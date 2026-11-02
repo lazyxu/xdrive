@@ -266,8 +266,9 @@ class OfflinePackageTests(unittest.TestCase):
             offline.validate_active_contracts(home, changed, ("app",), set())
 
     def check_enabled_profile_preserves_existing(self, existing_profile, enabled_profile,
-                                               update_source=None, backup_file_data=False, all_components=False):
-        home = self.root / "existing-profile"
+                                               update_source=None, backup_file_data=False, all_components=False,
+                                               delivery_commit=None, no_start=False, default_home=False):
+        home = self.root / "default-home/.xd" if default_home else self.root / "existing-profile"
         (home / "config").mkdir(parents=True)
         (home / "state").mkdir()
         image_key = ("XD_MEDIA_WORKER_IMAGE" if existing_profile == "media-worker"
@@ -277,6 +278,8 @@ class OfflinePackageTests(unittest.TestCase):
             f'COMPOSE_PROFILES="{existing_profile}"\n{image_key}={image_ref}\n',
             encoding="utf-8")
         manifest = dict(self.manifest)
+        if delivery_commit:
+            manifest["source_commit"] = delivery_commit
         manifest["contracts"] = {"postgres_major": 17, "media_worker_api": 1,
                                  "photo_intelligence_api": 1, "model_runtime_api": 1}
         (home / "state" / "offline-installed.json").write_text(json.dumps({
@@ -288,18 +291,43 @@ class OfflinePackageTests(unittest.TestCase):
                      else ("app", "postgres", "media-worker"))
         if all_components:
             selection = offline.COMPONENTS
-        args = types.SimpleNamespace(directory=self.out, config_dir=home,
-                                     workdir=self.root, no_start=False,
+        args = types.SimpleNamespace(directory=self.out, config_dir=None if default_home else home,
+                                     workdir=self.root, no_start=no_start,
                                      update_source=update_source, backup_file_data=backup_file_data,
                                      enable_ai=enabled_profile == "photo-intelligence",
                                      enable_media=enabled_profile == "media-worker")
         installer_profiles = []
+        inherited_overrides = {
+            key: "untrusted/inherited:edge" for key in (
+                "XD_SERVER_IMAGE", "XD_CADDY_IMAGE", "XD_POSTGRES_IMAGE",
+                "XD_MEDIA_WORKER_IMAGE", "XD_PHOTO_FACE_IMAGE", "XD_CADDY_RESCUE_IMAGE", "XD_WEB_IMAGE",
+                "XD_OFFLINE_SERVER_IMAGE", "XD_OFFLINE_CADDY_IMAGE", "XD_OFFLINE_POSTGRES_IMAGE",
+                "XD_OFFLINE_MEDIA_IMAGE", "XD_OFFLINE_PHOTO_IMAGE",
+                "XD_SOURCE_REF", "XD_IMAGE_TAG", "XD_IMAGE_REGISTRY", "XD_BUILT_CHANNEL",
+                "XD_BUILT_COMMIT", "XD_BUILT_SOURCE")}
+        inherited_overrides["COMPOSE_PROFILES"] = ""
+        inherited_overrides["XD_INSTALL_NO_START"] = "1"
+        inherited_overrides["XD_CONFIG_DIR"] = str(self.root / "unrelated-installation")
 
         def run_process(command, **kwargs):
             if command == ["docker", "info"]:
                 return subprocess.CompletedProcess(command, 0)
             if command[0] == "bash":
-                installer_profiles.append(kwargs["env"].get("COMPOSE_PROFILES", ""))
+                environment = kwargs["env"]
+                installer_profiles.append(environment.get("COMPOSE_PROFILES", ""))
+                for name in ("server", "caddy", "postgres"):
+                    self.assertEqual(environment.get("XD_OFFLINE_" + name.upper() + "_IMAGE"),
+                                     manifest["images"][name]["ref"])
+                self.assertEqual(environment.get("XD_OFFLINE_MEDIA_IMAGE"),
+                                 manifest["images"]["media-worker"]["ref"] if "media-worker" in selection else None)
+                self.assertEqual(environment.get("XD_OFFLINE_PHOTO_IMAGE"),
+                                 "xdrive/offline-photo:verified" if "ai-runtime" in selection else None)
+                self.assertEqual(environment.get("XD_POSTGRES_IMAGE"), manifest["images"]["postgres"]["ref"])
+                self.assertEqual(environment.get("XD_INSTALL_NO_START"), "1" if no_start else None)
+                self.assertEqual(environment.get("XD_CONFIG_DIR"), str(home))
+                for name in inherited_overrides:
+                    if name not in ("COMPOSE_PROFILES", "XD_POSTGRES_IMAGE", "XD_INSTALL_NO_START", "XD_CONFIG_DIR") and not name.startswith("XD_OFFLINE_"):
+                        self.assertNotIn(name, environment, "inherited image/release overrides must not reach activation")
                 self.assertEqual(command[2:6], ["--source", "github", "--channel", "master"])
                 self.assertEqual(kwargs["env"].get("XD_OFFLINE_UPDATE_SOURCE"), update_source)
                 self.assertEqual("--backup-file-data" in command, backup_file_data)
@@ -308,7 +336,8 @@ class OfflinePackageTests(unittest.TestCase):
 
         # Verify real package contents and saved compatibility state; replace
         # only Docker mutation and the host activation process boundary.
-        with mock.patch.dict(os.environ, {"COMPOSE_PROFILES": ""}), \
+        with mock.patch.dict(os.environ, inherited_overrides), \
+                mock.patch.object(offline.Path, "home", return_value=home.parent), \
                 mock.patch.object(offline.shutil, "which", return_value="/fake/bin"), \
                 mock.patch.object(offline.subprocess, "run", side_effect=run_process), \
                 mock.patch.object(offline, "load_image"), \
@@ -317,6 +346,8 @@ class OfflinePackageTests(unittest.TestCase):
             offline.offline_install(args, manifest, selection)
         expected = ",".join(sorted({p for p in (existing_profile, enabled_profile) if p}))
         self.assertEqual(installer_profiles, [expected])
+        saved_state = json.loads((home / "state/offline-installed.json").read_text())
+        self.assertEqual("source_commit" in saved_state, not no_start)
 
     def test_enable_ai_preserves_existing_media_worker(self):
         self.check_enabled_profile_preserves_existing("media-worker", "photo-intelligence")
@@ -330,6 +361,16 @@ class OfflinePackageTests(unittest.TestCase):
 
     def test_share_prefetched_all_five_does_not_activate_disabled_profiles(self):
         self.check_enabled_profile_preserves_existing("", "", "xdrive", all_components=True)
+
+    def test_reused_app_keeps_signed_images_when_delivery_commit_advances(self):
+        self.check_enabled_profile_preserves_existing("", "", "xdrive", all_components=True,
+                                                     delivery_commit="b" * 40)
+
+    def test_explicit_no_start_does_not_record_successful_activation(self):
+        self.check_enabled_profile_preserves_existing("", "", "xdrive", all_components=True, no_start=True)
+
+    def test_default_home_matches_installer_and_receipt_despite_inherited_other_home(self):
+        self.check_enabled_profile_preserves_existing("", "", "xdrive", all_components=True, default_home=True)
 
     def test_share_override_rejects_stable_or_foreign_provenance_before_docker(self):
         args = types.SimpleNamespace(update_source="xdrive")

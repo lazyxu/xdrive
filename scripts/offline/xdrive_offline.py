@@ -466,12 +466,26 @@ def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[s
         installer = app_assets / "xdrive-server-install.sh"
         require(installer.is_file(), "offline rendered installer is missing")
         environment = os.environ.copy()
+        # A shell/CI image override must not outrank the authenticated package
+        # or the transactional .env restored on failure. Supply only dedicated
+        # offline inputs, including when an App package predates this delivery.
+        for key in ("XD_SERVER_IMAGE", "XD_CADDY_IMAGE", "XD_POSTGRES_IMAGE", "XD_WEB_IMAGE",
+                    "XD_MEDIA_WORKER_IMAGE", "XD_PHOTO_FACE_IMAGE", "XD_CADDY_RESCUE_IMAGE",
+                    "XD_SOURCE_REF", "XD_IMAGE_TAG", "XD_IMAGE_REGISTRY", "XD_BUILT_CHANNEL",
+                    "XD_BUILT_COMMIT", "XD_BUILT_SOURCE", "XD_OFFLINE_SERVER_IMAGE",
+                    "XD_OFFLINE_CADDY_IMAGE", "XD_OFFLINE_POSTGRES_IMAGE",
+                    "XD_OFFLINE_MEDIA_IMAGE", "XD_OFFLINE_PHOTO_IMAGE"):
+            environment.pop(key, None)
         environment["XD_OFFLINE_ASSET_DIR"] = str(app_assets)
         environment["XD_INSTALL_SOURCE"] = manifest["source"]
         environment["XD_INSTALL_CHANNEL"] = manifest["channel"]
         environment.pop("XD_OFFLINE_UPDATE_SOURCE", None)
         if update_source:
             environment["XD_OFFLINE_UPDATE_SOURCE"] = update_source
+        for name in ("server", "caddy", "postgres"):
+            environment["XD_OFFLINE_" + name.upper() + "_IMAGE"] = manifest["images"][name]["ref"]
+        # Accepted older offline installers use this input name. Current
+        # installers capture it and remove the export before Compose/rollback.
         environment["XD_POSTGRES_IMAGE"] = postgres_ref
         # Never let an inherited online pull be enabled on this process.
         environment["XD_OFFLINE_NO_PULL"] = "1"
@@ -479,8 +493,8 @@ def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[s
             environment["XD_OFFLINE_MEDIA_IMAGE"] = manifest["images"]["media-worker"]["ref"]
         if photo_ref:
             environment["XD_OFFLINE_PHOTO_IMAGE"] = photo_ref
-        if args.config_dir:
-            environment["XD_CONFIG_DIR"] = str(args.config_dir)
+        environment["XD_CONFIG_DIR"] = str(home)
+        environment.pop("XD_INSTALL_NO_START", None)
         if args.no_start:
             environment["XD_INSTALL_NO_START"] = "1"
         if args.enable_media:

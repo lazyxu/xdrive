@@ -32,9 +32,29 @@ GITLAB_PROJECT="${XD_GITLAB_PROJECT:-xuliang/xdrive}"
 IMAGE_REGISTRY="${XD_IMAGE_REGISTRY:-@IMAGE_REGISTRY@}"
 # Offline mode is accepted only with a rendered, hash-bound release installer.
 OFFLINE_ASSET_DIR="${XD_OFFLINE_ASSET_DIR:-}"
+OFFLINE_SERVER_IMAGE="${XD_OFFLINE_SERVER_IMAGE:-}"
+OFFLINE_CADDY_IMAGE="${XD_OFFLINE_CADDY_IMAGE:-}"
+OFFLINE_POSTGRES_IMAGE="${XD_OFFLINE_POSTGRES_IMAGE:-${XD_POSTGRES_IMAGE:-}}"
 OFFLINE_MEDIA_IMAGE="${XD_OFFLINE_MEDIA_IMAGE:-}"
 OFFLINE_PHOTO_IMAGE="${XD_OFFLINE_PHOTO_IMAGE:-}"
 OFFLINE_UPDATE_SOURCE="${XD_OFFLINE_UPDATE_SOURCE:-}"
+if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+  # Offline provenance belongs to the signed rendered installer. Ambient CI or
+  # shell overrides must not replace its identity or outrank the current .env.
+  # Keep manifest image inputs local: rollback subprocesses must resolve the
+  # restored old .env, not newly imported images exported by this process.
+  SOURCE_REF="@SOURCE_REF@"
+  IMAGE_TAG="@IMAGE_TAG@"
+  BUILT_CHANNEL="@RELEASE_CHANNEL@"
+  BUILT_COMMIT="@RELEASE_COMMIT@"
+  BUILT_SOURCE="@UPDATE_SOURCE@"
+  IMAGE_REGISTRY="@IMAGE_REGISTRY@"
+  unset XD_SOURCE_REF XD_IMAGE_TAG XD_IMAGE_REGISTRY XD_BUILT_CHANNEL XD_BUILT_COMMIT XD_BUILT_SOURCE
+  unset XD_SERVER_IMAGE XD_CADDY_IMAGE XD_POSTGRES_IMAGE XD_WEB_IMAGE \
+    XD_MEDIA_WORKER_IMAGE XD_PHOTO_FACE_IMAGE XD_CADDY_RESCUE_IMAGE
+  unset XD_OFFLINE_SERVER_IMAGE XD_OFFLINE_CADDY_IMAGE XD_OFFLINE_POSTGRES_IMAGE \
+    XD_OFFLINE_MEDIA_IMAGE XD_OFFLINE_PHOTO_IMAGE
+fi
 STAGING_DIR="$STATE_DIR/install-staging"
 UPGRADE_STATE_DIR="$STATE_DIR/upgrade-transaction"
 INSTALL_LOCK_PATH="$STATE_DIR/install.lock"
@@ -1012,8 +1032,8 @@ prepare_target_image() {
       [[ -f "$PREFETCH_COMPOSE_PATH" && ! -L "$PREFETCH_COMPOSE_PATH" ]] || exit 1
       # Process-only image overrides; preserve the live runtime .env.
       export XD_POSTGRES_IMAGE="$target_postgres_image"
-      export XD_SERVER_IMAGE="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
-      export XD_CADDY_IMAGE="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
+      export XD_SERVER_IMAGE="$server_image_ref"
+      export XD_CADDY_IMAGE="$caddy_image_ref"
       export XD_PHOTO_FACE_IMAGE="$photo_image_ref"
       export XD_MEDIA_WORKER_IMAGE="$media_image_ref"
       pull_service_with_retry "$service"
@@ -2322,10 +2342,10 @@ ensure_env ALIYUN_ACCESS_KEY_ID "${ALIYUN_ACCESS_KEY_ID:-}"
 ensure_env ALIYUN_ACCESS_KEY_SECRET "${ALIYUN_ACCESS_KEY_SECRET:-}"
 ensure_env XD_POSTGRES_IMAGE "${XD_POSTGRES_IMAGE:-postgres:17-alpine}"
 if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
-  [[ -n "${XD_POSTGRES_IMAGE:-}" ]] || {
+  [[ -n "$OFFLINE_POSTGRES_IMAGE" ]] || {
     echo "xDrive offline: exact PostgreSQL image is required." >&2; exit 1;
   }
-  set_env XD_POSTGRES_IMAGE "$XD_POSTGRES_IMAGE"
+  set_env XD_POSTGRES_IMAGE "$OFFLINE_POSTGRES_IMAGE"
 fi
 set_env XD_DOCKER_MODE "$DOCKER_MODE"
 set_env XD_SERVER_UID "$SERVER_UID"
@@ -2641,9 +2661,13 @@ repair_migrated_cas_parents_before_backup() {
 # and must never bypass a real detected inconsistency.
 repair_migrated_cas_parents_before_backup
 
+server_image_ref="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
+caddy_image_ref="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
 photo_image_ref="$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
 media_image_ref="$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
 if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+  server_image_ref="${OFFLINE_SERVER_IMAGE:-$server_image_ref}"
+  caddy_image_ref="${OFFLINE_CADDY_IMAGE:-$caddy_image_ref}"
   photo_image_ref="${OFFLINE_PHOTO_IMAGE:-$(env_value XD_PHOTO_FACE_IMAGE)}"
   media_image_ref="${OFFLINE_MEDIA_IMAGE:-$(env_value XD_MEDIA_WORKER_IMAGE)}"
   [[ -n "$photo_image_ref" ]] || photo_image_ref="$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
@@ -2652,7 +2676,7 @@ fi
 
 stage 5 "create pre-upgrade backup"
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
-  target_server_image="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
+  target_server_image="$server_image_ref"
   # The old runtime can predate fast verification. Pull the EXACT published
   # target verifier while the existing app is still serving traffic, so stage
   # 5 does not need to repeat a multi-minute legacy deep hash sweep.
@@ -2700,7 +2724,7 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     target_postgres_image="${target_postgres_image:-postgres:17-alpine}"
     prepare_target_image postgres "$target_postgres_image"
     prepare_target_image server "$target_server_image"
-    prepare_target_image caddy "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
+    prepare_target_image caddy "$caddy_image_ref"
     if compose_profile_enabled photo-intelligence; then
       prepare_target_image photo-face "$photo_image_ref"
     fi
@@ -2834,8 +2858,8 @@ fi
 stage 6 "install deployment files"
 # Only point at the new release images after the old deployment has been
 # backed up successfully. Caddy now contains the exact CI-tested Web build.
-set_env XD_SERVER_IMAGE "$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
-set_env XD_CADDY_IMAGE "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
+set_env XD_SERVER_IMAGE "$server_image_ref"
+set_env XD_CADDY_IMAGE "$caddy_image_ref"
 set_env XD_PHOTO_FACE_IMAGE "$photo_image_ref"
 set_env XD_MEDIA_WORKER_IMAGE "$media_image_ref"
 unset_env XD_WEB_IMAGE

@@ -9,7 +9,7 @@ cleanup() {
   local status=$?
   if [[ "$status" -ne 0 ]]; then
     echo "server transactional upgrade test failed (exit $status)" >&2
-    for file in locked.out locked.err upgrade.out upgrade.err cas-lock.out cas-lock.err cas-real-error.out cas-real-error.err stall.out stall.err incremental-stall.out incremental-stall.err completion-tail.out completion-tail.err incremental-success.out incremental-success.err pull-fail.out pull-fail.err share-1.out share-1.err share-0.out share-0.err state/docker-calls state/server-ps-count state/backup-args state/backup-images; do
+    for file in locked.out locked.err upgrade.out upgrade.err cas-lock.out cas-lock.err cas-real-error.out cas-real-error.err stall.out stall.err incremental-stall.out incremental-stall.err completion-tail.out completion-tail.err incremental-success.out incremental-success.err pull-fail.out pull-fail.err share-1.out share-1.err share-0.out share-0.err share-fresh.out share-fresh.err state/docker-calls state/server-ps-count state/backup-args state/backup-images; do
       if [[ -f "$TMP/$file" ]]; then
         echo "===== $file =====" >&2
         cat "$TMP/$file" >&2 || true
@@ -279,10 +279,12 @@ fi
 
 progress_mode=""
 compose_file=""
+compose_env_file=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     compose) shift ;;
-    --profile|--env-file) shift 2 ;;
+    --profile) shift 2 ;;
+    --env-file) compose_env_file="$2"; shift 2 ;;
     -f) compose_file="$2"; shift 2 ;;
     --progress) progress_mode="$2"; shift 2 ;;
     *) break ;;
@@ -396,6 +398,15 @@ case "$1" in
     exit 0
     ;;
   up)
+    if [[ "${TEST_RECORD_COMPOSE_IMAGES:-0}" == 1 ]]; then
+      # Match Compose precedence: process environment overrides --env-file.
+      # Record effective refs, not merely restored configuration file text.
+      for variable in XD_SERVER_IMAGE XD_CADDY_IMAGE XD_POSTGRES_IMAGE XD_MEDIA_WORKER_IMAGE XD_PHOTO_FACE_IMAGE; do
+        image_ref="${!variable:-}"
+        [[ -n "$image_ref" ]] || image_ref="$(sed -n "s/^$variable=//p" "$compose_env_file" | tr -d '\"')"
+        printf '%s=%s\n' "$variable" "$image_ref" >> "$TEST_STATE/compose-images"
+      done
+    fi
     exit 0
     ;;
   exec)
@@ -1071,14 +1082,21 @@ for health in 1 0; do
   # independent suites cover HTTPS certificate readiness.
   sed -i 's/^XD_DOMAIN=.*/XD_DOMAIN=/' "$share_config/.env" "$share_config/config/.env"
   printf '\nXD_UPDATE_SOURCE=gitlab\n' >> "$share_config/config/.env"
+  printf '%s\n' 'COMPOSE_PROFILES=media-worker,photo-intelligence' \
+    'XD_POSTGRES_IMAGE=postgres:17-old' 'XD_MEDIA_WORKER_IMAGE=local/media:old' \
+    'XD_PHOTO_FACE_IMAGE=local/photo:old' >> "$share_config/config/.env"
   mkdir -p "$share_state"
   printf '%s\n' postgres:17-alpine ghcr.io/lazyxu/xdrive-server:sha-0123456789ab \
-    ghcr.io/lazyxu/xdrive-caddy:sha-0123456789ab > "$share_state/cached-images"
+    ghcr.io/lazyxu/xdrive-caddy:sha-0123456789ab local/media:signed local/photo:signed > "$share_state/cached-images"
   set +e
-  TEST_STATE="$share_state" TEST_HEALTH_OK="$health" PATH="$TMP/bin:/usr/bin:/bin" \
+  TEST_STATE="$share_state" TEST_HEALTH_OK="$health" TEST_RECORD_COMPOSE_IMAGES=1 PATH="$TMP/bin:/usr/bin:/bin" \
     XD_CONFIG_DIR="$share_config" XD_SHELL_RC_PATH="$TMP/share-$health.bashrc" \
     XD_OFFLINE_ASSET_DIR="$share_assets" XD_OFFLINE_UPDATE_SOURCE=xdrive \
-    XD_POSTGRES_IMAGE=postgres:17-alpine \
+    XD_OFFLINE_POSTGRES_IMAGE=postgres:17-alpine \
+    XD_OFFLINE_MEDIA_IMAGE=local/media:signed XD_OFFLINE_PHOTO_IMAGE=local/photo:signed \
+    XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:edge XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:edge \
+    XD_POSTGRES_IMAGE=postgres:inherited XD_MEDIA_WORKER_IMAGE=local/media:inherited \
+    XD_PHOTO_FACE_IMAGE=local/photo:inherited XD_IMAGE_TAG=untrusted-tag XD_IMAGE_REGISTRY=untrusted/registry \
     XD_NONINTERACTIVE=1 XD_UPGRADE_BACKUP_VERIFIER=target \
     bash "$TMP/share-install.sh" --source github --channel master --backup-file-data \
     >"$TMP/share-$health.out" 2>"$TMP/share-$health.err"
@@ -1102,6 +1120,44 @@ for health in 1 0; do
   if grep -q -- '--skip-file-data' "$share_state/backup-args"; then
     echo "Share file-data backup option was lost" >&2; exit 1
   fi
+  head -n 5 "$share_state/compose-images" > "$share_state/first-compose-images"
+  printf '%s\n' 'XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-0123456789ab' \
+    'XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-0123456789ab' 'XD_POSTGRES_IMAGE=postgres:17-alpine' \
+    'XD_MEDIA_WORKER_IMAGE=local/media:signed' 'XD_PHOTO_FACE_IMAGE=local/photo:signed' > "$share_state/expected-images"
+  diff -u "$share_state/expected-images" "$share_state/first-compose-images"
+  if [[ "$health" == 0 ]]; then
+    tail -n 5 "$share_state/compose-images" > "$share_state/last-compose-images"
+    printf '%s\n' 'XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold' \
+      'XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-oldoldoldold' 'XD_POSTGRES_IMAGE=postgres:17-old' \
+      'XD_MEDIA_WORKER_IMAGE=local/media:old' 'XD_PHOTO_FACE_IMAGE=local/photo:old' > "$share_state/expected-old-images"
+    diff -u "$share_state/expected-old-images" "$share_state/last-compose-images"
+  fi
 done
+
+# A fresh files-only installation resolves the same signed inputs before any
+# runtime starts. Existing healthy/failing cases above cover Compose and rollback.
+fresh_config="$TMP/share-fresh-config"
+fresh_state="$TMP/share-fresh-state"
+mkdir -p "$fresh_state"
+TEST_STATE="$fresh_state" PATH="$TMP/bin:/usr/bin:/bin" \
+  XD_CONFIG_DIR="$fresh_config" XD_SHELL_RC_PATH="$TMP/share-fresh.bashrc" \
+  XD_OFFLINE_ASSET_DIR="$share_assets" XD_OFFLINE_UPDATE_SOURCE=xdrive \
+  XD_OFFLINE_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-0123456789ab \
+  XD_OFFLINE_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-0123456789ab \
+  XD_OFFLINE_POSTGRES_IMAGE=postgres:17-alpine \
+  XD_OFFLINE_MEDIA_IMAGE=local/media:signed XD_OFFLINE_PHOTO_IMAGE=local/photo:signed \
+  XD_SERVER_IMAGE=untrusted/server:edge XD_CADDY_IMAGE=untrusted/caddy:edge \
+  XD_POSTGRES_IMAGE=postgres:inherited XD_MEDIA_WORKER_IMAGE=local/media:inherited \
+  XD_PHOTO_FACE_IMAGE=local/photo:inherited XD_IMAGE_TAG=untrusted-tag XD_IMAGE_REGISTRY=untrusted/registry \
+  XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 XD_LAN_HTTPS_IP=192.168.2.4 \
+  bash "$TMP/share-install.sh" --source github --channel master >"$TMP/share-fresh.out" 2>"$TMP/share-fresh.err"
+for expected in 'XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-0123456789ab' \
+  'XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-0123456789ab' 'XD_POSTGRES_IMAGE=postgres:17-alpine' \
+  'XD_MEDIA_WORKER_IMAGE=local/media:signed' 'XD_PHOTO_FACE_IMAGE=local/photo:signed'; do
+  grep -Fxq "$expected" "$fresh_config/config/.env"
+done
+if grep -Eq '^pull |^stop |compose .* (pull|up) ' "$fresh_state/docker-calls"; then
+  echo "Fresh files-only offline install performed a runtime mutation" >&2; exit 1
+fi
 
 echo "server transactional upgrade tests passed"
