@@ -133,7 +133,18 @@ internal fun GalleryPhotoViewer(
     }
     // Only this verified Viewer image moves. No neighbor image requests are
     // launched while the finger is down; Owner-scoped navigation stays on UP.
-    val photoDrag = remember(photo.node.id, photo.node.revision) { Animatable(0f) }
+    var photoDragX by remember(controller, photo.node.id, photo.node.revision) {
+        mutableFloatStateOf(0f)
+    }
+    // AwaitPointerEventScope has restricted suspension: render progress from
+    // a value state, and run finish animations in the composition's scope.
+    val photoSwipeScope = rememberCoroutineScope()
+    var photoSwipeJob by remember(controller, photo.node.id, photo.node.revision) {
+        mutableStateOf<kotlinx.coroutines.Job?>(null)
+    }
+    DisposableEffect(controller, photo.node.id, photo.node.revision) {
+        onDispose { photoSwipeJob?.cancel() }
+    }
     var originalProgress by remember(photo.node.id, photo.node.revision) {
         mutableStateOf(0L to (null as Long?))
     }
@@ -269,52 +280,65 @@ internal fun GalleryPhotoViewer(
                         )
                         val origin = down.position
                         liveSwipeFence.beginGesture()
-                        photoDrag.snapTo(0f)
+                        photoSwipeJob?.cancel()
+                        photoDragX = 0f
                         var singlePointer = true
-                        try {
-                            while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                if (event.changes.count { it.pressed } > 1)
-                                    singlePointer = false
-                                val pointer = event.changes.firstOrNull {
-                                    it.id == down.id
-                                } ?: break
-                                val dx = pointer.position.x - origin.x
-                                val dy = pointer.position.y - origin.y
-                                val available = if (dx < 0f) canGoNewer else canGoOlder
-                                if (!pointer.pressed) {
-                                    val permitted = available && liveSwipeFence.mayShift(
-                                        deltaX = dx, deltaY = dy,
-                                        durationMillis = pointer.uptimeMillis - down.uptimeMillis,
-                                        thresholdPx = swipeThreshold,
-                                        deliberateThresholdPx = maxOf(swipeThreshold + 1f,
-                                            size.width.toFloat() * 0.28f),
-                                        singlePointer = singlePointer,
-                                        atDefaultZoom = currentZoom <= 1.001f,
-                                    ) && controller.state.value.galleryViewer == photo
-                                    if (permitted) {
-                                        photoDrag.animateTo(
-                                            if (dx < 0f) -size.width.toFloat() else size.width.toFloat(),
-                                            animationSpec = tween(135),
-                                        )
-                                        if (controller.state.value.galleryViewer == photo)
-                                            controller.shiftGalleryViewer(if (dx < 0f) 1 else -1)
-                                    } else {
-                                        photoDrag.animateTo(0f, animationSpec = tween(170))
+                        var released = false
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (event.changes.count { it.pressed } > 1)
+                                singlePointer = false
+                            val pointer = event.changes.firstOrNull {
+                                it.id == down.id
+                            } ?: break
+                            val dx = pointer.position.x - origin.x
+                            val dy = pointer.position.y - origin.y
+                            val available = if (dx < 0f) canGoNewer else canGoOlder
+                            if (!pointer.pressed) {
+                                released = true
+                                val permitted = available && liveSwipeFence.mayShift(
+                                    deltaX = dx, deltaY = dy,
+                                    durationMillis = pointer.uptimeMillis - down.uptimeMillis,
+                                    thresholdPx = swipeThreshold,
+                                    deliberateThresholdPx = maxOf(swipeThreshold + 1f,
+                                        size.width.toFloat() * 0.28f),
+                                    singlePointer = singlePointer,
+                                    atDefaultZoom = currentZoom <= 1.001f,
+                                ) && controller.state.value.galleryViewer == photo
+                                val start = photoDragX
+                                val targetX = if (!permitted) 0f
+                                    else if (dx < 0f) -size.width.toFloat()
+                                    else size.width.toFloat()
+                                photoSwipeJob?.cancel()
+                                photoSwipeJob = photoSwipeScope.launch {
+                                    Animatable(start).animateTo(targetX,
+                                        animationSpec = tween(if (permitted) 135 else 170)) {
+                                        photoDragX = value
                                     }
-                                    break
+                                    photoDragX = 0f
+                                    if (permitted && controller.state.value.galleryViewer == photo)
+                                        controller.shiftGalleryViewer(if (dx < 0f) 1 else -1)
                                 }
-                                if (singlePointer && currentZoom <= 1.001f &&
-                                    liveSwipeFence.canFollowSwipe() &&
-                                    controller.state.value.galleryViewer == photo) {
-                                    photoDrag.snapTo(galleryPhotoDragTranslation(
-                                        dx, dy, size.width.toFloat(), available))
-                                } else if (photoDrag.value != 0f) {
-                                    photoDrag.snapTo(0f)
-                                }
+                                break
                             }
-                        } finally {
-                            photoDrag.snapTo(0f)
+                            if (singlePointer && currentZoom <= 1.001f &&
+                                liveSwipeFence.canFollowSwipe() &&
+                                controller.state.value.galleryViewer == photo) {
+                                photoDragX = galleryPhotoDragTranslation(
+                                    dx, dy, size.width.toFloat(), available)
+                            } else {
+                                photoDragX = 0f
+                            }
+                        }
+                        if (!released && photoDragX != 0f) {
+                            val start = photoDragX
+                            photoSwipeJob?.cancel()
+                            photoSwipeJob = photoSwipeScope.launch {
+                                Animatable(start).animateTo(0f, animationSpec = tween(170)) {
+                                    photoDragX = value
+                                }
+                                photoDragX = 0f
+                            }
                         }
                     }
                 }
@@ -393,7 +417,7 @@ internal fun GalleryPhotoViewer(
                                 scaleX = zoom
                                 scaleY = zoom
                                 translationX = pan.x +
-                                    (if (zoom <= 1.001f) photoDrag.value else 0f)
+                                    (if (zoom <= 1.001f) photoDragX else 0f)
                                 translationY = pan.y
                             }
                             .transformable(gesture)

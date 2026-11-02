@@ -8,8 +8,11 @@ test('Android cloud and local gallery use an actual visible finger-following tra
   const cloud = read('android/app/src/main/java/com/tfluid/xdrive/GalleryPhotoViewer.kt')
   const local = read('android/app/src/main/java/com/tfluid/xdrive/NativeLocalMediaStoreGallery.kt')
   const gate = read('android/app/src/main/java/com/tfluid/xdrive/GalleryViewerSwipeGate.kt')
-  assert.match(cloud, /photoDrag\.snapTo\(galleryPhotoDragTranslation\(/)
-  assert.match(cloud, /photoDrag\.animateTo\(/)
+  assert.match(cloud, /photoDragX = galleryPhotoDragTranslation\(/)
+  assert.match(cloud, /photoSwipeScope\.launch \{/)
+  assert.match(cloud, /Animatable\(start\)\.animateTo\(/)
+  assert.doesNotMatch(cloud, /photoDrag\.snapTo\(/,
+    'restricted AwaitPointerEventScope must not suspend on animation state')
   assert.match(cloud, /liveSwipeFence\.canFollowSwipe\(\)/)
   assert.match(cloud, /controller\.state\.value\.galleryViewer == photo/)
   assert.match(local, /dragDistance \+= drag/)
