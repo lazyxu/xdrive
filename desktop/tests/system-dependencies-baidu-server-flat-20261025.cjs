@@ -23,6 +23,11 @@ test('Server API is one always-open page, never the legacy config Accordion', ()
   assert.match(server, /disabled=\{checking \|\| hasUnsavedEdits \|\| clearOpen\}/)
   assert.match(page, /setRefreshID\(\(value\) => value \+ 1\)/)
   assert.match(page, /void source\.loadBaiduMapConfig\(\)\.then\(\(next\) =>/)
+  // Automatic local reads happen on entering the Baidu service and the
+  // inventory effect; no hidden upstream Loader/Geoconv probe is dispatched.
+  assert.match(page, /if \(selectedPage === 'baidu-map' && source\.loadBaiduMapConfig\)/)
+  assert.match(page, /void source\.loadBaiduMapConfig\(\)\.then\(\(config\) =>/)
+  assert.match(page, /void source\.load\(controller\.signal\)\.then\(\(next\) =>/)
 })
 
 test('Server AK identity and Browser AK release authority remain separate', () => {
@@ -35,7 +40,14 @@ test('Server AK identity and Browser AK release authority remain separate', () =
   assert.doesNotMatch(page, /JSAPI 配置<\/Button>|JSAPI 检测<\/Button>/)
   assert.match(jsapi, /source\.saveBaiduJSAPIConfig\(/)
   assert.doesNotMatch(server, /verifyBaiduJSAPI4Loader|Browser AK.*onReveal|static.map|verifyBaiduMap\(/)
-  assert.match(server, /不证明百度上游已接受 AK/)
+  assert.match(server, /百度上游是否接受 Server AK 尚未在线核验/)
+  assert.match(server, /进入页面会自动读取 Server 本机配置与运行状态/)
+  assert.match(server, /刷新本机状态/)
+  assert.match(server, /不会请求百度上游或消耗坐标转换配额/)
+  assert.match(server, /本机状态读取时间：\{checkedAt\}/)
+  assert.match(server, /service\.health_state === 'not-checked' \? '百度上游未检测'/)
+  assert.match(server, /assessment\.state === 'attention' \? '上游未验证'/)
+  assert.doesNotMatch(server, /检测时间：\{checkedAt\}|Static Map|自动验证百度上游已接受/)
   assert.match(server, /service\.health_state === 'failed' \|\| service\.status === 'unavailable'/)
   assert.doesNotMatch(server, /静态地图|Static Map/)
 })

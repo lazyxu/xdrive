@@ -49,9 +49,14 @@ export function XDriveBaiduServerAPIDetail({
   const checking = loading || refreshing || busy || otherBusy || revealingAK
   const editable = config?.editable === true && canSaveConfig
   const canSave = editable && dirty && !checking && !clearOpen
+  // Administrator inventory is automatically loaded on page entry; it NEVER
+  // makes a quota-consuming Baidu request. Don't label the local-read time as
+  // provider verification or turn an enabled AK into green remote health.
   const health = service.health_state === 'ready' ? '检查通过'
     : service.health_state === 'failed' ? '检查异常'
-      : service.health_state === 'not-checked' ? '尚未检测' : '无法确认'
+      : service.health_state === 'not-checked' ? '百度上游未检测' : '无法确认'
+  const stateLabel = service.health_state === 'not-checked' &&
+    assessment.state === 'attention' ? '上游未验证' : assessment.label
 
   return (
     <Box data-xdrive-baidu-server-flat="true" sx={{ width: '100%', minWidth: 0 }}>
@@ -63,22 +68,23 @@ export function XDriveBaiduServerAPIDetail({
             <Button size="small" variant="outlined" data-xdrive-baidu-server-refresh
               onClick={onRefreshStatus} disabled={checking || hasUnsavedEdits || clearOpen}
               aria-busy={refreshing || undefined}>
-              重新检测
+              刷新本机状态
             </Button>
           </Stack>
           <Stack direction="row" alignItems="center" flexWrap="wrap" gap={1}>
             <Chip size="small" color={assessment.state === 'healthy' ? 'success' :
               assessment.state === 'failed' ? 'error' : 'default'}
-              variant="outlined" label={assessment.label} data-xdrive-baidu-server-state={assessment.state} />
+              variant="outlined" label={stateLabel} data-xdrive-baidu-server-state={assessment.state} />
             <Typography variant="body2" color="text.secondary">
               健康：{health} · {axes[3].label}：{axes[3].value}
             </Typography>
           </Stack>
           {checkedAt && <Typography variant="caption" color="text.secondary">
-            检测时间：{checkedAt}
+            本机状态读取时间：{checkedAt}
           </Typography>}
           <Typography variant="body2" color="text.secondary" data-xdrive-baidu-server-evidence-scope>
-            当前状态只来自 Server 的配置与运行检查；不证明百度上游已接受 AK 或动态地图加载成功。
+            进入页面会自动读取 Server 本机配置与运行状态；「刷新本机状态」只重新读取，不会请求百度上游或消耗坐标转换配额。
+            百度上游是否接受 Server AK 尚未在线核验；动态地图的 Browser AK 与 Loader 状态另行显示。
           </Typography>
           {(service.health_state === 'failed' || service.status === 'unavailable') && service.detail && (
             <Typography variant="body2" color={service.health_state === 'failed' ? 'error.main' : 'text.secondary'}>
