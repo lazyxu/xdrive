@@ -45,5 +45,8 @@ test('existing backup runner, Owner/ledger status and false whole-library comple
   assert.match(screen, /整库是否已经备份：尚未逐张核验/)
   assert.match(scanner, /static let maxItems = 256/)
   assert.match(writer, /static let maxScannedAssets = XDrivePhotoBackupScanWindow\.maxItems/)
-  assert.doesNotMatch(policy, /UserDefaults|CoreData|PhotoKit|import Photos/)
+  // Documentation can mention PhotoKit while this pure Foundation policy
+  // must not import, call or persist any PhotoKit/backup source.
+  const executablePolicy = policy.replace(/\/\/[^\n]*/g, '')
+  assert.doesNotMatch(executablePolicy, /UserDefaults|CoreData|PhotoKit|import Photos|PHAsset|UploadSession|PhotoSyncLedger/)
 })
