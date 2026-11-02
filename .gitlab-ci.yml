@@ -6,6 +6,7 @@ stages:
   - gate
   - build
   - package
+  # MR/v* run pre-release tests; master snapshots run them after publication.
   - test
   - verify
   - release-build
@@ -118,6 +119,9 @@ desktop-tests:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -280,6 +284,9 @@ go-linux:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -308,6 +315,9 @@ go-linux-api:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -384,6 +394,9 @@ server-validation:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -411,7 +424,7 @@ server-image:
     - when: on_success
   image: $XDRIVE_CI_GO_IMAGE
   extends: .ci-tools-cache
-  stage: test
+  stage: package
   needs: []
   resource_group: xdrive-server-image
   tags:
@@ -438,7 +451,7 @@ media-worker-image:
     - when: on_success
   image: $XDRIVE_CI_GO_IMAGE
   extends: .ci-tools-cache
-  stage: test
+  stage: package
   needs: []
   resource_group: xdrive-media-worker-image
   tags:
@@ -464,7 +477,7 @@ photo-face-image:
         XDRIVE_GITLAB_PACKAGE_ONLY: "1"
     - when: on_success
   image: $XDRIVE_CI_GO_IMAGE
-  stage: test
+  stage: package
   timeout: 2h
   needs: []
   resource_group: xdrive-photo-face-image
@@ -502,7 +515,7 @@ caddy-image:
     - when: on_success
   image: $XDRIVE_CI_GO_IMAGE
   extends: .ci-tools-cache
-  stage: test
+  stage: package
   needs:
     - job: web
       artifacts: true
@@ -524,6 +537,9 @@ server-backup:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -547,6 +563,9 @@ test-backup-cli-windows:
   # GitLab master may publish if tests fail for environmental reasons;
   # formal v* and merge-request Final Gate still requires this test.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -564,6 +583,9 @@ go-windows:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -610,6 +632,9 @@ test-linux-artifact:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -627,6 +652,9 @@ test-source-agent-artifact:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -644,6 +672,9 @@ test-windows-rollback-artifact:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -663,6 +694,9 @@ test-windows-upgrade-artifact:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -684,6 +718,9 @@ test-windows-smoke-artifact:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
+    # Registry-backed master runs this exact test after publication instead.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
       allow_failure: true
     - when: on_success
@@ -709,7 +746,7 @@ web:
         XDRIVE_GITLAB_PACKAGE_ONLY: "1"
     - when: on_success
   image: $XDRIVE_CI_NODE_IMAGE
-  stage: test
+  stage: build
   needs: []
   cache:
     key: "xdrive-web-$CI_RUNNER_EXECUTABLE_ARCH"
@@ -787,3 +824,115 @@ final-gate:
     - linux
   script:
     - echo "All source, server, web, and exact-artifact tests passed."
+
+# Snapshot release must not wait for long-running GitLab diagnostic tests.
+# Reuse formal test scripts, but schedule them strictly after publication on
+# registry-backed master pushes. MR/v* keep their pre-release test jobs.
+.master-post-release-test:
+  stage: post-release-test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      allow_failure: true
+    - when: never
+  needs:
+    - job: publish-release
+      artifacts: false
+
+master-desktop-tests:
+  extends:
+    - desktop-tests
+    - .master-post-release-test
+
+master-go-linux:
+  extends:
+    - go-linux
+    - .master-post-release-test
+
+master-go-linux-api:
+  extends:
+    - go-linux-api
+    - .master-post-release-test
+
+master-server-validation:
+  extends:
+    - server-validation
+    - .master-post-release-test
+
+master-server-backup:
+  extends:
+    - server-backup
+    - .master-post-release-test
+  needs:
+    - job: publish-release
+      artifacts: false
+    - job: server-image
+      artifacts: true
+
+master-test-backup-cli-windows:
+  extends:
+    - test-backup-cli-windows
+    - .master-post-release-test
+  needs:
+    - job: publish-release
+      artifacts: false
+    - job: build-client-core
+      artifacts: true
+
+master-go-windows:
+  extends:
+    - go-windows
+    - .master-post-release-test
+
+master-test-linux-artifact:
+  extends:
+    - test-linux-artifact
+    - .master-post-release-test
+  needs:
+    - job: publish-release
+      artifacts: false
+    - job: package-linux-client
+      artifacts: true
+
+master-test-source-agent-artifact:
+  extends:
+    - test-source-agent-artifact
+    - .master-post-release-test
+  needs:
+    - job: publish-release
+      artifacts: false
+    - job: build-source-agent
+      artifacts: true
+
+master-test-windows-rollback-artifact:
+  extends:
+    - test-windows-rollback-artifact
+    - .master-post-release-test
+  needs:
+    - job: publish-release
+      artifacts: false
+    - job: package-windows-client
+      artifacts: true
+
+master-test-windows-upgrade-artifact:
+  extends:
+    - test-windows-upgrade-artifact
+    - .master-post-release-test
+  needs:
+    - job: publish-release
+      artifacts: false
+    - job: package-windows-client
+      artifacts: true
+    - job: master-test-windows-rollback-artifact
+      artifacts: false
+
+master-test-windows-smoke-artifact:
+  extends:
+    - test-windows-smoke-artifact
+    - .master-post-release-test
+  needs:
+    - job: publish-release
+      artifacts: false
+    - job: package-windows-client
+      artifacts: true
+    - job: master-test-windows-upgrade-artifact
+      artifacts: false
