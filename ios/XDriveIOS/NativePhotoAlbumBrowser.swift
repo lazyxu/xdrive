@@ -146,6 +146,74 @@ actor XDriveIOSNativeAlbumPageReader {
         )
     }
 
+    /// Admit exactly one neighbor album page from a newly verified PhotoKit
+    /// snapshot. Validate EVERY slot of the previous 64-item page and the
+    /// exact edge item; an insertion, edit or album membership change must not
+    /// let an old Viewer index jump into a different media item.
+    func adjacentPage(
+        from current: XDrivePhotoKitScanPage,
+        anchoredAt selected: XDrivePhotoKitScanCandidate,
+        direction: Int
+    ) throws -> XDrivePhotoKitScanPage? {
+        guard let snapshot, let permission else {
+            throw XDriveIOSAlbumReadFailure.missing
+        }
+        try verify(permission)
+        try Task.checkCancellation()
+        let total = snapshot.count
+        guard total > 0, current.totalAccessibleAssets == total,
+              current.limitedAuthorization == (permission == .limited),
+              current.startOffset >= 0, current.startOffset < total,
+              current.startOffset % 64 == 0,
+              current.items.count == min(64, total - current.startOffset),
+              current.nextOffset == current.startOffset + current.items.count,
+              direction == -1 || direction == 1 else {
+            throw XDriveIOSAlbumReadFailure.changed
+        }
+        let supported = current.items.filter {
+            $0.kind == "image" || $0.kind == "video"
+        }
+        guard let edge = direction > 0 ? supported.last : supported.first,
+              Self.sameCandidate(edge, selected) else {
+            throw XDriveIOSAlbumReadFailure.changed
+        }
+
+        for (index, expected) in current.items.enumerated() {
+            try Task.checkCancellation()
+            let asset = snapshot.object(at: current.startOffset + index)
+            let kind: String
+            switch asset.mediaType {
+            case .image: kind = "image"
+            case .video: kind = "video"
+            default: kind = "unsupported"
+            }
+            guard asset.localIdentifier == expected.id,
+                  asset.creationDate == expected.capturedAt,
+                  asset.modificationDate == expected.modifiedAt,
+                  kind == expected.kind,
+                  expected.isLive == (kind == "image" &&
+                      asset.mediaSubtypes.contains(.photoLive))
+            else { throw XDriveIOSAlbumReadFailure.changed }
+        }
+        try verify(permission)
+        guard let offset = XDriveIOSNativePhotoVirtualPagePolicy.adjacentOffset(
+            current: current.startOffset, total: total, direction: direction
+        ) else { return nil }
+        let neighbor = try page(offset: offset)
+        // Do not silently skip an all-unsupported album page.
+        return neighbor.items.contains {
+            $0.kind == "image" || $0.kind == "video"
+        } ? neighbor : nil
+    }
+
+    private static func sameCandidate(
+        _ lhs: XDrivePhotoKitScanCandidate, _ rhs: XDrivePhotoKitScanCandidate
+    ) -> Bool {
+        lhs.id == rhs.id && lhs.kind == rhs.kind &&
+        lhs.isLive == rhs.isLive && lhs.capturedAt == rhs.capturedAt &&
+        lhs.modifiedAt == rhs.modifiedAt
+    }
+
     func reset() {
         snapshot = nil
         permission = nil
@@ -219,6 +287,9 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
     @State private var selected: XDrivePhotoKitScanCandidate?
+    // Only the one currently viewed verified page is retained in memory.
+    // It may change when L3 crosses a 64-slot album boundary.
+    @State private var viewerPage: XDrivePhotoKitScanPage?
     @State private var loading = false
     @State private var task: Task<Void, Never>?
     @State private var epoch = UUID()
@@ -256,6 +327,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                             Button {
                                 viewerReturnID = item.id
                                 accessibilityFocusedTileID = nil
+                                viewerPage = page
                                 selected = item
                             } label: {
                                 XDriveIOSLocalPhotoTile(candidate: item)
@@ -309,23 +381,58 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) { initial in
             XDriveIOSNativeLocalPhotoDetail(
                 candidate: initial,
-                // Only this currently authorized album's loaded 64-slot page.
-                // The Viewer never fetches an adjacent page or saves asset IDs.
-                loadedItems: page?.items.filter { $0.kind != "unsupported" } ?? [],
+                // The album owns one verified 64-slot page at a time. The
+                // Viewer can request only the immediate neighbor on demand.
+                loadedItems: (viewerPage ?? page)?.items.filter {
+                    $0.kind != "unsupported"
+                } ?? [],
                 onViewed: { next in
-                    // Album changes may invalidate this wall while L3 is open.
-                    // Revalidate the exact row before accepting a return tile.
+                    // Use the currently verified Viewer page, not the original
+                    // wall page after a cross-page move.
                     guard phase == .active, selected?.id == initial.id,
                           [.authorized, .limited].contains(
                             PHPhotoLibrary.authorizationStatus(for: .readWrite)
                           ),
-                          page?.items.contains(where: {
+                          viewerPage?.items.contains(where: {
                             $0.id == next.id && $0.kind == next.kind &&
                             $0.isLive == next.isLive &&
                             $0.capturedAt == next.capturedAt &&
                             $0.modifiedAt == next.modifiedAt
                           }) == true
                     else { return }
+                    viewerReturnID = next.id
+                    accessibilityFocusedTileID = nil
+                },
+                loadedPage: viewerPage ?? page,
+                onCrossPage: { oldPage, anchor, direction in
+                    guard phase == .active, selected?.id == initial.id,
+                          [.authorized, .limited].contains(
+                            PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                          ) else { throw XDriveIOSAlbumReadFailure.changed }
+                    let adjacentReader = XDriveIOSNativeAlbumPageReader()
+                    do {
+                        let count = try await adjacentReader.open(album)
+                        guard count == oldPage.totalAccessibleAssets else {
+                            throw XDriveIOSAlbumReadFailure.changed
+                        }
+                        let neighbor = try await adjacentReader.adjacentPage(
+                            from: oldPage, anchoredAt: anchor, direction: direction
+                        )
+                        await adjacentReader.reset()
+                        guard phase == .active, selected?.id == initial.id,
+                              [.authorized, .limited].contains(
+                                PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                              ) else { throw XDriveIOSAlbumReadFailure.changed }
+                        return neighbor
+                    } catch {
+                        await adjacentReader.reset()
+                        throw error
+                    }
+                },
+                onCrossedPage: { next, verifiedPage in
+                    guard phase == .active, selected?.id == initial.id else { return }
+                    viewerPage = verifiedPage
+                    savedOffset = verifiedPage.startOffset
                     viewerReturnID = next.id
                     accessibilityFocusedTileID = nil
                 }
@@ -375,6 +482,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     }
 
     private func restoreAfterViewer() {
+        viewerPage = nil
         shouldRestoreViewerTile = viewerReturnID != nil && phase == .active
         // Open the same album/page only after fresh PhotoKit authorization.
         if phase == .active { reload() }
@@ -459,6 +567,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         reader = nil
         page = nil
         selected = nil
+        viewerPage = nil
         loading = false
         error = nil
     }
