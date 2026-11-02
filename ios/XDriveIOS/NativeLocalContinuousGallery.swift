@@ -3,6 +3,52 @@ import Photos
 import SwiftUI
 import UIKit
 
+/// Only the continuous PhotoKit wall uses this 1:1 thumbnail.
+/// Legacy album/map/photo Viewer dimensions are intentionally unchanged.
+private struct XDriveIOSNativeSquarePhotoTile: View {
+    let candidate: XDrivePhotoKitScanCandidate
+    @StateObject private var loader = XDriveIOSPhotoImageLoader()
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            GeometryReader { geometry in
+                Group {
+                    if let image = loader.image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Rectangle()
+                            .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                            .overlay {
+                                Image(systemName: "photo").foregroundStyle(.secondary)
+                            }
+                    }
+                }
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .clipped()
+            }
+            if candidate.kind == "video" || candidate.isLive {
+                Image(systemName: candidate.kind == "video" ? "play.circle.fill" : "livephoto")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .padding(5)
+                    .shadow(radius: 2)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .task(id: candidate.id) {
+            // Only visible cells request local PhotoKit derivatives; never
+            // fetch iCloud originals when zooming the thumbnail grid.
+            loader.load(candidate.id, size: CGSize(width: 420, height: 420))
+        }
+        .onDisappear { loader.cancel() }
+        .accessibilityLabel(candidate.isLive ? "实况照片" :
+            candidate.kind == "video" ? "视频" : "照片")
+    }
+}
+
 /// Metadata-only virtual page. The existing permission/change-fenced PhotoKit
 /// scanner is the single source of truth; this screen never touches backup cursors.
 private struct XDriveIOSNativeVirtualPhotoPage: View {
@@ -10,6 +56,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let expectedTotal: Int
     let generation: UUID
     let mediaFilter: XDriveIOSNativePhotoMediaFilter
+    let density: XDriveIOSNativePhotoWallDensity
     let selectionMode: Bool
     let selectedIDs: Set<String>
     let onSelect: (XDrivePhotoKitScanCandidate, XDrivePhotoKitScanPage) -> Void
@@ -22,9 +69,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
 
 
     private var placeholderTile: some View {
-        RoundedRectangle(cornerRadius: 7)
+        RoundedRectangle(cornerRadius: 3)
             .fill(Color(uiColor: .secondarySystemGroupedBackground))
-            .frame(height: 108)
+            .aspectRatio(1, contentMode: .fit)
     }
 
     var body: some View {
@@ -51,12 +98,15 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                             .padding(.top, 4)
                             .accessibilityAddTraits(.isHeader)
                     }
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
+                    LazyVGrid(columns: [GridItem(.adaptive(
+                        minimum: density.minimumCellWidth,
+                        maximum: density.maximumCellWidth
+                    ), spacing: 2)], spacing: 2) {
                         ForEach(page.items[section.startIndex..<section.endIndex]) { candidate in
                         if candidate.kind != "unsupported" {
                             Button { onSelect(candidate, page) } label: {
                                 ZStack(alignment: .topTrailing) {
-                                    XDriveIOSLocalPhotoTile(candidate: candidate)
+                                    XDriveIOSNativeSquarePhotoTile(candidate: candidate)
                                     if selectionMode {
                                         Image(systemName: selectedIDs.contains(candidate.id)
                                             ? "checkmark.circle.fill" : "circle")
@@ -96,7 +146,10 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 .foregroundStyle(.secondary)
                 // Match the number of real grid cells before PhotoKit finishes.
                 // A one-row spinner would shift the entire scroll offset later.
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
+                LazyVGrid(columns: [GridItem(.adaptive(
+                        minimum: density.minimumCellWidth,
+                        maximum: density.maximumCellWidth
+                    ), spacing: 2)], spacing: 2) {
                     ForEach(0..<min(64, expectedTotal - offset), id: \.self) { _ in
                         placeholderTile.accessibilityHidden(true)
                     }
@@ -179,6 +232,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter
     @Environment(\.scenePhase) private var phase
     @State private var total = 0
+    @State private var density: XDriveIOSNativePhotoWallDensity = .standard
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false
     @State private var failure: String?
@@ -227,6 +281,21 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             Text("本机已授权\(mediaFilter.title) · 按日分组")
                                 .font(.subheadline).foregroundStyle(.secondary)
                             Spacer(minLength: 6)
+                            Menu {
+                                ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
+                                    Button {
+                                        density = option
+                                    } label: {
+                                        Label(option.title, systemImage: density == option
+                                              ? "checkmark.circle.fill" : "square.grid.3x3")
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "square.grid.3x3")
+                                    .frame(width: 44, height: 44)
+                            }
+                            .accessibilityLabel("缩略图大小：\(density.title)")
+                            .accessibilityIdentifier("native-ios-local-wall-density")
                             Button(selectionMode ? "取消选择" : "选择") {
                                 selectionMode.toggle()
                                 selectedCandidates.removeAll()
@@ -295,7 +364,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 let offset = number * 64
                                 XDriveIOSNativeVirtualPhotoPage(
                                     offset: offset, expectedTotal: total, generation: generation,
-                                    mediaFilter: mediaFilter,
+                                    mediaFilter: mediaFilter, density: density,
                                     selectionMode: selectionMode,
                                     selectedIDs: Set(selectedCandidates.keys),
                                     onSelect: { asset, page in
@@ -341,6 +410,13 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                 }
                 .padding(.vertical, 8)
             }
+            .simultaneousGesture(
+                MagnificationGesture(minimumScaleDelta: 0.14).onEnded { value in
+                    guard authorized, phase == .active, selected == nil,
+                          !actionBusy && !shareBusy else { return }
+                    density = density.applyingPinch(value)
+                }
+            )
             .onChange(of: total) { count in
                 guard count > 0, phase == .active else { return }
                 let start = XDriveIOSNativePhotoVirtualPagePolicy.normalizedAnchor(
