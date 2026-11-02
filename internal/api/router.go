@@ -550,6 +550,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services/caddy/https/preflight", s.adminCaddyHTTPSPreflight)
 	admin.GET("/services/caddy/https/adoption-candidate", s.adminCaddyHostAdoptionCandidate)
 	admin.GET("/services/caddy/https/host-plan", s.adminCaddyHTTPSHostPlan)
+	admin.GET("/services/viewer-quality", s.adminGetViewerQuality)
+	admin.PUT("/services/viewer-quality", s.adminPutViewerQuality)
 	admin.GET("/services/media-worker", s.adminMediaWorkerConfig)
 	admin.PUT("/services/media-worker", s.adminSaveMediaWorkerConfig)
 	admin.POST("/services/media-worker/apply", s.adminApplyMediaWorker)

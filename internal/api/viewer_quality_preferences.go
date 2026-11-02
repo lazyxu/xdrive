@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,7 +19,27 @@ var errViewerQualityPreferenceConflict = errors.New("viewer preference revision 
 
 type viewerQualityPreferenceDTO struct {
 	Revision uint64 `json:"revision"`
-	Preset   mediapkg.ViewerQualityPreset `json:"preset"`
+	Preset mediapkg.ViewerQualityPreset `json:"preset"`
+	Effective mediapkg.ViewerQualityPreset `json:"effective"`
+	AdminMaximum mediapkg.ViewerQualityPreset `json:"admin_maximum"`
+	Capped bool `json:"capped"`
+}
+
+// Include the enforced maximum in the user's read response without making
+// the admin mutation endpoint readable or writable by ordinary users.
+func (s *Server) resolvedViewerPreferenceDTO(ctx context.Context, revision uint64, preset mediapkg.ViewerQualityPreset) (viewerQualityPreferenceDTO, error) {
+	maximum, err := s.readAdminViewerQualityMaximum(ctx)
+	if err != nil {
+		return viewerQualityPreferenceDTO{}, err
+	}
+	effective, err := mediapkg.ResolveViewerQuality(string(preset), "", string(maximum.Maximum))
+	if err != nil {
+		return viewerQualityPreferenceDTO{}, err
+	}
+	return viewerQualityPreferenceDTO{
+		Revision: revision, Preset: preset, Effective: effective.Effective,
+		AdminMaximum: maximum.Maximum, Capped: effective.Capped,
+	}, nil
 }
 
 // The view preference belongs to the authenticated Owner, not the device
@@ -38,9 +59,12 @@ func (s *Server) getViewerQualityPreference(c *gin.Context) {
 	err := s.DB.WithContext(c.Request.Context()).
 		Where("user_id = ?", uid).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusOK, viewerQualityPreferenceDTO{
-			Revision: 0, Preset: mediapkg.ViewerQualityHigh,
-		})
+		out, err := s.resolvedViewerPreferenceDTO(c.Request.Context(), 0, mediapkg.ViewerQualityHigh)
+		if err != nil {
+			fail(c, http.StatusServiceUnavailable, "viewer preferences unavailable")
+			return
+		}
+		c.JSON(http.StatusOK, out)
 		return
 	}
 	if err != nil {
@@ -52,7 +76,12 @@ func (s *Server) getViewerQualityPreference(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "viewer preferences unavailable")
 		return
 	}
-	c.JSON(http.StatusOK, viewerQualityPreferenceDTO{Revision: row.Revision, Preset: preset})
+	out, err := s.resolvedViewerPreferenceDTO(c.Request.Context(), row.Revision, preset)
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "viewer preferences unavailable")
+		return
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 // PUT uses optimistic concurrency and the Server's Owner identity. Missing
@@ -142,5 +171,10 @@ func (s *Server) putViewerQualityPreference(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "viewer preferences unavailable")
 		return
 	}
-	c.JSON(http.StatusOK, viewerQualityPreferenceDTO{Revision: nextRevision, Preset: preset})
+	out, err := s.resolvedViewerPreferenceDTO(c.Request.Context(), nextRevision, preset)
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "viewer preferences unavailable")
+		return
+	}
+	c.JSON(http.StatusOK, out)
 }

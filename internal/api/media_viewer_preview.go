@@ -74,6 +74,36 @@ func (s *Server) mediaViewerPreview(c *gin.Context) {
 	if !requireMediaSourceRevision(c, node.Revision) {
 		return
 	}
+	adminPolicy, err := s.readAdminViewerQualityMaximum(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "viewer administrator policy unavailable")
+		return
+	}
+	resolution, err := mediapkg.ResolveViewerQuality(string(preset), "", string(adminPolicy.Maximum))
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "viewer quality policy unavailable")
+		return
+	}
+	// Legacy clients explicitly rely on the old 4K/v1 ETag. Never silently
+	// return an incompatible v2 response to DSM's strict Range validator.
+	if resolution.Capped && rawPreset == "" {
+		c.Header("Cache-Control", "private, no-store")
+		fail(c, http.StatusForbidden, "legacy viewer exceeds administrator preview maximum")
+		return
+	}
+	if resolution.Capped {
+		preset = resolution.Effective
+		variant, err = mediapkg.ViewerQualityVariantFor(preset, format)
+		if err != nil {
+			fail(c, http.StatusServiceUnavailable, "viewer quality policy unavailable")
+			return
+		}
+		kind, ok = mediaViewerKindForVariant(variant)
+		if !ok {
+			fail(c, http.StatusServiceUnavailable, "viewer quality policy unavailable")
+			return
+		}
+	}
 	metadata, err := s.ensureMediaMetadata(c.Request.Context(), node)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "media indexing failed")
@@ -97,6 +127,10 @@ func (s *Server) mediaViewerPreview(c *gin.Context) {
 	c.Header("X-XDrive-Viewer-Preview-Edge", strconv.Itoa(variant.MaxEdge))
 	c.Header("X-XDrive-Viewer-Preview-Quality", strconv.Itoa(variant.Quality))
 	c.Header("X-XDrive-Viewer-Preview-Preset", string(preset))
+	c.Header("X-XDrive-Viewer-Admin-Maximum", string(adminPolicy.Maximum))
+	if resolution.Capped {
+		c.Header("X-XDrive-Viewer-Preview-Capped", "true")
+	}
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Referrer-Policy", "no-referrer")
 	if strings.TrimSpace(c.Query("revision")) != "" {
