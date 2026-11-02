@@ -66,6 +66,10 @@ internal fun nativeGalleryMapReturnSource(
         lastNonMap.takeUnless { it == NativeGallerySource.MAP } ?: NativeGallerySource.CLOUD
     } else source
 
+/** A map opened from local Photos/Albums must not silently switch to cloud. */
+internal fun nativeGalleryMapStartsLocal(origin: NativeGallerySource): Boolean =
+    origin == NativeGallerySource.LOCAL || origin == NativeGallerySource.ALBUMS
+
 internal data class NativeHomeNavigation(
     val selected: NativeHomeTab = NativeHomeTab.FILES,
     val dynamicFeature: NativeDynamicFeature? = null,

@@ -44,6 +44,7 @@ internal fun ColumnScope.GalleryMapOverview(
     onCameraSnapshot: (NativeBaiduCameraPose) -> Unit,
     focused: Boolean = true,
     onFocusChange: (Boolean) -> Unit = {},
+    onExit: () -> Unit = controller::closeGalleryMapOverview,
 ) {
     val overview = state.galleryMapOverview
     val bd09Cells = state.galleryBd09Cells
@@ -53,7 +54,7 @@ internal fun ColumnScope.GalleryMapOverview(
             Text("地点", style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TextButton(
-                onClick = controller::closeGalleryMapOverview,
+                onClick = onExit,
                 modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-map-close"),
             ) { Text("返回图库") }
         }

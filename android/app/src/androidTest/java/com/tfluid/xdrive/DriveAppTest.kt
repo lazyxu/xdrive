@@ -777,6 +777,43 @@ class DriveAppTest {
         }
         // L2 map keeps the Gallery route and hides its single L1 bottom bar.
         compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
+        compose.onNodeWithTag("gallery-map-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                !controller.state.value.galleryMapOpen
+        }
+        // Map's own close button must return to the original cloud wall.
+        compose.onNodeWithTag("native-gallery-source-cloud").assertIsSelected()
+    }
+
+    @Test fun galleryMapFromLocalPhotosStartsLocalAndReturnsToLocalAfterCloudToggle() {
+        galleryGpsOverviewFixture = true
+        startAndLogin(galleryFirstOnLogin = true)
+        compose.onNodeWithTag("native-gallery-source-local").assertIsSelected()
+        compose.onNodeWithTag("native-gallery-source-map").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("native-photo-map-sources")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("native-photo-map-source-local").assertIsNotEnabled()
+        compose.onNodeWithTag("native-photo-map-source-cloud").assertIsEnabled()
+        compose.runOnIdle {
+            org.junit.Assert.assertFalse(controller.state.value.galleryMapOpen)
+            org.junit.Assert.assertEquals(0, gpsOverviewReads)
+        }
+        // An explicit cloud switch is allowed, but closing it must restore
+        // the local wall that originally opened the Gallery map child.
+        compose.onNodeWithTag("native-photo-map-source-cloud").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryMapOpen
+        }
+        compose.onNodeWithTag("gallery-map-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                !controller.state.value.galleryMapOpen
+        }
+        compose.onNodeWithTag("native-gallery-source-local").assertIsSelected()
     }
 
     @Test fun dynamicTransferTabAndPickerResumeActualCenterOnOneTap() {
