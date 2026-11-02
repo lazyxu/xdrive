@@ -45,6 +45,11 @@ function compiledGallery() {
           throw Error('Owner video streaming not authorized in this fixture')
         },
       }
+      if (name === '../synology-live-motion') return {
+        xDriveSynologyLoadOwnerLiveMotion: async () => {
+          throw Error('This Gallery read-only fixture never requests Live Photo motion')
+        },
+      }
       if (name === '../synology-owner-thumbnail') return {
         xDriveSynologyLoadOwnerThumbnail: async (local, item, signal) => {
           const thumb = await local.ownerFileThumbnail(item.id, item.revision, signal)
