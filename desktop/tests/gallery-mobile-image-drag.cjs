@@ -41,3 +41,10 @@ test('slow deliberate drags remain valid without weakening zoom or Live fences',
   assert.match(gate, /deliberateThresholdPx: Float = Float.POSITIVE_INFINITY/)
   assert.match(gate, /durationMillis >= 0L/)
 })
+
+test('a normal pointerleave after Live Photo swipe release cannot cancel paging', () => {
+  const live = read('ui/shared/src/mui/LivePhotoSurface.tsx')
+  assert.match(live, /photoSwipeTimerRef\.current !== null && !touchGestureRef\.current/)
+  assert.match(live, /retirePhotoSlide\(\)/)
+  assert.match(live, /paintPhotoSlide\(0, false\)/)
+})

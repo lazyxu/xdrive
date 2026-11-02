@@ -669,6 +669,10 @@ export function XDriveLivePhotoSurface({
     // Never accept queued touches on an already-hidden document: a deferred
     // hold timer could otherwise fire after returning to the foreground.
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    // A new contact supersedes any pending slide completion. A normal
+    // pointerleave AFTER finger-up must not revoke the already accepted page.
+    retirePhotoSlide()
+    paintPhotoSlide(0, false)
     if (interactiveImage && stillReadyRef.current && event.pointerType === 'touch') {
       zoomPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
       if (zoomPointersRef.current.size >= 2) {
@@ -939,7 +943,10 @@ export function XDriveLivePhotoSurface({
       onDoubleClick={handleDoubleClick}
       onWheel={handleWheel}
       onPointerCancel={cancelTouchGesture}
-      onPointerLeave={cancelTouchGesture}
+      onPointerLeave={() => {
+        if (photoSwipeTimerRef.current !== null && !touchGestureRef.current) return
+        cancelTouchGesture()
+      }}
       onLostPointerCapture={handleLostCapture}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
