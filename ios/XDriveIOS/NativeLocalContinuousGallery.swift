@@ -17,6 +17,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let onRead: (XDrivePhotoKitScanPage) -> Void
     let onFailure: () -> Void
     @State private var page: XDrivePhotoKitScanPage?
+    @State private var precedingCapturedAt: Date?
     @State private var scanner: XDriveIOSNativeGalleryMediaScanner?
 
 
@@ -30,7 +31,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         VStack(alignment: .leading, spacing: 7) {
             if let page {
                 let daySections = XDriveIOSNativePhotoDayGroupingPolicy.sections(
-                    dates: page.items.map(\.capturedAt), calendar: .current
+                    dates: page.items.map(\.capturedAt),
+                    previousCapturedAt: precedingCapturedAt,
+                    hasPreviousPage: offset > 0, calendar: .current
                 )
                 HStack {
                     Text("当前照片页")
@@ -41,11 +44,13 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 ForEach(daySections) { section in
-                    Text(section.title)
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 4)
-                        .accessibilityAddTraits(.isHeader)
+                    if !section.continuesPreviousPage {
+                        Text(section.title)
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 4)
+                            .accessibilityAddTraits(.isHeader)
+                    }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
                         ForEach(page.items[section.startIndex..<section.endIndex]) { candidate in
                         if candidate.kind != "unsupported" {
@@ -102,11 +107,16 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         .id("page:\(offset)")
         .task(id: "\(generation)-\(offset)-\(mediaFilter.rawValue)") {
             page = nil
+            precedingCapturedAt = nil
             let reader = XDriveIOSNativeGalleryMediaScanner()
             scanner = reader
             do {
                 let count = try await reader.start(atOffset: offset, mediaFilter: mediaFilter)
                 let loaded = try await reader.nextPage()
+                var preceding: Date?
+                if offset > 0 {
+                    preceding = try await reader.precedingCaptureDate(beforeOffset: offset)
+                }
                 try Task.checkCancellation()
                 guard count == expectedTotal,
                       loaded.startOffset == offset,
@@ -116,6 +126,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                     onFailure()
                     return
                 }
+                precedingCapturedAt = preceding
                 page = loaded
                 onRead(loaded)
             } catch is CancellationError {
@@ -127,6 +138,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         }
         .onDisappear {
             page = nil
+            precedingCapturedAt = nil
             if let scanner { Task { await scanner.reset() } }
             scanner = nil
         }
@@ -164,9 +176,9 @@ private struct XDriveIOSNativeVirtualViewerSelection: Identifiable {
 /// uses the existing scanner and releases IDs/thumbnail loaders on disappearance.
 struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @Binding var savedOffset: Int
+    @Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter
     @Environment(\.scenePhase) private var phase
     @State private var total = 0
-    @State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false
     @State private var failure: String?
@@ -317,6 +329,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                         } else if failure == nil {
                             Text(mediaFilter == .videos ? "当前已授权图库中没有视频。" :
                                  mediaFilter == .photos ? "当前已授权图库中没有照片。" :
+                                 mediaFilter == .favorites ? "当前已授权图库中没有收藏照片。" :
                                  "当前已授权图库中没有可浏览的照片或视频。")
                                 .foregroundStyle(.secondary).padding(12)
                         }
@@ -361,6 +374,41 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                 candidate: current.candidate,
                 loadedItems: current.page.items.filter { $0.kind != "unsupported" },
                 onViewed: { next in
+                    returnID = next.id
+                    returnDate = next.capturedAt
+                    returnModified = next.modifiedAt
+                },
+                loadedPage: current.page,
+                onCrossPage: { page, anchor, direction in
+                    guard phase == .active, authorized else {
+                        throw XDrivePhotoKitScanFailure.notAuthorized
+                    }
+                    let currentFilter = mediaFilter
+                    let reader = XDriveIOSNativeGalleryMediaScanner()
+                    do {
+                        let count = try await reader.start(
+                            atOffset: page.startOffset, mediaFilter: currentFilter
+                        )
+                        guard count == page.totalAccessibleAssets else {
+                            throw XDrivePhotoKitScanFailure.snapshotChanged
+                        }
+                        let next = try await reader.adjacentPage(
+                            from: page, anchoredAt: anchor, direction: direction
+                        )
+                        await reader.reset()
+                        guard phase == .active, authorized,
+                              mediaFilter == currentFilter else {
+                            throw XDrivePhotoKitScanFailure.snapshotChanged
+                        }
+                        return next
+                    } catch {
+                        await reader.reset()
+                        throw error
+                    }
+                },
+                onCrossedPage: { next, page in
+                    returnPageOffset = page.startOffset
+                    savedOffset = page.startOffset
                     returnID = next.id
                     returnDate = next.capturedAt
                     returnModified = next.modifiedAt

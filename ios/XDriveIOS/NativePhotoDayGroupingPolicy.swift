@@ -6,6 +6,9 @@ struct XDriveIOSNativePhotoDaySection: Identifiable, Equatable {
     let startIndex: Int
     let endIndex: Int
     let title: String
+    // Suppress only the first heading when the preceding verified PhotoKit
+    // slot belongs to the same date across a virtual 64-item boundary.
+    let continuesPreviousPage: Bool
 
     var id: Int { startIndex }
     var count: Int { endIndex - startIndex }
@@ -14,20 +17,25 @@ struct XDriveIOSNativePhotoDaySection: Identifiable, Equatable {
 enum XDriveIOSNativePhotoDayGroupingPolicy {
     /// Splits adjacent slots by their actual creation day in the active
     /// Calendar/time zone. An unsupported media slot still retains its place.
-    /// A day continuing across 64-slot pages may show a repeated header.
+    /// The previous page is inspected by the same authorized PhotoKit
+    /// snapshot; only its immediately preceding date is passed here.
     static func sections(
-        dates: [Date?], calendar: Calendar = .current
+        dates: [Date?], previousCapturedAt: Date? = nil,
+        hasPreviousPage: Bool = false, calendar: Calendar = .current
     ) -> [XDriveIOSNativePhotoDaySection] {
         guard !dates.isEmpty, dates.count <= 64 else { return [] }
         var result: [XDriveIOSNativePhotoDaySection] = []
         var runStart = 0
         var lastKey = key(for: dates[0], calendar: calendar)
+        let firstContinues = hasPreviousPage &&
+            key(for: previousCapturedAt, calendar: calendar) == lastKey
 
         for index in 1..<dates.count {
             let newKey = key(for: dates[index], calendar: calendar)
             if newKey != lastKey {
                 result.append(XDriveIOSNativePhotoDaySection(
-                    startIndex: runStart, endIndex: index, title: lastKey.title
+                    startIndex: runStart, endIndex: index, title: lastKey.title,
+                    continuesPreviousPage: runStart == 0 && firstContinues
                 ))
                 runStart = index
                 lastKey = newKey
@@ -35,7 +43,7 @@ enum XDriveIOSNativePhotoDayGroupingPolicy {
         }
         result.append(XDriveIOSNativePhotoDaySection(
             startIndex: runStart, endIndex: dates.count,
-            title: lastKey.title
+            title: lastKey.title, continuesPreviousPage: runStart == 0 && firstContinues
         ))
         return result
     }

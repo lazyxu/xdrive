@@ -307,6 +307,26 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     /// A bounded copy of the currently authorized PhotoKit page, never full-library.
     var loadedItems: [XDrivePhotoKitScanCandidate] = []
     var onViewed: ((XDrivePhotoKitScanCandidate) -> Void)? = nil
+    // These optional callbacks are supplied only by the continuous wall.
+    // Legacy 64-item Gallery Viewer behavior stays unchanged.
+    var loadedPage: XDrivePhotoKitScanPage? = nil
+    var onCrossPage: ((
+        XDrivePhotoKitScanPage, XDrivePhotoKitScanCandidate, Int
+    ) async throws -> XDrivePhotoKitScanPage?)? = nil
+    var onCrossedPage: ((XDrivePhotoKitScanCandidate, XDrivePhotoKitScanPage) -> Void)? = nil
+    @State private var currentCrossedPage: XDrivePhotoKitScanPage?
+    @State private var crossing = false
+    @State private var crossingEpoch = UUID()
+    @State private var crossingTask: Task<Void, Never>?
+    @State private var crossingMessage: String?
+    @State private var favoriteStatus: Bool?
+    @State private var photoActionBusy = false
+    @State private var photoActionEpoch = UUID()
+    @State private var photoActionTask: Task<Void, Never>?
+    @State private var photoActionMessage: String?
+    @State private var showDeleteConfirm = false
+    @State private var photoShareSession: XDriveIOSNativeLocalPhotoShareSession?
+    @State private var retainedPhotoShare: XDriveIOSNativeLocalPhotoShareSession?
     @State private var activeItem: XDrivePhotoKitScanCandidate?
     @State private var showsStaticStill = false
     @State private var livePlaybackRequest: UUID?
@@ -325,36 +345,73 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         )
     }
 
+    private var visiblePage: XDrivePhotoKitScanPage? {
+        currentCrossedPage ?? loadedPage
+    }
+
+    private var visibleItems: [XDrivePhotoKitScanCandidate] {
+        if let page = visiblePage {
+            return page.items.filter { $0.kind == "image" || $0.kind == "video" }
+        }
+        return loadedItems
+    }
+
     private var loadedPosition: Int? {
         XDriveIOSNativePhotoViewerReturnAnchorPolicy.localLoadedIndex(
-            currentID: viewed.id, in: loadedItems.map(\.id),
+            currentID: viewed.id, in: visibleItems.map(\.id),
             authorized: currentPageAuthorized
         )
     }
 
     private func neighbor(_ direction: Int) -> XDrivePhotoKitScanCandidate? {
         guard let id = XDriveIOSNativePhotoViewerReturnAnchorPolicy.localNeighborID(
-            currentID: viewed.id, in: loadedItems.map(\.id),
+            currentID: viewed.id, in: visibleItems.map(\.id),
             direction: direction, authorized: currentPageAuthorized
         ) else { return nil }
-        return loadedItems.first(where: { $0.id == id })
+        return visibleItems.first(where: { $0.id == id })
     }
 
-    private func showNeighbor(_ direction: Int) {
-        guard let next = neighbor(direction),
+    private func canCross(_ direction: Int) -> Bool {
+        guard currentPageAuthorized, onCrossPage != nil,
+              let page = visiblePage, let position = loadedPosition,
+              XDriveIOSNativePhotoVirtualPagePolicy.atBoundary(
+                  index: position, visibleCount: visibleItems.count,
+                  direction: direction
+              ) else { return false }
+        return XDriveIOSNativePhotoVirtualPagePolicy.adjacentOffset(
+            current: page.startOffset, total: page.totalAccessibleAssets,
+            direction: direction
+        ) != nil
+    }
+
+    private func verified(_ next: XDrivePhotoKitScanCandidate) -> Bool {
+        guard currentPageAuthorized,
               let asset = PHAsset.fetchAssets(
                 withLocalIdentifiers: [next.id], options: nil
               ).firstObject,
               asset.creationDate == next.capturedAt,
-              asset.modificationDate == next.modifiedAt,
-              (next.kind == "image" && asset.mediaType == .image &&
-                 next.isLive == asset.mediaSubtypes.contains(.photoLive)) ||
-              (next.kind == "video" && asset.mediaType == .video)
-        else { return }
-        // Revoke the previous item's PhotoKit requests and playback before
-        // admitting a replacement. No hidden wall/next-page fetch or upload.
+              asset.modificationDate == next.modifiedAt else { return false }
+        return (next.kind == "image" && asset.mediaType == .image &&
+                next.isLive == asset.mediaSubtypes.contains(.photoLive)) ||
+               (next.kind == "video" && asset.mediaType == .video)
+    }
+
+    private func show(_ next: XDrivePhotoKitScanCandidate,
+                      from page: XDrivePhotoKitScanPage? = nil) {
+        guard verified(next) else {
+            crossingMessage = "当前照片已变化，无法安全切换；请返回相册重新读取。"
+            return
+        }
         showsStaticStill = false
         livePlaybackRequest = nil
+        crossingMessage = nil
+        if let page {
+            currentCrossedPage = page
+            onCrossedPage?(next, page)
+        }
+        favoriteStatus = nil
+        // Retire the old item's explicit iCloud lease immediately before the
+        // old PhotoKit requests and selected item are replaced.
         requestedICloudForCurrentItem = false
         model.cancel()
         activeItem = next
@@ -378,6 +435,175 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         }
         requestedICloudForCurrentItem = true
         model.load(viewed, allowICloud: true)
+    }
+
+    private func refreshFavoriteStatus() {
+        guard verified(viewed), let asset = PHAsset.fetchAssets(
+            withLocalIdentifiers: [viewed.id], options: nil
+        ).firstObject else {
+            favoriteStatus = nil
+            return
+        }
+        favoriteStatus = asset.isFavorite
+    }
+
+    private func shareOriginal(allowICloud: Bool) {
+        guard currentPageAuthorized, !crossing, !photoActionBusy,
+              photoShareSession == nil else { return }
+        let captured = viewed
+        let token = UUID()
+        photoActionEpoch = token
+        photoActionBusy = true
+        photoActionMessage = nil
+        photoActionTask = Task { @MainActor in
+            do {
+                let shared = try await XDriveIOSNativeLocalOriginalSharer.prepare(
+                    [captured], allowICloudDownload: allowICloud
+                )
+                guard photoActionEpoch == token, !Task.isCancelled,
+                      currentPageAuthorized, viewed.id == captured.id else {
+                    shared.discard()
+                    return
+                }
+                retainedPhotoShare = shared
+                photoShareSession = shared
+                if shared.containsLivePair {
+                    photoActionMessage = "实况原件以照片和 MOV 两项分享，目标 App 可能不会自动配对。"
+                }
+            } catch is CancellationError {
+            } catch {
+                if photoActionEpoch == token {
+                    photoActionMessage = allowICloud
+                        ? "原件下载或分享准备失败，请检查 iCloud、权限和可用空间。"
+                        : "无法读取本机原件；仅在 iCloud 时可显式选择下载后分享。"
+                }
+            }
+            if photoActionEpoch == token {
+                photoActionBusy = false
+                photoActionTask = nil
+            }
+        }
+    }
+
+    private func editFavorite(_ favorite: Bool) {
+        guard currentPageAuthorized, !crossing, !photoActionBusy else { return }
+        let captured = viewed
+        let token = UUID()
+        photoActionEpoch = token
+        photoActionBusy = true
+        photoActionMessage = nil
+        photoActionTask = Task { @MainActor in
+            do {
+                try await XDriveIOSNativeLocalPhotoSelectionActions.setFavorite(
+                    [captured], to: favorite
+                )
+                if photoActionEpoch == token, currentPageAuthorized {
+                    favoriteStatus = favorite
+                    // PhotoKit change notifications independently revoke old
+                    // Viewers and force a fresh source wall.
+                    photoActionMessage = favorite ? "已收藏。" : "已取消收藏。"
+                }
+            } catch is CancellationError {
+            } catch {
+                if photoActionEpoch == token {
+                    photoActionMessage = "收藏操作未完成，照片或访问权限可能已变化。"
+                }
+            }
+            if photoActionEpoch == token {
+                photoActionBusy = false
+                photoActionTask = nil
+            }
+        }
+    }
+
+    private func deleteViewed() {
+        guard currentPageAuthorized, !crossing, !photoActionBusy else { return }
+        let captured = viewed
+        let token = UUID()
+        photoActionEpoch = token
+        photoActionBusy = true
+        photoActionMessage = nil
+        photoActionTask = Task { @MainActor in
+            do {
+                try await XDriveIOSNativeLocalPhotoSelectionActions.delete([captured])
+                guard photoActionEpoch == token else { return }
+                // System Photos confirmation is part of performChanges;
+                // never delete a cloud backup copy from this UI.
+                dismiss()
+            } catch is CancellationError {
+            } catch {
+                if photoActionEpoch == token {
+                    photoActionMessage = "未能删除这张系统照片，请检查访问权限。"
+                }
+            }
+            if photoActionEpoch == token {
+                photoActionBusy = false
+                photoActionTask = nil
+            }
+        }
+    }
+
+    private func cancelPhotoAction() {
+        photoActionEpoch = UUID()
+        photoActionTask?.cancel()
+        photoActionTask = nil
+        photoActionBusy = false
+        photoActionMessage = nil
+        showDeleteConfirm = false
+    }
+
+    private func showNeighbor(_ direction: Int) {
+        guard currentPageAuthorized, !crossing, !photoActionBusy else { return }
+        if let next = neighbor(direction) {
+            show(next)
+            return
+        }
+        guard canCross(direction), let page = visiblePage,
+              let onCrossPage else { return }
+        let anchor = viewed
+        let epoch = UUID()
+        crossingEpoch = epoch
+        crossing = true
+        crossingMessage = nil
+        crossingTask = Task { @MainActor in
+            defer {
+                if crossingEpoch == epoch {
+                    crossing = false
+                    crossingTask = nil
+                }
+            }
+            do {
+                let adjacent = try await onCrossPage(page, anchor, direction)
+                try Task.checkCancellation()
+                guard crossingEpoch == epoch, currentPageAuthorized,
+                      viewed.id == anchor.id else { return }
+                guard let adjacent else {
+                    crossingMessage = "相邻页面没有可浏览的照片。"
+                    return
+                }
+                let media = adjacent.items.filter {
+                    $0.kind == "image" || $0.kind == "video"
+                }
+                guard let next = direction > 0 ? media.first : media.last else {
+                    crossingMessage = "相邻页面没有可浏览的照片。"
+                    return
+                }
+                show(next, from: adjacent)
+            } catch is CancellationError {
+            } catch {
+                if crossingEpoch == epoch {
+                    crossingMessage = "照片库或权限已变化，请返回相册重新读取。"
+                }
+            }
+        }
+    }
+
+    private func cancelCrossing() {
+        crossingEpoch = UUID()
+        crossingTask?.cancel()
+        crossingTask = nil
+        crossing = false
+        crossingMessage = nil
     }
 
     var body: some View {
@@ -449,7 +675,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
                 if model.needsICloudFetch || model.downloadingFromICloud ||
-                   loadedItems.count > 1 {
+                   visibleItems.count > 1 || canCross(-1) || canCross(1) {
                     VStack(spacing: 8) {
                         if model.downloadingFromICloud {
                             ProgressView("正在从 iCloud 获取当前原件…")
@@ -462,20 +688,20 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                             .frame(minHeight: 44)
                             .accessibilityIdentifier("native-ios-local-viewer-icloud-load")
                         }
-                        if loadedItems.count > 1 {
+                        if visibleItems.count > 1 || canCross(-1) || canCross(1) {
                             HStack(spacing: 12) {
                                 Button("上一项") { showNeighbor(-1) }
-                                    .disabled(neighbor(-1) == nil)
+                                    .disabled(crossing || (neighbor(-1) == nil && !canCross(-1)))
                                     .accessibilityIdentifier("native-ios-local-viewer-previous")
                                 Spacer(minLength: 4)
                                 Text(loadedPosition.map {
-                                    "\($0 + 1)/\(loadedItems.count)（已加载）"
+                                    "\($0 + 1)/\(visibleItems.count)（已加载）"
                                 } ?? "当前媒体已变化")
                                     .font(.caption).monospacedDigit()
                                     .accessibilityIdentifier("native-ios-local-viewer-position")
                                 Spacer(minLength: 4)
                                 Button("下一项") { showNeighbor(1) }
-                                    .disabled(neighbor(1) == nil)
+                                    .disabled(crossing || (neighbor(1) == nil && !canCross(1)))
                                     .accessibilityIdentifier("native-ios-local-viewer-next")
                             }
                             .accessibilityIdentifier("native-ios-local-viewer-neighbors")
@@ -483,6 +709,20 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.ultraThinMaterial)
+                }
+                if crossing {
+                    ProgressView("正在读取相邻的 64 项照片…").font(.caption)
+                }
+                if let crossingMessage {
+                    Text(crossingMessage)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if photoActionBusy {
+                    ProgressView("正在处理当前照片…").font(.caption)
+                }
+                if let photoActionMessage {
+                    Text(photoActionMessage)
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .toolbar {
@@ -494,17 +734,57 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                             .accessibilityIdentifier("native-ios-local-player-reload")
                     }
                 }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Menu {
+                        Button("分享本机原件") { shareOriginal(allowICloud: false) }
+                        Button("从 iCloud 下载原件并分享") {
+                            shareOriginal(allowICloud: true)
+                        }
+                        Divider()
+                        Button(favoriteStatus == true ? "取消收藏" : "收藏照片") {
+                            editFavorite(favoriteStatus != true)
+                        }
+                        .disabled(favoriteStatus == nil)
+                        Divider()
+                        Button("删除照片", role: .destructive) {
+                            showDeleteConfirm = true
+                        }
+                    } label: {
+                        Label("照片操作", systemImage: "ellipsis.circle")
+                    }
+                    .disabled(!currentPageAuthorized || crossing || photoActionBusy)
+                    .accessibilityIdentifier("native-ios-local-viewer-photo-actions")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
+            }
+            .sheet(item: $photoShareSession, onDismiss: {
+                retainedPhotoShare?.discard()
+                retainedPhotoShare = nil
+            }) { current in
+                XDriveIOSNativeLocalPhotoActivitySheet(fileURLs: current.fileURLs)
+            }
+            .confirmationDialog(
+                "确认删除当前系统照片？",
+                isPresented: $showDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("删除这张照片", role: .destructive) { deleteViewed() }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("会按 iOS 系统照片规则删除本机照片；不会删除 xDrive 云端备份。")
             }
         }
         .onAppear { changes.start() }
         .task(id: viewed.id) {
             // Never materialize PhotoKit pixels while the App is inactive.
             if phase == .active { model.load(viewed) }
+            if phase == .active { refreshFavoriteStatus() }
         }
         .onChange(of: changes.generation) { _ in
+            cancelCrossing()
+            cancelPhotoAction()
             // Library mutation may revoke the selected media even when
             // the visible PhotoKit permission level stays Full or Limited.
             model.cancel()
@@ -512,6 +792,9 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                favoriteStatus = nil
+                cancelPhotoAction()
+                cancelCrossing()
                 showsStaticStill = false
                 livePlaybackRequest = nil
                 requestedICloudForCurrentItem = false
@@ -524,6 +807,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 // Re-check the exact selected ID in the currently allowed
                 // PhotoKit subset; never reuse an old image/pixel buffer.
                 model.load(viewed)
+                refreshFavoriteStatus()
             } else {
                 model.cancel()
                 dismiss()
@@ -538,6 +822,10 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                   let failed = notice.object as? AVPlayerItem,
                   model.player?.currentItem === failed else { return }
             model.playbackFailed(failed)
+        }
+        .onDisappear {
+            cancelCrossing()
+            cancelPhotoAction()
         }
         .onDisappear {
             changes.stop()
