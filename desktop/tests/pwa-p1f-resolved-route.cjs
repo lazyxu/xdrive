@@ -57,7 +57,9 @@ function exerciseRuntime() {
     mod, mod.exports,
     name => name === 'react' ? react :
       name === '../../ui/shared/src' ? shared :
-      name === '../../ui/shared/src/mui/ViewerForegroundPriority' ? coordinator.exports : assert.fail(name), window,
+      name === '../../ui/shared/src/mui/ViewerForegroundPriority' ? coordinator.exports :
+      name === './webMobileNavigationLayout' ? { xDriveWebBrowserCompactNavigation: () => false } :
+      assert.fail(name), window,
   )
   return { runtime: mod.exports.useXDriveWebAppRuntime(), route, trace, window,
     dispatch: kind => (listeners.get(kind) || []).forEach(fn => fn({ type: kind })) }
