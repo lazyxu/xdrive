@@ -575,6 +575,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-share-policy-check"
           node --test desktop/tests/ios-native-files-share-links.cjs
 
+      - name: Verify native Files bounded Server ZIP folder export
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesFolderArchivePolicy.swift \
+            ios/tests/NativeFilesFolderArchivePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-folder-archive-policy"
+          "$RUNNER_TEMP/xdrive-ios-folder-archive-policy"
+          node --test desktop/tests/ios-native-files-folder-archive.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 
