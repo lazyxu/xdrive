@@ -50,6 +50,35 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         suspendForViewer()
     }
 
+    /// Adopt only a Viewer-revalidated immediate 48-item Owner Range. Keeps
+    /// the original reader for scoped thumbnails when returning to L2.
+    func acceptVerifiedViewerRange(
+        _ next: XDriveIOSNativeMediaRange,
+        after previous: XDriveIOSNativeMediaRange,
+        login: XDriveIOSNativeOwnerLoginModel,
+        albumID: String?, placeID: String?, search: String
+    ) -> Bool {
+        guard let existing = page, let reader = currentReader,
+              let expected = pageScope,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+              XDriveIOSNativePhotoOwnerScope.matches(reader.owner, expected),
+              pageAlbumID == albumID, pagePlaceID == placeID,
+              pageSearch == search, !busy,
+              existing.sameVisibleSnapshot(as: previous),
+              next.total_count == previous.total_count,
+              next.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
+              XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
+                offset: next.offset, count: next.items.count,
+                total: next.total_count
+              ),
+              Set(next.items.map(\.id)).count == next.items.count
+        else { return false }
+        page = next
+        failedOffset = nil
+        error = nil
+        return true
+    }
+
     /// Retain a previously verified page only for a transient transport
     /// problem. Access revocation, missing albums, invalid responses, TLS
     /// trust failures and malformed media must immediately clear old rows.
@@ -270,8 +299,20 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     /// Immutable L2 Owner Range captured before presenting this one L3 Viewer.
     var loadedItems: [XDriveIOSNativeMediaItem] = []
+    var loadedRange: XDriveIOSNativeMediaRange? = nil
     var openedOwner: XDriveNativeOwnerRoot? = nil
     var onNavigate: ((XDriveIOSNativeMediaItem) -> Bool)? = nil
+    var onCrossRange: ((
+        XDriveIOSNativeMediaRange, XDriveIOSNativeMediaItem, Int
+    ) async throws -> XDriveIOSNativeMediaRange?)? = nil
+    var onCrossedRange: ((
+        XDriveIOSNativeMediaItem, XDriveIOSNativeMediaRange
+    ) -> Bool)? = nil
+    @State private var crossedRange: XDriveIOSNativeMediaRange?
+    @State private var rangeCrossing = false
+    @State private var rangeCrossingEpoch = UUID()
+    @State private var rangeCrossingTask: Task<Void, Never>?
+    @State private var rangeCrossingMessage: String?
     @State private var activeItem: XDriveIOSNativeMediaItem?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
@@ -308,8 +349,16 @@ struct XDriveIOSNativeServerMediaPreview: View {
         } == true
     }
 
+    private var visibleRange: XDriveIOSNativeMediaRange? {
+        crossedRange ?? loadedRange
+    }
+
+    private var visibleItems: [XDriveIOSNativeMediaItem] {
+        crossedRange?.items ?? loadedItems
+    }
+
     private var loadedKeys: [XDriveIOSNativePhotoAssetViewerNeighborKey] {
-        loadedItems.map {
+        visibleItems.map {
             XDriveIOSNativePhotoAssetViewerNeighborKey(
                 nodeID: $0.id, revision: $0.node.revision,
                 previewable: $0.supportsPreview
@@ -335,18 +384,91 @@ struct XDriveIOSNativeServerMediaPreview: View {
             current: currentKey, in: loadedKeys, direction: direction,
             ownerAuthorized: ownerAuthorized
         ) else { return nil }
-        return loadedItems[index]
+        // The neighbor index comes from the active crossed Range, not the
+        // 48 items frozen when the Viewer first opened. The last Range may
+        // contain fewer rows; indexing the old array can show the wrong Node.
+        return visibleItems[index]
+    }
+
+    private func canCrossRange(_ direction: Int) -> Bool {
+        guard ownerAuthorized, !rangeCrossing, onCrossRange != nil,
+              let page = visibleRange, let position = loadedPosition,
+              page.items.count == visibleItems.count else { return false }
+        return XDriveIOSNativePhotoAssetRangeCursorPolicy.adjacentOffset(
+            current: page.offset, count: page.items.count,
+            total: page.total_count, selectedIndex: position,
+            direction: direction
+        ) != nil
     }
 
     private func navigateLoaded(_ direction: Int) {
-        guard let next = neighbor(direction), onNavigate?(next) == true
-        else { return }
-        // Switching a PhotoAsset also revokes a pending native Photos import.
-        cancelPhotosRestore()
-        // Cancel old signed streams, AVPlayer, Live pairing and temporary
-        // resources before admitting exactly one new foreground preview.
-        retirePreview()
-        activeItem = next
+        guard ownerAuthorized, !rangeCrossing, !photosRestoreBusy else { return }
+        if neighbor(direction) != nil {
+            guard let next = neighbor(direction), onNavigate?(next) == true
+            else { return }
+            // Switching a PhotoAsset also revokes a pending native Photos import.
+            cancelPhotosRestore()
+            // Cancel old signed streams, AVPlayer, Live pairing and temporary
+            // resources before admitting exactly one foreground preview.
+            retirePreview()
+            activeItem = next
+            return
+        }
+        crossRange(direction)
+    }
+
+    private func crossRange(_ direction: Int) {
+        guard canCrossRange(direction), let previous = visibleRange,
+              let onCrossRange else { return }
+        let target = viewed
+        let ticket = UUID()
+        rangeCrossingEpoch = ticket
+        rangeCrossing = true
+        rangeCrossingMessage = nil
+        rangeCrossingTask = Task { @MainActor in
+            defer {
+                if rangeCrossingEpoch == ticket {
+                    rangeCrossing = false
+                    rangeCrossingTask = nil
+                }
+            }
+            do {
+                let nextPage = try await onCrossRange(previous, target, direction)
+                try Task.checkCancellation()
+                guard rangeCrossingEpoch == ticket, ownerAuthorized,
+                      viewed.id == target.id,
+                      viewed.node.revision == target.node.revision,
+                      visibleRange?.sameVisibleSnapshot(as: previous) == true
+                else { return }
+                guard let nextPage,
+                      let next = direction > 0
+                        ? nextPage.items.first : nextPage.items.last,
+                      next.supportsPreview else {
+                    rangeCrossingMessage = "相邻云端页没有可直接查看的媒体。"
+                    return
+                }
+                guard onCrossedRange?(next, nextPage) == true else {
+                    rangeCrossingMessage = "云端范围或账户已变化，请返回图库重新读取。"
+                    return
+                }
+                cancelPhotosRestore()
+                retirePreview()
+                crossedRange = nextPage
+                activeItem = next
+            } catch is CancellationError {
+            } catch {
+                guard rangeCrossingEpoch == ticket, ownerAuthorized else { return }
+                rangeCrossingMessage = "无法安全切换相邻云端照片；请检查网络后重试。"
+            }
+        }
+    }
+
+    private func cancelRangeCrossing() {
+        rangeCrossingEpoch = UUID()
+        rangeCrossingTask?.cancel()
+        rangeCrossingTask = nil
+        rangeCrossing = false
+        rangeCrossingMessage = nil
     }
 
     var body: some View {
@@ -486,6 +608,15 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 } else {
                     ProgressView("正在验证并打开云端媒体…")
                 }
+                if rangeCrossing {
+                    ProgressView("正在核验相邻云端照片页…")
+                        .accessibilityIdentifier("native-ios-photoasset-viewer-range-loading")
+                }
+                if let rangeCrossingMessage {
+                    Text(rangeCrossingMessage).font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-photoasset-viewer-range-error")
+                }
             }
             .overlay(alignment: .topLeading) {
                 if let image {
@@ -504,21 +635,27 @@ struct XDriveIOSNativeServerMediaPreview: View {
             .navigationTitle(viewed.node.name)
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
-                if loadedItems.count > 1 {
+                if visibleItems.count > 1 || canCrossRange(-1) ||
+                    canCrossRange(1) || rangeCrossing {
                     HStack(spacing: 12) {
                         Button("上一项") { navigateLoaded(-1) }
-                            .disabled(neighbor(-1) == nil)
+                            .disabled((neighbor(-1) == nil && !canCrossRange(-1)) ||
+                                rangeCrossing || photosRestoreBusy)
                             .frame(minHeight: 44)
                             .accessibilityIdentifier("native-ios-photoasset-viewer-previous")
                         Spacer(minLength: 4)
-                        Text(loadedPosition.map {
-                            "\($0 + 1)/\(loadedItems.count)（已加载）"
+                        Text(loadedPosition.map { index in
+                            if let range = visibleRange {
+                                return "\(range.offset + index + 1)/\(range.total_count)"
+                            }
+                            return "\(index + 1)/\(visibleItems.count)（已加载）"
                         } ?? "当前媒体已变化")
                             .font(.caption).monospacedDigit()
                             .accessibilityIdentifier("native-ios-photoasset-viewer-position")
                         Spacer(minLength: 4)
                         Button("下一项") { navigateLoaded(1) }
-                            .disabled(neighbor(1) == nil)
+                            .disabled((neighbor(1) == nil && !canCrossRange(1)) ||
+                                rangeCrossing || photosRestoreBusy)
                             .frame(minHeight: 44)
                             .accessibilityIdentifier("native-ios-photoasset-viewer-next")
                     }
@@ -670,6 +807,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
             failure = "媒体播放失败，请重试当前云端照片或视频。"
         }
         .onChange(of: phase) { _ in
+            if phase != .active { cancelRangeCrossing() }
             // The iOS Photos permission dialog can briefly make the scene
             // inactive. No download starts until it has returned; a genuine
             // background transition always cancels the pending restore.
@@ -682,10 +820,12 @@ struct XDriveIOSNativeServerMediaPreview: View {
             retirePreview()
         }
         .onChange(of: login.owner) { _ in
+            cancelRangeCrossing()
             cancelPhotosRestore()
             retirePreview()
             dismiss()
         }
+        .onDisappear { cancelRangeCrossing() }
         .onDisappear { cancelPhotosRestore() }
         .onDisappear { retirePreview() }
     }
@@ -824,6 +964,7 @@ struct XDriveIOSNativeServerMediaWall: View {
     @State private var showingGalleryHelp = false
     @State private var selected: XDriveIOSNativeMediaItem?
     @State private var viewerLoadedItems: [XDriveIOSNativeMediaItem] = []
+    @State private var viewerLoadedRange: XDriveIOSNativeMediaRange?
     @State private var viewerOpenedOwner: XDriveNativeOwnerRoot?
     @State private var searchDraft = ""
     @State private var appliedSearch = ""
@@ -886,6 +1027,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                                 // Freeze the already-authorized 48-item page.
                                 // The hidden L2 wall never fetches new neighbors.
                                 viewerLoadedItems = model.page?.items ?? []
+                                viewerLoadedRange = model.page
                                 viewerOpenedOwner = login.owner
                                 selected = item
                             } label: {
@@ -946,6 +1088,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                 model.suspendForViewer()
             } else {
                 viewerLoadedItems = []
+                viewerLoadedRange = nil
                 viewerOpenedOwner = nil
                 // Only return focus to the identical current Node revision
                 // under the same verified Owner. A different revision/page
@@ -1030,6 +1173,7 @@ struct XDriveIOSNativeServerMediaWall: View {
             XDriveIOSNativeServerMediaPreview(
                 item: initial, login: login,
                 loadedItems: viewerLoadedItems,
+                loadedRange: viewerLoadedRange,
                 openedOwner: viewerOpenedOwner,
                 onNavigate: { next in
                     guard phase == .active, selected?.id == initial.id,
@@ -1055,6 +1199,81 @@ struct XDriveIOSNativeServerMediaWall: View {
                     lastOpenedOwner = opened
                     accessibilityFocusedMediaID = nil
                     return true
+                },
+                onCrossRange: { previous, anchor, direction in
+                    guard phase == .active, selected?.id == initial.id,
+                          let opened = viewerOpenedOwner,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, opened),
+                          model.page?.sameVisibleSnapshot(as: previous) == true,
+                          viewerLoadedRange?.sameVisibleSnapshot(as: previous) == true,
+                          let selectedIndex = previous.items.firstIndex(where: {
+                            $0.sameVisibleRevision(as: anchor)
+                          }),
+                          let targetOffset =
+                            XDriveIOSNativePhotoAssetRangeCursorPolicy.adjacentOffset(
+                                current: previous.offset, count: previous.items.count,
+                                total: previous.total_count,
+                                selectedIndex: selectedIndex, direction: direction
+                            )
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+
+                    let owner = try await login.verifiedAuthorization()
+                    try Task.checkCancellation()
+                    guard phase == .active, selected?.id == initial.id,
+                          XDriveIOSNativePhotoOwnerScope.matches(owner.owner, opened),
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, opened)
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                    let reader = XDriveIOSNativeMediaGalleryReader(
+                        owner: owner.owner, accessToken: owner.accessToken
+                    )
+                    // The Server must prove the old page still has exactly
+                    // the same members before an adjacent Range is accepted.
+                    let reread = try await reader.page(
+                        offset: previous.offset, albumID: album?.id,
+                        placeID: placeID, search: appliedSearch
+                    )
+                    guard previous.sameVisibleSnapshot(as: reread) else {
+                        throw XDriveIOSNativeMediaReadFailure.invalidPage
+                    }
+                    let next = try await reader.page(
+                        offset: targetOffset, albumID: album?.id,
+                        placeID: placeID, search: appliedSearch
+                    )
+                    try Task.checkCancellation()
+                    guard next.total_count == previous.total_count,
+                          next.offset == targetOffset,
+                          next.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
+                          XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
+                            offset: next.offset, count: next.items.count,
+                            total: next.total_count
+                          ),
+                          Set(next.items.map(\.id)).count == next.items.count,
+                          phase == .active, selected?.id == initial.id,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, opened),
+                          model.page?.sameVisibleSnapshot(as: previous) == true
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                    return next
+                },
+                onCrossedRange: { next, verifiedRange in
+                    guard phase == .active, selected?.id == initial.id,
+                          let opened = viewerOpenedOwner,
+                          let previous = viewerLoadedRange,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, opened),
+                          verifiedRange.items.contains(where: {
+                            $0.sameVisibleRevision(as: next)
+                          }),
+                          model.acceptVerifiedViewerRange(
+                            verifiedRange, after: previous, login: login,
+                            albumID: album?.id, placeID: placeID,
+                            search: appliedSearch
+                          ) else { return false }
+                    viewerLoadedItems = verifiedRange.items
+                    viewerLoadedRange = verifiedRange
+                    lastOpenedMediaID = next.id
+                    lastOpenedRevision = next.node.revision
+                    lastOpenedOwner = opened
+                    accessibilityFocusedMediaID = nil
+                    return true
                 }
             )
         }
@@ -1065,6 +1284,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         }
         .onChange(of: login.owner) { _ in
             viewerLoadedItems = []
+            viewerLoadedRange = nil
             viewerOpenedOwner = nil
             focusedBrowsing = false
             onFocusChange?(false)
@@ -1081,6 +1301,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         .onChange(of: phase) { state in
             if state != .active {
                 viewerLoadedItems = []
+                viewerLoadedRange = nil
                 viewerOpenedOwner = nil
                 focusedBrowsing = false
                 onFocusChange?(false)
@@ -1099,6 +1320,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                 model.suspendForViewer()
             } else {
                 viewerLoadedItems = []
+                viewerLoadedRange = nil
                 viewerOpenedOwner = nil
                 // A different feature/album should not inherit this wall's
                 // L2 focus state or hide the global bottom navigation.

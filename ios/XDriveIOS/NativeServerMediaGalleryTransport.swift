@@ -60,6 +60,34 @@ struct XDriveIOSNativeMediaRange: Decodable {
     let limit: Int
 }
 
+/// Exact per-item identity for a resumed native cloud Viewer. A matching
+/// Node ID by itself cannot prove the same media revision, Live pair,
+/// thumbnail classification or original bytes after Server reindexing.
+extension XDriveIOSNativeMediaItem {
+    func sameVisibleRevision(as rhs: Self) -> Bool {
+        node.id == rhs.node.id &&
+        node.revision == rhs.node.revision &&
+        node.name == rhs.node.name &&
+        node.type == rhs.node.type &&
+        node.size == rhs.node.size &&
+        metadata.media_kind == rhs.metadata.media_kind &&
+        metadata.has_thumbnail == rhs.metadata.has_thumbnail &&
+        metadata.container_kind == rhs.metadata.container_kind &&
+        asset_kind == rhs.asset_kind &&
+        live_photo == rhs.live_photo &&
+        resources == rhs.resources
+    }
+}
+
+extension XDriveIOSNativeMediaRange {
+    func sameVisibleSnapshot(as rhs: Self) -> Bool {
+        offset == rhs.offset && limit == rhs.limit &&
+        total_count == rhs.total_count &&
+        items.count == rhs.items.count &&
+        zip(items, rhs.items).allSatisfy { $0.sameVisibleRevision(as: $1) }
+    }
+}
+
 private struct XDriveIOSNativeMediaPreviewTicket: Decodable {
     let url: String
     let kind: String
