@@ -50,6 +50,35 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         suspendForViewer()
     }
 
+    /// Adopt only a Viewer-revalidated immediate 48-item Owner Range. Keeps
+    /// the original reader for scoped thumbnails when returning to L2.
+    func acceptVerifiedViewerRange(
+        _ next: XDriveIOSNativeMediaRange,
+        after previous: XDriveIOSNativeMediaRange,
+        login: XDriveIOSNativeOwnerLoginModel,
+        albumID: String?, placeID: String?, search: String
+    ) -> Bool {
+        guard let existing = page, let reader = currentReader,
+              let expected = pageScope,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+              XDriveIOSNativePhotoOwnerScope.matches(reader.owner, expected),
+              pageAlbumID == albumID, pagePlaceID == placeID,
+              pageSearch == search, !busy,
+              existing.sameVisibleSnapshot(as: previous),
+              next.total_count == previous.total_count,
+              next.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
+              XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
+                offset: next.offset, count: next.items.count,
+                total: next.total_count
+              ),
+              Set(next.items.map(\.id)).count == next.items.count
+        else { return false }
+        page = next
+        failedOffset = nil
+        error = nil
+        return true
+    }
+
     /// Retain a previously verified page only for a transient transport
     /// problem. Access revocation, missing albums, invalid responses, TLS
     /// trust failures and malformed media must immediately clear old rows.
@@ -270,8 +299,20 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     /// Immutable L2 Owner Range captured before presenting this one L3 Viewer.
     var loadedItems: [XDriveIOSNativeMediaItem] = []
+    var loadedRange: XDriveIOSNativeMediaRange? = nil
     var openedOwner: XDriveNativeOwnerRoot? = nil
     var onNavigate: ((XDriveIOSNativeMediaItem) -> Bool)? = nil
+    var onCrossRange: ((
+        XDriveIOSNativeMediaRange, XDriveIOSNativeMediaItem, Int
+    ) async throws -> XDriveIOSNativeMediaRange?)? = nil
+    var onCrossedRange: ((
+        XDriveIOSNativeMediaItem, XDriveIOSNativeMediaRange
+    ) -> Bool)? = nil
+    @State private var crossedRange: XDriveIOSNativeMediaRange?
+    @State private var rangeCrossing = false
+    @State private var rangeCrossingEpoch = UUID()
+    @State private var rangeCrossingTask: Task<Void, Never>?
+    @State private var rangeCrossingMessage: String?
     @State private var activeItem: XDriveIOSNativeMediaItem?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
@@ -307,8 +348,16 @@ struct XDriveIOSNativeServerMediaPreview: View {
         } == true
     }
 
+    private var visibleRange: XDriveIOSNativeMediaRange? {
+        crossedRange ?? loadedRange
+    }
+
+    private var visibleItems: [XDriveIOSNativeMediaItem] {
+        crossedRange?.items ?? loadedItems
+    }
+
     private var loadedKeys: [XDriveIOSNativePhotoAssetViewerNeighborKey] {
-        loadedItems.map {
+        visibleItems.map {
             XDriveIOSNativePhotoAssetViewerNeighborKey(
                 nodeID: $0.id, revision: $0.node.revision,
                 previewable: $0.supportsPreview
@@ -337,15 +386,85 @@ struct XDriveIOSNativeServerMediaPreview: View {
         return loadedItems[index]
     }
 
+    private func canCrossRange(_ direction: Int) -> Bool {
+        guard ownerAuthorized, !rangeCrossing, onCrossRange != nil,
+              let page = visibleRange, let position = loadedPosition,
+              page.items.count == visibleItems.count else { return false }
+        return XDriveIOSNativePhotoAssetRangeCursorPolicy.adjacentOffset(
+            current: page.offset, count: page.items.count,
+            total: page.total_count, selectedIndex: position,
+            direction: direction
+        ) != nil
+    }
+
     private func navigateLoaded(_ direction: Int) {
-        guard let next = neighbor(direction), onNavigate?(next) == true
-        else { return }
-        // Switching a PhotoAsset also revokes a pending native Photos import.
-        cancelPhotosRestore()
-        // Cancel old signed streams, AVPlayer, Live pairing and temporary
-        // resources before admitting exactly one new foreground preview.
-        retirePreview()
-        activeItem = next
+        guard ownerAuthorized, !rangeCrossing, !photosRestoreBusy else { return }
+        if neighbor(direction) != nil {
+            guard let next = neighbor(direction), onNavigate?(next) == true
+            else { return }
+            // Switching a PhotoAsset also revokes a pending native Photos import.
+            cancelPhotosRestore()
+            // Cancel old signed streams, AVPlayer, Live pairing and temporary
+            // resources before admitting exactly one foreground preview.
+            retirePreview()
+            activeItem = next
+            return
+        }
+        crossRange(direction)
+    }
+
+    private func crossRange(_ direction: Int) {
+        guard canCrossRange(direction), let previous = visibleRange,
+              let onCrossRange else { return }
+        let target = viewed
+        let ticket = UUID()
+        rangeCrossingEpoch = ticket
+        rangeCrossing = true
+        rangeCrossingMessage = nil
+        rangeCrossingTask = Task { @MainActor in
+            defer {
+                if rangeCrossingEpoch == ticket {
+                    rangeCrossing = false
+                    rangeCrossingTask = nil
+                }
+            }
+            do {
+                let nextPage = try await onCrossRange(previous, target, direction)
+                try Task.checkCancellation()
+                guard rangeCrossingEpoch == ticket, ownerAuthorized,
+                      viewed.id == target.id,
+                      viewed.node.revision == target.node.revision,
+                      visibleRange?.sameVisibleSnapshot(as: previous) == true
+                else { return }
+                guard let nextPage,
+                      let next = direction > 0
+                        ? nextPage.items.first : nextPage.items.last,
+                      next.supportsPreview else {
+                    rangeCrossingMessage = "相邻云端页没有可直接查看的媒体。"
+                    return
+                }
+                guard onCrossedRange?(next, nextPage) == true else {
+                    rangeCrossingMessage = "云端范围或账户已变化，请返回图库重新读取。"
+                    return
+                }
+                cancelPhotosRestore()
+                retirePreview()
+                crossedRange = nextPage
+                activeItem = next
+            } catch is CancellationError {
+            } catch {
+                guard rangeCrossingEpoch == ticket, ownerAuthorized else { return }
+                rangeCrossingMessage = "无法安全切换相邻云端照片；请检查网络后重试。"
+            }
+        }
+    }
+
+    private func cancelRangeCrossing() {
+        rangeCrossingEpoch = UUID()
+        rangeCrossingTask?.cancel()
+        rangeCrossingTask = nil
+        rangeCrossing = false
+        rangeCrossingMessage = nil
     }
 
     var body: some View {
