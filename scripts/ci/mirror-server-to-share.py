@@ -439,11 +439,26 @@ def release_assets(record, commit):
     assets = {}
     for item in record['assets']:
         name = item.get('name')
-        if (name not in RELEASE_FILES or name in assets or type(item.get('size')) is not int or
+        if (name not in RELEASE_FILES or name in assets or type(item.get('id')) is not int or
+                item['id'] <= 0 or type(item.get('size')) is not int or
                 not 0 < item['size'] <= METADATA_LIMIT):
             raise MirrorError('Unexpected or duplicate release asset')
         assets[name] = item
     return assets
+
+
+def asset_identities(assets):
+    # Download counters, URLs and timestamps can change during publication.
+    # The ID also detects delete/reupload replacements with identical bytes.
+    return {name: (item['id'], item['size'], item.get('digest')) for name, item in assets.items()}
+
+
+class PublicationError(MirrorError):
+    CODES = frozenset(('github-publish', 'github-post-publish-lookup', 'github-post-publish-identity'))
+
+    def __init__(self, code):
+        super().__init__('Release publication was not confirmed')
+        self.code = code if code in self.CODES else 'verification'
 
 
 def download_release(directory, commit, github, record):
@@ -512,11 +527,20 @@ def publish_github(directory, commit, github):
             if set(complete) != set(RELEASE_FILES) or any(
                     (checked / n).read_bytes() != (directory / n).read_bytes() for n in RELEASE_FILES):
                 raise MirrorError('Draft assets are incomplete or changed')
-        github.publish(tag)
-        published = github.get(tag)
-        if (published is None or published['id'] != record['id'] or published.get('draft') is not False or
-                release_assets(published, commit) != complete):
-            raise MirrorError('Release publication was not confirmed')
+        try:
+            github.publish(tag)
+        except (MirrorError, OSError, ValueError, KeyError, TypeError) as error:
+            raise PublicationError('github-publish') from error
+        try:
+            published = github.get(tag)
+        except (MirrorError, OSError, ValueError, KeyError, TypeError) as error:
+            raise PublicationError('github-post-publish-lookup') from error
+        try:
+            if (published is None or published['id'] != record['id'] or published.get('draft') is not False or
+                    asset_identities(release_assets(published, commit)) != asset_identities(complete)):
+                raise MirrorError('Release publication was not confirmed')
+        except (MirrorError, OSError, ValueError, KeyError, TypeError) as error:
+            raise PublicationError('github-post-publish-identity') from error
 
 
 def resume_github(directory, commit, repository, github):
@@ -590,8 +614,12 @@ def main():
                 raise MirrorError('Missing private publisher Share configuration')
             publish(args.directory, Share(url, os.environ.get('XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD', '')))
         return 0
-    except (MirrorError, OSError, ValueError, KeyError, TypeError):
-        print('Server release verification failed; no publication may be assumed', file=sys.stderr)
+    except (MirrorError, OSError, ValueError, KeyError, TypeError) as error:
+        # Only locally controlled codes are logged; exceptions may contain URLs
+        # or credentials from an external process or private Share request.
+        code = (error.code if isinstance(error, PublicationError) and error.code in PublicationError.CODES
+                else 'verification')
+        print(f'Server release verification failed [{code}]; no publication may be assumed', file=sys.stderr)
         return 1
 
 
