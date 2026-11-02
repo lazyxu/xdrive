@@ -26,6 +26,7 @@ type ByteRange = {
 
 type LocalPreviewTicket = {
   upstreamURL: string
+  kind: DesktopFilePreviewTicket['kind']
   expiresAt: number
   onProgress?: DesktopFilePreviewProgressHandler
   coveredRanges: ByteRange[]
@@ -224,6 +225,7 @@ export class DesktopFilePreviewProxy {
     const localToken = randomBytes(32).toString('hex')
     this.tickets.set(localToken, {
       upstreamURL: ticket.url,
+      kind: ticket.kind,
       expiresAt: ticket.expiresAt,
       onProgress,
       coveredRanges: [],
