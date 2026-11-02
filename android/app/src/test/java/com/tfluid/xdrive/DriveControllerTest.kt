@@ -1466,6 +1466,152 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun galleryAlbumReturnRevalidatesFreshOwnerAlbumRevisionAndFallsBackIfDeleted() = runTest {
+        val old = GalleryAlbum("manual:trip", "manual", "旅行", 1, 2, 0)
+        val renamed = old.copy(name = "新旅行", revision = 2)
+        var available: GalleryAlbum? = old
+        val albumPageIds = mutableListOf<String>()
+        var albumReads = 0
+        val svc = object : Service() {
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                assertEquals("access", accessToken)
+                albumReads++
+                return listOfNotNull(available)
+            }
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int,
+                initialLatest: Boolean,
+            ): GalleryPage {
+                albumPageIds += albumId
+                assertEquals(available?.id, albumId)
+                return GalleryPage(listOf(GalleryAsset(
+                    DriveNode(7000L + albumPageIds.size, 1, "fresh.jpg",
+                        "file", size = 10, revision = 3),
+                    "image", hasThumbnail = true)), 1, 0)
+            }
+        }
+        val c = controller(this, svc)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.openGalleryAlbum(old); runCurrent()
+        val prior = c.state.value.galleryItems.single()
+        assertEquals(1, albumReads)
+        assertEquals(listOf(old.id), albumPageIds)
+
+        c.openFilesApp(); runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertTrue(c.state.value.galleryAlbums.isEmpty())
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        assertNull(c.state.value.gallerySelectedAlbum)
+        available = renamed
+        c.openGallery(); runCurrent()
+        assertEquals(GalleryPrimaryTab.COLLECTIONS, c.state.value.galleryPrimaryTab)
+        assertEquals(renamed, c.state.value.gallerySelectedAlbum)
+        assertEquals(listOf(renamed), c.state.value.galleryAlbums)
+        assertEquals(2, albumReads)
+        assertEquals(listOf(old.id, old.id), albumPageIds)
+        assertEquals(7002L, c.state.value.galleryItems.single().node.id)
+        assertFalse(c.state.value.galleryItems.contains(prior))
+
+        c.openFilesApp(); runCurrent()
+        available = null // A fresh Owner list no longer grants membership.
+        c.openGallery(); runCurrent()
+        assertEquals(GalleryPrimaryTab.COLLECTIONS, c.state.value.galleryPrimaryTab)
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        assertNull(c.state.value.gallerySelectedAlbum)
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        assertEquals(3, albumReads)
+        assertEquals(2, albumPageIds.size)
+        assertTrue(c.state.value.error.orEmpty().contains("原相册"))
+        c.close()
+    }
+
+    @Test fun galleryAlbumReturnRetriesOnlyCurrentOwnerListAfterFailedGET() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "旅行", 1, 2, 0)
+        var failOnce = false
+        var albumListReads = 0
+        var memberReads = 0
+        val svc = object : Service() {
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                albumListReads++
+                if (failOnce) {
+                    failOnce = false
+                    throw ApiException(503, "temporary album list failure")
+                }
+                return listOf(album)
+            }
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int,
+                initialLatest: Boolean,
+            ): GalleryPage {
+                memberReads++
+                assertEquals(album.id, albumId)
+                return GalleryPage(listOf(latestGallery), 1, 0)
+            }
+        }
+        val c = controller(this, svc)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.openGalleryAlbum(album); runCurrent()
+        c.openFilesApp(); runCurrent()
+        failOnce = true
+        c.openGallery(); runCurrent()
+        assertEquals(GalleryPrimaryTab.COLLECTIONS, c.state.value.galleryPrimaryTab)
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        assertNull(c.state.value.gallerySelectedAlbum)
+        assertNotNull(c.state.value.error)
+        assertEquals(1, memberReads)
+        c.retryGalleryAlbums(); runCurrent()
+        assertEquals(album, c.state.value.gallerySelectedAlbum)
+        assertTrue(c.state.value.galleryLoaded)
+        assertEquals(2, memberReads)
+        assertEquals(3, albumListReads)
+        c.close()
+    }
+
+    @Test fun gallerySearchAndKindDoNotSurviveNewOwnerSession() = runTest {
+        val svc = Service()
+        val c = controller(this, svc)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.searchGallery("sunset"); runCurrent()
+        c.filterGalleryKind("video"); runCurrent()
+        c.openFilesApp(); runCurrent()
+        c.logout(); runCurrent()
+        c.login("other-owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        assertEquals("other-owner", c.state.value.username)
+        assertEquals("", c.state.value.gallerySearchQuery)
+        assertEquals("", c.state.value.galleryMediaKind)
+        assertEquals(GalleryPrimaryTab.LIBRARY, c.state.value.galleryPrimaryTab)
+        assertEquals(990L, c.state.value.galleryItems.single().node.id)
+        assertEquals(listOf("sunset" to "video"), svc.galleryKindRequests)
+        c.close()
+    }
+
+    @Test fun gallerySearchAndKindAreRequeriedAfterFilesReturn() = runTest {
+        val svc = Service()
+        val c = controller(this, svc)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.searchGallery("sunset"); runCurrent()
+        c.filterGalleryKind("video"); runCurrent()
+        assertEquals(992L, c.state.value.galleryItems.single().node.id)
+        c.openFilesApp(); runCurrent()
+        assertEquals("", c.state.value.gallerySearchQuery)
+        assertEquals("", c.state.value.galleryMediaKind)
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        c.openGallery(); runCurrent()
+        assertEquals("sunset", c.state.value.gallerySearchQuery)
+        assertEquals("video", c.state.value.galleryMediaKind)
+        assertEquals(992L, c.state.value.galleryItems.single().node.id)
+        assertEquals(listOf("sunset" to "video", "sunset" to "video"),
+            svc.galleryKindRequests)
+        c.close()
+    }
+
     @Test fun cancelledAlbumsGetNeverPublishesAfterReturningToPhotoLibrary() = runTest {
         val album = GalleryAlbum("manual:late", "manual", "迟到", 1, 1, 0)
         val gate = CompletableDeferred<Unit>()
@@ -1510,7 +1656,7 @@ class DriveControllerTest {
         c.close()
     }
 
-    @Test fun gallerySortIsRealOwnerPaginationAndReturnsToDefaultAfterLeavingApp() = runTest {
+    @Test fun gallerySortRequeriesCurrentOwnerAndRestoresOnlyIntentAfterFiles() = runTest {
         val api = object : Service() {
             val sorted = mutableListOf<Triple<String, String, Int>>()
             override suspend fun gallerySortedPage(accessToken: String, offset: Int,
@@ -1542,15 +1688,20 @@ class DriveControllerTest {
         assertEquals(listOf(Triple("added", "desc", 0),
             Triple("added", "desc", 1)), api.sorted)
         c.openFilesApp(); runCurrent()
+        // Old Owner rows are never retained in the Files workspace.
+        assertTrue(c.state.value.galleryItems.isEmpty())
         assertEquals("captured", c.state.value.gallerySortBy)
         assertEquals("asc", c.state.value.gallerySortDir)
         c.openGallery(); runCurrent()
-        assertEquals("captured", c.state.value.gallerySortBy)
-        assertEquals(990L, c.state.value.galleryItems.single().node.id)
+        assertEquals("added", c.state.value.gallerySortBy)
+        assertEquals("desc", c.state.value.gallerySortDir)
+        assertEquals(listOf(Triple("added", "desc", 0),
+            Triple("added", "desc", 1), Triple("added", "desc", 0)), api.sorted)
+        assertEquals(9000L, c.state.value.galleryItems.single().node.id)
         c.close()
     }
 
-    @Test fun GallerySearchReplacesOwnerRangeAndClearsAtAppBoundary() = runTest {
+    @Test fun GallerySearchRequeriesCurrentOwnerAndKeepsIntentAcrossFiles() = runTest {
         val api = Service(); val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
         c.openGallery(); runCurrent()
@@ -1566,6 +1717,12 @@ class DriveControllerTest {
         c.openFilesApp(); runCurrent()
         assertEquals(Screen.FILES, c.state.value.screen)
         assertTrue(c.state.value.gallerySearchQuery.isEmpty())
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        c.openGallery(); runCurrent()
+        assertEquals("sunset", c.state.value.gallerySearchQuery)
+        assertEquals(991L, c.state.value.galleryItems.single().node.id)
+        assertEquals(listOf("sunset", "sunset", "sunset"), api.gallerySearchRequests)
+        c.close()
     }
 
     @Test fun GalleryTimelineJumpUsesTrueGlobalOffsetAndPagesBothDirections() = runTest {
@@ -1602,8 +1759,12 @@ class DriveControllerTest {
         c.openFilesApp(); runCurrent()
         c.openGallery(); runCurrent()
         assertTrue(c.state.value.galleryJumpEpoch > afterSearchEpoch)
-        assertEquals(120, c.state.value.galleryOffset)
-        assertNotNull(c.state.value.galleryTimelineSets)
+        assertEquals("sunset", c.state.value.gallerySearchQuery)
+        // Search is re-fetched, never silently replaced with an unfiltered
+        // timeline or a stale absolute offset from an earlier Owner range.
+        assertEquals(0, c.state.value.galleryOffset)
+        assertNull(c.state.value.galleryTimelineSets)
+        assertEquals(991L, c.state.value.galleryItems.single().node.id)
         c.close()
     }
 

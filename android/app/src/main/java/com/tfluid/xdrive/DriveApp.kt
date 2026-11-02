@@ -557,8 +557,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         contentColor = MaterialTheme.colorScheme.onSurface,
         bottomBar = {
             if (nativeAuthenticated && !photoViewerOpen &&
-                (nativeNavigation.selected != NativeHomeTab.GALLERY ||
-                    (!state.galleryMapOpen && !localPhotoMapOpen)))
+                !nativeGalleryMapHidesBottomBar(
+                    nativeNavigation.selected, state.galleryMapOpen,
+                    localPhotoMapOpen, nativeMapFocused))
                 NativeHomeBottomBar(nativeNavigation, ::selectNativeTab,
                     onShowDynamicPicker = { dynamicPickerOpen = true })
         },
@@ -663,6 +664,17 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium,
                         textAlign = TextAlign.Center)
                 }
+                if (state.screen == Screen.GALLERY &&
+                    state.galleryMapOpen && !localPhotoMapOpen &&
+                    nativeNavigation.selected == NativeHomeTab.GALLERY)
+                    TextButton(
+                        onClick = { nativeMapFocused = !nativeMapFocused },
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .testTag("native-gallery-map-chrome-toggle"),
+                    ) {
+                        Text(if (nativeMapFocused) "恢复导航" else "专注地图",
+                            maxLines = 1)
+                    }
                 TextButton(
                     onClick = {
                         transferCenterOpen = true
@@ -901,6 +913,16 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 } else gallerySaveable.SaveableStateProvider(galleryStateKey) {
                                     Gallery(state, controller, galleryThumbnails,
                                         returnAnchor = cloudViewerReturn,
+                                        onOpenMap = {
+                                            controller.openGalleryMapOverview()
+                                            if (controller.state.value.galleryMapOpen) {
+                                                // Gallery's More menu bypasses the
+                                                // MAP source chip. Explicitly capture
+                                                // the true cloud origin or a previous
+                                                // local-map entry can hijack Back/Close.
+                                                mapOriginSource = NativeGallerySource.CLOUD
+                                            }
+                                        },
                                         onViewerOpened = { opened ->
                                             if (controller.state.value.galleryViewer == opened &&
                                                 state.screen == Screen.GALLERY &&

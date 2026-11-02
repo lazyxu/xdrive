@@ -140,6 +140,7 @@ internal fun ColumnScope.Gallery(
     returnAnchor: NativeCloudViewerReturnAnchor? = null,
     onViewerOpened: (GalleryAsset) -> Unit = {},
     onReturnResolved: () -> Unit = {},
+    onOpenMap: () -> Unit = controller::openGalleryMapOverview,
 ) {
     val gridState = rememberLazyGridState()
     var searchOpen by remember { mutableStateOf(false) }
@@ -284,7 +285,7 @@ internal fun ColumnScope.Gallery(
                     modifier = Modifier.testTag("gallery-show-map"),
                     onClick = {
                         displayMenuOpen = false
-                        controller.openGalleryMapOverview()
+                        onOpenMap()
                     },
                 )
                 // Day-scale is in PWA More rather than the floating
