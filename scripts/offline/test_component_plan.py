@@ -16,6 +16,73 @@ POSTGRES_ID = "sha256:" + "a" * 64
 
 
 class ComponentPlanTests(unittest.TestCase):
+    def copied_input_fixture(self, directory):
+        root = Path(directory)
+        paths = sorted({component_plan.CONTRACT_FILE, "Dockerfile", *component_plan.RUNTIME_FILES,
+                        component_plan.MODEL_FILE, "deploy/install-media-worker-ffmpeg.sh",
+                        "services/photo-face-analyzer/THIRD_PARTY.md"})
+        for path in paths:
+            target = root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("initial", encoding="utf-8")
+        for path in (component_plan.CONTRACT_FILE, component_plan.MODEL_FILE):
+            (root / path).write_bytes((ROOT / path).read_bytes())
+        return root, paths
+
+    def test_copied_helper_and_notice_changes_invalidate_consuming_components(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, paths = self.copied_input_fixture(directory)
+            with mock.patch.object(component_plan, "files_at", return_value=paths):
+                initial = component_plan.analyze(root, POSTGRES_ID, None)
+                previous = {"schema": 2, "fingerprints": initial["fingerprints"]}
+                for path, expected in (
+                    ("deploy/install-media-worker-ffmpeg.sh", ["app", "media-worker"]),
+                    ("services/photo-face-analyzer/THIRD_PARTY.md", ["ai-runtime", "ai-models"]),
+                ):
+                    with self.subTest(path=path):
+                        target = root / path
+                        target.write_text("changed delivered content", encoding="utf-8")
+                        try:
+                            self.assertEqual(component_plan.analyze(root, POSTGRES_ID, previous)["changed"], expected)
+                        finally:
+                            target.write_text("initial", encoding="utf-8")
+
+    def test_model_output_identity_changes_invalidate_models_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, paths = self.copied_input_fixture(directory)
+            target = root / component_plan.MODEL_FILE
+            source = target.read_text(encoding="utf-8")
+            with mock.patch.object(component_plan, "files_at", return_value=paths):
+                initial = component_plan.analyze(root, POSTGRES_ID, None)
+                previous = {"schema": 2, "fingerprints": initial["fingerprints"]}
+                for old, new in (
+                    ('"name": "face_detection_yunet_2023mar.onnx"', '"name": "renamed-yunet.onnx"'),
+                    ('"name": "YUNET_LICENSE.txt"', '"name": "renamed-license.txt"'),
+                    ('IMAGENET_LABELS_SHA256 = "0df974', 'IMAGENET_LABELS_SHA256 = "1df974'),
+                    ('OPENCV_ZOO_COMMIT = "47534e', 'OPENCV_ZOO_COMMIT = "57534e'),
+                    ('"imagenet1k_labels.txt"', '"renamed-labels.txt"'),
+                    ('"Pinned models used by xDrive Photo Intelligence"', '"Updated model provenance notice"'),
+                ):
+                    with self.subTest(change=old):
+                        self.assertIn(old, source)
+                        target.write_text(source.replace(old, new), encoding="utf-8")
+                        try:
+                            self.assertEqual(component_plan.analyze(root, POSTGRES_ID, previous)["changed"], ["ai-models"])
+                        finally:
+                            target.write_text(source, encoding="utf-8")
+
+    def test_model_transport_retry_change_reuses_all_components(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, paths = self.copied_input_fixture(directory)
+            target = root / component_plan.MODEL_FILE
+            source = target.read_text(encoding="utf-8")
+            with mock.patch.object(component_plan, "files_at", return_value=paths):
+                initial = component_plan.analyze(root, POSTGRES_ID, None)
+                previous = {"schema": 2, "fingerprints": initial["fingerprints"]}
+                self.assertIn("time.sleep(", source)
+                target.write_text(source.replace("time.sleep(", "time.sleep(1 + "), encoding="utf-8")
+                self.assertEqual(component_plan.analyze(root, POSTGRES_ID, previous)["changed"], [])
+
     def test_provider_and_offline_policy_changes_rebuild_app_only(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

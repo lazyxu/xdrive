@@ -8,6 +8,7 @@ declared compatibility contracts match, not merely when a Docker tag matches.
 """
 from __future__ import annotations
 import argparse
+import ast
 import hashlib
 import json
 from pathlib import Path
@@ -20,11 +21,13 @@ HEX64 = re.compile(r"^[a-f0-9]{64}$")
 IMAGE_ID = re.compile(r"^sha256:[a-f0-9]{64}$")
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_FILE = "scripts/offline/contracts.json"
+THIRD_PARTY_FILE = "services/photo-face-analyzer/THIRD_PARTY.md"
 RUNTIME_FILES = (
     "services/photo-face-analyzer/Dockerfile",
     "services/photo-face-analyzer/requirements.txt",
     "services/photo-face-analyzer/analyzer.py",
     "services/photo-face-analyzer/creative.py",
+    THIRD_PARTY_FILE,
 )
 MODEL_FILE = "services/photo-face-analyzer/fetch_models.py"
 
@@ -50,6 +53,34 @@ def load_contracts(root: Path) -> dict[str, int]:
     return v
 
 
+def model_output_inputs(source: str) -> bytes:
+    """Hash declared names/bytes and generated output, without running the fetcher.
+
+    Transport retry/backoff helpers do not change an accepted, digest-verified
+    archive. Output declarations, derived text assets and provenance do.
+    Normalized AST ignores comments and formatting while retaining strings,
+    expression order and the output/layout logic used to build those files.
+    """
+    declarations = {"FILES", "LICENSES", "IMAGENET_LABELS_SHA256", "CRNN_CHARSET_SHA256",
+                    "OPENCV_ZOO_COMMIT", "SIGLIP_ONNX_COMMIT", "SIGLIP_TOKENIZER_COMMIT"}
+    functions = {"write_runtime_text_assets", "model_metadata_text", "main"}
+    found = {}
+    for node in ast.parse(source).body:
+        name = None
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            if node.targets[0].id in declarations:
+                name = node.targets[0].id
+        elif isinstance(node, ast.FunctionDef) and node.name in functions:
+            name = node.name
+        if name is not None:
+            if name in found:
+                raise ValueError("duplicate model output declaration")
+            found[name] = ast.dump(node, include_attributes=False)
+    if set(found) != declarations | functions:
+        raise ValueError("model output declarations changed; review the offline input contract")
+    return json.dumps(found, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
 def analyze(root: Path, postgres_id: str, previous: dict | None) -> dict:
     if not IMAGE_ID.fullmatch(postgres_id):
         raise ValueError("PostgreSQL image ID must be an exact sha256 Docker ID")
@@ -68,7 +99,8 @@ def analyze(root: Path, postgres_id: str, previous: dict | None) -> dict:
                  or p.startswith(("scripts/server-", "scripts/caddy-", "scripts/xdrive-server-host")))
         ),
         "media-worker": lambda p: (
-            p in ("Dockerfile", "go.mod", "go.sum", "deploy/MediaWorker.Dockerfile", CONTRACT_FILE)
+            p in ("Dockerfile", "go.mod", "go.sum", "deploy/MediaWorker.Dockerfile",
+                  "deploy/install-media-worker-ffmpeg.sh", CONTRACT_FILE)
             or p.startswith(("cmd/", "internal/"))
             or p == "scripts/ci/test-media-worker-image.sh"
         ) and not p.endswith("_test.go"),
@@ -81,14 +113,15 @@ def analyze(root: Path, postgres_id: str, previous: dict | None) -> dict:
             raise ValueError(f"no fingerprint inputs: {component}")
         fingerprints[component] = digest_inputs(data)
 
-    # The models' identity depends on their declared, pinned bytes, not the
-    # downloader's retry logic or an unrelated code-only change.
+    # Names, derived text, provenance and copied license notices are package
+    # contents too; a list of weight digests alone cannot identify the archive.
     source = (root / MODEL_FILE).read_text("utf-8")
     weights = re.findall(r'"sha256":\s*"([a-f0-9]{64})"', source)
     if len(weights) < 10:
         raise ValueError("expected pinned model/license SHA-256 values not found")
     fingerprints["ai-models"] = digest_inputs([
-        ("pinned_model_and_license_sha256", "\n".join(weights).encode("ascii")),
+        ("model_output_contract", model_output_inputs(source)),
+        (THIRD_PARTY_FILE, (root / THIRD_PARTY_FILE).read_bytes()),
         ("model_runtime_contract", str(contracts["model_runtime_api"]).encode("ascii")),
     ])
     fingerprints["postgres"] = digest_inputs([
