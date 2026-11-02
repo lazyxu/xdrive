@@ -24,11 +24,16 @@ new Function('module', 'exports', dockCompiled)(dockModule, dockModule.exports)
 const mocks = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
-  '@mui/material': Object.fromEntries([
+  '@mui/material': Object.assign(Object.fromEntries([
     'Autocomplete','Box','Button','Drawer','IconButton','Menu','MenuItem',
     'Slider','Stack','TextField','Typography',
-  ].map(x => [x, x.toLowerCase()])),
+  ].map(x => [x, x.toLowerCase()])), { useMediaQuery: () => false }),
   './useMobilePanelViewport': { useXDriveMobilePanelViewport: () => null },
+  './MobileHeaderPortal': {
+    XDriveMobileHeaderNavigation: ({ children }) =>
+      React.createElement(React.Fragment, null, children),
+    useXDriveMobileHeaderMode: () => 'standalone',
+  },
   './MobileGalleryDockLayout': dockModule.exports,
   './MediaGalleryNavigation': {
     XDriveMediaGalleryNavigation: 'gallery-navigation',
