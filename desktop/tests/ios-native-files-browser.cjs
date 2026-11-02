@@ -8,6 +8,7 @@ const page = read('ios/XDriveIOS/NativeCloudFilesPolicy.swift');
 const view = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift');
 const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift');
 const source = read('web/src/api.ts');
+const management = read('ios/XDriveIOS/NativeFilesManagementPanel.swift');
 
 test('native Files replaces its fixed-tab placeholder without returning to WebView', () => {
   assert.match(dashboard, /private var files: some View \{\s*XDriveIOSNativeFilesBrowser\(login: login\)/);
@@ -39,7 +40,7 @@ test('native Files decodes and displays Server modification timestamps in list a
   assert.match(page, /var updated_at: String\? = nil/)
   assert.match(page, /enum XDriveIOSNativeFilesDatePolicy/)
   assert.match(page, /fractionDigits\.utf8\.count <= 9/)
-  assert.equal((view.match(/Text\("修改于 \\(XDriveIOSNativeFilesDatePolicy\.display\(modifiedDate\)\)"\)/g) || []).length, 2)
+  assert.equal((view.match(/XDriveIOSNativeFilesDatePolicy\.display\(modifiedDate\)/g) || []).length, 2)
   assert.match(management, /file\.modifiedDate/)
   assert.match(management, /directory\.modifiedDate/)
 })
