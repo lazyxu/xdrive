@@ -1153,10 +1153,10 @@ function FileManager({
   const guardBrowserNavigation = useCallback((from: XDriveWebAppRoute, to: XDriveWebAppRoute) => {
     if (!adminRoleRef.current || !systemDependenciesDraftRef.current ||
       (!xDriveSystemDependenciesNeedsExitConfirmation(from.app, to.app, true) &&
-       !xDriveMobileSystemDependenciesRouteChanged(from, to))) return false
+       !(compactWorkspace && xDriveMobileSystemDependenciesRouteChanged(from, to)))) return false
     setPendingSystemDependenciesExit({ kind: 'history' })
     return true
-  }, [])
+  }, [compactWorkspace])
   const {
     route, launch: launchWebAppRuntime, closeViewer, exitApp,
     cancelHistoryNavigation, confirmHistoryNavigation, markLoadedWorkspaceApp,
@@ -1178,14 +1178,14 @@ function FileManager({
       xDriveSystemDependenciesNeedsExitConfirmation(
         activeAppRef.current, next.app, systemDependenciesDraftRef.current, Boolean(options.newTab),
       ) ||
-      (!options.newTab && systemDependenciesDraftRef.current &&
+      (!options.newTab && compactWorkspace && systemDependenciesDraftRef.current &&
        xDriveMobileSystemDependenciesRouteChanged(activeRouteRef.current, next))
     )) {
       setPendingSystemDependenciesExit({ kind: 'route', next, options })
       return
     }
     launchWebAppRuntime(next, options)
-  }, [launchWebAppRuntime])
+  }, [compactWorkspace, launchWebAppRuntime])
 
   const exitWebApp = useCallback(() => {
     if (adminRoleRef.current && xDriveSystemDependenciesNeedsExitConfirmation(
