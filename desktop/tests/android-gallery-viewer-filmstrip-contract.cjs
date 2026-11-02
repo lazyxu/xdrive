@@ -13,7 +13,9 @@ test('Android Gallery filmstrip is a bounded Viewer-only child of the real photo
   assert.match(app, /GalleryViewerFilmstrip\([\s\S]*?active = photo,[\s\S]*?loaded = state\.galleryItems/)
   assert.match(app, /Box\(Modifier\.weight\(1f\)\.fillMaxWidth\(\)\)/)
   assert.match(app, /GalleryVideoPlayer\(photo, controller, galleryThumbnails\)/)
-  assert.match(app, /GalleryPhotoViewer\(photo, controller, galleryThumbnails\)/)
+  // #3555 adds a scoped native SAF export action; filmstrip ownership is unchanged.
+  assert.match(app, /GalleryPhotoViewer\(\s*photo,\s*controller,\s*galleryThumbnails,\s*onDownload\s*=\s*onDownload,/)
+  assert.match(app, /canDownload\s*=\s*onDownload\s*!=\s*null\s*&&[\s\S]*?nativeGalleryViewerExportEligible\(state,\s*photo\.node\)/)
   assert.match(viewer, /galleryViewerFilmstripWindow\(loaded\.size, index\)/)
   assert.match(viewer, /thumbnails\.get\(item\.node\.id\.toString\(\)/)
   assert.doesNotMatch(viewer, /galleryThumbnail\(|galleryImageBytes\(|galleryVideoPlayback\(|Media3|http[s]?:|openGalleryViewer\(/)

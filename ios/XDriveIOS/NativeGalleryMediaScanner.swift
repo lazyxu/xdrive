@@ -48,7 +48,9 @@ actor XDriveIOSNativeGalleryMediaScanner {
         let options = PHFetchOptions()
         options.sortDescriptors = [
             NSSortDescriptor(key: "creationDate", ascending: false),
-            NSSortDescriptor(key: "localIdentifier", ascending: true)
+            // Match the main native PhotoKit wall's supported fetch sort.
+            // This read-only filtered wall has no persisted backup cursor.
+            NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
         let result: PHFetchResult<PHAsset>
         switch mediaFilter {
