@@ -80,10 +80,10 @@ const fakeRequire = (id) => {
   if (id === './webApps') return { XDRIVE_WEB_APPS: {} }
   // The real Launcher tests cover these production helpers; this harness
   // isolates the long-press component without pulling the workspace runtime.
-  if (id === '@xdrive/ui/mui') return {
+  if (id === '../../ui/shared/src/mui/WorkspaceRouteTitles') return {
     xDriveWorkspaceRouteTitle: key => {
       assert.equal(key, 'global-tasks', 'only the declared task workspace may be titled')
-      return '全局任务'
+      return '全局后台任务'
     },
   }
   if (id === './mobileLauncherSections') return {
