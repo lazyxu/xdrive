@@ -153,9 +153,28 @@ class OfflinePackageTests(unittest.TestCase):
         offline.build_packages(types.SimpleNamespace(
             prepared=self.prepared, output=first, commit=self.commit,
             channel="master", source="github", plan=plan, reuse_manifest=None))
+        # Recreate an accepted pre-Share App archive and manifest. Its four
+        # dependency packages remain reusable when this release rebuilds App.
+        old_manifest = json.loads((first / "manifest.json").read_text("utf-8"))
+        old_app = old_manifest["packages"]["app"]
+        del old_app["members"]["assets/scripts/xdrive-share-update.py"]
+        old_path = first / old_app["filename"]
+        offline.deterministic_archive(self.prepared / "app", old_path, old_app["members"])
+        old_app["sha256"] = sha(old_path)
+        old_app["size"] = old_path.stat().st_size
+        old_app["filename"] = f"xdrive-app-{old_app['sha256'][:12]}.tar.gz"
+        old_app["release_tag"] = f"offline-app-{old_app['sha256'][:12]}"
+        old_path.rename(first / old_app["filename"])
+        (first / "manifest.json").write_text(json.dumps(old_manifest), encoding="utf-8")
         previous = offline.parse_manifest(first, sha(first / "manifest.json"), require_trust=True)
         self.assertEqual(previous["schema"], 2)
         old_postgres = previous["packages"]["postgres"]
+        plan.write_text(json.dumps({"schema": 1, "fingerprints": fingerprint,
+                        "changed": [], "contracts": contracts}), encoding="utf-8")
+        with self.assertRaisesRegex(offline.PackageError, "rebuild App"):
+            offline.build_packages(types.SimpleNamespace(
+                prepared=self.prepared, output=self.root / "invalid-reuse", commit=self.commit,
+                channel="master", source="github", plan=plan, reuse_manifest=first / "manifest.json"))
         # New Commit changes the App but leaves the independent dependency
         # fingerprints untouched: the reused Postgres bytes must not be copied.
         commit2 = "b" * 40
@@ -178,7 +197,22 @@ class OfflinePackageTests(unittest.TestCase):
         self.assertEqual(new["packages"]["postgres"]["built_from_commit"], self.commit)
         self.assertEqual(new["packages"]["app"]["built_from_commit"], commit2)
         self.assertFalse((second / old_postgres["filename"]).exists())
+        self.assertIn("assets/scripts/xdrive-share-update.py", new["packages"]["app"]["members"])
         offline.verify_selection(second, new, ("app",))
+
+    def test_current_build_requires_share_provider_asset(self):
+        (self.prepared / "app/assets/scripts/xdrive-share-update.py").unlink()
+        with self.assertRaisesRegex(offline.PackageError, "App package missing deployment scripts"):
+            offline.build_packages(types.SimpleNamespace(prepared=self.prepared,
+                output=self.root / "missing-helper", commit=self.commit, source="github", channel="master"))
+
+    def test_share_install_rejects_legacy_app_before_docker(self):
+        manifest = json.loads(json.dumps(self.manifest))
+        del manifest["packages"]["app"]["members"]["assets/scripts/xdrive-share-update.py"]
+        with mock.patch.object(offline.subprocess, "run") as external:
+            with self.assertRaisesRegex(offline.PackageError, "Share provider"):
+                offline.offline_install(types.SimpleNamespace(update_source="xdrive"), manifest, offline.COMPONENTS)
+        external.assert_not_called()
 
     def test_rejects_fingerprint_reuse_for_changed_component(self):
         import types

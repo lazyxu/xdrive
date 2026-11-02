@@ -30,7 +30,9 @@ IMAGE_MEMBERS = {
     "media-worker": ("media-worker", "images/media-worker.tar.gz"),
     "ai-runtime": ("ai-runtime", "images/ai-runtime.tar.gz"),
 }
-REQUIRED_ASSETS = (
+# Keep accepted pre-Share manifests readable for immutable dependency reuse.
+# Current App builds and Share activation enforce the additional provider asset.
+BASE_REQUIRED_ASSETS = (
     "assets/xdrive-server-install.sh",
     "assets/deploy/docker-compose.yml",
     "assets/scripts/server-backup.sh",
@@ -43,8 +45,9 @@ REQUIRED_ASSETS = (
     "assets/scripts/caddy-env-config.py",
     "assets/scripts/caddy-admission.py",
     "assets/scripts/xdrive-server-host.sh",
-    "assets/scripts/xdrive-share-update.py",
 )
+SHARE_PROVIDER_ASSET = "assets/scripts/xdrive-share-update.py"
+REQUIRED_ASSETS = (*BASE_REQUIRED_ASSETS, SHARE_PROVIDER_ASSET)
 SHA_RE = re.compile(r"[a-f0-9]{64}\Z")
 COMMIT_RE = re.compile(r"[a-f0-9]{40}\Z")
 IMAGE_ID_RE = re.compile(r"sha256:[a-f0-9]{64}\Z")
@@ -199,7 +202,7 @@ def parse_manifest(directory: Path, trusted_digest: str | None, *, require_trust
         require(images["server"]["ref"].endswith(suffix)
                 and images["caddy"]["ref"].endswith(suffix),
                 "App images are not bound to the exact release commit")
-    require(set(REQUIRED_ASSETS).issubset(packages["app"]["members"]), "missing app host deployment assets")
+    require(set(BASE_REQUIRED_ASSETS).issubset(packages["app"]["members"]), "missing app host deployment assets")
     require(any(p.startswith("models/") for p in packages["ai-models"]["members"]), "AI models package has no models")
     require(any(p.startswith("licenses/") for p in packages["ai-models"]["members"]), "AI models package has no licenses")
     return manifest
@@ -420,6 +423,8 @@ def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[s
         require(update_source == "xdrive" and manifest["source"] == "github"
                 and manifest["channel"] == "master",
                 "Share update preference requires a verified GitHub master package")
+        require(SHARE_PROVIDER_ASSET in manifest["packages"]["app"]["members"],
+                "Share provider is missing from the App package; rebuild App before Share activation")
     require(not ("ai-models" in selection) != ("ai-runtime" in selection),
             "AI Runtime and AI Models must be installed together")
     require(shutil.which("docker") is not None, "Docker must already be installed on the host")
@@ -584,6 +589,8 @@ def build_packages(args: argparse.Namespace) -> None:
         finally:
             if temp_path.exists():
                 temp_path.unlink()
+    require(set(REQUIRED_ASSETS).issubset(packages["app"]["members"]),
+            "App package missing deployment scripts; rebuild App instead of reusing it")
     manifest = {
         "schema": 2 if plan else 1,
         "platform": "linux/amd64", "source": args.source,
