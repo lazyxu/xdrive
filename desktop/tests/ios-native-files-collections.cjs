@@ -70,3 +70,22 @@ test('Viewer triggers recent only after successful real preview and reuses same 
   assert.match(screen, /busy = false\s*running = nil\s*onConfirmed\(\)/)
   assert.doesNotMatch(screen, /POST.*\/api\/v1\/uploads|OriginalRunGate|downloadFileVersion/)
 })
+
+test('recent and favorites match Browse list/icon presentation without duplicating reads', () => {
+  // The same setting is shared with the main native Files browser.
+  assert.match(browser, /@AppStorage\("xdrive\.ios\.files\.view-mode\.v1"\)/)
+  assert.match(screen, /@AppStorage\("xdrive\.ios\.files\.view-mode\.v1"\)/)
+  assert.match(screen, /Picker\("显示方式", selection: \$viewMode\)/)
+  assert.match(screen, /if viewMode == "grid" \{[\s\S]*?LazyVGrid\(/)
+  assert.match(screen, /GridItem\(\.adaptive\(minimum: 128, maximum: 184\)/)
+  assert.match(screen, /gridTile\(item\)[\s\S]*?\.id\(item\.id\)/)
+  assert.match(screen, /native-ios-files-collection-grid/)
+  assert.match(screen, /native-ios-files-collection-view-mode/)
+  assert.match(screen, /private func gridTile\([\s\S]*?XDriveIOSNativeFilesBrowser\([\s\S]*?folderID: item\.node\.id/)
+  assert.match(screen, /private func gridEntryLabel\([\s\S]*?XDriveIOSNativeFilesThumbnailTile\(/)
+  assert.match(screen, /Button \{ openFile\(item\) \}/)
+  assert.match(screen, /private func openFile\([\s\S]*?model\.items\.contains\(item\)/)
+  assert.match(screen, /favorites\.remove\(item, login: login\) \{ reload\(\) \}/)
+  assert.match(screen, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/)
+  assert.doesNotMatch(screen, /import WebKit|WKWebView|URLSession\.shared/)
+})
