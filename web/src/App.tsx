@@ -66,6 +66,7 @@ import {
   XDriveWorkspaceContent,
   XDriveWorkspaceRouteSurface,
   XDriveMobileAppHeader,
+  XDriveMobileHeaderPortalContext,
   xDriveWorkspaceRouteTitle,
   useXDriveRetainedWorkspaceRoute,
   xDriveWorkspaceNavigationAllowed,
@@ -970,6 +971,8 @@ function FileManager({
   onPasswordChanged: () => void
 }) {
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
+  const [mobilePageHeaderTarget, setMobilePageHeaderTarget] = useState<HTMLDivElement | null>(null)
+  const [mobilePageActionsTarget, setMobilePageActionsTarget] = useState<HTMLDivElement | null>(null)
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
   const placesEmbedRequested=new URLSearchParams(window.location.search)
@@ -2640,6 +2643,11 @@ function FileManager({
   const mobileRouteTitle = route.app === 'overview'
     ? route.params.section === 'mine' ? '我的' : '全部'
     : mobileMapFocused ? '地图' : xDriveWorkspaceRouteTitle(appView)
+  // One 52px L1 shell header on every phone route. Files/Gallery supply the
+  // actual local Back/Title/actions into it; generic pages retain App Back.
+  const mobileHeaderMode = !compactWorkspace ? 'standalone'
+    : viewerActive || mobileMapFocused || mobileManualFocused ? 'hidden'
+    : appView === 'files' || appView === 'gallery' ? 'global' : 'shell'
   const browserWorkspaceHost = useMemo(
     () => createXDriveBrowserWorkspaceHost({
       adminRoleVerified: serverAdminVerified,
@@ -2954,6 +2962,11 @@ function FileManager({
         )}
       >
 
+        <XDriveMobileHeaderPortalContext.Provider value={{
+          mode: mobileHeaderMode,
+          navigationTarget: mobilePageHeaderTarget,
+          actionsTarget: mobilePageActionsTarget,
+        }}>
         <Box data-xdrive-mobile-app-frame sx={{ minWidth: 0, minHeight: 0, height: '100%', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* L2 Places map owns a 44px in-map Close control. Suppress the
               L1 52px app bar only for the actual verified Owner map panel,
@@ -2962,6 +2975,9 @@ function FileManager({
             <XDriveMobileAppHeader
               title={mobileRouteTitle}
               canGoBack={mobileCanGoBack}
+              pageNavigation={mobileHeaderMode === 'global'}
+              navigationSlotRef={setMobilePageHeaderTarget}
+              actionsSlotRef={setMobilePageActionsTarget}
               backLabel="返回当前功能上一级"
               disabled={viewerActive}
               onBack={goBackWithinMobileFeature}
@@ -3008,7 +3024,10 @@ function FileManager({
           // The Gallery's virtual grid owns its logical row/Node anchors.
           // Native scroll anchoring otherwise shifts main.scrollTop by one
           // tile row as the virtual window reflows through Viewer breakpoints.
-          sx={{ overflowAnchor: appView === 'gallery' ? 'none' : undefined }}
+          sx={{
+            overflowAnchor: appView === 'gallery' ? 'none' : undefined,
+            ...(compactWorkspace ? { px: 0, py: 0 } : {}),
+          }}
         >
         {appView === 'overview' ? (
           compactWorkspace && route.app === 'overview' && route.params.section === 'mine' ? (
@@ -3258,6 +3277,7 @@ function FileManager({
           />
         ) : null}
         </Box>
+        </XDriveMobileHeaderPortalContext.Provider>
       </XDriveWorkspaceFrame>
       </Box>
 
