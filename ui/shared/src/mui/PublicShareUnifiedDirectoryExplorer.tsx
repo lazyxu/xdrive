@@ -173,6 +173,15 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
         minHeight: 520, minWidth: 0, width: '100%',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         border: 1, borderColor: 'divider', borderRadius: 2,
+        // Background clicks intentionally focus the shared scroll host to
+        // preserve Explorer keyboard navigation. Remove the browser's default
+        // white viewport-wide outline on pointer focus, not the row selection.
+        '& [data-xdrive-file-explorer-scroll-host]:focus': { outline: 'none' },
+        '& [data-xdrive-file-explorer-scroll-host]:focus-visible': {
+          outline: '2px solid',
+          outlineColor: 'primary.main',
+          outlineOffset: -2,
+        },
       }}>
       {!fileLink && !folderOpened && !pending ? (
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>

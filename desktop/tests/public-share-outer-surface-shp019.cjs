@@ -52,3 +52,22 @@ test('SH-P019 real Share tokens stay within dedicated public loader, never in Ow
   ]) assert.ok(publicPage.includes(token), 'Share-only capability adapter: ' + token)
   assert.ok(!owner.includes('publicShareImagePreviewURL(') && !owner.includes('api.publicShareThumbnailURL('))
 })
+
+
+test('SH-P019 pointer-selected Share file has no viewport-wide white native focus outline', () => {
+  const bridge = read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
+  const core = read('ui/shared/src/mui/FileExplorer.tsx')
+
+  // The focusable scroll host belongs to the shared Core. Only the public
+  // Share workspace suppresses its UA outline for pointer-origin focus.
+  assert.ok(core.includes('data-xdrive-file-explorer-scroll-host'))
+  assert.ok(core.includes('scrollHostRef.current?.focus()'))
+  assert.match(bridge, /data-xdrive-public-share-explorer-workspace/)
+  assert.ok(bridge.includes("'& [data-xdrive-file-explorer-scroll-host]:focus': { outline: 'none' }"))
+  // Keyboard users still get a deliberate visible ring, and per-item
+  // selection and keyboard focus styles remain unchanged in the shared Core.
+  assert.ok(bridge.includes("'& [data-xdrive-file-explorer-scroll-host]:focus-visible': {"))
+  assert.ok(bridge.includes("outlineColor: 'primary.main'"))
+  assert.ok(pure.includes("selected ? 'action.selected' : 'transparent'"))
+  assert.ok(pure.includes("'&:focus-visible': {"))
+})
