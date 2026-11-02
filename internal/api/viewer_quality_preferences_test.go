@@ -55,7 +55,7 @@ func TestViewerQualityPreferenceIsolatedCASPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.ViewerQualityPreference{}); err != nil {
+	if err := db.AutoMigrate(&meta.ViewerQualityPreference{}, &meta.AdminViewerQualitySetting{}); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{DB: db}
@@ -80,7 +80,8 @@ func TestViewerQualityPreferenceIsolatedCASPostgres(t *testing.T) {
 		return rec, result
 	}
 	r, before := invoke(11, http.MethodGet, "")
-	if r.Code != http.StatusOK || before.Revision != 0 || before.Preset != "high" {
+	if r.Code != http.StatusOK || before.Revision != 0 || before.Preset != "high" ||
+		before.Effective != "high" || before.AdminMaximum != "high" || before.Capped {
 		t.Fatalf("default must be high: %+v", before)
 	}
 	r, after := invoke(11, http.MethodPut, `{"revision":0,"preset":"economy"}`)
@@ -106,5 +107,24 @@ func TestViewerQualityPreferenceIsolatedCASPostgres(t *testing.T) {
 	r, _ = invoke(12, http.MethodGet, "")
 	if r.Code != http.StatusOK {
 		t.Fatal("other Owner read failed")
+	}
+	// Changing the Server-wide maximum must clamp Owner A's effective tier
+	// without modifying Owner A's stored preference or Owner B's identity.
+	if err := db.Create(&meta.AdminViewerQualitySetting{
+		Name: "viewer-quality", Revision: 1, MaximumPreset: "economy",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	r, after = invoke(11, http.MethodGet, "")
+	if r.Code != http.StatusOK || after.Preset != "balanced" ||
+		after.Effective != "economy" || after.AdminMaximum != "economy" ||
+		!after.Capped || after.Revision != 2 {
+		t.Fatalf("effective tier must respect new admin cap: %+v", after)
+	}
+	r, other = invoke(12, http.MethodGet, "")
+	if r.Code != http.StatusOK || other.Revision != 0 ||
+		other.Preset != "high" || other.Effective != "economy" ||
+		other.AdminMaximum != "economy" || !other.Capped {
+		t.Fatalf("second Owner should inherit cap but not Owner A setting: %+v", other)
 	}
 }

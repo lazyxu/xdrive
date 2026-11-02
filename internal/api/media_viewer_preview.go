@@ -133,11 +133,10 @@ func (s *Server) mediaViewerPreview(c *gin.Context) {
 	}
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Referrer-Policy", "no-referrer")
-	if strings.TrimSpace(c.Query("revision")) != "" {
-		c.Header("Cache-Control", "private, max-age=3600")
-	} else {
-		c.Header("Cache-Control", "private, no-store")
-	}
+	// Every variant stays cacheable, but the browser MUST revalidate owner
+	// permission and the current administrator maximum on each reuse.
+	// A stale 1h positive browser cache could otherwise bypass a lowered cap.
+	c.Header("Cache-Control", viewerPreviewHTTPRevalidation(c.Query("revision")))
 	if s.tryServeMediaDerivative(c, key, node.Name+".viewer."+format,
 		mime, metadata.UpdatedAt) {
 		return
@@ -159,4 +158,13 @@ func (s *Server) mediaViewerPreview(c *gin.Context) {
 		mime, metadata.UpdatedAt) {
 		fail(c, http.StatusInternalServerError, "generated viewer preview is unavailable")
 	}
+}
+
+func viewerPreviewHTTPRevalidation(revision string) string {
+	if strings.TrimSpace(revision) == "" {
+		return "private, no-store"
+	}
+	// ETag remains stable per immutable format/revision/variant. no-cache
+	// allows conditional 304 reuse but requires a fresh authenticated check.
+	return "private, no-cache"
 }
