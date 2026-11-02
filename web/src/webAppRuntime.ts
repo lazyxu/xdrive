@@ -1,4 +1,5 @@
 import { startTransition, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { xDriveWebBrowserCompactNavigation } from './webMobileNavigationLayout'
 import { xDriveEnterForegroundPage } from '../../ui/shared/src/mui/ViewerForegroundPriority'
 import type {
   XDriveWebAppBrowseContext,
@@ -102,13 +103,7 @@ function indexedState(value: unknown, index: number): XDriveWebAppHistoryState {
 
 /** The mobile-only bare-root landing matches native Photos-first entry. */
 function xDriveIsCompactWebViewport(): boolean {
-  try {
-    return typeof window.matchMedia === 'function' &&
-      window.matchMedia('(max-width:899.95px)').matches
-  } catch {
-    // Restricted Safari media-query getters cannot break login or deep links.
-    return false
-  }
+  return xDriveWebBrowserCompactNavigation()
 }
 
 function currentRoute(): XDriveWebAppRoute {
