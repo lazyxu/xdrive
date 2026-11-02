@@ -20,10 +20,11 @@ Exact bytes and commits are reported by each workflow run (not hardcoded).
 in-place. `iOS` requires SideStore/other user signing. Successful CI compilation
 is not device installation validation.
 
-Not mirrored: Docker/OCI image archives, Server, Caddy, photo/media-worker
-images, backup CLI archives, diagnostics/scripts, Source Agent binaries, PR
+This client workflow does not mirror Docker/OCI image archives, Server, Caddy,
+photo/media-worker images, backup CLI archives, diagnostics/scripts, Source Agent binaries, PR
 artifacts or source tarballs. There is no macOS installer at present. Web/PWA
 is served from the xDrive HTTPS website and has no offline installer to upload.
+Server packages use the separate [signed Share update publisher](server-share-update.md).
 
 ## Enable (explicit opt-in)
 
@@ -69,12 +70,19 @@ xDrive-Clients/ios/<source-sha12>/xDrive-unsigned.ipa
 
 The real xDrive anonymous API uses `conflict_policy=keep_both`, **not** replace;
 therefore the mirror checks the shared folder before writing. A same-name,
-same-size file is skipped; a same-name **different-size** conflict fails rather
-than silently producing `(1)` copies. A deterministic HMAC-based resume key
+same-size file is skipped only after its bytes pass SHA-256 verification through
+a scoped download ticket. A size or digest conflict fails rather than silently
+producing `(1)` copies. A deterministic HMAC-based resume key
 permits retry/recovery of the same chunked upload session. Each successful
 binary receives a `.sha256` sidecar. The mirror never deletes existing files,
 rewrites a `latest` pointer or sends a full folder ZIP. To limit disk usage,
 remove old version subfolders through an authenticated Owner UI when desired.
+
+Every upload initialization includes the full SHA-256 and size. When the Server
+can reuse a current file visible inside this same Share subtree, it returns a
+durable finalized receipt and the uploader sends **zero data chunks**. Files
+outside the Share, historical/deleted files and another Owner's files are not
+eligible. Older Servers continue through the existing chunk upload protocol.
 
 For content origin, always prefer exact GitHub Release SHA-256/CI provenance:
 files in an anonymously writable Share are **not tamper-proof** even with
