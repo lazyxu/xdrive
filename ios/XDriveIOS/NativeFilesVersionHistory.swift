@@ -330,6 +330,7 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesVersionHistoryModel()
+    @StateObject private var historicalExport = XDriveIOSNativeFilesHistoricalExportModel()
     @State private var pendingVersion: XDriveIOSNativeFilesVersionRecord?
     @State private var confirming = false
 
@@ -370,16 +371,47 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
                                     pendingVersion = version
                                     confirming = true
                                 }
-                                .disabled(model.busy || !model.verified)
+                                .disabled(model.busy || historicalExport.busy || !model.verified)
                                 .accessibilityIdentifier("native-ios-files-restore-\(version.id)")
+                                if let staged = historicalExport.prepared,
+                                   staged.versionID == version.id {
+                                    ShareLink(item: staged.fileURL) {
+                                        Label("存储这个旧版本到“文件”或分享",
+                                              systemImage: "square.and.arrow.up")
+                                    }
+                                    .accessibilityIdentifier("native-ios-files-version-share-\(version.id)")
+                                } else {
+                                    Button("下载这个旧版本") {
+                                        historicalExport.prepare(
+                                            version, node: node,
+                                            login: login, openedOwner: openedOwner
+                                        )
+                                    }
+                                    .disabled(model.busy || historicalExport.busy ||
+                                              !model.verified ||
+                                              version.size >
+                                                XDriveIOSNativeFilesExportCapacityPolicy.maximumSingleFileBytes)
+                                    .accessibilityIdentifier("native-ios-files-version-download-\(version.id)")
+                                }
                             }
                             .padding(.vertical, 4)
                         }
+                        if historicalExport.busy {
+                            ProgressView("正在下载历史原件…")
+                            Button("取消旧版本下载", role: .cancel) {
+                                historicalExport.cancelCurrentTransfer()
+                            }
+                            .accessibilityIdentifier("native-ios-files-version-download-cancel")
+                        }
+                        if let exportStatus = historicalExport.status {
+                            Text(exportStatus).font(.footnote).foregroundStyle(.secondary)
+                        }
                         Button("刷新版本历史") {
                             pendingVersion = nil
+                            historicalExport.invalidate()
                             model.load(node: node, login: login, openedOwner: openedOwner)
                         }
-                        .disabled(model.busy)
+                        .disabled(model.busy || historicalExport.busy)
                         .accessibilityIdentifier("native-ios-files-versions-refresh")
                     }
                     if let status = model.status {
@@ -393,7 +425,8 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }.disabled(model.busy)
+                    Button("完成") { dismiss() }
+                        .disabled(model.busy || historicalExport.busy)
                 }
             }
             .confirmationDialog("恢复到选中的历史版本？",
@@ -401,7 +434,8 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
                 Button("确认恢复", role: .destructive) {
                     guard let version = pendingVersion,
                           model.verified, model.items.contains(version),
-                          ownerValid else { return }
+                          ownerValid, !historicalExport.busy else { return }
+                    historicalExport.invalidate()
                     model.restore(version, node: node, login: login,
                                   openedOwner: openedOwner) {
                         dismiss()
@@ -421,11 +455,13 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
         }
         .onDisappear {
             pendingVersion = nil
+            historicalExport.invalidate()
             model.invalidate()
         }
         .onChange(of: login.owner) { _ in
             if !ownerValid {
                 pendingVersion = nil
+                historicalExport.invalidate()
                 model.invalidate()
                 dismiss()
             }
@@ -433,6 +469,7 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
         .onChange(of: phase) { state in
             if state != .active {
                 pendingVersion = nil
+                historicalExport.invalidate()
                 model.invalidate()
             } else if ownerValid {
                 model.load(node: node, login: login, openedOwner: openedOwner)
