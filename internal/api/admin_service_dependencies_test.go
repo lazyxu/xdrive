@@ -107,9 +107,12 @@ func TestAdminServiceDependencyLifecycleBaiduAndCaddyNoFalseApplied(t *testing.T
 		baidu.ActivationState != "local-effective" {
 		t.Fatalf("configured AK must not fabricate remote Baidu health: %+v", baidu)
 	}
-	if !strings.Contains(baidu.Detail, "管理员手动在线验证会消耗一次 Static Map API 配额") ||
-		strings.Contains(baidu.Detail, "不消耗额外 API 配额") {
-		t.Fatalf("Baidu status must distinguish saved AK from a quota-consuming live PNG probe: %q", baidu.Detail)
+	if !strings.Contains(baidu.Detail, "本机配置在状态读取时自动核对") ||
+		!strings.Contains(baidu.Detail, "未向百度上游发送在线检测请求") ||
+		!strings.Contains(baidu.Detail, "按配额执行") ||
+		baidu.Version != "Geoconv · WGS84 → BD-09" ||
+		strings.Contains(baidu.Detail, "Static Map") {
+		t.Fatalf("Baidu status must distinguish automatic local inventory from unverified quota-bound upstream: %+v", baidu)
 	}
 	if before["caddy"].InstallationState != "unknown" ||
 		before["caddy"].ActivationState != "deployment-only" {
