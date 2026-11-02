@@ -29,6 +29,27 @@ import Foundation
         precondition(XDrivePhotoBackupScanWindow.count(visibleTotal: 100_000) == 391)
         precondition(step(389, 100_000, 256, 0, false) == .nextWindow(390))
         precondition(step(390, 100_000, 160, 0, false) == .finished)
+        var window = 0
+        var windowsChecked = 0
+        var finished = false
+        while !finished {
+            let offset = XDrivePhotoBackupScanWindow.offset(for: window)!
+            let checked = XDrivePhotoBackupScanWindow.capacity(
+                visibleTotal: 100_000, offset: offset
+            )
+            windowsChecked += 1
+            switch step(window, 100_000, checked, 0, false) {
+            case .nextWindow(let next):
+                precondition(next == window + 1)
+                window = next
+            case .finished:
+                precondition(windowsChecked == 391 && window == 390)
+                finished = true
+            default:
+                preconditionFailure("safe 100k read-only pass must advance")
+            }
+            precondition(windowsChecked <= 391)
+        }
         print("iOS focused PhotoKit window progression and unsafe-retry stops: PASS")
     }
 }
