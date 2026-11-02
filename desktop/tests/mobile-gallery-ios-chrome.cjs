@@ -19,16 +19,10 @@ const compiled = ts.transpileModule(read(sourcePath), {
 const mocks = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
-  '@mui/material': Object.fromEntries([
+  '@mui/material': Object.assign(Object.fromEntries([
     'Autocomplete','Box','Button','Drawer','IconButton','Menu','MenuItem',
     'Slider','Stack','TextField','Typography',
-    'useMediaQuery',
-  ].map(x => [x, x.toLowerCase()])),
-  './MobileHeaderPortal': {
-    XDriveMobileHeaderNavigation: ({ children }) =>
-      React.createElement(React.Fragment, null, children),
-    useXDriveMobileHeaderMode: () => 'standalone',
-  },
+  ].map(x => [x, x.toLowerCase()])), { useMediaQuery: () => false }),
   './MobileHeaderPortal': {
     XDriveMobileHeaderNavigation: ({ children }) =>
       React.createElement(React.Fragment, null, children),
