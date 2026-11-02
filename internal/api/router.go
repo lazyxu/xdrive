@@ -207,6 +207,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/me", s.me)
 	authed.GET("/me/quota", s.quotaUsage)
 	authed.GET("/me/storage", s.storageStats)
+	authed.GET("/me/viewer-quality", s.getViewerQualityPreference)
+	authed.PUT("/me/viewer-quality", s.putViewerQualityPreference)
 	authed.POST("/me/change-password", s.changePassword)
 	// Authenticated browser password rotation gets a new HttpOnly cookie,
 	// without exposing the new durable refresh token in JSON.
