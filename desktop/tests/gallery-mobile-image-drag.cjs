@@ -17,3 +17,15 @@ test('mobile ordinary image follows pan without triggering work until pointer-up
   assert.match(file, /imageViewportRef\.current\.scale <= 1\.01/)
   assert.match(file, /imagePinchRef\.current/)
 })
+
+test('mobile Live Photo still follows one-finger pan without starting motion', () => {
+  const live = read('ui/shared/src/mui/LivePhotoSurface.tsx')
+  assert.match(live, /data-xdrive-live-photo-swipe-slide/)
+  assert.match(live, /layer\.style\.transform =/)
+  assert.match(live, /gesture\.mode === 'swiping'/)
+  assert.match(live, /viewportRef\.current\.scale <= 1\.01/)
+  assert.match(live, /retirePhotoSlide\(\)/)
+  assert.match(live, /gestureSessionRef\.current !== gestureSession/)
+  assert.match(live, /gesture\.held \|\| gesture\.multi/)
+  assert.match(live, /clearHoldTimer\(\)/)
+})

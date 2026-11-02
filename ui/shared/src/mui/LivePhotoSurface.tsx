@@ -170,6 +170,18 @@ export function XDriveLivePhotoSurface({
   const viewportRef = useRef<XDrivePreviewViewport>({ scale: 1, offset: { x: 0, y: 0 } })
   const [imageScale, setImageScale] = useState(1)
   const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 })
+  const photoSlideRef = useRef<HTMLDivElement | null>(null)
+  const photoSwipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const retirePhotoSlide = () => {
+    if (photoSwipeTimerRef.current !== null) clearTimeout(photoSwipeTimerRef.current)
+    photoSwipeTimerRef.current = null
+  }
+  const paintPhotoSlide = (dx: number, settle: boolean) => {
+    const layer = photoSlideRef.current
+    if (!layer) return
+    layer.style.transition = settle ? 'transform 170ms cubic-bezier(.2,.7,.2,1)' : 'none'
+    layer.style.transform = `translate3d(${dx}px,0,0)`
+  }
   const zoomPointersRef = useRef(new Map<number, { x: number; y: number }>())
   const pinchRef = useRef<{
     distance: number
@@ -251,6 +263,8 @@ export function XDriveLivePhotoSurface({
     lastTouchZoomAtRef.current = 0
     setImageScale(1)
     setImageOffset({ x: 0, y: 0 })
+    retirePhotoSlide()
+    paintPhotoSlide(0, false)
   }, [gestureSession])
   // Unlike a passive effect, this cleanup runs before React detaches the
   // current video DOM node. Stop signed media Range on Viewer Close and
@@ -591,6 +605,8 @@ export function XDriveLivePhotoSurface({
     pinchRef.current = null
     panRef.current = null
     lastTapRef.current = null
+    retirePhotoSlide()
+    paintPhotoSlide(0, true)
     endHold()
   }, [clearHoldTimer, endHold, gestureSession])
   // A hidden iOS PWA/desktop tab may never dispatch pointerup, keyup or blur.
@@ -604,6 +620,8 @@ export function XDriveLivePhotoSurface({
     pinchRef.current = null
     panRef.current = null
     lastTapRef.current = null
+    retirePhotoSlide()
+    paintPhotoSlide(0, false)
     holdActiveRef.current = false
     stopPlayback()
     cancelPendingMotion()
@@ -653,6 +671,8 @@ export function XDriveLivePhotoSurface({
       zoomPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
       if (zoomPointersRef.current.size >= 2) {
         clearHoldTimer()
+        retirePhotoSlide()
+        paintPhotoSlide(0, true)
         if (touchGestureRef.current) {
           touchGestureRef.current.multi = true
           touchGestureRef.current.mode = 'cancelled'
@@ -778,12 +798,20 @@ export function XDriveLivePhotoSurface({
       if (gesture.held) {
         gesture.mode = 'cancelled'
         endHold()
+        paintPhotoSlide(0, true)
       } else if (gesture.mode === 'pending') {
         // A gesture starting vertically cannot later become a photo swipe.
         gesture.mode = Math.abs(dx) > Math.abs(dy) * 1.25 ? 'swiping' : 'cancelled'
       }
     }
-  }, [applyImageViewport, clearHoldTimer, endHold, gestureSession, imageAnchor, interactiveImage])
+    // Direct transform, no React render and no motion ticket while dragging.
+    if (interactiveImage && gesture.mode === 'swiping' && !gesture.multi &&
+        viewportRef.current.scale <= 1.01) {
+      const width = Math.max(1, viewportSizeRef.current.width)
+      const available = dx < 0 ? Boolean(onSwipeNext) : Boolean(onSwipePrevious)
+      paintPhotoSlide(Math.max(-width, Math.min(width, dx)) * (available ? 1 : 0.12), false)
+    }
+  }, [applyImageViewport, clearHoldTimer, endHold, gestureSession, imageAnchor, interactiveImage, onSwipeNext, onSwipePrevious])
 
   const handlePointerRelease = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (gestureSessionRef.current !== gestureSession) return
@@ -830,7 +858,10 @@ export function XDriveLivePhotoSurface({
       // Ignore runtimes that have already released the pointer.
     }
     endHold()
-    if (!current || !gesture || gesture.held || gesture.multi || gesture.mode === 'cancelled') return
+    if (!current || !gesture || gesture.held || gesture.multi || gesture.mode === 'cancelled') {
+      paintPhotoSlide(0, true)
+      return
+    }
     if (interactiveImage && gesture.mode === 'pending' &&
         Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) < 12 &&
         Date.now() - gesture.startedAt <= 450) acceptTouchTap(event)
@@ -840,9 +871,29 @@ export function XDriveLivePhotoSurface({
     // Slow drags or post-pinch releases must remain on the current still.
     if (viewportRef.current.scale > 1.01 ||
         Date.now() - gesture.startedAt > 700 ||
-        Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.25) return
-    if (dx > 0) onSwipePrevious?.()
-    else onSwipeNext?.()
+        Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.25) {
+      paintPhotoSlide(0, true)
+      return
+    }
+    const next = dx > 0 ? onSwipePrevious : onSwipeNext
+    if (!next) {
+      paintPhotoSlide(0, true)
+      return
+    }
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      paintPhotoSlide(0, false)
+      next()
+      return
+    }
+    const width = Math.max(1, viewportSizeRef.current.width)
+    paintPhotoSlide(dx < 0 ? -width : width, true)
+    retirePhotoSlide()
+    photoSwipeTimerRef.current = setTimeout(() => {
+      photoSwipeTimerRef.current = null
+      if (gestureSessionRef.current !== gestureSession) return
+      paintPhotoSlide(0, false)
+      next()
+    }, 170)
   }, [acceptTouchTap, clearHoldTimer, endHold, gestureSession, interactiveImage, onSwipeNext, onSwipePrevious])
 
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
@@ -911,16 +962,19 @@ export function XDriveLivePhotoSurface({
         },
       }}
     >
-      <Box sx={{
-        position: 'absolute', inset: 0,
-        transform: interactiveImage
-          ? `translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageScale})`
-          : undefined,
-        transformOrigin: 'center',
-        transition: panRef.current || pinchRef.current ? 'none' : 'transform 100ms ease-out',
-        '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
-      }}>
-        {still}
+      <Box ref={photoSlideRef} data-xdrive-live-photo-swipe-slide
+        sx={{ position: 'absolute', inset: 0, willChange: 'transform' }}>
+        <Box sx={{
+          position: 'absolute', inset: 0,
+          transform: interactiveImage
+            ? `translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageScale})`
+            : undefined,
+          transformOrigin: 'center',
+          transition: panRef.current || pinchRef.current ? 'none' : 'transform 100ms ease-out',
+          '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+        }}>
+          {still}
+        </Box>
       </Box>
 
       {motionURL ? (
