@@ -627,17 +627,6 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Section("批量操作") {
                     Text("已选 \(selectedIDs.count) 项（最多 64 项，可跨已加载的目录范围）")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Button("选择已加载的前 64 项") {
-                        guard canSelectPage else { return }
-                        selectedIDs = Set(model.entries.prefix(
-                            XDriveIOSNativeFilesPagePolicy.pageSize
-                        ).map(\.id))
-                    }
-                    .disabled(!canSelectPage)
-                    Button("清空选择") { selectedIDs.removeAll() }
-                        .disabled(batchTrash.busy || batchTarget.busy ||
-                              batchExport.busy || !batchExport.prepared.isEmpty ||
-                              selectedIDs.isEmpty)
                     if batchExport.busy {
                         ProgressView("正在顺序下载和核对文件…")
                         Button("取消批量下载", role: .cancel) {
@@ -692,36 +681,61 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("native-ios-files-selection-count")
             Spacer(minLength: 4)
-            Button {
-                openBatchDestination(.copy)
-            } label: {
-                Label("复制", systemImage: "doc.on.doc")
-            }
-            .disabled(!canSelectPage || selectedIDs.isEmpty)
-            .accessibilityIdentifier("native-ios-files-batch-copy")
-            Button {
-                openBatchDestination(.move)
-            } label: {
-                Label("移动", systemImage: "folder")
-            }
-            .disabled(!canSelectPage || selectedIDs.isEmpty)
-            .accessibilityIdentifier("native-ios-files-batch-move")
-            Menu {
-                Button("已选项批量下载并导出") {
-                    prepareSelectedExport()
+            if !batchExport.prepared.isEmpty {
+                Button {
+                    showingBatchShare = true
+                } label: {
+                    Label("导出", systemImage: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("native-ios-files-batch-share-toolbar")
+                Button {
+                    batchExport.invalidate()
+                } label: {
+                    Label("清理暂存", systemImage: "xmark.circle")
+                }
+                .accessibilityIdentifier("native-ios-files-batch-discard-toolbar")
+            } else {
+                Button {
+                    openBatchDestination(.copy)
+                } label: {
+                    Label("复制", systemImage: "doc.on.doc")
                 }
                 .disabled(!canSelectPage || selectedIDs.isEmpty)
-                .accessibilityIdentifier("native-ios-files-batch-export")
-                Button("已选项移入回收站", role: .destructive) {
-                    showingBatchTrashConfirmation = true
+                .accessibilityIdentifier("native-ios-files-batch-copy")
+                Button {
+                    openBatchDestination(.move)
+                } label: {
+                    Label("移动", systemImage: "folder")
                 }
                 .disabled(!canSelectPage || selectedIDs.isEmpty)
-                .accessibilityIdentifier("native-ios-files-batch-trash")
-            } label: {
-                Label("更多", systemImage: "ellipsis.circle")
+                .accessibilityIdentifier("native-ios-files-batch-move")
+                Menu {
+                    Button("选择已加载的前 64 项") {
+                        guard canSelectPage else { return }
+                        selectedIDs = Set(model.entries.prefix(
+                            XDriveIOSNativeFilesPagePolicy.pageSize
+                        ).map(\.id))
+                    }
+                    .disabled(!canSelectPage)
+                    Button("清空选择") { selectedIDs.removeAll() }
+                        .disabled(selectedIDs.isEmpty)
+                    Divider()
+                    Button("已选项批量下载并导出") {
+                        prepareSelectedExport()
+                    }
+                    .disabled(!canSelectPage || selectedIDs.isEmpty)
+                    .accessibilityIdentifier("native-ios-files-batch-export")
+                    Button("已选项移入回收站", role: .destructive) {
+                        showingBatchTrashConfirmation = true
+                    }
+                    .disabled(!canSelectPage || selectedIDs.isEmpty)
+                    .accessibilityIdentifier("native-ios-files-batch-trash")
+                } label: {
+                    Label("更多", systemImage: "ellipsis.circle")
+                }
+                .disabled(!canSelectPage)
+                .accessibilityIdentifier("native-ios-files-batch-more")
             }
-            .disabled(!canSelectPage || selectedIDs.isEmpty)
-            .accessibilityIdentifier("native-ios-files-batch-more")
         }
         .font(.subheadline)
         .padding(.horizontal, 12)
