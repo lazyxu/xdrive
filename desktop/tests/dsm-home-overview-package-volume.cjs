@@ -58,12 +58,13 @@ function metric(view, title) {
   return matches[0].props
 }
 
+const flushEffects = () => new Promise(resolve => setImmediate(resolve))
+
 async function mount(client) {
   let view
   await act(async () => {
     view = Renderer.create(React.createElement(Home, { client }))
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushEffects()
   })
   return view
 }
@@ -130,8 +131,7 @@ test('DSM Home refresh re-reads the package filesystem through the same cancella
     assert.ok(refresh && typeof refresh.props.onClick === 'function')
     await act(async () => {
       refresh.props.onClick()
-      await Promise.resolve()
-      await Promise.resolve()
+      await flushEffects()
     })
     assert.equal(reads, 2)
     assert.equal(metric(view, 'DSM 套件数据所在文件系统').value, '6144 B / 8192 B')
