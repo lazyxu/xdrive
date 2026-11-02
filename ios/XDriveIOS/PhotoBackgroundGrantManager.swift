@@ -247,9 +247,17 @@ actor XDriveIOSPhotoBackgroundGrantManager {
     /// Rotation is an all-or-nothing Server transaction; save the new secret
     /// before counting the new grant as usable by future BG tasks.
     func rotateNativeBackgroundGrant(
-        owner: XDriveNativeOwnerRoot
+        owner: XDriveNativeOwnerRoot, expectedStopGeneration: UInt64
     ) async throws -> XDriveIOSPhotoBackgroundGrantStatus {
         _ = try await verifyNativeBackgroundGrant(owner: owner)
+        // An emergency stop while renewal is in flight must not mint a new
+        // background-capable credential using obsolete consent.
+        let stoppedBeforeWrite = await MainActor.run {
+            XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration != expectedStopGeneration
+        }
+        guard !stoppedBeforeWrite else {
+            throw XDriveIOSPhotoBackgroundGrantError.invalidOwner
+        }
         guard let old = try read(owner: owner),
               let device = try await XDriveIOSDeviceEnrollment.shared
                 .backgroundPhotoDeviceProofWithoutWeb(owner: owner),
@@ -270,6 +278,20 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         let next = try checkedResponse(
             result, owner: owner, deviceID: device.deviceID
         )
+        // Server rotation can commit after emergency STOP. Keep the new
+        // ID for remote revocation, but persist as disabled and discard the
+        // old background-accessible credential.
+        let stoppedAfterWrite = await MainActor.run {
+            XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration != expectedStopGeneration
+        }
+        if stoppedAfterWrite {
+            var blocked = next
+            blocked.revokePending = true
+            try save(blocked, owner: owner)
+            try await XDriveIOSApprovedPhotoBGVault.shared.cancelLocally(owner: owner)
+            XDriveIOSBackgroundPhotoTask.revokePendingRequests()
+            return try localStatus(owner: owner)
+        }
         try save(next, owner: owner)
         // A successful Server rotation immediately invalidates the prior
         // grant. Refresh an existing approved BG vault atomically, otherwise
@@ -283,6 +305,15 @@ actor XDriveIOSPhotoBackgroundGrantManager {
                 grantID: next.grantID, grantSecret: next.rawSecret,
                 expiresAt: next.expiresAt, intervalMinutes: approved.intervalMinutes
             )
+            let stoppedAfterInstall = await MainActor.run {
+                XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration != expectedStopGeneration
+            }
+            if stoppedAfterInstall {
+                // The vault now matches the rotated grant, so canonical
+                // local-first stop durably records remote revocation pending.
+                _ = try await stopLocally(owner: owner)
+                return try localStatus(owner: owner)
+            }
             try XDriveIOSBackgroundPhotoTask.scheduleApprovedProbe(
                 afterMinutes: approved.intervalMinutes
             )
