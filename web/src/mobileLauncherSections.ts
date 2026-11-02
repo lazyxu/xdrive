@@ -47,6 +47,16 @@ export function xDriveMobileLauncherSections<T extends { key: string }>(
   return sections
 }
 
+/** Empty dynamic history falls back to the canonical Gallery Places route.
+ * A verified Owner and existing Gallery workspace admission are required.
+ * The fallback never records Map as a dynamic feature or creates a map Host. */
+export function xDriveMobileEmptyRecentMapRoute(
+  hasRecentDynamic: boolean, galleryAllowed: boolean,
+): XDriveWebAppRoute | null {
+  return !hasRecentDynamic && galleryAllowed
+    ? { app: 'gallery', params: { section: 'places' } } : null
+}
+
 /** Browser-only Launcher shortcuts are Gallery *subroutes*, never dynamic
  * features. Existing Gallery authorization and Owner Range remain decisive. */
 export function xDriveMobileLauncherGalleryRoute(key: string): XDriveWebAppRoute | null {

@@ -102,7 +102,7 @@ import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveReadWebA
 import { XDRIVE_WEB_NARROW_QUERY, XDRIVE_WEB_TOUCH_ONLY_QUERY, xDriveWebCompactNavigation } from './webMobileNavigationLayout'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations, xDriveBrowserMobileGalleryShortcuts } from './MobileFiveSlotNavigation'
-import { xDriveMobileLauncherSections, xDriveMobileLauncherGalleryRoute } from './mobileLauncherSections'
+import { xDriveMobileLauncherSections, xDriveMobileLauncherGalleryRoute, xDriveMobileEmptyRecentMapRoute } from './mobileLauncherSections'
 import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileViewerSafeFallbackRoute, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused, xDriveMobileManualFocusTarget, xDriveMobileManualFocusActive, xDriveInitialMobileOverviewScroll, xDriveMobileOverviewScrollSlot, xDriveMobileOverviewScrollOffset, xDriveRememberMobileOverviewScroll, xDriveMobileSystemDependenciesRouteChanged } from './mobileFiveSlotState'
 import type { XDriveMobileSlot, XDriveMobileManualFocusSelection } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
@@ -2576,6 +2576,15 @@ function FileManager({
     const destination = mobileDestinations.find(item => item.key === key)
     return destination ? [{ key: destination.key, route: recent, label: destination.label, icon: destination.icon }] : []
   })
+  // On a first visit, use Gallery's real authorized Map rather than showing
+  // an empty dynamic tab. The Map route does not enter dynamic recents.
+  const mobileEmptyRecentMapRoute = xDriveMobileEmptyRecentMapRoute(
+    mobileRecentDestinations.length > 0,
+    Boolean(mobileOwnerScope) &&
+      mobileLauncherDestinations.some(item => item.key === 'gallery-places'),
+  )
+  const mobileEmptyRecentMapShortcut = mobileEmptyRecentMapRoute
+    ? mobileLauncherDestinations.find(item => item.key === 'gallery-places') : undefined
   const latestMobileDynamic = mobileRecentDestinations[0]
   // Capture the exact visible position before synchronous bottom-tab or
   // launcher navigation; passive scroll events cover browser Back/Forward.
@@ -2602,7 +2611,9 @@ function FileManager({
     }
   }
   const selectMobileSlot = (slot: XDriveMobileSlot) => {
-    const next = xDriveMobileRouteForSlot(currentMobileNavigation, slot, serverAdminVerified)
+    const next = slot === 'dynamic' && mobileEmptyRecentMapRoute
+      ? mobileEmptyRecentMapRoute
+      : xDriveMobileRouteForSlot(currentMobileNavigation, slot, serverAdminVerified)
     // Re-selecting the current fixed Tab must not create an invisible browser
     // History entry. Safari's Back swipe should reach the real previous route.
     // Compare canonical hashes, not route object identity or raw params order.
@@ -3270,9 +3281,13 @@ function FileManager({
         {compactWorkspace && !viewerActive && !mobileMapFocused && !mobileManualFocused ? (
           <XDriveMobileFiveSlotNavigation
             selected={xDriveMobileSlotForRoute(route) ?? 'all'}
-            dynamicLabel={latestMobileDynamic?.label ?? '最近'}
-            dynamicIcon={latestMobileDynamic?.icon}
+            dynamicLabel={latestMobileDynamic?.label ?? mobileEmptyRecentMapShortcut?.label ?? '最近'}
+            dynamicIcon={latestMobileDynamic?.icon ?? mobileEmptyRecentMapShortcut?.icon}
             recent={mobileRecentDestinations}
+            emptyRecentFallback={mobileEmptyRecentMapRoute && mobileEmptyRecentMapShortcut
+              ? { key: 'gallery-places', route: mobileEmptyRecentMapRoute,
+                  label: mobileEmptyRecentMapShortcut.label, icon: mobileEmptyRecentMapShortcut.icon }
+              : null}
             recentOpen={mobileRecentOpen}
             onRecentOpenChange={setMobileRecentOpen}
             onSelect={selectMobileSlot}

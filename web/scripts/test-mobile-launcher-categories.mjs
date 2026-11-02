@@ -73,6 +73,15 @@ assert.deepEqual(model.xDriveMobileLauncherGalleryRoute('gallery-places'),
 assert.equal(model.xDriveMobileLauncherGalleryRoute('files'), null)
 assert.equal(model.xDriveMobileLauncherGalleryRoute('admin-users'), null)
 assert.equal(model.xDriveMobileLauncherGalleryRoute('gallery'), null)
+// The default Map is a Gallery subroute, not a dynamic recent entry.
+const expectedMapFallback = { app: 'gallery', params: { section: 'places' } }
+assert.deepEqual(model.xDriveMobileEmptyRecentMapRoute(false, true), expectedMapFallback)
+assert.equal(model.xDriveMobileEmptyRecentMapRoute(true, true), null)
+assert.equal(model.xDriveMobileEmptyRecentMapRoute(false, false), null)
+assert.match(app, /xDriveMobileEmptyRecentMapRoute\(/)
+assert.match(app, /slot === 'dynamic' && mobileEmptyRecentMapRoute/)
+assert.match(app, /emptyRecentFallback=\{mobileEmptyRecentMapRoute/)
+assert.match(launcher, /onPickRecent\(emptyRecentFallback\.route\)/)
 const withoutGallery = model.xDriveMobileLauncherSections(
   input.filter(item => item.key !== 'gallery' &&
     item.key !== 'gallery-albums' && item.key !== 'gallery-places'))
