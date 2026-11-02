@@ -578,6 +578,62 @@ assert.deepEqual(realRecent.launched, [transfers],
   'a real recent Dynamic destination always wins over the empty-history Map fallback')
 assert.deepEqual(realRecent.recent, [])
 
+// Run the actual Recent drawer callback as well: a Gallery-map fallback must
+// pass the ordinary authorized Gallery route, preserve All scroll and avoid
+// duplicate History entries. No separate drawer routing implementation.
+function originalMobileRecentPicker(env) {
+  const ast = ts.createSourceFile('App.tsx', appSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const declarations = []
+  const visit = node => {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'pickMobileRecent')
+      declarations.push(node.getText(ast))
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(declarations.length, 1, 'one production Recent drawer route callback')
+  const js = ts.transpileModule(
+    'function getHandler() { const ' + declarations[0] + '; return pickMobileRecent; }',
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText
+  return new Function(...Object.keys(env), js + '\nreturn getHandler();')(...Object.values(env))
+}
+function drawerMapHarness(admitted, active = all, overviewSlot = 'all') {
+  const launched = [], snapshots = []
+  const pick = originalMobileRecentPicker({
+    xDriveWebAppWorkspaceKey: app => app === 'gallery' ? 'gallery' : null,
+    mobileDestinations: admitted ? [{ key: 'gallery' }] : [],
+    xDriveWorkspaceNavigationAllowed: key => key === 'gallery',
+    serverAdminVerified: false,
+    xDriveWebAppHash: testCanonicalHash,
+    route: active,
+    mobileOverviewSlot: overviewSlot,
+    saveVisibleMobileOverviewScroll: () => snapshots.push(true),
+    launchWebApp: next => launched.push(next),
+  })
+  return { pick, launched, snapshots }
+}
+assert.match(readFileSync(resolve(here, '../src/webApps.ts'), 'utf8'),
+  /gallery: \{[^\n]*workspaceKey: 'gallery'/,
+  'the fallback uses the real Gallery workspace admission key')
+const mapDrawer = drawerMapHarness(true)
+mapDrawer.pick(map)
+assert.deepEqual(mapDrawer.launched, [map],
+  'the empty-history drawer opens the authorized Gallery map')
+assert.deepEqual(mapDrawer.snapshots, [true],
+  'leaving All through the drawer remembers its scroll position')
+const deniedDrawer = drawerMapHarness(false)
+deniedDrawer.pick(map)
+assert.deepEqual(deniedDrawer.launched, [],
+  'a revoked Gallery destination cannot open the map through Recent')
+const sameMapDrawer = drawerMapHarness(true, map)
+sameMapDrawer.pick(map)
+assert.deepEqual(sameMapDrawer.launched, [],
+  'reopening the current map never pushes a duplicate browser history entry')
+const nonGalleryDrawer = drawerMapHarness(true)
+nonGalleryDrawer.pick(files)
+assert.deepEqual(nonGalleryDrawer.launched, [],
+  'the fallback drawer never authorizes a different workspace')
+
 const otherGallery = mobileTabHarness(activeAlbums, {
   ...galleryTabs, gallery: { app: 'gallery', params: { section: 'places' } },
 })
