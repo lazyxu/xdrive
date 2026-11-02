@@ -17,23 +17,36 @@ enum XDriveIOSNativeFilesViewerPolicy {
     ]
     private static let videos: Set<String> = ["mp4", "mov", "m4v"]
     private static let audio: Set<String> = ["mp3", "m4a", "aac", "wav"]
+    // Mirror the Server's read-only UTF-8 preview allowlist. The transport
+    // independently validates the exact Owner/Node/revision and text bounds.
     private static let texts: Set<String> = [
-        "asm", "bash", "bat", "c", "cc", "cfg", "cjs", "conf", "cpp", "cs",
-        "css", "csv", "dart", "go", "h", "hpp", "htm", "html", "ini",
-        "java", "js", "json", "jsonl", "jsx", "kt", "log", "lua", "m",
-        "md", "mjs", "mm", "patch", "php", "properties", "py", "r",
-        "rb", "rs", "sh", "sql", "swift", "text", "toml", "ts", "tsv",
-        "tsx", "txt", "xml", "yaml", "yml", "zsh"
+        "asm", "astro", "bash", "bat", "c", "cc", "cfg", "cjs",
+        "cljs", "clj", "cmd", "conf", "cpp", "cs", "css", "csv",
+        "cxx", "dart", "erl", "ex", "exs", "fish", "fs", "fsx",
+        "go", "gql", "gradle", "graphql", "groovy", "h", "hpp", "hrl",
+        "hs", "htm", "html", "hxx", "ini", "java", "js", "json",
+        "jsonl", "jsx", "kt", "kts", "less", "lock", "log", "lua",
+        "m", "md", "markdown", "mjs", "mk", "mm", "nix", "patch",
+        "php", "pl", "pm", "properties", "proto", "ps1", "py", "rb",
+        "rs", "r", "s", "scala", "scss", "sh", "sol", "sql",
+        "svelte", "svg", "swift", "tex", "text", "tf", "tfvars", "toml",
+        "ts", "tsv", "tsx", "txt", "vb", "vbs", "vue", "xml",
+        "yaml", "yml", "zig", "zsh"
     ]
     private static let textBasenames: Set<String> = [
-        "readme", "license", "dockerfile", "makefile", "gemfile",
-        "jenkinsfile", "copying", ".gitignore", ".dockerignore",
-        ".env", ".editorconfig", ".npmrc"
+        "cmakelists.txt", "copying", "dockerfile", "gemfile", "jenkinsfile", "license", "makefile", "procfile",
+        "rakefile", "readme", ".babelrc", ".browserslistrc", ".dockerignore", ".editorconfig", ".env", ".eslintignore",
+        ".eslintrc", ".gitattributes", ".gitignore", ".gitmodules", ".npmignore", ".npmrc", ".prettierignore", ".prettierrc",
+        ".stylelintrc", ".yarnrc"
+    ]
+    private static let textDotPrefixes = [
+        ".env.", ".eslintrc.", ".prettierrc.", ".stylelintrc."
     ]
 
     static func kind(for name: String) -> XDriveIOSNativeFilesViewerKind {
         let base = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if textBasenames.contains(base) || base.hasPrefix(".env.") { return .text }
+        if textBasenames.contains(base) ||
+            textDotPrefixes.contains(where: { base.hasPrefix($0) }) { return .text }
         guard let dot = base.lastIndex(of: "."), dot != base.startIndex else {
             return .unsupported
         }
