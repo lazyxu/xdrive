@@ -52,6 +52,17 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-window-check"
           "$RUNNER_TEMP/xdrive-ios-window-check"
 
+      - name: Verify truthful bounded iOS original backup window scan progress
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoBackupScanWindow.swift \
+            ios/XDriveIOS/NativeBackupWindowReadProgress.swift \
+            ios/tests/NativeBackupWindowReadProgressChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-window-read-progress"
+          "$RUNNER_TEMP/xdrive-ios-window-read-progress"
+          node --test desktop/tests/ios-native-photo-backup-window-progress.cjs
+
       - name: Verify V2 PhotoKit journal shard routing
         run: |
           set -euo pipefail
