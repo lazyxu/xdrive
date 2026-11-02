@@ -54,20 +54,36 @@ test('SH-P019 real Share tokens stay within dedicated public loader, never in Ow
 })
 
 
-test('SH-P019 pointer-selected Share file has no viewport-wide white native focus outline', () => {
+test('SH-P019 Owner and public Share suppress only pointer-focus viewport outline', () => {
   const bridge = read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
   const core = read('ui/shared/src/mui/FileExplorer.tsx')
+  const start = core.indexOf('data-xdrive-file-explorer-scroll-host')
+  const end = core.indexOf('onScroll={handleScroll}', start)
+  assert.ok(start > 0 && end > start, 'shared scroll host is missing')
+  const host = core.slice(start, end)
 
-  // The focusable scroll host belongs to the shared Core. Only the public
-  // Share workspace suppresses its UA outline for pointer-origin focus.
-  assert.ok(core.includes('data-xdrive-file-explorer-scroll-host'))
+  // Owner and public Share both use the same focusable scroll host.
   assert.ok(core.includes('scrollHostRef.current?.focus()'))
-  assert.match(bridge, /data-xdrive-public-share-explorer-workspace/)
-  assert.ok(bridge.includes("'& [data-xdrive-file-explorer-scroll-host]:focus': { outline: 'none' }"))
-  // Keyboard users still get a deliberate visible ring, and per-item
-  // selection and keyboard focus styles remain unchanged in the shared Core.
-  assert.ok(bridge.includes("'& [data-xdrive-file-explorer-scroll-host]:focus-visible': {"))
-  assert.ok(bridge.includes("outlineColor: 'primary.main'"))
+  assert.ok(bridge.includes('<XDriveFileExplorer'))
+  assert.ok(host.includes("'&:focus:not(:focus-visible)': { outline: 'none' }"))
+  // Keyboard navigation must still be visibly indicated. The deliberately
+  // selected row and drag target highlights must NOT be affected.
+  assert.ok(host.includes("'&:focus-visible': {"))
+  assert.ok(host.includes("outline: '2px solid'"))
+  assert.ok(host.includes("outlineColor: 'primary.main'"))
   assert.ok(pure.includes("selected ? 'action.selected' : 'transparent'"))
   assert.ok(pure.includes("'&:focus-visible': {"))
+  assert.equal(bridge.includes("[data-xdrive-file-explorer-scroll-host]:focus"),
+    false, 'public Share cannot diverge from the shared focus policy')
+})
+
+test('SH-P019 unrelated gallery, mobile row and task focus indicators stay intact', () => {
+  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const mobile = read('web/src/MobileFiles.tsx')
+  const task = read('ui/shared/src/mui/TaskPresentation.tsx')
+  assert.ok(gallery.includes("outline: selectedForAction ? '2px solid' : 'none'"))
+  assert.ok(gallery.includes("'&:focus-visible': {"))
+  assert.ok(mobile.includes("outline: dropFolderID === String(item.id) ? '2px solid' : 'none'"))
+  assert.ok(mobile.includes("'&:focus-visible': { outline: '2px solid'"))
+  assert.ok(task.includes("'&:focus-visible': {"))
 })
