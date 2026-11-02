@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import io
+import lzma
 import shutil
 import tarfile
 import json
@@ -226,16 +227,44 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp:
     # The published SPK is GUI-required. Match its nested package.tgz contract
     # rather than incorrectly using a CLI-only fixture for successful cases.
     nested = io.BytesIO()
-    with tarfile.open(fileobj=nested, mode='w:gz') as payload:
+    # DSM 7's pkg_make_package writes XZ (not GZIP) to package.tgz and
+    # literal root entries. Keep this GitLab offline fixture aligned with the
+    # source-exact ARMv7 SPK builder and the fail-closed release verifier.
+    with tarfile.open(fileobj=nested, mode='w:xz') as payload:
+        for dirname in ('bin/', 'ui/', 'ui/assets/'):
+            member = tarfile.TarInfo(dirname)
+            member.type = tarfile.DIRTYPE
+            member.mode = 0o755
+            payload.addfile(member)
         for item_name, body in (
-            ('./ui/config', b'fixture DSM app registration'),
-            ('./ui/backup.cgi', b'fixture authenticated CGI'),
-            ('./ui/synology.html', b'fixture shared MUI entry'),
-            ('./ui/assets/app.js', b'fixture compiled MUI JavaScript'),
+            ('bin/xd', b'fixture ARMv7 xd executable'),
+            ('bin/xdrive-agent', b'fixture ARMv7 agent executable'),
+            ('ui/config', b'fixture DSM app registration'),
+            ('ui/backup.cgi', b'fixture authenticated CGI'),
+            ('ui/synology.html', b'fixture shared MUI entry'),
+            ('ui/assets/app.js', b'fixture compiled MUI JavaScript'),
         ):
             member = tarfile.TarInfo(item_name)
             member.size = len(body)
+            member.mode = 0o755 if item_name in ('bin/xd', 'bin/xdrive-agent', 'ui/backup.cgi') else 0o644
             payload.addfile(member, io.BytesIO(body))
+    assert nested.getvalue().startswith(b'\xfd7zXZ\x00'), 'fixture must be XZ, not GZIP'
+    # Python tarfile normalizes directory member.name from "bin/" to "bin";
+    # compare normalized directory names and still verify literal TAR bytes.
+    with tarfile.open(fileobj=io.BytesIO(nested.getvalue()), mode='r:xz') as inner:
+        members = inner.getmembers()
+        assert {'bin', 'ui', 'ui/assets'} <= {
+            item.name for item in members if item.isdir()
+        }, 'fixture must include the required DSM toolkit directories'
+        assert {'bin/xd', 'bin/xdrive-agent', 'ui/config',
+                'ui/backup.cgi', 'ui/synology.html', 'ui/assets/app.js'} <= {
+            item.name for item in members if item.isfile()
+        }, 'fixture must include the required DSM toolkit files'
+    # Ensure the raw first TAR header actually uses the literal "bin/" root;
+    # tarfile's normalized directory names alone do not prove this.
+    assert lzma.decompress(nested.getvalue())[:100].split(bytes([0]), 1)[0] == b'bin/', (
+        'fixture must have a literal bin/ TAR root header'
+    )
     # The real DSM package publisher requires the canonical raw outer SPK
     # layout. A legacy "./INFO" fixture used to pass here and masked the
     # format regression that prevents DS218j Package Center installation.

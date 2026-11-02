@@ -3,9 +3,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/release" "$tmp/package" "$tmp/payload"
-# The publication fixture also uses literal root entries from its first build.
-tar -C "$tmp/payload" -czf "$tmp/package/package.tgz" .
+mkdir -p "$tmp/release" "$tmp/package" "$tmp/payload/bin"
+# Match DSM 7's actual toolkit inner archive: XZ with literal bin root.
+# Source-exact original ELF binaries are checked by separate SPK tests.
+printf 'fixture xd' > "$tmp/payload/bin/xd"
+printf 'fixture agent' > "$tmp/payload/bin/xdrive-agent"
+tar -C "$tmp/payload" -cJf "$tmp/package/package.tgz" bin
 cat > "$tmp/package/INFO" <<'INFO'
 package="xdrivenas"
 version="0.0.0-123"
@@ -31,7 +34,7 @@ printf 'DSM HTML entry' > "$tmp/payload/ui/synology.html"
 printf 'DSM config' > "$tmp/payload/ui/config"
 printf 'DSM CGI' > "$tmp/payload/ui/backup.cgi"
 printf 'DSM JavaScript' > "$tmp/payload/ui/assets/app.js"
-tar -C "$tmp/payload" -czf "$tmp/package/package.tgz" .
+tar -C "$tmp/payload" -cJf "$tmp/package/package.tgz" bin ui
 cat >> "$tmp/package/INFO" <<'INFO'
 dsmuidir="ui"
 dsmappname="com.xdrive.NASBackup"
@@ -40,6 +43,25 @@ tar --format=ustar -C "$tmp/package" -cf "$spk" INFO package.tgz
 (cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
 bash "$ROOT/scripts/ci/verify-synology-spk-release.sh" "$tmp/release" --require-mui
 bash "$ROOT/scripts/ci/verify-release-archive-allowlist.sh" "$tmp/release"
+
+# Negative: the old GZIP package.tgz is a valid archive for generic TAR
+# readers but NOT the DSM toolkit's XZ payload. A valid recalculated digest
+# must not let it pass the release publication gate.
+tar -C "$tmp/payload" -czf "$tmp/package/package.tgz" bin ui
+tar --format=ustar -C "$tmp/package" -cf "$spk" INFO package.tgz
+(cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
+if bash "$ROOT/scripts/ci/verify-synology-spk-release.sh" "$tmp/release" --require-mui >/dev/null 2>&1; then
+  echo "GZIP payload incorrectly admitted as DSM 7 toolkit SPK" >&2; exit 1
+fi
+
+# Negative: even XZ cannot hide a legacy "./" inner root.
+tar -C "$tmp/payload" -cJf "$tmp/package/package.tgz" .
+tar --format=ustar -C "$tmp/package" -cf "$spk" INFO package.tgz
+(cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
+if bash "$ROOT/scripts/ci/verify-synology-spk-release.sh" "$tmp/release" --require-mui >/dev/null 2>&1; then
+  echo "Dot-prefixed XZ inner payload incorrectly admitted" >&2; exit 1
+fi
+tar -C "$tmp/payload" -cJf "$tmp/package/package.tgz" bin ui
 
 # Both variants extract under GNU tar; an old ./INFO or late INFO must fail
 # even if its SHA256 is freshly recomputed and the UI payload is valid.

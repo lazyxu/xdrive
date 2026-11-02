@@ -118,15 +118,23 @@ fi
 (cd "$ROOT" && GO111MODULE=off go run scripts/synology-spk-icons.go \
   assets/icon/web/pwa-512.png "$pkg/PACKAGE_ICON.PNG" "$pkg/PACKAGE_ICON_256.PNG")
 
-# DSM's .spk is an outer tar archive containing the gzip-compressed payload.
+# DSM's .spk is an outer tar archive containing the XZ-compressed payload.
 # Package Center needs literal top-level INFO as the FIRST archive member.
 # Archiving "." emits "./" and "./INFO", which normal tar readers accept but
 # some DSM 7 installers reject as "invalid package file format".
 # Use explicitly ordered root entries in POSIX ustar with stable metadata.
 epoch="${SOURCE_DATE_EPOCH:-0}"
 [[ "$epoch" =~ ^[0-9]+$ ]] || { echo 'SOURCE_DATE_EPOCH must be numeric' >&2; exit 2; }
+# DSM 7's official pkg_make_package uses tar cJf (XZ) even though its
+# payload is named package.tgz. The prior GZIP payload passed ordinary TAR
+# tests but not necessarily the Package Center's format preflight.
+# Match the toolkit's literal root entries rather than archiving ".".
+payload_roots=(bin)
+if [[ -n "$UI_DIR" ]]; then
+  payload_roots+=(ui)
+fi
 tar --sort=name --mtime="@$epoch" --owner=0 --group=0 --numeric-owner \
-  -C "$payload" -cf - . | gzip -n > "$pkg/package.tgz"
+  -C "$payload" -cf - "${payload_roots[@]}" | xz --threads=1 -6 > "$pkg/package.tgz"
 spk="$OUTPUT_DIR/xdrivenas-armada38x-$SPK_VERSION.spk"
 tar --format=ustar --sort=name --mtime="@$epoch" --owner=0 --group=0 --numeric-owner \
   -C "$pkg" -cf "$spk" \
