@@ -7,9 +7,6 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,7 +17,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
@@ -29,6 +25,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import com.tfluid.xdrive.core.DriveNode
 import java.io.Closeable
 import java.io.File
@@ -326,16 +323,6 @@ internal fun NativeFilesPdfViewer(
             // even before its cancelled IO effect reaches its finally block.
             val shown = bitmap.takeIf { bitmapPage == pageIndex }
             val visibleError = error?.takeIf { lease == null || errorPage == pageIndex }
-            val gesture = rememberTransformableState { scale, drag, _ ->
-                val next = (zoom * scale).coerceIn(1f, 4f)
-                zoom = next
-                pan = if (next == 1f) Offset.Zero else {
-                    val dx = constraints.maxWidth * (next - 1f) / 2f
-                    val dy = constraints.maxHeight * (next - 1f) / 2f
-                    Offset((pan.x + drag.x).coerceIn(-dx, dx),
-                        (pan.y + drag.y).coerceIn(-dy, dy))
-                }
-            }
             val decodedDoc = lease
             if (shown != null && decodedDoc != null) {
                 Image(
@@ -346,12 +333,15 @@ internal fun NativeFilesPdfViewer(
                             scaleX = zoom; scaleY = zoom
                             translationX = pan.x; translationY = pan.y
                         }
-                        .transformable(gesture)
-                        .pointerInput(pageIndex) {
-                            detectTapGestures(onDoubleTap = {
-                                zoom = if (zoom > 1f) 1f else 2f
-                                pan = Offset.Zero
-                            })
+                        .nativePdfTouchGestures(
+                            pageIndex = pageIndex,
+                            zoom = zoom,
+                            pan = pan,
+                            viewport = IntSize(constraints.maxWidth,
+                                constraints.maxHeight),
+                        ) { nextZoom, nextPan ->
+                            zoom = nextZoom
+                            pan = nextPan
                         }
                         .nativePdfZoomAccessibility(
                             pageIndex = pageIndex,
