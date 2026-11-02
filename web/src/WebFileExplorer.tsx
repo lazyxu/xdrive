@@ -77,6 +77,7 @@ import type {
   NodeLocation,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
+import { xDrivePreflightWebPDFTicket } from './webPDFTicketPreflight'
 import { xDriveFileExplorerSelectionAdmissionReason } from '../../ui/shared/src/file-explorer-selection-admission'
 import { xDriveResolveFileExplorerCapabilities } from '../../ui/shared/src/file-explorer-capabilities'
 import type { XDriveFileExplorerDataAdapter } from '../../ui/shared/src/file-explorer-capabilities'
@@ -1163,7 +1164,9 @@ export default function WebFileExplorer({
       if (plan.mode === 'analysis-image') {
         return await api.mediaAnalysisPreviewURL(plan.nodeID, signal, Number(item.revision), onProgress)
       }
-      return await api.filePreviewURL(plan.nodeID, signal)
+      const url = await api.filePreviewURL(plan.nodeID, signal)
+      if (kind === 'pdf') await xDrivePreflightWebPDFTicket(url, signal)
+      return url
     } catch {
       return null
     }
