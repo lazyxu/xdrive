@@ -848,10 +848,11 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                     nativeLiveReady = ready
                                     if !ready { nativeLiveUnavailable = true }
                                 }
+                                .xdriveCloudLivePhotoPaging { showNeighbor($0) }
                                 .id(resources.folderURL)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .accessibilityLabel("云端实况照片，长按播放")
+                            .accessibilityLabel("云端实况照片，长按播放或左右滑动切换")
                         } else {
                             XDriveIOSNativeZoomablePhotoView(image: still)
                                 .onNavigateSwipe { showNeighbor($0) }
