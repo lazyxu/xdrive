@@ -219,10 +219,16 @@ func (s *Server) createFileShare(c *gin.Context) {
 	// Save a recoverable link under the existing deployment keyring when available.
 	// The row creation and encrypted envelope update are atomic.
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&share).Error; err != nil { return err }
-		if s.ConnectorSecrets == nil { return nil }
+		if err := tx.Create(&share).Error; err != nil {
+			return err
+		}
+		if s.ConnectorSecrets == nil {
+			return nil
+		}
 		version, ciphertext, err := s.ConnectorSecrets.SealShareToken(share.ID, []byte(rawToken))
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		return tx.Model(&share).Updates(map[string]any{
 			"link_token_ciphertext": ciphertext, "link_token_key_version": version,
 		}).Error
