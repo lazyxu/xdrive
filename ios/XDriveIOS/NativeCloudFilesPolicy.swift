@@ -79,8 +79,9 @@ struct XDriveIOSNativeFilesSearchRange: Decodable {
     let order: String
 }
 
-/// Validate an actual Owner Range before it can replace the currently visible
-/// page. Holding just one 64-item page is deliberate even for 100k/115k nodes.
+/// Validate each 64-entry Server Range independently. The iOS presentation
+/// may combine adjacent, freshly verified ranges for continuous scrolling;
+/// only Server-provided Nodes and paths can enter that window.
 enum XDriveIOSNativeFilesPagePolicy {
     static let pageSize = 64
     static let maximumCount = 10_000_000
@@ -153,5 +154,46 @@ enum XDriveIOSNativeFilesPagePolicy {
                 $0.node.parent_id != nil && !$0.path.isEmpty &&
                     $0.path.utf8.count <= 4096
             }
+    }
+}
+
+
+/// A continuous Files window is assembled from individually verified canonical
+/// 64-item ranges. Neither a changed result count nor overlapping Node IDs may
+/// silently extend an old window (offset pagination is not a snapshot cursor).
+enum XDriveIOSNativeFilesContinuousPolicy {
+    enum Direction {
+        case before, after
+    }
+
+    static func validJoin(
+        loadedIDs: Set<UInt64>, loadedCount: Int, startOffset: Int, total: Int,
+        pageIDs: [UInt64], pageOffset: Int, pageTotal: Int,
+        direction: Direction
+    ) -> Bool {
+        guard loadedCount > 0, loadedIDs.count == loadedCount,
+              XDriveIOSNativeFilesPagePolicy.validOffset(startOffset),
+              total >= loadedCount && total <= XDriveIOSNativeFilesPagePolicy.maximumCount,
+              startOffset <= total - loadedCount,
+              XDriveIOSNativeFilesPagePolicy.validOffset(pageOffset),
+              !pageIDs.isEmpty,
+              pageIDs.count <= XDriveIOSNativeFilesPagePolicy.pageSize,
+              Set(pageIDs).count == pageIDs.count,
+              Set(pageIDs).isDisjoint(with: loadedIDs),
+              pageTotal == total else { return false }
+
+        switch direction {
+        case .after:
+            // Reject a short nonterminal page: its count would not yield the
+            // next legal Server offset and could skip undisplayed items.
+            return pageOffset == startOffset + loadedCount &&
+                pageOffset < total &&
+                (pageIDs.count == XDriveIOSNativeFilesPagePolicy.pageSize ||
+                 pageOffset + pageIDs.count == total)
+        case .before:
+            return startOffset > 0 &&
+                pageOffset + XDriveIOSNativeFilesPagePolicy.pageSize == startOffset &&
+                pageIDs.count == XDriveIOSNativeFilesPagePolicy.pageSize
+        }
     }
 }
