@@ -781,17 +781,19 @@ test('P1 Live Photo browsing separates tap, swipe and stationary hold without ea
   const originalSet = global.setTimeout
   const originalClear = global.clearTimeout
   const scheduled = new Map()
+  const settleScheduled = new Map()
   let nextTimer = 1000000
   global.setTimeout = (callback, delay, ...args) => {
-    if (delay === 260) {
+    if (delay === 260 || delay === 150) {
       const id = nextTimer++
-      scheduled.set(id, () => callback(...args))
+      const target = delay === 260 ? scheduled : settleScheduled
+      target.set(id, () => callback(...args))
       return id
     }
     return originalSet(callback, delay, ...args)
   }
   global.clearTimeout = (id) => {
-    if (!scheduled.delete(id)) originalClear(id)
+    if (!scheduled.delete(id) && !settleScheduled.delete(id)) originalClear(id)
   }
   let loads = 0, next = 0, previous = 0
   const load = async () => { loads++; return 'https://example.invalid/one-live.mov' }
@@ -803,7 +805,15 @@ test('P1 Live Photo browsing separates tap, swipe and stationary hold without ea
   let tree
   const start = async (x, y) => act(async () => { surface(tree).props.onPointerDown(pt(x, y)); await flush() })
   const move = async (x, y) => act(async () => { surface(tree).props.onPointerMove(pt(x, y)); await flush() })
-  const finish = async (x, y) => act(async () => { surface(tree).props.onPointerUp(pt(x, y)); await flush() })
+  const finish = async (x, y) => act(async () => {
+    surface(tree).props.onPointerUp(pt(x, y))
+    await flush()
+    // The production Viewer settles the old still for 150ms before changing
+    // the authorized neighbor. Drive that timer deterministically in this test.
+    const callbacks = [...settleScheduled.values()]
+    settleScheduled.clear()
+    for (const callback of callbacks) { callback(); await flush() }
+  })
   try {
     await act(async () => { tree = mount(player, load, 'gesture:1', opts); await flush() })
     await start(300, 150)
