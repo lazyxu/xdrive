@@ -537,6 +537,25 @@ export type XDriveViewerQualityPreferenceResponse = {
 export type XDriveAdminViewerQualityResponse = {
   revision: number
   maximum_preset: XDriveViewerQualityPreset
+  cache_budget_bytes: number
+}
+
+export type XDriveViewerCacheStatus = {
+  budget_bytes: number
+  observed_bytes: number
+  candidate_bytes: number
+  candidate_files: number
+  over_budget: boolean
+}
+
+export type XDriveViewerCacheEvictionResult = {
+  dry_run: boolean
+  result?: {
+    DeletedFiles: number
+    DeletedBytes: number
+    RemainingBytes: number
+    OverBudget: boolean
+  }
 }
 
 export class XDriveApi {
@@ -881,11 +900,26 @@ export class XDriveApi {
 
   async saveAdminViewerQuality(
     revision: number, maximumPreset: XDriveViewerQualityPreset,
-    signal?: AbortSignal,
+    cacheBudgetBytes?: number, signal?: AbortSignal,
   ): Promise<XDriveAdminViewerQualityResponse> {
     return this.request('/api/v1/admin/services/viewer-quality', {
       method: 'PUT', cache: 'no-store',
-      body: JSON.stringify({ revision, maximum_preset: maximumPreset }), signal,
+      body: JSON.stringify({
+        revision, maximum_preset: maximumPreset,
+        ...(cacheBudgetBytes !== undefined ? { cache_budget_bytes: cacheBudgetBytes } : {}),
+      }), signal,
+    })
+  }
+
+  async adminViewerCacheStatus(signal?: AbortSignal): Promise<XDriveViewerCacheStatus> {
+    return this.request('/api/v1/admin/storage/cache/viewer', { cache: 'no-store', signal })
+  }
+
+  async adminViewerCacheEvict(
+    dryRun: boolean, signal?: AbortSignal,
+  ): Promise<XDriveViewerCacheEvictionResult> {
+    return this.request('/api/v1/admin/storage/cache/viewer/evict', {
+      method: 'POST', cache: 'no-store', body: JSON.stringify({ dry_run: dryRun }), signal,
     })
   }
 
