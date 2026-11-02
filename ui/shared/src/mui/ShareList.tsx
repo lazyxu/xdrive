@@ -77,7 +77,7 @@ export function XDriveShareList({
               </Typography>
             </Box>
             <Stack direction="row" spacing={1}>
-              {onCopy && share.status === 'active' ? (
+              {onCopy && share.status !== 'revoked' ? (
                 <XDriveActionButton compact disabled={copyBusy} onClick={() => void onCopy(share)}>复制链接</XDriveActionButton>
               ) : null}
               {onEdit && share.status !== 'revoked' ? (
@@ -120,7 +120,7 @@ export function XDriveShareList({
               <TableCell>{expiryLabel(share, false)}</TableCell>
               <TableCell>{accessLabel(share)}</TableCell>
               <TableCell align="right">
-                {onCopy && share.status === 'active' ? (
+                {onCopy && share.status !== 'revoked' ? (
                   <XDriveActionButton compact startIcon={<ContentCopyRoundedIcon />}
                     disabled={copyBusy} onClick={() => void onCopy(share)}>复制链接</XDriveActionButton>
                 ) : null}

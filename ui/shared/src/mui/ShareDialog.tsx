@@ -222,15 +222,24 @@ export function XDriveShareDialog({
   }
 
   const copyExisting = async (share: FileShare) => {
-    if (!adapter.getShareLink || share.status !== 'active') return
+    if (!adapter.getShareLink || share.status === 'revoked') return
     const generation = nodeLifecycleGenerationRef.current
     setCopyingID(share.id)
     try {
       const { url } = await adapter.getShareLink(share.id)
       if (generation !== nodeLifecycleGenerationRef.current) return
-      await navigator.clipboard.writeText(url)
-      if (generation === nodeLifecycleGenerationRef.current) {
-        setFeedback({ tone: 'good', message: '分享链接已复制；原分享权限和有效期不变' })
+      try {
+        await navigator.clipboard.writeText(url)
+        if (generation === nodeLifecycleGenerationRef.current) {
+          setFeedback({ tone: 'good', message: '分享链接已复制；原分享权限和有效期不变' })
+        }
+      } catch {
+        // Clipboard activation can expire during an authenticated network read.
+        // Render the actual link only after this explicit Owner copy action.
+        if (generation === nodeLifecycleGenerationRef.current) {
+          setCreatedLink(url)
+          setFeedback({ tone: 'bad', message: '剪贴板不可用，已在上方显示链接，请手动复制。' })
+        }
       }
     } catch (error) {
       if (generation === nodeLifecycleGenerationRef.current) onError(error)

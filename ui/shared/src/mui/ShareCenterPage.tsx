@@ -75,7 +75,7 @@ export function XDriveShareCenterPage({ port }: { port: XDriveShareCenterPort })
   }
 
   const copy = async (share: OwnerFileShare) => {
-    if (busy || share.status !== 'active' || share.node_missing) return
+    if (busy || share.status === 'revoked' || share.node_missing) return
     setBusy(true)
     setError('')
     const current = generation.current
@@ -104,8 +104,8 @@ export function XDriveShareCenterPage({ port }: { port: XDriveShareCenterPort })
   const save = async () => {
     if (!editing || busy) return
     const date = expiry ? new Date(expiry) : null
-    if (date && !Number.isFinite(date.getTime())) {
-      setError('过期时间无效。')
+    if (date && (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now())) {
+      setError('请输入未来的过期时间，或留空表示永久有效。')
       return
     }
     setBusy(true)
@@ -163,7 +163,7 @@ export function XDriveShareCenterPage({ port }: { port: XDriveShareCenterPort })
               <TableCell>{share.expires_at ? new Date(share.expires_at).toLocaleString() : '永不过期'}</TableCell>
               <TableCell>{new Date(share.created_at).toLocaleString()}</TableCell>
               <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                <Button size="small" disabled={busy || share.status !== 'active' || share.node_missing} onClick={() => void copy(share)}>复制链接</Button>
+                <Button size="small" disabled={busy || share.status === 'revoked' || share.node_missing} onClick={() => void copy(share)}>复制链接</Button>
                 <Button size="small" disabled={busy || share.status === 'revoked' || share.node_missing} onClick={() => edit(share)}>编辑</Button>
                 <Button size="small" color="error" disabled={busy || share.status === 'revoked'} onClick={() => setRevoking(share)}>撤销</Button>
               </TableCell>
