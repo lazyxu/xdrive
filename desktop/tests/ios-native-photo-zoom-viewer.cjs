@@ -43,9 +43,10 @@ test('zoom remains read only and preserves media ownership lifecycle', () => {
 })
 
 test('all native still viewers offer horizontal paging through their existing authorized neighbor gate', () => {
-  assert.match(zoom, /@objc func panEnded\(_ recognizer: UIPanGestureRecognizer\)/)
-  assert.match(zoom, /scroll\.panGestureRecognizer\.addTarget\(/)
-  assert.match(zoom, /scroll\.alwaysBounceHorizontal = true/)
+  assert.match(zoom, /@objc func pagePan\(_ recognizer: UIPanGestureRecognizer\)/)
+  assert.match(zoom, /pagingPan\.maximumNumberOfTouches = 1/)
+  assert.match(zoom, /scroll\.panGestureRecognizer\.require\(toFail: pagingPan\)/)
+  assert.match(zoom, /scroll\.alwaysBounceHorizontal = false/)
   assert.match(zoom, /XDriveIOSNativeViewerSwipePolicy\.direction\(/)
   assert.match(zoom, /context\.coordinator\.onSwipe = onSwipe/)
   assert.match(zoom, /func onNavigateSwipe\(_ handler: @escaping \(Int\) -> Void\) -> Self/)
