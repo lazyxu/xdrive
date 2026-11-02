@@ -17,3 +17,23 @@ export function xDriveKeepMediaPlaceHierarchyQuery(
     place_hierarchy: current.place_hierarchy,
   }
 }
+
+/**
+ * Hierarchy facets use the current Gallery membership filters but never pass a
+ * previous map/nearby/selected-place scope into another hierarchy request.
+ * Delete omitted keys instead of setting them to undefined: Electron's IPC
+ * allowlist validates own keys before JSON transport and must receive the same
+ * compact query that the browser would actually send.
+ */
+export function xDrivePlacesHierarchyRequestFilters(
+  query?: MediaGalleryQuery,
+): MediaGalleryQuery {
+  const filters: MediaGalleryQuery = { ...query, has_location: true }
+  delete filters.place
+  delete filters.place_hierarchy
+  delete filters.nearby
+  delete filters.bbox
+  delete filters.anchor_node_id
+  delete filters.initial_position
+  return filters
+}

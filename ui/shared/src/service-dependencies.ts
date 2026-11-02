@@ -86,6 +86,26 @@ export function xDrivePhotoOCRVerified(service: XDriveServiceDependency): boolea
 }
 
 // Administrator-only Caddy HTTPS intent, never evidence of installed host configuration.
+export type XDriveCaddyCertificate = {
+  state: "disabled" | "unverified" | "verified-local"
+  dns_names?: string[]
+  ip_addresses?: string[]
+  not_before?: string
+  not_after?: string
+  issuer?: string
+  leaf_sha256?: string
+  chain_root_sha256?: string
+  chain_root_not_after?: string
+  leaf_pem?: string
+  verified_at?: string
+}
+export type XDriveCaddyCertificates = {
+  scope: "caddy-container-local-v1"
+  domain: XDriveCaddyCertificate
+  lan: XDriveCaddyCertificate
+  root_ca?: { sha256: string; not_after: string; pem: string }
+}
+
 export type XDriveCaddyHTTPSConfig = {
   desired_enabled: boolean
   desired_domain: string
@@ -110,6 +130,8 @@ export type XDriveCaddyHTTPSConfig = {
   host_https_configured: boolean
   host_tls_state: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
   host_lan_tls_state?: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
+  // Read-only certificates presented by the fixed Caddy container, not WAN or device trust.
+  certificates?: XDriveCaddyCertificates
 }
 export type XDriveCaddyHTTPSUpdate = {
   revision: number

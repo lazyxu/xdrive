@@ -200,6 +200,11 @@ internal fun UnifiedLoginForm(
             keyboardType = KeyboardType.Uri, placeholder = "192.168.2.4")
         Text("自动优先连接内网，网络不可达时通过服务器域名连接公网；始终验证 HTTPS 身份。",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (lanIp.isNotBlank()) {
+            Text("使用“公网 HTTPS 域名 + 可选内网 IP”时，Android 只将 TCP 连接定向到内网，TLS 仍严格验证公网域名证书，不必额外安装私有 CA。如直接以 HTTPS IP 访问，则需验证 IP SAN 与根 CA，不能忽略证书错误。",
+                modifier = Modifier.testTag("auth-lan-certificate-help"),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         AuthField("用户名", username, {
             username = it; password = ""; rememberPassword = false
         }, "username", !state.loading)

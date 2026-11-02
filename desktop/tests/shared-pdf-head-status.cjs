@@ -192,12 +192,30 @@ function dsmPDF(id = 42, total = (32 << 20) + 1) {
   return url.href
 }
 
+// DSM's canonical HEAD must carry a strong identity and Range proof.
+// Signed Web tickets remain on the separate credential-free response helper.
+const dsmResponse = (status, type = 'application/pdf', overrides = {}) => ({
+  status,
+  headers: {
+    get: name => {
+      const key = name.toLowerCase()
+      const values = {
+        'content-type': type,
+        'accept-ranges': 'bytes',
+        'content-length': String((32 << 20) + 1),
+        etag: '"' + 'a'.repeat(64) + '"',
+      }
+      return Object.hasOwn(overrides, key) ? overrides[key] : (values[key] ?? null)
+    },
+  },
+})
+
 test('DSM PDF Owner Range HEAD 403 never mounts an HTML iframe; retry rechecks current Owner', async () => {
   const saved = global.fetch, calls = []
   let renderer
   global.fetch = async (url, options) => {
     calls.push({ url, options })
-    return response(calls.length === 1 ? 403 : 200)
+    return dsmResponse(calls.length === 1 ? 403 : 200)
   }
   try {
     await act(async () => {
@@ -226,7 +244,7 @@ test('DSM PDF Owner Range HEAD 403 never mounts an HTML iframe; retry rechecks c
 test('DSM Owner PDF valid status with HTML MIME fails without embedding an error page', async () => {
   const saved = global.fetch
   let renderer
-  global.fetch = async () => response(200, 'text/html; charset=utf-8')
+  global.fetch = async () => dsmResponse(200, 'text/html; charset=utf-8')
   try {
     await act(async () => {
       renderer = create(React.createElement(XDriveFilePreviewSurface, {
@@ -246,7 +264,7 @@ test('DSM PDF HEAD is abortable on Viewer source change and uses new Owner URL o
   let renderer
   global.fetch = async (url, options) => {
     calls.push({ url, options })
-    return calls.length === 1 ? pending.promise : response(200)
+    return calls.length === 1 ? pending.promise : dsmResponse(200)
   }
   const props = (id) => ({
     target: node(id), loadPreviewURL: async () => dsmPDF(id),
@@ -259,7 +277,7 @@ test('DSM PDF HEAD is abortable on Viewer source change and uses new Owner URL o
     await act(async () => renderer.update(React.createElement(XDriveFilePreviewSurface, props(45))))
     assert.equal(calls[0].options.signal.aborted, true)
     assert.equal(renderer.root.findByType('iframe').props.src, dsmPDF(45))
-    await act(async () => { pending.resolve(response(200)); await Promise.resolve() })
+    await act(async () => { pending.resolve(dsmResponse(200)); await Promise.resolve() })
     assert.equal(renderer.root.findByType('iframe').props.src, dsmPDF(45))
   } finally {
     if (renderer) await act(async () => renderer.unmount())
@@ -306,6 +324,42 @@ test('malformed same-origin DSM CGI PDF selector fails closed before iframe or H
       renderer = null
     }
     assert.deepEqual(calls, [])
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    global.fetch = saved
+  }
+})
+
+
+test('DSM Owner PDF refuses stale or incomplete HEAD metadata without mounting an iframe', async () => {
+  const saved = global.fetch
+  const invalid = [
+    { status: 206 },
+    { headers: { 'accept-ranges': 'none' } },
+    { headers: { 'accept-ranges': null } },
+    { headers: { 'content-length': '10' } },
+    { headers: { etag: '"stale-owner"' } },
+    { headers: { etag: null } },
+  ]
+  let renderer
+  try {
+    for (const sample of invalid) {
+      global.fetch = async (_url, options) => {
+        assert.equal(options.method, 'HEAD')
+        assert.equal(options.mode, 'same-origin')
+        assert.equal(options.credentials, 'same-origin')
+        return dsmResponse(sample.status ?? 200, 'application/pdf', sample.headers ?? {})
+      }
+      await act(async () => {
+        renderer = create(React.createElement(XDriveFilePreviewSurface, {
+          target: node(49), loadPreviewURL: async () => dsmPDF(49),
+        }))
+      })
+      assert.equal(renderer.root.findAllByType('iframe').length, 0)
+      assert.equal(findRetry(renderer).length, 1)
+      await act(async () => renderer.unmount())
+      renderer = null
+    }
   } finally {
     if (renderer) await act(async () => renderer.unmount())
     global.fetch = saved

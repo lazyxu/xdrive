@@ -117,6 +117,7 @@ internal suspend fun scanNativeLocalFullDateIndex(
     resolver: ContentResolver,
     albumId: String?,
     signal: CancellationSignal,
+    mediaKind: String = "",
     onProgress: suspend (Int) -> Unit = {},
 ): NativeLocalFullDateIndex {
     val builder = NativeLocalFullDateIndexBuilder()
@@ -130,7 +131,7 @@ internal suspend fun scanNativeLocalFullDateIndex(
             NativeLocalMediaStore.MAX_SCAN - builder.scanned)
         val page = NativeLocalMediaStore.pageAfter(
             resolver, after = after, limit = amount, albumId = albumId,
-            cancellationSignal = signal,
+            cancellationSignal = signal, mediaKind = mediaKind,
         )
         if (page.isEmpty()) { complete = true; break }
         if (!builder.append(page.map { it.pageKey })) {

@@ -14,11 +14,13 @@ import type { XDriveViewerPhotoMapSelection } from '../media-gallery-viewer-phot
  * No grant, revoke, expiry, enqueue or confirmation UI is rendered.
  */
 export function XDriveMediaGalleryViewerLocationDialog({
-  open, item, onOpenDynamicMap, onClose,
+  open, item, onOpenDynamicMap, opensFullLibrary = false, onClose,
 }: {
   open: boolean
   item: MediaItem | null
   onOpenDynamicMap?: (selection: XDriveViewerPhotoMapSelection) => void
+  /** Explicitly disclosed cross-collection jump, never silent scope widening. */
+  opensFullLibrary?: boolean
   /** @deprecated No per-photo map consent. */
   getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
   /** @deprecated No per-photo map consent. */
@@ -54,6 +56,13 @@ export function XDriveMediaGalleryViewerLocationDialog({
               这张照片具有有效 GPS，已自动具备照片地图索引资格，无需单独授权。
               如尚未完成 BD-09 位置派生，地图将在位置索引完成后显示该照片。
             </Typography>
+            {opensFullLibrary && onOpenDynamicMap ? (
+              <Typography variant="body2" color="text.secondary"
+                data-xdrive-full-library-map-notice>
+                此照片来自文件或直接查看入口。继续将打开当前账号的完整图库地图，
+                其中可能显示其他带位置的照片，不会保留原文件夹或搜索结果的筛选。
+              </Typography>
+            ) : null}
             <Button variant="outlined" disabled={!onOpenDynamicMap || !selection}
               sx={{minHeight:44}}
               onClick={() => {
@@ -61,7 +70,7 @@ export function XDriveMediaGalleryViewerLocationDialog({
                 onClose()
                 onOpenDynamicMap(selection)
               }}>
-              打开照片地图
+              {opensFullLibrary ? '在完整图库地图中定位' : '打开照片地图'}
             </Button>
             {!onOpenDynamicMap || !selection ? (
               <Typography variant="caption" color="text.secondary" role="status">

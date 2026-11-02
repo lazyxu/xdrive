@@ -48,6 +48,7 @@ class DriveAppTest {
     private var moveCalls = 0
     private var extraRootFile = false
     private var textPreviewFixture = false
+    private var textPreviewText = "hello xDrive"
     private var textPreviewReads = 0
     private var locateLargeFolder = false
     private var locateRangeReads = 0
@@ -545,7 +546,7 @@ class DriveAppTest {
         ): FileTextPreview {
             check(textPreviewFixture && node.id == 3L && node.revision == 2L)
             textPreviewReads++
-            return FileTextPreview("hello xDrive", false, node.size)
+            return FileTextPreview(textPreviewText, false, node.size)
         }
         override suspend fun childrenArranged(
             accessToken: String, parentId: Long, offset: Int,
@@ -685,6 +686,10 @@ class DriveAppTest {
         startAndLogin(galleryFirstOnLogin = true)
         compose.onNodeWithTag("native-five-slot-bar").assertIsDisplayed()
         compose.onNodeWithTag("native-tab-gallery").assertExists()
+        // Real first login chooses local Photos, not the Owner cloud wall;
+        // the user can still switch cloud explicitly via the Gallery chip.
+        compose.onNodeWithTag("native-gallery-source-local").assertIsSelected()
+        compose.onNodeWithTag("native-gallery-source-cloud").assertIsNotSelected()
         compose.runOnIdle {
             org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
             org.junit.Assert.assertTrue(controller.state.value.path.isNotEmpty())
@@ -2303,6 +2308,28 @@ class DriveAppTest {
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithText("退出登录").performClick()
         compose.runOnIdle { org.junit.Assert.assertNull(controller.state.value.fileTextPreview) }
+    }
+
+    @Test fun nativeFilesDetailsPreviewUsesUnicodeSafeTextChunks() {
+        // The same exact Owner text is shown both in the full-screen reader
+        // and in Files properties. Neither surface may render half an emoji.
+        textPreviewFixture = true
+        textPreviewText = "x".repeat(4095) + "😀tail"
+        startAndLogin()
+        compose.onNodeWithText("假期照片").performClick()
+        compose.onNodeWithTag("files-item-3").performTouchInput { longClick() }
+        compose.onNodeWithText("属性").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.fileTextPreview?.text == textPreviewText &&
+                !controller.state.value.fileTextPreviewLoading
+        }
+        compose.onNodeWithTag("files-text-preview-content").assertExists()
+            .performScrollToNode(hasText("😀tail"))
+        compose.onNodeWithText("😀tail").assertExists()
+        compose.onNodeWithText("关闭").performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertNull(controller.state.value.fileTextPreview)
+        }
     }
 
     @Test fun loginBrowseDetailsBackAndLogout() {
