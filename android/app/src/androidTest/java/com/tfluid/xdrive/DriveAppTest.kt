@@ -686,6 +686,10 @@ class DriveAppTest {
         startAndLogin(galleryFirstOnLogin = true)
         compose.onNodeWithTag("native-five-slot-bar").assertIsDisplayed()
         compose.onNodeWithTag("native-tab-gallery").assertExists()
+        // Real first login chooses local Photos, not the Owner cloud wall;
+        // the user can still switch cloud explicitly via the Gallery chip.
+        compose.onNodeWithTag("native-gallery-source-local").assertIsSelected()
+        compose.onNodeWithTag("native-gallery-source-cloud").assertIsNotSelected()
         compose.runOnIdle {
             org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
             org.junit.Assert.assertTrue(controller.state.value.path.isNotEmpty())

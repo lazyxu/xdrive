@@ -519,7 +519,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             galleryFirstPending = false
             controller.openGallery()
             if (controller.state.value.screen == Screen.GALLERY) {
-                nativeNavigation = nativeNavigation.select(NativeHomeTab.GALLERY)
+                // A new verified Owner lands in the native local photo wall,
+                // like Photos-first iOS. The separate cloud source remains
+                // available through its explicit Gallery chip.
+                nativeNavigation = nativeNavigation.copy(
+                    selected = NativeHomeTab.GALLERY,
+                    gallerySource = NativeGallerySource.LOCAL,
+                )
             }
         }
     }
