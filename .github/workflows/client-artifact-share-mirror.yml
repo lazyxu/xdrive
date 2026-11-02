@@ -1,0 +1,87 @@
+name: Mirror Client Installers To xDrive Share
+
+# Pull requests only verify implementation; they NEVER see the Share secret.
+# Upload one bounded, latest-successful set daily instead of uploading every
+# master commit, which can create hundreds of CI runs per day.
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/client-artifact-share-mirror.yml'
+      - 'scripts/ci/mirror-clients-to-share.py'
+      - 'scripts/ci/test-mirror-clients-to-share.py'
+      - 'scripts/ci/collect-client-share-mirror.sh'
+      - 'docs/client-artifact-share-mirror.md'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List/verify available client installers without uploading'
+        type: boolean
+        required: true
+        default: true
+  schedule:
+    - cron: '37 4 * * *' # Daily, UTC; master-only and opt-in by repository variable
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: xdrive-client-share-mirror
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify immutable Share uploader contract offline, without secrets
+        run: |
+          python3 -m py_compile scripts/ci/mirror-clients-to-share.py
+          python3 scripts/ci/test-mirror-clients-to-share.py -v
+          bash -n scripts/ci/collect-client-share-mirror.sh
+
+  mirror:
+    if: >-
+      github.ref == 'refs/heads/master' &&
+      (github.event_name == 'workflow_dispatch' || vars.XDRIVE_CLIENT_MIRROR_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify uploader contract before any network operation
+        run: |
+          python3 scripts/ci/test-mirror-clients-to-share.py -q
+          bash -n scripts/ci/collect-client-share-mirror.sh
+      - name: Select and verify latest successful installers (five platforms)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/collect-client-share-mirror.sh "$RUNNER_TEMP/xdrive-client-mirror"
+      - name: Summarize exact bytes, before optional upload
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          m = json.loads((Path(os.environ['RUNNER_TEMP'])/'xdrive-client-mirror/meta/manifest.json').read_text())
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('## xDrive Client Mirror — verified candidates\n\n')
+              output.write('| Platform | Source commit | File | MiB |\n|---|---|---|---:|\n')
+              for i in m['items']:
+                  output.write(f"| {i['platform']} | `{i['commit'][:12]}` | `{i['name']}` | {i['size']/1048576:.1f} |\n")
+              output.write('\nNo server images, source agents or backup tools are mirrored.\n')
+          PY
+      - name: Upload immutable versioned clients into Share (opt-in)
+        if: github.event_name == 'schedule' || inputs.dry_run == false
+        env:
+          # Keep complete share capability (including #/s/token) in Secret,
+          # NEVER in workflow YAML, logs, artifact names or source code.
+          XDRIVE_CLIENT_MIRROR_SHARE_URL: ${{ secrets.XDRIVE_CLIENT_MIRROR_SHARE_URL }}
+          XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD: ${{ secrets.XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD }}
+        run: >-
+          python3 scripts/ci/mirror-clients-to-share.py publish
+          --manifest "$RUNNER_TEMP/xdrive-client-mirror/meta/manifest.json"
