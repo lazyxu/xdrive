@@ -1255,7 +1255,7 @@ function WebMediaViewerApp({
       if (focus.kind === 'stale') return
       if (focus.kind !== 'ready')
         throw new Error(focus.kind === 'unavailable'
-          ? '当前照片位置尚未完成 BD-09 索引，暂不能精确定位。'
+          ? '当前照片暂无法精确定位：BD-09 索引可能尚未完成，或地图服务暂不可用。请稍后重试。'
           : '当前照片位置或图库范围无效，请返回图库重新进入。')
       const mode = xDrivePlacesMapModeFromHref(window.location.href)
       // The existing Server handoff is one-use, bound to the current signed

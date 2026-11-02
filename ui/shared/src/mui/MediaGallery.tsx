@@ -4193,7 +4193,7 @@ export function XDriveMediaGalleryPage({
       if (!live()) return false
       if (focus.kind !== 'ready')
         return reject(focus.kind === 'unavailable'
-          ? '当前照片的 BD-09 位置尚未完成索引，请稍后重试。'
+          ? '当前照片暂无法精确定位：BD-09 索引可能尚未完成，或地图服务暂不可用。请稍后重试。'
           : '当前照片位置无效或已经变化，未进入地图。')
       // This original admission still checks the current Owner Range.
       // No new map route or SDK is created, nor does a Cell subset widen.
