@@ -295,6 +295,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-photoasset-viewer-neighbors"
           node --test desktop/tests/ios-native-photoasset-viewer-neighbors.cjs desktop/tests/ios-native-photoasset-live.cjs
 
+      - name: Verify native cloud PhotoAsset cross-range Viewer and numeric cursor
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoAssetRangeCursorPolicy.swift \
+            ios/tests/NativePhotoAssetRangeCursorChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photoasset-range-cursor"
+          "$RUNNER_TEMP/xdrive-ios-photoasset-range-cursor"
+          node --test desktop/tests/ios-native-photoasset-viewer-adjacent-range.cjs
+
       - name: Verify native PhotoKit Viewer tile scroll return
         run: |
           set -euo pipefail
