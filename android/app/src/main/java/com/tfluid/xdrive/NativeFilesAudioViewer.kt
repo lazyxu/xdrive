@@ -28,7 +28,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import java.util.concurrent.atomic.AtomicBoolean
 
 /** Only foreground Activity states may start an Owner audio stream.
  * A source resolved after ON_STOP must never begin playback in background. */
@@ -41,30 +40,6 @@ internal fun filesAudioMayAutoPlay(lifecycleState: Lifecycle.State): Boolean =
 internal fun filesAudioShouldReleaseFailedLease(
     sourcePresent: Boolean, playerReady: Boolean, terminalFailure: Boolean,
 ): Boolean = sourcePresent && (!playerReady || terminalFailure)
-
-/** The exact decoder is released as soon as a terminal Media3 failure occurs,
- * not only after a user dismisses or retries the Viewer. Error cleanup and
- * Compose disposal can overlap; one generation owns one terminal release.
- * The separate OwnerVideoPlayback lease remains owned by the Controller. */
-internal class FilesAudioPlayerReleaseOnce(
-    private val stop: () -> Unit,
-    private val release: () -> Unit,
-) {
-    private val released = AtomicBoolean(false)
-
-    val isReleased: Boolean get() = released.get()
-
-    fun retireFailed() {
-        if (!released.compareAndSet(false, true)) return
-        // Some OEM codecs throw on stop. Release must still be attempted.
-        runCatching { stop() }
-        runCatching { release() }
-    }
-
-    fun dispose() {
-        if (released.compareAndSet(false, true)) runCatching { release() }
-    }
-}
 
 /** Files-only read-only audio. Media3 reuses the same pinned Owner Range/ETag
  * transport as the Gallery video Viewer. No downloaded audio file or token is
@@ -107,7 +82,7 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
     // (decoder/device resource unavailable). Never show inert play controls.
     val playerSetupFailed = activeSource != null && player == null
     val playerCleanup = remember(player) {
-        FilesAudioPlayerReleaseOnce(
+        NativeMedia3PlayerReleaseOnce(
             stop = { player?.stop(); Unit },
             release = { player?.release(); Unit },
         )

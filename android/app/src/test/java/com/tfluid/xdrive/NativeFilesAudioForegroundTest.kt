@@ -49,7 +49,7 @@ class NativeFilesAudioForegroundTest {
     @Test fun terminalDecoderErrorStopsAndReleasesExactlyOnceBeforeLeavingViewer() {
         var stops = 0
         var releases = 0
-        val cleanup = FilesAudioPlayerReleaseOnce(
+        val cleanup = NativeMedia3PlayerReleaseOnce(
             stop = { stops++ },
             release = { releases++ },
         )
@@ -68,7 +68,7 @@ class NativeFilesAudioForegroundTest {
     @Test fun healthyAudioExitsWithoutUnnecessaryStopAndReleasesOnce() {
         var stops = 0
         var releases = 0
-        val cleanup = FilesAudioPlayerReleaseOnce(
+        val cleanup = NativeMedia3PlayerReleaseOnce(
             stop = { stops++ },
             release = { releases++ },
         )
@@ -81,7 +81,7 @@ class NativeFilesAudioForegroundTest {
 
     @Test fun vendorStopFailureStillReleasesAndNeverCrashesCleanup() {
         var releases = 0
-        val cleanup = FilesAudioPlayerReleaseOnce(
+        val cleanup = NativeMedia3PlayerReleaseOnce(
             stop = { throw IllegalStateException("codec stop failed") },
             release = {
                 releases++
@@ -97,11 +97,11 @@ class NativeFilesAudioForegroundTest {
     @Test fun nextRetryOwnsFreshPlayerAndOldErrorCannotReleaseIt() {
         var firstReleases = 0
         var nextReleases = 0
-        val first = FilesAudioPlayerReleaseOnce(
+        val first = NativeMedia3PlayerReleaseOnce(
             stop = {},
             release = { firstReleases++ },
         )
-        val next = FilesAudioPlayerReleaseOnce(
+        val next = NativeMedia3PlayerReleaseOnce(
             stop = {},
             release = { nextReleases++ },
         )
