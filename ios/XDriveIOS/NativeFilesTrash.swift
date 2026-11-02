@@ -179,34 +179,72 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
     @Published private(set) var verified = false
     @Published private(set) var loading = false
     @Published private(set) var error: String?
+    @Published private(set) var continuationError: String?
 
+    private var loadedIDs = Set<UInt64>()
     private var epoch = UUID()
     private var running: Task<Void, Never>?
+
+    var canLoadMore: Bool {
+        verified && !loading && continuationError == nil &&
+            !items.isEmpty && items.count < total &&
+            XDriveIOSNativeFilesPagePolicy.validOffset(items.count)
+    }
+
+    func pageOffset(for item: XDriveIOSNativeFilesTrashNode) -> Int? {
+        guard verified, let index = items.firstIndex(of: item) else { return nil }
+        return index / XDriveIOSNativeFilesTrashPolicy.pageSize *
+            XDriveIOSNativeFilesTrashPolicy.pageSize
+    }
 
     func invalidate() {
         epoch = UUID()
         running?.cancel()
         running = nil
         items = []
+        loadedIDs.removeAll()
         total = 0
-        verified = false
         loading = false
+        verified = false
         error = nil
+        continuationError = nil
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel, offset: Int) {
         invalidate()
+        guard offset == 0 else {
+            error = "回收站仅从当前云端列表顶部开始读取。"
+            return
+        }
+        read(login: login, offset: 0, appending: false)
+    }
+
+    func loadMore(login: XDriveIOSNativeOwnerLoginModel) {
+        guard canLoadMore else { return }
+        read(login: login, offset: items.count, appending: true)
+    }
+
+    func retryMore(login: XDriveIOSNativeOwnerLoginModel) {
+        guard verified, !loading, continuationError != nil else { return }
+        continuationError = nil
+        loadMore(login: login)
+    }
+
+    private func read(login: XDriveIOSNativeOwnerLoginModel, offset: Int,
+                      appending: Bool) {
+        guard !loading, XDriveIOSNativeFilesPagePolicy.validOffset(offset) else { return }
         guard let expected = login.owner else {
+            invalidate()
             error = "请先验证服务器账户。"
             return
         }
         let ticket = epoch
         loading = true
-        running = Task { @MainActor in
+        running = Task { @MainActor [weak self] in
             defer {
-                if epoch == ticket {
-                    loading = false
-                    running = nil
+                if self?.epoch == ticket {
+                    self?.loading = false
+                    self?.running = nil
                 }
             }
             do {
@@ -218,31 +256,68 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
                     owner: auth.owner, accessToken: auth.accessToken
                 ).page(offset)
                 try Task.checkCancellation()
-                guard epoch == ticket,
+                guard let self, self.epoch == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
-                items = page.items
-                total = page.total_count
-                verified = true
-                error = nil
+
+                if appending {
+                    guard XDriveIOSNativeFilesTrashPolicy.validAppend(
+                        alreadyLoadedIDs: self.loadedIDs,
+                        alreadyLoadedCount: self.items.count,
+                        total: self.total, next: page
+                    ) else { throw XDriveIOSNativeFilesTrashFailure.malformed }
+                    self.items.append(contentsOf: page.items)
+                    self.loadedIDs.formUnion(page.items.map(\.id))
+                } else {
+                    self.items = page.items
+                    self.loadedIDs = Set(page.items.map(\.id))
+                    self.total = page.total_count
+                }
+                self.verified = true
+                self.error = nil
+                self.continuationError = nil
             } catch is CancellationError {
-                // An abandoned page must not publish old filenames.
+                // Navigation, background or a changed Owner retires this read.
             } catch {
-                guard epoch == ticket else { return }
-                items = []
-                total = 0
-                verified = false
+                guard let self, self.epoch == ticket else { return }
+                let fatal: Bool
+                if let reason = error as? XDriveIOSNativeFilesTrashFailure {
+                    switch reason {
+                    case .invalidOwner, .malformed,
+                         .server(401), .server(403), .server(404):
+                        fatal = true
+                    default:
+                        fatal = false
+                    }
+                } else {
+                    fatal = false
+                }
+                let message: String
                 if let reason = error as? XDriveIOSNativeFilesTrashFailure {
                     switch reason {
                     case .invalidOwner, .server(401), .server(403), .server(404):
-                        self.error = "账户或回收站访问已变化，请重新验证。"
+                        message = "账户或回收站访问已变化，请重新验证。"
+                    case .malformed:
+                        message = "回收站数量或排序已变化，请刷新重试。"
                     case .server(429), .server(503):
-                        self.error = "服务器暂时繁忙，请重试。"
+                        message = "服务器暂时繁忙，请重试。"
                     default:
-                        self.error = "回收站列表无法验证，请刷新重试。"
+                        message = "回收站列表无法验证，请刷新重试。"
                     }
                 } else {
-                    self.error = "读取回收站失败，请检查网络后重试。"
+                    message = "读取回收站失败，请检查网络后重试。"
+                }
+                if !appending || fatal {
+                    self.items = []
+                    self.loadedIDs.removeAll()
+                    self.total = 0
+                    self.verified = false
+                    self.error = message
+                    self.continuationError = nil
+                } else {
+                    // Keep previously verified rows; never publish a failed
+                    // range, and retry only after an explicit user action.
+                    self.continuationError = message
                 }
             }
         }
