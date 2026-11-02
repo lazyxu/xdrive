@@ -1430,10 +1430,10 @@ func assertGitLabMasterSnapshotDiagnostics(t *testing.T, gitlab map[string]any) 
 		t.Errorf("GitLab Snapshot diagnostic must be absent on MR/stable tags: %v", rule)
 	}
 	for jobName, stage := range map[string]string{
-		"web": "build",
-		"server-image": "package",
-		"caddy-image": "package",
-		"photo-face-image": "package",
+		"web":                "build",
+		"server-image":       "package",
+		"caddy-image":        "package",
+		"photo-face-image":   "package",
 		"media-worker-image": "package",
 	} {
 		job, ok := gitlab[jobName].(map[string]any)
