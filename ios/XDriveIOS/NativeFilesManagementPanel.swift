@@ -97,7 +97,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             }
                             .disabled(anyBusy)
                             .accessibilityIdentifier("native-ios-files-export")
-                            Text("首版上限 512 MiB，使用实际下载结果；无后台任务或虚构进度。")
+                            Text("单文件导出最大 1 GiB，需足够暂存空间；不支持后台下载。")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
                         if exporter.busy {

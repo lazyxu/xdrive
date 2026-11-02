@@ -7,6 +7,8 @@ const read = p => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8')
 const panel = read('ios/XDriveIOS/NativeFilesManagementPanel.swift')
 const exportFile = read('ios/XDriveIOS/NativeFilesDownloadExport.swift')
 const go = read('internal/api/router.go')
+const capacity = read('ios/XDriveIOS/NativeFilesExportCapacityPolicy.swift')
+const batch = read('ios/XDriveIOS/NativeFilesBatchExportPolicy.swift')
 
 test('native Files download accepts only exact Owner signed ticket, actual bytes and unchanged Node', () => {
   assert.match(go, /authed\.POST\("\/files\/:id\/download-ticket", s\.fileDownloadTicket\)/)
@@ -20,7 +22,7 @@ test('native Files download accepts only exact Owner signed ticket, actual bytes
   assert.match(exportFile, /int64Value == node\.size/)
   assert.match(exportFile, /guard stillCurrent == node/)
   assert.match(exportFile, /FileProtectionType\.complete/)
-  assert.match(exportFile, /static let maximumTemporaryBytes: Int64 = 512 \* 1_048_576/)
+  assert.match(exportFile, /static let maximumTemporaryBytes: Int64 = XDriveIOSNativeFilesExportCapacityPolicy\.maximumSingleFileBytes/)
   assert.match(exportFile, /completionHandler\(nil\)/)
 })
 test('native File management exports only via OS ShareLink and releases scoped temporary bytes', () => {
@@ -32,4 +34,18 @@ test('native File management exports only via OS ShareLink and releases scoped t
   assert.match(exportFile, /login\.verifiedAuthorization\(\)/)
   assert.doesNotMatch(panel, /\.quickLookPreview\(/)
   assert.doesNotMatch(exportFile, /WKWebView\s*\(|document\.cookie/)
+})
+
+test('1 GiB foreground single-file export has a real free-space preflight and unchanged batch cap', () => {
+  assert.match(capacity, /maximumSingleFileBytes: Int64 = 1_073_741_824/)
+  assert.match(capacity, /freeSpaceReserveBytes: Int64 = 128 \* 1_048_576/)
+  assert.match(capacity, /size <= availableFreeBytes - freeSpaceReserveBytes/)
+  assert.match(exportFile, /attributesOfFileSystem\(/)
+  assert.match(exportFile, /XDriveIOSNativeFilesExportCapacityPolicy\.mayStage\(/)
+  assert.match(exportFile, /case \.insufficientDiskSpace:/)
+  assert.match(exportFile, /本机暂存空间不足/)
+  assert.match(exportFile, /config\.timeoutIntervalForResource = 1800/)
+  assert.match(batch, /maximumAggregateBytes: Int64 = 512 \* 1_048_576/)
+  assert.match(panel, /单文件导出最大 1 GiB/)
+  assert.doesNotMatch(exportFile, /URLSession\.shared|Data\(contentsOf:|WKWebView/)
 })
