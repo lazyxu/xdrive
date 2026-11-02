@@ -22,6 +22,7 @@ type RemotePullPagePorts = Pick<
 export function createXDriveBrowserWorkspaceHost(ports: {
   cloudStorage: XDriveCloudStorageDataSource
   localStorage: XDriveLocalStorageDataSource
+  shareCenter?: NonNullable<XDriveWorkspaceHostServices['shareCenterPage']>
   deviceBackup?: DeviceBackupPagePorts
   remotePull?: RemotePullPagePorts
   /** Accepted only from the current authenticated Server /me profile. */
@@ -43,6 +44,7 @@ export function createXDriveBrowserWorkspaceHost(ports: {
     services: {
       cloudStorage: ports.cloudStorage,
       localStorage: ports.localStorage,
+      shareCenterPage: ports.shareCenter,
       ...(ports.deviceBackup ? {
         // Owner device history and folder runs are Server read ports. No
         // local agent, device-root control, or native backup writer is exposed.

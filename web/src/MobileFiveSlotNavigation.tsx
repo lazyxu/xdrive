@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../../ui/shared/src/mobile-item-gesture'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
+import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import PhotoAlbumRoundedIcon from '@mui/icons-material/PhotoAlbumRounded'
@@ -33,6 +34,7 @@ import { xDriveMobileSupplementalDynamicDestinationKeys } from './mobileLauncher
 function xDriveBrowserMobileDestinationIcon(key: string): ReactNode {
   switch (key) {
     case 'files': return <FolderOpenRoundedIcon fontSize="small" />
+    case 'shares': return <ShareRoundedIcon fontSize="small" />
     case 'gallery': return <PhotoLibraryRoundedIcon fontSize="small" />
     case 'device-backup': return <BackupRoundedIcon fontSize="small" />
     case 'remote-pull': return <CloudDownloadRoundedIcon fontSize="small" />
