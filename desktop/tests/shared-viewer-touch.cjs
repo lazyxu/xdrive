@@ -16,6 +16,9 @@ const runtimeDocs = read('docs', 'web-app-runtime.md')
 const previewDocs = read('docs', 'preview-engine.md')
 
 test('shared image preview supports pinch, double-tap and scale-aware swipe navigation', () => {
+  const paging = read('ui', 'shared', 'src', 'media-gallery-photo-swipe.ts')
+  for (const token of ['Math.abs(dx) < 56', 'elapsedMS > 700', 'Math.abs(dx) <= Math.abs(dy) * 1.25'])
+    assert.ok(paging.includes(token), 'shared page turn threshold must remain safe: ' + token)
   for (const token of [
     'onSwipePrevious?: () => void',
     'onSwipeNext?: () => void',
@@ -28,7 +31,7 @@ test('shared image preview supports pinch, double-tap and scale-aware swipe navi
     'data-xdrive-preview-swipe',
     'Math.hypot(second.x - first.x, second.y - first.y)',
     'pinch.scale * distance / pinch.distance',
-    'absX >= 56 && absX > absY * 1.25',
+    'xDrivePhotoPageTurn(dx, dy, Date.now() - swipe.startedAt,',
     'onSwipeNext?.()',
     'onSwipePrevious?.()',
     'handleImagePointerCancel',
@@ -158,7 +161,7 @@ test('shared Live still viewport guards slow swipe, decoded pan, mouse double-cl
     'measureViewport(viewportElementRef.current)',
     'lastTouchZoomAtRef',
     'onDoubleClick={handleDoubleClick}',
-    'Date.now() - gesture.startedAt > 700',
+    'xDrivePhotoPageTurn(dx, dy, Date.now() - gesture.startedAt,',
     'viewportRef.current.scale > 1.01',
     'xDriveAnchorPreviewZoom(',
     'xDriveClampPreviewViewport(',

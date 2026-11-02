@@ -17,6 +17,9 @@ import type {
   XDriveLivePhotoMotionSource,
 } from '../file-preview'
 import { xDriveAnchorPreviewZoom, xDriveClampPreviewViewport } from '../file-preview-viewport'
+import {
+  XDRIVE_PHOTO_PAGE_SETTLE_MS, xDrivePhotoFingerTranslation, xDrivePhotoPageTurn,
+} from '../media-gallery-photo-swipe'
 import type { XDrivePreviewImageDimensions, XDrivePreviewPoint, XDrivePreviewViewport } from '../file-preview-viewport'
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
 import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
@@ -404,6 +407,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const imageTapRef = useRef<{
     pointerID: number; startX: number; startY: number; startedAt: number; moved: boolean
   } | null>(null)
+  const imageSwipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [imageSwipeX, setImageSwipeX] = useState(0)
+  const [imageSwipeTracking, setImageSwipeTracking] = useState(false)
   const lastTouchTapRef = useRef<{ at: number; x: number; y: number } | null>(null)
   const touchDoubleTapAtRef = useRef(0)
   const [imageScale, setImageScale] = useState(1)
@@ -428,6 +434,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   }, [measureImageViewport])
 
   const resetImageViewport = useCallback(() => {
+    if (imageSwipeTimerRef.current !== null) clearTimeout(imageSwipeTimerRef.current)
+    imageSwipeTimerRef.current = null
+    setImageSwipeX(0)
+    setImageSwipeTracking(false)
     imageDragRef.current = null
     imagePointersRef.current.clear()
     imagePinchRef.current = null
@@ -447,6 +457,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   useEffect(() => {
     imageDimensionsRef.current = null
     resetImageViewport()
+    return () => {
+      if (imageSwipeTimerRef.current !== null) clearTimeout(imageSwipeTimerRef.current)
+      imageSwipeTimerRef.current = null
+    }
   }, [previewKind, resetImageViewport, target?.id, target?.revision])
 
   useLayoutEffect(() => {
@@ -488,6 +502,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const handleImagePointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (!interactiveImage || event.button !== 0) return
     measureImageViewport(event.currentTarget)
+    if (imageSwipeTimerRef.current !== null) clearTimeout(imageSwipeTimerRef.current)
+    imageSwipeTimerRef.current = null
+    setImageSwipeX(0)
+    setImageSwipeTracking(false)
     const viewport = imageViewportRef.current
     if (event.pointerType === 'touch') {
       event.preventDefault()
@@ -504,12 +522,15 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         }
         imageDragRef.current = null
         imageSwipeRef.current = null
+        setImageSwipeX(0)
+        setImageSwipeTracking(false)
         imageTapRef.current = null
         lastTouchTapRef.current = null
         return
       }
       imageTapRef.current = { pointerID: event.pointerId, startX: event.clientX, startY: event.clientY, startedAt: Date.now(), moved: false }
-      if (viewport.scale <= 1.01) imageSwipeRef.current = { ...imageTapRef.current }
+      if (viewport.scale <= 1.01 && (onSwipePrevious || onSwipeNext))
+        imageSwipeRef.current = { ...imageTapRef.current }
     }
     if (viewport.scale <= 1) return
     event.preventDefault()
@@ -518,7 +539,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       pointerID: event.pointerId, startX: event.clientX, startY: event.clientY,
       originX: viewport.offset.x, originY: viewport.offset.y,
     }
-  }, [imageAnchor, interactiveImage, measureImageViewport])
+  }, [imageAnchor, interactiveImage, measureImageViewport, onSwipePrevious, onSwipeNext])
 
   const handleImagePointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const tap = imageTapRef.current
@@ -526,6 +547,20 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       tap.moved = true
     }
     if (event.pointerType === 'touch' && imagePointersRef.current.has(event.pointerId)) {
+      const swipe = imageSwipeRef.current
+      if (swipe?.pointerID === event.pointerId && imagePointersRef.current.size === 1 &&
+          imageViewportRef.current.scale <= 1.01) {
+        const dx = event.clientX - swipe.startX
+        const dy = event.clientY - swipe.startY
+        const x = xDrivePhotoFingerTranslation(dx, dy,
+          imageViewportSizeRef.current.width, Boolean(onSwipePrevious), Boolean(onSwipeNext))
+        if (x !== 0) {
+          setImageSwipeTracking(true)
+          setImageSwipeX(x)
+        } else {
+          setImageSwipeX(0)
+        }
+      }
       imagePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
       const pinch = imagePinchRef.current
       const points = [...imagePointersRef.current.values()]
@@ -535,6 +570,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y))
         const scale = Math.min(6, Math.max(1, Math.round(pinch.scale * distance / pinch.distance * 100) / 100))
         const midpoint = imageAnchor(event.currentTarget, (first.x + second.x) / 2, (first.y + second.y) / 2)
+        setImageSwipeX(0)
+        setImageSwipeTracking(false)
         applyImageViewport(xDriveAnchorPreviewZoom({ scale: pinch.scale, offset: pinch.offset }, scale, pinch.midpoint, midpoint))
         return
       }
@@ -546,7 +583,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       x: drag.originX + event.clientX - drag.startX,
       y: drag.originY + event.clientY - drag.startY,
     } })
-  }, [applyImageViewport, imageAnchor])
+  }, [applyImageViewport, imageAnchor, onSwipePrevious, onSwipeNext])
 
   const handleImagePointerRelease = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const touch = event.pointerType === 'touch'
@@ -560,14 +597,27 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       if (!wasPinching && swipe?.pointerID === event.pointerId) {
         const dx = event.clientX - swipe.startX
         const dy = event.clientY - swipe.startY
-        const absX = Math.abs(dx), absY = Math.abs(dy)
-        const elapsed = Date.now() - swipe.startedAt
-        const horizontalSwipe = imageScale <= 1.01 && elapsed <= 700 && absX >= 56 && absX > absY * 1.25
-        if (horizontalSwipe) {
+        const direction = imageScale <= 1.01
+          ? xDrivePhotoPageTurn(dx, dy, Date.now() - swipe.startedAt,
+            Boolean(onSwipePrevious), Boolean(onSwipeNext),
+            imageViewportSizeRef.current.width)
+          : null
+        setImageSwipeTracking(false)
+        if (direction) {
           lastTouchTapRef.current = null
-          if (dx < 0) onSwipeNext?.()
-          else onSwipePrevious?.()
-        }
+          // Finish the current image's finger-follow animation before asking
+          // the existing Owner-scoped Viewer to select its adjacent item.
+          const width = imageViewportSizeRef.current.width
+          setImageSwipeX(direction === 'next' ? -width : width)
+          const identity = currentSourceIdentityRef.current
+          imageSwipeTimerRef.current = setTimeout(() => {
+            imageSwipeTimerRef.current = null
+            if (currentSourceIdentityRef.current !== identity) return
+            setImageSwipeX(0)
+            if (direction === 'next') onSwipeNext?.()
+            else onSwipePrevious?.()
+          }, XDRIVE_PHOTO_PAGE_SETTLE_MS)
+        } else setImageSwipeX(0)
       }
       if (!wasPinching && tap?.pointerID === event.pointerId) {
         const moved = tap.moved || Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) >= 12
@@ -600,6 +650,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     imageSwipeRef.current = null
     imageTapRef.current = null
     lastTouchTapRef.current = null
+    if (imageSwipeTimerRef.current !== null) clearTimeout(imageSwipeTimerRef.current)
+    imageSwipeTimerRef.current = null
+    setImageSwipeX(0)
+    setImageSwipeTracking(false)
     releaseImagePointer(event)
   }, [])
   const handleImagePointerLostCapture = useCallback((event: ReactPointerEvent<HTMLElement>) => {
@@ -1017,9 +1071,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
             minHeight={minHeight}
             mediaTransform={mediaTransform}
             onPresentationStateChange={handleImagePresentationStateChange}
-            viewportTransform={`translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageScale})`}
+            viewportTransform={`translate(${imageOffset.x + (imageScale <= 1.01 ? imageSwipeX : 0)}px, ${imageOffset.y}px) scale(${imageScale})`}
             onImageDimensionsChange={handleImageDimensionsChange}
-            viewportTransition={imageDragRef.current || imagePinchRef.current ? 'none' : 'transform 100ms ease-out'}
+            viewportTransition={imageDragRef.current || imagePinchRef.current || imageSwipeTracking
+              ? 'none' : 'transform 150ms ease-out'}
           />
           {interactiveImage && !coarsePointer ? (
             <Stack

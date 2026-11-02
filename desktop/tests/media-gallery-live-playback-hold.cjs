@@ -18,6 +18,7 @@ assert.ok(start > 0, 'the production Live Photo helpers and component must exist
 const source = [
   "import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'",
   "import { xDriveAbortHTMLMediaElement } from './teardown'",
+  "import { XDRIVE_PHOTO_PAGE_SETTLE_MS, xDrivePhotoFingerTranslation, xDrivePhotoPageTurn } from './swipe'",
   "import { Box, Chip, CircularProgress, XDriveLivePhotoGlyph, XDriveMediaLoadingProgress, xDriveAnchorPreviewZoom, xDriveClampPreviewViewport } from './fixture'",
   'type XDriveLivePhotoMotionSource = string | { url: string; dispose?: () => void }',
   'type XDriveByteProgressHandler = (loaded: number, total?: number) => void',
@@ -49,10 +50,20 @@ const teardownJS = ts.transpileModule(read('ui/shared/src/mui/mediaPreviewStream
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
 new Function('exports', 'module', teardownJS)(teardownModule.exports, teardownModule)
+// Load the real pure swipe implementation: this test compiles the production
+// component body without the source file's imports, so its new dependency
+// must be bound rather than mocked or skipped.
+const swipeModule = { exports: {} }
+const swipeJS = ts.transpileModule(read('ui/shared/src/media-gallery-photo-swipe.ts'), {
+  fileName: 'media-gallery-photo-swipe.ts',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+new Function('exports', 'module', swipeJS)(swipeModule.exports, swipeModule)
 const mocks = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
   './teardown': teardownModule.exports,
+  './swipe': swipeModule.exports,
   './fixture': {
     Box: 'mounted-live-box',
     Chip: 'mounted-live-chip',
@@ -770,17 +781,19 @@ test('P1 Live Photo browsing separates tap, swipe and stationary hold without ea
   const originalSet = global.setTimeout
   const originalClear = global.clearTimeout
   const scheduled = new Map()
+  const settleScheduled = new Map()
   let nextTimer = 1000000
   global.setTimeout = (callback, delay, ...args) => {
-    if (delay === 260) {
+    if (delay === 260 || delay === 150) {
       const id = nextTimer++
-      scheduled.set(id, () => callback(...args))
+      const target = delay === 260 ? scheduled : settleScheduled
+      target.set(id, () => callback(...args))
       return id
     }
     return originalSet(callback, delay, ...args)
   }
   global.clearTimeout = (id) => {
-    if (!scheduled.delete(id)) originalClear(id)
+    if (!scheduled.delete(id) && !settleScheduled.delete(id)) originalClear(id)
   }
   let loads = 0, next = 0, previous = 0
   const load = async () => { loads++; return 'https://example.invalid/one-live.mov' }
@@ -792,7 +805,15 @@ test('P1 Live Photo browsing separates tap, swipe and stationary hold without ea
   let tree
   const start = async (x, y) => act(async () => { surface(tree).props.onPointerDown(pt(x, y)); await flush() })
   const move = async (x, y) => act(async () => { surface(tree).props.onPointerMove(pt(x, y)); await flush() })
-  const finish = async (x, y) => act(async () => { surface(tree).props.onPointerUp(pt(x, y)); await flush() })
+  const finish = async (x, y) => act(async () => {
+    surface(tree).props.onPointerUp(pt(x, y))
+    await flush()
+    // The production Viewer settles the old still for 150ms before changing
+    // the authorized neighbor. Drive that timer deterministically in this test.
+    const callbacks = [...settleScheduled.values()]
+    settleScheduled.clear()
+    for (const callback of callbacks) { callback(); await flush() }
+  })
   try {
     await act(async () => { tree = mount(player, load, 'gesture:1', opts); await flush() })
     await start(300, 150)
@@ -1158,7 +1179,7 @@ test('P1 Live mouse double-click zooms one existing still and never fetches moti
   } finally { if (tree) await act(async () => tree.unmount()) }
 })
 
-test('P1 slow horizontal Live drag never navigates, even when distance exceeds swipe threshold', async () => {
+test('P1 slow deliberate Live drag pages after settle despite a normal pointerleave', async () => {
   const originalNow = Date.now
   let now = 1000, navigation = 0, loads = 0, tree
   Date.now = () => now
@@ -1178,14 +1199,23 @@ test('P1 slow horizontal Live drag never navigates, even when distance exceeds s
         onSwipeNext: () => navigation++,
       })
     })
-    await act(async () => surface(tree).props.onPointerDown(event(300)))
+    await act(async () => {
+      surface(tree).props.onPointerDown(event(300))
+      // Start moving before the Live hold threshold; keep dragging slowly.
+      surface(tree).props.onPointerMove(event(240))
+    })
     now += 800
     await act(async () => {
       surface(tree).props.onPointerMove(event(100))
       surface(tree).props.onPointerUp(event(100))
     })
-    assert.equal(navigation, 0, 'slow drag is pan/interaction, never a photo swipe')
-    assert.equal(loads, 0, 'slow drag is not a motion hold')
+    assert.equal(navigation, 0, 'the old still remains until settle completes')
+    await act(async () => {
+      surface(tree).props.onPointerLeave(event(100))
+      await new Promise(resolve => setTimeout(resolve, 190))
+    })
+    assert.equal(navigation, 1, 'slow deliberate drag completes despite harmless pointerleave')
+    assert.equal(loads, 0, 'slow still paging never loads Live motion')
   } finally {
     if (tree) await act(async () => tree.unmount())
     Date.now = originalNow
