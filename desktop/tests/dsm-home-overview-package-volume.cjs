@@ -26,6 +26,7 @@ assert.deepEqual((compiled.diagnostics || [])
   .map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), [])
 
 const mui = new Proxy({}, { get: (_, name) => String(name) })
+let lastPageActions = null
 const dependencies = {
   './ActionButton': { XDriveActionButton: 'ActionButton' },
   './MetricCards': { XDriveMetricCard: 'MetricCard', XDriveMetricGrid: 'MetricGrid' },
@@ -33,8 +34,10 @@ const dependencies = {
   './StatePanel': { XDriveStatePanel: 'StatePanel' },
   './StatusAlert': { XDriveStatusAlert: 'StatusAlert' },
   './WorkspaceSurface': {
-    XDriveWorkspaceSurface: ({ children, pageActions }) =>
-      React.createElement('WorkspaceSurface', null, pageActions, children),
+    XDriveWorkspaceSurface: ({ children, pageActions }) => {
+      lastPageActions = pageActions
+      return React.createElement('WorkspaceSurface', null, children)
+    },
   },
 }
 const mod = { exports: {} }
@@ -129,11 +132,11 @@ test('DSM Home refresh re-reads the package filesystem through the same cancella
   const view = await mount(client)
   try {
     assert.equal(reads, 1)
-    const refresh = view.root.findAll(node =>
-      node.type === 'ActionButton' && node.props.children === '刷新')[0]
-    assert.ok(refresh && typeof refresh.props.onClick === 'function')
+    assert.ok(lastPageActions && lastPageActions.type === 'ActionButton')
+    assert.equal(lastPageActions.props.children, '刷新')
+    assert.equal(typeof lastPageActions.props.onClick, 'function')
     await act(async () => {
-      refresh.props.onClick()
+      lastPageActions.props.onClick()
       await flushEffects()
     })
     assert.equal(reads, 2)
