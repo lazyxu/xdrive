@@ -193,11 +193,14 @@ internal fun ColumnScope.NativeLocalPhotoMap(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: OperationCanceledException) {
+            chosen = null // A partial cell is no longer a valid active page.
             scan = NativeLocalPhotoMapScan(error = "位置扫描已取消，请重新进入地图。")
         } catch (_: SecurityException) {
+            chosen = null // Revoke the open partial sheet on grant loss.
             scan = NativeLocalPhotoMapScan(
                 error = "照片或原始 GPS 权限已变化，请重新授权后扫描。")
         } catch (_: Exception) {
+            chosen = null
             scan = NativeLocalPhotoMapScan(
                 error = "设备媒体索引或位置读取失败，请重试。")
         } finally {
