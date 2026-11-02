@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
-import { xDriveDesktopDecodeViewerPreviewURL } from './desktopViewerPreviewDecode'
+import { xDriveDesktopDecodeViewerPreviewURL, xDriveDesktopRegisterLegacyJPEGViewerPreviewURL } from './desktopViewerPreviewDecode'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
@@ -1033,10 +1033,11 @@ export default function DesktopFileExplorer({
           (requestID) => agent.getMediaAnalysisPreview(plan.nodeID, requestID, onProgress),
         )
         if (!result.ok || signal?.aborted) return null
-        return URL.createObjectURL(new Blob(
+        const blob = new Blob(
           [result.data.data],
           { type: result.data.content_type || 'image/jpeg' },
-        ))
+        )
+        return xDriveDesktopRegisterLegacyJPEGViewerPreviewURL(blob)
       } catch {
         signal?.throwIfAborted()
         return null
