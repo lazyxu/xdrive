@@ -786,6 +786,59 @@ class DriveAppTest {
         compose.onNodeWithTag("native-gallery-source-cloud").assertIsSelected()
     }
 
+    @Test fun localPlacesCloudToggleLeavesCollectionsBeforeOpeningVerifiedMap() {
+        galleryGpsOverviewFixture = true
+        // This flow explicitly opens the real Owner Collections overview.
+        // Without the fixture, the service correctly returns 501 and the
+        // navigation assertion times out before the map source switch.
+        galleryManualAlbumFixture = true
+        startAndLogin(galleryFirstOnLogin = false)
+        compose.onNodeWithTag("native-tab-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        // Cloud Gallery is showing Collections, not Library. Local Places
+        // must still allow a real cloud map source switch.
+        compose.onNodeWithTag("gallery-open-collections").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                controller.state.value.galleryAlbumsLoaded &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("native-gallery-source-local").performClick()
+        compose.onNodeWithTag("native-gallery-source-map").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("native-photo-map-source-cloud")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(
+                GalleryPrimaryTab.COLLECTIONS, controller.state.value.galleryPrimaryTab)
+            org.junit.Assert.assertEquals(0, gpsOverviewReads)
+        }
+        compose.onNodeWithTag("native-photo-map-source-cloud").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapOpen &&
+                controller.state.value.galleryMapLoaded &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-close").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(
+                GalleryPrimaryTab.LIBRARY, controller.state.value.galleryPrimaryTab)
+            org.junit.Assert.assertEquals(1, gpsOverviewReads)
+        }
+        compose.onNodeWithTag("gallery-map-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                !controller.state.value.galleryMapOpen
+        }
+        // Cloud map is a Gallery child of the local map origin, not a
+        // new bottom tab or a forced switch to cloud Photos.
+        compose.onNodeWithTag("native-gallery-source-local").assertIsSelected()
+    }
+
     @Test fun galleryMapFromLocalPhotosStartsLocalAndReturnsToLocalAfterCloudToggle() {
         galleryGpsOverviewFixture = true
         startAndLogin(galleryFirstOnLogin = true)

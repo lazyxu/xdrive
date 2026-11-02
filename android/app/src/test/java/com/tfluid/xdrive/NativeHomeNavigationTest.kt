@@ -99,6 +99,41 @@ class NativeHomeNavigationTest {
             localMapOpen = false, cloudFocused = true))
     }
 
+    @Test fun localToCloudMapMayLeaveCollectionsButNotLosePendingGalleryWork() {
+        val collections = DriveState(
+            screen = Screen.GALLERY,
+            galleryPrimaryTab = GalleryPrimaryTab.COLLECTIONS,
+        )
+        assertTrue(nativeLocalCloudMapSwitchAllowed(collections))
+        assertTrue(nativeLocalCloudMapSwitchAllowed(
+            collections.copy(galleryPrimaryTab = GalleryPrimaryTab.LIBRARY)))
+        val photo = com.tfluid.xdrive.core.GalleryAsset(
+            com.tfluid.xdrive.core.DriveNode(
+                42L, 1L, "photo.jpg", "file", size = 10, revision = 1),
+            "image", hasThumbnail = true,
+        )
+        assertFalse(nativeLocalCloudMapSwitchAllowed(
+            collections.copy(gallerySelectionMode = true)))
+        assertFalse(nativeLocalCloudMapSwitchAllowed(
+            collections.copy(gallerySelected = photo)))
+        assertFalse(nativeLocalCloudMapSwitchAllowed(
+            collections.copy(galleryViewer = photo)))
+        assertFalse(nativeLocalCloudMapSwitchAllowed(
+            collections.copy(galleryMetadataWriteAttempted = true)))
+        assertFalse(nativeLocalCloudMapSwitchAllowed(
+            collections.copy(galleryAlbumCreateAttempted = true)))
+        assertFalse(nativeLocalCloudMapSwitchAllowed(
+            collections.copy(galleryAlbumEditAttempted = true)))
+        assertFalse(nativeLocalCloudMapSwitchAllowed(
+            collections.copy(fileUploadActive = true)))
+        assertFalse(nativeLocalCloudMapSwitchAllowed(
+            collections.copy(fileDownloadActive = true)))
+        assertFalse(nativeLocalCloudMapSwitchAllowed(
+            collections.copy(galleryMapOpen = true)))
+        assertFalse(nativeLocalCloudMapSwitchAllowed(
+            collections.copy(screen = Screen.LOGIN)))
+    }
+
     @Test fun localGalleryMapUsesItsActualSourceBeforeCloudFallback() {
         assertTrue(nativeGalleryMapStartsLocal(NativeGallerySource.LOCAL))
         assertTrue(nativeGalleryMapStartsLocal(NativeGallerySource.ALBUMS))

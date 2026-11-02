@@ -67,6 +67,16 @@ internal fun nativeFeatureBackAllowed(
     NativeHomeTab.ALL, NativeHomeTab.DYNAMIC, NativeHomeTab.MINE -> false
 }
 
+/** An explicit local-to-cloud map switch may leave Collections, but must
+ * never discard a selected photo, active batch, Viewer or uncertain write to
+ * satisfy the cloud Library-only map entry precondition. */
+internal fun nativeLocalCloudMapSwitchAllowed(state: DriveState): Boolean =
+    state.screen == Screen.GALLERY && !state.galleryMapOpen &&
+    state.galleryViewer == null && state.gallerySelected == null &&
+    !state.gallerySelectionMode && !state.hasActiveNativeTransfer() &&
+    !state.galleryMetadataWriteAttempted &&
+    !state.galleryAlbumCreateAttempted && !state.galleryAlbumEditAttempted
+
 /** A map cell has one native album sheet, not an extra Gallery route or
  * authorization. A full-screen Viewer temporarily replaces the sheet.
  * The originating map's Owner/Cell identity remains in DriveController. */
@@ -812,8 +822,23 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             localSelected = true,
                             onLocal = {},
                             onCloud = {
-                                localPhotoMapOpen = false
-                                if (!state.galleryMapOpen) controller.openGalleryMapOverview()
+                                // Local Places can outlive the cloud Gallery's
+                                // Collections subroute. The cloud map accepts
+                                // only a Library Owner scope, so explicitly
+                                // leave Collections before opening it.
+                                val current = controller.state.value
+                                if (nativeLocalCloudMapSwitchAllowed(current)) {
+                                    if (current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS)
+                                        controller.openGalleryLibrary()
+                                    // A disposable Library GET may be cancelled
+                                    // immediately; the cloud Owner map is the
+                                    // only request for this explicit action.
+                                    controller.openGalleryMapOverview()
+                                    // A blocked route switch must retain the
+                                    // local map, not expose an inert MAP chip.
+                                    if (controller.state.value.galleryMapOpen)
+                                        localPhotoMapOpen = false
+                                }
                             })
                         NativeLocalPhotoMap(
                             sessionId = state.nativeUiSessionId,
