@@ -186,9 +186,9 @@ export function XDriveMobileFiveSlotNavigation({
         }}>
         <BottomNavigation showLabels value={selected}
           sx={{
-            height: 58, bgcolor: 'transparent',
+            height: 56, bgcolor: 'transparent',
             '& .MuiBottomNavigationAction-root': {
-              minWidth: 0, maxWidth: 'none', px: 0.25, minHeight: 58,
+              minWidth: 0, maxWidth: 'none', px: 0.25, minHeight: 56,
               '& .MuiBottomNavigationAction-label': {
                 fontSize: 11, minWidth: 0, maxWidth: '100%',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

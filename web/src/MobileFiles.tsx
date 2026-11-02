@@ -62,9 +62,10 @@ import { xDriveCanUseNativeShare } from '../../ui/shared/src/mui/NativeShareCapa
 import { xDriveFileExplorerMenuDisabledReason, xDriveFileExplorerMenuReasonLabel } from '../../ui/shared/src/mui/FileExplorerMenuReasons'
 import {
   mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesIsMoved, mobileFilesWindow,
-  mobileFilesRowTextInset, mobileFilesNativeMetadata, mobileFilesViewportAnchor, mobileFilesViewportTop,
+  mobileFilesRowTextInset, mobileFilesDirectoryRowTextInset, mobileFilesNativeMetadata, mobileFilesViewportAnchor, mobileFilesViewportTop,
   mobileFilesLogicalPositionDescription,
   MOBILE_FILES_HOLD_MS, MOBILE_FILES_GRID_ROW_HEIGHT, MOBILE_FILES_ROW_HEIGHT,
+  MOBILE_FILES_ITEM_TEXT_GAP_PX,
 } from './mobileFilesState'
 import type { MobileFilesSection } from './mobileFilesState'
 
@@ -2291,7 +2292,7 @@ export default function MobileFiles(props: Props) {
           '&:focus-visible': { outline: '2px solid', outlineColor: IOS_FILES_MOBILE_BLUE },
           ...(!effectiveGrid ? { '&:not(:last-child)::after': {
             content: '""', position: 'absolute', bottom: 0,
-            left: mobileFilesRowTextInset(selectionMode, depth), right: 0,
+            left: mobileFilesDirectoryRowTextInset(selectionMode, depth), right: 0,
             borderBottom: '1px solid', borderColor: 'divider', pointerEvents: 'none',
           } } : {}),
         }}
@@ -2314,7 +2315,7 @@ export default function MobileFiles(props: Props) {
               sx={{ width: MIN_TOUCH, height: MIN_TOUCH, flexShrink: 0,
                 position: 'relative',
                 color: inlineBranch?.error ? 'error.main' : IOS_FILES_MOBILE_BLUE }}>
-              <ArrowBackIosNewRoundedIcon sx={{ fontSize: 15,
+              <ArrowBackIosNewRoundedIcon sx={{ fontSize: 15, position: 'relative', left: 2,
                 transform: inlineBranch ? 'rotate(90deg)' : 'rotate(180deg)' }}/>
               <MobileInlineDisclosureProgress />
             </IconButton>
@@ -2338,7 +2339,9 @@ export default function MobileFiles(props: Props) {
                 height: effectiveGrid ? 64 : 42, borderRadius: 0 }}/>
           )}
         </Box>
-        <Box sx={{ minWidth: 0, width: effectiveGrid ? '100%' : undefined, flex: effectiveGrid ? undefined : 1 }}>
+        <Box sx={{ minWidth: 0, width: effectiveGrid ? '100%' : undefined, flex: effectiveGrid ? undefined : 1,
+          ml: !effectiveGrid && !selectionMode ? `${MOBILE_FILES_ITEM_TEXT_GAP_PX}px` : undefined,
+          display: 'flex', flexDirection: 'column', rowGap: '3px' }}>
           <Typography data-mobile-files-item-title variant="body2" fontWeight={500} noWrap
             dir="auto" title={item.name}
             sx={{ fontSize: effectiveGrid ? 14 : 16, unicodeBidi: 'plaintext' }}
@@ -2444,10 +2447,10 @@ export default function MobileFiles(props: Props) {
                       fallback={<MobileDocumentIcon item={entry} size={36}/>}
                       sx={{ width: 42, height: 42, borderRadius: 0 }}/>}
       </Box>
-      <Box minWidth={0} flex={1}>
+      <Box minWidth={0} flex={1} sx={{ display: 'flex', flexDirection: 'column', rowGap: '3px' }}>
         <Typography data-mobile-files-collection-title variant="body2" noWrap
-          dir="auto" title={entry.name} sx={{ unicodeBidi: 'plaintext' }}>{entry.name}</Typography>
-        <Typography data-mobile-files-collection-meta variant="caption" color="text.secondary" noWrap display="block">{entry.subtitle ?? (owner ? mobileFilesNativeMetadata(entry) || (entry.kind === 'dir' ? '文件夹' : '文件')
+          dir="auto" title={entry.name} sx={{ unicodeBidi: 'plaintext', fontSize: 16, fontWeight: 500 }}>{entry.name}</Typography>
+        <Typography data-mobile-files-collection-meta variant="caption" color="text.secondary" noWrap display="block" sx={{ fontSize: 13.5 }}>{entry.subtitle ?? (owner ? mobileFilesNativeMetadata(entry) || (entry.kind === 'dir' ? '文件夹' : '文件')
           : (entry.kind === 'dir' ? '文件夹' : '文件'))}</Typography>
       </Box>
     </Box>
@@ -2667,17 +2670,17 @@ export default function MobileFiles(props: Props) {
         '& .MuiTypography-root, & .MuiButton-root': { fontFamily: IOS_FILES_MOBILE_FONT },
       }}>
         <Stack data-mobile-files-navigation-bar direction="row" alignItems="center" sx={{
-          px: 1.5, flexShrink: 0, minHeight: 56, gap: 1,
+          px: 2, flexShrink: 0, minHeight: 52, gap: 1,
           bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#ffffff',
         }}>
           {showDirectory ? (
             <IconButton aria-label="返回" onClick={navigateUp} sx={{
-              width: 48, height: 48, flexShrink: 0,
+              width: 44, height: 44, flexShrink: 0,
               color: theme => theme.palette.mode === 'dark' ? '#f7f7f7' : '#111111',
               bgcolor: theme => theme.palette.mode === 'dark' ? '#232326' : '#fafafa',
               boxShadow: '0 4px 20px rgba(0,0,0,0.035)',
             }}><ArrowBackIosNewRoundedIcon sx={{ fontSize: 23 }}/></IconButton>
-          ) : <Box aria-hidden="true" sx={{ width: 48, height: 48, flexShrink: 0 }}/>}
+          ) : <Box aria-hidden="true" sx={{ width: 44, height: 44, flexShrink: 0 }}/>}
           {hasFolderAncestors ? (
             <Button data-mobile-files-location-trigger
               aria-label={`查看文件夹位置：${compactTitle}`} aria-haspopup="menu"
@@ -2719,7 +2722,7 @@ export default function MobileFiles(props: Props) {
               sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>完成</Button>
           ) : (
             <IconButton aria-label="文件操作菜单" onClick={event => setMoreAnchor(event.currentTarget)}
-              sx={{ width: 48, height: 48, flexShrink: 0, color: 'text.primary', borderRadius: '50%',
+              sx={{ width: 44, height: 44, flexShrink: 0, color: 'text.primary', borderRadius: '50%',
                 bgcolor: theme => theme.palette.mode === 'dark' ? '#232326' : '#fafafa',
                 boxShadow: '0 4px 20px rgba(0,0,0,0.035)' }}><MoreHorizRoundedIcon sx={{ fontSize: 26 }}/></IconButton>
           )}
@@ -2759,11 +2762,11 @@ export default function MobileFiles(props: Props) {
           ) : null}
           <Box data-mobile-files-search-region sx={{ position: 'relative', zIndex: 1,
             bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#ffffff',
-            px: 2, py: 1 }}>
+            px: 2, py: 0.75 }}>
             {/* Search scrolls away naturally. Shrinking a sticky header's
                 max-height at scrollTop=48 used to modify scrollTop itself,
                 producing a visible bounce and repeat-triggering the collapse. */}
-            <Stack direction="row" spacing={0.5} alignItems="center">
+            <Stack direction="row" spacing={1} alignItems="center">
             <TextField inputRef={searchInputRef} size="small" fullWidth value={props.searchValue}
               placeholder="搜索全部文件"
               aria-label="搜索全部文件"
@@ -2781,7 +2784,10 @@ export default function MobileFiles(props: Props) {
               } }}
               slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small"/></InputAdornment>,
                 endAdornment: props.searchValue ? <InputAdornment position="end"><IconButton size="small" aria-label="清除搜索文本" onClick={() => props.onSearchValueChange('')}><CloseRoundedIcon fontSize="small"/></IconButton></InputAdornment> : null }}}/>
-            {props.filtersControl}
+            {props.filtersControl ? <Box sx={{ flexShrink: 0,
+              '& .MuiButtonBase-root': { minWidth: 44, minHeight: 44 } }}>
+              {props.filtersControl}
+            </Box> : null}
             </Stack>
             {(props.searchActive || props.searchSummary) &&
               !pendingGlobalSearchPresentation ? (
@@ -3089,28 +3095,28 @@ export default function MobileFiles(props: Props) {
         </Box>
         {selectionActive ? (
           <Stack data-xdrive-mobile-selection-toolbar direction="row" alignItems="stretch" sx={{
-            px: 0.5, pt: 0.5, pb: 'max(env(safe-area-inset-bottom), 4px)',
+            px: 0.5, pt: 0.5, pb: 0.5,
             borderTop: 1, borderColor: 'divider', flexShrink: 0, bgcolor: 'background.paper',
           }}>
             <Button aria-label="复制已选" disabled={Boolean(selectionLoad || selectionDisabledReason('copy'))} onClick={() => selectedAction('copy')}
-              sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
+              sx={{ minWidth: 0, minHeight: 44, flex: 1, display: 'flex', flexDirection: 'column', gap: 0.25, fontSize: 11 }}>
               <ContentCopyOutlinedIcon fontSize="small"/>复制
             </Button>
             <Button aria-label="移动已选" disabled={Boolean(selectionLoad || selectionDisabledReason('move-to'))} onClick={() => selectedAction('move')}
-              sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
+              sx={{ minWidth: 0, minHeight: 44, flex: 1, display: 'flex', flexDirection: 'column', gap: 0.25, fontSize: 11 }}>
               <DriveFileMoveOutlinedIcon fontSize="small"/>移动
             </Button>
             <Button aria-label="下载已选" disabled={Boolean(selectionLoad || selectionDisabledReason('download'))} onClick={() => selectedAction('download')}
-              sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
+              sx={{ minWidth: 0, minHeight: 44, flex: 1, display: 'flex', flexDirection: 'column', gap: 0.25, fontSize: 11 }}>
               <DownloadRoundedIcon fontSize="small"/>下载
             </Button>
             <Button aria-label="删除已选" disabled={Boolean(selectionLoad || selectionDisabledReason('delete'))} onClick={() => selectedAction('delete')}
-              sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11, color: 'error.main' }}>
+              sx={{ minWidth: 0, minHeight: 44, flex: 1, display: 'flex', flexDirection: 'column', gap: 0.25, fontSize: 11, color: 'error.main' }}>
               <DeleteOutlineRoundedIcon fontSize="small"/>删除
             </Button>
             <Button aria-label="更多已选操作" disabled={!selection.length || Boolean(selectionLoad)}
               onClick={event => setSelectionMoreAnchor(event.currentTarget)}
-              sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
+              sx={{ minWidth: 0, minHeight: 44, flex: 1, display: 'flex', flexDirection: 'column', gap: 0.25, fontSize: 11 }}>
               <MoreHorizRoundedIcon fontSize="small"/>更多
             </Button>
           </Stack>
@@ -3118,8 +3124,9 @@ export default function MobileFiles(props: Props) {
           <Stack component="nav" direction="row" justifyContent="space-around" sx={{
             flexShrink: 0, alignSelf: 'center', width: 'calc(100% - 24px)', maxWidth: 320,
             mt: 0.75,
-            mb: 'max(env(safe-area-inset-bottom), 8px)',
-            px: 0.75, py: 0.5, borderRadius: '999px',
+            // The global five-slot navigation alone owns the Home Indicator inset.
+            mb: 1,
+            px: 0.75, py: 0.25, borderRadius: '999px',
             border: '1px solid', borderColor: 'divider',
             bgcolor: theme => theme.palette.mode === 'dark' ? 'rgba(42,42,45,0.92)' : 'rgba(249,249,253,0.94)',
             backdropFilter: 'blur(18px) saturate(160%)',
@@ -3132,7 +3139,7 @@ export default function MobileFiles(props: Props) {
             ] as const).map(([value, icon, label]) => (
               <Button key={value} data-mobile-files-section={value} aria-current={section === value ? 'page' : undefined}
                 onClick={() => changeSection(value)} sx={{
-                  flex: 1, flexDirection: 'column', minHeight: 52, gap: 0,
+                  flex: 1, flexDirection: 'column', minHeight: 44, gap: 0.25,
                   color: section === value ? IOS_FILES_MOBILE_BLUE : 'text.secondary',
                   fontSize: 11, borderRadius: '999px',
                   bgcolor: section === value ? 'action.selected' : 'transparent',
