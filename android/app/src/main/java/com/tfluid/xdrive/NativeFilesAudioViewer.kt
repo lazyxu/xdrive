@@ -81,6 +81,12 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
     // A verified Owner stream can exist even when Media3 initialization fails
     // (decoder/device resource unavailable). Never show inert play controls.
     val playerSetupFailed = activeSource != null && player == null
+    val playerCleanup = remember(player) {
+        NativeMedia3PlayerReleaseOnce(
+            stop = { player?.stop(); Unit },
+            release = { player?.release(); Unit },
+        )
+    }
     // A manual retry is a new playback generation: old seek/duration or
     // Media3 callbacks cannot be presented as the new file's playback state.
     var isPlaying by remember(node.id, node.revision, retryNonce) { mutableStateOf(false) }
@@ -91,7 +97,8 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
     var seekProgress by remember(node.id, node.revision, retryNonce) { mutableFloatStateOf(0f) }
     DisposableEffect(player, activeSource, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) player?.pause()
+            if (event == Lifecycle.Event.ON_STOP && !playerCleanup.isReleased)
+                player?.pause()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         // Cover a STOP that happened before this effect was installed.
@@ -105,8 +112,8 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
         player?.addListener(listener)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            player?.removeListener(listener)
-            player?.release()
+            if (!playerCleanup.isReleased) player?.removeListener(listener)
+            playerCleanup.dispose()
             // Refers to the immutable stream from this exact player generation.
             // Reading mutable 'source' here would leak the old Owner client
             // when a failed playback is retried (source = null -> new source).
@@ -121,16 +128,19 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
             // On a decoder error, stop any residual buffering before
             // retiring the scoped Owner HTTP dispatcher. close() is idempotent
             // with both dispose and Owner logout; never close a later retry.
-            runCatching { player?.stop() }
+            playerCleanup.retireFailed()
             exactSource?.let(controller::closeGalleryVideoPlayback)
         }
     }
-    LaunchedEffect(player, lifecycleOwner) {
+    LaunchedEffect(player, lifecycleOwner, failed) {
+        // Stop polling an already failed/released decoder; old player state
+        // cannot be reused by a later explicit retry of this Owner file.
+        if (failed) return@LaunchedEffect
         // Pause the frequent UI position poll while the app is backgrounded.
         // A STOP already paused playback; START only restores the controls,
         // never an old playWhenReady flag.
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (player != null) {
+            while (player != null && !failed && !playerCleanup.isReleased) {
                 positionMs = player.currentPosition.coerceAtLeast(0L)
                 bufferedMs = player.bufferedPosition.coerceAtLeast(0L)
                 durationMs = player.duration.takeIf { it > 0 } ?: 0L
