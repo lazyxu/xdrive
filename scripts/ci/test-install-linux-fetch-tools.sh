@@ -51,6 +51,20 @@ for plan in mirror-ok mirror-update-fails mirror-install-fails; do
   ! grep -Eq -- '--allow-unauthenticated|trusted=yes|Verify-Peer=false' "$APT_TEST_LOG"
   [[ -z "$(ls -A "$tmp/temps")" ]]
 done
+# Job-specific prerequisites must use the same signed mirror and survive
+# fallback. Previously the API job bypassed this helper for PostgreSQL and
+# stalled on the official CDN before it could run any tests.
+for plan in mirror-ok mirror-update-fails mirror-install-fails; do
+  : > "$APT_TEST_LOG"
+  APT_TEST_PLAN="$plan" bash "$ROOT/scripts/ci/install-linux-fetch-tools.sh" postgresql-client python3
+  expected=mirror
+  [[ "$plan" == mirror-ok ]] || expected=official
+  grep -q "^$expected .*install.*xz-utils postgresql-client python3" "$APT_TEST_LOG" || {
+    echo 'job prerequisites were not installed through the signed APT helper' >&2
+    exit 1
+  }
+  [[ -z "$(ls -A "$tmp/temps")" ]]
+done
 if APT_TEST_PLAN=all-fail bash "$ROOT/scripts/ci/install-linux-fetch-tools.sh"; then
   echo 'all failed repositories incorrectly reported success' >&2; exit 1
 fi

@@ -446,6 +446,14 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobTextContains(t, gitlab, "server-validation",
 		"bash scripts/ci/install-linux-fetch-tools.sh",
 	)
+	for _, jobName := range []string{"go-linux", "go-linux-api"} {
+		assertGitLabJobTextContains(t, gitlab, jobName,
+			"bash scripts/ci/install-linux-fetch-tools.sh postgresql-client",
+		)
+	}
+	assertGitLabJobTextContains(t, gitlab, "build-client-core",
+		"bash scripts/ci/install-linux-fetch-tools.sh python3",
+	)
 	for _, jobName := range []string{"test-backup-cli-windows", "test-windows-rollback-artifact", "test-windows-upgrade-artifact", "test-windows-smoke-artifact"} {
 		assertGitLabJobTextContains(t, gitlab, jobName, "xdrive-test-windows-client-artifact")
 	}

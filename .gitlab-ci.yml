@@ -54,9 +54,7 @@ variables:
     - &install_docker_cli_only bash scripts/ci/install-docker-cli.sh --docker-only
     - &install_postgres_client |
         set -euo pipefail
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get install -y --no-install-recommends postgresql-client
+        bash scripts/ci/install-linux-fetch-tools.sh postgresql-client
         rm -rf /var/lib/apt/lists/*
 
 .electron-linux-cache:
@@ -247,9 +245,7 @@ build-client-core:
       bash scripts/build-client-core.sh "$XDRIVE_RELEASE_VERSION" release/core
       # Same immutable core binaries as Desktop; never build a second uploader.
       if ! command -v python3 >/dev/null 2>&1; then
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get install -y --no-install-recommends python3
+        bash scripts/ci/install-linux-fetch-tools.sh python3
       fi
       bash scripts/package-backup-cli.sh release/core release/backup-cli
       bash scripts/ci/test-backup-cli-archives.sh "$XDRIVE_RELEASE_VERSION" release/backup-cli release/core
