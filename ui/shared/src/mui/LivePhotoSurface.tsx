@@ -611,6 +611,13 @@ export function XDriveLivePhotoSurface({
     setPhotoPageDragging(false)
     endHold()
   }, [clearHoldTimer, endHold, gestureSession])
+  // Normal pointerleave follows pointerup on some browsers. It must not
+  // cancel the accepted turn while its existing 150ms settle is pending.
+  // A leave during an active gesture still cancels it immediately.
+  const handlePointerLeave = useCallback(() => {
+    if (photoPageTimerRef.current !== null && !touchGestureRef.current) return
+    cancelTouchGesture()
+  }, [cancelTouchGesture])
   // A hidden iOS PWA/desktop tab may never dispatch pointerup, keyup or blur.
   // Retire the exact current signed motion lease rather than leaving a video
   // Range or unfinished motion ticket alive across background suspension.
@@ -880,7 +887,8 @@ export function XDriveLivePhotoSurface({
     // the existing authenticated Viewer may adopt the adjacent item.
     const direction = viewportRef.current.scale <= 1.01
       ? xDrivePhotoPageTurn(dx, dy, Date.now() - gesture.startedAt,
-        Boolean(onSwipePrevious), Boolean(onSwipeNext))
+        Boolean(onSwipePrevious), Boolean(onSwipeNext),
+        viewportSizeRef.current.width)
       : null
     setPhotoPageDragging(false)
     if (!direction) {
@@ -938,7 +946,7 @@ export function XDriveLivePhotoSurface({
       onDoubleClick={handleDoubleClick}
       onWheel={handleWheel}
       onPointerCancel={cancelTouchGesture}
-      onPointerLeave={cancelTouchGesture}
+      onPointerLeave={handlePointerLeave}
       onLostPointerCapture={handleLostCapture}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}

@@ -599,7 +599,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         const dy = event.clientY - swipe.startY
         const direction = imageScale <= 1.01
           ? xDrivePhotoPageTurn(dx, dy, Date.now() - swipe.startedAt,
-            Boolean(onSwipePrevious), Boolean(onSwipeNext))
+            Boolean(onSwipePrevious), Boolean(onSwipeNext),
+            imageViewportSizeRef.current.width)
           : null
         setImageSwipeTracking(false)
         if (direction) {
