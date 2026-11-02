@@ -255,7 +255,7 @@ test('P0-A no duplicate inline toolbar and filters become embedded in mobile she
   assert.ok((gallery.match(/sx=\{\{ display: compactGallery \? 'none' : 'flex' \}\}/g) || []).length >= 3,
     'mobile Gallery hides its desktop header, toolbar and feedback strip')
   assert.match(gallery, /mobileEmbedded=\{mobileWebChrome\}/)
-  assert.match(gallery, /const compactGallery = useMediaQuery\([^\n]+ && mobileWebChrome/)
+  assert.match(gallery, /const compactGallery = mobileWebChrome/)\n  assert.doesNotMatch(gallery, /const compactGallery = useMediaQuery\([^\n]+ && mobileWebChrome/)
   assert.match(read('web/src/App.tsx'), /<XDriveMediaGalleryPage[\s\S]*?mobileWebChrome/)
   assert.match(filter, /mobileEmbedded && compactViewport/)
   assert.match(navigation, /export type MediaGallerySection/)
