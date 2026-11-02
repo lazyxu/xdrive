@@ -240,11 +240,11 @@ test('Desktop sidebar uses the active MUI dark theme rather than the light fallb
     'keep exactly one normal-width rail divider without changing its geometry')
   assert.match(sharedNav, /borderColor: dark \? 'rgba\(255,255,255,\.06\)' : 'divider'/,
     'dark rail divider should stay subtle while light themes keep MUI divider tokens')
-  assert.match(sharedNav, /scrollbarColor: 'rgba\\(255,255,255,\\.16\\) transparent'/,
+  assert.match(sharedNav, /scrollbarColor: 'rgba\(255,255,255,\.16\) transparent'/,
     'dark-side rail must not display a bright native Windows scrollbar')
-  assert.match(sharedNav, /overflowY: responsive \\? \\{ xs: 'hidden', md: 'auto' \\} : 'auto'/,
+  assert.match(sharedNav, /overflowY: responsive \? \{ xs: 'hidden', md: 'auto' \} : 'auto'/,
     'dark thumb adjustment must not disable scrolling')
-  assert.match(sharedNav, /'@media \\(forced-colors: active\\)'/,
+  assert.match(sharedNav, /'@media \(forced-colors: active\)'/,
     'Windows high-contrast mode retains system scrollbar visibility')
   assert.doesNotMatch(sharedApp, /boxShadow:|outline:|borderLeft:/,
     'do not add a second highlight/shadow at the shared app boundary')
