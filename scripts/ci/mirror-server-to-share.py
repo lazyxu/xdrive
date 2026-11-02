@@ -29,6 +29,7 @@ def load(name, path):
 HERE = Path(__file__).resolve().parent
 client = load('server_mirror_client', HERE / 'mirror-clients-to-share.py')
 offline = load('server_mirror_offline', HERE.parent / 'offline/xdrive_offline.py')
+delivery = load('server_mirror_delivery', HERE.parent / 'offline/delivery_descriptor.py')
 MirrorError = client.MirrorError
 REPOSITORY = 'lazyxu/xdrive'
 METADATA_LIMIT = 16 * 1024 * 1024
@@ -214,14 +215,240 @@ def publish(directory, share):
     print('Server mirror verified: sequence ' + str(descriptor['sequence']) + ', commit ' + manifest['source_commit'])
 
 
+RELEASE_FILES = ('manifest.json', 'xdrive-offline.py', 'delivery.json',
+                 'delivery-attestation.jsonl', 'xdrive-offline-attestation.json',
+                 'SHA256SUMS.txt', 'MANIFEST_SHA256.txt')
+BUNDLE_FILES = ('delivery-attestation.jsonl', 'xdrive-offline-attestation.json')
+
+
+def installer_source(repository):
+    return repository / 'scripts/offline/xdrive_offline.py'
+
+
+def previous_manifest(releases):
+    published = [r for r in releases if r.get('draft') is False and
+                 re.fullmatch(r'offline-manifest-[a-f0-9]{12}', r.get('tag_name', ''))]
+    return max(published, key=lambda r: r['created_at'])['tag_name'] if published else ''
+
+
+def write_checksums(directory):
+    manifest = manifest_at(directory)
+    lines = [client.sha256_file(directory / 'manifest.json') + '  manifest.json']
+    # Declare all five package identities so metadata is deterministic on retries,
+    # regardless of which archives the runner needed to build or fetch locally.
+    lines.extend(manifest['packages'][c]['sha256'] + '  ' + manifest['packages'][c]['filename']
+                 for c in offline.COMPONENTS)
+    lines.append(client.sha256_file(directory / 'xdrive-offline.py') + '  xdrive-offline.py')
+    (directory / 'SHA256SUMS.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    (directory / 'MANIFEST_SHA256.txt').write_text(lines[0].split()[0] + '\n', encoding='ascii')
+
+
+class GitHub:
+    def run(self, *args):
+        result = subprocess.run(['gh', *args], stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, check=False)
+        if result.returncode:
+            raise MirrorError('GitHub release operation failed')
+        return result.stdout
+
+    def get(self, tag):
+        result = subprocess.run(['gh', 'api', f'repos/{REPOSITORY}/releases/tags/{tag}'],
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+        if result.returncode:
+            if '(HTTP 404)' in result.stderr:
+                return None
+            raise MirrorError('Cannot determine GitHub release state')
+        if len(result.stdout) > METADATA_LIMIT:
+            raise MirrorError('Excessive GitHub release metadata')
+        return json.loads(result.stdout)
+
+    def download(self, tag, name, directory):
+        self.run('release', 'download', tag, '--repo', REPOSITORY,
+                 '--pattern', name, '--dir', str(directory))
+
+    def verify(self, directory, bundle):
+        for name in ('manifest.json', 'xdrive-offline.py', 'delivery.json'):
+            result = json.loads(self.run('attestation', 'verify', str(directory / name),
+                '--repo', REPOSITORY, '--bundle', str(bundle), '--signer-workflow',
+                REPOSITORY + '/.github/workflows/offline-packages.yml',
+                '--source-ref', 'refs/heads/master', '--deny-self-hosted-runners', '--format', 'json'))
+            if not isinstance(result, list) or not result:
+                raise MirrorError('Missing verified publisher identity')
+            for item in result:
+                identity = item['verificationResult']['signature']['certificate']['sourceRepositoryIdentifier']
+                if type(identity) not in (str, int) or str(identity) != '1382670236':
+                    raise MirrorError('GitHub publisher repository identity mismatch')
+
+    def packages(self, manifest):
+        for item in manifest['packages'].values():
+            release = self.get(item['release_tag'])
+            if not isinstance(release, dict) or release.get('draft') is not False:
+                raise MirrorError('Referenced package is not published')
+            matches = [a for a in release.get('assets', []) if a.get('name') == item['filename']]
+            if len(matches) != 1 or matches[0].get('size') != item['size'] or matches[0].get('digest') != 'sha256:' + item['sha256']:
+                raise MirrorError('Published package differs from signed manifest')
+
+    def create(self, tag, commit, notes=''):
+        self.run('release', 'create', tag, '--repo', REPOSITORY, '--target', commit,
+                 '--draft', '--prerelease', '--title', 'xDrive offline Manifest ' + commit[:12],
+                 '--notes', notes)
+
+    def upload(self, tag, path):
+        self.run('release', 'upload', tag, str(path), '--repo', REPOSITORY)
+
+    def publish(self, tag):
+        self.run('release', 'edit', tag, '--repo', REPOSITORY, '--draft=false')
+
+
+def release_assets(record, commit):
+    tag = 'offline-manifest-' + commit[:12]
+    if (not isinstance(record, dict) or record.get('tag_name') != tag or
+            record.get('target_commitish') != commit or type(record.get('id')) is not int or
+            type(record.get('draft')) is not bool or not isinstance(record.get('assets'), list)):
+        raise MirrorError('Release target does not match the exact source commit')
+    assets = {}
+    for item in record['assets']:
+        name = item.get('name')
+        if (name not in RELEASE_FILES or name in assets or type(item.get('size')) is not int or
+                not 0 < item['size'] <= METADATA_LIMIT):
+            raise MirrorError('Unexpected or duplicate release asset')
+        assets[name] = item
+    return assets
+
+
+def download_release(directory, commit, github, record):
+    assets = release_assets(record, commit)
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, item in assets.items():
+        github.download(record['tag_name'], name, directory)
+        path = directory / name
+        if path.is_symlink() or not path.is_file() or path.stat().st_size != item['size']:
+            raise MirrorError('Downloaded release metadata size mismatch')
+        digest = item.get('digest')
+        if digest is not None and digest != 'sha256:' + client.sha256_file(path):
+            raise MirrorError('Downloaded release metadata digest mismatch')
+    return assets
+
+
+def publish_github(directory, commit, github):
+    manifest = manifest_at(directory)
+    if manifest['source_commit'] != commit or not re.fullmatch(r'[a-f0-9]{40}', commit):
+        raise MirrorError('Wrong source manifest for publication')
+    validate_delivery(directory, manifest)
+    tag = 'offline-manifest-' + commit[:12]
+    record = github.get(tag)
+    with tempfile.TemporaryDirectory(prefix='release-verify-', dir=directory) as temp:
+        remote = Path(temp)
+        assets = download_release(remote, commit, github, record) if record is not None else {}
+        existing_bundles = [remote / n for n in BUNDLE_FILES if n in assets]
+        if existing_bundles:
+            original = existing_bundles[0].read_bytes()
+            if any(p.read_bytes() != original for p in existing_bundles):
+                raise MirrorError('Existing attestation bundles conflict')
+            github.verify(directory, existing_bundles[0])
+            for name in BUNDLE_FILES:
+                (directory / name).write_bytes(original)
+        if (directory / BUNDLE_FILES[0]).read_bytes() != (directory / BUNDLE_FILES[1]).read_bytes():
+            raise MirrorError('Local attestation aliases conflict')
+        github.verify(directory, directory / BUNDLE_FILES[0])
+        for name in RELEASE_FILES:
+            path = directory / name
+            if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= METADATA_LIMIT:
+                raise MirrorError('Missing local release metadata')
+            if name in assets and path.read_bytes() != (remote / name).read_bytes():
+                raise MirrorError('Immutable release asset collision; never overwrite')
+        github.packages(manifest)
+        if record is not None and not record['draft']:
+            if set(assets) != set(RELEASE_FILES):
+                raise MirrorError('Published release is incomplete; refusing mutation')
+            return
+        if record is None:
+            notes = ('Source Commit: ' + commit + '\nTrusted Manifest SHA-256: ' +
+                     client.sha256_file(directory / 'manifest.json') + '\nTrusted Installer SHA-256: ' +
+                     client.sha256_file(directory / 'xdrive-offline.py'))
+            github.create(tag, commit, notes)
+            record = github.get(tag)
+            if not record or release_assets(record, commit) or record['draft'] is not True:
+                raise MirrorError('New release draft identity changed')
+        for name in RELEASE_FILES:  # Manifest is uploaded first; never clobber.
+            if name not in assets:
+                github.upload(tag, directory / name)
+        current = github.get(tag)
+        if current is None or current['id'] != record['id'] or current.get('draft') is not True:
+            raise MirrorError('Draft changed during recovery')
+        with tempfile.TemporaryDirectory(prefix='release-readback-', dir=directory) as checked:
+            checked = Path(checked)
+            complete = download_release(checked, commit, github, current)
+            if set(complete) != set(RELEASE_FILES) or any(
+                    (checked / n).read_bytes() != (directory / n).read_bytes() for n in RELEASE_FILES):
+                raise MirrorError('Draft assets are incomplete or changed')
+        github.publish(tag)
+        published = github.get(tag)
+        if (published is None or published['id'] != record['id'] or published.get('draft') is not False or
+                release_assets(published, commit) != complete):
+            raise MirrorError('Release publication was not confirmed')
+
+
+def resume_github(directory, commit, repository, github):
+    if not re.fullmatch(r'[a-f0-9]{40}', commit):
+        raise MirrorError('Full source commit required')
+    tag = 'offline-manifest-' + commit[:12]
+    record = github.get(tag)
+    if record is None:
+        return False
+    assets = release_assets(record, commit)
+    if not record['draft'] and set(assets) != set(RELEASE_FILES):
+        raise MirrorError('Published release is incomplete')
+    # No authenticated seed yet: the normal CI build may supply missing assets.
+    # publish_github will compare every surviving byte before adding anything.
+    if 'manifest.json' not in assets or not any(n in assets for n in BUNDLE_FILES):
+        return False
+    with tempfile.TemporaryDirectory(prefix='release-resume-', dir=directory.parent) as temp:
+        stage = Path(temp)
+        download_release(stage, commit, github, record)
+        original = {n: (stage / n).read_bytes() for n in assets}
+        (stage / 'xdrive-offline.py').write_bytes(installer_source(repository).read_bytes())
+        descriptor = delivery.generate(stage, commit, repository)
+        (stage / 'delivery.json').write_text(json.dumps(descriptor, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+        write_checksums(stage)
+        for name, contents in original.items():
+            if name not in BUNDLE_FILES and (stage / name).read_bytes() != contents:
+                raise MirrorError('Existing draft metadata conflicts with exact source')
+        bundle = next(original[n] for n in BUNDLE_FILES if n in original)
+        for name in BUNDLE_FILES:
+            if name in original and original[name] != bundle:
+                raise MirrorError('Existing draft signatures conflict')
+            (stage / name).write_bytes(bundle)
+        # This verifies signatures before publication and publishes only a fully
+        # verified exact draft. Missing/mismatched package releases fail closed.
+        publish_github(stage, commit, github)
+        directory.mkdir(parents=True, exist_ok=True)
+        for name in RELEASE_FILES:
+            (directory / name).write_bytes((stage / name).read_bytes())
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('fetch', 'publish'))
-    parser.add_argument('--directory', type=Path, required=True)
+    parser.add_argument('command', choices=('fetch', 'publish', 'resume-github', 'publish-github', 'checksums', 'previous'))
+    parser.add_argument('--directory', type=Path, default=Path('offline'))
+    parser.add_argument('--commit')
+    parser.add_argument('--repository', type=Path, default=HERE.parents[1])
     args = parser.parse_args()
     try:
         if args.command == 'fetch':
             fetch_packages(args.directory)
+        elif args.command == 'checksums':
+            write_checksums(args.directory)
+        elif args.command == 'previous':
+            print(previous_manifest(json.loads(sys.stdin.read())))
+        elif args.command in ('resume-github', 'publish-github'):
+            if not isinstance(args.commit, str) or not re.fullmatch(r'[a-f0-9]{40}', args.commit):
+                raise MirrorError('Full source commit required')
+            if args.command == 'resume-github':
+                print('true' if resume_github(args.directory, args.commit, args.repository, GitHub()) else 'false')
+            else:
+                publish_github(args.directory, args.commit, GitHub())
         else:
             url = os.environ.get('XDRIVE_CLIENT_MIRROR_SHARE_URL', '')
             if not url:
@@ -229,8 +456,7 @@ def main():
             publish(args.directory, Share(url, os.environ.get('XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD', '')))
         return 0
     except (MirrorError, OSError, ValueError, KeyError, TypeError):
-        # Never print raw request errors, capability URLs, passwords or responses.
-        print('Server mirror failed verification; no completion may be assumed', file=sys.stderr)
+        print('Server release verification failed; no publication may be assumed', file=sys.stderr)
         return 1
 
 

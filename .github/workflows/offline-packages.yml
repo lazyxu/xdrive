@@ -15,7 +15,7 @@ on:
       ci_run_id:
         required: true
         type: string
-        description: "Completed successful master CI run"
+        description: "Completed successful master CI run (retry failed mirror via the original CI rerun-failed-jobs)"
 
 permissions:
   contents: write
@@ -45,6 +45,9 @@ jobs:
           test "$GITHUB_REPOSITORY" = lazyxu/xdrive
           test "$GITHUB_REPOSITORY_ID" = 1382670236
           [[ "$TARGET_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 2
+          # Do not authorize a failed CI through workflow_dispatch. If only this
+          # downstream publisher/mirror failed, rerun the original CI's failed
+          # jobs so its completed prerequisites and exact Final Gate are reused.
           record="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TARGET_RUN_ID")"
           jq -e '.name == "CI" and .event == "push" and .head_branch == "master" and
                  (.status == "in_progress" or (.status == "completed" and .conclusion == "success"))' <<< "$record" >/dev/null
@@ -73,34 +76,15 @@ jobs:
           python3 scripts/ci/test-mirror-server-to-share.py -q
           bash -n scripts/offline/build-five-packages.sh
 
-      - name: Resume an already published exact-commit release without rebuilding
+      - name: Resume verified publication or recover its exact draft
         id: replay
         shell: bash
         env:
           COMMIT: ${{ steps.source.outputs.commit }}
-          SHORT: ${{ steps.source.outputs.short }}
         run: |
           set -euo pipefail
-          tag="offline-manifest-$SHORT"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            mkdir -p offline
-            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir offline \
-              --pattern manifest.json --pattern xdrive-offline.py \
-              --pattern delivery.json --pattern delivery-attestation.jsonl \
-              --pattern xdrive-offline-attestation.json
-            for name in manifest.json xdrive-offline.py delivery.json; do
-              gh attestation verify "offline/$name" --repo "$GITHUB_REPOSITORY" \
-                --bundle offline/delivery-attestation.jsonl \
-                --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/offline-packages.yml" \
-                --source-ref refs/heads/master --deny-self-hosted-runners
-            done
-            cmp scripts/offline/xdrive_offline.py offline/xdrive-offline.py
-            cp offline/delivery.json offline/delivery.original.json
-            python3 scripts/offline/delivery_descriptor.py --directory offline --commit "$COMMIT"
-            cmp offline/delivery.original.json offline/delivery.json
-            rm offline/delivery.original.json
-            echo 'exists=true' >> "$GITHUB_OUTPUT"
-          fi
+          exists="$(python3 scripts/ci/mirror-server-to-share.py resume-github --directory offline --commit "$COMMIT")"
+          echo "exists=$exists" >> "$GITHUB_OUTPUT"
 
       - name: Find the last authenticated immutable Manifest
         if: steps.replay.outputs.exists != 'true'
@@ -110,8 +94,7 @@ jobs:
           set -euo pipefail
           mkdir -p previous
           releases="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")"
-          tag="$(jq -r '[.[] | select(.tag_name | test("^offline-manifest-[a-f0-9]{12}$"))] |
-                         sort_by(.created_at) | last | .tag_name // ""' <<< "$releases")"
+          tag="$(python3 scripts/ci/mirror-server-to-share.py previous <<< "$releases")"
           if [[ -n "$tag" ]]; then
             gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
               --pattern manifest.json --pattern xdrive-offline-attestation.json --dir previous
@@ -200,7 +183,7 @@ jobs:
           set -euo pipefail
           bash scripts/offline/build-five-packages.sh ci-assets offline
           cp scripts/offline/xdrive_offline.py offline/xdrive-offline.py
-          (cd offline && sha256sum xdrive-offline.py >> SHA256SUMS.txt)
+          python3 scripts/ci/mirror-server-to-share.py checksums --directory offline
           count="$(find offline -maxdepth 1 -type f -name 'xdrive-*.tar.gz' | wc -l)"
           expected="$(jq '.changed|length' plan.json)"
           test "$count" = "$expected"
@@ -267,21 +250,8 @@ jobs:
                 --notes "Immutable $component, source $CI_COMMIT, SHA256 $digest"
             fi
           done < changed-assets.tsv
-          tag="offline-manifest-$SHORT"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Refusing to overwrite immutable $tag" >&2; exit 1
-          fi
-          digest="$(sha256sum offline/manifest.json | awk '{print $1}')"
-          tool_digest="$(sha256sum offline/xdrive-offline.py | awk '{print $1}')"
-          notes="$(printf 'xDrive five-component Linux AMD64 offline release.\nSource Commit: %s\nTrusted Manifest SHA-256: %s\nTrusted Installer SHA-256: %s\nCI run: %s\nNew components: %s\n\nVerify GitHub Actions attestation and copy both hashes from this trusted release before running the offline installer.' "$CI_COMMIT" "$digest" "$tool_digest" "$TARGET_RUN_ID" "$(jq -c .changed plan.json)")"
-          gh release create "$tag" \
-            offline/manifest.json offline/xdrive-offline.py \
-            offline/delivery.json offline/delivery-attestation.jsonl \
-            offline/xdrive-offline-attestation.json offline/SHA256SUMS.txt \
-            offline/MANIFEST_SHA256.txt \
-            --repo "$GITHUB_REPOSITORY" --target "$CI_COMMIT" --prerelease \
-            --title "xDrive offline Manifest $SHORT" --notes "$notes"
-          echo "Published $tag; new packages: $(jq -c .changed plan.json)"
+          python3 scripts/ci/mirror-server-to-share.py publish-github --directory offline --commit "$CI_COMMIT"
+          echo "Published offline-manifest-$SHORT; new packages: $(jq -c .changed plan.json)"
 
       - name: Mirror exact published server packages into Share (opt-in)
         if: vars.XDRIVE_CLIENT_MIRROR_ENABLED == 'true'
