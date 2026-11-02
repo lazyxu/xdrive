@@ -58,6 +58,7 @@ type Server struct {
 	geoNamesSnapshotMu             sync.Mutex
 	BaiduMapAK                     string
 	BaiduMapEnabled                bool
+	BaiduServerAKProbeHTTPClient   *http.Client // test-only transport; production uses pinned SafeHTTPClient
 	BaiduJSAPIProbeHTTPClient      *http.Client
 	baiduJSAPIProbeMu              sync.Mutex
 	baiduJSAPIProbeAt              time.Time
