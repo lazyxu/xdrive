@@ -935,6 +935,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                               ),
                               model.entries.contains(where: { $0.node == next })
                         else { return false }
+                        offset = model.pageOffset(for: next) ?? offset
                         lastViewedFile = next
                         return true
                     }
