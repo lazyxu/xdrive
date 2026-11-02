@@ -43,9 +43,9 @@ test('Host-disabled Search never dispatches even through direct command callback
   assert.deepEqual(calls, ['authorized'], 'Desktop keeps its original authenticated search')
 })
 
-test('shared Files toolbar disables unsupported operations while allowing verified Owner folder creation and search', () => {
+test('shared Files toolbar retains Host-disabled operations while admitting verified Owner upload and search', () => {
   for (const name of [
-    'uploadFiles', 'uploadFolder',
+    'uploadFolder',
     'copy', 'cut', 'paste', 'delete', 'moveTo', 'copyTo', 'manageTags',
   ]) {
     assert.ok(explorer.includes("'" + name + "'"), name + ' missing from shared capability contract')
@@ -56,8 +56,16 @@ test('shared Files toolbar disables unsupported operations while allowing verifi
   assert.ok(dsm.includes('onSearch={search.start}') &&
     dsm.includes('searchEnabled'),
     'the shared search bar must dispatch only through the authenticated DSM search hook')
-  // DSM now explicitly supports only Owner-scoped new-folder creation;
-  // remaining unsupported mutations still require genuine Host reasons.
+  // Only the verified browser-selected single-file upload is admitted.
+  // Folder upload and unrelated mutations remain truly Host-disabled.
+  assert.equal(host.includes("uploadFiles: 'DSM"), false,
+    'Owner-scoped single-file upload must not be falsely disabled')
+  assert.ok(dsm.includes('onUpload={() => {') &&
+    dsm.includes('client.ownerUploadSmallFile(') &&
+    dsm.includes('uploadInputRef.current?.click()'),
+    'upload must use the typed current-Owner browser picker')
+  assert.ok(host.includes("uploadFolder: 'DSM"),
+    'unimplemented folder upload must remain unavailable')
   assert.equal(host.includes("createFolder: 'DSM"), false,
     'Owner-scoped new-folder action must not be falsely disabled by DSM Host')
   assert.equal(host.includes("rename: 'DSM"), false,
