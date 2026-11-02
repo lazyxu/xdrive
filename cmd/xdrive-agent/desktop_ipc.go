@@ -125,6 +125,7 @@ var desktopIPCCapabilities = []string{
 	"cloud-folder-create",
 	"cloud-owner-small-upload",
 	"cloud-node-rename",
+	"cloud-node-delete",
 	"cloud-file-text-preview",
 	"cloud-media-range-read",
 	"cloud-thumbnail-read",
