@@ -102,6 +102,18 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
           "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
 
+      - name: Verify focused first-pass native PhotoKit window progression
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoBackupScanWindow.swift \
+            ios/XDriveIOS/PhotoAutoSchedulePolicy.swift \
+            ios/XDriveIOS/PhotoFocusedBackupPolicy.swift \
+            ios/tests/PhotoFocusedBackupPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-focused-policy-check"
+          "$RUNNER_TEMP/xdrive-ios-focused-policy-check"
+          node --test desktop/tests/ios-native-photo-focused-backup.cjs
+
       - name: Verify bounded private PhotoKit orphan staging cleanup
         run: |
           set -euo pipefail
