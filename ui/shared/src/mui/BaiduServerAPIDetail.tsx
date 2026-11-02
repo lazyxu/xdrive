@@ -52,11 +52,19 @@ export function XDriveBaiduServerAPIDetail({
   // Administrator inventory is automatically loaded on page entry; it NEVER
   // makes a quota-consuming Baidu request. Don't label the local-read time as
   // provider verification or turn an enabled AK into green remote health.
-  const health = service.health_state === 'ready' ? '检查通过'
-    : service.health_state === 'failed' ? '检查异常'
-      : service.health_state === 'not-checked' ? '百度上游未检测' : '无法确认'
-  const stateLabel = service.health_state === 'not-checked' &&
-    assessment.state === 'attention' ? '上游未验证' : assessment.label
+  const probe = service.baidu_server_probe_state
+  const health = service.health_state === 'ready' ? '百度固定测试通过'
+    : service.health_state === 'failed' ? '百度固定测试未通过'
+      : probe === 'checking' ? '正在自动检测'
+        : probe === 'unavailable' ? '在线检测未确认'
+          : service.health_state === 'not-checked' ? '百度上游未检测' : '无法确认'
+  const stateLabel = probe === 'checking' ? '自动在线检测中'
+    : probe === 'accepted' && service.health_state === 'ready' ? '百度已响应'
+      : probe === 'rejected' && service.health_state === 'failed' ? '上游未接受'
+        : probe === 'unavailable' ? '在线检测失败'
+          : probe === 'rate-limited' ? '等待检测配额'
+            : service.health_state === 'not-checked' &&
+              assessment.state === 'attention' ? '上游未验证' : assessment.label
 
   return (
     <Box data-xdrive-baidu-server-flat="true" sx={{ width: '100%', minWidth: 0 }}>
@@ -82,11 +90,17 @@ export function XDriveBaiduServerAPIDetail({
           {checkedAt && <Typography variant="caption" color="text.secondary">
             本机状态读取时间：{checkedAt}
           </Typography>}
+          {service.baidu_server_probe_checked_at && (
+            <Typography variant="caption" color="text.secondary" data-xdrive-baidu-server-upstream-check-time>
+              百度在线检测时间：{new Date(service.baidu_server_probe_checked_at).toLocaleString('zh-CN')}
+            </Typography>
+          )}
           <Typography variant="body2" color="text.secondary" data-xdrive-baidu-server-evidence-scope>
-            进入页面会自动读取 Server 本机配置与运行状态；「刷新本机状态」只重新读取，不会请求百度上游或消耗坐标转换配额。
-            百度上游是否接受 Server AK 尚未在线核验；动态地图的 Browser AK 与 Loader 状态另行显示。
+            Server 会自动以固定公开坐标检测百度 Geoconv v2：跨实例最多每小时一次，并计入现有坐标转换共享配额。
+            「刷新本机状态」只读取缓存结果，不会绕过频率限制；检测通过不代表实际照片索引或动态地图 JSAPI4 成功。Browser AK 与 Loader 独立检测。
           </Typography>
-          {(service.health_state === 'failed' || service.status === 'unavailable') && service.detail && (
+          {(service.health_state === 'failed' || service.status === 'unavailable' ||
+            (probe && probe !== 'not-checked')) && service.detail && (
             <Typography variant="body2" color={service.health_state === 'failed' ? 'error.main' : 'text.secondary'}>
               {service.detail}
             </Typography>

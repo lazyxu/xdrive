@@ -53,6 +53,32 @@ test('Web/PWA PDF preflight accepts exact authenticated API-origin tickets, not 
   }
 })
 
+test('Web/PWA PDF ticket validation works when legacy WebKit lacks URLSearchParams.size', async () => {
+  const oldFetch = global.fetch
+  const oldWindow = global.window
+  const descriptor = Object.getOwnPropertyDescriptor(URLSearchParams.prototype, 'size')
+  const calls = []
+  Object.defineProperty(URLSearchParams.prototype, 'size', {
+    configurable: true,
+    value: undefined,
+  })
+  global.window = { location: { href: 'https://web.xdrive.example/#/files' } }
+  global.fetch = async (...args) => {
+    calls.push(args)
+    return response(200, 'application/pdf')
+  }
+  try {
+    await xDrivePreflightWebPDFTicket(ticket(), new AbortController().signal)
+    assert.equal(calls.length, 1,
+      'a valid one-token ticket must pass validation without the newer size getter')
+  } finally {
+    if (descriptor) Object.defineProperty(URLSearchParams.prototype, 'size', descriptor)
+    else delete URLSearchParams.prototype.size
+    global.fetch = oldFetch
+    global.window = oldWindow
+  }
+})
+
 test('Web/PWA PDF iframe is gated on HTTP status and PDF MIME, including retry attempts', async () => {
   const oldFetch = global.fetch
   const failures = [

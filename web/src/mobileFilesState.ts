@@ -16,6 +16,7 @@ export type MobileFilesSavedState = {
 export const MOBILE_FILES_HOLD_MS = 450
 export const MOBILE_FILES_MOVE_PX = 10
 export const MOBILE_FILES_ROW_HEIGHT = 68
+export const MOBILE_FILES_ITEM_TEXT_GAP_PX = 12
 export const MOBILE_FILES_GRID_ROW_HEIGHT = 150
 
 /** F02-M: read out a mounted Mobile button's position within the complete
@@ -31,14 +32,21 @@ export function mobileFilesLogicalPositionDescription(
   return `第 ${index + 1} 项，共 ${itemCount} 项`
 }
 
-// Actual leading edge of file text in List/Recent/Favorites. iOS 27 List
-// uses a 28px outer gutter + 44px thumbnail slot + 12px gap; selection
-// inserts a 24px circle and another 12px gap. Inline disclosure adds 16px
-// per level, capped at four levels. Keep the 68px virtual-row contract.
-// Keep separators aligned without changing the shared 68px virtual row height.
+// Browse Home, Recent and Favorites have a 28px gutter, a 44px icon slot
+// and a 12px icon-to-text gap. Keep separators aligned with the title.
 export function mobileFilesRowTextInset(selectionMode: boolean, depth = 0): number {
   const level = Number.isFinite(depth) ? Math.max(0, Math.min(4, Math.floor(depth))) : 0
-  return 28 + level * 16 + 44 + 12 + (selectionMode ? 24 + 12 : 0)
+  return 28 + level * 16 + 44 + MOBILE_FILES_ITEM_TEXT_GAP_PX + (selectionMode ? 24 + 12 : 0)
+}
+
+// Directory List differs: the 44px disclosure and 40px thumbnail come first.
+// Selection replaces disclosure with 28px gutter + 24px checkbox and two gaps.
+// Use the actual text edge while preserving the 68px virtual row contract.
+export function mobileFilesDirectoryRowTextInset(selectionMode: boolean, depth = 0): number {
+  const level = Number.isFinite(depth) ? Math.max(0, Math.min(4, Math.floor(depth))) : 0
+  return selectionMode
+    ? mobileFilesRowTextInset(true, level)
+    : 44 + 40 + MOBILE_FILES_ITEM_TEXT_GAP_PX + level * 16
 }
 
 // Presentation-only projection from the existing authoritative Node fields.

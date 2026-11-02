@@ -14,10 +14,16 @@ const compiled = ts.transpileModule(read(chromePath), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX,
     target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 }).outputText
+const dockCompiled = ts.transpileModule(read('ui/shared/src/mui/MobileGalleryDockLayout.ts'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const dockModule = { exports: {} }
+new Function('module', 'exports', dockCompiled)(dockModule, dockModule.exports)
 const mui = Object.fromEntries([
   'Autocomplete', 'Box', 'Button', 'Drawer', 'IconButton', 'Menu',
   'MenuItem', 'Slider', 'Stack', 'TextField', 'Typography',
 ].map(name => [name, name.toLowerCase()]))
+mui.useMediaQuery = () => false
 const modules = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
@@ -27,6 +33,12 @@ const modules = {
   '@mui/icons-material/SearchRounded': 'icon',
   '@mui/icons-material/SortRounded': 'icon',
   './useMobilePanelViewport': { useXDriveMobilePanelViewport: () => null },
+  './MobileHeaderPortal': {
+    XDriveMobileHeaderNavigation: ({ children }) =>
+      React.createElement(React.Fragment, null, children),
+    useXDriveMobileHeaderMode: () => 'standalone',
+  },
+  './MobileGalleryDockLayout': dockModule.exports,
   '../media-timezone': { xDriveMediaTimeZoneChoices: () => [] },
 }
 const loaded = { exports: {} }

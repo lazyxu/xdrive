@@ -246,7 +246,14 @@ test('native local and album photo walls free short landscape grid space while r
   assert.match(localWall, /native-ios-local-gallery-layout-help/)
   assert.match(albumWall, /native-ios-local-album-layout-help/)
   assert.match(localWall, /只读取当前授权子集/)
-  assert.match(albumWall, /不读取 iCloud 原件、不上传、不保存相册成员标识/)
+  // Album selection still cannot upload or persist PhotoKit member IDs.
+  // Explicit, user-initiated original sharing may read iCloud originals:
+  // the pre-batch MVP text "never reads iCloud originals" is no longer true.
+  assert.match(albumWall, /仅操作当前授权相簿的媒体；原件分享需明确点击，不上传或持久保存相簿成员标识/)
+  assert.match(albumWall, /Button\("从 iCloud 下载后分享"\)/)
+  assert.match(albumWall, /XDriveIOSNativeLocalOriginalSharer\.prepare\(\s*batch, allowICloudDownload: allowICloud/)
+  assert.match(albumWall, /guard selectionMode, albumAuthorized, phase == \.active/)
+  assert.doesNotMatch(albumWall, /UploadSession|PhotoSyncLedger|XDriveIOSForegroundPhotoBackupMVP/)
 });
 
 test('native automatic scan stops for revoked Owner, sealed ledger or revoked Photos permission', () => {

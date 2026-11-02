@@ -77,14 +77,23 @@ test('real Desktop selection still dispatches the original complete selection', 
 
 test('disabled native-like Host actions use the same menu and shortcut boundary', () => {
   const dsm = fs.readFileSync(path.join(repo, 'web/src/synologyHost.ts'), 'utf8')
+  const ownerFilesPage = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'), 'utf8')
   const dsmEntry = fs.readFileSync(path.join(repo, 'web/src/synology.tsx'), 'utf8')
   const outlet = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8')
   assert.ok(dsmEntry.includes('const host = createXDriveSynologyHost()') &&
     !dsmEntry.includes('filesUnavailableActions:'),
     'DSM entry must use the authenticated Host adapter instead of a page-local capability list')
-  for (const key of ['copy','cut','paste','delete','rename','moveTo','copyTo','manageTags']) {
+  for (const key of ['copy','cut','paste','delete','moveTo','copyTo','manageTags']) {
     assert.ok(dsm.includes(key + ": 'DSM"), key + ' must be declared only at authenticated DSM Host boundary')
   }
+  assert.equal(dsm.includes("rename: 'DSM"), false,
+    'DSM rename is now provided by its exact-revision authenticated Owner operation')
+  assert.ok(ownerFilesPage.includes('onRenameItem={async (item, name) => {'),
+    'DSM rename must enter through the shared FileExplorer callback')
+  assert.ok(ownerFilesPage.includes('xDriveFindVerifiedOwnerSelection(item, itemsRef.current)'),
+    'DSM rename must verify the item against the current authenticated Owner cursor page')
+  assert.ok(ownerFilesPage.includes('client.ownerRenameNode('),
+    'DSM rename must use the narrow authenticated Owner Agent adapter')
   assert.ok(dsm.includes('ownerFilesPage: {') && dsm.includes('client: local,'))
   assert.ok(outlet.includes('client={services.ownerFilesPage.client}'))
   assert.ok(outlet.includes('unavailableActions={services.ownerFilesPage.unavailableActions}'))

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../../ui/shared/src/mobile-item-gesture'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
+import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import PhotoAlbumRoundedIcon from '@mui/icons-material/PhotoAlbumRounded'
@@ -33,6 +34,7 @@ import { xDriveMobileSupplementalDynamicDestinationKeys } from './mobileLauncher
 function xDriveBrowserMobileDestinationIcon(key: string): ReactNode {
   switch (key) {
     case 'files': return <FolderOpenRoundedIcon fontSize="small" />
+    case 'shares': return <ShareRoundedIcon fontSize="small" />
     case 'gallery': return <PhotoLibraryRoundedIcon fontSize="small" />
     case 'device-backup': return <BackupRoundedIcon fontSize="small" />
     case 'remote-pull': return <CloudDownloadRoundedIcon fontSize="small" />
@@ -148,7 +150,12 @@ export function XDriveMobileFiveSlotNavigation({
     // The same threshold as Files/Gallery: panning wins over hold.
     if (xDriveMobileItemMoved(activePointer.current.origin, {
       x: event.clientX, y: event.clientY,
-    })) cancelLongPress()
+    })) {
+      // A pan wins over the hold even if Safari emits a compatibility click
+      // when the pointer is released back over the same bottom tab.
+      suppressReleaseClick.current = true
+      cancelLongPress()
+    }
   }
   const finishLongPress = (event: ReactPointerEvent<HTMLElement>) => {
     if (activePointer.current?.id !== event.pointerId) return
@@ -181,10 +188,13 @@ export function XDriveMobileFiveSlotNavigation({
         }}>
         <BottomNavigation showLabels value={selected}
           sx={{
-            height: 58, bgcolor: 'transparent',
+            height: 56, bgcolor: 'transparent',
             '& .MuiBottomNavigationAction-root': {
-              minWidth: 0, maxWidth: 'none', px: 0.25, minHeight: 58,
-              '& .MuiBottomNavigationAction-label': { fontSize: 11 },
+              minWidth: 0, maxWidth: 'none', px: 0.25, minHeight: 56,
+              '& .MuiBottomNavigationAction-label': {
+                fontSize: 11, minWidth: 0, maxWidth: '100%',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              },
               '& .MuiBottomNavigationAction-label.Mui-selected': { fontSize: 11 },
             },
             '@media (orientation: landscape) and (max-height: 500px)': {
@@ -197,7 +207,7 @@ export function XDriveMobileFiveSlotNavigation({
           <BottomNavigationAction value="all" label="全部"
             icon={<AppsRoundedIcon fontSize="small" />} aria-current={selected === 'all' ? 'page' : undefined}
             onClick={() => onSelect('all')} />
-          <BottomNavigationAction value="dynamic" label="动态功能"
+          <BottomNavigationAction value="dynamic" label={dynamicLabel}
             icon={dynamicIcon ?? <HistoryRoundedIcon fontSize="small" />}
             aria-current={selected === 'dynamic' ? 'page' : undefined}
             aria-label={'动态功能：' + String(dynamicLabel) + '，长按查看最近功能'}

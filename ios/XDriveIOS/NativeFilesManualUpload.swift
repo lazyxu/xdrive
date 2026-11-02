@@ -136,9 +136,15 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
     @Published private(set) var status: String?
     private var epoch = UUID()
     private var running: Task<Void, Never>?
+    private var fileProgressTicket = UUID()
+    private var lastConfirmedPercent = -1
+    private var cancelRequested = false
 
     func invalidate() {
         epoch = UUID()
+        fileProgressTicket = UUID()
+        lastConfirmedPercent = -1
+        cancelRequested = false
         running?.cancel()
         running = nil
         busy = false
@@ -150,6 +156,7 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
     func cancelCurrentTransfer() {
         guard busy, let running else { return }
         running.cancel()
+        cancelRequested = true
         status = "已请求取消上传；若服务器已接收请求，结果可能不确定。请刷新云端目录核对。"
     }
 
@@ -188,6 +195,9 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
         }
         let ticket = UUID()
         epoch = ticket
+        fileProgressTicket = UUID()
+        lastConfirmedPercent = -1
+        cancelRequested = false
         busy = true
         status = "正在检查文件和目标目录…"
         running = Task { @MainActor in
@@ -308,8 +318,35 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
         let writer = try XDriveNativeUploadSessionTransport(
             origin: beforeUpload.owner.origin, accessToken: beforeUpload.accessToken
         )
+        let fileTicket = UUID()
+        fileProgressTicket = fileTicket
+        lastConfirmedPercent = -1
+        defer {
+            if epoch == ticket { fileProgressTicket = UUID() }
+        }
         let receipt = try await writer.uploadOnce(
-            from: staged.fileURL, name: staged.originalName, parentID: parentID
+            from: staged.fileURL, name: staged.originalName, parentID: parentID,
+            onChunkConfirmed: { [weak self] confirmedBytes, fileBytes in
+                Task { @MainActor [weak self] in
+                    guard let self, self.epoch == ticket,
+                          self.fileProgressTicket == fileTicket,
+                          self.busy, !self.cancelRequested, self.running != nil,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                          let percent = XDriveIOSNativeFilesUploadBatchPolicy
+                            .confirmedProgressPercent(
+                                bytes: confirmedBytes, totalBytes: fileBytes
+                            ),
+                          percent > self.lastConfirmedPercent else { return }
+                    self.lastConfirmedPercent = percent
+                    let done = ByteCountFormatter.string(
+                        fromByteCount: confirmedBytes, countStyle: .file
+                    )
+                    let all = ByteCountFormatter.string(
+                        fromByteCount: fileBytes, countStyle: .file
+                    )
+                    self.status = "第 \(index + 1)/\(count) 项服务器已确认接收 \(done) / \(all)（\(percent)%）；最终原件收据尚待核对。"
+                }
+            }
         )
 
         // No next upload starts until this exact item's durable Node

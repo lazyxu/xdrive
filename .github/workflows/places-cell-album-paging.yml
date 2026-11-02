@@ -29,9 +29,10 @@ on:
 permissions:
   contents: read
 
+# PR revisions may supersede each other; every master commit keeps its own run.
 concurrency:
-  group: places-cell-album-paging-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: places-cell-album-paging-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   owner-cell-pages:

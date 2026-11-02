@@ -15,7 +15,7 @@ const navigation = read('ui/shared/src/mui/MediaGalleryNavigation.tsx')
 
 test('Web wide and Mobile Web mount one shared Gallery page and same REST DataSource', () => {
   assert.equal((web.match(/<XDriveMediaGalleryPage\b/g) || []).length, 1)
-  assert.match(web, /mobileWebChrome\s+source=\{gallerySource\}/)
+  assert.match(web, /mobileWebChrome=\{placesEmbedRequested \? compactWidth : compactWorkspace\}\s+source=\{gallerySource\}/)
   assert.match(web, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(wide, /galleryPage:\s*\{[\s\S]*?source:\s*mediaGallerySource/)
   assert.match(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx'), /<XDriveMediaGalleryPage \{\.\.\.services.galleryPage\} \/>/)
@@ -31,7 +31,7 @@ test('Both Web widths use one VirtualCollection with identical media and Viewer 
   assert.match(page, /<MediaVirtualTimeline/)
   assert.match(page, /<XDriveMediaGalleryViewer/)
   assert.match(page, /onOpenViewer=\{onOpenViewer\s*\?/)
-  assert.match(page, /const compactGallery = useMediaQuery\([^\n]+&& mobileWebChrome/)
+  assert.match(page, /const compactGallery = mobileWebChrome/)
   assert.match(page, /firstAtLatest \? 'latest' : undefined/)
   assert.match(page, /XDriveMediaThumbnailScheduler/)
   assert.doesNotMatch(collections, /listItemRange\(|fetch\(|new XMLHttpRequest\(/)
@@ -233,7 +233,12 @@ test('P1-1c Web and Mobile sorting/time-scale affordances share Page eligibility
 test('P1-3b Mobile Gallery restores selection focus through the visible Chrome Select', () => {
   assert.match(page, /selectionControlRef=\{selectionControlRef\}/)
   assert.match(page, /ref=\{compactGallery \? undefined : selectionControlRef\}/)
-  assert.match(chrome, /<Button ref=\{selectionControlRef\} size="small" aria-pressed=\{selectionMode\}/)
+  assert.match(chrome,
+    /<Button ref=\{narrowManagedHeader \? undefined : selectionControlRef\}\s+size="small" aria-pressed=\{selectionMode\}/)
+  assert.match(chrome,
+    /<IconButton ref=\{narrowManagedHeader && showCollection \? selectionControlRef : undefined\}\s+aria-label="图库更多操作"/)
+  assert.match(chrome, /data-xdrive-mobile-gallery-more-select/,
+    'narrow Gallery retains selection from the visible More action sheet')
   const browser = read('desktop/scripts/mobile-web-app-browser.cjs')
   assert.match(browser, /galleryToolbar = page\.locator\('\[data-xdrive-mobile-gallery-actions\]'\)/)
   assert.match(read('desktop/scripts/mobile-web-app-browser.cjs'), /Gallery 900px: wide Select and album dropdown remain reachable/)

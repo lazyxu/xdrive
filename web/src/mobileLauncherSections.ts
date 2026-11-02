@@ -18,7 +18,7 @@ export function xDriveMobileSupplementalDynamicDestinationKeys(adminVerified: bo
 
 const categories = [
   { key: 'photos', label: '图库与相册', keys: ['gallery', 'gallery-albums', 'gallery-places'] },
-  { key: 'files', label: '文件与存储', keys: ['files', 'cloud-storage', 'local-storage'] },
+  { key: 'files', label: '文件与存储', keys: ['files', 'shares', 'cloud-storage', 'local-storage'] },
   { key: 'backup', label: '备份与同步', keys: ['device-backup', 'remote-pull'] },
   { key: 'tasks', label: '任务与传输', keys: ['transfers', 'global-tasks'] },
   { key: 'admin', label: '管理', keys: [

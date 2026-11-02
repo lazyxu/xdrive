@@ -101,6 +101,38 @@ function validOwnerFileNode(raw: unknown, expectedParentID?: number): raw is XDr
       ? node.parent_id === undefined
       : node.parent_id === expectedParentID)
 }
+export function xDriveValidateSynologyOwnerCreatedFolder(
+  raw: unknown, parentID: number, name: string,
+): XDriveSynologyOwnerFileNode {
+  if (!Number.isSafeInteger(parentID) || parentID < 1 ||
+    typeof name !== 'string' || name !== name.trim() ||
+    name === '.' || name === '..' || !name || /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+    new TextEncoder().encode(name).length > 255 ||
+    !validOwnerFileNode(raw, parentID) || raw.type !== 'dir' ||
+    raw.name !== name || raw.size !== 0) {
+    throw new Error('Invalid authenticated Owner created folder')
+  }
+  return raw
+}
+
+export function xDriveValidateSynologyOwnerRenamedNode(
+  raw: unknown, nodeID: number, revision: number, parentID: number,
+  kind: 'file' | 'dir', name: string,
+): XDriveSynologyOwnerFileNode {
+  if (![nodeID, revision, parentID].every(value =>
+      Number.isSafeInteger(value) && value > 0) ||
+    (kind !== 'file' && kind !== 'dir') ||
+    typeof name !== 'string' || !name || name !== name.trim() ||
+    name === '.' || name === '..' ||
+    /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+    new TextEncoder().encode(name).length > 255 ||
+    !validOwnerFileNode(raw, parentID) || raw.id !== nodeID ||
+    raw.type !== kind || raw.name !== name || raw.revision <= revision) {
+    throw new Error('Invalid authenticated Owner renamed node')
+  }
+  return raw
+}
+
 export function xDriveValidateSynologyOwnerFileRoot(raw: unknown): XDriveSynologyOwnerFileNode {
   if (!validOwnerFileNode(raw) || (raw as XDriveSynologyOwnerFileNode).type !== 'dir') {
     throw new Error('Invalid authenticated Server Owner cloud root')
@@ -420,6 +452,9 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   /** Authenticated Agent Server Owner quota, not a DSM volume metric. */
   ownerQuota(signal?: AbortSignal): Promise<QuotaUsage>
   ownerFilesRoot(signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
+  /** Current DSM Server Owner creates one named folder through the original Agent. */
+  ownerCreateFolder(parentID: number, name: string, ownerScope: string,
+    signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
   /** Bounded Server Owner Gallery wall and album read; never full Desktop Media RPC. */
   ownerGalleryItemsRange(
     kind: 'all' | 'image' | 'video', limit: number, offset: number,
@@ -458,6 +493,12 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
     nodeID: number, revision: number, total: number, sha256: string,
     mime: XDriveSynologyOwnerStreamMIME,
   ): string
+  /** Exact-revision rename of one current Server Owner file or folder. */
+  ownerRenameNode(
+    nodeID: number, revision: number, parentID: number,
+    kind: 'file' | 'dir', name: string, ownerScope: string,
+    signal?: AbortSignal,
+  ): Promise<XDriveSynologyOwnerFileNode>
   ownerFilesPage(
     parentID: number, limit: number, sort: XDriveSynologyOwnerFileSort,
     order: XDriveSynologyOwnerFileOrder, cursor: string, signal?: AbortSignal,
@@ -492,7 +533,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     if (!['bootstrap', 'sources', 'status', 'history', 'run', 'control', 'schedule',
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
-      'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
+      'cloud-root', 'cloud-children', 'cloud-create-folder', 'cloud-rename-node', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-places',
        'cloud-gallery-place-items', 'cloud-gallery-map-overview',
        'cloud-live-motion', 'nas-shares',
@@ -835,6 +876,38 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     ownerFilesRoot: async (signal) =>
       xDriveValidateSynologyOwnerFileRoot(
         await request<unknown>('/v1/cloud-root', 'GET', undefined, signal)),
+    ownerCreateFolder: async (parentID, name, ownerScope, signal) => {
+      if (!Number.isSafeInteger(parentID) || parentID < 1 ||
+        typeof name !== 'string' || !name || name !== name.trim() ||
+        name === '.' || name === '..' ||
+        /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+        new TextEncoder().encode(name).length > 255 ||
+        !/^[0-9a-f]{64}$/.test(ownerScope)) {
+        throw new Error('Invalid Server Owner create folder request')
+      }
+      return xDriveValidateSynologyOwnerCreatedFolder(
+        await request<unknown>('/v1/cloud-create-folder', 'POST',
+          { parent_id: parentID, name, owner_scope: ownerScope }, signal),
+        parentID, name)
+    },
+    ownerRenameNode: async (nodeID, revision, parentID, kind, name, ownerScope, signal) => {
+      if (![nodeID, revision, parentID].every(value =>
+          Number.isSafeInteger(value) && value > 0) ||
+        (kind !== 'file' && kind !== 'dir') ||
+        typeof name !== 'string' || !name || name !== name.trim() ||
+        name === '.' || name === '..' ||
+        /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+        new TextEncoder().encode(name).length > 255 ||
+        !/^[0-9a-f]{64}$/.test(ownerScope)) {
+        throw new Error('Invalid Server Owner rename node selector')
+      }
+      return xDriveValidateSynologyOwnerRenamedNode(
+        await request<unknown>('/v1/cloud-rename-node', 'POST', {
+          id: nodeID, revision, parent_id: parentID,
+          type: kind, name, owner_scope: ownerScope,
+        }, signal),
+        nodeID, revision, parentID, kind, name)
+    },
     ownerFileTextPreview: async (nodeID, signal) => {
       if (!Number.isSafeInteger(nodeID) || nodeID < 1) {
         throw new Error('Invalid Server Owner text preview file ID')

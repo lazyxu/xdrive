@@ -174,6 +174,36 @@ class ScopeTests(unittest.TestCase):
             source,
         )
 
+    def test_places_master_runs_are_never_displaced_by_a_new_push(self):
+        """PR-only cancellation must preserve every exact-SHA master check."""
+        root = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+        for name, prefix in (
+            ("places-p0-17-real-chromium.yml", "places-p0-17-browser"),
+            ("places-cell-album-paging.yml", "places-cell-album-paging"),
+        ):
+            with self.subTest(workflow=name):
+                source = (root / name).read_text(encoding="utf-8")
+                self.assertIn("  push:\n    branches: [master]\n", source)
+                self.assertIn("  pull_request:\n", source)
+                self.assertIn("  workflow_dispatch:\n", source)
+                # A shared github.ref group cancels the previous master
+                # check on each adjacent push; even cancel-in-progress:false
+                # can evict an earlier queued run. Require unique run IDs.
+                sections = source.split("\nconcurrency:\n")
+                self.assertEqual(len(sections), 2, name)
+                concurrency = sections[1].split("\njobs:\n", 1)[0]
+                keys = [
+                    line.strip()
+                    for line in concurrency.splitlines()
+                    if line.strip().startswith(("group:", "cancel-in-progress:"))
+                ]
+                self.assertEqual(keys, [
+                    "group: " + prefix
+                    + "-${{ github.event.pull_request.number || github.run_id }}",
+                    "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+                ])
+                self.assertNotIn("github.ref", concurrency)
+
     def test_branch_sweeps_avoid_redundant_master_push_trigger(self):
         # PR closure drives immediate guarded cleanup; daily/manual sweeps
         # cover orphaned refs. A push on every master commit creates a queue

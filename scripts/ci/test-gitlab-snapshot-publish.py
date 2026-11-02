@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Offline runtime regression for GitLab snapshot stage/verify/promote semantics."""
 import copy
+from contextlib import ExitStack, contextmanager
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import lzma
 import shutil
@@ -10,8 +12,11 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import textwrap
+import threading
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 PUBLISHER = ROOT / 'scripts/ci/gitlab-publish-release.sh'
@@ -26,6 +31,7 @@ FILES = (
     'xdrive-server-install.sh', 'server-backup.sh', 'server-backup-scheduled.sh',
     'server-restore.sh', 'server-verify.sh', 'server-doctor.sh',
     'server-migrate-user.sh', 'xdrive-server', 'xdrive-share-update.py', 'docker-compose.yml',
+    'server-control.sh', 'caddy-env-config.py', 'caddy-admission.py',
     'xdrive.env.example', 'SHA256SUMS.txt',
 )
 
@@ -35,6 +41,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from urllib.parse import parse_qs, urlsplit
 
 path = Path(os.environ['MOCK_STATE'])
 state = json.loads(path.read_text())
@@ -69,8 +76,8 @@ args = args[1:]
 method = 'GET'
 input_file = None
 fields = {}
-filter_expr = ''
 endpoint = ''
+paginate = False
 i = 0
 while i < len(args):
     a = args[i]
@@ -80,10 +87,10 @@ while i < len(args):
         input_file=args[i+1];i+=2
     elif a in ('--header','-H'):
         i+=2
-    elif a == '--jq':
-        filter_expr=args[i+1];i+=2
     elif a in ('-f','--raw-field'):
         k,v=args[i+1].split('=',1);fields[k]=v;i+=2
+    elif a == '--paginate':
+        paginate=True;i+=1
     elif a.startswith('-'):
         fail('unexpected flag: '+a)
     else:
@@ -105,28 +112,30 @@ if '/packages/generic/' in endpoint:
     sys.exit(0)
 
 if endpoint.startswith('projects/42/packages?'):
+    if os.getenv('MOCK_FAIL_PACKAGE_READ'):
+        print('[]')
+        fail('simulated package API failure with valid JSON')
     version=endpoint.split('package_version=',1)[1].split('&',1)[0]
-    print('123' if version in state['packages'] else '')
+    print(json.dumps([{'id':123, 'name':'xdrive-build-packages', 'version':version}]
+                     if version in state['packages'] else []))
     sys.exit(0)
 if endpoint.startswith('projects/42/packages/123/package_files?'):
-    # --jq produces precisely the TAB-delimited name/hash pairs expected by
-    # the production script, as GitLab's package_files metadata does.
-    assert filter_expr
+    # Model GitLab's JSON response, not a nonexistent glab --jq flag.
     version=next(reversed(state['packages']))
+    files=[]
     for name,sha in state['packages'][version].items():
         if os.getenv('MOCK_CORRUPT_DIGEST') == name:
             sha='0'*64
-        print(name+'\t'+sha)
+        files.append({'file_name':name, 'file_sha256':sha})
+    print(json.dumps(files))
     sys.exit(0)
 
 if endpoint == 'projects/42/releases/snapshot':
     if method == 'GET':
         if state['release'] is None:
             fail('404 Not Found')
-        if filter_expr == '.description':
-            print(state['release']['description'])
-        else:
-            print(json.dumps(state['release']))
+        print('{invalid JSON' if os.getenv('MOCK_INVALID_RELEASE_JSON')
+              else json.dumps(state['release']))
         sys.exit(0)
     if method == 'PUT':
         state['release']['name'] = fields['name']
@@ -136,20 +145,41 @@ if endpoint == 'projects/42/releases/snapshot':
         print(json.dumps(state['release']))
         sys.exit(0)
 
-if endpoint == 'projects/42/releases/snapshot/assets/links':
+link_request = urlsplit(endpoint)
+if link_request.path == 'projects/42/releases/snapshot/assets/links':
     if method == 'GET':
-        for link in state['release']['links']:
-            print(link['name']+'\t'+str(link['id'])+'\t'+link['url'])
+        # GitLab returns newest IDs first and only 20 links by default. The
+        # old unbounded fixture hid the failure once a release had 22 assets.
+        links = sorted(state['release']['links'], key=lambda link:link['id'], reverse=True)
+        query = parse_qs(link_request.query)
+        page = int(query.get('page', ['1'])[0])
+        per_page = int(query.get('per_page', ['20'])[0])
+        while True:
+            phase = ('after' if any('sha-'+'b'*40 in link['url'] for link in links)
+                     else 'before')
+            fault = os.getenv('MOCK_LINK_PAGE_FAILURE', '')
+            if page >= 3 and fault.startswith(phase+'-'):
+                if fault.endswith('-json'):
+                    print('{invalid page JSON')
+                    sys.exit(0)
+                print('[]')
+                fail('simulated later link page failure')
+            print(json.dumps(links[(page-1)*per_page:page*per_page]))
+            if not paginate or page*per_page >= len(links):
+                break
+            page += 1
         sys.exit(0)
     if method == 'POST':
         if os.getenv('MOCK_FAIL_LINK') == fields.get('name'):
             fail('simulated link failure')
+        if any(link['name'] == fields['name'] for link in state['release']['links']):
+            fail('link name has already been taken')
         state['next_link'] += 1
         link={'id':state['next_link'], 'name':fields['name'], 'url':fields['url']}
         state['release']['links'].append(link)
         state['events'].append('create-link-'+fields['name'])
         persist()
-        print(str(link['id']))
+        print(json.dumps(link))
         sys.exit(0)
 
 if endpoint.startswith('projects/42/releases/snapshot/assets/links/'):
@@ -178,9 +208,99 @@ if [ "$1" = merge-base ] && [ "$2" = --is-ancestor ]; then
   [ "${MOCK_STALE:-0}" != 1 ]
   exit $?
 fi
+if [ -n "${XDRIVE_TEST_REAL_GIT:-}" ]; then exec "$XDRIVE_TEST_REAL_GIT" "$@"; fi
 echo "unexpected git command: $*" >&2
 exit 2
 '''
+
+
+@contextmanager
+def real_cli_api(tmp):
+    """Exercise the real glab binary against a loopback-only GitLab API fixture.
+
+    Reuse the failure/state model, but never mock CLI parsing, HTTP methods,
+    JSON request encoding, uploads or response decoding in this mode.
+    """
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def handle_api(self):
+            prefix = '/api/v4/'
+            assert self.path.startswith(prefix), self.path
+            endpoint = self.path[len(prefix):].replace('xuliang%2Fxdrive', '42')
+            body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
+            args = ['api', '--method', self.command, endpoint]
+            upload = None
+            try:
+                if '/packages/generic/' in endpoint:
+                    assert self.headers.get_content_type() == 'application/octet-stream'
+                    # The next HTTP request can start before this handler's
+                    # finally block runs. Never share its upload path.
+                    with tempfile.NamedTemporaryFile(dir=tmp, prefix='request-upload-', delete=False) as request:
+                        upload = Path(request.name)
+                        request.write(body)
+                    args += ['--input', str(upload)]
+                elif body:
+                    fields = json.loads(body)
+                    if self.command == 'POST' and endpoint == 'projects/42/releases':
+                        args = ['release', 'create', fields['tag_name'],
+                                '--notes', fields['description'], '--name', fields['name']]
+                    else:
+                        for key, value in fields.items():
+                            args += ['-f', f'{key}={value}']
+                result = subprocess.run(
+                    [sys.executable, str(tmp/'api-model'), *args],
+                    env=self.server.fixture_env, capture_output=True, timeout=5,
+                )
+                status = 200
+                response = result.stdout
+                if result.returncode:
+                    status = 404 if b'404 Not Found' in result.stderr else 500
+                    response = json.dumps({'message': result.stderr.decode()}).encode()
+                elif args[:2] == ['release', 'create']:
+                    status = 201
+                    release = json.loads((tmp/'state.json').read_text())['release']
+                    response = json.dumps({**release, 'tag_name':'snapshot'}).encode()
+                self.send_response(status)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(response)))
+                request = urlsplit(endpoint)
+                if (status == 200 and self.command == 'GET'
+                        and request.path == 'projects/42/releases/snapshot/assets/links'):
+                    query = {key:values[0] for key,values in parse_qs(request.query).items()}
+                    page = int(query.get('page', '1'))
+                    per_page = int(query.get('per_page', '20'))
+                    total = len(json.loads((tmp/'state.json').read_text())['release']['links'])
+                    self.send_header('X-Page', str(page))
+                    self.send_header('X-Per-Page', str(per_page))
+                    self.send_header('X-Total', str(total))
+                    self.send_header('X-Next-Page', str(page+1) if page*per_page < total else '')
+                    if page*per_page < total:
+                        query.update(page=str(page+1), per_page=str(per_page))
+                        next_url = (f'http://127.0.0.1:{self.server.server_port}/api/v4/'
+                                    f'{request.path}?{urlencode(query)}')
+                        self.send_header('Link', f'<{next_url}>; rel="next"')
+                self.end_headers()
+                self.wfile.write(response)
+            finally:
+                if upload is not None:
+                    upload.unlink(missing_ok=True)
+
+        do_GET = do_POST = do_PUT = do_DELETE = handle_api
+
+    with ThreadingHTTPServer(('127.0.0.1', 0), Handler) as server:
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            yield server
+        finally:
+            server.shutdown()
+            worker.join(timeout=5)
+            assert not worker.is_alive(), 'fixture HTTP server did not stop'
+
+
+api_server = None
 
 
 def run(tmp, sha, **switches):
@@ -193,9 +313,26 @@ def run(tmp, sha, **switches):
         'CI_PROJECT_ID':'42', 'CI_PROJECT_PATH':'xuliang/xdrive',
         'CI_API_V4_URL':'http://gitlab.local/api/v4',
     }
-    for key in ('MOCK_FAIL_ASSET','MOCK_CORRUPT_DIGEST','MOCK_FAIL_LINK','MOCK_STALE'):
+    env.pop('CI_COMMIT_TAG', None)
+    if api_server is not None:
+        host = f'127.0.0.1:{api_server.server_port}'
+        env.update({
+            'GITLAB_CI':'true', 'CI_SERVER_URL':f'http://{host}',
+            'CI_SERVER_HOST':'127.0.0.1', 'CI_SERVER_PORT':str(api_server.server_port),
+            'CI_SERVER_PROTOCOL':'http', 'CI_SERVER_FQDN':host,
+            'CI_API_V4_URL':f'http://{host}/api/v4',
+            'CI_PROJECT_URL':f'http://{host}/xuliang/xdrive',
+            'CI_JOB_TOKEN':'fixture-token-not-a-credential',
+            'XDRIVE_TEST_REAL_GIT':shutil.which('git'),
+            'GLAB_CONFIG_DIR':str(tmp/'glab-config'), 'GLAB_CHECK_UPDATE':'false',
+            'NO_PROXY':'127.0.0.1', 'no_proxy':'127.0.0.1',
+        })
+    for key in ('MOCK_FAIL_ASSET','MOCK_CORRUPT_DIGEST','MOCK_FAIL_LINK','MOCK_STALE',
+                'MOCK_FAIL_PACKAGE_READ','MOCK_INVALID_RELEASE_JSON','MOCK_LINK_PAGE_FAILURE'):
         env.pop(key,None)
     env.update(switches)
+    if api_server is not None:
+        api_server.fixture_env = env
     result=subprocess.run(['sh',str(PUBLISHER)],cwd=tmp,env=env,capture_output=True,text=True,timeout=22)
     return result,json.loads(state_path.read_text())
 
@@ -209,7 +346,7 @@ def unchanged(before,after):
     assert after['release'] == before['release'], (before['release'],after['release'])
 
 
-with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp:
+with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp, ExitStack() as stack:
     tmp=Path(temp)
     (tmp/'release').mkdir()
     # The publisher runs from the isolated fixture working directory, not
@@ -287,6 +424,17 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp:
         binary=tmp/'bin'/name
         binary.write_text(content)
         binary.chmod(0o755)
+    if os.environ.get('XDRIVE_TEST_REAL_GLAB'):
+        real_glab = Path(os.environ['XDRIVE_TEST_REAL_GLAB']).resolve(strict=True)
+        (tmp/'api-model').write_text(MOCK_GLAB)
+        (tmp/'bin/glab').unlink()
+        (tmp/'bin/glab').symlink_to(real_glab)
+        api_server = stack.enter_context(real_cli_api(tmp))
+        # glab release create resolves its repository through Git. Use a real
+        # temporary repository; only the synthetic A/B ancestry is simulated.
+        subprocess.run(['git', 'init', '-q', str(tmp)], check=True)
+        subprocess.run(['git', '-C', str(tmp), 'remote', 'add', 'origin',
+                        f'http://127.0.0.1:{api_server.server_port}/xuliang/xdrive.git'], check=True)
     initial={'packages':{},'release':None,'next_link':0,'events':[]}
     (tmp/'state.json').write_text(json.dumps(initial))
 
@@ -314,6 +462,72 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp:
     assert same['release'] == new['release']
     assert len(same['packages']) == 1
     assert len([e for e in same['events'] if e.startswith('upload-')]) == len(FILES)
+
+    # Historic/manual links can exceed even GitLab's maximum page size (100).
+    # Required links on later pages must retain their IDs, unrelated links must
+    # survive, and all required URLs must be verified before advancing marker.
+    paged = copy.deepcopy(new)
+    for index in range(101):
+        paged['next_link'] += 1
+        paged['release']['links'].append({
+            'id':paged['next_link'], 'name':f'legacy-{index}',
+            'url':f'https://archive.example/legacy-{index}',
+        })
+    (tmp/'state.json').write_text(json.dumps(paged))
+    paginated_update,after=run(tmp,B)
+    check('publish with required links beyond page 100',paginated_update)
+    assert [(link['id'], link['name']) for link in after['release']['links']] == [
+        (link['id'], link['name']) for link in paged['release']['links']]
+    assert all('sha-'+B in link['url'] for link in after['release']['links'][:len(FILES)])
+    assert after['release']['links'][len(FILES):] == paged['release']['links'][len(FILES):]
+    assert 'XDRIVE_RELEASE_COMMIT='+B in after['release']['description']
+    assert after['events'][-1] == 'promote-marker'
+
+    # An incomplete later page cannot become a partial link inventory. This
+    # also covers failure during final verification after links were updated:
+    # every original URL, including links outside page one, must be restored.
+    # Put all required links before the failing third page (even at page size
+    # 20), with enough legacy links to reach it even at GitLab's maximum 100.
+    # Missing-asset checks must not accidentally mask a swallowed API error.
+    fault_paged = copy.deepcopy(paged)
+    for index in range(101,201):
+        fault_paged['next_link'] += 1
+        fault_paged['release']['links'].append({
+            'id':fault_paged['next_link'], 'name':f'legacy-{index}',
+            'url':f'https://archive.example/legacy-{index}',
+        })
+    for link in fault_paged['release']['links'][:len(FILES)]:
+        fault_paged['next_link'] += 1
+        link['id'] = fault_paged['next_link']
+    for phase in ('before', 'after'):
+        for fault in ('error', 'json'):
+            (tmp/'state.json').write_text(json.dumps(fault_paged))
+            failed_page,after=run(tmp,B,MOCK_LINK_PAGE_FAILURE=f'{phase}-{fault}')
+            assert failed_page.returncode != 0, (phase,fault)
+            unchanged(fault_paged,after)
+            events = after['events'][len(fault_paged['events']):]
+            assert 'promote-marker' not in events, (phase,fault)
+            assert any(e.startswith('update-link-') for e in events) == (phase == 'after')
+
+    # Duplicate-name protection must include links from different pages.
+    duplicate = copy.deepcopy(paged)
+    duplicate['next_link'] += 1
+    duplicate['release']['links'].append({
+        **duplicate['release']['links'][0], 'id':duplicate['next_link'],
+    })
+    (tmp/'state.json').write_text(json.dumps(duplicate))
+    failed_duplicate,after=run(tmp,B)
+    assert failed_duplicate.returncode != 0
+    unchanged(duplicate,after)
+    assert 'duplicate GitLab Release links' in failed_duplicate.stderr
+
+    # API failures must not disappear behind a successful JSON parser;
+    # malformed API JSON must also fail before uploads or Release mutation.
+    for switch in ('MOCK_FAIL_PACKAGE_READ', 'MOCK_INVALID_RELEASE_JSON'):
+        (tmp/'state.json').write_text(json.dumps(new))
+        failed_read,after=run(tmp,B,**{switch:'1'})
+        assert failed_read.returncode != 0, switch
+        assert after == new, switch
 
     # Simulated interrupt before full package staging cannot touch the Release.
     (tmp/'state.json').write_text(json.dumps(new))
@@ -356,4 +570,5 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp:
     assert stale.returncode != 0
     unchanged(next_state,last)
 
-print('GitLab staged rolling Release: new/replay/fail-upload/fail-digest/fail-link/advance/stale: passed')
+print('GitLab staged rolling Release: new/replay/pagination/later-page-errors/rollback/duplicates/API-errors/fail-upload/fail-digest/fail-link/advance/stale: passed'
+      + (' (real glab + loopback HTTP)' if api_server else ' (offline CLI model)'))

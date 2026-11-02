@@ -196,6 +196,8 @@ import {
   type AgentCloudVersion,
   type AgentCloudShare,
   type AgentCreatedCloudShare,
+  type AgentOwnerSharePage,
+  type AgentOwnerShareLink,
   type AgentCloudSearchPage,
   type AgentCloudSearchRange,
   type AgentCloudSearchFilters,
@@ -8095,6 +8097,24 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'File node id is required.')
     }
     return requireAgentClient().cloudShares(nodeID)
+  }, false))
+
+  ipcMain.handle('agent:cloud-owner-shares', (_event, cursor: unknown, limit: unknown) => runAgentAction<AgentOwnerSharePage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof cursor !== 'number' || !Number.isSafeInteger(cursor) || cursor < 0 ||
+        typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new AgentIPCError('invalid_input', 0, 'Share cursor and limit are invalid.')
+    }
+    return requireAgentClient().cloudOwnerShares(cursor, limit)
+  }, false))
+  ipcMain.handle('agent:cloud-share-link', (_event, id: unknown) => runAgentAction<AgentOwnerShareLink>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Share id is required.')
+    }
+    return requireAgentClient().cloudOwnShareLink(id)
   }, false))
   ipcMain.handle('agent:cloud-create-share', (_event, nodeID: unknown, input: unknown) => runAgentAction<AgentCreatedCloudShare>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

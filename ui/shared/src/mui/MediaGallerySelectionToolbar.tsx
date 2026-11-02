@@ -34,6 +34,7 @@ import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { xDriveMediaGalleryErrorMessage } from './MediaGalleryUtils'
 import { useXDriveMobilePanelViewport } from './useMobilePanelViewport'
+import { xDriveMobileGalleryDockBottom } from './MobileGalleryDockLayout'
 
 function parseSelectionTags(value: string) {
   const seen = new Set<string>()
@@ -90,7 +91,8 @@ export function XDriveMediaGallerySelectionToolbar({
   onReview?: () => void
   onClear: () => void
 }) {
-  const compactViewport = useMediaQuery('(max-width:899.95px)')
+  // The Browser shell can be on a wide tablet while still owning five slots.
+  const compactViewport = useMediaQuery('(max-width:899.95px)') || mobileBottomDock
   const albumSubmitRef = useRef(false)
   const [albumID, setAlbumID] = useState('')
   const [albumPickerOpen, setAlbumPickerOpen] = useState(false)
@@ -170,12 +172,13 @@ export function XDriveMediaGallerySelectionToolbar({
         sx={{
           position: compactViewport && mobileBottomDock ? 'fixed' : 'sticky',
           top: compactViewport && mobileBottomDock ? 'auto' : 8,
-          bottom: compactViewport && mobileBottomDock ? 0 : undefined,
+          bottom: compactViewport && mobileBottomDock ? xDriveMobileGalleryDockBottom() : undefined,
           left: compactViewport && mobileBottomDock ? 0 : undefined,
           right: compactViewport && mobileBottomDock ? 0 : undefined,
           width: compactViewport && mobileBottomDock ? '100%' : undefined,
           boxSizing: 'border-box',
-          pb: compactViewport && mobileBottomDock ? 'max(8px, env(safe-area-inset-bottom, 0px))' : 0.75,
+          // Global tabs (or standalone safe area) own the lower inset.
+          pb: 0.75,
           zIndex: 4,
           px: 1.25,
           py: 0.75,

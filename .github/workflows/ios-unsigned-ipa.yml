@@ -52,6 +52,17 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-window-check"
           "$RUNNER_TEMP/xdrive-ios-window-check"
 
+      - name: Verify truthful bounded iOS original backup window scan progress
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoBackupScanWindow.swift \
+            ios/XDriveIOS/NativeBackupWindowReadProgress.swift \
+            ios/tests/NativeBackupWindowReadProgressChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-window-read-progress"
+          "$RUNNER_TEMP/xdrive-ios-window-read-progress"
+          node --test desktop/tests/ios-native-photo-backup-window-progress.cjs
+
       - name: Verify V2 PhotoKit journal shard routing
         run: |
           set -euo pipefail
@@ -252,6 +263,9 @@ jobs:
       - name: Verify native cloud PhotoAsset original still/video save-to-Photos boundaries
         run: node --test desktop/tests/ios-native-photoasset-original-restore.cjs
 
+      - name: Verify native cloud Live Photo original pair add-to-Photos
+        run: node --test desktop/tests/ios-native-photoasset-live-original-restore.cjs
+
       - name: Verify native whole-library PhotoKit calendar jump policy
         run: |
           set -euo pipefail
@@ -286,6 +300,9 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-photo-day-group"
           "$RUNNER_TEMP/xdrive-ios-photo-day-group"
 
+      - name: Verify native Live and screenshot full-library subtype filters
+        run: node --test desktop/tests/ios-native-photo-subtype-filter.cjs
+
       - name: Verify native PhotoKit full-library media filtering
         run: |
           set -euo pipefail
@@ -303,7 +320,10 @@ jobs:
             ios/tests/NativePhotoAssetViewerNeighborPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-photoasset-viewer-neighbors"
           "$RUNNER_TEMP/xdrive-ios-photoasset-viewer-neighbors"
-          node --test desktop/tests/ios-native-photoasset-viewer-neighbors.cjs desktop/tests/ios-native-photoasset-live.cjs
+          node --test desktop/tests/ios-native-photoasset-viewer-neighbors.cjs desktop/tests/ios-native-photoasset-live.cjs desktop/tests/ios-native-photoasset-still-fallback.cjs
+
+      - name: Verify native cloud PhotoAsset square wall and density pinch
+        run: node --test desktop/tests/ios-native-photoasset-wall-density.cjs
 
       - name: Verify native cloud PhotoAsset cross-range Viewer and numeric cursor
         run: |
@@ -344,6 +364,9 @@ jobs:
             desktop/tests/ios-native-compact-bottom-bar.cjs \
             desktop/tests/ios-native-l2-focus-bar-integration.cjs \
             desktop/tests/ios-native-supported-orientations.cjs
+
+      - name: Verify native album single-page selection and PhotoKit actions
+        run: node --test desktop/tests/ios-native-album-batch-actions.cjs
 
       - name: Verify native album Viewer exact adjacent PhotoKit page and return anchor
         run: node --test desktop/tests/ios-native-album-viewer-adjacent.cjs
@@ -568,6 +591,16 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-files-share-policy-check"
           "$RUNNER_TEMP/xdrive-ios-files-share-policy-check"
           node --test desktop/tests/ios-native-files-share-links.cjs
+
+      - name: Verify native Files bounded Server ZIP folder export
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesFolderArchivePolicy.swift \
+            ios/tests/NativeFilesFolderArchivePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-folder-archive-policy"
+          "$RUNNER_TEMP/xdrive-ios-folder-archive-policy"
+          node --test desktop/tests/ios-native-files-folder-archive.cjs
 
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh

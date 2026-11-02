@@ -27,7 +27,24 @@ private struct XDriveIOSFilesDownloadTicket: Decodable {
     let url: String
 }
 
-private final class XDriveIOSFilesDenyDownloadRedirects: NSObject, URLSessionTaskDelegate {
+/// Download callbacks report *actual received device bytes*, not simulated
+/// time/speed or the Server-side number of bytes scheduled for sending.
+private final class XDriveIOSFilesDenyDownloadRedirects: NSObject, URLSessionDownloadDelegate {
+    private let onProgress: (Int64, Int64) -> Void
+
+    init(onProgress: @escaping (Int64, Int64) -> Void) {
+        self.onProgress = onProgress
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+                    didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
+                    totalBytesExpectedToWrite: Int64) {
+        onProgress(totalBytesWritten, totalBytesExpectedToWrite)
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+                    didFinishDownloadingTo location: URL) {}
+
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
@@ -90,8 +107,10 @@ struct XDriveIOSNativeFilesExportReader {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    func prepare(_ node: XDriveIOSNativeFilesNode) async throws
-        -> XDriveIOSNativeFilesPreparedExport {
+    func prepare(
+        _ node: XDriveIOSNativeFilesNode,
+        onProgress: @escaping (Int64, Int64) -> Void = { _, _ in }
+    ) async throws -> XDriveIOSNativeFilesPreparedExport {
         guard node.id > 0, node.revision > 0, node.parent_id != nil,
               node.type == "file", node.size >= 0,
               node.size <= Self.maximumTemporaryBytes,
@@ -115,8 +134,11 @@ struct XDriveIOSNativeFilesExportReader {
         config.urlCache = nil
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 1800
+        let downloadDelegate = XDriveIOSFilesDenyDownloadRedirects(
+            onProgress: onProgress
+        )
         let session = URLSession(configuration: config,
-                                 delegate: XDriveIOSFilesDenyDownloadRedirects(),
+                                 delegate: downloadDelegate,
                                  delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
@@ -201,9 +223,11 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
 
     private var epoch = UUID()
     private var task: Task<Void, Never>?
+    private var lastProgressPercent = -1
 
     func invalidate() {
         epoch = UUID()
+        lastProgressPercent = -1
         task?.cancel()
         task = nil
         prepared?.discard()
@@ -229,7 +253,7 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
         }
         let ticket = epoch
         busy = true
-        status = "正在下载原文件；当前大小或剩余时间尚未确认。"
+        status = "正在下载原文件；即将显示接收的真实字节进度。"
         task = Task { @MainActor in
             defer {
                 if epoch == ticket {
@@ -246,7 +270,31 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
                 else { return }
                 let output = try await XDriveIOSNativeFilesExportReader(
                     owner: auth.owner, accessToken: auth.accessToken
-                ).prepare(node)
+                ).prepare(node, onProgress: { [weak self] received, expectedHTTP in
+                    Task { @MainActor [weak self] in
+                        guard let self,
+                              self.epoch == ticket,
+                              self.busy, self.prepared == nil,
+                              XDriveIOSNativePhotoOwnerScope.matches(
+                                  login.owner, expected
+                              ),
+                              let percent = XDriveIOSNativeFilesExportCapacityPolicy
+                                .receivedPercent(
+                                    bytesWritten: received,
+                                    nodeBytes: node.size,
+                                    httpExpectedBytes: expectedHTTP
+                                ),
+                              percent > self.lastProgressPercent else { return }
+                        self.lastProgressPercent = percent
+                        let actual = ByteCountFormatter.string(
+                            fromByteCount: received, countStyle: .file
+                        )
+                        let original = ByteCountFormatter.string(
+                            fromByteCount: node.size, countStyle: .file
+                        )
+                        self.status = "实际已接收 \(actual) / \(original)（\(percent)%）；完成后仍需校验并选择保存位置。"
+                    }
+                })
                 do {
                     try Task.checkCancellation()
                     let after = try await login.verifiedAuthorization()

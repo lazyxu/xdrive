@@ -6,10 +6,12 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
 import {
   Autocomplete, Box, Button, Drawer, IconButton, Menu, MenuItem,
-  Slider, Stack, TextField, Typography,
+  Slider, Stack, TextField, Typography, useMediaQuery,
 } from '@mui/material'
 import { useXDriveMobilePanelViewport } from './useMobilePanelViewport'
+import { XDriveMobileHeaderNavigation, useXDriveMobileHeaderMode } from './MobileHeaderPortal'
 import { xDriveMediaTimeZoneChoices } from '../media-timezone'
+import { XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT, xDriveMobileGalleryDockBottom } from './MobileGalleryDockLayout'
 
 export type MobileGalleryTimeScale = 'year' | 'month' | 'day' | 'all'
 export type MobileGalleryPrimaryTab = 'library' | 'collections'
@@ -93,6 +95,8 @@ export function XDriveMobileGalleryChrome({
   const searchHost = useRef<HTMLDivElement>(null)
   const onFilterOpenRef = useRef(onFilterOpen)
   const panelViewport = useXDriveMobilePanelViewport(searchOpen || moreOpen)
+  const managedHeader = useXDriveMobileHeaderMode() === 'global'
+  const narrowManagedHeader = useMediaQuery('(max-width:380px)') && managedHeader
   const collectionsOverview = primaryTab === 'collections' && !showCollection && !canGoBack
   const canShowMore = !collectionsOverview || Boolean(showOverviewActions)
   useEffect(() => {
@@ -169,12 +173,17 @@ export function XDriveMobileGalleryChrome({
   return (
     <>
       {!mapImmersive ? (
+      <XDriveMobileHeaderNavigation>
       <Stack data-xdrive-mobile-gallery-actions direction="row" alignItems="center"
         justifyContent="space-between" spacing={0.25}
         sx={{
-          position: 'sticky', top: 0, zIndex: 6, minHeight: 48,
-          bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider',
-          mx: -0.5, px: 0.5, flexShrink: 0,
+          width: '100%', minWidth: 0,
+          position: managedHeader ? 'static' : 'sticky',
+          top: managedHeader ? undefined : 0,
+          zIndex: 6, minHeight: managedHeader ? 44 : 48,
+          bgcolor: 'background.paper',
+          borderBottom: managedHeader ? 0 : 1, borderColor: 'divider',
+          mx: managedHeader ? 0 : -0.5, px: managedHeader ? 0 : 0.5, flexShrink: 0,
         }}>
         <Stack direction="row" alignItems="center" spacing={0.25}
           sx={{ flex: 1, minWidth: 0 }}>
@@ -184,9 +193,10 @@ export function XDriveMobileGalleryChrome({
               <ArrowBackRoundedIcon fontSize="small" />
             </IconButton>
           ) : null}
-          {canGoBack || primaryTab === 'collections' ? (
-            <Typography variant="body2" fontWeight={650} noWrap sx={{ minWidth: 0 }}>
-              {canGoBack ? collectionTitle : '精选集'}
+          {managedHeader || canGoBack || primaryTab === 'collections' ? (
+            <Typography component={managedHeader ? 'h1' : 'span'} variant="body2"
+              fontWeight={650} noWrap sx={{ minWidth: 0 }}>
+              {canGoBack ? collectionTitle : primaryTab === 'collections' ? '精选集' : '图库'}
             </Typography>
           ) : null}
         </Stack>
@@ -194,8 +204,10 @@ export function XDriveMobileGalleryChrome({
           sx={{ flexShrink: 0, '& .MuiButton-root, & .MuiIconButton-root': { minHeight: 44, minWidth: 44 } }}>
           {showCollection ? (
             <>
-              <Button ref={selectionControlRef} size="small" aria-pressed={selectionMode}
-                data-xdrive-mobile-gallery-select onClick={onToggleSelection}>
+              <Button ref={narrowManagedHeader ? undefined : selectionControlRef}
+                size="small" aria-pressed={selectionMode}
+                data-xdrive-mobile-gallery-select onClick={onToggleSelection}
+                sx={narrowManagedHeader ? { display: 'none' } : undefined}>
                 {selectionMode ? '完成' : '选择'}
               </Button>
               <IconButton aria-label={canSort ? '图库排序和筛选' : filterContent ? '图库筛选和显示选项' : '图库显示选项'}
@@ -204,13 +216,15 @@ export function XDriveMobileGalleryChrome({
                   setViewOptionsOpen(false)
                   setSortAnchor(event.currentTarget)
                 }}
-                data-xdrive-mobile-gallery-sort-filter>
+                data-xdrive-mobile-gallery-sort-filter
+                sx={narrowManagedHeader ? { display: 'none' } : undefined}>
                 <SortRoundedIcon fontSize="small" />
               </IconButton>
             </>
           ) : null}
           {canShowMore ? (
-            <IconButton aria-label="图库更多操作" aria-haspopup="dialog"
+            <IconButton ref={narrowManagedHeader && showCollection ? selectionControlRef : undefined}
+              aria-label="图库更多操作" aria-haspopup="dialog"
               aria-expanded={moreOpen}
               onClick={() => setMoreOpen(true)} data-xdrive-mobile-gallery-more
               sx={{ minWidth: 44, minHeight: 44 }}>
@@ -219,6 +233,7 @@ export function XDriveMobileGalleryChrome({
           ) : null}
         </Stack>
       </Stack>
+      </XDriveMobileHeaderNavigation>
       ) : null}
 
       <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)}
@@ -282,11 +297,11 @@ export function XDriveMobileGalleryChrome({
           direction="row" role="group" aria-label="图库时间尺度"
           justifyContent="center" spacing={0.5}
           sx={{
-            // Photos' Years / Months / All live in the Gallery-local bottom
-            // chrome, above the existing Library / Collections / Search dock.
+            // Above the 48px Gallery-local dock and the measured global five-slot bar.
+            // Both remain separate layers without hiding photo-wall scroll space.
             position: 'fixed', left: '50%', transform: 'translateX(-50%)',
-            bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
-            zIndex: 7, minHeight: 52, p: 0.5,
+            bottom: xDriveMobileGalleryDockBottom(XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT + 8),
+            zIndex: 7, minHeight: XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT, p: 0.25,
             maxWidth: 'calc(100vw - 24px)',
             borderRadius: 99, border: '1px solid', borderColor: 'divider',
             boxShadow: 2,
@@ -315,17 +330,21 @@ export function XDriveMobileGalleryChrome({
         <Stack data-xdrive-mobile-gallery-bottom direction="row"
           alignItems="center" justifyContent="space-between" spacing={0.75}
           sx={{
-            position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 7,
-            minHeight: 56, px: 1.5,
-            pb: 'env(safe-area-inset-bottom, 0px)',
-            boxSizing: 'content-box',
+            // A separate, shorter Gallery tier above the shell's bottom bar.
+            // The five-slot bar alone owns the home-indicator safe area.
+            position: 'fixed', left: 0, right: 0,
+            bottom: xDriveMobileGalleryDockBottom(), zIndex: 7,
+            minHeight: XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT,
+            pl: 'max(12px, env(safe-area-inset-left, 0px))',
+            pr: 'max(12px, env(safe-area-inset-right, 0px))',
+            boxSizing: 'border-box',
             bgcolor: 'transparent',
             pointerEvents: 'none',
           }}>
           <Stack direction="row" role="tablist" aria-label="照片主导航"
             spacing={0.25} data-xdrive-mobile-gallery-primary-tabs
             sx={{
-              flex: 1, minWidth: 0, maxWidth: 288, py: 0.5, px: 0.5,
+              flex: 1, minWidth: 0, maxWidth: 288, py: 0.25, px: 0.5,
               borderRadius: 99, border: '1px solid',
               borderColor: 'divider', boxShadow: 2,
               backgroundColor: (theme) => theme.palette.mode === 'dark'
@@ -352,7 +371,7 @@ export function XDriveMobileGalleryChrome({
             onClick={() => { onSearchRequested?.(); openFilter(true) }}
             data-xdrive-mobile-gallery-search
             sx={{
-              minWidth: 50, minHeight: 50, pointerEvents: 'auto',
+              minWidth: 44, minHeight: 44, pointerEvents: 'auto',
               bgcolor: 'background.paper', border: '1px solid',
               borderColor: 'divider', boxShadow: 2,
               backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)',
@@ -396,6 +415,28 @@ export function XDriveMobileGalleryChrome({
             </Typography>
           ) : null}
           <Stack spacing={1.5} sx={{ py: 1.5 }}>
+            {narrowManagedHeader && showCollection ? (
+              <>
+                <Button data-xdrive-mobile-gallery-more-select
+                  onClick={() => { setMoreOpen(false); onToggleSelection() }}
+                  sx={{ minHeight: 44 }}>{selectionMode ? '完成选择' : '选择'}</Button>
+                {canSort ? ([
+                  ['captured', 'asc', '拍摄时间 · 最早在前'],
+                  ['captured', 'desc', '拍摄时间 · 最新在前'],
+                  ['added', 'asc', '加入时间 · 最早在前'],
+                  ['added', 'desc', '加入时间 · 最新在前'],
+                ] as const).map(([by, dir, label]) => (
+                  <Button key={by + dir} data-xdrive-mobile-gallery-more-sort
+                    onClick={() => { onSort(by, dir); setMoreOpen(false) }}
+                    sx={{ minHeight: 44, justifyContent: 'flex-start' }}>{label}</Button>
+                )) : null}
+                {filterContent ? (
+                  <Button data-xdrive-mobile-gallery-more-filter
+                    onClick={() => { setMoreOpen(false); openFilter(false) }}
+                    sx={{ minHeight: 44 }}>筛选图库</Button>
+                ) : null}
+              </>
+            ) : null}
             {showCollection && showTimeScale ? (
               <Button variant={timeScale === 'day' ? 'contained' : 'outlined'}
                 data-xdrive-mobile-gallery-day-mode

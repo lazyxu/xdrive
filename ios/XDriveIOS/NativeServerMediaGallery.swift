@@ -253,23 +253,28 @@ private struct XDriveIOSNativeMediaWallTile: View {
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            if let image {
-                Image(uiImage: image).resizable().scaledToFill()
-                    .frame(maxWidth: .infinity).frame(height: 112).clipped()
-            } else {
-                Rectangle().fill(Color(uiColor: .secondarySystemGroupedBackground))
-                    .overlay {
-                        Image(systemName: item.isVideo ? "video" : "photo")
-                            .foregroundStyle(.secondary)
+            GeometryReader { square in
+                Group {
+                    if let image {
+                        Image(uiImage: image).resizable().scaledToFill()
+                    } else {
+                        Rectangle().fill(Color(uiColor: .secondarySystemGroupedBackground))
+                            .overlay {
+                                Image(systemName: item.isVideo ? "video" : "photo")
+                                    .foregroundStyle(.secondary)
+                            }
                     }
-                    .frame(height: 112)
+                }
+                .frame(width: square.size.width, height: square.size.height)
+                .clipped()
             }
             if item.isVideo || item.isLive {
                 Image(systemName: item.isVideo ? "play.circle.fill" : "livephoto")
                     .foregroundStyle(.white).padding(6).shadow(radius: 2)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
         .accessibilityLabel(
             item.isLive ? "实况媒体：\(item.node.name)" :
                 item.isVideo ? "视频：\(item.node.name)" : "照片：\(item.node.name)"
@@ -504,9 +509,10 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                 nativeLiveReady = ready
                                 if !ready { nativeLiveUnavailable = true }
                             }
+                            .xdriveCloudLivePhotoPaging { navigateLoaded($0) }
                             .id(resources.folderURL)
                         }
-                        .accessibilityLabel("云端 Live Photo，长按播放")
+                        .accessibilityLabel("云端 Live Photo，长按播放或左右滑动切换")
                     } else {
                         XDriveIOSNativeZoomablePhotoView(image: still)
                             .onNavigateSwipe { navigateLoaded($0) }
@@ -593,8 +599,18 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         onFailed: { playbackLoadFailed($0) }
                     )
                 } else if let image {
-                    XDriveIOSNativeZoomablePhotoView(image: image)
-                        .onNavigateSwipe { navigateLoaded($0) }
+                    VStack(spacing: 6) {
+                        XDriveIOSNativeZoomablePhotoView(image: image)
+                            .onNavigateSwipe { navigateLoaded($0) }
+                        if imageIsThumbnailOnly {
+                            Text("原件适屏预览过大或无法解码，当前仅显示低清缩略图。可从顶部重试。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 8)
+                                .accessibilityIdentifier("native-ios-photoasset-still-lowres")
+                        }
+                    }
                 } else if let failure {
                     VStack(spacing: 8) {
                         Text(failure).foregroundStyle(.secondary).padding(.horizontal)
@@ -677,18 +693,21 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         .accessibilityIdentifier("native-ios-photoasset-player-reload")
                     }
                 }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if ownerAuthorized && imageIsThumbnailOnly {
+                        Button { retirePreview() } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .accessibilityLabel("重新加载高清照片预览")
+                        .accessibilityIdentifier("native-ios-photoasset-still-reload")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if photosRestoreBusy {
                         ProgressView().accessibilityLabel("正在保存云端原件到 iOS 照片")
                     } else {
                         Button {
-                            if viewed.isLive {
-                                photosRestoreNotice =
-                                    "此云端 Live Photo 尚未提供完整原件配对导入；不能把静态预览保存为实况。已校验的 iPhone Live ZIP 可从“云端备份原件”恢复。"
-                                photosRestoreNoticePresented = true
-                            } else {
-                                restorePhotoAssetOriginal()
-                            }
+                            restorePhotoAssetOriginal()
                         } label: {
                             Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
                         }
@@ -771,16 +790,40 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         }
                     }
                 } else {
-                    let media = try await XDriveIOSNativeMediaGalleryReader(
+                    let reader = XDriveIOSNativeMediaGalleryReader(
                         owner: auth.owner, accessToken: auth.accessToken
-                    ).preview(target)
-                    try Task.checkCancellation()
-                    guard phase == .active, previewRequestID == requestID,
-                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
-                    else { return }
-                    image = media.image
-                    imageIsThumbnailOnly = false
-                    if let url = media.videoURL { player = AVPlayer(url: url) }
+                    )
+                    do {
+                        // Preserve the verified one-shot preview contract.
+                        // The fallback Reader below is constructed with the
+                        // identical frozen Owner and bearer only on demand.
+                        let media = try await XDriveIOSNativeMediaGalleryReader(
+                            owner: auth.owner, accessToken: auth.accessToken
+                        ).preview(target)
+                        try Task.checkCancellation()
+                        guard phase == .active, previewRequestID == requestID,
+                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                              XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
+                        else { return }
+                        image = media.image
+                        imageIsThumbnailOnly = false
+                        if let url = media.videoURL { player = AVPlayer(url: url) }
+                    } catch XDriveIOSNativeMediaStillPreviewFallback.unavailable {
+                        // Never hide access revocation or a failed video/Live
+                        // behind a thumbnail. Only this already selected still
+                        // can use its independent bounded revision derivative.
+                        guard target.supportsPreview, !target.isLive, !target.isVideo
+                        else { throw XDriveIOSNativeMediaReadFailure.unsupported }
+                        let thumbnail = try await reader.thumbnail(target)
+                        try Task.checkCancellation()
+                        guard phase == .active, previewRequestID == requestID,
+                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                              XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
+                        else { return }
+                        image = thumbnail
+                        imageIsThumbnailOnly = true
+                        failure = nil
+                    }
                 }
             } catch is CancellationError {
                 // The generation has retired. Do not display a stale error.
@@ -848,15 +891,19 @@ struct XDriveIOSNativeServerMediaPreview: View {
         viewed.id == selected.id &&
         viewed.node.revision == selected.node.revision &&
         viewed.node.name == selected.node.name &&
-        viewed.isVideo == selected.isVideo && !viewed.isLive &&
+        viewed.isVideo == selected.isVideo &&
+        viewed.isLive == selected.isLive &&
+        viewed.sameVisibleRevision(as: selected) &&
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
     }
 
-    /// User-initiated import of this verified cloud PhotoAsset's original
-    /// still or video. The independent L3 export does not touch backup
-    /// receipts, upload sessions, cloud Nodes, or the local PhotoKit inventory.
+    /// User-initiated import of this exact Owner PhotoAsset original.
+    /// Live sources import BOTH underlying original resources in one Photos
+    /// transaction. The verified Live transport serves current Node bytes or
+    /// indexed LIVP byte ranges, never thumbnails.
+    /// Neither pathway changes receipts, cloud Nodes or upload queues.
     private func restorePhotoAssetOriginal() {
-        guard !photosRestoreBusy, ownerAuthorized, !viewed.isLive,
+        guard !photosRestoreBusy, ownerAuthorized,
               viewed.supportsPreview, let owner = openedOwner else { return }
         let selected = viewed
         let epoch = UUID()
@@ -891,23 +938,44 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 )
-                let originalURL = try await reader.downloadOriginalForPhotos(selected)
-                defer {
-                    try? FileManager.default.removeItem(
-                        at: originalURL.deletingLastPathComponent()
-                    )
-                }
-                guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
-                else { return }
-                let kind: PHAssetResourceType = selected.isVideo ? .video : .photo
-                try await PHPhotoLibrary.shared().performChanges {
-                    let asset = PHAssetCreationRequest.forAsset()
-                    asset.addResource(with: kind, fileURL: originalURL, options: nil)
+                if selected.isLive {
+                    // The reader rechecks exact Owner/Node/resource identity
+                    // before AND after the paired original streams.
+                    let verified = try await reader.livePreview(selected)
+                    defer { verified.files.discard() }
+                    try Task.checkCancellation()
+                    guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
+                    else { return }
+                    try await PHPhotoLibrary.shared().performChanges {
+                        let asset = PHAssetCreationRequest.forAsset()
+                        asset.addResource(
+                            with: .photo, fileURL: verified.files.stillURL, options: nil
+                        )
+                        asset.addResource(
+                            with: .pairedVideo, fileURL: verified.files.motionURL, options: nil
+                        )
+                    }
+                } else {
+                    let originalURL = try await reader.downloadOriginalForPhotos(selected)
+                    defer {
+                        try? FileManager.default.removeItem(
+                            at: originalURL.deletingLastPathComponent()
+                        )
+                    }
+                    guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
+                    else { return }
+                    let kind: PHAssetResourceType = selected.isVideo ? .video : .photo
+                    try await PHPhotoLibrary.shared().performChanges {
+                        let asset = PHAssetCreationRequest.forAsset()
+                        asset.addResource(with: kind, fileURL: originalURL, options: nil)
+                    }
                 }
                 try Task.checkCancellation()
                 guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
                 else { return }
-                photosRestoreNotice = "已将云端原件添加到 iOS 照片，原云端照片保持不变。"
+                photosRestoreNotice = selected.isLive ?
+                    "已将云端 Live 原始照片与配对视频添加到 iOS 照片，原云端媒体保持不变。" :
+                    "已将云端原件添加到 iOS 照片，原云端照片保持不变。"
                 photosRestoreNoticePresented = true
             } catch is CancellationError {
                 // A retired Viewer/Owner/scene discards the temporary original.
@@ -962,6 +1030,9 @@ struct XDriveIOSNativeServerMediaWall: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingGalleryHelp = false
+    // Presentation-only, shared with the already-native local PhotoKit wall.
+    // Does not participate in Owner, Range, thumbnail request or Viewer keys.
+    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @State private var selected: XDriveIOSNativeMediaItem?
     @State private var viewerLoadedItems: [XDriveIOSNativeMediaItem] = []
     @State private var viewerLoadedRange: XDriveIOSNativeMediaRange?
@@ -1014,13 +1085,34 @@ struct XDriveIOSNativeServerMediaWall: View {
                         .font(.caption).foregroundStyle(.red)
                 }
                 if let page = model.page {
-                    Text(page.total_count == 0 ?
-                        "当前没有已索引且可访问的云端媒体；这不代表服务器没有原件。" :
-                        "照片 \(page.offset + 1)–\(page.offset + page.items.count) / \(page.total_count)")
-                        .font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text(page.total_count == 0 ?
+                            "当前没有已索引且可访问的云端媒体；这不代表服务器没有原件。" :
+                            "照片 \(page.offset + 1)–\(page.offset + page.items.count) / \(page.total_count)")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer(minLength: 4)
+                        Menu {
+                            ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
+                                Button {
+                                    wallDensity = option
+                                } label: {
+                                    Label(option.title, systemImage: wallDensity == option
+                                          ? "checkmark.circle.fill" : "square.grid.3x3")
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "square.grid.3x3")
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel("云端缩略图大小：\(wallDensity.title)")
+                        .accessibilityIdentifier("native-ios-cloud-wall-density")
+                    }
                     LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 90, maximum: 145), spacing: 3)],
-                        spacing: 3
+                        columns: [GridItem(.adaptive(
+                            minimum: wallDensity.minimumCellWidth,
+                            maximum: wallDensity.maximumCellWidth
+                        ), spacing: 2)],
+                        spacing: 2
                     ) {
                         ForEach(page.items) { item in
                             Button {
@@ -1077,6 +1169,15 @@ struct XDriveIOSNativeServerMediaWall: View {
             }
             .padding(12)
         }
+        .simultaneousGesture(
+            MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
+                guard phase == .active, selected == nil, !model.busy,
+                      login.owner != nil else { return }
+                // Resizing existing 48 cells must never fetch a new Range or
+                // reauthorize a different Owner. No current L3 is remounted.
+                wallDensity = wallDensity.applyingPinch(scale)
+            }
+        )
         .onChange(of: selected?.id) { selectedID in
             if let selectedID {
                 lastOpenedMediaID = selectedID

@@ -12,6 +12,7 @@ import { XDriveDeviceBackupLocalScheduleDialog } from './DeviceBackupLocalSchedu
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveSynologyBackupSourceSetup } from './SynologyBackupSourceSetup'
+import { XDriveSynologyBackupSourceProgress } from './SynologyBackupSourceProgress'
 import { XDriveStatusAlert } from './StatusAlert'
 
 type LocalHistory = {
@@ -191,6 +192,12 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
                         onRun={() => { if (isCurrentHost()) setActiveID(item.source_id) }}
                         onSchedule={() => { if (isCurrentHost()) setScheduleID(item.source_id) }}
                       />
+                      {expandedID === item.source_id && sameOwningClient ? (
+                        <XDriveSynologyBackupSourceProgress
+                          key={renderedHostEpoch + ':' + item.source_id}
+                          client={client} sourceID={item.source_id}
+                          refreshEpoch={historyRevision} />
+                      ) : null}
                           <Typography variant="subtitle2">同步历史（只读）</Typography>
                           <Typography variant="caption" color="text.secondary">
                             历史任务结果不代表当前 CAS 物理完整性证明。

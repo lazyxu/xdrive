@@ -23,7 +23,15 @@ CONTROL_DIR="$XDRIVE_HOME/state/control"
 mkdir -p "$CONFIG_DIR" "$FILES_DIR" "$POSTGRES_DIR" "$BACKUP_ROOT" "$CONTROL_DIR"
 chmod 2770 "$CONTROL_DIR"
 cp "$ROOT/deploy/docker-compose.yml" "$CONFIG_DIR/docker-compose.yml"
-cat > "$CONFIG_DIR/.env" <<'EOF'
+# The GitLab daemon workspace owns a unique Compose project. Remove fixed
+# product container names only from this disposable fixture, never deployment.
+if [[ "${XD_BACKUP_TEST_ISOLATE:-0}" == 1 ]]; then
+  [[ "${COMPOSE_PROJECT_NAME:-}" == xdrive-backup-* ]] || {
+    echo 'isolated backup drill requires a task-owned Compose project' >&2; exit 1;
+  }
+  sed -i '/^[[:space:]]*container_name:/d' "$CONFIG_DIR/docker-compose.yml"
+fi
+cat > "$CONFIG_DIR/.env" <<EOF
 POSTGRES_PASSWORD=xdrive-backup-test
 XD_JWT_SECRET=xdrive-backup-test-secret-that-is-long-enough
 XD_CONNECTOR_SECRET_ACTIVE_VERSION=1
@@ -35,7 +43,7 @@ XD_WEB_BIND=127.0.0.1
 XD_WEB_PORT=31999
 XD_ALLOWED_ORIGIN=http://localhost:31999
 XD_MAX_UPLOAD_BYTES=21474836480
-XD_SERVER_IMAGE=xdrive/server:test
+XD_SERVER_IMAGE=${XD_BACKUP_TEST_IMAGE:-xdrive/server:test}
 XD_RELEASE_CHANNEL=master
 XD_RELEASE_COMMIT=0123456789abcdef0123456789abcdef01234567
 XD_UPDATE_SOURCE=github

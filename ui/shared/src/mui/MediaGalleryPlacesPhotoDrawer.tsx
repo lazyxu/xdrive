@@ -242,7 +242,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               // MUI Dialog's flex height: 142 real tiles then fit into only
               // ~460px and the grid has NO vertical overflow. A real minimum
               // tile track restores scrolling without changing Owner paging.
-              gridAutoRows:expanded?'minmax(132px, max-content)':undefined,
+              gridAutoRows:expanded?'minmax(108px, max-content)':undefined,
               overscrollBehavior:'contain',touchAction:'auto'}}>
             {items.map(item => (
               <Box key={item.node.id} component="button" type="button"
@@ -321,10 +321,6 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
                       <PhotoLibraryOutlinedIcon fontSize="small"/>
                     </Box>}/>
                 </Box>
-                <Typography variant="caption" component="span" noWrap
-                  sx={{display:'block',px:0.5,py:0.5,fontSize:10}}>
-                  {item.node.name}
-                </Typography>
               </Box>
             ))}
           </Box>

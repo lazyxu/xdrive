@@ -240,6 +240,12 @@ private struct XDriveIOSNativeFilesManagementIntent: Identifiable {
     let directory: XDriveIOSNativeFilesNode?
 }
 
+private struct XDriveIOSNativeFilesVersionIntent: Identifiable {
+    let id = UUID()
+    let owner: XDriveNativeOwnerRoot
+    let node: XDriveIOSNativeFilesNode
+}
+
 private struct XDriveIOSNativeFilesFolder: Hashable {
     let id: UInt64
     let name: String
@@ -269,6 +275,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var searchError: String?
     @State private var selectedFile: XDriveIOSNativeFilesEntry?
     @State private var managementIntent: XDriveIOSNativeFilesManagementIntent?
+    @State private var versionHistoryIntent: XDriveIOSNativeFilesVersionIntent?
     @State private var locateIntent: XDriveIOSNativeFilesLocateIntent?
     @State private var selectedOwner: XDriveNativeOwnerRoot?
     @State private var returnOwner: XDriveNativeOwnerRoot?
@@ -476,6 +483,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                         }
                         .contextMenu {
                             Button("文件操作") { openManagement(for: entry.node) }
+                            Button("版本历史") { openVersionHistory(for: entry.node) }
                         }
                         .id(entry.node.id)
                     }
@@ -766,6 +774,20 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .sheet(item: $versionHistoryIntent, onDismiss: {
+            reload()
+        }) { intent in
+            if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
+                XDriveIOSNativeFilesVersionHistoryScreen(
+                    login: login, openedOwner: intent.owner, node: intent.node
+                ) {
+                    // The sheet's onDismiss refreshes once after Server receipt.
+                    versionHistoryIntent = nil
+                }
+            } else {
+                Text("当前账户已变化，请关闭后重新进入文件版本历史。")
+            }
+        }
         .fullScreenCover(item: $selectedFile, onDismiss: {
             selectedOwner = nil
             // Re-read the exact current directory/search page before returning
@@ -822,6 +844,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             selectedIDs.removeAll()
             showingBatchTrashConfirmation = false
             managementIntent = nil
+            versionHistoryIntent = nil
             locateIntent = nil
             selectedFile = nil
             selectedOwner = nil
@@ -926,6 +949,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Button(entry.node.isDirectory ? "文件夹操作" : "文件操作") {
                     openManagement(for: entry.node)
                 }
+                if !entry.node.isDirectory {
+                    Button("版本历史") { openVersionHistory(for: entry.node) }
+                }
             }
         }
     }
@@ -955,6 +981,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+            if let modifiedDate = entry.node.modifiedDate {
+                Text("修改于 \(XDriveIOSNativeFilesDatePolicy.display(modifiedDate))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
         .contentShape(Rectangle())
@@ -974,10 +1006,19 @@ struct XDriveIOSNativeFilesBrowser: View {
                 if let path = entry.path {
                     Text(path).font(.caption).foregroundStyle(.secondary)
                         .lineLimit(1)
-                } else if !entry.node.isDirectory {
-                    Text(ByteCountFormatter.string(
-                        fromByteCount: entry.node.size, countStyle: .file
-                    )).font(.caption).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
+                    if !entry.node.isDirectory {
+                        Text(ByteCountFormatter.string(
+                            fromByteCount: entry.node.size, countStyle: .file
+                        )).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let modifiedDate = entry.node.modifiedDate {
+                        Text("修改于 \(XDriveIOSNativeFilesDatePolicy.display(modifiedDate))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
             Spacer(minLength: 6)
@@ -1007,6 +1048,17 @@ struct XDriveIOSNativeFilesBrowser: View {
         batchDestinationIntent = XDriveIOSNativeFilesBatchDestinationIntent(
             owner: owner, items: chosenItems, sourceParentID: sourceParentID,
             kind: kind
+        )
+    }
+
+    private func openVersionHistory(for node: XDriveIOSNativeFilesNode) {
+        guard !selecting, !model.loading, model.verifiedPage,
+              !batchTrash.busy, !batchTarget.busy, !batchExport.busy,
+              batchExport.prepared.isEmpty,
+              node.type == "file", let owner = login.owner,
+              model.entries.contains(where: { $0.node == node }) else { return }
+        versionHistoryIntent = XDriveIOSNativeFilesVersionIntent(
+            owner: owner, node: node
         )
     }
 

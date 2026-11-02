@@ -15,19 +15,83 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         return copy
     }
 
-    final class Coordinator: NSObject, UIScrollViewDelegate {
+    final class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
         weak var photo: UIImageView?
         weak var scroll: UIScrollView?
         var onSwipe: ((Int) -> Void)?
 
-        @objc func panEnded(_ recognizer: UIPanGestureRecognizer) {
-            guard recognizer.state == .ended, let scroll else { return }
-            let displacement = recognizer.translation(in: scroll)
-            guard let direction = XDriveIOSNativeViewerSwipePolicy.direction(
-                horizontal: displacement.x, vertical: displacement.y,
-                zoom: scroll.zoomScale, minimum: scroll.minimumZoomScale
-            ) else { return }
-            onSwipe?(direction)
+        private var pagingEpoch: UInt64 = 0
+
+        // A separate, strictly horizontal 1-finger recognizer owns paging at
+        // 1x. UIScrollView keeps its native pan for zoomed images and its pinch
+        // recognizer; File previews with no onSwipe never acquire a page drag.
+        func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            guard let scroll, onSwipe != nil,
+                  scroll.zoomScale <= scroll.minimumZoomScale + 0.01,
+                  let pan = recognizer as? UIPanGestureRecognizer,
+                  pan.numberOfTouches == 1 else { return false }
+            let velocity = pan.velocity(in: scroll)
+            return abs(velocity.x) > abs(velocity.y) * 1.15
+        }
+
+        private func snap(_ photo: UIImageView, to offset: CGFloat,
+                          turn direction: Int? = nil) {
+            let epoch = pagingEpoch
+            UIView.animate(
+                withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.17,
+                delay: 0, options: [.curveEaseOut, .beginFromCurrentState],
+                animations: { photo.transform = CGAffineTransform(translationX: offset, y: 0) },
+                completion: { [weak self, weak photo] completed in
+                    guard let self, let photo, self.pagingEpoch == epoch else { return }
+                    if completed, let direction { self.onSwipe?(direction) }
+                    if self.pagingEpoch == epoch { photo.transform = .identity }
+                }
+            )
+        }
+
+        @objc func pagePan(_ recognizer: UIPanGestureRecognizer) {
+            guard let scroll, let photo else { return }
+            switch recognizer.state {
+            case .began:
+                pagingEpoch &+= 1
+                photo.layer.removeAllAnimations()
+                photo.transform = .identity
+            case .changed:
+                guard scroll.zoomScale <= scroll.minimumZoomScale + 0.01,
+                      recognizer.numberOfTouches == 1 else {
+                    snap(photo, to: 0)
+                    return
+                }
+                let displacement = recognizer.translation(in: scroll)
+                guard abs(displacement.x) > abs(displacement.y) * 1.05 else { return }
+                let width = max(1, scroll.bounds.width)
+                // Move the actual decoded still in place: no new PhotoKit or
+                // Owner request while the user's finger is down.
+                photo.transform = CGAffineTransform(
+                    translationX: max(-width, min(width, displacement.x)), y: 0
+                )
+            case .ended:
+                let displacement = recognizer.translation(in: scroll)
+                guard let direction = XDriveIOSNativeViewerSwipePolicy.direction(
+                    horizontal: displacement.x, vertical: displacement.y,
+                    zoom: scroll.zoomScale, minimum: scroll.minimumZoomScale
+                ), onSwipe != nil else {
+                    snap(photo, to: 0)
+                    return
+                }
+                let width = max(1, scroll.bounds.width)
+                snap(photo, to: direction > 0 ? -width : width, turn: direction)
+            case .cancelled, .failed:
+                snap(photo, to: 0)
+            default:
+                break
+            }
+        }
+
+        func retirePageAnimation() {
+            pagingEpoch &+= 1
+            photo?.layer.removeAllAnimations()
+            photo?.transform = .identity
         }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
@@ -60,9 +124,9 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         scroll.minimumZoomScale = 1
         scroll.maximumZoomScale = 5
         scroll.bouncesZoom = true
-        // The content normally fits the viewport. Keep the system pan
-        // recognizer active for paging without stealing pinch-to-zoom.
-        scroll.alwaysBounceHorizontal = true
+        // The explicit horizontal pager tracks 1x swipes; disable UIKit's
+        // parallel rubber-band so the still does not move twice.
+        scroll.alwaysBounceHorizontal = false
         scroll.contentInsetAdjustmentBehavior = .never
         scroll.showsHorizontalScrollIndicator = false
         scroll.showsVerticalScrollIndicator = false
@@ -84,9 +148,15 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         context.coordinator.photo = photo
         context.coordinator.scroll = scroll
         context.coordinator.onSwipe = onSwipe
-        scroll.panGestureRecognizer.addTarget(
-            context.coordinator, action: #selector(Coordinator.panEnded(_:))
+        let pagingPan = UIPanGestureRecognizer(
+            target: context.coordinator, action: #selector(Coordinator.pagePan(_:))
         )
+        pagingPan.maximumNumberOfTouches = 1
+        pagingPan.delegate = context.coordinator
+        scroll.addGestureRecognizer(pagingPan)
+        // Native scroll pan must win for magnified images and vertical moves,
+        // but wait for an eligible horizontal 1x page gesture.
+        scroll.panGestureRecognizer.require(toFail: pagingPan)
         let doubleTap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.doubleTap(_:))
@@ -101,6 +171,7 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         guard let photo = context.coordinator.photo else { return }
         // A reused detail view must never retain another picture's zoom.
         if photo.image !== image {
+            context.coordinator.retirePageAnimation()
             scroll.setZoomScale(scroll.minimumZoomScale, animated: false)
             photo.image = image
         }

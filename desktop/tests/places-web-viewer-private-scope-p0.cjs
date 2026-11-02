@@ -29,6 +29,7 @@ function load(rel, inject = {}) {
   new Function('module','exports','require',result.outputText)(mod,mod.exports,(name)=>{
     if(Object.hasOwn(inject,name))return inject[name]
     if(name==='react')return React
+    if(name==='./webMobileNavigationLayout')return {xDriveWebBrowserCompactNavigation:()=>false}
     if(name==='../../ui/shared/src')return shared
     if(name==='../../ui/shared/src/mui/ViewerForegroundPriority')return foreground
     throw Error('Unexpected module '+name+' in '+rel)

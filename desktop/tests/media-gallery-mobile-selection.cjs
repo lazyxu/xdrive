@@ -29,6 +29,11 @@ const bindings = {
     xDriveMediaGalleryErrorMessage: (error) => error instanceof Error ? error.message : String(error),
   },
   './useMobilePanelViewport': { useXDriveMobilePanelViewport: () => null },
+  './MobileGalleryDockLayout': {
+    xDriveMobileGalleryDockBottom: extra => extra > 0
+      ? 'calc(var(--xdrive-mobile-five-slot-inset, env(safe-area-inset-bottom, 0px)) + ' + extra + 'px)'
+      : 'var(--xdrive-mobile-five-slot-inset, env(safe-area-inset-bottom, 0px))',
+  },
 }
 const output = ts.transpileModule(source, {
   fileName: filename, compilerOptions: {

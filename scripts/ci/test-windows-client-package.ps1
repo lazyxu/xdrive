@@ -14,6 +14,7 @@ try {
     & ./scripts/ci/gitlab-windows-native.ps1 -Action ValidateScripts
     & ./scripts/ci/test-windows-uninstaller-resolver.ps1
     & ./scripts/ci/test-windows-process-scope.ps1
+    & ./scripts/ci/test-windows-artifact-preconditions.ps1
 
     if ($ExpectSigned) {
         $signature = Get-AuthenticodeSignature $Installer

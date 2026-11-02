@@ -47,6 +47,7 @@ const parse = raw => {
 }
 const viewer = app => ['preview', 'media-viewer', 'pdf-viewer', 'text-viewer', 'audio-player'].includes(app)
 const { useXDriveWebAppRuntime } = loadTS('web/src/webAppRuntime.ts', {
+  './webMobileNavigationLayout': { xDriveWebBrowserCompactNavigation: () => false },
   '../../ui/shared/src/mui/ViewerForegroundPriority': foreground,
   '../../ui/shared/src': {
     xDriveParseWebAppHash: parse,

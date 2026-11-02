@@ -989,6 +989,8 @@ const agent = Object.freeze({
   cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) =>
     ipcRenderer.invoke('agent:cloud-restore-version', nodeID, revision, versionID),
   cloudShares: (nodeID: number) => ipcRenderer.invoke('agent:cloud-shares', nodeID),
+  cloudOwnerShares: (cursor: number, limit: number) => ipcRenderer.invoke('agent:cloud-owner-shares', cursor, limit),
+  cloudOwnShareLink: (id: number) => ipcRenderer.invoke('agent:cloud-share-link', id),
   cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) =>
     ipcRenderer.invoke('agent:cloud-create-share', nodeID, input),
   cloudUpdateShare: (id: number, input: { expires_at?: string | null; access: 'read_only' | 'view_upload' }) =>

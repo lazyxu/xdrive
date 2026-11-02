@@ -11,6 +11,14 @@ const compiled = ts.transpileModule(source, {
   reportDiagnostics: true,
 })
 assert.equal(compiled.diagnostics?.length ?? 0, 0, 'real browser runtime must transpile')
+const layoutSource = readFileSync(resolve(here, '../src/webMobileNavigationLayout.ts'), 'utf8')
+const layoutJS = ts.transpileModule(layoutSource, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  reportDiagnostics: true,
+})
+assert.equal(layoutJS.diagnostics?.length ?? 0, 0)
+const layoutModule = { exports: {} }
+new Function('module', 'exports', layoutJS.outputText)(layoutModule, layoutModule.exports)
 const react = {
   useState(initial) {
     const value = typeof initial === 'function' ? initial() : initial
@@ -29,6 +37,7 @@ const parseHash = hash => {
 const module = { exports: {} }
 new Function('module', 'exports', 'require', compiled.outputText)(module, module.exports, id => {
   if (id === 'react') return react
+  if (id === './webMobileNavigationLayout') return layoutModule.exports
   if (id === '../../ui/shared/src/mui/ViewerForegroundPriority')
     return { xDriveEnterForegroundPage: () => undefined }
   if (id === '../../ui/shared/src') return {
@@ -50,15 +59,24 @@ for (const hash of [
   assert.equal(landing(hash, true), null,
     'explicit or unknown hashes must not be reinterpreted as a Gallery request: ' + hash)
 }
-function startup(rawHash, compact, denyMedia = false) {
+function startup(rawHash, compact, denyMedia = false, device = {}) {
   const previous = globalThis.window
   const writes = []
   const location = { hash: rawHash }
   globalThis.window = {
     location,
-    matchMedia: () => {
+    navigator: {
+      userAgent: device.userAgent ?? '',
+      platform: device.platform ?? 'Win32',
+      maxTouchPoints: device.maxTouchPoints ?? 0,
+    },
+    matchMedia: query => {
       if (denyMedia) throw Error('Safari media getter denied')
-      return { matches: compact }
+      if (query === layoutModule.exports.XDRIVE_WEB_NARROW_QUERY)
+        return { matches: compact }
+      if (query === layoutModule.exports.XDRIVE_WEB_TOUCH_ONLY_QUERY)
+        return { matches: device.touchOnly === true }
+      throw Error('Unexpected media query: ' + query)
     },
     history: {
       state: null,
@@ -84,6 +102,24 @@ assert.deepEqual(startup('', true).route, gallery, 'actual hook uses mobile Gall
 assert.equal(startup('', true).finalHash, '#/app/gallery',
   'first mobile route must have canonical Gallery hash without a pushed history entry')
 assert.deepEqual(startup('', false).route, home, 'wide Web keeps Home')
+const ipadDesktopSite = {
+  userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Safari/605.1',
+  platform: 'MacIntel', maxTouchPoints: 5,
+}
+const androidTablet = {
+  userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel Tablet)',
+  platform: 'Linux armv8l', maxTouchPoints: 10,
+}
+assert.deepEqual(startup('', false, false, ipadDesktopSite).route, gallery,
+  'wide iPad desktop-site startup must still land in Gallery')
+assert.deepEqual(startup('', false, false, androidTablet).route, gallery,
+  'wide Android tablet startup must still land in Gallery')
+assert.deepEqual(startup('', false, false, { touchOnly: true }).route, gallery,
+  'touch-only tablet mode uses mobile startup despite a desktop UA')
+assert.deepEqual(startup('', false, true, ipadDesktopSite).route, gallery,
+  'denied media query does not hide a recognizable iPadOS device')
+assert.deepEqual(startup('#/app/files', false, false, ipadDesktopSite).route,
+  { app: 'files', params: {} }, 'mobile deep link still wins over Gallery-first')
 assert.deepEqual(startup('', true, true).route, home,
   'denied optional Safari matchMedia must not break first Web/PWA render')
 assert.deepEqual(startup('#/app/files', true).route, { app: 'files', params: {} },
@@ -99,8 +135,8 @@ assert.match(source,
 assert.match(source, /useState<XDriveWebAppRoute>\(\(\) => initialRootRoute\(\)\)/)
 assert.match(source, /const landing = initialRootRoute\(\)/,
   'initial hook state and initial hash normalization must agree')
-assert.match(source, /window\.matchMedia\('\(max-width:899\.95px\)'\)/,
-  'use the existing compact workspace breakpoint')
+assert.match(source, /xDriveWebBrowserCompactNavigation\(\)/,
+  'cold Gallery route shares the orientation-stable phone/tablet detector')
 assert.match(source, /window\.addEventListener\('hashchange', sync\)/,
   'protected browser Back/Forward routing must stay in place')
 assert.doesNotMatch(source, /\.\/mobileDefaultLandingRoute/,

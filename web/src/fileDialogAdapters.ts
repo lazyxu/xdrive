@@ -34,6 +34,7 @@ export function createWebShareDialogAdapter(api: XDriveApi) {
   return createXDriveShareDialogAdapter({
     listShares: (nodeID) => api.shares(nodeID),
     createShare: (nodeID, input) => api.createShare(nodeID, input),
+    getShareLink: (shareID) => api.shareLink(shareID),
     revokeShare: (shareID) => api.revokeShare(shareID),
     updateShare: (shareID, input) => api.updateShare(shareID, input),
   }, {

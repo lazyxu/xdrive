@@ -241,3 +241,15 @@ test('cloud PhotoAsset Gallery short landscape recovers wall height without losi
   assert.match(wall, /ownerAuthorized: ownerAuthorized && phase == \.active/)
   assert.doesNotMatch(wall, /\.id\(compactGallery\)|onChange\(of: compactGallery\)|UploadSessionTransport|WKWebView/)
 });
+
+
+test('native PhotoAsset authenticated reads stream and stop at the first byte over the endpoint limit', () => {
+  const read = api.slice(api.indexOf('private func read('), api.indexOf('private func albumSegment'));
+  assert.match(read, /client\.bytes\(for: request\)/);
+  assert.match(read, /for try await byte in stream/);
+  assert.match(read, /bytes\.count \+ chunk\.count < maximum/);
+  assert.match(read, /throw XDriveIOSNativeMediaReadFailure\.tooLarge/);
+  assert.match(read, /try Task\.checkCancellation\(\)/);
+  assert.match(read, /reply\.statusCode == 200/);
+  assert.doesNotMatch(read, /client\.data\(for:/);
+});

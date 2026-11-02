@@ -67,6 +67,16 @@ internal fun nativeFeatureBackAllowed(
     NativeHomeTab.ALL, NativeHomeTab.DYNAMIC, NativeHomeTab.MINE -> false
 }
 
+/** An explicit local-to-cloud map switch may leave Collections, but must
+ * never discard a selected photo, active batch, Viewer or uncertain write to
+ * satisfy the cloud Library-only map entry precondition. */
+internal fun nativeLocalCloudMapSwitchAllowed(state: DriveState): Boolean =
+    state.screen == Screen.GALLERY && !state.galleryMapOpen &&
+    state.galleryViewer == null && state.gallerySelected == null &&
+    !state.gallerySelectionMode && !state.hasActiveNativeTransfer() &&
+    !state.galleryMetadataWriteAttempted &&
+    !state.galleryAlbumCreateAttempted && !state.galleryAlbumEditAttempted
+
 /** A map cell has one native album sheet, not an extra Gallery route or
  * authorization. A full-screen Viewer temporarily replaces the sheet.
  * The originating map's Owner/Cell identity remains in DriveController. */
@@ -493,11 +503,20 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         !state.hasActiveNativeTransfer())
                 selectNativeTab(NativeHomeTab.GALLERY)
                 if (mayEnter) {
-                    // A launcher photo/album shortcut is an explicit route
-                    // override. Drop a previously pending map resume before
-                    // the new source can be rendered.
-                    if (shortcut != NativeHomeShortcut.GALLERY_MAP)
+                    // The Launcher is an explicit Gallery destination, not a
+                    // request to keep the previous Places child. Changing
+                    // only the chip previously left the Controller's cloud
+                    // map open, masking even the newly selected local wall.
+                    if (shortcut != NativeHomeShortcut.GALLERY_MAP) {
+                        if (controller.state.value.galleryMapOpen) {
+                            controller.closeGalleryMapOverview()
+                            // A transfer or unresolved Viewer may prevent a
+                            // safe close. Do not claim the new source then.
+                            if (controller.state.value.galleryMapOpen) return
+                        }
+                        localPhotoMapOpen = false
                         pendingRoutes = pendingRoutes.afterGallerySource(next.gallerySource)
+                    }
                     nativeNavigation = next
                     if (shortcut == NativeHomeShortcut.GALLERY_MAP) {
                         mapOriginSource = nativeGalleryMapReturnSource(
@@ -559,9 +578,20 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             if (nativeAuthenticated && !photoViewerOpen &&
                 !nativeGalleryMapHidesBottomBar(
                     nativeNavigation.selected, state.galleryMapOpen,
-                    localPhotoMapOpen, nativeMapFocused))
-                NativeHomeBottomBar(nativeNavigation, ::selectNativeTab,
-                    onShowDynamicPicker = { dynamicPickerOpen = true })
+                    localPhotoMapOpen, nativeMapFocused)) {
+                // This common Scaffold slot pins Files' local category/action
+                // dock ABOVE the global five tabs in Browse, Recent, Favorites
+                // and Search. It is never rendered as a scrollable list child.
+                Column(Modifier.fillMaxWidth().testTag("native-bottom-stack")) {
+                    if (!nativeOverlay && state.screen == Screen.FILES &&
+                        nativeNavigation.selected == NativeHomeTab.FILES) {
+                        FilesBottomDock(state, controller,
+                            onBatchTrash = { batchTrashConfirm = true })
+                    }
+                    NativeHomeBottomBar(nativeNavigation, ::selectNativeTab,
+                        onShowDynamicPicker = { dynamicPickerOpen = true })
+                }
+            }
         },
         topBar = {
         if (nativeOverlay) {
@@ -747,7 +777,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         onTrash = { filesEdit = FilesEditIntent(FilesEditKind.TRASH, it) },
                         onCopy = { controller.chooseDestination(it, FilesTransferKind.COPY) },
                         onMove = { controller.chooseDestination(it, FilesTransferKind.MOVE) },
-                        onBatchTrash = { batchTrashConfirm = true }, onDownload = onDownload)
+                        onDownload = onDownload)
                 }
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
@@ -792,8 +822,23 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             localSelected = true,
                             onLocal = {},
                             onCloud = {
-                                localPhotoMapOpen = false
-                                if (!state.galleryMapOpen) controller.openGalleryMapOverview()
+                                // Local Places can outlive the cloud Gallery's
+                                // Collections subroute. The cloud map accepts
+                                // only a Library Owner scope, so explicitly
+                                // leave Collections before opening it.
+                                val current = controller.state.value
+                                if (nativeLocalCloudMapSwitchAllowed(current)) {
+                                    if (current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS)
+                                        controller.openGalleryLibrary()
+                                    // A disposable Library GET may be cancelled
+                                    // immediately; the cloud Owner map is the
+                                    // only request for this explicit action.
+                                    controller.openGalleryMapOverview()
+                                    // A blocked route switch must retain the
+                                    // local map, not expose an inert MAP chip.
+                                    if (controller.state.value.galleryMapOpen)
+                                        localPhotoMapOpen = false
+                                }
                             })
                         NativeLocalPhotoMap(
                             sessionId = state.nativeUiSessionId,

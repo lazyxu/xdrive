@@ -39,6 +39,8 @@ type serviceDependency struct {
 	CaddyLocalDomainHTTPSState       string `json:"caddy_local_domain_https_state,omitempty"`
 	PhotoHostRuntimeState            string `json:"photo_host_runtime_state,omitempty"`
 	PhotoHostProfileConfigured       *bool  `json:"photo_host_profile_configured,omitempty"`
+	BaiduServerProbeState            string `json:"baidu_server_probe_state,omitempty"`
+	BaiduServerProbeCheckedAt        string `json:"baidu_server_probe_checked_at,omitempty"`
 }
 
 type serviceDependenciesSnapshot struct {
@@ -368,6 +370,9 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 	}
 	// Preserve legacy status. Each new axis uses only its own proof.
 	s.setServiceLifecycleStates(ctx, services, cfg, configErr, mediaManaged, mediaConfigUnreadable, caddyContainerObserved)
+	if s.DB != nil && configErr == nil && cfg.Enabled && cfg.Configured {
+		applyBaiduServerProbeEvidence(&services[7], s.observeBaiduServerAKProbe(ctx, cfg))
+	}
 	// Smart Info and the container alone cannot execute queued OCR: the
 	// owner SmartRunner and the bounded scheduler must both be initialized.
 	s.photoIntelligenceMu.Lock()

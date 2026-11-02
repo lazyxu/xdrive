@@ -4,6 +4,9 @@ import { Box, Chip, CircularProgress } from '@mui/material'
 import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
 import { xDriveAbortHTMLMediaElement } from './mediaPreviewStreamTeardown'
 import { xDriveAnchorPreviewZoom, xDriveClampPreviewViewport } from '../file-preview-viewport'
+import {
+  XDRIVE_PHOTO_PAGE_SETTLE_MS, xDrivePhotoFingerTranslation, xDrivePhotoPageTurn,
+} from '../media-gallery-photo-swipe'
 import type { XDrivePreviewPoint, XDrivePreviewViewport, XDrivePreviewImageDimensions } from '../file-preview-viewport'
 import type {
   XDriveByteProgressHandler,
@@ -148,6 +151,9 @@ export function XDriveLivePhotoSurface({
     session: object
   } | null>(null)
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const photoPageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [photoPageX, setPhotoPageX] = useState(0)
+  const [photoPageDragging, setPhotoPageDragging] = useState(false)
   const clearHoldTimer = useCallback(() => {
     if (holdTimerRef.current !== null) {
       clearTimeout(holdTimerRef.current)
@@ -249,8 +255,16 @@ export function XDriveLivePhotoSurface({
     panRef.current = null
     lastTapRef.current = null
     lastTouchZoomAtRef.current = 0
+    if (photoPageTimerRef.current !== null) clearTimeout(photoPageTimerRef.current)
+    photoPageTimerRef.current = null
+    setPhotoPageX(0)
+    setPhotoPageDragging(false)
     setImageScale(1)
     setImageOffset({ x: 0, y: 0 })
+    return () => {
+      if (photoPageTimerRef.current !== null) clearTimeout(photoPageTimerRef.current)
+      photoPageTimerRef.current = null
+    }
   }, [gestureSession])
   // Unlike a passive effect, this cleanup runs before React detaches the
   // current video DOM node. Stop signed media Range on Viewer Close and
@@ -591,8 +605,19 @@ export function XDriveLivePhotoSurface({
     pinchRef.current = null
     panRef.current = null
     lastTapRef.current = null
+    if (photoPageTimerRef.current !== null) clearTimeout(photoPageTimerRef.current)
+    photoPageTimerRef.current = null
+    setPhotoPageX(0)
+    setPhotoPageDragging(false)
     endHold()
   }, [clearHoldTimer, endHold, gestureSession])
+  // Normal pointerleave follows pointerup on some browsers. It must not
+  // cancel the accepted turn while its existing 150ms settle is pending.
+  // A leave during an active gesture still cancels it immediately.
+  const handlePointerLeave = useCallback(() => {
+    if (photoPageTimerRef.current !== null && !touchGestureRef.current) return
+    cancelTouchGesture()
+  }, [cancelTouchGesture])
   // A hidden iOS PWA/desktop tab may never dispatch pointerup, keyup or blur.
   // Retire the exact current signed motion lease rather than leaving a video
   // Range or unfinished motion ticket alive across background suspension.
@@ -604,6 +629,10 @@ export function XDriveLivePhotoSurface({
     pinchRef.current = null
     panRef.current = null
     lastTapRef.current = null
+    if (photoPageTimerRef.current !== null) clearTimeout(photoPageTimerRef.current)
+    photoPageTimerRef.current = null
+    setPhotoPageX(0)
+    setPhotoPageDragging(false)
     holdActiveRef.current = false
     stopPlayback()
     cancelPendingMotion()
@@ -646,6 +675,10 @@ export function XDriveLivePhotoSurface({
 
   const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (gestureSessionRef.current !== gestureSession) return
+    if (photoPageTimerRef.current !== null) clearTimeout(photoPageTimerRef.current)
+    photoPageTimerRef.current = null
+    setPhotoPageX(0)
+    setPhotoPageDragging(false)
     // Never accept queued touches on an already-hidden document: a deferred
     // hold timer could otherwise fire after returning to the foreground.
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
@@ -783,7 +816,15 @@ export function XDriveLivePhotoSurface({
         gesture.mode = Math.abs(dx) > Math.abs(dy) * 1.25 ? 'swiping' : 'cancelled'
       }
     }
-  }, [applyImageViewport, clearHoldTimer, endHold, gestureSession, imageAnchor, interactiveImage])
+    if (interactiveImage && gesture.mode === 'swiping' && !gesture.held &&
+        !gesture.multi && viewportRef.current.scale <= 1.01) {
+      const x = xDrivePhotoFingerTranslation(dx, dy, viewportSizeRef.current.width,
+        Boolean(onSwipePrevious), Boolean(onSwipeNext))
+      setPhotoPageX(x)
+      if (x !== 0) setPhotoPageDragging(true)
+    }
+  }, [applyImageViewport, clearHoldTimer, endHold, gestureSession, imageAnchor,
+    interactiveImage, onSwipePrevious, onSwipeNext])
 
   const handlePointerRelease = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (gestureSessionRef.current !== gestureSession) return
@@ -792,6 +833,8 @@ export function XDriveLivePhotoSurface({
     if (event.pointerType === 'touch') zoomPointersRef.current.delete(event.pointerId)
     const pan = panRef.current
     if (pinching || (interactiveImage && pan?.pointerId === event.pointerId)) {
+      setPhotoPageX(0)
+      setPhotoPageDragging(false)
       clearHoldTimer()
       touchGestureRef.current = null
       if (pinching) {
@@ -830,19 +873,38 @@ export function XDriveLivePhotoSurface({
       // Ignore runtimes that have already released the pointer.
     }
     endHold()
-    if (!current || !gesture || gesture.held || gesture.multi || gesture.mode === 'cancelled') return
+    if (!current || !gesture || gesture.held || gesture.multi || gesture.mode === 'cancelled') {
+      setPhotoPageX(0)
+      setPhotoPageDragging(false)
+      return
+    }
     if (interactiveImage && gesture.mode === 'pending' &&
         Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) < 12 &&
         Date.now() - gesture.startedAt <= 450) acceptTouchTap(event)
     const dx = event.clientX - gesture.startX
     const dy = event.clientY - gesture.startY
-    // Match ordinary images: only a brisk unzoomed horizontal swipe navigates.
-    // Slow drags or post-pinch releases must remain on the current still.
-    if (viewportRef.current.scale > 1.01 ||
-        Date.now() - gesture.startedAt > 700 ||
-        Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.25) return
-    if (dx > 0) onSwipePrevious?.()
-    else onSwipeNext?.()
+    // Stay on the decoded still during the drag, then settle visually before
+    // the existing authenticated Viewer may adopt the adjacent item.
+    const direction = viewportRef.current.scale <= 1.01
+      ? xDrivePhotoPageTurn(dx, dy, Date.now() - gesture.startedAt,
+        Boolean(onSwipePrevious), Boolean(onSwipeNext),
+        viewportSizeRef.current.width)
+      : null
+    setPhotoPageDragging(false)
+    if (!direction) {
+      setPhotoPageX(0)
+      return
+    }
+    const width = viewportSizeRef.current.width
+    setPhotoPageX(direction === 'next' ? -width : width)
+    const session = gestureSession
+    photoPageTimerRef.current = setTimeout(() => {
+      photoPageTimerRef.current = null
+      if (gestureSessionRef.current !== session) return
+      setPhotoPageX(0)
+      if (direction === 'next') onSwipeNext?.()
+      else onSwipePrevious?.()
+    }, XDRIVE_PHOTO_PAGE_SETTLE_MS)
   }, [acceptTouchTap, clearHoldTimer, endHold, gestureSession, interactiveImage, onSwipeNext, onSwipePrevious])
 
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
@@ -884,7 +946,7 @@ export function XDriveLivePhotoSurface({
       onDoubleClick={handleDoubleClick}
       onWheel={handleWheel}
       onPointerCancel={cancelTouchGesture}
-      onPointerLeave={cancelTouchGesture}
+      onPointerLeave={handlePointerLeave}
       onLostPointerCapture={handleLostCapture}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
@@ -914,10 +976,11 @@ export function XDriveLivePhotoSurface({
       <Box sx={{
         position: 'absolute', inset: 0,
         transform: interactiveImage
-          ? `translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageScale})`
+          ? `translate(${imageOffset.x + (imageScale <= 1.01 ? photoPageX : 0)}px, ${imageOffset.y}px) scale(${imageScale})`
           : undefined,
         transformOrigin: 'center',
-        transition: panRef.current || pinchRef.current ? 'none' : 'transform 100ms ease-out',
+        transition: panRef.current || pinchRef.current || photoPageDragging
+          ? 'none' : 'transform 150ms ease-out',
         '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
       }}>
         {still}

@@ -28,6 +28,9 @@ try {
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-client-package.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-process-scope.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-smoke-package.ps1))
+            $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/assert-windows-artifact-session.ps1))
+            $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-artifact-preconditions.ps1))
+            $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-backup-cli-windows.ps1))
         }
 
         "PrepareSigning" {
@@ -64,6 +67,7 @@ try {
         }
 
         "SmokeInstall" {
+            & ./scripts/ci/assert-windows-artifact-session.ps1
             $installer = (Resolve-Path ./release/xDriveSetup-amd64.exe).Path
             $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
             $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT", "/NOSTARTDESKTOP", "/DIR=$app")

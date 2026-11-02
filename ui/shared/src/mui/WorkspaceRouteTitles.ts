@@ -8,6 +8,7 @@ export const XDRIVE_WORKSPACE_ROUTE_TITLES = {
   overview: '主页',
   files: '文件',
   gallery: '图库',
+  shares: '分享中心',
   'device-backup': '设备备份',
   'remote-pull': '远程拉取',
   transfers: '任务',

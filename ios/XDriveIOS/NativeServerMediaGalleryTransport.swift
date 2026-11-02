@@ -107,6 +107,13 @@ enum XDriveIOSNativeMediaReadFailure: Error {
     case tooLarge
 }
 
+// This specifically means the *image body* exceeded the native preview
+// buffer or ImageIO could not decode it. It never converts bad tickets,
+// denied Owner access or transient HTTP failures into a successful preview.
+enum XDriveIOSNativeMediaStillPreviewFallback: Error {
+    case unavailable
+}
+
 /// Never follow an authenticated Owner request to another origin.
 private final class XDriveIOSNativeMediaRejectRedirect: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask,
@@ -169,7 +176,7 @@ struct XDriveIOSNativeMediaGalleryReader {
         if bearer {
             request.setValue("Bearer " + accessToken, forHTTPHeaderField: "Authorization")
         }
-        let (bytes, response) = try await client.data(for: request)
+        let (stream, response) = try await client.bytes(for: request)
         try Task.checkCancellation()
         guard let reply = response as? HTTPURLResponse else {
             throw XDriveIOSNativeMediaReadFailure.malformed
@@ -177,9 +184,28 @@ struct XDriveIOSNativeMediaGalleryReader {
         guard reply.statusCode == 200 else {
             throw XDriveIOSNativeMediaReadFailure.response(reply.statusCode)
         }
-        guard bytes.count <= maximum else {
-            throw XDriveIOSNativeMediaReadFailure.tooLarge
+        guard maximum > 0 else {
+            throw XDriveIOSNativeMediaReadFailure.malformed
         }
+        var bytes = Data()
+        var chunk: [UInt8] = []
+        let chunkSize = 64 * 1024
+        chunk.reserveCapacity(chunkSize)
+        for try await byte in stream {
+            // Accept exactly maximum bytes; stop at maximum+1 without
+            // materializing the rest of an untrusted preview response.
+            guard bytes.count + chunk.count < maximum else {
+                throw XDriveIOSNativeMediaReadFailure.tooLarge
+            }
+            chunk.append(byte)
+            if chunk.count == chunkSize {
+                bytes.append(contentsOf: chunk)
+                chunk.removeAll(keepingCapacity: true)
+                try Task.checkCancellation()
+            }
+        }
+        try Task.checkCancellation()
+        if !chunk.isEmpty { bytes.append(contentsOf: chunk) }
         return bytes
     }
 
@@ -348,6 +374,9 @@ struct XDriveIOSNativeMediaGalleryReader {
         let data = try await read(ticketURL, method: "POST", maximum: 32_768)
         let ticket = try JSONDecoder().decode(XDriveIOSNativeMediaPreviewTicket.self, from: data)
         guard ticket.url.hasPrefix("/api/v1/file-preview/"),
+              XDriveIOSNativeFilesViewerPolicy.validTicketPath(
+                ticket.url, nodeID: item.id
+              ),
               !ticket.url.hasPrefix("//"),
               (item.isVideo ? ticket.kind == "video" : ticket.kind == "image"),
               let parsed = URLComponents(string: ticket.url),
@@ -365,7 +394,14 @@ struct XDriveIOSNativeMediaGalleryReader {
             throw XDriveIOSNativeMediaReadFailure.malformed
         }
         if item.isVideo { return (nil, signedURL) }
-        let still = try await read(signedURL, bearer: false, maximum: 32 * 1_048_576)
+        let still: Data
+        do {
+            still = try await read(signedURL, bearer: false, maximum: 32 * 1_048_576)
+        } catch XDriveIOSNativeMediaReadFailure.tooLarge {
+            // The preview ticket was valid, but its image body is too large.
+            // A separate bounded Owner/revision thumbnail can be requested.
+            throw XDriveIOSNativeMediaStillPreviewFallback.unavailable
+        }
         // Preview responses can be compressed yet huge when decoded.
         // Downsample off the MainActor instead of allocating unbounded pixels.
         // The selected Viewer may close or switch Owner while ImageIO decodes
@@ -391,7 +427,9 @@ struct XDriveIOSNativeMediaGalleryReader {
         }
         try Task.checkCancellation()
         guard let bounded else {
-            throw XDriveIOSNativeMediaReadFailure.malformed
+            // Do not claim this image is an original-resolution still.
+            // The presenting Viewer may try the indexed low-res derivative.
+            throw XDriveIOSNativeMediaStillPreviewFallback.unavailable
         }
         return (UIImage(cgImage: bounded), nil)
     }

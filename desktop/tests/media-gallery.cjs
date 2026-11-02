@@ -234,7 +234,9 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
 
 test('Gallery workspace separates collection failures from empty results and keeps controls compact', () => {
   assert.match(sharedWorkspaceSurface, /showPageHeader = true/)
-  assert.match(sharedWorkspaceSurface, /mt: showPageHeader \? 2 : 0/)
+  assert.match(sharedWorkspaceSurface,
+    /mt: showPageHeader \? \(mobileShell \? \(subtitle \? 1\.5 : 0\) : 2\) : 0/,
+    'desktop retains two-unit title spacing while mobile shell avoids a duplicate title row')
   assert.match(sharedGalleryMain, /showPageHeader=\{false\}/)
   assert.match(sharedGalleryMain, /collectionError=\{collectionError\}/)
   assert.match(sharedGalleryMain, /setCollectionError\(message\)/)
@@ -594,7 +596,7 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
     'onPointerUp={handlePointerRelease}',
     'onPointerMove={handlePointerMove}',
     'onPointerCancel={cancelTouchGesture}',
-    'onPointerLeave={cancelTouchGesture}',
+    'onPointerLeave={handlePointerLeave}',
     'onKeyDown={handleKeyDown}',
     'onKeyUp={handleKeyUp}',
     'video.play()',
@@ -612,6 +614,9 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
   ]) {
     assert.ok(sharedLivePhotoSurface.includes(token), 'Live Photo surface missing: ' + token)
   }
+  assert.match(sharedLivePhotoSurface, /const handlePointerLeave = useCallback/)
+  assert.ok(sharedLivePhotoSurface.includes('photoPageTimerRef.current !== null && !touchGestureRef.current'))
+  assert.ok(sharedLivePhotoSurface.includes('cancelTouchGesture()'))
   assert.equal(sharedLivePhotoSurface.includes('muted'), false, 'Live Photo motion must preserve audio capability')
   assert.match(webAPI, /live-photo-motion-ticket/)
   assert.match(webAPI, /mediaLivePhotoMotionURL\(nodeID: number, signal\?: AbortSignal\)/)

@@ -151,15 +151,23 @@ internal fun GalleryVideoPlayer(
         )
     }
     val lifecycleOwner = LocalLifecycleOwner.current
+    // The same current Viewer generation owns exactly one Media3 decoder.
+    val playerCleanup = remember(player) {
+        NativeMedia3PlayerReleaseOnce(
+            stop = { player?.stop(); Unit },
+            release = { player?.release(); Unit },
+        )
+    }
     DisposableEffect(player, source, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) player?.pause()
+            if (event == Lifecycle.Event.ON_STOP && !playerCleanup.isReleased)
+                player?.pause()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         // No autoplay while Android is already stopped, even if an async
         // Owner lease resolves after Activity lifecycle moves offscreen.
-        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
-            player?.pause()
+        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+            !playerCleanup.isReleased) player?.pause()
         // If Android rejected media setup, the helper already released the
         // partially constructed player. Close this verified Owner stream now,
         // rather than keeping an unusable transport lease until Viewer exit.
@@ -170,10 +178,11 @@ internal fun GalleryVideoPlayer(
                 failed = true // Do not display raw URL, host, credentials or body.
             }
             override fun onRenderedFirstFrame() {
-                firstFrame = true // Never replace a visible frame with a late cover.
+                if (!failed && !playerCleanup.isReleased)
+                    firstFrame = true // Ignore an obsolete released decoder.
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (player == null) return
+                if (player == null || failed || playerCleanup.isReleased) return
                 bufferedMs = player.bufferedPosition.coerceAtLeast(0L)
                 val duration = player.duration
                 if (duration > 0 && duration != androidx.media3.common.C.TIME_UNSET) {
@@ -184,8 +193,8 @@ internal fun GalleryVideoPlayer(
         player?.addListener(listener)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            player?.removeListener(listener)
-            player?.release()
+            if (!playerCleanup.isReleased) player?.removeListener(listener)
+            playerCleanup.dispose()
             if (source != null && player != null) controller.closeGalleryVideoPlayback(source)
         }
     }
@@ -197,7 +206,7 @@ internal fun GalleryVideoPlayer(
             // Stop any residual buffering while retaining the visible poster
             // and explicit manual retry. Disposal/logout may close this same
             // resource again; OwnerVideoPlayback.close is idempotent.
-            runCatching { player?.stop() }
+            playerCleanup.retireFailed()
             source?.let(controller::closeGalleryVideoPlayback)
         }
     }
@@ -249,15 +258,15 @@ internal fun GalleryVideoPlayer(
                 AndroidView(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
-                            this.player = player
+                            this.player = if (failed) null else player
                             useController = true
                             setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                         }
                     },
-                    update = { it.player = player },
+                    update = { it.player = if (failed) null else player },
                     modifier = Modifier.fillMaxSize().testTag("gallery-video-player"),
                 )
-                if (!firstFrame) {
+                if (!firstFrame || failed) {
                     val still = cover
                     if (still != null) {
                         Image(

@@ -6,6 +6,7 @@ import type {
   XDriveSynologyBackupLocalClient, XDriveSynologyOwnerFileNode,
 } from '../synology-backup-adapter'
 import { XDriveFileExplorer } from './FileExplorer'
+import { XDriveFileNameDialog } from './FileNameDialog'
 import { xDriveFindVerifiedOwnerSelection } from './FileExplorerVerifiedOwnerSelection'
 import { xDriveFileExplorerReadOnlyDownloadReason } from './FileExplorerReadOnlyDownloadAdmission'
 import { xDriveFileExplorerReadOnlyViewerSelection } from './FileExplorerReadOnlyViewerSelection'
@@ -130,6 +131,11 @@ export function XDriveSynologyOwnerFilesPage({
     client, rootRevision, authenticatedRootCurrent,
   )
   const [notice, setNotice] = useState('')
+  const [createFolderTarget, setCreateFolderTarget] = useState<{
+    parentID: number; scopeKey: string; rootRevision: number
+    client: XDriveSynologyBackupLocalClient
+  } | null>(null)
+  useEffect(() => setCreateFolderTarget(null), [client, rootRevision, currentScopeKey])
   const [preview, setPreview] = useState<{
     scopeKey: string; rootRevision: number; client: XDriveSynologyBackupLocalClient
     item: XDriveFileExplorerItem; sessionIDs?: (string | number)[]
@@ -168,6 +174,15 @@ export function XDriveSynologyOwnerFilesPage({
   const previewItem = viewerSelection.item
   const previewPositionLabel = viewerSelection.positionLabel
   const thumbnailOnlyPreview = previewItem !== null && usesOwnerThumbnailOnlyPreview(previewItem)
+  // #3528's Owner-scoped 4K reader is an allowed *derivative*, not an unsafe
+  // full-original Blob. A prior thumbnail-only fallback must not suppress it.
+  // Unavailable/undecodable derivatives still leave the independent verified
+  // thumbnail visible in the shared two-layer image Viewer.
+  const ownerDerivedPreview = previewItem !== null && (
+    xDriveSynologyViewerNeedsDerived(previewItem.name) ||
+    (thumbnailOnlyPreview && typeof previewItem.size === 'number' &&
+      previewItem.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES)
+  )
   // A verified explicit download is not a disposable directory read. Keep
   // its proven Blob/save action across same-Owner folder and sort changes.
   // Never offer it after an account/client or root-session replacement.
@@ -321,6 +336,11 @@ export function XDriveSynologyOwnerFilesPage({
     }
     return xDriveSynologyLoadBoundedMediaPreview(client, item, signal, onProgress)
   }, [client])
+  // Preserve thumbnail-only for unsupported originals without a derived
+  // transport (e.g. small BMP). Only verified Owner image derivatives may
+  // enable the same Quick Look's higher-quality second layer.
+  const quickLookPreviewURLLoader =
+    thumbnailOnlyPreview && !ownerDerivedPreview ? undefined : loadMediaPreview
 
   // Unavailable/obsolete per-directory messages must not survive a scope switch.
   useEffect(() => {
@@ -344,6 +364,7 @@ export function XDriveSynologyOwnerFilesPage({
     setVerifiedDownload(null)
     setNotice('')
     setPreview(null)
+    setCreateFolderTarget(null)
   }, [refreshAuthenticatedRoot])
 
   // An explicit verified Owner download continues while browsing another
@@ -457,6 +478,56 @@ export function XDriveSynologyOwnerFilesPage({
                 setCrumbs(current => current.slice(0, index + 1))
               }}
               onRefresh={refreshAuthenticatedOwner}
+              onCreateFolder={() => {
+                if (!isCurrentOwner() || !currentScopeVerified) {
+                  setNotice('请先确认当前 Server Owner 文件目录，再新建文件夹。')
+                  return
+                }
+                const parent = crumbs[crumbs.length - 1]?.id
+                if (!Number.isSafeInteger(parent) || parent < 1) return
+                setCreateFolderTarget({
+                  parentID: parent, scopeKey: currentScopeKey, rootRevision, client,
+                })
+              }}
+              onRenameItem={async (item, name) => {
+                // Rebind the inline FileExplorer draft to the current
+                // authenticated Server Owner cursor row, not a stale selection.
+                if (!isCurrentOwner() || !currentScopeVerified ||
+                  typeof item.id !== 'number' || typeof item.revision !== 'number') {
+                  throw new Error('请先核实当前 Server Owner 文件目录。')
+                }
+                const selected = xDriveFindVerifiedOwnerSelection(item, itemsRef.current)
+                const parent = crumbs[crumbs.length - 1]?.id
+                if (!selected || !Number.isSafeInteger(parent) || parent < 1 ||
+                  selected.parent_id !== parent ||
+                  (selected.type !== 'file' && selected.type !== 'dir')) {
+                  throw new Error('所选文件已改变，请刷新当前 Owner 目录。')
+                }
+                const connection = await client.serverConnection()
+                if (!connection.configured || !/^[0-9a-f]{64}$/.test(connection.owner_scope) ||
+                  !isCurrentOwner()) {
+                  throw new Error('当前 Server Owner 已改变，请刷新目录后重试。')
+                }
+                setPreview(null)
+                try {
+                  const renamed = await client.ownerRenameNode(
+                    selected.id, selected.revision, parent, selected.type,
+                    name, connection.owner_scope)
+                  if (!isCurrentOwner()) {
+                    refreshAuthenticatedOwner()
+                    throw new Error('Server Owner 已改变，请刷新目录确认重命名结果。')
+                  }
+                  // Replay the first authenticated cursor page instead of
+                  // splicing a mutable node into the sorted directory rows.
+                  setCrumbs(current => [...current])
+                  setNotice('已重命名：' + renamed.name)
+                } catch (cause) {
+                  // A lost ACK may still mean a committed rename; refresh
+                  // rather than auto-retrying an uncertain Server mutation.
+                  if (isCurrentOwner()) setCrumbs(current => [...current])
+                  throw cause
+                }
+              }}
               loadTextPreview={loadTextPreview}
               loadThumbnail={loadOwnerThumbnail}
               loadPreviewURL={loadMediaPreview}
@@ -482,7 +553,7 @@ export function XDriveSynologyOwnerFilesPage({
                 }
               }}
               statusText={currentScopeVerified
-                ? `已核实 ${displayedItems.length.toLocaleString('zh-CN')} 项${hasMore ? ' · 仍有后续页' : ''} · 云端只读`
+                ? `已核实 ${displayedItems.length.toLocaleString('zh-CN')} 项${hasMore ? ' · 仍有后续页' : ''} · 云端已开放新建文件夹与重命名`
                 : '云端账号目录尚未确认'}
             />
             {currentScopeVerified && hasMore ? (
@@ -499,12 +570,44 @@ export function XDriveSynologyOwnerFilesPage({
           </>
         ) : null}
       </Stack>
+      <XDriveFileNameDialog
+        open={createFolderTarget !== null}
+        mode="create-folder"
+        lifecycleKey={rootRevision + ':' + currentScopeKey}
+        onClose={() => setCreateFolderTarget(null)}
+        onSubmit={async (name) => {
+          const target = createFolderTarget
+          if (!target || target.client !== client || target.rootRevision !== rootRevision ||
+            target.scopeKey !== currentScopeKey || !currentScopeVerified || !isCurrentOwner() ||
+            crumbs[crumbs.length - 1]?.id !== target.parentID) {
+            throw new Error('Server Owner 文件目录已改变，请重新确认。')
+          }
+          const connection = await client.serverConnection()
+          if (!connection.configured || !/^[0-9a-f]{64}$/.test(connection.owner_scope) ||
+            !isCurrentOwner()) {
+            throw new Error('当前 Server Owner 登录状态不可用，请先刷新。')
+          }
+          const created = await client.ownerCreateFolder(target.parentID, name, connection.owner_scope)
+          if (!isCurrentOwner()) {
+            refreshAuthenticatedOwner()
+            throw new Error('Server Owner 已改变，不能确认新文件夹；请刷新核实。')
+          }
+          // Same verified folder and sort: replay its first authenticated
+          // cursor page, never splice an unverified Server node into old rows.
+          setCrumbs(current => [...current])
+          setNotice('已创建文件夹：' + created.name)
+        }}
+      />
       <XDriveFileQuickLookDialog
         key={rootRevision + ':' + currentScopeKey}
         open={previewItem !== null}
         item={previewItem}
         positionLabel={previewPositionLabel}
-        subtitle={thumbnailOnlyPreview ? '仅显示已认证的缩略预览；原件格式或大小暂不支持直接查看' : undefined}
+        subtitle={thumbnailOnlyPreview
+          ? ownerDerivedPreview
+            ? '不直接读取原件；优先加载已认证的 4K 派生图，失败时保留缩略图'
+            : '仅显示已认证的缩略预览；原件格式或大小暂不支持直接查看'
+          : undefined}
         canPrevious={previewIndex > 0}
         canNext={previewIndex >= 0 && previewIndex < previewItems.length - 1}
         onPrevious={() => movePreview(-1)}
@@ -517,7 +620,7 @@ export function XDriveSynologyOwnerFilesPage({
         // derivative falls back to the existing icon without delaying the
         // independent original/media Range request.
         loadImagePreview={loadOwnerThumbnail}
-        loadPreviewURL={thumbnailOnlyPreview ? undefined : loadMediaPreview}
+        loadPreviewURL={quickLookPreviewURLLoader}
         onClose={() => setPreview(null)}
       />
     </XDriveFilesWorkspacePage>

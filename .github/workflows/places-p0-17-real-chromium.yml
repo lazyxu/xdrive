@@ -68,9 +68,11 @@ on:
 permissions:
   contents: read
 
+# Keep PR checks current, but never cancel a running or queued master SHA.
+# A shared master branch group evicts prior snapshots even while pending.
 concurrency:
-  group: places-p0-17-browser-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: places-p0-17-browser-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   malicious-sdk-controlled-chromium:

@@ -30,6 +30,10 @@ export type XDriveServiceDependency = {
   installation_state?: 'observed' | 'external' | 'unknown'
   health_state?: 'ready' | 'failed' | 'not-checked' | 'unknown'
   activation_state?: 'verified' | 'local-effective' | 'pending' | 'deployment-only' | 'unknown'
+  // Bounded, fleet-wide real Geoconv fixed-public-coordinate canary.
+  // Absent on older Servers; never conflated with Browser AK/JSAPI4 Loader.
+  baidu_server_probe_state?: 'not-checked' | 'checking' | 'accepted' | 'rejected' | 'unavailable' | 'rate-limited'
+  baidu_server_probe_checked_at?: string
   automatic_policy_state?: 'enabled' | 'paused' | 'partial' | 'pending' | 'unmanaged' | 'unknown' | 'not-applicable'
   // Only current-Server automatic OCR readiness; not real-image success or
   // all-replica activation. Missing fields from an old Server mean unknown.

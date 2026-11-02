@@ -740,11 +740,14 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 Button("允许查看本机照片") {
                     Task {
                         _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-                        // Full-library mode is explicit opt-in. Reflect the
-                        // newly granted access before showing its Scan button.
+                        // The user explicitly opened Places. When PhotoKit
+                        // grants access, start the existing bounded local-only
+                        // full-library GPS scan without another Scan tap.
                         authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
                         if mapScope == .page { refresh(at: 0) }
-                        else { invalidate() }
+                        else if authorization == .authorized || authorization == .limited {
+                            scanFullLibrary()
+                        } else { invalidate() }
                     }
                 }.buttonStyle(.borderedProminent)
             } else if authorization == .denied || authorization == .restricted {
@@ -950,15 +953,22 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 .presentationDragIndicator(.visible)
         }
         .onAppear {
+            authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             changes.start()
             if mapScope == .page, page == nil, !busy, phase == .active {
                 refresh(at: offset)
+            } else if mapScope == .library && !globalComplete && !busy &&
+                phase == .active && (authorization == .authorized || authorization == .limited) {
+                // One initial bounded PhotoKit metadata scan per live map.
+                // Do not request iCloud originals or retain all asset IDs.
+                scanFullLibrary()
             }
         }
         .onChange(of: mapScope) { next in
             clearReturnCamera()
             invalidate()
             if next == .page && phase == .active { refresh(at: offset) }
+            if next == .library && phase == .active { scanFullLibrary() }
         }
         .onChange(of: changes.revision) { _ in
             clearReturnCamera()
@@ -967,9 +977,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         }
         .onChange(of: phase) { state in
             if state == .active {
+                authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
                 changes.start()
                 if mapScope == .page { refresh(at: offset) }
-                else { invalidate() } // A new PhotoKit generation must re-scan.
+                else { scanFullLibrary() } // A new PhotoKit generation must re-scan.
             } else {
                 changes.stop()
                 clearReturnCamera()

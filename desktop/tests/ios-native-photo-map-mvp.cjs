@@ -204,9 +204,9 @@ test('refined PhotoKit map revokes old region cluster actions during and after p
   assert.match(map, /上次细化的视窗没有可显示的 GPS 照片/)
 })
 
-test('local library permission grant advances the displayed PhotoKit auth state before opt-in scan', () => {
+test('local library permission grant starts the already authorized local GPS scan', () => {
   assert.match(map, /PHPhotoLibrary\.requestAuthorization\(for: \.readWrite\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
-  assert.match(map, /if mapScope == \.page \{ refresh\(at: 0\) \}[\s\S]*?else \{ invalidate\(\) \}/)
+  assert.match(map, /if mapScope == \.page \{ refresh\(at: 0\) \}[\s\S]*?else if authorization == \.authorized \|\| authorization == \.limited \{[\s\S]*?scanFullLibrary\(\)[\s\S]*?else \{ invalidate\(\) \}/)
   assert.match(map, /trusted\.representative\.id == cell\.representative\.id/)
 })
 
@@ -283,3 +283,22 @@ test('both local MapKit album sheets browse a frozen authorized slice and restor
   assert.match(spatialAlbum, /guard !busy,[\s\S]*?XDriveIOSNativeMapViewerAdmission\.allows\(/);
   assert.match(spatialAlbum, /viewerReturnID = nil\s*focusedTileID = nil\s*viewer = nil\s*items = \[\]\s*dismiss\(\)/);
 });
+
+
+test('iOS Places defaults to all authorized PhotoKit GPS while retaining explicit current-page mode',()=>{
+  assert.match(dashboard, /@State private var localMapScope: XDriveIOSNativeLocalMapScope = \.library/)
+  assert.match(dashboard, /localMapScope = XDriveIOSNativeLocalMapScope\(rawValue: snapshot\.mapScope \?\? "library"\) \?\? \.library/)
+  assert.match(dashboard, /localMapScope = \.library\s+localMapPageOffset = 0/)
+  assert.match(map, /Picker\("本机地图扫描范围", selection: \$mapScope\)/)
+  assert.match(map, /case page, library/)
+  assert.match(map, /authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)\s+changes\.start\(\)/)
+  assert.match(map, /else if mapScope == \.library && !globalComplete && !busy &&\s*phase == \.active && \(authorization == \.authorized \|\| authorization == \.limited\) \{[\s\S]*?scanFullLibrary\(\)/)
+  assert.match(map, /if next == \.library && phase == \.active \{ scanFullLibrary\(\) \}/)
+  assert.match(map, /if mapScope == \.page \{ refresh\(at: offset\) \}\s*else \{ scanFullLibrary\(\) \}/)
+  assert.match(map, /guard mapScope == \.library, phase == \.active,\s*authorization == \.authorized \|\| authorization == \.limited else \{ return \}/)
+  assert.match(map, /while scanned < total \{/)
+  assert.match(spatial, /static let maximumCells = 64/)
+  assert.match(map, /pages % 16 == 0 \|\| next\.page\.finished/)
+  assert.match(map, /\.onDisappear \{[\s\S]*?if selection == nil && globalSelection == nil \{[\s\S]*?invalidate\(\)/)
+  assert.doesNotMatch(map, /isNetworkAccessAllowed = true|URLSession\(|UploadSession|UserDefaults/)
+})

@@ -19,6 +19,7 @@ docker build \
   --build-arg "GOSUMDB=${GOSUMDB:-sum.golang.org}" \
   --build-arg "GO_IMAGE=${XDRIVE_CI_GO_IMAGE:-golang:1.25-bookworm}" \
   --build-arg "RUNTIME_IMAGE=${XDRIVE_CI_ALPINE_IMAGE:-alpine:3.22}" \
+  --build-arg "ALPINE_MIRROR=${XDRIVE_CI_ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}" \
   -t xdrive/media-worker:test .
 
 version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' xdrive/media-worker:test)"

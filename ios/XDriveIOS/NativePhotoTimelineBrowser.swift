@@ -75,6 +75,16 @@ private actor XDriveIOSNativePhotoTimelineReader {
         ]
         if mediaFilter.requiresFavorite {
             options.predicate = NSPredicate(format: "favorite == YES")
+        } else if mediaFilter.requiresLive {
+            options.predicate = NSPredicate(
+                format: "(mediaSubtypes & %d) != 0",
+                PHAssetMediaSubtype.photoLive.rawValue
+            )
+        } else if mediaFilter.requiresScreenshot {
+            options.predicate = NSPredicate(
+                format: "(mediaSubtypes & %d) != 0",
+                PHAssetMediaSubtype.photoScreenshot.rawValue
+            )
         }
         let snapshot: PHFetchResult<PHAsset>
         switch mediaFilter {
@@ -86,6 +96,8 @@ private actor XDriveIOSNativePhotoTimelineReader {
             snapshot = PHAsset.fetchAssets(with: .video, options: options)
         case .favorites:
             snapshot = PHAsset.fetchAssets(with: options)
+        case .livePhotos, .screenshots:
+            snapshot = PHAsset.fetchAssets(with: .image, options: options)
         }
         try verify(status: status, observer: observer, revision: revision)
         var index = XDriveIOSNativePhotoTimelineBuilder(calendar: .current)
@@ -99,7 +111,11 @@ private actor XDriveIOSNativePhotoTimelineReader {
             if asset.mediaType == .image || asset.mediaType == .video {
                 let kind = asset.mediaType == .image ? "image" : "video"
                 guard mediaFilter.includes(kind: kind),
-                      !mediaFilter.requiresFavorite || asset.isFavorite else {
+                      !mediaFilter.requiresFavorite || asset.isFavorite,
+                      !mediaFilter.requiresLive ||
+                        asset.mediaSubtypes.contains(.photoLive),
+                      !mediaFilter.requiresScreenshot ||
+                        asset.mediaSubtypes.contains(.photoScreenshot) else {
                     throw XDriveIOSNativePhotoTimelineError.libraryChanged
                 }
                 index.append(capturedAt: asset.creationDate, slot: slot)
@@ -270,6 +286,8 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
                                 Button(mediaFilter == .videos ? "所有视频（返回第一页）" :
                                        mediaFilter == .photos ? "所有照片（返回第一页）" :
                                        mediaFilter == .favorites ? "所有收藏（返回第一页）" :
+                                       mediaFilter == .livePhotos ? "所有实况（返回第一页）" :
+                                       mediaFilter == .screenshots ? "所有截屏（返回第一页）" :
                                        "所有媒体（返回第一页）") {
                                     jump(to: 0)
                                 }

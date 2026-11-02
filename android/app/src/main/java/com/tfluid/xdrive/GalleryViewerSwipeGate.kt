@@ -40,6 +40,9 @@ internal class GalleryLiveHoldSwipeFence {
         liveActivatedInGesture = true
     }
 
+    /** No visual page motion after a Live hold began in this gesture. */
+    fun mayPreviewFingerDrag(): Boolean = !liveActivatedInGesture
+
     fun mayShift(
         deltaX: Float,
         deltaY: Float,
@@ -52,4 +55,27 @@ internal class GalleryLiveHoldSwipeFence {
             deltaX, deltaY, durationMillis, thresholdPx,
             singlePointer, atDefaultZoom,
         )
+}
+
+/**
+ * Finger-locked drag preview used by both cloud and MediaStore galleries.
+ * No Owner request occurs during movement; unavailable edges resist rather
+ * than opening an unauthorized neighbor. 1x single-finger horizontal only.
+ */
+internal fun galleryPhotoFingerDrag(
+    deltaX: Float,
+    deltaY: Float,
+    viewportWidth: Float,
+    atDefaultZoom: Boolean,
+    singlePointer: Boolean,
+    previousAvailable: Boolean,
+    nextAvailable: Boolean,
+): Float {
+    if (!singlePointer || !atDefaultZoom || !deltaX.isFinite() ||
+        !deltaY.isFinite() || !viewportWidth.isFinite() || viewportWidth <= 0f ||
+        kotlin.math.abs(deltaX) < 10f ||
+        kotlin.math.abs(deltaX) <= kotlin.math.abs(deltaY) * 1.15f) return 0f
+    val neighborAvailable = if (deltaX > 0f) previousAvailable else nextAvailable
+    val offset = if (neighborAvailable) deltaX else deltaX * 0.18f
+    return offset.coerceIn(-viewportWidth, viewportWidth)
 }

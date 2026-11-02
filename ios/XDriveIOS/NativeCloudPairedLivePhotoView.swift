@@ -90,3 +90,22 @@ struct XDriveIOSNativeCloudPairedLivePhotoView: UIViewRepresentable {
         coordinator.retire()
     }
 }
+
+/// Horizontal paging on cloud Live surfaces uses the same bounded swipe
+/// policy as still images. Simultaneous recognition keeps Apple's native
+/// PHLivePhotoView hold-to-play interaction available.
+extension View {
+    func xdriveCloudLivePhotoPaging(onSwipe: @escaping (Int) -> Void) -> some View {
+        simultaneousGesture(
+            DragGesture(minimumDistance: 72).onEnded { value in
+                guard let direction = XDriveIOSNativeViewerSwipePolicy.direction(
+                    horizontal: value.translation.width,
+                    vertical: value.translation.height,
+                    zoom: 1,
+                    minimum: 1
+                ) else { return }
+                onSwipe(direction)
+            }
+        )
+    }
+}

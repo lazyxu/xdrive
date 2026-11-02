@@ -21,6 +21,14 @@ enum XDriveIOSNativeFilesUploadBatchPolicy {
     }
 
 
+    /// Confirmed chunks are still provisional until Finalize and exact
+    /// Node/revision/SHA readback, so this is capped below 100%.
+    static func confirmedProgressPercent(bytes: Int64, totalBytes: Int64) -> Int? {
+        guard totalBytes > 0, totalBytes <= maximumStagedFileBytes,
+              bytes >= 0, bytes <= totalBytes else { return nil }
+        return min(99, Int(Double(bytes) * 100.0 / Double(totalBytes)))
+    }
+
     static func validSelection(_ files: [URL]) -> Bool {
         guard !files.isEmpty, files.count <= maximumFiles,
               files.allSatisfy({ $0.isFileURL }) else { return false }

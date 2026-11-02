@@ -62,7 +62,7 @@ test('signed source is single-use scoped, size-checked, never a token-bearing ex
   assert.doesNotMatch(download, /Authorization|Bearer|localStorage|WKWebView|UploadSession/)
 })
 
-test('user chooses native add-only save and no Live still is mislabeled restored', () => {
+test('user chooses native add-only save and original Live still plus paired motion', () => {
   assert.match(viewer, /import Photos/)
   assert.match(detail, /native-ios-photoasset-original-save-to-photos/)
   assert.match(detail, /PHPhotoLibrary\.requestAuthorization\(for: \.addOnly\)/)
@@ -71,8 +71,14 @@ test('user chooses native add-only save and no Live still is mislabeled restored
   assert.match(detail, /PHAssetCreationRequest\.forAsset\(\)/)
   assert.match(detail, /selected\.isVideo \? \.video : \.photo/)
   assert.match(detail, /asset\.addResource\(with: kind, fileURL: originalURL, options: nil\)/)
-  assert.match(detail, /if viewed\.isLive \{[\s\S]*?尚未提供完整原件配对导入/)
-  assert.match(detail, /!viewed\.isLive/)
+  assert.match(detail, /if selected\.isLive \{[\s\S]*?reader\.livePreview\(selected\)/)
+  assert.match(detail, /verified\.files\.stillURL/)
+  assert.match(detail, /verified\.files\.motionURL/)
+  assert.match(detail, /with: \.pairedVideo/)
+  assert.match(detail, /defer \{ verified\.files\.discard\(\) \}/)
+  assert.doesNotMatch(detail, /尚未提供完整原件配对导入/)
+  assert.match(detail, /viewed\.isLive == selected\.isLive/)
+  assert.match(detail, /viewed\.sameVisibleRevision\(as: selected\)/)
   assert.doesNotMatch(download, /\.pairedVideo|\.photoLive|\.preview\(/)
 })
 

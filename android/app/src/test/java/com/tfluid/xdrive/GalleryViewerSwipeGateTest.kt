@@ -58,6 +58,37 @@ class GalleryViewerSwipeGateTest {
         assertFalse(gesture(fence, dx = 0f))
     }
 
+    @Test fun aDragFollowsTheFingerAndOnlyResistsUnavailableEdges() {
+        assertTrue(galleryPhotoFingerDrag(-120f, 2f, 390f, true, true,
+            true, true) == -120f)
+        assertTrue(galleryPhotoFingerDrag(120f, 2f, 390f, true, true,
+            true, true) == 120f)
+        assertTrue(kotlin.math.abs(galleryPhotoFingerDrag(-120f, 2f, 390f, true, true,
+            true, false) + 21.6f) < 0.01f)
+        assertTrue(kotlin.math.abs(galleryPhotoFingerDrag(120f, 2f, 390f, true, true,
+            false, true) - 21.6f) < 0.01f)
+        assertTrue(galleryPhotoFingerDrag(-800f, 1f, 390f, true, true,
+            true, true) == -390f)
+        assertTrue(galleryPhotoFingerDrag(-10f, 180f, 390f, true, true,
+            true, true) == 0f)
+        assertTrue(galleryPhotoFingerDrag(100f, 0f, 390f, false, true,
+            true, true) == 0f)
+        assertTrue(galleryPhotoFingerDrag(100f, 0f, 390f, true, false,
+            true, true) == 0f)
+        assertTrue(galleryPhotoFingerDrag(Float.NaN, 0f, 390f, true, true,
+            true, true) == 0f)
+    }
+
+    @Test fun aLongHeldLivePhotoCannotPreviewASecondPage() {
+        val fence = GalleryLiveHoldSwipeFence()
+        fence.beginGesture()
+        assertTrue(fence.mayPreviewFingerDrag())
+        fence.liveHoldActivated()
+        assertFalse(fence.mayPreviewFingerDrag())
+        fence.beginGesture()
+        assertTrue(fence.mayPreviewFingerDrag())
+    }
+
     @Test fun differentViewerItemUsesFreshFenceWithoutStickyHold() {
         val previousPhoto = GalleryLiveHoldSwipeFence()
         previousPhoto.beginGesture()

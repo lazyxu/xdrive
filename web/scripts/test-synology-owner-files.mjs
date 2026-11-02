@@ -35,7 +35,7 @@ const context = vm.createContext({
   fetch: async (raw, options) => {
     const url = new URL(raw)
     calls.push({url, options})
-    assert.ok(['cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range'].includes(url.searchParams.get('op')))
+    assert.ok(['cloud-root', 'cloud-children', 'cloud-create-folder', 'cloud-rename-node', 'bootstrap', 'cloud-text-preview', 'cloud-media-range'].includes(url.searchParams.get('op')))
     return { ok: true, headers: { get: () => 'application/json' }, json: async () => response(url) }
   },
 })
@@ -231,4 +231,91 @@ for (const bad of [
   await assert.rejects(client.ownerFileMediaRange(42,7,0,4), /Invalid|Inconsistent/)
 }
 
-console.log('Owner read-only FileExplorer accepts only bounded redacted Server root/children, no leaked Agent bearer')
+// A single current-Owner create action uses the same CGI/CSRF transport and
+// cannot introduce arbitrary cloud writes or private Node fields.
+const folder = {id:57,parent_id:17,name:'新文件夹',type:'dir',size:0,
+  revision:1,created_at:date,updated_at:date}
+response = url => url.searchParams.get('op') === 'bootstrap'
+  ? {csrf_token:'b'.repeat(64)} : folder
+const firstCreateIndex = calls.length
+const created = await client.ownerCreateFolder(17, '新文件夹', 'a'.repeat(64))
+assert.equal(created.id,57)
+assert.equal(calls.length,firstCreateIndex+2)
+assert.equal(calls.at(-2).url.search,'?op=bootstrap')
+assert.equal(calls.at(-1).url.search,'?op=cloud-create-folder')
+assert.equal(calls.at(-1).options.method,'POST')
+assert.equal(calls.at(-1).options.headers['X-CSRF-Token'],'b'.repeat(64))
+assert.deepEqual(JSON.parse(calls.at(-1).options.body),
+  {parent_id:17,name:'新文件夹',owner_scope:'a'.repeat(64)})
+assert.equal(calls.at(-1).options.headers.Authorization,undefined)
+const beforeInvalid = calls.length
+for (const [parent, name, scope] of [
+  [0,'A','a'.repeat(64)], [17,'/private','a'.repeat(64)],
+  [17,'..','a'.repeat(64)], [17,'bad\nname','a'.repeat(64)],
+  [17,'A','bogus'], [17,'x'.repeat(256),'a'.repeat(64)],
+]) {
+  await assert.rejects(client.ownerCreateFolder(parent,name,scope), /Invalid/)
+}
+assert.equal(calls.length,beforeInvalid,'invalid folder create touched DSM CGI')
+for (const invalid of [
+  {...folder,parent_id:99},
+  {...folder,type:'file'},
+  {...folder,name:'switched-owner'},
+  {...folder,root_path:'/volume1/private'},
+]) {
+  response = url => url.searchParams.get('op') === 'bootstrap'
+    ? {csrf_token:'b'.repeat(64)} : invalid
+  await assert.rejects(client.ownerCreateFolder(17,'新文件夹','a'.repeat(64)),/Invalid/)
+}
+assert.match(pageSource, /onCreateFolder=\{/)
+assert.match(pageSource, /<XDriveFileNameDialog/)
+assert.match(pageSource, /client\.ownerCreateFolder\(/)
+// Owner-scoped file/folder rename must never bypass the current Agent,
+// current page revision, DSM CSRF, or the original authenticated Server API.
+const renamedNode = { id:42, parent_id:17, type:'file', name:'新照片.jpg',
+  size:1500, revision:8, created_at:date, updated_at:date }
+response = url => url.searchParams.get('op') === 'bootstrap'
+  ? { csrf_token:'b'.repeat(64) } : renamedNode
+const renameStart = calls.length
+const renameResult = await client.ownerRenameNode(
+  42, 7, 17, 'file', '新照片.jpg', 'a'.repeat(64))
+assert.equal(renameResult.revision, 8)
+assert.equal(renameResult.parent_id, 17)
+assert.equal(calls.length, renameStart + 1)
+assert.equal(calls.at(-1).url.search, '?op=cloud-rename-node')
+assert.equal(calls.at(-1).options.method, 'POST')
+assert.equal(calls.at(-1).options.headers['X-CSRF-Token'], 'b'.repeat(64))
+assert.equal(calls.at(-1).options.headers.Authorization, undefined)
+assert.deepEqual(JSON.parse(calls.at(-1).options.body), {
+  id:42, revision:7, parent_id:17, type:'file',
+  name:'新照片.jpg', owner_scope:'a'.repeat(64),
+})
+const renameInvalidStart = calls.length
+for (const args of [
+  [0,7,17,'file','新照片.jpg','a'.repeat(64)],
+  [42,0,17,'file','新照片.jpg','a'.repeat(64)],
+  [42,7,0,'file','新照片.jpg','a'.repeat(64)],
+  [42,7,17,'symlink','新照片.jpg','a'.repeat(64)],
+  [42,7,17,'file','../bad','a'.repeat(64)],
+  [42,7,17,'file','bad\\nname','a'.repeat(64)],
+  [42,7,17,'file','新照片.jpg','invalid-scope'],
+]) await assert.rejects(client.ownerRenameNode(...args), /Invalid/)
+assert.equal(calls.length, renameInvalidStart)
+for (const bad of [
+  { ...renamedNode, id:43 },
+  { ...renamedNode, parent_id:99 },
+  { ...renamedNode, type:'dir' },
+  { ...renamedNode, revision:7 },
+  { ...renamedNode, name:'foreign-name.jpg' },
+  { ...renamedNode, original_path:'/volume1/private' },
+]) {
+  response = url => url.searchParams.get('op') === 'bootstrap'
+    ? { csrf_token:'b'.repeat(64) } : bad
+  await assert.rejects(
+    client.ownerRenameNode(42,7,17,'file','新照片.jpg','a'.repeat(64)),
+    /Invalid/)
+}
+assert.ok(pageSource.includes('onRenameItem={async (item, name) => {'))
+assert.ok(pageSource.includes('xDriveFindVerifiedOwnerSelection(item, itemsRef.current)'))
+assert.ok(pageSource.includes('client.ownerRenameNode('))
+console.log('DSM Owner Files: current Owner reads, folder create, and exact-revision rename verified')

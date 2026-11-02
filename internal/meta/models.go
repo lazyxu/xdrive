@@ -251,18 +251,21 @@ func (SystemMaintenanceRun) TableName() string {
 }
 
 type Share struct {
-	Access        string     `gorm:"size:16;not null;default:'read_only'"`
-	ID            uint64     `gorm:"primaryKey"`
-	OwnerID       uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
-	NodeID        uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
-	TokenHash     string     `gorm:"size:64;not null;uniqueIndex"`
-	PasswordHash  string     `gorm:"size:255"`
-	ExpiresAt     *time.Time `gorm:"index"`
-	MaxDownloads  int64      `gorm:"not null;default:0"`
-	DownloadCount int64      `gorm:"not null;default:0"`
-	RevokedAt     *time.Time `gorm:"index"`
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	Access              string     `gorm:"size:16;not null;default:'read_only'"`
+	ID                  uint64     `gorm:"primaryKey;index:idx_xd_shares_owner_page,priority:2"`
+	OwnerID             uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node;index:idx_xd_shares_owner_page,priority:1"`
+	NodeID              uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
+	TokenHash           string     `gorm:"size:64;not null;uniqueIndex"`
+	LinkAliasHash       *string    `gorm:"size:64;uniqueIndex:idx_xd_shares_link_alias_hash"`
+	LinkTokenCiphertext []byte     `gorm:"type:bytea"`
+	LinkTokenKeyVersion uint32     `gorm:"not null;default:0"`
+	PasswordHash        string     `gorm:"size:255"`
+	ExpiresAt           *time.Time `gorm:"index"`
+	MaxDownloads        int64      `gorm:"not null;default:0"`
+	DownloadCount       int64      `gorm:"not null;default:0"`
+	RevokedAt           *time.Time `gorm:"index"`
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 func (Share) TableName() string { return "xd_shares" }

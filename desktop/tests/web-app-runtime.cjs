@@ -177,9 +177,21 @@ test('temporary BD09 stays private and ordinary Viewer survives denied Safari se
     compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
   })
   assert.deepEqual((built.diagnostics||[]).filter(x=>x.category===ts.DiagnosticCategory.Error),[])
+  // The Viewer runtime now uses the shared orientation-stable navigation
+  // classifier. Load the *actual production* module instead of substituting a
+  // stub: denied Safari storage must not bypass this module's initialization.
+  const layoutBuilt=ts.transpileModule(read('web','src','webMobileNavigationLayout.ts'),{
+    fileName:'web/src/webMobileNavigationLayout.ts',
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+  })
+  assert.deepEqual((layoutBuilt.diagnostics||[]).filter(x=>x.category===ts.DiagnosticCategory.Error),[])
+  const layoutModule={exports:{}}
+  new Function('module','exports',layoutBuilt.outputText)(layoutModule,layoutModule.exports)
+  assert.equal(typeof layoutModule.exports.xDriveWebBrowserCompactNavigation,'function')
   const mod={exports:{}}
   new Function('module','exports','require',built.outputText)(mod,mod.exports,name=>{
     if(name==='react')return require('react')
+    if(name==='./webMobileNavigationLayout')return layoutModule.exports
     if(name==='../../ui/shared/src/mui/ViewerForegroundPriority')
       return { xDriveEnterForegroundPage: () => undefined }
     if(name==='../../ui/shared/src')return {

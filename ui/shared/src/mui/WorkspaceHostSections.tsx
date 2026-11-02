@@ -6,6 +6,7 @@ import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
+import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import {
   xDriveDiagnosticsSidebarDestination,
   xDriveSettingsSidebarDestination,
@@ -20,6 +21,7 @@ export function xDriveWorkspaceHostSections({
   conflictCount,
   diagnosticsAriaLabel = 'xDrive 辅助功能',
   includeUtilityRoutes = true,
+  showShareCenter = false,
 }: {
   adminRoleVerified?: boolean
   conflictCount?: number
@@ -27,6 +29,7 @@ export function xDriveWorkspaceHostSections({
   /** False for Web/PWA: Settings lives in its account menu, while these
    * Host-only utility pages have not been migrated to the browser. */
   includeUtilityRoutes?: boolean
+  showShareCenter?: boolean
 } = {}): XDriveSidebarSectionModel[] {
   return [
     {
@@ -34,6 +37,11 @@ export function xDriveWorkspaceHostSections({
       placement: 'before-core',
       items: [{ key: 'overview', label: xDriveWorkspaceRouteTitle('overview'), icon: <DashboardRoundedIcon fontSize="small" /> }],
     },
+    ...(showShareCenter ? [{
+      key: 'shares',
+      placement: 'after-core' as const,
+      items: [{ key: 'shares', label: xDriveWorkspaceRouteTitle('shares'), icon: <ShareRoundedIcon fontSize="small" /> }],
+    }] : []),
     ...(includeUtilityRoutes ? [{
       key: 'conflicts',
       placement: 'after-core' as const,

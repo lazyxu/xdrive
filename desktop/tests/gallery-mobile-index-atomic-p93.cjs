@@ -289,7 +289,7 @@ test('P93 real Gallery Server range acceptance owns the callback, not request st
   }
   assert.ok(originalGallery.includes('XDriveMediaAsyncThumbnail'))
   assert.ok(originalGallery.includes('XDriveMediaAsyncVideoPoster'))
-  assert.ok(read('web/src/App.tsx').includes('mobileWebChrome\n'))
+  assert.ok(read('web/src/App.tsx').includes('mobileWebChrome={placesEmbedRequested ? compactWidth : compactWorkspace}'))
   assert.ok(read('desktop/src/renderer/App.tsx').includes('galleryPage: {') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveMediaGalleryPage'))
   const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.equal(agents.split('Permanent no-jitter contract / P78').length, 2)

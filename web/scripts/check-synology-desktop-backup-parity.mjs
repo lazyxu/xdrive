@@ -279,10 +279,15 @@ if (dsmEntry.includes('coreKeys=') ||
     !nasHome.includes('client.ownerQuota(abort.signal)') ||
     !nasHome.includes("quotaLoading ? '读取中' : '未检测'") ||
     !nasHome.includes('formatBytes(quota.physical_used_bytes)') ||
+    !nasHome.includes('client.nasVolumeSpace(abort.signal)') ||
+    !nasHome.includes("nasSpaceLoading ? '读取中' : '无法确认'") ||
+    !nasHome.includes('formatBytes(nasSpace.capacity_bytes - nasSpace.available_bytes)') ||
+    !nasHome.includes('formatBytes(nasSpace.available_bytes)') ||
+    !nasHome.includes('title="DSM 套件数据所在文件系统"') ||
+    nasHome.includes('title="NAS 物理磁盘"') ||
     !sharedHome.includes('onOpenCloudStorage={props.onOpenCloudStorage}') ||
     !appPageOutlet.includes("onOpenCloudStorage={navigate('cloud-storage')}") ||
     !nasHome.includes('云端账号配额') ||
-    !nasHome.includes('value="未检测"') ||
     !muiExports.includes("export * from './SynologyHomeOverview'") ||
     !sidebar.includes('primaryKeys: compactPrimaryKeys') ||
     !nav.includes('primaryKeys ??') ||

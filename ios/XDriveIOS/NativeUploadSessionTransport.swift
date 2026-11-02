@@ -133,8 +133,9 @@ final class XDriveNativeUploadSessionTransport {
     /// never interpreted as a failure-safe permission to create a new session.
     /// A production sync runner must first durably persist resume_key/Owner/
     /// resource identity before calling this method.
-    func uploadOnce(from stagedFileURL: URL, name: String, parentID: UInt64) async throws
-        -> XDriveNativeUploadReceipt {
+    func uploadOnce(from stagedFileURL: URL, name: String, parentID: UInt64,
+                    onChunkConfirmed: @escaping (Int64, Int64) -> Void = { _, _ in })
+        async throws -> XDriveNativeUploadReceipt {
         guard case .foregroundBearer = authorization else {
             // A background grant cannot perform a generic one-off manual
             // upload, overwrite or choose a non-journaled iosmanual_ key.
@@ -142,7 +143,8 @@ final class XDriveNativeUploadSessionTransport {
         }
         return try await uploadInternally(from: stagedFileURL, name: name, parentID: parentID,
                                    resumeKey: "iosmanual_" + UUID().uuidString.lowercased(),
-                                   expectedSize: nil, expectedSHA256: nil, hooks: nil)
+                                   expectedSize: nil, expectedSHA256: nil,
+                                   hooks: nil, onChunkConfirmed: onChunkConfirmed)
     }
 
     /// This is the ledger-backed path, not a public retry API. Only accept an
@@ -172,12 +174,14 @@ final class XDriveNativeUploadSessionTransport {
         }
         return try await uploadInternally(from: stagedFileURL, name: name, parentID: parentID,
                                           resumeKey: resumeKey, expectedSize: expectedSize,
-                                          expectedSHA256: expectedSHA256, hooks: hooks)
+                                          expectedSHA256: expectedSHA256, hooks: hooks,
+                                           onChunkConfirmed: nil)
     }
 
     private func uploadInternally(from stagedFileURL: URL, name: String, parentID: UInt64,
                                   resumeKey: String, expectedSize: Int64?,
-                                  expectedSHA256: String?, hooks: XDriveNativeUploadCheckpointHooks?)
+                                  expectedSHA256: String?, hooks: XDriveNativeUploadCheckpointHooks?,
+                                   onChunkConfirmed: ((Int64, Int64) -> Void)?)
         async throws -> XDriveNativeUploadReceipt {
         guard stagedFileURL.isFileURL, parentID > 0, validName(name) else {
             throw XDriveNativeUploadError.invalidLocalFile
@@ -233,6 +237,12 @@ final class XDriveNativeUploadSessionTransport {
         let file = try FileHandle(forReadingFrom: stagedFileURL)
         defer { try? file.close() }
         let received = try receivedParts(created, hashes: hashes.parts, size: fileSize)
+        // Only exact Server-verified hashes and byte counts contribute.
+        var confirmedBytes: Int64 = received.reduce(0) { total, index in
+            total + min(Int64(Self.chunkBytes),
+                        fileSize - Int64(index) * Int64(Self.chunkBytes))
+        }
+        if confirmedBytes > 0 { onChunkConfirmed?(confirmedBytes, fileSize) }
 
         for index in hashes.parts.indices {
             try Task.checkCancellation()
@@ -265,6 +275,11 @@ final class XDriveNativeUploadSessionTransport {
                       (try? receivedParts(status, hashes: hashes.parts, size: fileSize))?.contains(index) == true
                 else { throw XDriveNativeUploadError.uncertainCommit }
             }
+            // PUT ACK or read-only recovery has proved this exact chunk.
+            // Never report unacknowledged bytes as uploaded.
+            try Task.checkCancellation()
+            confirmedBytes += Int64(bytes)
+            onChunkConfirmed?(confirmedBytes, fileSize)
         }
 
         try Task.checkCancellation()

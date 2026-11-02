@@ -79,7 +79,7 @@ internal class FilesViewportAnchors(private val capacity: Int = 64) {
 internal fun ColumnScope.Files(state: DriveState, controller: DriveController, viewMode: FileViewMode,
     onRename: (DriveNode) -> Unit = {}, onTrash: (DriveNode) -> Unit = {},
     onCopy: (DriveNode) -> Unit = {}, onMove: (DriveNode) -> Unit = {},
-    onBatchTrash: () -> Unit = {}, onDownload: ((DriveNode) -> Unit)? = null) {
+    onDownload: ((DriveNode) -> Unit)? = null) {
     val dark = LocalXDriveDarkTheme.current
     val pageColor = Color(if (dark) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
     val rowColor = Color(if (dark) SharedVisuals.darkMobileRow else SharedVisuals.lightMobileRow)
@@ -95,11 +95,14 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
     if (state.filesSection != FilesSection.BROWSE) {
         // A new Owner-scoped section or search query must not inherit the
         // old collection's virtual-list viewport or long-press menu state.
-        key(state.filesSection, state.searchQuery) {
-            FilesCollection(state, controller, pageColor, rowColor,
-                thumbnailCache, thumbnailFailures)
+        // The collection takes ALL remaining content height; the category
+        // dock is a separate Scaffold bottomBar sibling, never a list header.
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            key(state.filesSection, state.searchQuery) {
+                FilesCollection(state, controller, pageColor, rowColor,
+                    thumbnailCache, thumbnailFailures)
+            }
         }
-        FilesSectionsBar(state, controller::changeFilesSection)
         return
     }
 
@@ -396,7 +399,17 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
         }
     }
     }
-    if (state.browseSelectionMode) FilesSelectionActions(state, controller, onBatchTrash)
+    // The single Files bottom dock is owned by DriveApp's Scaffold, not the
+    // Browse list or Collection subtree. Changing sections cannot move it.
+}
+
+/** One bottom dock for Browse / Recent / Favorites / Search. */
+@Composable
+internal fun ColumnScope.FilesBottomDock(
+    state: DriveState, controller: DriveController, onBatchTrash: () -> Unit,
+) {
+    if (state.filesSection == FilesSection.BROWSE && state.browseSelectionMode)
+        FilesSelectionActions(state, controller, onBatchTrash)
     else FilesSectionsBar(state, controller::changeFilesSection)
 }
 
@@ -404,7 +417,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
 private fun ColumnScope.FilesSelectionActions(
     state: DriveState, controller: DriveController, onBatchTrash: () -> Unit,
 ) {
-    Surface(Modifier.fillMaxWidth().navigationBarsPadding()
+    Surface(Modifier.fillMaxWidth().testTag("files-selection-actions")
         .padding(horizontal = 12.dp, vertical = 6.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)) {
@@ -446,7 +459,7 @@ private fun ColumnScope.FilesSelectionActions(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveController,
+private fun FilesCollection(state: DriveState, controller: DriveController,
     pageColor: Color, rowColor: Color,
     thumbnailCache: LruCache<String, ImageBitmap>,
     thumbnailFailures: MutableMap<String, Boolean>) {
@@ -503,7 +516,7 @@ private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveCont
         }
     }
 
-    Surface(Modifier.weight(1f).fillMaxWidth(), color = pageColor) {
+    Surface(Modifier.fillMaxSize(), color = pageColor) {
         LazyColumn(Modifier.fillMaxSize().testTag("files-collection"), state = listState) {
             item(key = "files-collection-chrome") { collectionChrome() }
             if (state.collectionLoaded && state.collectionItems.isEmpty() &&
@@ -610,7 +623,9 @@ private fun FilesBrowseGroupHeader(
 @Composable
 private fun ColumnScope.FilesSectionsBar(state: DriveState, select: (FilesSection) -> Unit) {
     val section = state.filesSection
-    Surface(Modifier.fillMaxWidth().navigationBarsPadding()
+    // Scaffold's global navigation owns the system navigation inset.
+    // Do not add it again to the local category row above that global bar.
+    Surface(Modifier.fillMaxWidth().testTag("files-sections-bar")
         .padding(horizontal = 12.dp, vertical = 6.dp),
         shape = androidx.compose.foundation.shape.RoundedCornerShape(50.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow, shadowElevation = 3.dp) {

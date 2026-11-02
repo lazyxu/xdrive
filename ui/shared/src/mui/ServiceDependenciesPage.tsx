@@ -1002,6 +1002,24 @@ export function XDriveServiceDependenciesPage({
     return () => { active = false; controller.abort() }
   }, [source, refreshID])
 
+  // A real fixed-coordinate Server canary completes asynchronously (<=7s).
+  // On the Baidu admin page only, reread its cached result a bounded number
+  // of times. These inventory GETs cannot bypass the PostgreSQL fleet lease.
+  const baiduProbePolls = useRef(0)
+  const baiduProbeState = snapshot?.services.find((item) => item.id === 'baidu-map')
+    ?.baidu_server_probe_state
+  useEffect(() => { baiduProbePolls.current = 0 }, [source, selectedPage])
+  useEffect(() => {
+    if (selectedPage !== 'baidu-map' || baiduProbeState !== 'checking' ||
+        loading || refreshing || hasUnsavedEdits || runtimeBusy ||
+        document.visibilityState !== 'visible' || baiduProbePolls.current >= 3) return
+    const timer = window.setTimeout(() => {
+      baiduProbePolls.current += 1
+      setRefreshID((value) => value + 1)
+    }, 4500)
+    return () => window.clearTimeout(timer)
+  }, [selectedPage, baiduProbeState, source, loading, refreshing, hasUnsavedEdits, runtimeBusy, refreshID])
+
   const revealBaiduAK = async () => {
     if (!baiduConfig?.configured || !source.revealBaiduMapAK || revealingAK || baiduBusy ||
         baiduReadBusy || refreshing) return

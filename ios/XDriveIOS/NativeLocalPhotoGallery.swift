@@ -273,6 +273,26 @@ private struct XDriveIOSNativeLivePhotoView: UIViewRepresentable {
     }
 }
 
+/// A long horizontal drag pages the currently authorized PhotoKit detail.
+/// Simultaneous recognition preserves PHLivePhotoView's native hold-to-play
+/// gesture; short movement remains owned by Photos rather than changing items.
+private extension View {
+    func xdriveNativeViewerPaging(onSwipe: @escaping (Int) -> Void) -> some View {
+        simultaneousGesture(
+            DragGesture(minimumDistance: 72).onEnded { value in
+                guard let direction = XDriveIOSNativeViewerSwipePolicy.direction(
+                    horizontal: value.translation.width,
+                    vertical: value.translation.height,
+                    zoom: 1,
+                    minimum: 1
+                ) else { return }
+                onSwipe(direction)
+            }
+        )
+    }
+}
+
+
 /// A full-screen detail has its own observer: the presenting wall suspends
 /// PhotoKit scans while the Viewer is open. Revoke on any library mutation,
 /// not only when the source grid happens to refresh.
@@ -621,9 +641,10 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                             XDriveIOSNativeLivePhotoView(
                                 live: live, playbackRequest: livePlaybackRequest
                             )
+                            .xdriveNativeViewerPaging { showNeighbor($0) }
                             .id(viewed.id)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .accessibilityLabel("实况照片，长按播放")
+                            .accessibilityLabel("实况照片，长按播放或左右滑动切换")
                         }
                         HStack(spacing: 12) {
                             Button("播放实况") {

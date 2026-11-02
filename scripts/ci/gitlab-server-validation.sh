@@ -85,6 +85,7 @@ sh -n scripts/ci/gitlab-publish-release.sh
 bash -n scripts/ci/test-gitlab-release-version.sh
 bash scripts/ci/test-gitlab-release-version.sh
 python3 scripts/ci/test-gitlab-snapshot-publish.py
+bash scripts/ci/test-gitlab-publisher-cli.sh
 python3 scripts/ci/test-gitlab-master-release-interrupt.py
 python3 scripts/ci/test-gitlab-master-publish-before-tests.py
 bash -n scripts/ci/gitlab-post-release-smoke.sh
@@ -102,12 +103,17 @@ bash -n scripts/ci/import-docker-image.sh
 bash -n scripts/ci/gitlab-server-image.sh
 bash -n scripts/ci/gitlab-caddy-image.sh
 bash -n scripts/ci/test-photo-face-image.sh
+bash scripts/ci/test-media-worker-apk.sh
+sh -n scripts/ci/install-gitlab-release-tools.sh
+bash scripts/ci/test-gitlab-release-tools.sh
 bash -n scripts/ci/photo-face-runtime-cache-key.sh
 bash -n scripts/ci/test-photo-face-runtime-cache.sh
 bash scripts/ci/test-photo-face-runtime-cache.sh
 bash -n scripts/ci/test-go-api-race.sh
 bash scripts/ci/test-go-api-race-shards.sh
 bash -n scripts/ci/gitlab-server-backup.sh
+bash -n scripts/ci/run-backup-daemon-workspace.sh scripts/ci/backup-fixture-docker.sh
+bash scripts/ci/test-backup-daemon-workspace.sh
 bash -n scripts/ci/gitlab-go-windows.sh
 bash -n scripts/ci/gitlab-package-windows-client.sh
 bash -n scripts/ci/gitlab-test-linux-artifact.sh

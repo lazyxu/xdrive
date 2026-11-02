@@ -114,7 +114,10 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
     @State private var gallerySource: XDriveIOSNativeGallerySource = .local
-    @State private var localMapScope: XDriveIOSNativeLocalMapScope = .page
+    // Opening a Photos map should include every currently authorized GPS photo,
+    // not just the current 64-slot Timeline page; the user can still select
+    // the bounded Current Page mode explicitly.
+    @State private var localMapScope: XDriveIOSNativeLocalMapScope = .library
     @State private var localMapPageOffset = 0
     // A bounded navigation position; never holds a PhotoKit asset identity.
     @State private var localGalleryPageOffset = 0
@@ -772,7 +775,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         // Only known, implemented routes are restored. Child PhotoKit pages
         // re-query their own permission and Owner-signed Server data.
         gallerySource = XDriveIOSNativeGallerySource(rawValue: snapshot.gallerySource) ?? .local
-        localMapScope = XDriveIOSNativeLocalMapScope(rawValue: snapshot.mapScope ?? "page") ?? .page
+        localMapScope = XDriveIOSNativeLocalMapScope(rawValue: snapshot.mapScope ?? "library") ?? .library
         localMapPageOffset = snapshot.mapPageOffset ?? 0
         localGalleryPageOffset = snapshot.localGalleryPageOffset ?? 0
         localAlbumDirectoryOffset = snapshot.localAlbumDirectoryOffset ?? 0
@@ -805,7 +808,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         galleryFocusGeneration = UUID()
         galleryFocused = false
         gallerySource = .local
-        localMapScope = .page
+        localMapScope = .library
         localMapPageOffset = 0
         localAlbumDirectoryOffset = 0
         localGalleryPageOffset = 0

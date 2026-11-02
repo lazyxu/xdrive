@@ -45,6 +45,24 @@ struct NativeFilesUploadBatchPolicyChecks {
               "invalid disk capacity rejected")
         check(P.mayStage(bytes: gib, freeDiskBytes: Int64.max),
               "extreme but valid disk capacity arithmetic does not overflow")
-        print("native Files sequential multi-upload selection: PASS")
+        check(P.confirmedProgressPercent(bytes: 0, totalBytes: 1_000) == 0,
+              "no confirmed bytes")
+        check(P.confirmedProgressPercent(bytes: 500, totalBytes: 1_000) == 50,
+              "half of original acknowledged")
+        check(P.confirmedProgressPercent(bytes: 1_000, totalBytes: 1_000) == 99,
+              "all chunks acknowledged but Finalize pending")
+        check(P.confirmedProgressPercent(bytes: 16, totalBytes: 64) == 25,
+              "partial byte progression")
+        check(P.confirmedProgressPercent(bytes: -1, totalBytes: 1_000) == nil,
+              "negative acknowledged bytes rejected")
+        check(P.confirmedProgressPercent(bytes: 1_001, totalBytes: 1_000) == nil,
+              "acknowledged overrun rejected")
+        check(P.confirmedProgressPercent(bytes: 0, totalBytes: 0) == nil,
+              "no percentage for empty original")
+        check(P.confirmedProgressPercent(bytes: 1, totalBytes: gib + 1) == nil,
+              "must satisfy 1 GiB native bound")
+        check(P.confirmedProgressPercent(bytes: gib, totalBytes: gib) == 99,
+              "1 GiB completed chunks still provisional")
+        print("native Files sequential multi-upload selection and real Server ACK progress: PASS")
     }
 }

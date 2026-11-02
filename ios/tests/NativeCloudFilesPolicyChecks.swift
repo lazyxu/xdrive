@@ -10,6 +10,18 @@ struct XDriveIOSNativeFilesPageChecks {
     }
 
     static func main() {
+        let timestampJSON = Data(#"{"id":99,"parent_id":7,"name":"timestamped.txt","type":"file","size":12,"revision":1,"created_at":"2026-11-02T10:00:00Z","updated_at":"2026-11-02T10:30:00.123456789Z"}"#.utf8)
+        let timestamped = try? JSONDecoder().decode(
+            XDriveIOSNativeFilesNode.self, from: timestampJSON
+        )
+        require(timestamped?.createdDate != nil, "decode Server created_at")
+        require(timestamped?.modifiedDate != nil, "decode RFC3339Nano updated_at")
+        require(XDriveIOSNativeFilesDatePolicy.date(
+            from: "2026-11-02T10:30:00Z"
+        ) != nil, "whole-second Server timestamp")
+        require(XDriveIOSNativeFilesDatePolicy.date(from: "invalid") == nil,
+                "reject malformed timestamp")
+
         let parent: UInt64 = 7
         let nodes: [XDriveIOSNativeFilesNode] = (0..<64).map { index in
             XDriveIOSNativeFilesNode(

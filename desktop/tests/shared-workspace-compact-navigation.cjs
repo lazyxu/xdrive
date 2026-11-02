@@ -291,9 +291,9 @@ test('More preserves extension placement and metadata while removing promoted an
 test('the actual Web role-filtered sections feed the same compact menu for administrators and ordinary users', () => {
   const { xDriveCompactWorkspaceNavigation } = createLoader()(modelPath)
   for (const { profile, expectedMore } of [
-    { profile: undefined, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage'] },
-    { profile: { role: 'user' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage'] },
-    { profile: { role: 'admin' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'admin-users', 'global-tasks', 'admin-audit', 'admin-storage', 'admin-services', 'admin-maintenance'] },
+    { profile: undefined, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'shares'] },
+    { profile: { role: 'user' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'shares'] },
+    { profile: { role: 'admin' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'shares', 'admin-users', 'global-tasks', 'admin-audit', 'admin-storage', 'admin-services', 'admin-maintenance'] },
   ]) {
     const result = xDriveCompactWorkspaceNavigation({ sections: productionWebSections(profile), showLocalStorage: true })
     assert.deepEqual(keys(result.primary), ['overview', 'files', 'gallery', 'transfers'])

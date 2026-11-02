@@ -40,6 +40,15 @@ export interface FileShare {
   updated_at: string
 }
 
+export interface OwnerFileShare extends FileShare {
+  node_name: string
+  node_type: string
+  node_missing: boolean
+}
+export interface OwnerFileSharePage {
+  items: OwnerFileShare[]
+  next_cursor: number
+}
 export interface CreatedFileShare extends FileShare {
   token: string
 }

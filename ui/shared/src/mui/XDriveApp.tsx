@@ -1,4 +1,5 @@
 import { useLayoutEffect } from 'react'
+import { useTheme } from '@mui/material/styles'
 import type { ComponentProps, ReactNode } from 'react'
 import { xDriveEnterForegroundPage } from './ViewerForegroundPriority'
 import type { SxProps, Theme } from '@mui/material/styles'
@@ -46,6 +47,11 @@ export function XDriveApp({
   /** Host-wide notices only; every route, including Files, uses the outlet. */
   children?: ReactNode
 }) {
+  // Desktop intentionally omits an explicit appearance; honor the active
+  // MUI color scheme rather than falling back to the light sidebar palette.
+  // DSM and other Hosts can still pass their own verified appearance override.
+  const theme = useTheme()
+  const sidebarAppearance = sidebar.appearance ?? theme.palette.mode
   // Responsive navigation is determined by MUI viewport width, never by Host identity.
   // The canonical Host renderer owns one page scope for every admitted route.
   // Desktop's earlier intent notification is idempotent; DSM shares this UI.
@@ -64,6 +70,7 @@ export function XDriveApp({
       sidebar={
         <XDriveWorkspaceSidebar
           {...sidebar}
+          appearance={sidebarAppearance}
           selected={view}
           responsive
           onSelect={onNavigate}

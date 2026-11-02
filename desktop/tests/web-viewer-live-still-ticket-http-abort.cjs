@@ -25,8 +25,18 @@ const compiled = ts.transpileModule(
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
   } },
 ).outputText
+// The extracted Owner method has the same imported fail-closed WebKit abort gate
+// as production, not a no-op imitation.
+const mediaJS = ts.transpileModule(read('web/src/mediaBinaryProgress.ts'), {
+  fileName: 'RealMediaBinaryProgress.ts',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const mediaModule = { exports: {} }
+new Function('exports', 'module', 'require', mediaJS)(mediaModule.exports, mediaModule, require)
 const moduleResult = { exports: {} }
-new Function('exports', compiled)(moduleResult.exports)
+new Function('exports', 'xDriveAssertMediaReadActive', compiled)(
+  moduleResult.exports, mediaModule.exports.xDriveAssertMediaReadActive,
+)
 const API = moduleResult.exports.OwnerApi
 const ticket = '/api/v1/media-live-photo-still/91?ticket=local-test'
 

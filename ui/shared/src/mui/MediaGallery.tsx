@@ -160,6 +160,7 @@ import {
 } from './MediaGalleryNavigation'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMobileGalleryChrome } from './MobileGalleryChrome'
+import { xDriveMobileGalleryDockBottom, xDriveMobileGalleryGlobalInset } from './MobileGalleryDockLayout'
 import { XDriveMobileGalleryCollections } from './MobileGalleryCollections'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import { xDrivePlacesVisiblePanels } from '../media-gallery-places-presentation'
@@ -734,7 +735,9 @@ export function XDriveMediaGalleryPage({
   const loadOwnerGPSPlaceCover = useCallback((place: MediaPlaceFacet, signal: AbortSignal) =>
     xDriveLoadOwnerGPSPhotoCover(place, source.listItemRange, source.loadThumbnail, signal),
   [source])
-  const mobileGalleryViewport = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
+  // The embedding workspace has already selected its phone/tablet layout.
+  // A second width-only gate would turn a rotated iPad back into Desktop UI.
+  const mobileGalleryViewport = mobileWebChrome
   const [facets, setFacets] = useState<MediaGalleryFacets>({ cameras: [], formats: [] })
   const [facetsLoading, setFacetsLoading] = useState(false)
   const [facetsError, setFacetsError] = useState('')
@@ -5460,7 +5463,7 @@ function MediaTile({
       data-xdrive-media-index={logicalIndex}
       data-xdrive-media-node-id={item.node.id}
       role="button"
-      aria-label={livePhoto ? item.node.name + '，实况照片' : undefined}
+      aria-label={`${item.node.name}，${livePhoto ? '实况照片' : video ? '视频' : '照片'}`}
       tabIndex={0}
       onClick={(event) => {
         if (selectionMode || event.ctrlKey || event.metaKey || event.shiftKey) {
@@ -5500,9 +5503,6 @@ function MediaTile({
         outline: selectedForAction ? '2px solid' : 'none',
         outlineColor: selectedForAction ? 'primary.main' : 'transparent',
         outlineOffset: selectedForAction ? -2 : 0,
-        '&:hover .media-name, &:focus-visible .media-name, &:focus-within .media-name': {
-          opacity: 1,
-        },
         '&:hover .media-favorite, &:focus-within .media-favorite': {
           opacity: 1,
           pointerEvents: 'auto',
@@ -5719,24 +5719,7 @@ function MediaTile({
           设封面
         </Button>
       ) : null}
-      <Box
-        className="media-name"
-        sx={{
-          position: 'absolute',
-          inset: 'auto 0 0',
-          px: 1,
-          pt: 2.5,
-          pb: 0.75,
-          opacity: 0,
-          pointerEvents: 'none',
-          transition: 'opacity 120ms ease',
-          background: 'linear-gradient(transparent, rgba(0,0,0,.72))',
-        }}
-      >
-        <Typography variant="caption" color="#fff" noWrap display="block">
-          {item.node.name}
-        </Typography>
-      </Box>
+
     </Paper>
   )
 }
@@ -6832,7 +6815,7 @@ export function XDriveMediaGallery({
     (nodeID, revision) => thumbnailScheduler.borrowCachedForViewer(nodeID, revision),
   ), [onRegisterViewerThumbnailCache, thumbnailScheduler])
   const availableTimeZones = useMemo(xDriveMediaTimeZoneChoices, [])
-  const compactGallery = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
+  const compactGallery = mobileWebChrome
   const [placesMobileMode, setPlacesMobileMode] = useState<'map' | 'list'>('map')
   const placesPanels = xDrivePlacesVisiblePanels(compactGallery, placesMobileMode)
   useEffect(() => () => {
@@ -7770,6 +7753,40 @@ export function XDriveMediaGallery({
     onMobileMapFocusChange?.(mobileMapFocusActive)
     return () => onMobileMapFocusChange?.(false)
   }, [onMobileMapFocusChange, mobileMapFocusActive])
+
+  // The global five-slot navigation is a flex sibling of Gallery's scroll
+  // viewport. Measure its ACTUAL top (including iOS safe areas, tablet Host
+  // padding and 44px landscape mode) so neither local dock steals its taps.
+  // Store the offset on this Gallery root only; isolated Desktop guests never
+  // inherit another mounted Gallery's navigation geometry.
+  useLayoutEffect(() => {
+    if (!compactGallery) return
+    const root = galleryRootRef.current
+    const shell = root?.closest<HTMLElement>('[data-xdrive-mobile-app-frame]')
+    const globalNav = shell?.querySelector<HTMLElement>('[data-xdrive-mobile-five-slot]')
+    if (!root || !shell || !globalNav) return
+    const updateInset = () => {
+      if (!root.isConnected || !globalNav.isConnected) return
+      const inset = xDriveMobileGalleryGlobalInset(
+        globalNav.getBoundingClientRect().top, window.innerHeight)
+      if (root.style.getPropertyValue('--xdrive-mobile-five-slot-inset') !== inset)
+        root.style.setProperty('--xdrive-mobile-five-slot-inset', inset)
+    }
+    updateInset()
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(updateInset) : null
+    observer?.observe(globalNav)
+    observer?.observe(shell)
+    window.addEventListener('resize', updateInset)
+    const visualViewport = window.visualViewport
+    visualViewport?.addEventListener('resize', updateInset)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', updateInset)
+      visualViewport?.removeEventListener('resize', updateInset)
+      root.style.removeProperty('--xdrive-mobile-five-slot-inset')
+    }
+  }, [compactGallery, mobileMapFocusActive, suspendBackgroundThumbnails])
   // These are presentational delays only; real Source/Server/Agent GETs and
   // the previously accepted albums/places lists are never delayed or cleared.
   const showDelayedPlacesPage = useXDriveDeferredPendingLoading(
@@ -10432,7 +10449,12 @@ export function XDriveMediaGallery({
       <Box data-xdrive-gallery-floating-feedback sx={{
         position: 'fixed', left: '50%', transform: 'translateX(-50%)',
         bottom: compactGallery
-          ? 'calc(156px + env(safe-area-inset-bottom, 0px))'
+          ? xDriveMobileGalleryDockBottom(
+              // Error/status feedback must also clear both local controls.
+              mobileMapFocusActive || selectionMode ? 156
+                : !mobileCollectionsOverview && section === 'library' &&
+                    showPhotoCollection && showCollectionTimeScale ? 116 : 56,
+            )
           : 'calc(20px + env(safe-area-inset-bottom, 0px))',
         width: 'min(calc(100vw - 24px), 560px)',
         maxHeight: 'min(35dvh, 240px)', overflowY: 'auto',

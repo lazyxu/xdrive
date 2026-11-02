@@ -17,6 +17,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.clickable
@@ -67,6 +70,8 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.currentCoroutineContext
@@ -262,6 +267,12 @@ internal fun NativeLocalMediaStoreGallery(
     var busy by wall.busy
     var pageIntent by wall.pageIntent
     var consumedPageIntent by wall.consumedPageIntent
+    // One explicit Viewer continuation. Never stored in the host cache or
+    // reused after grant, source, filter, Owner session or album changes.
+    var viewerNextPending by remember(sessionId, cache, albumsOnly,
+        selectedAlbum?.id, mediaKind, libraryEpoch) {
+        mutableStateOf<NativeLocalViewerNextPageIntent?>(null)
+    }
 
     // When no Owner-host observer was provided, retain the previous in-screen
     // ContentObserver/lifecycle contract. The host observer covers inactive tabs,
@@ -430,6 +441,40 @@ internal fun NativeLocalMediaStoreGallery(
                 failure = "下一页读取失败；现有照片保持不变。"
         } finally {
             if (wall.revision.intValue == readRevision) busy = false
+        }
+    }
+    // Resolve a Viewer continuation only after the exact existing keyset
+    // query has finished. Never speculate while a read is pending or after
+    // Owner/grant/album/filter/source identity changes.
+    LaunchedEffect(viewerNextPending, items, busy, failure, pageIntent,
+        consumedPageIntent, selectedMedia, allowed, libraryEpoch,
+        wall.revision.intValue, albumsOnly, selectedAlbum?.id, mediaKind,
+        querySignal) {
+        val pending = viewerNextPending ?: return@LaunchedEffect
+        val current = selectedMedia?.let {
+            NativeLocalVideoSourceKey(it.viewerReturnKey(), it.uri.toString())
+        }
+        val keys = items.map { it.viewerReturnKey() }
+        when (nativeLocalViewerNextPageDecision(
+            request = pending, activeSource = current, loaded = keys,
+            sessionId = sessionId, generation = libraryEpoch,
+            wallRevision = wall.revision.intValue, albumsOnly = albumsOnly,
+            albumId = if (albumsOnly) selectedAlbum?.id else null,
+            mediaKind = mediaKind, readable = allowed && wall.loaded.value &&
+                !querySignal.isCanceled,
+            pageIntent = pageIntent, consumedPageIntent = consumedPageIntent,
+            busy = busy, hasError = failure != null,
+        )) {
+            NativeLocalNextPageDecision.ADVANCE -> {
+                val index = nativeLocalViewerNeighborIndex(
+                    keys, pending.source.item, 1)
+                if (index != null) selectedMedia = items[index]
+                viewerNextPending = null
+            }
+            NativeLocalNextPageDecision.FAILED,
+            NativeLocalNextPageDecision.END,
+            NativeLocalNextPageDecision.STALE -> viewerNextPending = null
+            NativeLocalNextPageDecision.WAITING -> Unit
         }
     }
     // Follow a *real* wall drag instead of restoring a saved LazyGrid viewport.
@@ -729,18 +774,78 @@ internal fun NativeLocalMediaStoreGallery(
                 cache.generation.intValue == libraryEpoch) {
                 val next = nativeLocalViewerNeighborIndex(
                     items.map { it.viewerReturnKey() }, sourceKey, direction)
-                if (next != null) selectedMedia = items[next]
+                if (next != null) {
+                    viewerNextPending = null
+                    selectedMedia = items[next]
+                }
             }
         }
+        val atTail = loadedIndex != null && loadedIndex == loadedKeys.lastIndex
+        val canFetchNext = nativeLocalViewerCanRequestNextPage(
+            loadedIndex = loadedIndex, loadedCount = loadedKeys.size,
+            exhausted = exhausted, hasCursor = nextPageKey == asset.pageKey,
+            busy = busy || fullDateBusy || pageIntent != consumedPageIntent,
+            hasError = failure != null, pending = viewerNextPending != null,
+            readable = allowed && wall.loaded.value &&
+                cache.generation.intValue == libraryEpoch &&
+                !querySignal.isCanceled,
+        )
+        val requestOneNextPage: () -> Unit = request@{
+            val current = selectedMedia ?: return@request
+            val cursor = nextPageKey ?: return@request
+            if (current.viewerReturnKey() != sourceKey ||
+                current.uri != asset.uri || cursor != current.pageKey ||
+                !nativeLocalViewerCanRequestNextPage(
+                    loadedIndex = nativeLocalViewerLoadedIndex(
+                        items.map { it.viewerReturnKey() }, sourceKey),
+                    loadedCount = items.size, exhausted = exhausted,
+                    hasCursor = true,
+                    busy = busy || fullDateBusy || pageIntent != consumedPageIntent,
+                    hasError = failure != null, pending = viewerNextPending != null,
+                    readable = allowed && wall.loaded.value &&
+                        cache.generation.intValue == libraryEpoch &&
+                        !querySignal.isCanceled))
+                return@request
+            val requestId = pageIntent + 1
+            viewerNextPending = NativeLocalViewerNextPageIntent(
+                source = NativeLocalVideoSourceKey(sourceKey, asset.uri.toString()),
+                sessionId = sessionId, generation = libraryEpoch,
+                wallRevision = wall.revision.intValue,
+                albumsOnly = albumsOnly,
+                albumId = if (albumsOnly) selectedAlbum?.id else null,
+                mediaKind = mediaKind, cursor = cursor,
+                requestId = requestId)
+            pageIntent = requestId
+        }
+        val boundaryError = if (atTail && !exhausted &&
+            viewerNextPending == null) failure else null
+        val retryNextPage: (() -> Unit)? = if (boundaryError != null && !busy &&
+            !fullDateBusy) ({
+                if (selectedMedia?.viewerReturnKey() == sourceKey &&
+                    selectedMedia?.uri == asset.uri &&
+                    cache.generation.intValue == libraryEpoch) {
+                    failure = null
+                    requestOneNextPage()
+                }
+            }) else null
         NativeLocalMediaViewer(
             asset = asset,
             loadedPosition = loadedIndex,
             loadedCount = loadedKeys.size,
             onPrevious = if (loadedIndex != null && loadedIndex > 0)
                 ({ shiftLoaded(-1) }) else null,
-            onNext = if (loadedIndex != null && loadedIndex < loadedKeys.lastIndex)
-                ({ shiftLoaded(1) }) else null,
+            onNext = when {
+                loadedIndex != null && loadedIndex < loadedKeys.lastIndex ->
+                    ({ shiftLoaded(1) })
+                canFetchNext -> requestOneNextPage
+                else -> null
+            },
+            onNextIsBoundary = canFetchNext,
+            nextPageLoading = viewerNextPending != null,
+            nextPageError = boundaryError,
+            onRetryNextPage = retryNextPage,
             onDismiss = {
+                viewerNextPending = null
                 viewerReturn = NativeLocalViewerReturnAnchor(
                     asset.viewerReturnKey(), albumsOnly,
                     if (albumsOnly) selectedAlbum?.id else null, libraryEpoch)
@@ -748,6 +853,7 @@ internal fun NativeLocalMediaStoreGallery(
             },
             onBackupOriginal = onBackupOriginal?.let { callback ->
                 {
+                    viewerNextPending = null
                     viewerReturn = null // consent overlay must own input focus
                     selectedMedia = null
                     callback(asset)
@@ -851,6 +957,10 @@ internal fun NativeLocalMediaViewer(
     loadedCount: Int = 0,
     onPrevious: (() -> Unit)? = null,
     onNext: (() -> Unit)? = null,
+    onNextIsBoundary: Boolean = false,
+    nextPageLoading: Boolean = false,
+    nextPageError: String? = null,
+    onRetryNextPage: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val mediaKey = asset.viewerReturnKey()
@@ -903,6 +1013,9 @@ internal fun NativeLocalMediaViewer(
                 NativeLocalMediaInfoAction(asset)
                 NativeLocalViewerLoadedNavigation(
                     loadedPosition, loadedCount, onPrevious, onNext)
+                NativeLocalViewerNextPageStatus(
+                    loading = nextPageLoading, error = nextPageError,
+                    onRetry = onRetryNextPage)
                 NativeLocalMotionControl(
                     candidate = motionCandidate, held = activeMotion)
                 // This gesture owner stays mounted during the entire touch.
@@ -924,6 +1037,7 @@ internal fun NativeLocalMediaViewer(
                                 asset,
                                 onPrevious = if (activeMotion) null else onPrevious,
                                 onNext = if (activeMotion) null else onNext,
+                                onNextIsBoundary = onNextIsBoundary,
                                 onStillReady = { ready ->
                                     stillReady = ready
                                     if (!ready) motionHeld = false
@@ -996,6 +1110,36 @@ internal fun NativeLocalViewerLoadedNavigation(
 }
 
 
+/** Status for the one explicit next-page query. The current still remains
+ * mounted and visible until a real next item is returned by MediaStore. */
+@Composable
+internal fun NativeLocalViewerNextPageStatus(
+    loading: Boolean, error: String?, onRetry: (() -> Unit)?,
+) {
+    if (loading) Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            .testTag("native-local-viewer-next-page-loading"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+        Text("正在读取下一页本机媒体…")
+    } else if (error != null) Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            .testTag("native-local-viewer-next-page-failed"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("下一页读取失败；当前照片保持不变。",
+            modifier = Modifier.weight(1f))
+        if (onRetry != null) TextButton(
+            onClick = onRetry,
+            modifier = Modifier.heightIn(min = 48.dp)
+                .testTag("native-local-viewer-next-page-retry"),
+        ) { Text("重试下一页") }
+    }
+}
+
 /**
  * Only a single horizontal drag on an unzoomed still photo can navigate.
  * The existing real photo card and Owner-scoped loaded-neighbor callbacks
@@ -1009,37 +1153,89 @@ internal fun NativeLocalPhotoSwipeSurface(
     onPrevious: (() -> Unit)?,
     onNext: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    onNextIsBoundary: Boolean = false,
     content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
 ) {
     // Pointer input must be restarted on a new photo or zoom state, but a
     // normal host recomposition must not leave an old callback in its scope.
     val currentPrevious by rememberUpdatedState(onPrevious)
     val currentNext by rememberUpdatedState(onNext)
+    val nextIsBoundary by rememberUpdatedState(onNextIsBoundary)
     val canSwipe = !zoomed && (onPrevious != null || onNext != null)
+    val currentKey by rememberUpdatedState(mediaKey)
+    val scope = rememberCoroutineScope()
+    val settle = remember(mediaKey) { mutableStateOf<Job?>(null) }
+    var dragging by remember(mediaKey) { mutableStateOf(false) }
+    var slideTarget by remember(mediaKey) { mutableFloatStateOf(0f) }
+    val visualOffset by animateFloatAsState(
+        targetValue = slideTarget,
+        animationSpec = if (dragging) snap() else tween(durationMillis = 150),
+        label = "native-local-photo-paging",
+    )
     Box(
         modifier = modifier.pointerInput(mediaKey, canSwipe) {
             if (!canSwipe) return@pointerInput
             var horizontalDistance = 0f
             val threshold = 64.dp.toPx()
+            val width = size.width.toFloat().coerceAtLeast(1f)
             detectHorizontalDragGestures(
-                onDragStart = { horizontalDistance = 0f },
-                onDragCancel = { horizontalDistance = 0f },
+                onDragStart = {
+                    settle.value?.cancel()
+                    horizontalDistance = 0f
+                    slideTarget = 0f
+                    dragging = true
+                },
+                onDragCancel = {
+                    dragging = false
+                    slideTarget = 0f
+                    horizontalDistance = 0f
+                },
                 onDragEnd = {
-                    when (nativeLocalViewerSwipeDirection(
-                        horizontalDistance, threshold, zoomed = false)) {
-                        -1 -> currentPrevious?.invoke()
-                        1 -> currentNext?.invoke()
+                    val direction = nativeLocalViewerSwipeDirection(
+                        horizontalDistance, threshold, zoomed = false)
+                    val available = when (direction) {
+                        -1 -> currentPrevious != null
+                        1 -> currentNext != null
+                        else -> false
                     }
+                    dragging = false
+                    if (available && direction != null) {
+                        // Animate the already-decoded current still off-screen
+                        // before the existing bounded neighbor callback swaps it.
+                        // At a page boundary the next poster has not yet
+                        // been loaded. Bounce the current image back while
+                        // the explicit 64-row query runs; never show a blank.
+                        val waitingForPage = direction > 0 && nextIsBoundary
+                        slideTarget = if (waitingForPage) 0f
+                            else if (direction > 0) -width else width
+                        settle.value = scope.launch {
+                            if (!waitingForPage) delay(150)
+                            if (currentKey == mediaKey) {
+                                if (direction > 0) currentNext?.invoke()
+                                else currentPrevious?.invoke()
+                            }
+                        }
+                    } else slideTarget = 0f
                     horizontalDistance = 0f
                 },
                 onHorizontalDrag = { change, drag ->
                     horizontalDistance += drag
+                    slideTarget = galleryPhotoFingerDrag(
+                        deltaX = horizontalDistance, deltaY = 0f,
+                        viewportWidth = width, atDefaultZoom = !zoomed,
+                        singlePointer = true,
+                        previousAvailable = currentPrevious != null,
+                        nextAvailable = currentNext != null,
+                    )
                     change.consume()
                 },
             )
         },
-        content = content,
-    )
+    ) {
+        Box(Modifier.fillMaxSize().graphicsLayer { translationX = visualOffset }) {
+            content()
+        }
+    }
 }
 
 /**
@@ -1161,6 +1357,7 @@ private fun ColumnScope.NativeLocalStillViewer(
     asset: NativeLocalMedia,
     onPrevious: (() -> Unit)?,
     onNext: (() -> Unit)?,
+    onNextIsBoundary: Boolean = false,
     onStillReady: (Boolean) -> Unit = {},
     onStillZoomChanged: (Boolean) -> Unit = {},
 ) {
@@ -1238,6 +1435,7 @@ private fun ColumnScope.NativeLocalStillViewer(
         zoomed = scale > 1f,
         onPrevious = onPrevious,
         onNext = onNext,
+        onNextIsBoundary = onNextIsBoundary,
         modifier = Modifier.fillMaxWidth().weight(1f).clipToBounds()
             .onSizeChanged { viewport = it }
             .pointerInput(mediaKey, asset.uri) {

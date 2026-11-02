@@ -52,7 +52,7 @@ test('wide Web keeps compact chrome while mobile owns five-slot navigation and l
     'Viewer must disable the account menu independent of the retired drawer')
   assert.ok(webApp.includes('compactWorkspace && !viewerActive && !mobileMapFocused'),
     'Viewer and focused map must not render a competing bottom bar')
-  assert.ok(appBar.includes("display: { xs: 'none', md: 'flex' }"), 'mobile AppBar must reserve no viewport height')
+  assert.ok(appBar.includes("display: compactWorkspace ? 'none' : 'flex'"), 'the same device-aware compact mode must hide desktop AppBar on phones and tablets')
   assert.ok(appBar.includes('{!compactWorkspace ? workspaceActions : null}'), 'wide Web AppBar must retain global actions without mounting a hidden second mobile copy')
   const mobileNav = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'MobileFiveSlotNavigation.tsx'), 'utf8')
   assert.ok(webApp.includes('<XDriveMobileFiveSlotNavigation'),
