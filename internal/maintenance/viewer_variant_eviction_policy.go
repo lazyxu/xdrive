@@ -5,9 +5,8 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
-
-	mediapkg "github.com/lazyxu/xdrive/internal/media"
 )
 
 const ViewerVariantCacheDefaultBudgetBytes int64 = 10 << 30
@@ -58,7 +57,7 @@ func PlanViewerVariantEvictions(
 	eligible := make([]ViewerVariantCacheEntry, 0, len(entries))
 	seen := make(map[string]bool, len(entries))
 	for _, entry := range entries {
-		if !viewerVariantCacheKeyRE.MatchString(entry.StorageKey) {
+		if !validManagedViewerVariantStorageKey(entry.StorageKey) {
 			continue
 		}
 		if seen[entry.StorageKey] || entry.Bytes < 0 ||
@@ -109,26 +108,14 @@ func validManagedViewerVariantStorageKey(key string) bool {
 	if !viewerVariantCacheKeyRE.MatchString(key) {
 		return false
 	}
-	for _, preset := range []mediapkg.ViewerQualityPreset{
-		mediapkg.ViewerQualityEconomy, mediapkg.ViewerQualityBalanced,
-		mediapkg.ViewerQualityHigh,
-	} {
-		for _, format := range []string{"webp", "jpeg"} {
-			variant, err := mediapkg.ViewerQualityVariantFor(preset, format)
-			if err != nil {
-				continue
-			}
-			expected, err := mediapkg.ViewerQualityStorageKey(1, 1,
-				"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", variant)
-			if err == nil {
-				// Key's prefix varies by source; the fixed suffix is derived
-				// only from vetted codec, max edge and quality.
-				suffix := expected[len(mediapkg.ThumbnailStoragePrefix)+3+64:]
-				if len(suffix) <= len(key) && key[len(key)-len(suffix):] == suffix {
-					return true
-				}
-			}
-		}
+	// The two-letter SHA shard must match the beginning of the 64-hex
+	// digest. Otherwise an arbitrary file inside the media cache root could
+	// be mistaken for an xDrive-produced variant and destructively removed.
+	key = strings.TrimPrefix(key, ".xdrive-media/thumbnails/")
+	if strings.HasPrefix(key, "node/") {
+		return true // no source SHA: Node/revision fallback is already bounded.
 	}
-	return false
+	parts := strings.SplitN(key, "/", 2)
+	return len(parts) == 2 && len(parts[1]) >= 64 &&
+		parts[0] == parts[1][:2]
 }

@@ -55,6 +55,8 @@ func TestViewerVariantEvictionPlannerRejectsUntrustedPathsAndBrokenBudget(t *tes
 		{StorageKey: key, Bytes: 1200 << 10, ModifiedAt: now.Add(-48 * time.Hour)},
 		{StorageKey: "../" + key, Bytes: 1 << 30, ModifiedAt: now.Add(-48 * time.Hour)},
 		{StorageKey: ".xdrive-media/thumbnails/aa/" + strings.Repeat("c", 64) + "-v3-512.jpg", Bytes: 1 << 30},
+		// A mismatched physical shard must never be an eviction candidate.
+		{StorageKey: ".xdrive-media/thumbnails/aa/" + strings.Repeat("b", 64) + "-v101-4096-q90.webp", Bytes: 1 << 30},
 	}
 	plan, err := PlanViewerVariantEvictions(entries, 1<<20, now)
 	if err != nil || len(plan.Keys) != 1 || plan.Keys[0] != key || plan.OverBudget {
@@ -65,5 +67,16 @@ func TestViewerVariantEvictionPlannerRejectsUntrustedPathsAndBrokenBudget(t *tes
 	}
 	if _, err := PlanViewerVariantEvictions(append(entries, entries[0]), 1<<20, now); err != ErrViewerVariantCacheBudget {
 		t.Fatal("duplicated cache entry accepted")
+	}
+}
+
+func TestViewerVariantCacheRejectsMismatchedHashShard(t *testing.T) {
+	valid := ".xdrive-media/thumbnails/bb/" + strings.Repeat("b", 64) + "-v101-4096-q90.webp"
+	wrong := ".xdrive-media/thumbnails/aa/" + strings.Repeat("b", 64) + "-v101-4096-q90.webp"
+	if !validManagedViewerVariantStorageKey(valid) {
+		t.Fatal("legitimate generated variant was refused")
+	}
+	if validManagedViewerVariantStorageKey(wrong) {
+		t.Fatal("wrong SHA shard was accepted for physical deletion")
 	}
 }
