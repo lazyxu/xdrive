@@ -248,7 +248,9 @@ func (s *Server) trashRestore(c *gin.Context) {
 			First(&parent).Error; err != nil {
 			return errTrashParentUnavailable
 		}
-		if err := notesRejectDestinationWithReason(c.Request.Context(), tx, userID(c), *root.ParentID, root.Name); err != nil { return err }
+		if err := notesRejectDestinationWithReason(c.Request.Context(), tx, userID(c), *root.ParentID, root.Name); err != nil {
+			return err
+		}
 		var count int64
 		if err := tx.Model(&meta.Node{}).
 			Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL AND lower(name) = lower(?)",
@@ -470,7 +472,9 @@ func (s *Server) restoreFileVersion(c *gin.Context) {
 			First(&current).Error; err != nil {
 			return err
 		}
-		if err := notesRejectNodeWithReason(c.Request.Context(), tx, userID(c), id); err != nil { return err }
+		if err := notesRejectNodeWithReason(c.Request.Context(), tx, userID(c), id); err != nil {
+			return err
+		}
 		currentRevision = current.Revision
 		if current.Revision != expected {
 			return errRevisionConflict
