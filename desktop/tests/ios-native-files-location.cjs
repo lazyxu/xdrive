@@ -27,8 +27,8 @@ test('native Files locate buttons stay inside concrete rows before the context m
   const end = browser.indexOf('@ViewBuilder private var filesContinuationStatus:', start)
   assert.ok(start >= 0 && end > start, 'native Files row must exist')
   const row = browser.slice(start, end)
-  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*Button\("文件夹操作"\)/)
-  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*Button\("文件操作"\)/)
+  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*nativeQuickActions\(for: entry\)\s*Button\("文件夹操作"\)/)
+  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*nativeQuickActions\(for: entry\)\s*Button\("文件操作"\)/)
 })
 
 test('location is a server-confirmed Owner path, not guessed search-hit text', () => {
