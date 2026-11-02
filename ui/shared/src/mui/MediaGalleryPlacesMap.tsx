@@ -647,9 +647,23 @@ export function XDriveMediaGalleryPlacesMap({
       ) : null}
       {desktopOnly ? (
         <Box sx={{ px: 1.5, pb: 1.5 }}>
-          <Button variant="outlined" onClick={() => onOpenSecureDesktopMap?.(mapPhotoScope)}>在独立 HTTPS 安全窗口打开动态地图</Button>
+          {listPlacesMapOverview && onOpenPlace ? (
+            <XDriveMediaGalleryOwnerGPSOverview
+              scope={diagnosticScope ?? ''} listPage={listPlacesMapOverview}
+              loadCover={loadPlacesMapCover}
+              onOpenPlace={onOpenPlace} compact={compact}/>
+          ) : (
+            <Typography role="status" variant="body2" color="text.secondary">
+              此服务器暂不支持 GPS 照片位置概览。
+            </Typography>
+          )}
+          <Button variant="outlined" sx={{ mt: 1, minHeight: 44 }}
+            onClick={() => onOpenSecureDesktopMap?.(mapPhotoScope)}>
+            在独立 HTTPS 安全窗口打开百度动态地图
+          </Button>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            动态地图由 Server 签名发布，不在 Electron file 页面加载第三方脚本。
+            主窗口显示可拖动、缩放和点击照片的 GPS 位置地图（无道路底图）。
+            百度动态地图仍在独立 HTTPS 窗口运行，不在 Electron file 页面加载第三方脚本。
           </Typography>
         </Box>
       ) : !getBaiduJSAPI4Status && listPlacesMapOverview && onOpenPlace ? (

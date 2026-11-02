@@ -8,6 +8,7 @@ import { XDriveCaddyPreflightPanel, type XDriveCaddyPreflightPort } from './Cadd
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
 import { caddyHostDeployFailureMessage } from './caddyHostDeployFailure'
+import { XDriveCaddyCertificatePanel } from './CaddyCertificatePanel'
 import { xDriveReconcileCaddyDeployReceipt } from '../caddy-operation-recovery'
 
 // Host .env is authoritative in v1; DB desired is legacy compatibility only.
@@ -602,6 +603,8 @@ export function XDriveCaddyDetailV1({
               </Box>
             </Stack>
           </Paper>
+          <XDriveCaddyCertificatePanel certificates={config?.certificates}
+            domain={config?.desired_domain ?? ''} lanIP={config?.desired_lan_ip ?? ''} />
           <XDriveConfirmDialog open={confirmDeploy}
             title={canRestart ? '重启 Caddy' : '应用 Caddy 配置'}
             description={canRestart

@@ -37,8 +37,11 @@ const videoPosterMode = new URLSearchParams(location.search).get('map_h264') ===
 // Synthetic two-Cell presentation test: both Owner Cells are valid and
 // accessible, but the SDK projects their thumbnails into one overlapping
 // 72px target. Only the largest verified React photo cover should paint.
+const separateFiveCover = !genuineGin &&
+  new URLSearchParams(location.search).get('direct_click_photo_5') === '1'
 const mixedMarkerMap = !genuineGin &&
-  new URLSearchParams(location.search).get('mixed_markers') === '1'
+  (new URLSearchParams(location.search).get('mixed_markers') === '1' ||
+    separateFiveCover)
 // Independent 28-photo cluster: the shared Gallery Dialog must load all
 // 28 through the bounded 48-item Owner Range rather than previewing 12.
 const albumDialog28 = !genuineGin &&
@@ -157,7 +160,8 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
   const first={cell_x:x,cell_y:y,photo_count:count,asset_id:33,node_id:75,
     node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude,
     ...(videoPosterMode?{media_kind:'video' as const}:{})}
-  const otherX=(x+3)%8,otherY=(y+3)%8
+  const otherX=separateFiveCover?0:(x+3)%8
+  const otherY=separateFiveCover?0:(y+3)%8
   const other={cell_x:otherX,cell_y:otherY,photo_count:5,asset_id:134,node_id:175,
     node_revision:2,latitude:bounds.south+(otherY+0.5)*(bounds.north-bounds.south)/8,
     longitude:bounds.west+(otherX+0.5)*width/8}
