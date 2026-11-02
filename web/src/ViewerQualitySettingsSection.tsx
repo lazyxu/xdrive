@@ -4,7 +4,7 @@ import {
 } from '@mui/material'
 import type {
   XDriveApi, XDriveViewerQualityPreferenceResponse,
-  XDriveAdminViewerQualityResponse,
+  XDriveAdminViewerQualityResponse, XDriveViewerCacheStatus,
 } from './api'
 import { ApiError } from './api'
 import {
@@ -32,8 +32,10 @@ function checkedAccount(value: XDriveViewerQualityPreferenceResponse) {
 
 function checkedAdmin(value: XDriveAdminViewerQualityResponse) {
   if (!validRevision(value.revision)) throw new Error('invalid Viewer admin revision')
-  if (!XDRIVE_VIEWER_QUALITY_OPTIONS.some(option => option.value === value.maximum_preset)) {
-    throw new Error('invalid Viewer maximum response')
+  if (!XDRIVE_VIEWER_QUALITY_OPTIONS.some(option => option.value === value.maximum_preset) ||
+      !Number.isSafeInteger(value.cache_budget_bytes) ||
+      value.cache_budget_bytes < 1 << 20 || value.cache_budget_bytes > 1 << 40) {
+    throw new Error('invalid Viewer administrator response')
   }
   return value
 }
@@ -47,6 +49,10 @@ export default function ViewerQualitySettingsSection({
   const [requested, setRequested] = useState<XDriveViewerQualityPreset>('high')
   const [admin, setAdmin] = useState<XDriveAdminViewerQualityResponse | null>(null)
   const [maximum, setMaximum] = useState<XDriveViewerQualityPreset>('high')
+  const [budgetGiB, setBudgetGiB] = useState(10)
+  const [cacheStatus, setCacheStatus] = useState<XDriveViewerCacheStatus | null>(null)
+  const [cacheReadError, setCacheReadError] = useState(false)
+  const [confirmEviction, setConfirmEviction] = useState(false)
   const [loadFailed, setLoadFailed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
@@ -63,6 +69,9 @@ export default function ViewerQualitySettingsSection({
     setAdmin(null)
     setLoadFailed(false)
     setAdminLoadFailed(false)
+    setCacheReadError(false)
+    setCacheStatus(null)
+    setConfirmEviction(false)
     // Preserve a successful admin Save message while the effective account
     // snapshot reloads, instead of clearing it on the refresh state change.
     void api.viewerQualityPreference(controller.signal).then(value => {
@@ -77,7 +86,19 @@ export default function ViewerQualitySettingsSection({
         const checked = checkedAdmin(value)
         setAdmin(checked)
         setMaximum(checked.maximum_preset)
+        setBudgetGiB(checked.cache_budget_bytes / (1 << 30))
       }).catch(() => { if (!controller.signal.aborted) setAdminLoadFailed(true) })
+      void api.adminViewerCacheStatus(controller.signal).then(value => {
+        if (controller.signal.aborted) return
+        if (!Number.isSafeInteger(value.observed_bytes) ||
+            !Number.isSafeInteger(value.budget_bytes) ||
+            !Number.isSafeInteger(value.candidate_bytes) ||
+            !Number.isSafeInteger(value.candidate_files) ||
+            typeof value.over_budget !== 'boolean') {
+          throw new Error('invalid Viewer cache status')
+        }
+        setCacheStatus(value)
+      }).catch(() => { if (!controller.signal.aborted) setCacheReadError(true) })
     }
     return () => controller.abort()
   }, [api, open, isAdmin, refresh])
@@ -107,7 +128,8 @@ export default function ViewerQualitySettingsSection({
     setSaving(true)
     setNotice('')
     try {
-      const response = checkedAdmin(await api.saveAdminViewerQuality(admin.revision, maximum))
+      const response = checkedAdmin(await api.saveAdminViewerQuality(
+        admin.revision, maximum, Math.round(budgetGiB * (1 << 30))))
       setAdmin(response)
       setMaximum(response.maximum_preset)
       // Reload the user's effective quality and any changed cap before
@@ -122,6 +144,32 @@ export default function ViewerQualitySettingsSection({
       setSaving(false)
     }
   }
+
+  const evictCache = async () => {
+    if (!isAdmin || saving || !confirmEviction) return
+    setSaving(true)
+    setNotice('')
+    try {
+      const result = await api.adminViewerCacheEvict(false)
+      if (result.dry_run !== false ||
+          !Number.isSafeInteger(result.result?.DeletedFiles)) {
+        throw new Error('Viewer cache cleanup not confirmed')
+      }
+      setNotice('Viewer 派生缓存已清理 ' + result.result!.DeletedFiles +
+        ' 个文件；原件和 Live Photo 动态视频不受影响。')
+      setRefresh(value => value + 1)
+    } catch (error) {
+      setNotice(error instanceof ApiError && error.status === 409
+        ? '有 Viewer 正在读取图片，稍后再清理缓存。'
+        : 'Viewer 缓存清理失败，未能确认删除结果。')
+    } finally {
+      setConfirmEviction(false)
+      setSaving(false)
+    }
+  }
+  const humanBytes = (bytes: number) =>
+    Number.isSafeInteger(bytes) && bytes >= 0
+      ? (bytes / (1 << 30)).toFixed(2) + ' GiB' : '—'
 
   return (
     <Box data-xdrive-viewer-quality-settings>
@@ -175,11 +223,53 @@ export default function ViewerQualitySettingsSection({
                       </MenuItem>
                     ))}
                   </TextField>
+                  <TextField select size="small" fullWidth label="Viewer 派生缓存容量预算"
+                    value={budgetGiB} disabled={saving}
+                    onChange={event => setBudgetGiB(Number(event.target.value))}>
+                    {[1, 5, 10, 20, 50, 100].map(value => (
+                      <MenuItem key={value} value={value}>{value} GiB</MenuItem>
+                    ))}
+                  </TextField>
                   <Button variant="outlined" size="small"
-                    disabled={saving || maximum === admin.maximum_preset}
+                    disabled={saving || (maximum === admin.maximum_preset &&
+                      budgetGiB * (1 << 30) === admin.cache_budget_bytes)}
                     onClick={() => void saveAdmin()}>
-                    保存管理员上限
+                    保存管理员画质与缓存上限
                   </Button>
+                  {cacheReadError ? (
+                    <Alert severity="warning">Viewer 缓存统计不可用。</Alert>
+                  ) : cacheStatus ? (
+                    <Stack spacing={0.5}>
+                      <Typography variant="caption" color="text.secondary">
+                        已用 {humanBytes(cacheStatus.observed_bytes)}，
+                        预算 {humanBytes(cacheStatus.budget_bytes)}，
+                        可回收约 {humanBytes(cacheStatus.candidate_bytes)}
+                        （{cacheStatus.candidate_files} 个缓存版本）。
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        只清理可重新生成的 Viewer 图片缓存，不删除原件、
+                        Live Photo 动态视频或相册墙缩略图。
+                      </Typography>
+                      {!confirmEviction ? (
+                        <Button size="small" variant="outlined" disabled={saving ||
+                          cacheStatus.candidate_files === 0}
+                          onClick={() => setConfirmEviction(true)}>
+                          清理超出预算的缓存…
+                        </Button>
+                      ) : (
+                        <Stack direction="row" spacing={1}>
+                          <Button size="small" color="error" variant="outlined"
+                            disabled={saving} onClick={() => void evictCache()}>
+                            确认清理
+                          </Button>
+                          <Button size="small" disabled={saving}
+                            onClick={() => setConfirmEviction(false)}>取消</Button>
+                        </Stack>
+                      )}
+                    </Stack>
+                  ) : (
+                    <Typography variant="caption">正在读取 Viewer 缓存统计…</Typography>
+                  )}
                 </>
               ) : <Typography variant="caption">正在读取管理员画质策略…</Typography>}
             </Stack>
