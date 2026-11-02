@@ -797,6 +797,19 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                 }
                             }
                         }
+                        if nativeLiveUnavailable && currentOwnerAuthorized &&
+                            !showingLiveMotion {
+                            Button("重试原生实况配对") {
+                                guard currentOwnerAuthorized, liveResources != nil else { return }
+                                // A valid ZIP may fail Photos' first pairing.
+                                // Reuse its verified files without redownloading.
+                                nativeLivePlaybackRequest = nil
+                                nativeLiveReady = false
+                                showsStaticStill = false
+                                nativeLiveUnavailable = false
+                            }
+                            .accessibilityIdentifier("native-ios-original-live-pair-retry")
+                        }
                         Button(showingLiveMotion ? "返回静态原件" : "播放原始动态视频") {
                             guard currentOwnerAuthorized, player != nil else { return }
                             if showingLiveMotion {
