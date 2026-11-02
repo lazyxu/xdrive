@@ -160,3 +160,33 @@ test('iOS indexed still fallback coexists with L3 original export and scoped AVP
   assert.match(policy, /case \.image: return node\.size > 0/);
   assert.match(policy, /return loaded\[\(index \+ 1\)\.\.\.\]\.first\(where: canPreview\)/);
 });
+
+
+test('native Files UTF-8 preview types cover the actual Server allowlist', () => {
+  const go = read('internal/api/file_text_preview.go');
+  const goExt = go.slice(go.indexOf('var fileTextPreviewExtensions'), go.indexOf('var fileTextPreviewBasenames'));
+  const goBase = go.slice(go.indexOf('var fileTextPreviewBasenames'), go.indexOf('type fileTextPreviewDTO'));
+  const nativeExt = policy.slice(policy.indexOf('private static let texts: Set<String>'),
+    policy.indexOf('private static let textBasenames: Set<String>'));
+  const nativeBase = policy.slice(policy.indexOf('private static let textBasenames: Set<String>'),
+    policy.indexOf('private static let textDotPrefixes'));
+  const goExtensions = [...goExt.matchAll(/"(\.[a-z0-9]+)"\s*:\s*\{\}/g)].map(m => m[1].slice(1));
+  const goBasenames = [...goBase.matchAll(/"([^"]+)"\s*:\s*\{\}/g)].map(m => m[1]);
+  assert.ok(goExtensions.length >= 90 && goBasenames.length >= 25);
+  const nativeExtensions = new Set([...nativeExt.matchAll(/"([^"]+)"/g)].map(m => m[1]));
+  const nativeBasenames = new Set([...nativeBase.matchAll(/"([^"]+)"/g)].map(m => m[1]));
+  for (const ext of goExtensions) {
+    assert.ok(nativeExtensions.has(ext), 'missing Server text extension: ' + ext);
+  }
+  for (const name of goBasenames) {
+    assert.ok(nativeBasenames.has(name), 'missing Server text basename: ' + name);
+  }
+  for (const prefix of ['.env.', '.eslintrc.', '.prettierrc.', '.stylelintrc.']) {
+    assert.ok(policy.includes('"' + prefix + '"'), 'missing text dot-prefix: ' + prefix);
+  }
+  assert.match(policy, /textDotPrefixes\.contains\(where: \{ base\.hasPrefix\(\$0\) \}\)/);
+  assert.match(reader, /if kind == \.text \{/);
+  assert.ok(reader.includes('/preview/text'), 'text uses native Owner-scoped Server preview');
+  assert.match(reader, /return \.text\(preview\.text, preview\.truncated\)/);
+  assert.ok(go.includes('func (s *Server) fileTextPreview('));
+});
