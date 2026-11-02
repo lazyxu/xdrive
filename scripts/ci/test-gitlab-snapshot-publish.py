@@ -16,6 +16,7 @@ import sys
 import tempfile
 import textwrap
 import threading
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 PUBLISHER = ROOT / 'scripts/ci/gitlab-publish-release.sh'
@@ -40,6 +41,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from urllib.parse import parse_qs, urlsplit
 
 path = Path(os.environ['MOCK_STATE'])
 state = json.loads(path.read_text())
@@ -75,6 +77,7 @@ method = 'GET'
 input_file = None
 fields = {}
 endpoint = ''
+paginate = False
 i = 0
 while i < len(args):
     a = args[i]
@@ -86,6 +89,8 @@ while i < len(args):
         i+=2
     elif a in ('-f','--raw-field'):
         k,v=args[i+1].split('=',1);fields[k]=v;i+=2
+    elif a == '--paginate':
+        paginate=True;i+=1
     elif a.startswith('-'):
         fail('unexpected flag: '+a)
     else:
@@ -140,13 +145,35 @@ if endpoint == 'projects/42/releases/snapshot':
         print(json.dumps(state['release']))
         sys.exit(0)
 
-if endpoint == 'projects/42/releases/snapshot/assets/links':
+link_request = urlsplit(endpoint)
+if link_request.path == 'projects/42/releases/snapshot/assets/links':
     if method == 'GET':
-        print(json.dumps(state['release']['links']))
+        # GitLab returns newest IDs first and only 20 links by default. The
+        # old unbounded fixture hid the failure once a release had 22 assets.
+        links = sorted(state['release']['links'], key=lambda link:link['id'], reverse=True)
+        query = parse_qs(link_request.query)
+        page = int(query.get('page', ['1'])[0])
+        per_page = int(query.get('per_page', ['20'])[0])
+        while True:
+            phase = ('after' if any('sha-'+'b'*40 in link['url'] for link in links)
+                     else 'before')
+            fault = os.getenv('MOCK_LINK_PAGE_FAILURE', '')
+            if page >= 3 and fault.startswith(phase+'-'):
+                if fault.endswith('-json'):
+                    print('{invalid page JSON')
+                    sys.exit(0)
+                print('[]')
+                fail('simulated later link page failure')
+            print(json.dumps(links[(page-1)*per_page:page*per_page]))
+            if not paginate or page*per_page >= len(links):
+                break
+            page += 1
         sys.exit(0)
     if method == 'POST':
         if os.getenv('MOCK_FAIL_LINK') == fields.get('name'):
             fail('simulated link failure')
+        if any(link['name'] == fields['name'] for link in state['release']['links']):
+            fail('link name has already been taken')
         state['next_link'] += 1
         link={'id':state['next_link'], 'name':fields['name'], 'url':fields['url']}
         state['release']['links'].append(link)
@@ -238,6 +265,22 @@ def real_cli_api(tmp):
                 self.send_response(status)
                 self.send_header('Content-Type', 'application/json')
                 self.send_header('Content-Length', str(len(response)))
+                request = urlsplit(endpoint)
+                if (status == 200 and self.command == 'GET'
+                        and request.path == 'projects/42/releases/snapshot/assets/links'):
+                    query = {key:values[0] for key,values in parse_qs(request.query).items()}
+                    page = int(query.get('page', '1'))
+                    per_page = int(query.get('per_page', '20'))
+                    total = len(json.loads((tmp/'state.json').read_text())['release']['links'])
+                    self.send_header('X-Page', str(page))
+                    self.send_header('X-Per-Page', str(per_page))
+                    self.send_header('X-Total', str(total))
+                    self.send_header('X-Next-Page', str(page+1) if page*per_page < total else '')
+                    if page*per_page < total:
+                        query.update(page=str(page+1), per_page=str(per_page))
+                        next_url = (f'http://127.0.0.1:{self.server.server_port}/api/v4/'
+                                    f'{request.path}?{urlencode(query)}')
+                        self.send_header('Link', f'<{next_url}>; rel="next"')
                 self.end_headers()
                 self.wfile.write(response)
             finally:
@@ -285,7 +328,7 @@ def run(tmp, sha, **switches):
             'NO_PROXY':'127.0.0.1', 'no_proxy':'127.0.0.1',
         })
     for key in ('MOCK_FAIL_ASSET','MOCK_CORRUPT_DIGEST','MOCK_FAIL_LINK','MOCK_STALE',
-                'MOCK_FAIL_PACKAGE_READ','MOCK_INVALID_RELEASE_JSON'):
+                'MOCK_FAIL_PACKAGE_READ','MOCK_INVALID_RELEASE_JSON','MOCK_LINK_PAGE_FAILURE'):
         env.pop(key,None)
     env.update(switches)
     if api_server is not None:
@@ -420,6 +463,64 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp, Exit
     assert len(same['packages']) == 1
     assert len([e for e in same['events'] if e.startswith('upload-')]) == len(FILES)
 
+    # Historic/manual links can exceed even GitLab's maximum page size (100).
+    # Required links on later pages must retain their IDs, unrelated links must
+    # survive, and all required URLs must be verified before advancing marker.
+    paged = copy.deepcopy(new)
+    for index in range(101):
+        paged['next_link'] += 1
+        paged['release']['links'].append({
+            'id':paged['next_link'], 'name':f'legacy-{index}',
+            'url':f'https://archive.example/legacy-{index}',
+        })
+    (tmp/'state.json').write_text(json.dumps(paged))
+    paginated_update,after=run(tmp,B)
+    check('publish with required links beyond page 100',paginated_update)
+    assert [(link['id'], link['name']) for link in after['release']['links']] == [
+        (link['id'], link['name']) for link in paged['release']['links']]
+    assert all('sha-'+B in link['url'] for link in after['release']['links'][:len(FILES)])
+    assert after['release']['links'][len(FILES):] == paged['release']['links'][len(FILES):]
+    assert 'XDRIVE_RELEASE_COMMIT='+B in after['release']['description']
+    assert after['events'][-1] == 'promote-marker'
+
+    # An incomplete later page cannot become a partial link inventory. This
+    # also covers failure during final verification after links were updated:
+    # every original URL, including links outside page one, must be restored.
+    # Put all required links before the failing third page (even at page size
+    # 20), with enough legacy links to reach it even at GitLab's maximum 100.
+    # Missing-asset checks must not accidentally mask a swallowed API error.
+    fault_paged = copy.deepcopy(paged)
+    for index in range(101,201):
+        fault_paged['next_link'] += 1
+        fault_paged['release']['links'].append({
+            'id':fault_paged['next_link'], 'name':f'legacy-{index}',
+            'url':f'https://archive.example/legacy-{index}',
+        })
+    for link in fault_paged['release']['links'][:len(FILES)]:
+        fault_paged['next_link'] += 1
+        link['id'] = fault_paged['next_link']
+    for phase in ('before', 'after'):
+        for fault in ('error', 'json'):
+            (tmp/'state.json').write_text(json.dumps(fault_paged))
+            failed_page,after=run(tmp,B,MOCK_LINK_PAGE_FAILURE=f'{phase}-{fault}')
+            assert failed_page.returncode != 0, (phase,fault)
+            unchanged(fault_paged,after)
+            events = after['events'][len(fault_paged['events']):]
+            assert 'promote-marker' not in events, (phase,fault)
+            assert any(e.startswith('update-link-') for e in events) == (phase == 'after')
+
+    # Duplicate-name protection must include links from different pages.
+    duplicate = copy.deepcopy(paged)
+    duplicate['next_link'] += 1
+    duplicate['release']['links'].append({
+        **duplicate['release']['links'][0], 'id':duplicate['next_link'],
+    })
+    (tmp/'state.json').write_text(json.dumps(duplicate))
+    failed_duplicate,after=run(tmp,B)
+    assert failed_duplicate.returncode != 0
+    unchanged(duplicate,after)
+    assert 'duplicate GitLab Release links' in failed_duplicate.stderr
+
     # API failures must not disappear behind a successful JSON parser;
     # malformed API JSON must also fail before uploads or Release mutation.
     for switch in ('MOCK_FAIL_PACKAGE_READ', 'MOCK_INVALID_RELEASE_JSON'):
@@ -469,5 +570,5 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp, Exit
     assert stale.returncode != 0
     unchanged(next_state,last)
 
-print('GitLab staged rolling Release: new/replay/API-errors/fail-upload/fail-digest/fail-link/advance/stale: passed'
+print('GitLab staged rolling Release: new/replay/pagination/later-page-errors/rollback/duplicates/API-errors/fail-upload/fail-digest/fail-link/advance/stale: passed'
       + (' (real glab + loopback HTTP)' if api_server else ' (offline CLI model)'))
