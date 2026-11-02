@@ -254,6 +254,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
     @StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel()
+    @StateObject private var batchExport = XDriveIOSNativeFilesBatchExportModel()
+    @State private var showingBatchShare = false
     @State private var batchDestinationIntent: XDriveIOSNativeFilesBatchDestinationIntent?
     @State private var selecting = false
     @State private var selectedIDs = Set<UInt64>()
@@ -309,7 +311,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var canSelectPage: Bool {
         !model.loading && model.verifiedPage && activeQuery.isEmpty &&
             login.owner != nil && !model.entries.isEmpty &&
-            !batchTrash.busy && !batchTarget.busy
+            !batchTrash.busy && !batchTarget.busy &&
+            !batchExport.busy && batchExport.prepared.isEmpty
     }
 
     private var chosenItems: [XDriveIOSNativeFilesNode] {
@@ -514,7 +517,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .disabled(!canSelectPage)
                     Button("清空选择") { selectedIDs.removeAll() }
-                        .disabled(batchTrash.busy || batchTarget.busy || selectedIDs.isEmpty)
+                        .disabled(batchTrash.busy || batchTarget.busy ||
+                              batchExport.busy || !batchExport.prepared.isEmpty ||
+                              selectedIDs.isEmpty)
                     Button("已选项复制到…") {
                         openBatchDestination(.copy)
                     }
@@ -525,6 +530,41 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .disabled(!canSelectPage || selectedIDs.isEmpty)
                     .accessibilityIdentifier("native-ios-files-batch-move")
+                    Button("已选项批量下载并导出") {
+                        guard canSelectPage, let sourceParentID = parentID,
+                              selectedIDs == Set(chosenItems.map(\.id)),
+                              XDriveIOSNativeFilesBatchExportPolicy.validSelection(
+                                  chosenItems, parentID: sourceParentID
+                              ) else {
+                            batchExport.invalidSelection()
+                            return
+                        }
+                        batchExport.prepare(
+                            chosenItems, parentID: sourceParentID, login: login
+                        )
+                    }
+                    .disabled(!canSelectPage || selectedIDs.isEmpty)
+                    .accessibilityIdentifier("native-ios-files-batch-export")
+                    if batchExport.busy {
+                        ProgressView("正在顺序下载和核对文件…")
+                        Button("取消批量下载", role: .cancel) {
+                            batchExport.cancelCurrentTransfer()
+                        }
+                        .accessibilityIdentifier("native-ios-files-batch-export-cancel")
+                    }
+                    if !batchExport.prepared.isEmpty {
+                        Button("用系统分享导出 \(batchExport.prepared.count) 个文件") {
+                            showingBatchShare = true
+                        }
+                        .accessibilityIdentifier("native-ios-files-batch-export-share")
+                        Button("删除临时下载文件") {
+                            batchExport.invalidate()
+                        }
+                    }
+                    if let status = batchExport.status {
+                        Text(status).font(.footnote).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("native-ios-files-batch-export-status")
+                    }
                     Button("已选项移入回收站", role: .destructive) {
                         showingBatchTrashConfirmation = true
                     }
@@ -596,11 +636,14 @@ struct XDriveIOSNativeFilesBrowser: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(selecting ? "完成多选" : "多选") {
                     guard canSelectPage || selecting,
-                          !batchTrash.busy, !batchTarget.busy else { return }
+                          !batchTrash.busy, !batchTarget.busy,
+                          !batchExport.busy, batchExport.prepared.isEmpty
+                    else { return }
                     selecting.toggle()
                     selectedIDs.removeAll()
                 }
-                .disabled((!canSelectPage && !selecting) || batchTarget.busy)
+                .disabled((!canSelectPage && !selecting) || batchTarget.busy ||
+                          batchExport.busy || !batchExport.prepared.isEmpty)
                 .accessibilityIdentifier("native-ios-files-multi-select")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -609,6 +652,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 .disabled(model.loading || !model.verifiedPage || selecting ||
                           batchTrash.busy || batchTarget.busy ||
+                          batchExport.busy || !batchExport.prepared.isEmpty ||
                           login.owner == nil || !activeQuery.isEmpty)
                 .accessibilityIdentifier("native-ios-files-folder-actions")
             }
@@ -619,13 +663,24 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Label("刷新", systemImage: "arrow.clockwise")
                 }
                 .accessibilityIdentifier("native-ios-files-refresh")
-                .disabled(batchTrash.busy || batchTarget.busy)
+                .disabled(batchTrash.busy || batchTarget.busy ||
+                          batchExport.busy || !batchExport.prepared.isEmpty)
             }
         }
     }
 
     private var filesModals: some View {
         filesChrome
+        .sheet(isPresented: $showingBatchShare, onDismiss: {
+            batchExport.invalidate()
+            selecting = false
+            selectedIDs.removeAll()
+            reload()
+        }) {
+            XDriveIOSNativeFilesBatchShareSheet(
+                files: batchExport.prepared.map(\.fileURL)
+            )
+        }
         .sheet(item: $batchDestinationIntent) { intent in
             if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
                 XDriveIOSNativeFilesDestinationPicker(
@@ -751,6 +806,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onDisappear {
             batchTrash.invalidate()
             batchTarget.invalidate()
+            if !showingBatchShare { batchExport.invalidate() }
             batchDestinationIntent = nil
             selecting = false
             selectedIDs.removeAll()
@@ -759,6 +815,8 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onChange(of: login.owner) { _ in
             batchTrash.invalidate()
             batchTarget.invalidate()
+            batchExport.invalidate()
+            showingBatchShare = false
             batchDestinationIntent = nil
             selecting = false
             selectedIDs.removeAll()
@@ -980,6 +1038,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func reload(resetOffset: Bool = false) {
         selecting = false
         selectedIDs.removeAll()
+        batchExport.invalidate()
         batchTarget.invalidate()
         batchDestinationIntent = nil
         if resetOffset { offset = 0 }

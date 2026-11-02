@@ -38,7 +38,7 @@ private final class XDriveIOSFilesDenyDownloadRedirects: NSObject, URLSessionTas
 /// One currently verified file, one same-origin signed Server ticket.
 /// A file is only staged inside app-private, file-protected temporary storage;
 /// Save to Files is an explicit OS share action, NOT assumed on completion.
-private struct XDriveIOSNativeFilesExportReader {
+struct XDriveIOSNativeFilesExportReader {
     static let maximumTemporaryBytes: Int64 = 512 * 1_048_576
 
     let owner: XDriveNativeOwnerRoot

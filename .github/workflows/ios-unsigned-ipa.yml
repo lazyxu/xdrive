@@ -501,6 +501,18 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-files-thumbnail-slots"
           "$RUNNER_TEMP/xdrive-ios-files-thumbnail-slots"
 
+      - name: Verify native Files sequential bounded multi-file export
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesFolderNamePolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchExportPolicy.swift \
+            ios/tests/NativeFilesBatchExportPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-batch-export"
+          "$RUNNER_TEMP/xdrive-ios-files-batch-export"
+          node --test desktop/tests/ios-native-files-batch-export.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 
