@@ -6,6 +6,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+& (Join-Path $Root "scripts\ci\assert-windows-artifact-session.ps1")
 . (Join-Path $Root "scripts\ci\windows-path-normalization.ps1")
 . (Join-Path $Root "internal\update\windows_process_scope.ps1")
 $TransactionScript = Join-Path $Root "internal\update\windows_upgrade_transaction.ps1"
@@ -159,7 +160,9 @@ $installArgs = @(
     "/NORESTART",
     "/SP-",
     "/NOSTARTAGENT",
-    "/NOSTARTDESKTOP"
+    "/NOSTARTDESKTOP",
+    ('/DIR="' + $AppDir + '"'),
+    ('/LOG="' + (Join-Path $TransactionRoot "baseline-install.log") + '"')
 )
 $install = Start-Process -FilePath $Installer -ArgumentList $installArgs -PassThru
 if (-not $install.WaitForExit(180000)) {
@@ -173,7 +176,9 @@ if ($install.ExitCode -ne 0) {
 
 $Xd = Join-Path $AppDir "xd.exe"
 if (-not (Test-Path -LiteralPath $Xd)) {
-    throw "baseline xd.exe missing"
+    $baselineLog = Join-Path $TransactionRoot "baseline-install.log"
+    $tail = if (Test-Path -LiteralPath $baselineLog) { Get-Content -LiteralPath $baselineLog -Tail 40 | Out-String } else { "installer log missing: $baselineLog" }
+    throw ("baseline xd.exe missing: {0}{1}{2}" -f $Xd, [Environment]::NewLine, $tail)
 }
 $baselineVersion = (& $Xd version | Out-String).Trim()
 if ($baselineVersion -ne $TargetVersion) {

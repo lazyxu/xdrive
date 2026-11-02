@@ -564,7 +564,8 @@ test-backup-cli-windows:
   needs:
     - job: build-client-core
       artifacts: true
-  resource_group: xdrive-backup-cli-windows-smoke
+  # The CLI Agent and installer drills share a Windows session singleton.
+  resource_group: xdrive-test-windows-client-artifact
   tags:
     - windows
   script:

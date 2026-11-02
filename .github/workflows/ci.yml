@@ -1248,6 +1248,8 @@ jobs:
           bash -n scripts/ci/test-go-api-race.sh
           bash scripts/ci/test-go-api-race-shards.sh
           bash -n scripts/ci/gitlab-server-backup.sh
+          bash -n scripts/ci/run-backup-daemon-workspace.sh scripts/ci/backup-fixture-docker.sh
+          bash scripts/ci/test-backup-daemon-workspace.sh
           bash -n scripts/ci/gitlab-go-windows.sh
           bash -n scripts/ci/gitlab-package-windows-client.sh
           bash -n scripts/ci/gitlab-test-linux-artifact.sh
@@ -1286,6 +1288,7 @@ jobs:
           grep -q 'load_exact xdrive-media-worker-image xdrive/media-worker:test' .github/workflows/release.yml
           grep -q 'profiles: \["media-worker"\]' deploy/docker-compose.yml
           bash -n scripts/ci/test-media-worker-image.sh
+          bash scripts/ci/test-media-worker-apk.sh
           if grep -q 'xdrive-web-image\|xdrive/web:test\|xdrive-web:' .github/workflows/release.yml deploy/docker-compose.yml; then
             echo "runtime Web image/container must be removed after Web -> Caddy merge" >&2
             exit 1

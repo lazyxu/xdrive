@@ -10,6 +10,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $archivePath = (Resolve-Path -LiteralPath $Archive -ErrorAction Stop).Path
+& (Join-Path $PSScriptRoot 'assert-windows-artifact-session.ps1')
 $isolated = Join-Path ([System.IO.Path]::GetTempPath()) ("xdrive-backup-only-smoke-" + [guid]::NewGuid().ToString("N"))
 $originalAppData = $env:APPDATA
 $originalLocalAppData = $env:LOCALAPPDATA
@@ -106,6 +107,7 @@ finally {
         catch {
             Write-Warning "Failed stopping isolated smoke Agent PID $($agent.Id): $($_.Exception.Message)"
         }
+        finally { $agent.Dispose() }
     }
     $env:APPDATA = $originalAppData
     $env:LOCALAPPDATA = $originalLocalAppData
