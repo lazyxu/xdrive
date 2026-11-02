@@ -56,8 +56,9 @@ function harness(replies) {
     return replies.shift()
   }
   const mod = { exports: {} }
-  new Function('exports', 'module', 'require', 'fetch', 'xDriveMediaResponseBlob', compiled)(
+  new Function('exports', 'module', 'require', 'fetch', 'xDriveMediaResponseBlob', 'xDriveAssertMediaReadActive', compiled)(
     mod.exports, mod, require, fetch, progressModule.exports.xDriveMediaResponseBlob,
+    progressModule.exports.xDriveAssertMediaReadActive,
   )
   const auth = {
     session: { accessToken: 'real-owner-scoped-token', refreshToken: 'test-refresh' },
