@@ -28,6 +28,13 @@ const moduleRef = { exports: {} }
 new Function('module', 'exports', 'require', 'URL', 'Blob', transpiled.outputText)(
   moduleRef, moduleRef.exports,
   name => {
+    if (name === '../synology-live-motion') return {
+      // Gallery's Live motion and digest are exercised by the dedicated
+      // real-helper DSM tests. This source test must never download motion.
+      xDriveSynologyLoadOwnerLiveMotion: async () => {
+        throw Error('Live motion is tested by shared-synology-live-motion-viewer')
+      },
+    }
     if (name === '../synology-viewer-preview') return {
       xDriveSynologyViewerNeedsDerived: filename => /\.(livp|heic|heif|arw|cr3|dng|nef)$/i.test(filename),
       xDriveSynologyLoadViewerPreview: async (_client, selected, signal) => {
