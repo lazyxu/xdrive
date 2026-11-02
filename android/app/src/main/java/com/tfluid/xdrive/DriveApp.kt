@@ -801,8 +801,22 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             localSelected = true,
                             onLocal = {},
                             onCloud = {
-                                localPhotoMapOpen = false
-                                if (!state.galleryMapOpen) controller.openGalleryMapOverview()
+                                // Local Places can outlive the cloud Gallery's
+                                // Collections subroute. The cloud map accepts
+                                // only a Library Owner scope, so explicitly
+                                // leave Collections before opening it.
+                                val current = controller.state.value
+                                if (current.screen == Screen.GALLERY &&
+                                    current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS) {
+                                    controller.openGalleryLibrary()
+                                }
+                                if (!controller.state.value.galleryMapOpen)
+                                    controller.openGalleryMapOverview()
+                                // A blocked write/Viewer or an unsuccessful
+                                // route switch must retain the local map, not
+                                // expose an inert MAP chip or cloud placeholder.
+                                if (controller.state.value.galleryMapOpen)
+                                    localPhotoMapOpen = false
                             })
                         NativeLocalPhotoMap(
                             sessionId = state.nativeUiSessionId,
