@@ -16,7 +16,7 @@ test('native file transfers provide explicit, accessible cancel without inventin
   assert.match(panel, /if exporter\.busy \{\s*Button\("取消当前下载", role: \.cancel\)/)
   assert.match(panel, /exporter\.cancelCurrentTransfer\(\)/)
   assert.match(panel, /native-ios-files-download-cancel/)
-  assert.match(panel, /createBusy \|\| exporter\.busy \|\| uploader\.busy/)
+  assert.match(panel, /createBusy \|\| exporter\.busy \|\| folderArchive\.busy \|\| uploader\.busy/)
 })
 test('upload cancel preserves uncertain server-ack semantics instead of misreporting no write', () => {
   assert.match(upload, /func cancelCurrentTransfer\(\) \{\s*guard busy, let running else \{ return \}\s*running\.cancel\(\)/)
