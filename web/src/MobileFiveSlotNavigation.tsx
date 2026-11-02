@@ -21,10 +21,12 @@ import {
   IconButton, List, ListItemButton, ListItemIcon, ListItemText,
   Stack, TextField, Typography,
 } from '@mui/material'
+import { xDriveWorkspaceRouteTitle } from '@xdrive/ui/mui'
 import type { XDriveSidebarDestinationModel, XDriveSidebarSectionModel } from '@xdrive/ui/mui'
 import type { XDriveWebAppRoute } from '../../ui/shared/src'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { XDRIVE_WEB_APPS } from './webApps'
+import { xDriveMobileSupplementalDynamicDestinationKeys } from './mobileLauncherSections'
 
 /** Browser-local icon choices, canonical labels from existing Web descriptors.
  * Do not pull Desktop-only JSX navigation modules into the Web bundle. */
@@ -34,7 +36,8 @@ function xDriveBrowserMobileDestinationIcon(key: string): ReactNode {
     case 'gallery': return <PhotoLibraryRoundedIcon fontSize="small" />
     case 'device-backup': return <BackupRoundedIcon fontSize="small" />
     case 'remote-pull': return <CloudDownloadRoundedIcon fontSize="small" />
-    case 'transfers': return <AssignmentOutlinedIcon fontSize="small" />
+    case 'transfers':
+    case 'global-tasks': return <AssignmentOutlinedIcon fontSize="small" />
     case 'local-storage': return <StorageRoundedIcon fontSize="small" />
     case 'cloud-storage': return <CloudRoundedIcon fontSize="small" />
     case 'admin-users': return <ManageAccountsRoundedIcon fontSize="small" />
@@ -45,7 +48,7 @@ function xDriveBrowserMobileDestinationIcon(key: string): ReactNode {
 export function xDriveBrowserMobileDestinations(
   adminVerified: boolean,
 ): XDriveSidebarDestinationModel[] {
-  return Object.values(XDRIVE_WEB_APPS)
+  const destinations = Object.values(XDRIVE_WEB_APPS)
     .filter(item => item.sidebar && item.workspaceKey && item.id !== 'overview' &&
       (!item.admin || adminVerified))
     .map(item => ({
@@ -53,6 +56,17 @@ export function xDriveBrowserMobileDestinations(
       label: item.title,
       icon: xDriveBrowserMobileDestinationIcon(item.workspaceKey!),
     }))
+  // /tasks?scope=global is a real shared workspace, not another Web app ID.
+  // It must be discoverable and labelled in the dynamic tab after a verified
+  // admin opens it, while never appearing to a regular Server Owner.
+  return [
+    ...destinations,
+    ...xDriveMobileSupplementalDynamicDestinationKeys(adminVerified).map(key => ({
+      key,
+      label: xDriveWorkspaceRouteTitle(key),
+      icon: xDriveBrowserMobileDestinationIcon(key),
+    })),
+  ]
 }
 
 /** Only expose Gallery subroutes when the canonical authorized Gallery
