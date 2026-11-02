@@ -35,6 +35,7 @@ function loadProduction(relative, dependencies) {
 
 const app = loadProduction('ui/shared/src/mui/XDriveApp.tsx', {
   'react': { useLayoutEffect() {} },
+  '@mui/material/styles': { useTheme() { return { palette: { mode: 'dark' } } } },
   'react/jsx-runtime': jsxRuntime,
   './ViewerForegroundPriority': { xDriveEnterForegroundPage() {} },
   './WorkspaceShell': { XDriveWorkspaceFrame: 'WorkspaceFrame' },
@@ -79,6 +80,7 @@ test('Desktop and DSM render the same responsive shell, sidebar and default page
       'the canonical frame must stay responsive on every Host')
     assert.equal(tree.props.sidebar.type, 'WorkspaceSidebar')
     assert.equal(tree.props.sidebar.props.responsive, true)
+    assert.equal(tree.props.sidebar.props.appearance, 'dark', 'shared shell follows the active theme')
     const route = child(tree, 'RouteContent')
     assert.deepEqual(route.props.pageSx, { p: { xs: 2, md: '34px 40px 48px' } })
     assert.equal(route.props.host.platform, tree === desktop ? 'desktop' : 'synology')

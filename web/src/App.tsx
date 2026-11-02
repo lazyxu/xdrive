@@ -99,6 +99,7 @@ import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveReadWebAppBrowseSession, xDriveIsPrivateMapBrowseSessionID, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
+import { XDRIVE_WEB_NARROW_QUERY, XDRIVE_WEB_TOUCH_ONLY_QUERY, xDriveWebCompactNavigation } from './webMobileNavigationLayout'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations, xDriveBrowserMobileGalleryShortcuts } from './MobileFiveSlotNavigation'
 import { xDriveMobileLauncherSections, xDriveMobileLauncherGalleryRoute } from './mobileLauncherSections'
@@ -969,7 +970,14 @@ function FileManager({
   loginPasswordChangeRequired: boolean
   onPasswordChanged: () => void
 }) {
-  const compactWorkspace = useMediaQuery('(max-width:899.95px)')
+  const compactWidth = useMediaQuery(XDRIVE_WEB_NARROW_QUERY)
+  const touchOnly = useMediaQuery(XDRIVE_WEB_TOUCH_ONLY_QUERY)
+  const compactWorkspace = xDriveWebCompactNavigation(compactWidth, {
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    maxTouchPoints: navigator.maxTouchPoints,
+    touchOnly,
+  })
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
   const placesEmbedRequested=new URLSearchParams(window.location.search)
@@ -1624,6 +1632,17 @@ function FileManager({
   const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
   const shareDialogAdapter = useMemo(() => createWebShareDialogAdapter(api), [api])
+  const shareCenterPort = useMemo(() => ({
+    listPage: (cursor: number, limit: number, signal?: AbortSignal) => api.ownerShares(cursor, limit, signal),
+    getShareLink: async (id: number) => {
+      const { token } = await api.shareLink(id)
+      if (!token) throw new Error('分享链接不可用。')
+      return `${window.location.origin}/#/s/${token}`
+    },
+    updateShare: (id: number, input: { expires_at: string | null; access: 'read_only' | 'view_upload' }) =>
+      api.updateShare(id, input),
+    revokeShare: (id: number) => api.revokeShare(id),
+  }), [api])
 
   // P1-C1: observe the Gallery's existing successful album-list response.
   // Capture a whitelist of at most 24 labels under the currently authenticated
@@ -2421,6 +2440,7 @@ function FileManager({
   const webSidebarSections = xDriveWorkspaceHostSections({
     adminRoleVerified: profile?.role === 'admin',
     includeUtilityRoutes: false,
+    showShareCenter: true,
   })
 
   const chooseUploadForResume = (id: string) => {
@@ -2695,6 +2715,7 @@ function FileManager({
       },
       cloudStorage: cloudStorageSource,
       localStorage: localStorageSource,
+      shareCenter: shareCenterPort,
       deviceBackup: { source: deviceBackupSource, initialSourceID: deviceBackupSourceID },
       remotePull: {
         adapter: sourceManagerAdapter,
@@ -2710,7 +2731,7 @@ function FileManager({
         },
       },
     }),
-    [cloudStorageSource, localStorageSource, deviceBackupSource,
+    [cloudStorageSource, localStorageSource, shareCenterPort, deviceBackupSource,
       deviceBackupSourceID, sourceManagerAdapter, remotePullSourceID,
       isRemotePullRoute, current?.id, current?.name, remotePullTargetPath,
       handleError, launchWebApp, serverAdminVerified, taskCenter.pageProps,
@@ -2744,7 +2765,7 @@ function FileManager({
               ? (scope,target,signal,camera)=>api.mediaBaiduMapScopeHandoffIssue(
                   scope,target,signal,camera)
               : undefined}
-            mobileWebChrome
+            mobileWebChrome={placesEmbedRequested ? compactWidth : compactWorkspace}
             source={gallerySource}
             onMobileMapFocusChange={onMobileMapFocusChange}
             suspendBackgroundThumbnails={viewerActive}
@@ -2898,7 +2919,7 @@ function FileManager({
           elevation={0}
           color="inherit"
           className="web-appbar"
-          sx={{ display: { xs: 'none', md: 'flex' }, borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', pt: 'env(safe-area-inset-top)' }}
+          sx={{ display: compactWorkspace ? 'none' : 'flex', borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', pt: 'env(safe-area-inset-top)' }}
         >
         <Toolbar
             sx={{
@@ -3079,6 +3100,7 @@ function FileManager({
               <WebFileExplorer
                 api={api}
                 mobileOwnerScope={mobileOwnerScope}
+                compactNavigation={compactWorkspace}
                 suspendBackgroundThumbnails={viewerActive}
                 items={items}
                 crumbs={crumbs}
@@ -3211,7 +3233,7 @@ function FileManager({
           ) : (
             <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
           )
-        ) : appView === 'transfers' || appView === 'global-tasks' ? (
+        ) : appView === 'shares' || appView === 'transfers' || appView === 'global-tasks' ? (
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : appView === 'local-storage' || appView === 'cloud-storage' ? (
           // First two real Browser Host-backed routes in the shared page

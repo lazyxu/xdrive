@@ -15,7 +15,7 @@ const navigation = read('ui/shared/src/mui/MediaGalleryNavigation.tsx')
 
 test('Web wide and Mobile Web mount one shared Gallery page and same REST DataSource', () => {
   assert.equal((web.match(/<XDriveMediaGalleryPage\b/g) || []).length, 1)
-  assert.match(web, /mobileWebChrome\s+source=\{gallerySource\}/)
+  assert.match(web, /mobileWebChrome=\{placesEmbedRequested \? compactWidth : compactWorkspace\}\s+source=\{gallerySource\}/)
   assert.match(web, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(wide, /galleryPage:\s*\{[\s\S]*?source:\s*mediaGallerySource/)
   assert.match(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx'), /<XDriveMediaGalleryPage \{\.\.\.services.galleryPage\} \/>/)
@@ -31,7 +31,7 @@ test('Both Web widths use one VirtualCollection with identical media and Viewer 
   assert.match(page, /<MediaVirtualTimeline/)
   assert.match(page, /<XDriveMediaGalleryViewer/)
   assert.match(page, /onOpenViewer=\{onOpenViewer\s*\?/)
-  assert.match(page, /const compactGallery = useMediaQuery\([^\n]+&& mobileWebChrome/)
+  assert.match(page, /const compactGallery = mobileWebChrome/)
   assert.match(page, /firstAtLatest \? 'latest' : undefined/)
   assert.match(page, /XDriveMediaThumbnailScheduler/)
   assert.doesNotMatch(collections, /listItemRange\(|fetch\(|new XMLHttpRequest\(/)

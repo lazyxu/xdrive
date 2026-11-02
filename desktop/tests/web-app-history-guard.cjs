@@ -123,6 +123,7 @@ function createHarness() {
     (id) => id === 'react' ? react
       : id === '../../ui/shared/src' ? fakeShared
       : id === '../../ui/shared/src/mui/ViewerForegroundPriority' ? fakePriority
+      : id === './webMobileNavigationLayout' ? { xDriveWebBrowserCompactNavigation: () => false }
       : assert.fail(id), window,
   )
   return {

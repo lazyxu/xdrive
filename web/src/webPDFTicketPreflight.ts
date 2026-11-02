@@ -20,10 +20,14 @@ export async function xDrivePreflightWebPDFTicket(
   } catch {
     throw new Error('Invalid PDF preview ticket')
   }
+  let queryParameterCount = 0
+  // URLSearchParams.size is newer than forEach and is absent in older WebKit.
+  // Count entries using the long-supported iterator callback instead.
+  parsed.searchParams.forEach(() => { queryParameterCount++ })
   if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
       parsed.username || parsed.password ||
       !/^\/api\/v1\/file-preview\/[0-9]+$/.test(parsed.pathname) ||
-      parsed.searchParams.size !== 1 ||
+      queryParameterCount !== 1 ||
       !parsed.searchParams.get('ticket')) {
     throw new Error('Invalid PDF preview ticket')
   }

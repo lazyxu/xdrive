@@ -9,8 +9,51 @@ struct XDriveIOSNativeFilesNode: Decodable, Identifiable, Hashable {
     let type: String
     let size: Int64
     let revision: UInt64
+    var created_at: String? = nil
+    var updated_at: String? = nil
 
     var isDirectory: Bool { type == "dir" }
+    var createdDate: Date? {
+        guard let value = created_at else { return nil }
+        return XDriveIOSNativeFilesDatePolicy.date(from: value)
+    }
+    var modifiedDate: Date? {
+        guard let value = updated_at else { return nil }
+        return XDriveIOSNativeFilesDatePolicy.date(from: value)
+    }
+}
+
+/// Server timestamps use RFC3339Nano. ISO8601DateFormatter's whole-second
+/// parser handles ordinary timestamps; the fallback preserves up to all nine
+/// fractional digits instead of dropping dates with nanosecond precision.
+enum XDriveIOSNativeFilesDatePolicy {
+    static func date(from value: String) -> Date? {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: value) { return date }
+
+        guard let timeSeparator = value.firstIndex(of: "T"),
+              let decimal = value[timeSeparator...].firstIndex(of: "."),
+              let timezone = value[value.index(after: decimal)...].firstIndex(where: {
+                  $0 == "Z" || $0 == "+" || $0 == "-"
+              }) else { return nil }
+        let fractionDigits = value[value.index(after: decimal)..<timezone]
+        guard !fractionDigits.isEmpty,
+              fractionDigits.utf8.count <= 9,
+              fractionDigits.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }),
+              let fraction = Double("0." + String(fractionDigits)) else { return nil }
+
+        let wholeSeconds = String(value[..<decimal]) + String(value[timezone...])
+        guard let base = formatter.date(from: wholeSeconds) else { return nil }
+        return base.addingTimeInterval(fraction)
+    }
+
+    static func display(_ date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .shortened)
+    }
 }
 
 struct XDriveIOSNativeFilesRange: Decodable {

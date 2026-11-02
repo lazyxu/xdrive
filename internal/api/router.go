@@ -410,6 +410,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/nodes/:id/shares", s.listFileShares)
 	authed.POST("/files/:id/shares", s.createFileShare)
 	authed.GET("/files/:id/shares", s.listFileShares)
+	authed.GET("/shares", s.listOwnShares)
+	authed.POST("/shares/:id/link", s.copyOwnShareLink)
 	authed.DELETE("/shares/:id", s.revokeShare)
 	authed.PATCH("/shares/:id", s.updateShare)
 

@@ -66,6 +66,14 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             fromByteCount: file.size, countStyle: .file
                         ))
                         LabeledContent("版本", value: String(file.revision))
+                        if let date = file.createdDate {
+                            LabeledContent("创建时间",
+                                           value: XDriveIOSNativeFilesDatePolicy.display(date))
+                        }
+                        if let date = file.modifiedDate {
+                            LabeledContent("修改时间",
+                                           value: XDriveIOSNativeFilesDatePolicy.display(date))
+                        }
                     }
                     Section("收藏夹") {
                         Button("收藏此文件") {
@@ -167,6 +175,14 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                     Section("文件夹信息") {
                         LabeledContent("名称", value: directory.name)
                         LabeledContent("版本", value: String(directory.revision))
+                        if let date = directory.createdDate {
+                            LabeledContent("创建时间",
+                                           value: XDriveIOSNativeFilesDatePolicy.display(date))
+                        }
+                        if let date = directory.modifiedDate {
+                            LabeledContent("修改时间",
+                                           value: XDriveIOSNativeFilesDatePolicy.display(date))
+                        }
                     }
                     Section("云端分享链接") {
                         Button("管理分享链接") { shareNode = directory }

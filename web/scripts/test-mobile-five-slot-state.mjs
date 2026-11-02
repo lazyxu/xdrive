@@ -894,4 +894,80 @@ assert.match(browserRuntime, /if \(state\?\.viewerReturn\) \{\s*window\.history\
   assert.match(gallerySource, /if \(canReturnToMapEntry\) onBack\(\)\s*else onSectionChange\('library'\)/,
     'return to current Owner collection or safe Gallery library, never another tab')
 }
-console.log('mobile five-slot state: routes, Owner, Viewer, back, role, favorites and Owner-scoped search passed')
+
+// Two-level Gallery bottom navigation: real global bar geometry determines the
+// local Gallery offset, never a hardcoded 58px/44px or a second bottom:0 dock.
+{
+  const dockSource = readFileSync(resolve(
+    here, '../../ui/shared/src/mui/MobileGalleryDockLayout.ts'), 'utf8')
+  const compiledDock = ts.transpileModule(dockSource, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    reportDiagnostics: true,
+  })
+  assert.equal(compiledDock.diagnostics?.length ?? 0, 0)
+  const dock = await import('data:text/javascript;base64,' +
+    Buffer.from(compiledDock.outputText).toString('base64'))
+  assert.equal(dock.XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT, 48,
+    'upper Gallery dock is a compact 48px with accessible 44px actions')
+  const inset = dock.XDRIVE_MOBILE_GALLERY_NAV_INSET
+  assert.equal(dock.xDriveMobileGalleryDockBottom(), inset)
+  assert.equal(dock.xDriveMobileGalleryDockBottom(56),
+    'calc(' + inset + ' + 56px)')
+  for (const [viewport, tabTop] of [
+    [844, 749], // iPhone portrait: 58px tabs + border + bottom safe area
+    [375, 312], // iPhone landscape: 44px compact tabs + safe area
+    [768, 667], // iPad landscape with extra Web Host padding
+    [900, 841], // desktop narrow responsive fallback
+  ]) {
+    const insetPixels = Number.parseFloat(dock.xDriveMobileGalleryGlobalInset(
+      tabTop, viewport))
+    assert.equal(insetPixels, viewport - tabTop)
+    const upperBottom = viewport - insetPixels
+    assert.equal(upperBottom, tabTop,
+      'upper Gallery dock ends exactly at the actual global tab bar top')
+    assert.ok(upperBottom - dock.XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT > 0)
+    const timeBottom = upperBottom - (dock.XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT + 8)
+    const timeTop = timeBottom - dock.XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT
+    assert.ok(timeTop > 0 && timeBottom <= upperBottom - 56,
+      'time-scale pills remain above the local dock with an 8px gap')
+  }
+  assert.equal(dock.xDriveMobileGalleryGlobalInset(Number.NaN, 844), '0px')
+  assert.equal(dock.xDriveMobileGalleryGlobalInset(-50, 844), '844px')
+  assert.equal(dock.xDriveMobileGalleryGlobalInset(900, 844), '0px')
+
+  const chrome = readFileSync(resolve(
+    here, '../../ui/shared/src/mui/MobileGalleryChrome.tsx'), 'utf8')
+  const toolbar = readFileSync(resolve(
+    here, '../../ui/shared/src/mui/MediaGallerySelectionToolbar.tsx'), 'utf8')
+  const galleryPage = readFileSync(resolve(
+    here, '../../ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
+  assert.match(chrome, /data-xdrive-mobile-gallery-bottom/)
+  assert.match(chrome, /bottom: xDriveMobileGalleryDockBottom\(\), zIndex: 7/,
+    'Gallery local tab dock must sit immediately ABOVE global tabs')
+  assert.match(chrome,
+    /bottom: xDriveMobileGalleryDockBottom\(XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT \+ 8\)/,
+    'year/month/all pills must sit above the shortened Gallery tab dock')
+  assert.match(chrome, /minHeight: XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT/)
+  assert.match(chrome, /py: 0\.25, px: 0\.5/)
+  assert.match(chrome, /minWidth: 44, minHeight: 44, pointerEvents: 'auto'/)
+  assert.match(chrome, /minWidth: 84, minHeight: 44/,
+    'both Gallery primary tabs must remain accessible touch targets')
+  assert.match(chrome, /pointerEvents: 'none'/,
+    'transparent dock gutters must not steal global tab bar events')
+  assert.doesNotMatch(chrome, /position: 'fixed', left: 0, right: 0, bottom: 0/,
+    'old fixed bottom:0 dock conflicts with global tabs')
+  assert.match(toolbar, /const compactViewport = useMediaQuery\(.*\) \|\| mobileBottomDock/,
+    'wide tablet still uses compact selection layout')
+  assert.match(toolbar,
+    /bottom: compactViewport && mobileBottomDock \? xDriveMobileGalleryDockBottom\(\) : undefined/,
+    'selection toolbar must also clear global tabs')
+  assert.match(galleryPage, /globalNav\.getBoundingClientRect\(\)\.top, window\.innerHeight/)
+  assert.match(galleryPage, /observer\?\.observe\(globalNav\)/)
+  assert.match(galleryPage, /window\.addEventListener\('resize', updateInset\)/)
+  assert.match(galleryPage, /root\.style\.removeProperty\('--xdrive-mobile-five-slot-inset'\)/,
+    'navigation offsets must not leak into the next Gallery/Owner')
+  assert.match(galleryPage, /bottom: compactGallery\s*\?\s*xDriveMobileGalleryDockBottom\(/,
+    'floating error messages cannot obscure Gallery local controls')
+}
+
+console.log('mobile five-slot state: routes, Owner, Viewer, back, role, favorites and two-tier Gallery docks passed')

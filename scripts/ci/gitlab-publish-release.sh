@@ -186,7 +186,10 @@ on_exit() {
 }
 trap on_exit 0
 
-existing_links="$(glab_api_jq '.[] | "\(.name)\t\(.id)\t\(.url)"' "$release_endpoint/assets/links")"
+# Links are paginated (20 by default). Read every page both before mutation
+# and before promotion; a failed later page must abort, never yield a partial
+# inventory that creates duplicate names or falsely reports missing assets.
+existing_links="$(glab_api_jq '.[] | "\(.name)\t\(.id)\t\(.url)"' --paginate "$release_endpoint/assets/links")"
 for name in "$@"; do
   url="${CI_API_V4_URL%/}/$package_endpoint/$name"
   links="$(printf '%s\n' "$existing_links" | awk -F '\t' -v n="$name" '$1==n {print $0}')"
@@ -212,7 +215,7 @@ for name in "$@"; do
   fi
 done
 
-active_links="$(glab_api_jq '.[] | "\(.name)\t\(.id)\t\(.url)"' "$release_endpoint/assets/links")"
+active_links="$(glab_api_jq '.[] | "\(.name)\t\(.id)\t\(.url)"' --paginate "$release_endpoint/assets/links")"
 for name in "$@"; do
   expected_url="${CI_API_V4_URL%/}/$package_endpoint/$name"
   count="$(printf '%s\n' "$active_links" | awk -F '\t' -v n="$name" -v u="$expected_url" '$1==n && $3==u {c++} END {print c+0}')"

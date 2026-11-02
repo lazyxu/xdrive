@@ -55,8 +55,8 @@ const loadRealDesktopLegacyJPEG=(register)=>{
 const makeHost=kind=>{
   const calls=[]
   const quality=[]
-  // Load the actual production Q84 helper, not a permissive stand-in: this
-  // extracted Host callback otherwise has no module-import scope.
+  const pdfPreflightCalls=[]
+  // Execute the actual Desktop JPEG helper with its temporary metadata sink.
   const registerLegacyJPEG=loadRealDesktopLegacyJPEG((url,info)=>quality.push({url,info}))
   const callsByName=(name,nodeID)=>{calls.push([name,nodeID]);return name}
   const api={
@@ -84,8 +84,11 @@ const makeHost=kind=>{
     useCallback:callback=>callback, xDriveFileExplorerPreviewRequest:plan,
     previewStreamSupported:true, hostPort, api,
     xDriveDesktopRegisterLegacyJPEGViewerPreviewURL:registerLegacyJPEG,
+    xDrivePreflightWebPDFTicket: async (url, signal) => {
+      pdfPreflightCalls.push({ url, signal })
+    },
   })
-  return {load,calls,quality}
+  return {load,calls,quality,pdfPreflightCalls}
 }
 test('shared plan keeps HEIC/HEIF/RAW derivatives and never streams a Live ZIP as video',()=>{
   for(const name of ['photo.heic','photo.heif','photo.arw','photo.cr3','photo.dng','photo.nef']){
@@ -108,23 +111,33 @@ test('invalid or disabled FileExplorer rows never enter a Host preview',()=>{
 })
 test('real Desktop and Web preview callbacks use exactly the same read strategy',async()=>{
   for(const host of ['desktop','web']){
-    const {load,calls,quality}=makeHost(host)
+    const {load,calls,quality,pdfPreflightCalls}=makeHost(host)
+    const viewerSignal=new AbortController().signal
     for(const [filename,kind,route] of [
       ['photo.heic','image','analysis-image'],['photo.livp','live_photo','live-still'],
       ['photo.jpg','image','file-stream'],['clip.mp4','video','file-stream'],
       ['sound.m4a','audio','file-stream'],['report.pdf','pdf','file-stream'],
     ]){
-      const r=await load({...item,name:filename},kind)
+      const r=await load({...item,name:filename},kind,viewerSignal)
       assert.ok(r,host+': '+filename)
       assert.deepEqual(calls.at(-1),[route,42])
       if(host==='desktop'&&filename==='photo.heic'){
         assert.deepEqual(calls.slice(0,3),[
           ['4k-unavailable-webp',42],['4k-unavailable-jpeg',42],['analysis-image',42],
-        ],'legacy Agent must fall back after both attempted modern formats')
+        ],'legacy Agent must fall back after both modern formats')
         assert.equal(quality.length,1)
         assert.equal(quality[0].url,r)
         assert.deepEqual(quality[0].info,{format:'JPEG',quality:84,byteSize:1})
         URL.revokeObjectURL(r)
+      }
+      if(host==='web' && kind==='pdf'){
+        assert.equal(pdfPreflightCalls.length,1,'Web Files must preflight its cross-origin PDF ticket')
+        assert.deepEqual(pdfPreflightCalls[0],{
+          url:'file-stream',signal:viewerSignal,
+        },'the PDF preflight receives the signed ticket and the exact Viewer signal')
+        pdfPreflightCalls.length=0
+      }else{
+        assert.equal(pdfPreflightCalls.length,0,host+': '+filename+' must not issue a PDF preflight')
       }
     }
     const count=calls.length

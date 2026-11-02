@@ -93,3 +93,23 @@ test('Web keeps native Browser sources and PWA lifecycle while delegating storag
   assert.match(web, /xDriveSystemDependenciesNeedsExitConfirmation/)
   assert.doesNotMatch(adapter, /localBackupClient|ownerFilesPage|xdriveDesktop|backup\.cgi|fetch\s*\(/)
 })
+
+test('Share Center is routed only when the Browser Host receives its explicit Owner port', () => {
+  const cloud = { load: async () => ({ quota: {} }) }
+  const local = { load: async () => ({ browserStorage: {} }) }
+  const absent = makeHost({ cloudStorage: cloud, localStorage: local })
+  assert.equal(Object.hasOwn(absent.services, 'shareCenterPage'), false)
+  assert.equal(render(absent, 'shares').type, 'XDriveStatePanel')
+
+  const port = {
+    listPage: async () => ({ items: [], next_cursor: 0 }),
+    getShareLink: async () => 'https://example.invalid/share',
+    updateShare: async () => ({}),
+    revokeShare: async () => ({}),
+  }
+  const enabled = makeHost({ cloudStorage: cloud, localStorage: local, shareCenter: port })
+  assert.equal(enabled.services.shareCenterPage, port)
+  const page = render(enabled, 'shares')
+  assert.equal(page.type, 'XDriveShareCenterPage')
+  assert.equal(page.props.port, port)
+})
