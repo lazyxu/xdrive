@@ -31,8 +31,10 @@ test('Files retains the same independent native L3 Viewer and file-specific acti
 test('File operations require an actually verified Owner page, never an initial or failed placeholder', () => {
   assert.match(files, /@Published private\(set\) var verifiedPage = false/)
   assert.match(files, /verifiedPage = false\s*loading = false/)
-  assert.match(files, /self\?\.verifiedPage = true/)
-  assert.match(files, /self\?\.verifiedPage = false/)
+  assert.match(files, /self\.verifiedPage = true/)
+  assert.match(files, /self\.verifiedPage = false/)
+  assert.match(files, /self\.loadedIDs\.removeAll\(\)/)
+  assert.match(files, /XDriveIOSNativeFilesContinuousPolicy\.validJoin\(/)
   assert.match(files, /\.disabled\(model\.loading \|\| !model\.verifiedPage \|\|/)
   assert.match(files, /guard !model\.loading, model\.verifiedPage, selectedFile == nil,/)
 })
