@@ -259,10 +259,59 @@ class MemoryGitHub:
         self.events.append('upload:' + path.name)
 
     def publish(self, tag):
-        if set(self.files) != set(mirror.RELEASE_FILES):
+        if (tag.startswith('offline-manifest-') and set(self.files) != set(mirror.RELEASE_FILES)
+                or not tag.startswith('offline-manifest-') and len(self.files) != 1):
             raise AssertionError('incomplete release published')
         self.events.append('publish')
         self.record['draft'] = False
+
+
+class GitHubLookupTests(unittest.TestCase):
+    def setUp(self):
+        self.tag = 'offline-manifest-' + 'a' * 12
+        self.record = dict(id=7, tag_name=self.tag, target_commitish='a' * 40, draft=True, assets=[])
+
+    def responses(self, command, **kwargs):
+        if command[1:3] == ['api', 'graphql']:
+            self.assertIn('tag=' + self.tag, command)
+            release = None if self.record is None else dict(
+                databaseId=self.record['id'], tagName=self.record['tag_name'], isDraft=self.record['draft'])
+            body = dict(data=dict(repository=dict(databaseId=1382670236, release=release)))
+            return subprocess.CompletedProcess(command, 0, stdout=json.dumps(body), stderr='')
+        if command[1:3] == ['api', 'repos/lazyxu/xdrive/releases/7']:
+            return subprocess.CompletedProcess(command, 0, stdout=json.dumps(self.record), stderr='')
+        if '/releases/tags/' in command[2]:
+            # GitHub's REST tag endpoint cannot see a pending draft tag.
+            return subprocess.CompletedProcess(command, 1, stdout='', stderr='gh: Not Found (HTTP 404)')
+        raise AssertionError('Unexpected GitHub lookup: ' + repr(command))
+
+    def test_pending_draft_tag_is_resolved_to_exact_numeric_release(self):
+        with patch.object(mirror.subprocess, 'run', side_effect=self.responses):
+            self.assertEqual(mirror.GitHub().get(self.tag), self.record)
+
+    def test_only_explicit_graphql_absence_returns_missing(self):
+        self.record = None
+        with patch.object(mirror.subprocess, 'run', side_effect=self.responses):
+            self.assertIsNone(mirror.GitHub().get(self.tag))
+        for body in ({'errors': [{'message': 'Resource not accessible'}]},
+                     {'data': {'repository': None}},
+                     {'data': {'repository': {'databaseId': 1382670236}}},
+                     {'data': {'repository': {'databaseId': 1, 'release': None}}}):
+            with self.subTest(body=body), patch.object(mirror.subprocess, 'run', return_value=
+                    subprocess.CompletedProcess([], 0, stdout=json.dumps(body), stderr='')):
+                with self.assertRaises(mirror.MirrorError):
+                    mirror.GitHub().get(self.tag)
+
+    def test_disappearing_or_replaced_numeric_release_fails_closed(self):
+        for replacement in (subprocess.CompletedProcess([], 1, stdout='', stderr='gh: Not Found (HTTP 404)'),
+                            subprocess.CompletedProcess([], 0, stdout=json.dumps(dict(self.record, id=8)), stderr=''),
+                            subprocess.CompletedProcess([], 0, stdout=json.dumps(dict(self.record, tag_name='other')), stderr='')):
+            original = self.responses
+            def changed(command, **kwargs):
+                return original(command, **kwargs) if command[2] == 'graphql' else replacement
+            with self.subTest(replacement=replacement), patch.object(mirror.subprocess, 'run', side_effect=changed):
+                with self.assertRaises(mirror.MirrorError):
+                    mirror.GitHub().get(self.tag)
 
 
 class DraftRecoveryTests(unittest.TestCase):
@@ -367,6 +416,101 @@ class DraftRecoveryTests(unittest.TestCase):
         older = dict(tag_name='offline-manifest-' + 'a' * 12, draft=False, created_at='2026-11-01')
         newer = dict(tag_name='offline-manifest-' + 'b' * 12, draft=True, created_at='2026-11-02')
         self.assertEqual(mirror.previous_manifest([older, newer]), older['tag_name'])
+
+    def test_new_manifest_publishes_through_real_draft_lookup_adapter(self):
+        github = MemoryGitHub()
+        lookup = GitHubLookupTests()
+        lookup.setUp()
+        def command(args, **kwargs):
+            lookup.record = MemoryGitHub.get(github, self.tag)
+            return lookup.responses(args, **kwargs)
+        github.get = mirror.GitHub().get
+        with patch.object(mirror.subprocess, 'run', side_effect=command):
+            mirror.publish_github(self.root, self.commit, github)
+        self.assertFalse(github.record['draft'])
+        self.assertEqual(github.events[-1], 'publish')
+
+    def package_github(self, files=None, **changes):
+        self.assertTrue(callable(getattr(mirror, 'publish_packages', None)), 'Component draft recovery is missing')
+        for component in ('postgres', 'media-worker', 'ai-runtime', 'ai-models'):
+            (self.root / self.manifest['packages'][component]['filename']).unlink(missing_ok=True)
+        item = self.manifest['packages']['app']
+        record = dict(id=7, tag_name=item['release_tag'], target_commitish=self.commit, draft=True)
+        record.update(changes)
+        return MemoryGitHub(record, files), item
+
+    def test_component_complete_draft_is_published_without_reupload(self):
+        github, item = self.package_github()
+        github.files[item['filename']] = (self.root / item['filename']).read_bytes()
+        mirror.publish_packages(self.root, self.commit, github)
+        self.assertFalse(github.record['draft'])
+        self.assertEqual(github.events, ['verify', 'publish'])
+
+    def test_component_empty_draft_uploads_missing_archive_then_publishes(self):
+        github, item = self.package_github()
+        mirror.publish_packages(self.root, self.commit, github)
+        self.assertFalse(github.record['draft'])
+        self.assertEqual(github.events, ['verify', 'upload:' + item['filename'], 'publish'])
+        self.assertEqual(github.files[item['filename']], (self.root / item['filename']).read_bytes())
+
+    def test_component_creation_is_a_verified_draft_before_publication(self):
+        github, item = self.package_github()
+        github.record = None
+        mirror.publish_packages(self.root, self.commit, github)
+        self.assertEqual(github.record['target_commitish'], self.commit)
+        self.assertFalse(github.record['draft'])
+        self.assertEqual(github.events, ['verify', 'create-draft', 'upload:' + item['filename'], 'publish'])
+
+    def test_component_collision_or_wrong_target_never_mutates_release(self):
+        github, item = self.package_github()
+        content = (self.root / item['filename']).read_bytes()
+        for target, files in (('b' * 40, {}), (self.commit, {item['filename']: b'!' + content[1:]}),
+                              (self.commit, {'unrelated.bin': b'extra'})):
+            github.record['target_commitish'] = target
+            github.files = files
+            github.events = []
+            with self.assertRaises(mirror.MirrorError):
+                mirror.publish_packages(self.root, self.commit, github)
+            self.assertEqual(github.events, ['verify'])
+            self.assertTrue(github.record['draft'])
+
+    def test_component_published_archive_is_immutable_and_incomplete_release_is_refused(self):
+        github, item = self.package_github(draft=False)
+        github.files[item['filename']] = (self.root / item['filename']).read_bytes()
+        mirror.publish_packages(self.root, self.commit, github)
+        self.assertEqual(github.events, ['verify'])
+        github.files.clear()
+        with self.assertRaises(mirror.MirrorError):
+            mirror.publish_packages(self.root, self.commit, github)
+        self.assertEqual(github.events, ['verify', 'verify'])
+
+    def test_component_lost_upload_ack_retry_does_not_overwrite_archive(self):
+        github, item = self.package_github()
+        upload = github.upload
+        def lost_ack(tag, path):
+            upload(tag, path)
+            raise mirror.MirrorError('Lost upload acknowledgement')
+        github.upload = lost_ack
+        with self.assertRaises(mirror.MirrorError):
+            mirror.publish_packages(self.root, self.commit, github)
+        self.assertTrue(github.record['draft'])
+        github.upload = upload
+        mirror.publish_packages(self.root, self.commit, github)
+        self.assertFalse(github.record['draft'])
+        self.assertEqual(github.events.count('upload:' + item['filename']), 1)
+
+    def test_referenced_published_component_must_match_signed_build_commit(self):
+        github = mirror.GitHub()
+        target = self.commit
+        def release(tag):
+            item = next(x for x in self.manifest['packages'].values() if x['release_tag'] == tag)
+            return dict(id=7, tag_name=tag, target_commitish=target, draft=False,
+                        assets=[dict(name=item['filename'], size=item['size'], digest='sha256:' + item['sha256'])])
+        with patch.object(github, 'get', side_effect=release):
+            github.packages(self.manifest)
+            target = 'b' * 40
+            with self.assertRaises(mirror.MirrorError):
+                github.packages(self.manifest)
 
 
 if __name__ == '__main__':

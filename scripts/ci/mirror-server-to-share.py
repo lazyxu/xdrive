@@ -252,15 +252,41 @@ class GitHub:
         return result.stdout
 
     def get(self, tag):
-        result = subprocess.run(['gh', 'api', f'repos/{REPOSITORY}/releases/tags/{tag}'],
-                                stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
-        if result.returncode:
-            if '(HTTP 404)' in result.stderr:
-                return None
-            raise MirrorError('Cannot determine GitHub release state')
-        if len(result.stdout) > METADATA_LIMIT:
-            raise MirrorError('Excessive GitHub release metadata')
-        return json.loads(result.stdout)
+        def read(*args):
+            output = self.run(*args)
+            if len(output) > METADATA_LIMIT:
+                raise MirrorError('Excessive GitHub release metadata')
+            try:
+                value = json.loads(output)
+            except ValueError as error:
+                raise MirrorError('Malformed GitHub release metadata') from error
+            if not isinstance(value, dict) or value.get('errors'):
+                raise MirrorError('Cannot determine GitHub release state')
+            return value
+
+        # REST /releases/tags/{tag} only sees published releases. Like gh's
+        # FetchRelease, resolve pending draft tags with GraphQL, then fetch the
+        # exact numeric REST identity. Never interpret a failed request as absent.
+        query = ('query($tag:String!) { repository(owner:"lazyxu",name:"xdrive") '
+                 '{ databaseId release(tagName:$tag) { databaseId tagName isDraft } } }')
+        result = read('api', 'graphql', '-f', 'query=' + query, '-f', 'tag=' + tag)
+        data = result.get('data')
+        repository = data.get('repository') if isinstance(data, dict) else None
+        if (not isinstance(repository, dict) or type(repository.get('databaseId')) is not int or
+                repository['databaseId'] != 1382670236 or 'release' not in repository):
+            raise MirrorError('GitHub repository identity unavailable')
+        release = repository['release']
+        if release is None:
+            return None
+        if (not isinstance(release, dict) or type(release.get('databaseId')) is not int or
+                release['databaseId'] <= 0 or release.get('tagName') != tag or
+                type(release.get('isDraft')) is not bool):
+            raise MirrorError('Invalid GitHub release identity')
+        record = read('api', f"repos/{REPOSITORY}/releases/{release['databaseId']}")
+        if (record.get('id') != release['databaseId'] or record.get('tag_name') != tag or
+                record.get('draft') is not release['isDraft']):
+            raise MirrorError('GitHub release identity changed during lookup')
+        return record
 
     def download(self, tag, name, directory):
         self.run('release', 'download', tag, '--repo', REPOSITORY,
@@ -284,13 +310,13 @@ class GitHub:
             release = self.get(item['release_tag'])
             if not isinstance(release, dict) or release.get('draft') is not False:
                 raise MirrorError('Referenced package is not published')
-            matches = [a for a in release.get('assets', []) if a.get('name') == item['filename']]
-            if len(matches) != 1 or matches[0].get('size') != item['size'] or matches[0].get('digest') != 'sha256:' + item['sha256']:
-                raise MirrorError('Published package differs from signed manifest')
+            package_asset(release, item)
 
     def create(self, tag, commit, notes=''):
+        title = ('xDrive offline Manifest ' + commit[:12] if tag.startswith('offline-manifest-')
+                 else 'xDrive ' + tag)
         self.run('release', 'create', tag, '--repo', REPOSITORY, '--target', commit,
-                 '--draft', '--prerelease', '--title', 'xDrive offline Manifest ' + commit[:12],
+                 '--draft', '--prerelease', '--title', title,
                  '--notes', notes)
 
     def upload(self, tag, path):
@@ -298,6 +324,62 @@ class GitHub:
 
     def publish(self, tag):
         self.run('release', 'edit', tag, '--repo', REPOSITORY, '--draft=false')
+
+
+def package_asset(record, item):
+    if (not isinstance(record, dict) or record.get('tag_name') != item['release_tag'] or
+            record.get('target_commitish') != item['built_from_commit'] or
+            type(record.get('id')) is not int or record['id'] <= 0 or
+            type(record.get('draft')) is not bool or not isinstance(record.get('assets'), list)):
+        raise MirrorError('Package release target differs from its exact build commit')
+    assets = record['assets']
+    if not assets and record['draft']:
+        return None
+    if len(assets) != 1 or not isinstance(assets[0], dict):
+        raise MirrorError('Unexpected or missing immutable package asset')
+    asset = assets[0]
+    if (asset.get('name') != item['filename'] or type(asset.get('size')) is not int or
+            asset['size'] != item['size'] or asset.get('digest') != 'sha256:' + item['sha256']):
+        raise MirrorError('Immutable package release collision; never overwrite')
+    return asset
+
+
+def publish_packages(directory, commit, github):
+    manifest = manifest_at(directory)
+    if manifest['source_commit'] != commit or not re.fullmatch(r'[a-f0-9]{40}', commit):
+        raise MirrorError('Wrong source manifest for package publication')
+    validate_delivery(directory, manifest)
+    # The verified manifest binds every archive's digest and exact build commit.
+    github.verify(directory, directory / BUNDLE_FILES[0])
+    for component in offline.COMPONENTS:
+        item = manifest['packages'][component]
+        path = directory / item['filename']
+        if not path.exists() and not path.is_symlink():
+            continue  # Reused components are verified by publish_github.packages.
+        check_file(path, item['size'], item['sha256'])
+        if item['built_from_commit'] != commit:
+            raise MirrorError('Local new package is not built from this source commit')
+        tag = item['release_tag']
+        record = github.get(tag)
+        asset = package_asset(record, item) if record is not None else None
+        if record is not None and not record['draft']:
+            continue
+        if record is None:
+            github.create(tag, commit, f"Immutable {component}, source {commit}, SHA256 {item['sha256']}")
+            record = github.get(tag)
+            if package_asset(record, item) is not None or record['draft'] is not True:
+                raise MirrorError('New package draft identity changed')
+        if asset is None:
+            github.upload(tag, path)
+        current = github.get(tag)
+        if (package_asset(current, item) is None or current['id'] != record['id'] or
+                current['draft'] is not True):
+            raise MirrorError('Package draft changed during upload')
+        github.publish(tag)
+        published = github.get(tag)
+        if (package_asset(published, item) is None or published['id'] != record['id'] or
+                published['draft'] is not False):
+            raise MirrorError('Package publication was not confirmed')
 
 
 def release_assets(record, commit):
@@ -430,7 +512,8 @@ def resume_github(directory, commit, repository, github):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('fetch', 'publish', 'resume-github', 'publish-github', 'checksums', 'previous'))
+    parser.add_argument('command', choices=('fetch', 'publish', 'resume-github', 'publish-github',
+                                           'publish-packages', 'checksums', 'previous'))
     parser.add_argument('--directory', type=Path, default=Path('offline'))
     parser.add_argument('--commit')
     parser.add_argument('--repository', type=Path, default=HERE.parents[1])
@@ -442,11 +525,13 @@ def main():
             write_checksums(args.directory)
         elif args.command == 'previous':
             print(previous_manifest(json.loads(sys.stdin.read())))
-        elif args.command in ('resume-github', 'publish-github'):
+        elif args.command in ('resume-github', 'publish-github', 'publish-packages'):
             if not isinstance(args.commit, str) or not re.fullmatch(r'[a-f0-9]{40}', args.commit):
                 raise MirrorError('Full source commit required')
             if args.command == 'resume-github':
                 print('true' if resume_github(args.directory, args.commit, args.repository, GitHub()) else 'false')
+            elif args.command == 'publish-packages':
+                publish_packages(args.directory, args.commit, GitHub())
             else:
                 publish_github(args.directory, args.commit, GitHub())
         else:

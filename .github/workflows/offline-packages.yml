@@ -226,30 +226,17 @@ jobs:
           SHORT: ${{ steps.source.outputs.short }}
         run: |
           set -euo pipefail
-          python3 - <<'PY' > changed-assets.tsv
+          python3 - <<'PY'
           import json
           p=json.load(open("plan.json",encoding="utf-8"))
           m=json.load(open("offline/manifest.json",encoding="utf-8"))
           assert m["schema"]==2 and m["fingerprints"]==p["fingerprints"]
           assert m["contracts"]==p["contracts"]
-          for c in p["changed"]:
-              x=m["packages"][c]
-              print("\t".join(map(str,[c,x["release_tag"],x["filename"],x["sha256"],x["size"]])))
+          from pathlib import Path
+          actual={c for c,x in m["packages"].items() if (Path("offline")/x["filename"]).is_file()}
+          assert actual==set(p["changed"])
           PY
-          while IFS=$'\t' read -r component tag filename digest size; do
-            path="offline/$filename"
-            test "$(sha256sum "$path" | awk '{print $1}')" = "$digest"
-            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              remote="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
-              jq -e --arg n "$filename" --arg h "sha256:$digest" --argjson s "$size" \
-                '[.assets[]|select(.name==$n and .digest==$h and .size==$s)]|length==1' \
-                <<< "$remote" >/dev/null || { echo "immutable package collision" >&2; exit 1; }
-            else
-              gh release create "$tag" "$path" --repo "$GITHUB_REPOSITORY" \
-                --target "$CI_COMMIT" --prerelease --title "xDrive offline $component $digest" \
-                --notes "Immutable $component, source $CI_COMMIT, SHA256 $digest"
-            fi
-          done < changed-assets.tsv
+          python3 scripts/ci/mirror-server-to-share.py publish-packages --directory offline --commit "$CI_COMMIT"
           python3 scripts/ci/mirror-server-to-share.py publish-github --directory offline --commit "$CI_COMMIT"
           echo "Published offline-manifest-$SHORT; new packages: $(jq -c .changed plan.json)"
 
