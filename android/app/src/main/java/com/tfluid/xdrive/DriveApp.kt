@@ -391,6 +391,12 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         pendingRoutes.galleryTab, pendingRoutes.trash) {
         if (state.screen == Screen.GALLERY && !state.viewerReturnToFiles &&
             nativeNavigation.selected == NativeHomeTab.FILES && !pendingRoutes.trash) {
+            // The AccountMenu can enter Gallery directly, bypassing the bottom
+            // bar. Resume the previous map child instead of leaving its MAP
+            // chip pointing at a disposed Controller map.
+            if (nativeNavigation.gallerySource == NativeGallerySource.MAP &&
+                !state.galleryMapOpen && !localPhotoMapOpen)
+                pendingRoutes = pendingRoutes.copy(galleryMap = true)
             nativeNavigation = nativeNavigation.select(NativeHomeTab.GALLERY)
         } else if (state.screen == Screen.FILES &&
             nativeNavigation.selected == NativeHomeTab.GALLERY && !pendingRoutes.galleryTab) {
@@ -431,11 +437,18 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         when (tab) {
             NativeHomeTab.GALLERY -> when (state.screen) {
                 Screen.FILES -> if (state.canNavigateFiles()) {
+                    // The Gallery source is module-local memory. Controller
+                    // navigation has disposed its cloud/map reads; rebuild
+                    // only the map child on explicit return to Gallery.
+                    if (nativeNavigation.gallerySource == NativeGallerySource.MAP)
+                        pendingRoutes = pendingRoutes.copy(galleryMap = true)
                     controller.openGallery()
                     nativeNavigation = nativeNavigation.select(tab)
                 }
                 Screen.TRASH -> if (!state.trashRestoreAttempted && !state.hasActiveNativeTransfer()) {
-                    pendingRoutes = pendingRoutes.copy(galleryTab = true)
+                    pendingRoutes = pendingRoutes.copy(
+                        galleryTab = true,
+                        galleryMap = nativeNavigation.gallerySource == NativeGallerySource.MAP)
                     nativeNavigation = nativeNavigation.select(tab)
                     controller.closeTrash()
                 }
@@ -480,6 +493,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         !state.hasActiveNativeTransfer())
                 selectNativeTab(NativeHomeTab.GALLERY)
                 if (mayEnter) {
+                    // A launcher photo/album shortcut is an explicit route
+                    // override. Drop a previously pending map resume before
+                    // the new source can be rendered.
+                    if (shortcut != NativeHomeShortcut.GALLERY_MAP)
+                        pendingRoutes = pendingRoutes.afterGallerySource(next.gallerySource)
                     nativeNavigation = next
                     if (shortcut == NativeHomeShortcut.GALLERY_MAP) {
                         mapOriginSource = nativeGalleryMapReturnSource(
