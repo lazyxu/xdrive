@@ -212,3 +212,18 @@ test('actual routed Viewer must use Server handoff and deny unscope hash navigat
   assert.match(chunk,/window\.location\.assign\(/)
   assert.doesNotMatch(chunk,/window\.location\.hash\s*=\s*xDriveWebAppHash\(/)
 })
+
+test('unavailable BD-09 focus never falsely claims indexing is the only cause',()=>{
+  const viewer=fs.readFileSync(path.join(repo,'web/src/WebFileViewerApps.tsx'),'utf8')
+  const gallery=fs.readFileSync(path.join(repo,
+    'ui/shared/src/mui/MediaGallery.tsx'),'utf8')
+  // Photo focus can fail when a derived point is not yet ready OR when the
+  // signed map release/transport is unavailable. Preserve fail-closed behavior.
+  for(const source of [viewer,gallery]) {
+    assert.match(source,/focus\.kind === 'unavailable'/)
+    assert.match(source,/BD-09 索引可能尚未完成，或地图服务暂不可用/)
+    assert.doesNotMatch(source,/位置尚未完成 BD-09 索引，暂不能精确定位|BD-09 位置尚未完成索引，请稍后重试/)
+  }
+  assert.match(viewer,/xDriveResolveBaiduOwnerPhotoFocusCamera\(/)
+  assert.match(gallery,/xDriveResolveBaiduOwnerPhotoFocusCamera\(/)
+})

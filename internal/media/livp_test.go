@@ -167,6 +167,42 @@ func TestInspectLIVPRejectsOversizedArchive(t *testing.T) {
 	}
 }
 
+
+func TestExtractLIVPProjectsStillGPSForPhotoMapIndex(t *testing.T) {
+	// The automatic Owner map queue consumes MediaMetadata GPS. An .livp
+	// projects its embedded still's EXIF coordinates, never its ZIP name
+	// or motion metadata, while retaining one original container Node.
+	payload := append([]byte("Exif\x00\x00"), buildTIFFFixture()...)
+	still := []byte{0xff, 0xd8, 0xff, 0xe1}
+	var length [2]byte
+	binary.BigEndian.PutUint16(length[:], uint16(len(payload)+2))
+	still = append(still, length[:]...)
+	still = append(still, payload...)
+	still = append(still, 0xff, 0xd9)
+	archive := buildStoredLIVP(t, []livpTestEntry{
+		{Name: "still.jpg", Data: still},
+		{Name: "motion.mov", Data: buildMovieWithQuickTimeIdentifier("")},
+	}, "untrusted-container-comment")
+
+	result, err := Extract("gps-original.livp", bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != KindImage || result.ContainerKind != ContainerKindLIVP ||
+		result.MIMEType != LIVPMIMEType {
+		t.Fatalf("unexpected .livp media classification: %+v", result)
+	}
+	if result.Latitude == nil || result.Longitude == nil ||
+		*result.Latitude != 30.25 || *result.Longitude != 120.175 {
+		t.Fatalf("embedded still GPS not projected to .livp: latitude=%v longitude=%v",
+			result.Latitude, result.Longitude)
+	}
+	if result.CapturedAt == nil ||
+		result.CapturedAt.UTC().Format("2006-01-02 15:04:05") != "2026-09-30 08:15:00" {
+		t.Fatalf("embedded still capture time lost: %v", result.CapturedAt)
+	}
+}
+
 func TestExtractLIVPProjectsContainerMetadata(t *testing.T) {
 	const identifier = "7F30CDE2-530E-4372-B51C-83A9F1D613CF"
 	archive := buildStoredLIVP(t, []livpTestEntry{
