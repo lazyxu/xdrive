@@ -1,8 +1,9 @@
 name: Mirror Client Installers To xDrive Share
 
 # Pull requests only verify implementation; they NEVER see the Share secret.
-# Upload one bounded, latest-successful set daily instead of uploading every
-# master commit, which can create hundreds of CI runs per day.
+# The successful, verified master Snapshot publisher dispatches this workflow
+# after publication. A daily retry catches delayed mobile artifacts without
+# launching a second build or exposing credentials on PRs.
 on:
   pull_request:
     branches: [master]
@@ -12,6 +13,8 @@ on:
       - 'scripts/ci/test-mirror-clients-to-share.py'
       - 'scripts/ci/collect-client-share-mirror.sh'
       - 'docs/client-artifact-share-mirror.md'
+  repository_dispatch:
+    types: [xdrive_snapshot_published]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -20,7 +23,7 @@ on:
         required: true
         default: true
   schedule:
-    - cron: '37 4 * * *' # Daily, UTC; master-only and opt-in by repository variable
+    - cron: '37 4 * * *' # Daily UTC retry, not the primary publication trigger
 
 permissions:
   contents: read
@@ -46,7 +49,9 @@ jobs:
   mirror:
     if: >-
       github.ref == 'refs/heads/master' &&
-      (github.event_name == 'workflow_dispatch' || vars.XDRIVE_CLIENT_MIRROR_ENABLED == 'true')
+      (github.event_name == 'workflow_dispatch' ||
+       (vars.XDRIVE_CLIENT_MIRROR_ENABLED == 'true' &&
+        (github.event_name == 'repository_dispatch' || github.event_name == 'schedule')))
     runs-on: ubuntu-latest
     timeout-minutes: 110
     steps:
@@ -57,6 +62,16 @@ jobs:
         run: |
           python3 scripts/ci/test-mirror-clients-to-share.py -q
           bash -n scripts/ci/collect-client-share-mirror.sh
+      - name: Require separately configured private Share upload secret
+        if: github.event_name != 'workflow_dispatch' || inputs.dry_run == false
+        env:
+          UPLOAD_SHARE_URL: ${{ secrets.XDRIVE_CLIENT_MIRROR_SHARE_URL }}
+        shell: bash
+        run: |
+          if [[ -z "${UPLOAD_SHARE_URL:-}" ]]; then
+            echo "::error::Configure XDRIVE_CLIENT_MIRROR_SHARE_URL as an Actions repository secret before enabling mirror uploads."
+            exit 1
+          fi
       - name: Select and verify latest successful installers (five platforms)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -76,7 +91,7 @@ jobs:
               output.write('\nNo server images, source agents or backup tools are mirrored.\n')
           PY
       - name: Upload immutable versioned clients into Share (opt-in)
-        if: github.event_name == 'schedule' || inputs.dry_run == false
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'schedule' || inputs.dry_run == false
         env:
           # Keep complete share capability (including #/s/token) in Secret,
           # NEVER in workflow YAML, logs, artifact names or source code.
