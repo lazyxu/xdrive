@@ -682,13 +682,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         ProgressView().accessibilityLabel("正在保存云端原件到 iOS 照片")
                     } else {
                         Button {
-                            if viewed.isLive {
-                                photosRestoreNotice =
-                                    "此云端 Live Photo 尚未提供完整原件配对导入；不能把静态预览保存为实况。已校验的 iPhone Live ZIP 可从“云端备份原件”恢复。"
-                                photosRestoreNoticePresented = true
-                            } else {
-                                restorePhotoAssetOriginal()
-                            }
+                            restorePhotoAssetOriginal()
                         } label: {
                             Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
                         }
@@ -848,15 +842,19 @@ struct XDriveIOSNativeServerMediaPreview: View {
         viewed.id == selected.id &&
         viewed.node.revision == selected.node.revision &&
         viewed.node.name == selected.node.name &&
-        viewed.isVideo == selected.isVideo && !viewed.isLive &&
+        viewed.isVideo == selected.isVideo &&
+        viewed.isLive == selected.isLive &&
+        viewed.sameVisibleRevision(as: selected) &&
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
     }
 
-    /// User-initiated import of this verified cloud PhotoAsset's original
-    /// still or video. The independent L3 export does not touch backup
-    /// receipts, upload sessions, cloud Nodes, or the local PhotoKit inventory.
+    /// User-initiated import of this exact Owner PhotoAsset original.
+    /// Live sources import BOTH underlying original resources in one Photos
+    /// transaction. The verified Live transport serves current Node bytes or
+    /// indexed LIVP byte ranges, never thumbnails.
+    /// Neither pathway changes receipts, cloud Nodes or upload queues.
     private func restorePhotoAssetOriginal() {
-        guard !photosRestoreBusy, ownerAuthorized, !viewed.isLive,
+        guard !photosRestoreBusy, ownerAuthorized,
               viewed.supportsPreview, let owner = openedOwner else { return }
         let selected = viewed
         let epoch = UUID()
@@ -891,23 +889,44 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 )
-                let originalURL = try await reader.downloadOriginalForPhotos(selected)
-                defer {
-                    try? FileManager.default.removeItem(
-                        at: originalURL.deletingLastPathComponent()
-                    )
-                }
-                guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
-                else { return }
-                let kind: PHAssetResourceType = selected.isVideo ? .video : .photo
-                try await PHPhotoLibrary.shared().performChanges {
-                    let asset = PHAssetCreationRequest.forAsset()
-                    asset.addResource(with: kind, fileURL: originalURL, options: nil)
+                if selected.isLive {
+                    // The reader rechecks exact Owner/Node/resource identity
+                    // before AND after the paired original streams.
+                    let verified = try await reader.livePreview(selected)
+                    defer { verified.files.discard() }
+                    try Task.checkCancellation()
+                    guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
+                    else { return }
+                    try await PHPhotoLibrary.shared().performChanges {
+                        let asset = PHAssetCreationRequest.forAsset()
+                        asset.addResource(
+                            with: .photo, fileURL: verified.files.stillURL, options: nil
+                        )
+                        asset.addResource(
+                            with: .pairedVideo, fileURL: verified.files.motionURL, options: nil
+                        )
+                    }
+                } else {
+                    let originalURL = try await reader.downloadOriginalForPhotos(selected)
+                    defer {
+                        try? FileManager.default.removeItem(
+                            at: originalURL.deletingLastPathComponent()
+                        )
+                    }
+                    guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
+                    else { return }
+                    let kind: PHAssetResourceType = selected.isVideo ? .video : .photo
+                    try await PHPhotoLibrary.shared().performChanges {
+                        let asset = PHAssetCreationRequest.forAsset()
+                        asset.addResource(with: kind, fileURL: originalURL, options: nil)
+                    }
                 }
                 try Task.checkCancellation()
                 guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
                 else { return }
-                photosRestoreNotice = "已将云端原件添加到 iOS 照片，原云端照片保持不变。"
+                photosRestoreNotice = selected.isLive ?
+                    "已将云端 Live 原始照片与配对视频添加到 iOS 照片，原云端媒体保持不变。" :
+                    "已将云端原件添加到 iOS 照片，原云端照片保持不变。"
                 photosRestoreNoticePresented = true
             } catch is CancellationError {
                 // A retired Viewer/Owner/scene discards the temporary original.
