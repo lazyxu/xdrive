@@ -63,7 +63,7 @@ test('Web Gallery, FileExplorer and Quick Look fetch authenticated 1280px JPEG r
   assert.ok(api.includes('?revision=${revision}'), 'browser cache must be source-revision keyed')
 })
 
-test('Desktop Gallery and FileExplorer use the same request-scoped Agent analysis JPEG endpoint', () => {
+test('Desktop Gallery and FileExplorer use typed 4K preview and request-scoped legacy JPEG fallback', () => {
   const agent = source('cmd/xdrive-agent/desktop_ipc.go')
   const go = source('cmd/xdrive-agent/cloud_files.go')
   const main = source('desktop/src/main/index.cts')
@@ -81,7 +81,16 @@ test('Desktop Gallery and FileExplorer use the same request-scoped Agent analysi
     assert.ok(component.includes('getMediaAnalysisPreview('))
   }
   assert.ok(desktop.includes('hostPort.requestViewport('), 'Files must preserve Owner-scoped viewport cancellation')
-  assert.ok(desktop.includes('hostPort.media.getMediaAnalysisPreview('), 'Files analysis preview must remain a typed media capability')
+  assert.ok(desktop.includes('const agent = hostPort.media'),
+    'Files must capture the typed Owner media Host port before asynchronous preview and cleanup')
+  assert.ok(desktop.includes('agent.getMediaViewerPreview('),
+    'Files 4K WebP/JPEG requests must use the typed media Host port, never global Electron IPC')
+  assert.ok(desktop.includes('agent.getMediaAnalysisPreview('),
+    'Files legacy JPEG fallback must use the same typed media Host port')
+  assert.ok(gallery.includes('agent.getMediaViewerPreview('),
+    'Gallery 4K bridge must use the typed authenticated media Agent API')
+  assert.ok(desktop.includes("for (const format of ['webp', 'jpeg'] as const)"))
+  assert.ok(gallery.includes("for (const format of ['webp', 'jpeg'] as const)"))
   assert.ok(gallery.includes('xDriveDesktopViewportRequest('), 'Gallery retains its native cancellable IPC')
   const original = source('internal/api/file_preview.go')
   assert.equal(original.includes('".dng"'), false, 'RAW original preview-ticket allowlist must remain closed')
