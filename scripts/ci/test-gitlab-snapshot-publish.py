@@ -208,8 +208,11 @@ def real_cli_api(tmp):
             try:
                 if '/packages/generic/' in endpoint:
                     assert self.headers.get_content_type() == 'application/octet-stream'
-                    upload = tmp/'request-upload'
-                    upload.write_bytes(body)
+                    # The next HTTP request can start before this handler's
+                    # finally block runs. Never share its upload path.
+                    with tempfile.NamedTemporaryFile(dir=tmp, prefix='request-upload-', delete=False) as request:
+                        upload = Path(request.name)
+                        request.write(body)
                     args += ['--input', str(upload)]
                 elif body:
                     fields = json.loads(body)
