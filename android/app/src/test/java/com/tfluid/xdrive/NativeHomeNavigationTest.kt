@@ -81,6 +81,24 @@ class NativeHomeNavigationTest {
                 NativeGallerySource.MAP))
     }
 
+    @Test fun cloudMapL2MayRestoreFiveSlotsWithoutExposingLocalViewer() {
+        assertTrue(nativeGalleryMapHidesBottomBar(
+            NativeHomeTab.GALLERY, cloudMapOpen = true,
+            localMapOpen = false, cloudFocused = true))
+        assertFalse(nativeGalleryMapHidesBottomBar(
+            NativeHomeTab.GALLERY, cloudMapOpen = true,
+            localMapOpen = false, cloudFocused = false))
+        assertTrue(nativeGalleryMapHidesBottomBar(
+            NativeHomeTab.GALLERY, cloudMapOpen = false,
+            localMapOpen = true, cloudFocused = false))
+        assertFalse(nativeGalleryMapHidesBottomBar(
+            NativeHomeTab.FILES, cloudMapOpen = true,
+            localMapOpen = false, cloudFocused = true))
+        assertFalse(nativeGalleryMapHidesBottomBar(
+            NativeHomeTab.GALLERY, cloudMapOpen = false,
+            localMapOpen = false, cloudFocused = true))
+    }
+
     @Test fun localGalleryMapUsesItsActualSourceBeforeCloudFallback() {
         assertTrue(nativeGalleryMapStartsLocal(NativeGallerySource.LOCAL))
         assertTrue(nativeGalleryMapStartsLocal(NativeGallerySource.ALBUMS))

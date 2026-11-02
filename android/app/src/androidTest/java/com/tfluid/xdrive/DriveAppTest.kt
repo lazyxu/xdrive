@@ -2826,6 +2826,48 @@ class DriveAppTest {
         }
     }
 
+    @Test fun cloudPlacesL2RestoresNativeFiveSlotsWithoutClosingMap() {
+        galleryGpsOverviewFixture = true
+        startAndLogin(galleryFirstOnLogin = false)
+        compose.onNodeWithTag("native-tab-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("native-gallery-source-map").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapOpen &&
+                controller.state.value.galleryMapLoaded
+        }
+        compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
+        compose.onNodeWithTag("native-gallery-map-chrome-toggle")
+            .assertIsDisplayed().performClick()
+        compose.onNodeWithTag("native-five-slot-bar").assertIsDisplayed()
+        compose.onNodeWithTag("native-tab-gallery").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(controller.state.value.galleryMapOpen)
+        }
+        compose.onNodeWithTag("native-gallery-map-chrome-toggle").performClick()
+        compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
+        compose.onNodeWithTag("gallery-map-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                !controller.state.value.galleryMapOpen
+        }
+        compose.onNodeWithTag("native-five-slot-bar").assertIsDisplayed()
+    }
+
+    @Test fun localPlacesStillHidesTabsOverItsFullscreenViewer() {
+        startAndLogin(galleryFirstOnLogin = true)
+        compose.onNodeWithTag("native-gallery-source-map").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("native-photo-map-sources")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
+        compose.onNodeWithTag("native-gallery-map-chrome-toggle").assertDoesNotExist()
+    }
+
     @Test fun cloudMoreMapAfterLocalMapHistoryReturnsToCloudForBothExitActions() {
         galleryGpsOverviewFixture = true
         startAndLogin(galleryFirstOnLogin = true)
