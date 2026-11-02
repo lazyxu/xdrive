@@ -23,6 +23,7 @@ const inspection = `
     previewPositionLabel: typeof previewPositionLabel === 'string' ? previewPositionLabel : '',
     thumbnailOnlyPreview: typeof thumbnailOnlyPreview === 'boolean' ? thumbnailOnlyPreview : false,
     ownerDerivedPreview: typeof ownerDerivedPreview === 'boolean' ? ownerDerivedPreview : false,
+    loadOwnerLivePhotoMotion: typeof loadOwnerLivePhotoMotion === 'function' ? loadOwnerLivePhotoMotion : null,
     quickLookPreviewURLLoader: typeof quickLookPreviewURLLoader === 'function'
       ? quickLookPreviewURLLoader : null,
     previewActions: typeof previewActions === 'object' ? previewActions : [],
@@ -68,7 +69,7 @@ const rows = [node(2, 'a.txt', 1), node(3, 'folder', 0, 'dir'),
 const same = (a, b) => a?.length === b?.length && a.every((value, i) => Object.is(value, b[i]))
 
 async function mount(extraRows = []) {
-  const slots = [], requests = [], viewerLoads = [], revoked = [], timers = [], listeners = new Map()
+  const slots = [], requests = [], viewerLoads = [], motionLoads = [], revoked = [], timers = [], listeners = new Map()
   let cursor = 0, dirty = true, snapshot, pending = [], urlSequence = 0
   const hooks = {
     useState(initial) {
@@ -154,6 +155,18 @@ async function mount(extraRows = []) {
     xDriveSynologyLoadOwnerThumbnail: () => { throw Error('Controller must not preload media') },
     xDriveSynologyLoadBoundedMediaPreview: () => { throw Error('Controller must not preload originals') },
     xDriveSynologyLoadNativeMediaStream: () => { throw Error('Controller must not preload a player') },
+    xDriveSynologyLoadOwnerLiveMotion(actualClient, id, revision, isCurrent, signal, onProgress) {
+      assert.strictEqual(actualClient, currentClient)
+      const attempt = { id, revision, isCurrent, signal, finish: null }
+      motionLoads.push(attempt)
+      return new Promise(resolve => {
+        attempt.finish = (url = 'blob:verified-motion') => {
+          if (signal?.aborted || !isCurrent()) { resolve(null); return }
+          onProgress?.(8, 8, null)
+          resolve(url)
+        }
+      })
+    },
     xDriveSynologyLoadViewerPreview(_client, item, signal) {
       viewerLoads.push({ item, signal })
       return Promise.resolve('blob:verified-4k')
@@ -185,7 +198,7 @@ async function mount(extraRows = []) {
     assert.equal(dirty, false, 'controller must settle')
   }
   await flush()
-  return { get state() { return snapshot }, flush, requests, viewerLoads, revoked, timers,
+  return { get state() { return snapshot }, flush, requests, viewerLoads, motionLoads, revoked, timers,
     replaceClient() { currentClient = { ...client }; dirty = true; render() },
     unmount() { for (const slot of slots) slot?.cleanup?.() } }
 }
@@ -311,6 +324,57 @@ test('DSM large PDF opens the same shared Viewer without broadening download lim
   assert.equal(app.state.previewActions[0].disabled, true)
   app.state.movePreview(-1); await app.flush()
   assert.notEqual(app.state.previewItem?.id, 9)
+  app.unmount()
+})
+
+test('DSM Files LIVP opens the common on-hold motion reader with a current Owner/revision fence', async () => {
+  const quickLook = read('ui/shared/src/mui/FileQuickLookDialog.tsx')
+  assert.match(page, /loadLivePhotoMotion=\{previewItem\?\.kind === 'file'/)
+  assert.match(quickLook, /loadLivePhotoMotion=\{loadLivePhotoMotion\}/)
+  const app = await mount([node(13, 'live.livp', 1024), node(14, 'video.mp4', 2048)])
+  const livp = app.state.displayedItems.find(item => item.id === 13)
+  assert.ok(livp)
+  assert.equal(await app.state.loadOwnerLivePhotoMotion(livp), null,
+    'an unopened LIVP cannot start motion')
+  assert.equal(app.motionLoads.length, 0)
+  app.state.openFilePreview(livp); await app.flush()
+  assert.strictEqual(app.state.previewItem, livp)
+  assert.equal(app.motionLoads.length, 0, 'opening Viewer must not preload motion')
+  const controller = new AbortController()
+  const progress = []
+  const first = app.state.loadOwnerLivePhotoMotion(livp, (...args) => progress.push(args), controller.signal)
+  assert.equal(app.motionLoads.length, 1)
+  assert.deepEqual([app.motionLoads[0].id, app.motionLoads[0].revision], [13,7])
+  assert.strictEqual(app.motionLoads[0].signal, controller.signal)
+  assert.equal(app.motionLoads[0].isCurrent(), true)
+  app.motionLoads[0].finish()
+  assert.equal(await first, 'blob:verified-motion')
+  assert.deepEqual(progress, [[8,8,null]])
+  assert.equal(await app.state.loadOwnerLivePhotoMotion({ ...livp, name: 'forged.livp' }), null)
+  assert.equal(await app.state.loadOwnerLivePhotoMotion({ ...livp, name: 'video.mp4' }), null)
+  assert.equal(app.motionLoads.length, 1, 'a forged row must not request motion')
+
+  const obsolete = app.state.loadOwnerLivePhotoMotion(livp)
+  assert.equal(app.motionLoads.length, 2)
+  app.state.movePreview(-1); await app.flush()
+  assert.notEqual(app.state.previewItem?.id, livp.id)
+  assert.equal(app.motionLoads[1].isCurrent(), false, 'switching files retires old hold')
+  app.motionLoads[1].finish()
+  assert.equal(await obsolete, null, 'stale motion cannot publish a Blob')
+  assert.equal(await app.state.loadOwnerLivePhotoMotion(livp), null,
+    'old callback cannot restart a nonselected LIVP')
+
+  app.state.openFilePreview(livp); await app.flush()
+  const cancelled = new AbortController()
+  const pending = app.state.loadOwnerLivePhotoMotion(livp, undefined, cancelled.signal)
+  assert.equal(app.motionLoads.length, 3)
+  cancelled.abort()
+  app.motionLoads[2].finish()
+  assert.equal(await pending, null)
+  app.state.refreshAuthenticatedOwner(); await app.flush()
+  assert.equal(await app.state.loadOwnerLivePhotoMotion(livp), null,
+    'a root refresh must revoke old Viewer motion selection')
+  assert.equal(app.motionLoads.length, 3)
   app.unmount()
 })
 

@@ -20,9 +20,25 @@ const urls = {
   createObjectURL: blob => { published.push(blob); return 'blob:dsm-motion-' + published.length },
   revokeObjectURL: url => revoked.push(url),
 }
+// Execute the production DSM motion reader, not a mocked duplicate digest.
+const liveReaderPath = 'ui/shared/src/synology-live-motion.ts'
+const liveReader = ts.transpileModule(fs.readFileSync(path.join(root, liveReaderPath), 'utf8'), {
+  fileName: liveReaderPath, reportDiagnostics: true,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+})
+assert.equal(liveReader.diagnostics?.filter(d=>d.category===ts.DiagnosticCategory.Error).length ?? 0, 0)
+const liveReaderModule = { exports: {} }
+new Function('module','exports','require','URL','Blob',liveReader.outputText)(
+  liveReaderModule, liveReaderModule.exports,
+  name => {
+    assert.equal(name, './synology-backup-adapter')
+    return { XDRIVE_SYNOLOGY_OWNER_LIVE_MOTION_MAX_BYTES: 4 << 20 }
+  }, urls, Blob,
+)
 new Function('module','exports','require','URL','Blob',diagnostics.outputText)(
   moduleRef,moduleRef.exports,
   name => {
+    if (name === '../synology-live-motion') return liveReaderModule.exports
     if (name === '../synology-viewer-preview') return {
       xDriveSynologyViewerNeedsDerived: filename => /\.(livp|heic|heif)$/i.test(filename),
       xDriveSynologyLoadViewerPreview: async () => {
@@ -113,4 +129,38 @@ test('DSM Live Photo shares original react player and requires no DSM component'
   assert.match(host,/createXDriveSynologyOwnerGallerySource\(local\)/)
   assert.match(source,/loadLivePhotoMotion: async/)
   assert.doesNotMatch(source,/window\.xdriveDesktop|ipcRenderer|fetch\(|\.livp.?content/)
+})
+
+test('DSM Live Photo common reader rejects forged size, unsupported MIME and abandoned Owner',async()=>{
+  const load = liveReaderModule.exports.xDriveSynologyLoadOwnerLiveMotion
+  const before = published.length
+  let calls = 0
+  const good = {
+    nodeID:42,revision:7,mimeType:'video/mp4',size:payload.length,
+    sha256:digest,data:payload,
+  }
+  const client = {
+    ownerLivePhotoMotion: async()=>{ calls++; return good },
+  }
+  assert.equal(await load(client,42,7,()=>false),null)
+  assert.equal(calls,0,'no authenticated Owner selection must not fetch bytes')
+  assert.equal(await load(client,42,7,()=>true,AbortSignal.abort()),null)
+  assert.equal(calls,0,'cancelled hold must not contact Agent')
+  for(const bad of [
+    {...good,nodeID:43}, {...good,revision:8},
+    {...good,mimeType:'text/html'}, {...good,size:5<<20},
+    {...good,sha256:'0'.repeat(64)}, {...good,data:new Uint8Array([1,2])},
+  ]){
+    client.ownerLivePhotoMotion=async()=>bad
+    assert.equal(await load(client,42,7,()=>true),null)
+    assert.equal(published.length,before,'untrusted motion published an object URL')
+  }
+  let settle
+  client.ownerLivePhotoMotion=()=>new Promise(resolve=>{ settle=resolve })
+  let current=true
+  const pending = load(client,42,7,()=>current)
+  current=false
+  settle(good)
+  assert.equal(await pending,null)
+  assert.equal(published.length,before,'stale Owner motion published during transition')
 })
