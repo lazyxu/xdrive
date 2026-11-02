@@ -3,6 +3,7 @@ import Foundation
 enum XDriveManualDocumentStageError: Error {
     case notAnAccessibleFile
     case tooLarge
+    case insufficientDiskSpace
     case invalidName
 }
 
@@ -20,9 +21,9 @@ struct XDriveStagedManualDocument {
 }
 
 enum XDriveManualDocumentStager {
-    // First manual iOS upload is deliberately small; later large/background
-    // transfers require a durable Owner transfer task and disk quota checks.
-    static let maxFirstFileBytes: Int64 = 128 * 1_048_576
+    // Foreground-only, one complete private staging copy at a time.
+    // A durable resumable/background transfer is a separate later feature.
+    static let maxFirstFileBytes: Int64 = XDriveIOSNativeFilesUploadBatchPolicy.maximumStagedFileBytes
 
     static func stage(_ pickedURL: URL) async throws -> XDriveStagedManualDocument {
         try await Task.detached(priority: .userInitiated) {
@@ -46,6 +47,18 @@ enum XDriveManualDocumentStager {
             }
             guard originalSize.int64Value <= maxFirstFileBytes else {
                 throw XDriveManualDocumentStageError.tooLarge
+            }
+            // The File Provider may live on another filesystem and APFS copy
+            // may allocate the full size. Reject before making an incomplete
+            // temporary original, leaving a fixed free-space reserve.
+            let filesystem = try? fm.attributesOfFileSystem(
+                forPath: fm.temporaryDirectory.path
+            )
+            let freeBytes = (filesystem?[.systemFreeSize] as? NSNumber)?.int64Value
+            guard XDriveIOSNativeFilesUploadBatchPolicy.mayStage(
+                bytes: originalSize.int64Value, freeDiskBytes: freeBytes
+            ) else {
+                throw XDriveManualDocumentStageError.insufficientDiskSpace
             }
             try Task.checkCancellation()
 
