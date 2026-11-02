@@ -143,6 +143,13 @@ fireTimers()
 dynamic.props.onPointerUp(pointer(2))
 assert.deepEqual(recentUpdates, [])
 assert.deepEqual(navigations, ['dynamic'])
+// A browser can still emit a compatibility click after a cancelled pan.
+// Do not accidentally switch to the most recent dynamic feature.
+const panClick = click()
+dynamic.props.onClick(panClick)
+assert.equal(panClick.prevented, true, 'cancelled pan release cannot activate the tab')
+assert.equal(panClick.stopped, true, 'cancelled pan release does not bubble')
+assert.deepEqual(navigations, ['dynamic'], 'a pan must never become a dynamic-tab tap')
 
 // A still hold opens the picker, and its compatibility release click cannot navigate.
 dynamic.props.onPointerDown(pointer(3))

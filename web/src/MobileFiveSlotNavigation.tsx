@@ -148,7 +148,12 @@ export function XDriveMobileFiveSlotNavigation({
     // The same threshold as Files/Gallery: panning wins over hold.
     if (xDriveMobileItemMoved(activePointer.current.origin, {
       x: event.clientX, y: event.clientY,
-    })) cancelLongPress()
+    })) {
+      // A pan wins over the hold even if Safari emits a compatibility click
+      // when the pointer is released back over the same bottom tab.
+      suppressReleaseClick.current = true
+      cancelLongPress()
+    }
   }
   const finishLongPress = (event: ReactPointerEvent<HTMLElement>) => {
     if (activePointer.current?.id !== event.pointerId) return
