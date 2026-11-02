@@ -1,0 +1,155 @@
+name: Publish Five Offline Server Packages
+
+# Deliberately operator-triggered: full AI models are hundreds of megabytes.
+# Normal master CI/snapshot publishing remains unchanged; an operator selects
+# a completed, successful master CI run when an immutable offline release is needed.
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: "Completed successful master CI run ID whose exact images will be packaged"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: offline-packages-${{ inputs.ci_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate exact successful master CI run before executing source
+        id: identify
+        shell: bash
+        env:
+          RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo "invalid run ID" >&2; exit 1; }
+          record="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID")"
+          jq -e '.name == "CI" and .event == "push" and .head_branch == "master" and
+                 .status == "completed" and .conclusion == "success"' <<< "$record" >/dev/null
+          commit="$(jq -r '.head_sha' <<< "$record")"
+          [[ "$commit" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "short=${commit:0:12}" >> "$GITHUB_OUTPUT"
+          echo "Exact approved master CI commit: $commit"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.identify.outputs.commit }}
+          fetch-depth: 0
+
+      - name: Confirm approved commit belongs to canonical master history
+        shell: bash
+        env:
+          CI_COMMIT: ${{ steps.identify.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CI_COMMIT"
+          git fetch --no-tags origin '+refs/heads/master:refs/remotes/origin/master'
+          git merge-base --is-ancestor "$CI_COMMIT" refs/remotes/origin/master
+          python3 -m unittest discover -s scripts/offline -p 'test_*.py'
+          bash -n scripts/offline/build-five-packages.sh
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-server-image
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: ci-assets/server-image
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-caddy-image
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: ci-assets/caddy-image
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-media-worker-image
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: ci-assets/media-worker-image
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-photo-face-image
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: ci-assets/photo-face-image
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-deploy
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: ci-assets/server-deploy
+
+      - name: Build and fully verify exactly five offline packages
+        shell: bash
+        env:
+          XDRIVE_OFFLINE_COMMIT: ${{ steps.identify.outputs.commit }}
+          XDRIVE_OFFLINE_CHANNEL: master
+          XDRIVE_OFFLINE_SOURCE: github
+          XDRIVE_OFFLINE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          bash scripts/offline/build-five-packages.sh ci-assets offline
+          cp scripts/offline/xdrive_offline.py offline/xdrive-offline.py
+          (cd offline && sha256sum xdrive-offline.py >> SHA256SUMS.txt)
+          test "$(find offline -maxdepth 1 -name 'xdrive-*.tar.gz' -type f | wc -l)" = 5
+
+      - name: Attest SHA-256 manifest and all five package archives
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            offline/manifest.json
+            offline/*.tar.gz
+
+      - name: Verify publisher identity before exposing executable installers
+        shell: bash
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          test -s "$ATTESTATION_BUNDLE"
+          cp "$ATTESTATION_BUNDLE" offline/xdrive-offline-attestation.json
+          gh attestation verify offline/manifest.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --bundle "$ATTESTATION_BUNDLE" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/offline-packages.yml" \
+            --source-ref refs/heads/master \
+            --deny-self-hosted-runners
+
+      - name: Publish immutable separately versioned offline release
+        shell: bash
+        env:
+          CI_COMMIT: ${{ steps.identify.outputs.commit }}
+          SHORT: ${{ steps.identify.outputs.short }}
+        run: |
+          set -euo pipefail
+          tag="offline-$SHORT"
+          manifest_sha="$(sha256sum offline/manifest.json | cut -d' ' -f1)"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Offline release already exists; immutable assets will not be overwritten." >&2
+            exit 1
+          fi
+          notes="$(printf 'xDrive verified five-package Linux AMD64 offline distribution.\nSource Commit: %s\nTrusted manifest SHA-256: %s\nCI run: %s\n\nVerify the release provenance and copy this manifest SHA-256 through a trusted independent channel before executing the offline installer.' "$CI_COMMIT" "$manifest_sha" '${{ inputs.ci_run_id }}')"
+          gh release create "$tag" offline/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$CI_COMMIT" \
+            --prerelease \
+            --title "xDrive five-package offline $SHORT" \
+            --notes "$notes"
+          echo "Published offline release $tag"
+          echo "Trusted manifest SHA-256: $manifest_sha"

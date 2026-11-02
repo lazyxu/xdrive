@@ -25,6 +25,22 @@ WORKDIR /opt/xdrive-photo-face-runtime
 COPY requirements.txt ./requirements.txt
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
+
+# Model-free, reusable offline runtime. The separate, checksum-verified
+# AI Models package is layered onto this image without network access.
+# Keep the online final stage unchanged for existing CI/registry delivery.
+FROM dependencies AS offline-runtime
+ARG XDRIVE_RUNTIME_VERSION=offline
+LABEL io.github.lazyxu.xdrive.offline.runtime-version="$XDRIVE_RUNTIME_VERSION"
+WORKDIR /app
+COPY analyzer.py creative.py /app/
+COPY THIRD_PARTY.md /app/THIRD_PARTY.md
+RUN mkdir -p /run/xdrive-photo-face \
+    && chown 65532:65532 /run/xdrive-photo-face \
+    && chmod 0770 /run/xdrive-photo-face
+USER 65532:65532
+ENTRYPOINT ["python", "/app/analyzer.py"]
+
 FROM dependencies AS runtime
 
 ARG XDRIVE_RUNTIME_CONTRACT_HASH=unknown

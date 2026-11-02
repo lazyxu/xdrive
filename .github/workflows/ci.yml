@@ -1172,6 +1172,8 @@ jobs:
           python3 -m unittest discover -s scripts/ci -p 'test_backup_restore_drill_evidence.py'
           bash -n scripts/test-server-backup-restore.sh
           bash -n scripts/test-server-chunk-storage.sh
+          bash -n scripts/offline/build-five-packages.sh
+          python3 -m unittest discover -s scripts/offline -p 'test_*.py'
           bash -n scripts/test-server-installer-bootstrap.sh
           bash scripts/test-server-installer-bootstrap.sh
           bash -n scripts/test-server-installer-transaction.sh

@@ -30,6 +30,10 @@ REPOSITORY="${XD_GITHUB_REPOSITORY:-lazyxu/xdrive}"
 GITLAB_BASE_URL="${XD_GITLAB_BASE_URL:-http://gitlab.t-fluid.com:1080}"
 GITLAB_PROJECT="${XD_GITLAB_PROJECT:-xuliang/xdrive}"
 IMAGE_REGISTRY="${XD_IMAGE_REGISTRY:-@IMAGE_REGISTRY@}"
+# Offline mode is accepted only with a rendered, hash-bound release installer.
+OFFLINE_ASSET_DIR="${XD_OFFLINE_ASSET_DIR:-}"
+OFFLINE_MEDIA_IMAGE="${XD_OFFLINE_MEDIA_IMAGE:-}"
+OFFLINE_PHOTO_IMAGE="${XD_OFFLINE_PHOTO_IMAGE:-}"
 STAGING_DIR="$STATE_DIR/install-staging"
 UPGRADE_STATE_DIR="$STATE_DIR/upgrade-transaction"
 INSTALL_LOCK_PATH="$STATE_DIR/install.lock"
@@ -990,6 +994,10 @@ prepare_target_image() {
   if docker image inspect "$ref" </dev/null >/dev/null 2>&1; then
     echo "[xDrive] prefetch $service: target image is already cached locally."
   else
+    if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+      echo "[xDrive] offline: required $service image is not imported: $ref" >&2
+      return 1
+    fi
     echo "[xDrive] prefetch $service: obtaining target image before downtime..."
     if ! (
       # Legacy Compose may still use old Web/Caddy image definitions or
@@ -1000,8 +1008,8 @@ prepare_target_image() {
       export XD_POSTGRES_IMAGE="$target_postgres_image"
       export XD_SERVER_IMAGE="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
       export XD_CADDY_IMAGE="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
-      export XD_PHOTO_FACE_IMAGE="$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
-      export XD_MEDIA_WORKER_IMAGE="$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
+      export XD_PHOTO_FACE_IMAGE="$photo_image_ref"
+      export XD_MEDIA_WORKER_IMAGE="$media_image_ref"
       pull_service_with_retry "$service"
     ); then
       if [[ "$service" != "caddy" ]] || ! install_caddy_from_release_archive "$ref"; then
@@ -1207,6 +1215,16 @@ if is_template_placeholder "$SOURCE_REF" || is_template_placeholder "$IMAGE_TAG"
 fi
 
 stage 1 "resolve release channel"
+if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+  [[ "$OFFLINE_ASSET_DIR" == /* && -d "$OFFLINE_ASSET_DIR" && ! -L "$OFFLINE_ASSET_DIR" ]] || {
+    echo "xDrive offline: asset directory must be a real absolute directory." >&2; exit 1;
+  }
+  if [[ "$artifact_is_template" == true || "$requested_channel" != "$BUILT_CHANNEL" ||
+        "$requested_source" != "$BUILT_SOURCE" ]]; then
+    echo "xDrive offline: only the exact rendered release installer and source/channel are accepted." >&2
+    exit 1
+  fi
+fi
 needs_source_resolution=false
 if [[ "$artifact_is_template" == "true" || "$requested_channel" != "$BUILT_CHANNEL" || "$requested_source" != "$BUILT_SOURCE" ]]; then
   needs_source_resolution=true
@@ -1268,17 +1286,19 @@ fi
 stage 3 "download deployment assets"
 mkdir -p "$CONFIG_DIR" "$STAGING_DIR"
 chmod 700 "$CONFIG_DIR" "$STAGING_DIR"
-if [[ "$requested_source" == "gitlab" ]]; then
-  raw_base="${GITLAB_BASE_URL%/}/${GITLAB_PROJECT#/}/-/raw/$SOURCE_REF"
-else
-  raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
+if [[ -z "$OFFLINE_ASSET_DIR" ]]; then
+  if [[ "$requested_source" == "gitlab" ]]; then
+    raw_base="${GITLAB_BASE_URL%/}/${GITLAB_PROJECT#/}/-/raw/$SOURCE_REF"
+  else
+    raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
+  fi
 fi
 
 # An old GitLab rolling Release may be advertised after the branch installer has
 # advanced. Fail before fetching the full bundle if that exact Release commit
 # lacks host-control assets required by this installer. Do not substitute a
 # newer branch or GitHub file: every installed file must use the pinned ref.
-if [[ "$requested_source" == "gitlab" ]]; then
+if [[ -z "$OFFLINE_ASSET_DIR" && "$requested_source" == "gitlab" ]]; then
   for required_gitlab_asset in caddy-env-config.py caddy-admission.py; do
     if ! fetch_stdout "$raw_base/scripts/$required_gitlab_asset" >/dev/null 2>&1; then
       echo "xDrive server installer: GitLab release $SOURCE_REF is missing required scripts/$required_gitlab_asset (or it cannot be read)." >&2
@@ -1287,15 +1307,34 @@ if [[ "$requested_source" == "gitlab" ]]; then
     fi
   done
 fi
-fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/9 docker-compose.yml"
-asset_no=1
-for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py; do
+if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+  # These assets were already verified against the independently trusted
+  # offline manifest. The embedded release hashes are checked again below.
+  offline_copy_asset() {
+    local relative="$1" target="$2" source="$OFFLINE_ASSET_DIR/$1"
+    [[ -f "$source" && ! -L "$source" ]] || {
+      echo "xDrive offline: missing or symlinked asset $relative" >&2; return 1;
+    }
+    cp -- "$source" "$target"
+  }
+  offline_copy_asset deploy/docker-compose.yml "$STAGING_DIR/docker-compose.yml"
+  for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py; do
+    offline_copy_asset "scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script"
+    chmod 700 "$STAGING_DIR/$maintenance_script"
+  done
+  offline_copy_asset scripts/xdrive-server-host.sh "$STAGING_DIR/xdrive-server"
+  echo "[xDrive] offline: staged deployment assets without network requests."
+else
+  fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/9 docker-compose.yml"
+  asset_no=1
+  for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py; do
+    asset_no=$((asset_no + 1))
+    fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/9 $maintenance_script"
+    chmod 700 "$STAGING_DIR/$maintenance_script"
+  done
   asset_no=$((asset_no + 1))
-  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/9 $maintenance_script"
-  chmod 700 "$STAGING_DIR/$maintenance_script"
-done
-asset_no=$((asset_no + 1))
-fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/9 xdrive-server"
+  fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/9 xdrive-server"
+fi
 chmod 700 "$STAGING_DIR/xdrive-server"
 chmod 600 "$STAGING_DIR/docker-compose.yml"
 
@@ -2361,6 +2400,10 @@ set_env XD_IMAGE_REGISTRY "$IMAGE_REGISTRY"
 set_env XD_UPDATE_SOURCE "$requested_source"
 set_env XD_RELEASE_CHANNEL "$requested_channel"
 set_env XD_RELEASE_COMMIT "${requested_commit:-}"
+if [[ -n "$OFFLINE_ASSET_DIR" && -n "${COMPOSE_PROFILES:-}" ]]; then
+  # Explicitly enabled optional offline profiles must survive the next restart.
+  set_env COMPOSE_PROFILES "$COMPOSE_PROFILES"
+fi
 domain="$(env_value XD_DOMAIN)"
 https_port="$(env_value XD_HTTPS_PORT)"
 web_port="$(env_value XD_WEB_PORT)"
@@ -2577,6 +2620,15 @@ repair_migrated_cas_parents_before_backup() {
 # and must never bypass a real detected inconsistency.
 repair_migrated_cas_parents_before_backup
 
+photo_image_ref="$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
+media_image_ref="$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
+if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+  photo_image_ref="${OFFLINE_PHOTO_IMAGE:-$(env_value XD_PHOTO_FACE_IMAGE)}"
+  media_image_ref="${OFFLINE_MEDIA_IMAGE:-$(env_value XD_MEDIA_WORKER_IMAGE)}"
+  [[ -n "$photo_image_ref" ]] || photo_image_ref="$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
+  [[ -n "$media_image_ref" ]] || media_image_ref="$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
+fi
+
 stage 5 "create pre-upgrade backup"
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   target_server_image="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
@@ -2594,6 +2646,10 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   esac
   if [[ "$upgrade_backup_verifier" == "target" ]]; then
     if ! docker image inspect "$target_server_image" </dev/null >/dev/null 2>&1; then
+      if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+        echo "xDrive offline: exact Server verifier is missing locally; refusing any network fetch." >&2
+        exit 1
+      fi
       echo "[xDrive] preparing published target Server verifier before maintenance: $target_server_image"
       initialize_image_pull
       # Use the SAME bounded retries as the later native service pulls.
@@ -2625,10 +2681,10 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     prepare_target_image server "$target_server_image"
     prepare_target_image caddy "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
     if compose_profile_enabled photo-intelligence; then
-      prepare_target_image photo-face "$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
+      prepare_target_image photo-face "$photo_image_ref"
     fi
     if compose_profile_enabled media-worker; then
-      prepare_target_image media-worker "$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
+      prepare_target_image media-worker "$media_image_ref"
     fi
     echo "[xDrive] all target images are ready locally; entering maintenance window."
   fi
@@ -2759,8 +2815,8 @@ stage 6 "install deployment files"
 # backed up successfully. Caddy now contains the exact CI-tested Web build.
 set_env XD_SERVER_IMAGE "$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
 set_env XD_CADDY_IMAGE "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
-set_env XD_PHOTO_FACE_IMAGE "$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
-set_env XD_MEDIA_WORKER_IMAGE "$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
+set_env XD_PHOTO_FACE_IMAGE "$photo_image_ref"
+set_env XD_MEDIA_WORKER_IMAGE "$media_image_ref"
 unset_env XD_WEB_IMAGE
 unset_env XD_WEB_MEMORY_LIMIT
 unset_env XD_WEB_CPU_LIMIT
@@ -2849,6 +2905,15 @@ if compose_profile_enabled media-worker; then
   pull_services+=(media-worker)
 fi
 for pull_service in "${pull_services[@]}"; do
+  if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+    target_local_ref="$(pull_service_image_ref "$pull_service")"
+    if ! docker image inspect "$target_local_ref" </dev/null >/dev/null 2>&1; then
+      echo "xDrive offline: required $pull_service image is unavailable locally: $target_local_ref" >&2
+      exit 1
+    fi
+    echo "[xDrive] offline: $pull_service loaded locally; network pull suppressed."
+    continue
+  fi
   if [[ -n "${prepared_image_ids[$pull_service]:-}" ]]; then
     current_image_id="$(docker image inspect --format '{{.Id}}' "${prepared_image_refs[$pull_service]}" </dev/null 2>/dev/null || true)"
     if [[ "$current_image_id" != "${prepared_image_ids[$pull_service]}" ]]; then
@@ -2880,7 +2945,11 @@ fi
 if compose_profile_enabled media-worker; then
   initial_services+=(media-worker)
 fi
-compose up -d --remove-orphans "${initial_services[@]}"
+if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+  compose up -d --pull never --remove-orphans "${initial_services[@]}"
+else
+  compose up -d --remove-orphans "${initial_services[@]}"
+fi
 
 stage 8 "verify service health"
 healthy=0
@@ -2900,7 +2969,11 @@ fi
 # Keep data rollback armed through all stage-8 validation. Caddy contains the
 # exact CI-tested Web build and proxies /api directly to the server.
 edge_services=(worker caddy)
-compose up -d --remove-orphans "${edge_services[@]}"
+if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+  compose up -d --pull never --remove-orphans "${edge_services[@]}"
+else
+  compose up -d --remove-orphans "${edge_services[@]}"
+fi
 
 if compose_profile_enabled photo-intelligence; then
   face_healthy=0
