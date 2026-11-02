@@ -553,7 +553,7 @@ func (s *Server) enqueueFileOperationWithConflictPolicy(
 
 		if operationType == meta.FileOperationTypeCopy || operationType == meta.FileOperationTypeMove {
 			if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, ""); err != nil {
-				return &batchMutationFailure{Status:http.StatusConflict, Code:"managed_notes", Message:"Notes destination is protected"}
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 			}
 		}
 		nodes, err := batchLoadNodesTx(tx, uid, refs, true)
@@ -562,11 +562,11 @@ func (s *Server) enqueueFileOperationWithConflictPolicy(
 		}
 		for _, node := range nodes {
 			if err := notesRejectNodeWithReason(ctx, tx, uid, node.ID); err != nil {
-				return &batchMutationFailure{Status:http.StatusConflict, Code:"managed_notes", Message:"managed Notes cannot be moved, copied or deleted"}
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes cannot be moved, copied or deleted"}
 			}
 			if operationType != meta.FileOperationTypeDelete {
 				if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, node.Name); err != nil {
-					return &batchMutationFailure{Status:http.StatusConflict, Code:"managed_notes", Message:"Notes destination is protected"}
+					return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 				}
 			}
 		}
@@ -1163,7 +1163,7 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 			return err
 		}
 		if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, ""); err != nil {
-			return &batchMutationFailure{Status:http.StatusConflict, Code:"managed_notes", Message:"Notes destination is protected"}
+			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 		}
 		nested, err := batchSelectionHasAncestor(tx, uid, refs)
 		if err != nil {
@@ -1192,10 +1192,10 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 		for index, ref := range refs {
 			source := roots[index]
 			if err := notesRejectNodeWithReason(ctx, tx, uid, source.ID); err != nil {
-				return &batchMutationFailure{Status:http.StatusConflict, Code:"managed_notes", Message:"managed Notes cannot be copied"}
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes cannot be copied"}
 			}
 			if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, source.Name); err != nil {
-				return &batchMutationFailure{Status:http.StatusConflict, Code:"managed_notes", Message:"Notes destination is protected"}
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 			}
 			if err := operationProgress.begin(source.Name); err != nil {
 				return err
@@ -1313,7 +1313,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 			return err
 		}
 		if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, ""); err != nil {
-			return &batchMutationFailure{Status:http.StatusConflict, Code:"managed_notes", Message:"Notes destination is protected"}
+			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 		}
 		nested, err := batchSelectionHasAncestor(tx, uid, refs)
 		if err != nil {
@@ -1347,10 +1347,10 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 		for index, ref := range refs {
 			node := roots[index]
 			if err := notesRejectNodeWithReason(ctx, tx, uid, node.ID); err != nil {
-				return &batchMutationFailure{Status:http.StatusConflict, Code:"managed_notes", Message:"managed Notes cannot be moved"}
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes cannot be moved"}
 			}
 			if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, node.Name); err != nil {
-				return &batchMutationFailure{Status:http.StatusConflict, Code:"managed_notes", Message:"Notes destination is protected"}
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 			}
 			if err := operationProgress.begin(node.Name); err != nil {
 				return err
@@ -1594,7 +1594,7 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 		for index, ref := range refs {
 			node := roots[index]
 			if err := notesRejectNodeWithReason(ctx, tx, uid, node.ID); err != nil {
-				return &batchMutationFailure{Status:http.StatusConflict, Code:"managed_notes", Message:"managed Notes cannot be deleted"}
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes cannot be deleted"}
 			}
 			if err := operationProgress.begin(node.Name); err != nil {
 				return err
