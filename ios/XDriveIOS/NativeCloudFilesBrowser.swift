@@ -124,28 +124,101 @@ private struct XDriveIOSNativeFilesEntry: Identifiable {
 private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     @Published private(set) var entries: [XDriveIOSNativeFilesEntry] = []
     @Published private(set) var total = 0
+    @Published private(set) var startOffset = 0
     @Published private(set) var loading = false
     @Published private(set) var verifiedPage = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var continuationError: String?
 
+    private enum Direction { case initial, before, after }
+    private var loadedIDs = Set<UInt64>()
+    private var failedDirection: Direction?
     private var epoch = UUID()
     private var job: Task<Void, Never>?
+
+    var canLoadEarlier: Bool {
+        verifiedPage && !loading && continuationError == nil &&
+            startOffset >= XDriveIOSNativeFilesPagePolicy.pageSize
+    }
+
+    var canLoadMore: Bool {
+        verifiedPage && !loading && continuationError == nil &&
+            !entries.isEmpty && startOffset + entries.count < total &&
+            XDriveIOSNativeFilesPagePolicy.validOffset(startOffset + entries.count)
+    }
+
+    func pageOffset(for node: XDriveIOSNativeFilesNode) -> Int? {
+        guard verifiedPage, let index = entries.firstIndex(where: { $0.node == node })
+        else { return nil }
+        let absoluteIndex = startOffset + index
+        return absoluteIndex / XDriveIOSNativeFilesPagePolicy.pageSize *
+            XDriveIOSNativeFilesPagePolicy.pageSize
+    }
 
     func invalidate() {
         epoch = UUID()
         job?.cancel()
         job = nil
         entries = []
+        loadedIDs.removeAll()
         total = 0
+        startOffset = 0
         verifiedPage = false
         loading = false
         errorMessage = nil
+        continuationError = nil
+        failedDirection = nil
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
               offset: Int, query: String, sort: String, order: String) {
         invalidate()
+        guard XDriveIOSNativeFilesPagePolicy.validOffset(offset) else {
+            errorMessage = "目标文件位置无效，请重新打开文件夹。"
+            return
+        }
+        startRead(login: login, folderID: folderID, offset: offset,
+                  query: query, sort: sort, order: order, direction: .initial)
+    }
+
+    func loadMore(login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
+                  query: String, sort: String, order: String) {
+        guard canLoadMore else { return }
+        startRead(login: login, folderID: folderID,
+                  offset: startOffset + entries.count,
+                  query: query, sort: sort, order: order, direction: .after)
+    }
+
+    func loadEarlier(login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
+                     query: String, sort: String, order: String) {
+        guard canLoadEarlier else { return }
+        startRead(login: login, folderID: folderID,
+                  offset: startOffset - XDriveIOSNativeFilesPagePolicy.pageSize,
+                  query: query, sort: sort, order: order, direction: .before)
+    }
+
+    func retryContinuation(login: XDriveIOSNativeOwnerLoginModel,
+                           folderID: UInt64, query: String, sort: String, order: String) {
+        guard verifiedPage, !loading, let direction = failedDirection else { return }
+        continuationError = nil
+        failedDirection = nil
+        switch direction {
+        case .initial: return
+        case .before:
+            loadEarlier(login: login, folderID: folderID,
+                        query: query, sort: sort, order: order)
+        case .after:
+            loadMore(login: login, folderID: folderID,
+                     query: query, sort: sort, order: order)
+        }
+    }
+
+    private func startRead(login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
+                           offset: Int, query: String, sort: String, order: String,
+                           direction: Direction) {
+        guard !loading, XDriveIOSNativeFilesPagePolicy.validOffset(offset) else { return }
         guard let expected = login.owner else {
+            invalidate()
             errorMessage = "请先验证原生服务器账户。"
             return
         }
@@ -159,9 +232,8 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 }
             }
             do {
-                // Re-prove the exact Server installation, Owner and root on
-                // every page/search read. A replaced account cannot publish
-                // stale filenames even after an A->B->A navigation sequence.
+                // Verify the Server installation, Owner and root for EVERY
+                // chunk. A stale page may never be mixed into this window.
                 let auth = try await login.verifiedAuthorization()
                 try Task.checkCancellation()
                 guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected) else {
@@ -188,31 +260,84 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                     count = page.total_count
                 }
                 try Task.checkCancellation()
-                guard self?.epoch == ticket,
+                guard let self, self.epoch == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
-                self?.entries = found
-                self?.total = count
-                self?.verifiedPage = true
-                self?.errorMessage = nil
+
+                switch direction {
+                case .initial:
+                    self.startOffset = offset
+                    self.entries = found
+                    self.total = count
+                    self.loadedIDs = Set(found.map(\.id))
+                case .before, .after:
+                    guard XDriveIOSNativeFilesContinuousPolicy.validJoin(
+                        loadedIDs: self.loadedIDs, loadedCount: self.entries.count,
+                        startOffset: self.startOffset, total: self.total,
+                        pageIDs: found.map(\.id), pageOffset: offset,
+                        pageTotal: count,
+                        direction: direction == .before ? .before : .after
+                    ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                    if direction == .before {
+                        self.entries = found + self.entries
+                        self.startOffset = offset
+                    } else {
+                        self.entries.append(contentsOf: found)
+                    }
+                    self.loadedIDs.formUnion(found.map(\.id))
+                }
+                self.verifiedPage = true
+                self.errorMessage = nil
+                self.continuationError = nil
+                self.failedDirection = nil
             } catch is CancellationError {
-                // Navigation and tab changes cancel disposable reads only.
+                // Tab/navigation changes invalidate the entire read epoch.
             } catch {
-                guard self?.epoch == ticket else { return }
-                self?.entries = []
-                self?.total = 0
-                self?.verifiedPage = false
-                if let failure = error as? XDriveIOSNativeFilesReadError {
-                    switch failure {
-                    case .server(401), .server(403), .server(404), .invalidScope:
-                        self?.errorMessage = "账户、目录或文件访问权限已变化，已清除旧列表。"
-                    case .server(429), .server(503):
-                        self?.errorMessage = "服务器暂时繁忙，请重试当前页面。"
+                guard let self, self.epoch == ticket else { return }
+                // Authentication changes, malformed or contradictory Server
+                // ranges invalidate the entire window rather than publishing
+                // a mixture of different owner/count/order snapshots.
+                let fatal: Bool
+                if let reason = error as? XDriveIOSNativeFilesReadError {
+                    switch reason {
+                    case .invalidScope, .invalidPage, .malformed,
+                         .server(401), .server(403), .server(404):
+                        fatal = true
                     default:
-                        self?.errorMessage = "无法验证云端文件列表，请刷新后重试。"
+                        fatal = false
                     }
                 } else {
-                    self?.errorMessage = "文件读取失败，请检查网络后重试。"
+                    fatal = false
+                }
+                let message: String
+                if let reason = error as? XDriveIOSNativeFilesReadError {
+                    switch reason {
+                    case .server(401), .server(403), .server(404), .invalidScope:
+                        message = "账户、目录或文件访问权限已变化，已清除旧列表。"
+                    case .invalidPage, .malformed:
+                        message = "云端文件数量或顺序已变化，请刷新重新加载。"
+                    case .server(429), .server(503):
+                        message = "服务器暂时繁忙，请重试。"
+                    default:
+                        message = "无法验证云端文件列表，请刷新后重试。"
+                    }
+                } else {
+                    message = "文件读取失败，请检查网络后重试。"
+                }
+                if direction == .initial || fatal {
+                    self.entries = []
+                    self.loadedIDs.removeAll()
+                    self.total = 0
+                    self.startOffset = 0
+                    self.verifiedPage = false
+                    self.errorMessage = message
+                    self.continuationError = nil
+                    self.failedDirection = nil
+                } else {
+                    // An ordinary transient network failure keeps the prior
+                    // verified page visible, but never exposes failed rows.
+                    self.continuationError = message
+                    self.failedDirection = direction
                 }
             }
         }
