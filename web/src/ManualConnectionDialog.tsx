@@ -80,7 +80,7 @@ export default function XDriveManualConnectionDialog({
             }}
             error={Boolean(lan.trim() && lanTarget.error)}
             helperText={lan.trim() && lanTarget.error
-              ? lanTarget.error : '只允许私有 IPv4 的 HTTPS 入口；浏览器必须信任 CA，证书必须包含 IP SAN。'}
+              ? lanTarget.error : '只允许私有 IPv4 的 HTTPS 入口；浏览器必须信任 CA，证书必须包含 IP SAN。可在管理员 → Caddy → HTTPS 证书管理核对指纹并下载根 CA。'}
           />
           <TextField size="small" fullWidth label="公网 HTTPS 域名入口"
             placeholder="https://drive.example.com:8443"

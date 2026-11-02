@@ -540,6 +540,13 @@
           data.generation!==generation || data.nonce!==nonce ||
           typeof data.ticket!=='string' || !/^[a-f0-9]{64}$/.test(data.ticket))return
       void redeem(data.ticket)
+    } else if (data.kind==='request-viewport') {
+      // A former photo-cover tap may request the present anonymous SDK camera.
+      // The Parent still requires a fresh signed Owner /cells receipt.
+      if (!active || !map || data.generation!==generation ||
+          data.nonce!==nonce ||
+          !exact(data,['version','generation','nonce','kind'])) return
+      scheduleViewport()
     } else if (data.kind==='restore-camera') {
       // Camera return never authorizes a photo or arbitrary media range.
       if (!active || !map || !sdk ||

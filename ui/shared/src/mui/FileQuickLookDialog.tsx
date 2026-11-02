@@ -30,6 +30,8 @@ export type XDriveFileQuickLookDialogProps<T extends XDriveFilePreviewTarget = X
   open: boolean
   item: T | null
   positionLabel?: ReactNode
+  /** Optional Host-scoped preview status, rendered by the existing shared dialog. */
+  subtitle?: ReactNode
   actions?: readonly XDriveFileQuickLookAction[]
   /** Desktop-only optional exact Agent Task Center receipt; other hosts keep default actions. */
   viewerDownloadReceipt?: XDriveViewerDownloadReceiptPort
@@ -50,6 +52,7 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
   open,
   item,
   positionLabel,
+  subtitle,
   actions = [],
   viewerDownloadReceipt,
   onDownloadWithReceipt,
@@ -266,6 +269,7 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
     <XDriveOpenPreviewDialog
       open={open && Boolean(item)}
       title={item?.name ?? ''}
+      subtitle={subtitle}
       positionLabel={positionLabel}
       quickLook
       chromeSessionKey={chromeOwner.session}

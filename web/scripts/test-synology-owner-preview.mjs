@@ -21,6 +21,7 @@ const inspection = `
     openFilePreview: typeof openFilePreview === 'function' ? openFilePreview : null,
     movePreview: typeof movePreview === 'function' ? movePreview : null,
     previewPositionLabel: typeof previewPositionLabel === 'string' ? previewPositionLabel : '',
+    thumbnailOnlyPreview: typeof thumbnailOnlyPreview === 'boolean' ? thumbnailOnlyPreview : false,
     previewActions: typeof previewActions === 'object' ? previewActions : [],
     getDownloadDisabledReason: typeof getDownloadDisabledReason === 'function' ? getDownloadDisabledReason : null,
     cancelDownload: typeof cancelDownload === 'function' ? cancelDownload : null,
@@ -36,8 +37,10 @@ function loadPlainModule(filename, names, bindings = {}) {
   return new Function(...Object.keys(bindings), stripped + '\nreturn {' + names.join(',') + '}')(...Object.values(bindings))
 }
 const classification = loadPlainModule('ui/shared/src/file-preview.ts',
-  ['xDriveFileSupportsTextPreview', 'xDriveFileNeedsBrowserCompatibleImagePreview'])
-// Mount the real derived-image classifier, not a synthetic test-only stub.
+  ['xDriveFileSupportsTextPreview', 'xDriveClassifyFilePreview',
+    'xDriveFileNeedsBrowserCompatibleImagePreview'])
+// Use the actual 4K derivative classifier without discarding the existing
+// thumbnail-only eligibility introduced in the current DSM Viewer.
 const derived = loadPlainModule('ui/shared/src/synology-viewer-preview.ts',
   ['xDriveSynologyViewerNeedsDerived'], classification)
 const range = { XDRIVE_SYNOLOGY_MEDIA_RANGE_BYTES: 256 << 10 }
@@ -141,7 +144,10 @@ async function mount(extraRows = []) {
     ...viewerSelection, ...readOnlyDownload,
     ...ownerIdentity, ...classification, ...derived, ...media, ...stream, ...scope,
     XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES: 32 << 20,
-    xDriveFileSupportsThumbnail: () => false,
+    // Test the real Controller's fallback admission, modeling only the
+    // existing presentation helper's eligible image/video extensions.
+    xDriveFileSupportsThumbnail: name =>
+      /\.(?:jpg|jpeg|png|gif|webp|heic|heif|dng|tif|tiff|arw|nef|cr3|avif|bmp|livp|mov|mp4)$/i.test(name),
     xDriveSynologyLoadOwnerThumbnail: () => { throw Error('Controller must not preload media') },
     xDriveSynologyLoadBoundedMediaPreview: () => { throw Error('Controller must not preload originals') },
     xDriveSynologyLoadNativeMediaStream: () => { throw Error('Controller must not preload a player') },
@@ -176,6 +182,14 @@ async function mount(extraRows = []) {
     replaceClient() { currentClient = { ...client }; dirty = true; render() },
     unmount() { for (const slot of slots) slot?.cleanup?.() } }
 }
+
+test('shared QuickLook shows the derivative notice and does not request prohibited originals', () => {
+  const quickLook = read('ui/shared/src/mui/FileQuickLookDialog.tsx')
+  assert.match(quickLook, /subtitle=\{subtitle\}/)
+  assert.match(page, /subtitle=\{thumbnailOnlyPreview \?/)
+  assert.match(page, /loadPreviewURL=\{thumbnailOnlyPreview \? undefined : loadMediaPreview\}/)
+  assert.match(page, /loadImagePreview=\{loadOwnerThumbnail\}/)
+})
 
 test('rejecting an empty-file download must not revoke a previously verified save link', async () => {
   const app = await mount()
@@ -255,9 +269,17 @@ test('loaded-file and selected-file navigation preserve order and stop at both b
   const app = await mount()
   const image = app.state.displayedItems.find(item => item.id === 4)
   app.state.openFilePreview(image); await app.flush()
-  assert.equal(app.state.previewPositionLabel, '2 / 4 已加载')
+  assert.equal(app.state.previewPositionLabel, '2 / 5 已加载')
   app.state.movePreview(1); await app.flush()
-  assert.equal(app.state.previewItem.id, 6, 'skip an unsupported oversized image')
+  assert.equal(app.state.previewItem.id, 5, 'large image retains an authenticated thumbnail-only Viewer')
+  assert.equal(app.state.thumbnailOnlyPreview, true)
+  app.state.movePreview(1); await app.flush()
+  assert.equal(app.state.previewItem.id, 6)
+  assert.equal(app.state.thumbnailOnlyPreview, false)
+  app.state.movePreview(-1); await app.flush()
+  assert.equal(app.state.previewItem.id, 5)
+  app.state.movePreview(-1); await app.flush()
+  assert.equal(app.state.previewItem.id, 4)
   app.state.openFilePreview(image, [2, 4, 6]); await app.flush()
   assert.equal(app.state.previewPositionLabel, '2 / 3 已选择')
   app.state.movePreview(1); await app.flush()
@@ -269,6 +291,47 @@ test('loaded-file and selected-file navigation preserve order and stop at both b
   app.state.movePreview(-1); await app.flush()
   assert.equal(app.state.previewItem.id, 2)
   assert.equal(app.requests.length, 0)
+})
+
+test('DSM large PDF opens the same shared Viewer without broadening download limits', async () => {
+  const app = await mount([node(9, 'manual.pdf', (32 << 20) + 1)])
+  const item = app.state.displayedItems.find(row => row.id === 9)
+  assert.ok(item)
+  app.state.openFilePreview(item); await app.flush()
+  assert.equal(app.state.previewItem?.id, 9)
+  assert.equal(app.state.previewActions[0].disabled, true)
+  app.state.movePreview(-1); await app.flush()
+  assert.notEqual(app.state.previewItem?.id, 9)
+  app.unmount()
+})
+
+test('DSM image size/compatibility use Owner thumbnails, never a fake video or Live Photo', async () => {
+  const app = await mount([
+    node(9, 'cloud.heic', 24 << 20), node(10, 'raw.dng', 64 << 20),
+    node(11, 'old.mov', 40 << 20), node(12, 'archive.livp', 16 << 20),
+    node(13, 'massive.png', 128 << 20), node(14, 'evil.exe', 16 << 20),
+  ])
+  for (const id of [5, 9, 10, 13]) {
+    app.state.openFilePreview(app.state.displayedItems.find(item => item.id === id))
+    await app.flush()
+    assert.equal(app.state.previewItem?.id, id, 'thumbnail-compatible image must remain previewable')
+    assert.equal(app.state.thumbnailOnlyPreview, true)
+    // A 24 MiB HEIC may still be downloaded intact: preview compatibility
+    // does not tighten or broaden the independent 32 MiB download policy.
+    assert.equal(app.state.previewActions[0].disabled, id !== 9,
+      'derivative-only Viewer must preserve existing original download admission')
+    assert.equal(Boolean(app.state.getDownloadDisabledReason([app.state.previewItem])), id !== 9)
+  }
+  for (const id of [11, 12, 14]) {
+    app.state.openFilePreview(app.state.displayedItems.find(item => item.id === id))
+    await app.flush()
+    assert.equal(app.state.previewItem?.id, 13,
+      'an unsupported callback must not displace the already verified Viewer')
+  }
+  app.state.openFilePreview(app.state.displayedItems.find(item => item.id === 4))
+  await app.flush()
+  assert.equal(app.state.thumbnailOnlyPreview, false, 'supported image still uses verified original')
+  app.unmount()
 })
 
 test('DSM large PDF opens the same shared Viewer without broadening download limits', async () => {

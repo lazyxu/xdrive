@@ -98,6 +98,12 @@ const sdkStub='('+function sdkFactory(){
         return {x:Math.round(width*.64)+(first?0:99)+this.panOffset.x,
           y:Math.round(height*.31)+(first?0:90)+this.panOffset.y}
       }
+      // Explicit non-overlapping five-photo marker from the user screenshot.
+      if(point && Math.abs(point.lng-101.5625)<0.00001 &&
+          Math.abs(point.lat-21.25)<0.00001) {
+        return {x:Math.round(width*.73)+this.panOffset.x,
+          y:Math.round(height*.64)+this.panOffset.y}
+      }
       // All other synthetic representatives stay centered in the CURRENT
       // CSS canvas; short landscape and gesture tests are unchanged.
       return {x:(width>=120?Math.round(width/2):180)+this.panOffset.x,
@@ -3694,6 +3700,68 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
 // one pixel target and only the highest-count React photo survives declutter.
 // The other Cell remains accessible via the Owner-signed Cell list/Range.
 // SDK Host inspection reads only synthetic label counts, never private media.
+
+async function testDirectFivePhotoCoverClick(browser,mode,port) {
+  const context=await browser.newContext({
+    viewport:{width:1280,height:800},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try {
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&direct_click_photo_5=1',{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 14 张照片',{exact:true}).waitFor()
+    const five=page.getByRole('button',{name:'查看该区域 5 张照片'})
+    await five.waitFor({state:'visible'})
+    const hit=await five.evaluate(node=>{
+      const rect=node.getBoundingClientRect()
+      const el=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2)
+      return {hit:!!el&&(el===node||node.contains(el)),
+        enabled:!node.disabled,pointer:getComputedStyle(node).pointerEvents,
+        covers:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length}
+    })
+    record(mode+': five-photo cover is a physical mouse hit target',
+      hit.hit&&hit.enabled&&hit.pointer==='auto'&&hit.covers===2)
+    // No lower-right full-map photo control or artificial dispatchEvent.
+    await five.click()
+    const modal=page.getByRole('dialog',{name:'此地点的照片'})
+    await modal.waitFor({state:'visible'})
+    await modal.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor()
+    const first=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': native click on the five-photo image opens five signed items',
+      first?.total===5&&first?.items===5&&
+      await modal.locator('[data-xdrive-places-photo-drawer-item]').count()===5)
+    await page.getByRole('button',{name:'关闭照片抽屉'}).click()
+    await modal.waitFor({state:'hidden'})
+    const sdkFrame=mode==='inline'
+      ? page : page.frames().find(frame=>frame.url().includes(childHost))
+    assert(sdkFrame,'mounted map SDK frame required')
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      sdk?.listeners.get('movestart')?.()
+    })
+    const recover=page.getByRole('button',{name:'重新确认该区域 5 张照片'})
+    await recover.waitFor({state:'visible'})
+    const before=await page.evaluate(()=>window.__mapProbe.queries.length)
+    await recover.click()
+    await page.waitForFunction(n=>window.__mapProbe.queries.length>n,before)
+    await modal.waitFor({state:'visible'})
+    await modal.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor()
+    const newRange=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': old five-photo marker click uses NEW Owner camera before reopening',
+      newRange?.total===5&&newRange?.items===5&&
+      await modal.locator('[data-xdrive-places-photo-drawer-item]').count()===5&&
+      errors.length===0)
+  } finally { await context.close() }
+}
+
 async function testPhotoMarkerPresentation(browser,mode,port){
   const context=await browser.newContext({
     viewport:{width:960,height:760},locale:'zh-CN',
@@ -3735,6 +3803,36 @@ async function testPhotoMarkerPresentation(browser,mode,port){
     record(mode+': one verified photo layer removes competing SDK labels',
       presentation.pins===1&&presentation.cellCount===2&&
       presentation.count===14&&presentation.strip===0&&errors.length===0)
+    // Regress the actual wide-screen Web failure: real provider controls can
+    // have very high z-index and steal mouse clicks from React photo covers.
+    // A native Playwright pointer click must hit the trusted Owner button even
+    // with an exaggerated SDK-only layer; .evaluate(button.click) would miss it.
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    const realHit=await page.evaluate(()=>{
+      const sdk=document.querySelector('[data-xdrive-places-map-sdk-layer]')
+      const photo=document.querySelector('[data-xdrive-places-trusted-photo-cover]')
+      if(!sdk||!photo)return false
+      const blocker=document.createElement('div')
+      blocker.dataset.xdriveSdkClickBlocker='1'
+      blocker.style.cssText='position:absolute;inset:0;z-index:2147483647;pointer-events:auto'
+      sdk.appendChild(blocker)
+      const rect=photo.getBoundingClientRect()
+      const target=document.elementFromPoint(rect.left+rect.width/2,
+        rect.top+rect.height/2)
+      return !!target && (target===photo || photo.contains(target))
+    })
+    record(mode+': wide Web photo cover remains the real hit target over SDK chrome',
+      realHit)
+    await cover.click()
+    await page.locator('[data-xdrive-places-photo-drawer-items] button')
+      .first().waitFor({state:'visible'})
+    const clickPreview=await page.evaluate(()=>
+      window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': native wide Web photo click opens exact signed 9-photo dialog',
+      clickPreview?.total===9&&clickPreview?.items===9&&errors.length===0)
+    await page.evaluate(()=>document.querySelector(
+      '[data-xdrive-sdk-click-blocker]')?.remove())
+    await page.getByRole('button',{name:'关闭照片抽屉'}).click()
     // The shared floating 44px action must reveal the ONE approved list of
     // otherwise decluttered Cells; no second SDK label or broader query.
     const reveal=page.locator('[data-xdrive-places-reveal-hidden-cells]')
@@ -4266,6 +4364,8 @@ async function main(){
     if(!ginURL){
       await testWorldBootstrapIsNotCamera(browser,'inline',port)
       await testWorldBootstrapIsNotCamera(browser,'isolated',port)
+      await testDirectFivePhotoCoverClick(browser,'inline',port)
+      await testDirectFivePhotoCoverClick(browser,'isolated',port)
       await testPhotoMarkerPresentation(browser,'inline',port)
       await testPhotoMarkerPresentation(browser,'isolated',port)
       await testPhotoCoverDuringMapPan(browser,'inline',port)

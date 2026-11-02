@@ -4099,7 +4099,13 @@ function registerIPCHandlers() {
           boundedFilters.length > 4096) {
         throw new AgentIPCError('invalid_input', 0, 'Invalid hierarchy filters.')
       }
-      const filter = filters as Record<string, unknown>
+      // Optional Gallery fields omitted by JSON transport must also be
+      // omitted by the Electron IPC gate; an own key with undefined is not a
+      // supplied filter. Validate every remaining real key/value as before.
+      const filter = Object.fromEntries(
+        Object.entries(filters as Record<string, unknown>)
+          .filter(([, value]) => value !== undefined),
+      )
       const allowedFilters = [
         'time_zone', 'anchor_node_id', 'fold_duplicates', 'fold_member_ids',
         'sort_by', 'sort_dir', 'search', 'asset_kind', 'category',

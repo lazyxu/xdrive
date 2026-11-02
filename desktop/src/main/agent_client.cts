@@ -862,6 +862,20 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentAdminCaddyCertificate = {
+  state: 'disabled' | 'unverified' | 'verified-local'
+  dns_names?: string[]
+  ip_addresses?: string[]
+  not_before?: string
+  not_after?: string
+  issuer?: string
+  leaf_sha256?: string
+  chain_root_sha256?: string
+  chain_root_not_after?: string
+  leaf_pem?: string
+  verified_at?: string
+}
+
 export type AgentAdminCaddyHTTPSConfig = {
   desired_enabled: boolean
   desired_domain: string
@@ -870,7 +884,7 @@ export type AgentAdminCaddyHTTPSConfig = {
   host_lan_configured?: boolean
   host_lan_ip?: string
   revision: number
-  source: 'default' | 'saved'
+  source: 'default' | 'saved' | 'host-import' | 'host-env'
   updated_at?: string
   apply_state: 'unmanaged' | 'pending'
   editable: boolean
@@ -881,6 +895,16 @@ export type AgentAdminCaddyHTTPSConfig = {
   host_https_configured: boolean
   host_tls_state: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
   host_lan_tls_state?: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
+  host_env_sha256?: string
+  host_env_pending_redeploy?: boolean
+  // Agent/Main is CommonJS: use a local wire shape instead of importing the ESM
+  // shared UI source into desktop's isolated TS rootDir.
+  certificates?: {
+    scope: 'caddy-container-local-v1'
+    domain: AgentAdminCaddyCertificate
+    lan: AgentAdminCaddyCertificate
+    root_ca?: { sha256: string; not_after: string; pem: string }
+  }
 }
 export type AgentAdminCaddyHTTPSUpdate = {
   revision: number

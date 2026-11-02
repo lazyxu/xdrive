@@ -64,6 +64,8 @@ export interface XDriveBaiduInlineMapHost<T> {
   beginAuthorizedInlineSession(signal: AbortSignal): Promise<boolean>
   replaceAuthorizedCells(cells: readonly XDriveTrustedIsolatedMapCell<T>[]): boolean
   setPhotoCoverSelections(selections: readonly T[]): boolean
+  /** Read current SDK camera; never authorize an Owner resource. */
+  requestCurrentViewport(): boolean
   restoreCamera(camera: XDriveBaiduIsolatedCamera): boolean
   dispose(): void
 }
@@ -589,6 +591,12 @@ export function xDriveMountBaiduInlineMap<T>(
       coveredSelections = next
       // Cosmetic change only: do not clear/re-publish trusted projections.
       return renderCells(false)
+    },
+    requestCurrentViewport() {
+      if (!alive || !ready || !map || heldMousePointer!==null ||
+          heldTouchPointers.size>0) return false
+      scheduleViewport()
+      return true
     },
     restoreCamera(camera) {
       if (!alive || !ready || !map || !sdk ||

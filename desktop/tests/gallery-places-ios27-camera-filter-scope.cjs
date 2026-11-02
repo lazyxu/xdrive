@@ -174,7 +174,7 @@ test('Web Viewer and Desktop Agent use bounded filtered BD09 only',()=>{
 
 test('iOS map filter changes invalidate old SDK pins before the next paint in both Hosts', () => {
   const surface = read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
-  assert.match(surface, /import \{ useEffect, useLayoutEffect, useRef, useState \} from 'react'/)
+  assert.match(surface, /import \{ (?:Fragment, )?useEffect, useLayoutEffect, useRef, useState \} from 'react'/)
   const start = surface.indexOf('  // Revoke stale SDK pins before the browser can paint')
   const end = surface.indexOf('  useEffect(() => {\n    const node = mount.current', start)
   assert.ok(start > 0 && end > start, 'Owner filter fence must precede SDK mount')
