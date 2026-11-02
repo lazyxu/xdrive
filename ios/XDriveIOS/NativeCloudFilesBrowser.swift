@@ -124,22 +124,37 @@ private struct XDriveIOSNativeFilesEntry: Identifiable {
 private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     @Published private(set) var entries: [XDriveIOSNativeFilesEntry] = []
     @Published private(set) var total = 0
+    @Published private(set) var startOffset = 0
     @Published private(set) var loading = false
+    @Published private(set) var loadingAdjacent = false
     @Published private(set) var verifiedPage = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var adjacentError: String?
 
     private var epoch = UUID()
+    private var adjacentTicket = UUID()
     private var job: Task<Void, Never>?
+    private var adjacentJob: Task<Void, Never>?
+
+    func cancelAdjacent() {
+        adjacentTicket = UUID()
+        adjacentJob?.cancel()
+        adjacentJob = nil
+        loadingAdjacent = false
+    }
 
     func invalidate() {
         epoch = UUID()
         job?.cancel()
         job = nil
+        cancelAdjacent()
         entries = []
         total = 0
+        startOffset = 0
         verifiedPage = false
         loading = false
         errorMessage = nil
+        adjacentError = nil
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
@@ -159,9 +174,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 }
             }
             do {
-                // Re-prove the exact Server installation, Owner and root on
-                // every page/search read. A replaced account cannot publish
-                // stale filenames even after an A->B->A navigation sequence.
+                // Prove the same Owner/root on every directory/search read.
                 let auth = try await login.verifiedAuthorization()
                 try Task.checkCancellation()
                 guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected) else {
@@ -193,14 +206,16 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 else { return }
                 self?.entries = found
                 self?.total = count
+                self?.startOffset = offset
                 self?.verifiedPage = true
                 self?.errorMessage = nil
             } catch is CancellationError {
-                // Navigation and tab changes cancel disposable reads only.
+                // Navigation, owner changes and refresh cancel obsolete reads.
             } catch {
                 guard self?.epoch == ticket else { return }
                 self?.entries = []
                 self?.total = 0
+                self?.startOffset = 0
                 self?.verifiedPage = false
                 if let failure = error as? XDriveIOSNativeFilesReadError {
                     switch failure {
@@ -213,6 +228,113 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                     }
                 } else {
                     self?.errorMessage = "文件读取失败，请检查网络后重试。"
+                }
+            }
+        }
+    }
+
+    /// Load only one neighboring Server range. A four-range window keeps the
+    /// view lazy, allows forward/backward finger scrolling, and never loads a
+    /// 100k-node directory into memory.
+    func loadAdjacent(_ direction: XDriveIOSNativeFilesContinuousWindowPolicy.Direction,
+                      login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
+                      query: String, sort: String, order: String) {
+        guard !loading, !loadingAdjacent, verifiedPage, adjacentError == nil,
+              let expected = login.owner else { return }
+        let oldEntries = entries
+        let oldIDs = oldEntries.map(\.id)
+        let oldStart = startOffset
+        let oldTotal = total
+        guard let requestOffset = XDriveIOSNativeFilesContinuousWindowPolicy.requestedOffset(
+            direction: direction, startOffset: oldStart,
+            loadedCount: oldEntries.count, total: oldTotal
+        ) else { return }
+
+        adjacentTicket = UUID()
+        let ticket = adjacentTicket
+        let pageTicket = epoch
+        loadingAdjacent = true
+        adjacentJob = Task { @MainActor [weak self] in
+            defer {
+                if self?.epoch == pageTicket && self?.adjacentTicket == ticket {
+                    self?.loadingAdjacent = false
+                    self?.adjacentJob = nil
+                }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected) else {
+                    throw XDriveIOSNativeFilesReadError.invalidScope
+                }
+                let reader = XDriveIOSNativeFilesReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                )
+                let found: [XDriveIOSNativeFilesEntry]
+                let returnedTotal: Int
+                let returnedOffset: Int
+                if query.isEmpty {
+                    let page = try await reader.children(
+                        parentID: folderID, offset: requestOffset, sort: sort, order: order
+                    )
+                    found = page.items.map { XDriveIOSNativeFilesEntry(node: $0, path: nil) }
+                    returnedTotal = page.total_count
+                    returnedOffset = page.offset
+                } else {
+                    let page = try await reader.search(
+                        query, offset: requestOffset, sort: sort, order: order
+                    )
+                    found = page.items.map {
+                        XDriveIOSNativeFilesEntry(node: $0.node, path: $0.path)
+                    }
+                    returnedTotal = page.total_count
+                    returnedOffset = page.offset
+                }
+                try Task.checkCancellation()
+                guard let self, self.epoch == pageTicket,
+                      self.adjacentTicket == ticket,
+                      self.startOffset == oldStart,
+                      self.total == oldTotal,
+                      self.entries.map(\.id) == oldIDs,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
+                guard let plan = XDriveIOSNativeFilesContinuousWindowPolicy.mergePlan(
+                    direction: direction, startOffset: oldStart,
+                    currentIDs: oldIDs, incomingIDs: found.map(\.id),
+                    pageOffset: returnedOffset, total: oldTotal,
+                    returnedTotal: returnedTotal
+                ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+
+                var updated = direction == .next
+                    ? oldEntries + found : found + oldEntries
+                if plan.dropFromFront > 0 {
+                    updated.removeFirst(plan.dropFromFront)
+                }
+                if plan.dropFromBack > 0 {
+                    updated.removeLast(plan.dropFromBack)
+                }
+                self.startOffset = plan.startOffset
+                self.entries = updated
+                self.adjacentError = nil
+            } catch is CancellationError {
+                // Never append cancelled or stale adjacent results.
+            } catch {
+                guard let self, self.epoch == pageTicket,
+                      self.adjacentTicket == ticket else { return }
+                if let failure = error as? XDriveIOSNativeFilesReadError {
+                    switch failure {
+                    case .server(401), .server(403), .server(404), .invalidScope:
+                        self.entries = []
+                        self.total = 0
+                        self.verifiedPage = false
+                        self.adjacentError = "文件访问权限已变化，请重新验证账户后刷新。"
+                    case .invalidPage:
+                        self.adjacentError = "文件列表在滚动期间发生变化，请刷新后继续。"
+                    default:
+                        self.adjacentError = "无法加载更多文件，请刷新当前目录重试。"
+                    }
+                } else {
+                    self.adjacentError = "网络读取失败，请刷新当前目录重试。"
                 }
             }
         }
@@ -489,39 +611,59 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
     }
 
-    private var filesPager: some View {
-            Section {
-                HStack {
-                    Button("上一页") {
-                        offset = max(0, offset - XDriveIOSNativeFilesPagePolicy.pageSize)
-                        reload()
-                    }
-                    .disabled(offset == 0 || model.loading)
-                    Spacer()
-                    Text(model.total == 0 ? "0 / 0" :
-                        "\(offset + 1)–\(min(offset + model.entries.count, model.total)) / \(model.total)")
-                        .font(.footnote.monospacedDigit())
+    /// No Previous/Next buttons: reaching either rendered edge reads the next
+    /// contiguous Server range, with a fixed four-range memory window.
+    private var filesContinuousStatus: some View {
+        Section {
+            if model.loadingAdjacent {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("正在继续加载文件…")
                         .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("下一页") {
-                        offset += XDriveIOSNativeFilesPagePolicy.pageSize
-                        reload()
-                    }
-                    .disabled(model.loading || model.total == 0 ||
-                              offset + model.entries.count >= model.total)
                 }
-                .accessibilityIdentifier("native-ios-files-page-controls")
+                .accessibilityIdentifier("native-ios-files-loading-adjacent")
             }
+            if let message = model.adjacentError {
+                Text(message).foregroundStyle(.orange)
+                Button("刷新文件列表") { reload(resetOffset: true) }
+                    .accessibilityIdentifier("native-ios-files-continuous-retry")
+            }
+        }
+    }
+
+    private func requestContinuousNeighbor(for visibleID: UInt64) {
+        guard !selecting, selectedFile == nil, !model.loading,
+              model.verifiedPage, !model.loadingAdjacent,
+              let parentID, let index = model.entries.firstIndex(where: {
+                  $0.id == visibleID
+              }) else { return }
+        let threshold = min(8, max(1, model.entries.count / 4))
+        if index >= model.entries.count - threshold {
+            model.loadAdjacent(
+                .next, login: login, folderID: parentID,
+                query: activeQuery, sort: sort, order: order
+            )
+        } else if index < threshold {
+            model.loadAdjacent(
+                .previous, login: login, folderID: parentID,
+                query: activeQuery, sort: sort, order: order
+            )
+        }
     }
 
     @ViewBuilder private var filesBatchOperations: some View {
             if selecting {
-                Section("本页批量操作") {
-                    Text("已选 \(selectedIDs.count) 项（最多 64 项，仅当前文件夹本页）")
+                Section("批量操作") {
+                    Text("已选 \(selectedIDs.count) 项（最多 64 项，限当前载入的同一文件夹）")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Button("全选本页") {
+                    Button("选择当前载入项目（最多 64 项）") {
                         guard canSelectPage else { return }
-                        selectedIDs = Set(model.entries.map(\.id))
+                        let remaining = max(
+                            0, XDriveIOSNativeFilesPagePolicy.pageSize - selectedIDs.count
+                        )
+                        selectedIDs.formUnion(model.entries.filter {
+                            !selectedIDs.contains($0.id)
+                        }.prefix(remaining).map(\.id))
                     }
                     .disabled(!canSelectPage)
                     Button("清空选择") { selectedIDs.removeAll() }
@@ -615,6 +757,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     ForEach(model.entries) { entry in
                         gridTile(entry)
                             .id(entry.id)
+                            .onAppear { requestContinuousNeighbor(for: entry.id) }
                     }
                 }
                 .padding(.horizontal, 10)
@@ -625,9 +768,10 @@ struct XDriveIOSNativeFilesBrowser: View {
             } else {
                 ForEach(model.entries) { entry in
                     fileEntryRow(entry)
+                        .onAppear { requestContinuousNeighbor(for: entry.id) }
                 }
             }
-            filesPager
+            filesContinuousStatus
             filesBatchOperations
         }
     }
@@ -647,6 +791,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                           !batchTrash.busy, !batchTarget.busy,
                           !batchExport.busy, batchExport.prepared.isEmpty
                     else { return }
+                    model.cancelAdjacent()
                     selecting.toggle()
                     selectedIDs.removeAll()
                 }
@@ -790,8 +935,14 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .fullScreenCover(item: $selectedFile, onDismiss: {
             selectedOwner = nil
-            // Re-read the exact current directory/search page before returning
-            // focus to the last still-valid Node and revision.
+            // Resume on the bounded Server range containing the last opened
+            // file, not silently at the first range of a large directory.
+            if let viewed = lastViewedFile,
+               let index = model.entries.firstIndex(where: { $0.id == viewed.id }) {
+                offset = model.startOffset +
+                    (index / XDriveIOSNativeFilesPagePolicy.pageSize) *
+                    XDriveIOSNativeFilesPagePolicy.pageSize
+            }
             reload()
         }) { initial in
             if let openedOwner = selectedOwner {
@@ -885,8 +1036,10 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func toggleSelection(_ entry: XDriveIOSNativeFilesEntry) {
         guard canSelectPage,
               model.entries.contains(where: { $0.node == entry.node }) else { return }
-        if !selectedIDs.insert(entry.id).inserted {
+        if selectedIDs.contains(entry.id) {
             selectedIDs.remove(entry.id)
+        } else if selectedIDs.count < XDriveIOSNativeFilesPagePolicy.pageSize {
+            selectedIDs.insert(entry.id)
         }
     }
 
@@ -894,6 +1047,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         guard !model.loading, model.verifiedPage,
               let owner = login.owner,
               model.entries.contains(where: { $0.node == entry.node }) else { return }
+        model.cancelAdjacent()
         selectedOwner = owner
         returnOwner = owner
         lastViewedFile = entry.node

@@ -419,6 +419,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-page-check"
           node --test desktop/tests/ios-native-files-browser.cjs
 
+      - name: Verify native Files bounded continuous scroll and reverse range
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift \
+            ios/tests/NativeFilesContinuousWindowChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-continuous-window"
+          "$RUNNER_TEMP/xdrive-ios-files-continuous-window"
+          node --test desktop/tests/ios-native-files-continuous-scroll.cjs
+
       - name: Verify native Files Viewer bounded navigation and Owner preview contracts
         run: |
           set -euo pipefail
