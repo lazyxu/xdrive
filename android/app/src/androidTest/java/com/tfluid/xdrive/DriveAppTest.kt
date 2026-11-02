@@ -788,6 +788,10 @@ class DriveAppTest {
 
     @Test fun localPlacesCloudToggleLeavesCollectionsBeforeOpeningVerifiedMap() {
         galleryGpsOverviewFixture = true
+        // This flow explicitly opens the real Owner Collections overview.
+        // Without the fixture, the service correctly returns 501 and the
+        // navigation assertion times out before the map source switch.
+        galleryManualAlbumFixture = true
         startAndLogin(galleryFirstOnLogin = false)
         compose.onNodeWithTag("native-tab-gallery").performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
