@@ -96,6 +96,14 @@ func (s *Server) initializeNotesNamespace(c *gin.Context) {
 			if err := tx.Create(&system).Error; err != nil { return err }
 		} else if err != nil { return err }
 		if system.Type != meta.NodeTypeDir { return errNotesPathConflict }
+		// A pre-existing public share of the parent would expose future Notes.
+		// Do not create an account-private namespace under an active share.
+		var shared int64
+		if err := tx.Model(&meta.Share{}).Where(
+			"owner_id = ? AND node_id = ? AND revoked_at IS NULL",
+			uid, system.ID,
+		).Count(&shared).Error; err != nil { return err }
+		if shared != 0 { return errNotesPathConflict }
 		var occupied int64
 		if err := tx.Model(&meta.Node{}).Where(
 			"owner_id = ? AND parent_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL",
