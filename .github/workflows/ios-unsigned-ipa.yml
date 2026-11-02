@@ -249,6 +249,9 @@ jobs:
             desktop/tests/ios-native-photo-cloud-confirmed-refresh.cjs \
             desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs
 
+      - name: Verify native cloud PhotoAsset original still/video save-to-Photos boundaries
+        run: node --test desktop/tests/ios-native-photoasset-original-restore.cjs
+
       - name: Verify native whole-library PhotoKit calendar jump policy
         run: |
           set -euo pipefail
