@@ -412,21 +412,19 @@ struct XDriveIOSNativeFilesTrashScreen: View {
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesTrashPageModel()
     @StateObject private var mutation = XDriveIOSNativeFilesTrashMutationModel()
-    @State private var offset = 0
     @State private var pendingDelete: XDriveIOSNativeFilesTrashNode?
     @State private var showingDeleteConfirmation = false
 
     var body: some View {
         List {
-            if model.loading {
+            if model.loading && model.items.isEmpty {
                 HStack { ProgressView(); Text("正在读取回收站…") }
             } else if let error = model.error {
                 Text(error).foregroundStyle(.orange)
-                Button("重试当前页") { reload() }
+                Button("重试") { reload() }
                     .accessibilityIdentifier("native-ios-files-trash-retry")
             } else if model.items.isEmpty {
-                Text(offset > 0 ? "本页已无项目，请返回上一页。" : "回收站为空。")
-                    .foregroundStyle(.secondary)
+                Text("回收站为空。").foregroundStyle(.secondary)
             }
             ForEach(model.items) { item in
                 VStack(alignment: .leading, spacing: 7) {
@@ -454,26 +452,24 @@ struct XDriveIOSNativeFilesTrashScreen: View {
                     .buttonStyle(.bordered)
                 }
                 .padding(.vertical, 5)
-            }
-            Section {
-                HStack {
-                    Button("上一页") {
-                        offset = max(0, offset - XDriveIOSNativeFilesTrashPolicy.pageSize)
-                        reload()
-                    }
-                    .disabled(offset == 0 || mutation.busy || model.loading)
-                    Spacer()
-                    Text(model.total == 0 ? "0 / 0" :
-                        "\(offset + 1)–\(min(offset + model.items.count, model.total)) / \(model.total)")
-                        .font(.footnote.monospacedDigit())
-                    Spacer()
-                    Button("下一页") {
-                        offset += XDriveIOSNativeFilesTrashPolicy.pageSize
-                        reload()
-                    }
-                    .disabled(!model.verified || mutation.busy || model.loading ||
-                              offset + model.items.count >= model.total)
+                .onAppear {
+                    guard !mutation.busy, model.canLoadMore,
+                          model.items.last?.id == item.id else { return }
+                    model.loadMore(login: login)
                 }
+            }
+            if model.loading && !model.items.isEmpty {
+                HStack {
+                    ProgressView()
+                    Text("正在加载更多已删除项目…")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("native-ios-files-trash-loading-more")
+            }
+            if let continuationError = model.continuationError {
+                Text(continuationError).foregroundStyle(.orange)
+                Button("重试加载更多") { model.retryMore(login: login) }
+                    .accessibilityIdentifier("native-ios-files-trash-retry-more")
             }
             if mutation.busy {
                 HStack { ProgressView(); Text("正在等待服务器确认…") }
@@ -520,7 +516,6 @@ struct XDriveIOSNativeFilesTrashScreen: View {
             mutation.invalidate()
             pendingDelete = nil
             showingDeleteConfirmation = false
-            offset = 0
             reload()
         }
         .onChange(of: phase) { current in
@@ -537,14 +532,15 @@ struct XDriveIOSNativeFilesTrashScreen: View {
 
     private func reload() {
         guard !mutation.busy else { return }
-        model.load(login: login, offset: offset)
+        model.load(login: login, offset: 0)
     }
 
     private func run(_ action: XDriveIOSNativeFilesTrashTransport.Action,
                      _ item: XDriveIOSNativeFilesTrashNode) {
         guard model.verified, !model.loading, !mutation.busy,
-              model.items.contains(item) else { return }
-        mutation.perform(action, node: item, offset: offset, login: login) {
+              model.items.contains(item),
+              let pageOffset = model.pageOffset(for: item) else { return }
+        mutation.perform(action, node: item, offset: pageOffset, login: login) {
             reload()
         }
     }
