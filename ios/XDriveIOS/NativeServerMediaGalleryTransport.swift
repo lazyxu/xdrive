@@ -176,7 +176,7 @@ struct XDriveIOSNativeMediaGalleryReader {
         if bearer {
             request.setValue("Bearer " + accessToken, forHTTPHeaderField: "Authorization")
         }
-        let (bytes, response) = try await client.data(for: request)
+        let (stream, response) = try await client.bytes(for: request)
         try Task.checkCancellation()
         guard let reply = response as? HTTPURLResponse else {
             throw XDriveIOSNativeMediaReadFailure.malformed
@@ -184,9 +184,28 @@ struct XDriveIOSNativeMediaGalleryReader {
         guard reply.statusCode == 200 else {
             throw XDriveIOSNativeMediaReadFailure.response(reply.statusCode)
         }
-        guard bytes.count <= maximum else {
-            throw XDriveIOSNativeMediaReadFailure.tooLarge
+        guard maximum > 0 else {
+            throw XDriveIOSNativeMediaReadFailure.malformed
         }
+        var bytes = Data()
+        var chunk: [UInt8] = []
+        let chunkSize = 64 * 1024
+        chunk.reserveCapacity(chunkSize)
+        for try await byte in stream {
+            // Accept exactly maximum bytes; stop at maximum+1 without
+            // materializing the rest of an untrusted preview response.
+            guard bytes.count + chunk.count < maximum else {
+                throw XDriveIOSNativeMediaReadFailure.tooLarge
+            }
+            chunk.append(byte)
+            if chunk.count == chunkSize {
+                bytes.append(contentsOf: chunk)
+                chunk.removeAll(keepingCapacity: true)
+                try Task.checkCancellation()
+            }
+        }
+        try Task.checkCancellation()
+        if !chunk.isEmpty { bytes.append(contentsOf: chunk) }
         return bytes
     }
 

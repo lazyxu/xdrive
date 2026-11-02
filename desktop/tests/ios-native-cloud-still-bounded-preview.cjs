@@ -71,3 +71,72 @@ test('native PhotoAsset Viewer foreground cancellation reaches both detached Ima
   assert.match(viewer, /kCGImageSourceThumbnailMaxPixelSize as String: 4096/)
   assert.doesNotMatch(media, /UploadSessionTransport|PHAssetCreationRequest/)
 })
+
+
+test('backed-up original thumbnail and still decoders inherit foreground cancellation', () => {
+  const thumb = cloud.slice(cloud.indexOf('    func thumbnail(_ node:'),
+                            cloud.indexOf('    func preview(_ node:'))
+  const previewStill = cloud.slice(cloud.indexOf('    func preview(_ node:'),
+                                   cloud.indexOf('    private func requireCurrentOriginal'))
+  for (const [name, part, pixelLimit] of [
+    ['Owner grid thumbnail', thumb, 280],
+    ['Owner fullscreen still', previewStill, 4096]
+  ]) {
+    assert.match(part, /let decodeWork = Task\.detached\(priority: \.utility\)/, name)
+    assert.match(part, /guard !Task\.isCancelled/, name)
+    assert.match(part, /return Task\.isCancelled \? nil : decoded/, name)
+    assert.match(part, /await withTaskCancellationHandler \{\s*await decodeWork\.value\s*\} onCancel: \{\s*decodeWork\.cancel\(\)\s*\}/, name)
+    assert.match(part, /try Task\.checkCancellation\(\)/, name)
+    assert.ok(part.includes('kCGImageSourceThumbnailMaxPixelSize as String: ' + pixelLimit), name)
+    assert.doesNotMatch(part, /let (image|decoded) = await Task\.detached/, name)
+  }
+  assert.match(previewStill, /if node\.isVideo \{ return \(nil, url\) \}/)
+  assert.match(previewStill, /XDriveIOSNativeFilesViewerPolicy\.validTicketPath\(/)
+  assert.doesNotMatch(thumb + previewStill, /URLSession\.shared|UploadSession|WKWebView/)
+})
+
+
+test('backed-up original still oversized/decode-only fallback is bounded, Owner-fenced, and labeled', () => {
+  const reader = cloud.slice(cloud.indexOf('    func preview(_ node:'),
+    cloud.indexOf('    private func requireCurrentOriginal'));
+  const viewer = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    cloud.indexOf('private struct XDriveIOSNativeCloudOriginalTileIdentity'));
+  assert.match(cloud, /enum XDriveIOSNativeCloudStillFallback: Error/);
+  assert.match(reader, /if node\.isVideo \{ return \(nil, url\) \}/);
+  assert.match(reader, /readBoundedResponse\(\s*client, request: request\(url, bearer: false\),\s*maximum: 32 \* 1_048_576/);
+  assert.match(reader, /catch XDriveIOSNativeCloudReadError\.tooLarge/);
+  assert.match(reader, /try Task\.checkCancellation\(\)\s*guard let decoded else \{\s*throw XDriveIOSNativeCloudStillFallback\.unavailable/);
+  assert.match(viewer, /catch XDriveIOSNativeCloudStillFallback\.unavailable/);
+  assert.match(viewer, /guard target\.isImage, !target\.isVideo, !target\.isLiveArchive/);
+  assert.match(viewer, /let thumbnail = try await reader\.thumbnail\(target\)/);
+  assert.match(viewer, /try Task\.checkCancellation\(\)\s*guard phase == \.active, previewRequestID == requestID/);
+  assert.match(viewer, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, before\)/);
+  assert.match(viewer, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, before\)/);
+  assert.match(viewer, /still = thumbnail\s*stillIsThumbnailOnly = true\s*error = nil/);
+  assert.match(viewer, /stillIsThumbnailOnly \? "缩略图回退"/);
+  assert.match(viewer, /native-ios-original-still-lowres/);
+  assert.match(viewer, /native-ios-original-still-reload/);
+  assert.match(viewer, /private func retryPreview\(\)[\s\S]*?still = nil\s*stillIsThumbnailOnly = false/);
+  assert.match(reader, /XDriveIOSNativeFilesViewerPolicy\.validTicketPath\(/);
+  assert.doesNotMatch(viewer, /UploadSessionTransport|WKWebView/);
+})
+
+
+test('cloud original still and thumbnail bodies are streamed within their byte limits', () => {
+  const helper = cloud.slice(cloud.indexOf('private func readBoundedResponse'),
+    cloud.indexOf('func page(offset: Int)'));
+  const thumbnail = cloud.slice(cloud.indexOf('func thumbnail(_ node:'),
+    cloud.indexOf('func preview(_ node:'));
+  const reader = cloud.slice(cloud.indexOf('func preview(_ node:'),
+    cloud.indexOf('private func requireCurrentOriginal'));
+  const still = reader.slice(reader.indexOf('if node.isVideo { return (nil, url) }'));
+  assert.match(helper, /client\.bytes\(for: request\)/);
+  assert.match(helper, /for try await byte in stream/);
+  assert.match(helper, /data\.count \+ chunk\.count < maximum/);
+  assert.match(helper, /throw XDriveIOSNativeCloudReadError\.tooLarge/);
+  assert.match(helper, /http\.statusCode == 200/);
+  assert.match(thumbnail, /readBoundedResponse\(\s*client, request: request\(url\), maximum: 2 \* 1_048_576/);
+  assert.match(still, /readBoundedResponse\(\s*client, request: request\(url, bearer: false\),\s*maximum: 32 \* 1_048_576/);
+  assert.doesNotMatch(still, /client\.data\(for:/);
+  assert.doesNotMatch(helper, /client\.data\(for:/);
+});

@@ -54,7 +54,13 @@ private struct XDriveIOSNativeCloudDownloadTicket: Decodable {
 }
 
 enum XDriveIOSNativeCloudReadError: Error {
-    case invalidScope, server(Int), invalidResponse, notSupported
+    case invalidScope, server(Int), invalidResponse, notSupported, tooLarge
+}
+
+// Only an authenticated still *body* over the pixel-preview buffer or
+// undecodable by ImageIO can request the existing revision-bound thumbnail.
+enum XDriveIOSNativeCloudStillFallback: Error {
+    case unavailable
 }
 
 private final class XDriveIOSNativeRejectReadRedirect: NSObject, URLSessionTaskDelegate {
@@ -122,6 +128,50 @@ struct XDriveIOSNativeCloudOriginalReader {
         }
     }
 
+    /// Streams at most `maximum` response bytes. URLSession.data(for:) buffers
+    /// the complete body before returning, so it cannot enforce an in-memory
+    /// preview limit for a very large cloud original. Stop at byte maximum+1
+    /// and let the caller choose an explicitly labeled derivative fallback.
+    private func readBoundedResponse(
+        _ client: URLSession, request: URLRequest, maximum: Int
+    ) async throws -> (data: Data, response: HTTPURLResponse) {
+        guard maximum > 0 else {
+            throw XDriveIOSNativeCloudReadError.invalidScope
+        }
+        let (stream, response) = try await client.bytes(for: request)
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse else {
+            throw XDriveIOSNativeCloudReadError.invalidResponse
+        }
+        guard http.statusCode == 200 else {
+            throw XDriveIOSNativeCloudReadError.server(http.statusCode)
+        }
+
+        var data = Data()
+        var chunk: [UInt8] = []
+        let chunkSize = 64 * 1024
+        chunk.reserveCapacity(chunkSize)
+        for try await byte in stream {
+            // Exactly maximum bytes are accepted. The first excess byte
+            // aborts the stream instead of buffering the rest of the file.
+            guard data.count + chunk.count < maximum else {
+                throw XDriveIOSNativeCloudReadError.tooLarge
+            }
+            chunk.append(byte)
+            if chunk.count == chunkSize {
+                data.append(contentsOf: chunk)
+                chunk.removeAll(keepingCapacity: true)
+                try Task.checkCancellation()
+            }
+        }
+        try Task.checkCancellation()
+        if !chunk.isEmpty { data.append(contentsOf: chunk) }
+        guard data.count <= maximum else {
+            throw XDriveIOSNativeCloudReadError.tooLarge
+        }
+        return (data, http)
+    }
+
     func page(offset: Int) async throws -> (nodes: [XDriveIOSNativeCloudOriginal], total: Int) {
         guard owner.ownerID > 0, owner.rootNodeID > 0,
               !owner.instanceID.isEmpty, !accessToken.isEmpty,
@@ -172,11 +222,10 @@ struct XDriveIOSNativeCloudOriginalReader {
         ])
         let client = session()
         defer { client.invalidateAndCancel() }
-        let (bytes, response) = try await client.data(for: request(url))
-        try Task.checkCancellation()
-        try check(response, size: bytes.count, maximum: 2 * 1_048_576)
-        guard let http = response as? HTTPURLResponse,
-              let kind = http.value(forHTTPHeaderField: "Content-Type")?.lowercased(),
+        let (bytes, response) = try await readBoundedResponse(
+            client, request: request(url), maximum: 2 * 1_048_576
+        )
+        guard let kind = response.value(forHTTPHeaderField: "Content-Type")?.lowercased(),
               kind.hasPrefix("image/jpeg") || kind.hasPrefix("image/png") ||
                 kind.hasPrefix("image/heic") || kind.hasPrefix("image/webp"),
               !bytes.isEmpty else {
@@ -184,8 +233,9 @@ struct XDriveIOSNativeCloudOriginalReader {
         }
         // ImageIO downsamples off the UI actor. Do not decode an untrusted
         // derivative to full-resolution UIImage before bounding its pixels.
-        let image = await Task.detached(priority: .utility) { () -> CGImage? in
-            guard let source = CGImageSourceCreateWithData(
+        let decodeWork = Task.detached(priority: .utility) { () -> CGImage? in
+            guard !Task.isCancelled,
+                  let source = CGImageSourceCreateWithData(
                 bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary
             ) else { return nil }
             // NSDictionary keys must be bridged String/NSString, not CFString
@@ -196,8 +246,14 @@ struct XDriveIOSNativeCloudOriginalReader {
                 kCGImageSourceThumbnailMaxPixelSize as String: 280,
                 kCGImageSourceShouldCacheImmediately as String: false
             ]
-            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-        }.value
+            let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            return Task.isCancelled ? nil : decoded
+        }
+        let image = await withTaskCancellationHandler {
+            await decodeWork.value
+        } onCancel: {
+            decodeWork.cancel()
+        }
         try Task.checkCancellation()
         guard let image else {
             throw XDriveIOSNativeCloudReadError.invalidResponse
@@ -249,17 +305,24 @@ struct XDriveIOSNativeCloudOriginalReader {
         if node.isVideo { return (nil, url) }
         // Ticket is a short-lived, same-origin path. Never put the native
         // bearer into the URL or into AVPlayer.
-        let (bytes, reply) = try await client.data(
-            for: request(url, bearer: false)
-        )
-        try Task.checkCancellation()
-        try check(reply, size: bytes.count, maximum: 32 * 1_048_576)
+        let bytes: Data
+        do {
+            let response = try await readBoundedResponse(
+                client, request: request(url, bearer: false),
+                maximum: 32 * 1_048_576
+            )
+            bytes = response.data
+        } catch XDriveIOSNativeCloudReadError.tooLarge {
+            // Stop the signed-body stream at 32 MiB; never buffer the
+            // remaining original merely to discover it needs a thumbnail.
+            throw XDriveIOSNativeCloudStillFallback.unavailable
+        }
         // Compressed data size is not a bound on decoded pixels: a small
         // HEIC/JPEG can otherwise expand to an enormous UIImage on MainActor.
         // Decode at most 4096px on a utility actor while keeping the signed
         // preview ticket and verified Owner-scoped request unchanged.
-        let decoded = await Task.detached(priority: .utility) { () -> CGImage? in
-            guard !bytes.isEmpty,
+        let decodeWork = Task.detached(priority: .utility) { () -> CGImage? in
+            guard !Task.isCancelled, !bytes.isEmpty,
                   let source = CGImageSourceCreateWithData(
                     bytes as CFData,
                     [kCGImageSourceShouldCache: false] as CFDictionary
@@ -270,11 +333,17 @@ struct XDriveIOSNativeCloudOriginalReader {
                 kCGImageSourceThumbnailMaxPixelSize as String: 4096,
                 kCGImageSourceShouldCacheImmediately as String: false
             ]
-            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-        }.value
+            let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            return Task.isCancelled ? nil : decoded
+        }
+        let decoded = await withTaskCancellationHandler {
+            await decodeWork.value
+        } onCancel: {
+            decodeWork.cancel()
+        }
         try Task.checkCancellation()
         guard let decoded else {
-            throw XDriveIOSNativeCloudReadError.invalidResponse
+            throw XDriveIOSNativeCloudStillFallback.unavailable
         }
         return (UIImage(cgImage: decoded), nil)
     }
@@ -552,7 +621,7 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
             case .server(let status):
                 return XDriveIOSNativeMediaPageRetryPolicy
                     .permitsRetainingPreviousPage(httpStatus: status)
-            case .invalidScope, .invalidResponse, .notSupported:
+            case .invalidScope, .invalidResponse, .notSupported, .tooLarge:
                 return false
             }
         }
@@ -662,6 +731,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     // Reuse the native Files verified-Node exporter, never a second download writer.
     @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
     @State private var still: UIImage?
+    @State private var stillIsThumbnailOnly = false
     @State private var player: AVPlayer?
     @State private var liveResources: XDriveIOSLivePreviewFiles?
     @State private var showingLiveMotion = false
@@ -731,6 +801,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         player?.pause()
         player = nil
         still = nil
+        stillIsThumbnailOnly = false
         error = nil
         liveResources?.discard()
         liveResources = nil
@@ -838,9 +909,18 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         }
                     }
                 } else if let still {
-                    XDriveIOSNativeZoomablePhotoView(image: still)
-                        .onNavigateSwipe { showNeighbor($0) }
-                        .accessibilityLabel("云端照片，可双指缩放或双击放大")
+                    VStack(spacing: 8) {
+                        XDriveIOSNativeZoomablePhotoView(image: still)
+                            .onNavigateSwipe { showNeighbor($0) }
+                            .accessibilityLabel("云端照片，可双指缩放或双击放大")
+                        if stillIsThumbnailOnly {
+                            Text("原件适屏预览过大或无法解码；当前仅显示低清缩略图。可重新加载高清原件预览。")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 8)
+                                .accessibilityIdentifier("native-ios-original-still-lowres")
+                        }
+                    }
                 } else if let player {
                     XDriveIOSNativeAVPlayerStatusObserver(
                         player: player,
@@ -866,7 +946,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     XDriveIOSNativeViewerQualityPanel(
                         fileName: viewed.name,
                         source: viewed.isLiveArchive
-                            ? "实况静态原件 · 适屏解码" : "原件 · 适屏解码",
+                            ? "实况静态原件 · 适屏解码" :
+                            stillIsThumbnailOnly ? "缩略图回退" : "原件 · 适屏解码",
                         image: still,
                         originalBytes: viewed.size,
                         archiveOriginal: viewed.isLiveArchive,
@@ -946,6 +1027,15 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         .accessibilityIdentifier("native-ios-original-player-reload")
                     }
                 }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if currentOwnerAuthorized && stillIsThumbnailOnly {
+                        Button { retryPreview() } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .accessibilityLabel("重新加载高清原件预览")
+                        .accessibilityIdentifier("native-ios-original-still-reload")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if restoringToPhotos {
                         ProgressView().accessibilityLabel("正在恢复原件到 iOS 照片")
@@ -1002,6 +1092,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     liveResources?.discard()
                     liveResources = live.files
                     still = live.image
+                    stillIsThumbnailOnly = false
                     player = AVPlayer(url: live.files.motionURL)
                     showingLiveMotion = false
                     nativeLiveReady = false
@@ -1009,15 +1100,32 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     showsStaticStill = false
                     nativeLivePlaybackRequest = nil
                 } else {
-                    let media = try await reader.preview(target)
-                    try Task.checkCancellation()
-                    guard phase == .active, previewRequestID == requestID,
-                          XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
-                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
-                    else { return }
-                    still = media.image
-                    if let url = media.videoURL {
-                        player = AVPlayer(url: url)
+                    do {
+                        let media = try await reader.preview(target)
+                        try Task.checkCancellation()
+                        guard phase == .active, previewRequestID == requestID,
+                              XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
+                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
+                        else { return }
+                        still = media.image
+                        stillIsThumbnailOnly = false
+                        if let url = media.videoURL {
+                            player = AVPlayer(url: url)
+                        }
+                    } catch XDriveIOSNativeCloudStillFallback.unavailable {
+                        // No silent low-res success for videos, Live, tickets,
+                        // HTTP failures, denied Owners or cancelled requests.
+                        guard target.isImage, !target.isVideo, !target.isLiveArchive
+                        else { throw XDriveIOSNativeCloudReadError.notSupported }
+                        let thumbnail = try await reader.thumbnail(target)
+                        try Task.checkCancellation()
+                        guard phase == .active, previewRequestID == requestID,
+                              XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
+                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
+                        else { return }
+                        still = thumbnail
+                        stillIsThumbnailOnly = true
+                        error = nil
                     }
                 }
             } catch is CancellationError {
@@ -1061,6 +1169,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 player?.pause()
                 player = nil
                 still = nil
+                stillIsThumbnailOnly = false
                 error = nil
                 liveResources?.discard()
                 liveResources = nil
@@ -1079,6 +1188,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             player?.pause()
             player = nil
             still = nil
+            stillIsThumbnailOnly = false
             error = nil
             liveResources?.discard()
             liveResources = nil
@@ -1095,6 +1205,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             player?.pause()
             player = nil
             still = nil
+            stillIsThumbnailOnly = false
             liveResources?.discard()
             liveResources = nil
             showingLiveMotion = false
@@ -1229,6 +1340,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         player?.pause()
         player = nil
         still = nil
+        stillIsThumbnailOnly = false
         error = nil
         liveResources?.discard()
         liveResources = nil
