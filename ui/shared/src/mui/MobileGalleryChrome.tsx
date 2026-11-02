@@ -10,6 +10,7 @@ import {
 } from '@mui/material'
 import { useXDriveMobilePanelViewport } from './useMobilePanelViewport'
 import { xDriveMediaTimeZoneChoices } from '../media-timezone'
+import { XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT, xDriveMobileGalleryDockBottom } from './MobileGalleryDockLayout'
 
 export type MobileGalleryTimeScale = 'year' | 'month' | 'day' | 'all'
 export type MobileGalleryPrimaryTab = 'library' | 'collections'
@@ -282,11 +283,11 @@ export function XDriveMobileGalleryChrome({
           direction="row" role="group" aria-label="图库时间尺度"
           justifyContent="center" spacing={0.5}
           sx={{
-            // Photos' Years / Months / All live in the Gallery-local bottom
-            // chrome, above the existing Library / Collections / Search dock.
+            // Above the 48px Gallery-local dock and the measured global five-slot bar.
+            // Both remain separate layers without hiding photo-wall scroll space.
             position: 'fixed', left: '50%', transform: 'translateX(-50%)',
-            bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
-            zIndex: 7, minHeight: 52, p: 0.5,
+            bottom: xDriveMobileGalleryDockBottom(XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT + 8),
+            zIndex: 7, minHeight: XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT, p: 0.25,
             maxWidth: 'calc(100vw - 24px)',
             borderRadius: 99, border: '1px solid', borderColor: 'divider',
             boxShadow: 2,
@@ -315,17 +316,21 @@ export function XDriveMobileGalleryChrome({
         <Stack data-xdrive-mobile-gallery-bottom direction="row"
           alignItems="center" justifyContent="space-between" spacing={0.75}
           sx={{
-            position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 7,
-            minHeight: 56, px: 1.5,
-            pb: 'env(safe-area-inset-bottom, 0px)',
-            boxSizing: 'content-box',
+            // A separate, shorter Gallery tier above the shell's bottom bar.
+            // The five-slot bar alone owns the home-indicator safe area.
+            position: 'fixed', left: 0, right: 0,
+            bottom: xDriveMobileGalleryDockBottom(), zIndex: 7,
+            minHeight: XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT,
+            pl: 'max(12px, env(safe-area-inset-left, 0px))',
+            pr: 'max(12px, env(safe-area-inset-right, 0px))',
+            boxSizing: 'border-box',
             bgcolor: 'transparent',
             pointerEvents: 'none',
           }}>
           <Stack direction="row" role="tablist" aria-label="照片主导航"
             spacing={0.25} data-xdrive-mobile-gallery-primary-tabs
             sx={{
-              flex: 1, minWidth: 0, maxWidth: 288, py: 0.5, px: 0.5,
+              flex: 1, minWidth: 0, maxWidth: 288, py: 0.25, px: 0.5,
               borderRadius: 99, border: '1px solid',
               borderColor: 'divider', boxShadow: 2,
               backgroundColor: (theme) => theme.palette.mode === 'dark'
@@ -352,7 +357,7 @@ export function XDriveMobileGalleryChrome({
             onClick={() => { onSearchRequested?.(); openFilter(true) }}
             data-xdrive-mobile-gallery-search
             sx={{
-              minWidth: 50, minHeight: 50, pointerEvents: 'auto',
+              minWidth: 44, minHeight: 44, pointerEvents: 'auto',
               bgcolor: 'background.paper', border: '1px solid',
               borderColor: 'divider', boxShadow: 2,
               backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)',
