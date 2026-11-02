@@ -127,6 +127,57 @@ test('native video pagehide is wired without changing audio, PDF or transformed 
   assert.match(source, /try \{ video\.pause\(\) \} catch/)
 })
 
+test('P0 cross-format Viewer transitions fence retired video and PDF readiness callbacks', async () => {
+  const reads = []
+  const loadPreviewURL = (target, kind, signal) => {
+    reads.push({ id: target.id, kind, signal })
+    return Promise.resolve('https://example.invalid/' + target.name)
+  }
+  const render = (id, name) => React.createElement(XDriveFilePreviewSurface, {
+    target: { id, revision: 1, name, kind: 'file' },
+    loadPreviewURL,
+    fallback: React.createElement('div', { role: 'alert' }, 'Preview unavailable'),
+  })
+  let renderer
+  try {
+    await act(async () => { renderer = create(render(991, 'first.mp4')) })
+    const retiredVideo = renderer.root.findByType('video')
+    const retiredVideoLoaded = retiredVideo.props.onLoadedData
+    const retiredVideoFailed = retiredVideo.props.onError
+    assert.equal(root(renderer, 'video').props['aria-busy'], true)
+
+    await act(async () => { renderer.update(render(992, 'document.pdf')) })
+    assert.equal(reads[0].signal.aborted, true, 'switching formats cancels the prior video lease')
+    const currentPDF = renderer.root.findByType('iframe')
+    const retiredPDFLoad = currentPDF.props.onLoad
+    assert.equal(root(renderer, 'pdf').props['aria-busy'], true)
+
+    await act(async () => {
+      retiredVideoLoaded()
+      retiredVideoFailed()
+    })
+    assert.equal(root(renderer, 'pdf').props['aria-busy'], true,
+      'late video readiness/error events cannot change the current PDF state')
+    assert.equal(renderer.root.findAllByProps({ 'data-xdrive-preview-retry': true }).length, 0)
+
+    await act(async () => retiredPDFLoad())
+    assert.equal(root(renderer, 'pdf').props['aria-busy'], undefined)
+
+    await act(async () => { renderer.update(render(993, 'second.mp4')) })
+    assert.equal(reads[1].signal.aborted, true, 'the PDF lease is retired on the next format switch')
+    const currentVideo = renderer.root.findByType('video')
+    assert.equal(root(renderer, 'video').props['aria-busy'], true)
+
+    await act(async () => retiredPDFLoad())
+    assert.equal(root(renderer, 'video').props['aria-busy'], true,
+      'late PDF onLoad cannot mark the new video as ready')
+    await act(async () => currentVideo.props.onLoadedData())
+    assert.equal(root(renderer, 'video').props['aria-busy'], undefined)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
 test('video busy state follows first frame and later buffering', async () => {
   const renderer = await mountMedia('clip.mp4')
   try {

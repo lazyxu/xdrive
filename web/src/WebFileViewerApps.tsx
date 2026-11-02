@@ -70,6 +70,7 @@ import type {
   XDriveWebAppRoute,
   XDriveTransferTask,
 } from '../../ui/shared/src'
+import { xDriveAssertMediaReadActive } from './mediaBinaryProgress'
 import type { XDriveApi } from './api'
 import {
   xDriveWebViewerAnyFile,
@@ -962,7 +963,7 @@ function WebPreviewApp({
           // Keep the current Owner/revision and stable Viewer lease for 4K WebP/JPEG.
           return await api.mediaViewerPreviewURL(id, signal, Number(currentTarget.revision), onProgress)
         } catch {
-          signal?.throwIfAborted()
+          xDriveAssertMediaReadActive(signal)
           // Older Servers retain the signed still or measured bounded JPEG.
           return kind === 'live_photo'
             ? api.mediaLivePhotoStillURL(id, signal)

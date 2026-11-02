@@ -134,7 +134,7 @@ import type {
 } from '../../ui/shared/src'
 import { xDriveCloudFilesPositionMatchesRequest } from '../../ui/shared/src/cloud-files'
 import { webTransferStore } from './transfers'
-import { xDriveMediaResponseBlob } from './mediaBinaryProgress'
+import { xDriveAssertMediaReadActive, xDriveMediaResponseBlob } from './mediaBinaryProgress'
 import { xDriveRegisterViewerImageSource } from '../../ui/shared/src/mui/ViewerImageSourceInfo'
 import { XDRIVE_NATIVE_SHARE_MAX_BYTES, xDriveReadBoundedNativeShareBlob } from './nativeFileShare'
 import {
@@ -330,7 +330,7 @@ async function xDriveThumbnailRetryAfter503(
   if (response.status !== 503) return response
   const retryAfter = response.headers.get('Retry-After')?.trim()
   if (!retryAfter || !/^[1-8]$/.test(retryAfter)) return response
-  signal?.throwIfAborted()
+  xDriveAssertMediaReadActive(signal)
   await response.body?.cancel().catch(() => undefined)
   await new Promise<void>((resolve, reject) => {
     const onAbort = () => {
@@ -347,7 +347,7 @@ async function xDriveThumbnailRetryAfter503(
     }
     signal?.addEventListener('abort', onAbort, { once: true })
   })
-  signal?.throwIfAborted()
+  xDriveAssertMediaReadActive(signal)
   return retryFetch()
 }
 
@@ -367,11 +367,11 @@ async function xDriveThumbnailHasSafeImageEnvelope(
   const jpeg = mime === 'image/jpeg'
   const png = mime === 'image/png'
   if ((!jpeg && !png) || blob.size < (jpeg ? 64 : 45)) return false
-  signal?.throwIfAborted()
+  xDriveAssertMediaReadActive(signal)
   const head = new Uint8Array(await blob.slice(0, 8).arrayBuffer())
-  signal?.throwIfAborted()
+  xDriveAssertMediaReadActive(signal)
   const tail = new Uint8Array(await blob.slice(-12).arrayBuffer())
-  signal?.throwIfAborted()
+  xDriveAssertMediaReadActive(signal)
   if (jpeg) {
     return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff &&
       tail[10] === 0xff && tail[11] === 0xd9
@@ -2647,7 +2647,7 @@ export class XDriveApi {
 
   async mediaThumbnail(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: (loaded: number, total?: number, alphaMask?: string | null) => void, bypassHTTPCache = false): Promise<Blob> {
     await this.ensureFresh(signal)
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     // Known source revisions get immutable browser-cache URL identities.
     // Album/Memory covers without a revision must revalidate the Server
     // ETag rather than reuse one hour of stale browser-cached pixels.
@@ -2668,7 +2668,7 @@ export class XDriveApi {
     let response = await send(bypassHTTPCache ? 'no-store' : undefined)
     if (response.status === 401 && this.session.refreshToken) {
       await this.refresh(true, signal)
-      signal?.throwIfAborted()
+      xDriveAssertMediaReadActive(signal)
       response = await send(bypassHTTPCache ? 'no-store' : undefined)
     }
     // Only the Server-directed 503 path retries; never replay a permanent
@@ -2700,9 +2700,9 @@ export class XDriveApi {
     // canonical derivative has already recovered. Only this visible
     // request may bypass that cache, and at most once. No image onError
     // loop, source download, or second gallery/virtualization code path.
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     try { onProgress?.(0, undefined, null) } catch { /* UI callbacks do not own I/O */ }
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     response = await send('no-store')
     if (!response.ok) {
       throw new ApiError(
@@ -2722,7 +2722,7 @@ export class XDriveApi {
    */
   async mediaAnalysisPreview(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: (loaded: number, total?: number) => void): Promise<Blob> {
     await this.ensureFresh(signal)
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     // Cache identity includes the current source revision. The Server derivative
     // is revision/SHA fenced, while a browser may cache the authenticated GET.
     const revisionQuery = Number.isSafeInteger(revision) && (revision ?? 0) > 0
@@ -2739,7 +2739,7 @@ export class XDriveApi {
     let response = await send()
     if (response.status === 401 && this.session.refreshToken) {
       await this.refresh(true, signal)
-      signal?.throwIfAborted()
+      xDriveAssertMediaReadActive(signal)
       response = await send()
     }
     if (!response.ok) {
@@ -2749,13 +2749,13 @@ export class XDriveApi {
       throw new ApiError(502, 'RAW preview response is not JPEG')
     }
     const blob = await xDriveMediaResponseBlob(response, signal, onProgress)
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     return blob
   }
 
   async mediaAnalysisPreviewURL(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: (loaded: number, total?: number) => void): Promise<string> {
     const blob = await this.mediaAnalysisPreview(nodeID, signal, revision, onProgress)
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     const url = URL.createObjectURL(blob)
     // Legacy 1280px analysis JPEG is a derivative, never label it "original".
     xDriveRegisterViewerImageSource(url, { format: 'JPEG', quality: 84, byteSize: blob.size })
@@ -2771,7 +2771,7 @@ export class XDriveApi {
   ): Promise<string> {
     await this.ensureFresh(signal)
     const get = async (format: 'webp' | 'jpeg') => {
-      signal?.throwIfAborted()
+      xDriveAssertMediaReadActive(signal)
       const query = new URLSearchParams({ format })
       if (revision && Number.isSafeInteger(revision)) query.set('revision', String(revision))
       const path = '/api/v1/media/items/' + nodeID + '/viewer-preview?' + query.toString()
@@ -2784,7 +2784,7 @@ export class XDriveApi {
       let response = await send()
       if (response.status === 401 && this.session.refreshToken) {
         await this.refresh(true, signal)
-        signal?.throwIfAborted()
+        xDriveAssertMediaReadActive(signal)
         response = await send()
       }
       if (!response.ok) throw new ApiError(response.status, '高清预览不可用')
@@ -2793,7 +2793,7 @@ export class XDriveApi {
         throw new ApiError(502, '高清预览格式不匹配')
       }
       const blob = await xDriveMediaResponseBlob(response, signal, onProgress)
-      signal?.throwIfAborted()
+      xDriveAssertMediaReadActive(signal)
       if (!blob.size) throw new ApiError(502, '高清预览内容为空')
       const url = URL.createObjectURL(blob)
       try {
@@ -2802,7 +2802,7 @@ export class XDriveApi {
         // unsupported/corrupt WebP genuinely falls back to JPEG.
         if (typeof Image !== 'undefined') {
           const probe = new Image()
-          if (signal?.aborted) signal.throwIfAborted()
+          xDriveAssertMediaReadActive(signal)
           probe.src = url
           if (typeof probe.decode === 'function') {
             await probe.decode()
@@ -2816,7 +2816,7 @@ export class XDriveApi {
               probe.onerror = () => reject(new Error('preview decode failed'))
             })
           }
-          signal?.throwIfAborted()
+          xDriveAssertMediaReadActive(signal)
           if (!probe.naturalWidth || !probe.naturalHeight) {
             throw new ApiError(502, '高清图片无法解码')
           }
@@ -2835,7 +2835,7 @@ export class XDriveApi {
     try {
       return await get('webp')
     } catch (error) {
-      signal?.throwIfAborted()
+      xDriveAssertMediaReadActive(signal)
       return get('jpeg')
     }
   }
@@ -2869,14 +2869,14 @@ export class XDriveApi {
   }
 
   async mediaLivePhotoMotionURL(nodeID: number, signal?: AbortSignal): Promise<string> {
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     const ticket = await this.request<{
       url: string
       expires_at: string
       kind: 'video'
       mime_type: string
     }>(`/api/v1/media/items/${nodeID}/live-photo-motion-ticket`, { method: 'POST', signal })
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     if (
       !ticket.url.startsWith('/api/v1/media-live-photo-motion/') ||
       ticket.url.startsWith('//')
@@ -3102,7 +3102,7 @@ export class XDriveApi {
     grouping?: XDriveFileExplorerGrouping,
     signal?: AbortSignal,
   ) {
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     const query = new URLSearchParams({
       offset: String(Math.max(0, Math.trunc(offset))),
       limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
@@ -3582,14 +3582,14 @@ export class XDriveApi {
   }
 
   async mediaLivePhotoStillURL(nodeID: number, signal?: AbortSignal): Promise<string> {
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     const ticket = await this.request<{
       url: string
       expires_at: string
       kind: 'image'
       mime_type: string
     }>(`/api/v1/media/items/${nodeID}/live-photo-still-ticket`, { method: 'POST', signal })
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     if (
       !ticket.url.startsWith('/api/v1/media-live-photo-still/') ||
       ticket.url.startsWith('//')
@@ -3600,14 +3600,14 @@ export class XDriveApi {
   }
 
   async filePreviewURL(nodeID: number, signal?: AbortSignal): Promise<string> {
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     const ticket = await this.request<{
       url: string
       expires_at: string
       kind: 'image' | 'video' | 'audio' | 'pdf'
       mime_type: string
     }>(`/api/v1/files/${nodeID}/preview-ticket`, { method: 'POST', signal })
-    signal?.throwIfAborted()
+    xDriveAssertMediaReadActive(signal)
     if (
       !ticket.url.startsWith('/api/v1/file-preview/') ||
       ticket.url.startsWith('//')

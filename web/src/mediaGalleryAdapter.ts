@@ -3,6 +3,7 @@ import {
   xDriveMediaGalleryTrashRoots,
 } from '@xdrive/ui/mui'
 import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileNeedsBrowserCompatibleImagePreview } from '../../ui/shared/src'
+import { xDriveAssertMediaReadActive } from './mediaBinaryProgress'
 import type { XDriveApi } from './api'
 import type { MediaAlbum } from '../../ui/shared/src'
 
@@ -148,7 +149,7 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
       try {
         return await api.mediaViewerPreviewURL(nodeID, signal, revision, onProgress)
       } catch {
-        signal?.throwIfAborted()
+        xDriveAssertMediaReadActive(signal)
         // Older Servers retain the pre-upgrade bounded JPEG preview.
         return kind === 'live_photo'
           ? api.mediaLivePhotoStillURL(nodeID, signal)
