@@ -8,6 +8,14 @@ internal data class NativeLocalViewerItemKey(
     val addedAtSeconds: Long,
 )
 
+/** The same MediaStore ID can resolve to a different content URI on a new
+ * volume or after reselection. Never reuse a player or Motion Photo intent
+ * just because the visible row's numeric identity still matches. */
+internal data class NativeLocalVideoSourceKey(
+    val item: NativeLocalViewerItemKey,
+    val uri: String,
+)
+
 internal fun NativeLocalMedia.viewerReturnKey() = NativeLocalViewerItemKey(
     id = id, isVideo = isVideo, albumId = albumId, addedAtSeconds = addedAtSeconds)
 
@@ -78,4 +86,34 @@ internal fun nativeLocalViewerSwipeDirection(
     if (zoomed || !distanceX.isFinite() || !thresholdPx.isFinite() ||
         thresholdPx <= 0f || kotlin.math.abs(distanceX) < thresholdPx) return null
     return if (distanceX < 0f) 1 else -1
+}
+
+/**
+ * A passive video swipe must not steal Media3 seeking, the top controls, or
+ * multitouch. Direction applies only to the already-loaded local media wall;
+ * it never asks MediaStore for additional files.
+ */
+internal fun nativeLocalVideoSwipeDirection(
+    deltaX: Float,
+    deltaY: Float,
+    elapsedMillis: Long,
+    startY: Float,
+    surfaceHeight: Float,
+    headerPx: Float,
+    thresholdPx: Float,
+    singlePointer: Boolean,
+    previousAvailable: Boolean,
+    nextAvailable: Boolean,
+): Int? {
+    if (!singlePointer || elapsedMillis !in 0L..800L ||
+        !deltaY.isFinite() || !startY.isFinite() ||
+        !surfaceHeight.isFinite() || surfaceHeight <= 0f ||
+        !headerPx.isFinite() || headerPx < 0f ||
+        startY < headerPx || startY >= surfaceHeight * 0.78f) return null
+    val direction = nativeLocalViewerSwipeDirection(
+        deltaX, thresholdPx, zoomed = false) ?: return null
+    if (kotlin.math.abs(deltaX) <= kotlin.math.abs(deltaY) * 1.25f) return null
+    return direction.takeIf {
+        if (it > 0) nextAvailable else previousAvailable
+    }
 }
