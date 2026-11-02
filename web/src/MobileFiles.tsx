@@ -45,7 +45,8 @@ import type {
 import {
   XDriveFileExplorerAvailabilityBadge, xDriveFileExplorerMarkThumbnailScrollActivity,
   XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
-  XDriveFileNameDialog, XDriveFilePropertiesDialog, XDriveStatePanel, XDriveMediaDetailsInspector, xDriveFileSupportsThumbnail,
+  XDriveFileNameDialog, XDriveFilePropertiesDialog, XDriveStatePanel, XDriveMediaDetailsInspector,
+  XDriveMobileHeaderNavigation, useXDriveMobileHeaderMode, xDriveFileSupportsThumbnail,
   useXDriveFileExplorerPropertiesController,
   xDriveFileKind, xDriveFileTypeLabel, xDriveCreateFileExplorerGroupLayout,
   xDriveFileExplorerVisibleGroupSegments, xDriveFileExplorerReadExternalDrop,
@@ -2503,6 +2504,7 @@ export default function MobileFiles(props: Props) {
       </Box>
     )
   }
+  const managedHeader = useXDriveMobileHeaderMode() === 'global'
   const heading = props.trashActive ? '最近删除' : section === 'recent' ? '最近' : section === 'favorites' ? '收藏' :
     showDirectory ? (props.searchActive ? '搜索结果' : props.crumbs.at(-1)?.name ?? '云端文件') : '浏览'
   const editTitle = editBrowseHome && section === 'browse' && !showDirectory
@@ -2666,18 +2668,21 @@ export default function MobileFiles(props: Props) {
         fontFamily: IOS_FILES_MOBILE_FONT,
         '& .MuiTypography-root, & .MuiButton-root': { fontFamily: IOS_FILES_MOBILE_FONT },
       }}>
+        <XDriveMobileHeaderNavigation>
         <Stack data-mobile-files-navigation-bar direction="row" alignItems="center" sx={{
-          px: 1.5, flexShrink: 0, minHeight: 56, gap: 1,
+          width: '100%', minWidth: 0,
+          px: managedHeader ? 0.25 : 1.5, flexShrink: 0,
+          minHeight: managedHeader ? 44 : 56, gap: managedHeader ? 0.25 : 1,
           bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#ffffff',
         }}>
           {showDirectory ? (
             <IconButton aria-label="返回" onClick={navigateUp} sx={{
-              width: 48, height: 48, flexShrink: 0,
+              width: managedHeader ? 44 : 48, height: 44, flexShrink: 0,
               color: theme => theme.palette.mode === 'dark' ? '#f7f7f7' : '#111111',
               bgcolor: theme => theme.palette.mode === 'dark' ? '#232326' : '#fafafa',
               boxShadow: '0 4px 20px rgba(0,0,0,0.035)',
             }}><ArrowBackIosNewRoundedIcon sx={{ fontSize: 23 }}/></IconButton>
-          ) : <Box aria-hidden="true" sx={{ width: 48, height: 48, flexShrink: 0 }}/>}
+          ) : <Box aria-hidden="true" sx={{ width: managedHeader ? 44 : 48, height: 44, flexShrink: 0 }}/>}
           {hasFolderAncestors ? (
             <Button data-mobile-files-location-trigger
               aria-label={`查看文件夹位置：${compactTitle}`} aria-haspopup="menu"
@@ -2694,9 +2699,10 @@ export default function MobileFiles(props: Props) {
             </Button>
           ) : (
             <Typography data-mobile-files-compact-title component="span" variant="subtitle1" noWrap
-              aria-hidden={!compactTitleVisible || savedResumePending} dir="auto" title={compactTitle}
+              aria-hidden={managedHeader ? false : !compactTitleVisible || savedResumePending}
+              dir="auto" title={compactTitle}
               sx={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 650, textAlign: 'center',
-                visibility: compactTitleVisible && !savedResumePending ? 'visible' : 'hidden' }}>
+                visibility: managedHeader || (compactTitleVisible && !savedResumePending) ? 'visible' : 'hidden' }}>
               {compactTitle}
             </Typography>
           )}
@@ -2719,11 +2725,13 @@ export default function MobileFiles(props: Props) {
               sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>完成</Button>
           ) : (
             <IconButton aria-label="文件操作菜单" onClick={event => setMoreAnchor(event.currentTarget)}
-              sx={{ width: 48, height: 48, flexShrink: 0, color: 'text.primary', borderRadius: '50%',
+              sx={{ width: managedHeader ? 44 : 48, height: 44, flexShrink: 0,
+                color: 'text.primary', borderRadius: '50%',
                 bgcolor: theme => theme.palette.mode === 'dark' ? '#232326' : '#fafafa',
                 boxShadow: '0 4px 20px rgba(0,0,0,0.035)' }}><MoreHorizRoundedIcon sx={{ fontSize: 26 }}/></IconButton>
           )}
         </Stack>
+        </XDriveMobileHeaderNavigation>
         <Box ref={scrollHostRef} data-xdrive-mobile-files-scroll data-xdrive-file-explorer-scroll-host
           onPointerDownCapture={() => { arrangeUserGestureRef.current += 1 }}
           onWheelCapture={() => { arrangeUserGestureRef.current += 1 }}
