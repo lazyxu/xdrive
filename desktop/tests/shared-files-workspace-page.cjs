@@ -51,7 +51,7 @@ test('both real Hosts use the exact same Files workspace surface, without native
   assert.equal(synology.includes('<XDriveWorkspaceSurface'), false,
     'DSM Files must use the canonical common page, not a NAS-specific wrapper')
   assert.match(synology, /disabled=\{loadingRoot\} onClick=\{refreshAuthenticatedOwner\}>重试/)
-  assert.match(synology, /onRefresh=\{refreshAuthenticatedOwner\}/)
+  assert.match(synology, /onRefresh=\{search\.current \? \(\) => search\.start\(search\.current!\.query\) : refreshAuthenticatedOwner\}/)
   assert.doesNotMatch(synology, /本页提供经 Server Owner 鉴权的文件列表/)
   assert.doesNotMatch(synology, /pageActions=\{<XDriveActionButton/)
   assert.doesNotMatch(source, /window\.xdriveDesktop|ipcRenderer|backup\.cgi|fetch\s*\(|ownerFilesRoot/)
