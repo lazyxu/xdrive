@@ -1079,7 +1079,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func submitSearch() {
         let query = queryDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.isEmpty || XDriveIOSNativeFilesPagePolicy.validSearch(query) else {
-            searchError = "搜索词最多 200 个字符。"
+            searchError = "搜索词至少需要 2 个字符，最多 200 个字符且不超过 256 UTF-8 字节。"
             return
         }
         searchError = nil

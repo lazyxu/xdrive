@@ -45,6 +45,13 @@ test('native Files decodes and displays Server modification timestamps in list a
   assert.match(management, /directory\.modifiedDate/)
 })
 
+test('native Files search input matches the Server character and UTF-8 byte contract', () => {
+  assert.match(page, /static let minimumQueryCharacters = 2/)
+  assert.match(page, /static let maximumQueryUTF8Bytes = 256/)
+  assert.match(page, /value\.utf8\.count <= maximumQueryUTF8Bytes/)
+  assert.match(view, /searchError = "搜索词至少需要 2 个字符，最多 200 个字符且不超过 256 UTF-8 字节。"/)
+})
+
 test('file mutations and downloads remain unavailable; Viewer uses one native modal', () => {
   assert.match(view, /\.fullScreenCover\(item: \$selectedFile/);
   assert.match(view, /XDriveIOSNativeFilesViewer\(/);

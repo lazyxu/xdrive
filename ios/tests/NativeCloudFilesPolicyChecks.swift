@@ -61,6 +61,18 @@ struct XDriveIOSNativeFilesPageChecks {
             empty, parentID: parent, offset: 0, sort: "name", order: "asc"
         ), "reject non-progressing page")
         require(XDriveIOSNativeFilesPagePolicy.validSearch(" hello "), "search string")
+        require(!XDriveIOSNativeFilesPagePolicy.validSearch("a"), "reject single ASCII character")
+        require(!XDriveIOSNativeFilesPagePolicy.validSearch("中"), "reject single Unicode scalar")
+        require(XDriveIOSNativeFilesPagePolicy.validSearch("中文"), "two Unicode scalars are valid")
+        require(XDriveIOSNativeFilesPagePolicy.validSearch(
+            String(repeating: "😀", count: 64)
+        ), "accept exactly 256 UTF-8 bytes")
+        require(!XDriveIOSNativeFilesPagePolicy.validSearch(
+            String(repeating: "😀", count: 65)
+        ), "reject more than 256 UTF-8 bytes")
+        require(XDriveIOSNativeFilesPagePolicy.validSearch(
+            String(repeating: "x", count: 200)
+        ), "accept 200 short characters")
         require(!XDriveIOSNativeFilesPagePolicy.validSearch("  "), "no empty search")
         require(!XDriveIOSNativeFilesPagePolicy.validSearch(String(repeating: "a", count: 201)),
                 "bounded search string")
