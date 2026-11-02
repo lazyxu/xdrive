@@ -687,7 +687,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     /// chrome by SwiftUI safe-area layout rather than a fixed global overlay.
     private var filesSelectionToolbar: some View {
         HStack(spacing: 12) {
-            Text("已选 \\(selectedIDs.count)")
+            Text("已选 \(selectedIDs.count)")
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("native-ios-files-selection-count")
@@ -732,7 +732,7 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func prepareSelectedExport() {
         guard canSelectPage, let sourceParentID = parentID,
-              selectedIDs == Set(chosenItems.map(\\.id)),
+              selectedIDs == Set(chosenItems.map(\.id)),
               XDriveIOSNativeFilesBatchExportPolicy.validSelection(
                   chosenItems, parentID: sourceParentID
               ) else {
