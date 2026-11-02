@@ -76,6 +76,39 @@ assert.equal(state.dynamic[0].app, 'admin-users')
 state = nav.xDriveRememberMobileNavigation(state, all, owner, false)
 assert.equal(state.dynamic.some(item => item.app === 'admin-users'), false, 'revoked admin must be excluded')
 assert.equal(nav.xDriveMobileRouteAllowed({ app: 'tasks', params: { scope: 'global' } }, false), false)
+// Two task scopes use the same /tasks browser app, but their independent
+// workspace routes and last local task must remain resumable in Recent.
+const personalTask = { app: 'tasks', params: { scope: 'mine', task: 'transfer-1' } }
+const globalTask = { app: 'tasks', params: { scope: 'global', task: 'admin-job-1' } }
+let taskState = nav.xDriveInitialMobileNavigation(owner)
+taskState = nav.xDriveRememberMobileNavigation(taskState, personalTask, owner, false)
+taskState = nav.xDriveRememberMobileNavigation(taskState, globalTask, owner, true)
+assert.deepEqual(taskState.dynamic, [globalTask, personalTask],
+  'global tasks do not displace the personal transfer workspace')
+assert.deepEqual(nav.xDriveMobileRouteForSlot(taskState, 'dynamic', true), globalTask)
+assert.deepEqual(nav.xDriveMobileRouteForSlot(taskState, 'dynamic', false), personalTask,
+  'a revoked administrator can still resume their personal transfers')
+const globalTaskNext = { app: 'tasks', params: { scope: 'global', task: 'admin-job-2' } }
+taskState = nav.xDriveRememberMobileNavigation(taskState, globalTaskNext, owner, true)
+assert.deepEqual(taskState.dynamic, [globalTaskNext, personalTask],
+  'new task detail replaces only its own workspace in recent history')
+const personalTaskNext = { app: 'tasks', params: { scope: 'mine', task: 'transfer-2' } }
+taskState = nav.xDriveRememberMobileNavigation(taskState, personalTaskNext, owner, true)
+assert.deepEqual(taskState.dynamic, [personalTaskNext, globalTaskNext])
+taskState = nav.xDriveRememberMobileNavigation(taskState, all, owner, false)
+assert.deepEqual(taskState.dynamic, [personalTaskNext],
+  'role downgrade drops the privileged task route, not personal transfers')
+taskState = nav.xDriveRememberMobileNavigation(taskState, all, 'https://example.test:2', true)
+assert.deepEqual(taskState.dynamic, [], 'switching Owner clears both task contexts')
+const noAdminGlobal = nav.xDriveToggleMobileFavorite(
+  nav.xDriveInitialMobileNavigation(owner), owner, 'global-tasks', false)
+assert.equal(noAdminGlobal.favorites.includes('global-tasks'), false,
+  'a regular Owner cannot keep a privileged launcher favorite')
+const withAdminGlobal = nav.xDriveToggleMobileFavorite(
+  nav.xDriveInitialMobileNavigation(owner), owner, 'global-tasks', true)
+assert.equal(withAdminGlobal.favorites.includes('global-tasks'), true)
+const downgradedGlobal = nav.xDriveRememberMobileNavigation(withAdminGlobal, all, owner, false)
+assert.equal(downgradedGlobal.favorites.includes('global-tasks'), false)
 state = nav.xDriveRememberMobileNavigation(state, all, 'https://example.test:2', false)
 assert.equal(state.dynamic.length, 0, 'Owner switch must reset recent feature state')
 assert.deepEqual(nav.xDriveMobileRouteForSlot(state, 'files', false), { app: 'files', params: {} })
