@@ -510,6 +510,7 @@ declare global {
       openBaiduMapSecure: (scope: import('../../../ui/shared/src/media-gallery-baidu-map-photo-scope').XDriveBaiduMapPhotoScope) => Promise<DesktopResult<{
         opened: true; separate_login_required: true
       }>>
+      preparePlacesEmbed: (scope: import('../../../ui/shared/src/media-gallery-baidu-map-photo-scope').XDriveBaiduMapPhotoScope) => Promise<DesktopResult<{allowed:true}>>
       startNativeDragOut: (relativePath: string) => void
       copyText: (text: string) => void
       hide: () => void

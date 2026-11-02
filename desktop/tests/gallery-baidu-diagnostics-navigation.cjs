@@ -129,7 +129,7 @@ test('Gallery remains a short fallback with admin-only route to the shared diagn
   assert.match(photo, /xDriveClassifyBaiduMapRequestFailure\('viewport', error\)/)
   assert.match(photo, /pending\.abort\(\)/)
   assert.match(photo, /data-xdrive-baidu-map-fallback/)
-  assert.match(web, /onOpenBaiduMapDiagnostics=\{profile\?\.role === 'admin'/)
+  assert.match(web, /onOpenBaiduMapDiagnostics=\{!placesEmbedRequested && profile\?\.role === 'admin'/)
   assert.match(web, /app: 'admin-services', params: \{ service: 'baidu-map', tab: 'verify' \}/)
   assert.match(desktop, /status\?\.role === 'admin' &&/)
   assert.match(web, /xDriveClearBaiduMapDiagnostic\(baiduDiagnosticScope\)/)

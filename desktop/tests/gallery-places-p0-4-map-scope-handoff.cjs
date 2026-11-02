@@ -111,7 +111,7 @@ test('P0-4 Web/Mobile page gates render until redeemed, preserves filters and Ow
   assert.match(app,/const initialWebMapScopeHandoff/)
   assert.match(app,/xDriveTakeMapScopeHandoffFromURL\(window\)/)
   assert.match(app,/webMapScopeHandoff\.state!=='none' && !webMapScopeOwnerReady/)
-  assert.match(app,/initialMapPhotoScope=\{secureMapOwnerReady/)
+  assert.match(app,/initialMapPhotoScope=\{placesEmbedRequested \? placesEmbedScope \?\? undefined :[\s\S]*?secureMapOwnerReady/)
   assert.match(app,/onMapModeHandoff=\{!window\.xdriveSecureMapBridge/)
   assert.match(app,/state:'ready',ownerID:profile.id,username:profile.username/)
   assert.match(app,/existing.ownerID!==profile.id/)

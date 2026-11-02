@@ -31,7 +31,7 @@ test('signed Cell/Camera Viewer map action returns rather than broadens Gallery'
   const reject=fn.indexOf('if (loading || collectionError || !accepted ||')
   assert.ok(branch>0 && viewport>branch && reject>viewport,
     'signed map wall must return BEFORE new general Gallery membership checks')
-  assert.match(fn,/if \(!onOpenSecureDesktopMap &&/)
+  assert.match(fn,/if \(\(!onOpenSecureDesktopMap \|\| desktopEmbeddedPlacesURL\) &&/)
   const limited=fn.slice(0,reject)
   assert.match(limited,/leaveBaiduCellWall\(\)/)
   assert.match(limited,/setError\(''\)/)
@@ -60,7 +60,7 @@ test('Desktop file renderer retains independent secure HTTPS map entry',()=>{
   const permission=fn.indexOf('if (!entry.ok)')
   const desktop=fn.indexOf('onOpenSecureDesktopMap(entry.scope)')
   assert.ok(permission>0 && desktop>permission)
-  assert.match(fn,/if \(onOpenSecureDesktopMap\) \{/)
+  assert.match(fn,/if \(onOpenSecureDesktopMap && !desktopEmbeddedPlacesURL\) \{/)
 })
 test('shared Gallery TSX retains valid TypeScript syntax',()=>{
   const r=ts.transpileModule(source,{fileName:file,reportDiagnostics:true,

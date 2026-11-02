@@ -696,6 +696,8 @@ export interface XDriveMediaGalleryPageProps {
   onRegisterViewerThumbnailCache?: XDriveMediaGalleryThumbnailCacheRegistrar
   onShowInFolder?: (location: NodeLocation) => void
   onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
+  desktopEmbeddedPlacesURL?: string
+  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope)=>Promise<boolean>
   onOpenBaiduMapDiagnostics?: () => void
   onError?: (error: unknown) => void
 }
@@ -724,6 +726,8 @@ export function XDriveMediaGalleryPage({
   onRegisterViewerThumbnailCache,
   onShowInFolder,
   onOpenSecureDesktopMap,
+  desktopEmbeddedPlacesURL,
+  onPrepareDesktopPlaces,
   onOpenBaiduMapDiagnostics,
   onError,
 }: XDriveMediaGalleryPageProps) {
@@ -4211,7 +4215,7 @@ export function XDriveMediaGalleryPage({
     // not a new all-library map entry. Cancel its reader and reveal the existing
     // Parent map so that /cells independently revalidates Owner/GPS/source.
     // Desktop file: cannot mount an SDK here; retain its HTTPS-only boundary.
-    if (!onOpenSecureDesktopMap &&
+    if ((!onOpenSecureDesktopMap || desktopEmbeddedPlacesURL) &&
         (accepted?.kind === 'baidu-cell' || accepted?.kind === 'baidu-viewport')) {
       setError('')
       leaveBaiduCellWall()
@@ -4239,9 +4243,10 @@ export function XDriveMediaGalleryPage({
       setError('当前照片集合包含地图尚不支持的筛选条件；未切换到全图库。')
       return false
     }
-    // Desktop remains on its original Gallery while only an independently
-    // authenticated HTTPS Parent may claim the selected Owner photo scope.
-    if (onOpenSecureDesktopMap) {
+    // Legacy Desktop external HTTPS window only. The new embedded Desktop
+    // uses this same Gallery navigation and source/album/date filter scope
+    // as Web, followed by a per-guest Owner-bound verified handshake.
+    if (onOpenSecureDesktopMap && !desktopEmbeddedPlacesURL) {
       setError('')
       onOpenSecureDesktopMap(entry.scope)
       return true
@@ -4394,6 +4399,8 @@ export function XDriveMediaGalleryPage({
           nativePhotoOpenAbort.current?.abort()
         }}
         onOpenSecureDesktopMap={onOpenSecureDesktopMap}
+        desktopEmbeddedPlacesURL={desktopEmbeddedPlacesURL}
+        onPrepareDesktopPlaces={onPrepareDesktopPlaces}
         onOpenBaiduMapDiagnostics={onOpenBaiduMapDiagnostics}
         baiduNativeCameraSnapshot={baiduNativeCameraSnapshot}
         onBaiduNativeCameraChange={rememberBaiduNativeCamera}
@@ -4920,6 +4927,8 @@ export interface XDriveMediaGalleryProps {
     camera?:XDriveBaiduNativeCameraSnapshot)=>Promise<string>
   onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
+  desktopEmbeddedPlacesURL?: string
+  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope)=>Promise<boolean>
   onOpenBaiduMapDiagnostics?: () => void
   focusPlaceID?: string
   getBaiduMapConsent?: MediaGalleryDataSource['getBaiduMapConsent']
@@ -6660,6 +6669,8 @@ export function XDriveMediaGallery({
   onMapModeHandoff,
   onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap,
+  desktopEmbeddedPlacesURL,
+  onPrepareDesktopPlaces,
   onOpenBaiduMapDiagnostics,
   baiduNativeCameraSnapshot,
   onBaiduNativeCameraChange,
@@ -8987,6 +8998,8 @@ export function XDriveMediaGallery({
             mapAlbums={albums}
             onBaiduNativeCellInvalidated={onBaiduNativeCellInvalidated}
             onOpenSecureDesktopMap={onOpenSecureDesktopMap}
+        desktopEmbeddedPlacesURL={desktopEmbeddedPlacesURL}
+        onPrepareDesktopPlaces={onPrepareDesktopPlaces}
             diagnosticScope={preferenceScope}
             onOpenDiagnostics={onOpenBaiduMapDiagnostics}
             initialNativeCamera={baiduNativeCameraSnapshot}

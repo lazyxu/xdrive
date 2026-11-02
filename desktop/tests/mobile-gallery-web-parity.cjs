@@ -192,7 +192,10 @@ test('P1-1a Mobile Collections overview reuses the Wide Web Gallery upload entry
   assert.match(page, /\{querySelectionControls\}/)
   assert.match(page, /extraActions=\{mobileCollectionsOverview \? galleryUploadAction :/)
   assert.doesNotMatch(page, /mobileCollectionsOverview \? contextualHeaderActions/)
-  assert.match(web, /ref=\{galleryUploadInputRef\}[\s\S]*?multiple[\s\S]*?onUploadRequested=\{\(\) => galleryUploadInputRef\.current\?\.click\(\)\}/)
+  // The same Gallery is constructed once, before the physical file input.
+  // Neither embedded map rendering nor source order may drop the Web picker.
+  assert.match(web, /ref=\{galleryUploadInputRef\}[\s\S]*?multiple/)
+  assert.match(web, /const sharedGalleryPage = \([\s\S]*?onUploadRequested=\{\(\) => galleryUploadInputRef\.current\?\.click\(\)\}/)
   assert.match(chrome, /const canShowMore =/)
   assert.match(chrome, /if \(!canShowMore\) setMoreOpen\(false\)/)
   assert.doesNotMatch(chrome, /fetch\(|listItemRange\(|new XMLHttpRequest\(/)

@@ -48,7 +48,7 @@ test('Gallery Photo Info checks accepted Owner membership before requesting BD09
 
 test('the original no-photo Show Map entry and signed Cell return remain intact',()=>{
   assert.match(gallery,/  const showMapFromCurrentGallery = \(\) => \{/)
-  assert.match(gallery,/if \(!onOpenSecureDesktopMap &&\s*\(accepted\?\.kind === 'baidu-cell'/)
+  assert.match(gallery,/if \(\(!onOpenSecureDesktopMap \|\| desktopEmbeddedPlacesURL\) &&\s*\(accepted\?\.kind === 'baidu-cell'/)
   assert.match(gallery,/if \(!onShowMap\(\)\) return/)
   assert.match(gallery,/onShowMap=\{showMapFromCurrentGallery\}/)
   assert.match(gallery,/onShowPhotoMap=\{source\.getBaiduNativePhotoFocus/)

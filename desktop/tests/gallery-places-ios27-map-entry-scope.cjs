@@ -136,7 +136,7 @@ test('Gallery source and map modes do not silently bypass the converter', () => 
   // current Album just because the browser mode URL happens to say isolated.
   // Desktop must send exact signed-map membership to the separately
   // authenticated HTTPS Parent, without falling back to all photos.
-  assert.ok(g.includes('if (onOpenSecureDesktopMap) {'))
+  assert.ok(g.includes('if (onOpenSecureDesktopMap && !desktopEmbeddedPlacesURL) {'))
   assert.ok(g.includes('onOpenSecureDesktopMap(entry.scope)'))
   assert.ok(g.indexOf('if (!entry.ok)') < g.indexOf('onOpenSecureDesktopMap(entry.scope)'))
   assert.ok(!g.includes('onOpenSecureDesktopMap()'))
@@ -199,6 +199,7 @@ test('Viewer location can open map only after current Owner map admission succee
     const currentSource = {}
     const env = {
       onOpenSecureDesktopMap: undefined,
+      desktopEmbeddedPlacesURL: undefined,
       collectionTargetRef: {current:{kind:'all',id:'',query:{}}},
       setError: message => { if (message) events.push(['error',message]) },
       leaveBaiduCellWall: () => events.push(['return-to-map']),
@@ -256,6 +257,22 @@ test('Viewer location can open map only after current Owner map admission succee
   assert.equal(desktopEvents.length,1)
   assert.ok(desktop.events.every(event=>event[0]!=='section'))
   assert.equal(desktop.entry,null)
+  const guestEvents=[]
+  const guest=run({
+    onOpenSecureDesktopMap:scope=>guestEvents.push(scope),
+    desktopEmbeddedPlacesURL:'https://drive.example.test/?desktop_places_embed=1',
+  })
+  assert.equal(guest.accepted,true)
+  assert.deepEqual(guestEvents,[], 'embedded HTTPS Guest must use shared local map route')
+  assert.deepEqual(guest.events,[['map-scope'],['section','places']])
+  const guestCell=run({
+    onOpenSecureDesktopMap:scope=>guestEvents.push(scope),
+    desktopEmbeddedPlacesURL:'https://drive.example.test/?desktop_places_embed=1',
+    collectionTargetRef:{current:{kind:'baidu-cell'}},
+  })
+  assert.equal(guestCell.accepted,true)
+  assert.deepEqual(guestCell.events,[['return-to-map']])
+  assert.deepEqual(guestEvents,[], 'signed Cell return must never create external Guest')
 })
 
 test('Viewer->Map keeps preview open on rejection and never widens to an unscoped tab', () => {

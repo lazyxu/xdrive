@@ -561,7 +561,7 @@ test('P1-2c real routed Viewer and Gallery use one Web media and virtual query c
   const app = fs.readFileSync(path.join(repo, 'web/src/App.tsx'), 'utf8')
   const gallery = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
   const adapter = fs.readFileSync(path.join(repo, 'web/src/mediaGalleryAdapter.ts'), 'utf8')
-  assert.match(app, /<XDriveMediaGalleryPage[\s\S]*?onOpenViewer=\{\(item, context\) => \{/)
+  assert.match(app, /<XDriveMediaGalleryPage[\s\S]*?onOpenViewer=\{placesEmbedRequested \? undefined : \(item, context\) => \{/)
   assert.match(app, /app: 'media-viewer'/)
   assert.match(source, /<WebViewerFrame[\s\S]*?immersive\s+photosViewer/)
   assert.match(source, /<XDriveMediaViewerContent/)
@@ -622,7 +622,7 @@ test('P1-2c Gallery Viewer return scroll snapshot belongs to same Web route, hos
   const runtime = fs.readFileSync(path.join(repo, 'web/src/webAppRuntime.ts'), 'utf8')
   assert.match(runtime, /if \(state\?\.viewerReturn\) \{\s*window\.history\.back\(\)/,
     'an existing Viewer return History entry must override any fallback')
-  const openStart = app.indexOf('onOpenViewer={(item, context) => {')
+  const openStart = app.indexOf('onOpenViewer={placesEmbedRequested ? undefined : (item, context) => {')
   const openEnd = app.indexOf('const contextID = xDriveCreateWebAppBrowseSession', openStart)
   assert.ok(openStart >= 0 && openEnd > openStart)
   assert.doesNotMatch(app.slice(openStart, openEnd), /api\.mediaItem|fetch\(/,
