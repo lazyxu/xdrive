@@ -46,7 +46,7 @@ test('Host-disabled Search never dispatches even through direct command callback
 test('shared Files toolbar retains Host-disabled operations while admitting verified Owner upload and search', () => {
   for (const name of [
     'uploadFolder',
-    'copy', 'cut', 'paste', 'delete', 'moveTo', 'copyTo', 'manageTags',
+    'copy', 'cut', 'paste', 'moveTo', 'copyTo', 'manageTags',
   ]) {
     assert.ok(explorer.includes("'" + name + "'"), name + ' missing from shared capability contract')
     assert.ok(host.includes(name + ": 'DSM"), name + ' missing genuine DSM Host explanation')
@@ -58,6 +58,14 @@ test('shared Files toolbar retains Host-disabled operations while admitting veri
     'the shared search bar must dispatch only through the authenticated DSM search hook')
   // Only the verified browser-selected single-file upload is admitted.
   // Folder upload and unrelated mutations remain truly Host-disabled.
+  assert.equal(host.includes("delete: 'DSM"), false,
+    'one verified Owner item may be moved to Server trash')
+  assert.ok(dsm.includes('onDeleteItems={selected => {') &&
+    dsm.includes('client.ownerDeleteNode(') &&
+    dsm.includes('<XDriveConfirmDialog'),
+    'one Owner-scoped trash action requires current-row verification and confirmation')
+  assert.ok(dsm.includes("count !== 1 || selected.length !== 1"),
+    'bulk delete must remain disabled until its distinct authorized endpoint exists')
   assert.equal(host.includes("uploadFiles: 'DSM"), false,
     'Owner-scoped single-file upload must not be falsely disabled')
   assert.ok(dsm.includes('onUpload={() => {') &&
