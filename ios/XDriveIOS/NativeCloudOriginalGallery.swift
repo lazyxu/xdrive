@@ -224,6 +224,9 @@ struct XDriveIOSNativeCloudOriginalReader {
             XDriveIOSNativeCloudPreviewTicket.self, from: ticketBytes
         )
         guard ticket.url.hasPrefix("/api/v1/file-preview/"),
+              XDriveIOSNativeFilesViewerPolicy.validTicketPath(
+                ticket.url, nodeID: node.id
+              ),
               !ticket.url.hasPrefix("//"),
               (node.isImage && ticket.kind == "image") ||
                 (node.isVideo && ticket.kind == "video"),

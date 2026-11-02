@@ -303,7 +303,7 @@ jobs:
             ios/tests/NativePhotoAssetViewerNeighborPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-photoasset-viewer-neighbors"
           "$RUNNER_TEMP/xdrive-ios-photoasset-viewer-neighbors"
-          node --test desktop/tests/ios-native-photoasset-viewer-neighbors.cjs desktop/tests/ios-native-photoasset-live.cjs
+          node --test desktop/tests/ios-native-photoasset-viewer-neighbors.cjs desktop/tests/ios-native-photoasset-live.cjs desktop/tests/ios-native-photoasset-still-fallback.cjs
 
       - name: Verify native cloud PhotoAsset cross-range Viewer and numeric cursor
         run: |
