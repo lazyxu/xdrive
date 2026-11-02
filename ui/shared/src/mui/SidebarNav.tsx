@@ -39,12 +39,31 @@ export function XDriveSidebarSurface({
         color: dark ? '#e8eef9' : 'text.primary',
         borderRight: responsive ? { xs: 0, md: 1 } : 1,
         borderBottom: responsive ? { xs: 1, md: 0 } : 0,
-        borderColor: dark ? 'rgba(255,255,255,.08)' : 'divider',
+        // Match the dark surface with a single low-contrast 1px divider.
+        // Do not brighten the Desktop rail when Host appearance is inferred.
+        borderColor: dark ? 'rgba(255,255,255,.06)' : 'divider',
         px: responsive ? { xs: 1, md: 1.25 } : 1.25,
         pt: responsive ? { xs: 1, md: 1.25 } : 1.5,
         pb: responsive ? { xs: 1, md: 1.25 } : 1.25,
         overflowX: responsive ? { xs: 'auto', md: 'hidden' } : 'hidden',
         overflowY: responsive ? { xs: 'hidden', md: 'auto' } : 'auto',
+        // Windows Chromium may show an almost full-height native scrollbar
+        // when the rail overflows by a few pixels. Keep it scrollable, but
+        // prevent the default bright thumb from looking like a white divider.
+        ...(dark ? {
+          scrollbarColor: 'rgba(255,255,255,.16) transparent',
+          scrollbarWidth: 'thin',
+          '&::-webkit-scrollbar': { width: 4 },
+          '&::-webkit-scrollbar-track': { bgcolor: 'transparent' },
+          '&::-webkit-scrollbar-thumb': {
+            bgcolor: 'rgba(255,255,255,.16)',
+            borderRadius: 3,
+          },
+          '@media (forced-colors: active)': {
+            scrollbarColor: 'auto',
+            scrollbarWidth: 'auto',
+          },
+        } : {}),
       }}
     >
       {children}
