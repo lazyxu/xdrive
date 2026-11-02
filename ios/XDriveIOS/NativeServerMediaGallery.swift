@@ -285,6 +285,9 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @State private var nativeLiveUnavailable = false
     @State private var livePlaybackRequest: UUID?
     @State private var showingLiveMotion = false
+    // Live pairing remains available, but a user can inspect the still
+    // at full zoom without starting the motion or a new network transfer.
+    @State private var showsStaticStill = false
 
     private var viewed: XDriveIOSNativeMediaItem { activeItem ?? item }
 
@@ -346,7 +349,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                             onFailed: { playbackLoadFailed($0) }
                         )
                     } else if let resources = liveResources,
-                              !nativeLiveUnavailable {
+                              !nativeLiveUnavailable && !showsStaticStill {
                         ZStack {
                             Image(uiImage: still).resizable().scaledToFit()
                             XDriveIOSNativeCloudPairedLivePhotoView(
@@ -375,8 +378,20 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     }
                     if liveResources != nil {
                         HStack(spacing: 12) {
-                            if nativeLiveReady && !nativeLiveUnavailable &&
+                            if ownerAuthorized && !nativeLiveUnavailable &&
                                 !showingLiveMotion {
+                                Button(showsStaticStill ? "返回原生实况" : "放大静态照片") {
+                                    guard ownerAuthorized else { return }
+                                    // Unmount PHLivePhotoView (stopping playback)
+                                    // before displaying the native zoom/swipe still.
+                                    livePlaybackRequest = nil
+                                    nativeLiveReady = false
+                                    showsStaticStill.toggle()
+                                }
+                                .accessibilityIdentifier("native-ios-photoasset-live-still-toggle")
+                            }
+                            if nativeLiveReady && !nativeLiveUnavailable &&
+                                !showingLiveMotion && !showsStaticStill {
                                 Button("播放原生实况") {
                                     guard phase == .active,
                                           let currentOwner = liveOwner,
@@ -624,6 +639,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
         nativeLiveReady = false
         nativeLiveUnavailable = false
         showingLiveMotion = false
+        showsStaticStill = false
     }
 }
 

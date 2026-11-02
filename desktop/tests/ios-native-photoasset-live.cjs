@@ -93,3 +93,23 @@ test('Viewer reuses native Photos pairing and keeps an honest still/video fallba
   assert.match(paired, /static func dismantleUIView[\s\S]*?coordinator\.retire\(\)/)
   assert.doesNotMatch(detail, /目前只支持静态预览|WKWebView|UploadSession|UserDefaults/)
 })
+
+
+test('paired PhotoAsset Live offers full-zoom still and bounded neighbor swipe, restoring native playback', () => {
+  const start = view.indexOf('struct XDriveIOSNativeServerMediaPreview: View')
+  const end = view.indexOf('/// Root and album-specific media wall', start)
+  assert.ok(start >= 0 && end > start)
+  const detail = view.slice(start, end)
+  assert.match(detail, /@State private var showsStaticStill = false/)
+  assert.match(detail, /!nativeLiveUnavailable && !showsStaticStill/)
+  assert.match(detail, /Button\(showsStaticStill \? "返回原生实况" : "放大静态照片"\)/)
+  assert.match(detail, /native-ios-photoasset-live-still-toggle/)
+  assert.match(detail, /livePlaybackRequest = nil\s*nativeLiveReady = false\s*showsStaticStill\.toggle\(\)/)
+  assert.match(detail, /XDriveIOSNativeZoomablePhotoView\(image: still\)\s*\.onNavigateSwipe \{ navigateLoaded\(\$0\) \}/)
+  assert.match(detail, /!showingLiveMotion && !showsStaticStill/)
+  const retire = detail.slice(detail.indexOf('private func retirePreview()'))
+  assert.match(retire, /liveResources\?\.discard\(\)/)
+  assert.match(retire, /showsStaticStill = false/)
+  assert.match(detail, /guard ownerAuthorized else \{ return \}/)
+  assert.match(paired, /static func dismantleUIView[\s\S]*?coordinator\.retire\(\)/)
+})
