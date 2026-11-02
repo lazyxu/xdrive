@@ -117,3 +117,77 @@ internal fun nativeLocalVideoSwipeDirection(
         if (it > 0) nextAvailable else previousAvailable
     }
 }
+
+/**
+ * A single user-triggered MediaStore continuation from the LAST currently
+ * loaded local Viewer item. It is transient and scoped to exact URI, Owner
+ * session, permission/index revision and the existing wall cursor. The
+ * existing 64-row pageAfter reader remains the sole source of new items.
+ */
+internal data class NativeLocalViewerNextPageIntent(
+    val source: NativeLocalVideoSourceKey,
+    val sessionId: Long,
+    val generation: Int,
+    val wallRevision: Int,
+    val albumsOnly: Boolean,
+    val albumId: String?,
+    val mediaKind: String,
+    val cursor: NativeLocalPageKey,
+    val requestId: Int,
+)
+
+internal enum class NativeLocalNextPageDecision {
+    WAITING, ADVANCE, END, FAILED, STALE,
+}
+
+/** No speculative scans: one deliberate next-page tap/swipe at a stable wall
+ * tail, never while a read, full-date scan or previous request is active. */
+internal fun nativeLocalViewerCanRequestNextPage(
+    loadedIndex: Int?,
+    loadedCount: Int,
+    exhausted: Boolean,
+    hasCursor: Boolean,
+    busy: Boolean,
+    hasError: Boolean,
+    pending: Boolean,
+    readable: Boolean,
+): Boolean = readable && loadedCount in 1..NativeLocalMediaStore.MAX_WALL_ITEMS &&
+    loadedIndex == loadedCount - 1 && !exhausted && hasCursor &&
+    !busy && !hasError && !pending
+
+/** A completed continuation may navigate only to a newly VERIFIED row in
+ * the existing bounded wall. Invalidated or delayed permissions, albums,
+ * filters, viewer items, or request IDs must never change the open Viewer. */
+internal fun nativeLocalViewerNextPageDecision(
+    request: NativeLocalViewerNextPageIntent,
+    activeSource: NativeLocalVideoSourceKey?,
+    loaded: List<NativeLocalViewerItemKey>,
+    sessionId: Long,
+    generation: Int,
+    wallRevision: Int,
+    albumsOnly: Boolean,
+    albumId: String?,
+    mediaKind: String,
+    readable: Boolean,
+    pageIntent: Int,
+    consumedPageIntent: Int,
+    busy: Boolean,
+    hasError: Boolean,
+): NativeLocalNextPageDecision {
+    if (!readable || activeSource != request.source ||
+        sessionId != request.sessionId || generation != request.generation ||
+        wallRevision != request.wallRevision ||
+        albumsOnly != request.albumsOnly || albumId != request.albumId ||
+        mediaKind != request.mediaKind || pageIntent != request.requestId ||
+        request.requestId <= 0 ||
+        request.cursor != NativeLocalPageKey(
+            request.source.item.addedAtSeconds, request.source.item.id))
+        return NativeLocalNextPageDecision.STALE
+    val index = nativeLocalViewerLoadedIndex(loaded, activeSource.item)
+        ?: return NativeLocalNextPageDecision.STALE
+    if (consumedPageIntent != request.requestId || busy)
+        return NativeLocalNextPageDecision.WAITING
+    if (hasError) return NativeLocalNextPageDecision.FAILED
+    return if (index < loaded.lastIndex) NativeLocalNextPageDecision.ADVANCE
+    else NativeLocalNextPageDecision.END
+}
