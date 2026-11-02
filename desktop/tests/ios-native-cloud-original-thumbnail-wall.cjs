@@ -272,3 +272,17 @@ test('cloud original export is invalidated at item, Owner, scene and Viewer boun
   assert.match(viewer, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?exporter\.invalidate\(\)[\s\S]*?dismiss\(\)/)
   assert.match(viewer, /\.onDisappear \{\s*cancelPhotoRestore\(\)\s*exporter\.invalidate\(\)/)
 })
+
+
+test('cloud backed-up original Live Photo surface supports bounded swipe paging', () => {
+  const paired = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeCloudPairedLivePhotoView.swift'), 'utf8')
+  const start = src.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View')
+  const end = src.indexOf('private struct XDriveIOSNativeCloudOriginalTile: View', start)
+  assert.ok(start >= 0 && end > start)
+  const viewer = src.slice(start, end)
+  assert.match(viewer, /XDriveIOSNativeCloudPairedLivePhotoView\([\s\S]*?\)\s*\{ ready in[\s\S]*?\}\s*\.xdriveCloudLivePhotoPaging \{ showNeighbor\(\$0\) \}/)
+  assert.match(viewer, /云端实况照片，长按播放或左右滑动切换/)
+  assert.match(paired, /simultaneousGesture\(\s*DragGesture\(minimumDistance: 72\)/)
+  assert.match(paired, /XDriveIOSNativeViewerSwipePolicy\.direction\(/)
+  assert.match(paired, /view\.startPlayback\(with: \.full\)/)
+})
