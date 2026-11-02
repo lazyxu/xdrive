@@ -1,5 +1,6 @@
 import AVKit
 import Combine
+import Photos
 import SwiftUI
 import UIKit
 
@@ -286,6 +287,18 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @State private var nativeLiveUnavailable = false
     @State private var livePlaybackRequest: UUID?
     @State private var showingLiveMotion = false
+    // Live pairing remains available, but a user can inspect the still
+    // at full zoom without starting the motion or a new network transfer.
+    @State private var showsStaticStill = false
+
+    // Explicit native Photos restore belongs to this one L3 Viewer and its
+    // presenting Owner. It never runs from Gallery thumbnails or background.
+    @State private var photosRestoreTask: Task<Void, Never>?
+    @State private var photosRestoreEpoch = UUID()
+    @State private var photosRestoreBusy = false
+    @State private var photosPermissionPrompt = false
+    @State private var photosRestoreNotice = ""
+    @State private var photosRestoreNoticePresented = false
 
     private var viewed: XDriveIOSNativeMediaItem { activeItem ?? item }
 
@@ -328,6 +341,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
     private func navigateLoaded(_ direction: Int) {
         guard let next = neighbor(direction), onNavigate?(next) == true
         else { return }
+        // Switching a PhotoAsset also revokes a pending native Photos import.
+        cancelPhotosRestore()
         // Cancel old signed streams, AVPlayer, Live pairing and temporary
         // resources before admitting exactly one new foreground preview.
         retirePreview()
@@ -347,7 +362,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                             onFailed: { playbackLoadFailed($0) }
                         )
                     } else if let resources = liveResources,
-                              !nativeLiveUnavailable {
+                              !nativeLiveUnavailable && !showsStaticStill {
                         ZStack {
                             Image(uiImage: still).resizable().scaledToFit()
                             XDriveIOSNativeCloudPairedLivePhotoView(
@@ -376,8 +391,20 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     }
                     if liveResources != nil {
                         HStack(spacing: 12) {
-                            if nativeLiveReady && !nativeLiveUnavailable &&
+                            if ownerAuthorized && !nativeLiveUnavailable &&
                                 !showingLiveMotion {
+                                Button(showsStaticStill ? "返回原生实况" : "放大静态照片") {
+                                    guard ownerAuthorized else { return }
+                                    // Unmount PHLivePhotoView (stopping playback)
+                                    // before displaying the native zoom/swipe still.
+                                    livePlaybackRequest = nil
+                                    nativeLiveReady = false
+                                    showsStaticStill.toggle()
+                                }
+                                .accessibilityIdentifier("native-ios-photoasset-live-still-toggle")
+                            }
+                            if nativeLiveReady && !nativeLiveUnavailable &&
+                                !showingLiveMotion && !showsStaticStill {
                                 Button("播放原生实况") {
                                     guard phase == .active,
                                           let currentOwner = liveOwner,
@@ -387,6 +414,19 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                     livePlaybackRequest = UUID()
                                 }
                                 .accessibilityIdentifier("native-ios-photoasset-live-play")
+                            }
+                            if ownerAuthorized && nativeLiveUnavailable &&
+                                !showingLiveMotion {
+                                Button("重试原生实况配对") {
+                                    guard ownerAuthorized, liveResources != nil else { return }
+                                    // Re-pair the existing verified still/MOV locally;
+                                    // a failed Photos pairing needs no new Server ticket.
+                                    livePlaybackRequest = nil
+                                    nativeLiveReady = false
+                                    showsStaticStill = false
+                                    nativeLiveUnavailable = false
+                                }
+                                .accessibilityIdentifier("native-ios-photoasset-live-pair-retry")
                             }
                             Button(showingLiveMotion ? "返回静态照片" : "播放原始动态视频") {
                                 guard ownerAuthorized, player != nil,
@@ -501,8 +541,32 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    if photosRestoreBusy {
+                        ProgressView().accessibilityLabel("正在保存云端原件到 iOS 照片")
+                    } else {
+                        Button {
+                            if viewed.isLive {
+                                photosRestoreNotice =
+                                    "此云端 Live Photo 尚未提供完整原件配对导入；不能把静态预览保存为实况。已校验的 iPhone Live ZIP 可从“云端备份原件”恢复。"
+                                photosRestoreNoticePresented = true
+                            } else {
+                                restorePhotoAssetOriginal()
+                            }
+                        } label: {
+                            Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
+                        }
+                        .disabled(!ownerAuthorized || !viewed.supportsPreview)
+                        .accessibilityIdentifier("native-ios-photoasset-original-save-to-photos")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
+            }
+            .alert("保存到 iOS 照片", isPresented: $photosRestoreNoticePresented) {
+                Button("完成", role: .cancel) {}
+            } message: {
+                Text(photosRestoreNotice)
             }
         }
         .task(id: previewRequestID) {
@@ -606,15 +670,115 @@ struct XDriveIOSNativeServerMediaPreview: View {
             failure = "媒体播放失败，请重试当前云端照片或视频。"
         }
         .onChange(of: phase) { _ in
+            // The iOS Photos permission dialog can briefly make the scene
+            // inactive. No download starts until it has returned; a genuine
+            // background transition always cancels the pending restore.
+            if phase != .active &&
+                (phase == .background || !photosPermissionPrompt) {
+                cancelPhotosRestore()
+            }
             // iOS app switcher must not expose signed still/video or local
             // Live originals. Foreground re-verifies Owner before fetching.
             retirePreview()
         }
         .onChange(of: login.owner) { _ in
+            cancelPhotosRestore()
             retirePreview()
             dismiss()
         }
+        .onDisappear { cancelPhotosRestore() }
         .onDisappear { retirePreview() }
+    }
+
+    private func cancelPhotosRestore() {
+        photosRestoreEpoch = UUID()
+        photosRestoreTask?.cancel()
+        photosRestoreTask = nil
+        photosRestoreBusy = false
+        photosPermissionPrompt = false
+        photosRestoreNoticePresented = false
+    }
+
+    private func canCommitPhotosRestore(
+        _ selected: XDriveIOSNativeMediaItem,
+        owner: XDriveNativeOwnerRoot, epoch: UUID
+    ) -> Bool {
+        ownerAuthorized && !Task.isCancelled &&
+        photosRestoreEpoch == epoch &&
+        viewed.id == selected.id &&
+        viewed.node.revision == selected.node.revision &&
+        viewed.node.name == selected.node.name &&
+        viewed.isVideo == selected.isVideo && !viewed.isLive &&
+        XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+    }
+
+    /// User-initiated import of this verified cloud PhotoAsset's original
+    /// still or video. The independent L3 export does not touch backup
+    /// receipts, upload sessions, cloud Nodes, or the local PhotoKit inventory.
+    private func restorePhotoAssetOriginal() {
+        guard !photosRestoreBusy, ownerAuthorized, !viewed.isLive,
+              viewed.supportsPreview, let owner = openedOwner else { return }
+        let selected = viewed
+        let epoch = UUID()
+        photosRestoreEpoch = epoch
+        photosRestoreBusy = true
+        photosRestoreTask = Task { @MainActor in
+            defer {
+                if photosRestoreEpoch == epoch {
+                    photosRestoreBusy = false
+                    photosRestoreTask = nil
+                }
+            }
+            do {
+                photosPermissionPrompt = true
+                let permission = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+                if photosRestoreEpoch == epoch {
+                    photosPermissionPrompt = false
+                }
+                try Task.checkCancellation()
+                guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
+                else { return }
+                guard permission == .authorized || permission == .limited else {
+                    photosRestoreNotice = "请先在 iOS 设置中允许 xDrive 向系统照片添加内容。"
+                    photosRestoreNoticePresented = true
+                    return
+                }
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch),
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner)
+                else { return }
+                let reader = XDriveIOSNativeMediaGalleryReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                )
+                let originalURL = try await reader.downloadOriginalForPhotos(selected)
+                defer {
+                    try? FileManager.default.removeItem(
+                        at: originalURL.deletingLastPathComponent()
+                    )
+                }
+                guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
+                else { return }
+                let kind: PHAssetResourceType = selected.isVideo ? .video : .photo
+                try await PHPhotoLibrary.shared().performChanges {
+                    let asset = PHAssetCreationRequest.forAsset()
+                    asset.addResource(with: kind, fileURL: originalURL, options: nil)
+                }
+                try Task.checkCancellation()
+                guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
+                else { return }
+                photosRestoreNotice = "已将云端原件添加到 iOS 照片，原云端照片保持不变。"
+                photosRestoreNoticePresented = true
+            } catch is CancellationError {
+                // A retired Viewer/Owner/scene discards the temporary original.
+            } catch {
+                guard canCommitPhotosRestore(selected, owner: owner, epoch: epoch)
+                else { return }
+                photosRestoreNotice =
+                    "保存未完成，请检查网络、系统照片权限、存储空间及云端原件格式后重试。"
+                photosRestoreNoticePresented = true
+            }
+        }
     }
 
     @MainActor
@@ -643,6 +807,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
         nativeLiveReady = false
         nativeLiveUnavailable = false
         showingLiveMotion = false
+        showsStaticStill = false
     }
 }
 

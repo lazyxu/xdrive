@@ -215,6 +215,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-photo-coverage"
           node --test desktop/tests/ios-native-photo-coverage.cjs
 
+      - name: Verify explicit current PhotoKit original Owner Node proof policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCurrentPhotoReceiptPolicy.swift \
+            ios/tests/NativeCurrentPhotoReceiptPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-current-photo-receipt-check"
+          "$RUNNER_TEMP/xdrive-ios-current-photo-receipt-check"
+          node --test desktop/tests/ios-native-photo-current-receipt.cjs
+
       - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail
@@ -238,6 +248,9 @@ jobs:
             desktop/tests/ios-native-local-viewer-on-demand-icloud.cjs \
             desktop/tests/ios-native-photo-cloud-confirmed-refresh.cjs \
             desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs
+
+      - name: Verify native cloud PhotoAsset original still/video save-to-Photos boundaries
+        run: node --test desktop/tests/ios-native-photoasset-original-restore.cjs
 
       - name: Verify native whole-library PhotoKit calendar jump policy
         run: |
@@ -280,7 +293,7 @@ jobs:
             ios/tests/NativePhotoAssetViewerNeighborPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-photoasset-viewer-neighbors"
           "$RUNNER_TEMP/xdrive-ios-photoasset-viewer-neighbors"
-          node --test desktop/tests/ios-native-photoasset-viewer-neighbors.cjs
+          node --test desktop/tests/ios-native-photoasset-viewer-neighbors.cjs desktop/tests/ios-native-photoasset-live.cjs
 
       - name: Verify native PhotoKit Viewer tile scroll return
         run: |
@@ -500,6 +513,18 @@ jobs:
             ios/tests/NativeFilesThumbnailSlotsChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-files-thumbnail-slots"
           "$RUNNER_TEMP/xdrive-ios-files-thumbnail-slots"
+
+      - name: Verify native Files sequential bounded multi-file export
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesFolderNamePolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchExportPolicy.swift \
+            ios/tests/NativeFilesBatchExportPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-batch-export"
+          "$RUNNER_TEMP/xdrive-ios-files-batch-export"
+          node --test desktop/tests/ios-native-files-batch-export.cjs
 
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh

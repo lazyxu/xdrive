@@ -56,6 +56,7 @@ with tarfile.open(spk) as outer:
     assert privilege["defaults"]["run-as"] == "package"
     assert privilege["username"] == privilege["groupname"] == "xdrivenas"
     payload = outer.extractfile(content["package.tgz"]).read()
+    assert payload.startswith(b"\xfd7zXZ\x00"), "expected Synology toolkit XZ-compressed package.tgz"
 
 ui_files = set()
 for item in dist.rglob("*"):
@@ -74,7 +75,10 @@ for item in ui_files:
         folders.add(str(parent))
         parent = parent.parent
 
-with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as body:
+with tarfile.open(fileobj=io.BytesIO(payload), mode="r:xz") as body:
+    assert all(not item.name.startswith("./") and item.name != "." for item in body.getmembers()), (
+        "DSM inner payload uses unsupported dot-prefixed paths"
+    )
     inner = members(body)
     assert set(inner) == files | folders, sorted(set(inner) ^ (files | folders))
     for name in files:

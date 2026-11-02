@@ -66,6 +66,10 @@ private struct XDriveIOSNativeMediaPreviewTicket: Decodable {
     let mime_type: String
 }
 
+private struct XDriveIOSNativeMediaOriginalDownloadTicket: Decodable {
+    let url: String
+}
+
 enum XDriveIOSNativeMediaReadFailure: Error {
     case invalidScope
     case invalidPage
@@ -362,6 +366,134 @@ struct XDriveIOSNativeMediaGalleryReader {
             throw XDriveIOSNativeMediaReadFailure.malformed
         }
         return (UIImage(cgImage: bounded), nil)
+    }
+
+    /// Generic cloud PhotoAsset names are NOT necessarily iPhone-generated
+    /// -xios- backup receipts. Only inspect the untrusted display name here:
+    /// the staged local path is a fixed "original.<checked extension>".
+    private func validOrdinaryPhotoAssetName(_ name: String) -> Bool {
+        guard !name.isEmpty, name.utf8.count <= 255,
+              !name.hasSuffix(" "), !name.hasSuffix(".") else { return false }
+        return !name.unicodeScalars.contains { scalar in
+            scalar.value < 32 || scalar.value == 127 ||
+                "/\\:".unicodeScalars.contains(scalar)
+        }
+    }
+
+    /// Re-fetch the selected logical PhotoAsset. A signed original download
+    /// must not silently import a renamed/replaced Node, a changed media
+    /// classification or a now-unpaired resource under the old Viewer item.
+    private func currentOriginal(_ selected: XDriveIOSNativeMediaItem)
+        async throws -> XDriveIOSNativeMediaItem {
+        let url = try endpoint("/api/v1/media/items/\(selected.id)")
+        let data = try await read(url, maximum: 131_072)
+        let current = try JSONDecoder().decode(XDriveIOSNativeMediaItem.self, from: data)
+        guard current.id == selected.id,
+              current.node.revision == selected.node.revision,
+              current.node.name == selected.node.name,
+              current.node.type == selected.node.type,
+              current.node.size == selected.node.size,
+              current.metadata.media_kind == selected.metadata.media_kind,
+              current.metadata.container_kind == selected.metadata.container_kind,
+              current.asset_kind == selected.asset_kind,
+              current.live_photo == selected.live_photo,
+              current.resources == selected.resources,
+              current.supportsPreview, !current.isLive,
+              current.isVideo == selected.isVideo
+        else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+        return current
+    }
+
+    /// Explicitly restore a single ordinary cloud PhotoAsset's ORIGINAL,
+    /// never its 280px thumbnail or the 4096px Viewer derivative. Native
+    /// Live Photo is deliberately excluded until both original resources
+    /// can be proven as one current pair and atomically imported together.
+    func downloadOriginalForPhotos(_ selected: XDriveIOSNativeMediaItem)
+        async throws -> URL {
+        let ext = (selected.node.name as NSString).pathExtension.lowercased()
+        let extensions = selected.isVideo
+            ? ["mov", "mp4", "m4v"]
+            : ["jpg", "jpeg", "png", "heic", "heif", "tif", "tiff"]
+        guard selected.supportsPreview, !selected.isLive,
+              selected.node.type == "file", selected.id > 0,
+              selected.node.revision > 0, selected.node.size > 0,
+              selected.node.size <= 4 * 1_073_741_824,
+              extensions.contains(ext),
+              validOrdinaryPhotoAssetName(selected.node.name),
+              !accessToken.isEmpty else {
+            throw XDriveIOSNativeMediaReadFailure.unsupported
+        }
+        _ = try await currentOriginal(selected)
+        try Task.checkCancellation()
+
+        let ticketData = try await read(
+            endpoint("/api/v1/files/\(selected.id)/download-ticket"),
+            method: "POST", maximum: 32_768
+        )
+        let ticket = try JSONDecoder().decode(
+            XDriveIOSNativeMediaOriginalDownloadTicket.self, from: ticketData
+        )
+        let expectedPath = "/api/v1/file-download/\(selected.id)"
+        guard let parsed = URLComponents(string: ticket.url),
+              parsed.scheme == nil, parsed.host == nil,
+              parsed.user == nil, parsed.password == nil,
+              parsed.fragment == nil, parsed.path == expectedPath,
+              let query = parsed.queryItems, query.count == 1,
+              query[0].name == "ticket",
+              let secret = query[0].value,
+              !secret.isEmpty, secret.utf8.count <= 8192,
+              let origin = URLComponents(url: owner.origin, resolvingAgainstBaseURL: false),
+              var resolved = URLComponents(url: owner.origin, resolvingAgainstBaseURL: false)
+        else { throw XDriveIOSNativeMediaReadFailure.malformed }
+        resolved.path = expectedPath
+        resolved.percentEncodedQuery = parsed.percentEncodedQuery
+        resolved.fragment = nil
+        guard origin.scheme == "https", resolved.scheme == "https",
+              resolved.host == origin.host, resolved.port == origin.port,
+              let signedURL = resolved.url
+        else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+
+        let client = session()
+        defer { client.invalidateAndCancel() }
+        var request = URLRequest(url: signedURL)
+        request.httpShouldHandleCookies = false
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        // The short-lived ticket grants the file; do not send an Owner bearer.
+        let (temporary, response) = try await client.download(for: request)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse,
+              http.statusCode == 200,
+              (http.expectedContentLength < 0 ||
+                http.expectedContentLength == selected.node.size),
+              let attributes = try? FileManager.default.attributesOfItem(
+                atPath: temporary.path
+              ),
+              (attributes[.type] as? FileAttributeType) == .typeRegular,
+              (attributes[.size] as? NSNumber)?.int64Value == selected.node.size
+        else { throw XDriveIOSNativeMediaReadFailure.malformed }
+        _ = try await currentOriginal(selected)
+        try Task.checkCancellation()
+
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "xdrive-ios-photoasset-restore-" + UUID().uuidString, isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: folder, withIntermediateDirectories: false,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+        do {
+            // Keep only a checked extension; do not make a filesystem path
+            // from an untrusted Server display name.
+            let output = folder.appendingPathComponent("original." + ext)
+            try FileManager.default.moveItem(at: temporary, to: output)
+            try Task.checkCancellation()
+            return output
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
     }
 }
 

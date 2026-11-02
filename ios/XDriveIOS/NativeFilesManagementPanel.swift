@@ -39,6 +39,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
     @State private var createEpoch = UUID()
     @State private var createTask: Task<Void, Never>?
     @State private var destinationIntent: XDriveIOSNativeFilesManageDestinationIntent?
+    @State private var shareNode: XDriveIOSNativeFilesNode?
 
     private var verified: Bool {
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
@@ -74,6 +75,13 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         if let status = favoriteMutation.status {
                             Text(status).font(.footnote).foregroundStyle(.secondary)
                         }
+                    }
+                    Section("云端分享链接") {
+                        Button("管理分享链接") { shareNode = file }
+                            .disabled(anyBusy)
+                            .accessibilityIdentifier("native-ios-files-share-file")
+                        Text("创建或撤销浏览器可访问的云端链接；不同于下载原件后进行系统分享。")
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                     Section("下载与系统导出") {
                         if let staged = exporter.prepared,
@@ -151,13 +159,20 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         if let status = destinationWriter.status {
                             Text(status).font(.footnote).foregroundStyle(.secondary)
                         }
-                        Text("多选批量管理和后台传输仍待实现。")
+                        Text("多选批量管理请返回文件列表使用“多选”；后台传输尚未提供。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 } else if let directory {
                     Section("文件夹信息") {
                         LabeledContent("名称", value: directory.name)
                         LabeledContent("版本", value: String(directory.revision))
+                    }
+                    Section("云端分享链接") {
+                        Button("管理分享链接") { shareNode = directory }
+                            .disabled(anyBusy)
+                            .accessibilityIdentifier("native-ios-files-share-folder")
+                        Text("可创建只读或查看并上传的云端文件夹分享链接。")
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                     Section("文件夹管理") {
                         Button("复制文件夹到…") {
@@ -298,6 +313,15 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         .disabled(anyBusy)
                 }
             }
+            .sheet(item: $shareNode) { selected in
+                if verified {
+                    XDriveIOSNativeFilesShareScreen(
+                        login: login, expectedOwner: expectedOwner, node: selected
+                    )
+                } else {
+                    Text("当前账户已变化，请关闭后重新选择文件。")
+                }
+            }
             .sheet(item: $destinationIntent) { intent in
                 XDriveIOSNativeFilesDestinationPicker(
                     login: login, originalOwner: expectedOwner,
@@ -340,6 +364,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         showingImporter = false
         showingMultiImporter = false
         destinationIntent = nil
+        shareNode = nil
         exporter.invalidate()
         uploader.invalidate()
         mutator.invalidate()

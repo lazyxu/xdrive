@@ -50,6 +50,20 @@ grep -Fxq "package=\"xdrivenas\"" <<<"$actual_info"
 grep -Fxq "version=\"$expected_version\"" <<<"$actual_info"
 grep -Fxq 'arch="armada38x"' <<<"$actual_info"
 grep -Fxq 'os_min_ver="7.0-40759"' <<<"$actual_info"
+# Synology DSM 7 pkg_make_package writes XZ (tar cJf) even though its
+# nested payload is called package.tgz. Validate the decoded, literal
+# payload structure for BOTH CLI-only and GUI packages.
+payload_entries="$(tar -xOf "$spk" package.tgz | tar -tJf -)" || {
+  echo "DSM SPK package.tgz must be readable XZ-compressed TAR" >&2; exit 1;
+}
+if grep -Eq '^\./|^\.$' <<< "$payload_entries"; then
+  echo "DSM SPK nested payload has invalid dot-prefixed paths" >&2; exit 1;
+fi
+for required in bin/ bin/xd bin/xdrive-agent; do
+  grep -Fxq "$required" <<< "$payload_entries" || {
+    echo "DSM SPK nested payload missing $required" >&2; exit 1;
+  }
+done
 if [[ "$required_flavor" == "--require-mui" ]]; then
   grep -Fxq 'dsmuidir="ui"' <<<"$actual_info" || {
     echo "published DSM SPK lacks registered graphical UI" >&2; exit 1;
@@ -59,15 +73,12 @@ if [[ "$required_flavor" == "--require-mui" ]]; then
   }
   # Inspect the real nested archive; INFO metadata alone is not sufficient.
   # Source-exact Go binaries, bundled UI and CGI bytes are verified separately.
-  payload_entries="$(tar -xOf "$spk" package.tgz | tar -tzf -)" || {
-    echo "published DSM GUI payload cannot be read" >&2; exit 1;
-  }
-  for required in ./ui/config ./ui/backup.cgi ./ui/synology.html; do
+for required in ui/config ui/backup.cgi ui/synology.html; do
     grep -Fxq "$required" <<<"$payload_entries" || {
       echo "published DSM GUI payload missing $required" >&2; exit 1;
     }
   done
-  grep -Eq '^[.]/ui/assets/.+[.]js$' <<<"$payload_entries" || {
+  grep -Eq '^ui/assets/.+[.]js$' <<<"$payload_entries" || {
     echo "published DSM GUI payload lacks compiled JavaScript" >&2; exit 1;
   }
 fi

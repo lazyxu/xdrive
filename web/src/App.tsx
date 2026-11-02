@@ -102,7 +102,7 @@ import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveReadWebA
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations, xDriveBrowserMobileGalleryShortcuts } from './MobileFiveSlotNavigation'
 import { xDriveMobileLauncherSections, xDriveMobileLauncherGalleryRoute } from './mobileLauncherSections'
-import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileViewerSafeFallbackRoute, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused, xDriveMobileManualFocusTarget, xDriveMobileManualFocusActive, xDriveInitialMobileOverviewScroll, xDriveMobileOverviewScrollSlot, xDriveMobileOverviewScrollOffset, xDriveRememberMobileOverviewScroll } from './mobileFiveSlotState'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileViewerSafeFallbackRoute, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused, xDriveMobileManualFocusTarget, xDriveMobileManualFocusActive, xDriveInitialMobileOverviewScroll, xDriveMobileOverviewScrollSlot, xDriveMobileOverviewScrollOffset, xDriveRememberMobileOverviewScroll, xDriveMobileSystemDependenciesRouteChanged } from './mobileFiveSlotState'
 import type { XDriveMobileSlot, XDriveMobileManualFocusSelection } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
@@ -1147,21 +1147,24 @@ function FileManager({
   >(null)
   const systemDependenciesDraftRef = useRef(false)
   const adminRoleRef = useRef(false)
-  // popstate/hashchange bypass the regular launcher. The runtime must stop a
-  // cross-app browser transition before React unmounts an unsaved admin form.
+  // Browser Back/Forward can leave the editor *within* admin-services
+  // (service details -> overview) as well as leave the app entirely. The
+  // unsaved-draft guard must apply to both without changing Viewer history.
   const guardBrowserNavigation = useCallback((from: XDriveWebAppRoute, to: XDriveWebAppRoute) => {
-    if (!adminRoleRef.current || !xDriveSystemDependenciesNeedsExitConfirmation(
-      from.app, to.app, systemDependenciesDraftRef.current,
-    )) return false
+    if (!adminRoleRef.current || !systemDependenciesDraftRef.current ||
+      (!xDriveSystemDependenciesNeedsExitConfirmation(from.app, to.app, true) &&
+       !(compactWorkspace && xDriveMobileSystemDependenciesRouteChanged(from, to)))) return false
     setPendingSystemDependenciesExit({ kind: 'history' })
     return true
-  }, [])
+  }, [compactWorkspace])
   const {
     route, launch: launchWebAppRuntime, closeViewer, exitApp,
     cancelHistoryNavigation, confirmHistoryNavigation, markLoadedWorkspaceApp,
   } = useXDriveWebAppRuntime(guardBrowserNavigation)
   const activeAppRef = useRef(route.app)
   activeAppRef.current = route.app
+  const activeRouteRef = useRef(route)
+  activeRouteRef.current = route
   systemDependenciesDraftRef.current = systemDependenciesDraftDirty
   adminRoleRef.current = profile?.role === 'admin'
 
@@ -1171,14 +1174,18 @@ function FileManager({
     next: XDriveWebAppRoute,
     options: { replace?: boolean; newTab?: boolean; viewerReturn?: boolean } = {},
   ) => {
-    if (adminRoleRef.current && xDriveSystemDependenciesNeedsExitConfirmation(
-      activeAppRef.current, next.app, systemDependenciesDraftRef.current, Boolean(options.newTab),
+    if (adminRoleRef.current && (
+      xDriveSystemDependenciesNeedsExitConfirmation(
+        activeAppRef.current, next.app, systemDependenciesDraftRef.current, Boolean(options.newTab),
+      ) ||
+      (!options.newTab && compactWorkspace && systemDependenciesDraftRef.current &&
+       xDriveMobileSystemDependenciesRouteChanged(activeRouteRef.current, next))
     )) {
       setPendingSystemDependenciesExit({ kind: 'route', next, options })
       return
     }
     launchWebAppRuntime(next, options)
-  }, [launchWebAppRuntime])
+  }, [compactWorkspace, launchWebAppRuntime])
 
   const exitWebApp = useCallback(() => {
     if (adminRoleRef.current && xDriveSystemDependenciesNeedsExitConfirmation(
@@ -3148,7 +3155,7 @@ function FileManager({
       <XDriveConfirmDialog
         open={pendingSystemDependenciesExit !== null}
         title="离开未保存的系统依赖配置？"
-        description="系统依赖中有尚未保存的修改。放弃草稿后才能进入其他应用；已提交的后台任务不会被取消。"
+        description="系统依赖中有尚未保存的修改。放弃草稿后才能返回上一级或切换页面；已提交的后台任务不会被取消。"
         confirmLabel="放弃修改并离开"
         onCancel={() => {
           if (pendingSystemDependenciesExit?.kind === 'history') cancelHistoryNavigation()

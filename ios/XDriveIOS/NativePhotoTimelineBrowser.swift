@@ -56,7 +56,8 @@ private enum XDriveIOSNativePhotoTimelineError: Error {
 /// PhotoKit PHFetchResult. This reader is independent of the backup scanner
 /// and never retains a PHAsset or its identifier in its returned index.
 private actor XDriveIOSNativePhotoTimelineReader {
-    func read() async throws -> XDriveIOSNativePhotoTimelineIndex {
+    func read(mediaFilter: XDriveIOSNativePhotoMediaFilter) async throws
+        -> XDriveIOSNativePhotoTimelineIndex {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard status == .authorized || status == .limited else {
             throw XDriveIOSNativePhotoTimelineError.permissionChanged
@@ -72,7 +73,20 @@ private actor XDriveIOSNativePhotoTimelineReader {
             NSSortDescriptor(key: "creationDate", ascending: false),
             NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
-        let snapshot = PHAsset.fetchAssets(with: options)
+        if mediaFilter.requiresFavorite {
+            options.predicate = NSPredicate(format: "favorite == YES")
+        }
+        let snapshot: PHFetchResult<PHAsset>
+        switch mediaFilter {
+        case .all:
+            snapshot = PHAsset.fetchAssets(with: options)
+        case .photos:
+            snapshot = PHAsset.fetchAssets(with: .image, options: options)
+        case .videos:
+            snapshot = PHAsset.fetchAssets(with: .video, options: options)
+        case .favorites:
+            snapshot = PHAsset.fetchAssets(with: options)
+        }
         try verify(status: status, observer: observer, revision: revision)
         var index = XDriveIOSNativePhotoTimelineBuilder(calendar: .current)
         for slot in 0..<snapshot.count {
@@ -83,11 +97,22 @@ private actor XDriveIOSNativePhotoTimelineReader {
             }
             let asset = snapshot.object(at: slot)
             if asset.mediaType == .image || asset.mediaType == .video {
+                let kind = asset.mediaType == .image ? "image" : "video"
+                guard mediaFilter.includes(kind: kind),
+                      !mediaFilter.requiresFavorite || asset.isFavorite else {
+                    throw XDriveIOSNativePhotoTimelineError.libraryChanged
+                }
                 index.append(capturedAt: asset.creationDate, slot: slot)
+            } else if mediaFilter != .all {
+                throw XDriveIOSNativePhotoTimelineError.libraryChanged
             }
         }
         try verify(status: status, observer: observer, revision: revision)
-        return index.finish(totalSlots: snapshot.count)
+        let result = index.finish(totalSlots: snapshot.count)
+        guard mediaFilter == .all || result.indexedMediaCount == result.totalSlots else {
+            throw XDriveIOSNativePhotoTimelineError.libraryChanged
+        }
+        return result
     }
 
     private func verify(status: PHAuthorizationStatus,
@@ -106,22 +131,27 @@ private actor XDriveIOSNativePhotoTimelineReader {
 @MainActor
 private final class XDriveIOSNativePhotoTimelineModel: ObservableObject {
     @Published private(set) var index: XDriveIOSNativePhotoTimelineIndex?
+    @Published private(set) var indexFilter: XDriveIOSNativePhotoMediaFilter?
     @Published private(set) var loading = false
     @Published private(set) var errorMessage: String?
     private var generation = UUID()
     private var job: Task<Void, Never>?
 
-    func load() {
-        guard !loading, index == nil else { return }
+    func load(mediaFilter: XDriveIOSNativePhotoMediaFilter) {
+        guard !loading else { return }
+        if indexFilter != mediaFilter { invalidate() }
+        guard index == nil else { return }
         generation = UUID()
         let token = generation
         errorMessage = nil
         loading = true
         job = Task { [weak self] in
             do {
-                let result = try await XDriveIOSNativePhotoTimelineReader().read()
+                let result = try await XDriveIOSNativePhotoTimelineReader()
+                    .read(mediaFilter: mediaFilter)
                 try Task.checkCancellation()
                 guard let self, self.generation == token else { return }
+                self.indexFilter = mediaFilter
                 self.index = result
             } catch is CancellationError {
             } catch {
@@ -140,6 +170,7 @@ private final class XDriveIOSNativePhotoTimelineModel: ObservableObject {
         job?.cancel()
         job = nil
         index = nil
+        indexFilter = nil
         errorMessage = nil
         loading = false
     }
@@ -160,6 +191,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
     @State private var scale: XDriveIOSNativePhotoTimelineScale = .year
     @State private var wallRevision: UInt64 = 0
     @State private var useContinuousWall = true
+    @State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
 
     init(savedOffset: Binding<Int>, @ViewBuilder content: () -> Content) {
         self._savedOffset = savedOffset
@@ -171,7 +203,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
             HStack(spacing: 8) {
                 Button {
                     showingDates = true
-                    model.load()
+                    model.load(mediaFilter: mediaFilter)
                 } label: {
                     Label("按年／月／日定位", systemImage: "calendar")
                 }
@@ -179,13 +211,21 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
                 .accessibilityIdentifier("native-ios-local-timeline-open")
                 Menu {
                     Button("连续滚动") { useContinuousWall = true }
-                    Button("按页查看") { useContinuousWall = false }
+                    Button("按页查看") {
+                        // The legacy paginated wall is unfiltered. Never reuse
+                        // an image/video-only offset when returning to all media.
+                        mediaFilter = .all
+                        model.invalidate()
+                        savedOffset = 0
+                        useContinuousWall = false
+                        wallRevision &+= 1
+                    }
                 } label: {
                     Label(useContinuousWall ? "连续" : "分页", systemImage: "rectangle.stack")
                 }
                 .accessibilityIdentifier("native-ios-local-timeline-browse-mode")
                 Spacer(minLength: 4)
-                if let index = model.index {
+                if let index = model.index, model.indexFilter == mediaFilter {
                     Text("已索引 \(index.indexedMediaCount) 项")
                         .font(.caption).foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -194,7 +234,9 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
             .padding(.horizontal, 12)
             .frame(minHeight: 46)
             if useContinuousWall {
-                XDriveIOSNativeLocalContinuousGalleryScreen(savedOffset: $savedOffset)
+                XDriveIOSNativeLocalContinuousGalleryScreen(
+                    savedOffset: $savedOffset, mediaFilter: $mediaFilter
+                )
                     .id(wallRevision)
             } else {
                 content.id(wallRevision)
@@ -218,18 +260,22 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
                     } else if let errorMessage = model.errorMessage {
                         Spacer()
                         Text(errorMessage).foregroundStyle(.secondary)
-                        Button("重新读取日期") { model.load() }
+                        Button("重新读取日期") { model.load(mediaFilter: mediaFilter) }
                             .buttonStyle(.borderedProminent)
                         Spacer()
-                    } else if let index = model.index {
+                    } else if let index = model.index,
+                              model.indexFilter == mediaFilter {
                         List {
                             Section {
-                                Button("所有照片（返回第一页）") {
+                                Button(mediaFilter == .videos ? "所有视频（返回第一页）" :
+                                       mediaFilter == .photos ? "所有照片（返回第一页）" :
+                                       mediaFilter == .favorites ? "所有收藏（返回第一页）" :
+                                       "所有媒体（返回第一页）") {
                                     jump(to: 0)
                                 }
                                 .accessibilityIdentifier("native-ios-local-timeline-all")
                             } footer: {
-                                Text("仅索引当前授权的照片和视频（\(index.indexedMediaCount) 项）。日期定位支持连续浏览及分页回退；完整逐日分组和跨页 Viewer 仍需补齐。")
+                                Text("仅索引当前授权的\(mediaFilter.title)（\(index.indexedMediaCount) 项）。日期定位使用当前媒体筛选的完整 PhotoKit 游标。")
                             }
                             Section("\(scale.title) · \(index.groups(for: scale).count) 个日期分组") {
                                 ForEach(index.groups(for: scale)) { group in
@@ -253,7 +299,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
                         .listStyle(.plain)
                     } else {
                         Spacer()
-                        Button("读取已授权图库的日期") { model.load() }
+                        Button("读取已授权图库的日期") { model.load(mediaFilter: mediaFilter) }
                         Spacer()
                     }
                 }
@@ -273,6 +319,10 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
             model.invalidate()
         }
         .onChange(of: changes.revision) { _ in model.invalidate() }
+        .onChange(of: mediaFilter) { _ in
+            model.invalidate()
+            showingDates = false
+        }
         .onChange(of: phase) { state in
             if state != .active {
                 model.invalidate()
@@ -284,7 +334,10 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
     private func jump(to requestedOffset: Int) {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard status == .authorized || status == .limited,
-              model.index != nil else {
+              let index = model.index, model.indexFilter == mediaFilter,
+              requestedOffset >= 0,
+              requestedOffset <= max(0, ((max(1, index.totalSlots) - 1) / 64) * 64),
+              requestedOffset % 64 == 0 else {
             model.invalidate()
             return
         }

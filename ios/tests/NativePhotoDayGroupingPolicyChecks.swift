@@ -41,6 +41,33 @@ struct NativePhotoDayGroupingPolicyChecks {
         )
         precondition(maximum.count == 1)
         precondition(maximum[0].count == 64)
+        // Exactly one previous slot, not a full-page array, determines
+        // whether an otherwise identical day heading should repeat.
+        let continued = XDriveIOSNativePhotoDayGroupingPolicy.sections(
+            dates: [p("2026-11-01T02:00:00Z"),
+                    p("2026-11-01T01:00:00Z"),
+                    p("2026-10-31T13:00:00Z")],
+            previousCapturedAt: p("2026-11-01T03:00:00Z"),
+            hasPreviousPage: true, calendar: calendar
+        )
+        precondition(continued.count == 2)
+        precondition(continued[0].continuesPreviousPage)
+        precondition(!continued[1].continuesPreviousPage)
+        let differentDay = XDriveIOSNativePhotoDayGroupingPolicy.sections(
+            dates: [p("2026-10-31T13:00:00Z")],
+            previousCapturedAt: p("2026-11-01T03:00:00Z"),
+            hasPreviousPage: true, calendar: calendar
+        )
+        precondition(!differentDay[0].continuesPreviousPage)
+        let unknownContinuation = XDriveIOSNativePhotoDayGroupingPolicy.sections(
+            dates: [nil], previousCapturedAt: nil,
+            hasPreviousPage: true, calendar: calendar
+        )
+        precondition(unknownContinuation[0].continuesPreviousPage)
+        let firstPage = XDriveIOSNativePhotoDayGroupingPolicy.sections(
+            dates: [nil], hasPreviousPage: false, calendar: calendar
+        )
+        precondition(!firstPage[0].continuesPreviousPage)
         print("iOS native PhotoKit actual-day section policy: PASS")
     }
 }

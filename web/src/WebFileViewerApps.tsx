@@ -49,6 +49,9 @@ import {
 } from '@xdrive/ui/mui'
 import type {
   MediaGalleryDataSource,
+  XDriveFilePreviewMotionLoader,
+  XDriveFilePreviewTextLoader,
+  XDriveFilePreviewURLLoader,
   XDriveShareDialogAdapter,
 } from '@xdrive/ui/mui'
 import {
@@ -83,7 +86,13 @@ import {
 } from '../../ui/shared/src/media-gallery-places-map-mode'
 import { xDriveContainViewerTabFocus } from './viewerFocusScope'
 import { xDriveWebTextSelection } from './webTextViewer'
+import { xDrivePreflightWebPDFTicket } from './webPDFTicketPreflight'
 import { xDriveMediaItemSupportsBasicEditing } from '../../ui/shared/src/media-edit'
+
+// Short landscape phones can exceed the 900px portrait breakpoint (e.g. a 956px iPhone).
+// Keep touch-sized controls and native video safe areas without changing tablet/desktop layouts.
+const XDRIVE_WEB_VIEWER_PHONE_LANDSCAPE_TOUCH_QUERY =
+  '(orientation: landscape) and (max-height: 500px) and (pointer: coarse)'
 
 // Navigation metadata is not media byte progress. Hold a full-height, silent
 // first-read canvas; the verified preview renderer still owns real thumbnails,
@@ -222,7 +231,8 @@ function WebViewerFrame({
   const narrowViewport = useMediaQuery('(max-width:899.95px)')
   const ultraNarrowViewport = useMediaQuery('(max-width:367.95px)')
   const coarseMobilePointer = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
-  const compactTouch = coarseMobilePointer || (photosViewer && immersive && narrowViewport)
+  const shortLandscapeTouch = useMediaQuery(XDRIVE_WEB_VIEWER_PHONE_LANDSCAPE_TOUCH_QUERY)
+  const compactTouch = coarseMobilePointer || shortLandscapeTouch || (photosViewer && immersive && narrowViewport)
   const compactImmersive = compactTouch && immersive
   const hasNavigation = canPrevious || canNext
   const showMobileNavigation = hasNavigation && !(compactImmersive && photosViewer && ultraNarrowViewport)
@@ -463,7 +473,7 @@ function WebViewerFrame({
       onKeyDown={handleKeyDown}
       onFocusCapture={handleChromeFocusCapture}
       onBlurCapture={handleChromeBlurCapture}
-      onMouseMove={coarseMobilePointer ? undefined : showChrome}
+      onMouseMove={coarseMobilePointer || shortLandscapeTouch ? undefined : showChrome}
       onPointerDownCapture={handleTouchPointerDown}
       onPointerMoveCapture={handleTouchPointerMove}
       onPointerUpCapture={handleTouchPointerRelease}
@@ -935,6 +945,42 @@ function WebPreviewApp({
     }
   }, [api, viewer.node?.id, viewer.node?.revision])
 
+  // Keep the authenticated loader identity stable across Web frame/download/
+  // filmstrip updates. In particular, changing the callback must not tear down
+  // an already buffering or playing HTMLVideoElement or reload a PDF iframe.
+  // The current target provides its own Node/revision; no captured old Node.
+  const loadQuickLookText = useCallback<XDriveFilePreviewTextLoader>(
+    (currentTarget, signal) => api.fileTextPreview(Number(currentTarget.id), signal),
+    [api],
+  )
+  const loadQuickLookPreview = useCallback<XDriveFilePreviewURLLoader>(
+    async (currentTarget, kind, signal, onProgress) => {
+      const id = Number(currentTarget.id)
+      if (kind === 'live_photo' ||
+          (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(currentTarget.name))) {
+        try {
+          // Keep the current Owner/revision and stable Viewer lease for 4K WebP/JPEG.
+          return await api.mediaViewerPreviewURL(id, signal, Number(currentTarget.revision), onProgress)
+        } catch {
+          signal?.throwIfAborted()
+          // Older Servers retain the signed still or measured bounded JPEG.
+          return kind === 'live_photo'
+            ? api.mediaLivePhotoStillURL(id, signal)
+            : api.mediaAnalysisPreviewURL(id, signal, Number(currentTarget.revision), onProgress)
+        }
+      }
+      const url = await api.filePreviewURL(id, signal)
+      if (kind === 'pdf') await xDrivePreflightWebPDFTicket(url, signal)
+      return url
+    },
+    [api],
+  )
+  const loadQuickLookMotion = useCallback<XDriveFilePreviewMotionLoader>(
+    (currentTarget, _onProgress, signal) =>
+      api.mediaLivePhotoMotionURL(Number(currentTarget.id), signal),
+    [api],
+  )
+
   return (
     <>
       <WebViewerFrame
@@ -977,22 +1023,10 @@ function WebPreviewApp({
         ) : <XDriveFilePreviewSurface
           key={dialogOwner.session}
           target={target}
-          loadTextPreview={(currentTarget, signal) => api.fileTextPreview(Number(currentTarget.id), signal)}
+          loadTextPreview={loadQuickLookText}
           loadImagePreview={loadThumbnail}
-          loadPreviewURL={async (_target, kind, signal, onProgress) => (
-            kind === 'live_photo' ||
-              (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(_target.name))
-              ? api.mediaViewerPreviewURL(viewer.node!.id, signal, viewer.node!.revision, onProgress)
-                  .catch(() => {
-                    signal?.throwIfAborted()
-                    return kind === 'live_photo'
-                      ? api.mediaLivePhotoStillURL(viewer.node!.id, signal)
-                      : api.mediaAnalysisPreviewURL(viewer.node!.id, signal, viewer.node!.revision, onProgress)
-                  })
-              : api.filePreviewURL(viewer.node!.id, signal)
-          )}
-          loadLivePhotoMotion={(currentTarget, _progress, signal) =>
-            api.mediaLivePhotoMotionURL(Number(currentTarget.id), signal)}
+          loadPreviewURL={loadQuickLookPreview}
+          loadLivePhotoMotion={loadQuickLookMotion}
           onPresentationStateChange={presentation.onPresentationStateChange}
           interactiveImage
           showImageDetails
@@ -1085,7 +1119,9 @@ function WebMediaViewerApp({
   // The actual routed Viewer is common to Mobile Web and wide Web. An iOS 27
   // compact rail cannot show ten 44px controls at 390px without sideways
   // scrolling; move only the presentation of secondary actions to More.
-  const narrowMediaViewer = useMediaQuery('(max-width:899.95px)')
+  const narrowViewport = useMediaQuery('(max-width:899.95px)')
+  const shortLandscapeTouch = useMediaQuery(XDRIVE_WEB_VIEWER_PHONE_LANDSCAPE_TOUCH_QUERY)
+  const narrowMediaViewer = narrowViewport || shortLandscapeTouch
   const ultraNarrowMediaViewer = useMediaQuery('(max-width:367.95px)')
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
@@ -2019,7 +2055,9 @@ function WebTextViewerApp({
   api: XDriveApi
   onClose: (node: Node | null) => void
 }) {
-  const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  const coarseMobilePointer = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  const shortLandscapeTouch = useMediaQuery(XDRIVE_WEB_VIEWER_PHONE_LANDSCAPE_TOUCH_QUERY)
+  const compactTouch = coarseMobilePointer || shortLandscapeTouch
   // One reader per API and route, even when navigation returns A→B→A.
   // Ownership changes during render, before any stale response can paint.
   const readerOwnerRef = useRef({ api, nodeID: route.params.node })
@@ -2143,10 +2181,10 @@ function WebSinglePreviewApp({
   const readerOwner = readerOwnerRef.current
   const loadNode = useCallback(async (signal: AbortSignal) => {
     const value = await api.node(readerOwner.nodeID, signal)
-    // Leave PDF's existing behavior unchanged; Audio must not silently stay
-    // pending after an empty but successful metadata response.
-    if (readerOwner.app === 'audio-player' && !value) {
-      throw new Error('当前音频文件信息不可用，请重试。')
+    // A successful but empty metadata response is terminal for PDF as well
+    // as audio; neither full-screen Viewer may remain silently busy forever.
+    if (!value) {
+      throw new Error('当前文件信息不可用，请重试。')
     }
     return value
   }, [api, readerOwner])
@@ -2154,6 +2192,20 @@ function WebSinglePreviewApp({
   const node = read.value
   const error = read.error
   const download = useWebViewerDownload(api, readerOwner, node)
+  const pdfPage = route.app === 'pdf-viewer' ? route.params.page : undefined
+  const loadSinglePreview = useCallback<XDriveFilePreviewURLLoader>(
+    async (currentTarget, kind, signal) => {
+      if (readerOwner.app === 'pdf-viewer' && kind !== 'pdf') return null
+      if (readerOwner.app === 'audio-player' && kind !== 'audio') return null
+      const url = await api.filePreviewURL(Number(currentTarget.id), signal)
+      if (readerOwner.app === 'pdf-viewer') {
+        await xDrivePreflightWebPDFTicket(url, signal)
+        return pdfPage ? `${url}#page=${pdfPage}` : url
+      }
+      return url
+    },
+    [api, pdfPage, readerOwner],
+  )
 
   return (
     <WebViewerFrame
@@ -2172,7 +2224,7 @@ function WebSinglePreviewApp({
       {error ? (
         <WebViewerReadError
           message={error}
-          onRetry={route.app === 'audio-player' ? read.retryRead : undefined}
+          onRetry={read.retryRead}
         />
       ) : !node ? (
         <WebViewerQuietFirstRead />
@@ -2184,14 +2236,7 @@ function WebSinglePreviewApp({
           size: node.size,
           revision: node.revision,
         }}
-        loadPreviewURL={async (_target, kind, signal) => {
-          if (route.app === 'pdf-viewer' && kind !== 'pdf') return null
-          if (route.app === 'audio-player' && kind !== 'audio') return null
-          const url = await api.filePreviewURL(node.id, signal)
-          return route.app === 'pdf-viewer' && route.params.page
-            ? `${url}#page=${route.params.page}`
-            : url
-        }}
+        loadPreviewURL={loadSinglePreview}
         minHeight={0}
         maxHeight="none"
       />}

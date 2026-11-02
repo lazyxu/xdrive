@@ -26,6 +26,7 @@ type ByteRange = {
 
 type LocalPreviewTicket = {
   upstreamURL: string
+  kind: DesktopFilePreviewTicket['kind']
   expiresAt: number
   onProgress?: DesktopFilePreviewProgressHandler
   coveredRanges: ByteRange[]
@@ -92,7 +93,7 @@ function coveredByteCount(ranges: readonly ByteRange[]) {
 function responseByteRange(response: Response) {
   const raw = response.headers.get('content-range') || ''
   const match = /^bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i.exec(raw.trim())
-  if (match) {
+  if (response.status === 206 && match) {
     const start = Number(match[1])
     const endInclusive = Number(match[2])
     const total = match[3] === '*' ? undefined : Number(match[3])
@@ -100,11 +101,14 @@ function responseByteRange(response: Response) {
       Number.isSafeInteger(start) &&
       Number.isSafeInteger(endInclusive) &&
       start >= 0 &&
-      endInclusive >= start
+      endInclusive >= start &&
+      endInclusive < Number.MAX_SAFE_INTEGER &&
+      (total === undefined || (Number.isSafeInteger(total) && total >= endInclusive + 1))
     ) {
       return {
         start,
-        total: Number.isSafeInteger(total) && (total ?? 0) > 0 ? total : undefined,
+        end: endInclusive + 1,
+        total,
       }
     }
   }
@@ -112,10 +116,11 @@ function responseByteRange(response: Response) {
     const total = Number(response.headers.get('content-length') || '')
     return {
       start: 0,
+      end: undefined,
       total: Number.isSafeInteger(total) && total > 0 ? total : undefined,
     }
   }
-  return { start: undefined, total: undefined }
+  return { start: undefined, end: undefined, total: undefined }
 }
 
 export class DesktopFilePreviewProxy {
@@ -220,6 +225,7 @@ export class DesktopFilePreviewProxy {
     const localToken = randomBytes(32).toString('hex')
     this.tickets.set(localToken, {
       upstreamURL: ticket.url,
+      kind: ticket.kind,
       expiresAt: ticket.expiresAt,
       onProgress,
       coveredRanges: [],
@@ -382,6 +388,41 @@ export class DesktopFilePreviewProxy {
       })
       controller.signal.throwIfAborted()
 
+      // A ticket's successful HEAD does not guarantee that a later GET still
+      // succeeds. Revoked/expired signed URLs can serve HTML error pages.
+      // Check the actual response before forwarding any media bytes or headers.
+      const range = responseByteRange(upstream)
+      const requestedRange = req.headers.range
+      const requestedStart = requestedRange ? /^bytes=(\d+)-/.exec(requestedRange.trim()) : null
+      const contentLength = upstream.headers.get('content-length')
+      const contentType = upstream.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+      const contentEncoding = upstream.headers.get('content-encoding')?.trim().toLowerCase()
+      // A reverse proxy may return a 200 login page or JSON error even if the
+      // signed media request did not receive a 4xx. Neither is playable media.
+      const errorDocument = contentType?.startsWith('text/') ||
+        contentType === 'application/json' || contentType?.endsWith('+json')
+      const validPartialRange = upstream.status !== 206 || (
+        range.start !== undefined &&
+        range.end !== undefined &&
+        (!requestedStart || Number(requestedStart[1]) === range.start) &&
+        (contentLength === null ||
+          (/^\d+$/.test(contentLength) &&
+            Number(contentLength) === range.end - range.start))
+      )
+      const validStatus = upstream.status === 200 || upstream.status === 206 ||
+        (upstream.status === 416 && Boolean(requestedRange))
+      if (!validStatus || !validPartialRange ||
+          (upstream.status !== 416 && errorDocument) ||
+          (ticket.kind === 'pdf' && upstream.status !== 416 && contentType !== 'application/pdf') ||
+          (contentEncoding && contentEncoding !== 'identity')) {
+        // Never leak signed upstream error content into an Electron Viewer.
+        res.writeHead(502, {
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        }).end()
+        return
+      }
+
       for (const name of previewResponseHeaders) {
         const value = upstream.headers.get(name)
         if (value) res.setHeader(name, value)
@@ -401,11 +442,18 @@ export class DesktopFilePreviewProxy {
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
       res.statusCode = upstream.status
 
+      // 416 is a normal out-of-bounds seek. Retain Content-Range for the
+      // player, but discard the upstream JSON/HTML error body and its length.
+      if (upstream.status === 416) {
+        res.removeHeader('Content-Type')
+        res.setHeader('Content-Length', '0')
+        res.end()
+        return
+      }
       if (req.method === 'HEAD' || !upstream.body) {
         res.end()
         return
       }
-      const range = responseByteRange(upstream)
       if (range.total) ticket.totalBytes = range.total
       this.emitProgress(ticket, true)
       const reader = upstream.body.getReader()

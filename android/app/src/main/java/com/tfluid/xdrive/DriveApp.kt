@@ -413,7 +413,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             !state.loading && nativeNavigation.selected == NativeHomeTab.GALLERY &&
             nativeNavigation.gallerySource == NativeGallerySource.MAP) {
             pendingRoutes = pendingRoutes.copy(galleryMap = false)
-            if (state.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
+            if (nativeGalleryMapStartsLocal(mapOriginSource)) {
+                // Keep local MediaStore places on the same Gallery child route.
+                // No cloud Owner map query or implicit local-to-cloud switch.
+                localPhotoMapOpen = true
+            } else if (state.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
                 state.gallerySelectedAlbum == null && !state.galleryMapOpen) {
                 controller.openGalleryMapOverview()
             } else nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
@@ -799,6 +803,14 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                     pose != bd09ViewerReturnCamera) {
                                     bd09ViewerReturnCamera = pose
                                 }
+                            },
+                            onExit = {
+                                // Restore the originating wall only after the
+                                // Controller actually closed this Owner map.
+                                controller.closeGalleryMapOverview()
+                                if (!controller.state.value.galleryMapOpen)
+                                    nativeNavigation = nativeNavigation.copy(
+                                        gallerySource = mapOriginSource)
                             })
                         if (nativeMapCellSheetVisible(state) && galleryMapCellStateKey != null) {
                             val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = false)
