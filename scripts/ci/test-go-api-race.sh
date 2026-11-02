@@ -24,8 +24,15 @@ if [[ -n "${XDRIVE_API_RACE_SHARD:-}${XDRIVE_API_RACE_SHARD_TOTAL:-}" ]]; then
   }
   indices=("$((XDRIVE_API_RACE_SHARD - 1))")
 fi
-mapfile -t listed < <(go test -race -mod=readonly -list '^(Test|Example|Fuzz)' ./internal/api |
-  grep -E '^(Test|Example|Fuzz)[[:alnum:]_]*$' || true)
+if listing="$(go test -race -mod=readonly -list '^(Test|Example|Fuzz)' ./internal/api)"; then
+  mapfile -t listed < <(printf '%s\n' "$listing" |
+    grep -E '^(Test|Example|Fuzz)[[:alnum:]_]*$' || true)
+else
+  status=$?
+  printf '%s\n' "$listing" >&2
+  echo '[ci] ERROR: internal/api test discovery failed' >&2
+  exit "$status"
+fi
 if (( ${#listed[@]} == 0 )); then
   echo "[ci] ERROR: no internal/api tests were discovered" >&2
   exit 1
@@ -43,18 +50,34 @@ for name in "${listed[@]}"; do
   fi
 done
 
-echo "[ci] internal/api race: ${#listed[@]} tests partitioned exactly once; ${#indices[@]} selected processes; timeout=30m each"
+# The G-M partition exceeded 30 minutes cumulatively on GitLab while its
+# current test had only run for nine seconds. Bound each sequential process
+# instead of increasing the timeout or removing race/security assertions.
+# The five CI jobs and their independent PostgreSQL services stay unchanged.
+batch_size=50
+echo "[ci] internal/api race: ${#listed[@]} tests partitioned exactly once; ${#indices[@]} selected shards; max $batch_size tests per process; timeout=30m each"
 status=0
 for i in "${indices[@]}"; do
-  echo "[ci] start shard $((i + 1))/${#shards[@]}: ${shards[i]}"
-  set +e
-  go test -race -timeout=30m -count=1 -json -run "${shards[i]}" ./internal/api
-  status=$?
-  set -e
-  if (( status != 0 )); then
-    echo "[ci] race test shard $((i + 1)) failed" >&2
-    break
-  fi
+  selected=()
+  for name in "${listed[@]}"; do
+    if [[ "$name" =~ ${shards[i]} ]]; then selected+=("$name"); fi
+  done
+  for (( offset=0; offset<${#selected[@]}; offset+=batch_size )); do
+    batch=("${selected[@]:offset:batch_size}")
+    # Discovery permits only alphanumeric/underscore names. Anchor the whole
+    # alternation so a prefix-related test cannot also run in another batch.
+    printf -v selector '%s|' "${batch[@]}"
+    selector="^(${selector%|})$"
+    echo "[ci] start shard $((i + 1))/${#shards[@]} batch $((offset / batch_size + 1)): ${#batch[@]} tests"
+    set +e
+    go test -race -timeout=30m -count=1 -json -run "$selector" ./internal/api
+    status=$?
+    set -e
+    if (( status != 0 )); then
+      echo "[ci] race test shard $((i + 1)) batch $((offset / batch_size + 1)) failed" >&2
+      break 2
+    fi
+  done
 done
 
 if [[ "$status" -ne 0 ]]; then
