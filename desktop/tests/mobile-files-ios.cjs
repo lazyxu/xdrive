@@ -7,6 +7,7 @@ const ts = require('typescript')
 const root = path.resolve(__dirname, '../..')
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 const mobileSource = read('web/src/MobileFiles.tsx')
+const mobileFiveSlotSource = read('web/src/MobileFiveSlotNavigation.tsx')
 const webAdapter = read('web/src/WebFileExplorer.tsx')
 const sharedExplorer = read('ui/shared/src/mui/FileExplorer.tsx')
 const stateFile = path.join(root, 'web/src/mobileFilesState.ts')
@@ -27,7 +28,7 @@ new Function('module', 'exports', 'require', transpiled)(pkg, pkg.exports, modul
   return virtualPkg.exports
 })
 const { mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesWindow, mobileFilesIsMoved,
-  mobileFilesRowTextInset, mobileFilesNativeMetadata, mobileFilesNativeSizeLabel,
+  mobileFilesRowTextInset, mobileFilesDirectoryRowTextInset, mobileFilesNativeMetadata, mobileFilesNativeSizeLabel,
   mobileFilesLogicalPositionDescription } = pkg.exports
 
 test('Mobile Files centralizes Apple-reference blue and document palette across views', () => {
@@ -399,7 +400,9 @@ test('Mobile selection replaces, never stacks upon, the Files category rail', ()
   assert.match(mobileSource, /<CheckCircleRoundedIcon/)
   assert.match(mobileSource, /<RadioButtonUncheckedRoundedIcon/)
   assert.match(mobileSource, /aria-label="下载已选"/)
-  assert.match(mobileSource, /pb: 'max\(env\(safe-area-inset-bottom\), 4px\)'/)
+  assert.match(mobileSource, /px: 0\.5, pt: 0\.5, pb: 0\.5/)
+  assert.doesNotMatch(mobileSource, /pb: 'max\(env\(safe-area-inset-bottom\), 4px\)'/)
+  assert.ok(mobileFiveSlotSource.includes("pb: 'env(safe-area-inset-bottom)'"))
   assert.match(mobileSource, /data-mobile-files-arrangement-status/)
   assert.match(mobileSource, /const arrangementLabel =/)
   assert.match(mobileSource, /props\.sort\.direction === 'asc' \? '↑' : '↓'/)
@@ -437,7 +440,7 @@ test('F-iOS-01A: Mobile-only large-title chrome and grouped iOS surfaces preserv
     assert.ok(mobileSource.includes(`data-mobile-files-group="${group}"`), 'missing Mobile-only native grouped section: ' + group)
   }
   assert.match(mobileSource, /borderRadius: '13px'/)
-  assert.match(mobileSource, /left: mobileFilesRowTextInset\(selectionMode, depth\)/)
+  assert.match(mobileSource, /left: mobileFilesDirectoryRowTextInset\(selectionMode, depth\)/)
   assert.match(mobileSource, /MOBILE_FILES_ROW_HEIGHT/)
   assert.match(mobileSource, /MOBILE_FILES_GRID_ROW_HEIGHT/)
   assert.match(mobileSource, /xDriveFileExplorerVisibleGroupSegments/)
@@ -494,7 +497,9 @@ test('F-iOS27-02: target is explicitly iOS 27, while only internal file tabs are
   assert.match(benchmark, /Only internal multiple file tabs/)
   assert.match(benchmark, /shared MUI virtualization-window kernel/)
   assert.match(mobileSource, /backdropFilter: 'blur\(18px\) saturate\(160%\)'/)
-  assert.match(mobileSource, /mb: 'max\(env\(safe-area-inset-bottom\), 8px\)'/)
+  assert.match(mobileSource, /mb: 1/)
+  assert.ok(mobileFiveSlotSource.includes("pb: 'env(safe-area-inset-bottom)'"))
+  assert.ok(read('web/index.html').includes('viewport-fit=cover'))
 })
 
 test('F-PARITY-02: Mobile More, item menu, selection all reuse wide-Web undo, history and path-copy actions', () => {
@@ -733,7 +738,7 @@ test('F-iOS27-08A: Files More has explicit paired native view actions and one sh
 })
 
 
-test('F-iOS27-08B: iOS List dividers follow real text indentation without changing virtual row geometry', () => {
+test('F-iOS27-08B: directory and collection dividers track their own text geometry without changing virtual rows', () => {
   for (const [depth, normal, selected] of [
     [0, 84, 120], [1, 100, 136], [2, 116, 152], [4, 148, 184], [99, 148, 184],
     [-2, 84, 120], [NaN, 84, 120],
@@ -741,7 +746,14 @@ test('F-iOS27-08B: iOS List dividers follow real text indentation without changi
     assert.equal(mobileFilesRowTextInset(false, depth), normal)
     assert.equal(mobileFilesRowTextInset(true, depth), selected)
   }
-  assert.match(mobileSource, /left: mobileFilesRowTextInset\(selectionMode, depth\)/)
+  for (const [depth, normal, selected] of [
+    [0, 96, 120], [1, 112, 136], [2, 128, 152], [4, 160, 184], [99, 160, 184],
+    [-2, 96, 120], [NaN, 96, 120],
+  ]) {
+    assert.equal(mobileFilesDirectoryRowTextInset(false, depth), normal)
+    assert.equal(mobileFilesDirectoryRowTextInset(true, depth), selected)
+  }
+  assert.match(mobileSource, /left: mobileFilesDirectoryRowTextInset\(selectionMode, depth\)/)
   assert.match(mobileSource, /left: mobileFilesRowTextInset\(false\)/)
   assert.match(mobileSource, /flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'/)
   assert.match(mobileSource, /minHeight: MOBILE_FILES_ROW_HEIGHT, px: 3\.5, gap: 1\.5/)
