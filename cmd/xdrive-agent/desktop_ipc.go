@@ -736,6 +736,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/versions", h.cloudVersions)
 	mux.HandleFunc("POST /v1/cloud/versions/restore", h.cloudRestoreVersion)
 	mux.HandleFunc("GET /v1/cloud/shares", h.cloudShares)
+	mux.HandleFunc("GET /v1/cloud/shares/all", h.cloudOwnerShares)
+	mux.HandleFunc("POST /v1/cloud/shares/link", h.cloudOwnShareLink)
 	mux.HandleFunc("POST /v1/cloud/shares", h.cloudCreateShare)
 	mux.HandleFunc("POST /v1/cloud/shares/update", h.cloudUpdateShare)
 	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)

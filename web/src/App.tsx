@@ -1632,6 +1632,17 @@ function FileManager({
   const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
   const shareDialogAdapter = useMemo(() => createWebShareDialogAdapter(api), [api])
+  const shareCenterPort = useMemo(() => ({
+    listPage: (cursor: number, limit: number, signal?: AbortSignal) => api.ownerShares(cursor, limit, signal),
+    getShareLink: async (id: number) => {
+      const { token } = await api.shareLink(id)
+      if (!token) throw new Error('分享链接不可用。')
+      return `${window.location.origin}/#/s/${token}`
+    },
+    updateShare: (id: number, input: { expires_at: string | null; access: 'read_only' | 'view_upload' }) =>
+      api.updateShare(id, input),
+    revokeShare: (id: number) => api.revokeShare(id),
+  }), [api])
 
   // P1-C1: observe the Gallery's existing successful album-list response.
   // Capture a whitelist of at most 24 labels under the currently authenticated
@@ -2429,6 +2440,7 @@ function FileManager({
   const webSidebarSections = xDriveWorkspaceHostSections({
     adminRoleVerified: profile?.role === 'admin',
     includeUtilityRoutes: false,
+    showShareCenter: true,
   })
 
   const chooseUploadForResume = (id: string) => {
@@ -2703,6 +2715,7 @@ function FileManager({
       },
       cloudStorage: cloudStorageSource,
       localStorage: localStorageSource,
+      shareCenter: shareCenterPort,
       deviceBackup: { source: deviceBackupSource, initialSourceID: deviceBackupSourceID },
       remotePull: {
         adapter: sourceManagerAdapter,
@@ -2718,7 +2731,7 @@ function FileManager({
         },
       },
     }),
-    [cloudStorageSource, localStorageSource, deviceBackupSource,
+    [cloudStorageSource, localStorageSource, shareCenterPort, deviceBackupSource,
       deviceBackupSourceID, sourceManagerAdapter, remotePullSourceID,
       isRemotePullRoute, current?.id, current?.name, remotePullTargetPath,
       handleError, launchWebApp, serverAdminVerified, taskCenter.pageProps,
@@ -3220,7 +3233,7 @@ function FileManager({
           ) : (
             <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
           )
-        ) : appView === 'transfers' || appView === 'global-tasks' ? (
+        ) : appView === 'shares' || appView === 'transfers' || appView === 'global-tasks' ? (
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : appView === 'local-storage' || appView === 'cloud-storage' ? (
           // First two real Browser Host-backed routes in the shared page

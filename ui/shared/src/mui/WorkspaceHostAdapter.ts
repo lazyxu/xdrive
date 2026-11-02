@@ -18,6 +18,7 @@ import type { XDriveOverviewPageProps } from './OverviewPage'
 import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import type { XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 import type { XDriveWorkspaceHostAlertsProps } from './WorkspaceHostAlerts'
+import type { XDriveShareCenterPort } from './ShareCenterPage'
 import type { XDriveDiagnosticsReadSource } from './DiagnosticsHostController'
 
 /** Authenticated domain ports, not Host-owned JSX or a generic Agent proxy. */
@@ -52,6 +53,7 @@ export type XDriveWorkspaceHostServices = {
    */
   readonly filesControllerContent?: ReactNode
   readonly deviceBackups?: XDriveDeviceBackupDataSource
+  readonly shareCenterPage?: XDriveShareCenterPort
   readonly cloudStorage?: XDriveCloudStorageDataSource
   /** Host-owned refresh policy, never inferred from a platform name. */
   readonly cloudStorageRefresh?: { readonly clearOnRefresh?: boolean }

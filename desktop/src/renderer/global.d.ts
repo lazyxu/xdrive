@@ -33,6 +33,7 @@ import type {
   ExternalSourceRunFailure,
   ExternalSourceRunSkip,
   FileShare,
+  OwnerFileSharePage,
   FileVersion,
   MediaAlbum,
   MediaAlbumFolder,
@@ -396,6 +397,8 @@ declare global {
   type AgentStorageCacheCleanupKind = StorageCacheCleanupKind
   type AgentCloudVersion = FileVersion
   type AgentCloudShare = FileShare
+  type AgentOwnerSharePage = OwnerFileSharePage
+  type AgentOwnerShareLink = { url: string }
   type AgentCreatedCloudShare = {
     share: CreatedFileShare
     url: string
@@ -1087,6 +1090,8 @@ declare global {
         cloudVersions: (nodeID: number) => Promise<DesktopResult<AgentCloudVersion[]>>
         cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudShares: (nodeID: number) => Promise<DesktopResult<AgentCloudShare[]>>
+        cloudOwnerShares: (cursor: number, limit: number) => Promise<DesktopResult<AgentOwnerSharePage>>
+        cloudOwnShareLink: (id: number) => Promise<DesktopResult<AgentOwnerShareLink>>
         cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) => Promise<DesktopResult<AgentCreatedCloudShare>>
         cloudUpdateShare: (id: number, input: { expires_at?: string | null; access: 'read_only' | 'view_upload' }) => Promise<DesktopResult<AgentCloudShare>>
         cloudRevokeShare: (id: number) => Promise<DesktopResult<{ ok: boolean }>>

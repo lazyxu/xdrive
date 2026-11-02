@@ -215,7 +215,25 @@ func (s *Server) createFileShare(c *gin.Context) {
 		MaxDownloads:  0,
 		DownloadCount: 0,
 	}
-	if err := s.DB.Create(&share).Error; err != nil {
+
+	// Save a recoverable link under the existing deployment keyring when available.
+	// The row creation and encrypted envelope update are atomic.
+	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&share).Error; err != nil {
+			return err
+		}
+		if s.ConnectorSecrets == nil {
+			return nil
+		}
+		version, ciphertext, err := s.ConnectorSecrets.SealShareToken(share.ID, []byte(rawToken))
+		if err != nil {
+			return err
+		}
+		return tx.Model(&share).Updates(map[string]any{
+			"link_token_ciphertext": ciphertext, "link_token_key_version": version,
+		}).Error
+	})
+	if err != nil {
 		fail(c, http.StatusInternalServerError, "create share failed")
 		return
 	}
@@ -417,7 +435,7 @@ func (s *Server) publicShareDownload(c *gin.Context) {
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var current meta.Share
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND token_hash = ?", share.ID, hashShareToken(rawToken)).
+			Where("id = ? AND (token_hash = ? OR link_alias_hash = ?)", share.ID, hashShareToken(rawToken), hashShareToken(rawToken)).
 			First(&current).Error; err != nil {
 			return err
 		}
@@ -530,7 +548,7 @@ func (s *Server) publicShareDownloadTicket(c *gin.Context) {
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var current meta.Share
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND token_hash = ?", share.ID, hashShareToken(rawToken)).
+			Where("id = ? AND (token_hash = ? OR link_alias_hash = ?)", share.ID, hashShareToken(rawToken), hashShareToken(rawToken)).
 			First(&current).Error; err != nil {
 			return err
 		}
@@ -707,7 +725,8 @@ func (s *Server) resolvePublicShare(ctx context.Context, rawToken string, now ti
 		return meta.Share{}, meta.Node{}, gorm.ErrRecordNotFound
 	}
 	var share meta.Share
-	if err := s.DB.WithContext(ctx).Where("token_hash = ?", hashShareToken(rawToken)).First(&share).Error; err != nil {
+	tokenHash := hashShareToken(rawToken)
+	if err := s.DB.WithContext(ctx).Where("token_hash = ? OR link_alias_hash = ?", tokenHash, tokenHash).First(&share).Error; err != nil {
 		return meta.Share{}, meta.Node{}, err
 	}
 	if shareStatus(share, now) != "active" {
