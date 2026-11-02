@@ -289,6 +289,9 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-photo-day-group"
           "$RUNNER_TEMP/xdrive-ios-photo-day-group"
 
+      - name: Verify native Live and screenshot full-library subtype filters
+        run: node --test desktop/tests/ios-native-photo-subtype-filter.cjs
+
       - name: Verify native PhotoKit full-library media filtering
         run: |
           set -euo pipefail

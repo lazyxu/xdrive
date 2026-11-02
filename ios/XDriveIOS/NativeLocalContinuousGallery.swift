@@ -310,7 +310,9 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 Text(option.title).tag(option)
                             }
                         }
-                        .pickerStyle(.segmented)
+                        // Six native source predicates fit cleanly in a
+                        // compact menu even on a 375pt iPhone/landscape.
+                        .pickerStyle(.menu)
                         .padding(.horizontal, 12)
                         .accessibilityIdentifier("native-ios-local-gallery-media-filter")
                         if selectionMode {
@@ -399,6 +401,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             Text(mediaFilter == .videos ? "当前已授权图库中没有视频。" :
                                  mediaFilter == .photos ? "当前已授权图库中没有照片。" :
                                  mediaFilter == .favorites ? "当前已授权图库中没有收藏照片。" :
+                                 mediaFilter == .livePhotos ? "当前已授权图库中没有实况照片。" :
+                                 mediaFilter == .screenshots ? "当前已授权图库中没有截屏。" :
                                  "当前已授权图库中没有可浏览的照片或视频。")
                                 .foregroundStyle(.secondary).padding(12)
                         }
