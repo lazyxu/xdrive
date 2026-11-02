@@ -18,6 +18,9 @@ class NativeLocalMotionHoldPolicyTest {
             candidate = true, stillReady = true, held = false, foreground = true))
         assertTrue(nativeLocalMotionMayPlay(
             candidate = true, stillReady = true, held = true, foreground = true))
+        assertFalse(nativeLocalMotionMayPlay(
+            candidate = true, stillReady = true, held = true, foreground = true,
+            atDefaultZoom = false))
     }
 
     @Test fun releaseAndBackgroundRetireMotionImmediately() {
