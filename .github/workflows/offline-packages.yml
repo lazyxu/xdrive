@@ -183,6 +183,7 @@ jobs:
           set -euo pipefail
           bash scripts/offline/build-five-packages.sh ci-assets offline
           cp scripts/offline/xdrive_offline.py offline/xdrive-offline.py
+          python3 scripts/ci/mirror-server-to-share.py reconcile-packages --directory offline --commit "$XDRIVE_OFFLINE_COMMIT"
           python3 scripts/ci/mirror-server-to-share.py checksums --directory offline
           count="$(find offline -maxdepth 1 -type f -name 'xdrive-*.tar.gz' | wc -l)"
           expected="$(jq '.changed|length' plan.json)"

@@ -344,6 +344,54 @@ def package_asset(record, item):
     return asset
 
 
+def reconcile_packages(directory, commit, repository, github):
+    manifest = manifest_at(directory)
+    if manifest['source_commit'] != commit or not re.fullmatch(r'[a-f0-9]{40}', commit):
+        raise MirrorError('Wrong source manifest for package reconciliation')
+    if any((directory / name).exists() or (directory / name).is_symlink() for name in BUNDLE_FILES):
+        raise MirrorError('Package identities must be reconciled before attestation')
+    changed = False
+    for item in manifest['packages'].values():
+        path = directory / item['filename']
+        if not path.exists() and not path.is_symlink():
+            continue
+        check_file(path, item['size'], item['sha256'])
+        record = github.get(item['release_tag'])
+        if record is None or not isinstance(record, dict) or record.get('draft') is not False:
+            # Only the exact source run may recover a draft. An old draft is
+            # not published provenance and must be retried at its own source.
+            if item['built_from_commit'] != commit:
+                raise MirrorError('Old package provenance requires an already published release')
+            if record is not None:
+                package_asset(record, item)
+            continue
+        original = record.get('target_commitish')
+        if not isinstance(original, str) or not re.fullmatch(r'[a-f0-9]{40}', original):
+            raise MirrorError('Published package must name its original full build commit')
+        package_asset(record, dict(item, built_from_commit=original))
+        kind = subprocess.run(['git', '-C', str(repository), 'cat-file', '-t', original],
+                              stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+        ancestor = subprocess.run(['git', '-C', str(repository), 'merge-base', '--is-ancestor', original, commit],
+                                  stdin=subprocess.DEVNULL, capture_output=True, check=False)
+        if kind.returncode or kind.stdout.strip() != 'commit' or ancestor.returncode:
+            raise MirrorError('Published package build is not a verified source ancestor')
+        if item['built_from_commit'] not in (commit, original):
+            raise MirrorError('Local package provenance conflicts with the immutable release')
+        if item['built_from_commit'] != original:
+            item['built_from_commit'] = original
+            changed = True
+    if changed:
+        # Validate the complete reconciled metadata before one atomic promotion.
+        # Fingerprints describe current build inputs; only original provenance
+        # comes from the existing content-addressed release (including A→B→A).
+        with tempfile.TemporaryDirectory(prefix='package-reconcile-', dir=directory) as temporary:
+            stage = Path(temporary)
+            target = stage / 'manifest.json'
+            target.write_text(json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+            manifest_at(stage)
+            target.replace(directory / 'manifest.json')
+
+
 def publish_packages(directory, commit, github):
     manifest = manifest_at(directory)
     if manifest['source_commit'] != commit or not re.fullmatch(r'[a-f0-9]{40}', commit):
@@ -357,13 +405,13 @@ def publish_packages(directory, commit, github):
         if not path.exists() and not path.is_symlink():
             continue  # Reused components are verified by publish_github.packages.
         check_file(path, item['size'], item['sha256'])
-        if item['built_from_commit'] != commit:
-            raise MirrorError('Local new package is not built from this source commit')
         tag = item['release_tag']
         record = github.get(tag)
         asset = package_asset(record, item) if record is not None else None
         if record is not None and not record['draft']:
             continue
+        if item['built_from_commit'] != commit:
+            raise MirrorError('Old package provenance requires an already published release')
         if record is None:
             github.create(tag, commit, f"Immutable {component}, source {commit}, SHA256 {item['sha256']}")
             record = github.get(tag)
@@ -513,7 +561,7 @@ def resume_github(directory, commit, repository, github):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('fetch', 'publish', 'resume-github', 'publish-github',
-                                           'publish-packages', 'checksums', 'previous'))
+                                           'reconcile-packages', 'publish-packages', 'checksums', 'previous'))
     parser.add_argument('--directory', type=Path, default=Path('offline'))
     parser.add_argument('--commit')
     parser.add_argument('--repository', type=Path, default=HERE.parents[1])
@@ -525,13 +573,15 @@ def main():
             write_checksums(args.directory)
         elif args.command == 'previous':
             print(previous_manifest(json.loads(sys.stdin.read())))
-        elif args.command in ('resume-github', 'publish-github', 'publish-packages'):
+        elif args.command in ('resume-github', 'publish-github', 'publish-packages', 'reconcile-packages'):
             if not isinstance(args.commit, str) or not re.fullmatch(r'[a-f0-9]{40}', args.commit):
                 raise MirrorError('Full source commit required')
             if args.command == 'resume-github':
                 print('true' if resume_github(args.directory, args.commit, args.repository, GitHub()) else 'false')
             elif args.command == 'publish-packages':
                 publish_packages(args.directory, args.commit, GitHub())
+            elif args.command == 'reconcile-packages':
+                reconcile_packages(args.directory, args.commit, args.repository, GitHub())
             else:
                 publish_github(args.directory, args.commit, GitHub())
         else:

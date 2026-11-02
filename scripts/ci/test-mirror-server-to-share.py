@@ -513,5 +513,130 @@ class DraftRecoveryTests(unittest.TestCase):
                 github.packages(self.manifest)
 
 
+class ReconcilePackageTests(unittest.TestCase):
+    def setUp(self):
+        self.root, self.manifest = fixtures.prepare(self)
+        self.git = self.root / 'source'
+        self.git.mkdir()
+        self.git_run('init', '-q')
+        self.git_run('config', 'user.name', 'Fixture')
+        self.git_run('config', 'user.email', 'fixture@example.invalid')
+        self.history = []
+        for name in ('original A', 'different B', 'return to A'):
+            self.git_run('commit', '--allow-empty', '-m', name)
+            self.history.append(self.git_run('rev-parse', 'HEAD').strip())
+        self.commit = self.history[-1]
+        self.git_run('update-ref', 'refs/remotes/origin/master', self.commit)
+        self.manifest['source_commit'] = self.commit
+        for item in self.manifest['packages'].values():
+            item['built_from_commit'] = self.commit
+        for key in ('server', 'caddy'):
+            self.manifest['images'][key]['ref'] = self.manifest['images'][key]['ref'].split(':sha-')[0] + ':sha-' + self.commit[:12]
+        self.item = self.manifest['packages']['ai-models']
+        for component, item in self.manifest['packages'].items():
+            if component != 'ai-models':
+                (self.root / item['filename']).unlink()
+        self.path = self.root / self.item['filename']
+        self.original = self.path.read_bytes()
+        self.record = dict(id=7, tag_name=self.item['release_tag'], target_commitish=self.history[0], draft=False)
+        self.github = MemoryGitHub(self.record, {self.path.name: self.original})
+        self.save_manifest()
+
+    def git_run(self, *args):
+        return subprocess.run(['git', '-C', str(self.git), *args], check=True,
+                              capture_output=True, text=True).stdout
+
+    def save_manifest(self):
+        (self.root / 'manifest.json').write_text(json.dumps(self.manifest), encoding='utf-8')
+
+    def reconcile(self):
+        self.assertTrue(callable(getattr(mirror, 'reconcile_packages', None)), 'Pre-attestation reconciliation is missing')
+        mirror.reconcile_packages(self.root, self.commit, self.git, self.github)
+
+    def sign(self):
+        descriptor = mirror.delivery.generate(self.root, self.commit, self.git)
+        (self.root / 'delivery.json').write_text(json.dumps(descriptor), encoding='utf-8')
+        mirror.write_checksums(self.root)
+        signed = {n: digest((self.root / n).read_bytes()) for n in ('manifest.json', 'xdrive-offline.py', 'delivery.json')}
+        for name in mirror.BUNDLE_FILES:
+            (self.root / name).write_text(json.dumps(signed), encoding='utf-8')
+
+    def test_same_bytes_recent_or_historical_release_preserves_original_provenance(self):
+        for original_commit in (self.history[1], self.history[0]):
+            with self.subTest(original_commit=original_commit):
+                self.github.record['target_commitish'] = original_commit
+                self.save_manifest()
+                self.reconcile()
+                actual = json.loads((self.root / 'manifest.json').read_text(encoding='utf-8'))
+                self.assertEqual(actual['packages']['ai-models']['built_from_commit'], original_commit)
+                self.assertEqual(actual['fingerprints'], self.manifest['fingerprints'])
+                self.assertEqual(actual['packages']['ai-models']['fingerprint'], self.item['fingerprint'])
+                self.assertEqual(self.path.read_bytes(), self.original)
+                self.assertEqual(self.github.events, [])
+                self.sign()
+                mirror.publish_packages(self.root, self.commit, self.github)
+                self.assertEqual(self.github.events, ['verify'])
+                self.github.events.clear()
+                for name in mirror.BUNDLE_FILES:
+                    (self.root / name).unlink()
+
+    def test_conflicting_bytes_size_or_nonancestor_target_do_not_rewrite_manifest(self):
+        self.git_run('checkout', '--detach', self.history[0])
+        self.git_run('commit', '--allow-empty', '-m', 'divergent')
+        divergent = self.git_run('rev-parse', 'HEAD').strip()
+        self.git_run('checkout', '--detach', self.commit)
+        before = (self.root / 'manifest.json').read_bytes()
+        for target, content in ((self.history[0], b'!' + self.original[1:]),
+                                (self.history[0], self.original + b'!'),
+                                ('master', self.original), ('f' * 40, self.original),
+                                (divergent, self.original)):
+            with self.subTest(target=target, size=len(content)):
+                self.github.record['target_commitish'] = target
+                self.github.files[self.path.name] = content
+                with self.assertRaises(mirror.MirrorError):
+                    self.reconcile()
+                self.assertEqual((self.root / 'manifest.json').read_bytes(), before)
+                self.assertEqual(self.github.events, [])
+
+    def test_current_draft_is_preserved_but_historical_draft_never_relabelled(self):
+        self.github.record.update(draft=True, target_commitish=self.commit)
+        self.github.files.clear()
+        before = (self.root / 'manifest.json').read_bytes()
+        self.reconcile()
+        self.assertEqual((self.root / 'manifest.json').read_bytes(), before)
+        self.github.record['target_commitish'] = self.history[0]
+        with self.assertRaises(mirror.MirrorError):
+            self.reconcile()
+        self.assertEqual((self.root / 'manifest.json').read_bytes(), before)
+        self.assertEqual(self.github.events, [])
+
+    def test_reconciled_old_provenance_requires_still_published_matching_release(self):
+        self.reconcile()
+        self.sign()
+        self.github.record['draft'] = True
+        with self.assertRaises(mirror.MirrorError):
+            mirror.publish_packages(self.root, self.commit, self.github)
+        self.assertEqual(self.github.events, ['verify'])
+        self.github.events.clear()
+        self.github.record = None
+        with self.assertRaises(mirror.MirrorError):
+            mirror.publish_packages(self.root, self.commit, self.github)
+        self.assertEqual(self.github.events, ['verify'])
+
+    def test_signed_manifest_is_never_reconciled_or_tampered_after_attestation(self):
+        self.sign()
+        with self.assertRaises(mirror.MirrorError):
+            self.reconcile()
+        self.item['built_from_commit'] = self.history[0]
+        self.save_manifest()
+        # Even if an attacker refreshes the unsigned descriptor hash binding,
+        # the original attestation cannot authorize this changed manifest.
+        descriptor = mirror.delivery.generate(self.root, self.commit, self.git)
+        (self.root / 'delivery.json').write_text(json.dumps(descriptor), encoding='utf-8')
+        with self.assertRaises(mirror.MirrorError):
+            mirror.publish_packages(self.root, self.commit, self.github)
+        self.assertEqual(self.github.events, [])
+
+
 if __name__ == '__main__':
     unittest.main()
