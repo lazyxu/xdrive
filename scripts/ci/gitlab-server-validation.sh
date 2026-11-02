@@ -82,6 +82,7 @@ sh -n scripts/ci/gitlab-publish-release.sh
 bash -n scripts/ci/test-gitlab-release-version.sh
 bash scripts/ci/test-gitlab-release-version.sh
 python3 scripts/ci/test-gitlab-snapshot-publish.py
+bash scripts/ci/test-gitlab-publisher-cli.sh
 python3 scripts/ci/test-gitlab-master-release-interrupt.py
 python3 scripts/ci/test-gitlab-master-publish-before-tests.py
 bash -n scripts/ci/gitlab-post-release-smoke.sh
