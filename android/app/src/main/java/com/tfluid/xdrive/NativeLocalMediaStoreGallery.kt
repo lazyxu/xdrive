@@ -17,6 +17,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.clickable
@@ -67,6 +70,8 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.currentCoroutineContext
@@ -1016,30 +1021,75 @@ internal fun NativeLocalPhotoSwipeSurface(
     val currentPrevious by rememberUpdatedState(onPrevious)
     val currentNext by rememberUpdatedState(onNext)
     val canSwipe = !zoomed && (onPrevious != null || onNext != null)
+    val currentKey by rememberUpdatedState(mediaKey)
+    val scope = rememberCoroutineScope()
+    val settle = remember(mediaKey) { mutableStateOf<Job?>(null) }
+    var dragging by remember(mediaKey) { mutableStateOf(false) }
+    var slideTarget by remember(mediaKey) { mutableFloatStateOf(0f) }
+    val visualOffset by animateFloatAsState(
+        targetValue = slideTarget,
+        animationSpec = if (dragging) snap() else tween(durationMillis = 150),
+        label = "native-local-photo-paging",
+    )
     Box(
         modifier = modifier.pointerInput(mediaKey, canSwipe) {
             if (!canSwipe) return@pointerInput
             var horizontalDistance = 0f
             val threshold = 64.dp.toPx()
+            val width = size.width.toFloat().coerceAtLeast(1f)
             detectHorizontalDragGestures(
-                onDragStart = { horizontalDistance = 0f },
-                onDragCancel = { horizontalDistance = 0f },
+                onDragStart = {
+                    settle.value?.cancel()
+                    horizontalDistance = 0f
+                    slideTarget = 0f
+                    dragging = true
+                },
+                onDragCancel = {
+                    dragging = false
+                    slideTarget = 0f
+                    horizontalDistance = 0f
+                },
                 onDragEnd = {
-                    when (nativeLocalViewerSwipeDirection(
-                        horizontalDistance, threshold, zoomed = false)) {
-                        -1 -> currentPrevious?.invoke()
-                        1 -> currentNext?.invoke()
+                    val direction = nativeLocalViewerSwipeDirection(
+                        horizontalDistance, threshold, zoomed = false)
+                    val available = when (direction) {
+                        -1 -> currentPrevious != null
+                        1 -> currentNext != null
+                        else -> false
                     }
+                    dragging = false
+                    if (available && direction != null) {
+                        // Animate the already-decoded current still off-screen
+                        // before the existing bounded neighbor callback swaps it.
+                        slideTarget = if (direction > 0) -width else width
+                        settle.value = scope.launch {
+                            delay(150)
+                            if (currentKey == mediaKey) {
+                                if (direction > 0) currentNext?.invoke()
+                                else currentPrevious?.invoke()
+                            }
+                        }
+                    } else slideTarget = 0f
                     horizontalDistance = 0f
                 },
                 onHorizontalDrag = { change, drag ->
                     horizontalDistance += drag
+                    slideTarget = galleryPhotoFingerDrag(
+                        deltaX = horizontalDistance, deltaY = 0f,
+                        viewportWidth = width, atDefaultZoom = !zoomed,
+                        singlePointer = true,
+                        previousAvailable = currentPrevious != null,
+                        nextAvailable = currentNext != null,
+                    )
                     change.consume()
                 },
             )
         },
-        content = content,
-    )
+    ) {
+        Box(Modifier.fillMaxSize().graphicsLayer { translationX = visualOffset }) {
+            content()
+        }
+    }
 }
 
 /**

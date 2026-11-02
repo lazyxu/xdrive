@@ -3,6 +3,9 @@ package com.tfluid.xdrive
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Image
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -36,6 +39,8 @@ import com.tfluid.xdrive.core.GalleryAsset
 import com.tfluid.xdrive.core.DriveNode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -143,6 +148,23 @@ internal fun GalleryPhotoViewer(
     val swipeThreshold = with(LocalDensity.current) { 72.dp.toPx() }
     val canGoOlder = controller.galleryViewerCanShift(-1)
     val canGoNewer = controller.galleryViewerCanShift(1)
+    val latestOlder by rememberUpdatedState(canGoOlder)
+    val latestNewer by rememberUpdatedState(canGoNewer)
+    val swipeScope = rememberCoroutineScope()
+    var swipeSettling by remember(photo.node.id, photo.node.revision) {
+        mutableStateOf<Job?>(null)
+    }
+    var fingerTracking by remember(photo.node.id, photo.node.revision) {
+        mutableStateOf(false)
+    }
+    var swipeX by remember(photo.node.id, photo.node.revision) {
+        mutableFloatStateOf(0f)
+    }
+    val visualSwipeX by animateFloatAsState(
+        targetValue = swipeX,
+        animationSpec = if (fingerTracking) snap() else tween(150),
+        label = "cloud-gallery-photo-paging",
+    )
     val cacheKey = "${photo.node.id}:${photo.node.revision}"
     val cachedThumbnail = thumbnails.get(cacheKey)
     var qualityPanelVisible by remember(photo.node.id, photo.node.revision) {
@@ -266,7 +288,11 @@ internal fun GalleryPhotoViewer(
                         )
                         val origin = down.position
                         liveSwipeFence.beginGesture()
+                        swipeSettling?.cancel()
+                        fingerTracking = false
+                        swipeX = 0f
                         var singlePointer = true
+                        val width = size.width.toFloat().coerceAtLeast(1f)
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                             if (event.changes.count { it.pressed } > 1)
@@ -274,20 +300,43 @@ internal fun GalleryPhotoViewer(
                             val pointer = event.changes.firstOrNull {
                                 it.id == down.id
                             } ?: break
+                            val dx = pointer.position.x - origin.x
+                            val dy = pointer.position.y - origin.y
                             if (!pointer.pressed) {
-                                val dx = pointer.position.x - origin.x
-                                val dy = pointer.position.y - origin.y
-                                if (liveSwipeFence.mayShift(
-                                        deltaX = dx, deltaY = dy,
-                                        durationMillis = pointer.uptimeMillis - down.uptimeMillis,
-                                        thresholdPx = swipeThreshold,
-                                        singlePointer = singlePointer,
-                                        atDefaultZoom = currentZoom <= 1.001f,
-                                    ) && controller.state.value.galleryViewer == photo) {
-                                    controller.shiftGalleryViewer(if (dx < 0f) 1 else -1)
-                                }
+                                val direction = if (dx < 0f) 1 else -1
+                                val available = if (direction > 0) latestNewer else latestOlder
+                                val accepted = available && liveSwipeFence.mayShift(
+                                    deltaX = dx, deltaY = dy,
+                                    durationMillis = pointer.uptimeMillis - down.uptimeMillis,
+                                    thresholdPx = swipeThreshold,
+                                    singlePointer = singlePointer,
+                                    atDefaultZoom = currentZoom <= 1.001f,
+                                ) && controller.state.value.galleryViewer == photo
+                                fingerTracking = false
+                                if (accepted) {
+                                    // Finish the visible, already-decoded still's
+                                    // page movement before the scoped Owner shift.
+                                    swipeX = if (direction > 0) -width else width
+                                    swipeSettling = swipeScope.launch {
+                                        delay(150)
+                                        if (controller.state.value.galleryViewer == photo &&
+                                            currentZoom <= 1.001f) {
+                                            controller.shiftGalleryViewer(direction)
+                                        }
+                                    }
+                                } else swipeX = 0f
                                 break
                             }
+                            val offset = galleryPhotoFingerDrag(
+                                deltaX = dx, deltaY = dy, viewportWidth = width,
+                                atDefaultZoom = currentZoom <= 1.001f && !liveHeld &&
+                                    liveSwipeFence.mayPreviewFingerDrag(),
+                                singlePointer = singlePointer,
+                                previousAvailable = latestOlder,
+                                nextAvailable = latestNewer,
+                            )
+                            fingerTracking = true
+                            swipeX = offset
                         }
                     }
                 }
@@ -369,7 +418,7 @@ internal fun GalleryPhotoViewer(
                             .graphicsLayer {
                                 scaleX = zoom
                                 scaleY = zoom
-                                translationX = pan.x
+                                translationX = pan.x + if (zoom <= 1.001f) visualSwipeX else 0f
                                 translationY = pan.y
                             }
                             .transformable(gesture)
