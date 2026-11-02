@@ -62,6 +62,12 @@ test('file mutations and downloads remain unavailable; Viewer uses one native mo
 test('native directory and whole-library search have no manual pager', () => {
   assert.doesNotMatch(view, /private var filesPager:|Button\("上一页"\)|Button\("下一页"\)/)
   assert.match(view, /private var filesContinuationStatus: some View/)
+  assert.match(view, /Menu \{[\s\S]*?Picker\("显示方式", selection: \$viewMode\)/)
+  assert.match(view, /Picker\("排序", selection: \$sort\)/)
+  assert.match(view, /Picker\("顺序", selection: \$order\)/)
+  assert.match(view, /native-ios-files-more-options/)
+  assert.match(view, /native-ios-files-folder-actions/)
+  assert.match(view, /native-ios-files-refresh/)
   assert.match(view, /ForEach\(model\.entries\) \{ entry in[\s\S]*?requestContinuationIfNeeded\(entry\)/)
   assert.match(view, /private func requestContinuationIfNeeded\(/)
   assert.match(view, /model\.entries\.first\?\.id == entry\.id && model\.canLoadEarlier/)
