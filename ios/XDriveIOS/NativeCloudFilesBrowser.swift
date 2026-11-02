@@ -614,39 +614,39 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
     }
 
-    private var filesPager: some View {
-            Section {
-                HStack {
-                    Button("上一页") {
-                        offset = max(0, offset - XDriveIOSNativeFilesPagePolicy.pageSize)
-                        reload()
-                    }
-                    .disabled(offset == 0 || model.loading)
-                    Spacer()
-                    Text(model.total == 0 ? "0 / 0" :
-                        "\(offset + 1)–\(min(offset + model.entries.count, model.total)) / \(model.total)")
-                        .font(.footnote.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("下一页") {
-                        offset += XDriveIOSNativeFilesPagePolicy.pageSize
-                        reload()
-                    }
-                    .disabled(model.loading || model.total == 0 ||
-                              offset + model.entries.count >= model.total)
-                }
-                .accessibilityIdentifier("native-ios-files-page-controls")
+    @ViewBuilder private var filesContinuationStatus: some View {
+        if model.loading && !model.entries.isEmpty {
+            HStack {
+                ProgressView()
+                Text("正在加载相邻文件…")
+                    .foregroundStyle(.secondary)
             }
+            .accessibilityIdentifier("native-ios-files-loading-more")
+        }
+        if let continuationError = model.continuationError {
+            Text(continuationError)
+                .foregroundStyle(.orange)
+            Button("重试加载相邻文件") {
+                guard let parentID else { return }
+                model.retryContinuation(
+                    login: login, folderID: parentID,
+                    query: activeQuery, sort: sort, order: order
+                )
+            }
+            .accessibilityIdentifier("native-ios-files-retry-continuation")
+        }
     }
 
     @ViewBuilder private var filesBatchOperations: some View {
             if selecting {
-                Section("本页批量操作") {
-                    Text("已选 \(selectedIDs.count) 项（最多 64 项，仅当前文件夹本页）")
+                Section("批量操作") {
+                    Text("已选 \(selectedIDs.count) 项（最多 64 项，可跨已加载的目录范围）")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Button("全选本页") {
+                    Button("选择已加载的前 64 项") {
                         guard canSelectPage else { return }
-                        selectedIDs = Set(model.entries.map(\.id))
+                        selectedIDs = Set(model.entries.prefix(
+                            XDriveIOSNativeFilesPagePolicy.pageSize
+                        ).map(\.id))
                     }
                     .disabled(!canSelectPage)
                     Button("清空选择") { selectedIDs.removeAll() }
@@ -740,6 +740,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     ForEach(model.entries) { entry in
                         gridTile(entry)
                             .id(entry.id)
+                            .onAppear { requestContinuationIfNeeded(entry) }
                     }
                 }
                 .padding(.horizontal, 10)
@@ -750,9 +751,10 @@ struct XDriveIOSNativeFilesBrowser: View {
             } else {
                 ForEach(model.entries) { entry in
                     fileEntryRow(entry)
+                        .onAppear { requestContinuationIfNeeded(entry) }
                 }
             }
-            filesPager
+            filesContinuationStatus
             filesBatchOperations
         }
     }
@@ -922,9 +924,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             if let openedOwner = selectedOwner {
                 XDriveIOSNativeFilesViewer(
                     initial: initial.node,
-                    loadedItems: model.entries.map(\.node).filter {
-                        $0.type == "file" && $0.parent_id == initial.node.parent_id
-                    },
+                    loadedItems: viewerWindow(for: initial.node),
                     openedOwner: openedOwner,
                     login: login,
                     onNavigate: { next in
@@ -1005,20 +1005,59 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
-    /// Both display modes operate on the same, currently verified 64-item
-    /// Owner page. No grid-specific reads or copied mutation pipelines.
+    /// Both display modes use the same contiguous verified Owner window.
+    /// The Server batch endpoints still bound one mutation to 64 selected
+    /// Nodes, even when more than one read range is visible.
     private func toggleSelection(_ entry: XDriveIOSNativeFilesEntry) {
         guard canSelectPage,
               model.entries.contains(where: { $0.node == entry.node }) else { return }
-        if !selectedIDs.insert(entry.id).inserted {
+        if selectedIDs.contains(entry.id) {
             selectedIDs.remove(entry.id)
+        } else if selectedIDs.count < XDriveIOSNativeFilesPagePolicy.pageSize {
+            selectedIDs.insert(entry.id)
         }
+    }
+
+    private func requestContinuationIfNeeded(_ entry: XDriveIOSNativeFilesEntry) {
+        guard !selecting, selectedFile == nil, !batchTrash.busy,
+              !batchTarget.busy, !batchExport.busy,
+              batchExport.prepared.isEmpty, let parentID,
+              model.verifiedPage else { return }
+        // Trigger on actual row visibility, not on a timer or the parent List's
+        // appearance: neither a short window nor a deep located folder may
+        // drain the entire library without user scrolling.
+        if model.entries.first?.id == entry.id && model.canLoadEarlier {
+            model.loadEarlier(
+                login: login, folderID: parentID,
+                query: activeQuery, sort: sort, order: order
+            )
+        } else if model.entries.last?.id == entry.id && model.canLoadMore {
+            model.loadMore(
+                login: login, folderID: parentID,
+                query: activeQuery, sort: sort, order: order
+            )
+        }
+    }
+
+    /// The existing native Viewer only accepts 64 same-parent file targets.
+    /// Center its immutable window on the selected file instead of passing
+    /// an unbounded continuously loaded file list into L3.
+    private func viewerWindow(for selected: XDriveIOSNativeFilesNode)
+        -> [XDriveIOSNativeFilesNode] {
+        let siblings = model.entries.map(\.node).filter {
+            $0.type == "file" && $0.parent_id == selected.parent_id
+        }
+        guard let index = siblings.firstIndex(of: selected) else { return [selected] }
+        let maximum = XDriveIOSNativeFilesViewerPolicy.maximumLoadedRows
+        let start = max(0, min(index - maximum / 2, max(0, siblings.count - maximum)))
+        return Array(siblings[start..<min(start + maximum, siblings.count)])
     }
 
     private func openViewer(_ entry: XDriveIOSNativeFilesEntry) {
         guard !model.loading, model.verifiedPage,
               let owner = login.owner,
               model.entries.contains(where: { $0.node == entry.node }) else { return }
+        offset = model.pageOffset(for: entry.node) ?? offset
         selectedOwner = owner
         returnOwner = owner
         lastViewedFile = entry.node
@@ -1182,6 +1221,7 @@ struct XDriveIOSNativeFilesBrowser: View {
               batchExport.prepared.isEmpty,
               node.type == "file", let owner = login.owner,
               model.entries.contains(where: { $0.node == node }) else { return }
+        offset = model.pageOffset(for: node) ?? offset
         versionHistoryIntent = XDriveIOSNativeFilesVersionIntent(
             owner: owner, node: node
         )
@@ -1193,6 +1233,9 @@ struct XDriveIOSNativeFilesBrowser: View {
               node != nil || activeQuery.isEmpty else { return }
         if let node {
             guard model.entries.contains(where: { $0.node == node }) else { return }
+        }
+        if let node {
+            offset = model.pageOffset(for: node) ?? offset
         }
         managementIntent = XDriveIOSNativeFilesManagementIntent(
             owner: owner,
