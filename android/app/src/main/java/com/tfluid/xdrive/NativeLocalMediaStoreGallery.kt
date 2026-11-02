@@ -860,6 +860,7 @@ internal fun NativeLocalMediaViewer(
     var motionCandidate by remember(mediaIdentity) { mutableStateOf(false) }
     var motionHeld by remember(mediaIdentity) { mutableStateOf(false) }
     var stillReady by remember(mediaIdentity) { mutableStateOf(false) }
+    var stillZoomed by remember(mediaIdentity) { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current
     var foreground by remember(mediaIdentity, lifecycle) {
         mutableStateOf(lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
@@ -884,7 +885,8 @@ internal fun NativeLocalMediaViewer(
         if (!asset.isVideo) motionCandidate = nativeLocalHasMotionPhotoCandidate(context, asset)
     }
     val activeMotion = nativeLocalMotionMayPlay(
-        motionCandidate, stillReady, motionHeld, foreground)
+        motionCandidate, stillReady, motionHeld, foreground,
+        atDefaultZoom = !stillZoomed)
     Dialog(onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().testTag("native-local-viewer")) {
@@ -910,7 +912,7 @@ internal fun NativeLocalMediaViewer(
                     Modifier.fillMaxWidth().weight(1f)
                         .galleryLivePhotoHold(
                             enabled = !asset.isVideo && motionCandidate &&
-                                stillReady && foreground,
+                                stillReady && !stillZoomed && foreground,
                             sourceIdentity = mediaIdentity.toString(),
                         ) { pressed ->
                             motionHeld = pressed && foreground
@@ -925,6 +927,10 @@ internal fun NativeLocalMediaViewer(
                                 onStillReady = { ready ->
                                     stillReady = ready
                                     if (!ready) motionHeld = false
+                                },
+                                onStillZoomChanged = { zoomed ->
+                                    stillZoomed = zoomed
+                                    if (zoomed) motionHeld = false
                                 },
                             )
                         }
@@ -941,7 +947,7 @@ internal fun NativeLocalMediaViewer(
                     }
                 }
                 Text("本机媒体只读预览：可用时读取原件，图片解码最长边不超过 4096 像素；" +
-                    "原件失败时仅显示缩略图；动态片段仅在按住时播放，松手停止。不会自动上传或备份。",
+                    "原件失败时如可用则仅显示缩略图；动态片段仅在按住时播放，松手停止。不会自动上传或备份。",
                     modifier = Modifier.navigationBarsPadding().padding(8.dp),
                     style = MaterialTheme.typography.bodySmall)
             }
@@ -1156,6 +1162,7 @@ private fun ColumnScope.NativeLocalStillViewer(
     onPrevious: (() -> Unit)?,
     onNext: (() -> Unit)?,
     onStillReady: (Boolean) -> Unit = {},
+    onStillZoomChanged: (Boolean) -> Unit = {},
 ) {
     val resolver = LocalContext.current.contentResolver
     val mediaKey = asset.viewerReturnKey()
@@ -1212,6 +1219,9 @@ private fun ColumnScope.NativeLocalStillViewer(
             preview is NativeLocalStillStage.Thumbnail)
     }
     var scale by remember(mediaKey, asset.uri) { mutableFloatStateOf(1f) }
+    LaunchedEffect(mediaKey, asset.uri, scale > 1f) {
+        onStillZoomChanged(scale > 1f)
+    }
     var translation by remember(mediaKey, asset.uri) { mutableStateOf(Offset.Zero) }
     var viewport by remember(mediaKey, asset.uri) { mutableStateOf(IntSize.Zero) }
     val gesture = rememberTransformableState { zoom, pan, _ ->
