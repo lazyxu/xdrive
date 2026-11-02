@@ -504,9 +504,10 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                 nativeLiveReady = ready
                                 if !ready { nativeLiveUnavailable = true }
                             }
+                            .xdriveCloudLivePhotoPaging { navigateLoaded($0) }
                             .id(resources.folderURL)
                         }
-                        .accessibilityLabel("云端 Live Photo，长按播放")
+                        .accessibilityLabel("云端 Live Photo，长按播放或左右滑动切换")
                     } else {
                         XDriveIOSNativeZoomablePhotoView(image: still)
                             .onNavigateSwipe { navigateLoaded($0) }
