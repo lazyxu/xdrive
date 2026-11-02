@@ -29,6 +29,39 @@ enum XDriveIOSNativeOwnerMapSelectionPolicy {
         canonicalPlaceID(id) && currentlyVisibleIDs.contains(id)
     }
 
+    /// Only real, unique canonical place IDs in the CURRENT Owner map overview
+    /// may be combined into a visual MapKit cluster's native photo album.
+    static func acceptsSelectedCluster(
+        _ chosen: [XDriveIOSNativeOwnerMapFacet],
+        currentlyVisible: [XDriveIOSNativeOwnerMapFacet]
+    ) -> Bool {
+        guard (2...XDriveIOSNativeOwnerMapOverviewPolicy.maximumCells).contains(chosen.count),
+              currentlyVisible.count <= XDriveIOSNativeOwnerMapOverviewPolicy.maximumCells
+        else { return false }
+        let selectedIDs = chosen.map(\.id)
+        let visibleIDs = currentlyVisible.map(\.id)
+        guard Set(selectedIDs).count == selectedIDs.count,
+              Set(visibleIDs).count == visibleIDs.count else { return false }
+        let byID = Dictionary(uniqueKeysWithValues: currentlyVisible.map { ($0.id, $0) })
+        var total = 0
+        for facet in chosen {
+            guard canOpenPhotoRange(facet), let signed = byID[facet.id],
+                  canOpenPhotoRange(signed),
+                  facet.item_count == signed.item_count,
+                  facet.coordinate_kind == signed.coordinate_kind,
+                  facet.latitude == signed.latitude,
+                  facet.longitude == signed.longitude,
+                  facet.sample_latitude == signed.sample_latitude,
+                  facet.sample_longitude == signed.sample_longitude,
+                  facet.cover_node_id == signed.cover_node_id
+            else { return false }
+            let (sum, overflow) = total.addingReportingOverflow(facet.item_count)
+            guard !overflow && sum <= 100_000_000 else { return false }
+            total = sum
+        }
+        return true
+    }
+
     /// Camera movement revokes the click authority of the previous signed
     /// Owner overview, even if its pins remain visible as inert map markers.
     /// Never use a previous WGS84 viewport as a fresh PhotoAsset Range scope.
