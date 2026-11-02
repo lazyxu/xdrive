@@ -48,11 +48,7 @@ variables:
     # Only use APT in jobs that actually need jq/xz. The Go image already
     # provides curl/CA/tar for cached Docker CLI installation in image builds.
     - &ensure_linux_fetch_tools |
-        set -euo pipefail
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get install -y --no-install-recommends ca-certificates curl jq xz-utils
-        rm -rf /var/lib/apt/lists/*
+        bash scripts/ci/install-linux-fetch-tools.sh
     - &install_node22 bash scripts/ci/install-node22.sh
     - &install_docker_cli bash scripts/ci/install-docker-cli.sh
     - &install_docker_cli_only bash scripts/ci/install-docker-cli.sh --docker-only
@@ -239,6 +235,11 @@ build-client-core:
       artifacts: true
   tags:
     - linux
+  # Unlike GitHub's Ubuntu runner, the Go image has neither XZ nor Node.
+  # XZ is also required to unpack the pinned Node distribution itself.
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_node22
   script:
     - |
       set -euo pipefail

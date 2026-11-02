@@ -62,6 +62,8 @@ bash -n scripts/test-update-channels.sh
 bash scripts/test-update-channels.sh
 bash -n scripts/ci/download-with-fallback.sh
 bash -n scripts/ci/install-node22.sh
+bash -n scripts/ci/install-linux-fetch-tools.sh
+bash scripts/ci/test-install-linux-fetch-tools.sh
 bash -n scripts/ci/install-docker-cli.sh
 bash -n scripts/ci/test-download-with-fallback.sh
 bash scripts/ci/test-download-with-fallback.sh
