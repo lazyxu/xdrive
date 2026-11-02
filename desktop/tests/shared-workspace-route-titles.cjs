@@ -11,7 +11,7 @@ test('canonical route catalog has exactly one title for each workspace destinati
   const routes = read('ui/shared/src/mui/WorkspaceRoute.ts')
   const titles = read('ui/shared/src/mui/WorkspaceRouteTitles.ts')
   const ids = [
-    'overview', 'files', 'gallery', 'device-backup', 'remote-pull',
+    'overview', 'files', 'gallery', 'shares', 'device-backup', 'remote-pull',
     'transfers', 'global-tasks', 'local-storage', 'cloud-storage',
     'conflicts', 'diagnostics', 'admin-users', 'admin-audit',
     'admin-storage', 'admin-services', 'admin-maintenance',
