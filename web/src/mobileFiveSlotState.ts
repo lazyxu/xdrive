@@ -295,6 +295,26 @@ export function xDriveMobileFeatureParentRoute(route: XDriveWebAppRoute): XDrive
     case 'admin-storage':
       return route.params.section || route.params.task
         ? { app: 'admin-storage', params: {} } : null
+    case 'admin-services':
+      // Service/policy details are within one dynamic module. Return to its
+      // overview; never make the top-left arrow traverse a previous tab.
+      return route.params.service || route.params.policy
+        ? { app: 'admin-services', params: {} } : null
     default: return null
   }
+}
+
+/** The browser hash can change within admin-services without changing its app
+ * ID. A dirty form must keep its existing discard confirmation for that
+ * navigation, including the Mobile app-header Back and browser Back/Forward.
+ * This is route state only; it never confers any admin capability. */
+export function xDriveMobileSystemDependenciesRouteChanged(
+  from: XDriveWebAppRoute,
+  to: XDriveWebAppRoute,
+): boolean {
+  return from.app === 'admin-services' && to.app === 'admin-services' && (
+    from.params.service !== to.params.service ||
+    from.params.policy !== to.params.policy ||
+    from.params.tab !== to.params.tab
+  )
 }
