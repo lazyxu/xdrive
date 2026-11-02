@@ -363,6 +363,7 @@ private struct XDriveIOSNativeFilesManagementIntent: Identifiable {
     let owner: XDriveNativeOwnerRoot
     let file: XDriveIOSNativeFilesNode?
     let directory: XDriveIOSNativeFilesNode?
+    let quickAction: XDriveIOSNativeFilesQuickAction?
 }
 
 private struct XDriveIOSNativeFilesVersionIntent: Identifiable {
@@ -561,6 +562,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                             }
                         }
                         .contextMenu {
+                            nativeQuickActions(for: entry)
                             Button("文件夹操作") { openManagement(for: entry.node) }
                         }
                         .id(entry.node.id)
@@ -589,6 +591,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                             }
                         }
                         .contextMenu {
+                            nativeQuickActions(for: entry)
                             Button("文件操作") { openManagement(for: entry.node) }
                             Button("版本历史") { openVersionHistory(for: entry.node) }
                         }
@@ -894,7 +897,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                     folderID: folder?.id ?? intent.owner.rootNodeID,
                     folderName: folder?.name,
                     file: intent.file,
-                    directory: intent.directory
+                    directory: intent.directory,
+                    initialQuickAction: intent.quickAction
                 ) {
                     managementIntent = nil
                     reload()
@@ -1114,6 +1118,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     in: RoundedRectangle(cornerRadius: 12))
         .contextMenu {
             if !selecting {
+                nativeQuickActions(for: entry)
                 Button(entry.node.isDirectory ? "文件夹操作" : "文件操作") {
                     openManagement(for: entry.node)
                 }
@@ -1231,7 +1236,54 @@ struct XDriveIOSNativeFilesBrowser: View {
         )
     }
 
-    private func openManagement(for node: XDriveIOSNativeFilesNode?) {
+    /// Context-menu shortcuts route through the existing Owner-scoped
+    /// management screen; no mutation is committed by pressing a menu item.
+    @ViewBuilder private func nativeQuickActions(for entry: XDriveIOSNativeFilesEntry)
+        -> some View {
+        if !entry.node.isDirectory {
+            Button {
+                openViewer(entry)
+            } label: {
+                Label("预览", systemImage: "eye")
+            }
+        }
+        Button {
+            openManagement(for: entry.node, quickAction: .copy)
+        } label: {
+            Label("复制到…", systemImage: "doc.on.doc")
+        }
+        Button {
+            openManagement(for: entry.node, quickAction: .move)
+        } label: {
+            Label("移动到…", systemImage: "folder")
+        }
+        Button {
+            openManagement(for: entry.node, quickAction: .rename)
+        } label: {
+            Label("重命名", systemImage: "pencil")
+        }
+        Button {
+            openManagement(for: entry.node, quickAction: .shareLink)
+        } label: {
+            Label("云端分享链接", systemImage: "link")
+        }
+        Button {
+            openManagement(for: entry.node, quickAction: .download)
+        } label: {
+            Label(entry.node.isDirectory ? "下载文件夹 ZIP" : "下载原件",
+                  systemImage: "arrow.down.to.line")
+        }
+        Button(role: .destructive) {
+            openManagement(for: entry.node, quickAction: .trash)
+        } label: {
+            Label("移入回收站", systemImage: "trash")
+        }
+    }
+
+    private func openManagement(
+        for node: XDriveIOSNativeFilesNode?,
+        quickAction: XDriveIOSNativeFilesQuickAction? = nil
+    ) {
         guard !model.loading, model.verifiedPage, selectedFile == nil,
               let owner = login.owner,
               node != nil || activeQuery.isEmpty else { return }
@@ -1244,7 +1296,8 @@ struct XDriveIOSNativeFilesBrowser: View {
         managementIntent = XDriveIOSNativeFilesManagementIntent(
             owner: owner,
             file: node?.isDirectory == false ? node : nil,
-            directory: node?.isDirectory == true ? node : nil
+            directory: node?.isDirectory == true ? node : nil,
+            quickAction: node == nil ? nil : quickAction
         )
     }
 
