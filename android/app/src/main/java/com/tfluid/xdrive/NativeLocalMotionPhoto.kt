@@ -2,13 +2,10 @@ package com.tfluid.xdrive
 
 import android.content.Context
 import android.media.ExifInterface
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -75,17 +72,21 @@ internal suspend fun nativeLocalHasMotionPhotoCandidate(
     }
 }
 
-/** Motion is explicitly requested; an XMP marker is never a success badge. */
+/** An XMP candidate alone is never a playable-motion success. Local motion
+ * requires a decoded still, one currently held pointer and foreground state.
+ * A previous hold is invalidated on STOP or source/URI change. */
+internal fun nativeLocalMotionMayPlay(
+    candidate: Boolean, stillReady: Boolean, held: Boolean, foreground: Boolean,
+    atDefaultZoom: Boolean = true,
+): Boolean = candidate && stillReady && held && foreground && atDefaultZoom
+
+/** Noninteractive hint: no persistent toggle that keeps Motion Photo playing
+ * after the finger is lifted. The actual still stays mounted below the player. */
 @Composable
-internal fun NativeLocalMotionControl(
-    candidate: Boolean, playing: Boolean, onToggle: () -> Unit,
-) {
+internal fun NativeLocalMotionControl(candidate: Boolean, held: Boolean) {
     if (!candidate) return
-    TextButton(
-        onClick = onToggle,
-        modifier = Modifier.heightIn(min = 48.dp)
-            .testTag("native-local-motion-toggle"),
-    ) {
-        Text(if (playing) "返回静态照片" else "尝试播放动态片段（也可长按照片）")
-    }
+    Text(
+        if (held) "松手返回静态照片" else "按住照片播放动态片段 · 松手停止",
+        modifier = Modifier.testTag("native-local-motion-hint"),
+    )
 }
