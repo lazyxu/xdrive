@@ -767,7 +767,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Menu {
                     Picker("显示方式", selection: $viewMode) {
                         Text("列表").tag("list")
-                        Text("网格").tag("grid")
+                        Text("图标").tag("grid")
                     }
                     .accessibilityIdentifier("native-ios-files-view-mode")
                     Picker("排序", selection: $sort) {
