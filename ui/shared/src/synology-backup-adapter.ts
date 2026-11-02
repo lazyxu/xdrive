@@ -143,6 +143,7 @@ export type XDriveSynologyOwnerLiveMotion = {
   data: Uint8Array
 }
 export const XDRIVE_SYNOLOGY_OWNER_LIVE_MOTION_MAX_BYTES = 4 << 20
+export const XDRIVE_SYNOLOGY_OWNER_UPLOAD_MAX_BYTES = 4 << 20
 
 export type XDriveSynologyOwnerFileSort = XDriveSynologyOwnerFilePageResponse['sort']
 export type XDriveSynologyOwnerFileOrder = XDriveSynologyOwnerFilePageResponse['order']
@@ -176,6 +177,23 @@ export function xDriveValidateSynologyOwnerCreatedFolder(
     !validOwnerFileNode(raw, parentID) || raw.type !== 'dir' ||
     raw.name !== name || raw.size !== 0) {
     throw new Error('Invalid authenticated Owner created folder')
+  }
+  return raw
+}
+
+export function xDriveValidateSynologyOwnerUploadedFile(
+  raw: unknown, parentID: number, name: string, byteLength: number,
+): XDriveSynologyOwnerFileNode {
+  if (!Number.isSafeInteger(parentID) || parentID < 1 ||
+    !Number.isSafeInteger(byteLength) || byteLength < 1 ||
+    byteLength > XDRIVE_SYNOLOGY_OWNER_UPLOAD_MAX_BYTES ||
+    typeof name !== 'string' || !name || name !== name.trim() ||
+    name === '.' || name === '..' ||
+    /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+    new TextEncoder().encode(name).length > 255 ||
+    !validOwnerFileNode(raw, parentID) || raw.type !== 'file' ||
+    raw.name !== name || raw.size !== byteLength) {
+    throw new Error('Invalid verified DSM Owner upload acknowledgement')
   }
   return raw
 }
@@ -520,6 +538,9 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   ownerSearchPage(query: string, cursor?: string, signal?: AbortSignal): Promise<XDriveSynologyOwnerSearchPage>
   /** Current DSM Server Owner creates one named folder through the original Agent. */
   ownerCreateFolder(parentID: number, name: string, ownerScope: string,
+    signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
+  /** Single nonempty file <=4 MiB; existing Agent stages and uses original CAS upload. */
+  ownerUploadSmallFile(parentID: number, file: File, ownerScope: string,
     signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
   /** Bounded Server Owner Gallery wall and album read; never full Desktop Media RPC. */
   ownerGalleryItemsRange(
@@ -967,6 +988,42 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         await request<unknown>('/v1/cloud-create-folder', 'POST',
           { parent_id: parentID, name, owner_scope: ownerScope }, signal),
         parentID, name)
+    },
+    ownerUploadSmallFile: async (parentID, file, ownerScope, signal) => {
+      const name = file?.name
+      const size = file?.size
+      if (!Number.isSafeInteger(parentID) || parentID < 1 ||
+        typeof name !== 'string' || !name || name !== name.trim() ||
+        name === '.' || name === '..' ||
+        /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+        new TextEncoder().encode(name).length > 255 ||
+        typeof size !== 'number' || !Number.isSafeInteger(size) ||
+        size < 1 || size > XDRIVE_SYNOLOGY_OWNER_UPLOAD_MAX_BYTES ||
+        !/^[0-9a-f]{64}$/.test(ownerScope) ||
+        typeof file.arrayBuffer !== 'function') {
+        throw new Error('DSM 当前仅支持上传 1 B～4 MiB 的单个文件')
+      }
+      if (signal?.aborted) throw new Error('Owner upload cancelled')
+      if (!globalThis.crypto?.subtle) throw new Error('Owner upload digest unavailable')
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      if (signal?.aborted) throw new Error('Owner upload cancelled')
+      if (bytes.length !== size) throw new Error('Owner upload bytes changed')
+      const hash = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes))
+      if (signal?.aborted) throw new Error('Owner upload cancelled')
+      const sha256 = Array.from(hash, b => b.toString(16).padStart(2, '0')).join('')
+      // A bounded binary string avoids argument-list limits and arbitrary
+      // native paths. The authenticated CGI rechecks the digest independently.
+      let binary = ''
+      for (let offset = 0; offset < bytes.length; offset += 8192) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192))
+      }
+      const data = btoa(binary)
+      if (signal?.aborted) throw new Error('Owner upload cancelled')
+      const response = await request<unknown>('/v1/cloud-upload-file', 'POST', {
+        parent_id: parentID, name, owner_scope: ownerScope, sha256, data,
+      }, signal)
+      if (signal?.aborted) throw new Error('Owner upload acknowledgement cancelled')
+      return xDriveValidateSynologyOwnerUploadedFile(response, parentID, name, size)
     },
     ownerRenameNode: async (nodeID, revision, parentID, kind, name, ownerScope, signal) => {
       if (![nodeID, revision, parentID].every(value =>
