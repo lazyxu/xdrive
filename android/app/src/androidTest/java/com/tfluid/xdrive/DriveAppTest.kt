@@ -902,6 +902,45 @@ class DriveAppTest {
         }
     }
 
+    @Test fun explicitLauncherPhotoShortcutsExitActiveCloudMapInsteadOfShowingStaleMap() {
+        galleryGpsOverviewFixture = true
+        startAndLogin(galleryFirstOnLogin = false)
+        compose.onNodeWithTag("native-tab-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        val targets = listOf(
+            NativeHomeShortcut.CLOUD_GALLERY to "native-gallery-source-cloud",
+            NativeHomeShortcut.LOCAL_PHOTOS to "native-gallery-source-local",
+            NativeHomeShortcut.LOCAL_ALBUMS to "native-gallery-source-albums",
+        )
+        for ((shortcut, expectedTag) in targets) {
+            // Explicitly enter cloud Places first; the map remains live even
+            // after the Launcher overlay opens from its restored L1 chrome.
+            compose.onNodeWithTag("native-gallery-source-cloud").performClick()
+            compose.onNodeWithTag("native-gallery-source-map").performClick()
+            compose.waitUntil(timeoutMillis = 10_000) {
+                controller.state.value.galleryMapOpen &&
+                    controller.state.value.galleryMapLoaded
+            }
+            compose.onNodeWithTag("native-gallery-map-chrome-toggle")
+                .assertIsDisplayed().performClick()
+            compose.onNodeWithTag("native-five-slot-bar").assertIsDisplayed()
+            compose.onNodeWithTag("native-tab-all").performClick()
+            clickNativeLauncherShortcut(shortcut)
+
+            compose.waitUntil(timeoutMillis = 10_000) {
+                controller.state.value.screen == Screen.GALLERY &&
+                    !controller.state.value.galleryMapOpen
+            }
+            compose.onNodeWithTag(expectedTag).assertIsSelected()
+            compose.onNodeWithTag("native-gallery-open-map").assertDoesNotExist()
+            compose.onNodeWithTag("gallery-map-close").assertDoesNotExist()
+            compose.onNodeWithTag("native-five-slot-bar").assertIsDisplayed()
+        }
+    }
+
     @Test fun dynamicTransferTabAndPickerResumeActualCenterOnOneTap() {
         startAndLogin(galleryFirstOnLogin = false)
         // With no permitted dynamic feature, the reserved slot cannot
