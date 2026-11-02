@@ -158,7 +158,7 @@ if link_request.path == 'projects/42/releases/snapshot/assets/links':
             phase = ('after' if any('sha-'+'b'*40 in link['url'] for link in links)
                      else 'before')
             fault = os.getenv('MOCK_LINK_PAGE_FAILURE', '')
-            if page > 1 and fault.startswith(phase+'-'):
+            if page >= 3 and fault.startswith(phase+'-'):
                 if fault.endswith('-json'):
                     print('{invalid page JSON')
                     sys.exit(0)
@@ -486,13 +486,26 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp, Exit
     # An incomplete later page cannot become a partial link inventory. This
     # also covers failure during final verification after links were updated:
     # every original URL, including links outside page one, must be restored.
+    # Put all required links before the failing third page (even at page size
+    # 20), with enough legacy links to reach it even at GitLab's maximum 100.
+    # Missing-asset checks must not accidentally mask a swallowed API error.
+    fault_paged = copy.deepcopy(paged)
+    for index in range(101,201):
+        fault_paged['next_link'] += 1
+        fault_paged['release']['links'].append({
+            'id':fault_paged['next_link'], 'name':f'legacy-{index}',
+            'url':f'https://archive.example/legacy-{index}',
+        })
+    for link in fault_paged['release']['links'][:len(FILES)]:
+        fault_paged['next_link'] += 1
+        link['id'] = fault_paged['next_link']
     for phase in ('before', 'after'):
         for fault in ('error', 'json'):
-            (tmp/'state.json').write_text(json.dumps(paged))
+            (tmp/'state.json').write_text(json.dumps(fault_paged))
             failed_page,after=run(tmp,B,MOCK_LINK_PAGE_FAILURE=f'{phase}-{fault}')
             assert failed_page.returncode != 0, (phase,fault)
-            unchanged(paged,after)
-            events = after['events'][len(paged['events']):]
+            unchanged(fault_paged,after)
+            events = after['events'][len(fault_paged['events']):]
             assert 'promote-marker' not in events, (phase,fault)
             assert any(e.startswith('update-link-') for e in events) == (phase == 'after')
 
