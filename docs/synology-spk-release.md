@@ -37,6 +37,7 @@ an installed SPK, real Server backups or physical DS218j acceptance.
   release identity.
 - The CI original binary version, source architecture (`linux/arm, GOARM=7`),
   payload allowlist and `conf/privilege` are checked before upload.
+- The **inner `package.tgz` uses XZ compression** (`tar cJf`) like Synology DSM 7's `pkgscripts-ng/pkg_make_package` despite the `.tgz` filename. Its first root is literal `bin/`, optionally followed by `ui/`; never gzip or dot-prefixed `./` entries. Positive CLI/shared-UI SPK tests and the release publication verifier decode with XZ and enforce exact inner paths; negative fixtures recompute the SHA256 of a GZIP/`./` SPK and confirm both remain rejected. This addresses a source-level mismatch remaining after outer INFO-first #3523; physical DS218j Package Center acceptance remains unverified.
 - The **outer SPK** is POSIX ustar with literal `INFO` as its **first member**,
   followed by literal `package.tgz` and the documented root entries. Do not
   archive `.` (which produces `./INFO`): tarfile may accept that form but DSM

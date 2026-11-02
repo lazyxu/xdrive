@@ -57,8 +57,12 @@ with tarfile.open(spk) as pkg:
         assert data[:8] == b'\x89PNG\r\n\x1a\n'
         assert struct.unpack('>II', data[16:24]) == (expected, expected)
     payload = pkg.extractfile(outer['package.tgz']).read()
+    assert payload.startswith(b'\xfd7zXZ\x00'), 'expected Synology toolkit XZ-compressed package.tgz'
 
-with tarfile.open(fileobj=io.BytesIO(payload), mode='r:gz') as body:
+with tarfile.open(fileobj=io.BytesIO(payload), mode='r:xz') as body:
+    assert all(not item.name.startswith('./') and item.name != '.' for item in body.getmembers()), (
+        'DSM inner payload uses unsupported dot-prefixed paths'
+    )
     inner = members(body)
     assert set(inner) == {'bin', 'bin/xd', 'bin/xdrive-agent'}, list(inner)
     for name in ('xd', 'xdrive-agent'):
