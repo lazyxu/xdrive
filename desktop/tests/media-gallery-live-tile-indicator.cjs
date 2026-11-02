@@ -148,7 +148,9 @@ test('unpaired still/video remain classified separately; video duration and othe
   let tree
   await act(async () => { tree = renderer.create(React.createElement(MediaTile, props(still))) })
   assert.equal(liveBadges(tree).length, 0)
-  assert.equal(tree.root.findByType('mounted-gallery-paper').props['aria-label'], undefined)
+  // Hiding visual filename captions must not remove the accessible media identity.
+  assert.equal(tree.root.findByType('mounted-gallery-paper').props['aria-label'],
+    'IMG_0041.HEIC，照片')
   await act(async () => { tree.unmount() })
 
   const video = makeItem({
