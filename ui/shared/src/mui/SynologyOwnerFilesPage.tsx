@@ -174,6 +174,15 @@ export function XDriveSynologyOwnerFilesPage({
   const previewItem = viewerSelection.item
   const previewPositionLabel = viewerSelection.positionLabel
   const thumbnailOnlyPreview = previewItem !== null && usesOwnerThumbnailOnlyPreview(previewItem)
+  // #3528's Owner-scoped 4K reader is an allowed *derivative*, not an unsafe
+  // full-original Blob. A prior thumbnail-only fallback must not suppress it.
+  // Unavailable/undecodable derivatives still leave the independent verified
+  // thumbnail visible in the shared two-layer image Viewer.
+  const ownerDerivedPreview = previewItem !== null && (
+    xDriveSynologyViewerNeedsDerived(previewItem.name) ||
+    (thumbnailOnlyPreview && typeof previewItem.size === 'number' &&
+      previewItem.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES)
+  )
   // A verified explicit download is not a disposable directory read. Keep
   // its proven Blob/save action across same-Owner folder and sort changes.
   // Never offer it after an account/client or root-session replacement.
@@ -327,6 +336,11 @@ export function XDriveSynologyOwnerFilesPage({
     }
     return xDriveSynologyLoadBoundedMediaPreview(client, item, signal, onProgress)
   }, [client])
+  // Preserve thumbnail-only for unsupported originals without a derived
+  // transport (e.g. small BMP). Only verified Owner image derivatives may
+  // enable the same Quick Look's higher-quality second layer.
+  const quickLookPreviewURLLoader =
+    thumbnailOnlyPreview && !ownerDerivedPreview ? undefined : loadMediaPreview
 
   // Unavailable/obsolete per-directory messages must not survive a scope switch.
   useEffect(() => {
@@ -550,7 +564,11 @@ export function XDriveSynologyOwnerFilesPage({
         open={previewItem !== null}
         item={previewItem}
         positionLabel={previewPositionLabel}
-        subtitle={thumbnailOnlyPreview ? '仅显示已认证的缩略预览；原件格式或大小暂不支持直接查看' : undefined}
+        subtitle={thumbnailOnlyPreview
+          ? ownerDerivedPreview
+            ? '不直接读取原件；优先加载已认证的 4K 派生图，失败时保留缩略图'
+            : '仅显示已认证的缩略预览；原件格式或大小暂不支持直接查看'
+          : undefined}
         canPrevious={previewIndex > 0}
         canNext={previewIndex >= 0 && previewIndex < previewItems.length - 1}
         onPrevious={() => movePreview(-1)}
@@ -563,7 +581,7 @@ export function XDriveSynologyOwnerFilesPage({
         // derivative falls back to the existing icon without delaying the
         // independent original/media Range request.
         loadImagePreview={loadOwnerThumbnail}
-        loadPreviewURL={thumbnailOnlyPreview ? undefined : loadMediaPreview}
+        loadPreviewURL={quickLookPreviewURLLoader}
         onClose={() => setPreview(null)}
       />
     </XDriveFilesWorkspacePage>
