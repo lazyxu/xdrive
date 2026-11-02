@@ -26,6 +26,25 @@ struct NativeFilesUploadBatchPolicyChecks {
         let eight = (1...8).map { URL(fileURLWithPath: "/tmp/document-\($0).pdf") }
         check(P.validSelection(eight), "bounded eight")
         check(!P.validSelection(eight + [single]), "nine rejected before any upload")
+        let gib = P.maximumStagedFileBytes
+        let reserve = P.freeDiskReserveBytes
+        check(gib == 1_073_741_824, "one GiB upper bound")
+        check(reserve == 128 * 1_048_576, "local staging free-space reserve")
+        check(P.mayStage(bytes: 0, freeDiskBytes: reserve), "empty original at exact reserve")
+        check(P.mayStage(bytes: gib, freeDiskBytes: gib + reserve),
+              "one GiB at exact disk threshold")
+        check(!P.mayStage(bytes: gib + 1, freeDiskBytes: Int64.max),
+              "over-limit original rejected before copy")
+        check(!P.mayStage(bytes: gib, freeDiskBytes: gib + reserve - 1),
+              "insufficient disk capacity rejected")
+        check(!P.mayStage(bytes: -1, freeDiskBytes: gib + reserve),
+              "negative original bytes rejected")
+        check(!P.mayStage(bytes: 1, freeDiskBytes: nil),
+              "unknown disk capacity cannot authorize a large staging copy")
+        check(!P.mayStage(bytes: 1, freeDiskBytes: -1),
+              "invalid disk capacity rejected")
+        check(P.mayStage(bytes: gib, freeDiskBytes: Int64.max),
+              "extreme but valid disk capacity arithmetic does not overflow")
         print("native Files sequential multi-upload selection: PASS")
     }
 }

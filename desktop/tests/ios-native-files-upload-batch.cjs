@@ -35,7 +35,7 @@ test('one existing gated UploadSession writer sequentially processes each staged
   assert.match(upload, /XDriveNativeUploadSessionTransport\(/)
   assert.match(upload, /let receipt = try await writer\.uploadOnce\(\s*from: staged\.fileURL, name: staged\.originalName, parentID: parentID/)
   assert.match(server, /authed\.POST\("\/uploads", s\.createUploadSession\)/)
-  assert.match(stager, /maxFirstFileBytes: Int64 = 128 \* 1_048_576/)
+  assert.match(stager, /maxFirstFileBytes: Int64 = XDriveIOSNativeFilesUploadBatchPolicy\.maximumStagedFileBytes/)
 })
 
 test('each item re-verifies Owner, exact destination and committed Node/SHA before next', () => {
@@ -59,4 +59,14 @@ test('cancellation or any uncertain ACK stops subsequent uploads without invente
   assert.match(upload, /请刷新目录核对，不要盲目重复提交/)
   assert.match(upload, /status = files\.count == 1/)
   assert.doesNotMatch(upload, /DispatchQueue\.main\.asyncAfter|Task\.sleep|retry\(/)
+})
+
+test('every foreground file stages within 1 GiB and remains sequential, with no background claim', () => {
+  assert.match(policy, /maximumStagedFileBytes: Int64 = 1_073_741_824/)
+  assert.match(policy, /freeDiskReserveBytes: Int64 = 128 \* 1_048_576/)
+  assert.match(stager, /mayStage\(\s*bytes: originalSize\.int64Value, freeDiskBytes: freeBytes/)
+  assert.match(stager, /try fm\.copyItem\(at: pickedURL, to: target\)/)
+  assert.match(upload, /当前文件超过 1 GiB/)
+  assert.match(panel, /批量最多 8 个文件，逐项核对收据/)
+  assert.doesNotMatch(upload, /URLSession\.shared|Task\.detached|resumeKey:|downloadTask/)
 })

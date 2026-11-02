@@ -288,7 +288,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             }
                         }
                         .accessibilityIdentifier("native-ios-files-manual-batch-upload")
-                        Text("单文件最大 128 MiB；批量最多 8 个文件，按顺序核对收据。遇到失败或未知结果立即停止。")
+                        Text("单文件最大 1 GiB（需足够本机暂存空间）；批量最多 8 个文件，逐项核对收据。失败或结果未知时停止后续上传。")
                             .font(.footnote).foregroundStyle(.secondary)
                         if uploader.busy {
                             Button("取消当前上传", role: .cancel) {
