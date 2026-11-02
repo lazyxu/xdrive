@@ -132,7 +132,9 @@ export function XDriveLivePhotoSurface({
   // having no neighbor must not trigger motion for a short tap or swipe.
   const stillReadyRef = useRef(stillReady)
   stillReadyRef.current = stillReady
-  const gestureSession = useMemo(() => ({}), [sourceKey])
+  // Same local Node/revision on another Owner is NOT the same gesture lease.
+  // The authenticated motion loader changes on a source/account replacement.
+  const gestureSession = useMemo(() => ({}), [sourceKey, loadMotion])
   const gestureSessionRef = useRef(gestureSession)
   gestureSessionRef.current = gestureSession
   const touchGestureRef = useRef<{

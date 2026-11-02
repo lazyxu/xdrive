@@ -266,6 +266,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const decodedImageSourceKey = JSON.stringify([
     target?.id, target?.revision, previewKind, imageSourceLeaseRef.current.generation,
   ])
+  // A visually identical Node ID/revision under another Owner still changes
+  // the authenticated loader lease. Never complete that Owner's old swipe.
+  const currentDecodedImageSourceKeyRef = useRef(decodedImageSourceKey)
+  currentDecodedImageSourceKeyRef.current = decodedImageSourceKey
   const livePhotoMotionLoader = useMemo(() => {
     if (!target || !loadLivePhotoMotion) return undefined
     return (onProgress?: XDriveByteProgressHandler, signal?: AbortSignal) =>
@@ -461,10 +465,11 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     applyImageViewport(xDriveAnchorPreviewZoom(imageViewportRef.current, next, anchor))
   }, [applyImageViewport])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // Reset the moving still before a replacement Owner's image can paint.
     imageDimensionsRef.current = null
     resetImageViewport()
-  }, [previewKind, resetImageViewport, target?.id, target?.revision])
+  }, [previewKind, resetImageViewport, target?.id, target?.revision, decodedImageSourceKey])
 
   useLayoutEffect(() => {
     const element = imageViewportElementRef.current
@@ -601,7 +606,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           lastTouchTapRef.current = null
           // Slide the already-decoded image off screen, then authorize its
           // existing loaded neighbor. A changed Owner cancels this callback.
-          const identity = sourceIdentity
+          const identity = decodedImageSourceKey
           const width = Math.max(1, imageViewportSizeRef.current.width)
           if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
             paintPhotoSwipe(0, false)
@@ -611,7 +616,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
             retirePhotoSwipe()
             swipeTimerRef.current = setTimeout(() => {
               swipeTimerRef.current = null
-              if (currentSourceIdentityRef.current !== identity) return
+              if (currentDecodedImageSourceKeyRef.current !== identity) return
               paintPhotoSwipe(0, false)
               next()
             }, 170)
@@ -642,7 +647,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     }
     if (imageDragRef.current?.pointerID === event.pointerId) imageDragRef.current = null
     releaseImagePointer(event)
-  }, [imageAnchor, onSwipeNext, onSwipePrevious, setImageZoom, sourceIdentity])
+  }, [imageAnchor, onSwipeNext, onSwipePrevious, setImageZoom, decodedImageSourceKey])
 
   const handleImagePointerCancel = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     imagePointersRef.current.delete(event.pointerId)
