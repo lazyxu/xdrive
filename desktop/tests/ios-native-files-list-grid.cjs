@@ -11,7 +11,7 @@ test('native Files list/grid switch is a real persisted presentation preference'
   assert.match(browser, /@AppStorage\("xdrive\.ios\.files\.view-mode\.v1"\) private var viewMode = "list"/)
   assert.match(browser, /Picker\("显示方式", selection: \$viewMode\)/)
   assert.match(browser, /Text\("列表"\)\.tag\("list"\)/)
-  assert.match(browser, /Text\("网格"\)\.tag\("grid"\)/)
+  assert.match(browser, /Text\("图标"\)\.tag\("grid"\)/)
   assert.match(browser, /Menu \{[\s\S]*?Picker\("显示方式", selection: \$viewMode\)/)
   assert.match(browser, /native-ios-files-more-options/)
   assert.doesNotMatch(browser, /\.pickerStyle\(\.segmented\)/)
