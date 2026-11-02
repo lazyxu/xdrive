@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/background"
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
 )
 
@@ -357,9 +359,24 @@ func (s *Server) tryServeMediaDerivative(
 	if strings.TrimSpace(key) == "" {
 		return false
 	}
-	file, err := s.Store.Open(c.Request.Context(), key)
+	var file *os.File
+	var err error
+	var release func()
+	if strings.HasPrefix(key, mediapkg.ThumbnailStoragePrefix) &&
+		strings.Contains(key, "-v101-") {
+		if provider, ok := s.Store.(storage.ViewerCacheLifecycleLocker); ok {
+			file, release, err = provider.OpenPinnedViewerCache(c.Request.Context(), key)
+		} else {
+			file, err = s.Store.Open(c.Request.Context(), key)
+		}
+	} else {
+		file, err = s.Store.Open(c.Request.Context(), key)
+	}
 	if err != nil {
 		return false
+	}
+	if release != nil {
+		defer release()
 	}
 	defer file.Close()
 	// A readable file is not necessarily a usable JPEG/PNG derivative.
