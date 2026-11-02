@@ -42,7 +42,11 @@ test('DSM retains a distinct Owner-authorized read-only bridge', () => {
     dsm.includes('client.ownerFilesPage('), 'DSM must use genuine scoped Owner reads')
   assert.equal(dsm.includes('window.xdriveDesktop'), false)
   assert.equal(dsm.includes('createDesktopFileExplorerHostPort'), false)
-  assert.ok(dsm.includes('searchEnabled') && dsm.includes('unavailableActions={unavailableActions}') && dsm.includes('groupingEnabled={false}'))
+  assert.ok(dsm.includes('searchEnabled') &&
+    dsm.includes('unavailableActions={search.current') &&
+    dsm.includes('groupingEnabled={false}'))
+  assert.ok(dsm.includes("createFolder: '退出搜索后可新建文件夹。'"),
+    'current Owner search must not grant folder creation from a search result')
   assert.equal(dsm.includes('onUpload='), false, 'Desktop owning upload capability must not leak to DSM')
 })
 
