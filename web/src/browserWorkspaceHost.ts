@@ -44,7 +44,7 @@ export function createXDriveBrowserWorkspaceHost(ports: {
     services: {
       cloudStorage: ports.cloudStorage,
       localStorage: ports.localStorage,
-      shareCenterPage: ports.shareCenter,
+      ...(ports.shareCenter ? { shareCenterPage: ports.shareCenter } : {}),
       ...(ports.deviceBackup ? {
         // Owner device history and folder runs are Server read ports. No
         // local agent, device-root control, or native backup writer is exposed.
