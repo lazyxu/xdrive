@@ -86,6 +86,7 @@ bash scripts/ci/test-gitlab-publisher-cli.sh
 python3 scripts/ci/test-gitlab-master-release-interrupt.py
 python3 scripts/ci/test-gitlab-master-publish-before-tests.py
 bash -n scripts/ci/gitlab-post-release-smoke.sh
+python3 scripts/ci/test-gitlab-image-smoke.py
 bash -n scripts/ci/test-gitlab-release-assets.sh
 bash scripts/ci/test-gitlab-release-assets.sh
 bash -n scripts/build-source-agent.sh

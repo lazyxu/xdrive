@@ -29,7 +29,8 @@ if [[ "${XDRIVE_GITLAB_PACKAGE_ONLY:-0}" == "1" ]]; then
   echo "GitLab master Caddy package exported; runtime smoke is post-release"
   exit 0
 fi
-docker run --rm xdrive/caddy:test caddy list-modules | grep -q '^dns.providers.alidns$'
+# Drain Docker output so a successful module listing cannot fail with SIGPIPE.
+docker run --rm xdrive/caddy:test caddy list-modules | grep -Fx 'dns.providers.alidns' >/dev/null
 docker run --rm xdrive/caddy:test test -f /srv/index.html
 docker run --rm xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile.http --adapter caddyfile
 docker run --rm -e XD_DOMAIN=drive.example.test -e ALIYUN_ACCESS_KEY_ID=test -e ALIYUN_ACCESS_KEY_SECRET=test xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
