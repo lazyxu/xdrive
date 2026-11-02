@@ -2470,7 +2470,7 @@ function FileManager({
   const mobileRecentDestinations = currentMobileNavigation.dynamic.flatMap(recent => {
     const key = xDriveWebAppWorkspaceKey(recent.app, recent.params)
     const destination = mobileDestinations.find(item => item.key === key)
-    return destination ? [{ route: recent, label: destination.label, icon: destination.icon }] : []
+    return destination ? [{ key: destination.key, route: recent, label: destination.label, icon: destination.icon }] : []
   })
   const latestMobileDynamic = mobileRecentDestinations[0]
   // Capture the exact visible position before synchronous bottom-tab or
