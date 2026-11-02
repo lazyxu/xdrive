@@ -260,6 +260,16 @@ jobs:
             desktop/tests/ios-native-photo-cloud-confirmed-refresh.cjs \
             desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs
 
+      - name: Verify native PhotoAsset Viewer cloud filmstrip Owner and revision admission
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudPhotoAssetFilmstripPolicy.swift \
+            ios/tests/NativeCloudPhotoAssetFilmstripPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photoasset-filmstrip-check"
+          "$RUNNER_TEMP/xdrive-ios-photoasset-filmstrip-check"
+          node --test desktop/tests/ios-native-cloud-filmstrip-contract.cjs
+
       - name: Verify native cloud PhotoAsset original still/video save-to-Photos boundaries
         run: node --test desktop/tests/ios-native-photoasset-original-restore.cjs
 
