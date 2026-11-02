@@ -102,6 +102,9 @@ const sharedNameDialog = (() => {
   return mod.exports.XDriveFileNameDialog
 })()
 const ui = {
+  XDriveMobileHeaderNavigation: ({ children }) =>
+    React.createElement(React.Fragment, null, children),
+  useXDriveMobileHeaderMode: () => 'standalone',
   XDriveFileNameDialog: sharedNameDialog,
   XDriveStatePanel: 'state-panel',
   XDriveFileExplorerAvailabilityBadge: 'availability-badge',

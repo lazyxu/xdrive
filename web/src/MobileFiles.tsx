@@ -45,7 +45,8 @@ import type {
 import {
   XDriveFileExplorerAvailabilityBadge, xDriveFileExplorerMarkThumbnailScrollActivity,
   XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
-  XDriveFileNameDialog, XDriveFilePropertiesDialog, XDriveStatePanel, XDriveMediaDetailsInspector, xDriveFileSupportsThumbnail,
+  XDriveFileNameDialog, XDriveFilePropertiesDialog, XDriveStatePanel, XDriveMediaDetailsInspector,
+  XDriveMobileHeaderNavigation, useXDriveMobileHeaderMode, xDriveFileSupportsThumbnail,
   useXDriveFileExplorerPropertiesController,
   xDriveFileKind, xDriveFileTypeLabel, xDriveCreateFileExplorerGroupLayout,
   xDriveFileExplorerVisibleGroupSegments, xDriveFileExplorerReadExternalDrop,
@@ -380,6 +381,7 @@ function xDriveMobileFilesKeyboardPlatformHint(): string {
 }
 
 export default function MobileFiles(props: Props) {
+  const managedHeader = useXDriveMobileHeaderMode() === 'global'
   const storageKey = 'xdrive.mobile.files.v1:' + props.lifecycleKey
   // Browse Home keeps its real rows mounted through organization refreshes.
   // The original Owner/Server GET runs immediately; decorative progress never
@@ -2669,8 +2671,11 @@ export default function MobileFiles(props: Props) {
         fontFamily: IOS_FILES_MOBILE_FONT,
         '& .MuiTypography-root, & .MuiButton-root': { fontFamily: IOS_FILES_MOBILE_FONT },
       }}>
+        <XDriveMobileHeaderNavigation>
         <Stack data-mobile-files-navigation-bar direction="row" alignItems="center" sx={{
-          px: 2, flexShrink: 0, minHeight: 52, gap: 1,
+          width: '100%', minWidth: 0,
+          px: managedHeader ? 0.25 : 2, flexShrink: 0,
+          minHeight: managedHeader ? 44 : 52, gap: managedHeader ? 0.25 : 1,
           bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#ffffff',
         }}>
           {showDirectory ? (
@@ -2697,9 +2702,10 @@ export default function MobileFiles(props: Props) {
             </Button>
           ) : (
             <Typography data-mobile-files-compact-title component="span" variant="subtitle1" noWrap
-              aria-hidden={!compactTitleVisible || savedResumePending} dir="auto" title={compactTitle}
+              aria-hidden={managedHeader ? false : !compactTitleVisible || savedResumePending}
+              dir="auto" title={compactTitle}
               sx={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 650, textAlign: 'center',
-                visibility: compactTitleVisible && !savedResumePending ? 'visible' : 'hidden' }}>
+                visibility: managedHeader || (compactTitleVisible && !savedResumePending) ? 'visible' : 'hidden' }}>
               {compactTitle}
             </Typography>
           )}
@@ -2727,6 +2733,7 @@ export default function MobileFiles(props: Props) {
                 boxShadow: '0 4px 20px rgba(0,0,0,0.035)' }}><MoreHorizRoundedIcon sx={{ fontSize: 26 }}/></IconButton>
           )}
         </Stack>
+        </XDriveMobileHeaderNavigation>
         <Box ref={scrollHostRef} data-xdrive-mobile-files-scroll data-xdrive-file-explorer-scroll-host
           onPointerDownCapture={() => { arrangeUserGestureRef.current += 1 }}
           onWheelCapture={() => { arrangeUserGestureRef.current += 1 }}
