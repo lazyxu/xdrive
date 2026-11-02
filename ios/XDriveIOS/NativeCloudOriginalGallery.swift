@@ -738,6 +738,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     @State private var nativeLiveReady = false
     @State private var nativeLiveUnavailable = false
     @State private var showsStaticStill = false
+    @State private var showChrome = true
     @State private var nativeLivePlaybackRequest: UUID?
     @State private var error: String?
     @State private var photoRestoreEpoch = UUID()
@@ -816,6 +817,11 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         previewRequestID = UUID()
     }
 
+    private func toggleChrome() {
+        guard currentOwnerAuthorized else { return }
+        withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -849,6 +855,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                     if !ready { nativeLiveUnavailable = true }
                                 }
                                 .xdriveCloudLivePhotoPaging { showNeighbor($0) }
+                                .simultaneousGesture(TapGesture().onEnded { toggleChrome() })
                                 .id(resources.folderURL)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -856,8 +863,10 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         } else {
                             XDriveIOSNativeZoomablePhotoView(image: still)
                                 .onNavigateSwipe { showNeighbor($0) }
+                                .onChromeTap { toggleChrome() }
                                 .accessibilityLabel("云端 Live 静态原件")
                         }
+                        if showChrome {
                         if nativeLiveReady && currentOwnerAuthorized && !showingLiveMotion {
                             HStack(spacing: 12) {
                                 Button("播放原生实况") {
@@ -903,6 +912,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                              ? "原生实况配对不可用，仍可查看静态原件和播放原始动态视频。"
                              : "已校验 Live ZIP 双资源；优先显示原生同步实况，保留独立视频回退。")
                             .font(.caption).foregroundStyle(.secondary)
+                        }
                         if let error {
                             Text(error).font(.caption).foregroundStyle(.secondary)
                             Button("重试") { retryPreview() }
@@ -913,8 +923,9 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     VStack(spacing: 8) {
                         XDriveIOSNativeZoomablePhotoView(image: still)
                             .onNavigateSwipe { showNeighbor($0) }
+                            .onChromeTap { toggleChrome() }
                             .accessibilityLabel("云端照片，可双指缩放或双击放大")
-                        if stillIsThumbnailOnly {
+                        if showChrome && stillIsThumbnailOnly {
                             Text("原件适屏预览过大或无法解码；当前仅显示低清缩略图。可重新加载高清原件预览。")
                                 .font(.caption).foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
@@ -943,7 +954,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if let still {
+                if showChrome, let still {
                     XDriveIOSNativeViewerQualityPanel(
                         fileName: viewed.name,
                         source: viewed.isLiveArchive
@@ -956,11 +967,13 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     )
                 }
             }
-            .navigationTitle(viewed.name)
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle(viewed.isLiveArchive ? "实况照片" :
+                viewed.isVideo ? "视频" : "照片")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
-                if loadedNodes.count > 1 || exporter.status != nil ||
-                   (currentOwnerAuthorized && viewed.size > 512 * 1_048_576) {
+                if showChrome && (loadedNodes.count > 1 || exporter.status != nil ||
+                   (currentOwnerAuthorized && viewed.size > 512 * 1_048_576)) {
                     VStack(spacing: 8) {
                         if let status = exporter.status {
                             Text(status)
@@ -996,6 +1009,12 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 }
             }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { dismiss() } label: {
+                        Label("返回图库", systemImage: "chevron.left")
+                    }
+                    .accessibilityIdentifier("native-ios-original-viewer-back")
+                }
                 ToolbarItem(placement: .navigationBarLeading) {
                     if let file = exporter.prepared,
                        file.nodeID == viewed.id,
@@ -1051,15 +1070,19 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         .accessibilityIdentifier("native-ios-cloud-original-save-to-photos")
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("完成") { dismiss() }
-                }
             }
+            .toolbar(showChrome ? .visible : .hidden, for: .navigationBar)
             .alert("保存到 iOS 照片", isPresented: $showsPhotoRestoreNotice) {
                 Button("完成", role: .cancel) {}
             } message: {
                 Text(photoRestoreNotice)
             }
+        }
+        .preferredColorScheme(.dark)
+        .statusBarHidden(!showChrome)
+        .onChange(of: viewed.id) { _ in showChrome = true }
+        .onChange(of: error) { message in
+            if message != nil { showChrome = true }
         }
         .task(id: previewRequestID) {
             guard phase == .active, let before = presentingOwner,
@@ -1157,6 +1180,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                showChrome = true
                 // The native Photos permission sheet may temporarily mark
                 // the scene inactive. There is no network transfer yet: let
                 // authorization return, but still cancel on real background.

@@ -104,3 +104,32 @@ test('cloud PhotoAsset first ticket uses the frozen presenting Owner rather than
   assert.match(files, /exporter\.prepare\(viewed, login: login\)/)
   assert.match(files, /exporter\.invalidate\(\)[\s\S]*?exportFallbackEligible = false/)
 })
+
+
+test('iOS gallery still and Live Viewers use the same reversible, Owner-scoped immersive chrome', () => {
+  assert.match(zoom, /func onChromeTap\(_ handler: @escaping \(\) -> Void\) -> Self/)
+  assert.match(zoom, /singleTap\.require\(toFail: doubleTap\)/)
+  assert.match(zoom, /singleTap\.cancelsTouchesInView = false/)
+  assert.match(zoom, /context\.coordinator\.onTap = onTap/)
+  assert.match(zoom, /@objc func singleTap\(_ gesture: UITapGestureRecognizer\)/)
+  for (const viewer of [local, cloud, media]) {
+    assert.match(viewer, /@State private var showChrome = true/)
+    assert.match(viewer, /\.onChromeTap \{ toggleChrome\(\) \}/)
+    assert.match(viewer, /\.simultaneousGesture\(TapGesture\(\)\.onEnded \{ toggleChrome\(\) \}\)/)
+    assert.match(viewer, /\.toolbar\(showChrome \? \.visible : \.hidden, for: \.navigationBar\)/)
+    assert.match(viewer, /\.statusBarHidden\(!showChrome\)/)
+    assert.match(viewer, /\.background\(Color\.black\.ignoresSafeArea\(\)\)/)
+    assert.match(viewer, /Label\("返回图库", systemImage: "chevron\.left"\)/)
+  }
+  assert.match(local, /private func toggleChrome\(\) \{\s*guard currentPageAuthorized/)
+  assert.match(cloud, /private func toggleChrome\(\) \{\s*guard currentOwnerAuthorized/)
+  assert.match(media, /private func toggleChrome\(\) \{\s*guard ownerAuthorized/)
+  assert.match(local, /if showChrome, let still = model\.still/)
+  assert.match(cloud, /if showChrome, let still/)
+  assert.match(media, /if showChrome, let image/)
+  assert.match(local, /\.onChange\(of: viewed\.id\) \{ _ in showChrome = true \}/)
+  assert.match(cloud, /\.onChange\(of: error\) \{ message in/)
+  assert.match(media, /\.onChange\(of: failure\) \{ message in/)
+  for (const viewer of [local, cloud, media]) assert.match(viewer, /if (state|phase) != \.active \{/)
+  assert.doesNotMatch(zoom, /PHImageManager|URLSession|accessToken|Bearer|WKWebView/)
+})

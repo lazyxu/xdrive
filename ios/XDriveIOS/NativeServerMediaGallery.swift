@@ -336,6 +336,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
     // Live pairing remains available, but a user can inspect the still
     // at full zoom without starting the motion or a new network transfer.
     @State private var showsStaticStill = false
+    @State private var showChrome = true
 
     // Explicit native Photos restore belongs to this one L3 Viewer and its
     // presenting Owner. It never runs from Gallery thumbnails or background.
@@ -476,6 +477,11 @@ struct XDriveIOSNativeServerMediaPreview: View {
         rangeCrossingMessage = nil
     }
 
+    private func toggleChrome() {
+        guard ownerAuthorized else { return }
+        withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
@@ -510,14 +516,16 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                 if !ready { nativeLiveUnavailable = true }
                             }
                             .xdriveCloudLivePhotoPaging { navigateLoaded($0) }
+                            .simultaneousGesture(TapGesture().onEnded { toggleChrome() })
                             .id(resources.folderURL)
                         }
                         .accessibilityLabel("云端 Live Photo，长按播放或左右滑动切换")
                     } else {
                         XDriveIOSNativeZoomablePhotoView(image: still)
                             .onNavigateSwipe { navigateLoaded($0) }
+                            .onChromeTap { toggleChrome() }
                     }
-                    if liveResources != nil {
+                    if showChrome && liveResources != nil {
                         HStack(spacing: 12) {
                             if ownerAuthorized && !nativeLiveUnavailable &&
                                 !showingLiveMotion {
@@ -602,7 +610,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     VStack(spacing: 6) {
                         XDriveIOSNativeZoomablePhotoView(image: image)
                             .onNavigateSwipe { navigateLoaded($0) }
-                        if imageIsThumbnailOnly {
+                            .onChromeTap { toggleChrome() }
+                        if showChrome && imageIsThumbnailOnly {
                             Text("原件适屏预览过大或无法解码，当前仅显示低清缩略图。可从顶部重试。")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -635,7 +644,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if let image {
+                if showChrome, let image {
                     XDriveIOSNativeViewerQualityPanel(
                         fileName: viewed.node.name,
                         source: imageIsThumbnailOnly ? "缩略图回退" :
@@ -648,11 +657,13 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     )
                 }
             }
-            .navigationTitle(viewed.node.name)
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle(viewed.isLive ? "实况照片" :
+                viewed.isVideo ? "视频" : "照片")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
-                if visibleItems.count > 1 || canCrossRange(-1) ||
-                    canCrossRange(1) || rangeCrossing {
+                if showChrome && (visibleItems.count > 1 || canCrossRange(-1) ||
+                    canCrossRange(1) || rangeCrossing) {
                     HStack(spacing: 12) {
                         Button("上一项") { navigateLoaded(-1) }
                             .disabled((neighbor(-1) == nil && !canCrossRange(-1)) ||
@@ -680,6 +691,12 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 }
             }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { dismiss() } label: {
+                        Label("返回图库", systemImage: "chevron.left")
+                    }
+                    .accessibilityIdentifier("native-ios-photoasset-viewer-back")
+                }
                 // Available even if an AVPlayer stalls without a terminal
                 // status or the bottom controls are cramped in landscape.
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -715,15 +732,19 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         .accessibilityIdentifier("native-ios-photoasset-original-save-to-photos")
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("完成") { dismiss() }
-                }
             }
+            .toolbar(showChrome ? .visible : .hidden, for: .navigationBar)
             .alert("保存到 iOS 照片", isPresented: $photosRestoreNoticePresented) {
                 Button("完成", role: .cancel) {}
             } message: {
                 Text(photosRestoreNotice)
             }
+        }
+        .preferredColorScheme(.dark)
+        .statusBarHidden(!showChrome)
+        .onChange(of: viewed.id) { _ in showChrome = true }
+        .onChange(of: failure) { message in
+            if message != nil { showChrome = true }
         }
         .task(id: previewRequestID) {
             // Signed previews must not survive a scene/Owner generation.
@@ -850,7 +871,10 @@ struct XDriveIOSNativeServerMediaPreview: View {
             failure = "媒体播放失败，请重试当前云端照片或视频。"
         }
         .onChange(of: phase) { _ in
-            if phase != .active { cancelRangeCrossing() }
+            if phase != .active {
+                showChrome = true
+                cancelRangeCrossing()
+            }
             // The iOS Photos permission dialog can briefly make the scene
             // inactive. No download starts until it has returned; a genuine
             // background transition always cancels the pending restore.

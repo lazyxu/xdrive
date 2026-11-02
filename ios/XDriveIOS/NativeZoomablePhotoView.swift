@@ -6,6 +6,7 @@ import UIKit
 struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
     let image: UIImage
     var onSwipe: ((Int) -> Void)? = nil
+    var onTap: (() -> Void)? = nil
 
     /// Keep the same still-view initializer for Files, local Photos and cloud.
     /// Only the owning Viewer can accept/reject a bounded neighbor.
@@ -15,10 +16,19 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         return copy
     }
 
+    /// A single tap toggles photo chrome; double-tap keeps its native zoom.
+    /// Files does not install this callback and retains its existing behavior.
+    func onChromeTap(_ handler: @escaping () -> Void) -> Self {
+        var copy = self
+        copy.onTap = handler
+        return copy
+    }
+
     final class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
         weak var photo: UIImageView?
         weak var scroll: UIScrollView?
         var onSwipe: ((Int) -> Void)?
+        var onTap: (() -> Void)?
 
         private var pagingEpoch: UInt64 = 0
 
@@ -98,6 +108,10 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
             photo
         }
 
+        @objc func singleTap(_ gesture: UITapGestureRecognizer) {
+            if gesture.state == .ended { onTap?() }
+        }
+
         @objc func doubleTap(_ gesture: UITapGestureRecognizer) {
             guard let scroll, let photo else { return }
             if scroll.zoomScale > scroll.minimumZoomScale + 0.01 {
@@ -148,6 +162,7 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         context.coordinator.photo = photo
         context.coordinator.scroll = scroll
         context.coordinator.onSwipe = onSwipe
+        context.coordinator.onTap = onTap
         let pagingPan = UIPanGestureRecognizer(
             target: context.coordinator, action: #selector(Coordinator.pagePan(_:))
         )
@@ -163,11 +178,19 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         )
         doubleTap.numberOfTapsRequired = 2
         scroll.addGestureRecognizer(doubleTap)
+        let singleTap = UITapGestureRecognizer(
+            target: context.coordinator, action: #selector(Coordinator.singleTap(_:))
+        )
+        singleTap.numberOfTapsRequired = 1
+        singleTap.cancelsTouchesInView = false
+        singleTap.require(toFail: doubleTap)
+        scroll.addGestureRecognizer(singleTap)
         return scroll
     }
 
     func updateUIView(_ scroll: UIScrollView, context: Context) {
         context.coordinator.onSwipe = onSwipe
+        context.coordinator.onTap = onTap
         guard let photo = context.coordinator.photo else { return }
         // A reused detail view must never retain another picture's zoom.
         if photo.image !== image {

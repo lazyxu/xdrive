@@ -349,6 +349,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     @State private var retainedPhotoShare: XDriveIOSNativeLocalPhotoShareSession?
     @State private var activeItem: XDrivePhotoKitScanCandidate?
     @State private var showsStaticStill = false
+    @State private var showChrome = true
     @State private var livePlaybackRequest: UUID?
     @State private var requestedICloudForCurrentItem = false
     @Environment(\.dismiss) private var dismiss
@@ -626,6 +627,11 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         crossingMessage = nil
     }
 
+    private func toggleChrome() {
+        guard currentPageAuthorized else { return }
+        withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -636,16 +642,19 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                         if showsStaticStill, let image = model.still {
                             XDriveIOSNativeZoomablePhotoView(image: image)
                                 .onNavigateSwipe { showNeighbor($0) }
+                                .onChromeTap { toggleChrome() }
                                 .accessibilityLabel("实况静态照片，可双指缩放")
                         } else {
                             XDriveIOSNativeLivePhotoView(
                                 live: live, playbackRequest: livePlaybackRequest
                             )
                             .xdriveNativeViewerPaging { showNeighbor($0) }
+                            .simultaneousGesture(TapGesture().onEnded { toggleChrome() })
                             .id(viewed.id)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .accessibilityLabel("实况照片，长按播放或左右滑动切换")
                         }
+                        if showChrome {
                         HStack(spacing: 12) {
                             Button("播放实况") {
                                 showsStaticStill = false
@@ -661,10 +670,12 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                             }
                         }
                         .padding(.horizontal, 12)
+                        }
                     }
                 } else if let image = model.still {
                     XDriveIOSNativeZoomablePhotoView(image: image)
                         .onNavigateSwipe { showNeighbor($0) }
+                        .onChromeTap { toggleChrome() }
                         .accessibilityLabel("本机照片，可双指缩放或双击放大")
                 } else if let message = model.message {
                     VStack(spacing: 8) {
@@ -692,7 +703,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if let still = model.still, viewed.kind == "image" {
+                if showChrome, let still = model.still, viewed.kind == "image" {
                     XDriveIOSNativeViewerQualityPanel(
                         fileName: viewed.id,
                         source: "PhotoKit 本机适屏图",
@@ -700,10 +711,13 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     )
                 }
             }
-            .navigationTitle(viewed.isLive ? "实况照片" :
-                viewed.kind == "video" ? "视频" : "照片")
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle(viewed.capturedAt.map {
+                $0.formatted(date: .abbreviated, time: .omitted)
+            } ?? (viewed.kind == "video" ? "视频" : "照片"))
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
+                if showChrome {
                 if model.needsICloudFetch || model.downloadingFromICloud ||
                    visibleItems.count > 1 || canCross(-1) || canCross(1) {
                     VStack(spacing: 8) {
@@ -754,18 +768,22 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     Text(photoActionMessage)
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                }
             }
             .toolbar {
-                // Remains reachable when a video stalls in landscape without
-                // firing a terminal failure callback.
                 ToolbarItem(placement: .navigationBarLeading) {
-                    if currentPageAuthorized, model.player != nil {
-                        Button("重新加载本机视频") { reloadCurrent() }
-                            .accessibilityIdentifier("native-ios-local-player-reload")
+                    Button { dismiss() } label: {
+                        Label("返回图库", systemImage: "chevron.left")
                     }
+                    .accessibilityIdentifier("native-ios-local-viewer-back")
                 }
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        // Video recovery stays accessible in compact landscape.
+                        if currentPageAuthorized, model.player != nil {
+                            Button("重新加载本机视频") { reloadCurrent() }
+                                .accessibilityIdentifier("native-ios-local-player-reload")
+                        }
                         Button("分享本机原件") { shareOriginal(allowICloud: false) }
                         Button("从 iCloud 下载原件并分享") {
                             shareOriginal(allowICloud: true)
@@ -785,10 +803,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     .disabled(!currentPageAuthorized || crossing || photoActionBusy)
                     .accessibilityIdentifier("native-ios-local-viewer-photo-actions")
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("完成") { dismiss() }
-                }
             }
+            .toolbar(showChrome ? .visible : .hidden, for: .navigationBar)
             .sheet(item: $photoShareSession, onDismiss: {
                 retainedPhotoShare?.discard()
                 retainedPhotoShare = nil
@@ -806,6 +822,13 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 Text("会按 iOS 系统照片规则删除本机照片；不会删除 xDrive 云端备份。")
             }
         }
+        .preferredColorScheme(.dark)
+        .statusBarHidden(!showChrome)
+        // Never strand a video/loading/error page behind hidden navigation.
+        .onChange(of: viewed.id) { _ in showChrome = true }
+        .onChange(of: model.message) { message in
+            if message != nil { showChrome = true }
+        }
         .onAppear { changes.start() }
         .task(id: viewed.id) {
             // Never materialize PhotoKit pixels while the App is inactive.
@@ -822,6 +845,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                // A covered Viewer must never return to an un-dismissible spinner.
+                showChrome = true
                 favoriteStatus = nil
                 cancelPhotoAction()
                 cancelCrossing()
