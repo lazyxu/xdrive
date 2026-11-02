@@ -19,7 +19,12 @@ function validRevision(value: number): boolean {
 function checkedAccount(value: XDriveViewerQualityPreferenceResponse) {
   if (!validRevision(value.revision)) throw new Error('invalid Viewer preference revision')
   for (const field of [value.preset, value.effective, value.admin_maximum]) {
-    xDriveParseViewerQualityPreset(field)
+    // Missing values are invalid network responses. The local parse helper
+    // treats an absent *preference* as high, but API snapshots are complete.
+    if (typeof field !== 'string' ||
+        !XDRIVE_VIEWER_QUALITY_OPTIONS.some(option => option.value === field)) {
+      throw new Error('invalid Viewer quality response')
+    }
   }
   if (typeof value.capped !== 'boolean') throw new Error('invalid Viewer cap')
   return value
@@ -27,7 +32,9 @@ function checkedAccount(value: XDriveViewerQualityPreferenceResponse) {
 
 function checkedAdmin(value: XDriveAdminViewerQualityResponse) {
   if (!validRevision(value.revision)) throw new Error('invalid Viewer admin revision')
-  xDriveParseViewerQualityPreset(value.maximum_preset)
+  if (!XDRIVE_VIEWER_QUALITY_OPTIONS.some(option => option.value === value.maximum_preset)) {
+    throw new Error('invalid Viewer maximum response')
+  }
   return value
 }
 
@@ -47,13 +54,17 @@ export default function ViewerQualitySettingsSection({
   const [refresh, setRefresh] = useState(0)
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setNotice('')
+      return
+    }
     const controller = new AbortController()
     setAccount(null)
     setAdmin(null)
     setLoadFailed(false)
     setAdminLoadFailed(false)
-    setNotice('')
+    // Preserve a successful admin Save message while the effective account
+    // snapshot reloads, instead of clearing it on the refresh state change.
     void api.viewerQualityPreference(controller.signal).then(value => {
       if (controller.signal.aborted) return
       const checked = checkedAccount(value)
