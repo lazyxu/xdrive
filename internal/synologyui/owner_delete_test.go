@@ -31,7 +31,7 @@ func (f *fakeDSMOwnerDeleter) OwnerDeleteNode(_ context.Context,
 }
 
 func (f *fakeDSMOwnerDeleter) ServerConnection(ctx context.Context) (localbackupipc.ServerConnection, error) {
-	if f.changeAfter && f.writes > 0 {
+	if f.changeAfter && f.writes >= 2 {
 		return localbackupipc.ServerConnection{
 			Configured: true, Server: "https://foreign.example.com", Username: "different",
 		}, nil
