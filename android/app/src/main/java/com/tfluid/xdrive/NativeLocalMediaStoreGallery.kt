@@ -20,6 +20,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -42,6 +44,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.ImageBitmap
@@ -850,11 +853,12 @@ internal fun NativeLocalMediaViewer(
 ) {
     val context = LocalContext.current
     val mediaKey = asset.viewerReturnKey()
-    // Metadata is a candidate only; actual motion must be rendered by Media3.
-    // Never scan the whole library or persist private media IDs.
-    var motionCandidate by remember(mediaKey) { mutableStateOf(false) }
-    var motionPlaying by remember(mediaKey) { mutableStateOf(false) }
-    LaunchedEffect(mediaKey, asset.uri) {
+    val mediaIdentity = NativeLocalVideoSourceKey(mediaKey, asset.uri.toString())
+    // Exact URI is part of both the motion candidate and play intent. A
+    // replaced/reselected MediaStore resource requires another explicit tap.
+    var motionCandidate by remember(mediaIdentity) { mutableStateOf(false) }
+    var motionPlaying by remember(mediaIdentity) { mutableStateOf(false) }
+    LaunchedEffect(mediaIdentity) {
         motionCandidate = false
         if (!asset.isVideo) motionCandidate = nativeLocalHasMotionPhotoCandidate(context, asset)
     }
@@ -880,7 +884,10 @@ internal fun NativeLocalMediaViewer(
                     onToggle = { motionPlaying = !motionPlaying },
                 )
                 if (asset.isVideo || (motionCandidate && motionPlaying)) {
-                    NativeLocalVideoPlayer(asset, autoPlay = !asset.isVideo)
+                    NativeLocalVideoPlayer(
+                        asset, autoPlay = !asset.isVideo,
+                        onPrevious = onPrevious, onNext = onNext,
+                    )
                 } else {
                     NativeLocalStillViewer(asset, onPrevious, onNext,
                         onMotionRequested = if (motionCandidate) {
@@ -981,6 +988,55 @@ internal fun NativeLocalPhotoSwipeSurface(
         },
         content = content,
     )
+}
+
+/**
+ * Passive INITIAL-pass observation leaves PlayerView's native seek/tap
+ * controls untouched. Do not treat scrubbing in the bottom control area, a
+ * second finger, or a slow diagonal as switching to another local file.
+ */
+@Composable
+internal fun Modifier.nativeLocalVideoSwipeNavigation(
+    mediaKey: NativeLocalViewerItemKey,
+    sourceUri: android.net.Uri,
+    onPrevious: (() -> Unit)?,
+    onNext: (() -> Unit)?,
+): Modifier {
+    val previous by rememberUpdatedState(onPrevious)
+    val next by rememberUpdatedState(onNext)
+    return this.pointerInput(mediaKey, sourceUri) {
+        val thresholdPx = 72.dp.toPx()
+        val headerPx = 52.dp.toPx()
+        awaitEachGesture {
+            val down = awaitFirstDown(
+                requireUnconsumed = false, pass = PointerEventPass.Initial)
+            val origin = down.position
+            var singlePointer = true
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                if (event.changes.count { it.pressed } > 1) singlePointer = false
+                val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+                if (!pointer.pressed) {
+                    when (nativeLocalVideoSwipeDirection(
+                        deltaX = pointer.position.x - origin.x,
+                        deltaY = pointer.position.y - origin.y,
+                        elapsedMillis = pointer.uptimeMillis - down.uptimeMillis,
+                        startY = origin.y,
+                        surfaceHeight = size.height.toFloat(),
+                        headerPx = headerPx,
+                        thresholdPx = thresholdPx,
+                        singlePointer = singlePointer,
+                        previousAvailable = previous != null,
+                        nextAvailable = next != null,
+                    )) {
+                        -1 -> previous?.invoke()
+                        1 -> next?.invoke()
+                    }
+                    break
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -1165,6 +1221,12 @@ private fun ColumnScope.NativeLocalStillViewer(
     }
 }
 
+/** Motion-video autoplay is only permitted for a new, explicit intent
+ * while the current Activity is visible. Ordinary videos never autoplay. */
+internal fun nativeLocalVideoMayAutoPlay(
+    autoPlay: Boolean, state: Lifecycle.State,
+): Boolean = autoPlay && state.isAtLeast(Lifecycle.State.STARTED)
+
 /**
  * A setup/codec/permission failure must never crash the native Viewer or
  * silently leave a blank PlayerView. Retry is explicit, scoped to the same
@@ -1173,13 +1235,16 @@ private fun ColumnScope.NativeLocalStillViewer(
 @Composable
 private fun ColumnScope.NativeLocalVideoPlayer(
     asset: NativeLocalMedia, autoPlay: Boolean = false,
+    onPrevious: (() -> Unit)? = null,
+    onNext: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val mediaKey = asset.viewerReturnKey()
-    var retryNonce by remember(mediaKey) { mutableIntStateOf(0) }
-    var failed by remember(mediaKey, retryNonce) { mutableStateOf(false) }
-    val player = remember(context, mediaKey, retryNonce, autoPlay) {
+    val mediaIdentity = NativeLocalVideoSourceKey(mediaKey, asset.uri.toString())
+    var retryNonce by remember(mediaIdentity) { mutableIntStateOf(0) }
+    var failed by remember(mediaIdentity, retryNonce) { mutableStateOf(false) }
+    val player = remember(context, lifecycle, mediaIdentity, retryNonce, autoPlay) {
         createPreparedMediaResource(
             build = { ExoPlayer.Builder(context).build() },
             prepare = { prepared ->
@@ -1187,12 +1252,16 @@ private fun ColumnScope.NativeLocalVideoPlayer(
                 // imageDurationMs is intentionally not supplied. Ordinary
                 // videos keep their existing no-autoplay behavior.
                 prepared.setMediaItem(MediaItem.fromUri(asset.uri))
+                prepared.playWhenReady = nativeLocalVideoMayAutoPlay(
+                    autoPlay, lifecycle.lifecycle.currentState)
                 prepared.prepare()
-                if (autoPlay) prepared.playWhenReady = true
             },
             release = { it.release() },
         )
     }
+    // A terminal decoder error must free the exact Media3 codec without
+    // requiring Viewer exit; retry/dispose must not release it twice.
+    val released = remember(player) { java.util.concurrent.atomic.AtomicBoolean(false) }
     DisposableEffect(player, lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) player?.pause()
@@ -1209,7 +1278,14 @@ private fun ColumnScope.NativeLocalVideoPlayer(
         onDispose {
             lifecycle.lifecycle.removeObserver(observer)
             player?.removeListener(listener)
-            player?.release()
+            if (released.compareAndSet(false, true))
+                runCatching { player?.release() }
+        }
+    }
+    LaunchedEffect(player, failed) {
+        if (player != null && failed && released.compareAndSet(false, true)) {
+            runCatching { player.stop() }
+            runCatching { player.release() }
         }
     }
     if (player == null || failed) {
@@ -1221,6 +1297,8 @@ private fun ColumnScope.NativeLocalVideoPlayer(
             factory = { ctx -> PlayerView(ctx).apply { this.player = player } },
             update = { view -> view.player = player },
             modifier = Modifier.fillMaxWidth().weight(1f)
+                .nativeLocalVideoSwipeNavigation(
+                    mediaKey, asset.uri, onPrevious, onNext)
                 .testTag("native-local-video-player"),
         )
     }
