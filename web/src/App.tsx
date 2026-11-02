@@ -2752,7 +2752,7 @@ function FileManager({
               ? (scope,target,signal,camera)=>api.mediaBaiduMapScopeHandoffIssue(
                   scope,target,signal,camera)
               : undefined}
-            mobileWebChrome
+            mobileWebChrome={placesEmbedRequested ? compactWidth : compactWorkspace}
             source={gallerySource}
             onMobileMapFocusChange={onMobileMapFocusChange}
             suspendBackgroundThumbnails={viewerActive}
@@ -3087,6 +3087,7 @@ function FileManager({
               <WebFileExplorer
                 api={api}
                 mobileOwnerScope={mobileOwnerScope}
+                compactNavigation={compactWorkspace}
                 suspendBackgroundThumbnails={viewerActive}
                 items={items}
                 crumbs={crumbs}

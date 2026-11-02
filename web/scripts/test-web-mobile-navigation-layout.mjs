@@ -71,4 +71,19 @@ assert.doesNotMatch(app, /display: \{ xs: 'none', md: 'flex' \}/,
   'CSS-only md desktop header must not appear over a wide mobile header')
 assert.match(runtime, /xDriveWebBrowserCompactNavigation\(\)/,
   'Gallery-first cold start must share the phone/tablet layout classifier')
-console.log('Web phone/tablet portrait/landscape five-slot, desktop sidebar, top bar and startup contracts passed')
+const files = readFileSync(resolve(here, '../src/WebFileExplorer.tsx'), 'utf8')
+const sharedGallery = readFileSync(resolve(here, '../../ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
+assert.match(app, /mobileWebChrome=\{placesEmbedRequested \? compactWidth : compactWorkspace\}/,
+  'wide tablet Gallery must use the same shell layout; desktop map guest keeps its width policy')
+assert.match(app, /compactNavigation=\{compactWorkspace\}/,
+  'wide tablet Files must use the same shell layout')
+assert.match(files, /const compactMobile = compactNavigation \?\? narrowFilesViewport/,
+  'Files use explicit shell mode while other entry points retain responsive fallback')
+assert.match(sharedGallery, /const mobileGalleryViewport = mobileWebChrome/,
+  'Gallery route controller cannot switch to desktop at tablet widths')
+assert.match(sharedGallery, /const compactGallery = mobileWebChrome/,
+  'Gallery visual chrome cannot switch to desktop at tablet widths')
+assert.doesNotMatch(sharedGallery,
+  /useMediaQuery\('\(max-width:899\.95px\)'\) && mobileWebChrome/,
+  'no width-only Gallery path may conflict with the shared mobile shell')
+console.log('Web phone/tablet portrait/landscape five-slot, Files/Gallery parity, desktop sidebar, top bar and startup contracts passed')
