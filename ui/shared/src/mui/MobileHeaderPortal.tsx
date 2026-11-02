@@ -1,8 +1,7 @@
 import { createContext, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
-import { Box, Drawer, IconButton, Stack, Typography } from '@mui/material'
+import { Box, Drawer, IconButton, Portal, Stack, Typography } from '@mui/material'
 
 /** A Web shell owns one mobile header. Standalone Desktop map guests keep
  * their local chrome, while L2/L3 intentionally suppress ordinary page nav.
@@ -25,7 +24,7 @@ export function XDriveMobileHeaderNavigation({ children }: { children: ReactNode
   const host = useContext(XDriveMobileHeaderPortalContext)
   if (host?.mode === 'hidden') return null
   if (host?.mode === 'global')
-    return host.navigationTarget ? createPortal(children, host.navigationTarget) : null
+    return host.navigationTarget ? <Portal container={host.navigationTarget}>{children}</Portal> : null
   return <>{children}</>
 }
 
@@ -38,8 +37,9 @@ export function XDriveMobileHeaderPageActions({
   const host = useContext(XDriveMobileHeaderPortalContext)
   const [open, setOpen] = useState(false)
   if (host?.mode !== 'shell' || !host.actionsTarget || !actions) return null
-  return createPortal(
-    <>
+  return (
+    <Portal container={host.actionsTarget}>
+      <>
       <IconButton data-xdrive-mobile-page-actions-trigger
         aria-label={title + '页面操作'} aria-haspopup="dialog"
         aria-expanded={open} onClick={() => setOpen(true)}
@@ -69,7 +69,7 @@ export function XDriveMobileHeaderPageActions({
           {actions}
         </Box>
       </Drawer>
-    </>,
-    host.actionsTarget,
+      </>
+    </Portal>
   )
 }

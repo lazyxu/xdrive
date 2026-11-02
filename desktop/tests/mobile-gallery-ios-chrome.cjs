@@ -22,7 +22,18 @@ const mocks = {
   '@mui/material': Object.fromEntries([
     'Autocomplete','Box','Button','Drawer','IconButton','Menu','MenuItem',
     'Slider','Stack','TextField','Typography',
+    'useMediaQuery',
   ].map(x => [x, x.toLowerCase()])),
+  './MobileHeaderPortal': {
+    XDriveMobileHeaderNavigation: ({ children }) =>
+      React.createElement(React.Fragment, null, children),
+    useXDriveMobileHeaderMode: () => 'standalone',
+  },
+  './MobileHeaderPortal': {
+    XDriveMobileHeaderNavigation: ({ children }) =>
+      React.createElement(React.Fragment, null, children),
+    useXDriveMobileHeaderMode: () => 'standalone',
+  },
   './useMobilePanelViewport': { useXDriveMobilePanelViewport: () => null },
   './MediaGalleryNavigation': {
     XDriveMediaGalleryNavigation: 'gallery-navigation',

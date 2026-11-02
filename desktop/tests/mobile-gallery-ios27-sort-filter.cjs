@@ -18,6 +18,7 @@ const mui = Object.fromEntries([
   'Autocomplete', 'Box', 'Button', 'Drawer', 'IconButton', 'Menu',
   'MenuItem', 'Slider', 'Stack', 'TextField', 'Typography',
 ].map(name => [name, name.toLowerCase()]))
+mui.useMediaQuery = () => false
 const modules = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
@@ -27,6 +28,11 @@ const modules = {
   '@mui/icons-material/SearchRounded': 'icon',
   '@mui/icons-material/SortRounded': 'icon',
   './useMobilePanelViewport': { useXDriveMobilePanelViewport: () => null },
+  './MobileHeaderPortal': {
+    XDriveMobileHeaderNavigation: ({ children }) =>
+      React.createElement(React.Fragment, null, children),
+    useXDriveMobileHeaderMode: () => 'standalone',
+  },
   '../media-timezone': { xDriveMediaTimeZoneChoices: () => [] },
 }
 const loaded = { exports: {} }

@@ -56,16 +56,16 @@ assert.equal(navigation({ children: 'loading bar' }), null,
 const parentNode = { owner: 'verified-owner-header' }
 current.host.navigationTarget = parentNode
 const portaled = navigation({ children: 'real page bar' })
-assert.equal(portaled.type, 'portal')
-assert.equal(portaled.props.target, parentNode)
+assert.equal(portaled.type, 'Portal')
+assert.equal(portaled.props.container, parentNode)
 assert.equal(portaled.props.children, 'real page bar')
 current.host = { mode: 'shell', navigationTarget: parentNode, actionsTarget: null }
 assert.equal(navigation({ children: 'standalone fallback' }).type, 'Fragment')
 assert.equal(actions({ title: '任务', actions: 'Refresh' }), null)
 current.host.actionsTarget = { owner: 'verified-owner-actions' }
 const rendered = actions({ title: '任务', actions: 'Refresh' })
-assert.equal(rendered.type, 'portal')
-assert.equal(rendered.props.target, current.host.actionsTarget)
+assert.equal(rendered.type, 'Portal')
+assert.equal(rendered.props.container, current.host.actionsTarget)
 const find = (node, predicate) => {
   if (node == null) return null
   if (Array.isArray(node)) return node.map(x => find(x, predicate)).find(Boolean) ?? null

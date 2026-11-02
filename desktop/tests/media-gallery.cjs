@@ -234,7 +234,9 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
 
 test('Gallery workspace separates collection failures from empty results and keeps controls compact', () => {
   assert.match(sharedWorkspaceSurface, /showPageHeader = true/)
-  assert.match(sharedWorkspaceSurface, /mt: showPageHeader \? 2 : 0/)
+  assert.match(sharedWorkspaceSurface,
+    /mt: showPageHeader \? \(mobileShell \? \(subtitle \? 1\.5 : 0\) : 2\) : 0/,
+    'desktop retains two-unit title spacing while mobile shell avoids a duplicate title row')
   assert.match(sharedGalleryMain, /showPageHeader=\{false\}/)
   assert.match(sharedGalleryMain, /collectionError=\{collectionError\}/)
   assert.match(sharedGalleryMain, /setCollectionError\(message\)/)
