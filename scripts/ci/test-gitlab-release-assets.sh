@@ -22,6 +22,7 @@ sources=(
   scripts/server-control.sh
   scripts/caddy-env-config.py
   scripts/caddy-admission.py
+  scripts/xdrive-share-update.py
   scripts/xdrive-server-host.sh
 )
 for source in "${sources[@]}"; do
@@ -66,6 +67,7 @@ expected="$fixture/expected.sha256"
     scripts/server-control.sh \
     scripts/caddy-env-config.py \
     scripts/caddy-admission.py \
+    scripts/xdrive-share-update.py \
     scripts/xdrive-server-host.sh > "$expected"
   sha256sum --check --status "$fixture/embedded.sha256"
 )
@@ -73,6 +75,7 @@ cmp -s "$fixture/embedded.sha256" "$expected" || {
   echo "GitLab embedded hashes differ from exact source assets" >&2
   exit 1
 }
+cmp "$fixture/scripts/xdrive-share-update.py" "$fixture/release/xdrive-share-update.py"
 
 printf '\n# tamper\n' >> "$fixture/scripts/server-control.sh"
 if (cd "$fixture"; sha256sum --check --status "$fixture/embedded.sha256"); then

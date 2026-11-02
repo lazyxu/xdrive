@@ -25,7 +25,7 @@ FILES = (
     SPK_NAME, SPK_NAME + '.sha256',
     'xdrive-server-install.sh', 'server-backup.sh', 'server-backup-scheduled.sh',
     'server-restore.sh', 'server-verify.sh', 'server-doctor.sh',
-    'server-migrate-user.sh', 'xdrive-server', 'docker-compose.yml',
+    'server-migrate-user.sh', 'xdrive-server', 'xdrive-share-update.py', 'docker-compose.yml',
     'xdrive.env.example', 'SHA256SUMS.txt',
 )
 

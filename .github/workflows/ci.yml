@@ -1189,6 +1189,9 @@ jobs:
           bash -n scripts/xdrive-server-host.sh
           bash -n scripts/test-xdrive-server-host.sh
           bash scripts/test-xdrive-server-host.sh
+          python3 scripts/test-xdrive-share-host.py
+          python3 scripts/test-xdrive-share-update.py
+          python3 scripts/ci/test-mirror-server-to-share.py
           python3 scripts/test-release-attestation-contract.py
           bash -n scripts/test-server-status-summary.sh
           bash scripts/test-server-status-summary.sh

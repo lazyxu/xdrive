@@ -231,7 +231,8 @@ class OfflinePackageTests(unittest.TestCase):
         with self.assertRaisesRegex(offline.PackageError, "unverified"):
             offline.validate_active_contracts(home, changed, ("app",), set())
 
-    def check_enabled_profile_preserves_existing(self, existing_profile, enabled_profile):
+    def check_enabled_profile_preserves_existing(self, existing_profile, enabled_profile,
+                                               update_source=None, backup_file_data=False, all_components=False):
         home = self.root / "existing-profile"
         (home / "config").mkdir(parents=True)
         (home / "state").mkdir()
@@ -251,8 +252,11 @@ class OfflinePackageTests(unittest.TestCase):
         selection = (("app", "postgres", "ai-runtime", "ai-models")
                      if enabled_profile == "photo-intelligence"
                      else ("app", "postgres", "media-worker"))
+        if all_components:
+            selection = offline.COMPONENTS
         args = types.SimpleNamespace(directory=self.out, config_dir=home,
                                      workdir=self.root, no_start=False,
+                                     update_source=update_source, backup_file_data=backup_file_data,
                                      enable_ai=enabled_profile == "photo-intelligence",
                                      enable_media=enabled_profile == "media-worker")
         installer_profiles = []
@@ -261,7 +265,10 @@ class OfflinePackageTests(unittest.TestCase):
             if command == ["docker", "info"]:
                 return subprocess.CompletedProcess(command, 0)
             if command[0] == "bash":
-                installer_profiles.append(kwargs["env"]["COMPOSE_PROFILES"])
+                installer_profiles.append(kwargs["env"].get("COMPOSE_PROFILES", ""))
+                self.assertEqual(command[2:6], ["--source", "github", "--channel", "master"])
+                self.assertEqual(kwargs["env"].get("XD_OFFLINE_UPDATE_SOURCE"), update_source)
+                self.assertEqual("--backup-file-data" in command, backup_file_data)
                 return subprocess.CompletedProcess(command, 0)
             self.fail(f"unexpected external process: {command}")
 
@@ -274,13 +281,28 @@ class OfflinePackageTests(unittest.TestCase):
                 mock.patch.object(offline, "assemble_photo_runtime",
                                   return_value="xdrive/offline-photo:verified"):
             offline.offline_install(args, manifest, selection)
-        self.assertEqual(installer_profiles, ["media-worker,photo-intelligence"])
+        expected = ",".join(sorted({p for p in (existing_profile, enabled_profile) if p}))
+        self.assertEqual(installer_profiles, [expected])
 
     def test_enable_ai_preserves_existing_media_worker(self):
         self.check_enabled_profile_preserves_existing("media-worker", "photo-intelligence")
 
     def test_enable_media_preserves_existing_ai(self):
         self.check_enabled_profile_preserves_existing("photo-intelligence", "media-worker")
+
+    def test_share_transport_keeps_github_provenance_and_forwards_file_backup(self):
+        self.check_enabled_profile_preserves_existing("media-worker", "photo-intelligence",
+                                                     "xdrive", True)
+
+    def test_share_prefetched_all_five_does_not_activate_disabled_profiles(self):
+        self.check_enabled_profile_preserves_existing("", "", "xdrive", all_components=True)
+
+    def test_share_override_rejects_stable_or_foreign_provenance_before_docker(self):
+        args = types.SimpleNamespace(update_source="xdrive")
+        for values in ({"source": "gitlab"}, {"channel": "stable"}):
+            with self.subTest(values=values):
+                with self.assertRaisesRegex(offline.PackageError, "GitHub master"):
+                    offline.offline_install(args, dict(self.manifest, **values), ("app", "postgres"))
 
     def test_rejects_unsupported_profiles_without_evaluating_env_text(self):
         home = self.root / "invalid-profile"

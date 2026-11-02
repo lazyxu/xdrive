@@ -62,12 +62,16 @@ func (s *Server) adminStartServerUpdate(c *gin.Context) {
 	}
 	input.Source = strings.ToLower(strings.TrimSpace(input.Source))
 	input.Channel = strings.ToLower(strings.TrimSpace(input.Channel))
-	if input.Source != "github" && input.Source != "gitlab" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_update_source", "detail": "source must be github or gitlab"})
+	if input.Source != "github" && input.Source != "gitlab" && input.Source != "xdrive" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_update_source", "detail": "source must be github, gitlab or xdrive"})
 		return
 	}
 	if input.Channel != "stable" && input.Channel != "master" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_update_channel", "detail": "channel must be stable or master"})
+		return
+	}
+	if input.Source == "xdrive" && input.Channel != "master" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_update_channel", "detail": "xdrive source requires the master channel"})
 		return
 	}
 
@@ -141,7 +145,7 @@ func (s *Server) serverUpdateStatus() serverUpdateState {
 	if err := json.Unmarshal(raw, &state); err != nil {
 		return unavailableServerUpdateState("宿主机更新状态格式无效。")
 	}
-	if state.Source != "github" && state.Source != "gitlab" {
+	if state.Source != "github" && state.Source != "gitlab" && state.Source != "xdrive" {
 		state.Source = "github"
 	}
 	if state.Channel != "stable" && state.Channel != "master" {
@@ -170,7 +174,8 @@ func (s *Server) serverUpdateStatus() serverUpdateState {
 		if requestRaw, readErr := os.ReadFile(requestPath); readErr == nil {
 			var request serverUpdateRequestFile
 			if json.Unmarshal(requestRaw, &request) == nil &&
-				(request.Source == "github" || request.Source == "gitlab") &&
+				(request.Source == "github" || request.Source == "gitlab" || request.Source == "xdrive") &&
+				(request.Source != "xdrive" || request.Channel == "master") &&
 				(request.Channel == "stable" || request.Channel == "master") {
 				state.State = "queued"
 				state.Source = request.Source

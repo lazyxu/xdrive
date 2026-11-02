@@ -34,6 +34,7 @@ IMAGE_REGISTRY="${XD_IMAGE_REGISTRY:-@IMAGE_REGISTRY@}"
 OFFLINE_ASSET_DIR="${XD_OFFLINE_ASSET_DIR:-}"
 OFFLINE_MEDIA_IMAGE="${XD_OFFLINE_MEDIA_IMAGE:-}"
 OFFLINE_PHOTO_IMAGE="${XD_OFFLINE_PHOTO_IMAGE:-}"
+OFFLINE_UPDATE_SOURCE="${XD_OFFLINE_UPDATE_SOURCE:-}"
 STAGING_DIR="$STATE_DIR/install-staging"
 UPGRADE_STATE_DIR="$STATE_DIR/upgrade-transaction"
 INSTALL_LOCK_PATH="$STATE_DIR/install.lock"
@@ -171,7 +172,7 @@ prepare_host_layout() {
     cp -p "$LEGACY_CADDY_PATH" "$CADDY_PATH"
     chmod 600 "$CADDY_PATH"
   fi
-  for legacy_tool in xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py; do
+  for legacy_tool in xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
     if [[ ! -f "$BIN_DIR/$legacy_tool" && -f "$XDRIVE_HOME/$legacy_tool" ]]; then
       cp -p "$XDRIVE_HOME/$legacy_tool" "$BIN_DIR/$legacy_tool"
       chmod 700 "$BIN_DIR/$legacy_tool"
@@ -383,6 +384,11 @@ if [[ -z "$requested_source" ]]; then
   fi
 fi
 requested_source="$(printf '%s' "$requested_source" | tr '[:upper:]' '[:lower:]')"
+if [[ -n "$OFFLINE_UPDATE_SOURCE" &&
+      ( "$OFFLINE_UPDATE_SOURCE" != xdrive || -z "$OFFLINE_ASSET_DIR" || "$requested_source" != github ) ]]; then
+  echo "xDrive installer: Share preference is accepted only for verified offline GitHub master assets." >&2
+  exit 2
+fi
 case "$requested_source" in
   github|gitlab) ;;
   *) echo "invalid update source: $requested_source (expected github or gitlab)" >&2; exit 2 ;;
@@ -1216,6 +1222,9 @@ fi
 
 stage 1 "resolve release channel"
 if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+  if [[ -n "$OFFLINE_UPDATE_SOURCE" && "$requested_channel" != master ]]; then
+    echo "xDrive installer: Share preference requires the master channel." >&2; exit 2
+  fi
   [[ "$OFFLINE_ASSET_DIR" == /* && -d "$OFFLINE_ASSET_DIR" && ! -L "$OFFLINE_ASSET_DIR" ]] || {
     echo "xDrive offline: asset directory must be a real absolute directory." >&2; exit 1;
   }
@@ -1318,7 +1327,7 @@ if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
     cp -- "$source" "$target"
   }
   offline_copy_asset deploy/docker-compose.yml "$STAGING_DIR/docker-compose.yml"
-  for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py; do
+  for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
     offline_copy_asset "scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script"
     chmod 700 "$STAGING_DIR/$maintenance_script"
   done
@@ -1327,7 +1336,7 @@ if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
 else
   fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/9 docker-compose.yml"
   asset_no=1
-  for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py; do
+  for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
     asset_no=$((asset_no + 1))
     fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/9 $maintenance_script"
     chmod 700 "$STAGING_DIR/$maintenance_script"
@@ -1352,6 +1361,7 @@ verify_embedded_deploy_assets() {
     scripts/server-control.sh
     scripts/caddy-env-config.py
     scripts/caddy-admission.py
+    scripts/xdrive-share-update.py
     scripts/xdrive-server-host.sh
   )
   local -A expected=()
@@ -2234,7 +2244,7 @@ finalize_host_layout() {
     rm -f "$XDRIVE_HOME/.install-pull.log"
   fi
 
-  for path in .env docker-compose.yml Caddyfile xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py; do
+  for path in .env docker-compose.yml Caddyfile xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
     rm -f "$XDRIVE_HOME/$path"
   done
   rm -f "$XDRIVE_HOME/.install.lock" "$XDRIVE_HOME/.scheduled-backup.lock"
@@ -2404,6 +2414,11 @@ validate_image_registry "$IMAGE_REGISTRY"
 ensure_env XD_IMAGE_REGISTRY "$IMAGE_REGISTRY"
 set_env XD_IMAGE_REGISTRY "$IMAGE_REGISTRY"
 set_env XD_UPDATE_SOURCE "$requested_source"
+if [[ -n "$OFFLINE_UPDATE_SOURCE" ]]; then
+  # The existing upgrade transaction already captured the previous .env.
+  # Rollback restores that preference with all other deployment settings.
+  set_env XD_UPDATE_SOURCE "$OFFLINE_UPDATE_SOURCE"
+fi
 set_env XD_RELEASE_CHANNEL "$requested_channel"
 set_env XD_RELEASE_COMMIT "${requested_commit:-}"
 if [[ -n "$OFFLINE_ASSET_DIR" && -n "${COMPOSE_PROFILES:-}" ]]; then
@@ -2830,7 +2845,7 @@ unset_env XD_WEB_PIDS_LIMIT
 unset_env XD_CADDY_BUILD_ID
 
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
-for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py; do
+for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
   install -m 700 "$STAGING_DIR/$maintenance_script" "$BIN_DIR/$maintenance_script"
 done
 install -m 700 "$STAGING_DIR/xdrive-server" "$HOST_MANAGER_PATH"

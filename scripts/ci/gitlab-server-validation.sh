@@ -52,6 +52,9 @@ bash scripts/test-server-uninstall.sh
 bash -n scripts/xdrive-server-host.sh
 bash -n scripts/test-xdrive-server-host.sh
 bash scripts/test-xdrive-server-host.sh
+python3 scripts/test-xdrive-share-host.py
+python3 scripts/test-xdrive-share-update.py
+python3 scripts/ci/test-mirror-server-to-share.py
 bash -n scripts/test-server-status-summary.sh
 bash scripts/test-server-status-summary.sh
 bash -n scripts/ci/test-server-rootless-e2e.sh

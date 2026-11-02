@@ -58,11 +58,12 @@ def analyze(root: Path, postgres_id: str, previous: dict | None) -> dict:
     checks = {
         "app": lambda p: (
             not (p.endswith(("_test.go", ".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"))
-                 or "/tests/" in p)
+                 or "/tests/" in p or Path(p).name.startswith(("test_", "test-")))
             and (p in ("Dockerfile", "go.mod", "go.sum", "deploy/install-server.sh",
                        CONTRACT_FILE, "scripts/ci/build-metadata.sh",
                        "scripts/ci/client-artifact-version.sh",
-                       "scripts/ci/gitlab-caddy-image.sh")
+                       "scripts/ci/gitlab-caddy-image.sh", "scripts/xdrive-share-update.py")
+                 or p.startswith("scripts/offline/")
                  or p.startswith(("cmd/", "internal/", "web/", "ui/", "deploy/"))
                  or p.startswith(("scripts/server-", "scripts/caddy-", "scripts/xdrive-server-host")))
         ),

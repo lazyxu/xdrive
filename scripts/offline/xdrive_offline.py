@@ -43,6 +43,7 @@ REQUIRED_ASSETS = (
     "assets/scripts/caddy-env-config.py",
     "assets/scripts/caddy-admission.py",
     "assets/scripts/xdrive-server-host.sh",
+    "assets/scripts/xdrive-share-update.py",
 )
 SHA_RE = re.compile(r"[a-f0-9]{64}\Z")
 COMMIT_RE = re.compile(r"[a-f0-9]{40}\Z")
@@ -414,6 +415,11 @@ def record_successful_offline_install(home: Path, previous: dict, manifest: dict
 
 def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[str, ...]) -> None:
     require("app" in selection, "offline install requires the App package")
+    update_source = getattr(args, "update_source", None)
+    if update_source is not None:
+        require(update_source == "xdrive" and manifest["source"] == "github"
+                and manifest["channel"] == "master",
+                "Share update preference requires a verified GitHub master package")
     require(not ("ai-models" in selection) != ("ai-runtime" in selection),
             "AI Runtime and AI Models must be installed together")
     require(shutil.which("docker") is not None, "Docker must already be installed on the host")
@@ -458,6 +464,9 @@ def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[s
         environment["XD_OFFLINE_ASSET_DIR"] = str(app_assets)
         environment["XD_INSTALL_SOURCE"] = manifest["source"]
         environment["XD_INSTALL_CHANNEL"] = manifest["channel"]
+        environment.pop("XD_OFFLINE_UPDATE_SOURCE", None)
+        if update_source:
+            environment["XD_OFFLINE_UPDATE_SOURCE"] = update_source
         environment["XD_POSTGRES_IMAGE"] = postgres_ref
         # Never let an inherited online pull be enabled on this process.
         environment["XD_OFFLINE_NO_PULL"] = "1"
@@ -478,6 +487,8 @@ def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[s
         environment["COMPOSE_PROFILES"] = ",".join(sorted(profiles))
         command = ["bash", str(installer), "--source", manifest["source"],
                    "--channel", manifest["channel"]]
+        if getattr(args, "backup_file_data", False):
+            command.append("--backup-file-data")
         print("[offline] activating verified local release via xDrive transactional installer", flush=True)
         subprocess.run(command, env=environment, stdin=None, check=True)
         if not args.no_start:
@@ -626,6 +637,9 @@ def main() -> int:
             item.add_argument("--no-start", action="store_true")
             item.add_argument("--enable-media", action="store_true")
             item.add_argument("--enable-ai", action="store_true")
+            item.add_argument("--update-source", choices=("xdrive",),
+                              help="Persist the Share transport independently of package provenance")
+            item.add_argument("--backup-file-data", action="store_true")
     args = parser.parse_args()
     try:
         if args.command == "build":

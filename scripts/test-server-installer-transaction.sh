@@ -9,7 +9,7 @@ cleanup() {
   local status=$?
   if [[ "$status" -ne 0 ]]; then
     echo "server transactional upgrade test failed (exit $status)" >&2
-    for file in locked.out locked.err upgrade.out upgrade.err cas-lock.out cas-lock.err cas-real-error.out cas-real-error.err stall.out stall.err incremental-stall.out incremental-stall.err completion-tail.out completion-tail.err incremental-success.out incremental-success.err pull-fail.out pull-fail.err state/docker-calls state/server-ps-count state/backup-args state/backup-images; do
+    for file in locked.out locked.err upgrade.out upgrade.err cas-lock.out cas-lock.err cas-real-error.out cas-real-error.err stall.out stall.err incremental-stall.out incremental-stall.err completion-tail.out completion-tail.err incremental-success.out incremental-success.err pull-fail.out pull-fail.err share-1.out share-1.err share-0.out share-0.err state/docker-calls state/server-ps-count state/backup-args state/backup-images; do
       if [[ -f "$TMP/$file" ]]; then
         echo "===== $file =====" >&2
         cat "$TMP/$file" >&2 || true
@@ -181,7 +181,7 @@ touch "$TEST_STATE/data-restored"
 exit 0
 '
     ;;
-  */scripts/server-backup-scheduled.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/server-control.sh|*/scripts/caddy-admission.py|*/scripts/caddy-env-config.py|*/scripts/xdrive-server-host.sh)
+  */scripts/server-backup-scheduled.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/server-control.sh|*/scripts/caddy-admission.py|*/scripts/caddy-env-config.py|*/scripts/xdrive-share-update.py|*/scripts/xdrive-server-host.sh)
     emit '#!/usr/bin/env bash
 exit 0
 '
@@ -1043,6 +1043,64 @@ for scenario in target-new target-cached target-orphan target-no-image; do
     if grep -q -- '--allow-inconsistent' "$scenario_state/backup-args"; then
       echo "target failure must not bypass integrity" >&2; exit 1
     fi
+  fi
+done
+
+# Share distribution is a preference, while the signed build stays GitHub.
+# Exercise the actual offline installer and its existing runtime rollback.
+share_assets="$TMP/share-assets"
+mkdir -p "$share_assets/deploy" "$share_assets/scripts"
+TEST_STATE="$TMP/state" "$TMP/bin/curl" -w '%{size_download}' -o "$share_assets/deploy/docker-compose.yml" https://fixture.invalid/deploy/docker-compose.yml >/dev/null
+for name in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh \
+  server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py \
+  xdrive-share-update.py xdrive-server-host.sh; do
+  TEST_STATE="$TMP/state" "$TMP/bin/curl" -w '%{size_download}' -o "$share_assets/scripts/$name" "https://fixture.invalid/scripts/$name" >/dev/null
+done
+share_hashes="$(cd "$share_assets"; sha256sum deploy/docker-compose.yml scripts/* | base64 -w0)"
+sed -e "s|@DEPLOY_ASSET_MANIFEST_B64@|$share_hashes|g" \
+  -e 's|@SOURCE_REF@|0123456789abcdef0123456789abcdef01234567|g' \
+  -e 's|@IMAGE_TAG@|sha-0123456789ab|g' -e 's|@IMAGE_REGISTRY@|ghcr.io/lazyxu|g' \
+  -e 's|@RELEASE_CHANNEL@|master|g' \
+  -e 's|@RELEASE_COMMIT@|0123456789abcdef0123456789abcdef01234567|g' \
+  -e 's|@UPDATE_SOURCE@|github|g' "$INSTALLER" > "$TMP/share-install.sh"
+for health in 1 0; do
+  share_config="$TMP/share-$health-config"
+  share_state="$TMP/share-$health-state"
+  cp -a "$TMP/config" "$share_config"
+  # Use the same existing legacy-HTTP fixture as the native success cases;
+  # independent suites cover HTTPS certificate readiness.
+  sed -i 's/^XD_DOMAIN=.*/XD_DOMAIN=/' "$share_config/.env" "$share_config/config/.env"
+  printf '\nXD_UPDATE_SOURCE=gitlab\n' >> "$share_config/config/.env"
+  mkdir -p "$share_state"
+  printf '%s\n' postgres:17-alpine ghcr.io/lazyxu/xdrive-server:sha-0123456789ab \
+    ghcr.io/lazyxu/xdrive-caddy:sha-0123456789ab > "$share_state/cached-images"
+  set +e
+  TEST_STATE="$share_state" TEST_HEALTH_OK="$health" PATH="$TMP/bin:/usr/bin:/bin" \
+    XD_CONFIG_DIR="$share_config" XD_SHELL_RC_PATH="$TMP/share-$health.bashrc" \
+    XD_OFFLINE_ASSET_DIR="$share_assets" XD_OFFLINE_UPDATE_SOURCE=xdrive \
+    XD_POSTGRES_IMAGE=postgres:17-alpine \
+    XD_NONINTERACTIVE=1 XD_UPGRADE_BACKUP_VERIFIER=target \
+    bash "$TMP/share-install.sh" --source github --channel master --backup-file-data \
+    >"$TMP/share-$health.out" 2>"$TMP/share-$health.err"
+  share_status=$?
+  set -e
+  if [[ "$health" == 1 ]]; then
+    [[ "$share_status" == 0 ]]
+    grep -qx 'XD_UPDATE_SOURCE=xdrive' "$share_config/config/.env"
+    grep -qx 'XD_IMAGE_REGISTRY=ghcr.io/lazyxu' "$share_config/config/.env"
+    grep -qx 'XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-0123456789ab' "$share_config/config/.env"
+    test -x "$share_config/bin/xdrive-share-update.py"
+  else
+    [[ "$share_status" != 0 ]]
+    grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/share-$health.err"
+    grep -qx 'XD_UPDATE_SOURCE=gitlab' "$share_config/config/.env"
+    grep -qx 'XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold' "$share_config/config/.env"
+  fi
+  if grep -Eq '^pull |compose .* pull ' "$share_state/docker-calls"; then
+    echo "Share offline transaction attempted an online image pull" >&2; exit 1
+  fi
+  if grep -q -- '--skip-file-data' "$share_state/backup-args"; then
+    echo "Share file-data backup option was lost" >&2; exit 1
   fi
 done
 

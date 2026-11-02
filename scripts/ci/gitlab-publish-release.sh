@@ -13,7 +13,7 @@ set -- \
   xdrive-backup-linux-amd64.tar.gz xdrive-backup-windows-amd64.zip \
   xdrive-server-install.sh server-backup.sh server-backup-scheduled.sh \
   server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh \
-  xdrive-server docker-compose.yml xdrive.env.example
+  xdrive-server xdrive-share-update.py docker-compose.yml xdrive.env.example
 bash scripts/ci/verify-synology-spk-release.sh release --require-mui
 for file in release/xdrivenas-armada38x-*.spk; do
   set -- "$@" "${file#release/}" "${file#release/}.sha256"
