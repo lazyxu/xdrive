@@ -305,7 +305,7 @@ test('DSM large PDF opens the same shared Viewer without broadening download lim
   app.unmount()
 })
 
-test('DSM image size/compatibility use Owner thumbnails, never a fake video or Live Photo', async () => {
+test('DSM image fallbacks and LIVP candidate selection preserve verified Owner media boundaries', async () => {
   const app = await mount([
     node(9, 'cloud.heic', 24 << 20), node(10, 'raw.dng', 64 << 20),
     node(11, 'old.mov', 40 << 20), node(12, 'archive.livp', 16 << 20),
@@ -322,7 +322,17 @@ test('DSM image size/compatibility use Owner thumbnails, never a fake video or L
       'derivative-only Viewer must preserve existing original download admission')
     assert.equal(Boolean(app.state.getDownloadDisabledReason([app.state.previewItem])), id !== 9)
   }
-  for (const id of [11, 12, 14]) {
+  // A .livp filename may open a read-only Viewer candidate so that the
+  // actual Owner/revision-scoped 4K still reader can verify the indexed LIVP
+  // resource. Selection itself must not invent image/motion bytes or download.
+  app.state.openFilePreview(app.state.displayedItems.find(item => item.id === 12))
+  await app.flush()
+  assert.equal(app.state.previewItem?.id, 12, 'LIVP candidate uses the shared Viewer')
+  assert.equal(app.requests.length, 0, 'LIVP selection must not synthesize a media read')
+  app.state.openFilePreview(app.state.displayedItems.find(item => item.id === 13))
+  await app.flush()
+  // Unrelated MOV and executable files still cannot replace that Viewer.
+  for (const id of [11, 14]) {
     app.state.openFilePreview(app.state.displayedItems.find(item => item.id === id))
     await app.flush()
     assert.equal(app.state.previewItem?.id, 13,
