@@ -252,8 +252,8 @@ func (SystemMaintenanceRun) TableName() string {
 
 type Share struct {
 	Access        string     `gorm:"size:16;not null;default:'read_only'"`
-	ID            uint64     `gorm:"primaryKey"`
-	OwnerID       uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
+	ID            uint64     `gorm:"primaryKey;index:idx_xd_shares_owner_page,priority:2"`
+	OwnerID       uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node;index:idx_xd_shares_owner_page,priority:1"`
 	NodeID        uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
 	TokenHash           string     `gorm:"size:64;not null;uniqueIndex"`
 	LinkAliasHash       *string    `gorm:"size:64;uniqueIndex:idx_xd_shares_link_alias_hash"`

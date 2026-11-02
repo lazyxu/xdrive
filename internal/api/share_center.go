@@ -48,10 +48,35 @@ func (s *Server) listOwnShares(c *gin.Context) {
         }
         cursor = parsed
     }
-    query := s.DB.WithContext(c.Request.Context()).Where("owner_id = ?", userID(c))
-    if cursor != 0 { query = query.Where("id < ?", cursor) }
+    // Apply Owner, status and filename filters before keyset pagination.
+    status := strings.TrimSpace(c.Query("status"))
+    if status != "" && status != "active" && status != "expired" && status != "revoked" {
+        fail(c, http.StatusBadRequest, "invalid share status")
+        return
+    }
+    name := strings.TrimSpace(c.Query("q"))
+    if len(name) > 128 {
+        fail(c, http.StatusBadRequest, "share search too long")
+        return
+    }
+    now := time.Now()
+    query := s.DB.WithContext(c.Request.Context()).Model(&meta.Share{}).
+        Select("xd_shares.*").Where("xd_shares.owner_id = ?", userID(c))
+    if cursor != 0 { query = query.Where("xd_shares.id < ?", cursor) }
+    switch status {
+    case "active":
+        query = query.Where("xd_shares.revoked_at IS NULL AND (xd_shares.expires_at IS NULL OR xd_shares.expires_at > ?)", now)
+    case "expired":
+        query = query.Where("xd_shares.revoked_at IS NULL AND xd_shares.expires_at <= ?", now)
+    case "revoked":
+        query = query.Where("xd_shares.revoked_at IS NOT NULL")
+    }
+    if name != "" {
+        query = query.Joins("JOIN xd_nodes AS share_node ON share_node.id = xd_shares.node_id AND share_node.owner_id = xd_shares.owner_id").
+            Where("POSITION(LOWER(?) IN LOWER(share_node.name)) > 0", name)
+    }
     var shares []meta.Share
-    if err := query.Order("id DESC").Limit(limit + 1).Find(&shares).Error; err != nil {
+    if err := query.Order("xd_shares.id DESC").Limit(limit + 1).Find(&shares).Error; err != nil {
         fail(c, http.StatusInternalServerError, "list owner shares failed")
         return
     }
@@ -70,7 +95,6 @@ func (s *Server) listOwnShares(c *gin.Context) {
         }
         for _, node := range found { nodes[node.ID] = node }
     }
-    now := time.Now()
     page := ownerSharesPageDTO{Items: make([]ownerShareItemDTO, 0, len(shares))}
     for _, share := range shares {
         item := ownerShareItemDTO{shareDTO: toShareDTO(share, now)}
@@ -104,14 +128,13 @@ func (s *Server) copyOwnShareLink(c *gin.Context) {
         fail(c, http.StatusServiceUnavailable, "share link encryption keyring is not configured")
         return
     }
-    now := time.Now()
     var result ownerShareLinkDTO
     err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
         var share meta.Share
         if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
             Where("id = ? AND owner_id = ?", shareID, userID(c)).
             First(&share).Error; err != nil { return err }
-        if shareStatus(share, now) != "active" { return errShareUnavailable }
+        if share.RevokedAt != nil { return errShareUnavailable }
         var node meta.Node
         if err := tx.Select("id", "type").
             Where("id = ? AND owner_id = ? AND deleted_at IS NULL",

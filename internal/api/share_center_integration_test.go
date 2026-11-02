@@ -69,6 +69,16 @@ func TestOwnerShareCenterCopyAndLegacyCompatibility(t *testing.T) {
         strings.Contains(pageRes.Body.String(), hashShareToken(created.Token)) {
         t.Fatal("Owner list unexpectedly leaked a bearer or hash")
     }
+    filterRes := request(t, router, http.MethodGet, "/api/v1/shares?status=active&q=CENTER-demo",
+        ownerToken, nil, http.StatusOK)
+    if !json.Valid(filterRes.Body.Bytes()) { t.Fatal("share status/name filter returned invalid response") }
+    var filtered ownerSharesPageDTO
+    if err := json.Unmarshal(filterRes.Body.Bytes(), &filtered); err != nil { t.Fatal(err) }
+    if len(filtered.Items) != 1 || filtered.Items[0].ID != created.ID {
+        t.Fatalf("unexpected filtered share result: %+v", filtered)
+    }
+    request(t, router, http.MethodGet, "/api/v1/shares?status=invalid", ownerToken, nil, http.StatusBadRequest)
+    request(t, router, http.MethodGet, "/api/v1/shares?cursor=-1", ownerToken, nil, http.StatusBadRequest)
     otherPage := request(t, router, http.MethodGet, "/api/v1/shares", otherToken, nil, http.StatusOK)
     if strings.Contains(otherPage.Body.String(), file.Name) { t.Fatal("other Owner read share") }
     sharePath := fmt.Sprintf("/api/v1/shares/%d/link", created.ID)
