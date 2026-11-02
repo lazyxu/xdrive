@@ -3,7 +3,7 @@ import MapKit
 import SwiftUI
 import UIKit
 
-private enum XDriveIOSNativePhotoMapSource: String, CaseIterable {
+enum XDriveIOSNativePhotoMapSource: String, CaseIterable {
     case local, cloud
     var label: String { self == .local ? "本机位置" : "云端 Owner" }
 }
@@ -16,11 +16,13 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     // Source switches never reset the parent's map scope or page cursor.
     @Binding var localMapScope: XDriveIOSNativeLocalMapScope
     @Binding var localMapPageOffset: Int
+    @Binding var source: XDriveIOSNativePhotoMapSource
+    @Binding var cloudMapCamera: MKCoordinateRegion?
     var onFocusChange: ((Bool) -> Void)?
-    @State private var source: XDriveIOSNativePhotoMapSource = .local
 
     var body: some View {
-        VStack(spacing: 4) {
+        let expectedOwner = login.owner
+        return VStack(spacing: 4) {
             Picker("地图照片来源", selection: $source) {
                 ForEach(XDriveIOSNativePhotoMapSource.allCases, id: \.self) { item in
                     Text(item.label).tag(item)
@@ -39,7 +41,15 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                     )
                 case .cloud:
                     XDriveIOSNativeOwnerPhotoMapScreen(
-                        login: login, onFocusChange: onFocusChange)
+                        login: login, onFocusChange: onFocusChange,
+                        cameraReturn: cloudMapCamera,
+                        onCameraChange: { next in
+                            guard source == .cloud, let expectedOwner,
+                                  XDriveIOSNativePhotoOwnerScope.matches(
+                                    login.owner, expectedOwner
+                                  ) else { return }
+                            cloudMapCamera = next
+                        })
                 }
             }
         }
@@ -130,6 +140,7 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
     let coverImages: [String: UIImage]
     let markersEnabled: Bool
     let revision: UUID
+    let initialCamera: MKCoordinateRegion
     let onCameraWillChange: () -> Void
     let onCamera: (MKCoordinateRegion) -> Void
     let onPlace: (XDriveIOSNativeOwnerMapFacet) -> Void
@@ -149,10 +160,7 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
                      forAnnotationViewWithReuseIdentifier: "xdrive-owner-pin")
         map.register(XDriveIOSOwnerMapPhotoCover.self,
                      forAnnotationViewWithReuseIdentifier: "xdrive-owner-cluster")
-        map.setRegion(MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
-            span: MKCoordinateSpan(latitudeDelta: 160, longitudeDelta: 360)),
-            animated: false)
+        map.setRegion(initialCamera, animated: false)
         map.delegate = context.coordinator
         return map
     }
@@ -293,6 +301,9 @@ private struct XDriveIOSOwnerMapChosenPlace: Identifiable {
 struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     var onFocusChange: ((Bool) -> Void)?
+    // Transient same-Owner camera only, never serialized as GPS history.
+    var cameraReturn: MKCoordinateRegion? = nil
+    var onCameraChange: ((MKCoordinateRegion) -> Void)? = nil
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var overview: XDriveIOSNativeOwnerMapOverview?
@@ -336,10 +347,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             XDriveIOSOwnerMapSurface(
                 overview: overview, coverImages: coverImages,
                 markersEnabled: mapMarkersEnabled,
-                revision: revision,
+                revision: revision, initialCamera: cameraReturn ?? camera,
                 onCameraWillChange: { revokeCameraAuthorization() },
                 onCamera: { next in
                     camera = next
+                    onCameraChange?(next)
                     // Programmatic camera correction may occur during Owner
                     // HTTPS; compare pending as well as already-verified bounds.
                     if let authorized = verifiedBounds ?? requestedBounds,
@@ -438,7 +450,10 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        .onAppear { if overview == nil && !busy && phase == .active { reload() } }
+        .onAppear {
+            if let cameraReturn { camera = cameraReturn }
+            if overview == nil && !busy && phase == .active { reload() }
+        }
         .onChange(of: login.owner) { _ in
             selected = nil
             invalidate()

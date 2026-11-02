@@ -175,14 +175,33 @@ test('short landscape Owner map retains verified camera, feedback, Sheet and acc
 });
 
 test('single native Gallery map entry exposes local and Owner cloud sources without dropping saved local map navigation', () => {
-  assert.match(dashboard, /case \.map:\s*XDriveIOSNativePhotoMapsScreen\(\s*login: login,\s*localMapScope: \$localMapScope,\s*localMapPageOffset: \$localMapPageOffset,\s*onFocusChange:/)
+  assert.match(dashboard, /case \.map:\s*XDriveIOSNativePhotoMapsScreen\(\s*login: login,\s*localMapScope: \$localMapScope,\s*localMapPageOffset: \$localMapPageOffset,\s*source: \$mapSource,\s*cloudMapCamera: \$cloudMapCamera,\s*onFocusChange:/)
   assert.match(dashboard, /localMapScope = XDriveIOSNativeLocalMapScope\(rawValue: snapshot\.mapScope/)
   assert.match(dashboard, /localMapPageOffset = snapshot\.mapPageOffset \?\? 0/)
   assert.match(map, /struct XDriveIOSNativePhotoMapsScreen: View \{[\s\S]*?@ObservedObject var login: XDriveIOSNativeOwnerLoginModel[\s\S]*?@Binding var localMapScope: XDriveIOSNativeLocalMapScope[\s\S]*?@Binding var localMapPageOffset: Int/)
   assert.match(map, /Picker\("地图照片来源", selection: \$source\)/)
   assert.match(map, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset/)
-  assert.match(map, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\(\s*login: login, onFocusChange: onFocusChange\)/)
+  assert.match(map, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\(\s*login: login, onFocusChange: onFocusChange,\s*cameraReturn: cloudMapCamera,\s*onCameraChange: \{ next in[\s\S]*?cloudMapCamera = next/)
   assert.match(map, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/)
   assert.doesNotMatch(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
   assert.doesNotMatch(map, /@State private var localMapScope|@State private var localMapPageOffset/)
+})
+
+
+test('cloud MapKit restores the same-Owner camera and selected map source after Gallery re-entry', () => {
+  assert.match(dashboard, /@State private var mapSource: XDriveIOSNativePhotoMapSource = \.local/)
+  assert.match(dashboard, /@State private var cloudMapCamera: MKCoordinateRegion\?/)
+  assert.match(dashboard, /source: \$mapSource,\s*cloudMapCamera: \$cloudMapCamera/)
+  assert.match(map, /@Binding var source: XDriveIOSNativePhotoMapSource/)
+  assert.match(map, /@Binding var cloudMapCamera: MKCoordinateRegion\?/)
+  assert.doesNotMatch(map, /@State private var source: XDriveIOSNativePhotoMapSource/)
+  assert.match(map, /let expectedOwner = login\.owner[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\([\s\S]*?cloudMapCamera = next/)
+  assert.match(map, /let initialCamera: MKCoordinateRegion/)
+  const make = map.slice(map.indexOf('func makeUIView('), map.indexOf('func updateUIView('))
+  assert.match(make, /map\.setRegion\(initialCamera, animated: false\)[\s\S]*?map\.delegate = context\.coordinator/)
+  assert.match(map, /initialCamera: cameraReturn \?\? camera/)
+  assert.match(map, /onCamera: \{ next in\s*camera = next\s*onCameraChange\?\(next\)/)
+  assert.match(map, /\.onAppear \{\s*if let cameraReturn \{ camera = cameraReturn \}[\s\S]*?reload\(\)/)
+  assert.match(dashboard, /mapSource = \.local\s*cloudMapCamera = nil/)
+  assert.doesNotMatch(dashboard, /UserDefaults\.set\(cloudMapCamera|navigationRouteStore\.save\([^)]*cloudMapCamera/)
 })

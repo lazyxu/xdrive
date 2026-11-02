@@ -1,4 +1,5 @@
 import CryptoKit
+import MapKit
 import Photos
 import SwiftUI
 
@@ -119,6 +120,10 @@ struct XDriveIOSNativePhotosDashboard: View {
     // the bounded Current Page mode explicitly.
     @State private var localMapScope: XDriveIOSNativeLocalMapScope = .library
     @State private var localMapPageOffset = 0
+    // Keep map source and cloud camera during native Gallery re-entry.
+    // Never persist camera/GPS coordinates with the navigation snapshot.
+    @State private var mapSource: XDriveIOSNativePhotoMapSource = .local
+    @State private var cloudMapCamera: MKCoordinateRegion?
     // A bounded navigation position; never holds a PhotoKit asset identity.
     @State private var localGalleryPageOffset = 0
     // Restore only the coarse 32-slot album directory, never album IDs.
@@ -532,6 +537,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                         login: login,
                         localMapScope: $localMapScope,
                         localMapPageOffset: $localMapPageOffset,
+                        source: $mapSource,
+                        cloudMapCamera: $cloudMapCamera,
                         onFocusChange: {
                             updateGalleryFocus(
                                 $0, from: .map, expectedOwnerKey: focusOwnerKey,
@@ -810,6 +817,8 @@ struct XDriveIOSNativePhotosDashboard: View {
         gallerySource = .local
         localMapScope = .library
         localMapPageOffset = 0
+        mapSource = .local
+        cloudMapCamera = nil
         localAlbumDirectoryOffset = 0
         localGalleryPageOffset = 0
         dynamicFeature = nil
