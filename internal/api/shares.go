@@ -166,6 +166,7 @@ func (s *Server) createFileShare(c *gin.Context) {
 		return
 	}
 
+	if notesRejectNodeMutation(c, s.DB, nodeID) { return }
 	var req struct {
 		ExpiresAt    *time.Time `json:"expires_at"`
 		Password     string     `json:"password"`
