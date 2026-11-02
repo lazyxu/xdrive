@@ -49,7 +49,8 @@ test('dirty admin dependency detail changes are guarded in both navigation paths
   ), false)
 
   const app = fs.readFileSync(path.join(root, 'web/src/App.tsx'), 'utf8')
-  assert.match(app, /xDriveMobileSystemDependenciesRouteChanged\(from, to\)/)
+  assert.match(app, /compactWorkspace && xDriveMobileSystemDependenciesRouteChanged\(from, to\)/)
+  assert.match(app, /compactWorkspace && systemDependenciesDraftRef\.current &&/)
   assert.match(app, /xDriveMobileSystemDependenciesRouteChanged\(activeRouteRef\.current, next\)/)
   assert.match(app, /else if \(mobileParent\) launchWebApp\(mobileParent, \{ replace: true \}\)/)
   assert.match(app, /onConfirm=\{\(\) => \{/)
