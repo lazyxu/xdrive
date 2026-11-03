@@ -63,3 +63,19 @@ result rather than deleting live assets.
 This is deliberately a **dry, pure plan**: do not wire a destructive cache
 cleanup action until the actual on-disk executor can prove file identity,
 DB revision, media advisory lock and active reader leases for every deletion.
+
+## Stacked Viewer integration and merge gate (2026-11-04)
+
+This Draft adds authenticated Owner quality preferences, an admin maximum,
+account-selected Web Viewer requests, bounded derivative variants and a
+budgeted cache maintenance path. These changes are source-level integration,
+not a declaration that the new presets or eviction have passed production
+acceptance. Unspecified presets still use the legacy Viewer result.
+
+The merge-conflict reconciliation preserved current-master account and Share
+Center routes `GET /api/v1/shares` and `POST /api/v1/shares/:id/link`,
+their route coverage manifest, and the current server migration order.
+A scoped 34-file diff was audited against master without deleting unrelated
+work. Before merge, require a **new exact-HEAD CI and Final Gate** including
+Owner Share Center integration, Viewer policy/cache tests and Web typechecks.
+Do not reuse results from the former failed HEAD or modify production Gen10.
