@@ -135,6 +135,11 @@ func migrateManagedSourceTx(ctx context.Context,tx *gorm.DB,source meta.Source) 
  if err!=nil {return errManagedMigrationBlocked}
  leaf:=managedTargetLeaf(source)
  already:=*root.ParentID==parent.ID && root.Name==leaf
+ if already {
+  // A live, already-conforming Source may have a running upload. Startup
+  // must not pause its healthy run merely to recheck a settled namespace.
+  return nil
+ }
  nodes,children,err:=loadManagedMigrationTree(tx,source.OwnerID,rootID)
  if err!=nil {return err}
  if _,nested:=nodes[parent.ID];nested {return errManagedMigrationBlocked}
@@ -158,10 +163,7 @@ func migrateManagedSourceTx(ctx context.Context,tx *gorm.DB,source meta.Source) 
   if !owned[id] {continue}
   for _,childID:=range childrenIDs {if !owned[childID] {ordinary=append(ordinary,childID)}}
  }
- if already {
-  if len(ordinary)!=0 && claims!=0 {return errManagedMigrationBlocked}
-  return nil
- }
+
  var conflict meta.Node
  err=tx.Where("owner_id=? AND parent_id=? AND lower(name)=lower(?) AND deleted_at IS NULL",
   source.OwnerID,parent.ID,leaf).Take(&conflict).Error
