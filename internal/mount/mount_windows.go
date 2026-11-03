@@ -46,6 +46,7 @@ type winProvider struct {
 	retrySync       chan chan error
 	transfers       *transfer.Manager
 	activityOwner   string
+	activityRunID   string
 }
 
 var activeWinProvider struct {
