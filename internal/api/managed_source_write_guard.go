@@ -71,13 +71,29 @@ func managedSourceTargetInIDsDB(ctx context.Context, db *gorm.DB, ownerID uint64
 	if !managedSourceGuardEnabled(db) || ownerID == 0 || len(ids) == 0 {
 		return false, nil
 	}
-	var protected bool
-	err := db.WithContext(ctx).Raw(`
-SELECT EXISTS (
-	SELECT 1 FROM xd_sources s WHERE s.owner_id = ?
-	AND `+managedTargetPredicate+` AND s.target_node_id IN ?
-)`, ownerID, ids).Scan(&protected).Error
-	return protected, err
+	// Delete/replace may inspect 100k+ descendant Node IDs. Never expand
+	// that list into PostgreSQL bind parameters (the protocol has a limit).
+	// Instead query the much smaller set of real Source targets once and
+	// match IDs in memory, exactly as the existing Yike guard does.
+	var targetIDs []uint64
+	if err := db.WithContext(ctx).Table("xd_sources AS s").
+		Where("s.owner_id = ? AND s.target_node_id IS NOT NULL AND "+managedTargetPredicate, ownerID).
+		Pluck("s.target_node_id", &targetIDs).Error; err != nil {
+		return false, err
+	}
+	if len(targetIDs) == 0 {
+		return false, nil
+	}
+	set := make(map[uint64]struct{}, len(targetIDs))
+	for _, targetID := range targetIDs {
+		set[targetID] = struct{}{}
+	}
+	for _, id := range ids {
+		if _, found := set[id]; found {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func managedSourceMutationTouchesDB(ctx context.Context, db *gorm.DB, ownerID, nodeID uint64) (bool, error) {
