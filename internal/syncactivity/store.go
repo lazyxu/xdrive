@@ -85,8 +85,8 @@ type Store struct {
  owner string
 }
 
-const runColumns = "run_id, engine, trigger, started_at, finished_at, status, outcome, detail_complete, details_expired, item_count, successful_count, created_count, updated_count, deleted_count, moved_count, renamed_count, uploaded_count, downloaded_count, skipped_count, failed_count, conflict_count, transferred_bytes"
-const itemColumns = "run_id, item_id, action, direction, status, old_path, new_path, logical_bytes, transferred_bytes, error_code, error_message, applied_at"
+const runColumns = "run_id, engine, trigger_kind, started_at, finished_at, status, outcome, detail_complete, details_expired, item_count, successful_count, created_count, updated_count, deleted_count, moved_count, renamed_count, uploaded_count, downloaded_count, skipped_count, failed_count, conflict_count, transferred_bytes"
+const itemColumns = "run_id, item_id, operation_kind, direction, status, old_path, new_path, logical_bytes, transferred_bytes, error_code, error_message, applied_at"
 
 // Open never follows a preexisting symlink at the chosen database path.
 // Agent callers must derive the path from their verified Server/Owner identity.
@@ -116,9 +116,9 @@ func Open(path, owner string) (*Store, error) {
   "PRAGMA synchronous=FULL",
   "PRAGMA foreign_keys=ON",
   "CREATE TABLE IF NOT EXISTS activity_owner (singleton INTEGER PRIMARY KEY CHECK(singleton=1), owner TEXT NOT NULL, version INTEGER NOT NULL)",
-  "CREATE TABLE IF NOT EXISTS sync_runs (run_id TEXT PRIMARY KEY, engine TEXT NOT NULL, trigger TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, status TEXT NOT NULL, outcome TEXT NOT NULL DEFAULT 'unknown', detail_complete INTEGER NOT NULL DEFAULT 0, details_expired INTEGER NOT NULL DEFAULT 0, item_count INTEGER NOT NULL DEFAULT 0, successful_count INTEGER NOT NULL DEFAULT 0, created_count INTEGER NOT NULL DEFAULT 0, updated_count INTEGER NOT NULL DEFAULT 0, deleted_count INTEGER NOT NULL DEFAULT 0, moved_count INTEGER NOT NULL DEFAULT 0, renamed_count INTEGER NOT NULL DEFAULT 0, uploaded_count INTEGER NOT NULL DEFAULT 0, downloaded_count INTEGER NOT NULL DEFAULT 0, skipped_count INTEGER NOT NULL DEFAULT 0, failed_count INTEGER NOT NULL DEFAULT 0, conflict_count INTEGER NOT NULL DEFAULT 0, transferred_bytes INTEGER)",
+  "CREATE TABLE IF NOT EXISTS sync_runs (run_id TEXT PRIMARY KEY, engine TEXT NOT NULL, trigger_kind TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, status TEXT NOT NULL, outcome TEXT NOT NULL DEFAULT 'unknown', detail_complete INTEGER NOT NULL DEFAULT 0, details_expired INTEGER NOT NULL DEFAULT 0, item_count INTEGER NOT NULL DEFAULT 0, successful_count INTEGER NOT NULL DEFAULT 0, created_count INTEGER NOT NULL DEFAULT 0, updated_count INTEGER NOT NULL DEFAULT 0, deleted_count INTEGER NOT NULL DEFAULT 0, moved_count INTEGER NOT NULL DEFAULT 0, renamed_count INTEGER NOT NULL DEFAULT 0, uploaded_count INTEGER NOT NULL DEFAULT 0, downloaded_count INTEGER NOT NULL DEFAULT 0, skipped_count INTEGER NOT NULL DEFAULT 0, failed_count INTEGER NOT NULL DEFAULT 0, conflict_count INTEGER NOT NULL DEFAULT 0, transferred_bytes INTEGER)",
   "CREATE INDEX IF NOT EXISTS idx_sync_runs_recent ON sync_runs(started_at DESC, run_id DESC)",
-  "CREATE TABLE IF NOT EXISTS sync_items (run_id TEXT NOT NULL REFERENCES sync_runs(run_id) ON DELETE CASCADE, item_id TEXT NOT NULL, action TEXT NOT NULL, direction TEXT NOT NULL, status TEXT NOT NULL, old_path TEXT NOT NULL, new_path TEXT NOT NULL, logical_bytes INTEGER, transferred_bytes INTEGER, error_code TEXT NOT NULL, error_message TEXT NOT NULL, applied_at INTEGER NOT NULL, PRIMARY KEY(run_id, item_id))",
+  "CREATE TABLE IF NOT EXISTS sync_items (run_id TEXT NOT NULL REFERENCES sync_runs(run_id) ON DELETE CASCADE, item_id TEXT NOT NULL, operation_kind TEXT NOT NULL, direction TEXT NOT NULL, status TEXT NOT NULL, old_path TEXT NOT NULL, new_path TEXT NOT NULL, logical_bytes INTEGER, transferred_bytes INTEGER, error_code TEXT NOT NULL, error_message TEXT NOT NULL, applied_at INTEGER NOT NULL, PRIMARY KEY(run_id, item_id))",
   "CREATE INDEX IF NOT EXISTS idx_sync_items_recent ON sync_items(run_id, applied_at DESC, item_id DESC)",
  } {
   if _, err := db.ExecContext(ctx, q); err != nil { return fail(fmt.Errorf("sync activity setup: %w", err)) }
@@ -156,11 +156,11 @@ func (s *Store) Begin(ctx context.Context, r Run) error {
   return errors.New("invalid sync activity run identity")
  }
  if r.StartedAt.IsZero() { r.StartedAt=time.Now().UTC() }
- _,err:=s.db.ExecContext(ctx, "INSERT OR IGNORE INTO sync_runs(run_id,engine,trigger,started_at,status) VALUES(?,?,?,?,?)",r.ID,r.Engine,r.Trigger,r.StartedAt.UnixNano(),StatusRunning)
+ _,err:=s.db.ExecContext(ctx, "INSERT OR IGNORE INTO sync_runs(run_id,engine,trigger_kind,started_at,status) VALUES(?,?,?,?,?)",r.ID,r.Engine,r.Trigger,r.StartedAt.UnixNano(),StatusRunning)
  if err!=nil { return err }
  var engine,trigger string
  var started int64
- if err:=s.db.QueryRowContext(ctx,"SELECT engine,trigger,started_at FROM sync_runs WHERE run_id=?",r.ID).Scan(&engine,&trigger,&started);err!=nil{return err}
+ if err:=s.db.QueryRowContext(ctx,"SELECT engine,trigger_kind,started_at FROM sync_runs WHERE run_id=?",r.ID).Scan(&engine,&trigger,&started);err!=nil{return err}
  if engine!=r.Engine || trigger!=r.Trigger || started!=r.StartedAt.UnixNano(){return ErrReceiptConflict}
  return nil
 }
