@@ -191,6 +191,8 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         let ticket = generation
         var token = snapshot.accessToken
         var refresh = snapshot.refreshToken
+        // Shared with Shortcuts only when the Server confirms this same Owner.
+        var refreshCandidate = snapshot.refreshToken
         let fresh: XDriveNativeOwnerRoot
         do {
             fresh = try await XDriveNativeOwnerRootVerifier(
@@ -204,7 +206,6 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             // A scheduled Apple Notes Shortcut may have rotated the native
             // saved refresh credential while this SwiftUI session stayed open.
             // Adopt it only for the SAME verified Server/Owner/root identity.
-            let refreshCandidate: String
             if keepSignedIn {
                 guard let stored = try XDriveIOSNativeOwnerSessionStore.load(),
                       stored.origin == snapshot.origin.absoluteString,
@@ -215,8 +216,6 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                     throw XDriveIOSNativeSessionError.staleSession
                 }
                 refreshCandidate = stored.refreshToken
-            } else {
-                refreshCandidate = snapshot.refreshToken
             }
             let replacement = try await AuthService(origin: snapshot.origin)
                 .refresh(token: refreshCandidate)
