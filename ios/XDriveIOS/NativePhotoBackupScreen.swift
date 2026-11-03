@@ -410,10 +410,15 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 .disabled(controller.busy || background.busy || login.owner == nil ||
                           (photoAuthorization != .authorized && photoAuthorization != .limited))
                 .accessibilityIdentifier("native-ios-photos-focused-start")
-                Text("适用于首次大量备份：从最新照片开始，连续处理所有已授权的分段；每段仍按原有 20 个新原件的安全上限执行。停止后再次启动会重新扫描并核验已确认文件，不假定旧进度代表全部已备份。")
+                Text("适用于首次大量备份：连续处理已授权的分段，每段最多新增 20 个原件。停止或重启后可从已完整扫描的分段继续，但必须重新验证当前账户、相册版本、授权范围和 iCloud 设置；不确定收据仍须先核对。扫描进度不代表全部云端原件已备份。")
                     .font(.caption).foregroundStyle(.secondary)
                 if let focused = controller.focusedSummary {
-                    Text("集中备份进度：已完整扫描 \(focused.completedWindows)/\(focused.totalWindows) 个分段 · 当前第 \(focused.currentWindow + 1) 段 · 已确认新增 \(focused.confirmedNew) 个原件")
+                    if focused.resumedFromWindow > 0 {
+                        Text("本次已从第 \(focused.resumedFromWindow + 1) 段恢复；此前完成的是扫描位置，不代表相应照片已经全部备份。")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("native-ios-photos-focused-resumed-window")
+                    }
+                    Text("集中备份进度：已完整扫描 \(focused.completedWindows)/\(focused.totalWindows) 个分段 · 当前第 \(focused.currentWindow + 1) 段 · 本次确认新增 \(focused.confirmedNew) 个原件")
                         .monospacedDigit()
                         .accessibilityIdentifier("native-ios-photos-focused-progress")
                     if focused.pausedForReview {
