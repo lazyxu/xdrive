@@ -105,8 +105,11 @@ export function useXDriveServerUpdateController({
   const applyState = useCallback((next: XDriveServerUpdateState) => {
     if (!initializedRef.current) {
       initializedRef.current = true
-      setSourceState(next.source)
-      setChannelState(xDriveServerUpdateChannelForSource(next.source, next.channel))
+      // Offline Host task status must never become an online update option.
+      if (next.source !== 'offline') {
+        setSourceState(next.source)
+        setChannelState(xDriveServerUpdateChannelForSource(next.source, next.channel))
+      }
     }
     setState(next)
     setError('')
