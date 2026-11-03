@@ -497,17 +497,16 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                             Label("列表", systemImage: "list.bullet").tag("list")
                             Label("图标", systemImage: "square.grid.2x2").tag("grid")
                         }
+                        .accessibilityIdentifier("native-ios-files-collection-view-mode")
+                        Divider()
+                        Button { reload() } label: {
+                            Label("刷新", systemImage: "arrow.clockwise")
+                        }
+                        .disabled(model.loading || favorites.busy)
                     } label: {
-                        Label("显示方式", systemImage: viewMode == "grid"
-                              ? "square.grid.2x2" : "list.bullet")
+                        Label("更多", systemImage: "ellipsis.circle")
                     }
-                    .accessibilityIdentifier("native-ios-files-collection-view-mode")
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { reload() } label: {
-                        Label("刷新", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(model.loading || favorites.busy)
+                    .accessibilityIdentifier("native-ios-files-collection-more-options")
                 }
             }
 
@@ -633,6 +632,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 } label: {
                     Label("取消收藏", systemImage: "star.slash")
                 }
+                .accessibilityIdentifier("native-ios-files-unfavorite-\(item.id)")
             } else {
                 Button { openManagement(for: item, quickAction: .favorite) } label: {
                     Label("收藏", systemImage: "star")
@@ -695,6 +695,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
 
     /// The same verified collection items and native destination/Viewer serve
     /// both presentations; switching modes never starts an extra API read.
+    /// Recent/Favorites reuse the uncluttered native Files icon grid. Favorite
+    /// removal stays in the verified long-press menu instead of a second
+    /// permanently visible button beneath every thumbnail.
     private func gridTile(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             if item.node.isDirectory {
@@ -716,25 +719,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-collection-open-\(item.id)")
             }
-            if kind == .favorites {
-                Button {
-                    guard model.verified, !model.loading,
-                          filteredItems.contains(item), model.items.contains(item) else {
-                        return
-                    }
-                    favorites.remove(item, login: login) { reload() }
-                } label: {
-                    Label("取消收藏", systemImage: "star.slash")
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
-                }
-                .disabled(!model.verified || model.loading || favorites.busy)
-                .accessibilityIdentifier("native-ios-files-unfavorite-\(item.id)")
-            }
         }
-        .padding(8)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(Color(uiColor: .secondarySystemGroupedBackground),
-                    in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func gridEntryLabel(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
@@ -757,6 +744,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// Tapping a file or folder remains the primary row action; long-press
+    /// exposes the same Owner-verified Favorite and management operations.
     private func row(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
         HStack(spacing: 8) {
             if item.node.isDirectory {
@@ -776,21 +765,6 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 .buttonStyle(.plain)
                 .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-collection-open-\(item.id)")
-            }
-            if kind == .favorites {
-                Button {
-                    guard model.verified, !model.loading,
-                          filteredItems.contains(item), model.items.contains(item) else {
-                        return
-                    }
-                    favorites.remove(item, login: login) { reload() }
-                } label: {
-                    Image(systemName: "star.slash")
-                        .frame(minWidth: 44, minHeight: 44)
-                }
-                .disabled(!model.verified || model.loading || favorites.busy)
-                .accessibilityLabel("取消收藏 \(item.node.name)")
-                .accessibilityIdentifier("native-ios-files-unfavorite-\(item.id)")
             }
         }
         .frame(minHeight: 44)
