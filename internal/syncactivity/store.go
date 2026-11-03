@@ -258,7 +258,12 @@ func (s *Store) Finish(ctx context.Context, id,status string,detailComplete bool
   return ErrTerminal
  }
  if status==StatusCompleted && failed+conflicted>0{return ErrIncomplete}
- if status==StatusPartial && failed+conflicted==0{return ErrIncomplete}
+ // A failed reconciliation may have applied successful changes before a
+ // later uninstrumented error. The engine is authoritative about its failure,
+ // but cannot invent a particular failed-file record.
+ if status==StatusPartial && failed+conflicted==0 && (success==0 || detailComplete) {
+  return ErrIncomplete
+ }
  outcome:="unknown"
  if changes>0 {outcome="changed"} else if detailComplete && status==StatusCompleted {outcome="no_change"}
  if status!=StatusCompleted && status!=StatusPartial {detailComplete=false}
