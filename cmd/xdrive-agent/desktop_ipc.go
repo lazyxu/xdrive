@@ -110,6 +110,7 @@ var desktopIPCCapabilities = []string{
 	"upload-conflict-preflight-batch",
 	"upload-conflict-policy",
 	"server-update",
+	"server-offline-update",
 	"media-gallery",
 	"media-index-status",
 	"media-selection-snapshot",
@@ -742,6 +743,14 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
 	mux.HandleFunc("GET /v1/server-update", h.serverUpdateState)
 	mux.HandleFunc("POST /v1/server-update", h.startServerUpdate)
+	mux.HandleFunc("GET /v1/server-offline-imports", h.offlineImportList)
+	mux.HandleFunc("POST /v1/server-offline-imports", h.offlineImportCreate)
+	mux.HandleFunc("GET /v1/server-offline-imports/{id}", h.offlineImportGet)
+	mux.HandleFunc("DELETE /v1/server-offline-imports/{id}", h.offlineImportDelete)
+	mux.HandleFunc("POST /v1/server-offline-imports/{id}/files/{name}", h.offlineImportRegister)
+	mux.HandleFunc("PUT /v1/server-offline-imports/{id}/files/{name}/chunks/{index}", h.offlineImportChunk)
+	mux.HandleFunc("POST /v1/server-offline-imports/{id}/files/{name}/finalize", h.offlineImportFinalize)
+	mux.HandleFunc("POST /v1/server-offline-imports/{id}/activate", h.offlineImportActivate)
 	mux.HandleFunc("GET /v1/cloud/storage-stats", h.cloudStorageStats)
 	mux.HandleFunc("POST /v1/cloud/storage-cache/cleanup", h.cloudCleanupStorageCache)
 	mux.HandleFunc("GET /v1/cloud/trash", h.cloudTrash)
