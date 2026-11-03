@@ -145,6 +145,11 @@ func (s *Server) publicShareUploadAdmissionTx(
 	if err := notesRejectNodeWithReason(ctx, tx, ownerID, parent.ID); err != nil {
 		return share, errShareUploadDenied
 	}
+	// Share grants can be inherited from ordinary ancestors, but never
+	// authorize adding or overwriting bytes in a Source-managed subtree.
+	if err := denyManagedSourceNodeTx(ctx, tx, ownerID, parent.ID); err != nil {
+		return share, errShareUploadDenied
+	}
 	allowed, err := publicShareUploadContainsNodeTx(ctx, tx, ownerID, root.ID, parent.ID)
 	if err != nil || !allowed {
 		return share, errShareUploadDenied
