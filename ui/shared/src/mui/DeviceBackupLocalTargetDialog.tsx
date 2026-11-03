@@ -36,6 +36,7 @@ export function XDriveDeviceBackupLocalTargetDialog({
   const [browsing, setBrowsing] = useState(true)
   const requestID = useRef(0)
   const target = trail[trail.length - 1]
+  const managed = Boolean(settings?.target_managed)
 
   const browse = useCallback(async (nextTrail: XDriveSourceTargetNode[]) => {
     const current = nextTrail[nextTrail.length - 1]
@@ -86,7 +87,7 @@ export function XDriveDeviceBackupLocalTargetDialog({
   }, [actions, sourceID, targetBrowser, browse])
 
   const save = async () => {
-    if (busy || loading || browsing || !settings || !target ||
+    if (busy || loading || browsing || managed || !settings || !target ||
       !Number.isSafeInteger(target.id) || target.id <= 0 ||
       target.id === settings.target_node_id) return
     setBusy(true)
@@ -105,15 +106,16 @@ export function XDriveDeviceBackupLocalTargetDialog({
 
   return (
     <Dialog open onClose={() => { if (!busy) onClose() }} fullWidth maxWidth="sm">
-      <DialogTitle>修改本机备份云端目标</DialogTitle>
+      <DialogTitle>{managed ? '本机备份云端目标' : '修改本机备份云端目标'}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Alert severity="info">
-            仅修改这台设备已绑定同步文件夹的后续备份目标。不会移动、覆盖或删除原云端文件，也不会启动同步。
+            {managed ? '当前目标由 Server 根据设备与 Source 身份自动管理。修改 Source 名称会同步重命名真实目录（5B）；不能手动指向普通文件夹。' : '仅修改这台设备已绑定同步文件夹的后续备份目标。不会移动、覆盖或删除原云端文件，也不会启动同步。'}
           </Alert>
           <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
             当前目标：{loading ? '正在读取…' : settings?.target_path || '尚未配置'}
           </Typography>
+          {!managed ? (
           <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
             <Typography variant="subtitle2">选择新目标目录</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
@@ -137,14 +139,15 @@ export function XDriveDeviceBackupLocalTargetDialog({
               ))}
             </List>
           </Box>
+          ) : null}
           {error ? <Alert severity="warning">{error}</Alert> : null}
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button disabled={busy} onClick={onClose}>取消</Button>
-        <Button variant="contained" disabled={busy || loading || browsing || !settings || !target ||
+        <Button disabled={busy} onClick={onClose}>{managed ? '关闭' : '取消'}</Button>
+        {!managed ? <Button variant="contained" disabled={busy || loading || browsing || !settings || !target ||
           target.id === settings.target_node_id}
-          onClick={() => void save()}>{busy ? '保存中…' : '确认新目标'}</Button>
+          onClick={() => void save()}>{busy ? '保存中…' : '确认新目标'}</Button> : null}
       </DialogActions>
     </Dialog>
   )
