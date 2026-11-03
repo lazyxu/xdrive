@@ -303,7 +303,7 @@ func SnapshotSelection(sourceDir,targetDir string,m *Manifest,selection []string
 		output,err:=os.OpenFile(target,os.O_CREATE|os.O_EXCL|os.O_WRONLY,0600)
 		if err!=nil{input.Close();return err}
 		hash:=sha256.New()
-		n,copyErr:=io.Copy(io.MultiWriter(output,hash),input)
+		n,copyErr:=io.Copy(io.MultiWriter(output,hash),io.LimitReader(input,p.Size+1))
 		readCloseErr:=input.Close()
 		writeCloseErr:=output.Close()
 		if copyErr!=nil{return copyErr}
