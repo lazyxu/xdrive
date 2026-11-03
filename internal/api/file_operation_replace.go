@@ -28,11 +28,14 @@ func fileOperationNameConflictNodeTx(tx *gorm.DB, uid, parentID uint64, name str
 }
 
 func (s *Server) trashFileOperationConflictTx(ctx context.Context, tx *gorm.DB, uid uint64, target meta.Node, index int) error {
+	if err := requireOrdinarySourceMutationTx(ctx, tx, uid, target.ID); err != nil {
+		return &batchMutationFailure{Index: index, ID: target.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "managed Source target cannot be replaced"}
+	}
 	ids, err := activeSubtreeIDsDB(tx, uid, target.ID)
 	if err != nil {
 		return err
 	}
-	protected, err := yikeManagedTargetInIDsDB(ctx, tx, uid, ids)
+	protected, err := managedSourceTargetInIDsDB(ctx, tx, uid, ids)
 	if err != nil {
 		return err
 	}
@@ -126,7 +129,7 @@ func (s *Server) copyNodeReplaceOrMergeTxLoaded(
 		return copied, false, err
 	}
 	if source.Type == meta.NodeTypeDir && target.Type == meta.NodeTypeDir {
-		protected, err := yikeManagedTargetInSubtreeDB(ctx, tx, uid, target.ID)
+		protected, err := managedSourceTargetInSubtreeDB(ctx, tx, uid, target.ID)
 		if err != nil {
 			return meta.Node{}, false, err
 		}
@@ -233,7 +236,7 @@ func (s *Server) moveNodeReplaceOrMergeTx(ctx context.Context, tx *gorm.DB, uid 
 		return moved, false, err
 	}
 	if source.Type == meta.NodeTypeDir && target.Type == meta.NodeTypeDir {
-		protected, err := yikeManagedTargetInSubtreeDB(ctx, tx, uid, target.ID)
+		protected, err := managedSourceTargetInSubtreeDB(ctx, tx, uid, target.ID)
 		if err != nil {
 			return meta.Node{}, false, err
 		}
