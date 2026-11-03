@@ -83,10 +83,19 @@ test('disabled native-like Host actions use the same menu and shortcut boundary'
   assert.ok(dsmEntry.includes('const host = createXDriveSynologyHost()') &&
     !dsmEntry.includes('filesUnavailableActions:'),
     'DSM entry must use the authenticated Host adapter instead of a page-local capability list')
-  for (const key of ['copy','cut','paste','moveTo','copyTo','manageTags']) {
+  for (const key of ['copy','cut','paste','manageTags']) {
     assert.ok(dsm.includes(key + ": 'DSM"), key + ' must be declared only at authenticated DSM Host boundary')
   }
   assert.equal(dsm.includes("delete: 'DSM"), false, 'single-node Owner trash is authorized')
+  assert.equal(dsm.includes("moveTo: 'DSM"), false, 'single-node Owner move is authorized')
+  assert.equal(dsm.includes("copyTo: 'DSM"), false, 'single-node Owner copy is authorized')
+  assert.ok(ownerFilesPage.includes('onCopyItemsTo={selected => {') &&
+    ownerFilesPage.includes('client.ownerCopyNode('),
+    'copy must use verified Owner selection and shared target picker')
+  assert.ok(ownerFilesPage.includes('onMoveItemsTo={selected => {') &&
+    ownerFilesPage.includes('client.ownerMoveNode(') &&
+    ownerFilesPage.includes('<XDriveFileExplorerDestinationDialog'),
+    'DSM move must use verified Owner selection and shared target picker')
   assert.ok(ownerFilesPage.includes('onDeleteItems={selected => {') &&
     ownerFilesPage.includes('client.ownerDeleteNode(') &&
     ownerFilesPage.includes('<XDriveConfirmDialog'),

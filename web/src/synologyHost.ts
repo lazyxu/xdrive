@@ -29,8 +29,6 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter & { reado
           copy: 'DSM Owner 文件目前没有经过授权的云端复制接口。',
           cut: 'DSM Owner 文件目前没有经过授权的移动接口。',
           paste: 'DSM Owner 文件目前没有经过授权的粘贴接口。',
-          moveTo: 'DSM Owner 文件目前没有经过授权的移动到接口。',
-          copyTo: 'DSM Owner 文件目前没有经过授权的复制到接口。',
           manageTags: 'DSM Owner 文件目前没有经过授权的标签修改接口。',
         },
       },
