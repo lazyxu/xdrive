@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var errManagedSourceWriteDenied = errors.New("managed source target is read-only")
@@ -130,6 +131,15 @@ func requireOrdinarySourceMutationTx(ctx context.Context, tx *gorm.DB, ownerID, 
 }
 
 func managedSourceWritePreflight(c *gin.Context, db *gorm.DB, ownerID, nodeID uint64, structural bool) bool {
+	if _, scoped := currentSourceRunScope(c); scoped {
+		// Execution JWT is only a candidate proof; validate Source/Run and
+		// Node ancestry here, then repeat in the actual write transaction.
+		if err := trustedSourceRunTargetTx(c.Request.Context(), db, c, ownerID, nodeID, !structural); err != nil {
+			fail(c, http.StatusConflict, errManagedSourceWriteDenied.Error())
+			return true
+		}
+		return false
+	}
 	var protected bool
 	var err error
 	if structural {
@@ -146,4 +156,124 @@ func managedSourceWritePreflight(c *gin.Context, db *gorm.DB, ownerID, nodeID ui
 		return true
 	}
 	return false
+}
+
+type sourceRunScope struct {
+	sourceID uint64
+	runID    string
+}
+
+func currentSourceRunScope(c *gin.Context) (sourceRunScope, bool) {
+	if c == nil {
+		return sourceRunScope{}, false
+	}
+	value, present := c.Get("sourceRunScope")
+	scope, ok := value.(sourceRunScope)
+	return scope, present && ok && scope.sourceID != 0 && scope.runID != ""
+}
+
+// trustedSourceRunTargetTx never uses a path string for authorization. A signed
+// SourceRun is allowed to write only below its current exclusive target, and
+// only while Source/Run revisions and status still match. All checks occur at
+// the same transaction boundary as the actual Node/CAS mutation.
+func trustedSourceRunTargetTx(ctx context.Context, tx *gorm.DB, c *gin.Context, uid, nodeID uint64, allowRoot bool) error {
+	scope, scoped := currentSourceRunScope(c)
+	if !scoped || uid == 0 || nodeID == 0 || tx == nil {
+		return errManagedSourceWriteDenied
+	}
+	var source meta.Source
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("id = ? AND owner_id = ? AND direction = ? AND status = ?",
+			scope.sourceID, uid, meta.SourceDirectionPull, meta.SourceStatusActive).
+		Take(&source).Error; err != nil {
+		return errManagedSourceWriteDenied
+	}
+	if source.TargetNodeID == nil || *source.TargetNodeID == 0 ||
+		(!source.TargetManaged && source.Kind != yikeSourceKind) {
+		return errManagedSourceWriteDenied
+	}
+	// Legacy Yike Sources are not tagged target_managed yet. Do not let
+	// a valid Worker token convert a manually targeted ordinary folder into
+	// an implicit writable Source root: verify the canonical ancestors.
+	var target meta.Node
+	if err := tx.Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+		*source.TargetNodeID, uid, meta.NodeTypeDir).Take(&target).Error; err != nil {
+		return errManagedSourceWriteDenied
+	}
+	if source.Kind == yikeSourceKind {
+		if _, ok := managedYikeTargetAccountID(target.Name); !ok {
+			return errManagedSourceWriteDenied
+		}
+	}
+	if _, err := managedSourceTargetAncestorIDsTx(tx, source, target); err != nil {
+		return errManagedSourceWriteDenied
+	}
+	var run meta.SyncRun
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("id = ? AND source_id = ? AND status = ?",
+			scope.runID, source.ID, meta.SyncRunStatusRunning).
+		Take(&run).Error; err != nil {
+		return errManagedSourceWriteDenied
+	}
+	if run.SourceRevision != source.Revision || run.Mode != meta.SourceRunModeSync ||
+		run.TargetNodeID == nil || *run.TargetNodeID != *source.TargetNodeID ||
+		run.CancelRequestedAt != nil {
+		return errManagedSourceWriteDenied
+	}
+	if !allowRoot && nodeID == *source.TargetNodeID {
+		return errManagedSourceWriteDenied
+	}
+	var within bool
+	if err := tx.WithContext(ctx).Raw(`
+WITH RECURSIVE ancestors AS (
+	SELECT id, parent_id FROM xd_nodes
+	WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+	UNION
+	SELECT p.id, p.parent_id FROM xd_nodes p
+	JOIN ancestors a ON p.id = a.parent_id
+	WHERE p.owner_id = ? AND p.deleted_at IS NULL
+)
+SELECT EXISTS (SELECT 1 FROM ancestors WHERE id = ?)`,
+		nodeID, uid, uid, *source.TargetNodeID).Scan(&within).Error; err != nil {
+		return err
+	}
+	if !within {
+		return errManagedSourceWriteDenied
+	}
+	// No worker is allowed to mutate a directory containing a different
+	// Source root, even when that root was erroneously nested.
+	if !allowRoot {
+		contained, err := managedSourceTargetInSubtreeDB(ctx, tx, uid, nodeID)
+		if err != nil {
+			return err
+		}
+		if contained {
+			return errManagedSourceWriteDenied
+		}
+	}
+	return nil
+}
+
+// A scoped SourceRun bearer is never upgraded into general Owner authority.
+// An ordinary Owner/guest is still read-only inside the managed tree.
+func requireSourceRunOrOrdinaryTargetTx(ctx context.Context, tx *gorm.DB, c *gin.Context, uid, parentID uint64) error {
+	if _, scoped := currentSourceRunScope(c); scoped {
+		return trustedSourceRunTargetTx(ctx, tx, c, uid, parentID, true)
+	}
+	return requireOrdinarySourceTargetTx(ctx, tx, uid, parentID)
+}
+
+func requireSourceRunOrOrdinaryMutationTx(ctx context.Context, tx *gorm.DB, c *gin.Context, uid, nodeID uint64) error {
+	if _, scoped := currentSourceRunScope(c); scoped {
+		return trustedSourceRunTargetTx(ctx, tx, c, uid, nodeID, false)
+	}
+	return requireOrdinarySourceMutationTx(ctx, tx, uid, nodeID)
+}
+
+func sourceRunUploadSessionMatches(c *gin.Context, session meta.UploadSession) bool {
+	scope, scoped := currentSourceRunScope(c)
+	if session.SourceRunID != "" {
+		return scoped && scope.runID == session.SourceRunID
+	}
+	return !scoped
 }

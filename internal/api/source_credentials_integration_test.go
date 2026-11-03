@@ -572,8 +572,18 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	accountExternalID = "12345"
 	accountName = "张三"
 
+	// The legacy relocation contract requires per-Node ownership evidence.
+	// A SourceItem with no NodeID is *not* proof and must not authorize moving
+	// arbitrary ordinary content into the managed target.
+	targetID := target.ID
+	tracked := meta.Node{OwnerID: userA.ID, ParentID: &targetID,
+		Name: "test.jpg", Type: meta.NodeTypeFile, Revision: 1}
+	if err := db.Create(&tracked).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&meta.SourceItem{
 		SourceID: source.ID, ExternalID: "yike:12345:999", Kind: meta.SourceItemKindFile,
+		NodeID: &tracked.ID, NodeRevision: 1,
 		Path: "test.jpg", State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
 	}).Error; err != nil {
 		t.Fatal(err)

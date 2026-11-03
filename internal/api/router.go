@@ -700,10 +700,18 @@ func (s *Server) requireAuth() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
 			return
 		}
-		uid, tokenVersion, err := s.Auth.Parse(strings.TrimSpace(h[7:]))
+		claims, err := s.Auth.ParseClaims(strings.TrimSpace(h[7:]))
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid bearer token"})
 			return
+		}
+		uid, tokenVersion := claims.UserID, claims.SessionVersion
+		if claims.SourceID != 0 {
+			if !sourceRunHTTPAllowed(c.Request.Method, c.FullPath()) {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "SourceRun bearer cannot access this endpoint"})
+				return
+			}
+			c.Set("sourceRunScope", sourceRunScope{sourceID: claims.SourceID, runID: claims.SourceRunID})
 		}
 		var user meta.User
 		if err := s.DB.First(&user, uid).Error; err != nil {

@@ -23,6 +23,8 @@ type Claims struct {
 	UserID         uint64 `json:"uid"`
 	TokenType      string `json:"typ,omitempty"`
 	SessionVersion uint64 `json:"ver,omitempty"`
+	SourceID       uint64 `json:"source_id,omitempty"`
+	SourceRunID    string `json:"source_run_id,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -59,7 +61,26 @@ func (m Manager) Issue(userID, sessionVersion uint64) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.secret)
 }
 
-func (m Manager) Parse(tokenString string) (userID, sessionVersion uint64, err error) {
+// IssueSourceRunAccess is used only by a trusted Server-side Pull executor.
+// Ordinary Owner JWTs do not carry this exact-run capability.
+func (m Manager) IssueSourceRunAccess(userID, sessionVersion, sourceID uint64, runID string) (string, error) {
+	if userID == 0 || sourceID == 0 || strings.TrimSpace(runID) == "" {
+		return "", errors.New("invalid SourceRun access scope")
+	}
+	now := time.Now()
+	claims := Claims{
+		UserID: userID, SessionVersion: sessionVersion, TokenType: "access",
+		SourceID: sourceID, SourceRunID: runID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(m.accessTTL)),
+			Subject: fmt.Sprintf("%d", userID),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.secret)
+}
+
+func (m Manager) ParseClaims(tokenString string) (Claims, error) {
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
 		if token.Method != jwt.SigningMethodHS256 {
@@ -67,8 +88,18 @@ func (m Manager) Parse(tokenString string) (userID, sessionVersion uint64, err e
 		}
 		return m.secret, nil
 	})
-	if err != nil || !token.Valid || claims.UserID == 0 || (claims.TokenType != "" && claims.TokenType != "access") {
-		return 0, 0, errors.New("invalid token")
+	if err != nil || !token.Valid || claims.UserID == 0 ||
+		(claims.TokenType != "" && claims.TokenType != "access") ||
+		(claims.SourceID == 0) != (claims.SourceRunID == "") {
+		return Claims{}, errors.New("invalid token")
+	}
+	return *claims, nil
+}
+
+func (m Manager) Parse(tokenString string) (userID, sessionVersion uint64, err error) {
+	claims, err := m.ParseClaims(tokenString)
+	if err != nil {
+		return 0, 0, err
 	}
 	return claims.UserID, claims.SessionVersion, nil
 }
