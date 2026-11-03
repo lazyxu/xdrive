@@ -612,6 +612,47 @@ class ImageArchiveIdentityTests(unittest.TestCase):
             with self.subTest(oci=oci), self.assertRaises(offline.PackageError):
                 self.parse(files, identity['config'])
 
+    def test_docker_default_registry_names_preserve_exact_namespace_and_tag(self):
+        for familiar, canonical in (("xdrive/offline-ai-runtime:contract", "docker.io/xdrive/offline-ai-runtime:contract"),
+                                    ("postgres:17-alpine", "docker.io/library/postgres:17-alpine"),
+                                    ("docker.io/postgres:17-alpine", "docker.io/library/postgres:17-alpine")):
+            for signed_ref, docker_ref, oci_ref in ((familiar, familiar, canonical),
+                                                   (canonical, familiar, canonical),
+                                                   (familiar, canonical, canonical)):
+                with self.subTest(signed=signed_ref, docker=docker_ref):
+                    self.ref = signed_ref
+                    files, identity = self.fixture(other_ref=oci_ref)
+                    manifest = json.loads(files['manifest.json'])
+                    manifest[0]['RepoTags'] = [docker_ref]
+                    files['manifest.json'] = json.dumps(manifest).encode()
+                    self.assertEqual(self.parse(files), identity)
+
+    def test_registry_namespace_tag_ports_and_suffix_aliases_are_not_equivalent(self):
+        self.ref = 'xdrive/offline-ai-runtime:contract'
+        for other in ('evil.invalid/xdrive/offline-ai-runtime:contract',
+                      'docker.io/foreign/offline-ai-runtime:contract',
+                      'docker.io/xdrive/offline-ai-runtime:other',
+                      'docker.io/evil/xdrive/offline-ai-runtime:contract',
+                      'registry-1.docker.io/xdrive/offline-ai-runtime:contract',
+                      'docker.io:443/xdrive/offline-ai-runtime:contract',
+                      'localhost/xdrive/offline-ai-runtime:contract'):
+            with self.subTest(other=other):
+                files, identity = self.fixture(other_ref=other)
+                with self.assertRaises(offline.PackageError):
+                    self.parse(files, identity['config'])
+                files, identity = self.fixture()
+                manifest = json.loads(files['manifest.json'])
+                manifest[0]['RepoTags'] = [other]
+                files['manifest.json'] = json.dumps(manifest).encode()
+                with self.assertRaises(offline.PackageError):
+                    self.parse(files, identity['config'])
+        files, identity = self.fixture()
+        index = json.loads(files['index.json'])
+        del index['manifests'][0]['annotations']['io.containerd.image.name']
+        files['index.json'] = json.dumps(index).encode()
+        with self.assertRaises(offline.PackageError):
+            self.parse(files, identity['config'])
+
 
 if __name__ == "__main__":
     unittest.main()

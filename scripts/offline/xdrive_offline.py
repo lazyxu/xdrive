@@ -362,6 +362,19 @@ def image_json(entry: dict) -> object:
         raise PackageError("invalid image JSON metadata") from error
 
 
+def canonical_image_ref(reference: str) -> str:
+    """Expand Docker's default registry/library without changing namespace or tag."""
+    require(isinstance(reference, str) and REF_RE.fullmatch(reference), "invalid image reference")
+    parts = reference.split("/")
+    if len(parts) == 1:
+        return "docker.io/library/" + reference
+    if parts[0] == "docker.io":
+        return "docker.io/library/" + parts[1] if len(parts) == 2 else reference
+    if "." not in parts[0] and ":" not in parts[0] and parts[0] != "localhost":
+        return "docker.io/" + reference
+    return reference
+
+
 def archive_image_identity(archive: Path, image: dict) -> dict:
     """Bind one exact ref to its config and optional single OCI descriptor path.
 
@@ -374,7 +387,10 @@ def archive_image_identity(archive: Path, image: dict) -> dict:
     require(isinstance(docker_manifest, list) and len(docker_manifest) == 1 and
             isinstance(docker_manifest[0], dict), "ambiguous Docker image manifest")
     selected = docker_manifest[0]
-    require(selected.get("RepoTags") == [image["ref"]], "image archive tag does not match signed reference")
+    reference = canonical_image_ref(image["ref"])
+    tags = selected.get("RepoTags")
+    require(isinstance(tags, list) and len(tags) == 1 and canonical_image_ref(tags[0]) == reference,
+            "image archive tag does not match signed reference")
     config_name, layers = selected.get("Config"), selected.get("Layers")
     require(isinstance(config_name, str) and valid_member(config_name) and
             isinstance(layers, list) and len(layers) <= 128 and
@@ -406,13 +422,17 @@ def archive_image_identity(archive: Path, image: dict) -> dict:
             annotations = descriptor.get("annotations", {})
             require(isinstance(annotations, dict), "invalid OCI image name annotations")
             if depth == 0:
-                require(annotations.get("io.containerd.image.name") == image["ref"] or
-                        annotations.get("org.opencontainers.image.ref.name") == image["ref"],
+                require(any(isinstance(value, str) and ("/" in value or ":" in value) and
+                            canonical_image_ref(value) == reference for value in (
+                                annotations.get("io.containerd.image.name"),
+                                annotations.get("org.opencontainers.image.ref.name"))),
                         "OCI descriptor does not name the exact signed image")
             if "io.containerd.image.name" in annotations:
-                require(annotations["io.containerd.image.name"] == image["ref"], "conflicting OCI image name")
+                require(canonical_image_ref(annotations["io.containerd.image.name"]) == reference,
+                        "conflicting OCI image name")
             if "org.opencontainers.image.ref.name" in annotations:
-                require(annotations["org.opencontainers.image.ref.name"] in (image["ref"], image["ref"].rsplit(":", 1)[-1]),
+                tag = annotations["org.opencontainers.image.ref.name"]
+                require(tag == image["ref"].rsplit(":", 1)[-1] or canonical_image_ref(tag) == reference,
                         "conflicting OCI image tag")
             platform = descriptor.get("platform")
             require(platform is None or isinstance(platform, dict) and platform.get("os") == "linux" and
