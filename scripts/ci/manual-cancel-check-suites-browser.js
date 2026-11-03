@@ -39,6 +39,7 @@
 
     const all = new Map();
     const seenPages = new Set();
+    let consecutiveTerminalPages = 0;
     for (let page = 1; ; page++) {
       const html = await read(root + "/actions/workflows/ci.yml?" +
         new URLSearchParams({ query: "branch:master", page }));
@@ -95,6 +96,22 @@
       if (mismatch.length) {
         console.warn("页面状态字段与显示文案不一致（不取消）：",
           mismatch.map(run => run.id));
+      }
+      // 只有连续两个完整页面全部终态，才允许提前结束扫描。
+      // 界面显示排队/运行中的页面不能计入连续终态页。
+      const terminalStatuses = new Set([
+        "WORKFLOW_RUN_STATUS_COMPLETED",
+        "WORKFLOW_RUN_STATUS_CANCELLED",
+        "WORKFLOW_RUN_STATUS_CANCELED"
+      ]);
+      const terminalPage = rows.length === 25 &&
+        rows.every(run => terminalStatuses.has(run?.state?.status)) &&
+        mismatch.length === 0;
+      consecutiveTerminalPages = terminalPage ? consecutiveTerminalPages + 1 : 0;
+      console.log("连续终态页:", consecutiveTerminalPages + "/2");
+      if (consecutiveTerminalPages >= 2) {
+        console.log("连续两页全部终态，停止翻页");
+        break;
       }
       if (rows.length < 25) {
         console.log("第 " + page + " 页为最后一页，停止翻页");
