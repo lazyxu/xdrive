@@ -34,8 +34,9 @@ test('native PhotoAsset thumbnail state invalidates on revised Node and verified
   assert.match(tile, /try Task\.checkCancellation\(\)/)
   assert.match(tile, /if !viewerActive \{ image = nil \}/)
 
-  const wall = source.slice(source.indexOf('struct XDriveIOSNativeServerMediaWall: View'))
-  assert.match(wall, /ForEach\(page\.items\) \{ item in[\s\S]*?XDriveIOSNativeMediaWallTile\([\s\S]*?\.id\(XDriveIOSNativeMediaWallTileIdentity\(\s*item: item, owner: login\.owner\s*\)\)/)
-  assert.match(wall, /\.id\(item\.id\)/, 'keep Node ID for existing Viewer scroll return')
-  assert.match(wall, /\.accessibilityFocused\(\$accessibilityFocusedMediaID, equals: item\.id\)/)
+  const virtual = source.slice(source.indexOf('private struct XDriveIOSNativeServerVirtualRange: View'),
+    source.indexOf('/// Root and album-specific media wall'))
+  assert.match(virtual, /ForEach\(verified\.items\) \{ item in[\s\S]*?XDriveIOSNativeMediaWallTile\([\s\S]*?\.id\(XDriveIOSNativeMediaWallTileIdentity\(\s*item: item, owner: login\.owner\s*\)\)/)
+  assert.match(virtual, /\.id\(item\.id\)/, 'keep Node ID for continuous Viewer scroll return')
+  assert.match(virtual, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/)
 })

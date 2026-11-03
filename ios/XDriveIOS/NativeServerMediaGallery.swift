@@ -79,6 +79,47 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         return true
     }
 
+
+    /// The visible virtual range was independently Owner-verified before the
+    /// tap. Adopt only that range as the Viewer authority; never concatenate
+    /// separately authorized ranges or give Viewer an unverified thumbnail.
+    func adoptVisibleRange(
+        from source: XDriveIOSNativeMediaWallModel,
+        login: XDriveIOSNativeOwnerLoginModel,
+        albumID: String?, placeID: String?, search: String
+    ) -> Bool {
+        guard let owner = login.owner,
+              let verified = source.page,
+              let verifiedOwner = source.pageScope,
+              let sourceReader = source.currentReader,
+              !source.busy, source.error == nil,
+              source.pageAlbumID == albumID,
+              source.pagePlaceID == placeID,
+              source.pageSearch == search,
+              XDriveIOSNativePhotoOwnerScope.matches(owner, verifiedOwner),
+              XDriveIOSNativePhotoOwnerScope.matches(sourceReader.owner, owner),
+              verified.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
+              XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
+                offset: verified.offset, count: verified.items.count,
+                total: verified.total_count
+              ),
+              Set(verified.items.map(\.id)).count == verified.items.count
+        else { return false }
+        epoch = UUID()
+        job?.cancel()
+        job = nil
+        busy = false
+        page = verified
+        pageScope = owner
+        pageAlbumID = albumID
+        pagePlaceID = placeID
+        pageSearch = search
+        currentReader = sourceReader
+        failedOffset = nil
+        error = nil
+        return true
+    }
+
     /// Retain a previously verified page only for a transient transport
     /// problem. Access revocation, missing albums, invalid responses, TLS
     /// trust failures and malformed media must immediately clear old rows.
@@ -1043,6 +1084,123 @@ struct XDriveIOSNativeServerMediaPreview: View {
     }
 }
 
+
+/// Each mounted range owns its own authenticated 48-item reader and thumbnail
+/// lifecycle. The parent retains only the Viewer range and numeric offsets.
+private struct XDriveIOSNativeServerVirtualRange: View {
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    let albumID: String?
+    let placeID: String?
+    let search: String
+    let offset: Int
+    let expectedTotal: Int
+    let density: XDriveIOSNativePhotoWallDensity
+    let viewerActive: Bool
+    let returnFocusID: UInt64?
+    let onSelect: (XDriveIOSNativeMediaItem, XDriveIOSNativeMediaWallModel) -> Void
+    let onRead: (XDriveIOSNativeMediaRange) -> Void
+    let onFailure: (String) -> Void
+
+    @StateObject private var model = XDriveIOSNativeMediaWallModel()
+    @AccessibilityFocusState private var focusedTileID: UInt64?
+
+    private var placeholders: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(
+            minimum: density.minimumCellWidth, maximum: density.maximumCellWidth
+        ), spacing: 2)], spacing: 2) {
+            ForEach(0..<min(48, max(0, expectedTotal - offset)), id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                    .aspectRatio(1, contentMode: .fit)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            if let verified = model.page,
+               verified.offset == offset, verified.total_count == expectedTotal {
+                LazyVGrid(columns: [GridItem(.adaptive(
+                    minimum: density.minimumCellWidth, maximum: density.maximumCellWidth
+                ), spacing: 2)], spacing: 2) {
+                    ForEach(verified.items) { item in
+                        Button { onSelect(item, model) } label: {
+                            XDriveIOSNativeMediaWallTile(
+                                item: item, viewerActive: viewerActive,
+                                model: model, login: login
+                            )
+                            .id(XDriveIOSNativeMediaWallTileIdentity(
+                                item: item, owner: login.owner
+                            ))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!item.supportsPreview)
+                        .accessibilityIdentifier("native-ios-server-media-tile")
+                        .id(item.id)
+                        .accessibilityFocused($focusedTileID, equals: item.id)
+                    }
+                }
+            } else if model.error == nil {
+                // Reserve the expected 48 grid slots until this verified
+                // range is ready; no scroll-height jumps during a download.
+                placeholders
+            }
+            if let error = model.error {
+                Text(error).font(.caption).foregroundStyle(.secondary)
+                Button("重试当前照片范围") {
+                    model.load(login: login, albumID: albumID, placeID: placeID,
+                               offset: offset, search: search)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.busy || viewerActive)
+            }
+        }
+        .id("cloud-range:\(offset)")
+        .task(id: "\(offset)-\(search)-\(albumID ?? "")-\(placeID ?? "")-\(login.owner?.ownerID ?? 0)-\(viewerActive)") {
+            guard !viewerActive else { return }
+            model.load(login: login, albumID: albumID, placeID: placeID,
+                       offset: offset, search: search)
+        }
+        .onChange(of: model.busy) { pending in
+            guard !pending, let page = model.page else { return }
+            guard page.offset == offset, page.total_count == expectedTotal,
+                  page.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
+                  XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
+                    offset: page.offset, count: page.items.count,
+                    total: page.total_count
+                  ) else {
+                onFailure("云端列表已变化，请重新读取。")
+                return
+            }
+            onRead(page)
+            if let focus = returnFocusID,
+               page.items.contains(where: { $0.id == focus }) {
+                focusedTileID = focus
+            }
+        }
+        .onChange(of: viewerActive) { active in
+            if active {
+                focusedTileID = nil
+                model.suspendForViewer()
+            }
+        }
+        .onChange(of: model.error) { message in
+            guard let message else { return }
+            // A transient transport failure remains retryable in this range.
+            // Revoked Owner, malformed responses or scope changes retire the
+            // entire wall so earlier ranges cannot leak stale filenames.
+            if !message.contains("读取失败；已保留当前浏览页") {
+                onFailure(message)
+            }
+        }
+        .onDisappear {
+            focusedTileID = nil
+            model.invalidate()
+        }
+    }
+}
+
 /// Root and album-specific media wall share one Owner-verified ranged source.
 struct XDriveIOSNativeServerMediaWall: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
@@ -1057,6 +1215,13 @@ struct XDriveIOSNativeServerMediaWall: View {
     // Presentation-only, shared with the already-native local PhotoKit wall.
     // Does not participate in Owner, Range, thumbnail request or Viewer keys.
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @State private var continuousFailure: String?
+    @State private var returnRangeOffset: Int?
+    @State private var pendingReturnID: UInt64?
+    @State private var pendingReturnRevision: UInt64?
+    // Only a few adjacent metadata ranges are compared to reject duplicates
+    // when automatic Server indexing inserts media while the user scrolls.
+    @State private var recentRangeIDs: [Int: [UInt64]] = [:]
     @State private var selected: XDriveIOSNativeMediaItem?
     @State private var viewerLoadedItems: [XDriveIOSNativeMediaItem] = []
     @State private var viewerLoadedRange: XDriveIOSNativeMediaRange?
@@ -1112,7 +1277,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                     HStack(spacing: 8) {
                         Text(page.total_count == 0 ?
                             "当前没有已索引且可访问的云端媒体；这不代表服务器没有原件。" :
-                            "照片 \(page.offset + 1)–\(page.offset + page.items.count) / \(page.total_count)")
+                            "\(page.total_count) 张照片")
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer(minLength: 4)
                         Menu {
@@ -1131,51 +1296,36 @@ struct XDriveIOSNativeServerMediaWall: View {
                         .accessibilityLabel("云端缩略图大小：\(wallDensity.title)")
                         .accessibilityIdentifier("native-ios-cloud-wall-density")
                     }
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(
-                            minimum: wallDensity.minimumCellWidth,
-                            maximum: wallDensity.maximumCellWidth
-                        ), spacing: 2)],
-                        spacing: 2
-                    ) {
-                        ForEach(page.items) { item in
-                            Button {
-                                // Freeze the already-authorized 48-item page.
-                                // The hidden L2 wall never fetches new neighbors.
-                                viewerLoadedItems = model.page?.items ?? []
-                                viewerLoadedRange = model.page
-                                viewerOpenedOwner = login.owner
-                                selected = item
-                            } label: {
-                                XDriveIOSNativeMediaWallTile(
-                                    item: item, viewerActive: selected != nil,
-                                    model: model, login: login
-                                )
-                                // Reset stale thumbnail pixels, not the Node-ID focus anchor.
-                                .id(XDriveIOSNativeMediaWallTileIdentity(
-                                    item: item, owner: login.owner
-                                ))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(!item.supportsPreview)
-                            .accessibilityIdentifier("native-ios-server-media-tile")
-                            .id(item.id)
-                            .accessibilityFocused($accessibilityFocusedMediaID, equals: item.id)
+                    if page.total_count > 0 {
+                        ForEach(0..<((page.total_count - 1) / 48 + 1), id: \.self) { number in
+                            let offset = number * 48
+                            XDriveIOSNativeServerVirtualRange(
+                                login: login, albumID: album?.id, placeID: placeID,
+                                search: appliedSearch,
+                                offset: offset, expectedTotal: page.total_count,
+                                density: wallDensity, viewerActive: selected != nil,
+                                returnFocusID: pendingReturnID,
+                                onSelect: { item, source in
+                                    openVerifiedMedia(item, from: source)
+                                },
+                                onRead: { range in
+                                    recordRange(range, scroll: returnScroll)
+                                },
+                                onFailure: { reason in
+                                    rejectContinuousRange(reason)
+                                }
+                            )
                         }
                     }
-                    HStack {
-                        Button("上一页") {
-                            model.load(login: login, albumID: album?.id, placeID: placeID,
-                                       offset: max(0, page.offset - 48), search: appliedSearch)
-                        }
-                        .disabled(model.busy || page.offset == 0)
-                        Spacer()
-                        Button("下一页") {
-                            model.load(login: login, albumID: album?.id, placeID: placeID,
-                                       offset: page.offset + page.items.count, search: appliedSearch)
-                        }
-                        .disabled(model.busy || page.offset + page.items.count >= page.total_count)
-                    }.buttonStyle(.bordered)
+                }
+                if let continuousFailure {
+                    Text(continuousFailure).foregroundStyle(.secondary)
+                    Button("重新读取云端图库") {
+                        self.continuousFailure = nil
+                        recentRangeIDs.removeAll()
+                        model.load(login: login, albumID: album?.id, placeID: placeID,
+                                   offset: 0, search: appliedSearch)
+                    }
                 }
                 if model.busy { ProgressView("读取云端图库…") }
                 if let message = model.error {
@@ -1187,7 +1337,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                     }
                 }
                 if !compactGallery {
-                    Text("每次最多保留 48 个逻辑媒体；只有当前可见图片申请授权缩略图。缩略图缺失不代表原件丢失。")
+                    Text("连续滚动只读取附近的 48 项验证范围；只有可见图片申请授权缩略图。缩略图缺失不代表原件丢失。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -1229,13 +1379,19 @@ struct XDriveIOSNativeServerMediaWall: View {
                     } ?? [],
                     ownerAuthorized: ownerAuthorized && phase == .active
                 )
+                let rememberedRevision = lastOpenedRevision
                 lastOpenedMediaID = nil
                 lastOpenedRevision = nil
                 lastOpenedOwner = nil
-                if let anchor {
-                    returnScroll.scrollTo(anchor, anchor: .center)
-                    accessibilityFocusedMediaID = anchor
+                if let anchor, let verified = model.page {
+                    pendingReturnID = anchor
+                    pendingReturnRevision = rememberedRevision
+                    returnRangeOffset = verified.offset
+                    returnScroll.scrollTo("cloud-range:\(verified.offset)", anchor: .top)
                 } else {
+                    pendingReturnID = nil
+                    pendingReturnRevision = nil
+                    returnRangeOffset = nil
                     accessibilityFocusedMediaID = nil
                 }
             }
@@ -1290,7 +1446,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         .alert("云端图库说明", isPresented: $showingGalleryHelp) {
             Button("完成", role: .cancel) {}
         } message: {
-            Text("图库范围属于当前已验证 Server Owner：普通云端图库、指定相册和地图地点分别按授权读取，每页最多保留 48 个逻辑媒体。只有可见缩略图才发起请求；缩略图缺失不代表原件丢失。")
+            Text("图库范围属于当前已验证 Server Owner：普通云端图库、指定相册和地图地点连续滚动，每个可见范围独立验证 48 项媒体。只有可见缩略图才发起请求；缩略图缺失不代表原件丢失。")
         }
         // The owning five-tab shell controls its custom bar; never show a
         // second system strip through a child toolbar override.
@@ -1408,6 +1564,11 @@ struct XDriveIOSNativeServerMediaWall: View {
             }
         }
         .onChange(of: login.owner) { _ in
+            continuousFailure = nil
+            recentRangeIDs.removeAll()
+            pendingReturnID = nil
+            pendingReturnRevision = nil
+            returnRangeOffset = nil
             viewerLoadedItems = []
             viewerLoadedRange = nil
             viewerOpenedOwner = nil
@@ -1425,6 +1586,11 @@ struct XDriveIOSNativeServerMediaWall: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                continuousFailure = nil
+                recentRangeIDs.removeAll()
+                pendingReturnID = nil
+                pendingReturnRevision = nil
+                returnRangeOffset = nil
                 viewerLoadedItems = []
                 viewerLoadedRange = nil
                 viewerOpenedOwner = nil
@@ -1444,6 +1610,11 @@ struct XDriveIOSNativeServerMediaWall: View {
             if selected != nil {
                 model.suspendForViewer()
             } else {
+                continuousFailure = nil
+                recentRangeIDs.removeAll()
+                pendingReturnID = nil
+                pendingReturnRevision = nil
+                returnRangeOffset = nil
                 viewerLoadedItems = []
                 viewerLoadedRange = nil
                 viewerOpenedOwner = nil
@@ -1463,11 +1634,83 @@ struct XDriveIOSNativeServerMediaWall: View {
 
     }
 
+
+    private func openVerifiedMedia(
+        _ item: XDriveIOSNativeMediaItem,
+        from source: XDriveIOSNativeMediaWallModel
+    ) {
+        guard phase == .active, selected == nil,
+              model.adoptVisibleRange(
+                from: source, login: login, albumID: album?.id,
+                placeID: placeID, search: appliedSearch
+              ), let verified = model.page,
+              verified.items.contains(where: {
+                $0.sameVisibleRevision(as: item)
+              }) else { return }
+        viewerLoadedItems = verified.items
+        viewerLoadedRange = verified
+        viewerOpenedOwner = login.owner
+        selected = item
+    }
+
+    private func rejectContinuousRange(_ reason: String) {
+        guard phase == .active, selected == nil else { return }
+        continuousFailure = reason
+        recentRangeIDs.removeAll()
+        pendingReturnID = nil
+        pendingReturnRevision = nil
+        returnRangeOffset = nil
+        model.invalidate()
+    }
+
+    private func recordRange(
+        _ range: XDriveIOSNativeMediaRange, scroll: ScrollViewProxy
+    ) {
+        guard phase == .active, selected == nil,
+              login.owner != nil else { return }
+        let ids = range.items.map(\.id)
+        // Offset paging without a server snapshot token can shift during
+        // indexing. Detect overlaps in the bounded neighboring ranges.
+        for (start, loaded) in recentRangeIDs where
+            abs(start - range.offset) == 48 {
+            if !Set(ids).isDisjoint(with: Set(loaded)) {
+                rejectContinuousRange("云端列表顺序已变化，请重新读取。")
+                return
+            }
+        }
+        recentRangeIDs[range.offset] = ids
+        if recentRangeIDs.count > 4,
+           let farthest = recentRangeIDs.keys.max(by: {
+             abs($0 - range.offset) < abs($1 - range.offset)
+           }) {
+            recentRangeIDs.removeValue(forKey: farthest)
+        }
+        guard let target = pendingReturnID,
+              range.offset == returnRangeOffset,
+              range.items.contains(where: {
+                $0.id == target && $0.node.revision == pendingReturnRevision
+              }) else { return }
+        DispatchQueue.main.async {
+            guard phase == .active, selected == nil,
+                  pendingReturnID == target else { return }
+            scroll.scrollTo(target, anchor: .center)
+            accessibilityFocusedMediaID = target
+            pendingReturnID = nil
+            pendingReturnRevision = nil
+            returnRangeOffset = nil
+        }
+    }
+
     private func applySearch() {
         let query = searchDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.unicodeScalars.count <= 200 else { return }
         if query == appliedSearch && model.page != nil { return }
         appliedSearch = query
+        continuousFailure = nil
+        recentRangeIDs.removeAll()
+        pendingReturnID = nil
+        pendingReturnRevision = nil
+        returnRangeOffset = nil
         lastOpenedMediaID = nil
         lastOpenedRevision = nil
         lastOpenedOwner = nil

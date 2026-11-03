@@ -323,7 +323,7 @@ jobs:
           node --test desktop/tests/ios-native-photoasset-viewer-neighbors.cjs desktop/tests/ios-native-photoasset-live.cjs desktop/tests/ios-native-photoasset-still-fallback.cjs
 
       - name: Verify native cloud PhotoAsset square wall and density pinch
-        run: node --test desktop/tests/ios-native-photoasset-wall-density.cjs
+        run: node --test desktop/tests/ios-native-photoasset-wall-density.cjs desktop/tests/ios-native-photoasset-thumbnail-state.cjs
 
       - name: Verify native cloud PhotoAsset cross-range Viewer and numeric cursor
         run: |

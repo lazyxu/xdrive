@@ -11,6 +11,10 @@ const tile = source.slice(
   source.indexOf('private struct XDriveIOSNativeMediaWallTile: View'),
   source.indexOf('/// Fullscreen media View.')
 )
+const virtual = source.slice(
+  source.indexOf('private struct XDriveIOSNativeServerVirtualRange: View'),
+  source.indexOf('/// Root and album-specific media wall')
+)
 const wall = source.slice(
   source.indexOf('struct XDriveIOSNativeServerMediaWall: View'),
   source.indexOf('/// Server collection index is distinct')
@@ -30,8 +34,8 @@ test('cloud grid shares bounded three-step native PhotoKit density menu and pinc
   assert.match(wall, /@State private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
   assert.match(wall, /ForEach\(XDriveIOSNativePhotoWallDensity\.allCases\)/)
   assert.match(wall, /native-ios-cloud-wall-density/)
-  assert.match(wall, /minimum: wallDensity\.minimumCellWidth/)
-  assert.match(wall, /maximum: wallDensity\.maximumCellWidth/)
+  assert.match(virtual, /minimum: density\.minimumCellWidth/)
+  assert.match(virtual, /maximum: density\.maximumCellWidth/)
   assert.match(wall, /MagnificationGesture\(minimumScaleDelta: 0\.14\)\.onEnded/)
   assert.match(wall, /wallDensity = wallDensity\.applyingPinch\(scale\)/)
   assert.match(wall, /guard phase == \.active, selected == nil, !model\.busy/)
@@ -42,9 +46,9 @@ test('cloud grid shares bounded three-step native PhotoKit density menu and pinc
 test('presentation-only density preserves exact Owner and Viewer/thumbnail generations', () => {
   assert.match(tile, /\.task\(id: "\\\(item\.id\)-\\\(item\.node\.revision\)-\\\(viewerActive\)"\)/)
   assert.doesNotMatch(tile, /task\(id:.*Density/)
-  assert.match(wall, /viewerLoadedItems = model\.page\?\.items \?\? \[\]/)
-  assert.match(wall, /viewerLoadedRange = model\.page/)
-  assert.match(wall, /\.id\(XDriveIOSNativeMediaWallTileIdentity\(\s*item: item, owner: login\.owner/)
+  assert.match(wall, /viewerLoadedItems = verified\.items/)
+  assert.match(wall, /viewerLoadedRange = verified/)
+  assert.match(virtual, /\.id\(XDriveIOSNativeMediaWallTileIdentity\(\s*item: item, owner: login\.owner/)
   assert.match(wall, /XDriveIOSNativeMediaWallModel\(\)/)
   assert.match(wall, /XDriveIOSNativeServerMediaPreview\(/)
   assert.match(wall, /onCrossRange: \{ previous, anchor, direction in/)
