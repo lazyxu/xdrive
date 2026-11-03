@@ -131,7 +131,7 @@ test('Desktop and DSM derive extension routes from one shared Host sections fact
   for (const [key, label] of [
     ['overview', '主页'], ['conflicts', '冲突'], ['admin-users', '用户管理'],
     ['admin-audit', '审计日志'], ['admin-storage', '全局存储'],
-    ['admin-services', '系统依赖'], ['admin-maintenance', '备份与系统维护'],
+    ['admin-services', '系统依赖'], ['admin-update', '系统更新'], ['admin-maintenance', '备份与恢复'],
   ]) {
     assert.ok(sharedHostSections.includes("key: '" + key + "'") &&
       sharedHostSections.includes("label: xDriveWorkspaceRouteTitle('" + key + "')") &&
@@ -159,7 +159,7 @@ test('Web Home and admin destinations use the canonical Host sections and route 
   for (const [key, label] of [
     ['admin-users', '用户管理'], ['admin-audit', '审计日志'],
     ['admin-storage', '全局存储'], ['admin-services', '系统依赖'],
-    ['admin-maintenance', '备份与系统维护'],
+    ['admin-update', '系统更新'], ['admin-maintenance', '备份与恢复'],
   ]) {
     assert.ok(sharedHostSections.includes("key: '" + key + "'"), key)
     assert.ok(routeTitles.includes("'" + key + "': '" + label + "'"), key)
@@ -168,7 +168,7 @@ test('Web Home and admin destinations use the canonical Host sections and route 
 
 test('Backup and maintenance navigation stays identical across Web/Desktop/DSM', () => {
   assert.ok(web.includes('xDriveWorkspaceHostSections({'))
-  assert.ok(routeTitles.includes("'admin-maintenance': '备份与系统维护'"))
+  assert.ok(routeTitles.includes("'admin-maintenance': '备份与恢复'"))
   assert.ok(sharedHostSections.includes("key: 'admin-maintenance'"))
   assert.ok(sharedHostSections.includes("label: xDriveWorkspaceRouteTitle('admin-maintenance')"))
   assert.ok(desktop.includes('xDriveWorkspaceHostSections({'))

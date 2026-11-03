@@ -1,5 +1,4 @@
 import {
-  Box as MuiBox,
   FormControlLabel,
   Stack,
   Switch,
