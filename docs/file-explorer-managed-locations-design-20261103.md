@@ -14,12 +14,12 @@
 
 用户已确认的不可变规则：
 
-- 文件管理器**侧边栏新增入口，所有现有文件仍保留原来的物理位置、Node ID、CAS 和归属**。不把 Source 目标重建在新的统一系统目录，也不复制原文件。
+- Files 侧边栏新增入口；新建 Push/Pull 由 Server 创建专属云端目标目录。旧 Source 路径若不合规范要自动原位迁移受管 Node；不复制 CAS 或改动 Notes 数据。
 - 受同步管理的 Push/Pull 文件**默认只读**；允许预览、下载和**复制到普通目录后编辑**。真正的同步入库继续归原有 Agent / Worker。
 - 删除 Source 配置**默认保留云端文件**，清理这些文件是单独操作、单独明确确认；不能通过删除文件夹隐式删除 Source 或设备源文件。
 - 我的备忘录可以新建、编辑、删除、恢复。iOS 备忘录备份不能手动新建/编辑/新增，却允许**删除云端备份、恢复、复制为个人备忘录**；不影响 Apple Notes 原件。
 - Notes 恢复必须同时恢复 Markdown 正文、Note 元数据、图片附件和版本引用相关状态。
-- Owner 可**主动只读分享**受管文件；普通匿名上传、普通 Share 写入不能修改受管文件。iOS 备份默认私有。
+- Owner 可主动只读分享受管文件；普通父目录的既有只读分享，按真实 Node 祖先关系包含后来加入的 Push/Pull 项目。迁移后旧父目录 Share 不再包含迁出的项目；直接分享 Node 的链接仍有效。匿名上传不能修改受管文件。iOS 备份默认私有。
 - 回收站沿用现有删除/清理机制，**不新增自动到期永久删除**；允许明确确认的手动清空。
 - 本文是独立设计 PR；**产品代码等待评审确认，再按 PR 分阶段实施**。
 
@@ -43,7 +43,7 @@
 - 当前通用 Trash 恢复并不会同时恢复已软删的 Note 元数据和附件；对 Notes 受管目标还会拒绝普通 Node 恢复。
 - 当前 deleteMyNote 只允许 source=mine，拒绝 ios_notes 的用户删除。未来 iOS 删除必须增加独立授权业务接口，不允许把普通 Notes 写权限扩大到 ios_notes。
 - 当前绑定过历史的本机 Push Source 不能通过 DELETE /sources/:id 硬删，否则会级联失去 SourceItem/SyncRun 等历史。这是保护，不应为满足“删除配置”而移除。
-- Source.TargetNodeID 可以位于用户早已有的普通目录；不能按显示路径或目录名直接将整个旧目录里的所有 Node 认定为受管。
+- 旧 Source.TargetNodeID 可以位于混有普通文件的目录；自动迁移经 SourceItem/Run 和真实 Node 身份验证的受管项目，普通文件留在旧目录。未知归属或 Source 重叠时暂停该 Source 并报告，不强制删除。
 - 当前 Notes 首次初始化是显式 POST，不是浏览 Files 时偷偷创建目录；用户既有同名目录不能被自动接管。
 
 已有规范：[文件管理器](file-explorer.md)、[统一 FileExplorer Core](unified-file-explorer-core.md)、[设备备份与远程拉取](sync-folder-apps.md)、[Source 架构](external-source-architecture.md)、[同步策略](sync-folder-sync-strategies.md)和[Share 上传](share-upload-session.md)。
@@ -74,7 +74,7 @@
   [原有最近、收藏、保存搜索与普通目录]
 ~~~
 
-这只是导航投影。原有 Notes 实体位置仍是 /@xDrive/@备忘录/{我的备忘录,iOS备份}，Source 目标仍是原 TargetNodeID。用户从“全部文件”按照原路径进入同一 Node 时，得到**完全相同的权限**；快捷入口不能成为绕过通用文件写入限制的捷径。
+这只是导航投影。Notes 实体位置不变；Source 目标新建时自动绑定，历史目标按新规范迁移，必要时更新 Source.TargetNodeID。原路径如已搬迁须通过真实 Node 身份重新定位，不能依赖旧路径文本。
 
 **保持现有应用分工**：Push 的设备注册/Root/调度/运行和 Pull 的连接器凭据/扫描/规则仍在现有“设备备份”“远程拉取”独立管理应用。Files 只增加浏览、定位、只读标记、复制等入口；不再创建一套 Source 配置表单。Synology Photos 同时可能 Push 和 Pull，分类以 Source.Direction 为准，不能只凭 Kind 判定。
 
@@ -85,6 +85,42 @@
 - 保留手机与平板的全局五模块、52px 全局 Header、模块内部返回历史；侧边栏调整不等于增加顶级 App 模块。
 - 导航以 Owner session epoch + entry kind + 可选 SourceID/NodeID 为稳定身份；切账户清理旧行/Viewer/搜索/异步响应，失效 Source 显示不可用，不回退到同名假目录。
 - 只有拥有设备 Agent 才能看原始本地路径和做该设备 Source 修改。Web、Mobile Web、其他 Desktop、DSM 不能通过 Files 接口获得设备 Root 秘密或远程控制权。
+
+
+### 3.4 最终补充决议：Push/Pull 目录层级与历史迁移（2026-11-03）
+
+本节 **1A 2A 3A 4A 5B 优先级高于早期零搬迁与“显示名不改真实路径”的表述**。
+
+**规范的云端目标（逻辑 Node 目录，不是宿主机绝对路径）**：
+
+~~~text
+同步文件夹/
+  设备备份/
+    <设备显示名>/
+      <Source.Name> [SourceID 唯一后缀]/   ← Push 受管根
+  远程拉取/
+    一刻相册/
+      uid_<提供方UID>_<Source.Name>/       ← Yike 受管根
+    Synology Photos/
+      <Source.Name> [SourceID 唯一后缀]/
+    Synology Files/
+      <Source.Name> [SourceID 唯一后缀]/
+~~~
+
+每一个 Source 独占一个真实目标根，目标根及全部后代对普通文件 API/匿名上传只读。只有通过设备/Source/Root/Run/Revision 验证的 Agent 或 Pull Worker 可同步更新、合法覆盖文件并保留版本历史；用户复制出站后产生不再受该 Source 管理的普通 Node。新建 Source 不再允许选择已有普通目录；目录及 Source 绑定须 Server 原子创建。设备显示名只用于组织展示，不构成授权依据，稳定身份仍是 SourceID/TargetNodeID。
+
+**数据库规范**：继续保留 xd_sources.id、xd_sources.name（单段显示/目标文件夹名称）、xd_sources.target_node_id、xd_nodes.id/parent_id/name；不存冗余完整云端目标路径。API 中 target_path 从 Node 祖先树实时计算。SourceItem.Path 是同步树内**相对路径**，必须保留；SyncRun.TargetNodeID 是运行快照不能更写旧历史；设备本地 Root 与 NAS 原始远端路径属于另一类来源配置，不能因为云端路径规范而删除。Source 改显示名（5B）必须在同一受控事务重命名真实目标根 Node.Name，并同步 Source.Revision/Node.Revision；名称冲突返回 409，不得只改显示名。
+
+**旧 Source 自动迁移**（必须可中断、重试和审计）：
+
+1. 先只读核查 Owner/Source/TargetNodeID、所有 SourceItem/NodeRevision、活动 Run/UploadSession、Share、其他 Source 目标及祖先，生成幂等迁移计划。暂停当前 Source 的新任务和写入，等待正在执行的任务安全结束；无法确认提交状态时不搬迁。
+2. 根目录全为同一 Source 且归属已证明：优先原位更新原目标根 Node.ParentID/Name，保留 TargetNodeID、全部后代 NodeID、CAS、FileVersion 和 SourceItem 身份。
+3. 旧根混有普通文件（2A）：先创建唯一的专属目标根，再根据 SourceItem 和真实节点祖先链移动**已确认受管文件及受管目录**，必要时创建新的结构父目录；普通文件与无归属文件留在旧目录，不删除、不强制覆盖。迁移结束后原子更新 Source.TargetNodeID。迁移中不按同名、大小、mtime 猜归属。
+4. Share（3A）：直接分享某 Node 的只读链接继续按其 NodeID 有效；旧普通父目录只读分享在项目迁出后不再包括这些项目；新的合法父目录只读分享可按 Node 祖先继承看到以后加入的 Push/Pull 文件。无需维持旧父目录的影子引用；view_upload 不可写受管树。
+5. 异常（4A）：目标重叠、其他 Source 引用、版本变化、无法确认归属、大小写路径冲突、活动运行无法封锁均**暂停该 Source 并报错**，不进行危险覆盖/删除、不把迁移失败标记为成功。其他合法 Source 可以独立继续迁移。
+6. 每一成功迁移必须能在 DB 事务提交后重试且无重复 Node；跨事务需要持久迁移状态/收据和运行版本隔离。崩溃后继续检验原计划和锁，防止旧 Agent/Worker 按旧路径写。源端文件、CAS 物理内容和历史 Run 不因路径迁移被重写。
+
+所谓“同步直接覆盖”，仅针对**具有完整 Source 授权与同步身份的受管目标**；绝不能以此为理由覆盖或销毁旧普通文件。Source 删除配置默认保留云端数据；归档后原受管根转为普通可编辑文件须确认所有写入已永久失效，清理数据另外确认。
 
 ## 4. 权限架构与矩阵
 
@@ -130,8 +166,8 @@
 
 1. 继续使用现有 Source 创建/设备 Root 授权和 Source.TargetNodeID 绑定；Files 只是显示这些可见 Source。
 2. 只有拥有本机 Root 的 Agent 可以按已授权的 Source Run、原始扫描/分块/commit 协议创建或更新 SourceItem 和 Node。
-3. 目标路径可能已有普通文件。受管判定基于 **SourceItem→Node** 与受管根结构性身份，不对所有旧后代“一刀切”变只读。若来源归属不明则阻止新的写入并提示处理，不自动接管。
-4. 新 Source 优先使用专属目标子目录；新的重叠/嵌套目标必须预检和拒绝归属歧义；老 Source 保持原位。
+3. 新专属 Source 目标根及全部后代对普通 Files 操作只读。旧目录如混入普通文件，迁移已确认属于该 Source 的项目；普通文件留旧位，无法确认归属时暂停并报告。
+4. 新 Source 必须自动获得独占目标子目录，不允许用户选旧普通目录作为目标；旧 Source 必须按规范自动迁移，冲突时暂停并报告，绝不猜测归属。
 
 ### 查看和修改
 
@@ -149,7 +185,7 @@
 
 ### 创建和加入
 
-Owner 仍在“远程拉取”创建连接器 Source，选择授权的来源/目标；Files 入口以 SourceID + Direction=pull 投影。文件只由 Pull Worker 根据提供方身份、SourceItem 和 CAS 校验写入。不允许用户随意上传“伪造远端文件”。
+Owner 仍在“远程拉取”创建连接器 Source、选择授权的远端来源；云端目标由 Server 在规范父目录下自动创建。文件只由 Pull Worker 根据来源身份、SourceItem 和 CAS 校验写入，不接受普通上传。
 
 ### 查看、修改和复制
 
@@ -286,10 +322,10 @@ ID 必须在当前 Owner/Server 实例下唯一且稳定；不得包含服务端
 
 ### 零搬迁约束
 
-- 本期不迁移 File/CAS、FileVersion、Node ID、Source.TargetNodeID、NotesNamespace 路径和真实文件字节，不制造“同名虚拟目录替换真实路径”的第二份数据。
+- 不复制/迁移 CAS 字节，不重建 FileVersion/SourceItem 身份。允许迁移 Source 目标的 Node ParentID/Name，必要时更新 Source.TargetNodeID；NotesNamespace 不迁移。
 - 旧收藏、历史、Viewer、地址栏和文件路径继续指向原 Node；无权限的旧版客户端直接请求 API 仍会被服务器拒绝写受管对象。
 - Notes 未初始化时显示“需要初始化”，不会在 GET 列表或切换侧边栏时自动创建 @xDrive，也不自动接管已有同名用户目录。
-- 已存在的混合 Source 目标、NodeID=NULL 的 SourceItem、重叠来源或不一致附件不能通过猜测名称/路径修复；读可以报告异常，写安全拒绝并提供可审计的处理手段。
+- 混合目标中归属可证明的受管项目自动迁移，普通文件留旧位；NodeID 缺失、重叠或无法验证归属时暂停并记录异常，拒绝后续破坏性写入。
 - Source Archive 若引入持久状态，需要可回退的 schema/迁移；必须保留历史 Source/Run/Item，不得以硬删除或级联删除替代。
 
 ### 一致性与失败回滚
@@ -332,7 +368,7 @@ ID 必须在当前 Owner/Server 实例下唯一且稳定；不得包含服务端
 | ID | 场景 | 完成标准 |
 | --- | --- | --- |
 | V01 | 入口顺序、首次/重复点击、Back/Forward、横屏、账号切换 | 五入口稳定、保留原 Node/滚动定位；旧 Owner 的 UI/HTTP 不可泄漏 |
-| V02 | Source 无目标、旧目标含普通文件、重叠 Source、Note 同名冲突 | 不接管已有文件、不擅自迁移/清空；异常时读状态真实且写 fail-closed |
+| V02 | Source 无目标、混合旧目录、重叠 Source、Note 同名冲突 | 自动迁移已证明的 Source 文件、普通文件留旧位，异常时暂停并 fail-closed |
 | V03 | Push 设备 Root + token 验证；Web/其他设备直调 Source | 非拥有设备只能查看脱敏信息，无法控制 Agent、读取本机路径或修改 Source |
 | V04 | Pull 一刻/Synology、多类型文件、远端重命名 | 不猜 provider 稳定身份、不反向改远端；文件原件完整且只读 |
 | V05 | 受管文件直接修改/覆盖/删除/移动/重命名 | UI、REST、Agent IPC、批量操作、旧客户端均被 Go 统一拒绝 |
@@ -350,7 +386,7 @@ ID 必须在当前 Owner/Server 实例下唯一且稳定；不得包含服务端
 | V17 | Share view_upload 直调 create/upload/resume/chunk/finalize | 任一通路都不能向受管目录写入；Share 不提升成 Owner/设备身份 |
 | V18 | Web/Mobile Web/Desktop/DSM/iOS/Android 的入口和菜单 | 授权一致，平台未实现的按钮不伪装已支持，原有五模块与 Source 管理不退化 |
 | V19 | 100k Source/Trash、并发删除/同步、请求取消、断网 | 窗口有界、任务持久、无跨 Owner 读取、无锁逆序/CAS 破坏 |
-| V20 | 老版本客户端、深链接与已有数据库数据 | 不改 NodeID/TargetNodeID/Notes 路径；服务端拒绝旧客户端受管写请求 |
+| V20 | 老版本客户端、深链接与已有数据库数据 | 历史 Source 路径规范迁移、Node ID 尽量保留、必要时更新 TargetNodeID；Notes 不搬迁，旧客户端无法写受管目录 |
 
 测试应包括 Go 单元与真实 Postgres/Storage 集成、带竞态的并发/撤销/上传提交、FileExplorer 组件/实际浏览器、Share 鉴权、Desktop owning-device Agent、iOS/Android 原生入口和前后台、100k 逻辑/物理样本。只完成模拟验证时，不得声称真机/WAN/DSM 生产通过。无法访问的真机验收标记 **跳过（未验收）**。每个实现切片仍必须通过适用 PR CI/Final Gate 和分支保护后才能合入 master。
 
@@ -366,14 +402,14 @@ ID 必须在当前 Owner/Server 实例下唯一且稳定；不得包含服务端
 | P1-B：Trash 手动清空与分享收口 | 业务项目批量 purge、祖先 read_only Share 隔离、禁受管匿名写 | V15–V17；撤销/并发验证 |
 | P1-C：原生与多端完善 | Web/Mobile Web、Desktop/DSM、iOS/Android native Files 入口与 Viewer/菜单对齐 | V01/V18–V20；分别标注已验收平台 |
 
-上表是**建议实现切片，不是授权现在实施**。下一步须先通过此设计 PR 的讨论与批准，然后逐项检查当时 master、相关在途 PR、真实权限和 CI 状态，避免与已开始/已通过 CI 的 Notes、Source 和移动端改动冲突。测试尚在队列里的 PR 不能因为“看起来没有冲突”就当作已经通过。
+用户已明确授权按最新 1A 2A 3A 4A 5B 决定开始 Push/Pull 实施，但各产品修改必须独立 PR/完整测试验证；不擅自修改其他已在 CI 的 PR。测试尚在队列里的 PR 不能因为“看起来没有冲突”就当作已经通过。
 
 ## 16. 主要风险、拒绝条件与设计验收标准
 
 | 设计风险 | 必须采取的措施 |
 | --- | --- |
-| 快捷入口产生多份字节或伪造真实父目录 | 只保留业务 ID 投影；无自动物理迁移、无新 CAS 副本 |
-| Source 目标混有普通文件被全部锁死 | 只识别绑定 SourceItem + 根的结构权限；未知归属写操作拒绝并报告 |
+| 快捷入口产生多份字节或伪造真实父目录 | 只保留入口投影；允许原位 Node 迁移，不复制 CAS 或生成影子文件 |
+| 旧 Source 目标混有普通文件 | 迁移受管 Node 到专属根，普通文件留在原处；未知归属暂停并报告 |
 | Device Push 被 Web 当成可远程管理 | 仍要求 owning Agent/Root/Device token，Web 只做观察 |
 | 直接硬删除历史 Source 造成级联遗失 | 新 Archive/解绑代替有历史的 Source 硬删除；数据清理独立 |
 | Notes 只恢复 Markdown 而丢图片/索引 | Note/Node/附件/版本原子恢复；故障模拟必须完整回滚 |
@@ -388,7 +424,7 @@ ID 必须在当前 Owner/Server 实例下唯一且稳定；不得包含服务端
 **评审通过判据**：
 
 1. 严格只有五个入口，不夹带安装包或其它新业务目录。
-2. 文件位置、Node/CAS、Source/Notes 现有身份无需迁移，后端只读/写权限没有路径或客户端信任漏洞。
+2. Source 旧云端目录必须自动按规范迁移，保留可证明的 Node、SourceItem、CAS/版本身份，Notes 不迁移；后端只读/写权限不能被绕过。
 3. Source 移除默认保留云端文件/历史，文件清理完全独立。
 4. 我的 Notes 可完整增删改恢复；iOS Notes 仅授权导入、更改受信来源版本、用户只读但允许删除/恢复/复制为个人 Note，绝不改 iPhone 原件。
 5. Trash 按类型分派恢复/删除，保留现有保留策略，仅新增可确认的手动清空能力。
