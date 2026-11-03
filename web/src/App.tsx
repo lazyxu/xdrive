@@ -2690,6 +2690,20 @@ function FileManager({
       } : undefined,
       adminUpdate: serverAdminVerified ? {
         updatePort: maintenanceUpdatePort,
+        offlinePort: {
+          list: () => api.adminOfflineImportList(),
+          create: () => api.adminOfflineImportCreate(),
+          get: (id) => api.adminOfflineImportGet(id),
+          register: async (id, name, size, sha) => { await api.adminOfflineImportRegister(id, name, size, sha) },
+          putChunk: async (id, name, index, blob, sha, signal) => {
+            await api.adminOfflineImportChunk(id, name, index, blob, sha, signal)
+          },
+          finalize: (id, name) => api.adminOfflineImportFinalize(id, name),
+          remove: async (id) => { await api.adminOfflineImportRemove(id) },
+          start: async (id, manifest, binary, backup) => {
+            await api.adminStartOfflineServerUpdate(id, manifest, binary, backup)
+          },
+        },
         buildInfo: [{ title: 'Server 构建信息', info: serverBuild }],
         unavailableLabel: 'Web/API',
         initialChannel: serverBuild?.channel === 'master' ? 'master' : 'stable',
