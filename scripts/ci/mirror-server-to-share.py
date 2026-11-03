@@ -208,7 +208,7 @@ def validate_delivery(directory, manifest):
     descriptor = read_json(directory / 'delivery.json')
     expected = {'schema', 'repository_id', 'channel', 'platform',
                 'source_commit', 'sequence', 'manifest', 'installer'}
-    if 'go_installer' in descriptor:
+    if isinstance(descriptor, dict) and 'go_installer' in descriptor:
         expected.add('go_installer')
     if (not isinstance(descriptor, dict) or set(descriptor) != expected or
             type(descriptor.get('schema')) is not int or descriptor['schema'] != 1 or
