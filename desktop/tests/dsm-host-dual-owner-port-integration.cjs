@@ -72,11 +72,12 @@ test('one real authenticated DSM client powers both Files and shared Gallery', (
 test('Gallery cannot silently re-enable missing Owner Files write operations', () => {
   const h = create()
   const disabled = h.services.ownerFilesPage.unavailableActions
-  for (const action of ['uploadFiles', 'uploadFolder',
+  for (const action of ['uploadFolder',
     'copy', 'cut', 'paste', 'delete', 'moveTo', 'copyTo', 'manageTags']) {
     assert.equal(typeof disabled[action], 'string', action)
     assert.ok(disabled[action].length > 5, action)
   }
+  assert.equal(disabled.uploadFiles, undefined, 'only verified DSM file upload is enabled')
   assert.equal(disabled.createFolder, undefined, 'DSM has one verified Owner folder-create action')
   assert.equal(disabled.search, undefined, 'DSM supplies a bounded authenticated Owner search adapter')
   assert.equal(disabled.rename, undefined, 'DSM permits only verified Owner node rename')

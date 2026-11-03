@@ -59,10 +59,10 @@ func TestAgentOwnerSmallUploadRejectsInvalidPayloadBeforeWriting(t *testing.T) {
 		ParentID: 17, Name: "ok.txt", SHA256: hex.EncodeToString(sum[:]), Data: data,
 	}
 	for label, mutate := range map[string]func(*agentOwnerSmallUploadInput){
-		"zero parent": func(x *agentOwnerSmallUploadInput) { x.ParentID = 0 },
-		"path name": func(x *agentOwnerSmallUploadInput) { x.Name = "../escape" },
-		"empty name": func(x *agentOwnerSmallUploadInput) { x.Name = "" },
-		"bad digest": func(x *agentOwnerSmallUploadInput) { x.SHA256 = "0" + x.SHA256[1:] },
+		"zero parent":   func(x *agentOwnerSmallUploadInput) { x.ParentID = 0 },
+		"path name":     func(x *agentOwnerSmallUploadInput) { x.Name = "../escape" },
+		"empty name":    func(x *agentOwnerSmallUploadInput) { x.Name = "" },
+		"bad digest":    func(x *agentOwnerSmallUploadInput) { x.SHA256 = "0" + x.SHA256[1:] },
 		"empty content": func(x *agentOwnerSmallUploadInput) { x.Data = nil },
 		"oversized content": func(x *agentOwnerSmallUploadInput) {
 			x.Data = make([]byte, dsmOwnerSmallUploadMaxBytes+1)
