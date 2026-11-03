@@ -152,7 +152,7 @@ export type AgentOfflineImportFinalize = { name: string; state: 'ready'; upload_
 export type AgentServerUpdateState = {
   supported: boolean
   state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
-  source: 'github' | 'gitlab' | 'xdrive'
+  source: 'github' | 'gitlab' | 'xdrive' | 'offline'
   channel: 'stable' | 'master'
   request_id?: string
   stage?: string
