@@ -12,7 +12,7 @@ private struct XDriveIOSNativeFilesManageDestinationIntent: Identifiable {
 /// No context-menu action bypasses the existing verified Owner-scoped
 /// operation or its destination / rename / destructive confirmation UI.
 enum XDriveIOSNativeFilesQuickAction {
-    case copy, move, rename, favorite, shareLink, download, trash
+    case createFolder, uploadFile, uploadMultiple, copy, move, rename, favorite, shareLink, download, trash
 }
 
 /// Native Server Files operations live beside, never inside, the independent
@@ -411,41 +411,55 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         }
     }
 
-    /// Reuse existing native operation flows for explicit quick actions.
-    /// Favorite is committed by its verified idempotent writer after this
-    /// user action; destructive writes still require explicit confirmation,
-    /// and all writes retain their Owner/Node/revision fences.
+    /// The current-directory shortcuts open the same native alert/importers
+    /// already used by the management screen. No new upload or create writer,
+    /// and never use a guessed root or a stale Owner identity.
+    /// File and folder quick actions keep their existing version checks and
+    /// explicit confirmation where appropriate.
     @MainActor
     private func applyInitialQuickAction() {
         guard !initialActionApplied else { return }
         initialActionApplied = true
-        guard verified, !anyBusy,
-              let selected = file ?? directory,
-              let initialQuickAction else { return }
+        guard verified, !anyBusy, let initialQuickAction else { return }
         switch initialQuickAction {
-        case .copy:
-            destinationIntent = .init(node: selected, kind: .copy)
-        case .move:
-            destinationIntent = .init(node: selected, kind: .move)
-        case .rename:
-            renameDraft = selected.name
-            showingRename = true
-        case .favorite:
-            // Reuse the existing Owner/Node revision checked, idempotent
-            // Favorite writer. No unverified new mutation transport.
-            favoriteMutation.add(selected, login: login)
-        case .shareLink:
-            shareNode = selected
-        case .download:
-            if let file {
-                exporter.prepare(file, login: login)
-            } else if let directory {
-                folderArchive.prepare(
-                    directory, login: login, expectedOwner: expectedOwner
-                )
+        case .createFolder:
+            guard file == nil, directory == nil else { return }
+            folderDraft = ""
+            showingCreate = true
+        case .uploadFile:
+            guard file == nil, directory == nil else { return }
+            showingImporter = true
+        case .uploadMultiple:
+            guard file == nil, directory == nil else { return }
+            showingMultiImporter = true
+        case .copy, .move, .rename, .favorite, .shareLink, .download, .trash:
+            guard let selected = file ?? directory else { return }
+            switch initialQuickAction {
+            case .copy:
+                destinationIntent = .init(node: selected, kind: .copy)
+            case .move:
+                destinationIntent = .init(node: selected, kind: .move)
+            case .rename:
+                renameDraft = selected.name
+                showingRename = true
+            case .favorite:
+                // Reuse the existing Owner/Node revision checked writer.
+                favoriteMutation.add(selected, login: login)
+            case .shareLink:
+                shareNode = selected
+            case .download:
+                if let file {
+                    exporter.prepare(file, login: login)
+                } else if let directory {
+                    folderArchive.prepare(
+                        directory, login: login, expectedOwner: expectedOwner
+                    )
+                }
+            case .trash:
+                showingTrash = true
+            case .createFolder, .uploadFile, .uploadMultiple:
+                return
             }
-        case .trash:
-            showingTrash = true
         }
     }
 
