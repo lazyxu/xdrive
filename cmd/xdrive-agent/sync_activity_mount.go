@@ -16,7 +16,7 @@ import (
 func (c *agentController) captureMountSyncActivity(event mount.Event){
  if event.RunID=="" || event.ActivityOwner=="" {return}
  switch event.Kind {
- case mount.EventSyncStarted,mount.EventSyncCompleted,mount.EventSyncFailed,mount.EventSyncDeferred:
+ case mount.EventSyncStarted,mount.EventSyncCompleted,mount.EventSyncFailed,mount.EventSyncDeferred,mount.EventSyncItemCommitted:
  default:return
  }
  c.syncActivityMu.Lock()
@@ -33,20 +33,51 @@ func (c *agentController) captureMountSyncActivity(event mount.Event){
   err=store.Begin(ctx,syncactivity.Run{
    ID:event.RunID,Engine:"mount",Trigger:trigger,StartedAt:time.Now().UTC(),
   })
- case mount.EventSyncCompleted:
-  // A successful Mount reconciliation does not prove every item was observed.
-  err=store.Finish(ctx,event.RunID,syncactivity.StatusCompleted,false)
- case mount.EventSyncDeferred:
-  // Cloud Files hydration settling is a deferred attempt, not "sync failed".
-  err=store.Finish(ctx,event.RunID,syncactivity.StatusInterrupted,false)
- case mount.EventSyncFailed:
-  status:=syncactivity.StatusFailed
-  // Once item instrumentation lands, a failed attempt with committed changes
-  // must report partial success rather than erase its successful receipts.
-  if run,readErr:=store.Get(ctx,event.RunID);readErr==nil && run.Stats.Successful>0{
-   status=syncactivity.StatusPartial
+  if err==nil {
+   if c.syncActivityPending==nil{c.syncActivityPending=make(map[string][]syncactivity.Item)}
+   c.syncActivityPending[event.RunID]=nil
   }
-  err=store.Finish(ctx,event.RunID,status,false)
+ case mount.EventSyncItemCommitted:
+  if c.syncActivityPending==nil {return}
+  buffered,ok:=c.syncActivityPending[event.RunID]
+  if !ok{return}
+  if len(buffered)>=500 {
+   // Never grow an unbounded in-memory backlog after a disk error.
+   log.Printf("xDrive sync activity buffer is full for run %s",event.RunID)
+   return
+  }
+  receipt:=syncactivity.Item{
+   RunID:event.RunID,ID:event.ItemID,Action:event.Action,Direction:event.Direction,
+   OldPath:event.OldPath,NewPath:event.Path,Status:"completed",
+   LogicalBytes:event.LogicalBytes,TransferredBytes:event.TransferredBytes,
+   AppliedAt:time.Now().UTC(),
+  }
+  buffered=append(buffered,receipt)
+  c.syncActivityPending[event.RunID]=buffered
+  if len(buffered)==500 {
+   err=store.AppendBatch(ctx,buffered)
+   if err==nil{c.syncActivityPending[event.RunID]=nil}
+  }
+ case mount.EventSyncCompleted,mount.EventSyncDeferred,mount.EventSyncFailed:
+  if buffered,ok:=c.syncActivityPending[event.RunID];ok && len(buffered)>0 {
+   if flushErr:=store.AppendBatch(ctx,buffered);flushErr!=nil{
+    log.Printf("xDrive sync activity terminal batch not durable (%s): %v",event.RunID,flushErr)
+   }
+  }
+  delete(c.syncActivityPending,event.RunID)
+  switch event.Kind {
+  case mount.EventSyncCompleted:
+   // The Mount code still has mutation paths without receipt coverage.
+   err=store.Finish(ctx,event.RunID,syncactivity.StatusCompleted,false)
+  case mount.EventSyncDeferred:
+   err=store.Finish(ctx,event.RunID,syncactivity.StatusInterrupted,false)
+  case mount.EventSyncFailed:
+   status:=syncactivity.StatusFailed
+   if run,readErr:=store.Get(ctx,event.RunID);readErr==nil && run.Stats.Successful>0{
+    status=syncactivity.StatusPartial
+   }
+   err=store.Finish(ctx,event.RunID,status,false)
+  }
  }
  if err!=nil && !errors.Is(err,syncactivity.ErrTerminal){
   log.Printf("xDrive sync activity receipt unavailable (%s): %v",event.Kind,err)
