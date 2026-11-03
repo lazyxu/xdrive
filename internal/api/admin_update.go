@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +16,9 @@ import (
 )
 
 const serverUpdateRunnerFreshness = 45 * time.Second
+
+var offlineImportID = regexp.MustCompile(`^[a-f0-9]{32}$`)
+var offlineDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type serverUpdateState struct {
 	Supported         bool   `json:"supported"`
@@ -41,6 +45,9 @@ type serverUpdateRequestFile struct {
 	Source         string `json:"source"`
 	Channel        string `json:"channel"`
 	BackupFileData bool   `json:"backup_file_data"`
+	OfflineID string `json:"offline_id,omitempty"`
+	TrustedManifestSHA256 string `json:"trusted_manifest_sha256,omitempty"`
+	TrustedInstallerSHA256 string `json:"trusted_installer_sha256,omitempty"`
 	RequestedBy    string `json:"requested_by,omitempty"`
 	CreatedAt      string `json:"created_at"`
 }
@@ -55,6 +62,9 @@ func (s *Server) adminStartServerUpdate(c *gin.Context) {
 		Source         string `json:"source"`
 		Channel        string `json:"channel"`
 		BackupFileData bool   `json:"backup_file_data"`
+		OfflineID string `json:"offline_id"`
+		TrustedManifestSHA256 string `json:"trusted_manifest_sha256"`
+		TrustedInstallerSHA256 string `json:"trusted_installer_sha256"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
@@ -62,12 +72,27 @@ func (s *Server) adminStartServerUpdate(c *gin.Context) {
 	}
 	input.Source = strings.ToLower(strings.TrimSpace(input.Source))
 	input.Channel = strings.ToLower(strings.TrimSpace(input.Channel))
-	if input.Source != "github" && input.Source != "gitlab" && input.Source != "xdrive" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_update_source", "detail": "source must be github, gitlab or xdrive"})
+	if input.Source != "github" && input.Source != "gitlab" && input.Source != "xdrive" && input.Source != "offline" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_update_source", "detail": "source must be github, gitlab, xdrive or offline"})
 		return
 	}
 	if input.Channel != "stable" && input.Channel != "master" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_update_channel", "detail": "channel must be stable or master"})
+		return
+	}
+	if input.Source == "offline" {
+		if input.Channel != "master" || !offlineImportID.MatchString(input.OfflineID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_offline_import"})
+			return
+		}
+		if !offlineDigest.MatchString(input.TrustedManifestSHA256) ||
+			!offlineDigest.MatchString(input.TrustedInstallerSHA256) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_offline_trust"})
+			return
+		}
+	} else if input.OfflineID != "" || input.TrustedManifestSHA256 != "" ||
+		input.TrustedInstallerSHA256 != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "offline_update_options_forbidden"})
 		return
 	}
 	if input.Source == "xdrive" && input.Channel != "master" {
@@ -102,6 +127,9 @@ func (s *Server) adminStartServerUpdate(c *gin.Context) {
 		Source:         input.Source,
 		Channel:        input.Channel,
 		BackupFileData: input.BackupFileData,
+		OfflineID: input.OfflineID,
+		TrustedManifestSHA256: input.TrustedManifestSHA256,
+		TrustedInstallerSHA256: input.TrustedInstallerSHA256,
 		RequestedBy:    requestedBy,
 		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
 	}
@@ -145,7 +173,7 @@ func (s *Server) serverUpdateStatus() serverUpdateState {
 	if err := json.Unmarshal(raw, &state); err != nil {
 		return unavailableServerUpdateState("宿主机更新状态格式无效。")
 	}
-	if state.Source != "github" && state.Source != "gitlab" && state.Source != "xdrive" {
+	if state.Source != "github" && state.Source != "gitlab" && state.Source != "xdrive" && state.Source != "offline" {
 		state.Source = "github"
 	}
 	if state.Channel != "stable" && state.Channel != "master" {
@@ -174,8 +202,12 @@ func (s *Server) serverUpdateStatus() serverUpdateState {
 		if requestRaw, readErr := os.ReadFile(requestPath); readErr == nil {
 			var request serverUpdateRequestFile
 			if json.Unmarshal(requestRaw, &request) == nil &&
-				(request.Source == "github" || request.Source == "gitlab" || request.Source == "xdrive") &&
+				(request.Source == "github" || request.Source == "gitlab" || request.Source == "xdrive" || request.Source == "offline") &&
 				(request.Source != "xdrive" || request.Channel == "master") &&
+				(request.Source != "offline" || (request.Channel == "master" &&
+					offlineImportID.MatchString(request.OfflineID) &&
+					offlineDigest.MatchString(request.TrustedManifestSHA256) &&
+					offlineDigest.MatchString(request.TrustedInstallerSHA256))) &&
 				(request.Channel == "stable" || request.Channel == "master") {
 				state.State = "queued"
 				state.Source = request.Source
