@@ -418,5 +418,241 @@ class OfflinePackageTests(unittest.TestCase):
         subprocess.run(["bash", "-n", str(HERE / "build-five-packages.sh")], check=True)
 
 
+class ImageArchiveIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="offline-image-identity-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.ref = "example.org/xdrive/server:sha-" + "a" * 12
+
+    def fixture(self, *, oci=True, index=False, platform="amd64", other_ref=None, wrong_diff_id=False):
+        def encode(value):
+            return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+        layer = b"fixture layer"
+        layer_id = hashlib.sha256(layer).hexdigest()
+        config = encode(dict(architecture=platform, os="linux", config={},
+                             rootfs=dict(type="layers", diff_ids=["sha256:" + ("0" * 64 if wrong_diff_id else layer_id)])))
+        config_id = hashlib.sha256(config).hexdigest()
+        config_name = "blobs/sha256/" + config_id if oci else config_id + ".json"
+        layer_name = "blobs/sha256/" + layer_id if oci else layer_id + "/layer.tar"
+        files = {config_name: config, layer_name: layer,
+                 "manifest.json": encode([dict(Config=config_name, RepoTags=[self.ref], Layers=[layer_name])])}
+        identity = dict(config="sha256:" + config_id, descriptors=())
+        if oci:
+            media = "application/vnd.oci.image."
+            manifest = encode(dict(schemaVersion=2, mediaType=media + "manifest.v1+json",
+                                   config=dict(mediaType=media + "config.v1+json", digest=identity["config"], size=len(config)),
+                                   layers=[dict(mediaType=media + "layer.v1.tar", digest="sha256:" + layer_id, size=len(layer))]))
+            manifest_id = hashlib.sha256(manifest).hexdigest()
+            files["blobs/sha256/" + manifest_id] = manifest
+            descriptor = dict(mediaType=media + "manifest.v1+json", digest="sha256:" + manifest_id, size=len(manifest))
+            chain = [descriptor["digest"]]
+            if index:
+                descriptor["platform"] = dict(os="linux", architecture=platform)
+                nested = encode(dict(schemaVersion=2, mediaType=media + "index.v1+json", manifests=[descriptor]))
+                nested_id = hashlib.sha256(nested).hexdigest()
+                files["blobs/sha256/" + nested_id] = nested
+                descriptor = dict(mediaType=media + "index.v1+json", digest="sha256:" + nested_id, size=len(nested))
+                chain.insert(0, descriptor["digest"])
+            descriptor["annotations"] = {"io.containerd.image.name": other_ref or self.ref,
+                                         "org.opencontainers.image.ref.name": self.ref.rsplit(":", 1)[1]}
+            files["index.json"] = encode(dict(schemaVersion=2, mediaType=media + "index.v1+json", manifests=[descriptor]))
+            files["oci-layout"] = b'{"imageLayoutVersion":"1.0.0"}'
+            identity["descriptors"] = tuple(chain)
+        return files, identity
+
+    def archive(self, files, extra=None):
+        path = self.root / "image.tar.gz"
+        with tarfile.open(path, "w:gz", format=tarfile.USTAR_FORMAT) as output:
+            for name, data in [*files.items(), *(extra or [])]:
+                entry = tarfile.TarInfo(name)
+                if isinstance(data, bytes):
+                    entry.size = len(data)
+                    output.addfile(entry, io.BytesIO(data))
+                else:
+                    entry.type = data[0]
+                    entry.linkname = "manifest.json"
+                    output.addfile(entry)
+        return path
+
+    def parse(self, files, signed=None, extra=None):
+        if signed is None:
+            manifest = json.loads(files["manifest.json"])[0]
+            signed = "sha256:" + hashlib.sha256(files[manifest["Config"]]).hexdigest()
+        return offline.archive_image_identity(self.archive(files, extra), dict(ref=self.ref, id=signed))
+
+    def test_classic_config_and_verified_oci_chain_in_both_directions(self):
+        for oci, index in ((False, False), (True, False), (True, True)):
+            files, identity = self.fixture(oci=oci, index=index)
+            for signed in (identity["config"], *identity["descriptors"]):
+                with self.subTest(oci=oci, index=index, signed=signed):
+                    self.assertEqual(self.parse(files, signed), identity)
+
+    def test_load_checks_relationship_before_docker_and_accepts_only_linked_identity(self):
+        files, identity = self.fixture()
+        archive = self.archive(files)
+        for signed, observed in ((identity["config"], identity["descriptors"][0]),
+                                 (identity["descriptors"][0], identity["config"])):
+            with mock.patch.object(offline, "docker", side_effect=["", observed]) as docker:
+                offline.load_image(archive, dict(ref=self.ref, id=signed))
+                self.assertEqual(docker.call_args_list[0].args[:2], ("load", "-i"))
+        for observed in ("sha256:" + "0" * 64, "sha256:" + hashlib.sha256(files["index.json"]).hexdigest()):
+            with mock.patch.object(offline, "docker", side_effect=["", observed]), self.assertRaises(offline.PackageError):
+                offline.load_image(archive, dict(ref=self.ref, id=identity["config"]))
+        with mock.patch.object(offline, "docker") as docker, self.assertRaises(offline.PackageError):
+            offline.load_image(archive, dict(ref=self.ref, id="sha256:" + "0" * 64))
+        docker.assert_not_called()
+
+    def test_wrong_tag_platform_signed_identity_and_wrapper_digest_are_rejected(self):
+        for changes in (dict(other_ref="example.org/other:tag"), dict(platform="arm64")):
+            files, _ = self.fixture(**changes)
+            with self.subTest(changes=changes), self.assertRaises(offline.PackageError):
+                self.parse(files)
+        files, _ = self.fixture()
+        for signed in ("sha256:" + "0" * 64, "sha256:" + hashlib.sha256(files["index.json"]).hexdigest()):
+            with self.subTest(signed=signed), self.assertRaises(offline.PackageError):
+                self.parse(files, signed)
+
+    def test_duplicate_tar_paths_links_and_json_keys_fail_closed(self):
+        files, _ = self.fixture()
+        for extra in ([('manifest.json', files['manifest.json'])], [('linked', (tarfile.SYMTYPE,))],
+                      [('linked', (tarfile.LNKTYPE,))], [('../outside', b'bad')],
+                      [('./manifest.json', b'bad')], [('blobs\\bad', b'bad')],
+                      [('pax', (tarfile.XHDTYPE,))]):
+            with self.subTest(extra=extra[0][0]), self.assertRaises(offline.PackageError):
+                self.parse(files, extra=extra)
+        files['index.json'] = b'{"schemaVersion":2,"schemaVersion":2,"manifests":[]}'
+        with self.assertRaises(offline.PackageError):
+            self.parse(files)
+
+    def test_ambiguous_tag_or_descriptor_and_digest_size_conflicts_fail_closed(self):
+        for kind in ('docker-duplicate', 'oci-duplicate', 'descriptor-size', 'descriptor-hash',
+                     'descriptor-platform', 'config-conflict', 'missing-layer', 'unknown-media'):
+            files, identity = self.fixture()
+            value = json.loads(files['index.json'])
+            if kind == 'docker-duplicate':
+                value = json.loads(files['manifest.json'])
+                files['manifest.json'] = json.dumps(value + value).encode()
+            elif kind == 'oci-duplicate':
+                value['manifests'] *= 2
+            elif kind == 'descriptor-size':
+                value['manifests'][0]['size'] += 1
+            elif kind == 'descriptor-hash':
+                files['blobs/sha256/' + identity['descriptors'][0][7:]] += b' '
+            elif kind == 'descriptor-platform':
+                value['manifests'][0]['platform'] = dict(os='linux', architecture='arm64')
+            elif kind == 'config-conflict':
+                files['blobs/sha256/' + identity['config'][7:]] += b' '
+            elif kind == 'missing-layer':
+                del files[json.loads(files['manifest.json'])[0]['Layers'][0]]
+            else:
+                value['manifests'][0]['mediaType'] = 'application/octet-stream'
+            if kind != 'docker-duplicate':
+                files['index.json'] = json.dumps(value).encode()
+            with self.subTest(kind=kind), self.assertRaises(offline.PackageError):
+                self.parse(files, identity['config'])
+
+    def test_parser_enforces_metadata_entry_and_unpacked_bounds(self):
+        files, identity = self.fixture()
+        for bound, limit in (('IMAGE_METADATA_LIMIT', 16), ('IMAGE_METADATA_TOTAL_LIMIT', 32),
+                             ('IMAGE_ARCHIVE_ENTRIES', 2), ('IMAGE_ARCHIVE_BYTES', 16)):
+            with self.subTest(bound=bound), mock.patch.object(offline, bound, limit), self.assertRaises(offline.PackageError):
+                self.parse(files, identity['config'])
+
+    def test_validly_hashed_but_unlinked_config_or_layer_is_not_equivalent(self):
+        for kind in ('config', 'layer'):
+            files, identity = self.fixture()
+            index = json.loads(files['index.json'])
+            descriptor = index['manifests'][0]
+            old_path = 'blobs/sha256/' + descriptor['digest'][7:]
+            document = json.loads(files[old_path])
+            if kind == 'config':
+                config = json.loads(files['blobs/sha256/' + identity['config'][7:]])
+                config['config'] = {'Env': ['UNRELATED=1']}
+                raw = json.dumps(config).encode()
+                new_id = hashlib.sha256(raw).hexdigest()
+                files['blobs/sha256/' + new_id] = raw
+                document['config'].update(digest='sha256:' + new_id, size=len(raw))
+            else:
+                document['layers'][0].update(digest=identity['config'],
+                                             size=len(files['blobs/sha256/' + identity['config'][7:]]))
+            raw = json.dumps(document).encode()
+            new_id = hashlib.sha256(raw).hexdigest()
+            del files[old_path]
+            files['blobs/sha256/' + new_id] = raw
+            descriptor.update(digest='sha256:' + new_id, size=len(raw))
+            files['index.json'] = json.dumps(index).encode()
+            with self.subTest(kind=kind), self.assertRaises(offline.PackageError):
+                self.parse(files, identity['config'])
+
+    def test_unreferenced_json_and_deep_index_graph_are_not_image_identities(self):
+        files, identity = self.fixture()
+        unused = b'{"schemaVersion":2,"unrelated":true}'
+        unused_id = hashlib.sha256(unused).hexdigest()
+        files['blobs/sha256/' + unused_id] = unused
+        self.assertEqual(self.parse(files), identity)
+        with self.assertRaises(offline.PackageError):
+            self.parse(files, 'sha256:' + unused_id)
+        root = json.loads(files['index.json'])
+        for _ in range(8):
+            raw = json.dumps(root).encode()
+            digest = hashlib.sha256(raw).hexdigest()
+            files['blobs/sha256/' + digest] = raw
+            root = dict(schemaVersion=2, mediaType=offline.OCI_INDEX, manifests=[dict(
+                mediaType=offline.OCI_INDEX, digest='sha256:' + digest, size=len(raw),
+                annotations={'io.containerd.image.name': self.ref})])
+        files['index.json'] = json.dumps(root).encode()
+        with self.assertRaises(offline.PackageError):
+            self.parse(files, identity['config'])
+
+    def test_uncompressed_layer_diff_id_must_match_actual_layer_bytes(self):
+        for oci in (False, True):
+            files, identity = self.fixture(oci=oci, wrong_diff_id=True)
+            with self.subTest(oci=oci), self.assertRaises(offline.PackageError):
+                self.parse(files, identity['config'])
+
+    def test_docker_default_registry_names_preserve_exact_namespace_and_tag(self):
+        for familiar, canonical in (("xdrive/offline-ai-runtime:contract", "docker.io/xdrive/offline-ai-runtime:contract"),
+                                    ("postgres:17-alpine", "docker.io/library/postgres:17-alpine"),
+                                    ("docker.io/postgres:17-alpine", "docker.io/library/postgres:17-alpine")):
+            for signed_ref, docker_ref, oci_ref in ((familiar, familiar, canonical),
+                                                   (canonical, familiar, canonical),
+                                                   (familiar, canonical, canonical)):
+                with self.subTest(signed=signed_ref, docker=docker_ref):
+                    self.ref = signed_ref
+                    files, identity = self.fixture(other_ref=oci_ref)
+                    manifest = json.loads(files['manifest.json'])
+                    manifest[0]['RepoTags'] = [docker_ref]
+                    files['manifest.json'] = json.dumps(manifest).encode()
+                    self.assertEqual(self.parse(files), identity)
+
+    def test_registry_namespace_tag_ports_and_suffix_aliases_are_not_equivalent(self):
+        self.ref = 'xdrive/offline-ai-runtime:contract'
+        for other in ('evil.invalid/xdrive/offline-ai-runtime:contract',
+                      'docker.io/foreign/offline-ai-runtime:contract',
+                      'docker.io/xdrive/offline-ai-runtime:other',
+                      'docker.io/evil/xdrive/offline-ai-runtime:contract',
+                      'registry-1.docker.io/xdrive/offline-ai-runtime:contract',
+                      'docker.io:443/xdrive/offline-ai-runtime:contract',
+                      'localhost/xdrive/offline-ai-runtime:contract'):
+            with self.subTest(other=other):
+                files, identity = self.fixture(other_ref=other)
+                with self.assertRaises(offline.PackageError):
+                    self.parse(files, identity['config'])
+                files, identity = self.fixture()
+                manifest = json.loads(files['manifest.json'])
+                manifest[0]['RepoTags'] = [other]
+                files['manifest.json'] = json.dumps(manifest).encode()
+                with self.assertRaises(offline.PackageError):
+                    self.parse(files, identity['config'])
+        files, identity = self.fixture()
+        index = json.loads(files['index.json'])
+        del index['manifests'][0]['annotations']['io.containerd.image.name']
+        files['index.json'] = json.dumps(index).encode()
+        with self.assertRaises(offline.PackageError):
+            self.parse(files, identity['config'])
+
+
 if __name__ == "__main__":
     unittest.main()
