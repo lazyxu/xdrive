@@ -468,6 +468,13 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         favoriteStatus = asset.isFavorite
     }
 
+    /// The native Photos-style bottom controls never bypass the same
+    /// authenticated, foreground PhotoKit action path as the overflow menu.
+    private var canUsePhotoActions: Bool {
+        currentPageAuthorized && !crossing && !photoActionBusy &&
+            !model.downloadingFromICloud && photoShareSession == nil
+    }
+
     private func shareOriginal(allowICloud: Bool) {
         guard currentPageAuthorized, !crossing, !photoActionBusy,
               photoShareSession == nil else { return }
@@ -785,6 +792,49 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.ultraThinMaterial)
+                }
+                // Match the system Photos' primary bottom actions without
+                // relocating any existing explicit-iCloud or retry commands.
+                if currentPageAuthorized {
+                    HStack(spacing: 16) {
+                        Button {
+                            shareOriginal(allowICloud: false)
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("分享本机原件")
+                        .accessibilityIdentifier("native-ios-local-viewer-bottom-share")
+                        .disabled(!canUsePhotoActions)
+
+                        Spacer(minLength: 8)
+
+                        Button {
+                            editFavorite(favoriteStatus != true)
+                        } label: {
+                            Image(systemName: favoriteStatus == true ? "heart.fill" : "heart")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel(favoriteStatus == true ? "取消收藏" : "收藏照片")
+                        .accessibilityIdentifier("native-ios-local-viewer-bottom-favorite")
+                        .disabled(!canUsePhotoActions || favoriteStatus == nil)
+
+                        Spacer(minLength: 8)
+
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("删除本机照片")
+                        .accessibilityIdentifier("native-ios-local-viewer-bottom-delete")
+                        .disabled(!canUsePhotoActions)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial)
+                    .accessibilityIdentifier("native-ios-local-viewer-bottom-actions")
                 }
                 if crossing {
                     ProgressView("正在读取相邻的 64 项照片…").font(.caption)
