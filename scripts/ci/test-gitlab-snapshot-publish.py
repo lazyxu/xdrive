@@ -376,7 +376,9 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp, Exit
         for item_name, body in (
             ('bin/xd', b'fixture ARMv7 xd executable'),
             ('bin/xdrive-agent', b'fixture ARMv7 agent executable'),
-            ('ui/config', b'fixture DSM app registration'),
+            # Match the actual launcher bytes. A placeholder once let this
+            # fixture bypass the new mandatory /webman/ launch-path gate.
+            ('ui/config', (ROOT/'packaging/synology/ui/config').read_bytes()),
             ('ui/backup.cgi', b'fixture authenticated CGI'),
             ('ui/synology.html', b'fixture shared MUI entry'),
             ('ui/assets/app.js', b'fixture compiled MUI JavaScript'),
