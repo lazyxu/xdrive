@@ -780,33 +780,33 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private var filesList: some View {
         List {
+            filesHeader
             if isHome {
                 filesHome
             } else {
-                filesHeader
                 filesLoadStatus
                 if viewMode == "grid" {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 128, maximum: 184), spacing: 10)],
-                    spacing: 10
-                ) {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 128, maximum: 184), spacing: 10)],
+                        spacing: 10
+                    ) {
+                        ForEach(model.entries) { entry in
+                            gridTile(entry)
+                                .id(entry.id)
+                                .onAppear { requestContinuationIfNeeded(entry) }
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .accessibilityIdentifier("native-ios-files-grid")
+                } else {
                     ForEach(model.entries) { entry in
-                        gridTile(entry)
-                            .id(entry.id)
+                        fileEntryRow(entry)
                             .onAppear { requestContinuationIfNeeded(entry) }
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden)
-                .accessibilityIdentifier("native-ios-files-grid")
-            } else {
-                ForEach(model.entries) { entry in
-                    fileEntryRow(entry)
-                        .onAppear { requestContinuationIfNeeded(entry) }
-                }
-            }
                 filesContinuationStatus
                 filesBatchOperations
             }
