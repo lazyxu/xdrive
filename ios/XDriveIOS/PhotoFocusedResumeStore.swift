@@ -55,6 +55,7 @@ final class XDriveIOSPhotoFocusedResumeStore {
         guard data.count <= 100_000,
               let state = try? JSONDecoder().decode(State.self, from: data),
               state.version == 1,
+              !state.hadUnavailable,
               !state.libraryEpoch.isEmpty, state.libraryEpoch.count <= 65_536
         else {
             clear(owner: owner)
@@ -88,9 +89,9 @@ final class XDriveIOSPhotoFocusedResumeStore {
         epoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot,
         allowICloud: Bool, hadUnavailable: Bool
     ) throws {
-        guard XDriveIOSPhotoFocusedBackupPolicy.validCheckpoint(
+        guard XDriveIOSPhotoFocusedBackupPolicy.canSaveCheckpoint(
             completedWindow: completedWindow, nextWindow: nextWindow,
-            visibleTotal: totalVisible
+            visibleTotal: totalVisible, hadUnavailable: hadUnavailable
         ), !epoch.serialized.isEmpty, epoch.serialized.count <= 65_536
         else { throw Failure.invalidBoundary }
         let checkpoint = State(
