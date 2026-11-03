@@ -7,6 +7,7 @@ import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import SystemUpdateRoundedIcon from '@mui/icons-material/SystemUpdateRounded'
+import UpdateRoundedIcon from '@mui/icons-material/UpdateRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import NotesRoundedIcon from '@mui/icons-material/NotesRounded'
 import {
@@ -23,6 +24,7 @@ export function xDriveWorkspaceHostSections({
   conflictCount,
   diagnosticsAriaLabel = 'xDrive 辅助功能',
   includeUtilityRoutes = true,
+  includeClientUpdate = false,
   showShareCenter = false,
   showNotes = false,
 }: {
@@ -32,6 +34,7 @@ export function xDriveWorkspaceHostSections({
   /** False for Web/PWA: Settings lives in its account menu, while these
    * Host-only utility pages have not been migrated to the browser. */
   includeUtilityRoutes?: boolean
+  includeClientUpdate?: boolean
   showShareCenter?: boolean
   /** Available only with a verified Notes domain port for the current Owner. */
   showNotes?: boolean
@@ -65,6 +68,11 @@ export function xDriveWorkspaceHostSections({
       ariaLabel: diagnosticsAriaLabel,
       placement: 'after-core' as const,
       items: [xDriveDiagnosticsSidebarDestination()],
+    }] : []),
+    ...(includeClientUpdate ? [{
+      key: 'client-update',
+      placement: 'after-core' as const,
+      items: [{ key: 'client-update', label: xDriveWorkspaceRouteTitle('client-update'), icon: <UpdateRoundedIcon fontSize="small" /> }],
     }] : []),
     ...(adminRoleVerified ? [{
       key: 'admin',

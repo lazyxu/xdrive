@@ -37,6 +37,7 @@ export const XDRIVE_APP_WORKSPACE_ROUTES = [
   'shares',
   'conflicts',
   'diagnostics',
+  'client-update',
   'admin-users',
   'admin-audit',
   'admin-storage',
