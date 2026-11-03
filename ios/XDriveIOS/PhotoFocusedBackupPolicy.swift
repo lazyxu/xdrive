@@ -12,6 +12,41 @@ enum XDriveIOSPhotoFocusedBackupPolicy {
         case invalidProgress
     }
 
+    /// A checkpoint is only a finished PhotoKit *scan* boundary; the next
+    /// attempt must independently prove every Node receipt before skipping it.
+    /// An incomplete 20-upload-cap window is deliberately not saved.
+    static func validCheckpoint(completedWindow: Int, nextWindow: Int,
+                                visibleTotal: Int) -> Bool {
+        guard completedWindow >= 0, completedWindow < Int.max,
+              nextWindow == completedWindow + 1, visibleTotal > 0,
+              let offset = XDrivePhotoBackupScanWindow.offset(for: nextWindow)
+        else { return false }
+        return offset < visibleTotal &&
+            nextWindow < XDrivePhotoBackupScanWindow.count(
+                visibleTotal: visibleTotal
+            )
+    }
+
+    /// Fail closed on edits, Full/Limited scope changes, iCloud behavior,
+    /// changed authorized count, malformed offsets or completed libraries.
+    /// A trusted scan checkpoint is NOT an original/Server receipt.
+    static func trustedResumeWindow(
+        requested: Int, previousVisible: Int, currentVisible: Int,
+        priorAuthorization: Int, currentAuthorization: Int,
+        tokenUnchanged: Bool, previousAllowICloud: Bool, allowICloud: Bool
+    ) -> Int {
+        guard requested > 0, previousVisible > 0,
+              currentVisible == previousVisible,
+              priorAuthorization == currentAuthorization,
+              tokenUnchanged, previousAllowICloud == allowICloud,
+              let offset = XDrivePhotoBackupScanWindow.offset(for: requested),
+              offset < currentVisible,
+              requested < XDrivePhotoBackupScanWindow.count(
+                visibleTotal: currentVisible
+              ) else { return 0 }
+        return requested
+    }
+
     static func afterWindow(index: Int, visibleTotal: Int, scanned: Int,
                             uploaded: Int, needsReview: Bool) -> Step {
         guard index >= 0, visibleTotal >= 0, scanned >= 0,
