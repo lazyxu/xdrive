@@ -106,7 +106,11 @@ private final class PhotoKitRequestGate: @unchecked Sendable {
         if let error {
             continuation.resume(throwing: error)
         } else if finalCount <= 0 {
-            continuation.resume(throwing: XDrivePhotoKitExportFailure.storageUnavailable)
+            // PhotoKit reported no error but supplied no original bytes.
+            // The file handle never failed: this is one missing/inaccessible
+            // asset, not a device-wide storage outage. Keep later originals
+            // eligible while refusing to record a zero-byte backup success.
+            continuation.resume(throwing: XDrivePhotoKitExportFailure.originalResourceMissing)
         } else {
             continuation.resume(returning: finalCount)
         }
