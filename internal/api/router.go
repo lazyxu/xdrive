@@ -520,6 +520,9 @@ func (s *Server) Router() *gin.Engine {
 	// Source has been archived. No device paths or remote files are affected.
 	authed.POST("/sources/:id/cloud-cleanup/preview", s.previewSourceCloudCleanup)
 	authed.POST("/sources/:id/cloud-cleanup", s.cleanupSourceCloudFiles)
+	// Existing legacy NAS Push runs use Owner login and upgrade to a scoped
+	// SourceRun writer grant. Local_folder Push must use device/Root proof.
+	authed.POST("/sources/:id/runs/:runID/write-grant", s.issueLegacySourceRunWriteGrant)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
 	authed.DELETE("/sources/:id/local-draft", s.discardLocalSourceDraft)
 	authed.POST("/sources/:id/trigger", s.requireLocalSourceExecutor(), s.triggerSource)
