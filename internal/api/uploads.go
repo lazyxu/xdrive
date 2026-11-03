@@ -1297,6 +1297,12 @@ func (s *Server) abortUploadSession(c *gin.Context) {
 		fail(c, http.StatusNotFound, "upload session not found")
 		return
 	}
+	// A scoped Worker may abort only uploads admitted for its own SyncRun;
+	// ordinary Owners cannot cancel an active SourceRun writer's session.
+	if !sourceRunUploadSessionMatches(c, session) {
+		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
+		return
+	}
 	if session.Status == meta.UploadStatusFinalized || session.Status == meta.UploadStatusSkipped {
 		fail(c, http.StatusConflict, "terminal upload cannot be aborted")
 		return
