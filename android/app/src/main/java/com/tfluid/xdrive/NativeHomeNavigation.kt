@@ -89,9 +89,16 @@ internal data class NativeHomeNavigation(
     val favoriteShortcuts: Set<NativeHomeShortcut> = emptySet(),
     val recentShortcuts: List<NativeHomeShortcut> = emptyList(),
 ) {
+    /** An empty current-Owner dynamic history displays the real Gallery Map.
+     * Map remains a Gallery subroute and never becomes a dynamic recent. */
+    val emptyDynamicMapFallback: Boolean
+        get() = dynamicFeature == null && recentDynamic.isEmpty()
+
     val labels: List<String>
         get() = NativeHomeTab.entries.map {
-            if (it == NativeHomeTab.DYNAMIC) dynamicFeature?.title ?: it.title else it.title
+            if (it == NativeHomeTab.DYNAMIC)
+                dynamicFeature?.title ?: if (emptyDynamicMapFallback) "地图" else it.title
+            else it.title
         }
 
     fun select(tab: NativeHomeTab) = copy(selected = tab)

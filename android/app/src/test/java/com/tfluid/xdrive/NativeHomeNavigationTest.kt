@@ -31,7 +31,7 @@ class NativeHomeNavigationTest {
 
     @Test fun fixedSlotsNeverReorderAndOnlyDynamicLabelChanges() {
         val initial = NativeHomeNavigation()
-        assertEquals(listOf("全部", "最近", "图库", "文件", "我的"), initial.labels)
+        assertEquals(listOf("全部", "地图", "图库", "文件", "我的"), initial.labels)
         val transfers = initial.openDynamic(NativeDynamicFeature.TRANSFERS)
         assertEquals(listOf("全部", "传输", "图库", "文件", "我的"), transfers.labels)
         assertEquals(NativeHomeTab.DYNAMIC, transfers.selected)
@@ -65,8 +65,23 @@ class NativeHomeNavigationTest {
             NativeHomeShortcut.CLOUD_FILES), visited.recentShortcuts)
         assertEquals(setOf(NativeHomeShortcut.LOCAL_ALBUMS), visited.favoriteShortcuts)
         assertEquals(NativeHomeTab.GALLERY, visited.open(NativeHomeShortcut.GALLERY_MAP).selected)
-        assertEquals(listOf("全部", "最近", "图库", "文件", "我的"),
+        assertEquals(listOf("全部", "地图", "图库", "文件", "我的"),
             NativeHomeNavigation().labels)
+    }
+
+    @Test fun emptyRecentDefaultsToExistingGalleryMapWithoutRecordingDynamicHistory() {
+        val empty = NativeHomeNavigation()
+        assertTrue(empty.emptyDynamicMapFallback)
+        assertEquals("地图", empty.labels[NativeHomeTab.DYNAMIC.ordinal])
+        val opened = empty.open(NativeHomeShortcut.GALLERY_MAP)
+        assertEquals(NativeHomeTab.GALLERY, opened.selected)
+        assertEquals(NativeGallerySource.MAP, opened.gallerySource)
+        assertEquals(emptyList<NativeDynamicFeature>(), opened.recentDynamic)
+        assertTrue(opened.emptyDynamicMapFallback)
+        val withRecent = empty.openDynamic(NativeDynamicFeature.TRANSFERS)
+        assertFalse(withRecent.emptyDynamicMapFallback)
+        assertEquals("传输", withRecent.labels[NativeHomeTab.DYNAMIC.ordinal])
+        assertEquals(listOf(NativeDynamicFeature.TRANSFERS), withRecent.recentDynamic)
     }
 
     @Test fun galleryMapExitKeepsItsActualOriginInsteadOfTheMapChip() {
@@ -151,7 +166,7 @@ class NativeHomeNavigationTest {
         assertEquals(null, revoked.dynamicFeature)
         assertEquals(emptyList<NativeDynamicFeature>(), revoked.recentDynamic)
         // A new Owner obtains a new in-memory instance, not a restored route.
-        assertEquals("最近", NativeHomeNavigation().labels[1])
+        assertEquals("地图", NativeHomeNavigation().labels[1])
     }
 
     @Test fun localAlbumHeaderBackBelongsOnlyToItsCurrentGalleryStack() {
