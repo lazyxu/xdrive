@@ -281,20 +281,20 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 		}
 		if boundManaged {
 			if source.Status != meta.SourceStatusActive {
-			now := time.Now().UTC()
-			if err := tx.WithContext(ctx).Model(&meta.Source{}).
-				Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
-				Updates(map[string]any{
-					"status":     meta.SourceStatusActive,
-					"revision":   gorm.Expr("revision + 1"),
-					"updated_at": now,
-					"last_error": "",
-				}).Error; err != nil {
-				return err
+				now := time.Now().UTC()
+				if err := tx.WithContext(ctx).Model(&meta.Source{}).
+					Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+					Updates(map[string]any{
+						"status":     meta.SourceStatusActive,
+						"revision":   gorm.Expr("revision + 1"),
+						"updated_at": now,
+						"last_error": "",
+					}).Error; err != nil {
+					return err
+				}
+				source.Status = meta.SourceStatusActive
+				source.Revision++
 			}
-			source.Status = meta.SourceStatusActive
-			source.Revision++
-		}
 			return nil
 		}
 	}
