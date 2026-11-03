@@ -402,16 +402,21 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 	if unchanged.Revision != 1 || unchanged.Name != "A root" || unchanged.RunRequestedAt != nil {
 		t.Fatalf("rejected writes changed local Source: %+v", unchanged)
 	}
-	validChange := requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerJWT, strings.NewReader("{\"name\":\"A renamed root\"}"), http.StatusOK, own)
-	var changed sourceDTO
-	if err := json.Unmarshal(validChange.Body.Bytes(), &changed); err != nil {
+	// These synthetic bound Sources deliberately share the Owner's ordinary
+	// root. The owning device is authorized, but Source rename must fail closed
+	// until an exclusive managed target has been migrated/provisioned (5B).
+	// The ordinary root and Source metadata must stay unchanged together.
+	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerJWT,
+		strings.NewReader("{\"name\":\"A renamed root\"}"), http.StatusConflict, own)
+	var blockedRename meta.Source
+	if err := db.First(&blockedRename, sourceA.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if changed.Name != "A renamed root" || changed.Revision != 2 {
-		t.Fatalf("owning Desktop could not update its bound local Source: %+v", changed)
+	if blockedRename.Name != "A root" || blockedRename.Revision != 1 ||
+		blockedRename.TargetNodeID == nil || *blockedRename.TargetNodeID != targetID {
+		t.Fatalf("legacy shared root was renamed without migration: %+v", blockedRename)
 	}
 	fresh := copyHeaders()
-	fresh["If-Match"] = "\"2\""
 	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerJWT, strings.NewReader("{\"status\":\"active\"}"), http.StatusConflict, fresh)
 	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/trigger", ownerJWT, nil, http.StatusConflict, fresh)
 	if err := db.Model(&meta.Source{}).Where("id = ?", sourceA.ID).Update("status", meta.SourceStatusActive).Error; err != nil {
