@@ -393,6 +393,9 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var queryDraft = ""
     @State private var activeQuery = ""
     @State private var searchReturnOffset: Int?
+    @State private var searchReturnNodeID: UInt64?
+    @State private var lastAppearedNodeID: UInt64?
+    @State private var pendingNavigationReturnNodeID: UInt64?
     @State private var sort = "name"
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
     @State private var order = "asc"
@@ -636,10 +639,14 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func requestContinuousNeighbor(for visibleID: UInt64) {
         guard !selecting, selectedFile == nil, !model.loading,
-              model.verifiedPage, !model.loadingAdjacent,
+              model.verifiedPage,
               let parentID, let index = model.entries.firstIndex(where: {
                   $0.id == visibleID
               }) else { return }
+        // A row becoming visible is an approximate, bounded scroll anchor.
+        // It remains valid even when an adjacent page fetch is in flight.
+        lastAppearedNodeID = visibleID
+        guard !model.loadingAdjacent else { return }
         let threshold = min(8, max(1, model.entries.count / 4))
         if index >= model.entries.count - threshold {
             model.loadAdjacent(
@@ -1108,11 +1115,36 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
+    /// Save the exact loaded page containing the last appeared row before
+    /// SwiftUI retires this navigation subtree. No stale or unknown Node may
+    /// become a return anchor.
+    private func rememberedPosition()
+        -> XDriveIOSNativeFilesContinuousWindowPolicy.RestoreAnchor? {
+        guard !isHome, model.verifiedPage, !model.loading,
+              login.owner != nil else { return nil }
+        return XDriveIOSNativeFilesContinuousWindowPolicy.restoreAnchor(
+            lastAppearedNodeID: lastAppearedNodeID,
+            startOffset: model.startOffset,
+            loadedIDs: model.entries.map(\.id), total: model.total
+        )
+    }
+
+    private func suspendVisibleRange() {
+        guard selectedFile == nil else { return }
+        if let saved = rememberedPosition() {
+            offset = saved.pageOffset
+            pendingNavigationReturnNodeID = saved.nodeID
+        } else {
+            pendingNavigationReturnNodeID = nil
+        }
+        model.invalidate()
+    }
+
     var body: some View {
         ScrollViewReader { returnScroll in
             filesModals
         .onAppear { reload() }
-        .onDisappear { if selectedFile == nil { model.invalidate() } }
+        .onDisappear { suspendVisibleRange() }
         .onDisappear {
             batchTrash.invalidate()
             batchTarget.invalidate()
@@ -1142,6 +1174,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             queryDraft = ""
             activeQuery = ""
             searchReturnOffset = nil
+            searchReturnNodeID = nil
+            lastAppearedNodeID = nil
+            pendingNavigationReturnNodeID = nil
             searchError = nil
             model.invalidate()
         }
@@ -1157,6 +1192,14 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onChange(of: order) { _ in reload(resetOffset: true) }
         .onChange(of: model.loading) { loading in
             guard !loading, selectedFile == nil else { return }
+            if let returnID = pendingNavigationReturnNodeID {
+                pendingNavigationReturnNodeID = nil
+                if focusedNode == nil, lastViewedFile == nil,
+                   model.verifiedPage,
+                   model.entries.contains(where: { $0.id == returnID }) {
+                    returnScroll.scrollTo(returnID, anchor: .center)
+                }
+            }
             if !didRestoreLocatedFile, let focusedNode, model.verifiedPage {
                 didRestoreLocatedFile = true
                 if model.entries.contains(where: { $0.node == focusedNode }) {
@@ -1463,7 +1506,11 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         searchError = nil
         if query == activeQuery { return }
-        if activeQuery.isEmpty { searchReturnOffset = offset }
+        if activeQuery.isEmpty {
+            let saved = rememberedPosition()
+            searchReturnOffset = saved?.pageOffset ?? offset
+            searchReturnNodeID = saved?.nodeID
+        }
         activeQuery = query
         reload(resetOffset: true)
     }
@@ -1471,11 +1518,15 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func clearSearch() {
         guard !activeQuery.isEmpty || !queryDraft.isEmpty else { return }
         let restoredOffset = searchReturnOffset ?? 0
+        let restoreNodeID = searchReturnNodeID
         activeQuery = ""
         queryDraft = ""
         searchError = nil
         searchReturnOffset = nil
+        searchReturnNodeID = nil
+        lastAppearedNodeID = nil
         offset = restoredOffset
+        pendingNavigationReturnNodeID = restoreNodeID
         reload()
     }
 
@@ -1485,7 +1536,11 @@ struct XDriveIOSNativeFilesBrowser: View {
         batchExport.invalidate()
         batchTarget.invalidate()
         batchDestinationIntent = nil
-        if resetOffset { offset = 0 }
+        if resetOffset {
+            offset = 0
+            lastAppearedNodeID = nil
+            pendingNavigationReturnNodeID = nil
+        }
         if isHome {
             model.invalidate()
             return
