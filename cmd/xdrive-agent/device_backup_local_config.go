@@ -78,7 +78,7 @@ func localBoundBackupSettingsDTO(source client.Source) client.LocalBoundBackupSe
 	return client.LocalBoundBackupSettings{
 		SourceID: source.ID, Name: source.Name, Revision: source.Revision,
 		SyncMode:     source.SyncMode,
-		TargetNodeID: source.TargetNodeID, TargetPath: source.TargetPath,
+		TargetNodeID: source.TargetNodeID, TargetManaged: source.TargetManaged, TargetPath: source.TargetPath,
 	}
 }
 
@@ -138,6 +138,9 @@ func (c *agentController) CloudRetargetLocalBoundBackup(ctx context.Context, sou
 	}
 	if source.Revision != revision {
 		return client.LocalBoundBackupSettings{}, errors.New("Source revision changed; reload before changing target")
+	}
+	if source.TargetManaged {
+		return client.LocalBoundBackupSettings{}, errors.New("this Source has a Server-managed cloud target; rename the Source instead of selecting another directory")
 	}
 	if source.TargetNodeID != nil && *source.TargetNodeID == targetNodeID {
 		return client.LocalBoundBackupSettings{}, errors.New("the cloud target is already selected")
