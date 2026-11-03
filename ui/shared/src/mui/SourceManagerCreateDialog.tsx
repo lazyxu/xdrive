@@ -220,9 +220,9 @@ export function XDriveSourceCreateDialog({
           </MuiBox>
         ) : (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标目录使用当前文件夹</MuiTypography>
+            <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>服务器自动创建独立同步目标</MuiTypography>
             <MuiTypography variant="body2">
-              当前目标：{selectedTargetLabel}{selectedTargetPath ? `（${selectedTargetPath}）` : '（我的文件根目录）'}
+              将在“同步文件夹 / {option.direction === 'push' ? '设备备份' : '远程拉取'}”下分配专属只读目录；不使用当前选中的普通文件夹。
             </MuiTypography>
             {option.direction === 'pull' ? (
               <MuiTypography variant="body2" sx={{ mt: 0.5 }}>
