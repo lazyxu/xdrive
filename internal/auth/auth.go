@@ -64,7 +64,15 @@ func (m Manager) Issue(userID, sessionVersion uint64) (string, error) {
 // IssueSourceRunAccess is only called by the trusted Server-side Pull worker.
 // Normal owner-login JWTs never carry the SourceID/SourceRunID capability.
 func (m Manager) IssueSourceRunAccess(userID, sessionVersion, sourceID uint64, sourceRunID string) (string, error) {
-	if userID == 0 || sourceID == 0 || strings.TrimSpace(sourceRunID) == "" {
+	return m.IssueSourceRunAccessTTL(userID, sessionVersion, sourceID, sourceRunID, m.accessTTL)
+}
+
+// IssueSourceRunAccessTTL is limited to the server-side Agent/Worker and only
+// to an exact SourceRun. The HTTP grant endpoint verifies the active run
+// before issuing a longer-lived token for a large original-file transfer.
+func (m Manager) IssueSourceRunAccessTTL(userID, sessionVersion, sourceID uint64, sourceRunID string, ttl time.Duration) (string, error) {
+	if userID == 0 || sourceID == 0 || strings.TrimSpace(sourceRunID) == "" ||
+		ttl <= 0 || ttl > 12*time.Hour {
 		return "", errors.New("invalid source-run claim")
 	}
 	now := time.Now()
@@ -73,7 +81,7 @@ func (m Manager) IssueSourceRunAccess(userID, sessionVersion, sourceID uint64, s
 		SourceID: sourceID, SourceRunID: sourceRunID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt: jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(m.accessTTL)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 			Subject: fmt.Sprintf("%d", userID),
 		},
 	}
