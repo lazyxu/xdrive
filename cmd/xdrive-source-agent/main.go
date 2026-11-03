@@ -506,6 +506,11 @@ func run(args []string) error {
 
 	scanner := sourceagent.Scanner{
 		API: cli, ExecutionAPI: cli, SourceID: cfg.SourceID, Photos: photos,
+		BindExecutionRun: func(ctx context.Context, sourceID uint64, runID string) (sourceagent.ExecutionAPI, error) {
+			// The NAS Agent owns local filesystem access, but can only write
+			// cloud Nodes while Server confirms this exact active SourceRun.
+			return sourceagent.NewRunScopedExecution(cli, sourceID, runID), nil
+		},
 		Roots: sourceagent.RootsWithIdentityState(
 			cfg.PersonalRoot, cfg.PersonalRootID, cfg.PersonalRootFingerprint,
 			cfg.SharedRoot, cfg.SharedRootID, cfg.SharedRootFingerprint,
