@@ -12,7 +12,7 @@ private struct XDriveIOSNativeFilesManageDestinationIntent: Identifiable {
 /// No context-menu action bypasses the existing verified Owner-scoped
 /// operation or its destination / rename / destructive confirmation UI.
 enum XDriveIOSNativeFilesQuickAction {
-    case copy, move, rename, shareLink, download, trash
+    case copy, move, rename, favorite, shareLink, download, trash
 }
 
 /// Native Server Files operations live beside, never inside, the independent
@@ -429,6 +429,10 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         case .rename:
             renameDraft = selected.name
             showingRename = true
+        case .favorite:
+            // Reuse the existing Owner/Node revision checked, idempotent
+            // Favorite writer. No unverified new mutation transport.
+            favoriteMutation.add(selected, login: login)
         case .shareLink:
             shareNode = selected
         case .download:
