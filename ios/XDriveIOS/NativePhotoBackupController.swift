@@ -593,15 +593,18 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 // prior confirmed original and Node; never trust stale flags.
                 window = same
             case .nextWindow(let next):
-                // Durable scan checkpoint BEFORE advancing the in-memory
-                // index. A failed write safely rechecks this same window on
-                // the next explicit foreground attempt; uncertain ACKs have
-                // already been fenced by the shared Owner preflight.
-                try XDriveIOSPhotoFocusedResumeStore.shared.saveCompletedWindow(
-                    owner: owner, completedWindow: window, nextWindow: next,
-                    totalVisible: result.totalVisible, epoch: after,
-                    allowICloud: allowICloud, hadUnavailable: hadUnavailable
-                )
+                // Only a contiguous prefix with NO unavailable/unsupported
+                // media may be skipped on a later run. Once one original was
+                // unavailable, keep the previous safe checkpoint and let
+                // the next explicit run revisit the first unresolved window.
+                // Do not silently jump past the gap after later windows.
+                if !hadUnavailable {
+                    try XDriveIOSPhotoFocusedResumeStore.shared.saveCompletedWindow(
+                        owner: owner, completedWindow: window, nextWindow: next,
+                        totalVisible: result.totalVisible, epoch: after,
+                        allowICloud: allowICloud, hadUnavailable: hadUnavailable
+                    )
+                }
                 state.completedWindows += 1
                 window = next
             case .finished:
