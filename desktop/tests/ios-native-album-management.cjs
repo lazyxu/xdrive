@@ -117,7 +117,16 @@ test('album identity is tied to the PhotoKit collection, not a changing director
   assert.match(pager, /id: album\.localIdentifier, name:/)
   assert.match(pager, /collectionIdentifier: album\.localIdentifier/)
   assert.doesNotMatch(pager, /id: "album-page-\\?\(position\)"/)
-  assert.match(browser, /ForEach\(page\.items\) \{ album in/)
+  // The visible directory is split into user and smart-album sections.
+  // Neither section may manufacture IDs from its current row position.
+  assert.match(directory, /let userAlbums = page\.items\.filter \{ \$0\.kind == "用户相册" \}/)
+  assert.match(directory, /let systemAlbums = page\.items\.filter \{ \$0\.kind == "系统智能相册" \}/)
+  assert.match(directory, /ForEach\(albums\) \{ album in\s*albumCoverCell\(album, page: page\)/)
+  assert.match(directory, /NavigationLink \{\s*XDriveIOSNativeAlbumContentsScreen\(album: album\)/)
+  assert.match(directory, /\.id\(album\.id\)/)
+  // Auto-load still follows the true last PhotoKit directory item, not a
+  // newly grouped visual section's last row.
+  assert.match(directory, /if album\.id == page\.items\.last\?\.id \{\s*visibleTailAlbumID = album\.id\s*continueDirectoryIfReady\(\)/)
   assert.match(browser, /scroll\.scrollTo\(target, anchor: \.top\)/)
   assert.match(browser, /let target = page\.items\[min\(anchor, page\.items\.count - 1\)\]\.id/)
 })
