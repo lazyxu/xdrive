@@ -170,9 +170,9 @@ func TestNotesOwnerClientRejectsInvalidIdentityAndForgedContent(t *testing.T) {
 
 func TestNotesReadVersionBoundsRawHTTPBody(t *testing.T) {
 	tests := []struct {
-		name string
+		name    string
 		content string
-		ok bool
+		ok      bool
 	}{
 		{name: "valid", content: "中文 Markdown", ok: true},
 		{name: "oversize", content: strings.Repeat("x", NotesMaxMarkdownBytes+1)},
