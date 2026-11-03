@@ -953,10 +953,13 @@ func desktopIPCAuth(token string, next http.Handler) http.Handler {
 // keep the legacy save action usable rather than sending an unsupported ID.
 func (h *desktopIPCHandler) viewerDownloadCapabilities() []string {
 	capabilities := desktopIPCCapabilitiesForRuntime(h.backupOnly)
+	// DSM uses the owning Backup-only Agent for the very same bounded Notes
+	// commands. The capability is only advertised when the Controller really
+	// implements that Owner port; other full-only capabilities stay hidden.
+	if _, notes := h.ctrl.(desktopIPCNotesPort); notes {
+		capabilities = append(capabilities, "cloud-notes")
+	}
 	if !h.backupOnly {
-		if _, notes := h.ctrl.(desktopIPCNotesPort); notes {
-			capabilities = append(capabilities, "cloud-notes")
-		}
 		if _, supported := h.ctrl.(interface {
 			CloudDownloadWithClientRequestID(context.Context, uint64, string, string) error
 		}); supported {
