@@ -12,8 +12,8 @@ import (
 
 var (
 	errSourceTargetMigrationRequired = errors.New("source target must be migrated before renaming")
-	errSourceTargetNameConflict       = errors.New("managed source target name is occupied")
-	errSourceTargetRenameActive       = errors.New("source has an active run; target rename is unsafe")
+	errSourceTargetNameConflict      = errors.New("managed source target name is occupied")
+	errSourceTargetRenameActive      = errors.New("source has an active run; target rename is unsafe")
 )
 
 // renameManagedSourceTargetTx is part of PATCH /sources/:id's Source-locked
