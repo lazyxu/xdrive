@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -164,29 +163,150 @@ func bindCreatedManagedTargetTx(
 	return nil
 }
 
+// canonicalManagedSourceTargetTx checks the actual ancestor Node identities
+// without creating anything. Category names describe layout only; SourceID
+// and TargetNodeID provide durable ownership, including renamed devices.
+func canonicalManagedSourceTargetTx(
+	ctx context.Context, tx *gorm.DB, source meta.Source,
+) (bool, error) {
+	if source.TargetNodeID == nil {
+		return false, nil
+	}
+	var target meta.Node
+	if err := tx.WithContext(ctx).Where(
+		"id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+		*source.TargetNodeID, source.OwnerID, meta.NodeTypeDir,
+	).First(&target).Error; err != nil {
+		return false, err
+	}
+	if target.ParentID == nil {
+		return false, nil
+	}
+	names := []string{managedSourceTopDirectory, managedSourcePullDirectory}
+	if source.Direction == meta.SourceDirectionPush {
+		names = []string{managedSourceTopDirectory, managedSourcePushDirectory}
+	}
+	currentID := *target.ParentID
+	for index := len(names) - 1; index >= 0; index-- {
+		// The last category (device or connector) is not part of names.
+		if index == len(names)-1 {
+			var category meta.Node
+			if err := tx.WithContext(ctx).Where(
+				"id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+				currentID, source.OwnerID, meta.NodeTypeDir,
+			).First(&category).Error; err != nil {
+				return false, err
+			}
+			if category.ParentID == nil {
+				return false, nil
+			}
+			currentID = *category.ParentID
+		}
+		var parent meta.Node
+		if err := tx.WithContext(ctx).Where(
+			"id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+			currentID, source.OwnerID, meta.NodeTypeDir,
+		).First(&parent).Error; err != nil {
+			return false, err
+		}
+		if parent.Name != names[index] {
+			return false, nil
+		}
+		if parent.ParentID == nil {
+			return false, nil
+		}
+		currentID = *parent.ParentID
+	}
+	return true, nil
+}
+
+// These writes intentionally never change SourceItem.Path, SourceItem.NodeID,
+// any file content/CAS ref or a historical SyncRun's target snapshot.
+func renameYikeManagedTargetTx(
+	ctx context.Context, tx *gorm.DB, source meta.Source, newName string,
+) error {
+	if source.TargetNodeID == nil {
+		return nil
+	}
+	var target meta.Node
+	if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND owner_id = ? AND deleted_at IS NULL",
+			*source.TargetNodeID, source.OwnerID).First(&target).Error; err != nil {
+		return err
+	}
+	accountID, ok := managedYikeTargetAccountID(target.Name)
+	if !ok || target.ParentID == nil {
+		return errManagedTargetConflict
+	}
+	leaf, err := yikeManagedTargetLeaf(accountID, newName)
+	if err != nil {
+		return err
+	}
+	return renameManagedTargetLeafTx(ctx, tx, source.OwnerID, target, leaf)
+}
+
+func renameManagedTargetLeafTx(
+	ctx context.Context, tx *gorm.DB, ownerID uint64, target meta.Node, leaf string,
+) error {
+	if target.Name == leaf {
+		return nil
+	}
+	if target.ParentID == nil {
+		return errManagedTargetConflict
+	}
+	var count int64
+	if err := tx.WithContext(ctx).Model(&meta.Node{}).Where(
+		"owner_id = ? AND parent_id = ? AND id <> ? AND deleted_at IS NULL AND lower(name) = lower(?)",
+		ownerID, *target.ParentID, target.ID, leaf,
+	).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return errManagedTargetConflict
+	}
+	result := tx.WithContext(ctx).Model(&meta.Node{}).Where(
+		"id = ? AND owner_id = ? AND deleted_at IS NULL AND revision = ?",
+		target.ID, ownerID, target.Revision,
+	).Updates(map[string]any{
+		"name": leaf, "revision": gorm.Expr("revision + 1"), "updated_at": time.Now().UTC(),
+	})
+	if result.Error != nil {
+		if isDuplicate(result.Error) {
+			return errManagedTargetConflict
+		}
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errManagedTargetConflict
+	}
+	return nil
+}
+
 // Only new canonical Source roots are renamed. Legacy mixed targets must be
 // migrated before changing their real folder name, not renamed in-place.
 func renameCanonicalManagedSourceTargetTx(
 	ctx context.Context, tx *gorm.DB, source meta.Source, newSourceName string,
 ) error {
-	if source.TargetNodeID == nil || source.Kind == yikeSourceKind {
+	if source.TargetNodeID == nil {
 		return nil
 	}
-	parent, err := managedSourceTargetParentTx(ctx, tx, source)
+	if source.Kind == yikeSourceKind {
+		return renameYikeManagedTargetTx(ctx, tx, source, newSourceName)
+	}
+	isCanonical, err := canonicalManagedSourceTargetTx(ctx, tx, source)
 	if err != nil {
 		return err
+	}
+	if !isCanonical {
+		// The original mixed target must be migrated first, not arbitrarily
+		// renamed and mistakenly converted to a managed ordinary directory.
+		return nil
 	}
 	var target meta.Node
 	if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND owner_id = ? AND deleted_at IS NULL",
-			*source.TargetNodeID, source.OwnerID).
-		Take(&target).Error; err != nil {
+			*source.TargetNodeID, source.OwnerID).First(&target).Error; err != nil {
 		return err
-	}
-	if target.ParentID == nil || *target.ParentID != parent.ID {
-		// Legacy location. The startup migration owns relocation and can
-		// report conflicts. Do not rename a mixed ordinary directory here.
-		return nil
 	}
 	renamed := source
 	renamed.Name = newSourceName
@@ -194,25 +314,5 @@ func renameCanonicalManagedSourceTargetTx(
 	if err != nil {
 		return err
 	}
-	if strings.EqualFold(target.Name, newName) && target.Name == newName {
-		return nil
-	}
-	var conflicts int64
-	if err := tx.WithContext(ctx).Model(&meta.Node{}).
-		Where("owner_id = ? AND parent_id = ? AND id <> ? AND deleted_at IS NULL AND lower(name) = lower(?)",
-			source.OwnerID, parent.ID, target.ID, newName).
-		Count(&conflicts).Error; err != nil {
-		return err
-	}
-	if conflicts != 0 {
-		return errManagedTargetConflict
-	}
-	now := time.Now().UTC()
-	return tx.WithContext(ctx).Model(&meta.Node{}).
-		Where("id = ? AND owner_id = ? AND deleted_at IS NULL", target.ID, source.OwnerID).
-		Updates(map[string]any{
-			"name": newName,
-			"revision": gorm.Expr("revision + 1"),
-			"updated_at": now,
-		}).Error
+	return renameManagedTargetLeafTx(ctx, tx, source.OwnerID, target, newName)
 }
