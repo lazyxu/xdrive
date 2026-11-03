@@ -22,6 +22,8 @@ test('root identity unchanged: clickable external-drive icon and title in breadc
   assert.match(explorer, /index === 0 \? XDRIVE_CLOUD_ROOT_LABEL : crumb\.name/)
   assert.match(explorer, /index === 0 \|\| index !== crumbs\.length - 1\) onCrumbClick/)
   assert.match(mobile, /XDriveCloudRootIcon/)
+  assert.match(mobile, /index === 0 \? <XDriveCloudRootIcon/)
+  assert.match(mobile, /index === 0 \? XDRIVE_CLOUD_ROOT_LABEL : crumb\.name/)
   assert.doesNotMatch(icon, /fetch\(|localStorage|NodeID\s*=/)
 })
 

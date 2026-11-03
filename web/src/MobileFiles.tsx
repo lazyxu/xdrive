@@ -43,7 +43,7 @@ import type {
 } from '../../ui/shared/src'
 import {
   XDriveFileExplorerAvailabilityBadge, xDriveFileExplorerMarkThumbnailScrollActivity,
-  XDriveCloudRootIcon, XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
+  XDriveCloudRootIcon, XDRIVE_CLOUD_ROOT_LABEL, XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
   XDriveFileNameDialog, XDriveFilePropertiesDialog, XDriveStatePanel, XDriveMediaDetailsInspector,
   XDriveMobileHeaderNavigation, useXDriveMobileHeaderMode, xDriveFileSupportsThumbnail,
   useXDriveFileExplorerPropertiesController,
@@ -2512,7 +2512,7 @@ export default function MobileFiles(props: Props) {
     )
   }
   const heading = props.trashActive ? '最近删除' : section === 'recent' ? '最近' : section === 'favorites' ? '收藏' :
-    showDirectory ? (props.searchActive ? '搜索结果' : props.crumbs.at(-1)?.name ?? '云端文件') : '浏览'
+    showDirectory ? (props.searchActive ? '搜索结果' : props.crumbs.length === 1 ? XDRIVE_CLOUD_ROOT_LABEL : props.crumbs.at(-1)?.name ?? '云端文件') : '浏览'
   const editTitle = editBrowseHome && section === 'browse' && !showDirectory
   const compactTitleVisible = showDirectory || scrollTop > 48 || selectionActive || editTitle
   const hasFolderAncestors = !savedResumePending && showDirectory &&
@@ -3176,9 +3176,11 @@ export default function MobileFiles(props: Props) {
                 // navigation is awaiting its Server-authoritative commit.
                 props.onCrumbClick(index)
               }}>
-              <ListItemIcon><MobileFolderIcon size={23}/></ListItemIcon>
-              <Typography noWrap dir="auto" title={crumb.name || '根目录'}
-                sx={{ unicodeBidi: 'plaintext' }}>{crumb.name || '根目录'}</Typography>
+              <ListItemIcon>
+                {index === 0 ? <XDriveCloudRootIcon sx={{ fontSize: 23, color: 'primary.main' }} /> : <MobileFolderIcon size={23}/>}
+              </ListItemIcon>
+              <Typography noWrap dir="auto" title={index === 0 ? XDRIVE_CLOUD_ROOT_LABEL : crumb.name || '根目录'}
+                sx={{ unicodeBidi: 'plaintext' }}>{index === 0 ? XDRIVE_CLOUD_ROOT_LABEL : crumb.name || '根目录'}</Typography>
               {index === props.crumbs.length - 1
                 ? <CheckRoundedIcon sx={{ ml: 'auto', fontSize: 18, color: IOS_FILES_MOBILE_BLUE }}/> : null}
             </MenuItem>
