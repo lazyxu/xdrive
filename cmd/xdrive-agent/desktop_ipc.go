@@ -145,7 +145,7 @@ var desktopIPCCapabilities = []string{
 	"transfer-lifecycle",
 	"transfer-lifecycle-child-batch",
 	"transfer-history-scope",
-	"sync-activity-history",
+
 	"diagnostics",
 	"diagnostic-actions",
 	"open-folder",
@@ -155,6 +155,9 @@ var desktopIPCCapabilities = []string{
 
 func desktopIPCHelloCapabilities() []string {
 	capabilities := append([]string(nil), desktopIPCCapabilities...)
+	if runtime.GOOS == "windows" {
+		capabilities = append(capabilities, "sync-activity-history")
+	}
 	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
 		capabilities = append(capabilities, "local-folder-root-grants", "device-backup-local-drafts", "device-backup-local-config", "device-backup-local-target", "device-backup-local-mode", "device-backup-local-rules", "device-backup-local-schedule", "device-backup-local-preview", "device-backup-local-snapshot", "device-backup-local-first-file", "device-backup-local-first-file-status", "device-backup-local-common-batch", "device-backup-local-common-recovery-review", "device-backup-local-delta", "device-backup-local-evidence", "device-backup-local-evidence-summary", "device-backup-local-evidence-preflight", "device-backup-local-remove")
 	}
