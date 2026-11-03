@@ -70,7 +70,7 @@ enum XDriveLocalPhotoAlbumPager {
                     }
                     let name = album.localizedTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
                     rows.append(XDriveLocalPhotoAlbumSummary(
-                        id: "album-page-\(position)", name: name?.isEmpty == false ? name! : "未命名相册",
+                        id: album.localIdentifier, name: name?.isEmpty == false ? name! : "未命名相册",
                         kind: kind,
                         collectionIdentifier: album.localIdentifier,
                         accessibleAssetCount: PHAsset.fetchAssets(in: album, options: nil).count

@@ -12,7 +12,9 @@ struct XDriveIOSNativeAlbumDestinationPicker: View {
     @Environment(\.scenePhase) private var phase
     @State private var page: XDriveLocalPhotoAlbumPage?
     @State private var busy = false
-    @State private var tailVisible = false
+    // Key visibility by the page end offset: old tail disappearance must not
+    // clear the newly mounted tail's visibility after an append.
+    @State private var visibleTailOffset: Int?
     @State private var writing = false
     @State private var message: String?
     @State private var epoch = UUID()
@@ -57,16 +59,21 @@ struct XDriveIOSNativeAlbumDestinationPicker: View {
                         }
                     }
                     if page.hasNext && !writing {
+                        let tailOffset = page.items.count
                         ProgressView("正在查找更多相簿…")
                             .frame(maxWidth: .infinity, minHeight: 44)
-                            .id("album-destination-tail:\(page.items.count)")
+                            .id("album-destination-tail:\(tailOffset)")
                             .onAppear {
                                 // Each newly visible tail advances one 32-item
                                 // PhotoKit directory segment; no page buttons.
-                                tailVisible = true
-                                if !busy && message == nil { load(at: page.items.count) }
+                                visibleTailOffset = tailOffset
+                                if !busy && message == nil { load(at: tailOffset) }
                             }
-                            .onDisappear { tailVisible = false }
+                            .onDisappear {
+                                if visibleTailOffset == tailOffset {
+                                    visibleTailOffset = nil
+                                }
+                            }
                     }
                 }
                 if busy { ProgressView("读取系统相簿…") }
@@ -91,8 +98,9 @@ struct XDriveIOSNativeAlbumDestinationPicker: View {
         .onChange(of: busy) { inProgress in
             // SwiftUI can mount the tail while its first page request is
             // still active. Once it finishes, do not require a second tap.
-            guard !inProgress, tailVisible, message == nil,
-                  let page, page.hasNext else { return }
+            guard !inProgress, message == nil,
+                  let page, page.hasNext,
+                  visibleTailOffset == page.items.count else { return }
             load(at: page.items.count)
         }
         .onChange(of: phase) { state in
@@ -107,7 +115,7 @@ struct XDriveIOSNativeAlbumDestinationPicker: View {
     }
 
     private func stopRead() {
-        tailVisible = false
+        visibleTailOffset = nil
         epoch = UUID()
         readTask?.cancel()
         readTask = nil
