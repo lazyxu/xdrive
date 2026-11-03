@@ -202,7 +202,7 @@ func sourceRunDTOForRead(run meta.SyncRun, source meta.Source) syncRunDTO {
 
 func (s *Server) listSources(c *gin.Context) {
 	var sources []meta.Source
-	if err := s.DB.Where("owner_id = ?", userID(c)).Order("lower(name) ASC, id ASC").Find(&sources).Error; err != nil {
+	if err := s.DB.Where("owner_id = ? AND status <> ?", userID(c), meta.SourceStatusArchived).Order("lower(name) ASC, id ASC").Find(&sources).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list sources failed")
 		return
 	}
@@ -216,7 +216,7 @@ func (s *Server) listSources(c *gin.Context) {
 
 func (s *Server) listSourceOverview(c *gin.Context) {
 	var sources []meta.Source
-	if err := s.DB.Where("owner_id = ?", userID(c)).Order("lower(name) ASC, id ASC").Find(&sources).Error; err != nil {
+	if err := s.DB.Where("owner_id = ? AND status <> ?", userID(c), meta.SourceStatusArchived).Order("lower(name) ASC, id ASC").Find(&sources).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list sources failed")
 		return
 	}
@@ -522,7 +522,7 @@ func (s *Server) updateSource(c *gin.Context) {
 			}
 			var count int64
 			if err := tx.Model(&meta.Source{}).
-				Where("owner_id = ? AND id <> ? AND lower(name) = lower(?)", userID(c), id, name).
+				Where("owner_id = ? AND id <> ? AND status <> ? AND lower(name) = lower(?)", userID(c), id, meta.SourceStatusArchived, name).
 				Count(&count).Error; err != nil {
 				return err
 			}
@@ -773,10 +773,34 @@ func (s *Server) deleteSource(c *gin.Context) {
 		if activeRuns != 0 {
 			return errSourceRunActive
 		}
-		if err := requireEmptyBoundLocalSourceRemovalTx(tx, source); err != nil {
+		// An archived Source is no longer executable or writable but its
+		// SourceItem/SyncRun history and cloud Node/CAS objects are durable.
+		// DELETE retains compatibility with existing SourceManager clients.
+		if source.Status == meta.SourceStatusArchived {
+			return nil
+		}
+		now := time.Now().UTC()
+		updated := tx.Model(&meta.Source{}).
+			Where("id = ? AND owner_id = ? AND revision = ?", source.ID, source.OwnerID, expected).
+			Updates(map[string]any{
+				"status": meta.SourceStatusArchived,
+				"revision": gorm.Expr("revision + 1"),
+				"run_requested_at": nil, "retry_at": nil,
+				"retry_attempt": 0, "updated_at": now,
+			})
+		if updated.Error != nil { return updated.Error }
+		if updated.RowsAffected != 1 { return errRevisionConflict }
+		// Credentials are no longer usable; history and Node/File records stay.
+		if err := tx.Where("source_id = ?", source.ID).Delete(&meta.SourceCredential{}).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&source).Error
+		// The Server binding record grants no local OS access. The owning
+		// Agent removes its private Root grant only after a confirmed response.
+		if err := tx.Where("source_id = ? AND owner_id = ?", source.ID, source.OwnerID).
+			Delete(&meta.LocalSourceBinding{}).Error; err != nil {
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		switch {
