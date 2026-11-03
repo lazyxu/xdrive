@@ -459,7 +459,7 @@ function XDriveDeviceBackupServerPage({
             onClick={() => refresh((n) => n + 1)}>
             刷新
           </Button>
-          {localCreate && targetBrowser ? (
+          {localCreate ? (
             <Button size="small" variant="contained" startIcon={<AddRoundedIcon />}
               onClick={() => setCreateOpen(true)}>
               新增本机备份
@@ -737,10 +737,9 @@ function XDriveDeviceBackupServerPage({
           </Box>
         </Stack>
       </Box>
-      {localCreate && targetBrowser && source ? (
+      {localCreate && source ? (
         <XDriveDeviceBackupLocalCreateDialog
           open={createOpen}
-          targetBrowser={targetBrowser}
           actions={localCreate}
           onClose={() => setCreateOpen(false)}
           onFinished={(message) => {
