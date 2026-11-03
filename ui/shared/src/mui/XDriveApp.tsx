@@ -6,7 +6,7 @@ import type { SxProps, Theme } from '@mui/material/styles'
 import { XDriveWorkspaceFrame } from './WorkspaceShell'
 import { XDriveWorkspaceSidebar } from './WorkspaceSidebar'
 import { XDriveAppRouteContent } from './XDriveAppRouteContent'
-import { XDRIVE_CORE_WORKSPACE_KEYS, xDriveWorkspaceNavigationAllowed, type XDriveWorkspaceAppRoute } from './WorkspaceRoute'
+import { xDriveWorkspaceNavigationAllowed, type XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 import type { XDriveWorkspaceHostAdapter } from './WorkspaceHostAdapter'
 
 // All Hosts use the same viewport breakpoints and default content padding.
@@ -70,11 +70,6 @@ export function XDriveApp({
       sidebar={
         <XDriveWorkspaceSidebar
           {...sidebar}
-          // Desktop/DSM must not expose a Notes button until they supply a
-          // real Owner-authenticated Notes transport; Web/PWA has its own
-          // verified Browser port and navigation.
-          coreKeys={sidebar.coreKeys ?? XDRIVE_CORE_WORKSPACE_KEYS.filter(key =>
-            key !== 'notes' || Boolean(host.services?.notesPage))}
           appearance={sidebarAppearance}
           selected={view}
           responsive
