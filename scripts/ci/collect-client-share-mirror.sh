@@ -27,6 +27,19 @@ verify_snapshot_ref() {
 }
 verify_snapshot_ref
 
+# Use the immutable source commit timestamp for stable names on rerun/retry.
+# Never use the mirror job clock or rolling Snapshot asset update timestamp.
+commit_utc() {
+  local sha="$1" stamp
+  [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || exit 1
+  stamp="$(gh api "repos/$repo/commits/$sha" --jq '.commit.committer.date')"
+  [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
+    echo "Invalid source commit UTC timestamp" >&2; exit 1;
+  }
+  printf '%s\n' "$stamp"
+}
+commit_utc "$snapshot_sha" > "$output/meta/snapshot.time"
+
 # The glob gets the single versioned SPK and checksum without guessing build
 # numbers. Exclude source agents, Docker layers, backup CLIs and deploy assets.
 gh release download snapshot --repo "$repo" --dir "$output/snapshot" \
@@ -34,6 +47,10 @@ gh release download snapshot --repo "$repo" --dir "$output/snapshot" \
   --pattern 'xdrive-linux-amd64.deb' \
   --pattern 'xdrivenas-armada38x-*.spk' \
   --pattern 'xdrivenas-armada38x-*.spk.sha256' \
+  --pattern 'xdrive-backup-linux-amd64.tar.gz' \
+  --pattern 'xdrive-backup-windows-amd64.zip' \
+  --pattern 'xdrive-source-agent-linux-amd64' \
+  --pattern 'xdrive-source-agent-linux-arm64' \
   --pattern 'SHA256SUMS.txt'
 verify_snapshot_ref
 
@@ -52,6 +69,10 @@ verify_release_asset() {
 }
 verify_release_asset 'xDriveSetup-amd64.exe'
 verify_release_asset 'xdrive-linux-amd64.deb'
+for supporting in xdrive-backup-linux-amd64.tar.gz xdrive-backup-windows-amd64.zip \
+  xdrive-source-agent-linux-amd64 xdrive-source-agent-linux-arm64; do
+  verify_release_asset "$supporting"
+done
 [[ -s "$output/snapshot/SHA256SUMS.txt" ]] || { echo 'Snapshot checksum manifest missing'; exit 1; }
 (cd "$output/snapshot"; sha256sum --check --ignore-missing SHA256SUMS.txt)
 printf '%s\n' "$snapshot_sha" > "$output/meta/snapshot.sha"
@@ -104,6 +125,7 @@ collect_mobile() {
       (cd "$output/ios"; sha256sum -c xDrive-unsigned.ipa.sha256)
     fi
     printf '%s\n' "$sha" > "$output/meta/$platform.sha"
+    commit_utc "$sha" > "$output/meta/$platform.time"
     echo "Selected $platform: $sha from successful master run $run_id"
     found=1
     break
