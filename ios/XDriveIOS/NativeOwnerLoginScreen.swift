@@ -106,6 +106,12 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 }
             }
         }
+        .onAppear {
+            backup.startLibraryChangeMonitoring(login: model)
+        }
+        .onDisappear {
+            backup.stopLibraryChangeMonitoring()
+        }
         .task {
             // Postpone the retired Keychain cleanup until the first native
             // view has mounted. Keep the launch stage visible across exits.

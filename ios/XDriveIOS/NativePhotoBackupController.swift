@@ -25,6 +25,22 @@ private enum XDriveIOSFocusedBackupFailure: Error {
     case invalidWindow
 }
 
+/// Installed once at the native Owner root, never from a gallery row.
+/// PhotoKit may call off-main; the observer only advances a saved due time.
+private final class XDriveIOSForegroundPhotoLibraryObserver:
+    NSObject, PHPhotoLibraryChangeObserver {
+    private let onChanged: @MainActor () -> Void
+
+    init(onChanged: @escaping @MainActor () -> Void) {
+        self.onChanged = onChanged
+        super.init()
+    }
+
+    func photoLibraryDidChange(_ changeInstance: PHChange) {
+        Task { @MainActor [weak self] in self?.onChanged() }
+    }
+}
+
 @MainActor
 final class XDriveIOSNativePhotoBackupController: ObservableObject {
     @Published private(set) var busy = false
@@ -53,6 +69,33 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     private var displayEpoch = UUID()
     private var manualLibraryEpoch: Data?
     private var manualAuthorizationRaw: Int?
+    private var libraryObserver: XDriveIOSForegroundPhotoLibraryObserver?
+
+    /// Observe changes without enumerating PhotoKit or starting a writer.
+    /// The native root owns the observer across tab switches; a late callback
+    /// always reads the CURRENT Owner rather than a captured former account.
+    func startLibraryChangeMonitoring(login: XDriveIOSNativeOwnerLoginModel) {
+        guard libraryObserver == nil else { return }
+        let observer = XDriveIOSForegroundPhotoLibraryObserver { [weak self, weak login] in
+            guard let self, let login, let owner = login.owner,
+                  [.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                  ) else { return }
+            guard (try? XDriveIOSPhotoAutoScheduleStore.shared
+                .expediteForLibraryChange(owner: owner)) != nil else { return }
+            // Only the already-running foreground timer may enter tickIfDue.
+            // Avoid a same-callback scan while PhotoKit is delivering changes.
+            self.refresh(owner: owner)
+        }
+        PHPhotoLibrary.shared().register(observer)
+        libraryObserver = observer
+    }
+
+    func stopLibraryChangeMonitoring() {
+        guard let observer = libraryObserver else { return }
+        PHPhotoLibrary.shared().unregisterChangeObserver(observer)
+        libraryObserver = nil
+    }
 
     func refresh(owner: XDriveNativeOwnerRoot?) {
         let unchanged: Bool
