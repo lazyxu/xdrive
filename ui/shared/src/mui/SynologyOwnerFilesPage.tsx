@@ -6,6 +6,7 @@ import type {
   XDriveSynologyBackupLocalClient, XDriveSynologyOwnerFileNode,
 } from '../synology-backup-adapter'
 import { XDriveFileExplorer } from './FileExplorer'
+import { useXDriveSynologyOwnerFilesSearch } from './SynologyOwnerFilesSearch'
 import { XDriveFileNameDialog } from './FileNameDialog'
 import { xDriveFindVerifiedOwnerSelection } from './FileExplorerVerifiedOwnerSelection'
 import { xDriveFileExplorerReadOnlyDownloadReason } from './FileExplorerReadOnlyDownloadAdmission'
@@ -28,6 +29,7 @@ import {
   XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES,
 } from '../synology-media-preview'
 import { xDriveSynologyLoadViewerPreview, xDriveSynologyViewerNeedsDerived } from '../synology-viewer-preview'
+import { xDriveSynologyLoadOwnerLiveMotion } from '../synology-live-motion'
 import {
   xDriveSynologyLoadNativeMediaStream, xDriveSynologyPlaybackMIME,
 } from '../synology-media-stream'
@@ -152,6 +154,24 @@ export function XDriveSynologyOwnerFilesPage({
     () => currentScopeVerified ? items.map(itemForExplorer) : [],
     [items, currentScopeVerified],
   )
+  const search = useXDriveSynologyOwnerFilesSearch({
+    client, scopeKey: currentScopeKey, rootRevision,
+    verified: currentScopeVerified, isCurrentOwner,
+  })
+  const searchSummary = search.current ? {
+    query: search.current.query,
+    conditions: [
+      '已载入 ' + search.current.hits.length.toLocaleString('zh-CN') +
+        (search.current.hasMore ? ' 项，尚有后续页' : ' 项'),
+      '点击结果进入所在文件夹',
+    ],
+    resultCount: search.current.loading && search.current.hits.length === 0
+      ? null : search.current.hits.length,
+    loading: search.current.loading,
+    error: search.current.error || undefined,
+    onClear: search.clear,
+    onRetry: search.retry,
+  } : undefined
   // Use the exact same Owner-fenced readonly Viewer selection lifecycle
   // as any other Host supplying authorized Files rows and media evidence.
   const viewerSelection = useMemo(() => xDriveFileExplorerReadOnlyViewerSelection({
@@ -173,6 +193,17 @@ export function XDriveSynologyOwnerFilesPage({
   const previewIndex = viewerSelection.index
   const previewItem = viewerSelection.item
   const previewPositionLabel = viewerSelection.positionLabel
+  // The current verified Viewer row is an ephemeral authority fence. A pending
+  // hold from Node A cannot publish bytes after navigation to B (or A again),
+  // even if the old callback is retained and an AbortSignal arrives late.
+  const activeLivePreviewRef = useRef({
+    client, scopeKey: currentScopeKey, rootRevision,
+    item: previewItem, verified: currentScopeVerified,
+  })
+  activeLivePreviewRef.current = {
+    client, scopeKey: currentScopeKey, rootRevision,
+    item: previewItem, verified: currentScopeVerified,
+  }
   const thumbnailOnlyPreview = previewItem !== null && usesOwnerThumbnailOnlyPreview(previewItem)
   // #3528's Owner-scoped 4K reader is an allowed *derivative*, not an unsafe
   // full-original Blob. A prior thumbnail-only fallback must not suppress it.
@@ -199,6 +230,33 @@ export function XDriveSynologyOwnerFilesPage({
     signal?: AbortSignal,
     onProgress?: XDriveByteProgressHandler,
   ) => xDriveSynologyLoadOwnerThumbnail(client, item, signal, onProgress), [client])
+  const loadOwnerLivePhotoMotion = useCallback((
+    item: XDriveFileExplorerItem,
+    onProgress?: XDriveByteProgressHandler,
+    signal?: AbortSignal,
+  ): Promise<string | null> => {
+    const opened = activeLivePreviewRef.current
+    // Live motion is on-demand for this exact selected .livp only. An ordinary
+    // image/video/unknown binary never gains a new privileged media read.
+    if (signal?.aborted || item.kind !== 'file' || !/\.livp$/i.test(item.name) ||
+        opened.client !== client || !opened.verified ||
+        opened.item !== item || !isCurrentOwner()) return Promise.resolve(null)
+
+    const isCurrent = () => {
+      const now = activeLivePreviewRef.current
+      return !signal?.aborted && isCurrentOwner() &&
+        now.client === opened.client &&
+        now.scopeKey === opened.scopeKey &&
+        now.rootRevision === opened.rootRevision &&
+        now.item === opened.item && now.verified &&
+        xDriveFindVerifiedOwnerSelection(item, itemsRef.current) !== null
+    }
+    if (!isCurrent()) return Promise.resolve(null)
+    return xDriveSynologyLoadOwnerLiveMotion(
+      client, item.id as number, item.revision as number,
+      isCurrent, signal, onProgress,
+    )
+  }, [client, isCurrentOwner])
   // Every entry uses the same capability check, including the actual handler.
   // Reject unsupported/stale requests before retiring an already verified save.
   const getDownloadDisabledReason = useCallback((
@@ -460,25 +518,37 @@ export function XDriveSynologyOwnerFilesPage({
               viewPreferencesKey={XDRIVE_HOST_FILES_PREFERENCES.viewPreferences}
               interactionLifecycleKey={rootRevision + ':' + currentScopeKey}
               suspendBackgroundThumbnails={previewItem !== null}
-              items={displayedItems}
+              items={search.current ? search.items : displayedItems}
               crumbs={crumbs}
-              loading={loading}
+              loading={search.current
+                ? search.current.loading && search.current.hits.length === 0
+                : loading}
               emptyReadState={currentScopeVerified ? 'ready' : error ? 'error' : 'unverified'}
               searchEnabled
-              unavailableActions={unavailableActions}
+              searchValue={search.draft}
+              onSearchValueChange={search.setDraft}
+              onSearch={search.start}
+              searchSummary={searchSummary}
+              unavailableActions={search.current
+                ? { ...unavailableActions,
+                    createFolder: '退出搜索后可新建文件夹。',
+                    rename: '退出搜索并进入文件夹后可重命名。' }
+                : unavailableActions}
               groupingEnabled={false}
               externallySorted
               forceVirtualization
               sort={sort}
-              onSortChange={next => { setPreview(null); setSort(next); return true }}
+              onSortChange={next => { if (search.current) return false; setPreview(null); setSort(next); return true }}
               canGoUp={crumbs.length > 1}
               onUp={navigateUp}
               onCrumbClick={(_crumb, index) => {
+                search.clear()
                 setPreview(null)
                 setCrumbs(current => current.slice(0, index + 1))
               }}
-              onRefresh={refreshAuthenticatedOwner}
+              onRefresh={search.current ? () => search.start(search.current!.query) : refreshAuthenticatedOwner}
               onCreateFolder={() => {
+                if (search.current) return
                 if (!isCurrentOwner() || !currentScopeVerified) {
                   setNotice('请先确认当前 Server Owner 文件目录，再新建文件夹。')
                   return
@@ -490,6 +560,7 @@ export function XDriveSynologyOwnerFilesPage({
                 })
               }}
               onRenameItem={async (item, name) => {
+                if (search.current) throw new Error('请先退出搜索并进入目标文件夹。')
                 // Rebind the inline FileExplorer draft to the current
                 // authenticated Server Owner cursor row, not a stale selection.
                 if (!isCurrentOwner() || !currentScopeVerified ||
@@ -531,13 +602,36 @@ export function XDriveSynologyOwnerFilesPage({
               loadTextPreview={loadTextPreview}
               loadThumbnail={loadOwnerThumbnail}
               loadPreviewURL={loadMediaPreview}
-              onOpenQuickLook={request => openFilePreview(request.item, request.sessionIDs)}
+              onOpenQuickLook={search.current ? undefined : request => openFilePreview(request.item, request.sessionIDs)}
               onDownloadItems={downloadSelectedFiles}
               getSelectionActionDisabledReason={(action, selected, count) => {
+                if (search.current) return '先进入搜索结果所在的文件夹，再执行此操作。'
                 return action === 'download' ? getDownloadDisabledReason(selected, count) : null
               }}
               onOpenItem={item => {
                 if (!isCurrentOwner() || !currentScopeVerified) return
+                if (search.current) {
+                  const result = search.current.hits.find(hit =>
+                    hit.node.id === item.id && hit.node.revision === item.revision)
+                  // Owner search can only navigate a Server-authenticated chain
+                  // that starts at the current verified root. The destination
+                  // must be fetched independently before any Viewer or mutation.
+                  if (!result || result.crumbs[0]?.id !== crumbs[0]?.id ||
+                      result.crumbs.at(-1)?.id !== result.node.parent_id) {
+                    setNotice('搜索结果所属目录未核实，请重新搜索。')
+                    return
+                  }
+                  const path = result.crumbs.map(crumb => ({
+                    id: crumb.id, name: crumb.name || crumbs[0].name,
+                  }))
+                  if (result.node.type === 'dir') {
+                    path.push({ id: result.node.id, name: result.node.name })
+                  }
+                  search.clear()
+                  setPreview(null)
+                  setCrumbs(path)
+                  return
+                }
                 // Select only a canonical item still present in the CURRENT
                 // authenticated cursor page, never a stale or forged list row.
                 const verified = xDriveFindVerifiedOwnerSelection(item, itemsRef.current)
@@ -556,13 +650,20 @@ export function XDriveSynologyOwnerFilesPage({
                 ? `已核实 ${displayedItems.length.toLocaleString('zh-CN')} 项${hasMore ? ' · 仍有后续页' : ''} · 云端已开放新建文件夹与重命名`
                 : '云端账号目录尚未确认'}
             />
-            {currentScopeVerified && hasMore ? (
+            {search.current?.hasMore ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                <XDriveActionButton compact loading={search.current.loading}
+                  disabled={search.current.loading || Boolean(search.current.error)}
+                  onClick={search.loadMore}>加载更多搜索结果</XDriveActionButton>
+              </Box>
+            ) : null}
+            {!search.current && currentScopeVerified && hasMore ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
                 <XDriveActionButton compact loading={paging} disabled={paging || loading}
                   onClick={loadMore}>加载更多文件</XDriveActionButton>
               </Box>
             ) : null}
-            {currentScopeVerified && !hasMore ? (
+            {!search.current && currentScopeVerified && !hasMore ? (
               <Typography variant="caption" color="text.secondary" sx={{ px: 1.5 }}>
                 当前目录已按 Server 授权游标读完；不是整个账号或其它设备的文件总数。
               </Typography>
@@ -621,6 +722,10 @@ export function XDriveSynologyOwnerFilesPage({
         // independent original/media Range request.
         loadImagePreview={loadOwnerThumbnail}
         loadPreviewURL={quickLookPreviewURLLoader}
+        // Reuse the Gallery's digest-verified Owner motion on explicit hold,
+        // with the exact same shared LivePhotoSurface and Quick Look chrome.
+        loadLivePhotoMotion={previewItem?.kind === 'file' &&
+          /\.livp$/i.test(previewItem.name) ? loadOwnerLivePhotoMotion : undefined}
         onClose={() => setPreview(null)}
       />
     </XDriveFilesWorkspacePage>

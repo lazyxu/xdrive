@@ -59,7 +59,7 @@ test('L2 retains the original modal and restores the last accepted Node+revision
   const wall = view.slice(start, end)
   assert.match(wall, /@State private var viewerLoadedItems: \[XDriveIOSNativeMediaItem\] = \[\]/)
   assert.match(wall, /@State private var viewerOpenedOwner: XDriveNativeOwnerRoot\?/)
-  assert.match(wall, /viewerLoadedItems = model\.page\?\.items \?\? \[\]/)
+  assert.match(wall, /viewerLoadedItems = verified\.items/)
   assert.match(wall, /viewerOpenedOwner = login\.owner/)
   assert.match(wall, /\.fullScreenCover\(item: \$selected\) \{ initial in/)
   assert.match(wall, /openedOwner: viewerOpenedOwner/)

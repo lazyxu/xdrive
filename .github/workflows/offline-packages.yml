@@ -1,0 +1,253 @@
+name: Publish Content-Addressed Offline Components
+on:
+  workflow_call:
+    secrets:
+      XDRIVE_CLIENT_MIRROR_SHARE_URL:
+        required: false
+      XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD:
+        required: false
+    inputs:
+      ci_run_id:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        required: true
+        type: string
+        description: "Completed successful master CI run (retry failed mirror via the original CI rerun-failed-jobs)"
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: xdrive-offline-component-publish
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_RUN_ID: ${{ inputs.ci_run_id }}
+    steps:
+      - name: Authorize exact master CI and completed Final Gate
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = lazyxu/xdrive
+          test "$GITHUB_REPOSITORY_ID" = 1382670236
+          [[ "$TARGET_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 2
+          # Do not authorize a failed CI through workflow_dispatch. If only this
+          # downstream publisher/mirror failed, rerun the original CI's failed
+          # jobs so its completed prerequisites and exact Final Gate are reused.
+          record="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TARGET_RUN_ID")"
+          jq -e '.name == "CI" and .event == "push" and .head_branch == "master" and
+                 (.status == "in_progress" or (.status == "completed" and .conclusion == "success"))' <<< "$record" >/dev/null
+          sha="$(jq -r '.head_sha' <<< "$record")"
+          [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          checks="$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?per_page=100")"
+          jq -e '[.check_runs[] | select(.name == "final-gate" and .conclusion == "success")] | length > 0' <<< "$checks" >/dev/null
+          echo "commit=$sha" >> "$GITHUB_OUTPUT"
+          echo "short=${sha:0:12}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.commit }}
+          fetch-depth: 0
+
+      - name: Verify source ancestry and source-only offline tests
+        env:
+          COMMIT: ${{ steps.source.outputs.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMMIT"
+          git fetch --no-tags origin '+refs/heads/master:refs/remotes/origin/master'
+          git merge-base --is-ancestor "$COMMIT" refs/remotes/origin/master
+          python3 -m unittest discover -s scripts/offline -p 'test_*.py'
+          python3 scripts/ci/test-mirror-server-to-share.py -q
+          bash -n scripts/offline/build-five-packages.sh
+
+      - name: Resume verified publication or recover its exact draft
+        id: replay
+        shell: bash
+        env:
+          COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          exists="$(python3 scripts/ci/mirror-server-to-share.py resume-github --directory offline --commit "$COMMIT")"
+          echo "exists=$exists" >> "$GITHUB_OUTPUT"
+
+      - name: Find the last authenticated immutable Manifest
+        if: steps.replay.outputs.exists != 'true'
+        id: previous
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p previous
+          releases="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")"
+          tag="$(python3 scripts/ci/mirror-server-to-share.py previous <<< "$releases")"
+          if [[ -n "$tag" ]]; then
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+              --pattern manifest.json --pattern xdrive-offline-attestation.json --dir previous
+            test -s previous/manifest.json
+            test -s previous/xdrive-offline-attestation.json
+            gh attestation verify previous/manifest.json \
+              --repo "$GITHUB_REPOSITORY" --bundle previous/xdrive-offline-attestation.json \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/offline-packages.yml" \
+              --source-ref refs/heads/master --deny-self-hosted-runners
+            prior="$(python3 -c 'import json;print(json.load(open("previous/manifest.json"))["source_commit"])')"
+            [[ "$prior" =~ ^[a-f0-9]{40}$ ]] || exit 1
+            git merge-base --is-ancestor "$prior" "${{ steps.source.outputs.commit }}" || {
+              echo "stale/divergent offline publication blocked" >&2; exit 1;
+            }
+            echo "manifest=previous/manifest.json" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pin current PostgreSQL image
+        if: steps.replay.outputs.exists != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 postgres:17-alpine
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' postgres:17-alpine)" = linux/amd64
+          echo "POSTGRES_ID=$(docker image inspect --format '{{.Id}}' postgres:17-alpine)" >> "$GITHUB_ENV"
+
+      - name: Compute content fingerprint and reuse plan
+        if: steps.replay.outputs.exists != 'true'
+        id: plan
+        shell: bash
+        env:
+          PREVIOUS: ${{ steps.previous.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          args=(--postgres-id "$POSTGRES_ID" --output plan.json)
+          [[ -z "$PREVIOUS" ]] || args+=(--previous "$PREVIOUS")
+          python3 scripts/offline/component_plan.py "${args[@]}"
+          echo "changed=$(jq -c .changed plan.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        if: steps.replay.outputs.exists != 'true' && contains(fromJSON(steps.plan.outputs.changed || '[]'), 'app')
+        with:
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          name: xdrive-server-image
+          path: ci-assets/server-image
+      - uses: actions/download-artifact@v4
+        if: steps.replay.outputs.exists != 'true' && contains(fromJSON(steps.plan.outputs.changed || '[]'), 'app')
+        with:
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          name: xdrive-caddy-image
+          path: ci-assets/caddy-image
+      - uses: actions/download-artifact@v4
+        if: steps.replay.outputs.exists != 'true' && contains(fromJSON(steps.plan.outputs.changed || '[]'), 'app')
+        with:
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          name: server-deploy
+          path: ci-assets/server-deploy
+      - uses: actions/download-artifact@v4
+        if: steps.replay.outputs.exists != 'true' && contains(fromJSON(steps.plan.outputs.changed || '[]'), 'media-worker')
+        with:
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          name: xdrive-media-worker-image
+          path: ci-assets/media-worker-image
+      - uses: actions/download-artifact@v4
+        if: steps.replay.outputs.exists != 'true' && contains(fromJSON(steps.plan.outputs.changed || '[]'), 'ai-models')
+        with:
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          name: xdrive-photo-face-image
+          path: ci-assets/photo-face-image
+
+      - name: Build only changed packages, reuse exact prior bytes
+        if: steps.replay.outputs.exists != 'true'
+        env:
+          XDRIVE_OFFLINE_COMMIT: ${{ steps.source.outputs.commit }}
+          XDRIVE_OFFLINE_SOURCE: github
+          XDRIVE_OFFLINE_CHANNEL: master
+          XDRIVE_OFFLINE_PLAN: plan.json
+          XDRIVE_OFFLINE_PREVIOUS_MANIFEST: ${{ steps.previous.outputs.manifest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/offline/build-five-packages.sh ci-assets offline
+          cp scripts/offline/xdrive_offline.py offline/xdrive-offline.py
+          python3 scripts/ci/mirror-server-to-share.py reconcile-packages --directory offline --commit "$XDRIVE_OFFLINE_COMMIT"
+          python3 scripts/ci/mirror-server-to-share.py checksums --directory offline
+          count="$(find offline -maxdepth 1 -type f -name 'xdrive-*.tar.gz' | wc -l)"
+          expected="$(jq '.changed|length' plan.json)"
+          test "$count" = "$expected"
+          python3 scripts/offline/delivery_descriptor.py --directory offline --commit "$XDRIVE_OFFLINE_COMMIT"
+
+      - name: Attest new packages, full manifest and standalone installer
+        if: steps.replay.outputs.exists != 'true'
+        id: attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            offline/manifest.json
+            offline/delivery.json
+            offline/xdrive-offline.py
+            offline/*.tar.gz
+
+      - name: Verify exact publisher provenance
+        if: steps.replay.outputs.exists != 'true'
+        env:
+          BUNDLE: ${{ steps.attestation.outputs.bundle-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$BUNDLE"
+          cp "$BUNDLE" offline/xdrive-offline-attestation.json
+          cp "$BUNDLE" offline/delivery-attestation.jsonl
+          for artifact in offline/manifest.json offline/delivery.json offline/xdrive-offline.py offline/*.tar.gz; do
+            [[ -f "$artifact" ]] || continue
+            gh attestation verify "$artifact" \
+              --repo "$GITHUB_REPOSITORY" --bundle "$BUNDLE" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/offline-packages.yml" \
+              --source-ref refs/heads/master --deny-self-hosted-runners
+          done
+
+      - name: Publish immutable packages and exact-commit Manifest
+        if: steps.replay.outputs.exists != 'true'
+        shell: bash
+        env:
+          CI_COMMIT: ${{ steps.source.outputs.commit }}
+          SHORT: ${{ steps.source.outputs.short }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          p=json.load(open("plan.json",encoding="utf-8"))
+          m=json.load(open("offline/manifest.json",encoding="utf-8"))
+          assert m["schema"]==2 and m["fingerprints"]==p["fingerprints"]
+          assert m["contracts"]==p["contracts"]
+          from pathlib import Path
+          actual={c for c,x in m["packages"].items() if (Path("offline")/x["filename"]).is_file()}
+          assert actual==set(p["changed"])
+          PY
+          python3 scripts/ci/mirror-server-to-share.py publish-packages --directory offline --commit "$CI_COMMIT"
+          python3 scripts/ci/mirror-server-to-share.py publish-github --directory offline --commit "$CI_COMMIT"
+          echo "Published offline-manifest-$SHORT; new packages: $(jq -c .changed plan.json)"
+
+      - name: Mirror exact published server packages into Share (opt-in)
+        if: vars.XDRIVE_CLIENT_MIRROR_ENABLED == 'true'
+        env:
+          XDRIVE_CLIENT_MIRROR_SHARE_URL: ${{ secrets.XDRIVE_CLIENT_MIRROR_SHARE_URL }}
+          XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD: ${{ secrets.XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/mirror-server-to-share.py fetch --directory offline
+          python3 scripts/ci/mirror-server-to-share.py publish --directory offline

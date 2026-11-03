@@ -134,14 +134,18 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     !sharedFileExplorer.includes('export function XDriveFileExplorer({') ||
     !synologyFiles.includes('<XDriveFileExplorer') ||
     // Search control is shared and visible on DSM; with no authorized CGI
-    // search route, Host must provide the true disabled reason instead.
-    !synologyFiles.includes('searchEnabled') ||
-    !synologyFiles.includes('unavailableActions={unavailableActions}') ||
+    // Authenticated DSM search is permitted only through its bounded Owner
+    // CGI route; other unimplemented mutations remain disabled by Host.
+    !synologyFiles.includes('useXDriveSynologyOwnerFilesSearch(') ||
+    !synologyFiles.includes('searchValue={search.draft}') ||
+    !synologyFiles.includes('searchSummary={searchSummary}') ||
+    !synologyFiles.includes('unavailableActions={search.current') ||
     // The authenticated DSM Owner Files port is explicit; unavailable actions
     // belong to that port, not to a parallel Host-specific Files registry.
     !dsmHost.includes('ownerFilesPage: {') ||
     !dsmHost.includes('client: local,') ||
     !dsmHost.includes('unavailableActions: {') ||
+    dsmHost.includes("search: 'DSM 尚未接通") ||
     !sharedFileExplorer.includes('searchUnavailableReason') ||
     !synologyFiles.includes('forceVirtualization') ||
     !synologyFiles.includes('onOpenItem={item =>') ||

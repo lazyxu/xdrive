@@ -54,7 +54,8 @@ test('shared server update model owns the confirmation summary', () => {
   for (const token of [
     'xDriveServerUpdateConfirmationDescription',
     "unavailableLabel = '服务'",
-    "source === 'gitlab' ? 'GitLab' : 'GitHub'",
+    'xDriveServerUpdateSources.find',
+    "{ value: 'xdrive', label: 'xDrive 分享' }",
     '文件数据备份',
     '数据库与一致性备份始终执行',
   ]) {
@@ -102,9 +103,9 @@ test('shared Server Update controller owns polling, transport normalization and 
     'updateActive(stateRef.current)',
     'activeReconnectMessage',
     'errorStatus(refreshError) === 403',
-    'setSource(next.source)',
-    'setChannel(next.channel)',
-    'port.startUpdate(source, channel, backupFileData)',
+    'setSourceState(next.source)',
+    'setChannelState(xDriveServerUpdateChannelForSource(next.source, next.channel))',
+    'port.startUpdate(source, xDriveServerUpdateChannelForSource(source, channel), backupFileData)',
     'onBusyChange?.(true)',
     'onBusyChange?.(false)',
   ]) {
@@ -148,7 +149,7 @@ test('host control reuses transactional xdrive-server update and installer progr
   assert.ok(hostControl.includes('update_args=(update --source "$source" --channel "$channel")'), 'host control must reuse xdrive-server update')
   assert.ok(hostControl.includes('update_args+=(--backup-file-data)'), 'host control must forward the file-data backup option')
   assert.ok(hostControl.includes('"backup_file_data":%s'), 'host control status must preserve the file-data backup mode')
-  assert.ok(hostControl.includes('case "$source" in github|gitlab)'), 'host runner source whitelist missing')
+  assert.ok(hostControl.includes('case "$source" in github|gitlab|xdrive)'), 'host runner source whitelist missing')
   assert.ok(hostControl.includes('case "$channel" in stable|master)'), 'host runner channel whitelist missing')
   assert.ok(hostControl.includes('heartbeat'), 'host runner heartbeat missing')
   assert.ok(hostControl.includes('exec 9>&-'), 'host runner must drop inherited installer lock fd')

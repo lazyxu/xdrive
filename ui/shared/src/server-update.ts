@@ -1,4 +1,4 @@
-export type XDriveServerUpdateSource = 'github' | 'gitlab'
+export type XDriveServerUpdateSource = 'github' | 'gitlab' | 'xdrive'
 export type XDriveServerUpdateChannel = 'stable' | 'master'
 export type XDriveServerUpdatePhase = 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
 
@@ -25,12 +25,23 @@ export interface XDriveServerUpdateState {
 export const xDriveServerUpdateSources: Array<{ value: XDriveServerUpdateSource; label: string }> = [
   { value: 'github', label: 'GitHub' },
   { value: 'gitlab', label: 'GitLab' },
+  { value: 'xdrive', label: 'xDrive 分享' },
 ]
 
 export const xDriveServerUpdateChannels: Array<{ value: XDriveServerUpdateChannel; label: string }> = [
   { value: 'stable', label: 'stable' },
   { value: 'master', label: 'master' },
 ]
+
+export function xDriveServerUpdateChannelsForSource(source: XDriveServerUpdateSource) {
+  return source === 'xdrive'
+    ? xDriveServerUpdateChannels.filter((option) => option.value === 'master')
+    : xDriveServerUpdateChannels
+}
+
+export function xDriveServerUpdateChannelForSource(source: XDriveServerUpdateSource, channel: XDriveServerUpdateChannel) {
+  return source === 'xdrive' ? 'master' : channel
+}
 
 export function xDriveServerUpdateProgress(state: XDriveServerUpdateState | null) {
   if (!state) return 0
@@ -66,6 +77,6 @@ export function xDriveServerUpdateConfirmationDescription({
   backupFileData: boolean
   unavailableLabel?: string
 }) {
-  const sourceLabel = source === 'gitlab' ? 'GitLab' : 'GitHub'
+  const sourceLabel = xDriveServerUpdateSources.find((option) => option.value === source)?.label || '未知来源'
   return `来源：${sourceLabel} · 通道：${channel} · 文件数据备份：${backupFileData ? '开启' : '关闭'}。数据库与一致性备份始终执行；更新期间${unavailableLabel}可能短暂不可用。`
 }

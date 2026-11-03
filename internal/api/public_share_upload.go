@@ -146,6 +146,135 @@ func (s *Server) publicShareUploadAdmissionTx(
 	return share, nil
 }
 
+// Both normal and instant guest creation call this after locking the Share.
+// The outer resume probe alone can miss another in-flight request, including
+// one that saw a CAS miss just before a matching file became Share-visible.
+func publicShareUploadResumeTx(ctx context.Context, tx *gorm.DB, shareID, ownerID uint64, req uploadInitRequest) (meta.UploadSession, error) {
+	var session meta.UploadSession
+	q := tx.WithContext(ctx).Where(`owner_id = ? AND share_id = ? AND parent_id = ? AND node_id IS NULL
+AND requested_name = ? AND conflict_policy = ? AND total_size = ? AND chunk_size = ?
+AND resume_key = ? AND status IN ? AND expires_at > ?`, ownerID, shareID, *req.ParentID,
+		req.RequestedName, req.ConflictPolicy, req.Size, req.ChunkSize, req.ResumeKey,
+		[]string{meta.UploadStatusActive, meta.UploadStatusFinalized, meta.UploadStatusSkipped}, time.Now())
+	if req.SHA256 != "" {
+		q = q.Where("sha256 = ? OR sha256 = ''", req.SHA256)
+	}
+	err := q.Order("created_at DESC").First(&session).Error
+	return session, err
+}
+
+// Lock the complete visible ancestry before retaining bytes. Reconstruct the
+// chain from the locked rows: a concurrent move that changed a parent while
+// locks were acquired must not authorize an unlocked replacement ancestry.
+// NOWAIT fails closed rather than deadlocking Owner move/delete operations
+// that acquire Node locks before changing a Share or quota row.
+func publicShareLockVisiblePathTx(ctx context.Context, tx *gorm.DB, ownerID, rootID, nodeID uint64, nodeType string) (bool, error) {
+	var nodes []meta.Node
+	err := tx.WithContext(ctx).Raw(`
+WITH RECURSIVE ancestors AS (
+    SELECT id, parent_id, 0 AS depth FROM xd_nodes
+    WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+    UNION ALL
+    SELECT parent.id, parent.parent_id, child.depth + 1
+    FROM xd_nodes parent JOIN ancestors child ON parent.id = child.parent_id
+    WHERE parent.owner_id = ? AND parent.deleted_at IS NULL AND child.depth < 128 AND child.id <> ?
+)
+SELECT n.id, n.parent_id, n.type FROM xd_nodes n JOIN ancestors a ON n.id = a.id
+WHERE n.owner_id = ? AND n.deleted_at IS NULL ORDER BY n.id FOR SHARE OF n NOWAIT
+`, nodeID, ownerID, ownerID, rootID, ownerID).Scan(&nodes).Error
+	if err != nil {
+		return false, errShareUploadDenied
+	}
+	byID := make(map[uint64]meta.Node, len(nodes))
+	for _, node := range nodes {
+		byID[node.ID] = node
+	}
+	for depth, id := 0, nodeID; depth <= 128; depth++ {
+		node, ok := byID[id]
+		if !ok || (depth == 0 && node.Type != nodeType) || (depth > 0 && node.Type != meta.NodeTypeDir) {
+			return false, nil
+		}
+		if id == rootID {
+			return true, nil
+		}
+		if node.ParentID == nil {
+			return false, nil
+		}
+		id = *node.ParentID
+	}
+	return false, nil
+}
+
+func (s *Server) publicShareInstantUploadAdmissionTx(
+	ctx context.Context, tx *gorm.DB, grant meta.Share, ownerID uint64, req uploadInitRequest, storageKey string,
+) error {
+	if grant.OwnerID != ownerID || req.ParentID == nil || req.NodeID != nil ||
+		req.ConflictPolicy != meta.UploadConflictPolicyKeepBoth || !strings.HasPrefix(req.ResumeKey, "ps1_") {
+		return errShareUploadDenied
+	}
+	share, err := s.publicShareUploadAdmissionTx(ctx, tx, grant.ID, ownerID, *req.ParentID)
+	if err != nil {
+		return err
+	}
+	// The wrapper checked the actual password. A changed password/token/root
+	// invalidates that authorization snapshot without retaining a raw secret.
+	if share.PasswordHash != grant.PasswordHash || share.TokenHash != grant.TokenHash || share.NodeID != grant.NodeID {
+		return errShareUploadDenied
+	}
+	var owner meta.User
+	// The canonical quota check takes UPDATE too; acquire it directly to
+	// avoid lock upgrades by simultaneous uploads through different links.
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "NOWAIT"}).Select("id", "disabled_at").
+		First(&owner, ownerID).Error; err != nil || owner.DisabledAt != nil {
+		return errShareUploadDenied
+	}
+	allowed, err := publicShareLockVisiblePathTx(ctx, tx, ownerID, share.NodeID, *req.ParentID, meta.NodeTypeDir)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return errShareUploadDenied
+	}
+	// Start with exact current-file digest/size/key matches, then walk only
+	// their ancestors. Never use Owner-wide versions or CAS existence as a
+	// guest-visible shortcut, and never enumerate the whole Share subtree.
+	var candidate struct{ ID uint64 }
+	err = tx.WithContext(ctx).Raw(`
+WITH RECURSIVE ancestors AS (
+    SELECT n.id AS source_id, n.id, n.parent_id, 0 AS depth
+    FROM xd_files f JOIN xd_nodes n ON n.id = f.node_id
+    WHERE f.storage_key = ? AND f.sha256 = ? AND f.size = ?
+      AND n.owner_id = ? AND n.type = ? AND n.deleted_at IS NULL
+    UNION ALL
+    SELECT child.source_id, parent.id, parent.parent_id, child.depth + 1
+    FROM xd_nodes parent JOIN ancestors child ON parent.id = child.parent_id
+    WHERE parent.owner_id = ? AND parent.deleted_at IS NULL AND child.depth < 128 AND child.id <> ?
+)
+SELECT source_id AS id FROM ancestors WHERE id = ? LIMIT 1
+`, storageKey, req.SHA256, req.Size, ownerID, meta.NodeTypeFile, ownerID, share.NodeID, share.NodeID).Scan(&candidate).Error
+	if err != nil {
+		return err
+	}
+	if candidate.ID == 0 {
+		return errInstantUploadUnavailable
+	}
+	allowed, err = publicShareLockVisiblePathTx(ctx, tx, ownerID, share.NodeID, candidate.ID, meta.NodeTypeFile)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return errInstantUploadUnavailable
+	}
+	var file meta.File
+	err = tx.Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).Where(
+		"node_id = ? AND storage_key = ? AND sha256 = ? AND size = ?", candidate.ID, storageKey, req.SHA256, req.Size,
+	).First(&file).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return errInstantUploadUnavailable
+	}
+	return err
+}
+
 func writePublicShareUploadError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, errShareUploadBusy):
@@ -261,6 +390,7 @@ func (s *Server) publicShareCreateUpload(c *gin.Context) {
 		return
 	}
 	c.Set("xdriveShareUploadID", share.ID)
+	c.Set("xdriveShareUploadGrant", share)
 	c.Request.Body = io.NopCloser(bytes.NewReader(body))
 	s.createUploadSession(c)
 }
