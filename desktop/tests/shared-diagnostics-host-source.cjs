@@ -111,6 +111,7 @@ test('the routed DSM Host has no independent diagnostics page or permission fall
   assert.match(outlet, /<XDriveDiagnosticsHostController/)
   assert.doesNotMatch(outlet, /<XDriveSynologyDiagnosticsPanel|else if \(local\) page = <XDriveSynologyDiagnosticsPanel/)
   assert.match(dsm, /diagnosticsSource: \{/)
-  assert.match(dsm, /read: signal => local\.diagnostics\(signal\)/)
+  assert.match(dsm, /read: signal => xDriveSynologyReadOwnerLoginDiagnostics\(local, signal\)/)
+  assert.match(dsm, /import \{ xDriveSynologyReadOwnerLoginDiagnostics \}/)
   assert.doesNotMatch(source, /window\.xdriveDesktop|backup\.cgi|fetch\s*\(/)
 })
