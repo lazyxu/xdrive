@@ -137,6 +137,7 @@ export function XDriveSynologyOwnerFilesPage({
   )
   const [notice, setNotice] = useState('')
   const [moveTarget, setMoveTarget] = useState<{
+    operation: 'move' | 'copy'
     node: XDriveSynologyOwnerFileNode
     sourceParent: number
     client: XDriveSynologyBackupLocalClient
@@ -645,6 +646,7 @@ export function XDriveSynologyOwnerFilesPage({
                     uploadFiles: '退出搜索后可上传文件。',
                     delete: '退出搜索后进入目标文件夹才能移入回收站。',
                     moveTo: '退出搜索后进入目标文件夹才能移动。',
+                    copyTo: '退出搜索后进入目标文件夹才能复制。',
                     rename: '退出搜索并进入文件夹后可重命名。' }
                 : unavailableActions}
               groupingEnabled={false}
@@ -680,6 +682,26 @@ export function XDriveSynologyOwnerFilesPage({
                   parentID: parent, scopeKey: currentScopeKey, rootRevision, client,
                 })
               }}
+              onCopyItemsTo={selected => {
+                if (search.current || !currentScopeVerified || !isCurrentOwner() ||
+                  moveTarget !== null || deleteAbort.current || uploadAbort.current ||
+                  selected.length !== 1) {
+                  setNotice('DSM 当前仅允许从已验证目录逐个复制文件或文件夹。')
+                  return
+                }
+                const source = xDriveFindVerifiedOwnerSelection(
+                  selected[0], itemsRef.current)
+                const parentID = crumbs[crumbs.length - 1]?.id
+                if (!source || !Number.isSafeInteger(parentID) || parentID < 1 ||
+                  source.parent_id !== parentID) {
+                  setNotice('所选文件已改变，请先刷新当前 Owner 目录。')
+                  return
+                }
+                setMoveTarget({
+                  operation: 'copy', node: source, sourceParent: parentID,
+                  client, scopeKey: currentScopeKey, rootRevision,
+                })
+              }}
               onMoveItemsTo={selected => {
                 if (search.current || !currentScopeVerified || !isCurrentOwner() ||
                   moveTarget !== null || deleteAbort.current || uploadAbort.current ||
@@ -696,7 +718,7 @@ export function XDriveSynologyOwnerFilesPage({
                   return
                 }
                 setMoveTarget({
-                  node: source, sourceParent: parentID,
+                  operation: 'move', node: source, sourceParent: parentID,
                   client, scopeKey: currentScopeKey, rootRevision,
                 })
               }}
@@ -767,11 +789,11 @@ export function XDriveSynologyOwnerFilesPage({
               onDownloadItems={downloadSelectedFiles}
               getSelectionActionDisabledReason={(action, selected, count) => {
                 if (search.current) return '先进入搜索结果所在的文件夹，再执行此操作。'
-                if (action === 'move-to') {
+                if (action === 'move-to' || action === 'copy-to') {
                   if (moveTarget || deleteAbort.current || uploadAbort.current) {
                     return '已有文件修改或移动操作正在执行。'
                   }
-                  if (count !== 1 || selected.length !== 1) return 'DSM 当前仅支持逐个移动。'
+                  if (count !== 1 || selected.length !== 1) return 'DSM 当前仅支持逐个复制或移动。'
                   if (!currentScopeVerified || !isCurrentOwner() ||
                     !xDriveFindVerifiedOwnerSelection(selected[0], itemsRef.current)) {
                     return '当前目录的 Owner 文件身份尚未验证。'
@@ -855,7 +877,7 @@ export function XDriveSynologyOwnerFilesPage({
       <XDriveFileExplorerDestinationDialog
         open={moveTarget !== null}
         lifecycleKey={rootRevision + ':' + currentScopeKey}
-        operation="move"
+        operation={moveTarget?.operation ?? 'move'}
         sources={moveTarget ? [{
           id: moveTarget.node.id, revision: moveTarget.node.revision,
           name: moveTarget.node.name, type: moveTarget.node.type,
@@ -889,12 +911,15 @@ export function XDriveSynologyOwnerFilesPage({
             throw new Error('当前 Owner 或目标文件夹已改变，请重新选择。')
           }
           const reason = xDriveFileExplorerDestinationTargetDisabledReason(
-            'move', [{
+            target.operation, [{
               id: target.node.id, revision: target.node.revision,
               name: target.node.name, type: target.node.type,
               parent_id: target.sourceParent,
             }], targetCrumbs)
           if (reason) throw new Error(reason)
+          if (target.operation === 'copy' && targetParent === target.sourceParent) {
+            throw new Error('DSM 当前仅支持复制到其他文件夹。')
+          }
           const row = xDriveFindVerifiedOwnerSelection(
             itemForExplorer(target.node), itemsRef.current)
           if (!row || row.parent_id !== target.sourceParent) {
@@ -903,21 +928,25 @@ export function XDriveSynologyOwnerFilesPage({
           const connection = await client.serverConnection()
           if (!connection.configured || connection.must_change_password ||
             !/^[0-9a-f]{64}$/.test(connection.owner_scope) || !isCurrentOwner()) {
-            throw new Error('Server Owner 已改变，不能移动。')
+            throw new Error('Server Owner 已改变，不能执行复制或移动。')
           }
           try {
-            const moved = await client.ownerMoveNode(
-              row.id, row.revision, target.sourceParent, targetParent,
-              row.type, row.name, connection.owner_scope)
+            const result = target.operation === 'copy'
+              ? await client.ownerCopyNode(
+                  row.id, row.revision, target.sourceParent, targetParent,
+                  row.type, row.name, connection.owner_scope)
+              : await client.ownerMoveNode(
+                  row.id, row.revision, target.sourceParent, targetParent,
+                  row.type, row.name, connection.owner_scope)
             if (!isCurrentOwner()) throw new Error('Owner changed after Server commit')
             setCrumbs(previous => [...previous])
-            setNotice('已移动文件：' + moved.name)
+            setNotice((target.operation === 'copy' ? '已复制文件：' : '已移动文件：') + result.name)
           } catch {
             // A request may have reached the Server even if its reply was lost.
             // Close the picker, refresh original Owner and NEVER auto-retry.
             if (isCurrentOwner()) {
               setCrumbs(previous => [...previous])
-              setNotice('移动失败或结果不确定；请刷新目标与原文件夹确认后再操作。')
+              setNotice('复制或移动失败或结果不确定；请刷新目标与原文件夹确认后再操作。')
             }
           }
         }}
