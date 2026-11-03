@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveHomePage } from './HomePage'
 import { XDriveShareCenterPage } from './ShareCenterPage'
+import { XDriveNotesPage } from './NotesPage'
 import { XDriveOverviewPage } from './OverviewPage'
 import { XDriveMediaGalleryPage } from './MediaGallery'
 import { XDriveSourceManager } from './SourceManager'
@@ -68,6 +69,9 @@ export function XDriveAppPageOutlet({
         break
       case 'shares':
         if (services.shareCenterPage) page = <XDriveShareCenterPage port={services.shareCenterPage} />
+        break
+      case 'notes':
+        if (services.notesPage) page = <XDriveNotesPage port={services.notesPage} />
         break
       case 'gallery':
         if (services.galleryPage) page = <XDriveMediaGalleryPage {...services.galleryPage} />
