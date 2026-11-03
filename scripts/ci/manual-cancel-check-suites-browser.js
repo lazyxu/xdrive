@@ -76,18 +76,30 @@
           queued: run.state?.status === "WORKFLOW_RUN_STATUS_QUEUED"
         });
       }
-      // 整页都是终态时停止；排队、等待、运行中或未知状态都继续查更旧页面。
-      // 不用 maxRequests 限制扫描，它只限制后面的取消请求数量。
-      const terminal = new Set([
-        "WORKFLOW_RUN_STATUS_COMPLETED",
-        "WORKFLOW_RUN_STATUS_CANCELLED",
-        "WORKFLOW_RUN_STATUS_CANCELED"
-      ]);
-      if (rows.every(run => terminal.has(run?.state?.status))) {
-        console.log("第 " + page + " 页全部结束或取消，停止翻页");
+      // 创建时间排序不代表状态连续：终态页之后仍可能有更旧的排队 Run。
+      // 因此不能按“整页终态”提前停止，只有最后一页才能结束扫描。
+      const statusCounts = {};
+      for (const run of rows) {
+        const state = String(run?.state?.status || "UNKNOWN")
+          .replace(/^WORKFLOW_RUN_STATUS_/, "");
+        statusCounts[state] = (statusCounts[state] || 0) + 1;
+      }
+      const uiActive = rows.filter(run =>
+        /queued|pending|waiting|in.?progress|running/i.test(
+          String(run?.timing?.text || "")));
+      const mismatch = uiActive.filter(run =>
+        /^(?:WORKFLOW_RUN_STATUS_)?(?:COMPLETED|CANCELLED|CANCELED)$/.test(
+          String(run?.state?.status || "")));
+      console.log("第 " + page + " 页状态:", statusCounts,
+        "界面显示待处理:", uiActive.length);
+      if (mismatch.length) {
+        console.warn("页面状态字段与显示文案不一致（不取消）：",
+          mismatch.map(run => run.id));
+      }
+      if (rows.length < 25) {
+        console.log("第 " + page + " 页为最后一页，停止翻页");
         break;
       }
-      if (rows.length < 25) break;
     }
 
     if (!all.size) throw new Error("没有找到 master CI Run，安全停止");
