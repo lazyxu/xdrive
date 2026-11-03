@@ -40,6 +40,7 @@ func (c *agentController) flushSyncActivityPendingLocked() {
   }
  }
  c.syncActivityPending=make(map[string][]syncactivity.Item)
+ c.syncActivityLost=make(map[string]bool)
 }
 
 func (c *agentController) switchSyncActivity(cfg userconfig.Config) {
