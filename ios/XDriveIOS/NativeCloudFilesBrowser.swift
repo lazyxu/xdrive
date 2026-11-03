@@ -820,6 +820,33 @@ struct XDriveIOSNativeFilesBrowser: View {
                 } else {
                     ForEach(model.entries) { entry in
                         fileEntryRow(entry)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                if !selecting && model.verifiedPage && !model.loading {
+                                    Button {
+                                        openManagement(for: entry.node)
+                                    } label: {
+                                        Label("更多", systemImage: "ellipsis")
+                                    }
+                                    .tint(.gray)
+                                    Button {
+                                        openManagement(
+                                            for: entry.node, quickAction: .shareLink
+                                        )
+                                    } label: {
+                                        Label("分享链接", systemImage: "link")
+                                    }
+                                    .tint(.blue)
+                                    Button(role: .destructive) {
+                                        // The management screen still asks for
+                                        // explicit destructive confirmation.
+                                        openManagement(
+                                            for: entry.node, quickAction: .trash
+                                        )
+                                    } label: {
+                                        Label("删除", systemImage: "trash")
+                                    }
+                                }
+                            }
                             .onAppear { requestContinuousNeighbor(for: entry.id) }
                     }
                 }
