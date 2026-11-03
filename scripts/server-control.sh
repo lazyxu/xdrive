@@ -258,7 +258,7 @@ sync_progress() {
 
 process_request() {
   local dir request active source channel backup_file_data request_id requested_at started_at
-  local progress_file run_log update_pid status error_text
+  local progress_file run_log update_pid status error_text offline_id trusted_manifest trusted_installer
   local -a update_args
   dir="$(prepare_dir)"
   request="$dir/request.json"
@@ -271,13 +271,23 @@ process_request() {
   source="$(json_value "$active" source)"
   channel="$(json_value "$active" channel)"
   backup_file_data="$(json_bool_value "$active" backup_file_data)"
+  offline_id="$(json_value "$active" offline_id)"
+  trusted_manifest="$(json_value "$active" trusted_manifest_sha256)"
+  trusted_installer="$(json_value "$active" trusted_installer_sha256)"
   [[ "$backup_file_data" == "true" ]] || backup_file_data=false
   request_id="$(json_value "$active" request_id)"
   requested_at="$(json_value "$active" created_at)"
-  case "$source" in github|gitlab|xdrive) ;; *) source="" ;; esac
+  case "$source" in github|gitlab|xdrive|offline) ;; *) source="" ;; esac
   case "$channel" in stable|master) ;; *) channel="" ;; esac
   if [[ -z "$source" || -z "$channel" || -z "$request_id" ||
-        ( "$source" == xdrive && "$channel" != master ) ]] || ! request_time_is_fresh "$requested_at"; then
+        ( "$source" == xdrive && "$channel" != master ) ||
+        ( "$source" == offline && ( "$channel" != master || ! "$offline_id" =~ ^[a-f0-9]{32}$ ||
+          ( -n "$trusted_manifest" && ! "$trusted_manifest" =~ ^[a-f0-9]{64}$ ) ||
+          ( -n "$trusted_installer" && ! "$trusted_installer" =~ ^[a-f0-9]{64}$ ) ||
+          ( -n "$trusted_manifest" && -z "$trusted_installer" ) ||
+          ( -z "$trusted_manifest" && -n "$trusted_installer" ) ) ) ||
+        ( "$source" != offline && ( -n "$offline_id" || -n "$trusted_manifest" || -n "$trusted_installer" ) ) ]] ||
+       ! request_time_is_fresh "$requested_at"; then
     write_status failed "${source:-github}" "${channel:-stable}" "$request_id" \
       "校验更新请求" 0 9 0 0 "更新请求无效或已过期。" "invalid or stale host-control request" "" "$(now_utc)" "$backup_file_data"
     rm -f "$active"
@@ -294,6 +304,11 @@ process_request() {
     "下载更新程序" 0 9 0 0 "正在下载并校验更新程序…" "" "$started_at" "" "$backup_file_data"
 
   update_args=(update --source "$source" --channel "$channel")
+  if [[ "$source" == offline ]]; then
+    update_args+=(--offline-id "$offline_id")
+    [[ -z "$trusted_manifest" ]] || update_args+=(--trusted-manifest-sha256 "$trusted_manifest")
+    [[ -z "$trusted_installer" ]] || update_args+=(--trusted-installer-sha256 "$trusted_installer")
+  fi
   [[ "$backup_file_data" == "true" ]] && update_args+=(--backup-file-data)
   (
     export XD_INSTALL_PROGRESS_FILE="$progress_file"
@@ -4067,7 +4082,7 @@ serve_cmd() {
     interrupted_request_id="$(json_value "$dir/active.json" request_id)"
     interrupted_backup_file_data="$(json_bool_value "$dir/active.json" backup_file_data)"
     [[ "$interrupted_backup_file_data" == "true" ]] || interrupted_backup_file_data=false
-    case "$interrupted_source" in github|gitlab|xdrive) ;; *) interrupted_source=github ;; esac
+    case "$interrupted_source" in github|gitlab|xdrive|offline) ;; *) interrupted_source=github ;; esac
     case "$interrupted_channel" in stable|master) ;; *) interrupted_channel=stable ;; esac
     write_status failed "$interrupted_source" "$interrupted_channel" "$interrupted_request_id" \
       "更新中断" 0 9 0 0 "检测到上次服务端更新被宿主机重启或 runner 中断。" \
