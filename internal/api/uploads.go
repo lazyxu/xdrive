@@ -334,11 +334,13 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		shareGrant = &grant
 	}
 	if req.NodeID != nil {
-		if notesRejectNodeMutation(c, s.DB, *req.NodeID) {
+		if notesRejectNodeMutation(c, s.DB, *req.NodeID) ||
+			s.rejectManagedSourceNodeWrite(c, s.DB, *req.NodeID) {
 			return
 		}
 	} else if req.ParentID != nil {
-		if notesRejectDestination(c, s.DB, *req.ParentID, req.Name) {
+		if notesRejectDestination(c, s.DB, *req.ParentID, req.Name) ||
+			s.rejectManagedSourceDestinationWrite(c, s.DB, *req.ParentID) {
 			return
 		}
 	}
@@ -870,11 +872,13 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		return
 	}
 	if session.NodeID != nil {
-		if notesRejectNodeMutation(c, s.DB, *session.NodeID) {
+		if notesRejectNodeMutation(c, s.DB, *session.NodeID) ||
+			s.rejectManagedSourceNodeWrite(c, s.DB, *session.NodeID) {
 			return
 		}
 	} else if session.ParentID != nil {
-		if notesRejectDestination(c, s.DB, *session.ParentID, session.Name) {
+		if notesRejectDestination(c, s.DB, *session.ParentID, session.Name) ||
+			s.rejectManagedSourceDestinationWrite(c, s.DB, *session.ParentID) {
 			return
 		}
 	}
@@ -1030,8 +1034,14 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			if err := notesRejectNodeWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.NodeID); err != nil {
 				return err
 			}
+			if err := s.managedSourceNodeWriteTx(c.Request.Context(), tx, c, currentSession.OwnerID, *currentSession.NodeID); err != nil {
+				return err
+			}
 		} else if currentSession.ParentID != nil {
 			if err := notesRejectDestinationWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.ParentID, currentSession.Name); err != nil {
+				return err
+			}
+			if err := s.managedSourceDestinationWriteTx(c.Request.Context(), tx, c, currentSession.OwnerID, *currentSession.ParentID); err != nil {
 				return err
 			}
 		}
