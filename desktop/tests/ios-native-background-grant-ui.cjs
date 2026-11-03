@@ -84,7 +84,7 @@ test('mutable root revision is not identity; BGTask remains bounded and fail-clo
   assert.match(task, /UIApplication\.shared\.isProtectedDataAvailable/);
   assert.match(task, /XDriveIOSOriginalRunGate\.shared\.acquire\(\)/);
   assert.match(task, /XDriveIOSForegroundPhotoBackupMVP\(/);
-  assert.match(task, /maximumNewOriginals: min\\(\\s*XDriveIOSBGOriginalWindowStore\\.maximumNewOriginalsPerRun,\\s*XDriveIOSForegroundPhotoBackupMVP\\.maxNewOriginalsPerRun\\s*\\)/);
+  assert.match(task, /maximumNewOriginals: min\(\s*XDriveIOSBGOriginalWindowStore\.maximumNewOriginalsPerRun,\s*XDriveIOSForegroundPhotoBackupMVP\.maxNewOriginalsPerRun\s*\)/);
   assert.match(read('ios/XDriveIOS/BGOriginalWindowStore.swift'), /static let maximumNewOriginalsPerRun = 4/);
   assert.match(task, /progress\.needsReview == 0/);
   assert.doesNotMatch(control, /document\.cookie|window\.webkit|UserDefaults|grantSecret|deviceToken/);
