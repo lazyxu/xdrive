@@ -52,7 +52,7 @@ final class XDriveIOSPhotoFocusedResumeStore {
         guard let data = UserDefaults.standard.data(forKey: name) else {
             return fresh
         }
-        guard data.count <= 80_000,
+        guard data.count <= 100_000,
               let state = try? JSONDecoder().decode(State.self, from: data),
               state.version == 1,
               !state.libraryEpoch.isEmpty, state.libraryEpoch.count <= 65_536
@@ -100,7 +100,7 @@ final class XDriveIOSPhotoFocusedResumeStore {
             hadUnavailable: hadUnavailable
         )
         let data = try JSONEncoder().encode(checkpoint)
-        guard data.count <= 80_000 else { throw Failure.persistenceUnavailable }
+        guard data.count <= 100_000 else { throw Failure.persistenceUnavailable }
         let name = key(for: owner)
         UserDefaults.standard.set(data, forKey: name)
         guard UserDefaults.standard.data(forKey: name) == data else {
