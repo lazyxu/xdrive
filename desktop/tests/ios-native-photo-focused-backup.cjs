@@ -120,7 +120,11 @@ test('focused restart checkpoint is scoped, verified and never interpreted as up
   assert.match(checkpoint, /XDriveIOSPhotoFocusedBackupPolicy\.trustedResumeWindow\(/);
   assert.match(checkpoint, /XDriveIOSPhotoKitLibraryEpoch\.matches\(/);
   assert.match(checkpoint, /func saveCompletedWindow\(/);
-  assert.match(checkpoint, /XDriveIOSPhotoFocusedBackupPolicy\.validCheckpoint\(/);
+  assert.match(checkpoint, /XDriveIOSPhotoFocusedBackupPolicy\.canSaveCheckpoint\(/);
+  assert.match(checkpoint, /!state\.hadUnavailable/);
+  assert.match(policy, /static func canSaveCheckpoint\(/);
+  assert.match(policy, /!hadUnavailable && validCheckpoint\(/);
+  assert.match(resumeTests, /unresolvedInEarlierWindow/);
   assert.match(checkpoint, /func clear\(owner: XDriveNativeOwnerRoot\)/);
   assert.doesNotMatch(checkpoint, /localIdentifier|accessToken|grantSecret|deviceToken|uploadPrepared|UploadSessionTransport|URLSession|PHAsset|SecItem/);
 
@@ -136,7 +140,7 @@ test('focused restart checkpoint is scoped, verified and never interpreted as up
   assert.match(focus, /var window = resume\.nextWindow/);
   assert.match(focus, /var hadUnavailable = resume\.hadUnavailable/);
   assert.match(focus, /var expectedTotal: Int\? = visibleNow/);
-  assert.match(focus, /case \.nextWindow\(let next\):[\s\S]*?saveCompletedWindow\([\s\S]*?state\.completedWindows \+= 1/);
+  assert.match(focus, /case \.nextWindow\(let next\):[\s\S]*?if !hadUnavailable \{[\s\S]*?saveCompletedWindow\([\s\S]*?state\.completedWindows \+= 1/);
   assert.match(focus, /case \.finished:\s*XDriveIOSPhotoFocusedResumeStore\.shared\.clear\(owner: owner\)/);
   assert.match(focus, /case \.pausedForReview:[\s\S]*?state\.pausedForReview = true/);
   assert.match(ui, /native-ios-photos-focused-resumed-window/);
