@@ -74,6 +74,7 @@ assert.match(fenced.rewrite(new Map([['Media/photo%201.png', a]])),
 assert.throws(() => select([]), /请选择/)
 assert.throws(() => select([md, file('other.md')]), /每次只能导入一条/)
 assert.throws(() => select([file('huge.md', 1_048_577)]), /1 MiB/)
-assert.throws(() => select([md, file('huge.png', 20_000_001)]), /20 MiB/)
+assert.equal(select([md, file('at-limit.png', 20 * 1_048_576)]).assets.length, 1)
+assert.throws(() => select([md, file('huge.png', 20 * 1_048_576 + 1)]), /20 MiB/)
 assert.throws(() => plan('Hello', file('bad\nname.md'), []), /标题/)
 console.log('Manual Notes Markdown/image bundles, folder paths and upload fencing: PASS')
