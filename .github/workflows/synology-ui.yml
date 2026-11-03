@@ -5,6 +5,9 @@ on:
     branches: [master]
     paths:
       - 'cmd/xd/backup_synology_ui.go'
+      - 'internal/api/local_push_common_native_versioned_multifile_e2e_integration_test.go'
+      - 'internal/api/local_push_common_native_http_e2e_integration_test.go'
+      - 'internal/api/local_push_common_native_process_kill_e2e_integration_test.go'
       - 'internal/synologyui/**'
       - 'internal/localbackupipc/remote_backup.go'
       - 'internal/localbackupipc/recovery_review.go'
@@ -150,6 +153,9 @@ on:
     branches: [master]
     paths:
       - 'cmd/xd/backup_synology_ui.go'
+      - 'internal/api/local_push_common_native_versioned_multifile_e2e_integration_test.go'
+      - 'internal/api/local_push_common_native_http_e2e_integration_test.go'
+      - 'internal/api/local_push_common_native_process_kill_e2e_integration_test.go'
       - 'internal/synologyui/**'
       - 'internal/localbackupipc/remote_backup.go'
       - 'internal/localbackupipc/recovery_review.go'
@@ -296,6 +302,24 @@ jobs:
   isolated-dsm-ui:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # The original native uploader is exercised against an isolated real
+    # PostgreSQL/CAS fixture in the existing DSM UI workflow.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
         with:
@@ -330,6 +354,18 @@ jobs:
           # and restart recovery safety regressions; no DSM-specific writer.
           go test -count=1 ./cmd/xdrive-agent \
             -run '^(TestCommonBatchFileAThenFileBThenUpdatedA|TestLocalCommonIncrementalSkipRechecksCurrentParentWithoutWrites|TestLocalCommonSkipRechecksCurrentFileBeforeCountingUnchanged|TestPrivateStageRestartOnlyHistoricalPhysicalReceiptCountsAsObserved|TestLocalCommonBatchFailedWorkerNeverReturnsConfirmedPartial)$'
+      - name: P0-0 original native first, unchanged, updated and crash recovery SQL/CAS
+        shell: bash
+        run: |
+          set -euo pipefail
+          # These original Server tests use PostgreSQL, LocalCAS and real
+          # native file bytes, unlike the separate CGI/CLI mock fixtures.
+          # They do not assert entire DSM SourceRun or physical Package Center.
+          go test -count=1 -v -timeout=8m ./internal/api -run '^Test(LocalPushCommonNativeVersionedFilesAThenBThenUpdatedA|LocalPushCommonNativeHTTPPhysicalOriginalReplay|LocalPushCommonActualProcessKillAfterSQLCommitReplay|LocalPushCommonActualProcessKillBeforeAdmissionACKReplay)$'
+          # Verify the ORIGINAL Agent's whole native Source batch against the
+          # same disposable PostgreSQL/CAS fixture, including status after
+          # an in-process Agent-controller restart (not physical DSM/CGI).
+          go test -count=1 -v -timeout=8m ./cmd/xdrive-agent -run '^TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental$'
       - name: Check Desktop and DSM shared backup presentation contracts
         run: node web/scripts/check-synology-desktop-backup-parity.mjs
       - name: Build isolated DSM-only shared MUI page
