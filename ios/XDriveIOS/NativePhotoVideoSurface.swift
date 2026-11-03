@@ -102,16 +102,16 @@ struct XDriveIOSNativePhotoVideoSurface: View {
 
     /// Coalesce intermediate seeks to bound signed cloud video Range traffic.
     /// Final finger-up positioning remains exact and is never throttled.
-    private func previewScrub(at value: Double) {
+    private func previewScrub(at value: Double) -> CMTime? {
         guard seeking, !finishingScrub, canControl,
               player.currentItem === scrubbedItem, duration > 0,
-              value.isFinite else { return }
+              value.isFinite else { return nil }
         let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastPreviewSeekAt >= 0.14 else { return }
+        guard now - lastPreviewSeekAt >= 0.14 else { return nil }
         lastPreviewSeekAt = now
-        let target = CMTime(seconds: min(max(0, value), duration), preferredTimescale: 600)
-        let tolerance = CMTime(seconds: 0.1, preferredTimescale: 600)
-        player.seek(to: target, toleranceBefore: tolerance, toleranceAfter: tolerance)
+        return CMTime(
+            seconds: min(max(0, value), duration), preferredTimescale: 600
+        )
     }
 
     private func finishScrub() {
@@ -205,7 +205,15 @@ struct XDriveIOSNativePhotoVideoSurface: View {
                             else { finishScrub() }
                         }
                     )
-                    .onChange(of: position) { previewScrub(at: $0) }
+                    .onChange(of: position) { value in
+                        if let target = previewScrub(at: value) {
+                            let tolerance = CMTime(seconds: 0.1, preferredTimescale: 600)
+                            player.seek(
+                                to: target, toleranceBefore: tolerance,
+                                toleranceAfter: tolerance
+                            )
+                        }
+                    }
                     .disabled(!canControl || duration <= 0)
                     .accessibilityLabel("视频进度")
                     .accessibilityHint("拖动时预览画面；松开后定位，原本播放中的视频将继续播放")
