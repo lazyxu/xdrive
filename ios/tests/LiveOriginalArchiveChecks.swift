@@ -75,6 +75,20 @@ struct XDriveIOSLiveOriginalArchiveChecks {
         } catch {
             precondition(!FileManager.default.fileExists(atPath: badOutput.path))
         }
+        // A non-existent destination directory deterministically exercises
+        // local ZIP creation failure. Unlike an invalid Live pair, this is a
+        // device I/O blocker and must stop the entire backup window.
+        let unavailableOutput = folder
+            .appendingPathComponent("missing-parent", isDirectory: true)
+            .appendingPathComponent("live-original.zip")
+        do {
+            _ = try XDriveIOSLiveOriginalArchive.create(
+                still: still, motion: motion, outputURL: unavailableOutput
+            )
+            preconditionFailure("Missing ZIP destination directory must fail")
+        } catch XDriveIOSLiveArchiveFailure.storageUnavailable {
+            precondition(!FileManager.default.fileExists(atPath: unavailableOutput.path))
+        }
         print("Live Photo original still/motion single-Node ZIP: PASS")
     }
 }
