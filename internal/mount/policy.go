@@ -12,6 +12,7 @@ type Options struct {
 	CacheLimitBytes  int64
 	StatePath        string
 	Transfers        *transfer.Manager
+	ActivityOwner   string
 }
 
 type syncPolicy struct {
