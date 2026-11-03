@@ -540,7 +540,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	// the generic immediate CAS fast path would commit before binding.
 	if req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") {
 		session, currentRevision, handled, err := s.tryInstantUploadSession(
-			c.Request.Context(), uid, req, chunkCount, shareGrant,
+			c.Request.Context(), c, uid, req, chunkCount, shareGrant,
 		)
 		if err != nil {
 			if writeQuotaError(c, err) {
@@ -549,6 +549,8 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			switch {
 			case errors.Is(err, errShareUploadDenied):
 				writePublicShareUploadError(c, err)
+			case errors.Is(err, errManagedSourceMutation):
+				fail(c, http.StatusConflict, "managed source files are read-only")
 			case errors.Is(err, errRevisionConflict):
 				revisionConflict(c, req.ExpectedRevision, currentRevision)
 			case errors.Is(err, errUploadNameTaken) || isDuplicate(err):
