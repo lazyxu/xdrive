@@ -102,6 +102,14 @@ func (s *Server) sourceWriterAllowedTx(
 		First(&source).Error; err != nil {
 		return false, err
 	}
+	var owner meta.User
+	if err := tx.WithContext(ctx).Select("id", "session_version", "disabled_at").
+		Where("id = ?", uid).Take(&owner).Error; err != nil {
+		return false, err
+	}
+	if owner.DisabledAt != nil || owner.SessionVersion != claims.SessionVersion {
+		return false, nil
+	}
 	if source.TargetNodeID == nil || *source.TargetNodeID != location.TargetID ||
 		source.Revision != claims.SourceRevision ||
 		source.Direction != meta.SourceDirectionPull ||
