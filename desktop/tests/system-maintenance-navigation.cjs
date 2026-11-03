@@ -25,7 +25,7 @@ test('administrator System Maintenance is typed and routed on Web/Desktop', () =
     web.includes('adminUpdate: serverAdminVerified ? {') &&
     web.includes('adminRoleVerified: serverAdminVerified') &&
     outlet.includes("case 'admin-maintenance':") &&
-    outlet.includes('<XDriveSystemUpdatePage {...services.adminMaintenancePage} />'),
+    outlet.includes('<XDriveSystemMaintenancePage {...services.adminMaintenancePage} />'),
     'the Web administrator uses a verified shared Host route')
   assert.ok(desktop.includes("adminMaintenancePage: status?.role === 'admin'") && read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx').includes("case 'admin-maintenance':"))
   assert.ok(desktop.includes("view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-storage' || view === 'admin-services' || view === 'admin-update' || view === 'admin-maintenance'"))
