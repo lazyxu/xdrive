@@ -114,7 +114,7 @@ def validate_source(path: Path, platform: str) -> None:
         signature = fp.read(20)
     if platform == 'windows' and signature[:2] != b'MZ':
         raise MirrorError('Windows installer lacks PE envelope')
-    if platform == 'linux' and signature != b'!<arch>\n':
+    if platform == 'linux' and signature[:8] != b'!<arch>\n':
         raise MirrorError('Linux installer lacks Debian archive envelope')
     if platform in ('android', 'ios', 'backup-windows'):
         if signature[:2] != b'PK':
