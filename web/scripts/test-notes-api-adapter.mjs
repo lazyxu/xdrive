@@ -92,6 +92,36 @@ assert.deepEqual(calls.find(c => Array.isArray(c) && c[0] === 'image-read'),
   ['image-read', example.id, imageReceipt.relative_path])
 await assert.rejects(() => port.readNote('../other-owner'), /非法备忘录标识/)
 
+// Two concurrent Notes components for the same verified Owner must share one
+// namespace initialization. A genuine transient failure must permit retry.
+let bootstrapCalls = 0
+const sharedBootstrap = createXDriveWebNotesPort({
+  ...api,
+  async notesInitialize() {
+    bootstrapCalls++
+    await Promise.resolve()
+    return { notes_node_id: 1, my_notes_node_id: 2, ios_backup_node_id: 3 }
+  },
+}, 'other-server:owner-42')
+await Promise.all([
+  sharedBootstrap.listNotes('mine', '', 0),
+  sharedBootstrap.listNotes('ios_notes', '', 0),
+])
+assert.equal(bootstrapCalls, 1, 'concurrent Owner reads duplicated namespace POST')
+let attempts = 0
+const transient = createXDriveWebNotesPort({
+  ...api,
+  async notesInitialize() {
+    attempts++
+    if (attempts === 1) throw new Error('temporary network loss')
+    return { notes_node_id: 1, my_notes_node_id: 2, ios_backup_node_id: 3 }
+  },
+}, 'owner-42:retry')
+await assert.rejects(transient.listNotes('mine', '', 0), /temporary network loss/)
+assert.equal((await transient.listNotes('mine', '', 0)).items.length, 1)
+assert.equal(attempts, 2, 'temporary bootstrap failure permanently poisoned Notes port')
+
+
 const sourceApi = readFileSync(resolve(here, '../src/api.ts'), 'utf8')
 for (const route of [
   '/api/v1/notes/namespace', '/api/v1/notes/ios/import',
