@@ -365,16 +365,10 @@ func (s *Server) createSource(c *gin.Context) {
 			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
 			return
 		}
-	} else {
-		if req.TargetNodeID == 0 {
-			fail(c, http.StatusBadRequest, "target_node_id is required")
-			return
-		}
-		if _, err := s.ownedDirectory(userID(c), req.TargetNodeID); err != nil {
-			fail(c, http.StatusBadRequest, "target directory not found")
-			return
-		}
 	}
+	// Historical clients may send a selected target_node_id. New Sources always
+	// receive a Server-owned exclusive root; never adopt this caller-selected
+	// directory or treat it as part of the Source.
 	if _, err := sourcepkg.CompileIgnoreRules(req.IgnoreRules); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
@@ -397,8 +391,6 @@ func (s *Server) createSource(c *gin.Context) {
 			// Device enrollment and binding are a separate guarded delivery phase.
 			status = meta.SourceStatusPaused
 		}
-		value := req.TargetNodeID
-		target = &value
 	}
 	source := meta.Source{
 		OwnerID: userID(c), Name: req.Name, Kind: req.Kind, Direction: req.Direction,
@@ -424,17 +416,29 @@ func (s *Server) createSource(c *gin.Context) {
 			if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
 				return errLocalSourceCreateDeviceUnauthorized
 			}
-			return tx.Create(&source).Error
+			if err := tx.Create(&source).Error; err != nil {
+			return err
+		}
+		return createManagedSourceTargetTx(c.Request.Context(), tx, &source, &device)
 		})
 	} else {
-		createErr = s.DB.WithContext(c.Request.Context()).Create(&source).Error
+		createErr = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&source).Error; err != nil {
+				return err
+			}
+			if isYike {
+				// Yike derives an account-specific root on credential binding.
+				return nil
+			}
+			return createManagedSourceTargetTx(c.Request.Context(), tx, &source, nil)
+		})
 	}
 	if createErr != nil {
 		switch {
 		case errors.Is(createErr, errLocalSourceCreateDeviceUnauthorized):
 			fail(c, http.StatusForbidden, "owning device credential invalid or revoked")
-		case isDuplicate(createErr):
-			fail(c, http.StatusConflict, "source name already exists")
+		case errors.Is(createErr, errManagedTargetOccupied), errors.Is(createErr, errManagedTargetUnavailable), isDuplicate(createErr):
+			fail(c, http.StatusConflict, "source name or managed target is unavailable")
 		default:
 			fail(c, http.StatusInternalServerError, "create source failed")
 		}
@@ -503,6 +507,9 @@ func (s *Server) updateSource(c *gin.Context) {
 			return err
 		}
 		currentRevision = current.Revision
+		if current.Status == meta.SourceStatusArchived {
+			return errManagedSourceTarget
+		}
 		if current.Revision != expected {
 			return errRevisionConflict
 		}
@@ -543,7 +550,7 @@ func (s *Server) updateSource(c *gin.Context) {
 		}
 		if req.Status != nil {
 			status := strings.TrimSpace(*req.Status)
-			if !meta.ValidSourceStatus(status) {
+			if !meta.ValidSourceStatus(status) || status == meta.SourceStatusArchived {
 				return errInvalidSourceConfig
 			}
 			if status == meta.SourceStatusActive {
@@ -580,24 +587,11 @@ func (s *Server) updateSource(c *gin.Context) {
 			updates["schedule_timezone"] = schedule.Timezone
 		}
 		if req.TargetNodeID != nil {
-			if current.Kind == yikeSourceKind {
+			// The target is owned by SourceID, never by mutable UI path selection.
+			// An explicit same-ID echo is harmless for older clients.
+			if current.TargetNodeID == nil || *req.TargetNodeID != *current.TargetNodeID {
 				return errManagedSourceTarget
 			}
-			if *req.TargetNodeID == 0 {
-				return errInvalidSourceTarget
-			}
-			var target meta.Node
-			if err := tx.Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-				*req.TargetNodeID, userID(c), meta.NodeTypeDir).First(&target).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return errInvalidSourceTarget
-				}
-				return err
-			}
-			if current.TargetNodeID == nil || *current.TargetNodeID != target.ID {
-				resetMirrorEvidence = true
-			}
-			updates["target_node_id"] = target.ID
 		}
 		if req.IgnoreRules != nil {
 			if _, err := sourcepkg.CompileIgnoreRules(*req.IgnoreRules); err != nil {
@@ -646,7 +640,7 @@ func (s *Server) updateSource(c *gin.Context) {
 		case errors.Is(err, errSourceConnectorConfigRequired):
 			fail(c, http.StatusConflict, "source connector config must be configured before activation")
 		case errors.Is(err, errManagedSourceTarget):
-			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
+			fail(c, http.StatusConflict, "source target and archived configuration are managed by the Server")
 		case errors.Is(err, errInvalidSourceTarget):
 			fail(c, http.StatusBadRequest, "target directory not found")
 		case errors.Is(err, errInvalidSourceConfig):
