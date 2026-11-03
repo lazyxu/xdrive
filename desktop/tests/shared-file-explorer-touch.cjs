@@ -22,14 +22,14 @@ test('shared FileExplorer keeps compact touch input separate from desktop mouse 
 
 test('compact touch opens, holds for Context Menu, drags to valid folders, and offers explicit Select', () => {
   for (const token of [
-    'XDRIVE_MOBILE_ITEM_HOLD_MS',
+    'XDRIVE_FILE_ITEM_DRAG_HOLD_MS',
     'openItemContextMenuAt(press.item, press.startX + 2, press.startY - 6)',
     'touchDrag.begin(event, source.map',
     'setTouchSelectionMode(true)',
     'toggleTouchSelection(item, index)',
     'onOpenItem?.(item)',
     'xDriveMobileItemMoved({ x: press.startX, y: press.startY }',
-    'draggable={!compactTouch && Boolean(onDropItemsToFolder) && !renaming}',
+    'draggable={!compactTouch && Boolean(onDropItemsToFolder || onNativeDragOutItem) && !renaming}',
     '已选择 {selectedCount} 项',
     'setTouchSelectionMode(false)',
     '完成',

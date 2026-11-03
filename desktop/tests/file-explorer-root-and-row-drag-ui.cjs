@@ -1,0 +1,43 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', '..', ...parts), 'utf8')
+const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
+const sidebar = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
+const icon = read('ui', 'shared', 'src', 'mui', 'XDriveCloudRootIcon.tsx')
+const pointer = read('ui', 'shared', 'src', 'mui', 'usePointerDrag.ts')
+const mobile = read('web', 'src', 'MobileFiles.tsx')
+const mobileState = read('web', 'src', 'mobileFilesState.ts')
+const drag = read('ui', 'shared', 'src', 'file-explorer-drag.ts')
+
+test('root identity unchanged: clickable external-drive icon and title in breadcrumb and folder tree', () => {
+  assert.match(icon, /XDRIVE_CLOUD_ROOT_LABEL = 'xDrive 云端'/)
+  assert.match(icon, /data-xdrive-cloud-root-icon/)
+  assert.match(sidebar, /name: XDRIVE_CLOUD_ROOT_LABEL,\s*crumbs: \[\{ id: root\.id, name: root\.name \}\]/)
+  assert.match(sidebar, /depth === 0[\s\S]*?<XDriveCloudRootIcon/)
+  assert.match(sidebar, /void onNavigate\(node\.crumbs\)/)
+  assert.match(explorer, /index === 0 \? <XDriveCloudRootIcon/)
+  assert.match(explorer, /index === 0 \? XDRIVE_CLOUD_ROOT_LABEL : crumb\.name/)
+  assert.match(explorer, /index === 0 \|\| index !== crumbs\.length - 1\) onCrumbClick/)
+  assert.match(mobile, /XDriveCloudRootIcon/)
+  assert.doesNotMatch(icon, /fetch\(|localStorage|NodeID\s*=/)
+})
+
+test('all Files six-dot handles removed; hold and mouse drag remain available', () => {
+  for (const source of [explorer, sidebar]) {
+    assert.doesNotMatch(source, /DragIndicatorRoundedIcon|renderOrderHandle|data-xdrive-native-drag-out|data-xdrive-file-explorer-touch-drag-handle/)
+  }
+  assert.match(sidebar, /touchHoldMs: XDRIVE_FILE_ITEM_DRAG_HOLD_MS/)
+  assert.match(sidebar, /onPointerDown=\{\(event\) => \{[\s\S]*?pointerDrag\.begin/)
+  assert.match(sidebar, /draggable=\{Boolean\(onReorderQuickAccess\)/)
+  assert.match(sidebar, /draggable=\{Boolean\(onReorderSavedSearches\)/)
+  assert.match(sidebar, /event\.shiftKey && event\.key === 'F10'/)
+  assert.match(explorer, /onDragStart=\{\(event\) => startItemDrag\(event, item\)\}/)
+  assert.match(explorer, /touchDrag\.begin\(event, source\.map/)
+  assert.match(mobile, /pointerDrag\.begin\(event, source\)/)
+  assert.match(pointer, /session\.phase = 'dragging'/)
+  assert.equal(mobileState.includes('MOBILE_FILES_HOLD_MS = 350'), true)
+  assert.equal(drag.includes('XDRIVE_FILE_ITEM_DRAG_HOLD_MS = 350'), true)
+})

@@ -264,3 +264,67 @@ test('edge scrolling uses the same host, updates hit testing after scroll and st
     assert.equal(h.host.scrollTop, 24); assert.equal(h.frames.size, 0)
   } finally { await h.dispose() }
 })
+
+test('sidebar touch waits 350 ms: tap stays clickable and held row drags without accidental click', async () => {
+  const h = await mount({ touchHoldMs: 350 })
+  try {
+    const { source } = await h.begin(undefined, { pointerType: 'touch' })
+    assert.equal(h.timers.size, 1)
+    await h.emit('pointermove', { clientX: 103, pointerType: 'touch' })
+    assert.equal(h.active, false)
+    await h.flushTimers()
+    assert.equal(h.active, true)
+    assert.equal(h.capture.size, 1)
+    await h.emit('pointermove', { clientX: 125, pointerType: 'touch' })
+    await h.emit('pointerup', { clientX: 125, pointerType: 'touch' })
+    assert.equal(h.drops.length, 1)
+    assert.deepEqual(h.drops[0].source, source)
+    assert.equal((await h.emit('click', { clientX: 125 })).defaultPrevented, true)
+    assert.equal(h.timers.size, 0)
+  } finally { await h.dispose() }
+
+  const tap = await mount({ touchHoldMs: 350 })
+  try {
+    await tap.begin(undefined, { pointerType: 'touch' })
+    await tap.emit('pointerup', { pointerType: 'touch' })
+    assert.equal(tap.active, false)
+    assert.equal(tap.timers.size, 0)
+    assert.equal(tap.drops.length, 0)
+    assert.equal((await tap.emit('click')).defaultPrevented, false)
+  } finally { await tap.dispose() }
+})
+
+test('sidebar touch scroll before 350 ms never submits reorder', async () => {
+  const h = await mount({ touchHoldMs: 350 })
+  try {
+    await h.begin(undefined, { pointerType: 'touch' })
+    const scroll = await h.emit('pointermove', { clientY: 115, pointerType: 'touch' })
+    assert.equal(scroll.defaultPrevented, false)
+    assert.equal(h.active, false)
+    assert.equal(h.timers.size, 0)
+    await h.flushTimers()
+    await h.emit('pointerup', { clientY: 115, pointerType: 'touch' })
+    assert.equal(h.drops.length, 0)
+    assert.equal(h.document.count, 0)
+  } finally { await h.dispose() }
+})
+
+test('sidebar mouse gesture starts immediately; owner changes cancel touch hold timers', async () => {
+  const h = await mount({ touchHoldMs: 350 })
+  try {
+    await h.begin(undefined, { pointerType: 'mouse' })
+    assert.equal(h.timers.size, 0)
+    await h.emit('pointermove', { pointerType: 'mouse', clientX: 125 })
+    assert.equal(h.active, true)
+    await h.emit('pointerup', { pointerType: 'mouse', clientX: 125 })
+  } finally { await h.dispose() }
+  const cancelled = await mount({ touchHoldMs: 350 })
+  try {
+    await cancelled.begin(undefined, { pointerType: 'touch' })
+    assert.equal(cancelled.timers.size, 1)
+    await cancelled.update({ scopeKey: 'other owner' })
+    assert.equal(cancelled.timers.size, 0)
+    await cancelled.flushTimers()
+    assert.equal(cancelled.drops.length, 0)
+  } finally { await cancelled.dispose() }
+})
