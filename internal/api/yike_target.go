@@ -49,7 +49,7 @@ SELECT EXISTS (
 	SELECT 1
 	FROM xd_sources AS source
 	JOIN subtree ON subtree.id = source.target_node_id
-	WHERE source.owner_id = ? AND source.kind = ?
+	WHERE source.owner_id = ? AND source.kind = ? AND source.status <> 'archived'
 )`, nodeID, ownerID, ownerID, ownerID, yikeSourceKind).Row()
 	if err := row.Scan(&protected); err != nil {
 		return false, err
@@ -79,7 +79,7 @@ func loadYikeManagedTargetIDsDB(
 
 	var ids []uint64
 	if err := scoped.Model(&meta.Source{}).
-		Where("owner_id = ? AND kind = ? AND target_node_id IS NOT NULL", ownerID, yikeSourceKind).
+		Where("owner_id = ? AND kind = ? AND status <> ? AND target_node_id IS NOT NULL", ownerID, yikeSourceKind, meta.SourceStatusArchived).
 		Pluck("target_node_id", &ids).Error; err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func ensureYikeManagedParentTx(ctx context.Context, tx *gorm.DB, ownerID uint64)
 
 	parent := root
 	var err error
-	for _, segment := range []string{yikeTargetRootName, yikeTargetConnectorName} {
+	for _, segment := range []string{yikeTargetRootName, managedPullRoot, yikeTargetConnectorName} {
 		parent, err = ensureOwnedChildDirectoryTx(ctx, tx, ownerID, parent.ID, segment)
 		if err != nil {
 			return meta.Node{}, err
