@@ -243,6 +243,13 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 				return err
 			}
 			parentChanged := currentTarget.ParentID == nil || *currentTarget.ParentID != desiredParent.ID
+			if parentChanged {
+				// Moving a legacy uid_* root is not authorized by the folder
+				// name alone. Reject if it carries unverified ordinary data.
+				if err := verifyYikeTargetRelocationTx(ctx, tx, *source, currentTarget); err != nil {
+					return err
+				}
+			}
 			if parentChanged || currentTarget.Name != desiredLeaf {
 				var conflict meta.Node
 				err := tx.WithContext(ctx).
