@@ -447,6 +447,9 @@ func (s *Server) createDirectory(c *gin.Context) {
 	if notesRejectDestination(c, s.DB, parentID, req.Name) {
 		return
 	}
+	if sourceRejectDestination(c, s.DB, parentID) {
+		return
+	}
 	n := meta.Node{ParentID: &parentID, Name: req.Name, Type: meta.NodeTypeDir, OwnerID: userID(c)}
 	if err := s.DB.Create(&n).Error; err != nil {
 		if isDuplicate(err) {
@@ -497,6 +500,9 @@ func (s *Server) copyNode(c *gin.Context) {
 	if notesRejectDestination(c, s.DB, req.ParentID, destinationName) {
 		return
 	}
+	if sourceRejectDestination(c, s.DB, req.ParentID) {
+		return
+	}
 	if source.Type == meta.NodeTypeDir && s.isDescendant(uid, req.ParentID, source.ID) {
 		fail(c, http.StatusBadRequest, "cannot copy a directory into its descendant")
 		return
@@ -508,6 +514,9 @@ func (s *Server) copyNode(c *gin.Context) {
 		if err := tx.Preload("File").
 			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", source.ID, uid).
 			First(&current).Error; err != nil {
+			return err
+		}
+		if err := managedSourceRejectDestinationTx(c.Request.Context(), tx, c, uid, req.ParentID); err != nil {
 			return err
 		}
 		name, err := copyDestinationNameTx(tx, uid, req.ParentID, current.Name, current.Type, req.Name)
@@ -741,6 +750,9 @@ func (s *Server) uploadFile(c *gin.Context) {
 	if notesRejectDestination(c, s.DB, parentID, "") {
 		return
 	}
+	if sourceRejectDestination(c, s.DB, parentID) {
+		return
+	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, s.MaxUploadBytes+(8<<20))
 	fh, err := c.FormFile("file")
 	if err != nil {
@@ -756,6 +768,9 @@ func (s *Server) uploadFile(c *gin.Context) {
 		return
 	}
 	if notesRejectDestination(c, s.DB, parentID, fh.Filename) {
+		return
+	}
+	if sourceRejectDestination(c, s.DB, parentID) {
 		return
 	}
 	if s.nameExists(userID(c), parentID, fh.Filename, 0) {
@@ -891,6 +906,9 @@ func (s *Server) overwriteFile(c *gin.Context) {
 	if notesRejectNodeMutation(c, s.DB, id) {
 		return
 	}
+	if sourceRejectNode(c, s.DB, id) {
+		return
+	}
 	logical, err := s.logicalPath(n)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "cannot resolve path")
@@ -1014,6 +1032,9 @@ func (s *Server) updateNode(c *gin.Context) {
 	if notesRejectNodeMutation(c, s.DB, id) {
 		return
 	}
+	if sourceRejectNode(c, s.DB, id) {
+		return
+	}
 	if n.Revision != expected {
 		revisionConflict(c, expected, n.Revision)
 		return
@@ -1054,6 +1075,9 @@ func (s *Server) updateNode(c *gin.Context) {
 		updates["parent_id"] = newParent
 	}
 	if notesRejectDestination(c, s.DB, newParent, newName) {
+		return
+	}
+	if sourceRejectDestination(c, s.DB, newParent) {
 		return
 	}
 	if len(updates) == 0 {
@@ -1124,6 +1148,9 @@ func (s *Server) deleteNode(c *gin.Context) {
 		if err := notesRejectNodeWithReason(c.Request.Context(), tx, userID(c), n.ID); err != nil {
 			return err
 		}
+		if err := managedSourceRejectNodeTx(c.Request.Context(), tx, c, userID(c), n.ID); err != nil {
+			return err
+		}
 		currentRevision = n.Revision
 		if n.Revision != expected {
 			return errRevisionConflict
@@ -1162,8 +1189,8 @@ func (s *Server) deleteNode(c *gin.Context) {
 			fail(c, http.StatusBadRequest, "root cannot be deleted")
 		case errors.Is(err, errNotesManagedPath):
 			fail(c, http.StatusConflict, errNotesManagedPath.Error())
-		case errors.Is(err, errManagedSourceTarget):
-			fail(c, http.StatusConflict, "managed Yike target path cannot be deleted")
+		case errors.Is(err, errManagedSourceMutation), errors.Is(err, errManagedSourceTarget):
+			fail(c, http.StatusConflict, "managed source path is read-only")
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "node not found")
 		default:
