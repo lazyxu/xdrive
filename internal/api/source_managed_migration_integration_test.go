@@ -2,6 +2,7 @@ package api
 
 import (
  "context"
+ "errors"
  "fmt"
  "net/url"
  "os"
@@ -9,7 +10,6 @@ import (
  "testing"
  "time"
 
- "github.com/gin-gonic/gin"
  "github.com/google/uuid"
  "github.com/lazyxu/xdrive/internal/meta"
  "gorm.io/driver/postgres"
@@ -148,5 +148,4 @@ func TestManagedSourceOrdinaryMutationDenied(t *testing.T) {
   if !errors.Is(err,errManagedSourceMutation) {t.Fatalf("ordinary user write unexpectedly permitted: %v",err)}
   return nil
  });err!=nil {t.Fatal(err)}
- gin.SetMode(gin.TestMode)
 }
