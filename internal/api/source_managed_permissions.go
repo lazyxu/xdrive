@@ -65,7 +65,9 @@ func managedSourceForNodeTx(
 func trustedSourceRunMutationTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, source meta.Source,
 ) (bool, error) {
-	if c == nil || tx == nil || source.Direction != meta.SourceDirectionPull ||
+	if c == nil || tx == nil ||
+		(source.Direction != meta.SourceDirectionPull &&
+			!(source.Direction == meta.SourceDirectionPush && source.Kind == synologySourceKind)) ||
 		source.Status != meta.SourceStatusActive || source.TargetNodeID == nil {
 		return false, nil
 	}
