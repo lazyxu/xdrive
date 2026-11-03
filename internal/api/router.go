@@ -512,6 +512,9 @@ func (s *Server) Router() *gin.Engine {
 	authed.PUT("/sources/:id/local-staging/:stageID/content", s.requireLocalSourceExecutor(), s.putLocalPushStageBytes)
 	authed.DELETE("/sources/:id/local-staging/:stageID", s.requireLocalSourceExecutor(), s.cancelLocalPushStage)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
+	// Explicit archive is the same history-preserving lifecycle as DELETE for
+	// legacy SourceManager clients; neither action deletes cloud Node/CAS.
+	authed.POST("/sources/:id/archive", s.requireLocalSourceExecutor(), s.deleteSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
 	authed.DELETE("/sources/:id/local-draft", s.discardLocalSourceDraft)
