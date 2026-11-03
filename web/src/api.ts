@@ -927,10 +927,62 @@ export class XDriveApi {
     })
   }
 
+  /** Read a single same-Owner note image without allowing arbitrary URLs. */
   async notesImageBlob(noteID: string, relativePath: string, signal?: AbortSignal) {
-    const uuidPattern = '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
-    const pattern = new RegExp('^_assets/(' + uuidPattern + ')/(' + uuidPattern +
-      '\\.(?:png|jpg|gif|webp|heic))
+    const uuid = '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
+    const pattern = new RegExp('^_assets/(' + uuid + ')/(' + uuid +
+      '\\.(?:png|jpg|gif|webp|heic))$', 'i')
+    const match = relativePath.match(pattern)
+    if (!match || match[1].toLowerCase() !== noteID.toLowerCase()) {
+      throw new Error('笔记图片的归属或路径无效')
+    }
+    await this.ensureFresh(signal)
+    signal?.throwIfAborted()
+    const path = '/api/v1/notes/' + encodeURIComponent(noteID) +
+      '/images/' + encodeURIComponent(match[2])
+    const send = () => fetch(API_BASE + path, {
+      method: 'GET', cache: 'no-store', redirect: 'error', credentials: 'same-origin',
+      headers: this.session.accessToken
+        ? { Authorization: 'Bearer ' + this.session.accessToken } : {},
+      signal,
+    })
+    let response = await send()
+    if (response.status === 401 && (this.session.refreshToken || this.session.browserSession)) {
+      await this.refresh(true, signal)
+      response = await send()
+    }
+    if (!response.ok) throw new ApiError(response.status, '笔记图片读取失败')
+    const mime = response.headers.get('Content-Type')?.split(';', 1)[0].toLowerCase()
+    if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/heic'].includes(mime ?? '')) {
+      throw new Error('笔记图片的媒体格式无效')
+    }
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('笔记图片无法读取')
+    const pieces: Uint8Array[] = []
+    let size = 0
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        size += value.byteLength
+        if (size > 20 * 1024 * 1024) {
+          await reader.cancel()
+          throw new Error('图片超过 20 MiB')
+        }
+        pieces.push(value)
+      }
+    } finally { reader.releaseLock() }
+    signal?.throwIfAborted()
+    const bytes = new Uint8Array(size)
+    let offset = 0
+    for (const piece of pieces) {
+      bytes.set(piece, offset)
+      offset += piece.byteLength
+    }
+    return new Blob([bytes.buffer], { type: mime })
+  }
+
+  /** A historical Markdown read uses the already protected Owner FileVersion
    * route. Limit decoded bytes, deny redirects and preserve 401 refresh. */
   async notesReadVersion(nodeID: number, versionID: number, signal?: AbortSignal) {
     if (!Number.isSafeInteger(nodeID) || nodeID <= 0 ||
