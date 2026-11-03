@@ -106,10 +106,9 @@ struct LocalPhotoInventoryScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var inspectedAssetID: String?
     @State private var inspectedResourceMessage: String?
-    @State private var albumPage: XDriveLocalPhotoAlbumPage?
-    @State private var albumLoading = false
-    @State private var albumError: String?
-    @State private var albumTask: Task<Void, Never>?
+    // The diagnostic route reuses the actual continuous Gallery album grid.
+    // Only a numeric navigation anchor survives; no PhotoKit collection IDs.
+    @State private var albumDirectoryOffset = 0
     @State private var showingBoundedScan = false
     @State private var allowICloudOriginal = false
     @State private var uploadingPhotoID: String?
@@ -219,64 +218,27 @@ struct LocalPhotoInventoryScreen: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                         Divider()
-                        Text("系统相册目录")
+                        Text("系统相簿目录")
                             .font(.headline)
-                        Text("仅枚举当前授权可访问的相册。不同相册的照片可能重复，目录成员数不等于唯一照片数。")
+                        NavigationLink {
+                            XDriveIOSNativePhotoAlbumsScreen(
+                                savedOffset: $albumDirectoryOffset
+                            )
+                        } label: {
+                            Label("浏览系统相簿", systemImage: "rectangle.stack")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(
+                                    Color(uiColor: .secondarySystemGroupedBackground),
+                                    in: RoundedRectangle(cornerRadius: 12)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("native-photo-inventory-albums-continuous")
+                        Text("复用图库中的系统相簿网格，连续滚动并按需读取目录；照片权限与相簿内容仍由 PhotoKit 检查。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        if let page = albumPage {
-                            Text(page.total == 0
-                                ? "当前没有可访问的相册目录。"
-                                : "相册 \(page.offset + 1)–\(page.offset + page.items.count) / \(page.total)"
-                            )
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            if page.limitedAuthorization {
-                                Label("仅统计 iOS 已授权子集", systemImage: "lock.shield")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                            ForEach(page.items) { album in
-                                HStack(spacing: 10) {
-                                    Image(systemName: "rectangle.stack")
-                                        .foregroundStyle(.secondary)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(album.name)
-                                        Text(album.kind)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Text(album.accessibleAssetCount.formatted())
-                                        .foregroundStyle(.secondary)
-                                        .monospacedDigit()
-                                }
-                                Divider()
-                            }
-                            HStack {
-                                Button("上一页") { loadAlbumPage(page.offset - XDriveLocalPhotoAlbumPager.pageSize) }
-                                    .disabled(!page.hasPrevious || albumLoading)
-                                Spacer()
-                                Button("下一页") { loadAlbumPage(page.offset + page.items.count) }
-                                    .disabled(!page.hasNext || albumLoading)
-                            }
-                            .buttonStyle(.bordered)
-                        } else if !albumLoading {
-                            Button("检查本机相册目录") { loadAlbumPage(0) }
-                                .buttonStyle(.bordered)
-                        }
-                        if albumLoading {
-                            ProgressView("正在读取最多 32 个相册目录…")
-                        }
-                        if let albumError {
-                            Text(albumError)
-                                .font(.footnote)
-                                .foregroundStyle(.red)
-                            Button("重新读取相册目录") { loadAlbumPage(0) }
-                                .buttonStyle(.bordered)
-                                .disabled(albumLoading)
-                        }
                     }
 
                     if model.loading {
@@ -290,9 +252,7 @@ struct LocalPhotoInventoryScreen: View {
                         Button("重新检查") {
                             inspectedAssetID = nil
                             inspectedResourceMessage = nil
-                            albumTask?.cancel()
-                            albumPage = nil
-                            albumError = nil
+                            albumDirectoryOffset = 0
                             Task { await model.inspect(askPermission: false) }
                         }
                         .buttonStyle(.bordered)
@@ -333,9 +293,7 @@ struct LocalPhotoInventoryScreen: View {
             if phase == .active {
                 inspectedAssetID = nil
                 inspectedResourceMessage = nil
-                albumTask?.cancel()
-                albumPage = nil
-                albumError = nil
+                albumDirectoryOffset = 0
                 Task { await model.inspect(askPermission: false) }
             }
         }
@@ -345,13 +303,10 @@ struct LocalPhotoInventoryScreen: View {
             photoUploadMessage = nil
             inspectedAssetID = nil
             inspectedResourceMessage = nil
-            albumTask?.cancel()
-            albumPage = nil
-            albumError = nil
+            albumDirectoryOffset = 0
         }
         .onDisappear {
             showingBoundedScan = false
-            albumTask?.cancel()
             photoUploadTask?.cancel()
         }
     }
@@ -369,27 +324,6 @@ struct LocalPhotoInventoryScreen: View {
                 : result
             uploadingPhotoID = nil
             photoUploadTask = nil
-        }
-    }
-
-    private func loadAlbumPage(_ offset: Int) {
-        guard !albumLoading else { return }
-        albumTask?.cancel()
-        albumLoading = true
-        albumError = nil
-        albumTask = Task { @MainActor in
-            defer { albumLoading = false }
-            do {
-                let page = try await XDriveLocalPhotoAlbumPager.readPage(offset: offset)
-                try Task.checkCancellation()
-                guard model.hasAccess else { return }
-                albumPage = page
-            } catch is CancellationError {
-                // Leaving this screen or revoking Photos access discards rows.
-            } catch {
-                albumPage = nil
-                albumError = "无法读取当前授权范围内的相册目录，请检查权限后重试。"
-            }
         }
     }
 
