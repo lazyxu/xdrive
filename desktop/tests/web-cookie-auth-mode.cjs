@@ -92,10 +92,11 @@ test('HTTPS browser endpoints never expose a refresh token or change native/HTTP
     'logoutPending',
     'setCookieBootPending(false)',
     'onAuthenticated(await api.login(username, password, rememberLogin), attemptEpoch)',
-    'data-xdrive-manual-connection-login',
-    'data-xdrive-manual-connection-menu',
     "window.location.hash === '#/offline/files'",
   ]) assert.ok(appSrc.includes(fragment), fragment)
+  for (const retired of ['data-xdrive-manual-connection-login', 'data-xdrive-manual-connection-menu']) {
+    assert.equal(appSrc.includes(retired), false, 'manual Origin UI must remain retired')
+  }
 })
 
 test('HTTPS cookie restoration never reads an old localStorage Access/Refresh JWT', () => {

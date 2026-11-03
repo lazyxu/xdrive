@@ -520,23 +520,20 @@ test('disabled personal account controls cannot reopen Settings or trigger logou
 })
 
 
-test('manual connection entry belongs to the account session and closes before Viewer exit', () => {
+test('retired manual Origin entry cannot appear in account menu or Viewer transitions', () => {
   const harness = accountMenuHarness()
   const anchor = { id: 'account-button' }
   only(harness.render(), 'XDriveAccountAvatarButton').props.onClick({ currentTarget: anchor })
   let tree = harness.render()
-  const entry = only(tree, 'MenuItem',
-    node => node.props['data-xdrive-manual-connection-menu'] !== undefined)
-  entry.props.onClick()
-  tree = harness.render()
-  assert.equal(only(tree, 'XDriveAccountMenu').props.anchorEl, null)
-  assert.equal(only(tree, 'XDriveManualConnectionDialog').props.open, true)
-  assert.equal(nodes(tree).filter(node => node.type === 'XDrivePwaInstallDialog').length, 0)
-
+  assert.equal(only(tree, 'XDriveAccountMenu').props.anchorEl, anchor)
+  assert.equal(nodes(tree).filter(node =>
+    node.props?.['data-xdrive-manual-connection-menu'] !== undefined).length, 0)
+  assert.equal(nodes(tree).filter(node => node.type === 'XDriveManualConnectionDialog').length, 0)
   tree = harness.render({ disabled: true })
-  assert.equal(only(tree, 'XDriveManualConnectionDialog').props.open, false)
+  assert.equal(only(tree, 'XDriveAccountMenu').props.anchorEl, null)
+  assert.equal(nodes(tree).filter(node => node.type === 'XDriveManualConnectionDialog').length, 0)
   tree = harness.render({ disabled: false })
-  assert.equal(only(tree, 'XDriveManualConnectionDialog').props.open, false)
+  assert.equal(nodes(tree).filter(node => node.type === 'XDriveManualConnectionDialog').length, 0)
   assert.deepEqual(harness.effects, [])
 })
 

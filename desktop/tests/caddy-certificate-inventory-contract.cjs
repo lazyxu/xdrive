@@ -46,7 +46,7 @@ test('shared Desktop DSM Web certificate panel downloads only user-clicked publi
 test('native login and Web/PWA refuse automatic CA trust or TLS downgrade', () => {
   const ios = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
   const android = read('android/app/src/main/java/com/tfluid/xdrive/AuthScreens.kt')
-  const web = read('web/src/ManualConnectionDialog.tsx')
+  const web = read('web/src/App.tsx')
   assert.match(ios, /native-ios-lan-certificate-help/)
   assert.match(android, /auth-lan-certificate-help/)
   // The newest master owns account-scoped Android passwords; the certificate
@@ -54,6 +54,7 @@ test('native login and Web/PWA refuse automatic CA trust or TLS downgrade', () =
   assert.match(android, /auth-remember-password/)
   assert.match(android, /auth-saved-password-login/)
   assert.match(android, /auth-forget-profile/)
-  assert.match(web, /管理员 → Caddy → HTTPS 证书管理/)
+  // The retired Web origin switch is absent; native trust policy remains enforced.
+  assert.doesNotMatch(web, /data-xdrive-manual-connection-(?:login|menu)/)
   assert.doesNotMatch(ios + android, /trustAllCertificates|InsecureSkipVerify|proceed\(\)/)
 })
