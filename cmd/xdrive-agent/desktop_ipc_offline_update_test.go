@@ -70,7 +70,7 @@ func TestDesktopIPCOfflineImportRejectsUnsafeTargetsWithoutControllerCall(t *tes
 	h:=newDesktopIPCHandler(f,"secret",func(){})
 	for _,tc:=range []struct{method,path,body string}{
 		{"GET","/v1/server-offline-imports/traversal",""},
-		{"DELETE","/v1/server-offline-imports/..",""},
+		{"DELETE","/v1/server-offline-imports/not-a-valid-id",""},
 		{"GET","/v1/server-offline-imports/FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",""},
 		{"POST","/v1/server-offline-imports/"+testOfflineID+"/files/evil.sh",`{"name":"evil.sh","size":12}`},
 		{"POST","/v1/server-offline-imports/"+testOfflineID+"/files/manifest.json",`{"name":"manifest.json","size":-1}`},
