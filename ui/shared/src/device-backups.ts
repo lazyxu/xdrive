@@ -92,6 +92,7 @@ export interface XDriveLocalBoundBackupSettings {
   revision: number
   sync_mode: 'backup' | 'mirror'
   target_node_id?: number
+  target_managed?: boolean
   target_path?: string
 }
 
