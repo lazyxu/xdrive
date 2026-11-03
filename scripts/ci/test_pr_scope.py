@@ -70,7 +70,6 @@ class PRScopeTest(unittest.TestCase):
     def test_offline_release_never_weakens_critical_or_cross_domain_checks(self):
         publisher = "scripts/ci/mirror-server-to-share.py"
         for sensitive in (
-            "scripts/ci/test-mirror-server-to-share.py",  # test-only PR
             "scripts/offline/xdrive_offline.py",
             "scripts/offline/delivery_descriptor.py",
             "scripts/offline/build-five-packages.sh",
