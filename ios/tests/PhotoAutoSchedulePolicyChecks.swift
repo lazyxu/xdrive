@@ -10,6 +10,17 @@ import Foundation
                               needsReview: false) == 1)
     precondition(p.nextWindow(current: 1, visibleTotal: 600, scanned: 256, uploaded: 3,
                               needsReview: false) == 2)
+    // An OS-admitted background batch may confirm up to four new originals.
+    // Its partial 256-slot window MUST repeat; only a fully scanned page
+    // may advance to the next source segment.
+    precondition(p.nextWindow(current: 0, visibleTotal: 600, scanned: 4, uploaded: 4,
+                              needsReview: false) == 0)
+    precondition(p.nextWindow(current: 0, visibleTotal: 600, scanned: 256, uploaded: 4,
+                              needsReview: false) == 1)
+    precondition(p.nextWindow(current: 2, visibleTotal: 600, scanned: 88, uploaded: 4,
+                              needsReview: false) == 0)
+    precondition(p.nextWindow(current: 0, visibleTotal: 600, scanned: 4, uploaded: 4,
+                              needsReview: true) == 0)
     precondition(p.nextWindow(current: 2, visibleTotal: 600, scanned: 88, uploaded: 0,
                               needsReview: false) == 0)
     precondition(p.nextWindow(current: 1, visibleTotal: 600, scanned: 35, uploaded: 20,
