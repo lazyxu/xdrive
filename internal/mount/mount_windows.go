@@ -45,6 +45,7 @@ type winProvider struct {
 	manualSync      chan struct{}
 	retrySync       chan chan error
 	transfers       *transfer.Manager
+	activityOwner   string
 }
 
 var activeWinProvider struct {
@@ -76,6 +77,7 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 		manualSync: make(chan struct{}, 1),
 		retrySync:  make(chan chan error),
 		transfers:  opts.Transfers,
+		activityOwner: opts.ActivityOwner,
 	}
 	activeWinProvider.Lock()
 	activeWinProvider.p = p
@@ -95,12 +97,12 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 
 	p.bootstrapRemoteJournal(ctx)
 
-	emitEvent(Event{Kind: EventSyncStarted})
+	initialRunID := p.beginActivity("initial")
 	if err := p.initialSync(ctx); err != nil {
-		emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
+		p.finishActivity(initialRunID, err, false)
 		return err
 	}
-	emitEvent(Event{Kind: EventSyncCompleted})
+	p.finishActivity(initialRunID, nil, false)
 
 	changes, watchErrs := watchWindowsChanges(ctx, root)
 	remoteTicker := time.NewTicker(winRemotePoll)
@@ -162,17 +164,20 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 		batch := append([]winLocalChange(nil), pending...)
 		pending = pending[:0]
 		stopBatchTimers()
-		emitEvent(Event{Kind: EventSyncStarted})
+		localRunID := p.beginActivity("local")
 		if err := p.reconcileLocalChanges(ctx, batch); err != nil {
 			if !errors.Is(err, errWindowsHydrationSettling) {
 				fmt.Fprintln(os.Stderr, "xd: Windows local sync:", err)
-				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
+				p.finishActivity(localRunID, err, false)
+			} else {
+				// Waiting for Cloud Files hydration is not a hard sync failure.
+				p.deferActivity(localRunID)
 			}
 			pending = append(batch, pending...)
 			scheduleLocalRetry()
 			return false
 		}
-		emitEvent(Event{Kind: EventSyncCompleted, Notify: true})
+		p.finishActivity(localRunID, nil, true)
 		return true
 	}
 	queueLocal := func(change winLocalChange) {
@@ -253,25 +258,25 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 			if !flushLocal() {
 				continue
 			}
-			emitEvent(Event{Kind: EventSyncStarted})
+			manualRunID := p.beginActivity("manual")
 			if err := p.reconcile(ctx); err != nil {
 				fmt.Fprintln(os.Stderr, "xd: Windows manual sync:", err)
-				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
+				p.finishActivity(manualRunID, err, false)
 				continue
 			}
-			emitEvent(Event{Kind: EventSyncCompleted, Notify: true})
+			p.finishActivity(manualRunID, nil, true)
 		case result := <-p.retrySync:
 			if !flushLocal() {
 				result <- errors.New("local changes are still pending")
 				continue
 			}
-			emitEvent(Event{Kind: EventSyncStarted})
+			retryRunID := p.beginActivity("retry")
 			err := p.reconcile(ctx)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "xd: Windows transfer retry:", err)
-				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
+				p.finishActivity(retryRunID, err, false)
 			} else {
-				emitEvent(Event{Kind: EventSyncCompleted, Notify: true})
+				p.finishActivity(retryRunID, nil, true)
 			}
 			result <- err
 		}
