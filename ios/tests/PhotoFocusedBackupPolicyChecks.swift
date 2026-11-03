@@ -4,6 +4,59 @@ import Foundation
     static func main() {
         let p = XDriveIOSPhotoFocusedBackupPolicy.self
         let step = p.afterWindow
+        // Completed boundaries persist; a partially scanned capped window
+        // and a fully completed final window have no next checkpoint.
+        precondition(p.validCheckpoint(completedWindow: 0, nextWindow: 1,
+                                       visibleTotal: 600))
+        precondition(p.validCheckpoint(completedWindow: 1, nextWindow: 2,
+                                       visibleTotal: 600))
+        precondition(!p.validCheckpoint(completedWindow: 1, nextWindow: 1,
+                                        visibleTotal: 600))
+        precondition(!p.validCheckpoint(completedWindow: 1, nextWindow: 3,
+                                        visibleTotal: 600))
+        precondition(!p.validCheckpoint(completedWindow: 0, nextWindow: 1,
+                                        visibleTotal: 256))
+        precondition(!p.validCheckpoint(completedWindow: -1, nextWindow: 0,
+                                        visibleTotal: 600))
+        precondition(!p.validCheckpoint(completedWindow: Int.max, nextWindow: 0,
+                                        visibleTotal: 600))
+        precondition(!p.validCheckpoint(completedWindow: 0, nextWindow: 1,
+                                        visibleTotal: 0))
+        precondition(p.validCheckpoint(completedWindow: 389, nextWindow: 390,
+                                       visibleTotal: 100_000))
+        precondition(!p.validCheckpoint(completedWindow: 390, nextWindow: 391,
+                                        visibleTotal: 100_000))
+
+        func resume(_ requested: Int, _ priorTotal: Int, _ currentTotal: Int,
+                    _ oldAuthorization: Int = 3, _ newAuthorization: Int = 3,
+                    _ unchanged: Bool = true,
+                    _ priorCloud: Bool = false, _ cloud: Bool = false) -> Int {
+            p.trustedResumeWindow(
+                requested: requested,
+                previousVisible: priorTotal, currentVisible: currentTotal,
+                priorAuthorization: oldAuthorization,
+                currentAuthorization: newAuthorization,
+                tokenUnchanged: unchanged,
+                previousAllowICloud: priorCloud, allowICloud: cloud
+            )
+        }
+        precondition(resume(1, 600, 600) == 1)
+        precondition(resume(2, 600, 600) == 2)
+        precondition(resume(390, 100_000, 100_000) == 390)
+        precondition(resume(1, 600, 600, 3, 4) == 0)
+        precondition(resume(1, 600, 600, 3, 3, false) == 0)
+        precondition(resume(1, 600, 601) == 0)
+        precondition(resume(1, 600, 600, 3, 3, true, false, true) == 0)
+        precondition(resume(1, 600, 600, 3, 3, true, true, false) == 0)
+        precondition(resume(0, 600, 600) == 0)
+        precondition(resume(-1, 600, 600) == 0)
+        precondition(resume(Int.max, 600, 600) == 0)
+        precondition(resume(3, 600, 600) == 0)
+        precondition(resume(1, 0, 0) == 0)
+        precondition(resume(1, 256, 256) == 0)
+        // The iCloud mode and authorization may be equal after an actual
+        // restart, but no generation equality means no checkpoint reuse.
+        precondition(resume(1, 600, 600, 4, 4, false, true, true) == 0)
         precondition(step(0, 0, 0, 0, false) == .finished)
         precondition(step(0, 256, 20, 20, false) == .repeatWindow(0))
         precondition(step(0, 256, 256, 20, false) == .finished)
