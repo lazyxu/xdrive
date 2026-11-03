@@ -135,6 +135,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     // no GPS or PhotoKit identity is persisted between views or Owners.
     let cameraReturn: MKCoordinateRegion?
     var canSelectCells = true
+    // Only previously viewport-filtered cells need instant gesture revocation.
+    // All-library overview and normal photo page remain directly selectable.
+    var cameraBoundCells = false
     var onCells: (([Cell], MKCoordinateRegion) -> Void)? = nil
     var onCamera: ((MKCoordinateRegion) -> Void)? = nil
     var onCameraWillChange: (() -> Void)? = nil
@@ -160,12 +163,15 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         context.coordinator.onCamera = onCamera
         context.coordinator.onCameraWillChange = onCameraWillChange
         context.coordinator.canSelectCells = canSelectCells
+        context.coordinator.cameraBoundCells = cameraBoundCells
         // Camera movement does not change the photo grid revision. Revoke
         // old MapKit marker taps and accessibility activation immediately.
         for annotation in map.annotations {
             if let cover = map.view(for: annotation) as? XDriveIOSMapPhotoCover {
                 cover.isEnabled = canSelectCells
+                cover.isAccessibilityElement = canSelectCells
                 cover.accessibilityElementsHidden = !canSelectCells
+                cover.accessibilityTraits = canSelectCells ? .button : []
             }
         }
         guard context.coordinator.revision != revision else { return }
@@ -223,6 +229,7 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         var onCamera: ((MKCoordinateRegion) -> Void)?
         var onCameraWillChange: (() -> Void)?
         var canSelectCells = true
+        var cameraBoundCells = false
 
         init(onOpen: @escaping ([XDrivePhotoKitScanCandidate], MKCoordinateRegion) -> Void,
              onCells: (([Cell], MKCoordinateRegion) -> Void)?,
@@ -235,6 +242,20 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            if cameraBoundCells {
+                // UIKit's delegate fires before SwiftUI re-renders. Make
+                // every stale GPS cell cover unclickable and unreachable by
+                // VoiceOver synchronously at the first camera gesture.
+                canSelectCells = false
+                for annotation in mapView.annotations {
+                    guard let cover = mapView.view(for: annotation) as? XDriveIOSMapPhotoCover
+                    else { continue }
+                    cover.isEnabled = false
+                    cover.isAccessibilityElement = false
+                    cover.accessibilityElementsHidden = true
+                    cover.accessibilityTraits = []
+                }
+            }
             onCameraWillChange?()
         }
 
@@ -264,7 +285,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
                 wholeLibrary: first.cell != nil
             )
             view?.isEnabled = canSelectCells
+            view?.isAccessibilityElement = canSelectCells
             view?.accessibilityElementsHidden = !canSelectCells
+            view?.accessibilityTraits = canSelectCells ? .button : []
             return view
         }
 
@@ -811,6 +834,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         items: [], globalCells: globalCells,
                         revision: mapRevision, cameraReturn: globalCamera,
                         canSelectCells: refinedViewportIsCurrent,
+                        cameraBoundCells: globalViewport != nil,
                         onCells: { cells, _ in
                             // A MapKit cluster may contain several spatial cells.
                             // Admit only the exact complete set still held by
