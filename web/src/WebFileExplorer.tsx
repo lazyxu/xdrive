@@ -265,10 +265,17 @@ export default function WebFileExplorer({
     setTagDialogItems([])
     setTagDialogMode(null)
   }, [navigationSessionStorageKey])
-  const loadSourceOptions = useCallback(async (): Promise<XDriveFileExplorerSearchSourceOption[]> =>
-    xDriveFileExplorerProjectSearchSources(await api.sources()),
-  [api])
-  const { options: searchSourceOptions } = useXDriveFileExplorerOwnerSourceOptions({
+  const loadSourceOptions = useCallback(async () => {
+    const sources = await api.sources()
+    const projected = xDriveFileExplorerProjectSearchSources(sources)
+    const byID = new Map(sources.map((source) => [source.id, source]))
+    return projected.map((entry) => ({
+      ...entry,
+      direction: byID.get(entry.id)?.direction,
+      target_node_id: byID.get(entry.id)?.target_node_id,
+    }))
+  }, [api])
+  const { options: searchSourceOptions, managedEntries: managedSourceEntries } = useXDriveFileExplorerOwnerSourceOptions({
     host: api,
     ownerKey: navigationSessionStorageKey ?? '',
     read: loadSourceOptions,
@@ -1892,6 +1899,15 @@ export default function WebFileExplorer({
           <XDriveFileExplorerNavigationPane
             lifecycleKey={navigationSessionStorageKey ?? ''}
             currentCrumbs={crumbs}
+            managedSourceEntries={managedSourceEntries}
+            onNavigateManagedSource={(entry) => {
+              onCloseTrash()
+              const navigationIntentID = beginNavigationIntent()
+              void quickAccess.navigate(
+                entry.targetNodeID,
+                (nextCrumbs) => navigateTo(nextCrumbs, true, navigationIntentID),
+              )
+            }}
             trashActive={trashActive}
             onNavigateTrash={() => {
               beginNavigationIntent()
