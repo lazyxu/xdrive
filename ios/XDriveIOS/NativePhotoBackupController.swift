@@ -68,10 +68,12 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             manualLibraryEpoch = nil
             manualAuthorizationRaw = nil
             progress = nil
-            focusedSummary = nil
             message = "未启动相册备份"
             errorMessage = nil
         }
+        // Keep the existing atomic Owner-reset sequence intact. Focused
+        // progress is also per-Owner and must be cleared synchronously.
+        if !unchanged { focusedSummary = nil }
         displayOwner = owner
         if let last = confirmedOriginalUpdate,
            !XDriveIOSNativePhotoOwnerScope.matches(owner, last.owner) {
@@ -424,15 +426,23 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             // Invalidate the cloud wall once at the terminal boundary using
             // only that confirmed count; never interpret an unknown ACK as
             // a successful backup or let an old Owner refresh another account.
-            if (self.progress?.uploaded ?? 0) > 0 ||
-               (self.focusedSummary?.confirmedNew ?? 0) > 0 {
-                if self.displayEpoch == uiEpoch,
-                   XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, selected),
-                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
-                    self.confirmedOriginalUpdate = ConfirmedOriginalUpdate(
-                        owner: selected, id: UUID()
-                    )
-                }
+            if let current = self.progress, current.uploaded > 0,
+               self.displayEpoch == uiEpoch,
+               XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, selected),
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
+                self.confirmedOriginalUpdate = ConfirmedOriginalUpdate(
+                    owner: selected, id: UUID()
+                )
+            } else if (self.focusedSummary?.confirmedNew ?? 0) > 0,
+                      self.displayEpoch == uiEpoch,
+                      XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, selected),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
+                // The final focused window can contain no new file while
+                // previous windows did. Keep the original single-window
+                // receipt refresh unchanged and cover this new case.
+                self.confirmedOriginalUpdate = ConfirmedOriginalUpdate(
+                    owner: selected, id: UUID()
+                )
             }
             self.refresh(owner: login.owner)
         }
