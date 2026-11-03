@@ -55,6 +55,28 @@ enum XDriveIOSNativeFilesTrashPolicy {
         return page.items.allSatisfy(validDeleted)
     }
 
+    /// Extra Server ranges can extend a verified recycle bin only when they
+    /// are adjacent, non-overlapping and keep the same authoritative count.
+    /// A fresh mutation re-reads the *original* 64-item Server page by offset.
+    static func validAppend(
+        alreadyLoadedIDs: Set<UInt64>, alreadyLoadedCount: Int, total: Int,
+        next: XDriveIOSNativeFilesTrashRange
+    ) -> Bool {
+        guard alreadyLoadedCount > 0,
+              alreadyLoadedIDs.count == alreadyLoadedCount,
+              alreadyLoadedCount < total,
+              XDriveIOSNativeFilesPagePolicy.validOffset(alreadyLoadedCount),
+              next.offset == alreadyLoadedCount,
+              next.total_count == total,
+              validRange(next, offset: alreadyLoadedCount),
+              !next.items.isEmpty,
+              (next.items.count == pageSize ||
+               alreadyLoadedCount + next.items.count == total),
+              alreadyLoadedIDs.isDisjoint(with: Set(next.items.map(\.id)))
+        else { return false }
+        return true
+    }
+
     static func validRestored(_ restored: XDriveIOSNativeFilesTrashNode,
                               from deleted: XDriveIOSNativeFilesTrashNode) -> Bool {
         validDeleted(deleted) && restored.id == deleted.id &&

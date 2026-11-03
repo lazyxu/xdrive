@@ -50,3 +50,30 @@ test('root and stale Owner cannot reach a directory mutation; one existing file 
   assert.match(panel, /mutator\.invalidate\(\)/)
   assert.doesNotMatch(browser, /WKWebView|document\.cookie|\/api\/v1\/file-operations/)
 })
+
+
+test('native context shortcuts reuse real Owner-scoped file/folder actions, not decorative menus', () => {
+  assert.equal((browser.match(/nativeQuickActions\(for: entry\)/g) || []).length, 3)
+  assert.match(browser, /@ViewBuilder private func nativeQuickActions\(for entry:/)
+  assert.match(browser, /if !entry\.node\.isDirectory \{\s*Button \{\s*openViewer\(entry\)/)
+  for (const action of ['copy', 'move', 'rename', 'shareLink', 'download', 'trash']) {
+    assert.match(browser, new RegExp('openManagement\\(for: entry\\.node, quickAction: \\.' + action + '\\)'))
+  }
+  assert.match(browser, /Button\(role: \.destructive\)/)
+  assert.match(browser, /quickAction: node == nil \? nil : quickAction/)
+  assert.match(browser, /initialQuickAction: intent\.quickAction/)
+  assert.match(panel, /enum XDriveIOSNativeFilesQuickAction/)
+  assert.match(panel, /let initialQuickAction: XDriveIOSNativeFilesQuickAction\?/)
+  assert.match(panel, /guard !initialActionApplied else \{ return \}/)
+  assert.match(panel, /guard verified, !anyBusy,[\s\S]*?let selected = file \?\? directory/)
+  assert.match(panel, /case \.copy:\s*destinationIntent = \.init\(node: selected, kind: \.copy\)/)
+  assert.match(panel, /case \.move:\s*destinationIntent = \.init\(node: selected, kind: \.move\)/)
+  assert.match(panel, /case \.rename:\s*renameDraft = selected\.name\s*showingRename = true/)
+  assert.match(panel, /case \.shareLink:\s*shareNode = selected/)
+  assert.match(panel, /case \.download:[\s\S]*?exporter\.prepare\(file, login: login\)/)
+  assert.match(panel, /folderArchive\.prepare\([\s\S]*?expectedOwner: expectedOwner/)
+  assert.match(panel, /case \.trash:\s*showingTrash = true/)
+  assert.match(panel, /mutator\.perform\(node: directory, kind: \.trash,/)
+  assert.match(mutation, /forHTTPHeaderField: "If-Match"/)
+  assert.doesNotMatch(browser, /import WebKit|WKWebView|\.uploadOnce\(/)
+})
