@@ -28,6 +28,7 @@ import {
   XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES,
 } from '../synology-media-preview'
 import { xDriveSynologyLoadViewerPreview, xDriveSynologyViewerNeedsDerived } from '../synology-viewer-preview'
+import { xDriveSynologyLoadOwnerLiveMotion } from '../synology-live-motion'
 import {
   xDriveSynologyLoadNativeMediaStream, xDriveSynologyPlaybackMIME,
 } from '../synology-media-stream'
@@ -173,6 +174,17 @@ export function XDriveSynologyOwnerFilesPage({
   const previewIndex = viewerSelection.index
   const previewItem = viewerSelection.item
   const previewPositionLabel = viewerSelection.positionLabel
+  // The current verified Viewer row is an ephemeral authority fence. A pending
+  // hold from Node A cannot publish bytes after navigation to B (or A again),
+  // even if the old callback is retained and an AbortSignal arrives late.
+  const activeLivePreviewRef = useRef({
+    client, scopeKey: currentScopeKey, rootRevision,
+    item: previewItem, verified: currentScopeVerified,
+  })
+  activeLivePreviewRef.current = {
+    client, scopeKey: currentScopeKey, rootRevision,
+    item: previewItem, verified: currentScopeVerified,
+  }
   const thumbnailOnlyPreview = previewItem !== null && usesOwnerThumbnailOnlyPreview(previewItem)
   // #3528's Owner-scoped 4K reader is an allowed *derivative*, not an unsafe
   // full-original Blob. A prior thumbnail-only fallback must not suppress it.
@@ -199,6 +211,33 @@ export function XDriveSynologyOwnerFilesPage({
     signal?: AbortSignal,
     onProgress?: XDriveByteProgressHandler,
   ) => xDriveSynologyLoadOwnerThumbnail(client, item, signal, onProgress), [client])
+  const loadOwnerLivePhotoMotion = useCallback((
+    item: XDriveFileExplorerItem,
+    onProgress?: XDriveByteProgressHandler,
+    signal?: AbortSignal,
+  ): Promise<string | null> => {
+    const opened = activeLivePreviewRef.current
+    // Live motion is on-demand for this exact selected .livp only. An ordinary
+    // image/video/unknown binary never gains a new privileged media read.
+    if (signal?.aborted || item.kind !== 'file' || !/\.livp$/i.test(item.name) ||
+        opened.client !== client || !opened.verified ||
+        opened.item !== item || !isCurrentOwner()) return Promise.resolve(null)
+
+    const isCurrent = () => {
+      const now = activeLivePreviewRef.current
+      return !signal?.aborted && isCurrentOwner() &&
+        now.client === opened.client &&
+        now.scopeKey === opened.scopeKey &&
+        now.rootRevision === opened.rootRevision &&
+        now.item === opened.item && now.verified &&
+        xDriveFindVerifiedOwnerSelection(item, itemsRef.current) !== null
+    }
+    if (!isCurrent()) return Promise.resolve(null)
+    return xDriveSynologyLoadOwnerLiveMotion(
+      client, item.id as number, item.revision as number,
+      isCurrent, signal, onProgress,
+    )
+  }, [client, isCurrentOwner])
   // Every entry uses the same capability check, including the actual handler.
   // Reject unsupported/stale requests before retiring an already verified save.
   const getDownloadDisabledReason = useCallback((
@@ -621,6 +660,10 @@ export function XDriveSynologyOwnerFilesPage({
         // independent original/media Range request.
         loadImagePreview={loadOwnerThumbnail}
         loadPreviewURL={quickLookPreviewURLLoader}
+        // Reuse the Gallery's digest-verified Owner motion on explicit hold,
+        // with the exact same shared LivePhotoSurface and Quick Look chrome.
+        loadLivePhotoMotion={previewItem?.kind === 'file' &&
+          /\.livp$/i.test(previewItem.name) ? loadOwnerLivePhotoMotion : undefined}
         onClose={() => setPreview(null)}
       />
     </XDriveFilesWorkspacePage>

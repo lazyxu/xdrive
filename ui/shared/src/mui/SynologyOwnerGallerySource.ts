@@ -4,6 +4,7 @@ import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter
 import { xDriveSynologyLoadBoundedMediaPreview, xDriveSynologyPreviewMIME } from '../synology-media-preview'
 import { xDriveSynologyLoadViewerPreview, xDriveSynologyViewerNeedsDerived } from '../synology-viewer-preview'
 import { xDriveSynologyLoadOwnerThumbnail } from '../synology-owner-thumbnail'
+import { xDriveSynologyLoadOwnerLiveMotion } from '../synology-live-motion'
 import {
   xDriveSynologyLoadNativeMediaStream, xDriveSynologyPlaybackMIME,
 } from '../synology-media-stream'
@@ -206,30 +207,13 @@ export function createXDriveSynologyOwnerGallerySource(
       if (signal?.aborted || !Number.isSafeInteger(nodeID) || nodeID < 1) return null
       const identity = previews.get(nodeID)
       if (!identity?.livePhoto) return null
-      // The Server's verified Live Photo endpoint, not the .livp archive or
-      // an unrelated MOV Node, supplies exactly this Owner/revision's motion.
-      // DSM only transports it; the SAME shared LivePhotoSurface owns hold,
-      // release, seek, frame and abort lifecycle on every Host.
-      const motion = await client.ownerLivePhotoMotion(nodeID, identity.revision, signal)
-      if (signal?.aborted || previews.get(nodeID) !== identity ||
-        motion.nodeID !== nodeID || motion.revision !== identity.revision ||
-        motion.size !== motion.data.length || !globalThis.crypto?.subtle) return null
-      const ownedBuffer = new ArrayBuffer(motion.data.length)
-      const owned = new Uint8Array(ownedBuffer)
-      owned.set(motion.data)
-      const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', owned))
-      const actual = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('')
-      if (signal?.aborted || previews.get(nodeID) !== identity ||
-        actual !== motion.sha256) return null
-      const url = URL.createObjectURL(new Blob([ownedBuffer], { type: motion.mimeType }))
-      if (signal?.aborted || previews.get(nodeID) !== identity) {
-        URL.revokeObjectURL(url)
-        return null
-      }
-      onProgress?.(motion.size, motion.size, null)
-      // Shared LivePhotoSurface disposes this Blob lease on Viewer close,
-      // Owner switch and explicit hold release; there is no DSM player.
-      return url
+      // Files and Gallery now use one SHA-verified Owner motion reader. This
+      // per-Gallery identity fence still rejects replaced rows after each await.
+      return xDriveSynologyLoadOwnerLiveMotion(
+        client, nodeID, identity.revision,
+        () => previews.get(nodeID) === identity,
+        signal, onProgress,
+      )
     },
     loadPreviewURL: async (nodeID, kind, signal, _fileName, revision, onProgress) => {
       if ((kind !== 'image' && kind !== 'video' && kind !== 'live_photo') || signal?.aborted) return null
