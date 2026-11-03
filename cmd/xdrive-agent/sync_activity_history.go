@@ -6,6 +6,7 @@ import (
  "fmt"
  "log"
  "path/filepath"
+ "time"
 
  "github.com/lazyxu/xdrive/internal/syncactivity"
  "github.com/lazyxu/xdrive/internal/userconfig"
@@ -52,6 +53,7 @@ func (c *agentController) switchSyncActivity(cfg userconfig.Config) {
  }
  c.syncActivity=nil
  c.syncActivityKey=""
+ c.syncActivityPrunedAt=time.Time{}
  if cfg.SessionInvalid{return}
  path,key,err:=agentSyncActivityIdentity(cfg)
  if err!=nil{log.Printf("xDrive sync activity scope: %v",err);return}
@@ -59,6 +61,14 @@ func (c *agentController) switchSyncActivity(cfg userconfig.Config) {
  if err!=nil{log.Printf("xDrive sync activity open: %v",err);return}
  c.syncActivity=store
  c.syncActivityKey=key
+ now:=time.Now().UTC()
+ ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second)
+ defer cancel()
+ if err:=store.Prune(ctx,now);err!=nil{
+  log.Printf("xDrive sync activity retention cleanup failed: %v",err)
+ } else {
+  c.syncActivityPrunedAt=now
+ }
 }
 
 func (c *agentController) closeSyncActivity() {
@@ -70,6 +80,7 @@ func (c *agentController) closeSyncActivity() {
  }
  c.syncActivity=nil
  c.syncActivityKey=""
+ c.syncActivityPrunedAt=time.Time{}
 }
 
 func (c *agentController) syncActivityForCurrentAccount() (*syncactivity.Store,error) {
