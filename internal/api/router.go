@@ -700,7 +700,8 @@ func (s *Server) requireAuth() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
 			return
 		}
-		uid, tokenVersion, err := s.Auth.Parse(strings.TrimSpace(h[7:]))
+		claims, err := s.Auth.ParseClaims(strings.TrimSpace(h[7:]))
+		uid, tokenVersion := claims.UserID, claims.SessionVersion
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid bearer token"})
 			return
@@ -726,6 +727,12 @@ func (s *Server) requireAuth() gin.HandlerFunc {
 		}
 		c.Set("userID", uid)
 		c.Set("user", user)
+		// Additional signed claims are only advisory until the exact active
+		// SourceRun, Source revision, target, and Node ancestry are checked
+		// inside each File mutation's database transaction.
+		if claims.SourceID != 0 && claims.SourceRunID != "" {
+			c.Set("sourceRunScope", sourceRunScope{sourceID: claims.SourceID, runID: claims.SourceRunID})
+		}
 		c.Next()
 	}
 }
