@@ -242,6 +242,7 @@ func (c *agentController) Run() {
 	go c.runLocalPushAutoScheduler()
 	updateReady := c.updates.InstallStarted()
 	mount.SetEventSink(func(event mount.Event) {
+		c.captureMountSyncActivity(event)
 		switch event.Kind {
 		case mount.EventSyncStarted:
 			c.availabilitySearch.Invalidate()
