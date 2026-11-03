@@ -22,6 +22,7 @@ const (
 
 	SourceStatusActive = "active"
 	SourceStatusPaused = "paused"
+	SourceStatusArchived = "archived"
 
 	SourceItemKindFile      = "file"
 	SourceItemKindDirectory = "directory"
@@ -266,7 +267,7 @@ func ValidSourceRunMode(mode string) bool {
 }
 
 func ValidSourceStatus(status string) bool {
-	return status == SourceStatusActive || status == SourceStatusPaused
+	return status == SourceStatusActive || status == SourceStatusPaused || status == SourceStatusArchived
 }
 
 func ValidSourceItemKind(kind string) bool {
