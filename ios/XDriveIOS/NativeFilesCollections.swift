@@ -565,6 +565,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     gridEntryLabel(item)
                 }
                 .buttonStyle(.plain)
+                .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-recent-folder-\(item.id)")
             } else {
                 Button { openFile(item) } label: {
@@ -623,6 +624,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 } label: {
                     entryLabel(item)
                 }
+                .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-recent-folder-\(item.id)")
             } else {
                 Button { openFile(item) } label: {
