@@ -333,6 +333,15 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		shareGrant = &grant
 	}
+	if req.NodeID != nil {
+		if notesRejectNodeMutation(c, s.DB, *req.NodeID) {
+			return
+		}
+	} else if req.ParentID != nil {
+		if notesRejectDestination(c, s.DB, *req.ParentID, req.Name) {
+			return
+		}
+	}
 	if req.SHA256 == "" && req.MD5 != "" {
 		resolved, ok, err := verifiedDigestSHA256(
 			c.Request.Context(), s.DB, uid, contentDigestAlgorithmMD5, req.MD5, req.Size,
@@ -860,6 +869,15 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		s.writeUploadSession(c, session, http.StatusOK)
 		return
 	}
+	if session.NodeID != nil {
+		if notesRejectNodeMutation(c, s.DB, *session.NodeID) {
+			return
+		}
+	} else if session.ParentID != nil {
+		if notesRejectDestination(c, s.DB, *session.ParentID, session.Name) {
+			return
+		}
+	}
 	if time.Now().After(session.ExpiresAt) {
 		_ = s.abortUploadSessionData(c.Request.Context(), session)
 		fail(c, http.StatusGone, "upload session expired")
@@ -1006,6 +1024,16 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		}
 		if time.Now().After(currentSession.ExpiresAt) {
 			return errUploadExpired
+		}
+		// An upload admitted before Notes initialization must not write into it.
+		if currentSession.NodeID != nil {
+			if err := notesRejectNodeWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.NodeID); err != nil {
+				return err
+			}
+		} else if currentSession.ParentID != nil {
+			if err := notesRejectDestinationWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.ParentID, currentSession.Name); err != nil {
+				return err
+			}
 		}
 		if currentSession.ShareID != nil {
 			if currentSession.ParentID == nil || currentSession.NodeID != nil ||
@@ -1178,6 +1206,8 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			revisionConflict(c, session.ExpectedRevision, currentRevision)
 		case errors.Is(err, errUploadNameTaken) || isDuplicate(err):
 			fail(c, http.StatusConflict, "name already exists")
+		case errors.Is(err, errNotesManagedPath):
+			fail(c, http.StatusConflict, errNotesManagedPath.Error())
 		case errors.Is(err, errLocalPushCommonUploadUnavailable):
 			fail(c, http.StatusConflict, "private local upload operation unavailable")
 		default:

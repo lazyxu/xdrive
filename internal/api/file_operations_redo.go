@@ -367,6 +367,9 @@ func (s *Server) executeRedoCopyTx(
 		if _, err := batchTargetDirectoryTx(tx, uid, snapshot.ParentID); err != nil {
 			return redoConflict(index, root.ID, "copy target folder is unavailable")
 		}
+		if err := notesRejectDestinationWithReason(ctx, tx, uid, snapshot.ParentID, snapshot.Name); err != nil {
+			return redoConflict(index, root.ID, "managed Notes destination is protected")
+		}
 		exists, err := batchNameExistsTx(tx, uid, snapshot.ParentID, snapshot.Name, root.ID)
 		if err != nil {
 			return err
@@ -437,6 +440,12 @@ func (s *Server) executeRedoMoveTx(
 		}
 		if node.ParentID == nil {
 			return redoConflict(index, node.ID, "moved item has no current parent")
+		}
+		if err := notesRejectNodeWithReason(ctx, tx, uid, node.ID); err != nil {
+			return redoConflict(index, node.ID, "managed Notes cannot be moved")
+		}
+		if err := notesRejectDestinationWithReason(ctx, tx, uid, snapshot.ParentID, snapshot.Name); err != nil {
+			return redoConflict(index, node.ID, "managed Notes destination is protected")
 		}
 		currentParentID := *node.ParentID
 		currentName := node.Name
@@ -527,6 +536,9 @@ func (s *Server) executeRedoDeleteTx(
 			return redoConflict(index, root.ID, "restored item changed after undo")
 		}
 
+		if err := notesRejectNodeWithReason(ctx, tx, uid, root.ID); err != nil {
+			return redoConflict(index, root.ID, "managed Notes cannot be deleted")
+		}
 		currentNodes, err := fileOperationActiveNodeRefsTx(tx, uid, root.ID)
 		if err != nil {
 			return err
