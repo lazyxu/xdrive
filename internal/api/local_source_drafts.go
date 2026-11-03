@@ -190,5 +190,51 @@ func discardPristineLocalManagedTargetTx(ctx context.Context, tx *gorm.DB, sourc
 	if err := tx.Delete(&target).Error; err != nil {
 		return err
 	}
+	// A cancelled first Source should not leave an orphaned device group
+	// that then blocks creation of another Source on the same device. Only
+	// prune the group if it is empty and has no user-facing references.
+	if target.ParentID != nil {
+		var group meta.Node
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+				*target.ParentID, source.OwnerID, meta.NodeTypeDir).
+			Take(&group).Error; err != nil {
+			return err
+		}
+		var childCount int64
+		if err := tx.Model(&meta.Node{}).Where("parent_id = ?", group.ID).Count(&childCount).Error; err != nil {
+			return err
+		}
+		if childCount == 0 {
+			refs := []guard{
+				{&meta.Source{}, "target_node_id = ? AND id <> ?", []any{group.ID, source.ID}},
+				{&meta.Share{}, "node_id = ?", []any{group.ID}},
+				{&meta.UploadSession{}, "parent_id = ? OR node_id = ? OR result_node_id = ?", []any{group.ID, group.ID, group.ID}},
+				{&meta.FileQuickAccess{}, "node_id = ?", []any{group.ID}},
+				{&meta.FileFavorite{}, "node_id = ?", []any{group.ID}},
+				{&meta.FileRecentAccess{}, "node_id = ?", []any{group.ID}},
+				{&meta.FileOperation{}, "parent_id = ?", []any{group.ID}},
+			}
+			pinned := false
+			for _, ref := range refs {
+				if !tx.Migrator().HasTable(ref.model) {
+					continue
+				}
+				var count int64
+				if err := tx.Model(ref.model).Where(ref.predicate, ref.args...).Limit(1).Count(&count).Error; err != nil {
+					return err
+				}
+				if count != 0 {
+					pinned = true
+					break
+				}
+			}
+			if !pinned {
+				if err := tx.Delete(&group).Error; err != nil {
+					return err
+				}
+			}
+		}
+	}
 	return nil
 }
