@@ -209,10 +209,15 @@ export default function App({
     { service: 'baidu-map'; tab: 'verify' } | undefined
   >(undefined)
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
+  const [syncActivityFromNotification, setSyncActivityFromNotification] = useState(false)
   const sourceRunFocusSequenceRef = useRef(0)
   const [sourceRunFocus, setSourceRunFocus] = useState<{
     sourceID: number; runID: string; server: string; username: string; requestID: number
   } | null>(null)
+  useEffect(() => {
+    if (view !== 'remote-pull') setSourceRunFocus(null)
+    if (view !== 'transfers') setSyncActivityFromNotification(false)
+  }, [view])
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -1211,6 +1216,7 @@ export default function App({
             typeof target.runID !== 'string' || !target.runID) return
         sourceRunFocusSequenceRef.current += 1
         setSourceRunFocus({ ...target, requestID: sourceRunFocusSequenceRef.current })
+        setSyncActivityFromNotification(false)
         setTransferPopoverOpen(false)
         setView('remote-pull')
         return
@@ -1219,6 +1225,7 @@ export default function App({
         // The completion notification must open the persistent Task Center,
         // not the existing quick-transfer popover shortcut.
         setTransferPopoverOpen(false)
+        setSyncActivityFromNotification(true)
         setView('transfers')
         return
       }
@@ -3014,6 +3021,9 @@ export default function App({
   } : undefined,
       taskCenterPage: {
     ...taskCenter.pageProps,
+    subtitle: syncActivityFromNotification && view === 'transfers'
+      ? '本轮 Mount 同步检查已结束。以下是已记录的任务与传输，不代表本轮完整的文件变更清单；逐项同步历史尚未接入。'
+      : taskCenter.pageProps.subtitle,
     globalTasksEnabled: status?.role === 'admin',
     globalTasksAvailable: Boolean(taskCenter.pageProps.globalTasksEnabled),
     backgroundScope: view === 'global-tasks' ? 'global' : 'mine',
