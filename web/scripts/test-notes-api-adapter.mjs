@@ -150,15 +150,26 @@ const imageFile = new File([new Uint8Array([137, 80, 78, 71])], imageName, {
 const uuid = '11111111-1111-4111-8111-111111111111'
 const imageUUID = '22222222-2222-4222-8222-222222222222'
 const assetPath = '_assets/' + uuid + '/' + imageUUID + '.png'
-let importedRevision = 0
+const separateUUID = '33333333-3333-4333-8333-333333333333'
+// Model the Server's uniqueness contract: same external_id updates one
+// immutable iOS backup, while a second manual import gets its OWN Note ID,
+// title and first revision. The mock must not fake an invalid receipt.
+const importedByExternalID = new Map()
 const imageApi = {
   ...api,
   async notesImportIOS(input) {
     bundleCalls.push(['snapshot', input])
-    importedRevision++
+    let entry = importedByExternalID.get(input.external_id)
+    if (!entry) {
+      const first = importedByExternalID.size === 0
+      entry = { id: first ? uuid : separateUUID,
+        node_id: first ? 77 : 79, revision: 0 }
+      importedByExternalID.set(input.external_id, entry)
+    }
+    entry.revision++
     return {
-      ...example, id: uuid, source: 'ios_notes', title: 'Journal',
-      node_id: 77, revision: importedRevision,
+      ...example, id: entry.id, source: 'ios_notes', title: input.title,
+      node_id: entry.node_id, revision: entry.revision,
     }
   },
   async notesImportIOSImage(id, value) {
@@ -186,6 +197,10 @@ const plain = await bundlePort.importIOSMarkdownBundle([
   new File(['# Solo'], 'Solo.md'),
 ])
 assert.equal(plain.source, 'ios_notes')
+assert.equal(plain.title, 'Solo')
+assert.notEqual(plain.id, completed.id,
+  'distinct manual imports must never re-use another backup Note ID')
+assert.equal(plain.revision, 1)
 assert.equal(bundleCalls.filter(x => x[0] === 'asset').length, 1)
 const afterPlain = bundleCalls.filter(x => x[0] === 'snapshot')
 assert.notEqual(afterPlain[0][1].external_id,
