@@ -1104,22 +1104,50 @@ func (s *Server) updateNode(c *gin.Context) {
 	}
 	updates["updated_at"] = time.Now()
 	updates["revision"] = gorm.Expr("revision + 1")
-	result := s.DB.Model(&meta.Node{}).
-		Where("id = ? AND owner_id = ? AND revision = ?", id, userID(c), expected).
-		Updates(updates)
-	if result.Error != nil {
-		if isDuplicate(result.Error) {
-			fail(c, http.StatusConflict, "name already exists")
-		} else {
-			fail(c, http.StatusInternalServerError, "update failed")
+	// Repeat both Source ownership checks under the actual metadata write
+	// transaction: a preflight from an older UI session is never authority.
+	currentRevision := n.Revision
+	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var current meta.Node
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", id, userID(c)).
+			Take(&current).Error; err != nil {
+			return err
 		}
-		return
-	}
-	if result.RowsAffected == 0 {
-		if current, lookupErr := s.ownedNode(userID(c), id, false); lookupErr == nil {
-			revisionConflict(c, expected, current.Revision)
-		} else {
+		currentRevision = current.Revision
+		if current.Revision != expected {
+			return errRevisionConflict
+		}
+		if err := requireOrdinarySourceMutationTx(c.Request.Context(), tx, userID(c), id); err != nil {
+			return err
+		}
+		if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, userID(c), newParent); err != nil {
+			return err
+		}
+		result := tx.Model(&meta.Node{}).
+			Where("id = ? AND owner_id = ? AND revision = ? AND deleted_at IS NULL",
+				id, userID(c), expected).
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errRevisionConflict
+		}
+		return nil
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, errRevisionConflict):
+			revisionConflict(c, expected, currentRevision)
+		case errors.Is(err, errManagedSourceWriteDenied):
+			fail(c, http.StatusConflict, err.Error())
+		case isDuplicate(err):
+			fail(c, http.StatusConflict, "name already exists")
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "node not found")
+		default:
+			fail(c, http.StatusInternalServerError, "update failed")
 		}
 		return
 	}
