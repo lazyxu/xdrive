@@ -516,6 +516,10 @@ func (s *Server) Router() *gin.Engine {
 	// legacy SourceManager clients; neither action deletes cloud Node/CAS.
 	authed.POST("/sources/:id/archive", s.requireLocalSourceExecutor(), s.deleteSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
+	// Only the authenticated Owner can preview/clean cloud bytes after the
+	// Source has been archived. No device paths or remote files are affected.
+	authed.POST("/sources/:id/cloud-cleanup/preview", s.previewSourceCloudCleanup)
+	authed.POST("/sources/:id/cloud-cleanup", s.cleanupSourceCloudFiles)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
 	authed.DELETE("/sources/:id/local-draft", s.discardLocalSourceDraft)
 	authed.POST("/sources/:id/trigger", s.requireLocalSourceExecutor(), s.triggerSource)
