@@ -440,6 +440,16 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(originalDir, "bravo.bin"), scheduledB, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The timer (not an explicit DSM GUI/manual POST) must also discover new
+	// nested NAS folders and commit their first original in the same batch.
+	scheduledNewRoot := filepath.Join(originalDir, "auto-album", "summer")
+	if err := os.MkdirAll(scheduledNewRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	scheduledNew := bytes.Repeat([]byte("scheduled-new-nested-original-"), 181)
+	if err := os.WriteFile(filepath.Join(scheduledNewRoot, "delta.bin"), scheduledNew, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	assertCounters()
 	chunksBeforeSchedule, finalizesBeforeSchedule := lastChunk, lastFinalize
 	opsBeforeSchedule, versionsBeforeSchedule := lastOperation, lastVersion
@@ -476,21 +486,67 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	scheduled := localCommonBatchObservedResult(job)
 	if job.err != nil || scheduled.SourceID != source.ID ||
 		scheduled.Revision != source.Revision || scheduled.State != "partial" ||
-		scheduled.Running || scheduled.ConfirmedFiles != 1 ||
-		scheduled.SkippedFiles != 1 || scheduled.InspectedFiles != 2 ||
-		scheduled.ConfirmedBytes != int64(len(scheduledB)) ||
+		scheduled.Running || scheduled.ConfirmedFiles != 2 ||
+		scheduled.SkippedFiles != 1 || scheduled.InspectedFiles != 3 ||
+		scheduled.ConfirmedBytes != int64(len(scheduledB)+len(scheduledNew)) ||
 		scheduled.UncertainFiles != 0 || scheduled.BackupComplete ||
 		scheduled.RetirementSafe || scheduled.CurrentCASVerified {
 		t.Fatalf("scheduled run misreported original SQL receipts: %+v %v", scheduled, job.err)
 	}
 	assertOriginal("alpha.bin", updated, 2)
 	assertOriginal("bravo.bin", scheduledB, 2)
+	// Newly discovered scheduled files must have the exact nested cloud
+	// ancestry and physical CAS original, with no invented prior revision.
+	scheduledParentID := target.ID
+	for _, name := range []string{"auto-album", "summer"} {
+		var folder meta.Node
+		if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+			owner.ID, scheduledParentID, name).Take(&folder).Error; err != nil {
+			t.Fatalf("scheduled NAS directory %s missing: %v", name, err)
+		}
+		if folder.Type != meta.NodeTypeDir {
+			t.Fatalf("scheduled NAS directory %s is not a folder: %+v", name, folder)
+		}
+		scheduledParentID = folder.ID
+	}
+	var scheduledNewNode meta.Node
+	if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+		owner.ID, scheduledParentID, "delta.bin").Take(&scheduledNewNode).Error; err != nil {
+		t.Fatalf("scheduled NAS nested original missing: %v", err)
+	}
+	if scheduledNewNode.Type != meta.NodeTypeFile || scheduledNewNode.Revision != 1 {
+		t.Fatalf("scheduled NAS nested original has wrong identity: %+v", scheduledNewNode)
+	}
+	var scheduledNewRecord meta.File
+	if err := db.Where("node_id = ?", scheduledNewNode.ID).Take(&scheduledNewRecord).Error; err != nil {
+		t.Fatal(err)
+	}
+	scheduledSHA := sha256.Sum256(scheduledNew)
+	if scheduledNewRecord.Size != int64(len(scheduledNew)) ||
+		scheduledNewRecord.SHA256 != hex.EncodeToString(scheduledSHA[:]) {
+		t.Fatalf("scheduled NAS nested SQL original differs: %+v", scheduledNewRecord)
+	}
+	scheduledReader, err := localCAS.Open(context.Background(), scheduledNewRecord.StorageKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduledBytes, readErr := io.ReadAll(scheduledReader)
+	_ = scheduledReader.Close()
+	if readErr != nil || !bytes.Equal(scheduledBytes, scheduledNew) {
+		t.Fatalf("scheduled NAS nested CAS bytes differ: %v", readErr)
+	}
+	var scheduledHistoricalVersions int64
+	if err := db.Model(&meta.FileVersion{}).Where("node_id = ?", scheduledNewNode.ID).
+		Count(&scheduledHistoricalVersions).Error; err != nil || scheduledHistoricalVersions != 0 {
+		t.Fatalf("new scheduled NAS original invented historical versions: count=%d err=%v",
+			scheduledHistoricalVersions, err)
+	}
 	assertCounters()
-	if lastOperation != opsBeforeSchedule+1 ||
+	if lastOperation != opsBeforeSchedule+2 ||
 		lastVersion != versionsBeforeSchedule+1 ||
 		lastChunk <= chunksBeforeSchedule ||
 		lastFinalize <= finalizesBeforeSchedule {
-		t.Fatal("scheduled increment failed to create exactly one new SQL/CAS version")
+		t.Fatal("scheduled update and new nested original did not commit two SQL/CAS operations")
 	}
 	// A repeated wake-up with the same attempt must respect the existing
 	// durable cooldown and never fabricate a second physical upload.
@@ -498,7 +554,7 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		t.Fatalf("repeated owning scheduler tick failed: %v", err)
 	}
 	assertCounters()
-	if lastOperation != opsBeforeSchedule+1 ||
+	if lastOperation != opsBeforeSchedule+2 ||
 		lastVersion != versionsBeforeSchedule+1 {
 		t.Fatal("repeated scheduler tick wrote duplicate original SQL operations")
 	}
@@ -517,8 +573,8 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	beforeNewOperations, beforeNewVersions := lastOperation, lastVersion
 	beforeNewChunks, beforeNewFinalizes := lastChunk, lastFinalize
 	added := run()
-	if added.InspectedFiles != 3 || added.ConfirmedFiles != 1 ||
-		added.SkippedFiles != 2 || added.ConfirmedBytes != int64(len(newOriginal)) {
+	if added.InspectedFiles != 4 || added.ConfirmedFiles != 1 ||
+		added.SkippedFiles != 3 || added.ConfirmedBytes != int64(len(newOriginal)) {
 		t.Fatalf("new nested native file did not enter incremental backup: %+v", added)
 	}
 	cloudParentID := target.ID
