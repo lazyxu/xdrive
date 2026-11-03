@@ -4,6 +4,7 @@ import type { XDriveCloudFilesCrumb, XDriveFileFavoriteItem } from '../cloud-fil
 type FavoriteNodeShape = {
   id: number
   name: string
+  type?: string
   size?: number
   revision?: number
   updated_at?: string
@@ -13,6 +14,7 @@ export type XDriveFileExplorerFavoriteNavigationEntry = {
   id: number
   name: string
   path: string
+  kind: 'file' | 'dir'
   size?: number
   revision?: number
   updatedAt?: string
@@ -32,6 +34,7 @@ function projectFavoriteItem<TNode extends FavoriteNodeShape>(
     id: item.node.id,
     name: item.node.name,
     path: item.path,
+    kind: item.node.type === 'dir' ? 'dir' : 'file',
     size: item.node.size,
     revision: item.node.revision,
     updatedAt: item.node.updated_at,
