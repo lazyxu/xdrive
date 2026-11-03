@@ -20,6 +20,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/synology"
 	"github.com/lazyxu/xdrive/internal/yike"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -471,6 +472,20 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 
 	var row meta.SourceCredential
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// Source identity and revision are part of credential authorization.
+		// Lock Source before credential rows to avoid a stale target rename or
+		// activation racing the verified account binding.
+		var live meta.Source
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+			Take(&live).Error; err != nil {
+			return err
+		}
+		if live.Revision != source.Revision || live.Kind != source.Kind ||
+			live.Direction != source.Direction {
+			return errRevisionConflict
+		}
+		source = live
 		if err := lockDSMFieldPatchSnapshot(tx, source.ID, storedSnapshot); err != nil {
 			return err
 		}
@@ -498,6 +513,10 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 		return tx.Where("source_id = ?", source.ID).First(&row).Error
 	})
 	if err != nil {
+		if errors.Is(err, errRevisionConflict) {
+			fail(c, http.StatusConflict, "Source changed during credential verification; reload and retry")
+			return
+		}
 		if errors.Is(err, errDSMFieldPatchConflict) {
 			fail(c, http.StatusConflict, "stored_source_credential_changed")
 			return
