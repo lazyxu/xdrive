@@ -365,6 +365,54 @@ class GitHubLookupTests(unittest.TestCase):
                     mirror.GitHub().get(self.tag)
 
 
+class SignedGoInstallerReleaseTests(unittest.TestCase):
+    def setUp(self):
+        self.root, self.manifest = fixtures.prepare(self)
+        self.commit = 'a' * 40
+        self.binary = self.root / mirror.GO_INSTALLER_ASSET
+        self.binary.write_bytes(b'\x7fELF' + b'exact-release-build-bytes')
+        self.descriptor = dict(
+            schema=1, repository_id=1382670236, channel='master',
+            platform='linux/amd64', source_commit=self.commit, sequence=42,
+            manifest=dict(name='manifest.json',
+                          size=(self.root / 'manifest.json').stat().st_size,
+                          sha256=digest((self.root / 'manifest.json').read_bytes())),
+            installer=dict(name='xdrive-offline.py', size=10,
+                           sha256=digest(b'installer\n')),
+            go_installer=dict(name=mirror.GO_INSTALLER_ASSET,
+                              size=self.binary.stat().st_size,
+                              sha256=digest(self.binary.read_bytes())),
+        )
+        (self.root / 'delivery.json').write_text(
+            json.dumps(self.descriptor), encoding='utf-8')
+        mirror.write_checksums(self.root)
+        signed = {name: digest((self.root / name).read_bytes())
+                  for name in ('manifest.json', 'xdrive-offline.py',
+                               'delivery.json', mirror.GO_INSTALLER_ASSET)}
+        for name in mirror.BUNDLE_FILES:
+            (self.root / name).write_text(json.dumps(signed), encoding='utf-8')
+
+    def test_signed_go_release_is_exactly_published_without_altering_legacy_schema(self):
+        self.assertEqual(mirror.local_release_files(self.root), mirror.RELEASE_FILES_GO)
+        self.assertEqual(self.descriptor['schema'], 1)
+        self.assertEqual(self.descriptor['installer']['name'], 'xdrive-offline.py')
+        self.assertLess(mirror.RELEASE_FILES_GO.index(mirror.GO_INSTALLER_ASSET),
+                        mirror.RELEASE_FILES_GO.index('delivery.json'))
+        github = MemoryGitHub()
+        mirror.publish_github(self.root, self.commit, github)
+        self.assertIsNotNone(github.record)
+        self.assertFalse(github.record['draft'])
+        self.assertEqual(set(github.files), set(mirror.RELEASE_FILES_GO))
+        self.assertEqual(github.files[mirror.GO_INSTALLER_ASSET], self.binary.read_bytes())
+
+    def test_modified_go_binary_is_rejected_before_publishing(self):
+        self.binary.write_bytes(b'\x7fELF' + b'evil-replacement-bytes-')
+        github = MemoryGitHub()
+        with self.assertRaises(mirror.MirrorError):
+            mirror.publish_github(self.root, self.commit, github)
+        self.assertIsNone(github.record)
+
+
 class DraftRecoveryTests(unittest.TestCase):
     def setUp(self):
         self.assertTrue(callable(getattr(mirror, 'resume_github', None)), 'Verified draft recovery is missing')
