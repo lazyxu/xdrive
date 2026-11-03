@@ -75,3 +75,15 @@ test('restricted album/favorite scopes never turn into an all-library embedded m
   assert.match(map,/data-xdrive-desktop-places-load-fallback/)
   assert.match(map,/setDesktopFallback\(true\)/)
 })
+
+test('GPS fallback never represents a restricted Album, favorite or date scope with full-library pins',()=>{
+  const map=read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
+  const contract=read('ui/shared/src/media-gallery-baidu-map-photo-scope.ts')
+  assert.match(contract,/export function xDriveBaiduMapScopeSurvivesFullReload/)
+  assert.match(map,/const gpsScopeSupported = xDriveBaiduMapScopeSurvivesFullReload\(mapPhotoScope\)/)
+  assert.match(map,/\{!gpsScopeSupported \? \([\s\S]*?data-xdrive-owner-gps-filter-incompatible[\s\S]*?\) : listPlacesMapOverview && onOpenPlace \? \(\s*<XDriveMediaGalleryOwnerGPSOverview/)
+  assert.match(map,/\) : !getBaiduJSAPI4Status && !gpsScopeSupported \? \([\s\S]*?data-xdrive-owner-gps-filter-incompatible[\s\S]*?\) : !getBaiduJSAPI4Status && gpsScopeSupported && listPlacesMapOverview && onOpenPlace \? \(\s*<XDriveMediaGalleryOwnerGPSOverview/)
+  assert.equal((map.match(/<XDriveMediaGalleryOwnerGPSOverview/g)||[]).length,2)
+  assert.match(map,/当前筛选保持不变/)
+  assert.match(map,/筛选条件不会被清除/)
+})

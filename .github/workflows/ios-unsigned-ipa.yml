@@ -266,6 +266,16 @@ jobs:
       - name: Verify native cloud Live Photo original pair add-to-Photos
         run: node --test desktop/tests/ios-native-photoasset-live-original-restore.cjs
 
+      - name: Verify native bounded PhotoKit metadata filename/date/media search
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoSearchQueryPolicy.swift \
+            ios/tests/NativePhotoSearchQueryPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-local-photo-search"
+          "$RUNNER_TEMP/xdrive-ios-local-photo-search"
+          node --test desktop/tests/ios-native-photo-metadata-search.cjs
+
       - name: Verify native whole-library PhotoKit calendar jump policy
         run: |
           set -euo pipefail
@@ -365,6 +375,16 @@ jobs:
             desktop/tests/ios-native-l2-focus-bar-integration.cjs \
             desktop/tests/ios-native-supported-orientations.cjs
 
+      - name: Verify native PhotoKit album lifecycle and bounded destination picker
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoAlbumNamePolicy.swift \
+            ios/tests/NativeAlbumNamePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-native-album-name"
+          "$RUNNER_TEMP/xdrive-ios-native-album-name"
+          node --test desktop/tests/ios-native-album-management.cjs
+
       - name: Verify native album single-page selection and PhotoKit actions
         run: node --test desktop/tests/ios-native-album-batch-actions.cjs
 
@@ -418,6 +438,16 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-files-page-check"
           "$RUNNER_TEMP/xdrive-ios-files-page-check"
           node --test desktop/tests/ios-native-files-browser.cjs
+
+      - name: Verify native Files bounded continuous scroll and reverse range
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift \
+            ios/tests/NativeFilesContinuousWindowChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-continuous-window"
+          "$RUNNER_TEMP/xdrive-ios-files-continuous-window"
+          node --test desktop/tests/ios-native-files-continuous-scroll.cjs
 
       - name: Verify native Files Viewer bounded navigation and Owner preview contracts
         run: |

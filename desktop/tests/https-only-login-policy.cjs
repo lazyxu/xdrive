@@ -39,15 +39,12 @@ test('Android real native login is HTTPS-only while domain/SNI LAN dial stays in
 test('Web/PWA HTTPS login and session restoration cannot use an HTTP Origin', () => {
   const api = read('web/src/api.ts')
   const web = read('web/src/App.tsx')
-  const dialog = read('web/src/ManualConnectionDialog.tsx')
-  const manual = read('web/src/manualConnection.ts')
   assert.match(api, /xDrive 登录只支持 HTTPS/)
   assert.match(api, /Browser refresh requires HTTPS/)
   assert.match(web, /window\.location\.protocol !== 'https:'/)
-  assert.match(manual, /parsed\.protocol !== 'https:'/)
-  assert.doesNotMatch(dialog, /setAllowInsecureLAN|allowInsecureLAN|明文登录风险/)
-  assert.match(dialog, /target="_blank" rel="noopener noreferrer"/)
-  assert.match(read('web/package.json'), /test-https-manual-connection\.mjs/)
+  assert.doesNotMatch(web, /XDriveManualConnectionDialog|data-xdrive-manual-connection/)
+  assert.match(read('web/package.json'), /test-no-manual-connection\.mjs/)
+  assert.doesNotMatch(read('web/package.json'), /test-https-manual-connection\.mjs/)
 })
 
 test('CLI and DSM keep distinct but HTTPS-only user login boundaries', () => {

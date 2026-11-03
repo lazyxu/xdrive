@@ -58,48 +58,6 @@ test('file mutations and downloads remain unavailable; Viewer uses one native mo
   assert.doesNotMatch(view, /\/api\/v1\/uploads|\/api\/v1\/file-operations|POST.*nodes|DELETE.*nodes/);
 });
 
-
-test('native directory and whole-library search have no manual pager', () => {
-  assert.doesNotMatch(view, /private var filesPager:|Button\("上一页"\)|Button\("下一页"\)/)
-  assert.match(view, /private var filesContinuationStatus: some View/)
-  assert.match(view, /Menu \{[\s\S]*?Picker\("显示方式", selection: \$viewMode\)/)
-  assert.match(view, /Picker\("排序", selection: \$sort\)/)
-  assert.match(view, /Picker\("顺序", selection: \$order\)/)
-  assert.match(view, /native-ios-files-more-options/)
-  assert.match(view, /native-ios-files-folder-actions/)
-  assert.match(view, /native-ios-files-refresh/)
-  assert.match(view, /ForEach\(model\.entries\) \{ entry in[\s\S]*?requestContinuationIfNeeded\(entry\)/)
-  assert.match(view, /private func requestContinuationIfNeeded\(/)
-  assert.match(view, /model\.entries\.first\?\.id == entry\.id && model\.canLoadEarlier/)
-  assert.match(view, /model\.entries\.last\?\.id == entry\.id && model\.canLoadMore/)
-  assert.match(view, /model\.loadEarlier\(/)
-  assert.match(view, /model\.loadMore\(/)
-  assert.match(view, /model\.retryContinuation\(/)
-  assert.match(view, /native-ios-files-retry-continuation/)
-  assert.match(view, /let ticket = epoch/)
-  assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/)
-  assert.match(view, /XDriveIOSNativeFilesContinuousPolicy\.validJoin\(/)
-  assert.match(view, /self\.loadedIDs\.formUnion\(found\.map\(\\\.id\)\)/)
-  assert.match(view, /self\.verifiedPage = false/)
-  assert.match(page, /enum XDriveIOSNativeFilesContinuousPolicy/)
-  assert.match(page, /pageTotal == total/)
-  assert.match(page, /Set\(pageIDs\)\.isDisjoint\(with: loadedIDs\)/)
-})
-
-test('continuous presentation preserves bounded native Viewer and batch operations', () => {
-  assert.match(view, /private func viewerWindow\(for selected:/)
-  assert.match(view, /XDriveIOSNativeFilesViewerPolicy\.maximumLoadedRows/)
-  assert.match(view, /loadedItems: viewerWindow\(for: initial\.node\)/)
-  assert.match(view, /offset = model\.pageOffset\(for: next\) \?\? offset/)
-  assert.match(view, /offset = model\.pageOffset\(for: entry\.node\) \?\? offset/)
-  assert.match(view, /selectedIDs\.count < XDriveIOSNativeFilesPagePolicy\.pageSize/)
-  assert.match(view, /model\.entries\.prefix\(\s*XDriveIOSNativeFilesPagePolicy\.pageSize/)
-  assert.match(view, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection/)
-  assert.match(view, /XDriveIOSNativeFilesBatchExportPolicy\.validSelection/)
-  assert.match(view, /batchTarget\.perform\(/)
-})
-
-
 test('native Browse home uses a verified cloud location rather than automatically opening root children', () => {
   assert.match(view, /private var isHome: Bool \{ folder == nil && activeQuery\.isEmpty \}/)
   assert.match(view, /private var filesHome: some View/)
@@ -132,3 +90,16 @@ test('native SwiftUI search collapses in the toolbar and restores directory on c
   assert.match(view, /native-ios-files-clear-search/)
   assert.doesNotMatch(view, /TextField\("搜索全部文件", text: \$queryDraft\)/)
 });
+
+
+test('native Files More menu keeps real sort, view and upload actions with bounded list model', () => {
+  assert.match(view, /Menu \{[\s\S]*?Picker\("显示方式", selection: \$viewMode\)/)
+  assert.match(view, /Picker\("排序", selection: \$sort\)/)
+  assert.match(view, /Picker\("顺序", selection: \$order\)/)
+  assert.match(view, /native-ios-files-more-options/)
+  assert.match(view, /native-ios-files-folder-actions/)
+  assert.match(view, /native-ios-files-refresh/)
+  assert.match(view, /XDriveIOSNativeFilesContinuousWindowPolicy\.mergePlan\(/)
+  assert.match(view, /requestContinuousNeighbor\(for: entry\.id\)/)
+  assert.doesNotMatch(view, /requestContinuationIfNeeded\(/)
+})

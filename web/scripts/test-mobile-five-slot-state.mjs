@@ -12,6 +12,15 @@ const compiled = ts.transpileModule(source, {
 })
 assert.equal(compiled.diagnostics?.length ?? 0, 0, 'route-state TypeScript must transpile')
 const nav = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputText).toString('base64'))
+const launcherSectionsSource = readFileSync(resolve(here, '../src/mobileLauncherSections.ts'), 'utf8')
+const launcherSectionsCompiled = ts.transpileModule(launcherSectionsSource, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  reportDiagnostics: true,
+})
+assert.equal(launcherSectionsCompiled.diagnostics?.length ?? 0, 0,
+  'mobile launcher fallback TypeScript must transpile')
+const launcherSections = await import('data:text/javascript;base64,' +
+  Buffer.from(launcherSectionsCompiled.outputText).toString('base64'))
 const owner = 'https://example.test:1'
 const all = { app: 'overview', params: {} }
 const mine = { app: 'overview', params: { section: 'mine' } }
@@ -508,12 +517,15 @@ const testCanonicalHash = route => [route.app, ...Object.entries(route.params)
   .filter(([,value]) => value !== undefined)
   .sort(([left],[right]) => left.localeCompare(right))
   .map(([key,value]) => key + '=' + value)].join('|')
-function mobileTabHarness(route, memory, overviewSlot = null) {
+function mobileTabHarness(route, memory, overviewSlot = null, galleryAllowed = true) {
   const launched = []
   const recent = []
   const snapshots = []
   const select = originalMobileSlotSelector({
     currentMobileNavigation: memory,
+    mobileEmptyRecentMapRoute: launcherSections.xDriveMobileEmptyRecentMapRoute(
+      memory.dynamic.length > 0, galleryAllowed,
+    ),
     serverAdminVerified: false,
     route,
     xDriveMobileRouteForSlot: nav.xDriveMobileRouteForSlot,
@@ -548,7 +560,79 @@ assert.deepEqual(sameGallery.recent, [])
 sameGallery.select('files')
 assert.deepEqual(sameGallery.launched, [files], 'real destination switch still launches')
 sameGallery.select('dynamic')
-assert.deepEqual(sameGallery.recent, [true], 'empty dynamic Tab still opens recent picker')
+assert.deepEqual(sameGallery.launched, [files, map],
+  'after a normal Files switch, an empty Dynamic tab opens the existing Gallery Places route')
+assert.deepEqual(sameGallery.recent, [], 'the map fallback is not a Recent drawer')
+const blockedMapFallback = mobileTabHarness(activeAlbums, galleryTabs, null, false)
+blockedMapFallback.select('dynamic')
+assert.deepEqual(blockedMapFallback.launched, [],
+  'without Gallery admission the fallback must not mint a Map route')
+assert.deepEqual(blockedMapFallback.recent, [true],
+  'without Gallery admission the existing Recent picker remains available')
+const withRecentDynamic = nav.xDriveRememberMobileNavigation(
+  galleryTabs, transfers, owner, false,
+)
+const realRecent = mobileTabHarness(activeAlbums, withRecentDynamic)
+realRecent.select('dynamic')
+assert.deepEqual(realRecent.launched, [transfers],
+  'a real recent Dynamic destination always wins over the empty-history Map fallback')
+assert.deepEqual(realRecent.recent, [])
+
+// Run the actual Recent drawer callback as well: a Gallery-map fallback must
+// pass the ordinary authorized Gallery route, preserve All scroll and avoid
+// duplicate History entries. No separate drawer routing implementation.
+function originalMobileRecentPicker(env) {
+  const ast = ts.createSourceFile('App.tsx', appSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const declarations = []
+  const visit = node => {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'pickMobileRecent')
+      declarations.push(node.getText(ast))
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(declarations.length, 1, 'one production Recent drawer route callback')
+  const js = ts.transpileModule(
+    'function getHandler() { const ' + declarations[0] + '; return pickMobileRecent; }',
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText
+  return new Function(...Object.keys(env), js + '\nreturn getHandler();')(...Object.values(env))
+}
+function drawerMapHarness(admitted, active = all, overviewSlot = 'all') {
+  const launched = [], snapshots = []
+  const pick = originalMobileRecentPicker({
+    xDriveWebAppWorkspaceKey: app => app === 'gallery' ? 'gallery' : null,
+    mobileDestinations: admitted ? [{ key: 'gallery' }] : [],
+    xDriveWorkspaceNavigationAllowed: key => key === 'gallery',
+    serverAdminVerified: false,
+    xDriveWebAppHash: testCanonicalHash,
+    route: active,
+    mobileOverviewSlot: overviewSlot,
+    saveVisibleMobileOverviewScroll: () => snapshots.push(true),
+    launchWebApp: next => launched.push(next),
+  })
+  return { pick, launched, snapshots }
+}
+assert.match(readFileSync(resolve(here, '../src/webApps.ts'), 'utf8'),
+  /gallery: \{[^\n]*workspaceKey: 'gallery'/,
+  'the fallback uses the real Gallery workspace admission key')
+const mapDrawer = drawerMapHarness(true)
+mapDrawer.pick(map)
+assert.deepEqual(mapDrawer.launched, [map],
+  'the empty-history drawer opens the authorized Gallery map')
+assert.deepEqual(mapDrawer.snapshots, [true],
+  'leaving All through the drawer remembers its scroll position')
+const deniedDrawer = drawerMapHarness(false)
+deniedDrawer.pick(map)
+assert.deepEqual(deniedDrawer.launched, [],
+  'a revoked Gallery destination cannot open the map through Recent')
+const sameMapDrawer = drawerMapHarness(true, map)
+sameMapDrawer.pick(map)
+assert.deepEqual(sameMapDrawer.launched, [],
+  'reopening the current map never pushes a duplicate browser history entry')
+const nonGalleryDrawer = drawerMapHarness(true)
+nonGalleryDrawer.pick(files)
+assert.deepEqual(nonGalleryDrawer.launched, [],
+  'the fallback drawer never authorizes a different workspace')
 
 const otherGallery = mobileTabHarness(activeAlbums, {
   ...galleryTabs, gallery: { app: 'gallery', params: { section: 'places' } },

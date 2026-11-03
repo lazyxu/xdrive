@@ -103,18 +103,15 @@ test('Caddy runtime selector refuses spoofed IPs and defaults to untouched domai
   assert.equal(noDomain.stdout.trim(), '/etc/caddy/Caddyfile.lan-only')
 })
 
-test('manual Web and Agent switching is independent of server certificate and refresh-token secrets', () => {
-  const dialog = read('web/src/ManualConnectionDialog.tsx')
-  const helper = read('web/src/manualConnection.ts')
+test('Desktop native server switch remains while Web/PWA manual Origin shortcuts retire', () => {
   const desktop = read('desktop/src/renderer/App.tsx')
+  const web = read('web/src/App.tsx')
   const api = read('web/src/api.ts')
   const docs = read('docs/network-manual-connection.md')
-  assert.match(dialog, /target="_blank" rel="noopener noreferrer"/)
-  assert.match(helper, /privateIPv4/)
   assert.match(desktop, /data-xdrive-manual-server-switch/)
   assert.match(api, /Authorization/)
   assert.match(docs, /tls internal/)
-  for (const forbidden of ['window.location.assign', 'window.location.replace', 'refresh_token', 'access_token']) {
-    assert.equal(dialog.includes(forbidden), false)
-  }
+  assert.doesNotMatch(web, /data-xdrive-manual-connection-(?:login|menu)/)
+  assert.equal(fs.existsSync(path.join(root, 'web/src/ManualConnectionDialog.tsx')), false)
+  assert.equal(fs.existsSync(path.join(root, 'web/src/manualConnection.ts')), false)
 })

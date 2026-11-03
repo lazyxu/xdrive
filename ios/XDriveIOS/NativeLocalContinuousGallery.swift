@@ -247,6 +247,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var requestedOffset: Int?
     @State private var selectionMode = false
     @State private var selectedCandidates: [String: XDrivePhotoKitScanCandidate] = [:]
+    @State private var showingAlbumPicker = false
+    @State private var albumPickerCandidates: [XDrivePhotoKitScanCandidate] = []
     @State private var confirmingDelete = false
     @State private var actionBusy = false
     @State private var actionToken = UUID()
@@ -335,6 +337,12 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                         XDriveIOSNativeLocalPhotoSharePolicy.maximumItems)
                                     Button("收藏选中") { updateFavorites(true) }
                                     Button("取消收藏") { updateFavorites(false) }
+                                    Button("添加到相簿") {
+                                        albumPickerCandidates = selectedCandidates.values.sorted {
+                                            $0.id < $1.id
+                                        }
+                                        showingAlbumPicker = true
+                                    }
                                     Button("删除选中", role: .destructive) {
                                         confirmingDelete = true
                                     }
@@ -434,6 +442,19 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             }
         }
         .navigationTitle("本机照片")
+        .sheet(isPresented: $showingAlbumPicker) {
+            XDriveIOSNativeAlbumDestinationPicker(
+                candidates: albumPickerCandidates,
+                excludingCollectionID: nil,
+                onAdded: {
+                    selectionMode = false
+                    selectedCandidates.removeAll()
+                    albumPickerCandidates.removeAll()
+                    reload()
+                    actionMessage = "已添加到所选系统相簿。"
+                }
+            )
+        }
         .sheet(item: $shareSession, onDismiss: {
             retainedShare?.discard()
             retainedShare = nil
@@ -527,6 +548,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         }
         .onDisappear {
             cancelSharePreparation()
+            showingAlbumPicker = false
+            albumPickerCandidates.removeAll()
             actionToken = UUID()
             actionBusy = false
             selectedCandidates.removeAll()
