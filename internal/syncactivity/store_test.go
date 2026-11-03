@@ -120,3 +120,28 @@ func TestRejectSymlinkDatabaseAndInvalidReceipts(t *testing.T){
   t.Fatal("negative file size accepted")
  }
 }
+
+func TestAtomicBatchReplaysAndRollback(t *testing.T){
+ ctx:=context.Background()
+ s:=openTestStore(t)
+ beginRun(t,s,"batch",time.Now().UTC())
+ first:=item("batch","a","create","upload",ptr(10),ptr(8))
+ second:=item("batch","b","update","download",ptr(12),nil)
+ if err:=s.AppendBatch(ctx,[]Item{first,second});err!=nil{t.Fatal(err)}
+ replay:=first;replay.AppliedAt=time.Now().UTC() // timestamp cannot change the receipt identity
+ if err:=s.AppendBatch(ctx,[]Item{replay,second});err!=nil{t.Fatalf("replay: %v",err)}
+ if err:=s.AppendBatch(ctx,[]Item{first,Item{RunID:"different",ID:"x",Action:"create",Direction:"upload",Status:"completed"}});err==nil{
+  t.Fatal("mixed-run batch was accepted")
+ }
+ altered:=second;altered.Direction="upload"
+ if err:=s.AppendBatch(ctx,[]Item{item("batch","new","create","upload",ptr(1),ptr(1)),altered});!errors.Is(err,ErrReceiptConflict){
+  t.Fatalf("conflicting replay did not abort transaction: %v",err)
+ }
+ r,err:=s.Get(ctx,"batch");if err!=nil{t.Fatal(err)}
+ if r.Stats.Items!=2||r.Stats.Created!=1||r.Stats.Updated!=1||r.Stats.Uploaded!=1||r.Stats.Downloaded!=1{
+  t.Fatalf("partial rollback or double count: %+v",r)
+ }
+ if r.Stats.TransferredBytes==nil||*r.Stats.TransferredBytes!=8{t.Fatalf("unknown bytes must not become a fabricated transfer: %+v",r)}
+ rows,err:=s.Items(ctx,"batch",50,nil);if err!=nil||len(rows)!=2{t.Fatalf("atomicity broken: %+v %v",rows,err)}
+ if err:=s.Finish(ctx,"batch",StatusCompleted,false);err!=nil{t.Fatal(err)}
+}
