@@ -58,10 +58,10 @@ func TestYikeCredentialRebindLegacyTargetRequiresProvenDescendants(t *testing.T)
 				}
 			case "running-run":
 				run := meta.SyncRun{
-					ID: "b43c6d35-0dcf-490b-8467-df3dba6c4c0f",
+					ID:       "b43c6d35-0dcf-490b-8467-df3dba6c4c0f",
 					SourceID: source.ID, Mode: meta.SourceRunModeSync,
 					Trigger: meta.SyncRunTriggerManual,
-					Status: meta.SyncRunStatusRunning, StartedAt: time.Now().UTC(),
+					Status:  meta.SyncRunStatusRunning, StartedAt: time.Now().UTC(),
 				}
 				if err := db.Create(&run).Error; err != nil {
 					t.Fatal(err)
