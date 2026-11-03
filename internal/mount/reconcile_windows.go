@@ -148,6 +148,7 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 			return err
 		}
 		deletedPrefixes.add(rel)
+		p.recordActivity("delete", "none", rel, "", nil)
 	}
 	deleteBaselinePrefixes(baseline, deletedPrefixes)
 	if err := p.applyAlwaysLocal(baseline); err != nil {
@@ -198,6 +199,7 @@ func (p *winProvider) applyLocalRename(ctx context.Context, rename winRename, ba
 	if err := cfMarkPathInSync(filepath.Join(p.root, filepath.FromSlash(rename.NewPath))); err != nil {
 		return false, err
 	}
+	p.recordActivity("move", "none", rename.OldPath, rename.NewPath, nil)
 	return true, nil
 }
 
@@ -275,6 +277,7 @@ func (p *winProvider) reconcileMovedPlaceholder(
 	if err := cfMarkPathInSync(absPath); err != nil {
 		return false, baselineByNodeID, err
 	}
+	p.recordActivity("move", "none", oldRel, rel, nil)
 	return true, baselineByNodeID, nil
 }
 
@@ -465,6 +468,7 @@ func (p *winProvider) syncNewDirectoryTree(ctx context.Context, rel string, base
 				return err
 			}
 			baseline[childRel] = stateFromLocal(node, localEntry{isDir: true, modTime: info.ModTime()})
+			p.recordActivity("create", "none", "", childRel, nil)
 			return nil
 		}
 		task, progress := p.uploadTransfer(childRel, info.Size())
@@ -477,6 +481,8 @@ func (p *winProvider) syncNewDirectoryTree(ctx context.Context, rel string, base
 			return err
 		}
 		baseline[childRel] = stateFromLocal(node, localEntry{size: info.Size(), modTime: info.ModTime()})
+		size := info.Size()
+		p.recordActivity("create", "upload", "", childRel, &size)
 		return nil
 	})
 }
@@ -505,6 +511,7 @@ func (p *winProvider) ensureRemoteParent(ctx context.Context, rel string, baseli
 		return err
 	}
 	baseline[parentRel] = stateFromLocal(node, localEntry{isDir: true, modTime: info.ModTime()})
+	p.recordActivity("create", "none", "", parentRel, nil)
 	return nil
 }
 
@@ -527,6 +534,7 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 			return err
 		}
 		baseline[rel] = stateFromLocal(node, entry)
+		p.recordActivity("create", "upload", "", rel, &entry.size)
 		return nil
 	}
 	if base.node.Type != "file" {
@@ -547,6 +555,7 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 			return syncErr
 		}
 		baseline[rel] = stateFromLocal(node, entry)
+		p.recordActivity("update", "upload", "", rel, &entry.size)
 		return nil
 	}
 	if !client.IsRevisionConflict(err) || base.node.ParentID == nil {
