@@ -226,9 +226,9 @@ func TestLocalPushCommonNativeVersionedFilesAThenBThenUpdatedA(t *testing.T) {
 			firstChunks, firstFinalizes)
 	}
 	for _, tc := range []struct {
-		name string
+		name     string
 		original localpushcommon.Plan
-		receipt client.LocalPushCommonUploadReceipt
+		receipt  client.LocalPushCommonUploadReceipt
 	}{
 		{"alpha.bin", planA, firstA}, {"bravo.bin", planB, firstB},
 	} {
