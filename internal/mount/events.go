@@ -8,6 +8,7 @@ const (
 	EventSyncStarted   EventKind = "sync_started"
 	EventSyncCompleted EventKind = "sync_completed"
 	EventSyncFailed    EventKind = "sync_failed"
+	EventSyncDeferred  EventKind = "sync_deferred"
 	EventConflict      EventKind = "conflict"
 )
 
