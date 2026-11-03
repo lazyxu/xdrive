@@ -80,10 +80,11 @@ struct XDriveIOSNativeFilesBatchTargetChecks {
                 type: "file", size: node.size, revision: node.revision + 1
             )
         }
-        let bulkCopied = bulk.enumerated().map { index, node in
+        let bulkCopied = bulk.enumerated().map { pair in
             XDriveIOSNativeFilesNode(
-                id: UInt64(3_000 + index), parent_id: 5, name: node.name,
-                type: "file", size: node.size, revision: 1
+                id: UInt64(3_000 + pair.offset), parent_id: 5,
+                name: pair.element.name, type: "file",
+                size: pair.element.size, revision: 1
             )
         }
         verify(P.validReceipt(.init(operation_id: receiptID, items: bulkMoved),
