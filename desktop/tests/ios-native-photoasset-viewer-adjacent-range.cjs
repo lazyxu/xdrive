@@ -73,7 +73,7 @@ test('Viewer crossing revokes previous signed media and Photos restore before op
   assert.match(preview, /visibleRange\?\.sameVisibleSnapshot\(as: previous\) == true/)
   assert.match(preview, /guard onCrossedRange\?\(next, nextPage\) == true/)
   assert.match(preview, /cancelPhotosRestore\(\)\s*retirePreview\(\)\s*crossedRange = nextPage\s*activeItem = next/)
-  assert.match(preview, /if phase != \.active \{ cancelRangeCrossing\(\) \}/)
+  assert.match(preview, /if phase != \.active \{\s*showChrome = true\s*cancelRangeCrossing\(\)\s*\}/)
   assert.match(preview, /\.onChange\(of: login\.owner\) \{ _ in\s*cancelRangeCrossing\(\)/)
   assert.match(preview, /\.onDisappear \{ cancelRangeCrossing\(\) \}/)
   assert.match(preview, /native-ios-photoasset-viewer-range-loading/)
@@ -82,7 +82,7 @@ test('Viewer crossing revokes previous signed media and Photos restore before op
 
 test('return wall uses verified adjacent range and last accepted Node revision', () => {
   assert.match(wall, /@State private var viewerLoadedRange: XDriveIOSNativeMediaRange\?/)
-  assert.match(wall, /viewerLoadedRange = model\.page/)
+  assert.match(wall, /viewerLoadedRange = verified/)
   assert.match(wall, /loadedRange: viewerLoadedRange/)
   assert.match(wall, /viewerLoadedItems = verifiedRange\.items/)
   assert.match(wall, /viewerLoadedRange = verifiedRange/)

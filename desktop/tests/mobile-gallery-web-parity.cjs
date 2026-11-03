@@ -233,7 +233,12 @@ test('P1-1c Web and Mobile sorting/time-scale affordances share Page eligibility
 test('P1-3b Mobile Gallery restores selection focus through the visible Chrome Select', () => {
   assert.match(page, /selectionControlRef=\{selectionControlRef\}/)
   assert.match(page, /ref=\{compactGallery \? undefined : selectionControlRef\}/)
-  assert.match(chrome, /<Button ref=\{selectionControlRef\} size="small" aria-pressed=\{selectionMode\}/)
+  assert.match(chrome,
+    /<Button ref=\{narrowManagedHeader \? undefined : selectionControlRef\}\s+size="small" aria-pressed=\{selectionMode\}/)
+  assert.match(chrome,
+    /<IconButton ref=\{narrowManagedHeader && showCollection \? selectionControlRef : undefined\}\s+aria-label="图库更多操作"/)
+  assert.match(chrome, /data-xdrive-mobile-gallery-more-select/,
+    'narrow Gallery retains selection from the visible More action sheet')
   const browser = read('desktop/scripts/mobile-web-app-browser.cjs')
   assert.match(browser, /galleryToolbar = page\.locator\('\[data-xdrive-mobile-gallery-actions\]'\)/)
   assert.match(read('desktop/scripts/mobile-web-app-browser.cjs'), /Gallery 900px: wide Select and album dropdown remain reachable/)

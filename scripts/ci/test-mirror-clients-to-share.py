@@ -25,6 +25,18 @@ class FakeShare:
         self.chunks = []
         self.directory_calls = []
         self.next_dir = 1
+        self.base = 'https://fixture.test'
+        self.opener = self
+        self.download_requests = []
+
+    def open(self, request, timeout):
+        self.download_requests.append(request)
+        identifier = int(request.full_url.split('/public-share-download/')[1].split('?')[0])
+        binary = list(self.files.values())[identifier - 1][1]
+        stream = io.BytesIO(binary)
+        stream.status = 200
+        stream.headers = {'Content-Length': str(len(binary))}
+        return stream
 
     def request(self, method, path, body=None):
         if path == '/api/v1/public/share' and method == 'GET':
@@ -38,8 +50,10 @@ class FakeShare:
             return {'id': self.folders[key], 'name': body['name'], 'parent_id': body['parent_id']}
         if path == '/api/v1/public/share/children':
             parent = body['parent_id']
-            return {'items': [dict(name=k[1], type='file', size=v[0])
-                              for k, v in self.files.items() if k[0] == parent], 'next_cursor': 0}
+            return {'items': [dict(id=i, name=k[1], type='file', size=v[0])
+                              for i, (k, v) in enumerate(self.files.items(), 1) if k[0] == parent], 'next_cursor': 0}
+        if path == '/api/v1/public/share/download-ticket':
+            return {'url': '/api/v1/public-share-download/' + str(body['node_id']) + '?ticket=fixture'}
         if path == '/api/v1/public/share/uploads' and method == 'POST':
             key = body['resume_key']
             if key in self.sessions:
@@ -72,6 +86,7 @@ class FakeShare:
     entries = mirror.Share.entries
     verify_grant = mirror.Share.verify_grant
     upload = mirror.Share.upload
+    verify_remote = mirror.Share.verify_remote
 
 
 def ipa_bytes():
@@ -86,6 +101,23 @@ class MirrorTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+
+    def test_snapshot_published_dispatch_is_opt_in_and_pr_cannot_upload(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / '.github/workflows/client-artifact-share-mirror.yml').read_text()
+        publisher = (root / '.github/workflows/release.yml').read_text()
+        self.assertIn('repository_dispatch:\n    types: [xdrive_snapshot_published]', workflow)
+        self.assertIn('event_type=xdrive_snapshot_published', publisher)
+        self.assertIn("github.ref == 'refs/heads/master'", workflow)
+        self.assertIn("vars.XDRIVE_CLIENT_MIRROR_ENABLED == 'true'", workflow)
+        self.assertIn("github.event_name == 'repository_dispatch' || github.event_name == 'schedule'", workflow)
+        self.assertIn("if: github.event_name == 'pull_request'", workflow)
+        self.assertIn("if: github.event_name != 'workflow_dispatch' || inputs.dry_run == false", workflow)
+        self.assertIn(
+            "if: github.event_name == 'repository_dispatch' || github.event_name == 'schedule' || inputs.dry_run == false",
+            workflow,
+        )
+        self.assertIn('secrets.XDRIVE_CLIENT_MIRROR_SHARE_URL', workflow)
 
     def test_url_validation_requires_https_and_full_share_hash_route(self):
         valid = 'https://example.test:8443/#/s/' + 'Z' * 43
@@ -168,6 +200,45 @@ class MirrorTests(unittest.TestCase):
         with self.assertRaisesRegex(mirror.MirrorError, 'never overwrite'):
             share.upload(123, 'test.apk', path, mirror.sha256_file(path), 'android', 'c' * 40)
         self.assertEqual(len(share.sessions), 0)
+
+    def test_existing_same_size_wrong_sha256_is_not_skipped(self):
+        share = FakeShare()
+        share.files[(123, 'test.apk')] = (7, b'PKwrong')
+        path = self.root / 'test.apk'
+        path.write_bytes(b'PKright')
+        with self.assertRaisesRegex(mirror.MirrorError, 'SHA256'):
+            share.upload(123, 'test.apk', path, mirror.sha256_file(path), 'android', 'c' * 40)
+        self.assertEqual(share.sessions, {})
+        self.assertEqual(share.chunks, [])
+
+    def test_existing_verified_bytes_use_only_scoped_ticket(self):
+        share = FakeShare()
+        path = self.root / 'test.apk'
+        path.write_bytes(b'PKright')
+        share.files[(123, path.name)] = (7, path.read_bytes())
+        self.assertEqual(share.upload(123, path.name, path, mirror.sha256_file(path), 'android', 'c' * 40), 'skipped')
+        self.assertEqual(share.chunks, [])
+        self.assertEqual(len(share.download_requests), 1)
+        request = share.download_requests[0]
+        self.assertIsNone(request.get_header('X-xdrive-share-token'))
+        self.assertIsNone(request.get_header('X-xdrive-share-password'))
+
+    def test_instant_receipt_at_new_path_sends_no_chunks(self):
+        share = FakeShare()
+        path = self.root / 'test.apk'
+        path.write_bytes(b'PKright')
+        original_request = share.request
+        def request(method, route, body=None):
+            if route == '/api/v1/public/share/uploads':
+                self.assertEqual(body['sha256'], mirror.sha256_file(path))
+                self.assertEqual(body['size'], path.stat().st_size)
+                share.files[(body['parent_id'], body['name'])] = (path.stat().st_size, path.read_bytes())
+                return {'id': 'instant-session', 'status': 'finalized'}
+            return original_request(method, route, body)
+        share.request = request
+        self.assertEqual(share.upload(123, path.name, path, mirror.sha256_file(path), 'android', 'c' * 40), 'resumed')
+        self.assertEqual(share.chunks, [])
+        self.assertEqual(share.files[(123, path.name)][1], path.read_bytes())
 
     def test_resume_upload_hmac_is_stable_and_not_plain_token(self):
         share = FakeShare()

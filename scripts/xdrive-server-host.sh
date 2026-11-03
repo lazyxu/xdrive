@@ -39,7 +39,7 @@ usage() {
 xDrive server host manager
 
 Usage:
-  xdrive-server update [--source github|gitlab] [--channel stable|master] [--backup-file-data]
+  xdrive-server update [--source github|gitlab|xdrive] [--channel stable|master] [--backup-file-data] [--prefetch-only]
   xdrive-server control <install|start|serve|stop|status>
   xdrive-server doctor [--strict]
   xdrive-server lan-ca export /absolute/path/root.crt
@@ -150,7 +150,8 @@ normalize_update_source() {
   case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
     ""|github) printf '%s\n' github ;;
     gitlab) printf '%s\n' gitlab ;;
-    *) echo "xdrive-server: invalid update source: $1 (expected github or gitlab)" >&2; return 2 ;;
+    xdrive) printf '%s\n' xdrive ;;
+    *) echo "xdrive-server: invalid update source: $1 (expected github, gitlab or xdrive)" >&2; return 2 ;;
   esac
 }
 
@@ -496,16 +497,39 @@ update_cmd() (
   [[ -n "$update_source" ]] || update_source="$(env_value XD_UPDATE_SOURCE)"
   update_source="$(normalize_update_source "$update_source")"
 
-  echo "[xDrive] downloading $update_channel host installer from $update_source..."
-  download_installer "$update_source" "$installer" "$update_channel"
-  chmod 700 "$installer"
-  bash -n "$installer"
-  echo "[xDrive] installer downloaded and syntax-checked."
-
-  if [[ -t 0 && -r /dev/tty && -w /dev/tty ]]; then
-    if XD_CONFIG_DIR="$XDRIVE_HOME" bash "$installer" "$@" </dev/tty; then status=0; else status=$?; fi
+  if [[ "$update_source" == xdrive ]]; then
+    [[ "$update_channel" == master ]] || {
+      echo "xdrive-server: Share updates support only the master channel." >&2; return 2;
+    }
+    local helper="$BIN_DIR/xdrive-share-update.py" prefetch_only=0
+    local -a helper_args=(--config "$CONFIG_DIR/xdrive-share-update.json" --home "$XDRIVE_HOME" --channel master)
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --source|--channel) [[ $# -ge 2 ]] || return 2; shift 2 ;;
+        --backup-file-data) helper_args+=(--backup-file-data); shift ;;
+        --prefetch-only) helper_args+=(--prefetch-only); prefetch_only=1; shift ;;
+        *) echo "xdrive-server: unsupported Share update option." >&2; return 2 ;;
+      esac
+    done
+    [[ -f "$helper" && ! -L "$helper" ]] || {
+      echo "xdrive-server: the verified Share update helper is not installed." >&2; return 1;
+    }
+    command -v python3 >/dev/null || { echo "xdrive-server: Python 3 is required for Share updates." >&2; return 1; }
+    if python3 "$helper" "${helper_args[@]}"; then status=0; else status=$?; fi
+    # Prefetch verifies availability; it is not an installed update receipt.
+    [[ "$prefetch_only" != 1 ]] || return "$status"
   else
-    if XD_CONFIG_DIR="$XDRIVE_HOME" XD_NONINTERACTIVE=1 bash "$installer" "$@" </dev/null; then status=0; else status=$?; fi
+    echo "[xDrive] downloading $update_channel host installer from $update_source..."
+    download_installer "$update_source" "$installer" "$update_channel"
+    chmod 700 "$installer"
+    bash -n "$installer"
+    echo "[xDrive] installer downloaded and syntax-checked."
+
+    if [[ -t 0 && -r /dev/tty && -w /dev/tty ]]; then
+      if XD_CONFIG_DIR="$XDRIVE_HOME" bash "$installer" "$@" </dev/tty; then status=0; else status=$?; fi
+    else
+      if XD_CONFIG_DIR="$XDRIVE_HOME" XD_NONINTERACTIVE=1 bash "$installer" "$@" </dev/null; then status=0; else status=$?; fi
+    fi
   fi
 
   target_commit="$(env_value XD_RELEASE_COMMIT)"

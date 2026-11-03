@@ -274,9 +274,10 @@ process_request() {
   [[ "$backup_file_data" == "true" ]] || backup_file_data=false
   request_id="$(json_value "$active" request_id)"
   requested_at="$(json_value "$active" created_at)"
-  case "$source" in github|gitlab) ;; *) source="" ;; esac
+  case "$source" in github|gitlab|xdrive) ;; *) source="" ;; esac
   case "$channel" in stable|master) ;; *) channel="" ;; esac
-  if [[ -z "$source" || -z "$channel" || -z "$request_id" ]] || ! request_time_is_fresh "$requested_at"; then
+  if [[ -z "$source" || -z "$channel" || -z "$request_id" ||
+        ( "$source" == xdrive && "$channel" != master ) ]] || ! request_time_is_fresh "$requested_at"; then
     write_status failed "${source:-github}" "${channel:-stable}" "$request_id" \
       "校验更新请求" 0 9 0 0 "更新请求无效或已过期。" "invalid or stale host-control request" "" "$(now_utc)" "$backup_file_data"
     rm -f "$active"
@@ -4066,7 +4067,7 @@ serve_cmd() {
     interrupted_request_id="$(json_value "$dir/active.json" request_id)"
     interrupted_backup_file_data="$(json_bool_value "$dir/active.json" backup_file_data)"
     [[ "$interrupted_backup_file_data" == "true" ]] || interrupted_backup_file_data=false
-    case "$interrupted_source" in github|gitlab) ;; *) interrupted_source=github ;; esac
+    case "$interrupted_source" in github|gitlab|xdrive) ;; *) interrupted_source=github ;; esac
     case "$interrupted_channel" in stable|master) ;; *) interrupted_channel=stable ;; esac
     write_status failed "$interrupted_source" "$interrupted_channel" "$interrupted_request_id" \
       "更新中断" 0 9 0 0 "检测到上次服务端更新被宿主机重启或 runner 中断。" \
@@ -4076,7 +4077,7 @@ serve_cmd() {
 
   source="$(env_value XD_UPDATE_SOURCE)"
   channel="$(env_value XD_RELEASE_CHANNEL)"
-  case "$source" in github|gitlab) ;; *) source=github ;; esac
+  case "$source" in github|gitlab|xdrive) ;; *) source=github ;; esac
   case "$channel" in stable|master) ;; *) channel=stable ;; esac
   if [[ ! -f "$dir/status.json" ]]; then
     write_status idle "$source" "$channel" "" "" 0 9 0 0 "等待管理员发起服务端更新。" "" "" ""

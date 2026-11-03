@@ -207,7 +207,7 @@ declare global {
   type AgentServerUpdateState = {
     supported: boolean
     state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
-    source: 'github' | 'gitlab'
+    source: 'github' | 'gitlab' | 'xdrive'
     channel: 'stable' | 'master'
     request_id?: string
     stage?: string
@@ -1074,7 +1074,7 @@ declare global {
         ) => Promise<DesktopResult<AgentCloudSearchRange>>
         cloudQuota: (requestID?: string) => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
-        startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
+        startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
         cloudStorageStats: (requestID?: string) => Promise<DesktopResult<AgentCloudStorageStats>>
         cloudCleanupStorageCache: (kind: AgentStorageCacheCleanupKind) => Promise<DesktopResult<AgentStorageCacheCleanup>>
         cloudTrash: () => Promise<DesktopResult<AgentCloudNode[]>>

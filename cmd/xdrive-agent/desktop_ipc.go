@@ -128,6 +128,7 @@ var desktopIPCCapabilities = []string{
 	"cloud-media-range-read",
 	"cloud-thumbnail-read",
 	"cloud-viewer-preview-read",
+	"cloud-owner-search-read",
 	"cloud-owner-gallery-read",
 	"cloud-owner-places-read",
 	"cloud-owner-live-motion-read",
@@ -724,6 +725,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/download/folder", h.cloudDownloadFolder)
 	mux.HandleFunc("POST /v1/cloud/download/archive", h.cloudDownloadArchive)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
+	mux.HandleFunc("GET /v1/cloud/owner-search", h.cloudOwnerSearch)
 	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
 	mux.HandleFunc("GET /v1/server-update", h.serverUpdateState)
 	mux.HandleFunc("POST /v1/server-update", h.startServerUpdate)
@@ -3806,8 +3808,9 @@ func (h *desktopIPCHandler) startServerUpdate(w http.ResponseWriter, r *http.Req
 	}
 	input.Source = strings.ToLower(strings.TrimSpace(input.Source))
 	input.Channel = strings.ToLower(strings.TrimSpace(input.Channel))
-	if (input.Source != "github" && input.Source != "gitlab") ||
-		(input.Channel != "stable" && input.Channel != "master") {
+	if (input.Source != "github" && input.Source != "gitlab" && input.Source != "xdrive") ||
+		(input.Channel != "stable" && input.Channel != "master") ||
+		(input.Source == "xdrive" && input.Channel != "master") {
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_server_update", "source/channel are invalid")
 		return
 	}

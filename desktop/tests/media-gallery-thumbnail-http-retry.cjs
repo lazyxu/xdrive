@@ -12,6 +12,16 @@ const start = api.indexOf('async function xDriveThumbnailRetryAfter503(')
 const end = api.indexOf('\nconst API_BASE', start)
 assert.ok(start >= 0 && end > start, 'the actual production helper must be present')
 const isolated = api.slice(start, end) + '\nexport { xDriveThumbnailRetryAfter503 }'
+const mediaSource = read('web/src/mediaBinaryProgress.ts')
+const mediaJS = ts.transpileModule(mediaSource, {
+  fileName: 'mediaBinaryProgress.ts',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const mediaModule = { exports: {} }
+new Function('exports', 'module', 'require', mediaJS)(mediaModule.exports, mediaModule, require)
+const xDriveAssertMediaReadActive = mediaModule.exports.xDriveAssertMediaReadActive
+assert.equal(typeof xDriveAssertMediaReadActive, 'function')
+
 const js = ts.transpileModule(isolated, {
   fileName: 'RealWebThumbnailRetry.ts',
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -34,8 +44,8 @@ async function fireNext() {
   await flush()
 }
 const mod = { exports: {} }
-new Function('exports', 'module', 'require', 'setTimeout', 'clearTimeout', js)(
-  mod.exports, mod, require, schedule, cancel,
+new Function('exports', 'module', 'require', 'setTimeout', 'clearTimeout', 'xDriveAssertMediaReadActive', js)(
+  mod.exports, mod, require, schedule, cancel, xDriveAssertMediaReadActive,
 )
 const retry = mod.exports.xDriveThumbnailRetryAfter503
 const reply = (status, hint, cancelled) => ({

@@ -50,7 +50,14 @@ test('anchor policy does not persist PhotoKit local IDs or scroll without reauth
 // invalidation cannot focus stale/unauthorized content from a previous scope.
 test('Owner PhotoAsset Viewer restores bounded cloud VoiceOver focus only to its live source', () => {
   assert.match(cloud, /@AccessibilityFocusState private var accessibilityFocusedMediaID: UInt64\?/);
-  assert.match(cloud, /\.accessibilityFocused\(\$accessibilityFocusedMediaID, equals: item\.id\)/);
+  if (cloud.includes('XDriveIOSNativeServerVirtualRange(')) {
+    const cloudSource = read('ios/XDriveIOS/NativeServerMediaGallery.swift');
+    assert.match(cloudSource, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/);
+    assert.match(cloud, /returnFocusID: pendingReturnID/);
+    assert.match(cloud, /model\.adoptVisibleRange\(/);
+  } else {
+    assert.match(cloud, /\.accessibilityFocused\(\$accessibilityFocusedMediaID, equals: item\.id\)/);
+  }
   assert.match(cloud, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.cloudTarget\(/);
   assert.match(cloud, /lastOpenedRevision = selected\?\.node\.revision/);
   assert.match(cloud, /lastOpenedOwner = login\.owner/);
@@ -58,7 +65,13 @@ test('Owner PhotoAsset Viewer restores bounded cloud VoiceOver focus only to its
   assert.match(cloud, /ownerAuthorized: ownerAuthorized && phase == \.active/);
   assert.match(policy, /\$0\.id == lastOpenedID && \$0\.revision == lastOpenedRevision/);
   assert.doesNotMatch(cloud, /model\.page\?\.items\.contains\(where: \{ \$0\.id == anchor \}\) == true/);
-  assert.match(cloud, /returnScroll\.scrollTo\(anchor, anchor: \.center\)\s*accessibilityFocusedMediaID = anchor/);
+  if (cloud.includes('XDriveIOSNativeServerVirtualRange(')) {
+    assert.match(cloud, /returnScroll\.scrollTo\("cloud-range:/);
+    assert.match(cloud, /pendingReturnRevision = rememberedRevision/);
+    assert.match(cloud, /recordRange\(range, scroll: returnScroll\)/);
+  } else {
+    assert.match(cloud, /returnScroll\.scrollTo\(anchor, anchor: \.center\)\s*accessibilityFocusedMediaID = anchor/);
+  }
   assert.match(cloud, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?accessibilityFocusedMediaID = nil/);
   assert.match(cloud, /if state != \.active \{[\s\S]*?accessibilityFocusedMediaID = nil/);
   assert.match(cloud, /private func applySearch\(\) \{[\s\S]*?lastOpenedMediaID = nil\s*lastOpenedRevision = nil\s*lastOpenedOwner = nil\s*accessibilityFocusedMediaID = nil/);

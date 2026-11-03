@@ -118,6 +118,7 @@ printf "%s\n" "$dir"
   */0123456789abcdef0123456789abcdef01234567/scripts/server-control.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/caddy-admission.py|\
   */0123456789abcdef0123456789abcdef01234567/scripts/caddy-env-config.py|\
+  */0123456789abcdef0123456789abcdef01234567/scripts/xdrive-share-update.py|\
   */0123456789abcdef0123456789abcdef01234567/scripts/xdrive-server-host.sh)
     emit '#!/usr/bin/env bash
 exit 0
@@ -234,7 +235,7 @@ test "$(cat "$TMP/config-ok/state/layout-version")" = "2"
 test ! -e "$TMP/config-ok/.env"
 test ! -e "$TMP/config-ok/docker-compose.yml"
 
-# The release-generated installer binds all 11 raw deployment assets to
+# The release-generated installer binds all 12 raw deployment assets to
 # digests calculated from its authenticated checkout. Recreate that set from
 # the already-fetched happy-path fixture and test the generated trust boundary.
 signed_manifest="$TMP/staged-source.sha256"
@@ -242,7 +243,7 @@ signed_manifest="$TMP/staged-source.sha256"
   sha256sum "$TMP/config-ok/config/docker-compose.yml" | awk '{ print $1 "  deploy/docker-compose.yml" }'
   for source_script in server-backup.sh server-backup-scheduled.sh server-restore.sh \
     server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh \
-    caddy-env-config.py caddy-admission.py xdrive-server-host.sh; do
+    caddy-env-config.py caddy-admission.py xdrive-share-update.py xdrive-server-host.sh; do
     staged_name="$source_script"
     [[ "$source_script" == xdrive-server-host.sh ]] && staged_name=xdrive-server
     sha256sum "$TMP/config-ok/bin/$staged_name" | awk -v path="scripts/$source_script" '{ print $1 "  " path }'
@@ -255,7 +256,7 @@ TEST_STATE="$TMP/state" PATH="$TMP/bin-ok:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config-signed" XD_SHELL_RC_PATH="$TMP/config-signed.bashrc" \
 XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 XD_LAN_HTTPS_IP=192.168.2.4 \
 bash "$TMP/signed-installer.sh" >"$TMP/signed.out" 2>"$TMP/signed.err"
-grep -q 'all 11 signed release deployment asset SHA-256 checks passed' "$TMP/signed.out"
+grep -q 'all 12 signed release deployment asset SHA-256 checks passed' "$TMP/signed.out"
 if grep -q 'raw bootstrap template' "$TMP/signed.err"; then
   echo "rendered signed installer must never skip embedded asset verification" >&2
   exit 1
