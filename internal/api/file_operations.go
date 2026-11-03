@@ -1162,6 +1162,13 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 		if _, err := batchTargetDirectoryTx(tx, uid, parentID); err != nil {
 			return err
 		}
+		if err := requireOrdinarySourceTargetTx(ctx, tx, uid, parentID); err != nil {
+			if errors.Is(err, errManagedSourceWriteDenied) {
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_source_target", Message: "managed Source destination is read-only"}
+			}
+			return err
+		}
+
 		if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, ""); err != nil {
 			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 		}
@@ -1312,6 +1319,13 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 		if _, err := batchTargetDirectoryTx(tx, uid, parentID); err != nil {
 			return err
 		}
+		if err := requireOrdinarySourceTargetTx(ctx, tx, uid, parentID); err != nil {
+			if errors.Is(err, errManagedSourceWriteDenied) {
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_source_target", Message: "managed Source destination is read-only"}
+			}
+			return err
+		}
+
 		if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, ""); err != nil {
 			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 		}
@@ -1349,6 +1363,13 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 			if err := notesRejectNodeWithReason(ctx, tx, uid, node.ID); err != nil {
 				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes cannot be moved"}
 			}
+			if err := requireOrdinarySourceMutationTx(ctx, tx, uid, node.ID); err != nil {
+				if errors.Is(err, errManagedSourceWriteDenied) {
+					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "managed Source node is read-only"}
+				}
+				return err
+			}
+
 			if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, node.Name); err != nil {
 				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 			}
@@ -1363,7 +1384,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusBadRequest, Code: "invalid_target", Message: "cannot move a directory into its descendant"}
 				}
 			}
-			protected, err := yikeManagedTargetInSubtreeDB(ctx, tx, uid, node.ID)
+			protected, err := managedSourceTargetInSubtreeDB(ctx, tx, uid, node.ID)
 			if err != nil {
 				return err
 			}
@@ -1596,6 +1617,13 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 			if err := notesRejectNodeWithReason(ctx, tx, uid, node.ID); err != nil {
 				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes cannot be deleted"}
 			}
+			if err := requireOrdinarySourceMutationTx(ctx, tx, uid, node.ID); err != nil {
+				if errors.Is(err, errManagedSourceWriteDenied) {
+					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "managed Source node is read-only"}
+				}
+				return err
+			}
+
 			if err := operationProgress.begin(node.Name); err != nil {
 				return err
 			}
