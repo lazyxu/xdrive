@@ -198,6 +198,25 @@ export function xDriveValidateSynologyOwnerUploadedFile(
   return raw
 }
 
+export function xDriveValidateSynologyOwnerCopiedNode(
+  raw: unknown, sourceID: number, revision: number, sourceParent: number,
+  targetParent: number, kind: 'file' | 'dir', name: string,
+): XDriveSynologyOwnerFileNode {
+  if (![sourceID, revision, sourceParent, targetParent].every(
+      value => Number.isSafeInteger(value) && value > 0) ||
+    sourceID === targetParent || sourceParent === targetParent ||
+    (kind !== 'file' && kind !== 'dir') ||
+    typeof name !== 'string' || !name || name !== name.trim() ||
+    name === '.' || name === '..' ||
+    /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+    new TextEncoder().encode(name).length > 255 ||
+    !validOwnerFileNode(raw, targetParent) ||
+    raw.id === sourceID || raw.type !== kind) {
+    throw new Error('Invalid current Server Owner copy acknowledgement')
+  }
+  return raw
+}
+
 export function xDriveValidateSynologyOwnerMovedNode(
   raw: unknown, nodeID: number, revision: number, sourceParent: number,
   targetParent: number, kind: 'file' | 'dir', name: string,
@@ -604,6 +623,10 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   ownerDeleteNode(nodeID: number, revision: number, parentID: number,
     kind: 'file' | 'dir', name: string, ownerScope: string,
     signal?: AbortSignal): Promise<void>
+  /** One current Owner node copied to a different authorized folder. */
+  ownerCopyNode(nodeID: number, revision: number, sourceParent: number,
+    targetParent: number, kind: 'file' | 'dir', name: string, ownerScope: string,
+    signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
   /** One exact-revision current-Owner move between authorized folders. */
   ownerMoveNode(nodeID: number, revision: number, sourceParent: number,
     targetParent: number, kind: 'file' | 'dir', name: string, ownerScope: string,
@@ -648,7 +671,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     if (!['bootstrap', 'sources', 'status', 'history', 'run', 'control', 'schedule',
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
-      'cloud-root', 'cloud-children', 'cloud-search', 'cloud-create-folder', 'cloud-rename-node', 'cloud-delete-node', 'cloud-move-node', 'cloud-upload-file', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
+      'cloud-root', 'cloud-children', 'cloud-search', 'cloud-create-folder', 'cloud-rename-node', 'cloud-delete-node', 'cloud-move-node', 'cloud-copy-node', 'cloud-upload-file', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-places',
        'cloud-gallery-place-items', 'cloud-gallery-map-overview',
        'cloud-live-motion', 'nas-shares',
@@ -1077,6 +1100,27 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         (ack as Record<string, unknown>).ok !== true) {
         throw new Error('Unverified Server Owner move-to-trash response')
       }
+    },
+    ownerCopyNode: async (nodeID, revision, sourceParent, targetParent, kind, name, ownerScope, signal) => {
+      if (![nodeID, revision, sourceParent, targetParent].every(
+          value => Number.isSafeInteger(value) && value > 0) ||
+        sourceParent === targetParent || nodeID === targetParent ||
+        (kind !== 'file' && kind !== 'dir') ||
+        typeof name !== 'string' || !name || name !== name.trim() ||
+        name === '.' || name === '..' ||
+        /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+        new TextEncoder().encode(name).length > 255 ||
+        !/^[0-9a-f]{64}$/.test(ownerScope)) {
+        throw new Error('Invalid Owner copy selector')
+      }
+      if (signal?.aborted) throw new Error('Owner copy cancelled before dispatch')
+      const response = await request<unknown>('/v1/cloud-copy-node', 'POST', {
+        id: nodeID, revision, parent_id: sourceParent,
+        target_parent_id: targetParent, type: kind, name, owner_scope: ownerScope,
+      }, signal)
+      if (signal?.aborted) throw new Error('Owner copy acknowledgement cancelled')
+      return xDriveValidateSynologyOwnerCopiedNode(response,
+        nodeID, revision, sourceParent, targetParent, kind, name)
     },
     ownerMoveNode: async (nodeID, revision, sourceParent, targetParent, kind, name, ownerScope, signal) => {
       if (![nodeID, revision, sourceParent, targetParent].every(
