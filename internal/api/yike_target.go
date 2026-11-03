@@ -148,7 +148,7 @@ func ensureYikeManagedParentTx(ctx context.Context, tx *gorm.DB, ownerID uint64)
 
 	parent := root
 	var err error
-	for _, segment := range []string{yikeTargetRootName, yikeTargetConnectorName} {
+	for _, segment := range []string{yikeTargetRootName, managedSourcePullDirectory, yikeTargetConnectorName} {
 		parent, err = ensureOwnedChildDirectoryTx(ctx, tx, ownerID, parent.ID, segment)
 		if err != nil {
 			return meta.Node{}, err
@@ -157,12 +157,12 @@ func ensureYikeManagedParentTx(ctx context.Context, tx *gorm.DB, ownerID uint64)
 	return parent, nil
 }
 
-func ensureYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, ownerID uint64, identity sourceCredentialTestDTO) (meta.Node, error) {
+func ensureYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, ownerID uint64, identity sourceCredentialTestDTO, sourceName string) (meta.Node, error) {
 	accountID, err := yikeAccountID(identity)
 	if err != nil {
 		return meta.Node{}, err
 	}
-	leaf, err := yikeManagedTargetLeaf(accountID, identity.AccountName)
+	leaf, err := yikeManagedTargetLeaf(accountID, sourceName)
 	if err != nil {
 		return meta.Node{}, err
 	}
@@ -233,7 +233,7 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 			if currentAccountID != accountID {
 				return errYikeAccountMismatch
 			}
-			desiredLeaf, err := yikeManagedTargetLeaf(accountID, identity.AccountName)
+			desiredLeaf, err := yikeManagedTargetLeaf(accountID, source.Name)
 			if err != nil {
 				return err
 			}
@@ -292,7 +292,7 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 		return nil
 	}
 
-	target, err := ensureYikeManagedTargetTx(ctx, tx, source.OwnerID, identity)
+	target, err := ensureYikeManagedTargetTx(ctx, tx, source.OwnerID, identity, source.Name)
 	if err != nil {
 		return err
 	}
