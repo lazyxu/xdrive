@@ -98,3 +98,37 @@ test('continuous presentation preserves bounded native Viewer and batch operatio
   assert.match(view, /XDriveIOSNativeFilesBatchExportPolicy\.validSelection/)
   assert.match(view, /batchTarget\.perform\(/)
 })
+
+
+test('native Browse home uses a verified cloud location rather than automatically opening root children', () => {
+  assert.match(view, /private var isHome: Bool \{ folder == nil && activeQuery\.isEmpty \}/)
+  assert.match(view, /private var filesHome: some View/)
+  assert.match(view, /Section\("位置"\)/)
+  assert.match(view, /folderID: owner\.rootNodeID,\s*folderName: "xDrive 云端"/)
+  assert.match(view, /native-ios-files-open-root-location/)
+  assert.match(view, /Section\("个人收藏"\)/)
+  assert.match(view, /Section\("快捷访问"\)/)
+  assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
+  assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
+  assert.match(view, /XDriveIOSNativeFilesTrashScreen\(login: login\)/)
+  assert.match(view, /List \{\s*filesHeader\s*if isHome \{\s*filesHome\s*\} else \{/)
+  assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*return\s*\}/)
+  assert.match(view, /queryDraft = ""\s*activeQuery = ""\s*searchReturnOffset = nil/)
+});
+
+test('native SwiftUI search collapses in the toolbar and restores directory on clear', () => {
+  assert.match(view, /\.searchable\(\s*text: \$queryDraft,/)
+  assert.match(view, /placement: \.navigationBarDrawer\(displayMode: \.automatic\)/)
+  assert.match(view, /prompt: "搜索全部文件"/)
+  assert.match(view, /\.onSubmit\(of: \.search\) \{ submitSearch\(\) \}/)
+  assert.match(view, /private func submitSearch\(\)/)
+  assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearch\(query\)/)
+  assert.match(view, /if activeQuery\.isEmpty \{ searchReturnOffset = offset \}/)
+  assert.match(view, /activeQuery = query\s*reload\(resetOffset: true\)/)
+  assert.match(view, /private func clearSearch\(\)/)
+  assert.match(view, /let restoredOffset = searchReturnOffset \?\? 0/)
+  assert.match(view, /searchReturnOffset = nil\s*offset = restoredOffset\s*reload\(\)/)
+  assert.match(view, /if value\.trimmingCharacters\(in: \.whitespacesAndNewlines\)\.isEmpty &&/)
+  assert.match(view, /native-ios-files-clear-search/)
+  assert.doesNotMatch(view, /TextField\("搜索全部文件", text: \$queryDraft\)/)
+});
