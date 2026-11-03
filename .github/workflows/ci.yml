@@ -2577,21 +2577,21 @@ jobs:
               echo "::error title=PR candidate mismatch::Expected a two-parent candidate with the exact submitted Head"
               exit 1
             fi
-            # The event's Base SHA may be old while a PR is queued. The
-            # synthetic merge's *actual first parent* MUST equal live master,
-            # not merely be an ancestor. Otherwise old green CI can admit an
-            # untested master+PR combination (master run #41553922713).
+            # The first parent must be a real ancestor of current master,
+            # not an unrelated/replaced branch. An independently advanced
+            # master does NOT invalidate successful exact-HEAD PR checks.
+            # GitHub will still reject an actual merge conflict at merge time.
             git fetch --quiet --no-tags origin '+refs/heads/master:refs/remotes/origin/master'
             live_master_sha="$(git rev-parse refs/remotes/origin/master)"
             if ! git merge-base --is-ancestor "$PR_BASE_SHA" "${actual_parents[0]}"; then
               echo "::error title=Invalid PR Base ancestry::Candidate Base must descend from the event Base"
               exit 1
             fi
-            if [[ "${actual_parents[0]}" != "$live_master_sha" ]]; then
-              echo "::error title=Stale PR CI::Tested Base ${actual_parents[0]} differs from current master $live_master_sha; re-run CI for the refreshed merge candidate."
+            if ! git merge-base --is-ancestor "${actual_parents[0]}" "$live_master_sha"; then
+              echo "::error title=Untrusted PR merge Base::Tested Base is not on current master ancestry."
               exit 1
             fi
-            echo "PR candidate verified: exact event SHA, submitted Head, and CURRENT master Base."
+            echo "PR candidate verified: exact event SHA, submitted Head, and trusted master ancestry."
           elif [[ "$GITHUB_EVENT_NAME" == "merge_group" ]]; then
             # GitHub's queue may group multiple PRs. Its head is the entire
             # queued combination and is the unit that must pass full CI.

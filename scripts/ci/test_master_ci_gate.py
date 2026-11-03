@@ -38,7 +38,7 @@ class FinalGateContract(unittest.TestCase):
         self.assertIn("      - final-gate\n", publish)
         self.assertIn("uses: ./.github/workflows/release.yml", publish)
 
-    def test_stale_pr_and_merge_group_are_rejected_using_live_master(self):
+    def test_pr_ancestry_allows_master_advance_and_queue_rejects_stale_head(self):
         # Git's parent order is significant: first is candidate master,
         # second is the precise PR HEAD which was tested.
         script = final_gate_script()
@@ -79,9 +79,24 @@ class FinalGateContract(unittest.TestCase):
             self.git(repo, "push", "origin", "master")
 
             self.git(repo, "checkout", "old-candidate")
-            stale = self.run_gate(repo, script, "pull_request", old_candidate, base, pr_head)
-            self.assertNotEqual(0, stale.returncode, "old green PR cannot pass against a newer master")
-            self.assertIn("Stale PR CI", stale.stdout + stale.stderr)
+            # An exact-HEAD, tested PR remains green when unrelated commits
+            # advance master; GitHub's mergeability check still handles conflicts.
+            advanced = self.run_gate(repo, script, "pull_request", old_candidate, base, pr_head)
+            self.assertEqual(0, advanced.returncode, advanced.stdout + advanced.stderr)
+            wrong_head = self.run_gate(repo, script, "pull_request", old_candidate, base, current_master)
+            self.assertNotEqual(0, wrong_head.returncode)
+            wrong_base = self.run_gate(repo, script, "pull_request", old_candidate, current_master, pr_head)
+            self.assertNotEqual(0, wrong_base.returncode)
+            # A synthetic merge built on a divergent first parent is untrusted.
+            self.git(repo, "checkout", "-b", "divergent-base", base)
+            (repo / "divergent.txt").write_text("other history\\n")
+            self.git(repo, "add", "divergent.txt")
+            self.git(repo, "commit", "-m", "divergent master candidate")
+            self.git(repo, "merge", "--no-ff", "--no-edit", "feature")
+            divergent_candidate = self.git(repo, "rev-parse", "HEAD").strip()
+            divergent = self.run_gate(repo, script, "pull_request", divergent_candidate, base, pr_head)
+            self.assertNotEqual(0, divergent.returncode)
+            self.assertIn("Untrusted PR merge Base", divergent.stdout + divergent.stderr)
 
             self.git(repo, "checkout", "master")
             self.git(repo, "checkout", "-b", "fresh-candidate")
