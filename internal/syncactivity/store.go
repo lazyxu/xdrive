@@ -103,6 +103,7 @@ func Open(path, owner string) (*Store, error) {
  }
  dir := filepath.Dir(path)
  if err := os.MkdirAll(dir, 0700); err != nil { return nil, err }
+ if err := os.Chmod(dir, 0700); err != nil { return nil, err }
  db, err := sql.Open("sqlite", path)
  if err != nil { return nil, err }
  db.SetMaxOpenConns(1)
