@@ -7,6 +7,8 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.*
 import org.junit.Test
 import java.security.MessageDigest
+import java.util.Base64
+import okio.Buffer
 
 class NativeNotesApiTest {
     private val id = "12345678-1234-1234-1234-123456789abc"
@@ -94,6 +96,92 @@ class NativeNotesApiTest {
                     api.notesUpdate("owner-secret", id, "Test", "# Other", 1)
                     fail("Read-only backup was editable")
                 } catch (e: ApiException) { assertEquals(403, e.statusCode) }
+            }
+        }
+    }
+
+    @Test fun imagePathsCannotEscapeOwnerOrNoteAndInsertIsBounded() {
+        val asset = "00000000-0000-4000-8000-000000000000.gif"
+        val path = "_assets/" + id + "/" + asset
+        assertTrue(validNotesImagePath(id, path))
+        assertEquals("![图片](" + path + ")\n",
+            appendNotesImageMarkdown("", id, path))
+        assertTrue(appendNotesImageMarkdown("Hello", id, path).startsWith("Hello\n\n"))
+        assertFalse(validNotesImagePath(
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", path))
+        assertFalse(validNotesImagePath(id, "../" + path))
+        assertFalse(validNotesImagePath(id, "https://other.example/photo.gif"))
+        assertFalse(validNotesImagePath(id, "_assets/" + id + "/../../anything.gif"))
+        assertFalse(validNotesImagePath(id, "_assets/" + id + "/photo.jpg"))
+        try {
+            appendNotesImageMarkdown("a".repeat(1_048_570), id, path)
+            fail("Oversized Markdown accepted")
+        } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test fun ownerNoteImageWriteAndReadAreBoundToAuthenticatedPaths() = runBlocking {
+        val asset = "00000000-0000-4000-8000-000000000000.gif"
+        val path = "_assets/" + id + "/" + asset
+        val bytes = Base64.getDecoder().decode("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==")
+        val size = bytes.size
+        val sha = MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        val badSha = "0".repeat(64)
+        MockWebServer().use { server ->
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
+                    .setBody("""{"node_id":93,"filename":"$asset",
+                        "relative_path":"$path","content_type":"image/gif",
+                        "bytes":$size,"sha256":"$sha"}"""))
+                val receipt = api.notesUploadImage("owner-secret", id, bytes)
+                assertEquals(93L, receipt.nodeId)
+                assertEquals(path, receipt.relativePath)
+                assertEquals(bytes.size.toLong(), receipt.bytes)
+                val upload = server.takeRequest()
+                assertEquals("POST", upload.method)
+                assertEquals("/api/v1/notes/mine/$id/images", upload.path)
+                assertEquals("Bearer owner-secret", upload.getHeader("Authorization"))
+                assertNull(upload.getHeader("Cookie"))
+                assertTrue(upload.getHeader("Content-Type")!!.startsWith("multipart/form-data;"))
+                assertTrue(upload.body.readUtf8().contains("name=\"image\""))
+
+                server.enqueue(MockResponse().setHeader("Content-Type", "image/gif")
+                    .setHeader("ETag", "\"$sha\"").setBody(Buffer().write(bytes)))
+                assertArrayEquals(bytes, api.notesReadImage("owner-secret", id, path))
+                val read = server.takeRequest()
+                assertEquals("GET", read.method)
+                assertEquals("/api/v1/notes/$id/images/$asset", read.path)
+                assertEquals("Bearer owner-secret", read.getHeader("Authorization"))
+                assertNull(read.getHeader("Cookie"))
+
+                server.enqueue(MockResponse().setHeader("Content-Type", "image/gif")
+                    .setHeader("ETag", "\"$badSha\"")
+                    .setBody(Buffer().write(bytes)))
+                try {
+                    api.notesReadImage("owner-secret", id, path)
+                    fail("Hash mismatch was accepted")
+                } catch (e: ApiException) {
+                    assertEquals(ApiFailureReason.INVALID_RESPONSE, e.reason)
+                }
+                server.takeRequest()
+
+                // Reject a false upload ACK even when the HTTP status is 201.
+                server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
+                    .setResponseCode(201)
+                    .setBody("""{"node_id":93,"filename":"$asset",
+                        "relative_path":"_assets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/$asset",
+                        "content_type":"image/gif","bytes":$size,"sha256":"$sha"}"""))
+                try {
+                    api.notesUploadImage("owner-secret", id, bytes)
+                    fail("Foreign note image receipt was accepted")
+                } catch (e: ApiException) { /* Invalid or rejected receipt */ }
+                server.takeRequest()
+
+                try {
+                    api.notesReadImage("owner-secret", id,
+                        "https://other.example/path.gif")
+                    fail("Remote image URL was fetched")
+                } catch (_: IllegalArgumentException) { }
             }
         }
     }
