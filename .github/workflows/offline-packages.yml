@@ -184,11 +184,30 @@ jobs:
           bash scripts/offline/build-five-packages.sh ci-assets offline
           cp scripts/offline/xdrive_offline.py offline/xdrive-offline.py
           python3 scripts/ci/mirror-server-to-share.py reconcile-packages --directory offline --commit "$XDRIVE_OFFLINE_COMMIT"
-          python3 scripts/ci/mirror-server-to-share.py checksums --directory offline
+          # Checksums/delivery must be finalized AFTER the Go ELF build below.
           count="$(find offline -maxdepth 1 -type f -name 'xdrive-*.tar.gz' | wc -l)"
           expected="$(jq '.changed|length' plan.json)"
           test "$count" = "$expected"
-          python3 scripts/offline/delivery_descriptor.py --directory offline --commit "$XDRIVE_OFFLINE_COMMIT"
+
+      # The Go binary is published as a signed *additional* artifact while
+      # old immutable Python releases remain accepted. The schema-1 delivery
+      # descriptor includes its exact SHA-256 only when this artifact exists.
+      - uses: actions/setup-go@v5
+        if: steps.replay.outputs.exists != 'true'
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Build exact-commit Go offline installer
+        if: steps.replay.outputs.exists != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' \
+            -o offline/xdrive-offline-linux-amd64 ./cmd/xdrive-offline
+          test -s offline/xdrive-offline-linux-amd64
+          test "$(stat -c %s offline/xdrive-offline-linux-amd64)" -le 16777216
+          python3 scripts/ci/mirror-server-to-share.py checksums --directory offline
+          python3 scripts/offline/delivery_descriptor.py --directory offline --commit "${{ steps.source.outputs.commit }}"
 
       - name: Attest new packages, full manifest and standalone installer
         if: steps.replay.outputs.exists != 'true'
@@ -199,6 +218,7 @@ jobs:
             offline/manifest.json
             offline/delivery.json
             offline/xdrive-offline.py
+            offline/xdrive-offline-linux-amd64
             offline/*.tar.gz
 
       - name: Verify exact publisher provenance
@@ -211,7 +231,7 @@ jobs:
           test -s "$BUNDLE"
           cp "$BUNDLE" offline/xdrive-offline-attestation.json
           cp "$BUNDLE" offline/delivery-attestation.jsonl
-          for artifact in offline/manifest.json offline/delivery.json offline/xdrive-offline.py offline/*.tar.gz; do
+          for artifact in offline/manifest.json offline/delivery.json offline/xdrive-offline.py offline/xdrive-offline-linux-amd64 offline/*.tar.gz; do
             [[ -f "$artifact" ]] || continue
             gh attestation verify "$artifact" \
               --repo "$GITHUB_REPOSITORY" --bundle "$BUNDLE" \
