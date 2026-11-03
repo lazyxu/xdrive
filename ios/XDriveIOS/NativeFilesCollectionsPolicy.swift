@@ -23,7 +23,7 @@ enum XDriveIOSNativeFilesCollectionsPolicy {
                           kind: XDriveIOSNativeFilesCollectionKind) -> Bool {
         let node = item.node
         guard node.id > 0, node.parent_id != nil, node.revision > 0,
-              node.type == "file" || (kind == .recent && node.type == "dir"),
+              (node.type == "file" || node.type == "dir"),
               node.size >= 0, !node.name.isEmpty, node.name.utf8.count <= 255,
               !item.path.isEmpty, item.path.utf8.count <= 4096 else {
             return false
