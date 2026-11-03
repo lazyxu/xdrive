@@ -132,16 +132,20 @@ enum XDriveIOSBackgroundPhotoTask {
                     return
                 }
                 try Task.checkCancellation()
-                // One newly committed original max per BGTask, even if the
-                // original is a video or an entire still+motion Live ZIP.
-                // The exact Owner journal and Go CAS writer are unchanged.
+                // A small bounded number of serially journaled originals per
+                // BGTask, even if an original is a video or paired Live ZIP.
+                // The OS expiration handler may stop the batch at any point;
+                // no parallel writer, retry or second authentication path.
                 attemptedOwner = owner
                 let progress = try await XDriveIOSForegroundPhotoBackupMVP(
                     owner: owner, approvedBackgroundGrant: approved
                 ).run(
                     allowICloudOriginals: false,
                     startOffset: offset,
-                    maximumNewOriginals: 1,
+                    maximumNewOriginals: min(
+                        XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun,
+                        XDriveIOSForegroundPhotoBackupMVP.maxNewOriginalsPerRun
+                    ),
                     onPotentialWrite: { beganOriginalWrite = true }
                 ) { _ in
                     // No inactive WebView progress or long-lived credentials.

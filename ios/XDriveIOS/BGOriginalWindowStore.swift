@@ -7,6 +7,10 @@ import Foundation
 @MainActor
 final class XDriveIOSBGOriginalWindowStore {
     static let shared = XDriveIOSBGOriginalWindowStore()
+    // A bounded number of independently finalized originals per OS-admitted
+    // BGProcessingTask, never a concurrent upload queue. iOS may expire
+    // earlier; the existing expiration + unknown-ACK fencing still wins.
+    static let maximumNewOriginalsPerRun = 4
     private init() {}
 
     private struct State: Codable {
@@ -99,7 +103,7 @@ final class XDriveIOSBGOriginalWindowStore {
         var state = try current(owner: owner)
         let unresolved = report.needsReview > 0 || report.stoppedForReview
         // The same strategy as visible runs. Do not skip a 256-item window
-        // just because one 1GiB video filled this BGTask's one-upload budget.
+        // just because a large original exhausted this BGTask's bounded upload budget.
         // A Photos mutation while the original was staged/uploaded cannot
         // commit the old window's next offset: the next BG task must restart
         // the current authorized library from its beginning.

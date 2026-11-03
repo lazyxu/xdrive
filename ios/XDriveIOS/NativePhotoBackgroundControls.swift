@@ -3,7 +3,7 @@ import Foundation
 import Photos
 import UIKit
 
-/// Native UI control for the existing scoped BG grant and one-original BGTask.
+/// Native UI control for the existing scoped BG grant and bounded serial BGTask.
 /// The existing Owner journal and UploadSession/CAS writer stay authoritative.
 @MainActor
 final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
@@ -160,7 +160,7 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
                 }
                 status = remote
                 serverVerified = true
-                notice = "服务器已确认授权。iOS 决定后台执行时机，单次最多尝试一个原件；锁定状态可能无法读取原件。"
+                notice = "服务器已确认授权。iOS 决定后台执行时机，单次最多尝试 \(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件；锁定状态可能无法读取原件。"
             } catch {
                 // A lost ACK may still have issued a real remote grant.
                 if XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) {

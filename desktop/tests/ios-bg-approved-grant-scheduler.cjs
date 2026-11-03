@@ -43,7 +43,7 @@ test('locked-screen credentials cannot outlive Owner, server, scope or expiry', 
   assert.match(credential, /XDriveIOSApprovedPhotoBGVault\.shared\.cancelLocally/)
 })
 
-test('BGProcessingTask runs one scoped original only after approved native proof', () => {
+test('BGProcessingTask runs a bounded serial original batch only after approved native proof', () => {
   assert.match(boot, /BGTaskScheduler\.shared\.register/)
   assert.match(boot, /BGProcessingTaskRequest\(identifier: identifier\)/)
   assert.match(boot, /requiresNetworkConnectivity = true/)
@@ -51,7 +51,18 @@ test('BGProcessingTask runs one scoped original only after approved native proof
   assert.match(boot, /UIApplication\.shared\.isProtectedDataAvailable/)
   assert.match(boot, /XDriveIOSForegroundPhotoBackupMVP\(/)
   assert.match(boot, /approvedBackgroundGrant: approved/)
-  assert.match(boot, /maximumNewOriginals: 1/)
+  const bgWindow = read('ios/XDriveIOS/BGOriginalWindowStore.swift')
+  const runner = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  assert.match(bgWindow, /static let maximumNewOriginalsPerRun = 4/)
+  assert.match(runner, /static let maxNewOriginalsPerRun = 20/)
+  assert.match(boot, /maximumNewOriginals: min\(\s*XDriveIOSBGOriginalWindowStore\.maximumNewOriginalsPerRun,\s*XDriveIOSForegroundPhotoBackupMVP\.maxNewOriginalsPerRun\s*\)/)
+  assert.equal((boot.match(/XDriveIOSForegroundPhotoBackupMVP\(/g) || []).length, 1,
+    'one shared serial runner; no separate background writer or parallel batch')
+  assert.ok(boot.indexOf('.proveInBackground()') < boot.indexOf('XDriveIOSOriginalRunGate.shared.acquire()') &&
+    boot.indexOf('XDriveIOSOriginalRunGate.shared.acquire()') < boot.indexOf('pendingCount(owner: owner)') &&
+    boot.indexOf('pendingCount(owner: owner)') < boot.indexOf('reserveDue(owner: owner, approved: approved)') &&
+    boot.indexOf('reserveDue(owner: owner, approved: approved)') < boot.indexOf('XDriveIOSForegroundPhotoBackupMVP('),
+    'approval, serial writer gate, pending receipt proof and due reservation precede all upload work')
   assert.match(boot, /task\.expirationHandler = \{[\s\S]*?guard activeRunID == runID else \{ return \}[\s\S]*?expiration\.systemExpired = true[\s\S]*?operation\.cancel\(\)/)
   assert.match(boot, /if beganOriginalWrite, let attemptedOwner \{[\s\S]*?XDriveIOSBGOriginalWindowStore\.shared\.pause\(/)
   assert.match(boot, /else if expiration\.systemExpired &&[\s\S]*?localStopVersion == stopVersionAtStart/)
