@@ -47,12 +47,12 @@ func TestDesktopSyncActivityAPIReadAndInputFencing(t *testing.T) {
  for _,tc:=range []struct{path string; code int}{
   {"/v1/sync/runs?limit=1",http.StatusOK},
   {"/v1/sync/runs/run-1",http.StatusOK},
-  {"/v1/sync/runs/run-1/items&limit=1",http.StatusOK},
+  {"/v1/sync/runs/run-1/items?limit=1",http.StatusOK},
   {"/v1/sync/runs/missing",http.StatusNotFound},
   {"/v1/sync/runs?limit=10000",http.StatusBadRequest},
   {"/v1/sync/runs?before_run_id=run-1",http.StatusBadRequest},
-  {"/v1/sync/runs/run-1/items&before_applied_at=12",http.StatusBadRequest},
-  {"/v1/sync/runs/run-1/items?limit=5",http.StatusBadRequest},
+  {"/v1/sync/runs/run-1/items?before_applied_at=12",http.StatusBadRequest},
+  {"/v1/sync/runs/run-1/items?limit=0",http.StatusBadRequest},
  } {
   res:=desktopIPCRequest(t,handler,http.MethodGet,tc.path,"")
   if res.Code!=tc.code{t.Fatalf("%s status=%d want=%d body=%s",tc.path,res.Code,tc.code,res.Body.String())}
