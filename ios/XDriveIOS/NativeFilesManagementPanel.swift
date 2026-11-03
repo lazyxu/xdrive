@@ -411,9 +411,10 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         }
     }
 
-    /// The user selected an explicit quick action. Only present the same
-    /// existing native interaction; write endpoints are still gated on a
-    /// fresh Owner/Node/revision comparison after user confirmation.
+    /// Reuse existing native operation flows for explicit quick actions.
+    /// Favorite is committed by its verified idempotent writer after this
+    /// user action; destructive writes still require explicit confirmation,
+    /// and all writes retain their Owner/Node/revision fences.
     @MainActor
     private func applyInitialQuickAction() {
         guard !initialActionApplied else { return }
