@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
@@ -16,6 +17,7 @@ var errInstantUploadUnavailable = errors.New("instant upload unavailable")
 
 func (s *Server) tryInstantUploadSession(
 	ctx context.Context,
+	c *gin.Context,
 	uid uint64,
 	req uploadInitRequest,
 	chunkCount int,
@@ -66,6 +68,18 @@ func (s *Server) tryInstantUploadSession(
 
 	var currentRevision uint64
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// A content-addressed instant commit skips the ordinary UploadSession
+		// finalize. Revalidate current Source ancestry and exact run scope in
+		// this same transaction before publishing any CAS or Node reference.
+		if req.NodeID != nil {
+			if err := managedSourceRejectNodeTx(ctx, tx, c, uid, *req.NodeID); err != nil {
+				return err
+			}
+		} else if req.ParentID != nil {
+			if err := managedSourceRejectDestinationTx(ctx, tx, c, uid, *req.ParentID); err != nil {
+				return err
+			}
+		}
 		if shareGrant != nil {
 			if err := s.publicShareInstantUploadAdmissionTx(ctx, tx, *shareGrant, uid, req, storageKey); err != nil {
 				return err
