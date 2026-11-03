@@ -135,9 +135,9 @@ func splitLegacyYikeMixedTargetTx(
 	if err := tx.Raw(
 		"SELECT EXISTS (SELECT 1 FROM xd_source_items i"+
 			" JOIN xd_nodes n ON n.id = i.node_id"+
-			" WHERE i.source_id <> ? AND n.parent_id = ?"+
+			" WHERE i.source_id <> ? AND (n.id = ? OR n.parent_id = ?)"+
 			" AND n.owner_id = ? AND n.deleted_at IS NULL)",
-		source.ID, target.ID, source.OwnerID,
+		source.ID, target.ID, target.ID, source.OwnerID,
 	).Scan(&foreignClaims).Error; err != nil {
 		return err
 	}

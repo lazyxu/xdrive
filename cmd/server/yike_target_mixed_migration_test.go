@@ -44,9 +44,14 @@ func TestLegacyYikeFlatMixedSplitPreservesDirectSharesAndCAS(t *testing.T) {
 	file := meta.File{NodeID: photoID, Size: 8, StorageKey: "blobs/current", SHA256: strings.Repeat("a", 64)}
 	version := meta.FileVersion{NodeID: photoID, Revision: 1, Size: 7,
 		StorageKey: "blobs/history", SHA256: strings.Repeat("b", 64)}
+	finished := time.Now().UTC()
+	run := meta.SyncRun{ID: uuid.NewString(), SourceID: source.ID, SourceRevision: source.Revision,
+		TargetNodeID: &oldRoot.ID, Mode: meta.SourceRunModeSync,
+		Trigger: meta.SyncRunTriggerManual, Status: meta.SyncRunStatusCompleted,
+		StartedAt: finished.Add(-time.Minute), FinishedAt: &finished}
 	for _, err := range []error{
 		db.Create(&rootShare).Error, db.Create(&childShare).Error,
-		db.Create(&file).Error, db.Create(&version).Error,
+		db.Create(&file).Error, db.Create(&version).Error, db.Create(&run).Error,
 	} {
 		if err != nil {
 			t.Fatal(err)
@@ -61,6 +66,7 @@ func TestLegacyYikeFlatMixedSplitPreservesDirectSharesAndCAS(t *testing.T) {
 	var rootShareAfter, childShareAfter meta.Share
 	var fileAfter meta.File
 	var versionAfter meta.FileVersion
+	var runAfter meta.SyncRun
 	for _, err := range []error{
 		db.First(&oldAfter, oldRoot.ID).Error,
 		db.First(&ordinaryAfter, ordinary.ID).Error,
@@ -70,7 +76,7 @@ func TestLegacyYikeFlatMixedSplitPreservesDirectSharesAndCAS(t *testing.T) {
 		db.First(&rootShareAfter, rootShare.ID).Error,
 		db.First(&childShareAfter, childShare.ID).Error,
 		db.First(&fileAfter, file.NodeID).Error,
-		db.First(&versionAfter, version.ID).Error,
+		db.First(&versionAfter, version.ID).Error, db.First(&runAfter, run.ID).Error,
 	} {
 		if err != nil {
 			t.Fatal(err)
@@ -90,7 +96,9 @@ func TestLegacyYikeFlatMixedSplitPreservesDirectSharesAndCAS(t *testing.T) {
 	if rootShareAfter.NodeID != oldRoot.ID || rootShareAfter.TokenHash != rootShare.TokenHash ||
 		rootShareAfter.RevokedAt != nil || childShareAfter.NodeID != photoID ||
 		childShareAfter.TokenHash != childShare.TokenHash || childShareAfter.RevokedAt != nil ||
-		fileAfter.StorageKey != file.StorageKey || versionAfter.StorageKey != version.StorageKey {
+		fileAfter.StorageKey != file.StorageKey || versionAfter.StorageKey != version.StorageKey ||
+		runAfter.TargetNodeID == nil || *runAfter.TargetNodeID != oldRoot.ID ||
+		runAfter.SourceRevision != source.Revision {
 		t.Fatalf("Share, FileVersion or CAS identity changed during split")
 	}
 	var newRoot meta.Node
@@ -128,7 +136,7 @@ func TestLegacyYikeFlatMixedSplitPreservesDirectSharesAndCAS(t *testing.T) {
 }
 
 func TestLegacyYikeFlatMixedSplitRejectsConcurrentWorkOrForeignClaims(t *testing.T) {
-	for _, scenario := range []string{"upload", "batch", "foreign-source", "occupied"} {
+	for _, scenario := range []string{"upload", "batch", "foreign-source", "foreign-root", "occupied"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := openYikeMigrationTestDB(t)
 			user, oldRoot, _, item, source := setupLegacyYikeFlatMixed(t, db)
@@ -160,6 +168,21 @@ func TestLegacyYikeFlatMixedSplitRejectsConcurrentWorkOrForeignClaims(t *testing
 					NodeID: item.NodeID, NodeRevision: 1, Kind: meta.SourceItemKindFile,
 					Path: item.Path, State: meta.SourceItemStateSynced,
 					LastSeenAt: time.Now().UTC()}
+				if err := db.Create(&claim).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "foreign-root":
+				other := meta.Source{OwnerID: user.ID, Name: "Root tracker",
+					Kind: "synology_files", Direction: meta.SourceDirectionPull,
+					SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeScan,
+					Status: meta.SourceStatusPaused, Revision: 1}
+				if err := db.Create(&other).Error; err != nil {
+					t.Fatal(err)
+				}
+				claim := meta.SourceItem{SourceID: other.ID, ExternalID: "old-root",
+					NodeID: &oldRoot.ID, NodeRevision: oldRoot.Revision,
+					Kind: meta.SourceItemKindDirectory, Path: "old-root",
+					State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC()}
 				if err := db.Create(&claim).Error; err != nil {
 					t.Fatal(err)
 				}
