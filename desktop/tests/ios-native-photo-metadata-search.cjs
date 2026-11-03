@@ -58,7 +58,9 @@ test('search results are one continuous grid with automatic bounded continuation
   assert.match(view, /model\.scanMore\(after: visibleTailWindowID\)/)
   assert.match(view, /model\.scannedThrough/)
   assert.match(view, /model\.matchCount/)
-  assert.match(view, /native-ios-photo-search-result/)
+  // Result tiles now live in a lazily mounted, independently revalidated window.
+  assert.match(reader, /private struct XDriveIOSNativePhotoSearchWindowView: View/)
+  assert.match(reader, /\.accessibilityIdentifier\("native-ios-photo-search-result"\)/)
   assert.match(view, /XDriveIOSNativeLocalPhotoDetail\(/)
   assert.doesNotMatch(view, /Button\("继续搜索后续照片"\)|native-ios-photo-search-more/)
 })
