@@ -736,6 +736,40 @@ export default function App({
     startUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
       window.xdriveDesktop.agent.startServerUpdate(source, channel, backupFileData),
   }), [])
+  const offlineImportPort = useMemo<import('../../../ui/shared/src/offline-update').XDriveOfflineImportPort>(() => {
+    async function call<T>(
+      action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'start',
+      input: Record<string, unknown> = {},
+    ): Promise<T> {
+      const result = await window.xdriveDesktop.agent.offlineImport<T>(action, input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    }
+    return {
+      list: () => call<{ items: import('../../../ui/shared/src/offline-update').XDriveOfflineImportSummary[] }>('list'),
+      create: () => call<{ id: string; chunk_bytes: number }>('create'),
+      get: (id) => call<import('../../../ui/shared/src/offline-update').XDriveOfflineImportStatus>('get', { id }),
+      register: async (id, name, size, sha) => {
+        await call<{ accepted: boolean }>('register', { id, name, size, sha256: sha || '' })
+      },
+      putChunk: async (id, name, index, blob, sha, signal) => {
+        if (signal?.aborted) throw new Error('离线包上传已暂停。')
+        const data = await blob.arrayBuffer()
+        if (signal?.aborted) throw new Error('离线包上传已暂停。')
+        const result = await window.xdriveDesktop.agent.offlineImportChunk(id, name, index, data, sha)
+        if (!result.ok) throw new Error(result.error.message)
+        // An in-flight IPC chunk may complete after the user pauses upload;
+        // the next iteration must still respect the abort before any new send.
+      },
+      finalize: (id, name) => call<{
+        name: string; state: 'ready'; upload_sha256: string
+      }>('finalize', { id, name }),
+      remove: async (id) => { await call<null>('remove', { id }) },
+      start: async (id, manifest, goBinary, backup) => {
+        await call<AgentServerUpdateState>('start', { id, manifest, go: goBinary, backup })
+      },
+    }
+  }, [])
   const maintenanceBackupPort = useMemo<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupPort>(() => ({
     read: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminBackups()
@@ -3137,6 +3171,7 @@ export default function App({
       adminUpdatePage: status?.role === 'admin'
         ? {
         updatePort: serverUpdatePort,
+        offlinePort: agent.hello?.capabilities.includes('server-offline-import') ? offlineImportPort : undefined,
         clientUpdateContent: <DesktopClientUpdatePanel {...desktopClientUpdateProps} />,
         buildInfo: [
           { title: 'Server 构建信息', info: status?.server_build },
