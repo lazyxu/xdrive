@@ -68,6 +68,18 @@ func migrateDedicatedSourceTargets(db *gorm.DB) error {
 		// A bad legacy Source is quarantined, not treated as successful
 		// migration and not allowed to run against an ambiguous target.
 		const prefix = "同步目标自动迁移暂停："
+		var persisted meta.Source
+		if loadErr := db.Select("status", "last_error", "run_requested_at").
+			Where("id = ?", sourceID).Take(&persisted).Error; loadErr != nil {
+			return loadErr
+		}
+		if persisted.Status == meta.SourceStatusPaused &&
+			persisted.RunRequestedAt == nil &&
+			strings.HasPrefix(persisted.LastError, prefix) {
+			// Re-run the preflight on restart, but do not bump Source.Revision
+			// indefinitely for the same already-quarantined condition.
+			continue
+		}
 		reason := strings.TrimPrefix(err.Error(), errDedicatedSourceMigrationBlocked.Error()+": ")
 		reason = strings.ReplaceAll(reason, "\n", " ")
 		reason = strings.TrimSpace(reason)
@@ -358,6 +370,24 @@ func migrateOneDedicatedSourceTx(tx *gorm.DB, source meta.Source) error {
 	if err := tree.validateBindings(tx, source, target); err != nil {
 		return err
 	}
+	if tx.Migrator().HasTable(&meta.UploadSession{}) {
+		// An old, still-resumable upload must not commit under a different
+		// Source target after we changed the Node ancestry.
+		ids := make([]uint64, 0, len(tree.nodes))
+		for id := range tree.nodes { ids = append(ids, id) }
+		for start := 0; start < len(ids); start += 500 {
+			end := start + 500
+			if end > len(ids) { end = len(ids) }
+			var inFlight int64
+			if err := tx.Model(&meta.UploadSession{}).
+				Where("owner_id = ? AND status = ? AND (parent_id IN ? OR node_id IN ?)",
+					source.OwnerID, meta.UploadStatusActive, ids[start:end], ids[start:end]).
+				Count(&inFlight).Error; err != nil { return err }
+			if inFlight != 0 {
+				return sourceMigrationFail("unresolved uploads still refer to old Source target")
+			}
+		}
+	}
 	var otherSources []meta.Source
 	if err := tx.Where("owner_id = ? AND id <> ? AND target_node_id IS NOT NULL",
 		source.OwnerID, source.ID).Find(&otherSources).Error; err != nil {
@@ -415,7 +445,9 @@ func migrateOneDedicatedSourceTx(tx *gorm.DB, source meta.Source) error {
 
 	stats := tree.calculate(target.ID)
 	var newTargetID uint64
-	if !stats.ordinary {
+	if !stats.ordinary || len(tree.children[target.ID]) == 0 {
+		// Empty legacy Source roots also belong to this Source and can move
+		// in place; they have no ordinary file payload to preserve.
 		// All active subtree content belongs to this Source. This is a
 		// metadata-only move: every Node, FileVersion, share and CAS survives.
 		rootNode := tree.nodes[target.ID]
