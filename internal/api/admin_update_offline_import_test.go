@@ -220,7 +220,9 @@ func TestAdminOfflineImportRoutesRequireAuthentication(t *testing.T) {
 	router := s.Router()
 	expected := map[string]bool{
 		"POST /api/v1/admin/update/offline/imports": false,
+		"GET /api/v1/admin/update/offline/imports": false,
 		"GET /api/v1/admin/update/offline/imports/:id": false,
+		"DELETE /api/v1/admin/update/offline/imports/:id": false,
 		"POST /api/v1/admin/update/offline/imports/:id/files/:name": false,
 		"PUT /api/v1/admin/update/offline/imports/:id/files/:name/chunks/:index": false,
 		"POST /api/v1/admin/update/offline/imports/:id/files/:name/finalize": false,
@@ -241,5 +243,41 @@ func TestAdminOfflineImportRoutesRequireAuthentication(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous offline import unexpectedly returned %d", response.Code)
+	}
+}
+
+
+func TestAdminOfflineImportCatalogAndSafeDeletion(t *testing.T) {
+	s, dir := offlineImportTestServer(t)
+	id := offlineImportCreateTestID(t, s)
+	c, w := offlineImportTestContext(t, http.MethodGet, nil, "", "", "")
+	s.adminListOfflineUpdateImports(c)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), id) {
+		t.Fatalf("created session not listed: %d %s", w.Code, w.Body.String())
+	}
+	// Never recursively delete unknown files: operators may have staged other
+	// data under an otherwise canonical ID by mistake.
+	extra := filepath.Join(dir, id, "unmanaged-file.txt")
+	if err := os.WriteFile(extra, []byte("preserve"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, w = offlineImportTestContext(t, http.MethodDelete, nil, id, "", "")
+	s.adminDeleteOfflineUpdateImport(c)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("unmanaged Host data removed: %d %s", w.Code, w.Body.String())
+	}
+	if _, err := os.Stat(extra); err != nil {
+		t.Fatal("unmanaged Host file was deleted")
+	}
+	if err := os.Remove(extra); err != nil {
+		t.Fatal(err)
+	}
+	c, w = offlineImportTestContext(t, http.MethodDelete, nil, id, "", "")
+	s.adminDeleteOfflineUpdateImport(c)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("safe session cleanup %d: %s", w.Code, w.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, id)); !os.IsNotExist(err) {
+		t.Fatal("finished session was not deleted")
 	}
 }
