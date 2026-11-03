@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -42,7 +43,7 @@ func openYikeMigrationTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.Source{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.Share{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
@@ -157,5 +158,196 @@ func TestMigrateLegacyYikeTargetConflictPausesSourceWithoutFailingStartup(t *tes
 	}
 	if unchanged.ParentID == nil || *unchanged.ParentID != connector.ID {
 		t.Fatalf("blocked migration moved target unexpectedly: %+v", unchanged)
+	}
+}
+
+func TestLegacyYikeMigrationVerifiedFilesKeepNodeAndShareIdentity(t *testing.T) {
+	db := openYikeMigrationTestDB(t)
+	user, _, connector, target, source := createLegacyYikeMigrationFixture(t, db)
+
+	targetID := target.ID
+	photo := meta.Node{
+		OwnerID: user.ID, ParentID: &targetID, Name: "photo.jpg",
+		Type: meta.NodeTypeFile, Revision: 1,
+	}
+	if err := db.Create(&photo).Error; err != nil {
+		t.Fatal(err)
+	}
+	item := meta.SourceItem{
+		SourceID: source.ID, ExternalID: "yike:12345:photo", NodeID: &photo.ID,
+		NodeRevision: photo.Revision, Path: photo.Name, Kind: meta.SourceItemKindFile,
+		State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	file := meta.File{NodeID: photo.ID, Size: 8, StorageKey: "blobs/example",
+		SHA256: strings.Repeat("a", 64)}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatal(err)
+	}
+	version := meta.FileVersion{NodeID: photo.ID, Revision: 1, Size: 7,
+		StorageKey: "blobs/previous", SHA256: strings.Repeat("b", 64)}
+	if err := db.Create(&version).Error; err != nil {
+		t.Fatal(err)
+	}
+	share := meta.Share{OwnerID: user.ID, NodeID: photo.ID,
+		TokenHash: strings.Repeat("c", 64), Access: "read_only"}
+	if err := db.Create(&share).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateLegacyYikeTargets(db); err != nil {
+		t.Fatal(err)
+	}
+	var movedRoot, keptFile meta.Node
+	if err := db.First(&movedRoot, target.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&keptFile, photo.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if movedRoot.ParentID == nil || *movedRoot.ParentID == connector.ID ||
+		keptFile.ParentID == nil || *keptFile.ParentID != target.ID ||
+		keptFile.Revision != photo.Revision {
+		t.Fatalf("verified file/root IDs were modified instead of reparented: root=%+v file=%+v", movedRoot, keptFile)
+	}
+	var savedItem meta.SourceItem
+	var savedVersion meta.FileVersion
+	var savedShare meta.Share
+	var savedFile meta.File
+	for _, result := range []error{
+		db.First(&savedItem, item.ID).Error,
+		db.First(&savedFile, file.NodeID).Error,
+		db.First(&savedVersion, version.ID).Error,
+		db.First(&savedShare, share.ID).Error,
+	} {
+		if result != nil {
+			t.Fatal(result)
+		}
+	}
+	if savedItem.NodeID == nil || *savedItem.NodeID != photo.ID ||
+		savedItem.Path != photo.Name || savedItem.NodeRevision != photo.Revision ||
+		savedVersion.NodeID != photo.ID || savedVersion.StorageKey != version.StorageKey ||
+		savedFile.StorageKey != file.StorageKey || savedShare.NodeID != photo.ID ||
+		savedShare.TokenHash != share.TokenHash || savedShare.RevokedAt != nil {
+		t.Fatalf("migration changed file/version/source/share identity: item=%+v file=%+v version=%+v share=%+v",
+			savedItem, savedFile, savedVersion, savedShare)
+	}
+}
+
+func TestLegacyYikeMigrationMixedTreePausesAndPreservesOriginalShare(t *testing.T) {
+	db := openYikeMigrationTestDB(t)
+	user, root, connector, target, source := createLegacyYikeMigrationFixture(t, db)
+	targetID := target.ID
+	photo := meta.Node{OwnerID: user.ID, ParentID: &targetID, Name: "tracked.jpg",
+		Type: meta.NodeTypeFile, Revision: 1}
+	ordinary := meta.Node{OwnerID: user.ID, ParentID: &targetID, Name: "ordinary.pdf",
+		Type: meta.NodeTypeFile, Revision: 1}
+	if err := db.Create(&photo).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&ordinary).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.SourceItem{SourceID: source.ID,
+		ExternalID: "yike:12345:tracked", NodeID: &photo.ID,
+		NodeRevision: photo.Revision, Path: photo.Name, Kind: meta.SourceItemKindFile,
+		State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	share := meta.Share{OwnerID: user.ID, NodeID: target.ID,
+		TokenHash: strings.Repeat("d", 64), Access: "read_only"}
+	if err := db.Create(&share).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateLegacyYikeTargets(db); err != nil {
+		t.Fatalf("ambiguous tree must pause Source but not block startup: %v", err)
+	}
+	var unchangedRoot, untouchedOrdinary meta.Node
+	var paused meta.Source
+	var oldShare meta.Share
+	for _, err := range []error{
+		db.First(&unchangedRoot, target.ID).Error,
+		db.First(&untouchedOrdinary, ordinary.ID).Error,
+		db.First(&paused, source.ID).Error,
+		db.First(&oldShare, share.ID).Error,
+	} {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if unchangedRoot.ParentID == nil || *unchangedRoot.ParentID != connector.ID ||
+		untouchedOrdinary.ParentID == nil || *untouchedOrdinary.ParentID != target.ID ||
+		paused.Status != meta.SourceStatusPaused || paused.Revision != source.Revision+1 ||
+		paused.TargetNodeID == nil || *paused.TargetNodeID != target.ID ||
+		oldShare.NodeID != target.ID || oldShare.TokenHash != share.TokenHash || oldShare.RevokedAt != nil {
+		t.Fatalf("mixed-tree migration changed authorization/ordinary data: root=%+v ordinary=%+v source=%+v share=%+v",
+			unchangedRoot, untouchedOrdinary, paused, oldShare)
+	}
+	var unexpected int64
+	if err := db.Model(&meta.Node{}).
+		Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+			user.ID, root.ID, yikeTargetRootName).Count(&unexpected).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unexpected != 0 {
+		t.Fatal("blocked migration created a new managed root before validating ownership")
+	}
+}
+
+func TestLegacyYikeMigrationOtherSourceOrRunningRunFailsClosed(t *testing.T) {
+	for _, scenario := range []string{"shared-root", "active-run", "stale-node-revision"} {
+		t.Run(scenario, func(t *testing.T) {
+			db := openYikeMigrationTestDB(t)
+			user, _, connector, target, source := createLegacyYikeMigrationFixture(t, db)
+			switch scenario {
+			case "shared-root":
+				other := meta.Source{OwnerID: user.ID, Name: "Foreign owner", Kind: "test",
+					Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+					RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused,
+					Revision: 1, TargetNodeID: &target.ID}
+				if err := db.Create(&other).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "active-run":
+				run := meta.SyncRun{ID: uuid.NewString(), SourceID: source.ID,
+					Mode: meta.SourceRunModeSync, Trigger: meta.SyncRunTriggerManual,
+					Status: meta.SyncRunStatusRunning, StartedAt: time.Now().UTC()}
+				if err := db.Create(&run).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "stale-node-revision":
+				id := target.ID
+				child := meta.Node{OwnerID: user.ID, ParentID: &id, Name: "changed.jpg",
+					Type: meta.NodeTypeFile, Revision: 3}
+				if err := db.Create(&child).Error; err != nil {
+					t.Fatal(err)
+				}
+				item := meta.SourceItem{SourceID: source.ID, ExternalID: "tracked-but-stale",
+					NodeID: &child.ID, NodeRevision: 2, Path: child.Name,
+					Kind: meta.SourceItemKindFile, State: meta.SourceItemStateSynced,
+					LastSeenAt: time.Now().UTC()}
+				if err := db.Create(&item).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := migrateLegacyYikeTargets(db); err != nil {
+				t.Fatal(err)
+			}
+			var unchanged meta.Node
+			var paused meta.Source
+			if err := db.First(&unchanged, target.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.First(&paused, source.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if unchanged.ParentID == nil || *unchanged.ParentID != connector.ID ||
+				paused.Status != meta.SourceStatusPaused ||
+				paused.TargetNodeID == nil || *paused.TargetNodeID != target.ID {
+				t.Fatalf("unsafe migration was allowed: root=%+v source=%+v", unchanged, paused)
+			}
+		})
 	}
 }
