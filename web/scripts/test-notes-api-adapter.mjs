@@ -22,8 +22,10 @@ const transpileDataURL = (path) => {
 const manualURL = transpileDataURL('../../ui/shared/src/notes-manual-import.ts')
 const policyURL = transpileDataURL('../../ui/shared/src/notes-markdown-policy.ts')
 const executed = compiled.outputText
-  .replace("'../../ui/shared/src/notes-manual-import'", "'" + manualURL + "'")
-  .replace("'../../ui/shared/src/notes-markdown-policy'", "'" + policyURL + "'")
+  .replace(/from ['"]\.\.\/\.\.\/ui\/shared\/src\/notes-manual-import['"]/, "from '" + manualURL + "'")
+  .replace(/from ['"]\.\.\/\.\.\/ui\/shared\/src\/notes-markdown-policy['"]/, "from '" + policyURL + "'")
+assert.ok(executed.includes(manualURL) && executed.includes(policyURL),
+  'Notes adapter runtime dependencies must be loaded from the tested local sources')
 const { createXDriveWebNotesPort } = await import('data:text/javascript;base64,' +
   Buffer.from(executed).toString('base64'))
 
