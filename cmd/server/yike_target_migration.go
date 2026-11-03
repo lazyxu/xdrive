@@ -46,7 +46,7 @@ func migrateLegacyYikeTargets(db *gorm.DB) error {
 			Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
 			Updates(map[string]any{
 				"status":     meta.SourceStatusPaused,
-				"last_error": "一刻相册固定目录迁移被现有同名文件或目录阻挡，请整理“同步文件夹/一刻相册”后重新配置 Cookie",
+				"last_error": "一刻相册迁移到“同步文件夹/远程拉取/一刻相册”被同名目标或身份冲突阻挡，请检查 Source 与目录绑定",
 				"revision":   gorm.Expr("revision + 1"),
 				"updated_at": now,
 			}).Error; updateErr != nil {
@@ -97,15 +97,29 @@ func migrateLegacyYikeTarget(tx *gorm.DB, source meta.Source) error {
 		}
 		return err
 	}
-	if legacyRoot.Name != legacyYikeTargetRootName || legacyRoot.ParentID == nil {
+	if legacyRoot.ParentID == nil {
 		return nil
 	}
-
-	syncRoot, err := ensureMigrationDirectory(tx, source.OwnerID, *legacyRoot.ParentID, yikeTargetRootName)
+	var syncRoot meta.Node
+	var err error
+	switch legacyRoot.Name {
+	case legacyYikeTargetRootName:
+		syncRoot, err = ensureMigrationDirectory(tx, source.OwnerID, *legacyRoot.ParentID, yikeTargetRootName)
+	case yikeTargetRootName:
+		// An existing /同步文件夹/一刻相册 directory is also legacy
+		// under the new Push/Pull organization.
+		syncRoot = legacyRoot
+	default:
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	syncConnector, err := ensureMigrationDirectory(tx, source.OwnerID, syncRoot.ID, yikeTargetConnectorName)
+	pullRoot, err := ensureMigrationDirectory(tx, source.OwnerID, syncRoot.ID, "远程拉取")
+	if err != nil {
+		return err
+	}
+	syncConnector, err := ensureMigrationDirectory(tx, source.OwnerID, pullRoot.ID, yikeTargetConnectorName)
 	if err != nil {
 		return err
 	}
