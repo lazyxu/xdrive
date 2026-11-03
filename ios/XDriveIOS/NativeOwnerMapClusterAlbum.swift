@@ -30,8 +30,18 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     @State private var earlier: [XDriveIOSOwnerClusterCursor] = []
     @State private var next: XDriveIOSOwnerClusterCursor?
     @State private var page: XDriveIOSNativeMediaRange?
+    // Exactly two visible 48-item Owner Ranges maximum. As the user reaches
+    // the lower edge, the old page remains on screen while the adjacent
+    // trusted page appears; later pages rotate this bounded window.
+    @State private var priorWindow: XDriveIOSNativeMediaRange?
+    @State private var priorWindowCursor: XDriveIOSOwnerClusterCursor?
+    @State private var scrollFootVisible = false
     @State private var coverImages: [UInt64: UIImage] = [:]
     @State private var viewing: XDriveIOSNativeMediaItem?
+    // Restore the last successfully viewed Node+revision in the bounded
+    // Owner page after L3 closes, without persisting any photo identities.
+    @State private var viewerReturn: XDriveIOSNativeMediaItem?
+    @State private var visiblePageRevision = UUID()
     // A Viewer may only promote an exact adjacent Range after verifying its
     // prior signed place page. No guessed place or cached media identities.
     @State private var pendingViewerCross: XDriveIOSOwnerClusterCursor?
@@ -65,50 +75,57 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 Text("位置 \(cursor.placeIndex + 1)/\(selection.places.count) · 当前地点 \(page.offset + 1)–\(page.offset + page.items.count)/\(page.total_count)")
                     .font(.caption).monospacedDigit()
             }
+            ScrollViewReader { returnScroll in
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 2) {
-                    ForEach(page?.items ?? []) { item in
-                        Button {
-                            guard activeOwner, !busy, viewing == nil,
-                                  page?.items.contains(where: {
-                                      $0.sameVisibleRevision(as: item)
-                                  }) == true else { return }
-                            viewing = item
-                        } label: {
-                            GeometryReader { tile in
-                                ZStack(alignment: .bottomTrailing) {
-                                    Rectangle().fill(Color(uiColor: .tertiarySystemFill))
-                                    if let image = coverImages[item.id] {
-                                        Image(uiImage: image)
-                                            .resizable().scaledToFill()
-                                            .frame(width: tile.size.width,
-                                                   height: tile.size.height)
-                                            .clipped()
-                                    } else {
-                                        Image(systemName: item.isVideo ? "video" : "photo")
-                                            .font(.title2).foregroundStyle(.secondary)
-                                            .frame(width: tile.size.width,
-                                                   height: tile.size.height)
-                                    }
-                                    if item.isLive || item.isVideo {
-                                        Image(systemName: item.isLive ? "livephoto" : "play.fill")
-                                            .font(.caption).foregroundStyle(.white)
-                                            .padding(5)
-                                            .background(.black.opacity(0.55), in: Capsule())
-                                            .padding(5)
-                                    }
-                                }
-                            }
-                            .aspectRatio(1, contentMode: .fit)
+                    if let priorWindow {
+                        ForEach(priorWindow.items) { item in
+                            photoTile(item, from: priorWindow)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(item.isLive ? "实况照片" :
-                                             item.isVideo ? "视频" : "照片")
+                    }
+                    if let page {
+                        ForEach(page.items) { item in
+                            photoTile(item, from: page)
+                        }
+                    }
+                    // This foot is inside LazyVGrid, not an eagerly built
+                    // ScrollView sibling. Programmatic appearance alone never
+                    // starts another PhotoAsset Range request.
+                    if let next {
+                        Color.clear
+                            .frame(height: 24)
+                            .id("\(next.placeIndex):\(next.offset)")
+                            .onAppear { scrollFootVisible = true }
+                            .onDisappear { scrollFootVisible = false }
+                            .accessibilityHidden(true)
                     }
                 }
                 .padding(.horizontal, 4)
             }
-            .id("\(cursor.placeIndex):\(cursor.offset)")
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12).onEnded { _ in
+                    guard scrollFootVisible, activeOwner, !busy,
+                          viewing == nil, page != nil, let next else { return }
+                    scrollFootVisible = false
+                    load(next, history: earlier + [cursor],
+                         autoAdvance: true)
+                }
+            )
+            .onChange(of: visiblePageRevision) { _ in
+                // Only the reverified current Owner page can restore focus.
+                // An unavailable, deleted or modified Node is never scrolled
+                // to using a stale visible ID from the old Viewer.
+                guard let anchor = viewerReturn, activeOwner,
+                      page?.items.contains(where: {
+                          $0.sameVisibleRevision(as: anchor)
+                      }) == true else {
+                    viewerReturn = nil
+                    return
+                }
+                returnScroll.scrollTo(anchor.id, anchor: .center)
+                viewerReturn = nil
+            }
+            }
             HStack(spacing: 12) {
                 Button("上一批") {
                     guard let previous = earlier.last else { return }
@@ -151,7 +168,20 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                           page.items.contains(where: {
                               $0.sameVisibleRevision(as: neighbor)
                           }) else { return false }
+                    viewerReturn = neighbor
                     return true
+                },
+                canCrossMapPlace: { previous, anchor, direction in
+                    guard activeOwner, viewing?.id == initial.id, let page,
+                          page.sameVisibleSnapshot(as: previous),
+                          previous.offset == cursor.offset,
+                          let index = previous.items.firstIndex(where: {
+                              $0.sameVisibleRevision(as: anchor)
+                          }) else { return false }
+                    return adjacentClusterPlace(
+                        current: cursor, previous: previous,
+                        selectedIndex: index, direction: direction
+                    ) != nil
                 },
                 onCrossRange: { previous, anchor, direction in
                     guard activeOwner, viewing?.id == initial.id,
@@ -161,21 +191,35 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                           selection.places.indices.contains(cursor.placeIndex),
                           let anchorIndex = previous.items.firstIndex(where: {
                               $0.sameVisibleRevision(as: anchor)
-                          }),
-                          let targetOffset =
-                            XDriveIOSNativePhotoAssetRangeCursorPolicy.adjacentOffset(
-                                current: previous.offset, count: previous.items.count,
-                                total: previous.total_count,
-                                selectedIndex: anchorIndex, direction: direction
-                            )
+                          })
                     else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
                     pendingViewerCross = nil
                     let currentCursor = cursor
-                    let targetCursor = XDriveIOSOwnerClusterCursor(
-                        placeIndex: currentCursor.placeIndex, offset: targetOffset)
                     let facet = selection.places[currentCursor.placeIndex]
                     guard XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(facet),
                           previous.total_count == facet.item_count
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                    let targetCursor: XDriveIOSOwnerClusterCursor
+                    if let targetOffset =
+                        XDriveIOSNativePhotoAssetRangeCursorPolicy.adjacentOffset(
+                            current: previous.offset, count: previous.items.count,
+                            total: previous.total_count,
+                            selectedIndex: anchorIndex, direction: direction
+                        ) {
+                        targetCursor = XDriveIOSOwnerClusterCursor(
+                            placeIndex: currentCursor.placeIndex, offset: targetOffset)
+                    } else if let neighboring = adjacentClusterPlace(
+                        current: currentCursor, previous: previous,
+                        selectedIndex: anchorIndex, direction: direction
+                    ) {
+                        targetCursor = neighboring
+                    } else {
+                        throw XDriveIOSNativeMediaReadFailure.invalidScope
+                    }
+                    guard selection.places.indices.contains(targetCursor.placeIndex)
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                    let targetFacet = selection.places[targetCursor.placeIndex]
+                    guard XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(targetFacet)
                     else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
                     let authorized = try await login.verifiedAuthorization()
                     try Task.checkCancellation()
@@ -195,8 +239,21 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     guard previous.sameVisibleSnapshot(as: reread),
                           reread.total_count == facet.item_count
                     else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
-                    let following = try await reader.page(
-                        offset: targetOffset, placeID: facet.id)
+                    let following: XDriveIOSNativeMediaRange
+                    if targetCursor.placeIndex == currentCursor.placeIndex {
+                        // Preserve the original same-place adjacent 48-item path.
+                        let targetOffset = targetCursor.offset
+                        following = try await reader.page(
+                            offset: targetOffset, placeID: facet.id)
+                        guard following.total_count == facet.item_count else {
+                            throw XDriveIOSNativeMediaReadFailure.invalidPage
+                        }
+                    } else {
+                        // Never use a MapKit region as a PhotoAsset credential.
+                        // The destination must be an exact, verified placeID.
+                        following = try await reader.page(
+                            offset: targetCursor.offset, placeID: targetFacet.id)
+                    }
                     try Task.checkCancellation()
                     guard activeOwner,
                           XDriveIOSNativePhotoOwnerScope.matches(
@@ -204,8 +261,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                           ),
                           cursor == currentCursor,
                           page?.sameVisibleSnapshot(as: previous) == true,
-                          following.total_count == facet.item_count,
-                          following.offset == targetOffset,
+                          following.total_count == targetFacet.item_count,
+                          following.offset == targetCursor.offset,
                           XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
                             offset: following.offset, count: following.items.count,
                             total: following.total_count
@@ -218,13 +275,11 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 onCrossedRange: { opened, verifiedRange in
                     guard activeOwner, viewing?.id == initial.id,
                           let oldPage = page, let admitted = pendingViewerCross,
-                          admitted.placeIndex == cursor.placeIndex,
                           admitted.offset == verifiedRange.offset,
                           selection.places.indices.contains(cursor.placeIndex),
+                          selection.places.indices.contains(admitted.placeIndex),
                           verifiedRange.total_count ==
-                            selection.places[cursor.placeIndex].item_count,
-                          abs(verifiedRange.offset - oldPage.offset) ==
-                            XDriveIOSNativePhotoAssetRangeCursorPolicy.pageSize,
+                            selection.places[admitted.placeIndex].item_count,
                           XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
                             offset: verifiedRange.offset,
                             count: verifiedRange.items.count,
@@ -234,8 +289,31 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                               $0.sameVisibleRevision(as: opened)
                           })
                     else { return false }
+                    let samePlace = admitted.placeIndex == cursor.placeIndex &&
+                        abs(verifiedRange.offset - oldPage.offset) ==
+                          XDriveIOSNativePhotoAssetRangeCursorPolicy.pageSize
+                    let followingPlace = admitted.placeIndex == cursor.placeIndex + 1 &&
+                        oldPage.offset + oldPage.items.count == oldPage.total_count &&
+                        admitted.offset == 0
+                    let precedingPlace = admitted.placeIndex + 1 == cursor.placeIndex &&
+                        oldPage.offset == 0 &&
+                        admitted.offset ==
+                          ((verifiedRange.total_count - 1) /
+                            XDriveIOSNativePhotoAssetRangeCursorPolicy.pageSize) *
+                            XDriveIOSNativePhotoAssetRangeCursorPolicy.pageSize
+                    guard samePlace || followingPlace || precedingPlace else {
+                        return false
+                    }
                     pendingViewerCross = nil
-                    if admitted.offset > cursor.offset {
+                    if followingPlace {
+                        earlier.append(cursor)
+                    } else if precedingPlace {
+                        if earlier.last == admitted {
+                            earlier.removeLast()
+                        } else {
+                            earlier = []
+                        }
+                    } else if admitted.offset > cursor.offset {
                         earlier.append(cursor)
                     } else if earlier.last == admitted {
                         earlier.removeLast()
@@ -244,6 +322,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     }
                     cursor = admitted
                     page = verifiedRange
+                    viewerReturn = opened
+                    priorWindow = nil
+                    priorWindowCursor = nil
                     coverTask?.cancel()
                     coverImages = [:]
                     let after = verifiedRange.offset + verifiedRange.items.count
@@ -283,6 +364,123 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         }
     }
 
+    @ViewBuilder
+    private func photoTile(
+        _ item: XDriveIOSNativeMediaItem,
+        from origin: XDriveIOSNativeMediaRange
+    ) -> some View {
+        Button {
+            guard activeOwner, !busy, viewing == nil,
+                  (page?.sameVisibleSnapshot(as: origin) == true ||
+                   priorWindow?.sameVisibleSnapshot(as: origin) == true),
+                  origin.items.contains(where: {
+                      $0.sameVisibleRevision(as: item)
+                  }) else { return }
+            // A prior visible page may still be tapped after automatic
+            // advancement. Make that exact verified Range current before
+            // launching L3, so the existing Viewer cross-page contract
+            // never reads its neighbors against the newer page.
+            if let oldCursor = priorWindowCursor,
+               priorWindow?.sameVisibleSnapshot(as: origin) == true {
+                let newerCursor = cursor
+                if earlier.last == oldCursor {
+                    earlier.removeLast()
+                } else {
+                    earlier = []
+                }
+                cursor = oldCursor
+                next = newerCursor
+                page = origin
+                priorWindow = nil
+                priorWindowCursor = nil
+            }
+            viewerReturn = item
+            viewing = item
+        } label: {
+            GeometryReader { tile in
+                ZStack(alignment: .bottomTrailing) {
+                    Rectangle().fill(Color(uiColor: .tertiarySystemFill))
+                    if let image = coverImages[item.id] {
+                        Image(uiImage: image)
+                            .resizable().scaledToFill()
+                            .frame(width: tile.size.width,
+                                   height: tile.size.height)
+                            .clipped()
+                    } else {
+                        Image(systemName: item.isVideo ? "video" : "photo")
+                            .font(.title2).foregroundStyle(.secondary)
+                            .frame(width: tile.size.width,
+                                   height: tile.size.height)
+                    }
+                    if item.isLive || item.isVideo {
+                        Image(systemName: item.isLive ? "livephoto" : "play.fill")
+                            .font(.caption).foregroundStyle(.white)
+                            .padding(5)
+                            .background(.black.opacity(0.55), in: Capsule())
+                            .padding(5)
+                    }
+                }
+            }
+            .aspectRatio(1, contentMode: .fit)
+        }
+        .buttonStyle(.plain)
+        .id(item.id)
+        .accessibilityLabel(item.isLive ? "实况照片" :
+                             item.isVideo ? "视频" : "照片")
+    }
+
+    /// Numeric-only map cluster boundary. A new place is admitted only if
+    /// the current exact Owner Range ends or begins at its real boundary.
+    /// The actual HTTP read and identity proof happen in onCrossRange.
+    private func adjacentClusterPlace(
+        current: XDriveIOSOwnerClusterCursor,
+        previous: XDriveIOSNativeMediaRange,
+        selectedIndex: Int, direction: Int
+    ) -> XDriveIOSOwnerClusterCursor? {
+        guard selection.places.indices.contains(current.placeIndex),
+              previous.offset == current.offset,
+              XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
+                  offset: previous.offset, count: previous.items.count,
+                  total: previous.total_count
+              ),
+              previous.total_count == selection.places[current.placeIndex].item_count,
+              XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(
+                  selection.places[current.placeIndex]
+              ),
+              selectedIndex >= 0 && selectedIndex < previous.items.count,
+              direction == 1 || direction == -1
+        else { return nil }
+        let nextIndex: Int
+        let nextOffset: Int
+        if direction > 0 {
+            guard selectedIndex == previous.items.count - 1,
+                  previous.offset + previous.items.count == previous.total_count,
+                  current.placeIndex + 1 < selection.places.count
+            else { return nil }
+            nextIndex = current.placeIndex + 1
+            nextOffset = 0
+        } else {
+            guard selectedIndex == 0, previous.offset == 0,
+                  current.placeIndex > 0 else { return nil }
+            nextIndex = current.placeIndex - 1
+            let count = selection.places[nextIndex].item_count
+            guard count > 0,
+                  count <= XDriveIOSNativePhotoAssetRangeCursorPolicy.maximumTotal
+            else { return nil }
+            nextOffset = ((count - 1) /
+                XDriveIOSNativePhotoAssetRangeCursorPolicy.pageSize) *
+                XDriveIOSNativePhotoAssetRangeCursorPolicy.pageSize
+        }
+        let destination = selection.places[nextIndex]
+        guard XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(destination),
+              destination.item_count > 0,
+              destination.item_count <=
+                XDriveIOSNativePhotoAssetRangeCursorPolicy.maximumTotal
+        else { return nil }
+        return XDriveIOSOwnerClusterCursor(
+            placeIndex: nextIndex, offset: nextOffset)
+    }
+
     private func invalidate() {
         generation = UUID()
         loadTask?.cancel()
@@ -290,6 +488,10 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         loadTask = nil
         coverTask = nil
         page = nil
+        viewerReturn = nil
+        priorWindow = nil
+        priorWindowCursor = nil
+        scrollFootVisible = false
         coverImages = [:]
         viewing = nil
         next = nil
@@ -299,16 +501,27 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     }
 
     private func load(_ target: XDriveIOSOwnerClusterCursor,
-                      history: [XDriveIOSOwnerClusterCursor]) {
+                      history: [XDriveIOSOwnerClusterCursor],
+                      autoAdvance: Bool = false) {
         guard activeOwner, !busy, viewing == nil,
               target.placeIndex >= 0,
               target.placeIndex < selection.places.count,
               target.offset >= 0 else { return }
         generation = UUID()
         let ticket = generation
+        let departingPage = page
+        let departingCursor = cursor
+        // Ordinary pagination does not carry a stale Viewer anchor into a
+        // different place or new 48-item Range. Dismissal reloads the SAME.
+        if autoAdvance || target != cursor { viewerReturn = nil }
+        scrollFootVisible = false
         loadTask?.cancel()
         coverTask?.cancel()
-        coverImages = [:]
+        if !autoAdvance {
+            priorWindow = nil
+            priorWindowCursor = nil
+            coverImages = [:]
+        }
         pendingViewerCross = nil
         error = nil
         busy = true
@@ -351,10 +564,30 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 } else {
                     following = nil
                 }
+                // Preserve at most one previous page and the newly validated
+                // page. Never combine two unrelated Owner scopes or replay
+                // prior photos after a failed Range verification.
+                if autoAdvance, let departingPage,
+                   history.last == departingCursor,
+                   target != departingCursor {
+                    priorWindow = departingPage
+                    priorWindowCursor = departingCursor
+                    let admitted = Set(
+                        departingPage.items.map(\.id) + fetched.items.map(\.id)
+                    )
+                    coverImages = coverImages.filter {
+                        admitted.contains($0.key)
+                    }
+                } else {
+                    priorWindow = nil
+                    priorWindowCursor = nil
+                    coverImages = [:]
+                }
                 cursor = target
                 earlier = history
                 next = following
                 page = fetched
+                visiblePageRevision = UUID()
                 coverTask = Task { @MainActor in
                     // At most 48 sequential thumbnails; no original download.
                     for item in fetched.items where item.metadata.has_thumbnail {
@@ -386,6 +619,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             } catch {
                 guard generation == ticket else { return }
                 // Do not promote an unverified next cursor on failure.
+                viewerReturn = nil
                 self.error = "地点照片或 Owner 授权已变化；可重试，必要时返回地图刷新。"
             }
         }
