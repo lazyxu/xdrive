@@ -97,89 +97,125 @@ internal object NativeLocalMediaStore {
         val idColumn = MediaStore.Files.FileColumns._ID
         val mediaType = MediaStore.Files.FileColumns.MEDIA_TYPE
         val captureDateColumn = MediaStore.MediaColumns.DATE_TAKEN
-        // DATE_TAKEN is milliseconds. Normalize NULL/zero/invalid dates to
-        // zero so unknown dates form one stable final keyset range.
-        val captureOrder = "CASE WHEN $captureDateColumn > 0 THEN $captureDateColumn ELSE 0 END"
         val kinds = nativeLocalMediaTypesForKind(mediaKind)
-        val selection = mutableListOf(
+        val baseSelection = mutableListOf(
             "(" + kinds.joinToString(" OR ") { "$mediaType=?" } + ")",
             "${MediaStore.MediaColumns.IS_PENDING}=0",
         )
-        val values = kinds.map { it.toString() }.toMutableList()
+        val baseValues = kinds.map { it.toString() }.toMutableList()
         if (Build.VERSION.SDK_INT >= 30) {
-            selection += "${MediaStore.MediaColumns.IS_TRASHED}=0"
+            baseSelection += "${MediaStore.MediaColumns.IS_TRASHED}=0"
         }
         if (albumId != null) {
-            selection += "${MediaStore.Images.ImageColumns.BUCKET_ID}=?"
-            values += albumId
+            baseSelection += "${MediaStore.Images.ImageColumns.BUCKET_ID}=?"
+            baseValues += albumId
         }
-        if (after != null) {
-            selection += "($captureOrder<? OR ($captureOrder=? AND $idColumn<?))"
-            values += after.capturedAtMillis.toString()
-            values += after.capturedAtMillis.toString()
-            values += after.id.toString()
-        }
-        val query = Bundle().apply {
-            putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection.joinToString(" AND "))
-            putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, values.toTypedArray())
-            putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "$captureOrder DESC, $idColumn DESC")
-            putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
-        }
+
         val result = ArrayList<NativeLocalMedia>(limit)
         val projection = if (Build.VERSION.SDK_INT >= 30)
             columns + MediaStore.MediaColumns.IS_TRASHED else columns
-        // Do not discard this signal: a cancelled Android tab, Owner grant
-        // epoch or album scan must interrupt an in-flight provider query,
-        // not merely drop its eventual cursor after IO finishes.
-        resolver.query(uri, projection, query, cancellationSignal)?.use { cursor ->
-            // Unbounded OEM cursors are not treated as a complete or correct page.
-            check(cursor.count <= limit) { "MediaStore ignored bounded keyset page" }
-            val idIndex = cursor.getColumnIndexOrThrow(idColumn)
-            val kindIndex = cursor.getColumnIndexOrThrow(mediaType)
-            val captureDateIndex = cursor.getColumnIndexOrThrow(captureDateColumn)
-            val pendingIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.IS_PENDING)
-            val trashedIndex = if (Build.VERSION.SDK_INT >= 30)
-                cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.IS_TRASHED) else -1
-            val bucketIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.BUCKET_ID)
-            val nameIndex = cursor.getColumnIndexOrThrow(
-                MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME)
-            var previous = after
-            while (cursor.moveToNext()) {
-                currentCoroutineContext().ensureActive()
-                cancellationSignal?.throwIfCanceled()
-                val id = cursor.getLong(idIndex)
-                val capturedAtMillis = cursor.getLong(captureDateIndex).coerceAtLeast(0L)
-                val key = NativeLocalPageKey(capturedAtMillis, id)
-                check(nativeLocalStrictPageOrder(previous, listOf(key))) {
-                    "MediaStore returned a repeated or unordered Gallery page"
+        var previous = after
+
+        // Some MediaProviders accept CASE in a WHERE clause but do not sort
+        // the matching cursor by that expression. Split known/unknown dates
+        // into two bounded SQL queries with simple column sort orders. Never
+        // silently sort a truncated page in memory or switch to OFFSET.
+        suspend fun appendPartition(knownDate: Boolean) {
+            val remaining = limit - result.size
+            if (remaining == 0) return
+            cancellationSignal?.throwIfCanceled()
+            val selection = baseSelection.toMutableList()
+            val values = baseValues.toMutableList()
+            if (knownDate) {
+                selection += "$captureDateColumn>0"
+                if (after != null && after.capturedAtMillis > 0L) {
+                    selection += "($captureDateColumn<? OR " +
+                        "($captureDateColumn=? AND $idColumn<?))"
+                    values += after.capturedAtMillis.toString()
+                    values += after.capturedAtMillis.toString()
+                    values += after.id.toString()
                 }
-                previous = key
-                check(cursor.getInt(pendingIndex) == 0 &&
-                    (trashedIndex < 0 || cursor.getInt(trashedIndex) == 0)) {
-                    "MediaStore returned a pending or trashed Gallery asset"
+            } else {
+                selection += "($captureDateColumn IS NULL OR $captureDateColumn<=0)"
+                if (after?.capturedAtMillis == 0L) {
+                    selection += "$idColumn<?"
+                    values += after.id.toString()
                 }
-                val providerKind = cursor.getInt(kindIndex)
-                check(providerKind in kinds) {
-                    "MediaStore ignored the current Gallery media type filter"
-                }
-                val video = when (providerKind) {
-                    MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE -> false
-                    MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO -> true
-                    else -> throw IllegalStateException("Unsupported Gallery media type")
-                }
-                val source = if (video) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                    else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                val bucket = cursor.getString(bucketIndex)?.takeIf { it.isNotBlank() } ?: "unknown"
-                check(albumId == null || albumId == bucket) {
-                    "MediaStore ignored selected album scope"
-                }
-                result += NativeLocalMedia(
-                    id, ContentUris.withAppendedId(source, id), video, bucket,
-                    cursor.getString(nameIndex)?.takeIf { it.isNotBlank() } ?: "未命名相册",
-                    capturedAtMillis,
-                )
             }
-        } ?: throw IllegalStateException("设备媒体索引不可用")
+            val query = Bundle().apply {
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION,
+                    selection.joinToString(" AND "))
+                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
+                    values.toTypedArray())
+                putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER,
+                    if (knownDate) "$captureDateColumn DESC, $idColumn DESC"
+                    else "$idColumn DESC")
+                putInt(ContentResolver.QUERY_ARG_LIMIT, remaining)
+            }
+            // Cancellation and all Owner/album/media-kind guards apply to both
+            // partitions, including the final unknown-date range.
+            resolver.query(uri, projection, query, cancellationSignal)?.use { cursor ->
+                check(cursor.count <= remaining) {
+                    "MediaStore ignored bounded keyset page"
+                }
+                val idIndex = cursor.getColumnIndexOrThrow(idColumn)
+                val kindIndex = cursor.getColumnIndexOrThrow(mediaType)
+                val captureDateIndex = cursor.getColumnIndexOrThrow(captureDateColumn)
+                val pendingIndex = cursor.getColumnIndexOrThrow(
+                    MediaStore.MediaColumns.IS_PENDING)
+                val trashedIndex = if (Build.VERSION.SDK_INT >= 30)
+                    cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.IS_TRASHED) else -1
+                val bucketIndex = cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.ImageColumns.BUCKET_ID)
+                val nameIndex = cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME)
+                while (cursor.moveToNext()) {
+                    currentCoroutineContext().ensureActive()
+                    cancellationSignal?.throwIfCanceled()
+                    val id = cursor.getLong(idIndex)
+                    val capturedAtMillis = cursor.getLong(captureDateIndex).coerceAtLeast(0L)
+                    check((capturedAtMillis > 0L) == knownDate) {
+                        "MediaStore ignored the Gallery capture-date partition"
+                    }
+                    val key = NativeLocalPageKey(capturedAtMillis, id)
+                    check(nativeLocalStrictPageOrder(previous, listOf(key))) {
+                        "MediaStore returned a repeated or unordered Gallery page " +
+                            "in ${if (knownDate) "dated" else "undated"} partition"
+                    }
+                    previous = key
+                    check(cursor.getInt(pendingIndex) == 0 &&
+                        (trashedIndex < 0 || cursor.getInt(trashedIndex) == 0)) {
+                        "MediaStore returned a pending or trashed Gallery asset"
+                    }
+                    val providerKind = cursor.getInt(kindIndex)
+                    check(providerKind in kinds) {
+                        "MediaStore ignored the current Gallery media type filter"
+                    }
+                    val video = when (providerKind) {
+                        MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE -> false
+                        MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO -> true
+                        else -> throw IllegalStateException("Unsupported Gallery media type")
+                    }
+                    val source = if (video) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                        else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                    val bucket = cursor.getString(bucketIndex)?.takeIf { it.isNotBlank() }
+                        ?: "unknown"
+                    check(albumId == null || albumId == bucket) {
+                        "MediaStore ignored selected album scope"
+                    }
+                    result += NativeLocalMedia(
+                        id, ContentUris.withAppendedId(source, id), video, bucket,
+                        cursor.getString(nameIndex)?.takeIf { it.isNotBlank() } ?: "未命名相册",
+                        capturedAtMillis,
+                    )
+                }
+            } ?: throw IllegalStateException("设备媒体索引不可用")
+        }
+
+        // A zero-date anchor is already in the final partition. Otherwise
+        // exhaust the dated rows before admitting the unknown-date tail.
+        if (after?.capturedAtMillis != 0L) appendPartition(knownDate = true)
+        if (result.size < limit) appendPartition(knownDate = false)
         currentCoroutineContext().ensureActive()
         cancellationSignal?.throwIfCanceled()
         result
