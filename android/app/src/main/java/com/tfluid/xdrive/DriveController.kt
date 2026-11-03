@@ -4548,6 +4548,76 @@ class DriveController(
         return block(refreshed.accessToken)
     }
 
+    /**
+     * Native Notes uses the SAME Controller Owner and coordinated refresh
+     * contract as Files/Gallery. No new credential owner or state-changing
+     * Files request() may be used from a transient Notes page.
+     */
+    private suspend fun <T> withNotesOwner(
+        block: suspend (XDriveService, String) -> T,
+    ): T {
+        val ticket = generation
+        val snapshot = state.value
+        val service = api ?: throw CancellationException()
+        if (snapshot.nativeUiSessionId <= 0 ||
+            snapshot.screen !in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH) ||
+            snapshot.server.isBlank() || snapshot.username.isBlank() ||
+            session == null) throw CancellationException()
+        return authenticated(service, ticket) { token ->
+            checkCurrent(ticket)
+            val owner = service.verifiedOwnerIdentity(token)
+            checkCurrent(ticket)
+            if (owner.username != snapshot.username || owner.id <= 0 ||
+                state.value.nativeUiSessionId != snapshot.nativeUiSessionId ||
+                state.value.server != snapshot.server ||
+                state.value.username != snapshot.username ||
+                service !== api) throw CancellationException()
+            val root = service.root(token)
+            checkCurrent(ticket)
+            if (root.id <= 0 || root.parentId != null || !root.isDirectory)
+                throw ApiException(0, "Notes Owner root could not be verified",
+                    ApiFailureReason.INVALID_RESPONSE)
+            val value = block(service, token)
+            checkCurrent(ticket)
+            if (state.value.nativeUiSessionId != snapshot.nativeUiSessionId ||
+                service !== api || state.value.server != snapshot.server ||
+                state.value.username != snapshot.username) throw CancellationException()
+            value
+        }
+    }
+
+    suspend fun notesInitialize() {
+        withNotesOwner { service, token -> service.notesInitialize(token) }
+    }
+
+    suspend fun notesList(source: String, query: String, offset: Int = 0): OwnerNotesPage =
+        withNotesOwner { service, token -> service.notesList(token, source, query, offset) }
+
+    suspend fun notesDetail(id: String): OwnerNoteDetail =
+        withNotesOwner { service, token -> service.notesDetail(token, id) }
+
+    suspend fun notesCreate(title: String, markdown: String): OwnerNoteRow =
+        withNotesOwner { service, token -> service.notesCreate(token, title, markdown) }
+
+    suspend fun notesImportIOSMarkdown(title: String, markdown: String): OwnerNoteRow =
+        withNotesOwner { service, token -> service.notesImportIOSMarkdown(token, title, markdown) }
+
+    suspend fun notesUpdate(
+        id: String, title: String, markdown: String, revision: Long,
+    ): OwnerNoteRow = withNotesOwner { service, token ->
+        service.notesUpdate(token, id, title, markdown, revision)
+    }
+
+    suspend fun notesDelete(id: String, revision: Long) {
+        withNotesOwner { service, token -> service.notesDelete(token, id, revision) }
+    }
+
+    suspend fun notesVersions(id: String): List<OwnerNoteVersion> =
+        withNotesOwner { service, token -> service.notesVersions(token, id) }
+
+    suspend fun notesPreviousMarkdown(nodeID: Long, versionID: Long): String =
+        withNotesOwner { service, token -> service.notesReadVersion(token, nodeID, versionID) }
+
     /** Any new Owner request cancels the prior transport, including SAF export.
      * Only the originating download request is allowed to keep download chrome;
      * a folder change, refresh, search or other request clears it immediately. */
