@@ -502,4 +502,68 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		lastVersion != versionsBeforeSchedule+1 {
 		t.Fatal("repeated scheduler tick wrote duplicate original SQL operations")
 	}
+
+	// A later new nested NAS path must enter the SAME original SourceRun,
+	// preserve its directory hierarchy and create a new original, not
+	// rewrite either existing file or invent a prior FileVersion.
+	nestedRoot := filepath.Join(originalDir, "new-album", "winter")
+	if err := os.MkdirAll(nestedRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	newOriginal := bytes.Repeat([]byte("new-nested-native-file-"), 181)
+	if err := os.WriteFile(filepath.Join(nestedRoot, "charlie.bin"), newOriginal, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	beforeNewOperations, beforeNewVersions := lastOperation, lastVersion
+	beforeNewChunks, beforeNewFinalizes := lastChunk, lastFinalize
+	added := run()
+	if added.InspectedFiles != 3 || added.ConfirmedFiles != 1 ||
+		added.SkippedFiles != 2 || added.ConfirmedBytes != int64(len(newOriginal)) {
+		t.Fatalf("new nested native file did not enter incremental backup: %+v", added)
+	}
+	cloudParentID := target.ID
+	for _, name := range []string{"new-album", "winter"} {
+		var folder meta.Node
+		if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+			owner.ID, cloudParentID, name).Take(&folder).Error; err != nil {
+			t.Fatalf("native directory %s was not preserved in cloud: %v", name, err)
+		}
+		if folder.Type != meta.NodeTypeDir {
+			t.Fatalf("native directory %s has incorrect cloud type: %s", name, folder.Type)
+		}
+		cloudParentID = folder.ID
+	}
+	var nestedFile meta.Node
+	if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+		owner.ID, cloudParentID, "charlie.bin").Take(&nestedFile).Error; err != nil {
+		t.Fatalf("incremental nested file missing in cloud: %v", err)
+	}
+	if nestedFile.Type != meta.NodeTypeFile || nestedFile.Revision != 1 {
+		t.Fatalf("new nested file did not preserve its original revision: %+v", nestedFile)
+	}
+	var nestedRecord meta.File
+	if err := db.Where("node_id = ?", nestedFile.ID).Take(&nestedRecord).Error; err != nil {
+		t.Fatal(err)
+	}
+	newSHA := sha256.Sum256(newOriginal)
+	if nestedRecord.Size != int64(len(newOriginal)) ||
+		nestedRecord.SHA256 != hex.EncodeToString(newSHA[:]) {
+		t.Fatalf("nested original SQL digest or size changed: %+v", nestedRecord)
+	}
+	originalReader, err := localCAS.Open(context.Background(), nestedRecord.StorageKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	casBytes, readErr := io.ReadAll(originalReader)
+	_ = originalReader.Close()
+	if readErr != nil || !bytes.Equal(casBytes, newOriginal) {
+		t.Fatalf("new nested NAS original CAS bytes differ: %v", readErr)
+	}
+	assertOriginal("alpha.bin", updated, 2)
+	assertOriginal("bravo.bin", scheduledB, 2)
+	assertCounters()
+	if lastOperation != beforeNewOperations+1 || lastVersion != beforeNewVersions ||
+		lastChunk <= beforeNewChunks || lastFinalize <= beforeNewFinalizes {
+		t.Fatal("new nested Source item was not a single new original SQL/CAS operation")
+	}
 }
