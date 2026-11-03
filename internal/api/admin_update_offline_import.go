@@ -198,7 +198,7 @@ func offlineImportReadMeta(root *os.Root, name string) (offlineImportFileMetadat
 	}
 	if meta.Name != name || !offlineImportAllowedFile(name) ||
 		meta.Size <= 0 || meta.Size > offlineImportSizeLimit(name) ||
-		!offlineImportSHA256.MatchString(meta.SHA256) {
+		(meta.SHA256 != "" && !offlineImportSHA256.MatchString(meta.SHA256)) {
 		return meta, errors.New("invalid upload metadata")
 	}
 	return meta, nil
@@ -339,7 +339,7 @@ func (s *Server) adminRegisterOfflineUpdateFile(c *gin.Context) {
 	var input offlineImportFileMetadata
 	if err := c.ShouldBindJSON(&input); err != nil || input.Name != name ||
 		input.Size <= 0 || input.Size > offlineImportSizeLimit(name) ||
-		!offlineImportSHA256.MatchString(input.SHA256) {
+		(input.SHA256 != "" && !offlineImportSHA256.MatchString(input.SHA256)) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_offline_upload_metadata"})
 		return
 	}
@@ -580,8 +580,8 @@ func (s *Server) adminFinalizeOfflineUpdateFile(c *gin.Context) {
 	}
 	if existing, err := session.Lstat(name); err == nil && existing.Mode().IsRegular() {
 		digest, err := offlineImportDigest(session, name, meta.Size)
-		if err == nil && digest == meta.SHA256 {
-			c.JSON(http.StatusOK, gin.H{"name": name, "state": "ready"})
+		if err == nil && (meta.SHA256 == "" || digest == meta.SHA256) {
+			c.JSON(http.StatusOK, gin.H{"name": name, "state": "ready", "upload_sha256": digest})
 			return
 		}
 		c.JSON(http.StatusConflict, gin.H{"error": "offline_final_file_identity_mismatch"})
@@ -593,7 +593,7 @@ func (s *Server) adminFinalizeOfflineUpdateFile(c *gin.Context) {
 		return
 	}
 	digest, err := offlineImportDigest(session, name+".part", meta.Size)
-	if err != nil || digest != meta.SHA256 {
+	if err != nil || (meta.SHA256 != "" && digest != meta.SHA256) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "offline_upload_sha256_mismatch"})
 		return
 	}
@@ -606,11 +606,11 @@ func (s *Server) adminFinalizeOfflineUpdateFile(c *gin.Context) {
 	if err := session.Remove(name + ".part"); err != nil {
 		// The canonical file is already present and fully verified; leave a
 		// harmless partial hardlink for the next host maintenance cleanup.
-		c.JSON(http.StatusOK, gin.H{"name": name, "state": "ready"})
+		c.JSON(http.StatusOK, gin.H{"name": name, "state": "ready", "upload_sha256": digest})
 		return
 	}
 	c.Header("Cache-Control", "no-store")
-	c.JSON(http.StatusOK, gin.H{"name": name, "state": "ready"})
+	c.JSON(http.StatusOK, gin.H{"name": name, "state": "ready", "upload_sha256": digest})
 }
 
 
