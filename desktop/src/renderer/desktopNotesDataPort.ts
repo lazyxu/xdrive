@@ -218,7 +218,8 @@ export function createDesktopNotesDataPort(
     },
     async exportNote(nodeID, filename) {
       checkedRevision(nodeID)
-      if (typeof filename !== 'string' || !/^[0-9a-f-]{36}\.md$/i.test(filename)) {
+      if (typeof filename !== 'string' || !filename.toLowerCase().endsWith('.md') ||
+        !uuid.test(filename.slice(0, -3))) {
         throw new Error('笔记导出文件名不合法。')
       }
       await ready()
