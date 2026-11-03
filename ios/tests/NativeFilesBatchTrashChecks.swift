@@ -14,14 +14,24 @@ struct XDriveIOSNativeFilesBatchTrashChecks {
             id: 16, parent_id: 9, name: "folder", type: "dir", size: 0, revision: 4
         )
         let list = [one, two]
-        check(P.maxSelected == 64, "bounded to one page")
+        check(P.maxSelected == 200, "matches atomic Server batch limit")
         check(P.validSelection(list, parentID: 9), "real files and folders")
         check(!P.validSelection([], parentID: 9), "empty batch")
         check(!P.validSelection([one, one], parentID: 9), "duplicate ID")
         check(!P.validSelection([one], parentID: 8), "foreign folder")
         check(!P.validSelection([one], parentID: 0), "rootless target")
+        let bulk = (0..<200).map { index in
+            XDriveIOSNativeFilesNode(
+                id: UInt64(1_000 + index), parent_id: 9,
+                name: "node-\(index).txt", type: "file",
+                size: 1, revision: 2
+            )
+        }
+        check(P.validSelection(bulk, parentID: 9), "200 unique loaded Owner Nodes")
+        check(!P.validSelection(bulk + [one], parentID: 9),
+              "201 different Nodes exceed Server batch limit")
         check(!P.validSelection(Array(repeating: one, count: 65), parentID: 9),
-              "bounded even for invalid large duplicate batch")
+              "large duplicate ID batch refused")
         let old = XDriveIOSNativeFilesNode(
             id: 17, parent_id: 9, name: "old", type: "file", size: 0, revision: 0
         )
@@ -31,6 +41,18 @@ struct XDriveIOSNativeFilesBatchTrashChecks {
             deleted_ids: [16, 15]
         )
         check(P.validReceipt(accepted, for: list), "exact unordered result")
+        let bulkReceipt = XDriveIOSNativeFilesBatchTrashReceipt(
+            operation_id: accepted.operation_id,
+            deleted_ids: Array(bulk.map(\.id).reversed())
+        )
+        check(P.validReceipt(bulkReceipt, for: bulk),
+              "200-item exact atomic Server receipt")
+        let shortBulkReceipt = XDriveIOSNativeFilesBatchTrashReceipt(
+            operation_id: accepted.operation_id,
+            deleted_ids: Array(bulk.map(\.id).dropLast())
+        )
+        check(!P.validReceipt(shortBulkReceipt, for: bulk),
+              "200-item incomplete Server receipt rejected")
         let duplicated = XDriveIOSNativeFilesBatchTrashReceipt(
             operation_id: accepted.operation_id, deleted_ids: [15, 15]
         )

@@ -43,7 +43,8 @@ func (s *Server) fileFavoriteItems(ctx context.Context, ownerID uint64, nodeID u
   JOIN xd_nodes n ON n.id = q.node_id
   WHERE q.owner_id = ?
     AND n.owner_id = ?
-    AND n.type = 'file'
+    AND n.type IN ('file', 'dir')
+    AND n.parent_id IS NOT NULL
     AND n.deleted_at IS NULL
     AND (? = 0 OR n.id = ?)
 ),
@@ -124,8 +125,9 @@ func (s *Server) favoriteFile(c *gin.Context) {
 		fail(c, http.StatusNotFound, "file not found")
 		return
 	}
-	if node.Type != meta.NodeTypeFile {
-		fail(c, http.StatusBadRequest, "only files can be favorited")
+	if node.ParentID == nil ||
+		(node.Type != meta.NodeTypeFile && node.Type != meta.NodeTypeDir) {
+		fail(c, http.StatusBadRequest, "only non-root files and folders can be favorited")
 		return
 	}
 

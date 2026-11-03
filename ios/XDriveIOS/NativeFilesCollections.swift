@@ -111,7 +111,7 @@ struct XDriveIOSNativeFilesCollectionsTransport {
     private func requireCurrent(_ node: XDriveIOSNativeFilesNode,
                                 client: URLSession) async throws {
         guard node.id > 0, node.parent_id != nil, node.revision > 0,
-              node.type == "file" else {
+              (node.type == "file" || node.type == "dir") else {
             throw XDriveIOSNativeFilesCollectionFailure.staleNode
         }
         let data = try await send(
@@ -565,6 +565,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     gridEntryLabel(item)
                 }
                 .buttonStyle(.plain)
+                .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-recent-folder-\(item.id)")
             } else {
                 Button { openFile(item) } label: {
@@ -574,7 +575,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-collection-open-\(item.id)")
             }
-            if kind == .favorites && !item.node.isDirectory {
+            if kind == .favorites {
                 Button {
                     guard model.verified, !model.loading,
                           model.items.contains(item) else { return }
@@ -623,6 +624,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 } label: {
                     entryLabel(item)
                 }
+                .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-recent-folder-\(item.id)")
             } else {
                 Button { openFile(item) } label: {
@@ -632,7 +634,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-collection-open-\(item.id)")
             }
-            if kind == .favorites && !item.node.isDirectory {
+            if kind == .favorites {
                 Button {
                     guard model.verified, !model.loading, model.items.contains(item) else {
                         return

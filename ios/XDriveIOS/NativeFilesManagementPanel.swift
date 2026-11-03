@@ -12,7 +12,7 @@ private struct XDriveIOSNativeFilesManageDestinationIntent: Identifiable {
 /// No context-menu action bypasses the existing verified Owner-scoped
 /// operation or its destination / rename / destructive confirmation UI.
 enum XDriveIOSNativeFilesQuickAction {
-    case copy, move, rename, shareLink, download, trash
+    case copy, move, rename, favorite, shareLink, download, trash
 }
 
 /// Native Server Files operations live beside, never inside, the independent
@@ -190,6 +190,16 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         if let date = directory.modifiedDate {
                             LabeledContent("修改时间",
                                            value: XDriveIOSNativeFilesDatePolicy.display(date))
+                        }
+                    }
+                    Section("收藏夹") {
+                        Button("收藏此文件夹") {
+                            favoriteMutation.add(directory, login: login)
+                        }
+                        .disabled(anyBusy)
+                        .accessibilityIdentifier("native-ios-files-add-folder-favorite")
+                        if let status = favoriteMutation.status {
+                            Text(status).font(.footnote).foregroundStyle(.secondary)
                         }
                     }
                     Section("云端分享链接") {
@@ -401,9 +411,10 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         }
     }
 
-    /// The user selected an explicit quick action. Only present the same
-    /// existing native interaction; write endpoints are still gated on a
-    /// fresh Owner/Node/revision comparison after user confirmation.
+    /// Reuse existing native operation flows for explicit quick actions.
+    /// Favorite is committed by its verified idempotent writer after this
+    /// user action; destructive writes still require explicit confirmation,
+    /// and all writes retain their Owner/Node/revision fences.
     @MainActor
     private func applyInitialQuickAction() {
         guard !initialActionApplied else { return }
@@ -419,6 +430,10 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         case .rename:
             renameDraft = selected.name
             showingRename = true
+        case .favorite:
+            // Reuse the existing Owner/Node revision checked, idempotent
+            // Favorite writer. No unverified new mutation transport.
+            favoriteMutation.add(selected, login: login)
         case .shareLink:
             shareNode = selected
         case .download:

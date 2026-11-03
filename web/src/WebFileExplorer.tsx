@@ -1254,7 +1254,7 @@ export default function WebFileExplorer({
         : undefined,
       quickAccessPinned: quickAccess.pinnedIDs.has(node.id),
       quickAccessDisabled: quickAccess.busyID !== null,
-      onToggleFavorite: node.type === 'file'
+      onToggleFavorite: node.type === 'file' || node.type === 'dir'
         ? () => { void favorites.toggle(node.id) }
         : undefined,
       favorite: favorites.favoriteIDs.has(node.id),
@@ -1577,7 +1577,7 @@ export default function WebFileExplorer({
             updatedAt: item.updatedAt,
           }))}
           favorites={favorites.items.map(item => ({
-            id: item.id, name: item.name, kind: 'file' as const,
+            id: item.id, name: item.name, kind: item.kind,
             subtitle: item.path, size: item.size, revision: item.revision,
             updatedAt: item.updatedAt,
           }))}
@@ -1627,8 +1627,12 @@ export default function WebFileExplorer({
           onOpenFavorite={id => {
             onCloseTrash()
             const intent = beginNavigationIntent()
-            return favorites.activate(id, node => {
-              if (isNavigationIntentCurrent(intent)) openWebNode(node)
+            return favorites.activate(id, (node, crumbs) => {
+              if (!isNavigationIntentCurrent(intent)) return
+              if (node.type === 'dir') {
+                return navigateTo(crumbs, true, intent)
+              }
+              openWebNode(node)
             })
           }}
           onOpenQuickAccess={id => {
@@ -1992,8 +1996,12 @@ export default function WebFileExplorer({
             onActivateFavorite={(nodeID) => {
               onCloseTrash()
               const navigationIntentID = beginNavigationIntent()
-              void favorites.activate(nodeID, (node) => {
+              void favorites.activate(nodeID, (node, crumbs) => {
                 if (!isNavigationIntentCurrent(navigationIntentID)) return
+                if (node.type === 'dir') {
+                  void navigateTo(crumbs, true, navigationIntentID)
+                  return
+                }
                 void recent.record(node.id)
                 openWebNode(node)
               })
