@@ -12,6 +12,7 @@ const viewer = read('ios/XDriveIOS/NativeFilesViewer.swift')
 const location = read('ios/XDriveIOS/NativeFilesSearchLocation.swift')
 const serverRecent = read('internal/api/file_recent.go')
 const serverFavorites = read('internal/api/file_favorites.go')
+const serverFavoritesIntegration = read('internal/api/file_favorites_integration_test.go')
 const router = read('internal/api/router.go')
 
 test('native Files owns recent and favorites subroutes, including Server directory navigation', () => {
@@ -111,4 +112,36 @@ test('Recent and Favorites locate both list and grid items in the real Owner fol
   assert.match(location, /XDriveIOSNativeFilesLocateModel/)
   assert.match(location, /login\.verifiedAuthorization\(\)/)
   assert.doesNotMatch(screen, /import WebKit|WKWebView|URLSession\.shared|\/api\/v1\/uploads/)
+})
+
+
+test('native Files can favorite non-root folders with real Owner API and remove them in both layouts', () => {
+  // Backend and native validation accept exactly files or non-root directories.
+  assert.match(serverFavorites, /n\.type IN \('file', 'dir'\)/)
+  assert.match(serverFavorites, /n\.parent_id IS NOT NULL/)
+  assert.match(serverFavorites, /node\.ParentID == nil/)
+  assert.match(serverFavorites, /node\.Type != meta\.NodeTypeFile && node\.Type != meta\.NodeTypeDir/)
+  assert.match(serverFavorites, /LEFT JOIN xd_files file ON file\.node_id = n\.id/)
+  assert.match(serverFavorites, /COALESCE\(file\.size, 0\) AS size/)
+  assert.match(policy, /\(node\.type == "file" \|\| node\.type == "dir"\)/)
+  assert.match(policy, /node\.parent_id != nil/)
+  assert.match(screen, /private func requireCurrent\(_ node:[\s\S]*?\(node\.type == "file" \|\| node\.type == "dir"\)/)
+  assert.match(screen, /favorite\.node == node/)
+  assert.match(panel, /Button\("收藏此文件夹"\)/)
+  assert.match(panel, /favoriteMutation\.add\(directory, login: login\)/)
+  assert.match(panel, /native-ios-files-add-folder-favorite/)
+  assert.equal((screen.match(/if kind == \.favorites \{/g) || []).length, 2)
+  assert.match(screen, /favorites\.remove\(item, login: login\) \{ reload\(\) \}/)
+  assert.match(screen, /kind == \.favorites[\s\S]*?Label\("取消收藏", systemImage: "star\.slash"\)/)
+  assert.match(screen, /if item\.node\.isDirectory \{[\s\S]*?XDriveIOSNativeFilesBrowser\(/)
+
+  // Actual Gin/PostgreSQL tests cover create/idempotent put/other-owner deny,
+  // moved folder path, trash and restore, and an idempotent 204 undo.
+  assert.match(serverFavoritesIntegration, /expected actual non-root folder favorite/)
+  assert.match(serverFavoritesIntegration, /foreign user deleted Owner's folder favorite/)
+  assert.match(serverFavoritesIntegration, /Archive\/ProjectsMoved/)
+  assert.match(serverFavoritesIntegration, /trashed folder leaked to Favorites/)
+  assert.match(serverFavoritesIntegration, /restored folder did not reappear in Favorites/)
+  assert.match(serverFavoritesIntegration, /unfavoriting folder deleted its Node/)
+  assert.doesNotMatch(screen, /WKWebView|import WebKit|URLSession\.shared/)
 })
