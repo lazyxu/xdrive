@@ -41,7 +41,7 @@ commit_utc() {
 commit_utc "$snapshot_sha" > "$output/meta/snapshot.time"
 
 # The glob gets the single versioned SPK and checksum without guessing build
-# numbers. Exclude source agents, Docker layers, backup CLIs and deploy assets.
+# numbers. Mirror verified support tools too; exclude Docker images and deploy assets.
 gh release download snapshot --repo "$repo" --dir "$output/snapshot" \
   --pattern 'xDriveSetup-amd64.exe' \
   --pattern 'xdrive-linux-amd64.deb' \
