@@ -1004,6 +1004,29 @@ export default function App({
     } : undefined
   ), [agent.connected, configured, mediaSelectionJobsSupported])
 
+  const syncActivityDataSource = useMemo(() => (
+    agent.connected && configured && agent.hello?.capabilities.includes('sync-activity-history')
+      ? {
+          runs: async (limit: number, cursor?: AgentSyncRunCursor) => {
+            const result = await window.xdriveDesktop.agent.getSyncRuns(limit, cursor)
+            if (!result.ok) throw new Error(result.error.message)
+            return result.data
+          },
+          run: async (runID: string) => {
+            const result = await window.xdriveDesktop.agent.getSyncRun(runID)
+            if (!result.ok) throw new Error(result.error.message)
+            return result.data
+          },
+          items: async (runID: string, limit: number, cursor?: AgentSyncItemCursor) => {
+            const result = await window.xdriveDesktop.agent.getSyncRunItems(runID, limit, cursor)
+            if (!result.ok) throw new Error(result.error.message)
+            return result.data
+          },
+        }
+      : undefined
+  ), [agent.connected, configured, agent.hello?.capabilities,
+      status?.server, status?.username, status?.auth_status])
+
   const taskCenter = useXDriveTaskCenterController({
     transfers: transfers.transfers,
     operations: cloudFileOperations,
@@ -2988,6 +3011,8 @@ export default function App({
   } : undefined,
       taskCenterPage: {
     ...taskCenter.pageProps,
+    syncActivity: syncActivityDataSource,
+    syncActivitySessionKey: `${status?.server ?? ''}\\0${status?.username ?? ''}`,
     globalTasksEnabled: status?.role === 'admin',
     globalTasksAvailable: Boolean(taskCenter.pageProps.globalTasksEnabled),
     backgroundScope: view === 'global-tasks' ? 'global' : 'mine',

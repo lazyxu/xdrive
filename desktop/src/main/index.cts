@@ -298,6 +298,11 @@ import {
   type AgentStatus,
   type AgentTransferLifecycleInput,
   type AgentTransfers,
+  type AgentSyncRun,
+  type AgentSyncRunsPage,
+  type AgentSyncItemsPage,
+  type AgentSyncRunCursor,
+  type AgentSyncItemCursor,
 } from './agent_client.cjs'
 
 
@@ -3638,6 +3643,61 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().deviceBackupRuns(sourceID, requestedLimit, requestedOffset)
   }, false))
+
+  const validatedSyncRunID = (value: unknown) => {
+    if (typeof value !== 'string' || value.length < 1 || value.length > 128 ||
+        value.trim() !== value || value.includes('\\0')) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid sync run ID.')
+    }
+    return value
+  }
+  const validatedSyncCursor = (value: unknown, kind: 'run' | 'item') => {
+    if (value === undefined) return undefined
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid sync history cursor.')
+    }
+    const object = value as Record<string, unknown>
+    const timestamp = kind === 'run' ? object.before_started_at : object.before_applied_at
+    const id = kind === 'run' ? object.before_run_id : object.before_item_id
+    if (typeof timestamp !== 'string' || !/^[0-9]{1,20}$/.test(timestamp) ||
+        typeof id !== 'string' || id.length < 1 || id.length > 128 || id.trim() !== id) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid sync history cursor.')
+    }
+    if (kind === 'run') {
+      return { before_started_at: timestamp, before_run_id: id } as AgentSyncRunCursor
+    }
+    return { before_applied_at: timestamp, before_item_id: id } as AgentSyncItemCursor
+  }
+  const validatedSyncLimit = (value: unknown, fallback: number) => {
+    const count = value === undefined ? fallback : value
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 1 || count > 50) {
+      throw new AgentIPCError('invalid_input', 0, 'Sync history page limit must be 1 to 50.')
+    }
+    return count
+  }
+  ipcMain.handle('agent:get-sync-runs', (_event, limit: unknown, cursor: unknown) =>
+    runAgentAction<AgentSyncRunsPage>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'sync-activity-history')
+      return requireAgentClient().syncActivityRuns(
+        validatedSyncLimit(limit, 20), validatedSyncCursor(cursor, 'run') as AgentSyncRunCursor | undefined,
+      )
+    }, false))
+  ipcMain.handle('agent:get-sync-run', (_event, runID: unknown) =>
+    runAgentAction<AgentSyncRun>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'sync-activity-history')
+      return requireAgentClient().syncActivityRun(validatedSyncRunID(runID))
+    }, false))
+  ipcMain.handle('agent:get-sync-run-items', (_event, runID: unknown, limit: unknown, cursor: unknown) =>
+    runAgentAction<AgentSyncItemsPage>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'sync-activity-history')
+      return requireAgentClient().syncActivityItems(
+        validatedSyncRunID(runID), validatedSyncLimit(limit, 50),
+        validatedSyncCursor(cursor, 'item') as AgentSyncItemCursor | undefined,
+      )
+    }, false))
 
   ipcMain.handle('agent:get-source-runs', (_event, sourceID: unknown, limit: unknown, offset: unknown) => runAgentAction<AgentSourceRun[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
