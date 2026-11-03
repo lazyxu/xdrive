@@ -423,6 +423,36 @@ struct XDriveIOSNativeServerMediaPreview: View {
         crossRange(direction)
     }
 
+    /// Select only another entry from the same verified Owner/Node revision
+    /// range. The L2 onNavigate callback retains the exact return anchor.
+    private func filmstripKey(_ item: XDriveIOSNativeMediaItem)
+        -> XDriveIOSNativeCloudFilmstripKey {
+        XDriveIOSNativeCloudFilmstripKey(
+            nodeID: item.id, revision: item.node.revision,
+            name: item.node.name, size: item.node.size,
+            kind: item.isLive ? "live" : item.isVideo ? "video" : "image"
+        )
+    }
+
+    private func selectFilmstrip(_ next: XDriveIOSNativeMediaItem) {
+        guard ownerAuthorized, !rangeCrossing, !photosRestoreBusy,
+              let target = visibleItems.first(where: {
+                  $0.sameVisibleRevision(as: next)
+              }), target.supportsPreview,
+              target.id != viewed.id ||
+                  target.node.revision != viewed.node.revision
+        else { return }
+        let keys = visibleItems.filter { $0.supportsPreview }.map(filmstripKey)
+        guard XDriveIOSNativeCloudFilmstripPolicy.target(
+            current: filmstripKey(viewed), requested: filmstripKey(target),
+            in: keys, authorized: ownerAuthorized
+        ) != nil,
+              onNavigate?(target) == true else { return }
+        cancelPhotosRestore()
+        retirePreview()
+        activeItem = target
+    }
+
     private func crossRange(_ direction: Int) {
         guard canCrossRange(direction), let previous = visibleRange,
               let onCrossRange else { return }
@@ -664,6 +694,16 @@ struct XDriveIOSNativeServerMediaPreview: View {
             .safeAreaInset(edge: .bottom) {
                 if showChrome && (visibleItems.count > 1 || canCrossRange(-1) ||
                     canCrossRange(1) || rangeCrossing) {
+                    VStack(spacing: 6) {
+                        if ownerAuthorized && visibleItems.count > 1 {
+                            XDriveIOSNativeCloudPhotoAssetFilmstrip(
+                                current: viewed, loaded: visibleItems,
+                                openedOwner: openedOwner, authorized: ownerAuthorized,
+                                busy: rangeCrossing || photosRestoreBusy,
+                                login: login,
+                                onSelect: { next in selectFilmstrip(next) }
+                            )
+                        }
                     HStack(spacing: 12) {
                         Button("上一项") { navigateLoaded(-1) }
                             .disabled((neighbor(-1) == nil && !canCrossRange(-1)) ||
@@ -688,6 +728,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.ultraThinMaterial)
+                    }
                 }
             }
             .toolbar {
