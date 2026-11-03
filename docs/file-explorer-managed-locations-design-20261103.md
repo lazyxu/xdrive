@@ -160,3 +160,144 @@ Owner 能浏览、下载、预览、搜索、复制为可编辑普通文件。�
 移除 Pull Source 默认归档并**保留已经下载的原件与历史**，不调用远端 delete；清理本地副本需要单独确认并进入 Trash。Backup 模式保留历史云端文件；Mirror 只能凭可靠的完整扫描/多轮缺失证据软删除，失败/取消/断网不能当成远端删除。
 
 对 Mirror 产生的 Trash 项，**推荐恢复到普通非受管位置**，避免下一次 Mirror 立即把它再判为缺失。恢复回原受管位置必须经过 Source 策略检查和明确许可，不能让通用 Trash 绕过只读规则。
+
+## 7. 我的备忘录：可编辑的受管内容
+
+### 实际路径与身份
+
+保留现有 NotesNamespace：/@xDrive/@备忘录/我的备忘录，使用 Owner 与已绑定 Node ID；不靠名字推导身份。正文 Node 名称是 UUID.md，真正对用户显示的标题来自 Note.Title；正文通过 File/CAS，图片在 _assets/<note-id>/<asset-id> 下，旧 FileVersion 仍可能引用原图片。
+
+### 创建、加入和编辑
+
+- 首次使用由用户明确触发现有 Notes 初始化；GET Files 列表不创建目录，不能自动采用用户既有同名内容。
+- 新建必须经 Notes.create 专属业务 API 一次性写入 Note/Node/File/CAS；不通过普通 Files.create 或在受管目录拖放生成任意 .md。
+- 用户可改标题、Markdown、经验证的图片引用；保存携带预期 Node Revision（If-Match 或既有预期修订语义），冲突返回 409 而不覆盖较新版本。
+- 文件管理器提供列表、Markdown Viewer/编辑器、历史版本、图片、下载/导出；普通 Files 的 Rename/Move/Upload/Replace/BatchDelete 对受管 Note 和附件必须拒绝。
+- **导出为普通文件**生成独立 Node；**复制为新个人 Note**须生成新 NoteID 与合法附件映射。不能把被保护的 UUID.md 直接复制/重命名到另一 Note 目录来伪造业务记录。
+
+### 删除、恢复和永久删除
+
+- 当前已有我的 Notes 专属软删除，会让 Note.DeletedAt、正文 Node 以及图片子树进入 Trash；原 CAS 和历史版本仍有引用时不得直接丢失。
+- **拟新增完整 Notes.restore**：按 Owner、Note.ID、正文 Node、附件关联及预期修订加锁，核对 NotesNamespace、原位置、CAS 可读性和版本关系。一次事务恢复 Note.DeletedAt、正文 Node.DeletedAt/TrashRootID、该 Note 的 _assets 子树，更新必要搜索索引和 Revision，失败全部回滚。
+- **注意不同 TrashRootID**：正文 Node 自身可能是 Trash root，而 _assets/<note-id> 是另一个 Trash root；业务恢复必须按 NoteID 执行同组操作，不能只用通用 trashRestore 恢复正文。
+- 碰到同名/业务身份冲突、NotesNamespace 不一致、附件丢失或 CAS 错误时，应返回可诊断冲突并保留删除状态；不得恢复一半或自动改 UUID 文件名。
+- Notes 永久删除须由带业务语义的 Purge 操作处理 Note/Node/附件/历史引用；CAS 引用归零并符合原有 GC 条件时才允许物理清除。UI 只显示一条 Notes 逻辑恢复项，不能误把其附件重复作为独立条目清空。
+
+## 8. iOS 备忘录备份：只读、可删除、可复制
+
+### 初始化、导入与查看
+
+- 使用现有 /@xDrive/@备忘录/iOS备份，按 Owner/NotesNamespace/Source=ios_notes 精确定位。
+- 内容只接受**受验证的 iOS Shortcuts/备份导入通道**，以稳定 ExternalID 实现幂等；普通 Owner Web/Files/其他设备不得使用通用上传接口向该区域写入。Notes UI 的用户编辑、保存、新建全部拒绝。
+- 用户可以列出、预览、下载和查看历史；iOS 备份**默认私有**，只有 Owner 明确选择具体备份时可以只读分享。
+- **复制到我的备忘录**通过 Notes 专属 duplicate 动作产生新的可编辑 Note.ID、Node 和附件映射；不可与原 ios_notes ExternalID 共用可写身份，也不构成对 Apple Notes 的回写。
+
+### 用户删除 iOS 云端备份（明确新增能力）
+
+现有 deleteMyNote 拒绝 ios_notes；本方案新增 **deleteIOSBackup**，但只授权原 Owner 删除自己的云端备份：
+
+1. 用户从 iOS 备份详情或 Files 菜单选择“删除云端备份”，明确提示“不影响 iPhone / Apple Notes 中的原件”。
+2. 请求携带精确 Note.ID、预期 Revision、Owner 会话；服务端重新验证 Source=ios_notes、已绑定 Markdown Node 和附件关系。
+3. 在业务事务中软删除 Note/正文 Node/附件，添加可恢复的来源墓碑，并从 iOS Notes 列表移走；不删除手机/外部源，不永久释放 CAS。
+4. **防止立即复活**：后续同一 Owner+ExternalID 的常规重试/导入不自动重建用户已经主动删除的备份，返回可辨识的已抑制状态。用户在 Trash 显式恢复或明确重新允许该备份后，才接收对应身份的新版本。
+5. 外部没有可靠 ExternalID 的新导入必须依赖独立幂等请求身份，不能凭标题/路径/大小把两条备份猜成同一条。
+
+恢复仍由 Notes.restore 处理正文、元数据、附件和引用；恢复后继续 Source=ios_notes、只读、原身份。永久清理后应保留最小的禁止自动复活状态而不是原文内容；允许有专属的“重新允许备份”动作，不引入新文件存储。手动删除与停止整个 iOS 同步渠道是两种操作，不能互相替代。
+
+## 9. 回收站：一个虚拟集合，多种业务恢复
+
+### 创建和加入
+
+每个 Owner 自动显示一个逻辑入口，依然根据 Node.DeletedAt 和 TrashRootID 查询；不插入可以删除的真实 Trash 目录。普通 Files 软删除、Notes 业务删除和满足可信缺失条件的 Source Mirror 删除分别产生可恢复项目。用户不得直接上传、创建或移动文件到 Trash。
+
+### 查看
+
+展示可恢复主体及其类型、原位置、删除时间、来源、大小、删除原因/恢复限制。Note 的正文与附件应投影成**同一个业务恢复项**；Source Mirror 条目应显示其 Source 上下文，不泄露本机设备原始路径。保持 Owner 过滤、服务端分页、稳定排序和按需 Viewer；不能一次下载整个 100k 回收站列表。
+
+### 恢复
+
+| 已删除对象 | 恢复途径 | 必要检查 |
+| --- | --- | --- |
+| 普通 Node/目录 | 复用已有 Trash restore；必要时扩展明确的普通目标选择 | 原 Parent、Owner、同名冲突、Revision、Node/CAS |
+| 我的备忘录 | 新 Notes.restore | Note/正文/附件/历史关系同一事务 |
+| iOS 备忘录备份 | 新 Notes.restore | 同上，恢复后仍只读，解除明确的导入抑制 |
+| Source Mirror 文件 | Source 感知的 Trash restore | 默认恢复到**普通非受管目标**；原 Source 的缺失证据不能再次误删副本 |
+
+原父目录被删除或当前名称冲突时，现有通用 restore 会拒绝。目标方案提供经 Owner 验证的恢复目的地选择；**不得**伪装当前端点已支持这个参数。恢复到受管目录时仍要接受 Source/Notes 的专属权限检查，不允许“先从回收站出来”绕过受管根保护。
+
+### 永久删除与手动清空
+
+- 用户可以按项目永久删除或手动清空全部；不新增“30 天到期自动清除”或其它新的自动保留规则。
+- 清空前展示本 Owner 当前可删除的项目数量、总逻辑字节和已知失败风险，要求二次确认；选择快照/确认 ID 防止操作对象悄悄变化。
+- 清空由 Server 创建有界、持久、可查询的批处理任务：按普通 Node、Notes、Source 业务类型调用对应 Purge，状态与逐项收据持久化，失败支持单项重试；不要在浏览器循环对 100k 项直接发 DELETE。
+- 删除与 CAS/历史版本引用释放必须幂等：同一事务已提交的项目在重试时跳过，仍被 FileVersion 或其他 Node 使用的 Blob 不得物理删除；取消只阻止后续项目，不伪装撤销已永久删除部分。
+- 手动清空后应按服务端真实列表刷新；请求失败不能把 UI 渲染为已验证空回收站。断网、浏览器关闭和会话退出只停止观察，不无故取消持久任务。
+
+## 10. 只读分享与写入隔离
+
+1. Owner 可以**主动只读分享**受管 Source 文件和 Note，沿用现有 read_only Share、密码/有效期/撤销/Owner/root 真实子树检查；默认不自动发布 Notes 或 iOS 备份。
+2. 任何 view_upload Share 都不能写入受管子树。无论 Share 根目录是否是受管父目录，都要在目录创建、UploadSession 建立、分块重试和 finalize 的实时授权中拒绝：普通匿名上传不能凭祖先共享获得 Notes/Source Writer 权限。
+3. **祖先 read_only Share 的读取也要隔离默认私有 Notes**：不能因为以前分享了某个普通父目录，就在以后初始化 NotesNamespace 时自动泄露 iOS 备份。列表/搜索、预览、缩略图、Range、ZIP、签名票据都要检查明确共享范围，不给未授权的 Notes 子树发票据。
+4. Notes 的只读分享应绑定具体 Note 身份或精确选定的安全导出，不允许一次性分享整个 /@xDrive。Note 图片须使用受共享对象约束的短期只读附件票据，禁止暴露 Owner 私有 API 图片 URL，也不能浏览另一个 Note 的图片。
+5. Source 受管项目的只读分享只包括 Owner 明确选择的 Node/子树及合法派生物；不能授予 Source 配置、更改 Root 或设备指令。被 Trash 删除的文件分享不可继续下载。
+6. 通用的 Share capability 只是展示上限，不是一次请求的授权证明。每次 HTTP 请求仍须验证当前 Token、密码、过期、撤销、具体对象及 Owner/Source/Note，Share bearer 永远不能当成 Owner JWT。
+
+## 11. API 合同（目标建议，不是既有端点）
+
+优先复用现有 Nodes、Source、Notes、Trash、Share 的 HTTP/Agent 入口；只有不能表达的业务动作才新增接口。以下**路径只是设计候选**，开发前需与当前真实路由核对，不能据此认为已实现。
+
+| 候选动作 | 使用者 | 效果 |
+| --- | --- | --- |
+| GET /api/v1/file-explorer/managed-entries | Owner | 无写副作用；发现五个入口、Source 列表及状态、真实 backing Node、只读能力 |
+| GET /api/v1/file-explorer/nodes/:id/capabilities | Owner | 当前 Node/业务的动作投影；写入事务仍重新鉴权 |
+| POST /api/v1/sources/:id/archive | 有权管理该 Source 的主体 | 停用/归档 Source，保留历史和云端文件；Push 必须经拥有设备授权 |
+| POST /api/v1/sources/:id/cleanup/preview | 同上 | 不写数据，展示仅归该 Source 的云端目标和风险 |
+| POST /api/v1/sources/:id/cleanup | 同上 | 带确认令牌的持久云端清理任务；只移到 Trash |
+| POST /api/v1/notes/:id/duplicate-to-mine | Owner | 独立新个人 Note 和图片映射 |
+| DELETE /api/v1/notes/ios-backups/:id | Owner | 带预期 Revision 的云端 iOS 备份软删除，保留导入抑制 |
+| POST /api/v1/notes/:id/restore | Owner | 恢复 Note、正文与图片附件 |
+| POST /api/v1/trash/empty/preview | Owner | 本 Owner 精确待清理清单摘要和确认 ID |
+| POST /api/v1/trash/empty | Owner | 校验确认 ID 后开始持久、可取消的业务分批 Purge |
+
+期望入口投影（示例，不用于授权）：
+
+~~~json
+{
+  "id": "source:push:42",
+  "kind": "source_push",
+  "source_id": 42,
+  "backing_node_id": 123,
+  "display_name": "设备备份",
+  "status": "ready",
+  "capabilities": {
+    "list": true,
+    "preview": true,
+    "download": true,
+    "copy_out": true,
+    "generic_write": false,
+    "generic_delete": false
+  }
+}
+~~~
+
+ID 必须在当前 Owner/Server 实例下唯一且稳定；不得包含服务端本机原始路径、Share Token、CAS StorageKey、设备令牌、连接器密码。不存在的绑定、设备下线、正在初始化或 Notes 名称冲突返回**诚实状态**，不造假目录。写入和删除使用业务 Revision/If-Match、当前锁与幂等操作 ID，冲突 409、未经授权 403、越权对象不可见 404，并沿用已有配额/容量与错误码惯例。
+
+## 12. 兼容性、事务与状态迁移
+
+### 零搬迁约束
+
+- 本期不迁移 File/CAS、FileVersion、Node ID、Source.TargetNodeID、NotesNamespace 路径和真实文件字节，不制造“同名虚拟目录替换真实路径”的第二份数据。
+- 旧收藏、历史、Viewer、地址栏和文件路径继续指向原 Node；无权限的旧版客户端直接请求 API 仍会被服务器拒绝写受管对象。
+- Notes 未初始化时显示“需要初始化”，不会在 GET 列表或切换侧边栏时自动创建 @xDrive，也不自动接管已有同名用户目录。
+- 已存在的混合 Source 目标、NodeID=NULL 的 SourceItem、重叠来源或不一致附件不能通过猜测名称/路径修复；读可以报告异常，写安全拒绝并提供可审计的处理手段。
+- Source Archive 若引入持久状态，需要可回退的 schema/迁移；必须保留历史 Source/Run/Item，不得以硬删除或级联删除替代。
+
+### 一致性与失败回滚
+
+- **Notes 删除/恢复**：以 Owner、NoteID、Revision、Node、附件归属加锁，DB 原子提交；Blob 释放遵循已有持久 CAS 引用与 GC 协议，不能先删物理字节再补数据库。
+- **Source 归档/清理**：以 Source Revision、Agent grant、在途 Run 和 NodeRevision 的精确状态为边界；不能在上传进行中解除受管并同时允许普通用户覆盖该 Node。
+- **Share 上传**：session 初始化授权不够，finalize 前须按当前 Share、目标父链和管理绑定再次判定；撤销 Share/新增 Source 绑定后不允许旧 session 提交。
+- **幂等重试**：超时/未知 ACK 先查询持久收据；不能二次释放 CAS、重复生成新 Note，或将未完成事务记成成功。
+- **Source 副本**：复制到普通位置后不继承 SourceItem 管理，后续同步更新不能修改副本；副本修改也不反写设备或远端。
+- **回收站中恢复的 Source 项**：不会因下轮 Mirror 再次丢失；历史来源证据仍可核实，原受管目录写入仍受控。
+- **浏览器取消**：目录列表、搜索、缩略图和 Viewer 的过时 HTTP 请求立即中止；已开始的 durable 同步/清理任务仅用户显式取消，页面离开不撤销。
