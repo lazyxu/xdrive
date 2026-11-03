@@ -47,6 +47,7 @@ type winProvider struct {
 	transfers       *transfer.Manager
 	activityOwner   string
 	activityRunID   string
+	activityTrigger string
 }
 
 var activeWinProvider struct {
@@ -236,7 +237,15 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 			if !flushLocal() {
 				continue
 			}
-			if err := p.reconcileRemote(ctx); err != nil {
+			// Polling every minute must not create thousands of empty runs.
+			// Begin lazily on the first confirmed local metadata mutation.
+			p.activityTrigger = "remote"
+			err := p.reconcileRemote(ctx)
+			p.activityTrigger = ""
+			if p.activityRunID != "" {
+				p.finishActivity(p.activityRunID, err, false)
+			}
+			if err != nil {
 				fmt.Fprintln(os.Stderr, "xd: Windows remote sync:", err)
 				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 			}
@@ -244,7 +253,14 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 			if !flushLocal() {
 				continue
 			}
-			if err := p.reconcile(ctx); err != nil {
+			// Audits are similarly persisted only when a real change is seen.
+			p.activityTrigger = "audit"
+			err := p.reconcile(ctx)
+			p.activityTrigger = ""
+			if p.activityRunID != "" {
+				p.finishActivity(p.activityRunID, err, false)
+			}
+			if err != nil {
 				fmt.Fprintln(os.Stderr, "xd: Windows full audit:", err)
 				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 			}
