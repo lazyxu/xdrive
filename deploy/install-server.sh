@@ -2731,7 +2731,14 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     if compose_profile_enabled media-worker; then
       prepare_target_image media-worker "$media_image_ref"
     fi
-    echo "[xDrive] all target images are ready locally; entering maintenance window."
+    echo "[xDrive] all target images are ready locally; preparing source preflight."
+  fi
+  # Inspect the OLD managed Server and its exact /data mount before closing
+  # the gateway. Stopped Compose run --rm leftovers must not cause an outage;
+  # active one-offs and multiple managed Servers must still fail closed.
+  if ! "$STAGING_DIR/server-backup.sh" --config-dir "$XDRIVE_HOME" --preflight-only </dev/null; then
+    echo "xDrive installer: pre-upgrade Server identity or /data source preflight failed before maintenance; existing services were not stopped." >&2
+    exit 1
   fi
   MAINTENANCE_STARTED=1
   echo "[xDrive] existing deployment detected; entering upgrade maintenance window..."
@@ -2793,7 +2800,7 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
       :
     else
       backup_status=$?
-      echo "xDrive target pre-upgrade verifier failed; refusing backup and restoring previous deployment." >&2
+      echo "xDrive pre-upgrade backup failed (target verifier selected); refusing upgrade and restoring previous deployment." >&2
       exit "$backup_status"
     fi
   elif run_pre_upgrade_backup ""; then
