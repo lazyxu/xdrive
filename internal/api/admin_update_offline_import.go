@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -382,6 +381,15 @@ func (s *Server) adminRegisterOfflineUpdateFile(c *gin.Context) {
 			return
 		}
 	}
+	if partInfo, lookupErr := session.Lstat(name + ".part"); lookupErr == nil {
+		if !partInfo.Mode().IsRegular() {
+			c.JSON(http.StatusConflict, gin.H{"error": "offline_partial_file_invalid"})
+			return
+		}
+	} else if !errors.Is(lookupErr, os.ErrNotExist) {
+		offlineImportError(c, lookupErr)
+		return
+	}
 	part, err := session.OpenFile(name+".part", os.O_WRONLY|os.O_CREATE, 0o660)
 	if err != nil {
 		offlineImportError(c, err)
@@ -446,6 +454,11 @@ func (s *Server) adminUploadOfflineUpdateChunk(c *gin.Context) {
 		return
 	} else if !errors.Is(err, os.ErrNotExist) {
 		offlineImportError(c, err)
+		return
+	}
+	partInfo, err := session.Lstat(name + ".part")
+	if err != nil || !partInfo.Mode().IsRegular() {
+		c.JSON(http.StatusConflict, gin.H{"error": "offline_partial_file_invalid"})
 		return
 	}
 	part, err := session.OpenFile(name+".part", os.O_RDWR, 0)
@@ -557,6 +570,11 @@ func (s *Server) adminFinalizeOfflineUpdateFile(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "offline_final_file_identity_mismatch"})
 		return
 	}
+	partInfo, err := session.Lstat(name + ".part")
+	if err != nil || !partInfo.Mode().IsRegular() {
+		c.JSON(http.StatusConflict, gin.H{"error": "offline_partial_file_invalid"})
+		return
+	}
 	digest, err := offlineImportDigest(session, name+".part", meta.Size)
 	if err != nil || digest != meta.SHA256 {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "offline_upload_sha256_mismatch"})
@@ -578,4 +596,3 @@ func (s *Server) adminFinalizeOfflineUpdateFile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"name": name, "state": "ready"})
 }
 
-var _ = fmt.Sprintf
