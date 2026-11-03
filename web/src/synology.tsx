@@ -11,6 +11,8 @@ import { XDriveDSMLoginNoCommitError } from '@xdrive/ui/mui'
 import type { XDriveSynologyBackupLocalClient } from '@xdrive/ui/mui'
 import './styles.css'
 import { createXDriveSynologyHost } from './synologyHost'
+import { normalizeXDriveAppearance, type XDriveAppearance } from '../../ui/shared/src/preferences'
+import { xDriveBrowserStorageRead, xDriveBrowserStorageWrite } from './browserSafeStorage'
 import { readDSMLoginDraft, saveDSMLoginDraft } from './synologyLoginDraft'
 import { xDriveDSMLoginInputError, xDriveDSMLoginOwnerError } from './synologyLoginPreflight'
 
@@ -328,7 +330,7 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
           subtitle="DSM 与 Desktop 共用设置对话框；Server 登录使用本机受限 Agent。"
         >
           <Typography variant="body2" color="text.secondary">
-            外观仅在当前窗口生效。Server 登录由受限 Agent 管理；备份源授权和套件设置仍遵循 DSM 权限。
+            外观偏好仅保存在当前 DSM 浏览器中。Server 登录由受限 Agent 管理；备份源授权和套件设置仍遵循 DSM 权限。
           </Typography>
           {host.services?.localBackupClient ? (
             <SynologyServerConnectionSettings open={settingsOpen} client={host.services.localBackupClient} />
@@ -343,12 +345,19 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
 
 const root = document.getElementById('root')
 if (!root) throw new Error('DSM authenticated xDrive application root missing')
+const DSM_APPEARANCE_KEY = 'xdrive.dsm.appearance.v1'
 function SynologyApp() {
-  const [appearance, setAppearance] = useState<'system' | 'light' | 'dark'>('system')
+  const [appearance, setAppearance] = useState<XDriveAppearance>(
+    () => normalizeXDriveAppearance(xDriveBrowserStorageRead(DSM_APPEARANCE_KEY)),
+  )
+  const updateAppearance = (next: XDriveAppearance) => {
+    xDriveBrowserStorageWrite(DSM_APPEARANCE_KEY, next)
+    setAppearance(next)
+  }
   return (
     <XDriveAppearanceThemeProvider appearance={appearance}>
       {host ? (
-        <SynologyWorkspace host={host} appearance={appearance} onAppearanceChange={setAppearance} />
+        <SynologyWorkspace host={host} appearance={appearance} onAppearanceChange={updateAppearance} />
       ) : (
         <Box component="main" role="alert" sx={{ p: 3 }}>
           <Typography variant="h6">DSM 连接需要 HTTPS</Typography>
