@@ -3012,7 +3012,7 @@ export default function App({
       taskCenterPage: {
     ...taskCenter.pageProps,
     syncActivity: syncActivityDataSource,
-    syncActivitySessionKey: `${status?.server ?? ''}\\0${status?.username ?? ''}`,
+    syncActivitySessionKey: JSON.stringify([status?.server ?? '', status?.username ?? '']),
     globalTasksEnabled: status?.role === 'admin',
     globalTasksAvailable: Boolean(taskCenter.pageProps.globalTasksEnabled),
     backgroundScope: view === 'global-tasks' ? 'global' : 'mine',

@@ -117,12 +117,26 @@ func Open(path, owner string) (*Store, error) {
   "PRAGMA synchronous=FULL",
   "PRAGMA foreign_keys=ON",
   "CREATE TABLE IF NOT EXISTS activity_owner (singleton INTEGER PRIMARY KEY CHECK(singleton=1), owner TEXT NOT NULL, version INTEGER NOT NULL)",
-  "CREATE TABLE IF NOT EXISTS sync_runs (run_id TEXT PRIMARY KEY, engine TEXT NOT NULL, trigger_kind TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, status TEXT NOT NULL, outcome TEXT NOT NULL DEFAULT 'unknown', detail_complete INTEGER NOT NULL DEFAULT 0, details_expired INTEGER NOT NULL DEFAULT 0, item_count INTEGER NOT NULL DEFAULT 0, successful_count INTEGER NOT NULL DEFAULT 0, created_count INTEGER NOT NULL DEFAULT 0, updated_count INTEGER NOT NULL DEFAULT 0, deleted_count INTEGER NOT NULL DEFAULT 0, moved_count INTEGER NOT NULL DEFAULT 0, renamed_count INTEGER NOT NULL DEFAULT 0, uploaded_count INTEGER NOT NULL DEFAULT 0, downloaded_count INTEGER NOT NULL DEFAULT 0, skipped_count INTEGER NOT NULL DEFAULT 0, failed_count INTEGER NOT NULL DEFAULT 0, conflict_count INTEGER NOT NULL DEFAULT 0, transferred_bytes INTEGER)",
+  "CREATE TABLE IF NOT EXISTS sync_runs (run_id TEXT PRIMARY KEY, engine TEXT NOT NULL, trigger_kind TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, status TEXT NOT NULL, outcome TEXT NOT NULL DEFAULT 'unknown', detail_complete INTEGER NOT NULL DEFAULT 0, details_expired INTEGER NOT NULL DEFAULT 0, item_count INTEGER NOT NULL DEFAULT 0, successful_count INTEGER NOT NULL DEFAULT 0, created_count INTEGER NOT NULL DEFAULT 0, updated_count INTEGER NOT NULL DEFAULT 0, deleted_count INTEGER NOT NULL DEFAULT 0, moved_count INTEGER NOT NULL DEFAULT 0, renamed_count INTEGER NOT NULL DEFAULT 0, uploaded_count INTEGER NOT NULL DEFAULT 0, downloaded_count INTEGER NOT NULL DEFAULT 0, skipped_count INTEGER NOT NULL DEFAULT 0, failed_count INTEGER NOT NULL DEFAULT 0, conflict_count INTEGER NOT NULL DEFAULT 0, transferred_bytes INTEGER, unmeasured_network_count INTEGER NOT NULL DEFAULT 0)",
   "CREATE INDEX IF NOT EXISTS idx_sync_runs_recent ON sync_runs(started_at DESC, run_id DESC)",
   "CREATE TABLE IF NOT EXISTS sync_items (run_id TEXT NOT NULL REFERENCES sync_runs(run_id) ON DELETE CASCADE, item_id TEXT NOT NULL, operation_kind TEXT NOT NULL, direction TEXT NOT NULL, status TEXT NOT NULL, old_path TEXT NOT NULL, new_path TEXT NOT NULL, logical_bytes INTEGER, transferred_bytes INTEGER, error_code TEXT NOT NULL, error_message TEXT NOT NULL, applied_at INTEGER NOT NULL, PRIMARY KEY(run_id, item_id))",
   "CREATE INDEX IF NOT EXISTS idx_sync_items_recent ON sync_items(run_id, applied_at DESC, item_id DESC)",
  } {
   if _, err := db.ExecContext(ctx, q); err != nil { return fail(fmt.Errorf("sync activity setup: %w", err)) }
+ }
+ // Allow the new accounting column when opening a database created by the
+ // earlier preview schema. Its previous aggregate cannot prove completeness.
+ var hadUnmeasured int
+ if err := db.QueryRowContext(ctx,"SELECT COUNT(*) FROM pragma_table_info('sync_runs') WHERE name='unmeasured_network_count'").Scan(&hadUnmeasured);err!=nil {
+  return fail(err)
+ }
+ if hadUnmeasured==0 {
+  if _,err:=db.ExecContext(ctx,"ALTER TABLE sync_runs ADD COLUMN unmeasured_network_count INTEGER NOT NULL DEFAULT 0");err!=nil {
+   return fail(err)
+  }
+  if _,err:=db.ExecContext(ctx,"UPDATE sync_runs SET transferred_bytes=NULL");err!=nil {
+   return fail(err)
+  }
  }
  // This identity seal prevents an old account's rows being opened as another.
  if _, err := db.ExecContext(ctx, "INSERT OR IGNORE INTO activity_owner(singleton,owner,version) VALUES (1,?,1)", owner); err != nil {
@@ -229,13 +243,15 @@ func (s *Store) AppendBatch(ctx context.Context, items []Item) error {
   hit:=func(action string)int64{if successful && x.Action==action{return 1};return 0}
   cnt:=func(ok bool)int64{if ok{return 1};return 0}
   var network sql.NullInt64
-  if successful && (x.Direction=="upload" || x.Direction=="download"){network=nullInt(x.TransferredBytes)}
+  networkTransfer:=successful && (x.Direction=="upload" || x.Direction=="download")
+  if networkTransfer {network=nullInt(x.TransferredBytes)}
+  unmeasured:=cnt(networkTransfer && !network.Valid)
   _,err=tx.ExecContext(ctx,
-   "UPDATE sync_runs SET item_count=item_count+1,successful_count=successful_count+?, created_count=created_count+?,updated_count=updated_count+?,deleted_count=deleted_count+?,moved_count=moved_count+?,renamed_count=renamed_count+?,uploaded_count=uploaded_count+?,downloaded_count=downloaded_count+?,skipped_count=skipped_count+?,failed_count=failed_count+?,conflict_count=conflict_count+?,transferred_bytes=CASE WHEN ? IS NULL THEN transferred_bytes ELSE COALESCE(transferred_bytes,0)+? END WHERE run_id=?",
+   "UPDATE sync_runs SET item_count=item_count+1,successful_count=successful_count+?, created_count=created_count+?,updated_count=updated_count+?,deleted_count=deleted_count+?,moved_count=moved_count+?,renamed_count=renamed_count+?,uploaded_count=uploaded_count+?,downloaded_count=downloaded_count+?,skipped_count=skipped_count+?,failed_count=failed_count+?,conflict_count=conflict_count+?,unmeasured_network_count=unmeasured_network_count+?,transferred_bytes=CASE WHEN unmeasured_network_count>0 OR ?>0 THEN NULL WHEN ? IS NULL THEN transferred_bytes ELSE COALESCE(transferred_bytes,0)+? END WHERE run_id=?",
    cnt(successful),hit("create"),hit("update"),hit("delete"),hit("move"),hit("rename"),
    cnt(successful&&x.Direction=="upload"),cnt(successful&&x.Direction=="download"),
    cnt(x.Status=="skipped"),cnt(x.Status=="failed"),cnt(x.Status=="conflict"),
-   network,network,x.RunID)
+   unmeasured,unmeasured,network,network,x.RunID)
   if err!=nil{return err}
  }
  return tx.Commit()

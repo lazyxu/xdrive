@@ -71,3 +71,6 @@ func TestDesktopSyncActivityUnsupportedFakeIsNotAvailable(t *testing.T){
  res:=desktopIPCRequest(t,handler,http.MethodGet,"/v1/sync/runs?limit=1","")
  if res.Code!=http.StatusNotImplemented{t.Fatalf("unexpected unsupported reader status=%d body=%s",res.Code,res.Body.String())}
 }
+
+// The cursor timestamp must remain a JSON string. UnixNano is well beyond
+// JavaScript Number.MAX_SAFE_INTEGER even for contemporary run dates.

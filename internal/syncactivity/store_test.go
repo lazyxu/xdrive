@@ -165,3 +165,17 @@ func TestUnitemizedEngineFailureCanClosePartialRun(t *testing.T) {
   t.Fatalf("empty unknown operation cannot be declared partial: %v",err)
  }
 }
+
+func TestTransferredBytesStayUnknownIfAnyNetworkOperationIsUnmeasured(t *testing.T) {
+ ctx:=context.Background()
+ s:=openTestStore(t)
+ beginRun(t,s,"mixed-byte-coverage",time.Now().UTC())
+ if err:=s.Append(ctx,item("mixed-byte-coverage","first","create","upload",ptr(100),ptr(80)));err!=nil{t.Fatal(err)}
+ if err:=s.Append(ctx,item("mixed-byte-coverage","unknown","update","download",ptr(50),nil));err!=nil{t.Fatal(err)}
+ if err:=s.Append(ctx,item("mixed-byte-coverage","last","create","upload",ptr(20),ptr(20)));err!=nil{t.Fatal(err)}
+ run,err:=s.Get(ctx,"mixed-byte-coverage")
+ if err!=nil {t.Fatal(err)}
+ if run.Stats.Uploaded!=2 || run.Stats.Downloaded!=1 || run.Stats.TransferredBytes!=nil {
+  t.Fatalf("partially measured traffic was presented as the full network total: %+v",run)
+ }
+}

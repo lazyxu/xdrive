@@ -3646,7 +3646,7 @@ function registerIPCHandlers() {
 
   const validatedSyncRunID = (value: unknown) => {
     if (typeof value !== 'string' || value.length < 1 || value.length > 128 ||
-        value.trim() !== value || value.includes('\\0')) {
+        value.trim() !== value || value.includes('\0')) {
       throw new AgentIPCError('invalid_input', 0, 'Invalid sync run ID.')
     }
     return value

@@ -249,7 +249,7 @@ export function XDriveSyncActivityPanel({
   }, [source, sessionKey, cursor, refresh])
 
   return (
-    <Stack spacing={1.25} data-xdrive-sync-activity={sessionKey}>
+    <Stack spacing={1.25} data-xdrive-sync-activity="active">
       <Stack direction="row" alignItems="center" justifyContent="space-between">
         <Typography variant="body2" color="text.secondary">仅记录当前 Windows 设备、当前账号的本机同步。</Typography>
         <Button size="small" onClick={() => {
