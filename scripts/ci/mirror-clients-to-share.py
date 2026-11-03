@@ -6,6 +6,7 @@ The share URL and optional password come only from runner secrets.
 """
 from __future__ import annotations
 
+from datetime import datetime
 import argparse
 import hashlib
 import hmac
@@ -24,14 +25,76 @@ import zipfile
 
 CHUNK_SIZE = 8 * 1024 * 1024
 MAX_FILE_SIZE = 256 * 1024 * 1024
-PLATFORMS = {"windows": ".exe", "linux": ".deb", "dsm": ".spk", "android": ".apk", "ios": ".ipa"}
-SHA_RE = re.compile(r"^[a-f0-9]{40}$")
+# Plan B: flat product-category directories within the Share root.
+# The separate signed xDrive-Server/{packages,master} namespace is unchanged.
+PLATFORMS = {
+    'windows': '.exe', 'linux': '.deb', 'dsm': '.spk',
+    'android': '.apk', 'ios': '.ipa',
+    'backup-linux': '.tar.gz', 'backup-windows': '.zip',
+    'agent-linux-amd64': '', 'agent-linux-arm64': '',
+}
+GROUPS = {
+    'windows': 'Desktop', 'linux': 'Desktop', 'dsm': 'DSM',
+    'android': 'Mobile', 'ios': 'Mobile',
+    'backup-linux': 'Backup-CLI', 'backup-windows': 'Backup-CLI',
+    'agent-linux-amd64': 'Source-Agent', 'agent-linux-arm64': 'Source-Agent',
+}
+ORIGINAL_NAMES = {
+    'windows': 'xDriveSetup-amd64.exe',
+    'linux': 'xdrive-linux-amd64.deb',
+    'ios': 'xDrive-unsigned.ipa',
+    'backup-linux': 'xdrive-backup-linux-amd64.tar.gz',
+    'backup-windows': 'xdrive-backup-windows-amd64.zip',
+    'agent-linux-amd64': 'xdrive-source-agent-linux-amd64',
+    'agent-linux-arm64': 'xdrive-source-agent-linux-arm64',
+}
+SHA_RE = re.compile(r'^[a-f0-9]{40}$')
+UTC_RE = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$')
 DIGEST_RE = re.compile(r"^[a-f0-9]{64}$")
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 
 
 class MirrorError(Exception):
     pass
+
+
+def published_name(platform: str, original: str, commit: str, source_time: str) -> str:
+    """Use the immutable source commit timestamp (UTC), not the mirror's upload time."""
+    if platform not in GROUPS or not isinstance(commit, str) or not SHA_RE.fullmatch(commit):
+        raise MirrorError('Invalid release source identity')
+    if not isinstance(source_time, str) or not UTC_RE.fullmatch(source_time):
+        raise MirrorError('Invalid UTC source commit timestamp')
+    try:
+        stamp = datetime.strptime(source_time, '%Y-%m-%dT%H:%M:%SZ').strftime('%Y%m%dT%H%M%SZ')
+    except ValueError as error:
+        raise MirrorError('Invalid UTC source commit timestamp') from error
+    short = commit[:12]
+    if platform in ORIGINAL_NAMES and original != ORIGINAL_NAMES[platform]:
+        raise MirrorError('Unexpected source artifact filename')
+    if platform == 'windows':
+        return f'xDriveSetup-master-{stamp}-{short}-win-amd64.exe'
+    if platform == 'linux':
+        return f'xDriveDesktop-master-{stamp}-{short}-linux-amd64.deb'
+    if platform == 'android':
+        if original != f'xdrive-android-master-{short}-debug.apk':
+            raise MirrorError('Android artifact does not match its source commit')
+        return f'xDrive-master-{stamp}-{short}-android-debug.apk'
+    if platform == 'ios':
+        return f'xDrive-master-{stamp}-{short}-ios-unsigned.ipa'
+    if platform == 'dsm':
+        match = re.fullmatch(r'xdrivenas-armada38x-([0-9][0-9A-Za-z.-]{0,60})\.spk', original)
+        if not match:
+            raise MirrorError('Unexpected DSM SPK filename')
+        return f'xdrivenas-master-{stamp}-{short}-dsm-armada38x-{match.group(1)}.spk'
+    if platform == 'backup-linux':
+        return f'xdrive-backup-master-{stamp}-{short}-linux-amd64.tar.gz'
+    if platform == 'backup-windows':
+        return f'xdrive-backup-master-{stamp}-{short}-win-amd64.zip'
+    if platform == 'agent-linux-amd64':
+        return f'xdrive-source-agent-master-{stamp}-{short}-linux-amd64'
+    if platform == 'agent-linux-arm64':
+        return f'xdrive-source-agent-master-{stamp}-{short}-linux-arm64'
+    raise MirrorError('Unsupported release platform')
 
 
 def sha256_file(path: Path) -> str:
@@ -53,15 +116,22 @@ def validate_source(path: Path, platform: str) -> None:
         raise MirrorError('Windows installer lacks PE envelope')
     if platform == 'linux' and signature != b'!<arch>\n':
         raise MirrorError('Linux installer lacks Debian archive envelope')
-    if platform in ('android', 'ios'):
+    if platform in ('android', 'ios', 'backup-windows'):
         if signature[:2] != b'PK':
-            raise MirrorError(f'{platform} installer is not a ZIP')
+            raise MirrorError(f'{platform} artifact is not ZIP')
         with zipfile.ZipFile(path) as archive:
             names = archive.namelist()
             if platform == 'android' and 'AndroidManifest.xml' not in names:
                 raise MirrorError('Android APK has no manifest')
             if platform == 'ios' and not any(re.fullmatch(r'Payload/[^/]+\.app/Info\.plist', n) for n in names):
                 raise MirrorError('iOS IPA has no app Info.plist')
+            if platform == 'backup-windows' and not names:
+                raise MirrorError('Empty Backup CLI ZIP')
+    if platform == 'backup-linux' and signature[:2] != b'\x1f\x8b':
+        raise MirrorError('Linux Backup CLI is not gzip')
+    if platform.startswith('agent-') and (signature[:4] != b'\x7fELF' or
+                                          len(signature) < 8 or signature[4] != 2):
+        raise MirrorError('Source Agent is not a 64-bit ELF executable')
     # DSM's signed checksum and real XZ/GUI envelope are validated before
     # plan creation by scripts/ci/verify-synology-spk-release.sh.
 
@@ -80,6 +150,10 @@ def build_manifest(staging: Path, with_dsm: bool) -> dict:
         'linux': (staging / 'snapshot' / 'xdrive-linux-amd64.deb', meta / 'snapshot.sha'),
         'android': (find_one(staging / 'android', '*.apk'), meta / 'android.sha'),
         'ios': (find_one(staging / 'ios', '*.ipa'), meta / 'ios.sha'),
+        'backup-linux': (staging / 'snapshot' / 'xdrive-backup-linux-amd64.tar.gz', meta / 'snapshot.sha'),
+        'backup-windows': (staging / 'snapshot' / 'xdrive-backup-windows-amd64.zip', meta / 'snapshot.sha'),
+        'agent-linux-amd64': (staging / 'snapshot' / 'xdrive-source-agent-linux-amd64', meta / 'snapshot.sha'),
+        'agent-linux-arm64': (staging / 'snapshot' / 'xdrive-source-agent-linux-arm64', meta / 'snapshot.sha'),
     }
     if with_dsm:
         source['dsm'] = (find_one(staging / 'snapshot', 'xdrivenas-armada38x-*.spk'), meta / 'snapshot.sha')
@@ -88,39 +162,50 @@ def build_manifest(staging: Path, with_dsm: bool) -> dict:
         commit = sha_path.read_text(encoding='ascii').strip()
         if not SHA_RE.fullmatch(commit):
             raise MirrorError(f'Invalid {platform} source commit')
-        if path.suffix != PLATFORMS[platform]:
+        if not path.name.endswith(PLATFORMS[platform]) or (
+                platform in ('windows', 'linux', 'dsm', 'android', 'ios') and
+                path.suffix != PLATFORMS[platform]):
             raise MirrorError(f'Unexpected {platform} installer suffix')
+        source_time = sha_path.with_suffix('.time').read_text(encoding='ascii').strip()
+        archive_name = published_name(platform, path.name, commit, source_time)
         validate_source(path, platform)
         items.append({
-            'platform': platform,
-            'commit': commit,
-            'path': str(path.resolve()),
-            'name': path.name,
-            'size': path.stat().st_size,
-            'sha256': sha256_file(path),
+            'platform': platform, 'commit': commit, 'source_time': source_time,
+            'path': str(path.resolve()), 'name': path.name,
+            'published_name': archive_name,
+            'size': path.stat().st_size, 'sha256': sha256_file(path),
         })
-    return {'schema': 1, 'items': items}
+    return {'schema': 2, 'items': items}
 
 
 def validate_manifest(manifest: dict) -> list[dict]:
-    if manifest.get('schema') != 1 or not isinstance(manifest.get('items'), list):
+    if manifest.get('schema') != 2 or not isinstance(manifest.get('items'), list):
         raise MirrorError('Unsupported manifest')
     if not 1 <= len(manifest['items']) <= len(PLATFORMS):
         raise MirrorError('Unexpected installer count')
     found = set()
+    published_paths = set()
     for item in manifest['items']:
         platform = item.get('platform')
         if platform not in PLATFORMS or platform in found:
             raise MirrorError('Invalid or duplicate platform')
         found.add(platform)
         name, commit, digest, size = (item.get(k) for k in ('name', 'commit', 'sha256', 'size'))
+        published = item.get('published_name')
         if (not isinstance(name, str) or len(name) > 160 or
             '/' in name or '\\' in name or name != Path(name).name or
             not name.endswith(PLATFORMS[platform]) or
             not isinstance(commit, str) or not SHA_RE.fullmatch(commit) or
             not isinstance(digest, str) or not DIGEST_RE.fullmatch(digest) or
-            type(size) is not int or not 0 < size <= MAX_FILE_SIZE):
+            type(size) is not int or not 0 < size <= MAX_FILE_SIZE or
+            not isinstance(published, str) or len(published) > 190):
             raise MirrorError(f'Invalid manifest entry for {platform}')
+        if published != published_name(platform, name, commit, item.get('source_time')):
+            raise MirrorError(f'Archive filename does not match signed {platform} source')
+        published_path = (GROUPS[platform], published)
+        if published_path in published_paths:
+            raise MirrorError('Duplicate archive path')
+        published_paths.add(published_path)
         path = Path(item.get('path', ''))
         validate_source(path, platform)
         if path.name != name or path.stat().st_size != size or sha256_file(path) != digest:
@@ -312,21 +397,23 @@ def publish(manifest: dict, share: Share) -> list[tuple[str, str, str]]:
     for item in items:
         platform, commit = item['platform'], item['commit']
         folder = 0
-        for segment in ('xDrive-Clients', platform, commit[:12]):
-            folder = share.directory(folder, segment)
+        # Share root is /xDrive Release; keep legacy xDrive-Clients untouched.
+        # Shared CAS quick transfer can reuse existing bytes without chunks.
+        folder = share.directory(folder, GROUPS[platform])
         path = Path(item['path'])
-        result = share.upload(folder, item['name'], path, item['sha256'], platform, commit)
+        archived_name = item['published_name']
+        result = share.upload(folder, archived_name, path, item['sha256'], platform, commit)
         # Small immutable checksum sidecar; generated only after the binary is
         # successfully finalized or verified present under the same SHA folder.
         checksum_path = path.with_name(path.name + '.sha256.mirror-temp')
         try:
-            checksum_path.write_text(f"{item['sha256']}  {item['name']}\n", encoding='ascii')
-            share.upload(folder, item['name'] + '.sha256', checksum_path,
+            checksum_path.write_text(f"{item['sha256']}  {archived_name}\n", encoding='ascii')
+            share.upload(folder, archived_name + '.sha256', checksum_path,
                          sha256_file(checksum_path), platform, commit)
         finally:
             checksum_path.unlink(missing_ok=True)
         results.append((platform, commit[:12], result))
-        print(f'{platform}: {result}, {item["size"]} bytes, commit {commit[:12]}')
+        print(f'{GROUPS[platform]}/{archived_name}: {result}, {item["size"]} bytes, commit {commit[:12]}')
     return results
 
 
@@ -345,7 +432,7 @@ def main() -> int:
             document = build_manifest(args.staging, args.include_dsm)
             args.manifest.write_text(json.dumps(document, indent=2) + '\n', encoding='utf-8')
             for item in document['items']:
-                print(f"{item['platform']}: {item['size']} bytes, source {item['commit'][:12]}, SHA256 {item['sha256']}")
+                print(f"{GROUPS[item['platform']]}/{item['published_name']}: {item['size']} bytes, source {item['commit'][:12]}, SHA256 {item['sha256']}")
         else:
             url = os.environ.get('XDRIVE_CLIENT_MIRROR_SHARE_URL', '')
             if not url:
