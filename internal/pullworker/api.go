@@ -21,6 +21,8 @@ type OwnerSourceAPI struct {
 	auth      auth.Manager
 	owner     meta.User
 	cancelRun context.CancelFunc
+	sourceID  uint64
+	runID     string
 }
 
 func NewOwnerSourceAPI(serverURL, jwtSecret string, owner meta.User) (*OwnerSourceAPI, error) {
@@ -40,6 +42,13 @@ func (a *OwnerSourceAPI) SetCancelRun(cancel context.CancelFunc) {
 	a.cancelRun = cancel
 }
 
+// The current run's signed capability is never issued to the browser or
+// Desktop Agent. Each OwnerSourceAPI belongs to exactly one Pull session.
+func (a *OwnerSourceAPI) SetSourceRun(sourceID uint64, runID string) {
+	a.sourceID = sourceID
+	a.runID = runID
+}
+
 func (a *OwnerSourceAPI) handleRunControlError(err error) error {
 	if !IsCancellationRequested(err) {
 		return err
@@ -51,7 +60,13 @@ func (a *OwnerSourceAPI) handleRunControlError(err error) error {
 }
 
 func (a *OwnerSourceAPI) client() (*client.Client, error) {
-	token, err := a.auth.Issue(a.owner.ID, a.owner.SessionVersion)
+	var token string
+	var err error
+	if a.sourceID != 0 && a.runID != "" {
+		token, err = a.auth.IssueSourceRunAccess(a.owner.ID, a.owner.SessionVersion, a.sourceID, a.runID)
+	} else {
+		token, err = a.auth.Issue(a.owner.ID, a.owner.SessionVersion)
+	}
 	if err != nil {
 		return nil, err
 	}
