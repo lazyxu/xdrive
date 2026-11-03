@@ -65,7 +65,7 @@ func splitLegacyYikeMixedTargetTx(
 			" WHERE p.owner_id = ? AND p.deleted_at IS NULL AND NOT p.id = ANY(a.visited)"+
 			"), descendants AS ("+
 			" SELECT id FROM xd_nodes WHERE id = ? AND owner_id = ? AND deleted_at IS NULL"+
-			" UNION ALL SELECT n.id FROM xd_nodes n JOIN descendants d ON n.parent_id = d.id"+
+			" UNION SELECT n.id FROM xd_nodes n JOIN descendants d ON n.parent_id = d.id"+
 			" WHERE n.owner_id = ? AND n.deleted_at IS NULL"+
 			") SELECT EXISTS (SELECT 1 FROM xd_sources s WHERE s.owner_id = ?"+
 			" AND s.id <> ? AND (s.target_node_id IN (SELECT id FROM ancestors)"+
