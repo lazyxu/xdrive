@@ -73,7 +73,7 @@ test('Viewer crossing revokes previous signed media and Photos restore before op
   assert.match(preview, /visibleRange\?\.sameVisibleSnapshot\(as: previous\) == true/)
   assert.match(preview, /guard onCrossedRange\?\(next, nextPage\) == true/)
   assert.match(preview, /cancelPhotosRestore\(\)\s*retirePreview\(\)\s*crossedRange = nextPage\s*activeItem = next/)
-  assert.match(preview, /if phase != \.active \{ cancelRangeCrossing\(\) \}/)
+  assert.match(preview, /if phase != \.active \{\s*showChrome = true\s*cancelRangeCrossing\(\)\s*\}/)
   assert.match(preview, /\.onChange\(of: login\.owner\) \{ _ in\s*cancelRangeCrossing\(\)/)
   assert.match(preview, /\.onDisappear \{ cancelRangeCrossing\(\) \}/)
   assert.match(preview, /native-ios-photoasset-viewer-range-loading/)

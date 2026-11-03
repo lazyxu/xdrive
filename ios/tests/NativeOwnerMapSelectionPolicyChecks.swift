@@ -30,6 +30,26 @@ struct NativeOwnerMapSelectionPolicyChecks {
             currentlyVisibleIDs: ["place:1:3"]))
         precondition(!policy.acceptsSelectedPlace("place:1:2",
             currentlyVisibleIDs: ["place:1:2","place:1:2"]))
+        let cloudPicked = [
+            facet("place:3500:13900", count: 2),
+            facet("place:3500:13901", count: 4)
+        ]
+        let signedPlaces = cloudPicked + [facet("place:3500:13902", count: 1)]
+        precondition(policy.acceptsSelectedCluster(
+            cloudPicked, currentlyVisible: signedPlaces))
+        precondition(!policy.acceptsSelectedCluster(
+            [cloudPicked[0]], currentlyVisible: signedPlaces))
+        precondition(!policy.acceptsSelectedCluster(
+            cloudPicked + [cloudPicked[0]], currentlyVisible: signedPlaces))
+        precondition(!policy.acceptsSelectedCluster(
+            cloudPicked, currentlyVisible: [cloudPicked[0]]))
+        precondition(!policy.acceptsSelectedCluster(
+            [cloudPicked[0], facet("place:3500:13901", count: 5)],
+            currentlyVisible: signedPlaces))
+        precondition(!policy.acceptsSelectedCluster(
+            [cloudPicked[0], facet("map-region:q:0:0:1:1:0:0",
+                                   kind: "map_region_sample", count: 5)],
+            currentlyVisible: signedPlaces))
         let world = policy.viewportBounds(
             latitude: 0, longitude: 0, latitudeSpan: 160, longitudeSpan: 360)
         precondition(world?.west == -180 && world?.east == 180)

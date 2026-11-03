@@ -31,11 +31,13 @@ caddy="$(image xdrive-caddy)"
 media="$(image xdrive-media-worker)"
 face="$(image xdrive-photo-face)"
 
-docker run --rm "$server" version | grep -Fqx "server version: $XDRIVE_RELEASE_VERSION"
-docker run --rm "$caddy" caddy list-modules | grep -q '^dns.providers.alidns$'
+# Drain stdout through EOF: grep -q can close a successful Docker stream early
+# and fail it with a broken pipe. Keep pipefail to propagate real run failures.
+docker run --rm "$server" version | grep -Fx "server version: $XDRIVE_RELEASE_VERSION" >/dev/null
+docker run --rm "$caddy" caddy list-modules | grep -Fx 'dns.providers.alidns' >/dev/null
 docker run --rm "$caddy" caddy validate --config /etc/caddy/Caddyfile.http --adapter caddyfile
-docker run --rm --entrypoint /usr/bin/ffmpeg "$media" -version | grep -q '^ffmpeg version '
-docker run --rm --entrypoint /usr/bin/ffprobe "$media" -version | grep -q '^ffprobe version '
+docker run --rm --entrypoint /usr/bin/ffmpeg "$media" -version | grep '^ffmpeg version ' >/dev/null
+docker run --rm --entrypoint /usr/bin/ffprobe "$media" -version | grep '^ffprobe version ' >/dev/null
 docker run --rm "$face" --self-test
 
 echo "GitLab master images passed post-release smoke (diagnostic only)"

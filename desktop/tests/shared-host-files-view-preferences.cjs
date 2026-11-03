@@ -127,7 +127,9 @@ test('denied persistence cannot unmount FileExplorer or elevate an Owner action'
     Renderer.act(() => renderer.unmount())
   })
   const dsm = read('ui/shared/src/mui/SynologyOwnerFilesPage.tsx')
-  assert.match(dsm, /unavailableActions=\{unavailableActions\}/)
+  assert.match(dsm, /unavailableActions=\{search\.current/)
+  assert.match(dsm, /: unavailableActions\}/)
+  assert.match(dsm, /currentScopeVerified/)
   assert.match(dsm, /currentScopeVerified/)
   assert.match(dsm, /isCurrentOwner/)
   // This appearance-only module documents that it does not store credentials;

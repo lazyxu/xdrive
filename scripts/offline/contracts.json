@@ -1,0 +1,6 @@
+{
+  "postgres_major": 17,
+  "media_worker_api": 1,
+  "photo_intelligence_api": 1,
+  "model_runtime_api": 1
+}

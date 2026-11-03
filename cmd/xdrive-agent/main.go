@@ -49,6 +49,12 @@ func runAgent() int {
 			return 0
 		}
 		writeEarlyError(err)
+		// DSM Backup-only must signal failed startup to Package Center and
+		// service supervisors instead of reporting a clean exit with no Agent.
+		// Preserve the original Desktop Agent behavior outside Backup-only.
+		if backupOnly {
+			return 1
+		}
 		return 0
 	}
 	defer closeInstance()
