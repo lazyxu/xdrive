@@ -51,8 +51,9 @@ func (s *Server) issueLegacySourceRunWriteGrant(c *gin.Context) {
   }
   return
  }
- user,ok:=currentUser(c)
- if !ok {fail(c,http.StatusUnauthorized,"owner required");return}
+ userValue,exists:=c.Get("user")
+ user,ok:=userValue.(meta.User)
+ if !exists || !ok || user.ID==0 {fail(c,http.StatusUnauthorized,"owner required");return}
  token,err:=s.Auth.IssueSourceRunAccessTTL(user.ID,user.SessionVersion,source.ID,run.ID,sourceRunAgentGrantTTL)
  if err!=nil {fail(c,http.StatusInternalServerError,"source run grant unavailable");return}
  c.Header("Cache-Control","no-store")
