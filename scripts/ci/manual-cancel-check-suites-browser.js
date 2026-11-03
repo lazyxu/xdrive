@@ -134,13 +134,9 @@
       first.match(/\/commit\/([a-f0-9]{40})/i)?.[1];
     if (!shaPattern.test(master || "")) throw new Error("无法识别当前 master SHA");
 
-    // 优先读取浏览器已渲染的 Actions 列表，再扫描同源页面。
-    // fetch(HTML) 不会执行页面 JavaScript，因此不能只依赖静态 <a>。
+    // 只读取带 master 分支过滤条件的 CI Workflow 列表。
+    // 不能混入当前页面的链接：当前页面可能是 PR/全部 Actions。
     const ids = new Set();
-    if (location.pathname.startsWith(root + "/actions")) {
-      for (const id of collectRunIds(document, [], document.documentElement.outerHTML))
-        ids.add(id);
-    }
     for (let page = 1; page <= pages; page++) {
       const html = await request(`${root}/actions/workflows/ci.yml?` +
         new URLSearchParams({ query: "branch:master", page }));
