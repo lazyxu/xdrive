@@ -6,6 +6,24 @@ import Foundation
         let step = p.afterWindow
         // Completed boundaries persist; a partially scanned capped window
         // and a fully completed final window have no next checkpoint.
+        precondition(p.canSaveCheckpoint(
+            completedWindow: 0, nextWindow: 1,
+            visibleTotal: 600, hadUnavailable: false
+        ))
+        precondition(!p.canSaveCheckpoint(
+            completedWindow: 0, nextWindow: 1,
+            visibleTotal: 600, hadUnavailable: true
+        ))
+        // A later clean window cannot leapfrog the first missing source.
+        let unresolvedInEarlierWindow = true
+        precondition(!p.canSaveCheckpoint(
+            completedWindow: 1, nextWindow: 2,
+            visibleTotal: 600, hadUnavailable: unresolvedInEarlierWindow
+        ))
+        precondition(!p.canSaveCheckpoint(
+            completedWindow: 0, nextWindow: 1,
+            visibleTotal: 256, hadUnavailable: false
+        ))
         precondition(p.validCheckpoint(completedWindow: 0, nextWindow: 1,
                                        visibleTotal: 600))
         precondition(p.validCheckpoint(completedWindow: 1, nextWindow: 2,
