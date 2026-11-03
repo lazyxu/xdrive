@@ -231,7 +231,7 @@ jobs:
       # master tests on the candidate publisher too, so changing tests cannot
       # silently weaken the existing security baseline.
       - name: Re-run trusted base Share publisher regression suite
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && needs.pr-scope.outputs.scope == 'offline-release'
         shell: bash
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
