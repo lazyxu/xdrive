@@ -574,7 +574,7 @@ internal fun NativeLocalMediaStoreGallery(
                 },
             )
             if (items.isNotEmpty()) Text(
-                "按加入时间定位 · 当前显示 ${items.size} 项",
+                "按拍摄时间定位 · 当前显示 ${items.size} 项",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 12.dp)
                     .testTag("native-local-date-window-scope"),
@@ -600,7 +600,7 @@ internal fun NativeLocalMediaStoreGallery(
             }
             if (fullDateIndex != null) Text(
                 if (fullDateIndex!!.complete)
-                    "日期索引已覆盖当前授权范围 ${fullDateIndex!!.scanned} 项（按加入时间）"
+                    "日期索引已覆盖当前授权范围 ${fullDateIndex!!.scanned} 项（按拍摄时间）"
                 else "仅覆盖前 ${fullDateIndex!!.scanned} 项；上限之外的日期未索引",
                 modifier = Modifier.padding(horizontal = 12.dp)
                     .testTag("native-local-full-date-status"),
@@ -745,7 +745,7 @@ internal fun NativeLocalMediaStoreGallery(
             )
         } else {
             val groups = remember(items, datePicker) {
-                nativeLocalDateWindowGroups(items.map { it.addedAtSeconds }, datePicker)
+                nativeLocalDateWindowGroups(items.map { it.capturedAtMillis }, datePicker)
             }
             NativeLocalDateWindowPicker(
                 scale = datePicker, groups = groups, loadedCount = items.size,

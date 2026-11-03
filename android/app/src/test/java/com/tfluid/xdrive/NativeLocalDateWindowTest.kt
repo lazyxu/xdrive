@@ -7,19 +7,19 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Exact bounded MediaStore DATE_ADDED grouping, never a full-library index. */
+/** Exact bounded MediaStore DATE_TAKEN grouping, never a full-library index. */
 class NativeLocalDateWindowTest {
-    private fun seconds(text: String) = Instant.parse(text).epochSecond
+    private fun millis(text: String) = Instant.parse(text).toEpochMilli()
     private val utc = ZoneId.of("UTC")
 
     @Test fun fourScalesAndContiguousPagesKeepExactLoadedIndices() {
         assertEquals(listOf("year","month","day","all"),
             nativeLocalDateWindowScales.map { it.first })
         val rows = listOf(
-            seconds("2026-11-01T10:00:00Z"),
-            seconds("2026-11-01T09:00:00Z"),
-            seconds("2026-10-31T23:00:00Z"),
-            seconds("2025-12-31T10:00:00Z"),
+            millis("2026-11-01T10:00:00Z"),
+            millis("2026-11-01T09:00:00Z"),
+            millis("2026-10-31T23:00:00Z"),
+            millis("2025-12-31T10:00:00Z"),
         )
         val months = nativeLocalDateWindowGroups(rows, "month", utc)
         assertEquals(listOf("2026-11","2026-10","2025-12"), months.map { it.key })
@@ -34,8 +34,8 @@ class NativeLocalDateWindowTest {
 
     @Test fun timezoneBoundaryAndUnknownTimestampsAreExplicit() {
         val rows = listOf(
-            seconds("2026-11-01T08:30:00Z"),
-            seconds("2026-11-01T06:30:00Z"),
+            millis("2026-11-01T08:30:00Z"),
+            millis("2026-11-01T06:30:00Z"),
             0L, -1L,
         )
         val groups = nativeLocalDateWindowGroups(rows, "day",
@@ -43,12 +43,12 @@ class NativeLocalDateWindowTest {
         assertEquals(listOf("2026-11-01","2026-10-31","unknown"),
             groups.map { it.key })
         assertEquals(listOf(1,1,2), groups.map { it.count })
-        assertEquals("加入日期未知", groups.last().label)
+        assertEquals("拍摄时间未知", groups.last().label)
     }
 
     @Test fun onlyBoundedRowsCanBuildAnIndex() {
         val items = List(NativeLocalMediaStore.MAX_WALL_ITEMS) {
-            seconds("2026-01-01T00:00:00Z")
+            millis("2026-01-01T00:00:00Z")
         }
         assertEquals(1, nativeLocalDateWindowGroups(items, "year", utc).size)
         assertThrows(IllegalArgumentException::class.java) {

@@ -25,7 +25,7 @@ class NativeLocalViewerLoadedNavigationTest {
     @Test fun rejectsEvictedOrReusedIdsWithChangedMediaKindAlbumOrTimestamp() {
         assertNull(nativeLocalViewerLoadedIndex(page, first.copy(isVideo = true)))
         assertNull(nativeLocalViewerNeighborIndex(page, second.copy(albumId = "other"), -1))
-        assertNull(nativeLocalViewerNeighborIndex(page, second.copy(addedAtSeconds = 3333), 1))
+        assertNull(nativeLocalViewerNeighborIndex(page, second.copy(capturedAtMillis = 3333), 1))
         assertNull(nativeLocalViewerNeighborIndex(emptyList(), first, 1))
     }
 

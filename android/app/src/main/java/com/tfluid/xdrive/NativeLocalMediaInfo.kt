@@ -31,6 +31,7 @@ internal data class NativeLocalMediaInfo(
     val width: Int? = null,
     val height: Int? = null,
     val takenAtMillis: Long? = null,
+    val addedAtSeconds: Long? = null,
     val durationMillis: Long? = null,
 )
 
@@ -51,6 +52,7 @@ internal suspend fun readNativeLocalMediaInfo(
         MediaStore.MediaColumns.WIDTH,
         MediaStore.MediaColumns.HEIGHT,
         MediaStore.MediaColumns.DATE_TAKEN,
+        MediaStore.MediaColumns.DATE_ADDED,
     ).let { if (asset.isVideo) it + MediaStore.Video.VideoColumns.DURATION else it }
         .toTypedArray()
     context.contentResolver.query(asset.uri, projection, null, null, null, signal)
@@ -74,6 +76,7 @@ internal suspend fun readNativeLocalMediaInfo(
                 height = long(MediaStore.MediaColumns.HEIGHT)
                     ?.takeIf { it in 1..100_000 }?.toInt(),
                 takenAtMillis = long(MediaStore.MediaColumns.DATE_TAKEN),
+                addedAtSeconds = long(MediaStore.MediaColumns.DATE_ADDED),
                 durationMillis = if (asset.isVideo)
                     long(MediaStore.Video.VideoColumns.DURATION) else null,
             )
@@ -195,7 +198,7 @@ internal fun NativeLocalMediaInfoAction(
                     is NativeLocalMediaInfoRead.Ready -> {
                         val rows = nativeLocalMediaInfoRows(
                             current.details, asset.isVideo, asset.albumName,
-                            asset.addedAtSeconds)
+                            current.details.addedAtSeconds ?: 0L)
                         rows.forEach { (label, value) ->
                             Row(Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween) {

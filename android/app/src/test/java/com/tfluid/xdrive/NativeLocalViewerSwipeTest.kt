@@ -30,6 +30,6 @@ class NativeLocalViewerSwipeTest {
         assertNull(nativeLocalViewerNeighborIndex(
             page, second, nativeLocalViewerSwipeDirection(-130f, 64f, false)!!))
         assertNull(nativeLocalViewerNeighborIndex(
-            page, first.copy(addedAtSeconds = 9999), 1))
+            page, first.copy(capturedAtMillis = 9999), 1))
     }
 }
