@@ -1,0 +1,34 @@
+//go:build windows
+
+package mount
+
+import (
+ "github.com/google/uuid"
+)
+
+// The run ID identifies one execution attempt (not an individual file).
+// The captured owner key is provided by the owning Agent at Mount creation;
+// an old Mount cannot write a subsequent account's history.
+func (p *winProvider) beginActivity(trigger string) string {
+ id:=uuid.NewString()
+ emitEvent(Event{
+  Kind:EventSyncStarted,
+  RunID:id,
+  Trigger:trigger,
+  ActivityOwner:p.activityOwner,
+ })
+ return id
+}
+
+func (p *winProvider) finishActivity(runID string,err error,notify bool) {
+ evt:=Event{Kind:EventSyncCompleted,RunID:runID,ActivityOwner:p.activityOwner,Notify:notify}
+ if err!=nil{
+  evt.Kind=EventSyncFailed
+  evt.Message=err.Error()
+ }
+ emitEvent(evt)
+}
+
+func (p *winProvider) deferActivity(runID string) {
+ emitEvent(Event{Kind:EventSyncDeferred,RunID:runID,ActivityOwner:p.activityOwner})
+}
