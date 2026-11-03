@@ -11,8 +11,21 @@ const compiled = ts.transpileModule(source, {
   reportDiagnostics: true,
 })
 assert.equal(compiled.diagnostics?.length ?? 0, 0, 'Web Notes adapter must transpile')
+const transpileDataURL = (path) => {
+  const module = ts.transpileModule(readFileSync(resolve(here, path), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    reportDiagnostics: true,
+  })
+  assert.equal(module.diagnostics?.length ?? 0, 0, path + ' must transpile')
+  return 'data:text/javascript;base64,' + Buffer.from(module.outputText).toString('base64')
+}
+const manualURL = transpileDataURL('../../ui/shared/src/notes-manual-import.ts')
+const policyURL = transpileDataURL('../../ui/shared/src/notes-markdown-policy.ts')
+const executed = compiled.outputText
+  .replace("'../../ui/shared/src/notes-manual-import'", "'" + manualURL + "'")
+  .replace("'../../ui/shared/src/notes-markdown-policy'", "'" + policyURL + "'")
 const { createXDriveWebNotesPort } = await import('data:text/javascript;base64,' +
-  Buffer.from(compiled.outputText).toString('base64'))
+  Buffer.from(executed).toString('base64'))
 
 const calls = []
 const example = {
@@ -122,6 +135,61 @@ assert.equal((await transient.listNotes('mine', '', 0)).items.length, 1)
 assert.equal(attempts, 2, 'temporary bootstrap failure permanently poisoned Notes port')
 
 
+// One explicit export with one picture must create a single read-only Note
+// and then a second revision of THAT Note, never an unrelated duplicate.
+const bundleCalls = []
+const imageName = 'photo.png'
+const bundleMD = new File(['# Journal\n![x](photo.png)'], 'Journal.md', {
+  type: 'text/markdown',
+})
+const imageFile = new File([new Uint8Array([137, 80, 78, 71])], imageName, {
+  type: 'image/png',
+})
+const uuid = '11111111-1111-4111-8111-111111111111'
+const imageUUID = '22222222-2222-4222-8222-222222222222'
+const assetPath = '_assets/' + uuid + '/' + imageUUID + '.png'
+let importedRevision = 0
+const imageApi = {
+  ...api,
+  async notesImportIOS(input) {
+    bundleCalls.push(['snapshot', input])
+    importedRevision++
+    return {
+      ...example, id: uuid, source: 'ios_notes', title: 'Journal',
+      node_id: 77, revision: importedRevision,
+    }
+  },
+  async notesImportIOSImage(id, value) {
+    bundleCalls.push(['asset', id, value.name])
+    return {
+      relative_path: assetPath, node_id: 88, bytes: value.size,
+      sha256: 'a'.repeat(64),
+    }
+  },
+}
+const bundlePort = createXDriveWebNotesPort(imageApi, 'notes-manual:owner')
+const completed = await bundlePort.importIOSMarkdownBundle([bundleMD, imageFile])
+assert.equal(completed.id, uuid)
+assert.equal(completed.revision, 2)
+assert.deepEqual(bundleCalls.map(x => x[0]), ['snapshot', 'asset', 'snapshot'])
+assert.equal(bundleCalls[0][1].external_id, bundleCalls[2][1].external_id)
+assert.match(bundleCalls[0][1].external_id, /^manual:[0-9a-f-]{36}$/)
+assert.equal(bundleCalls[0][1].markdown, '# Journal\n![x](photo.png)')
+assert.equal(bundleCalls[2][1].markdown, '# Journal\n![x](' + assetPath + ')')
+await assert.rejects(bundlePort.importIOSMarkdownBundle([
+  new File(['![missing](absent.png)'], 'Missing.md'),
+]), /缺少/)
+assert.equal(bundleCalls.length, 3, 'invalid bundle posted data before asset validation')
+const plain = await bundlePort.importIOSMarkdownBundle([
+  new File(['# Solo'], 'Solo.md'),
+])
+assert.equal(plain.source, 'ios_notes')
+assert.equal(bundleCalls.filter(x => x[0] === 'asset').length, 1)
+const afterPlain = bundleCalls.filter(x => x[0] === 'snapshot')
+assert.notEqual(afterPlain[0][1].external_id,
+  afterPlain[afterPlain.length - 1][1].external_id,
+  'separate Apple Notes imports incorrectly share an identity')
+
 const sourceApi = readFileSync(resolve(here, '../src/api.ts'), 'utf8')
 for (const route of [
   '/api/v1/notes/namespace', '/api/v1/notes/ios/import',
@@ -135,7 +203,10 @@ assert.match(notesUI, /port\.uploadImage\(noteID, file\)/)
 assert.match(notesUI, /port\.readImageBlob\(selected\.id, path/)
 assert.match(notesUI, /URL\.revokeObjectURL/)
 assert.match(notesUI, /label="搜索标题或正文"/)
-assert.match(notesUI, /port\.importIOSMarkdown\(\{ title, markdown \}\)/)
+assert.match(notesUI, /port\.importIOSMarkdownBundle\(files, controller\.signal\)/)
+assert.match(notesUI, /port\.importIOSMarkdown!\(\{ title: name, markdown \}\)/)
+assert.match(notesUI, /webkitdirectory/)
+assert.match(sourceApi, /notesImportIOSImage\(/)
 assert.match(notesUI, /勿重复导入/)
 assert.match(notesUI, /new TextDecoder\('utf-8', \{ fatal: true \}\)/)
 assert.match(sourceApi, /size > 20 \* 1024 \* 1024/)
