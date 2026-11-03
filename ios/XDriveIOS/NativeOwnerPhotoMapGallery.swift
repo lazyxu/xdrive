@@ -795,15 +795,15 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         cameraSettleTask = nil
         coverTask?.cancel()
         coverTask = nil
-        coverImages = [:]
         task?.cancel()
         task = nil
-        overview = nil
+        // Preserve the last rendered covers during the settled-camera HTTPS
+        // refresh. They are visual-only: busy and the revoked viewport fence
+        // disable both touch and VoiceOver activation until a fresh response.
         verifiedBounds = nil
         requestedBounds = bounds
         error = nil
         busy = true
-        revision = UUID()
         task = Task { @MainActor in
             defer {
                 if epoch == ticket {
@@ -826,8 +826,12 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                       XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                         bounds, current: currentBounds())
                 else { return }
-                verifiedBounds = bounds
+                // Publish the verified new place snapshot together with a
+                // clean cover cache. No previous-viewport thumbnail can be
+                // reused as the current place's photo.
+                coverImages = [:]
                 overview = result
+                verifiedBounds = bounds
                 revision = UUID()
                 loadCurrentOwnerCovers(result, reader: reader,
                                        expected: expected, bounds: bounds,
@@ -835,7 +839,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             } catch is CancellationError {
             } catch {
                 guard epoch == ticket else { return }
+                // A failed authorization or failed map response cannot keep
+                // old Owner GPS covers displayed indefinitely.
                 overview = nil
+                coverImages = [:]
+                revision = UUID()
                 self.error = "当前 Owner 地图范围或权限已失效，请核对账户并重试。"
             }
         }
