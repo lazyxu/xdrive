@@ -1031,6 +1031,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 viewed.isVideo ? "视频" : "照片")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
                 if showChrome && (loadedNodes.count > 1 || exporter.status != nil ||
                    (currentOwnerAuthorized && viewed.size > 512 * 1_048_576)) {
                     VStack(spacing: 8) {
@@ -1075,6 +1076,31 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.ultraThinMaterial)
+                }
+
+                if showChrome && currentOwnerAuthorized &&
+                   (viewed.isImage || viewed.isVideo || viewed.isLiveArchive) {
+                    HStack {
+                        Spacer(minLength: 8)
+                        if restoringToPhotos {
+                            ProgressView()
+                                .frame(minWidth: 44, minHeight: 44)
+                                .accessibilityLabel("正在恢复原件到 iOS 照片")
+                        } else {
+                            Button {
+                                restoreCurrentOriginalToPhotos()
+                            } label: {
+                                Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .disabled(exporter.busy)
+                            .accessibilityIdentifier("native-ios-original-bottom-save-to-photos")
+                        }
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.horizontal, 12)
+                    .background(.ultraThinMaterial)
+                }
                 }
             }
             .toolbar {

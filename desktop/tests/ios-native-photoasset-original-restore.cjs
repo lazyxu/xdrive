@@ -97,3 +97,21 @@ test('native Viewer and Owner boundaries cancel stale Photos restore without tou
   assert.match(detail, /private func navigateLoaded\(_ direction: Int\) \{[\s\S]*?cancelPhotosRestore\(\)/)
   assert.doesNotMatch(detail, /UploadSession|markConfirmed|ledger\.write|deleteCloud/)
 })
+
+
+test('cloud indexed PhotoAsset Viewer exposes a primary bottom Save to Photos action on singleton media', () => {
+  const viewer = read('ios/XDriveIOS/NativeServerMediaGallery.swift')
+  const detail = viewer.slice(viewer.indexOf('struct XDriveIOSNativeServerMediaPreview: View'),
+    viewer.indexOf('/// Root and album-specific media wall'))
+  assert.match(detail, /\.safeAreaInset\(edge: \.bottom\) \{\s*VStack\(spacing: 0\)/)
+  assert.match(detail, /if showChrome && ownerAuthorized && viewed\.supportsPreview \{/)
+  assert.match(detail, /if photosRestoreBusy \{\s*ProgressView\(\)/)
+  assert.match(detail, /restorePhotoAssetOriginal\(\)[\s\S]*?native-ios-photoasset-bottom-save-to-photos/)
+  assert.match(detail, /\.disabled\(rangeCrossing\)/)
+  assert.match(detail, /Label\("保存到 iOS 照片", systemImage: "square\.and\.arrow\.down"\)/)
+  assert.match(detail, /native-ios-photoasset-original-save-to-photos/)
+  assert.match(detail, /XDriveIOSNativeCloudPhotoAssetFilmstrip\(/)
+  assert.match(detail, /private func restorePhotoAssetOriginal\(\) \{\s*guard !photosRestoreBusy, ownerAuthorized,\s*viewed\.supportsPreview, let owner = openedOwner/)
+  assert.match(detail, /cancelPhotosRestore\(\)/)
+  assert.doesNotMatch(detail, /UploadSession|UserDefaults|WKWebView/)
+})
