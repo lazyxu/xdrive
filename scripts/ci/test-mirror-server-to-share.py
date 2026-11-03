@@ -88,6 +88,25 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(len(self.remote.chunks), before)
         self.assertEqual(len(self.remote.files), 9)
 
+    def test_signed_go_companion_is_uploaded_before_completion_and_rechecked(self):
+        go_binary = self.root / mirror.GO_INSTALLER_ASSET
+        go_binary.write_bytes(b'\x7fELF' + b'signed-build-exactly')
+        descriptor = json.loads((self.root / 'delivery.json').read_text())
+        descriptor['go_installer'] = dict(name=mirror.GO_INSTALLER_ASSET,
+                                          size=go_binary.stat().st_size,
+                                          sha256=digest(go_binary.read_bytes()))
+        (self.root / 'delivery.json').write_text(json.dumps(descriptor), encoding='utf-8')
+        mirror.publish(self.root, self.share)
+        self.assertEqual(self.finalized[-1], 'delivery.json')
+        self.assertIn(mirror.GO_INSTALLER_ASSET, self.finalized)
+        self.assertLess(self.finalized.index(mirror.GO_INSTALLER_ASSET),
+                        self.finalized.index('delivery.json'))
+        self.assertEqual(len(self.remote.files), 10)
+        go_binary.write_bytes(b'\x7fELF' + b'tampered-build-exactl')
+        with self.assertRaises(mirror.MirrorError):
+            mirror.publish(self.root, self.share)
+        self.assertEqual(self.finalized.count('delivery.json'), 1)
+
     def test_same_size_corrupt_existing_package_refuses_completion(self):
         mirror.publish(self.root, self.share)
         key = next(k for k in self.remote.files if k[1].endswith('.tar.gz'))
@@ -266,7 +285,10 @@ class MemoryGitHub:
 
     def verify(self, directory, bundle):
         signed = json.loads(bundle.read_text(encoding='utf-8'))
-        for name in ('manifest.json', 'xdrive-offline.py', 'delivery.json'):
+        names = ('manifest.json', 'xdrive-offline.py', 'delivery.json')
+        if (directory / mirror.GO_INSTALLER_ASSET).exists():
+            names += (mirror.GO_INSTALLER_ASSET,)
+        for name in names:
             if signed.get(name) != digest((directory / name).read_bytes()):
                 raise mirror.MirrorError('Fixture signature does not bind this artifact')
         self.events.append('verify')
@@ -287,7 +309,8 @@ class MemoryGitHub:
         self.events.append('upload:' + path.name)
 
     def publish(self, tag):
-        if (tag.startswith('offline-manifest-') and set(self.files) != set(mirror.RELEASE_FILES)
+        if (tag.startswith('offline-manifest-') and
+                set(self.files) not in (set(mirror.RELEASE_FILES), set(mirror.RELEASE_FILES_GO))
                 or not tag.startswith('offline-manifest-') and len(self.files) != 1):
             raise AssertionError('incomplete release published')
         self.events.append('publish')

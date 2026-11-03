@@ -366,7 +366,10 @@ class GitHub:
                  '--pattern', name, '--dir', str(directory))
 
     def verify(self, directory, bundle):
-        for name in ('manifest.json', 'xdrive-offline.py', 'delivery.json'):
+        names = ('manifest.json', 'xdrive-offline.py', 'delivery.json')
+        if (directory / GO_INSTALLER_ASSET).exists():
+            names += (GO_INSTALLER_ASSET,)
+        for name in names:
             result = json.loads(self.run('attestation', 'verify', str(directory / name),
                 '--repo', REPOSITORY, '--bundle', str(bundle), '--signer-workflow',
                 REPOSITORY + '/.github/workflows/offline-packages.yml',
