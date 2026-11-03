@@ -258,6 +258,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-photo-filmstrip-check"
           node --test desktop/tests/ios-native-photo-filmstrip-contract.cjs
 
+      - name: Verify bounded native PhotoKit and Owner PhotoAsset filmstrip scrub gesture
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoFilmstripScrubPolicy.swift \
+            ios/tests/NativePhotoFilmstripScrubPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-filmstrip-scrub"
+          "$RUNNER_TEMP/xdrive-ios-photo-filmstrip-scrub"
+          node --test desktop/tests/ios-native-photo-filmstrip-scrub-contract.cjs
+
       - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail
