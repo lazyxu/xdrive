@@ -52,6 +52,20 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-notes-import-policy"
           "$RUNNER_TEMP/xdrive-ios-notes-import-policy"
 
+      - name: Verify explicit Markdown plus local image import policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeNotesManualImportPolicy.swift \
+            ios/tests/NativeNotesManualImportPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-notes-manual-import"
+          "$RUNNER_TEMP/xdrive-ios-notes-manual-import"
+
+      - name: Verify native Notes launcher and Owner-only editor contracts
+        run: |
+          set -euo pipefail
+          node --test desktop/tests/ios-native-notes-route.cjs
+
       - name: Verify bounded iOS PhotoKit scan-window math
         run: |
           set -euo pipefail

@@ -22,10 +22,11 @@ private enum XDriveIOSNativeGallerySource: String, CaseIterable, Identifiable {
 }
 
 private enum XDriveIOSNativeDynamicFeature: String, CaseIterable, Identifiable {
-    case backup, transfers, sync, storage, devices, diagnostics
+    case notes, backup, transfers, sync, storage, devices, diagnostics
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .notes: return "备忘录"
         case .backup: return "相册备份"
         case .transfers: return "传输任务"
         case .sync: return "同步"
@@ -36,6 +37,7 @@ private enum XDriveIOSNativeDynamicFeature: String, CaseIterable, Identifiable {
     }
     var symbol: String {
         switch self {
+        case .notes: return "note.text"
         case .backup: return "icloud.and.arrow.up"
         case .transfers: return "arrow.up.arrow.down"
         case .sync: return "arrow.triangle.2.circlepath"
@@ -44,11 +46,11 @@ private enum XDriveIOSNativeDynamicFeature: String, CaseIterable, Identifiable {
         case .diagnostics: return "waveform.path.ecg"
         }
     }
-    var implemented: Bool { self == .backup }
+    var implemented: Bool { self == .backup || self == .notes }
 }
 
 private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
-    case local, albums, cloud, originals, map, files
+    case local, albums, cloud, originals, map, files, notes
     case backup, transfers, sync, storage, devices, diagnostics
     var id: String { rawValue }
     var title: String {
@@ -59,6 +61,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
         case .originals: return "备份原件"
         case .map: return "地图"
         case .files: return "文件"
+        case .notes: return "备忘录"
         case .backup: return "相册备份"
         case .transfers: return "传输"
         case .sync: return "同步"
@@ -75,6 +78,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
         case .originals: return "icloud"
         case .map: return "map"
         case .files: return "folder"
+        case .notes: return "note.text"
         case .backup: return "icloud.and.arrow.up"
         case .transfers: return "arrow.up.arrow.down"
         case .sync: return "arrow.triangle.2.circlepath"
@@ -85,13 +89,13 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
     }
     var available: Bool {
         switch self {
-        case .local, .albums, .cloud, .originals, .map, .files, .backup: return true
+        case .local, .albums, .cloud, .originals, .map, .files, .notes, .backup: return true
         default: return false
         }
     }
     var category: String {
         switch self {
-        case .local, .albums, .cloud, .originals, .map, .files: return "内容浏览"
+        case .local, .albums, .cloud, .originals, .map, .files, .notes: return "内容浏览"
         case .backup, .devices, .sync: return "设备与备份"
         case .transfers, .storage, .diagnostics: return "任务与工具"
         }
@@ -665,6 +669,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     private var dynamicPage: some View {
         if let feature = dynamicFeature {
             switch feature {
+            case .notes:
+                XDriveIOSNativeNotesScreen(login: login)
             case .backup:
                 XDriveIOSNativePhotoBackupScreen(login: login, controller: backup) {
                     // Navigation only: never infer that a pending receipt is backed up.
@@ -766,6 +772,8 @@ struct XDriveIOSNativePhotosDashboard: View {
             openGallery(.map)
         case .files:
             tab = .files
+        case .notes:
+            openDynamic(.notes)
         case .backup:
             openDynamic(.backup)
         case .transfers:
