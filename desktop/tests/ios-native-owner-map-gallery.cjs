@@ -164,8 +164,8 @@ test('short landscape Owner map retains verified camera, feedback, Sheet and acc
   assert.match(map, /GeometryReader \{ viewport in[\s\S]*?XDriveIOSNativePhotoMapPolicy\.compactViewport\(/);
   assert.match(map, /accessibilityText: dynamicTypeSize\.isAccessibilitySize/);
   assert.match(map, /VStack\(spacing: compactMap \? 4 : 8\)/);
-  assert.match(map, /if !compactMap \{\s*Text\("当前 Server Owner/);
-  assert.match(map, /if !compactMap \{\s*Text\("选择真实地点后/);
+  assert.match(map, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\("当前 Server Owner/);
+  assert.match(map, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\("选择真实地点后/);
   assert.match(map, /\.alert\("云端照片地图说明", isPresented: \$showingMapHelp\)/);
   assert.match(map, /\.accessibilityIdentifier\("native-ios-owner-map-layout-help"\)/);
   assert.match(map, /Button\("刷新当前视窗"\)/);
