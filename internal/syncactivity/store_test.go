@@ -145,3 +145,23 @@ func TestAtomicBatchReplaysAndRollback(t *testing.T){
  rows,err:=s.Items(ctx,"batch",50,nil);if err!=nil||len(rows)!=2{t.Fatalf("atomicity broken: %+v %v",rows,err)}
  if err:=s.Finish(ctx,"batch",StatusCompleted,false);err!=nil{t.Fatal(err)}
 }
+
+func TestUnitemizedEngineFailureCanClosePartialRun(t *testing.T) {
+ ctx:=context.Background()
+ s:=openTestStore(t)
+ beginRun(t,s,"mixed-engine-result",time.Now().UTC())
+ if err:=s.Append(ctx,item("mixed-engine-result","committed","create","upload",ptr(12),nil));err!=nil{t.Fatal(err)}
+ // A failed reconciliation may have successfully uploaded files before it
+ // failed elsewhere. Never invent a per-file error merely to close the run.
+ if err:=s.Finish(ctx,"mixed-engine-result",StatusPartial,false);err!=nil{
+  t.Fatalf("must record partial outcome for a real terminal engine failure: %v",err)
+ }
+ run,err:=s.Get(ctx,"mixed-engine-result")
+ if err!=nil||run.Status!=StatusPartial||run.DetailComplete||run.Stats.Created!=1{
+  t.Fatalf("partial readback: %+v %v",run,err)
+ }
+ beginRun(t,s,"false-partial",time.Now().UTC())
+ if err:=s.Finish(ctx,"false-partial",StatusPartial,false);!errors.Is(err,ErrIncomplete){
+  t.Fatalf("empty unknown operation cannot be declared partial: %v",err)
+ }
+}
