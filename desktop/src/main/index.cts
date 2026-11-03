@@ -21,6 +21,7 @@ import {
   Tray,
   type NativeImage,
   type OpenDialogOptions,
+  type IpcMainInvokeEvent,
 } from 'electron'
 import {
   xDriveResolveSecureBaiduMapTarget,
@@ -8016,6 +8017,91 @@ function registerIPCHandlers() {
       requireAgentCapability(hello, 'cloud-files')
       return requireAgentClient().cloudQuota(signal)
     }), false))
+  // No arbitrary URL/Host path or Renderer bearer API. Only the Desktop
+  // primary main frame, with an authenticated Server admin account and an
+  // Agent advertising this exact capability, may stage offline packages.
+  const offlineID = /^[a-f0-9]{32}$/
+  const offlineSHA = /^[a-f0-9]{64}$/
+  const offlineFile = /^xdrive-(app|postgres|media-worker|ai-runtime|ai-models)-[a-f0-9]{12}\.tar\.gz$/
+  const allowedOfflineFile = (name: unknown): name is string =>
+    typeof name === 'string' && (
+      ['manifest.json', 'xdrive-offline-linux-amd64', 'delivery.json', 'delivery-attestation.jsonl'].includes(name) ||
+      offlineFile.test(name)
+    )
+  const offlineAdminClient = async (event: IpcMainInvokeEvent) => {
+    if (!mainWindow || mainWindow.isDestroyed() ||
+        event.sender !== mainWindow.webContents ||
+        event.senderFrame !== mainWindow.webContents.mainFrame ||
+        agentState.status?.role !== 'admin') {
+      throw new AgentIPCError('forbidden', 403, 'Only the authenticated Desktop administrator can import offline packages.')
+    }
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'server-offline-update')
+    return requireAgentClient()
+  }
+  ipcMain.handle('agent:offline-import-list', event =>
+    runAgentAction(async () => (await offlineAdminClient(event)).offlineImportList(), false))
+  ipcMain.handle('agent:offline-import-create', event =>
+    runAgentAction(async () => (await offlineAdminClient(event)).offlineImportCreate(), false))
+  ipcMain.handle('agent:offline-import-get', (event, id: unknown) =>
+    runAgentAction(async () => {
+      const api = await offlineAdminClient(event)
+      if (typeof id !== 'string' || !offlineID.test(id)) {
+        throw new AgentIPCError('invalid_input', 0, 'Offline import ID is invalid.')
+      }
+      return api.offlineImportGet(id)
+    }, false))
+  ipcMain.handle('agent:offline-import-register', (event, id: unknown, name: unknown, size: unknown, sha: unknown) =>
+    runAgentAction(async () => {
+      const api = await offlineAdminClient(event)
+      if (typeof id !== 'string' || !offlineID.test(id) || !allowedOfflineFile(name) ||
+          typeof size !== 'number' || !Number.isSafeInteger(size) || size <= 0 || size > 8 * 1024 ** 3 ||
+          (sha !== undefined && (typeof sha !== 'string' || (sha !== '' && !offlineSHA.test(sha))))) {
+        throw new AgentIPCError('invalid_input', 0, 'Offline import file identity is invalid.')
+      }
+      return api.offlineImportRegister(id, name, size, typeof sha === 'string' ? sha : '')
+    }, false))
+  ipcMain.handle('agent:offline-import-chunk', (event, id: unknown, name: unknown,
+    index: unknown, data: unknown, sha: unknown) =>
+    runAgentAction(async () => {
+      const api = await offlineAdminClient(event)
+      if (typeof id !== 'string' || !offlineID.test(id) || !allowedOfflineFile(name) ||
+          typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0 || index > 0xffffffff ||
+          !(data instanceof ArrayBuffer) || data.byteLength === 0 || data.byteLength > 8 * 1024 * 1024 ||
+          typeof sha !== 'string' || !offlineSHA.test(sha)) {
+        throw new AgentIPCError('invalid_input', 0, 'Offline chunk identity or length is invalid.')
+      }
+      await api.offlineImportChunk(id, name, index, data, sha)
+      return { ok: true }
+    }, false))
+  ipcMain.handle('agent:offline-import-finalize', (event, id: unknown, name: unknown) =>
+    runAgentAction(async () => {
+      const api = await offlineAdminClient(event)
+      if (typeof id !== 'string' || !offlineID.test(id) || !allowedOfflineFile(name)) {
+        throw new AgentIPCError('invalid_input', 0, 'Offline file identity is invalid.')
+      }
+      return api.offlineImportFinalize(id, name)
+    }, false))
+  ipcMain.handle('agent:offline-import-delete', (event, id: unknown) =>
+    runAgentAction(async () => {
+      const api = await offlineAdminClient(event)
+      if (typeof id !== 'string' || !offlineID.test(id)) {
+        throw new AgentIPCError('invalid_input', 0, 'Offline import ID is invalid.')
+      }
+      return api.offlineImportDelete(id)
+    }, false))
+  ipcMain.handle('agent:offline-import-activate', (event, id: unknown, manifest: unknown, binary: unknown, backup: unknown) =>
+    runAgentAction(async () => {
+      const api = await offlineAdminClient(event)
+      if (typeof id !== 'string' || !offlineID.test(id) ||
+          typeof manifest !== 'string' || !offlineSHA.test(manifest) ||
+          typeof binary !== 'string' || !offlineSHA.test(binary) ||
+          typeof backup !== 'boolean') {
+        throw new AgentIPCError('invalid_input', 0, 'Two independent SHA-256 digests and a fixed import ID are required.')
+      }
+      return api.offlineImportActivate(id, manifest, binary, backup)
+    }, false))
+
   ipcMain.handle('agent:get-server-update', () => runAgentAction<AgentServerUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'server-update')
