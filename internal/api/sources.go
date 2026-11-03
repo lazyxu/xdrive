@@ -613,6 +613,15 @@ func (s *Server) updateSource(c *gin.Context) {
 			if current.Kind == yikeSourceKind {
 				return errManagedSourceTarget
 			}
+			if current.TargetNodeID != nil && *req.TargetNodeID != *current.TargetNodeID {
+				canonical, err := canonicalManagedSourceTargetTx(c.Request.Context(), tx, current)
+				if err != nil {
+					return err
+				}
+				if canonical {
+					return errManagedSourceTarget
+				}
+			}
 			if *req.TargetNodeID == 0 {
 				return errInvalidSourceTarget
 			}
