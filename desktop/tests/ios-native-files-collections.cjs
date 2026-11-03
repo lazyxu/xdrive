@@ -145,3 +145,15 @@ test('native Files can favorite non-root folders with real Owner API and remove 
   assert.match(serverFavoritesIntegration, /unfavoriting folder deleted its Node/)
   assert.doesNotMatch(screen, /WKWebView|import WebKit|URLSession\.shared/)
 })
+
+
+test('native Files favorite shortcut reuses real Owner and revision verified file/folder writer', () => {
+  assert.match(browser, /openManagement\(for: entry\.node, quickAction: \.favorite\)/)
+  assert.match(browser, /Label\("收藏", systemImage: "star"\)/)
+  assert.match(panel, /case \.favorite:[\s\S]*?favoriteMutation\.add\(selected, login: login\)/)
+  assert.match(panel, /guard verified, !anyBusy,[\s\S]*?let selected = file \?\? directory/)
+  assert.match(screen, /private func requireCurrent\(_ node:[\s\S]*?current == node/)
+  assert.match(panel, /favoriteMutation\.invalidate\(\)/)
+  assert.match(panel, /favoriteMutation\.add\(directory, login: login\)/)
+  assert.match(panel, /favoriteMutation\.add\(file, login: login\)/)
+});
