@@ -29,7 +29,8 @@ test('directory and full-library search use canonical counted Owner Range', () =
   assert.match(source, /searchRange\([\s\S]*?\/api\/v1\/search/);
   assert.match(view, /URLSessionConfiguration\.ephemeral/);
   assert.match(view, /completionHandler\(nil\)/);
-  assert.match(view, /\.onDisappear \{ if selectedFile == nil \{ model\.invalidate\(\) \} \}/);
+  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}/);
+  assert.match(view, /private func suspendVisibleRange\(\) \{[\s\S]*?model\.invalidate\(\)/);
   assert.match(view, /job\?\.cancel\(\)/);
   assert.match(page, /static let pageSize = 64/);
   assert.match(page, /Set\(items\.map\(\\\.id\)\)\.count/);
@@ -81,11 +82,11 @@ test('native SwiftUI search collapses in the toolbar and restores directory on c
   assert.match(view, /\.onSubmit\(of: \.search\) \{ submitSearch\(\) \}/)
   assert.match(view, /private func submitSearch\(\)/)
   assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearch\(query\)/)
-  assert.match(view, /if activeQuery\.isEmpty \{ searchReturnOffset = offset \}/)
+  assert.match(view, /if activeQuery\.isEmpty \{\s*let saved = rememberedPosition\(\)\s*searchReturnOffset = saved\?\.pageOffset \?\? offset\s*searchReturnNodeID = saved\?\.nodeID/)
   assert.match(view, /activeQuery = query\s*reload\(resetOffset: true\)/)
   assert.match(view, /private func clearSearch\(\)/)
   assert.match(view, /let restoredOffset = searchReturnOffset \?\? 0/)
-  assert.match(view, /searchReturnOffset = nil\s*offset = restoredOffset\s*reload\(\)/)
+  assert.match(view, /searchReturnOffset = nil\s*searchReturnNodeID = nil\s*lastAppearedNodeID = nil\s*offset = restoredOffset\s*pendingNavigationReturnNodeID = restoreNodeID\s*reload\(\)/)
   assert.match(view, /if value\.trimmingCharacters\(in: \.whitespacesAndNewlines\)\.isEmpty &&/)
   assert.match(view, /native-ios-files-clear-search/)
   assert.doesNotMatch(view, /TextField\("搜索全部文件", text: \$queryDraft\)/)

@@ -21,7 +21,8 @@ test('Files retains the same independent native L3 Viewer and file-specific acti
   // Owner switch retires management, the new version-history sheet and
   // locate before the Viewer. Preserve the ordering and check every intent.
   assert.match(files, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?managementIntent = nil\s*versionHistoryIntent = nil\s*locateIntent = nil\s*selectedFile = nil\s*selectedOwner = nil/)
-  assert.match(files, /if selectedFile == nil \{ model\.invalidate\(\) \}/)
+  assert.match(files, /\.onDisappear \{ suspendVisibleRange\(\) \}/)
+  assert.match(files, /private func suspendVisibleRange\(\) \{[\s\S]*?guard selectedFile == nil else \{ return \}[\s\S]*?model\.invalidate\(\)/)
   assert.match(viewer, /XDriveIOSNativeFilesPreviewReader\(/)
   assert.match(management, /let expectedOwner: XDriveNativeOwnerRoot/)
   assert.match(management, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expectedOwner\)/)

@@ -43,7 +43,8 @@ test('sliding range preserves Viewer return and bounded selection, and owner/nav
   assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in/)
   assert.match(browser, /func invalidate\(\) \{[\s\S]*?cancelAdjacent\(\)/)
   assert.match(browser, /self\.entries = \[\]\s*self\.total = 0\s*self\.verifiedPage = false/)
-  assert.match(browser, /\.onDisappear \{ if selectedFile == nil \{ model\.invalidate\(\) \} \}/)
+  assert.match(browser, /\.onDisappear \{ suspendVisibleRange\(\) \}/)
+  assert.match(browser, /private func suspendVisibleRange\(\) \{[\s\S]*?guard selectedFile == nil else \{ return \}[\s\S]*?model\.invalidate\(\)/)
 })
 
 
@@ -55,4 +56,22 @@ test('bounded Files window never retains unloaded selected IDs and batch cap mat
   assert.match(window, /static let maximumVisibleItems = 4 \* pageSize/)
   // 4*64 loaded rows, but only 200 selectable for one Server operation.
   assert.doesNotMatch(browser, /XDriveIOSNativeFilesPagePolicy\.pageSize - selectedIDs\.count/)
+})
+
+test('Files restores a bounded, verified Node anchor across child navigation and global search', () => {
+  assert.match(window, /struct RestoreAnchor: Equatable/)
+  assert.match(window, /static func restoreAnchor\(lastAppearedNodeID: UInt64\?, startOffset: Int,/)
+  assert.match(window, /startOffset \+ \(index \/ pageSize\) \* pageSize/)
+  assert.match(browser, /@State private var lastAppearedNodeID: UInt64\?/)
+  assert.match(browser, /@State private var pendingNavigationReturnNodeID: UInt64\?/)
+  assert.match(browser, /lastAppearedNodeID = visibleID\s*guard !model\.loadingAdjacent/)
+  assert.match(browser, /private func rememberedPosition\([\s\S]*?model\.verifiedPage, !model\.loading/)
+  assert.match(browser, /XDriveIOSNativeFilesContinuousWindowPolicy\.restoreAnchor\(/)
+  assert.match(browser, /private func suspendVisibleRange\([\s\S]*?offset = saved\.pageOffset\s*pendingNavigationReturnNodeID = saved\.nodeID/)
+  assert.match(browser, /model\.entries\.contains\(where: \{ \$0\.id == returnID \}\)/)
+  assert.match(browser, /returnScroll\.scrollTo\(returnID, anchor: \.center\)/)
+  assert.match(browser, /let saved = rememberedPosition\(\)\s*searchReturnOffset = saved\?\.pageOffset \?\? offset\s*searchReturnNodeID = saved\?\.nodeID/)
+  assert.match(browser, /pendingNavigationReturnNodeID = restoreNodeID\s*reload\(\)/)
+  assert.match(browser, /searchReturnNodeID = nil\s*lastAppearedNodeID = nil\s*pendingNavigationReturnNodeID = nil/)
+  assert.doesNotMatch(browser, /\.onDisappear \{ if selectedFile == nil \{ model\.invalidate\(\) \} \}/)
 })
