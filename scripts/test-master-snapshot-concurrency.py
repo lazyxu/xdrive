@@ -48,7 +48,7 @@ publish_master = re.search(
     r"(?ms)^  publish-master:\s*\n(.*?)(?=^  [a-zA-Z0-9_-]+:\s*$|\Z)",
     jobs,
 )
-assert publish_master is not None, "early master publication job missing"
+assert publish_master is not None, "master publication job missing"
 body = publish_master.group(1)
 assert "github.event_name == 'push'" in body
 assert "github.ref == 'refs/heads/master'" in body
@@ -64,7 +64,7 @@ required_builds = {
     "media-worker-image",
 }
 assert required_builds <= needed, f"required publishable artifacts missing: {required_builds - needed}"
-assert "final-gate" not in needed, "snapshot must not wait for full race/E2E Final Gate"
+assert "final-gate" in needed, "Snapshot release must wait for full CI Final Gate, including Android emulator tests"
 assert "photo-ocr-master-smoke" not in needed, "snapshot must not wait for OCR model acceptance"
 
 publish_stable = re.search(

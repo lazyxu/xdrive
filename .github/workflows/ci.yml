@@ -3,6 +3,10 @@ name: CI
 on:
   pull_request:
     branches: ["master"]
+  # A queued merge must test the exact master + queued PR combination.
+  # This does not enforce the queue by itself: master Ruleset must require it.
+  merge_group:
+    types: [checks_requested]
   push:
     branches: ["master"]
     tags: ["v*"]
@@ -92,6 +96,7 @@ jobs:
           node --check desktop/tests/agents-active-policy-archive.cjs
           node --test desktop/tests/agents-active-policy-archive.cjs
           python3 -m unittest discover -s scripts/ci -p 'test_pr_scope.py'
+          python3 -m unittest discover -s scripts/ci -p 'test_master_ci_gate.py'
 
   android-native:
     needs: pr-scope
@@ -2551,6 +2556,8 @@ jobs:
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           checkout_sha="$(git rev-parse HEAD)"
@@ -2570,22 +2577,38 @@ jobs:
               echo "::error title=PR candidate mismatch::Expected a two-parent candidate with the exact submitted Head"
               exit 1
             fi
-            # A queued PR event can still carry an older Base SHA when GitHub
-            # regenerates its synthetic merge candidate on a newer master.
-            # Admit only a verified fast-forward along the same master history.
+            # The first parent must be a real ancestor of current master,
+            # not an unrelated/replaced branch. An independently advanced
+            # master does NOT invalidate successful exact-HEAD PR checks.
+            # GitHub will still reject an actual merge conflict at merge time.
             git fetch --quiet --no-tags origin '+refs/heads/master:refs/remotes/origin/master'
+            live_master_sha="$(git rev-parse refs/remotes/origin/master)"
             if ! git merge-base --is-ancestor "$PR_BASE_SHA" "${actual_parents[0]}"; then
               echo "::error title=Invalid PR Base ancestry::Candidate Base must descend from the event Base"
               exit 1
             fi
-            if ! git merge-base --is-ancestor "${actual_parents[0]}" refs/remotes/origin/master; then
-              echo "::error title=Untrusted PR merge Base::Candidate Base must be on the current master ancestry"
+            if ! git merge-base --is-ancestor "${actual_parents[0]}" "$live_master_sha"; then
+              echo "::error title=Untrusted PR merge Base::Tested Base is not on current master ancestry."
               exit 1
             fi
-            if [[ "${actual_parents[0]}" != "$PR_BASE_SHA" ]]; then
-              echo "::notice title=GitHub advanced PR Base::Tested candidate Base ${actual_parents[0]} is a verified forward descendant of event Base $PR_BASE_SHA"
+            echo "PR candidate verified: exact event SHA, submitted Head, and trusted master ancestry."
+          elif [[ "$GITHUB_EVENT_NAME" == "merge_group" ]]; then
+            # GitHub's queue may group multiple PRs. Its head is the entire
+            # queued combination and is the unit that must pass full CI.
+            if [[ ! "$MERGE_GROUP_HEAD_SHA" =~ ^[a-f0-9]{40}$ ||
+                  ! "$MERGE_GROUP_BASE_SHA" =~ ^[a-f0-9]{40}$ ||
+                  "$checkout_sha" != "$MERGE_GROUP_HEAD_SHA" ]]; then
+              echo "::error title=Invalid Merge Queue candidate::Checkout must equal the queued head SHA"
+              exit 1
             fi
-            echo "PR candidate verified: exact event SHA, submitted Head, and forward-only trusted Base ancestry."
+            git fetch --quiet --no-tags origin '+refs/heads/master:refs/remotes/origin/master'
+            live_master_sha="$(git rev-parse refs/remotes/origin/master)"
+            if ! git merge-base --is-ancestor "$MERGE_GROUP_BASE_SHA" "$checkout_sha" ||
+               ! git merge-base --is-ancestor "$live_master_sha" "$checkout_sha"; then
+              echo "::error title=Stale Merge Queue candidate::Queued head does not contain the event Base and the live master; requeue required."
+              exit 1
+            fi
+            echo "Merge Queue candidate verified: exact queued head, event Base ancestry, and live master ancestry."
           else
             echo "Non-PR checkout verified against the exact workflow event SHA."
           fi
@@ -2619,8 +2642,11 @@ jobs:
           echo "Scoped $CI_SCOPE PR validation passed; master and v* remain full."
 
   publish-master:
+    # Build and package jobs may run in parallel, but *publishing* a Snapshot
+    # must wait for every applicable test, including the real Android emulator.
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs:
+      - final-gate
       - build-client-core
       - build-source-agent
       - package-linux-client
