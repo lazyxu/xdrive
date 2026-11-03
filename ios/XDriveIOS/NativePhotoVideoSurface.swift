@@ -44,6 +44,16 @@ struct XDriveIOSNativePhotoVideoSurface: View {
     let player: AVPlayer
     let showChrome: Bool
     let onChromeTap: () -> Void
+    let onNavigateSwipe: ((Int) -> Void)?
+
+    init(player: AVPlayer, showChrome: Bool,
+         onChromeTap: @escaping () -> Void,
+         onNavigateSwipe: ((Int) -> Void)? = nil) {
+        self.player = player
+        self.showChrome = showChrome
+        self.onChromeTap = onChromeTap
+        self.onNavigateSwipe = onNavigateSwipe
+    }
 
     @Environment(\.scenePhase) private var phase
     @State private var position = 0.0
@@ -87,6 +97,21 @@ struct XDriveIOSNativePhotoVideoSurface: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onChromeTap)
+                // Recognize page swipes only on the video canvas. The timeline
+                // Slider above this layer keeps its own drag-to-seek gesture.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 72, coordinateSpace: .local)
+                        .onEnded { value in
+                            guard canControl, !seeking,
+                                  let onNavigateSwipe,
+                                  let direction = XDriveIOSNativeViewerSwipePolicy.direction(
+                                    horizontal: value.translation.width,
+                                    vertical: value.translation.height,
+                                    zoom: 1, minimum: 1
+                                  ) else { return }
+                            onNavigateSwipe(direction)
+                        }
+                )
                 .accessibilityLabel("视频，轻点显示或隐藏控制栏")
 
             if showChrome {
