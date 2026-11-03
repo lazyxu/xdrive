@@ -96,7 +96,7 @@ test('recent and favorites match Browse list/icon presentation without duplicati
 test('Recent and Favorites locate both list and grid items in the real Owner folder', () => {
   assert.match(screen, /@State private var locateIntent: XDriveIOSNativeFilesCollectionItem\?/)
   assert.match(screen, /@State private var locateOwner: XDriveNativeOwnerRoot\?/)
-  assert.equal((screen.match(/\.contextMenu \{\s*Button \{ showLocation\(for: item\) \}/g) || []).length, 2)
+  assert.equal((screen.match(/\.contextMenu \{\s*collectionQuickActions\(for: item\)\s*\}/g) || []).length, 2)
   assert.match(screen, /Label\("显示所在文件夹", systemImage: "folder"\)/)
   assert.match(screen, /private func showLocation\(for item: XDriveIOSNativeFilesCollectionItem\)/)
   assert.match(screen, /guard phase == \.active, model\.verified, !model\.loading,/)
@@ -105,8 +105,8 @@ test('Recent and Favorites locate both list and grid items in the real Owner fol
   assert.match(screen, /\.sheet\(item: \$locateIntent, onDismiss: \{\s*locateOwner = nil\s*reload\(\)/)
   assert.match(screen, /XDriveIOSNativeFilesLocateScreen\(\s*login: login, selected: selected\.node,/)
   assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, openedOwner\)/)
-  assert.match(screen, /if selectedFile == nil && locateIntent == nil/)
-  assert.match(screen, /locateIntent = nil\s*locateOwner = nil\s*model\.invalidate\(\)/)
+  assert.match(screen, /if selectedFile == nil && locateIntent == nil && managementIntent == nil/)
+  assert.match(screen, /locateIntent = nil\s*locateOwner = nil\s*managementIntent = nil\s*model\.invalidate\(\)/)
   // Root-originated results must open the cloud root itself, not Browse home.
   assert.match(location, /login: login, folderID: openedOwner\.rootNodeID,/)
   assert.match(location, /XDriveIOSNativeFilesLocateModel/)
@@ -130,7 +130,7 @@ test('native Files can favorite non-root folders with real Owner API and remove 
   assert.match(panel, /Button\("收藏此文件夹"\)/)
   assert.match(panel, /favoriteMutation\.add\(directory, login: login\)/)
   assert.match(panel, /native-ios-files-add-folder-favorite/)
-  assert.equal((screen.match(/if kind == \.favorites \{/g) || []).length, 2)
+  assert.equal((screen.match(/if kind == \.favorites \{/g) || []).length, 3)
   assert.match(screen, /favorites\.remove\(item, login: login\) \{ reload\(\) \}/)
   assert.match(screen, /kind == \.favorites[\s\S]*?Label\("取消收藏", systemImage: "star\.slash"\)/)
   assert.match(screen, /if item\.node\.isDirectory \{[\s\S]*?XDriveIOSNativeFilesBrowser\(/)
@@ -157,3 +157,28 @@ test('native Files favorite shortcut reuses real Owner and revision verified fil
   assert.match(panel, /favoriteMutation\.add\(directory, login: login\)/)
   assert.match(panel, /favoriteMutation\.add\(file, login: login\)/)
 });
+
+test('Recent and Favorites expose native long-press and swipe operations through the same verified writers', () => {
+  assert.match(screen, /private struct XDriveIOSNativeFilesCollectionManageIntent: Identifiable/)
+  assert.match(screen, /@State private var managementIntent: XDriveIOSNativeFilesCollectionManageIntent\?/)
+  assert.match(screen, /private func collectionQuickActions\(/)
+  for (const action of ['copy', 'move', 'rename', 'shareLink', 'download', 'trash']) {
+    assert.match(screen, new RegExp('openManagement\\(for: item, quickAction: \\.' + action + '\\)'))
+  }
+  assert.match(screen, /if kind == \.favorites \{[\s\S]*?favorites\.remove\(item, login: login\) \{ reload\(\) \}/)
+  assert.match(screen, /openManagement\(for: item, quickAction: \.favorite\)/)
+  assert.match(screen, /if !item\.node\.isDirectory \{\s*Button \{ openFile\(item\) \}/)
+  assert.match(screen, /\.swipeActions\(edge: \.trailing, allowsFullSwipe: false\)/)
+  assert.match(screen, /private func openManagement\([\s\S]*?phase == \.active, model\.verified, !model\.loading,/)
+  assert.match(screen, /let owner = login\.owner, let parentID = item\.node\.parent_id,/)
+  assert.match(screen, /XDriveIOSNativeFilesCollectionsPolicy\.validItem\(item, kind: kind\),\s*model\.items\.contains\(item\)/)
+  assert.match(screen, /\.sheet\(item: \$managementIntent, onDismiss: \{\s*reload\(\)/)
+  assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, intent\.owner\)/)
+  assert.match(screen, /folderID: parentID, folderName: nil,/)
+  assert.match(screen, /file: intent\.item\.node\.isDirectory \? nil : intent\.item\.node/)
+  assert.match(screen, /directory: intent\.item\.node\.isDirectory \? intent\.item\.node : nil/)
+  assert.match(screen, /initialQuickAction: intent\.quickAction/)
+  assert.match(panel, /func applyInitialQuickAction\(\)/)
+  assert.match(panel, /showingTrash = true/)
+  assert.doesNotMatch(screen, /WKWebView|import WebKit|\/api\/v1\/uploads/)
+})
