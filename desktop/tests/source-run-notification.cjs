@@ -4,6 +4,8 @@ const assert = require('node:assert/strict')
 const {
   sourceRunIsTerminal,
   sourceRunNotificationPresentation,
+  sourceRunNotificationTarget,
+  mountSyncCompletionPresentation,
 } = require('../dist/main/source_run_notification.cjs')
 
 function run(overrides = {}) {
@@ -75,4 +77,22 @@ test('source run terminal detection excludes running state', () => {
   for (const status of ['completed', 'partial', 'failed', 'cancelled']) {
     assert.equal(sourceRunIsTerminal(status), true)
   }
+})
+
+test('mount status notification does not invent successful file transfers', () => {
+  const message = mountSyncCompletionPresentation()
+  assert.match(message.body, /任务中心/)
+  assert.match(message.body, /尚未记录/)
+  assert.doesNotMatch(message.body, /已同步 \\d+/)
+})
+
+test('source-run deep links keep run identity and enforce an account scope', () => {
+  assert.deepEqual(
+    sourceRunNotificationTarget(7, 'run-123', { server: 'https://nas.example', username: 'alice' }),
+    { kind: 'source-run', sourceID: 7, runID: 'run-123',
+      server: 'https://nas.example', username: 'alice' },
+  )
+  assert.equal(sourceRunNotificationTarget(0, 'run', { server: 'https://nas', username: 'alice' }), null)
+  assert.equal(sourceRunNotificationTarget(7, '', { server: 'https://nas', username: 'alice' }), null)
+  assert.equal(sourceRunNotificationTarget(7, 'run', { server: '', username: 'alice' }), null)
 })
