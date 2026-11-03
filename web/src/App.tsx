@@ -1621,7 +1621,7 @@ function FileManager({
   const notesPort = useMemo(() => mobileOwnerScope
     ? createXDriveWebNotesPort(api, `${mobileOwnerScope}:${authEpochRef.current}`)
     : undefined, [api, mobileOwnerScope])
-  const shareCenterPort = useMemo(() => ({)
+  const shareCenterPort = useMemo(() => ({
     listPage: (cursor: number, limit: number, signal?: AbortSignal) => api.ownerShares(cursor, limit, signal),
     getShareLink: async (id: number) => {
       const { token } = await api.shareLink(id)
