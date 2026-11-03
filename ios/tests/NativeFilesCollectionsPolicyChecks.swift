@@ -26,7 +26,15 @@ struct NativeFilesCollectionsPolicyChecks {
         )
         check(P.validItems([recent, recentDir], kind: .recent), "file/dir recent")
         check(P.validItems([favorite], kind: .favorites), "file favorite")
-        check(!P.validItem(recentDir, kind: .favorites), "cannot favorite a folder")
+        let favoriteDir = XDriveIOSNativeFilesCollectionItem(
+            node: folder, path: "home/Docs", accessed_at: nil,
+            favorited_at: "2026-11-01T09:00:00Z"
+        )
+        check(P.validItem(favoriteDir, kind: .favorites), "non-root folder favorite")
+        check(P.validItems([favorite, favoriteDir], kind: .favorites),
+              "mixed file and folder favorites")
+        check(!P.validItem(recentDir, kind: .favorites),
+              "recent directory needs real favorited timestamp")
         check(!P.validItem(recent, kind: .favorites), "wrong timestamp kind")
         check(!P.validItems([favorite, favorite], kind: .favorites), "duplicate IDs")
         check(!P.validItems(Array(repeating: recent, count: 51), kind: .recent), "recent cap")
@@ -41,6 +49,11 @@ struct NativeFilesCollectionsPolicyChecks {
             node: root, path: "root", accessed_at: "x", favorited_at: nil
         )
         check(!P.validItem(rootRecent, kind: .recent), "root is not a recent entry")
+        let rootFavorite = XDriveIOSNativeFilesCollectionItem(
+            node: root, path: "root", accessed_at: nil, favorited_at: "x"
+        )
+        check(!P.validItem(rootFavorite, kind: .favorites),
+              "Owner root cannot be a favorite")
         print("native Files recent/favorites Owner projection policy: PASS")
     }
 }
