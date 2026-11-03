@@ -60,6 +60,17 @@ type offlineImportStatus struct {
 	ReadyToVerify bool                      `json:"ready_to_verify"`
 }
 
+// Read directory entries through a directory file, not a nonexistent
+// os.Root.ReadDir API. os.Root pins all names within this Host mount.
+func offlineImportReadDir(root *os.Root) ([]os.DirEntry, error) {
+	dir, err := root.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	return dir.ReadDir(-1)
+}
+
 func offlineImportAllowedFile(name string) bool {
 	switch name {
 	case "manifest.json", "xdrive-offline-linux-amd64",
@@ -140,7 +151,7 @@ func (s *Server) adminCreateOfflineUpdateImport(c *gin.Context) {
 		return
 	}
 	defer root.Close()
-	entries, err := root.ReadDir(".")
+	entries, err := offlineImportReadDir(root)
 	if err != nil {
 		offlineImportError(c, err)
 		return
@@ -209,7 +220,7 @@ func offlineImportStatusFor(root *os.Root, id string) (offlineImportStatus, erro
 		ID: id, ChunkBytes: offlineImportChunkBytes,
 		Files: make([]offlineImportFileStatus, 0),
 	}
-	entries, err := root.ReadDir(".")
+	entries, err := offlineImportReadDir(root)
 	if err != nil {
 		return status, err
 	}
@@ -288,7 +299,7 @@ func (s *Server) adminGetOfflineUpdateImport(c *gin.Context) {
 }
 
 func offlineImportExistingBytes(root *os.Root) (int64, error) {
-	entries, err := root.ReadDir(".")
+	entries, err := offlineImportReadDir(root)
 	if err != nil {
 		return 0, err
 	}
@@ -623,7 +634,7 @@ func (s *Server) adminListOfflineUpdateImports(c *gin.Context) {
 		return
 	}
 	defer root.Close()
-	entries, err := root.ReadDir(".")
+	entries, err := offlineImportReadDir(root)
 	if err != nil {
 		offlineImportError(c, err)
 		return
@@ -674,7 +685,7 @@ func (s *Server) adminDeleteOfflineUpdateImport(c *gin.Context) {
 		offlineImportError(c, err)
 		return
 	}
-	entries, err := session.ReadDir(".")
+	entries, err := offlineImportReadDir(session)
 	_ = session.Close()
 	if err != nil {
 		offlineImportError(c, err)
