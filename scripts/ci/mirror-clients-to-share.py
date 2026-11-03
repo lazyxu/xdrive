@@ -111,7 +111,7 @@ def validate_source(path: Path, platform: str) -> None:
     if not 0 < path.stat().st_size <= MAX_FILE_SIZE:
         raise MirrorError(f"Invalid {platform} installer size (limit 256 MiB)")
     with path.open('rb') as fp:
-        signature = fp.read(8)
+        signature = fp.read(20)
     if platform == 'windows' and signature[:2] != b'MZ':
         raise MirrorError('Windows installer lacks PE envelope')
     if platform == 'linux' and signature != b'!<arch>\n':
@@ -129,9 +129,11 @@ def validate_source(path: Path, platform: str) -> None:
                 raise MirrorError('Empty Backup CLI ZIP')
     if platform == 'backup-linux' and signature[:2] != b'\x1f\x8b':
         raise MirrorError('Linux Backup CLI is not gzip')
-    if platform.startswith('agent-') and (signature[:4] != b'\x7fELF' or
-                                          len(signature) < 8 or signature[4] != 2):
-        raise MirrorError('Source Agent is not a 64-bit ELF executable')
+    if platform.startswith('agent-'):
+        expected_machine = b'\x3e\x00' if platform == 'agent-linux-amd64' else b'\xb7\x00'
+        if (signature[:4] != b'\x7fELF' or len(signature) < 20 or
+                signature[4:6] != b'\x02\x01' or signature[18:20] != expected_machine):
+            raise MirrorError('Source Agent ELF architecture differs from release')
     # DSM's signed checksum and real XZ/GUI envelope are validated before
     # plan creation by scripts/ci/verify-synology-spk-release.sh.
 
