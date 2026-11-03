@@ -77,8 +77,8 @@
           queued: run.state?.status === "WORKFLOW_RUN_STATUS_QUEUED"
         });
       }
-      // 创建时间排序不代表状态连续：终态页之后仍可能有更旧的排队 Run。
-      // 因此不能按“整页终态”提前停止，只有最后一页才能结束扫描。
+      // 创建时间排序不代表状态连续：单页终态不足以说明更旧 Run 已结束。
+      // 按约定，连续两页终态才停止；否则继续翻页。
       const statusCounts = {};
       for (const run of rows) {
         const state = String(run?.state?.status || "UNKNOWN")
