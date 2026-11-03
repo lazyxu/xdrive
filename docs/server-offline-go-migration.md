@@ -44,7 +44,7 @@ Go 校验必须继续满足 PR #3693 的约束：
 - **CI 端到端**：真正离线五组件产物完整签名、Go/Python 同一 Manifest 验证结果、受控 Docker Store classic/containerd 各一次、恢复锁、App-only 与启用可选 profile。
 - **实机**：Gen10 离线导入、更新及回滚、恢复后 Server/Postgres 健康、旧 Source/共享/文件完整性与配置；未执行之前状态始终标注「未验收」。
 
-当前 Go Draft PR 只完成 **G0 的代码草案**，还没有替换生产发行；G1/G2/G3 应在 G0 验证之后独立检查再接入。
+Go 核心 PR #3751 已通过准确 HEAD 的 CI 并合入 `master`，完成 G0 的源码接入，**生产默认离线安装器尚未切换**。当前 PR #3760 提供 G1/G2 的增量发行改动，必须单独通过其准确 HEAD 的适用 CI 与 Final Gate；G3 的 Host/CLI Go 接入由 #3758 独立验证。不得把上游 G0 的绿色 CI 视为本发行分支已验收。
 
 ## G1 实施分支：新版 Release 追加签名 Go ELF（尚未默认启用）
 
