@@ -6,6 +6,7 @@ remote bytes, including prior uploads, must match before delivery.json appears.
 """
 from __future__ import annotations
 import argparse
+from contextlib import contextmanager
 import hashlib
 import importlib.util
 import json
@@ -35,6 +36,36 @@ REPOSITORY = 'lazyxu/xdrive'
 METADATA_LIMIT = 16 * 1024 * 1024
 PACKAGE_LIMIT = 8 * 1024**3
 
+# Only constants and fixed component names may reach the public CI log.
+# The underlying Share/GitHub exception can contain a private capability URL.
+PUBLISH_PHASES = frozenset({
+    'github-manifest', 'local-archive', 'share-grant', 'share-root',
+    'share-packages-root', 'share-channel', 'share-release-folder',
+    'share-manifest', 'share-installer', 'share-attestation', 'share-completion',
+} | {f'github-package-{component}' for component in offline.COMPONENTS}
+  | {f'share-package-{component}' for component in offline.COMPONENTS})
+
+
+class MirrorPhaseError(MirrorError):
+    def __init__(self, phase):
+        if phase not in PUBLISH_PHASES:
+            raise ValueError('Unknown mirror stage')
+        super().__init__('Server mirror publication stage failed')
+        self.phase = phase
+
+
+@contextmanager
+def mirror_phase(phase):
+    if phase not in PUBLISH_PHASES:
+        raise ValueError('Unknown mirror stage')
+    print('[server-mirror] verifying ' + phase, flush=True)
+    try:
+        yield
+    except (MirrorError, OSError, ValueError, KeyError, TypeError) as error:
+        if isinstance(error, MirrorPhaseError):
+            raise
+        raise MirrorPhaseError(phase) from error
+
 
 def check_file(path, size, digest):
     if (type(size) is not int or not 0 < size <= PACKAGE_LIMIT or
@@ -62,23 +93,24 @@ def manifest_at(directory):
 
 
 def fetch_packages(directory):
-    manifest = manifest_at(directory)
+    with mirror_phase('github-manifest'):
+        manifest = manifest_at(directory)
     for component in offline.COMPONENTS:
-        item = manifest['packages'][component]
-        path = directory / item['filename']
-        if not path.exists() and not path.is_symlink():
-            # The validated tag is bound to this component and archive digest.
-            # Never use latest, a branch, a registry pull or rebuild missing bytes.
-            with tempfile.TemporaryDirectory(prefix='xdrive-package-fetch-', dir=directory) as temp:
-                result = subprocess.run(['gh', 'release', 'download', item['release_tag'],
-                                         '--repo', REPOSITORY, '--pattern', item['filename'], '--dir', temp],
-                                        stdin=subprocess.DEVNULL, capture_output=True, check=False)
-                if result.returncode:
-                    raise MirrorError('Exact GitHub package download failed')
-                staged = Path(temp) / item['filename']
-                check_file(staged, item['size'], item['sha256'])
-                staged.replace(path)
-        check_file(path, item['size'], item['sha256'])
+        with mirror_phase('github-package-' + component):
+            item = manifest['packages'][component]
+            path = directory / item['filename']
+            if not path.exists() and not path.is_symlink():
+                # Download only the exact signed component; never use a floating tag.
+                with tempfile.TemporaryDirectory(prefix='xdrive-package-fetch-', dir=directory) as temp:
+                    result = subprocess.run(['gh', 'release', 'download', item['release_tag'],
+                                             '--repo', REPOSITORY, '--pattern', item['filename'], '--dir', temp],
+                                            stdin=subprocess.DEVNULL, capture_output=True, check=False)
+                    if result.returncode:
+                        raise MirrorError('Exact GitHub package download failed')
+                    staged = Path(temp) / item['filename']
+                    check_file(staged, item['size'], item['sha256'])
+                    staged.replace(path)
+            check_file(path, item['size'], item['sha256'])
     return manifest
 
 
@@ -194,24 +226,35 @@ def validate_delivery(directory, manifest):
 
 
 def publish(directory, share):
-    manifest = manifest_at(directory)
-    descriptor = validate_delivery(directory, manifest)
-    for item in manifest['packages'].values():
-        check_file(directory / item['filename'], item['size'], item['sha256'])
-    share.verify_grant()
-    root = share.directory(0, 'xDrive-Server')
-    package_root = share.directory(root, 'packages')
+    with mirror_phase('local-archive'):
+        manifest = manifest_at(directory)
+        descriptor = validate_delivery(directory, manifest)
+        for item in manifest['packages'].values():
+            check_file(directory / item['filename'], item['size'], item['sha256'])
+    with mirror_phase('share-grant'):
+        share.verify_grant()
+    with mirror_phase('share-root'):
+        root = share.directory(0, 'xDrive-Server')
+    with mirror_phase('share-packages-root'):
+        package_root = share.directory(root, 'packages')
     for component in offline.COMPONENTS:
-        item = manifest['packages'][component]
-        folder = share.directory(package_root, item['sha256'])
-        share.upload(folder, item['filename'], directory / item['filename'], item['sha256'],
-                     'server-' + component, manifest['source_commit'])
-    channel = share.directory(root, 'master')
-    folder = share.directory(channel, f"{descriptor['sequence']}-{manifest['source_commit']}")
-    # The completion marker must remain last, including on interrupted retries.
-    for name in ('manifest.json', 'xdrive-offline.py', 'delivery-attestation.jsonl', 'delivery.json'):
-        path = directory / name
-        share.upload(folder, name, path, client.sha256_file(path), 'server-delivery', manifest['source_commit'])
+        with mirror_phase('share-package-' + component):
+            item = manifest['packages'][component]
+            folder = share.directory(package_root, item['sha256'])
+            share.upload(folder, item['filename'], directory / item['filename'], item['sha256'],
+                         'server-' + component, manifest['source_commit'])
+    with mirror_phase('share-channel'):
+        channel = share.directory(root, 'master')
+    with mirror_phase('share-release-folder'):
+        folder = share.directory(channel, f"{descriptor['sequence']}-{manifest['source_commit']}")
+    # The authenticated completion marker must remain last even on retries.
+    for name, phase in (('manifest.json', 'share-manifest'),
+                        ('xdrive-offline.py', 'share-installer'),
+                        ('delivery-attestation.jsonl', 'share-attestation'),
+                        ('delivery.json', 'share-completion')):
+        with mirror_phase(phase):
+            path = directory / name
+            share.upload(folder, name, path, client.sha256_file(path), 'server-delivery', manifest['source_commit'])
     print('Server mirror verified: sequence ' + str(descriptor['sequence']) + ', commit ' + manifest['source_commit'])
 
 
@@ -617,7 +660,8 @@ def main():
     except (MirrorError, OSError, ValueError, KeyError, TypeError) as error:
         # Only locally controlled codes are logged; exceptions may contain URLs
         # or credentials from an external process or private Share request.
-        code = (error.code if isinstance(error, PublicationError) and error.code in PublicationError.CODES
+        code = (error.phase if isinstance(error, MirrorPhaseError)
+                else error.code if isinstance(error, PublicationError) and error.code in PublicationError.CODES
                 else 'verification')
         print(f'Server release verification failed [{code}]; no publication may be assumed', file=sys.stderr)
         return 1
