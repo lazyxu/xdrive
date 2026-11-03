@@ -314,7 +314,7 @@ func (s *Server) createSource(c *gin.Context) {
 	if req.RunMode == "" {
 		req.RunMode = meta.SourceRunModeSync
 	}
-	if !meta.ValidSourceName(req.Name) || !meta.ValidSourceKind(req.Kind) || !meta.ValidSourceDirection(req.Direction) {
+	if !meta.ValidSourceName(req.Name) || meta.ValidateName(req.Name) != nil || !meta.ValidSourceKind(req.Kind) || !meta.ValidSourceDirection(req.Direction) {
 		fail(c, http.StatusBadRequest, "invalid source name, kind, or direction")
 		return
 	}
@@ -510,7 +510,7 @@ func (s *Server) updateSource(c *gin.Context) {
 		resetMirrorEvidence := false
 		if req.Name != nil {
 			name := strings.TrimSpace(*req.Name)
-			if !meta.ValidSourceName(name) {
+			if !meta.ValidSourceName(name) || meta.ValidateName(name) != nil {
 				return errInvalidSourceConfig
 			}
 			var count int64
@@ -521,6 +521,14 @@ func (s *Server) updateSource(c *gin.Context) {
 			}
 			if count != 0 {
 				return errSourceNameTaken
+			}
+			if name != current.Name {
+				if req.TargetNodeID != nil && (current.TargetNodeID == nil || *req.TargetNodeID != *current.TargetNodeID) {
+					return errSourceTargetMigrationRequired
+				}
+				if err := renameManagedSourceTargetTx(tx, current, name); err != nil {
+					return err
+				}
 			}
 			updates["name"] = name
 		}
@@ -580,7 +588,7 @@ func (s *Server) updateSource(c *gin.Context) {
 			updates["schedule_timezone"] = schedule.Timezone
 		}
 		if req.TargetNodeID != nil {
-			if current.Kind == yikeSourceKind {
+			if current.Kind == yikeSourceKind || (current.TargetManaged && (current.TargetNodeID == nil || *current.TargetNodeID != *req.TargetNodeID)) {
 				return errManagedSourceTarget
 			}
 			if *req.TargetNodeID == 0 {
@@ -637,6 +645,12 @@ func (s *Server) updateSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
+		case errors.Is(err, errSourceTargetNameConflict):
+			fail(c, http.StatusConflict, "managed target folder name already exists")
+		case errors.Is(err, errSourceTargetMigrationRequired):
+			fail(c, http.StatusConflict, "source target migration required before rename")
+		case errors.Is(err, errSourceTargetRenameActive):
+			fail(c, http.StatusConflict, "source has an active run; retry after it finishes")
 		case errors.Is(err, errSourceNameTaken), isDuplicate(err):
 			fail(c, http.StatusConflict, "source name already exists")
 		case errors.Is(err, errLocalFolderNotReady):
@@ -646,7 +660,7 @@ func (s *Server) updateSource(c *gin.Context) {
 		case errors.Is(err, errSourceConnectorConfigRequired):
 			fail(c, http.StatusConflict, "source connector config must be configured before activation")
 		case errors.Is(err, errManagedSourceTarget):
-			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
+			fail(c, http.StatusBadRequest, "managed source target cannot be changed manually")
 		case errors.Is(err, errInvalidSourceTarget):
 			fail(c, http.StatusBadRequest, "target directory not found")
 		case errors.Is(err, errInvalidSourceConfig):
