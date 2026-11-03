@@ -317,7 +317,6 @@ function WebAccountMenu({
         subtitle="外观与服务端信息"
         appearance={appearance}
         onAppearanceChange={onAppearanceChange}
-        buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
       >
         {offlineOwner ? <PwaOfflineDirectorySection owner={offlineOwner} onConsentChange={onOfflineConsentChange} /> : null}
       </XDriveSettingsDialog>
@@ -2689,12 +2688,15 @@ function FileManager({
           { replace: options?.replace },
         ),
       } : undefined,
-      adminMaintenance: serverAdminVerified ? {
+      adminUpdate: serverAdminVerified ? {
         updatePort: maintenanceUpdatePort,
-        backupPort: maintenanceBackupPort,
-        onOpenStorage: () => setAppView('admin-storage'),
+        buildInfo: [{ title: 'Server 构建信息', info: serverBuild }],
         unavailableLabel: 'Web/API',
         initialChannel: serverBuild?.channel === 'master' ? 'master' : 'stable',
+      } : undefined,
+      adminMaintenance: serverAdminVerified ? {
+        backupPort: maintenanceBackupPort,
+        onOpenStorage: () => setAppView('admin-storage'),
       } : undefined,
       adminStorage: serverAdminVerified ? {
         api,
@@ -3259,7 +3261,7 @@ function FileManager({
           // outlet; never admit Browser Files/admin/native DSM capabilities.
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : (appView === 'admin-users' || appView === 'admin-audit' ||
-          appView === 'admin-services' || appView === 'admin-maintenance' ||
+          appView === 'admin-services' || appView === 'admin-update' || appView === 'admin-maintenance' ||
           appView === 'admin-storage') && serverAdminVerified ? (
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : (

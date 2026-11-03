@@ -1301,7 +1301,7 @@ export default function App({
   }, [acceptTransferSnapshot, status?.server, status?.username])
 
   useEffect(() => {
-    if ((view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-storage' || view === 'admin-services' || view === 'admin-maintenance') && status?.role !== 'admin') setView('transfers')
+    if ((view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-storage' || view === 'admin-services' || view === 'admin-update' || view === 'admin-maintenance') && status?.role !== 'admin') setView('transfers')
   }, [view, status?.role])
 
   useEffect(() => {
@@ -3122,11 +3122,13 @@ export default function App({
             },
           onExport: () => { void exportDiagnostics() },
       },
-      adminMaintenancePage: status?.role === 'admin'
+      adminUpdatePage: status?.role === 'admin'
         ? {
         updatePort: serverUpdatePort,
-        backupPort: agent.hello?.capabilities.includes('admin-backups') ? maintenanceBackupPort : undefined,
-        onOpenStorage: () => setView('admin-storage'),
+        buildInfo: [
+          { title: 'Server 构建信息', info: status?.server_build },
+          { title: 'Desktop 构建信息', info },
+        ],
         supported: serverUpdateSupported,
         unavailableLabel: "服务端与 Desktop",
         unsupportedMessage: "当前 xdrive-agent 不支持服务端更新，请先更新客户端核心组件。",
@@ -3136,6 +3138,11 @@ export default function App({
                 ? 'server-update'
                 : current === 'server-update' ? '' : current)
             },
+      } : undefined,
+      adminMaintenancePage: status?.role === 'admin'
+        ? {
+        backupPort: agent.hello?.capabilities.includes('admin-backups') ? maintenanceBackupPort : undefined,
+        onOpenStorage: () => setView('admin-storage'),
       } : undefined,
       adminUsersPage: status?.role === 'admin' && agent.hello?.capabilities.includes('admin-users')
         ? {
@@ -3363,11 +3370,6 @@ export default function App({
           appearance={appearance}
           appearanceDisabled={busy === 'appearance'}
           onAppearanceChange={(next) => void changeAppearance(next)}
-          buildInfoSectionID="desktop-build-info"
-          buildInfo={[
-            { title: 'Desktop 构建信息', info },
-            { title: 'Server 构建信息', info: status?.server_build },
-          ]}
         >
           <DesktopSettingsContent
             desktopPreferences={desktopPreferences}
