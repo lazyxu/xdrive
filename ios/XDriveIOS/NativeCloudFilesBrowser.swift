@@ -395,6 +395,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var offset = 0
     @State private var queryDraft = ""
     @State private var activeQuery = ""
+    @State private var searchReturnOffset: Int?
     @State private var sort = "name"
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
     @State private var order = "asc"
@@ -452,30 +453,71 @@ struct XDriveIOSNativeFilesBrowser: View {
         model.entries.filter { selectedIDs.contains($0.id) }.map(\.node)
     }
 
-    private var filesHeader: some View {
-            Section {
-                HStack(spacing: 8) {
-                    TextField("搜索全部文件", text: $queryDraft)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .submitLabel(.search)
-                        .onSubmit { submitSearch() }
-                        .accessibilityIdentifier("native-ios-files-search-input")
-                    Button("搜索") { submitSearch() }
-                        .accessibilityIdentifier("native-ios-files-search")
-                    if !activeQuery.isEmpty || !queryDraft.isEmpty {
-                        Button("清除") {
-                            queryDraft = ""
-                            activeQuery = ""
-                            searchError = nil
-                            reload(resetOffset: true)
-                        }
-                        .accessibilityIdentifier("native-ios-files-clear-search")
+    /// Native Files Browse starts at locations and shortcuts, not inside an
+    /// arbitrary server directory. Enter the verified cloud root explicitly.
+    private var isHome: Bool { folder == nil && activeQuery.isEmpty }
+
+    @ViewBuilder private var filesHome: some View {
+        Section("位置") {
+            if let owner = login.owner {
+                NavigationLink {
+                    XDriveIOSNativeFilesBrowser(
+                        login: login, folderID: owner.rootNodeID,
+                        folderName: "xDrive 云端"
+                    )
+                } label: {
+                    HStack(spacing: 12) {
+                        Label("xDrive 云端", systemImage: "externaldrive")
+                        Spacer()
+                        Text(owner.origin.host ?? "云端")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
+                .accessibilityIdentifier("native-ios-files-open-root-location")
+            } else {
+                Label("请先登录 xDrive 服务器", systemImage: "externaldrive.badge.xmark")
+                    .foregroundStyle(.secondary)
+            }
+            NavigationLink {
+                XDriveIOSNativeFilesTrashScreen(login: login)
+            } label: {
+                Label("最近删除", systemImage: "trash")
+            }
+            .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
+            .accessibilityIdentifier("native-ios-files-open-trash")
+        }
+        Section("个人收藏") {
+            NavigationLink {
+                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
+            } label: {
+                Label("收藏夹", systemImage: "star")
+            }
+            .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
+            .accessibilityIdentifier("native-ios-files-open-favorites")
+        }
+        Section("快捷访问") {
+            NavigationLink {
+                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
+            } label: {
+                Label("最近使用", systemImage: "clock")
+            }
+            .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
+            .accessibilityIdentifier("native-ios-files-open-recent")
+        }
+    }
+
+    @ViewBuilder private var filesHeader: some View {
+        if !activeQuery.isEmpty || searchError != nil || locatedFileNotice != nil {
+            Section {
                 if !activeQuery.isEmpty {
-                    Text("全库搜索：\(activeQuery)")
-                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text("全库搜索：\(activeQuery)")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Button("清除") { clearSearch() }
+                            .accessibilityIdentifier("native-ios-files-clear-search")
+                    }
                 }
                 if let searchError {
                     Text(searchError).foregroundStyle(.orange).font(.footnote)
@@ -483,34 +525,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                 if let locatedFileNotice {
                     Text(locatedFileNotice).foregroundStyle(.orange).font(.footnote)
                 }
-                if folder == nil {
-                    NavigationLink {
-                        XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
-                    } label: {
-                        Label("最近使用", systemImage: "clock")
-                    }
-                    .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
-                    .accessibilityIdentifier("native-ios-files-open-recent")
-                    NavigationLink {
-                        XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
-                    } label: {
-                        Label("收藏夹", systemImage: "star")
-                    }
-                    .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
-                    .accessibilityIdentifier("native-ios-files-open-favorites")
-                }
-                NavigationLink {
-                    XDriveIOSNativeFilesTrashScreen(login: login)
-                } label: {
-                    Label("回收站", systemImage: "trash")
-                }
-                .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
-                .accessibilityIdentifier("native-ios-files-open-trash")
             }
+        }
     }
 
     @ViewBuilder private var filesLoadStatus: some View {
-            if model.loading {
+            if model.loading && model.entries.isEmpty {
                 HStack { ProgressView(); Text("正在读取当前页…") }
             } else if let error = model.errorMessage {
                 Text(error).foregroundStyle(.orange)
@@ -760,9 +780,12 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private var filesList: some View {
         List {
-            filesHeader
-            filesLoadStatus
-            if viewMode == "grid" {
+            if isHome {
+                filesHome
+            } else {
+                filesHeader
+                filesLoadStatus
+                if viewMode == "grid" {
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 128, maximum: 184), spacing: 10)],
                     spacing: 10
@@ -784,14 +807,27 @@ struct XDriveIOSNativeFilesBrowser: View {
                         .onAppear { requestContinuationIfNeeded(entry) }
                 }
             }
-            filesContinuationStatus
-            filesBatchOperations
+                filesContinuationStatus
+                filesBatchOperations
+            }
         }
     }
 
     private var filesChrome: some View {
         filesList
         .listStyle(.plain)
+        .searchable(
+            text: $queryDraft,
+            placement: .navigationBarDrawer(displayMode: .automatic),
+            prompt: "搜索全部文件"
+        )
+        .onSubmit(of: .search) { submitSearch() }
+        .onChange(of: queryDraft) { value in
+            if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !activeQuery.isEmpty {
+                clearSearch()
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if selecting { filesSelectionToolbar }
         }
@@ -1032,6 +1068,10 @@ struct XDriveIOSNativeFilesBrowser: View {
             returnOwner = nil
             lastViewedFile = nil
             offset = 0
+            queryDraft = ""
+            activeQuery = ""
+            searchReturnOffset = nil
+            searchError = nil
             model.invalidate()
         }
         .onChange(of: model.verifiedPage) { now in
@@ -1351,13 +1391,30 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func submitSearch() {
         let query = queryDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard query.isEmpty || XDriveIOSNativeFilesPagePolicy.validSearch(query) else {
+        if query.isEmpty {
+            clearSearch()
+            return
+        }
+        guard XDriveIOSNativeFilesPagePolicy.validSearch(query) else {
             searchError = "搜索词至少需要 2 个字符，最多 200 个字符且不超过 256 UTF-8 字节。"
             return
         }
         searchError = nil
+        if query == activeQuery { return }
+        if activeQuery.isEmpty { searchReturnOffset = offset }
         activeQuery = query
         reload(resetOffset: true)
+    }
+
+    private func clearSearch() {
+        guard !activeQuery.isEmpty || !queryDraft.isEmpty else { return }
+        let restoredOffset = searchReturnOffset ?? 0
+        activeQuery = ""
+        queryDraft = ""
+        searchError = nil
+        searchReturnOffset = nil
+        offset = restoredOffset
+        reload()
     }
 
     private func reload(resetOffset: Bool = false) {
@@ -1367,6 +1424,10 @@ struct XDriveIOSNativeFilesBrowser: View {
         batchTarget.invalidate()
         batchDestinationIntent = nil
         if resetOffset { offset = 0 }
+        if isHome {
+            model.invalidate()
+            return
+        }
         guard let parentID else {
             model.invalidate()
             return
