@@ -121,6 +121,15 @@ services:
   */scripts/server-backup.sh)
     emit '#!/usr/bin/env bash
 set -euo pipefail
+if [[ " $* " == *" --preflight-only "* ]]; then
+  printf "%s\n" "$*" >> "$TEST_STATE/backup-preflight-args"
+  printf "preflight backup\n" >> "$TEST_STATE/docker-calls"
+  if [[ "${TEST_BACKUP_SOURCE_PREFLIGHT_FAIL:-0}" == "1" ]]; then
+    echo "xDrive backup: ambiguous managed Server container identity; no services stopped." >&2
+    exit 1
+  fi
+  exit 0
+fi
 printf "%s\n" "$*" >> "$TEST_STATE/backup-args"
 printf "%s\n" "${XD_SERVER_IMAGE:-}" >> "$TEST_STATE/backup-images"
 printf "%s|%s|%s|%s\n" \
@@ -532,6 +541,34 @@ grep -q 'current deployment verifier rejected derived media cache; retrying the 
 grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/upgrade.err"
 if grep -q 'storage consistency verification failed' "$TMP/upgrade.err"; then
   echo "test fixture unexpectedly contains the obsolete installer match phrase" >&2
+  exit 1
+fi
+
+# The staged backup source preflight must run before the first gateway stop.
+# An identity admission failure must not enter the maintenance window.
+preflight_line="$(grep -n '^preflight backup$' "$TMP/state/docker-calls" | head -n1 | cut -d: -f1)"
+[[ -n "$preflight_line" && "$preflight_line" -lt "$first_stop_line" ]]
+cp -a "$TMP/config" "$TMP/source-preflight-config"
+mkdir -p "$TMP/source-preflight-state"
+set +e
+TEST_STATE="$TMP/source-preflight-state" \
+TEST_BACKUP_SOURCE_PREFLIGHT_FAIL=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/source-preflight-config" \
+XD_SHELL_RC_PATH="$TMP/source-preflight.bashrc" \
+XD_NONINTERACTIVE=1 \
+XD_INSTALL_NO_START=1 \
+bash "$INSTALLER" --channel master >"$TMP/source-preflight.out" 2>"$TMP/source-preflight.err"
+source_preflight_status=$?
+set -e
+[[ "$source_preflight_status" -ne 0 ]]
+grep -q 'source preflight failed before maintenance' "$TMP/source-preflight.err"
+grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/source-preflight.err"
+grep -q 'image preflight failed before maintenance' "$TMP/source-preflight.err"
+test -f "$TMP/source-preflight-state/backup-preflight-args"
+test ! -e "$TMP/source-preflight-state/backup-images"
+if grep -q '^stop ' "$TMP/source-preflight-state/docker-calls"; then
+  echo "source preflight failure stopped existing services" >&2
   exit 1
 fi
 
@@ -1050,7 +1087,7 @@ for scenario in target-new target-cached target-orphan target-no-image; do
     [[ -n "$prefetch_line" && -n "$stop_line" && "$prefetch_line" -lt "$stop_line" ]]
   fi
   if [[ "$corrupt" == 1 ]]; then
-    grep -q 'target pre-upgrade verifier failed' "$TMP/$scenario.err"
+    grep -q 'pre-upgrade backup failed (target verifier selected)' "$TMP/$scenario.err"
     if grep -q -- '--allow-inconsistent' "$scenario_state/backup-args"; then
       echo "target failure must not bypass integrity" >&2; exit 1
     fi
