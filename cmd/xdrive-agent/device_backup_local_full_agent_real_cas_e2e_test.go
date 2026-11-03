@@ -91,7 +91,7 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner := meta.User{
-		Username: "dsm-e2e-" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		Username:     "dsm-e2e-" + strings.ReplaceAll(uuid.NewString(), "-", ""),
 		PasswordHash: "fixture-only", Role: meta.UserRoleUser, SessionVersion: 1,
 	}
 	if err := db.Create(&owner).Error; err != nil {
@@ -129,7 +129,7 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := &api.Server{DB: db, Store: localCAS,
-		Auth: auth.New("dsm-e2e-independent-local-server", time.Hour),
+		Auth:       auth.New("dsm-e2e-independent-local-server", time.Hour),
 		RefreshTTL: time.Hour, MaxUploadBytes: 64 << 20}
 	token, err := srv.Auth.Issue(owner.ID, owner.SessionVersion)
 	if err != nil {
