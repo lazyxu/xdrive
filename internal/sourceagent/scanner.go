@@ -56,6 +56,9 @@ type Root struct {
 type Scanner struct {
 	API               API
 	ExecutionAPI      ExecutionAPI
+	// Optional for legacy Synology agent. Real file execution receives a
+	// Server-verified SourceRun writer, not the broad Owner bearer.
+	BindExecutionRun  func(context.Context, uint64, string) (ExecutionAPI, error)
 	SourceID          uint64
 	Roots             []Root
 	BatchSize         int
@@ -174,6 +177,16 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 	case meta.SourceRunModeSync:
 		if s.ExecutionAPI == nil || run.TargetNodeID == nil || *run.TargetNodeID == 0 {
 			return failRun(fmt.Errorf("source sync executor is not configured"))
+		}
+		if s.BindExecutionRun != nil {
+			scoped, err := s.BindExecutionRun(runCtx, s.SourceID, run.ID)
+			if err != nil {
+				return failRun(fmt.Errorf("obtain SourceRun writer grant: %w", err))
+			}
+			if scoped == nil {
+				return failRun(fmt.Errorf("SourceRun writer grant unavailable"))
+			}
+			s.ExecutionAPI = scoped
 		}
 		executor = NewExecutor(s.ExecutionAPI, *run.TargetNodeID)
 		executor.Progress = func(progressCtx context.Context, itemPath string, done, total int64) error {
