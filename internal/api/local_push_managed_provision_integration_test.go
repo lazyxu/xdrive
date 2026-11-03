@@ -175,3 +175,57 @@ func TestLocalPushAutoManagedTargetAndDraftCancellation(t *testing.T) {
 	}
 	create("错误跨用户目标", otherRoot.ID, deviceA, secretA, http.StatusBadRequest)
 }
+
+func TestLocalPushAutoTargetRejectsUnownedDeviceGroup(t *testing.T) {
+	db, server, owner, _, root := setupFilePropertiesTestDB(t)
+	if err := db.AutoMigrate(&meta.ClientDevice{}); err != nil {
+		t.Fatal(err)
+	}
+	gin.SetMode(gin.TestMode)
+	server.Auth = auth.New("occupied-push-group", time.Hour)
+	router := server.Router()
+	ownerJWT, err := server.Auth.Issue(owner.ID, owner.SessionVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := "occupied-group-verified-device-credential-123"
+	now := time.Now().UTC()
+	device := meta.ClientDevice{
+		ID: uuid.NewString(), OwnerID: owner.ID, Name: "User's computer",
+		Platform: "windows", CredentialHash: deviceCredentialDigest(secret),
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatal(err)
+	}
+	groupName, err := managedPushDeviceFolderName(device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	umbrella := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
+	push := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, "设备备份")
+	occupied := createFilePropertiesDir(t, db, owner.ID, push.ID, groupName)
+	body := `{"name":"Not claimed","kind":"local_folder","direction":"push","schedule_type":"manual"}`
+	headers := map[string]string{
+		"X-XDrive-Device-ID": device.ID, "X-XDrive-Device-Token": secret,
+	}
+	result := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources",
+		ownerJWT, strings.NewReader(body), http.StatusConflict, headers)
+	if !strings.Contains(result.Body.String(), "managed source target") {
+		t.Fatalf("missing explicit occupied group conflict: %s", result.Body.String())
+	}
+	var after meta.Node
+	if err := db.First(&after, occupied.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if after.ParentID == nil || *after.ParentID != push.ID || after.Revision != occupied.Revision {
+		t.Fatalf("user-owned device group was modified: %+v", after)
+	}
+	var sources int64
+	if err := db.Model(&meta.Source{}).Where("owner_id = ?", owner.ID).Count(&sources).Error; err != nil {
+		t.Fatal(err)
+	}
+	if sources != 0 {
+		t.Fatalf("conflicted automatic provision left %d Source rows", sources)
+	}
+}
