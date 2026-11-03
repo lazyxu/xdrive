@@ -143,7 +143,7 @@ func validateAndroidWorkflow(workflow map[string]any) error {
 	for _, required := range []string{
 		"git rev-parse HEAD", "GITHUB_SHA", "git cat-file -p", "actual_parents[0]", "actual_parents[1]", "PR_BASE_SHA", "PR_HEAD_SHA",
 		"git fetch --quiet --no-tags origin", "git merge-base --is-ancestor \"$PR_BASE_SHA\" \"${actual_parents[0]}\"",
-		"\"${actual_parents[0]}\" != \"$live_master_sha\"",
+		"git merge-base --is-ancestor \"${actual_parents[0]}\" \"$live_master_sha\"",
 		"\"${actual_parents[1]}\" != \"$PR_HEAD_SHA\"",
 	} {
 		if !strings.Contains(candidateRun, required) {
@@ -220,10 +220,10 @@ func TestAndroidNativeCIRejectsWeakenedGates(t *testing.T) {
 		"Final Gate shallow history cannot prove base ancestry": func(w map[string]any) {
 			androidStep(androidJob(w, "final-gate"), "uses", "actions/checkout@v4")["with"].(map[string]any)["fetch-depth"] = 1
 		},
-		"Final Gate omits fresh master identity": func(w map[string]any) {
+		"Final Gate omits trusted master ancestry": func(w map[string]any) {
 			candidate := androidStep(androidJob(w, "final-gate"), "name", "Verify exact CI checkout and PR merge candidate parents")
 			candidate["run"] = strings.Replace(candidate["run"].(string),
-				"\"${actual_parents[0]}\" != \"$live_master_sha\"", "true", 1)
+				"git merge-base --is-ancestor \"${actual_parents[0]}\" \"$live_master_sha\"", "true", 1)
 		},
 		"Final Gate omits event Base forward ancestry": func(w map[string]any) {
 			candidate := androidStep(androidJob(w, "final-gate"), "name", "Verify exact CI checkout and PR merge candidate parents")

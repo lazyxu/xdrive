@@ -11,17 +11,17 @@
 2. CI 支持 `merge_group.checks_requested`。对队列组合运行完整 CI，Final Gate 验证事件 head SHA、base 祖先、实时 master 祖先。GitHub Merge Queue 为多 PR 串行合入提供原子性；单靠 PR Final Gate 不能消除“检查刚完成、合入前 master 又前进”的 TOCTOU 竞态。
 3. `publish-master` 依赖 `final-gate`。构建/打包仍可并行，但真实 Snapshot 发布不可绕过 Android Emulator 等测试。独立的 Android Master APK Workflow 仍仅生成标识为 Debug 的 GitHub Actions 构建产物，**不是经过放行的 Snapshot/公开发行**。
 4. Android 搜索补充键盘“搜索”提交，与按钮共用 `submitGlobalSearch` 的 Owner 校验。定位用例走真实 IME、只发起一次查询，失败时记录 fixture 状态和搜索请求次数；另一用例继续测试搜索按钮。没有增加超时或自动重试。
-5. `scripts/ci/test_master_ci_gate.py` 在临时本地 Git 仓库运行实际 Gate shell，验证旧基线失败、最新基线通过、队列头不匹配/过期失败。
+5. `scripts/ci/test_master_ci_gate.py` 在临时本地 Git 仓库运行实际 Gate shell，验证绿色 PR 在 master 正常前进后仍可复用、错误 HEAD/不可信 Base 被拒绝；队列头不匹配/过期仍被拒绝。
 
-## **必须在 GitHub 管理界面执行的强制门禁（无法由本次代码 PR 替代）**
+## GitHub 仓库规则（按 Owner 的合入策略配置）
 当前可读规则集 [master ruleset #23892726](https://github.com/lazyxu/xdrive/rules/23892726) 只包含禁止删除和禁止非快进，未配置 Required status checks 或 Merge Queue。仅修改 Workflow 并不禁止 GitHub 手工/自动合入。
 
 在 **本 PR CI 通过且代码合入 master 后**，由拥有仓库 Administration 权限的人员在 Settings → Rules → Rulesets → master 中：
 - 启用 **Require a pull request before merging**（如果当前保护策略没有此要求）。
 - 启用 **Require status checks to pass**，将 `CI / final-gate`（确切名称以 GitHub Checks UI 为准）设为必需检查；不用 `android-native` 单项代替 Final Gate。
-- 启用 **Require merge queue**。队列负责创建实际合入组合，`merge_group` Workflows 必须完成并全绿；保护规则不得允许跳过检查的管理者例外。
-- 校验 `merge_group` 合并队列构造的 SHA 全部检查是否触发；若 Check 名称变化，以实际 `final-gate` 上报名称更新配置。
-- 若无法立刻启用 Merge Queue，临时启用 **Require branches to be up to date before merging**，但它仍非队列的原子合入保证。
+- **不强制 Merge Queue。** 当前 Workflow 支持 `merge_group` 作为可选机制，普通 PR 可在 exact HEAD CI / Final Gate 绿色且无阻塞冲突时直接合入。
+- 如果以后主动启用 Merge Queue，再检查 `merge_group` 事件的实际全量 CI/Final Gate；当前无需为这次 PR 启用。
+- **不要启用 `Require branches to be up to date before merging` 作为本次修复的前置条件**；这会让无冲突的绿色 PR 因 master 不相关提交而不必要地重复 CI。
 
 ## 验收清单
 - 用测试中的临时 Git 仓库验证：旧的已验证 PR candidate 在 master 正常前进时仍通过；伪造的第二父提交、错误事件 Base、与 master 分叉的第一父提交都必须拒绝。
