@@ -68,7 +68,7 @@ func (h *desktopIPCHandler) syncActivityRuns(w http.ResponseWriter,r *http.Reque
  var next any
  if len(runs)==limit {
   tail:=runs[len(runs)-1]
-  next=map[string]any{"before_started_at":tail.StartedAt.UnixNano(),"before_run_id":tail.ID}
+  next=map[string]any{"before_started_at":strconv.FormatInt(tail.StartedAt.UnixNano(),10),"before_run_id":tail.ID}
  }
  writeDesktopIPCJSON(w,http.StatusOK,map[string]any{"items":runs,"next_cursor":next})
 }
@@ -102,7 +102,7 @@ func (h *desktopIPCHandler) syncActivityItems(w http.ResponseWriter,r *http.Requ
  var next any
  if len(items)==limit{
   tail:=items[len(items)-1]
-  next=map[string]any{"before_applied_at":tail.AppliedAt.UnixNano(),"before_item_id":tail.ID}
+  next=map[string]any{"before_applied_at":strconv.FormatInt(tail.AppliedAt.UnixNano(),10),"before_item_id":tail.ID}
  }
  writeDesktopIPCJSON(w,http.StatusOK,map[string]any{"items":items,"next_cursor":next})
 }
