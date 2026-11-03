@@ -4,7 +4,7 @@
 
 ## 同一个管理入口
 
-「管理 → 系统更新」保留当前在线 GitHub/GitLab/xDrive Share Server 更新、完整 BuildInfo、进度/失败回滚的既有 Host 状态。其下增加离线 Go 五组件管理面板。Web/ Desktop 共享 `XDriveOfflineSystemUpdatePanel` 和 `XDriveOfflineImportPort`，不同宿主只提供真实授权传输适配器；目前 Web 已接入 Server 管理员 API，Desktop Agent 传输适配器需按同一 Port 后续实现。普通用户 Desktop 本机更新仍在独立的「客户端更新」入口。
+「管理 → 系统更新」保留当前在线 GitHub/GitLab/xDrive Share Server 更新、完整 BuildInfo、进度/失败回滚的既有 Host 状态。其下增加离线 Go 五组件管理面板。Web/ Desktop 共享 `XDriveOfflineSystemUpdatePanel` 和 `XDriveOfflineImportPort`，不同宿主只提供真实授权传输适配器；Web 已接入 Server 管理员 API；Desktop 同一 Port 目前经 Electron 主窗口 → Go Agent IPC → 经认证 Server 管理员 API 接入。Desktop 仅在 Agent 宣告 `server-offline-import` 能力且当前账号是管理员时显示该面板，仍待适用 CI 验证。普通用户 Desktop 本机更新仍在独立的「客户端更新」入口。
 
 ## 浏览器上传
 

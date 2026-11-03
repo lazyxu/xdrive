@@ -17,28 +17,28 @@ import (
 const OfflineImportChunkBytes = 8 << 20
 
 var (
-	offlineImportIDPattern = regexp.MustCompile("^[a-f0-9]{32}$")
+	offlineImportIDPattern   = regexp.MustCompile("^[a-f0-9]{32}$")
 	offlineImportHashPattern = regexp.MustCompile("^[a-f0-9]{64}$")
 	offlineImportNamePattern = regexp.MustCompile("^xdrive-(app|postgres|media-worker|ai-runtime|ai-models)-[a-f0-9]{12}\\.tar\\.gz$")
 )
 
 type OfflineImportFile struct {
-	Name string `json:"name"`
-	State string `json:"state"`
-	Size int64 `json:"size"`
-	UploadedBytes int64 `json:"uploaded_bytes"`
-	UploadSHA256 string `json:"upload_sha256,omitempty"`
+	Name          string `json:"name"`
+	State         string `json:"state"`
+	Size          int64  `json:"size"`
+	UploadedBytes int64  `json:"uploaded_bytes"`
+	UploadSHA256  string `json:"upload_sha256,omitempty"`
 }
 
 type OfflineImportStatus struct {
-	ID string `json:"id"`
-	Files []OfflineImportFile `json:"files"`
-	ChunkBytes int `json:"chunk_bytes"`
-	ReadyToVerify bool `json:"ready_to_verify"`
+	ID            string              `json:"id"`
+	Files         []OfflineImportFile `json:"files"`
+	ChunkBytes    int                 `json:"chunk_bytes"`
+	ReadyToVerify bool                `json:"ready_to_verify"`
 }
 
 type OfflineImportSummary struct {
-	ID string `json:"id"`
+	ID         string `json:"id"`
 	ModifiedAt string `json:"modified_at"`
 }
 
@@ -47,13 +47,13 @@ type OfflineImportList struct {
 }
 
 type OfflineImportCreated struct {
-	ID string `json:"id"`
-	ChunkBytes int `json:"chunk_bytes"`
+	ID         string `json:"id"`
+	ChunkBytes int    `json:"chunk_bytes"`
 }
 
 type OfflineImportFinalizeReceipt struct {
-	Name string `json:"name"`
-	State string `json:"state"`
+	Name         string `json:"name"`
+	State        string `json:"state"`
 	UploadSHA256 string `json:"upload_sha256"`
 }
 
@@ -97,23 +97,29 @@ func (c *Client) AdminOfflineImportCreate(ctx context.Context) (OfflineImportCre
 func (c *Client) AdminOfflineImportGet(ctx context.Context, id string) (OfflineImportStatus, error) {
 	var out OfflineImportStatus
 	base, err := offlineImportPath(id)
-	if err != nil { return out, err }
+	if err != nil {
+		return out, err
+	}
 	err = c.json(ctx, http.MethodGet, base, nil, &out)
 	return out, err
 }
 func (c *Client) AdminOfflineImportRegister(ctx context.Context, id, name string, size int64, transportSHA string) error {
 	path, err := offlineFilePath(id, name)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	if size <= 0 || (transportSHA != "" && !offlineImportHashPattern.MatchString(transportSHA)) {
 		return fmt.Errorf("invalid offline file size or transfer digest")
 	}
 	return c.json(ctx, http.MethodPost, path, map[string]any{
-		"name":name, "size":size, "sha256": transportSHA,
+		"name": name, "size": size, "sha256": transportSHA,
 	}, nil)
 }
 func (c *Client) AdminOfflineImportChunk(ctx context.Context, id, name string, index int, data []byte, sha string) error {
 	path, err := offlineFilePath(id, name)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	if index < 0 || index > 1<<20 || len(data) == 0 || len(data) > OfflineImportChunkBytes ||
 		!offlineImportHashPattern.MatchString(sha) {
 		return fmt.Errorf("invalid offline chunk envelope")
@@ -123,38 +129,48 @@ func (c *Client) AdminOfflineImportChunk(ctx context.Context, id, name string, i
 		return fmt.Errorf("offline chunk digest differs before network transfer")
 	}
 	req, err := c.request(ctx, http.MethodPut, fmt.Sprintf("%s/chunks/%d", path, index), bytes.NewReader(data))
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("X-XDrive-Chunk-SHA256", sha)
 	resp, err := c.do(req)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer resp.Body.Close()
 	return decodeResponse(resp, nil)
 }
 func (c *Client) AdminOfflineImportFinalize(ctx context.Context, id, name string) (OfflineImportFinalizeReceipt, error) {
 	var out OfflineImportFinalizeReceipt
 	path, err := offlineFilePath(id, name)
-	if err != nil { return out, err }
+	if err != nil {
+		return out, err
+	}
 	err = c.json(ctx, http.MethodPost, path+"/finalize", map[string]any{}, &out)
 	return out, err
 }
 func (c *Client) AdminOfflineImportDelete(ctx context.Context, id string) error {
 	path, err := offlineImportPath(id)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return c.json(ctx, http.MethodDelete, path, nil, nil)
 }
 
 func (c *Client) AdminOfflineImportStart(ctx context.Context, id, manifestSHA, installerSHA string, backup bool) (ServerUpdateState, error) {
 	var out ServerUpdateState
-	if _,err := offlineImportPath(id);err != nil {return out,err}
-	if !offlineImportHashPattern.MatchString(manifestSHA)||!offlineImportHashPattern.MatchString(installerSHA){
+	if _, err := offlineImportPath(id); err != nil {
+		return out, err
+	}
+	if !offlineImportHashPattern.MatchString(manifestSHA) || !offlineImportHashPattern.MatchString(installerSHA) {
 		return out, fmt.Errorf("invalid independent offline release digests")
 	}
 	err := c.json(ctx, http.MethodPost, "/api/v1/admin/update", map[string]any{
-		"source":"offline", "channel":"master", "offline_id":id,
-		"trusted_manifest_sha256":manifestSHA,
-		"trusted_installer_sha256":installerSHA,
-		"backup_file_data":backup,
+		"source": "offline", "channel": "master", "offline_id": id,
+		"trusted_manifest_sha256":  manifestSHA,
+		"trusted_installer_sha256": installerSHA,
+		"backup_file_data":         backup,
 	}, &out)
 	return out, err
 }
