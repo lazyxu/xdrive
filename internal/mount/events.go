@@ -5,30 +5,30 @@ import "sync"
 type EventKind string
 
 const (
-	EventSyncStarted   EventKind = "sync_started"
-	EventSyncCompleted EventKind = "sync_completed"
-	EventSyncFailed    EventKind = "sync_failed"
-	EventSyncDeferred  EventKind = "sync_deferred"
+	EventSyncStarted       EventKind = "sync_started"
+	EventSyncCompleted     EventKind = "sync_completed"
+	EventSyncFailed        EventKind = "sync_failed"
+	EventSyncDeferred      EventKind = "sync_deferred"
 	EventSyncItemCommitted EventKind = "sync_item_committed"
-	EventConflict      EventKind = "conflict"
+	EventConflict          EventKind = "conflict"
 )
 
 type Event struct {
-	Kind           EventKind
-	Path           string
-	OriginalPath   string
-	OriginalNodeID uint64
-	ConflictNodeID uint64
-	Message        string
-	Notify         bool
-	RunID          string
-	Trigger        string
-	ActivityOwner  string
-	ItemID         string
-	Action         string
-	Direction      string
-	OldPath        string
-	LogicalBytes   *int64
+	Kind             EventKind
+	Path             string
+	OriginalPath     string
+	OriginalNodeID   uint64
+	ConflictNodeID   uint64
+	Message          string
+	Notify           bool
+	RunID            string
+	Trigger          string
+	ActivityOwner    string
+	ItemID           string
+	Action           string
+	Direction        string
+	OldPath          string
+	LogicalBytes     *int64
 	TransferredBytes *int64
 }
 
