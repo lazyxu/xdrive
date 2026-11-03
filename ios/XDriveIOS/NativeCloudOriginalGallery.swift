@@ -832,7 +832,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                 player: player,
                                 content: XDriveIOSNativePhotoVideoSurface(
                                     player: player, showChrome: showChrome,
-                                    onChromeTap: { toggleChrome() }
+                                    onChromeTap: { toggleChrome() },
+                                    onNavigateSwipe: { showNeighbor($0) }
                                 )
                                     .id(viewed.id)
                                     .onAppear {
@@ -942,7 +943,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         player: player,
                         content: XDriveIOSNativePhotoVideoSurface(
                                     player: player, showChrome: showChrome,
-                                    onChromeTap: { toggleChrome() }
+                                    onChromeTap: { toggleChrome() },
+                                    onNavigateSwipe: { showNeighbor($0) }
                                 )
                                     .id(viewed.id)
                             .onAppear {
