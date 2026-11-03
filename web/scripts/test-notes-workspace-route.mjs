@@ -28,8 +28,13 @@ assert.match(shared, /case 'notes':/)
 assert.match(shared, /if \(services\.notesPage\) page = <XDriveNotesPage port=\{services\.notesPage\} \/>/)
 const host = read('ui/shared/src/mui/WorkspaceHostAdapter.ts')
 assert.match(host, /readonly notesPage\?: XDriveNotesDataPort/)
-const sidebar = read('ui/shared/src/mui/WorkspaceNavigation.tsx')
-assert.match(sidebar, /key: 'notes'/)
+const hostSections = read('ui/shared/src/mui/WorkspaceHostSections.tsx')
+assert.match(hostSections, /showNotes = false/)
+assert.match(hostSections, /key: 'notes'/)
+assert.match(hostSections, /xDriveWorkspaceRouteTitle\('notes'\)/)
+const coreSidebar = read('ui/shared/src/mui/WorkspaceNavigation.tsx')
+assert.doesNotMatch(coreSidebar, /key: 'notes'/,
+  'Unverified Desktop or DSM Hosts must not expose a Notes core route')
 
 const ids = read('ui/shared/src/web-app.ts')
 assert.match(ids, /'notes',/)
@@ -51,6 +56,7 @@ assert.match(web, /createXDriveWebNotesPort\(api, /)
 assert.match(web, /mobileOwnerScope\s*\n\s*\? createXDriveWebNotesPort/,
   'Only an authenticated matching Owner /me may create a Notes API port')
 assert.match(web, /notes: notesPort,/)
+assert.match(web, /showNotes: Boolean\(notesPort\)/)
 assert.match(web, /appView === 'notes' \|\| appView === 'shares'/)
 assert.match(web, /<XDriveAppPageOutlet host=\{browserWorkspaceHost\} view=\{appView\}/)
 assert.doesNotMatch(web, /appView === 'notes' \? <iframe/i,
