@@ -102,6 +102,19 @@ class MirrorTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
+    @staticmethod
+    def entry(platform, file, commit='a'*40, source_time='2026-11-03T12:34:56Z'):
+        return {
+            'platform': platform, 'commit': commit, 'source_time': source_time,
+            'path': str(file), 'name': file.name,
+            'published_name': mirror.published_name(platform, file.name, commit, source_time),
+            'size': file.stat().st_size, 'sha256': mirror.sha256_file(file),
+        }
+
+    @staticmethod
+    def elf(machine):
+        return b'\x7fELF\x02\x01' + b'\x00'*12 + machine + b'fixture'
+
     def test_snapshot_published_dispatch_is_opt_in_and_pr_cannot_upload(self):
         root = Path(__file__).resolve().parents[2]
         workflow = (root / '.github/workflows/client-artifact-share-mirror.yml').read_text()
@@ -133,25 +146,26 @@ class MirrorTests(unittest.TestCase):
     def test_manifest_checks_source_bytes_before_upload(self):
         ipa = self.root / 'xDrive-unsigned.ipa'
         ipa.write_bytes(ipa_bytes())
-        entry = {'platform': 'ios', 'commit': 'a' * 40, 'path': str(ipa), 'name': ipa.name,
-                 'size': ipa.stat().st_size, 'sha256': mirror.sha256_file(ipa)}
-        mirror.validate_manifest({'schema': 1, 'items': [entry]})
+        entry = self.entry('ios', ipa)
+        mirror.validate_manifest({'schema': 2, 'items': [entry]})
         ipa.write_bytes(ipa_bytes() + b'changed')
         with self.assertRaises(mirror.MirrorError):
-            mirror.validate_manifest({'schema': 1, 'items': [entry]})
+            mirror.validate_manifest({'schema': 2, 'items': [entry]})
 
     def test_immutable_publish_skips_existing_and_includes_digest(self):
         ipa = self.root / 'xDrive-unsigned.ipa'
         ipa.write_bytes(ipa_bytes())
-        item = {'platform': 'ios', 'commit': 'a' * 40, 'path': str(ipa), 'name': ipa.name,
-                'size': ipa.stat().st_size, 'sha256': mirror.sha256_file(ipa)}
-        manifest = {'schema': 1, 'items': [item]}
+        item = self.entry('ios', ipa)
+        manifest = {'schema': 2, 'items': [item]}
         share = FakeShare()
         self.assertEqual(mirror.publish(manifest, share)[0][2], 'uploaded')
         self.assertEqual(len(share.files), 2)
-        parent = share.folders[(share.folders[(share.folders[(0, 'xDrive-Clients')], 'ios')], 'a'*12)]
-        self.assertEqual(share.files[(parent, 'xDrive-unsigned.ipa')][1], ipa.read_bytes())
-        self.assertIn(item['sha256'].encode(), share.files[(parent, 'xDrive-unsigned.ipa.sha256')][1])
+        parent = share.folders[(0, 'Mobile')]
+        self.assertEqual(share.files[(parent, item['published_name'])][1], ipa.read_bytes())
+        self.assertIn(item['sha256'].encode(), share.files[(parent, item['published_name'] + '.sha256')][1])
+        self.assertIn(item['published_name'].encode(), share.files[(parent, item['published_name'] + '.sha256')][1])
+        self.assertNotIn((0, 'latest'), share.folders)
+        self.assertNotIn((0, 'xDrive-Clients'), share.folders)
         chunks = len(share.chunks)
         self.assertEqual(mirror.publish(manifest, share)[0][2], 'skipped')
         self.assertEqual(len(share.files), 2)
@@ -164,15 +178,28 @@ class MirrorTests(unittest.TestCase):
             (root / folder).mkdir()
         (root / 'snapshot/xDriveSetup-amd64.exe').write_bytes(b'MZfixture')
         (root / 'snapshot/xdrive-linux-amd64.deb').write_bytes(b'!<arch>\nfixture')
-        (root / 'android/xdrive-android-debug.apk').write_bytes(self._zip_bytes('AndroidManifest.xml'))
+        (root / ('android/xdrive-android-master-' + 'b'*12 + '-debug.apk')).write_bytes(
+            self._zip_bytes('AndroidManifest.xml'))
         (root / 'ios/xDrive-unsigned.ipa').write_bytes(ipa_bytes())
+        (root / 'snapshot/xdrive-backup-linux-amd64.tar.gz').write_bytes(b'\x1f\x8b' + b'fixture')
+        (root / 'snapshot/xdrive-backup-windows-amd64.zip').write_bytes(self._zip_bytes('xdrive-backup.exe'))
+        (root / 'snapshot/xdrive-source-agent-linux-amd64').write_bytes(self.elf(b'\x3e\x00'))
+        (root / 'snapshot/xdrive-source-agent-linux-arm64').write_bytes(self.elf(b'\xb7\x00'))
         (root / 'meta/snapshot.sha').write_text('a'*40)
         (root / 'meta/android.sha').write_text('b'*40)
         (root / 'meta/ios.sha').write_text('c'*40)
+        for source in ('snapshot', 'android', 'ios'):
+            (root / 'meta' / (source + '.time')).write_text('2026-11-03T12:34:56Z')
         manifest = mirror.build_manifest(root, with_dsm=False)
-        self.assertEqual({p['platform'] for p in manifest['items']}, {'windows', 'linux', 'android', 'ios'})
+        self.assertEqual({p['platform'] for p in manifest['items']},
+                         {'windows', 'linux', 'android', 'ios', 'backup-linux', 'backup-windows',
+                          'agent-linux-amd64', 'agent-linux-arm64'})
         for item in manifest['items']:
             self.assertEqual(len(item['sha256']), 64)
+            self.assertEqual(item['published_name'],
+                             mirror.published_name(item['platform'], item['name'], item['commit'],
+                                                   item['source_time']))
+            self.assertIn('20261103T123456Z', item['published_name'])
         mirror.validate_manifest(manifest)
 
     @staticmethod
@@ -185,12 +212,79 @@ class MirrorTests(unittest.TestCase):
     def test_read_only_share_fails_before_create(self):
         ipa = self.root / 'xDrive-unsigned.ipa'
         ipa.write_bytes(ipa_bytes())
-        item = {'platform': 'ios', 'commit': 'b'*40, 'path': str(ipa), 'name': ipa.name,
-                'size': ipa.stat().st_size, 'sha256': mirror.sha256_file(ipa)}
+        item = self.entry('ios', ipa, commit='b'*40)
         share = FakeShare(allow=False)
         with self.assertRaises(mirror.MirrorError):
-            mirror.publish({'schema': 1, 'items': [item]}, share)
+            mirror.publish({'schema': 2, 'items': [item]}, share)
         self.assertEqual(share.directory_calls, [])
+
+
+    def test_plan_b_group_names_and_stable_originals(self):
+        time = '2026-11-03T12:34:56Z'
+        commit = 'a' * 40
+        cases = [
+            ('windows', 'xDriveSetup-amd64.exe', 'Desktop',
+             'xDriveSetup-master-20261103T123456Z-aaaaaaaaaaaa-win-amd64.exe'),
+            ('linux', 'xdrive-linux-amd64.deb', 'Desktop',
+             'xDriveDesktop-master-20261103T123456Z-aaaaaaaaaaaa-linux-amd64.deb'),
+            ('android', 'xdrive-android-master-aaaaaaaaaaaa-debug.apk', 'Mobile',
+             'xDrive-master-20261103T123456Z-aaaaaaaaaaaa-android-debug.apk'),
+            ('ios', 'xDrive-unsigned.ipa', 'Mobile',
+             'xDrive-master-20261103T123456Z-aaaaaaaaaaaa-ios-unsigned.ipa'),
+            ('dsm', 'xdrivenas-armada38x-0.1.0-7642.spk', 'DSM',
+             'xdrivenas-master-20261103T123456Z-aaaaaaaaaaaa-dsm-armada38x-0.1.0-7642.spk'),
+            ('backup-linux', 'xdrive-backup-linux-amd64.tar.gz', 'Backup-CLI',
+             'xdrive-backup-master-20261103T123456Z-aaaaaaaaaaaa-linux-amd64.tar.gz'),
+            ('backup-windows', 'xdrive-backup-windows-amd64.zip', 'Backup-CLI',
+             'xdrive-backup-master-20261103T123456Z-aaaaaaaaaaaa-win-amd64.zip'),
+            ('agent-linux-amd64', 'xdrive-source-agent-linux-amd64', 'Source-Agent',
+             'xdrive-source-agent-master-20261103T123456Z-aaaaaaaaaaaa-linux-amd64'),
+            ('agent-linux-arm64', 'xdrive-source-agent-linux-arm64', 'Source-Agent',
+             'xdrive-source-agent-master-20261103T123456Z-aaaaaaaaaaaa-linux-arm64'),
+        ]
+        for platform, original, group, expected in cases:
+            with self.subTest(platform=platform):
+                self.assertEqual(mirror.GROUPS[platform], group)
+                self.assertEqual(mirror.published_name(platform, original, commit, time), expected)
+        self.assertNotIn('latest', mirror.GROUPS.values())
+
+    def test_reject_tampered_filename_and_invalid_source_time_before_write(self):
+        ipa = self.root / 'xDrive-unsigned.ipa'
+        ipa.write_bytes(ipa_bytes())
+        item = self.entry('ios', ipa)
+        share = FakeShare()
+        for patched in (dict(published_name='xDrive-unsigned.ipa'),
+                        dict(published_name='../xDrive.exe'),
+                        dict(source_time='2026-02-30T00:00:00Z'),
+                        dict(source_time='2026-11-03T12:34:56+09:00'),
+                        dict(name='xDrive-unsigned-bad.ipa')):
+            with self.subTest(patched=patched), self.assertRaises(mirror.MirrorError):
+                mirror.publish({'schema': 2, 'items': [dict(item, **patched)]}, share)
+        self.assertEqual(share.directory_calls, [])
+
+    def test_legacy_paths_are_not_removed_or_overwritten_by_flat_archive(self):
+        ipa = self.root / 'xDrive-unsigned.ipa'
+        ipa.write_bytes(ipa_bytes())
+        share = FakeShare()
+        legacy_id = share.directory(0, 'xDrive-Clients')
+        share.files[(legacy_id, 'old.ipa')] = (len(ipa.read_bytes()), ipa.read_bytes())
+        item = self.entry('ios', ipa)
+        self.assertEqual(mirror.publish({'schema': 2, 'items': [item]}, share)[0][2], 'uploaded')
+        self.assertEqual(share.files[(legacy_id, 'old.ipa')][1], ipa.read_bytes())
+        self.assertIn((0, 'Mobile'), share.folders)
+        self.assertNotIn((0, 'latest'), share.folders)
+
+    def test_same_source_retries_reuse_flat_name_instead_of_creating_keep_both(self):
+        ipa = self.root / 'xDrive-unsigned.ipa'
+        ipa.write_bytes(ipa_bytes())
+        item = self.entry('ios', ipa)
+        share = FakeShare()
+        first = mirror.publish({'schema': 2, 'items': [item]}, share)
+        second = mirror.publish({'schema': 2, 'items': [item]}, share)
+        self.assertEqual(first[0][2], 'uploaded')
+        self.assertEqual(second[0][2], 'skipped')
+        self.assertEqual(len(share.files), 2)
+        self.assertFalse(any('(1)' in name for (_, name) in share.files))
 
     def test_existing_different_size_refuses_keep_both(self):
         share = FakeShare()
