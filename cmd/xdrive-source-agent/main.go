@@ -242,20 +242,17 @@ func setup(args []string) error {
 	}
 
 	sourceName := setupSourceName(remote, *name)
-	targetID, targetValue := setupTarget(remote, *targetPath)
-	if targetID == 0 {
-		target, targetErr := ensureRemoteDir(ctx, cli, targetValue)
-		if targetErr != nil {
-			return targetErr
-		}
-		targetID = target.ID
+	// New Source targets are exclusively allocated by the Server. --target
+	// is a legacy input accepted for CLI compatibility, not an instruction
+	// to create or adopt a writable Owner folder.
+	if strings.TrimSpace(*targetPath) != "" {
+		fmt.Fprintln(os.Stderr, "xdrive-source-agent: --target is ignored; the Server manages Source paths")
 	}
-
 	if remote.ID == 0 {
 		remote, err = cli.CreateSource(ctx, client.CreateSourceInput{
 			Name: sourceName, Kind: sourceagent.SynologyKind,
 			Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
-			RunMode: effectiveMode, TargetNodeID: targetID, IgnoreRules: rules,
+			RunMode: effectiveMode, TargetNodeID: 0, IgnoreRules: rules,
 		})
 		if err != nil {
 			return err
@@ -265,12 +262,16 @@ func setup(args []string) error {
 		active := meta.SourceStatusActive
 		remote, err = cli.UpdateSource(ctx, remote.ID, remote.Revision, client.UpdateSourceInput{
 			Name: &sourceName, RunMode: &mode, Status: &active,
-			TargetNodeID: &targetID, IgnoreRules: &rules,
+			IgnoreRules: &rules,
 		})
 		if err != nil {
 			return err
 		}
 	}
+	if remote.TargetNodeID == nil || *remote.TargetNodeID == 0 {
+		return fmt.Errorf("Server did not provide a valid exclusive Source target")
+	}
+	targetID := *remote.TargetNodeID
 
 	cfg.SourceID = remote.ID
 	cfg.PersonalRoot = strings.TrimSpace(*personal)
