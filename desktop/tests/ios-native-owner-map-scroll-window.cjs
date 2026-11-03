@@ -103,3 +103,19 @@ test('Owner map scroll foot cannot advance on a horizontal or backward gesture',
   assert.match(album, /load\(next, history: earlier \+ \[cursor\],\s*autoAdvance: true\)/)
   assert.doesNotMatch(album, /DragGesture\(minimumDistance: 12\)\.onEnded \{ _ in/)
 })
+
+test('cluster photo wall hides transport pagination while retaining verified scroll, retry and accessible navigation', () => {
+  const body = album.slice(album.indexOf('var body: some View {'),
+                           album.indexOf('.fullScreenCover(item: $viewing'))
+  assert.doesNotMatch(body, /HStack\(spacing: 12\)[\s\S]*?Button\("上一批"\)/)
+  assert.doesNotMatch(body, /Button\("下一批"\)/)
+  assert.doesNotMatch(body, /Text\("位置 /)
+  assert.match(body, /ScrollViewReader \{ returnScroll in\s*ScrollView \{[\s\S]*?LazyVGrid/)
+  assert.match(body, /DragGesture\(minimumDistance: 12\)[\s\S]*?load\(next, history: earlier \+ \[cursor\],[\s\S]*?autoAdvance: true\)/)
+  assert.match(body, /\.accessibilityValue\([\s\S]*?page\.map \{/)
+  assert.match(body, /if let error \{[\s\S]*?Button\("重试读取照片"\) \{ load\(cursor, history: earlier\) \}/)
+  assert.match(body, /Menu \{[\s\S]*?Button\("查看上一批照片"\)[\s\S]*?load\(previous, history: Array\(earlier\.dropLast\(\)\)\)/)
+  assert.match(body, /Button\("继续浏览下一批照片"\)[\s\S]*?load\(next, history: earlier \+ \[cursor\]\)/)
+  assert.match(body, /\.disabled\(busy \|\| !activeOwner \|\| next == nil \|\| viewing != nil\)/)
+  assert.match(body, /accessibilityIdentifier\("native-ios-owner-map-cluster-more"\)/)
+})
