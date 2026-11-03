@@ -75,6 +75,13 @@ class NativeLocalCaptureTimeProviderTest {
             assertTrue(first.single().id != second.single().id)
             assertTrue(nativeLocalStrictPageOrder(first.single().pageKey,
                 listOf(second.single().pageKey)))
+            // A bounded two-row read must match the two independent keyset
+            // pages even when the real MediaProvider has unknown timestamps.
+            val combined = NativeLocalMediaStore.pageAfter(
+                resolver, limit = 2, albumId = bucketId,
+                cancellationSignal = signal)
+            assertEquals(listOf(first.single().pageKey, second.single().pageKey),
+                combined.map { it.pageKey })
             val third = NativeLocalMediaStore.pageAfter(
                 resolver, after = second.single().pageKey, limit = 1,
                 albumId = bucketId, cancellationSignal = signal)
