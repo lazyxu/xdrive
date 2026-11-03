@@ -397,8 +397,7 @@ func (s *Server) adminRegisterOfflineUpdateFile(c *gin.Context) {
 			return
 		}
 		raw, _ := json.Marshal(input)
-		_, writeErr := f.Write(append(raw, '
-'))
+		_, writeErr := f.Write(append(raw, '\n'))
 		if writeErr == nil {
 			writeErr = f.Sync()
 		}
