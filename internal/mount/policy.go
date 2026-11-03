@@ -7,12 +7,12 @@ import (
 )
 
 type Options struct {
-	ExcludedPaths    []string
-	AlwaysLocalPaths []string
-	CacheLimitBytes  int64
-	StatePath        string
-	Transfers        *transfer.Manager
-	ActivityOwner   string
+	ExcludedPaths     []string
+	AlwaysLocalPaths  []string
+	CacheLimitBytes   int64
+	StatePath         string
+	Transfers         *transfer.Manager
+	ActivityOwner     string
 }
 
 type syncPolicy struct {
