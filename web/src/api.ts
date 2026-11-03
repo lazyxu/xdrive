@@ -877,10 +877,33 @@ export class XDriveApi {
     })
   }
 
-  notesImportIOS(input: { title: string; markdown: string; external_id?: string }) {
+  notesImportIOS(input: { title: string; markdown: string; external_id?: string },
+                 signal?: AbortSignal) {
     return this.request<XDriveNoteSummary>('/api/v1/notes/ios/import', {
       method: 'POST', body: JSON.stringify({ ...input, external_id: input.external_id ?? '' }),
-      cache: 'no-store',
+      cache: 'no-store', signal,
+    })
+  }
+
+  /** A dedicated Owner-only import endpoint; regular Files and Notes update
+   * routes must never accept mutations to a read-only Apple Notes snapshot. */
+  notesImportIOSImage(noteID: string, image: File, signal?: AbortSignal) {
+    if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(noteID) ||
+        image.size <= 0 || image.size > 20 * 1024 * 1024 ||
+        !/\.(?:png|jpe?g|gif|webp|heic)$/i.test(image.name)) {
+      throw new Error('导入的图片或备忘录标识无效；单张图片最多 20 MiB。')
+    }
+    const form = new FormData()
+    form.append('image', image)
+    return this.request<{
+      node_id: number
+      filename: string
+      relative_path: string
+      content_type: string
+      bytes: number
+      sha256: string
+    }>('/api/v1/notes/ios/images/import/' + encodeURIComponent(noteID), {
+      method: 'POST', body: form, cache: 'no-store', signal,
     })
   }
 
