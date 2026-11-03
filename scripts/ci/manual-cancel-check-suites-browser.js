@@ -44,6 +44,34 @@
     roots.forEach(root => visit(root));
     return matched;
   };
+  // GitHub Actions 列表可能在 DOM、内嵌 React JSON 或 HTML 字符串中。
+  const collectRunIds = (doc, roots, html = "") => {
+    const ids = new Set();
+    const add = id => {
+      const n = number(id);
+      if (n) ids.add(n);
+    };
+    for (const a of doc.querySelectorAll('a[href]')) {
+      try {
+        const url = new URL(a.getAttribute("href"), location.origin);
+        const match = url.pathname.match(
+          /^\/lazyxu\/xdrive\/actions\/runs\/(\d+)(?:\/|$)/);
+        if (url.origin === location.origin && match) add(match[1]);
+      } catch { /* invalid href */ }
+    }
+    // 某些版本的 Actions 页面用 script JSON 渲染列表而不是 <a>。
+    for (const item of findObjects(roots, object =>
+      number(value(object, "id", "run_id", "runId", "workflowRunId")) &&
+      value(object, "head_branch", "headBranch") === "master" &&
+      value(object, "event", "eventType") === "push")) {
+      add(value(item, "id", "run_id", "runId", "workflowRunId"));
+    }
+    // JSON 字符串或链接属性可能用 \\/ 或 Unicode 方式转义斜杠。
+    const normalized = html.replace(/\\u002[fF]/g, "/").replace(/\\\//g, "/");
+    const pattern = /(?:https:\/\/github\.com)?\/lazyxu\/xdrive\/actions\/runs\/(\d+)(?:[\/?#"' <]|$)/g;
+    for (const match of normalized.matchAll(pattern)) add(match[1]);
+    return ids;
+  };
   const normalizeRun = object => ({
     id: number(value(object, "id", "run_id", "runId", "workflowRunId")),
     suiteId: number(value(object, "check_suite_id", "checkSuiteId")),
@@ -106,21 +134,25 @@
       first.match(/\/commit\/([a-f0-9]{40})/i)?.[1];
     if (!shaPattern.test(master || "")) throw new Error("无法识别当前 master SHA");
 
-    // 直接从同源 Actions 页面收集 Run 链接，不再填写 Check Suite ID。
+    // 优先读取浏览器已渲染的 Actions 列表，再扫描同源页面。
+    // fetch(HTML) 不会执行页面 JavaScript，因此不能只依赖静态 <a>。
     const ids = new Set();
+    if (location.pathname.startsWith(root + "/actions")) {
+      for (const id of collectRunIds(document, [], document.documentElement.outerHTML))
+        ids.add(id);
+    }
     for (let page = 1; page <= pages; page++) {
       const html = await request(`${root}/actions/workflows/ci.yml?` +
         new URLSearchParams({ query: "branch:master", page }));
-      const { doc } = embedded(html);
-      const before = ids.size;
-      for (const link of doc.querySelectorAll('a[href*="/actions/runs/"]')) {
-        const match = link.getAttribute("href")?.match(
-          /^\/lazyxu\/xdrive\/actions\/runs\/(\d+)(?:[/?#]|$)/);
-        if (match) ids.add(Number(match[1]));
-      }
-      if (ids.size === before) break;
+      const { doc, roots } = embedded(html);
+      const found = collectRunIds(doc, roots, html);
+      for (const id of found) ids.add(id);
+      console.log(`Actions 列表第 ${page} 页发现 ${found.size} 个 Run，合计 ${ids.size} 个`);
     }
-    if (!ids.size) throw new Error("未识别到 CI Run，GitHub 页面结构可能已变化");
+    if (!ids.size) throw new Error(
+      "Actions 页面未返回 Run 列表。请打开仓库 Actions → CI 页面，" +
+      "等待运行列表显示，再在该页面的 Console 执行脚本。"
+    );
 
     const details = [];
     for (const id of ids) {
