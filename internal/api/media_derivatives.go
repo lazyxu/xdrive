@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -14,17 +15,22 @@ import (
 	"github.com/lazyxu/xdrive/internal/background"
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
 )
 
 type mediaDerivativeKind string
 
 const (
-	mediaDerivativeThumbnail  mediaDerivativeKind = "thumbnail"
-	mediaDerivativeAnalysis   mediaDerivativeKind = "analysis_preview"
-	mediaDerivativeCreative   mediaDerivativeKind = "creative_preview"
-	mediaDerivativeViewerWebP mediaDerivativeKind = "viewer_webp"
-	mediaDerivativeViewerJPEG mediaDerivativeKind = "viewer_jpeg"
+	mediaDerivativeThumbnail          mediaDerivativeKind = "thumbnail"
+	mediaDerivativeAnalysis           mediaDerivativeKind = "analysis_preview"
+	mediaDerivativeCreative           mediaDerivativeKind = "creative_preview"
+	mediaDerivativeViewerWebP         mediaDerivativeKind = "viewer_webp"
+	mediaDerivativeViewerJPEG         mediaDerivativeKind = "viewer_jpeg"
+	mediaDerivativeViewerEconomyWebP  mediaDerivativeKind = "viewer_economy_webp"
+	mediaDerivativeViewerEconomyJPEG  mediaDerivativeKind = "viewer_economy_jpeg"
+	mediaDerivativeViewerBalancedWebP mediaDerivativeKind = "viewer_balanced_webp"
+	mediaDerivativeViewerBalancedJPEG mediaDerivativeKind = "viewer_balanced_jpeg"
 
 	mediaDerivativeRunTimeout = 2 * time.Minute
 )
@@ -86,7 +92,9 @@ func (s *Server) ensureMediaDerivative(
 		taskKind = "media.analysis_preview"
 	case mediaDerivativeCreative:
 		taskKind = "media.creative_preview"
-	case mediaDerivativeViewerWebP, mediaDerivativeViewerJPEG:
+	case mediaDerivativeViewerWebP, mediaDerivativeViewerJPEG,
+		mediaDerivativeViewerEconomyWebP, mediaDerivativeViewerEconomyJPEG,
+		mediaDerivativeViewerBalancedWebP, mediaDerivativeViewerBalancedJPEG:
 		taskKind = "media.viewer_preview"
 	}
 	handle, err := s.BackgroundScheduler.Submit(background.Task{
@@ -171,6 +179,14 @@ func mediaDerivativeIdentity(
 	case mediaDerivativeViewerJPEG:
 		return mediapkg.ViewerPreviewStorageKey(node.ID, node.Revision, metadata.SHA256, "jpeg"),
 			mediapkg.ViewerPreviewEdge, mediapkg.ViewerPreviewVersion, nil
+	case mediaDerivativeViewerEconomyWebP, mediaDerivativeViewerEconomyJPEG,
+		mediaDerivativeViewerBalancedWebP, mediaDerivativeViewerBalancedJPEG:
+		variant, ok := mediaViewerVariantForDerivative(kind)
+		if !ok {
+			return "", 0, 0, errMediaDerivativeUnsupported
+		}
+		key, err := mediapkg.ViewerQualityStorageKey(node.ID, node.Revision, metadata.SHA256, variant)
+		return key, variant.MaxEdge, variant.EncoderVersion, err
 	case mediaDerivativeCreative:
 		return mediapkg.CreativePreviewStorageKey(
 				node.ID,
@@ -232,6 +248,15 @@ func (s *Server) generateMediaDerivative(
 		render = mediapkg.ViewerPreviewWebP
 	case mediaDerivativeViewerJPEG:
 		render = mediapkg.ViewerPreviewJPEG
+	case mediaDerivativeViewerEconomyWebP, mediaDerivativeViewerEconomyJPEG,
+		mediaDerivativeViewerBalancedWebP, mediaDerivativeViewerBalancedJPEG:
+		variant, ok := mediaViewerVariantForDerivative(kind)
+		if !ok {
+			return errMediaDerivativeUnsupported
+		}
+		render = func(reader io.ReadSeeker, orientation, _ int) (mediapkg.Thumbnail, error) {
+			return mediapkg.ViewerQualityPreview(reader, orientation, variant)
+		}
 	case mediaDerivativeThumbnail:
 		if mediaThumbnailVersion(metadata) == mediapkg.ThumbnailAlphaVersion {
 			render = mediapkg.ThumbnailWithAlpha
@@ -334,9 +359,24 @@ func (s *Server) tryServeMediaDerivative(
 	if strings.TrimSpace(key) == "" {
 		return false
 	}
-	file, err := s.Store.Open(c.Request.Context(), key)
+	var file *os.File
+	var err error
+	var release func()
+	if strings.HasPrefix(key, mediapkg.ThumbnailStoragePrefix) &&
+		strings.Contains(key, "-v101-") {
+		if provider, ok := s.Store.(storage.ViewerCacheLifecycleLocker); ok {
+			file, release, err = provider.OpenPinnedViewerCache(c.Request.Context(), key)
+		} else {
+			file, err = s.Store.Open(c.Request.Context(), key)
+		}
+	} else {
+		file, err = s.Store.Open(c.Request.Context(), key)
+	}
 	if err != nil {
 		return false
+	}
+	if release != nil {
+		defer release()
 	}
 	defer file.Close()
 	// A readable file is not necessarily a usable JPEG/PNG derivative.

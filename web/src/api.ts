@@ -136,6 +136,7 @@ import type {
 import { xDriveCloudFilesPositionMatchesRequest } from '../../ui/shared/src/cloud-files'
 import { webTransferStore } from './transfers'
 import { xDriveAssertMediaReadActive, xDriveMediaResponseBlob } from './mediaBinaryProgress'
+import type { XDriveViewerQualityPreset } from '../../ui/shared/src/viewer-quality-policy'
 import { xDriveRegisterViewerImageSource } from '../../ui/shared/src/mui/ViewerImageSourceInfo'
 import { XDRIVE_NATIVE_SHARE_MAX_BYTES, xDriveReadBoundedNativeShareBlob } from './nativeFileShare'
 import {
@@ -526,6 +527,38 @@ type WebUploadGroupOwner = {
 }
 const webUploadGroupOwners = new Map<string, WebUploadGroupOwner>()
 
+export type XDriveViewerQualityPreferenceResponse = {
+  revision: number
+  preset: XDriveViewerQualityPreset
+  effective: XDriveViewerQualityPreset
+  admin_maximum: XDriveViewerQualityPreset
+  capped: boolean
+}
+
+export type XDriveAdminViewerQualityResponse = {
+  revision: number
+  maximum_preset: XDriveViewerQualityPreset
+  cache_budget_bytes: number
+}
+
+export type XDriveViewerCacheStatus = {
+  budget_bytes: number
+  observed_bytes: number
+  candidate_bytes: number
+  candidate_files: number
+  over_budget: boolean
+}
+
+export type XDriveViewerCacheEvictionResult = {
+  dry_run: boolean
+  result?: {
+    DeletedFiles: number
+    DeletedBytes: number
+    RemainingBytes: number
+    OverBudget: boolean
+  }
+}
+
 export class XDriveApi {
   private session: AuthSession
   private readonly onSession?: (session: AuthSession) => void
@@ -844,6 +877,51 @@ export class XDriveApi {
     }
     if (response.status === 204) return undefined as T
     return response.json() as Promise<T>
+  }
+
+  /** Authenticated Owner-only Viewer defaults. Never accept an Owner ID. */
+  async viewerQualityPreference(signal?: AbortSignal): Promise<XDriveViewerQualityPreferenceResponse> {
+    return this.request('/api/v1/me/viewer-quality', { cache: 'no-store', signal })
+  }
+
+  async saveViewerQualityPreference(
+    revision: number, preset: XDriveViewerQualityPreset,
+    signal?: AbortSignal,
+  ): Promise<XDriveViewerQualityPreferenceResponse> {
+    return this.request('/api/v1/me/viewer-quality', {
+      method: 'PUT', cache: 'no-store',
+      body: JSON.stringify({ revision, preset }), signal,
+    })
+  }
+
+  /** Admin route is protected by the existing Server requireAdmin gate. */
+  async adminViewerQuality(signal?: AbortSignal): Promise<XDriveAdminViewerQualityResponse> {
+    return this.request('/api/v1/admin/services/viewer-quality', { cache: 'no-store', signal })
+  }
+
+  async saveAdminViewerQuality(
+    revision: number, maximumPreset: XDriveViewerQualityPreset,
+    cacheBudgetBytes?: number, signal?: AbortSignal,
+  ): Promise<XDriveAdminViewerQualityResponse> {
+    return this.request('/api/v1/admin/services/viewer-quality', {
+      method: 'PUT', cache: 'no-store',
+      body: JSON.stringify({
+        revision, maximum_preset: maximumPreset,
+        ...(cacheBudgetBytes !== undefined ? { cache_budget_bytes: cacheBudgetBytes } : {}),
+      }), signal,
+    })
+  }
+
+  async adminViewerCacheStatus(signal?: AbortSignal): Promise<XDriveViewerCacheStatus> {
+    return this.request('/api/v1/admin/storage/cache/viewer', { cache: 'no-store', signal })
+  }
+
+  async adminViewerCacheEvict(
+    dryRun: boolean, signal?: AbortSignal,
+  ): Promise<XDriveViewerCacheEvictionResult> {
+    return this.request('/api/v1/admin/storage/cache/viewer/evict', {
+      method: 'POST', cache: 'no-store', body: JSON.stringify({ dry_run: dryRun }), signal,
+    })
   }
 
   async serverVersion() {
@@ -2773,7 +2851,8 @@ export class XDriveApi {
     await this.ensureFresh(signal)
     const get = async (format: 'webp' | 'jpeg') => {
       xDriveAssertMediaReadActive(signal)
-      const query = new URLSearchParams({ format })
+      // Server resolves the authenticated Owner's effective Viewer preset.
+      const query = new URLSearchParams({ format, preset: 'account' })
       if (revision && Number.isSafeInteger(revision)) query.set('revision', String(revision))
       const path = '/api/v1/media/items/' + nodeID + '/viewer-preview?' + query.toString()
       const send = () => fetch(API_BASE + path, {
@@ -2822,9 +2901,14 @@ export class XDriveApi {
             throw new ApiError(502, '高清图片无法解码')
           }
         }
+        // Never report a fallback JPEG/WebP derivative as a higher preset.
+        const reportedQuality = Number(response.headers.get('X-XDrive-Viewer-Preview-Quality'))
+        const quality = Number.isSafeInteger(reportedQuality) &&
+          reportedQuality >= 1 && reportedQuality <= 100
+          ? reportedQuality : format === 'webp' ? 90 : 93
         xDriveRegisterViewerImageSource(url, {
           format: format === 'webp' ? 'WebP' : 'JPEG',
-          quality: format === 'webp' ? 90 : 93,
+          quality,
           byteSize: blob.size,
         })
         return url
