@@ -659,6 +659,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 				}
 				if st, err := os.Stat(abs); err == nil {
 					baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+					p.recordActivity("create", "local", "", rel, nil)
 				}
 				continue
 			}
@@ -678,6 +679,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			}
 			if st, err := os.Stat(abs); err == nil {
 				baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+				p.recordActivity("create", "local", "", rel, nil)
 			}
 			continue
 		}
@@ -688,6 +690,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			}
 			if st, err := os.Stat(abs); err == nil {
 				baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+				p.recordActivity("update", "local", "", rel, nil)
 			}
 		} else {
 			base.node = rn

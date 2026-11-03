@@ -1090,6 +1090,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 					return false, err
 				}
 				deleteBaselinePrefixIndexed(baseline, baselineByNodeID, oldRel)
+				p.recordActivity("delete", "local", oldRel, "", nil)
 				continue
 			}
 			if base.node.Type == "file" {
@@ -1106,6 +1107,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			if err := os.RemoveAll(abs); err != nil {
 				return false, err
 			}
+			p.recordActivity("delete", "local", oldRel, "", nil)
 			delete(baseline, oldRel)
 			delete(baselineByNodeID, base.node.ID)
 
@@ -1319,6 +1321,7 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 					base.node.Type,
 					rn.Type,
 				)
+				p.recordActivity("delete", "none", rel, "", nil)
 				continue
 			}
 		}
@@ -1350,6 +1353,7 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 			}
 			if st, err := os.Stat(abs); err == nil {
 				baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+				p.recordActivity("create", "local", "", rel, nil)
 			}
 			continue
 		}
@@ -1369,6 +1373,7 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 			}
 			if st, err := os.Stat(abs); err == nil {
 				baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+				p.recordActivity("create", "local", "", rel, nil)
 			}
 			continue
 		}
@@ -1380,6 +1385,7 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 			}
 			if st, err := os.Stat(abs); err == nil {
 				baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+				p.recordActivity("update", "local", "", rel, nil)
 			}
 		} else {
 			base.node = rn
