@@ -217,7 +217,7 @@ func TestPublicShareInstantUploadRechecksGrantAndSerializesRetry(t *testing.T) {
 			if err := env.db.Model(&meta.Share{}).Where("id = ?", grant.ID).Update(tc.column, tc.value).Error; err != nil {
 				t.Fatal(err)
 			}
-			_, _, instant, err := env.server.tryInstantUploadSession(context.Background(), grant.OwnerID, req, 1, &grant)
+			_, _, instant, err := env.server.tryInstantUploadSession(context.Background(), nil, grant.OwnerID, req, 1, &grant)
 			if !errors.Is(err, errShareUploadDenied) || instant {
 				t.Fatalf("changed authorization snapshot accepted: instant=%v err=%v", instant, err)
 			}
@@ -230,7 +230,7 @@ func TestPublicShareInstantUploadRechecksGrantAndSerializesRetry(t *testing.T) {
 		if err := env.db.Model(&meta.User{}).Where("id = ?", grant.OwnerID).Update("disabled_at", time.Now()).Error; err != nil {
 			t.Fatal(err)
 		}
-		_, _, instant, err := env.server.tryInstantUploadSession(context.Background(), grant.OwnerID, req, 1, &grant)
+		_, _, instant, err := env.server.tryInstantUploadSession(context.Background(), nil, grant.OwnerID, req, 1, &grant)
 		if !errors.Is(err, errShareUploadDenied) || instant {
 			t.Fatalf("disabled Owner accepted: instant=%v err=%v", instant, err)
 		}
@@ -247,7 +247,7 @@ func TestPublicShareInstantUploadRechecksGrantAndSerializesRetry(t *testing.T) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		_, _, instant, err := env.server.tryInstantUploadSession(ctx, grant.OwnerID, req, 1, &grant)
+		_, _, instant, err := env.server.tryInstantUploadSession(ctx, nil, grant.OwnerID, req, 1, &grant)
 		if !errors.Is(err, errShareUploadDenied) || instant {
 			t.Fatalf("concurrent source mutation did not fail closed: instant=%v err=%v", instant, err)
 		}
@@ -266,7 +266,7 @@ func TestPublicShareInstantUploadRechecksGrantAndSerializesRetry(t *testing.T) {
 	for range 2 {
 		go func() {
 			<-start
-			session, _, instant, err := env.server.tryInstantUploadSession(ctx, grant.OwnerID, req, 1, &grant)
+			session, _, instant, err := env.server.tryInstantUploadSession(ctx, nil, grant.OwnerID, req, 1, &grant)
 			results <- result{session, instant, err}
 		}()
 	}
@@ -300,7 +300,7 @@ func TestPublicShareInstantUploadRechecksGrantAndSerializesRetry(t *testing.T) {
 		uploadTestFile(t, env.router, ownerToken, source.ID, "late-source.bin", lateContent)
 		// Model an in-flight retry whose outer lookup ran before the normal
 		// session committed. The inner locked lookup must see that session.
-		resumed, _, handled, err := env.server.tryInstantUploadSession(ctx, grant.OwnerID, lateReq, 1, &grant)
+		resumed, _, handled, err := env.server.tryInstantUploadSession(ctx, nil, grant.OwnerID, lateReq, 1, &grant)
 		if err != nil || !handled || resumed.ID != active["id"] || resumed.Status != meta.UploadStatusActive || resumed.InstantCAS {
 			t.Fatalf("mixed normal/instant retry created a second receipt: session=%+v handled=%v err=%v", resumed, handled, err)
 		}
