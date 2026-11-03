@@ -91,13 +91,14 @@ export type XDriveMobileRecentDestination = {
 }
 
 export function XDriveMobileFiveSlotNavigation({
-  selected, dynamicLabel, dynamicIcon, recent, recentOpen,
+  selected, dynamicLabel, dynamicIcon, recent, emptyRecentFallback, recentOpen,
   onRecentOpenChange, onSelect, onPickRecent,
 }: {
   selected: XDriveMobileSlot
   dynamicLabel: ReactNode
   dynamicIcon?: ReactNode
   recent: XDriveMobileRecentDestination[]
+  emptyRecentFallback?: XDriveMobileRecentDestination | null
   recentOpen: boolean
   onRecentOpenChange: (open: boolean) => void
   onSelect: (slot: XDriveMobileSlot) => void
@@ -259,9 +260,21 @@ export function XDriveMobileFiveSlotNavigation({
               <ListItemText primary={item.label} />
             </ListItemButton>
           ))}
-        </List> : (
+        </List> : emptyRecentFallback ? (
+          <List component="nav" aria-label="没有最近功能时的默认地图">
+            <ListItemButton key={emptyRecentFallback.key} sx={{ minHeight: 48 }}
+              onClick={() => {
+                onRecentOpenChange(false)
+                onPickRecent(emptyRecentFallback.route)
+              }}>
+              <ListItemIcon sx={{ minWidth: 36 }}>{emptyRecentFallback.icon}</ListItemIcon>
+              <ListItemText primary={emptyRecentFallback.label}
+                secondary="尚无最近动态功能，打开图库地图" />
+            </ListItemButton>
+          </List>
+        ) : (
           <Typography color="text.secondary" sx={{ py: 2 }}>
-            暂无最近动态功能。请先从“全部”选择备份、传输或其他可用功能。
+            暂无最近动态功能，请从“全部”选择可用功能。
           </Typography>
         )}
       </Drawer>
