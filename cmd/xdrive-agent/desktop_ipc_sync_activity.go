@@ -75,7 +75,7 @@ func (h *desktopIPCHandler) syncActivityRuns(w http.ResponseWriter,r *http.Reque
 
 func (h *desktopIPCHandler) syncActivityRun(w http.ResponseWriter,r *http.Request){
  provider:=h.syncActivityReader(w);if provider==nil{return}
- id:=strings.TrimSpace(r.URL.Query().Get("run_id"))
+ id:=strings.TrimSpace(r.PathValue("run_id"))
  if id=="" || len(id)>128{
   writeDesktopIPCError(w,http.StatusBadRequest,"invalid_run_id","run_id is required and must be bounded");return
  }
@@ -86,7 +86,7 @@ func (h *desktopIPCHandler) syncActivityRun(w http.ResponseWriter,r *http.Reques
 
 func (h *desktopIPCHandler) syncActivityItems(w http.ResponseWriter,r *http.Request){
  provider:=h.syncActivityReader(w);if provider==nil{return}
- runID:=strings.TrimSpace(r.URL.Query().Get("run_id"))
+ runID:=strings.TrimSpace(r.PathValue("run_id"))
  if runID==""||len(runID)>128{
   writeDesktopIPCError(w,http.StatusBadRequest,"invalid_run_id","run_id is required and must be bounded");return
  }
