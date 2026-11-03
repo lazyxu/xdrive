@@ -114,8 +114,15 @@ func TestMigrateLegacyYikeTargetMovesTargetInPlace(t *testing.T) {
 	if connector.Name != yikeTargetConnectorName || connector.ParentID == nil {
 		t.Fatalf("connector=%+v", connector)
 	}
+	var pullRoot meta.Node
+	if err := db.First(&pullRoot, *connector.ParentID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pullRoot.Name != "远程拉取" || pullRoot.ParentID == nil {
+		t.Fatalf("pull root=%+v", pullRoot)
+	}
 	var syncRoot meta.Node
-	if err := db.First(&syncRoot, *connector.ParentID).Error; err != nil {
+	if err := db.First(&syncRoot, *pullRoot.ParentID).Error; err != nil {
 		t.Fatal(err)
 	}
 	if syncRoot.Name != yikeTargetRootName || syncRoot.ParentID == nil || *syncRoot.ParentID != root.ID {
