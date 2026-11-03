@@ -69,6 +69,7 @@ func BeginRunSession(
 		return nil, err
 	}
 	runCtx, cancel := context.WithCancel(ctx)
+	api.SetWriterRun(source.ID, run.SourceRevision, run.ID)
 	api.SetCancelRun(cancel)
 	go watchRunCancellation(
 		runCtx,
