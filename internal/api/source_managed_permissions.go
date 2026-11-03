@@ -16,6 +16,13 @@ type sourceRunScope struct {
 	runID    string
 }
 
+func currentSourceRunScope(c *gin.Context) (sourceRunScope, bool) {
+	if c == nil { return sourceRunScope{}, false }
+	value, present := c.Get("sourceRunScope")
+	scope, ok := value.(sourceRunScope)
+	return scope, present && ok && scope.sourceID != 0 && scope.runID != ""
+}
+
 var errManagedSourceMutation = errors.New("managed source files are read-only")
 
 // managedSourceForNodeTx resolves a Node's current Source owner from its
@@ -102,6 +109,11 @@ func managedSourceRejectNodeTx(
 	if err != nil {
 		return err
 	}
+	if scope, scoped := currentSourceRunScope(c); scoped && (!found || source.ID != scope.sourceID) {
+		// A Pull worker capability can only write within its own Source
+		// target; it must never become a general-purpose Owner writer.
+		return errManagedSourceMutation
+	}
 	if found {
 		if source.TargetNodeID != nil && *source.TargetNodeID == nodeID {
 			return errManagedSourceMutation
@@ -130,9 +142,13 @@ func managedSourceRejectDestinationTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, uid, parentID uint64,
 ) error {
 	source, found, err := managedSourceForNodeTx(ctx, tx, uid, parentID)
-	if err != nil || !found {
+	if err != nil {
 		return err
 	}
+	if scope, scoped := currentSourceRunScope(c); scoped && (!found || source.ID != scope.sourceID) {
+		return errManagedSourceMutation
+	}
+	if !found { return nil }
 	allowed, err := trustedSourceRunMutationTx(ctx, tx, c, source)
 	if err != nil {
 		return err
