@@ -741,6 +741,11 @@ func (s *Server) requireAuth() gin.HandlerFunc {
 		// SourceRun, Source revision, target, and Node ancestry are checked
 		// inside each File mutation's database transaction.
 		if claims.SourceID != 0 && claims.SourceRunID != "" {
+			if !sourceRunHTTPAllowed(c.Request.Method, c.FullPath()) {
+				fail(c, http.StatusForbidden, "SourceRun bearer cannot access this Owner endpoint")
+				c.Abort()
+				return
+			}
 			c.Set("sourceRunScope", sourceRunScope{sourceID: claims.SourceID, runID: claims.SourceRunID})
 		}
 		c.Next()
