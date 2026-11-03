@@ -217,11 +217,6 @@ export function XDriveSourceCreateDialog({
                 </MuiButton>
               ))}
             </Stack>
-            {option.direction === 'pull' ? (
-              <MuiTypography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                服务器会直接连接 DSM，请确保 xDrive Server 能访问下面填写的 DSM 地址。
-              </MuiTypography>
-            ) : null}
           </MuiBox>
         ) : (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
@@ -229,11 +224,6 @@ export function XDriveSourceCreateDialog({
             <MuiTypography variant="body2">
               当前目标：{selectedTargetLabel}{selectedTargetPath ? `（${selectedTargetPath}）` : '（我的文件根目录）'}
             </MuiTypography>
-            {option.direction === 'pull' ? (
-              <MuiTypography variant="body2" sx={{ mt: 0.5 }}>
-                服务器会直接连接 DSM，请确保 xDrive Server 能访问下面填写的 DSM 地址。
-              </MuiTypography>
-            ) : null}
           </XDriveStatusAlert>
         )}
 
