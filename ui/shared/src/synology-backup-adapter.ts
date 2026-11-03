@@ -1040,10 +1040,14 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         !/^[0-9a-f]{64}$/.test(ownerScope)) {
         throw new Error('Invalid Server Owner move-to-trash selector')
       }
+      if (signal?.aborted) throw new Error('Owner move-to-trash cancelled before dispatch')
       const ack = await request<unknown>('/v1/cloud-delete-node', 'POST', {
         id: nodeID, revision, parent_id: parentID, type: kind,
         name, owner_scope: ownerScope,
       }, signal)
+      // If abort races a committed Server trash operation, never report a
+      // confirmed result. The UI refreshes current Owner instead of retrying.
+      if (signal?.aborted) throw new Error('Owner move-to-trash acknowledgement cancelled')
       if (!ack || typeof ack !== 'object' || Array.isArray(ack) ||
         Object.keys(ack).length !== 1 ||
         (ack as Record<string, unknown>).ok !== true) {
