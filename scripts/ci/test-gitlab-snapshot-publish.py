@@ -376,9 +376,15 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp, Exit
         for item_name, body in (
             ('bin/xd', b'fixture ARMv7 xd executable'),
             ('bin/xdrive-agent', b'fixture ARMv7 agent executable'),
-            # Match the actual launcher bytes. A placeholder once let this
-            # fixture bypass the new mandatory /webman/ launch-path gate.
-            ('ui/config', (ROOT/'packaging/synology/ui/config').read_bytes()),
+            # The isolated GitLab publication fixture mounts scripts/, not
+            # packaging/. Keep this positive SPK self-contained; the DSM UI
+            # archive test separately checks its real source-exact config.
+            ('ui/config', json.dumps({
+                '.url': {'com.xdrive.NASBackup': {
+                    'type': 'url',
+                    'url': '/webman/3rdparty/xdrivenas/synology.html',
+                }},
+            }).encode()),
             ('ui/backup.cgi', b'fixture authenticated CGI'),
             ('ui/synology.html', b'fixture shared MUI entry'),
             ('ui/assets/app.js', b'fixture compiled MUI JavaScript'),
