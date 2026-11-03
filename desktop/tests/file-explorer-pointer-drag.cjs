@@ -305,6 +305,8 @@ test('sidebar touch scroll before 350 ms never submits reorder', async () => {
     await h.flushTimers()
     await h.emit('pointerup', { clientY: 115, pointerType: 'touch' })
     assert.equal(h.drops.length, 0)
+    assert.equal((await h.emit('click', { clientY: 115 })).defaultPrevented, true,
+      'cancelled scrolling contact cannot activate the row on release')
     assert.equal(h.document.count, 0)
   } finally { await h.dispose() }
 })
@@ -339,6 +341,7 @@ test('sidebar touch blocks scroll only after hold, then cleans all listeners', a
     assert.equal((await h.emit('touchmove')).defaultPrevented, true)
     await h.emit('pointerup', { pointerType: 'touch' })
     assert.equal((await h.emit('touchmove')).defaultPrevented, false)
+    assert.equal((await h.emit('click')).defaultPrevented, true)
     assert.equal(h.document.count, 0)
   } finally { await h.dispose() }
 })
