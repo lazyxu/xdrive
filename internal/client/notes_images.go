@@ -12,7 +12,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
-
 )
 
 // Notes images are immutable Owner Files, not public media URLs. Both Desktop
@@ -148,8 +147,8 @@ func (c *Client) NotesReadImage(
 		return nil, errors.New("invalid Notes image Content-Type or length")
 	}
 	etag := resp.Header.Get("ETag")
-	if len(etag) != 66 || !strings.HasPrefix(etag, """) ||
-		!strings.HasSuffix(etag, """) {
+	if len(etag) != 66 || !strings.HasPrefix(etag, "\"") ||
+		!strings.HasSuffix(etag, "\"") {
 		return nil, errors.New("Notes image digest ETag missing")
 	}
 	if _, err := hex.DecodeString(etag[1:65]); err != nil {
