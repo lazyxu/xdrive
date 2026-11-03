@@ -283,7 +283,10 @@ func Install(ctx context.Context,m *Manifest,opts InstallOptions)error{
 	root,err:=os.MkdirTemp(opts.Workdir,"xdrive-offline-")
 	if err!=nil{return err}
 	defer os.RemoveAll(root)
-	if err:=VerifySelection(opts.Directory,m,opts.Components,root);err!=nil{return err}
+	snapshot:=filepath.Join(root,"snapshot")
+	if err:=SnapshotSelection(opts.Directory,snapshot,m,opts.Components);err!=nil{return err}
+	// All further reads target the private, SHA-256 bound snapshot.
+	if err:=VerifySelection(snapshot,m,opts.Components,root);err!=nil{return err}
 	for key,owner:=range imageMembers{
 		if !selection[owner.Component]{continue}
 		archive:=filepath.Join(root,owner.Component,filepath.FromSlash(owner.Member))
