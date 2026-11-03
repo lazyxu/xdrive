@@ -972,6 +972,11 @@ const agent = Object.freeze({
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
   startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
     ipcRenderer.invoke('agent:start-server-update', source, channel, backupFileData),
+  offlineImport: (action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'start',
+    input: Record<string, unknown> = {}) =>
+    ipcRenderer.invoke('agent:offline-import', action, input),
+  offlineImportChunk: (id: string, name: string, index: number, data: ArrayBuffer, sha256: string) =>
+    ipcRenderer.invoke('agent:offline-import-chunk', id, name, index, data, sha256),
   cloudStorageStats: (requestID?: string) => ipcRenderer.invoke('agent:cloud-storage-stats', requestID),
   cloudCleanupStorageCache: (kind: 'media_thumbnail' | 'analysis_preview' | 'upload_staging' | 'storage_temp' | 'all') =>
     ipcRenderer.invoke('agent:cloud-storage-cache-cleanup', kind),
