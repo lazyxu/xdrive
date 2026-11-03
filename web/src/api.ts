@@ -1534,6 +1534,66 @@ export class XDriveApi {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update')
   }
 
+  adminOfflineImportList() {
+    return this.request<{ items: import('../../ui/shared/src/offline-update').XDriveOfflineImportSummary[] }>(
+      '/api/v1/admin/update/offline/imports', { cache: 'no-store' })
+  }
+
+  adminOfflineImportCreate() {
+    return this.request<{ id: string; chunk_bytes: number }>(
+      '/api/v1/admin/update/offline/imports', { method: 'POST', body: '{}', cache: 'no-store' })
+  }
+
+  adminOfflineImportGet(id: string) {
+    return this.request<import('../../ui/shared/src/offline-update').XDriveOfflineImportStatus>(
+      '/api/v1/admin/update/offline/imports/' + encodeURIComponent(id), { cache: 'no-store' })
+  }
+
+  adminOfflineImportRegister(id: string, name: string, size: number, uploadSHA256 = '') {
+    return this.request<void>(
+      '/api/v1/admin/update/offline/imports/' + encodeURIComponent(id) +
+      '/files/' + encodeURIComponent(name), {
+        method: 'POST', body: JSON.stringify({ name, size, sha256: uploadSHA256 }),
+        cache: 'no-store',
+      })
+  }
+
+  adminOfflineImportChunk(id: string, name: string, index: number, data: Blob, sha256: string, signal?: AbortSignal) {
+    return this.request<void>(
+      '/api/v1/admin/update/offline/imports/' + encodeURIComponent(id) +
+      '/files/' + encodeURIComponent(name) + '/chunks/' + index, {
+        method: 'PUT', body: data,
+        headers: { 'Content-Type': 'application/octet-stream', 'X-XDrive-Chunk-SHA256': sha256 },
+        signal, cache: 'no-store',
+      })
+  }
+
+  adminOfflineImportFinalize(id: string, name: string) {
+    return this.request<{ name: string; state: 'ready'; upload_sha256: string }>(
+      '/api/v1/admin/update/offline/imports/' + encodeURIComponent(id) +
+      '/files/' + encodeURIComponent(name) + '/finalize', {
+        method: 'POST', body: '{}', cache: 'no-store',
+      })
+  }
+
+  adminOfflineImportRemove(id: string) {
+    return this.request<void>(
+      '/api/v1/admin/update/offline/imports/' + encodeURIComponent(id), {
+        method: 'DELETE', cache: 'no-store',
+      })
+  }
+
+  adminStartOfflineServerUpdate(id: string, manifestSHA256: string, goSHA256: string, backupFileData: boolean) {
+    return this.request<XDriveServerUpdateState>('/api/v1/admin/update', {
+      method: 'POST', cache: 'no-store',
+      body: JSON.stringify({
+        source: 'offline', channel: 'master', offline_id: id,
+        trusted_manifest_sha256: manifestSHA256, trusted_installer_sha256: goSHA256,
+        backup_file_data: backupFileData,
+      }),
+    })
+  }
+
   adminStartServerUpdate(source: XDriveServerUpdateSource, channel: XDriveServerUpdateChannel, backupFileData: boolean) {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update', {
       method: 'POST',
