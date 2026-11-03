@@ -23,8 +23,8 @@ test('Windows history has one shared task entry and never invents legacy results
   assert.match(panel, /PAGE_SIZE = 20/)
 })
 test('Agent and Electron use one lossless timestamp cursor through every layer', () => {
-  assert.match(go, /strconv\.FormatInt\(tail\.StartedAt\.UnixNano\(\),10\)/)
-  assert.match(go, /strconv\.FormatInt\(tail\.AppliedAt\.UnixNano\(\),10\)/)
+  assert.match(go, /strconv\.FormatInt\(tail\.StartedAt\.UnixNano\(\),\s*10\)/)
+  assert.match(go, /strconv\.FormatInt\(tail\.AppliedAt\.UnixNano\(\),\s*10\)/)
   assert.match(panel, /before_started_at: string/)
   assert.match(panel, /before_applied_at: string/)
   assert.match(client, /before_started_at: string/)

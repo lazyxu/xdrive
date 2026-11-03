@@ -141,7 +141,7 @@ func TestAtomicBatchReplaysAndRollback(t *testing.T){
  if r.Stats.Items!=2||r.Stats.Created!=1||r.Stats.Updated!=1||r.Stats.Uploaded!=1||r.Stats.Downloaded!=1{
   t.Fatalf("partial rollback or double count: %+v",r)
  }
- if r.Stats.TransferredBytes==nil||*r.Stats.TransferredBytes!=8{t.Fatalf("unknown bytes must not become a fabricated transfer: %+v",r)}
+ if r.Stats.TransferredBytes!=nil{t.Fatalf("unknown bytes must not become a fabricated transfer: %+v",r)}
  rows,err:=s.Items(ctx,"batch",50,nil);if err!=nil||len(rows)!=2{t.Fatalf("atomicity broken: %+v %v",rows,err)}
  if err:=s.Finish(ctx,"batch",StatusCompleted,false);err!=nil{t.Fatal(err)}
 }
