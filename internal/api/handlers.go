@@ -491,7 +491,9 @@ func (s *Server) copyNode(c *gin.Context) {
 		return
 	}
 	destinationName := source.Name
-	if req.Name != nil { destinationName = *req.Name }
+	if req.Name != nil {
+		destinationName = *req.Name
+	}
 	if notesRejectDestination(c, s.DB, req.ParentID, destinationName) {
 		return
 	}

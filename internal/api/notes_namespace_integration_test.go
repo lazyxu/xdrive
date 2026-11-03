@@ -22,7 +22,9 @@ import (
 
 func TestNotesNamespaceOwnerBoundAndOrdinaryFilesCannotWrite(t *testing.T) {
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
-	if dsn == "" { t.Skip("XD_TEST_DATABASE_URL is not set") }
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
 	gin.SetMode(gin.TestMode)
 	base, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -49,7 +51,9 @@ func TestNotesNamespaceOwnerBoundAndOrdinaryFilesCannotWrite(t *testing.T) {
 		&meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{},
 		&meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{},
 		&meta.AuditEvent{}, &meta.FileOperation{}, &meta.NotesNamespace{},
-	); err != nil { t.Fatal(err) }
+	); err != nil {
+		t.Fatal(err)
+	}
 	for _, statement := range []string{
 		`CREATE UNIQUE INDEX idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`,
@@ -63,9 +67,9 @@ func TestNotesNamespaceOwnerBoundAndOrdinaryFilesCannotWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := (&Server{DB: db, Store: store,
-		Auth: auth.New("notes-namespace-test-secret", time.Hour),
-		RefreshTTL:24*time.Hour, AllowedOrigin:"http://localhost",
-		MaxUploadBytes:8<<20,
+		Auth:       auth.New("notes-namespace-test-secret", time.Hour),
+		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost",
+		MaxUploadBytes: 8 << 20,
 	}).Router()
 	tokenA := createTestUser(t, db, router, "notes-owner-a", "notes-pass-a")
 	tokenB := createTestUser(t, db, router, "notes-owner-b", "notes-pass-b")
@@ -86,7 +90,9 @@ func TestNotesNamespaceOwnerBoundAndOrdinaryFilesCannotWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if first.SystemNodeID == 0 || first.NotesNodeID == 0 ||
-		first.IOSNodeID == 0 || first.MineNodeID == 0 { t.Fatalf("missing nodes: %+v", first) }
+		first.IOSNodeID == 0 || first.MineNodeID == 0 {
+		t.Fatalf("missing nodes: %+v", first)
+	}
 	response = request(t, router, http.MethodPost,
 		"/api/v1/notes/namespace", tokenA, strings.NewReader(`{}`), http.StatusOK)
 	var again notesNamespaceDTO
@@ -131,7 +137,9 @@ func TestNotesNamespaceOwnerBoundAndOrdinaryFilesCannotWrite(t *testing.T) {
 
 	var uid uint64
 	if err := db.Model(&meta.Node{}).Select("owner_id").Where("id = ?", rootA.ID).
-		Scan(&uid).Error; err != nil { t.Fatal(err) }
+		Scan(&uid).Error; err != nil {
+		t.Fatal(err)
+	}
 	for _, id := range []uint64{first.SystemNodeID, first.NotesNodeID, first.IOSNodeID, first.MineNodeID} {
 		locked, err := notesProtectedNodeTx(context.Background(), db, uid, id)
 		if err != nil || !locked {
