@@ -57,3 +57,36 @@ test('original Viewer selects only same revision and retires old player, Live re
   assert.match(v, /if showChrome && \(loadedNodes\.count > 1/)
   assert.match(v, /\.onChange\(of: login\.owner\) \{ _ in/)
 })
+
+
+test('backed-up Original filmstrip scrubs with existing bounded PhotoKit/Owner gesture policy', () => {
+  const scrub = read('ios/XDriveIOS/NativePhotoFilmstripScrubPolicy.swift')
+  const executable = read('ios/tests/NativePhotoFilmstripScrubPolicyChecks.swift')
+  assert.match(scrub, /static let maximumPageCount = 64/)
+  assert.match(scrub, /abs\(dx\) > abs\(dy\) \* 1\.5/)
+  assert.match(scrub, /dx.isFinite, dy.isFinite/)
+  assert.match(policy, /static let maximumLoaded = 48/)
+  assert.match(filmstrip, /@State private var scrubStartIndex: Int\?/)
+  assert.match(filmstrip, /private func scrubChanged\(_ translation: CGSize, force: Bool = false\)/)
+  assert.match(filmstrip, /XDriveIOSNativePhotoFilmstripScrubPolicy\.targetIndex\(/)
+  assert.match(filmstrip, /startingAt: origin, loadedCount: visible\.count/)
+  assert.match(filmstrip, /horizontal: translation\.width, vertical: translation\.height/)
+  assert.match(filmstrip, /visible\.indices\.contains\(target\)/)
+  assert.match(filmstrip, /XDriveIOSNativeCloudOriginalFilmstripPolicy\.target\(/)
+  assert.match(filmstrip, /candidateKey != key\(current\), candidateKey != lastScrubbedKey/)
+  assert.match(filmstrip, /now - lastScrubDispatch >= 0\.08/)
+  assert.match(filmstrip, /\.highPriorityGesture\(\s*DragGesture\(minimumDistance: 18, coordinateSpace: \.local\)/)
+  assert.match(filmstrip, /\.onChanged \{ scrubChanged\(\$0\.translation\) \}/)
+  assert.match(filmstrip, /\.onEnded \{\s*scrubChanged\(\$0\.translation, force: true\)\s*resetScrub\(\)/)
+  assert.match(filmstrip, /\.onChange\(of: keys\) \{ _ in resetScrub\(\) \}/)
+  assert.match(filmstrip, /\.onChange\(of: login\.owner\) \{ _ in resetScrub\(\) \}/)
+  assert.match(filmstrip, /\.onChange\(of: phase\) \{ state in/)
+  assert.match(filmstrip, /\.onDisappear \{ resetScrub\(\) \}/)
+  assert.match(filmstrip, /onSelect\(candidate\)/)
+  for (const label of [
+    'vertical pan', 'diagonal pan', 'permission revoked',
+    'first page boundary', 'last page boundary', 'cloud 48 slot boundary',
+    'NaN drag rejected', 'huge finite drag safely clamped'
+  ]) assert.ok(executable.includes(label), 'missing executable Swift policy regression: ' + label)
+  assert.doesNotMatch(filmstrip, /UploadSession|downloadOriginal|livePreview\(|UserDefaults|WKWebView/)
+})

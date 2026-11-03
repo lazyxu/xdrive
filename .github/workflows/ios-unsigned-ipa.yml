@@ -26,10 +26,12 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 35
     steps:
-      - name: Checkout exact source commit
+      - name: Checkout exact tested PR merge candidate
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # PR checks need the real base+HEAD candidate so newer master
+          # source-backed Swift contracts are present; push uses event SHA.
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Verify cold launch recovery and BG registration safety
