@@ -36,7 +36,6 @@ export function XDriveDeviceBackupLocalCreateDialog({
   const validName = name.trim().length > 0 && new TextEncoder().encode(name.trim()).length <= 128
 
   const close = () => {
-    if (busy) return
     setName('')
     setError('')
     setDraft(null)
@@ -103,6 +102,7 @@ export function XDriveDeviceBackupLocalCreateDialog({
 
   return (
     <Dialog open={open} onClose={() => {
+      if (busy) return
       if (draft) {
         setError('仍有未确认的草稿，须选择保留、重试或安全清理。')
       } else {
