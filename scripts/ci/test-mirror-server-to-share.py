@@ -143,6 +143,33 @@ class ServerTests(unittest.TestCase):
             mirror.publish(self.root, self.share)
         self.assertEqual(self.remote.directory_calls, [])
 
+    def test_share_mirror_failure_reports_fixed_stage_without_leaking_exception(self):
+        secret = 'https://private-user:secret@example.invalid/#/s/PRIVATE-CAPABILITY'
+        stderr = io.StringIO()
+        with patch.object(self.share, 'upload', side_effect=mirror.MirrorError(secret)), \
+             patch.object(mirror, 'Share', return_value=self.share), \
+             patch.dict(mirror.os.environ, {'XDRIVE_CLIENT_MIRROR_SHARE_URL': 'configured'}), \
+             patch.object(mirror.sys, 'argv', ['mirror', 'publish', '--directory', str(self.root)]), \
+             redirect_stderr(stderr):
+            self.assertEqual(mirror.main(), 1)
+        self.assertEqual(stderr.getvalue(),
+                         'Server release verification failed [share-package-app]; no publication may be assumed\\n'.replace('\\\\n', '\\n'))
+        self.assertNotIn(secret, stderr.getvalue())
+        self.assertNotIn('PRIVATE-CAPABILITY', stderr.getvalue())
+
+    def test_github_package_fetch_failure_reports_fixed_stage(self):
+        secret = 'https://secret.example.invalid/release?token=private'
+        item = self.manifest['packages']['postgres']
+        (self.root / item['filename']).unlink()
+        stderr = io.StringIO()
+        with patch.object(mirror.subprocess, 'run', side_effect=OSError(secret)), \
+             patch.object(mirror.sys, 'argv', ['mirror', 'fetch', '--directory', str(self.root)]), \
+             redirect_stderr(stderr):
+            self.assertEqual(mirror.main(), 1)
+        self.assertEqual(stderr.getvalue(),
+                         'Server release verification failed [github-package-postgres]; no publication may be assumed\\n'.replace('\\\\n', '\\n'))
+        self.assertNotIn(secret, stderr.getvalue())
+
     def test_duplicate_remote_names_fail_closed(self):
         item = dict(id=1, name='duplicate', type='file', size=2)
         with patch.object(self.share, 'request', return_value=dict(items=[item, item], next_cursor=0)):
