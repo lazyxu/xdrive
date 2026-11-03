@@ -15,6 +15,8 @@ import { XDriveFileOperationCenter } from './FileOperationCenter'
 import { XDriveMediaSelectionJobCenter } from './MediaSelectionJobCenter'
 import type { XDriveMediaSelectionJobPort } from './MediaSelectionJobCenter'
 import { XDriveTransferCenter } from './TransferCenter'
+import { XDriveSyncActivityPanel } from './SyncActivityPanel'
+import type { XDriveSyncActivityDataSource } from './SyncActivityPanel'
 import { XDriveTaskCenterSection } from './TaskPresentation'
 import { XDriveSynologyLocalTaskSection } from './SynologyLocalTaskSection'
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
@@ -74,6 +76,9 @@ export interface XDriveTaskCenterPageProps {
   onOpenLocalBackup?: () => void
   transfers: XDriveTransferTask[]
   operations: XDriveFileOperation[]
+  syncActivity?: XDriveSyncActivityDataSource
+  syncActivitySessionKey?: string
+  syncActivityFocusRunID?: string
   mediaSelectionJobPort?: XDriveMediaSelectionJobPort
   backgroundTasks?: XDriveBackgroundTask[]
   globalBackgroundTasks?: XDriveBackgroundTask[]
@@ -127,6 +132,9 @@ export function XDriveTaskCenterPage({
   onOpenLocalBackup,
   transfers,
   operations,
+  syncActivity,
+  syncActivitySessionKey = '',
+  syncActivityFocusRunID,
   mediaSelectionJobPort,
   backgroundTasks = [],
   globalBackgroundTasks = [],
@@ -344,6 +352,18 @@ export function XDriveTaskCenterPage({
             onOpenBackup={onOpenLocalBackup} />
         ) : (
           <>
+            {syncActivity ? (
+              <>
+                <XDriveTaskCenterSection title="Windows 同步活动"
+                  description="仅本设备的 Mount 同步历史；扫描记录与真实文件变更不能混为一谈。">
+                  <XDriveSyncActivityPanel key={syncActivitySessionKey}
+                    source={syncActivity}
+                    sessionKey={syncActivitySessionKey}
+                    focusedRunID={syncActivityFocusRunID} />
+                </XDriveTaskCenterSection>
+                <Divider />
+              </>
+            ) : null}
             {mediaSelectionJobPort ? (
               <Box>
                 <XDriveMediaSelectionJobCenter port={mediaSelectionJobPort} />

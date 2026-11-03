@@ -279,6 +279,12 @@ declare global {
   type AgentFileSavedSearch = XDriveFileSavedSearch
   type AgentFileSavedSearchInput = XDriveFileSavedSearchInput
   type AgentTransfer = XDriveTransferTask
+  type AgentSyncRun = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncRun
+  type AgentSyncItem = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncItem
+  type AgentSyncRunCursor = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncRunCursor
+  type AgentSyncItemCursor = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncItemCursor
+  type AgentSyncRunsPage = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncActivityPage<AgentSyncRun, AgentSyncRunCursor>
+  type AgentSyncItemsPage = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncActivityPage<AgentSyncItem, AgentSyncItemCursor>
 
   type AgentTransfers = {
     revision: number
@@ -529,6 +535,9 @@ declare global {
       agent: {
         getState: () => Promise<AgentConnectionState>
         getTransfers: () => Promise<AgentTransfers>
+        getSyncRuns: (limit?: number, cursor?: AgentSyncRunCursor) => Promise<DesktopResult<AgentSyncRunsPage>>
+        getSyncRun: (runID: string) => Promise<DesktopResult<AgentSyncRun>>
+        getSyncRunItems: (runID: string, limit?: number, cursor?: AgentSyncItemCursor) => Promise<DesktopResult<AgentSyncItemsPage>>
         getStorageTree: (requestID?: string) => Promise<DesktopResult<AgentStorageTreeNode>>
         getCache: (requestID?: string) => Promise<DesktopResult<AgentCacheStats>>
         getLocalDiskSpace: (requestID?: string) => Promise<DesktopResult<AgentLocalDiskSpace>>

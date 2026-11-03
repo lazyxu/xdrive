@@ -1025,6 +1025,29 @@ export default function App({
     } : undefined
   ), [agent.connected, configured, mediaSelectionJobsSupported])
 
+  const syncActivityDataSource = useMemo(() => (
+    agent.connected && configured && agent.hello?.capabilities.includes('sync-activity-history')
+      ? {
+          runs: async (limit: number, cursor?: AgentSyncRunCursor) => {
+            const result = await window.xdriveDesktop.agent.getSyncRuns(limit, cursor)
+            if (!result.ok) throw new Error(result.error.message)
+            return result.data
+          },
+          run: async (runID: string) => {
+            const result = await window.xdriveDesktop.agent.getSyncRun(runID)
+            if (!result.ok) throw new Error(result.error.message)
+            return result.data
+          },
+          items: async (runID: string, limit: number, cursor?: AgentSyncItemCursor) => {
+            const result = await window.xdriveDesktop.agent.getSyncRunItems(runID, limit, cursor)
+            if (!result.ok) throw new Error(result.error.message)
+            return result.data
+          },
+        }
+      : undefined
+  ), [agent.connected, configured, agent.hello?.capabilities,
+      status?.server, status?.username, status?.auth_status])
+
   const taskCenter = useXDriveTaskCenterController({
     transfers: transfers.transfers,
     operations: cloudFileOperations,
@@ -3036,7 +3059,9 @@ export default function App({
   } : undefined,
       taskCenterPage: {
     ...taskCenter.pageProps,
-    subtitle: syncActivityFromNotification && view === 'transfers'
+    syncActivity: syncActivityDataSource,
+    syncActivitySessionKey: JSON.stringify([status?.server ?? '', status?.username ?? '']),
+    subtitle: syncActivityFromNotification && view === 'transfers' && !syncActivityDataSource
       ? '本轮 Mount 同步检查已结束。以下是已记录的任务与传输，不代表本轮完整的文件变更清单；逐项同步历史尚未接入。'
       : taskCenter.pageProps.subtitle,
     globalTasksEnabled: status?.role === 'admin',

@@ -21,6 +21,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/diagnostics"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/shellintegration"
+	"github.com/lazyxu/xdrive/internal/syncactivity"
 	"github.com/lazyxu/xdrive/internal/transfer"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 	"github.com/lazyxu/xdrive/internal/version"
@@ -133,6 +134,12 @@ type agentController struct {
 	historyPath           string
 	historyKey            string
 	historyWriterDone     chan struct{}
+	syncActivityMu        sync.Mutex
+	syncActivity          *syncactivity.Store
+	syncActivityKey       string
+	syncActivityPending   map[string][]syncactivity.Item
+	syncActivityLost      map[string]bool
+	syncActivityPrunedAt  time.Time
 	mu                    sync.RWMutex
 	snap                  agentSnapshot
 	snapshotRevision      uint64
@@ -152,6 +159,8 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 		snapshotRevision:   1,
 		snapshotChanged:    make(chan struct{}),
 		transfers:          transfer.NewManager(transfer.DefaultHistoryLimit),
+		syncActivityPending: make(map[string][]syncactivity.Item),
+		syncActivityLost:    make(map[string]bool),
 		historyWriterDone:  make(chan struct{}),
 		updates:            newClientUpdateManager(ctx),
 		thumbnailCache:     newAgentMediaThumbnailCache(agentMediaThumbnailCacheMaxEntries, agentMediaThumbnailCacheMaxBytes),
@@ -163,6 +172,11 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 		},
 	}
 	c.loadInitialTransferHistory()
+	c.loadInitialSyncActivity()
+	go func() {
+		<-ctx.Done()
+		c.closeSyncActivity()
+	}()
 	go func() {
 		defer close(c.historyWriterDone)
 		c.runTransferHistoryWriter(ctx)
@@ -233,6 +247,7 @@ func (c *agentController) Run() {
 	go c.runLocalPushAutoScheduler()
 	updateReady := c.updates.InstallStarted()
 	mount.SetEventSink(func(event mount.Event) {
+		c.captureMountSyncActivity(event)
 		switch event.Kind {
 		case mount.EventSyncStarted:
 			c.availabilitySearch.Invalidate()
@@ -827,6 +842,7 @@ func (c *agentController) authenticateWithConnectionIP(server, username, passwor
 		return err
 	}
 	c.switchTransferHistory(cfg)
+	c.switchSyncActivity(cfg)
 	c.setSnapshot(func(s *agentSnapshot) {
 		s.Configured = true
 		s.Username = resp.Username
@@ -1192,6 +1208,9 @@ func mountOptionsFromConfig(cfg userconfig.Config, managers ...*transfer.Manager
 		transfers = managers[0]
 	}
 	opts := mount.Options{CacheLimitBytes: cfg.CacheLimitBytes, Transfers: transfers}
+	if _, owner, err := agentSyncActivityIdentity(cfg); err == nil {
+		opts.ActivityOwner = owner
+	}
 	if dir, err := userconfig.Dir(); err == nil {
 		if root, rootErr := userconfig.EffectiveMountPath(cfg); rootErr == nil {
 			key := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(cfg.Server)) + "\x00" +
@@ -1376,6 +1395,7 @@ func (c *agentController) Logout() error {
 		return err
 	}
 	c.stopTransferHistory()
+	c.closeSyncActivity()
 	c.setSnapshot(func(s *agentSnapshot) {
 		*s = agentSnapshot{
 			AuthStatus: "未登录",
