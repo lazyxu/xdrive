@@ -555,6 +555,9 @@ func (s *Server) enqueueFileOperationWithConflictPolicy(
 			if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, ""); err != nil {
 				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 			}
+			if err := denyManagedSourceNodeTx(ctx, tx, uid, parentID); err != nil {
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_source_target", Message: "Source destination cannot be changed by Files"}
+			}
 		}
 		nodes, err := batchLoadNodesTx(tx, uid, refs, true)
 		if err != nil {
@@ -563,6 +566,11 @@ func (s *Server) enqueueFileOperationWithConflictPolicy(
 		for _, node := range nodes {
 			if err := notesRejectNodeWithReason(ctx, tx, uid, node.ID); err != nil {
 				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes cannot be moved, copied or deleted"}
+			}
+			if operationType != meta.FileOperationTypeCopy {
+				if err := denyManagedSourceNodeTx(ctx, tx, uid, node.ID); err != nil {
+					return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_source_target", Message: "Source-managed item cannot be changed by Files"}
+				}
 			}
 			if operationType != meta.FileOperationTypeDelete {
 				if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, node.Name); err != nil {
@@ -1165,6 +1173,9 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 		if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, ""); err != nil {
 			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 		}
+		if err := denyManagedSourceNodeTx(ctx, tx, uid, parentID); err != nil {
+			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_source_target", Message: "Source destination is read-only"}
+		}
 		nested, err := batchSelectionHasAncestor(tx, uid, refs)
 		if err != nil {
 			return err
@@ -1315,6 +1326,9 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 		if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, ""); err != nil {
 			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
 		}
+		if err := denyManagedSourceNodeTx(ctx, tx, uid, parentID); err != nil {
+			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_source_target", Message: "Source destination is read-only"}
+		}
 		nested, err := batchSelectionHasAncestor(tx, uid, refs)
 		if err != nil {
 			return err
@@ -1348,6 +1362,9 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 			node := roots[index]
 			if err := notesRejectNodeWithReason(ctx, tx, uid, node.ID); err != nil {
 				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes cannot be moved"}
+			}
+			if err := denyManagedSourceNodeTx(ctx, tx, uid, node.ID); err != nil {
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_source_target", Message: "Source-managed item cannot be moved"}
 			}
 			if err := notesRejectDestinationWithReason(ctx, tx, uid, parentID, node.Name); err != nil {
 				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "Notes destination is protected"}
@@ -1595,6 +1612,9 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 			node := roots[index]
 			if err := notesRejectNodeWithReason(ctx, tx, uid, node.ID); err != nil {
 				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes cannot be deleted"}
+			}
+			if err := denyManagedSourceNodeTx(ctx, tx, uid, node.ID); err != nil {
+				return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_source_target", Message: "Source-managed item cannot be deleted"}
 			}
 			if err := operationProgress.begin(node.Name); err != nil {
 				return err
