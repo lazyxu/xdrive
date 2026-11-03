@@ -38,4 +38,45 @@ for (const bad of [
   { ...valid, stop_requested: 'delete', state: 'running', running: true },
 ]) assert.throws(() => validate(42, bad), /Untrusted DSM/)
 assert.throws(() => validate(0, valid), /Invalid owner/)
-console.log('DSM batch status rejects wrong Owner, fake completion, CAS proof and counters.')
+
+// The same owning-Agent history used in Device Backup is now available from
+// Task Center on an explicit user selection, never from an eager Source fan-out.
+const validateHistory = ctx.module.exports.xDriveValidateSynologyLocalHistoryPage
+const receipt = {
+  source_id: 42, run_id: 'local-run-1', revision: 2, state: 'partial',
+  inspected_files: 12, confirmed_files: 5, skipped_files: 2,
+  unsupported_files: 1, uncertain_files: 3, confirmed_bytes: 4096,
+  started_at: '2026-11-01T00:00:00Z', finished_at: '2026-11-01T00:02:00Z',
+}
+const goodHistory = { source_id: 42, items: [receipt] }
+assert.equal(validateHistory(42, goodHistory).items[0].run_id, 'local-run-1')
+assert.equal(validateHistory(42, { source_id: 42, items: [] }).items.length, 0)
+for (const broken of [
+  { ...goodHistory, source_id: 43 },
+  { ...goodHistory, items: [null] },
+  { ...goodHistory, items: [{ ...receipt, source_id: 43 }] },
+  { ...goodHistory, items: [{ ...receipt, state: 'completed' }] },
+  { ...goodHistory, items: [{ ...receipt, run_id: '' }] },
+  { ...goodHistory, items: [{ ...receipt, revision: 0 }] },
+  { ...goodHistory, items: [{ ...receipt, confirmed_files: 12 }] },
+  { ...goodHistory, items: [{ ...receipt, finished_at: 'not-a-date' }] },
+  { ...goodHistory, items: [receipt, receipt] },
+  { ...goodHistory, items: Array.from({ length: 21 }, (_, i) => ({
+    ...receipt, run_id: 'run-' + i,
+  })) },
+]) assert.throws(() => validateHistory(42, broken), /Untrusted DSM local history/)
+assert.throws(() => validateHistory(0, goodHistory), /Invalid owner/)
+const tasks = fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/SynologyLocalTaskSection.tsx'), 'utf8')
+for (const contract of [
+  'client.history(id, abort.signal)',
+  'xDriveValidateSynologyLocalHistoryPage(id, page)',
+  '<XDriveDeviceBackupHistoryList',
+  'historyView.hostEpoch === hostEpoch',
+  'hostEpochRef.current.client === client',
+  'visibleSources.some((item) => item.source_id === selectedID)',
+  'return () => { active = false; abort.abort() }',
+  "setHistoryExpanded(value => !value)",
+  "kind: 'local-receipt' as const",
+]) assert.ok(tasks.includes(contract), 'DSM Task Center lost bounded Owner history: ' + contract)
+console.log('DSM batch status and on-demand Source history retain current Owner and non-authoritative receipt boundaries.')
