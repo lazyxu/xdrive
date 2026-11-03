@@ -21,6 +21,9 @@ type OwnerSourceAPI struct {
 	auth      auth.Manager
 	owner     meta.User
 	cancelRun context.CancelFunc
+	sourceID uint64
+	sourceRevision uint64
+	runID string
 }
 
 func NewOwnerSourceAPI(serverURL, jwtSecret string, owner meta.User) (*OwnerSourceAPI, error) {
@@ -34,6 +37,29 @@ func NewOwnerSourceAPI(serverURL, jwtSecret string, owner meta.User) (*OwnerSour
 		auth:      auth.New(jwtSecret, internalTokenTTL),
 		owner:     owner,
 	}, nil
+}
+
+// SetWriterRun binds all later HTTP requests to the exact verified run.
+func (a *OwnerSourceAPI) SetWriterRun(sourceID, sourceRevision uint64, runID string) {
+	a.sourceID, a.sourceRevision, a.runID = sourceID, sourceRevision, runID
+}
+
+type sourceWriterTransport struct {
+	base http.RoundTripper
+	auth auth.Manager
+	ownerID, sessionVersion, sourceID, sourceRevision uint64
+	runID string
+}
+
+func (t *sourceWriterTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	proof, err := t.auth.IssueSourceWriter(
+		t.ownerID, t.sessionVersion, t.sourceID, t.sourceRevision, t.runID,
+		15*time.Minute,
+	)
+	if err != nil { return nil, err }
+	copy := req.Clone(req.Context())
+	copy.Header.Set("X-XDrive-Source-Writer-Proof", proof)
+	return t.base.RoundTrip(copy)
 }
 
 func (a *OwnerSourceAPI) SetCancelRun(cancel context.CancelFunc) {
@@ -56,7 +82,16 @@ func (a *OwnerSourceAPI) client() (*client.Client, error) {
 		return nil, err
 	}
 	out := client.New(a.serverURL, token)
-	out.HTTP = &http.Client{Timeout: 30 * time.Second}
+	transport := http.RoundTripper(http.DefaultTransport)
+	if a.sourceID != 0 && a.sourceRevision != 0 && a.runID != "" {
+		transport = &sourceWriterTransport{
+			base: transport, auth: a.auth, ownerID: a.owner.ID,
+			sessionVersion: a.owner.SessionVersion,
+			sourceID: a.sourceID, sourceRevision: a.sourceRevision,
+			runID: a.runID,
+		}
+	}
+	out.HTTP = &http.Client{Timeout: 30 * time.Second, Transport: transport}
 	return out, nil
 }
 
