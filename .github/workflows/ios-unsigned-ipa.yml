@@ -365,6 +365,16 @@ jobs:
             desktop/tests/ios-native-l2-focus-bar-integration.cjs \
             desktop/tests/ios-native-supported-orientations.cjs
 
+      - name: Verify native PhotoKit album lifecycle and bounded destination picker
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoAlbumNamePolicy.swift \
+            ios/tests/NativeAlbumNamePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-native-album-name"
+          "$RUNNER_TEMP/xdrive-ios-native-album-name"
+          node --test desktop/tests/ios-native-album-management.cjs
+
       - name: Verify native album single-page selection and PhotoKit actions
         run: node --test desktop/tests/ios-native-album-batch-actions.cjs
 
