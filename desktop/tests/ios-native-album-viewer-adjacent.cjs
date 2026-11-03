@@ -13,7 +13,7 @@ const actor = album.slice(
 )
 const contents = album.slice(
   album.indexOf('struct XDriveIOSNativeAlbumContentsScreen: View'),
-  album.indexOf('/// existing 32-at-a-time')
+  album.indexOf('/// Photos-first list of local smart/user albums.')
 )
 
 test('native album Viewer shares the tested one-neighbor callback, not a full album cache', () => {
@@ -54,7 +54,7 @@ test('album cursor validates all 64 original members, exact edge, and bounded ad
 
 test('album viewer returns exact last-viewed tile on the crossed page, then forgets it', () => {
   assert.match(contents, /@State private var viewerPage: XDrivePhotoKitScanPage\?/)
-  assert.match(contents, /viewerPage = page[\s\S]*?selected = item/)
+  assert.match(contents, /viewerPage = loadedPage[\s\S]*?selected = item/)
   assert.match(contents, /viewerPage\?\.items\.contains\(where:/)
   assert.match(contents, /viewerPage = verifiedPage\s+savedOffset = verifiedPage\.startOffset\s+viewerReturnID = next\.id/)
   assert.match(contents, /private func restoreAfterViewer\(\) \{\s*viewerPage = nil/)

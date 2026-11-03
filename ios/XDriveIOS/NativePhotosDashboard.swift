@@ -533,11 +533,9 @@ struct XDriveIOSNativePhotosDashboard: View {
             Group {
                 switch gallerySource {
                 case .local:
-                    XDriveIOSNativeLocalPhotoTimelineContainer(savedOffset: $localGalleryPageOffset) {
-                        XDriveIOSNativeLocalGalleryScreen(
-                            savedOffset: $localGalleryPageOffset
-                        )
-                    }
+                    XDriveIOSNativeLocalPhotoTimelineContainer(
+                        savedOffset: $localGalleryPageOffset
+                    )
                 case .albums:
                     XDriveIOSNativePhotoAlbumsScreen(
                         savedOffset: $localAlbumDirectoryOffset

@@ -46,8 +46,8 @@ test('date jump uses identical live/screenshot predicate and exact filtered slot
   assert.match(timeline, /asset\.mediaSubtypes\.contains\(\.photoScreenshot\)/)
   assert.match(timeline, /result\.indexedMediaCount == result\.totalSlots/)
   assert.match(timeline, /model\.indexFilter == mediaFilter/)
-  assert.match(timeline, /"所有实况（返回第一页）"/)
-  assert.match(timeline, /"所有截屏（返回第一页）"/)
+  assert.match(timeline, /"所有实况（查看全部）"/)
+  assert.match(timeline, /"所有截屏（查看全部）"/)
 })
 
 test('Gallery category selection is compact, invalidates offsets, and never rewrites backup', () => {
