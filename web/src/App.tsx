@@ -2427,10 +2427,11 @@ function FileManager({
   // Shared with Desktop/DSM: browser-only settings stay in the account menu.
   // Do not advertise utility routes before the Browser Host implements them.
   const webSidebarSections = xDriveWorkspaceHostSections({
-    showNotes: Boolean(notesPort),
     adminRoleVerified: profile?.role === 'admin',
     includeUtilityRoutes: false,
     showShareCenter: true,
+    // The current authenticated Owner Notes port, not a UI role, unlocks this item.
+    showNotes: Boolean(notesPort),
   })
 
   const chooseUploadForResume = (id: string) => {
