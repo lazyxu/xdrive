@@ -114,6 +114,11 @@ func migrateLegacyYikeTarget(tx *gorm.DB, source meta.Source) error {
 		return nil
 	}
 	if err := verifyLegacyYikeTargetOwnershipTx(tx, source, legacyRoot, connector, target); err != nil {
+		if errors.Is(err, errLegacyYikeTargetMigrationBlocked) {
+			// A flat mixed root may split without changing its original
+			// direct Share authorization. Unproven trees still fail closed.
+			return splitLegacyYikeMixedTargetTx(tx, source, legacyRoot, connector, target)
+		}
 		return err
 	}
 
