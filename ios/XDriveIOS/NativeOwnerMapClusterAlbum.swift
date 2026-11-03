@@ -103,8 +103,13 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 .padding(.horizontal, 4)
             }
             .simultaneousGesture(
-                DragGesture(minimumDistance: 12).onEnded { _ in
-                    guard scrollFootVisible, activeOwner, !busy,
+                DragGesture(minimumDistance: 12).onEnded { gesture in
+                    // The user must swipe upward to scroll toward newer tiles.
+                    // Pulling back or swiping horizontally cannot advance.
+                    guard gesture.translation.height <= -12,
+                          abs(gesture.translation.height) >
+                            abs(gesture.translation.width),
+                          scrollFootVisible, activeOwner, !busy,
                           viewing == nil, page != nil, let next else { return }
                     scrollFootVisible = false
                     load(next, history: earlier + [cursor],
@@ -506,7 +511,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         guard activeOwner, !busy, viewing == nil,
               target.placeIndex >= 0,
               target.placeIndex < selection.places.count,
-              target.offset >= 0 else { return }
+              target.offset >= 0,
+              target.offset % XDriveIOSNativePhotoAssetRangeCursorPolicy.pageSize == 0
+        else { return }
         generation = UUID()
         let ticket = generation
         let departingPage = page
@@ -550,7 +557,19 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                       ),
                       fetched.total_count == facet.item_count,
                       fetched.offset == target.offset,
-                      !fetched.items.isEmpty else {
+                      fetched.limit == XDriveIOSNativePhotoAssetRangeCursorPolicy.pageSize,
+                      XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
+                          offset: fetched.offset, count: fetched.items.count,
+                          total: fetched.total_count
+                      ),
+                      Set(fetched.items.map(\.id)).count == fetched.items.count
+                else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                // An auto-advanced window must not duplicate the same Node
+                // even if different place facets were temporarily indexed.
+                if autoAdvance, let departingPage,
+                   target != departingCursor,
+                   !Set(departingPage.items.map(\.id))
+                     .isDisjoint(with: fetched.items.map(\.id)) {
                     throw XDriveIOSNativeMediaReadFailure.invalidPage
                 }
                 let after = fetched.offset + fetched.items.count
