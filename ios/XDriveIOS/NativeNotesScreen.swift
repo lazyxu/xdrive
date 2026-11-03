@@ -1,4 +1,14 @@
 import SwiftUI
+
+// Newer SwiftUI SDKs expose two toolbar(content:) builder overloads.
+// The ToolbarContent constraint disambiguates native Notes toolbar calls.
+private extension View {
+    func xDriveNotesToolbar<Content: ToolbarContent>(
+        @ToolbarContentBuilder content: () -> Content
+    ) -> some View {
+        self.toolbar(content: content)
+    }
+}
 import UIKit
 import UniformTypeIdentifiers
 
@@ -132,7 +142,7 @@ struct XDriveIOSNativeNotesScreen: View {
         }
         .navigationTitle("备忘录")
         .searchable(text: $search, prompt: "搜索标题或正文")
-        .toolbar {
+        .xDriveNotesToolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 notesListToolbarButtons
             }
@@ -508,7 +518,7 @@ private struct XDriveIOSNativeNoteDetailScreen: View {
         }
         .navigationTitle("备忘录")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
+        .xDriveNotesToolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 notesDetailToolbarButtons
             }
@@ -739,7 +749,7 @@ private struct XDriveIOSNativeNoteHistorySheet: View {
             }
             .overlay { if loading { ProgressView() } }
             .navigationTitle("历史版本")
-            .toolbar {
+            .xDriveNotesToolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }
                 }
