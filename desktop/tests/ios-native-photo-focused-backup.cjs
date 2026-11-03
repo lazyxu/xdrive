@@ -102,7 +102,7 @@ test('focused restart checkpoint is scoped, verified and never interpreted as up
 
   assert.match(policy, /static func validCheckpoint\(/);
   assert.match(policy, /static func trustedResumeWindow\(/);
-  assert.match(policy, /previousVisible == currentVisible/);
+  assert.match(policy, /currentVisible == previousVisible/);
   assert.match(policy, /priorAuthorization == currentAuthorization/);
   assert.match(policy, /previousAllowICloud == allowICloud/);
   assert.match(policy, /tokenUnchanged/);
