@@ -92,3 +92,54 @@ test('status reports source scan, verified new bytes and interrupted/limited sta
   assert.match(ui, /停止集中备份/);
   assert.doesNotMatch(ui, /100%.*备份成功|所有照片均已备份/);
 });
+
+test('focused restart checkpoint is scoped, verified and never interpreted as upload success', () => {
+  const checkpoint = read('ios/XDriveIOS/PhotoFocusedResumeStore.swift');
+  const focus = controller.slice(controller.indexOf('private func runFocused('));
+  const start = controller.slice(controller.indexOf('private func start('),
+    controller.indexOf('private func runFocused('));
+  const resumeTests = read('ios/tests/PhotoFocusedBackupPolicyChecks.swift');
+
+  assert.match(policy, /static func validCheckpoint\(/);
+  assert.match(policy, /static func trustedResumeWindow\(/);
+  assert.match(policy, /previousVisible == currentVisible/);
+  assert.match(policy, /priorAuthorization == currentAuthorization/);
+  assert.match(policy, /previousAllowICloud == allowICloud/);
+  assert.match(policy, /tokenUnchanged/);
+  assert.match(resumeTests, /resume\(390, 100_000, 100_000\) == 390/);
+  assert.match(resumeTests, /resume\(1, 600, 601\) == 0/);
+  assert.match(resumeTests, /resume\(1, 600, 600, 3, 3, false\) == 0/);
+  assert.match(resumeTests, /resume\(1, 600, 600, 3, 3, true, false, true\) == 0/);
+
+  // The persisted position has no bearer, grant, filename, asset identifier
+  // or per-asset uploaded state; real receipts remain in the sealed ledger.
+  assert.match(checkpoint, /owner\.origin\.absoluteString/);
+  assert.match(checkpoint, /owner\.instanceID/);
+  assert.match(checkpoint, /owner\.ownerID/);
+  assert.match(checkpoint, /owner\.rootNodeID/);
+  assert.match(checkpoint, /XDriveIOSPhotoFocusedBackupPolicy\.trustedResumeWindow\(/);
+  assert.match(checkpoint, /XDriveIOSPhotoKitLibraryEpoch\.matches\(/);
+  assert.match(checkpoint, /func saveCompletedWindow\(/);
+  assert.match(checkpoint, /XDriveIOSPhotoFocusedBackupPolicy\.validCheckpoint\(/);
+  assert.match(checkpoint, /func clear\(owner: XDriveNativeOwnerRoot\)/);
+  assert.doesNotMatch(checkpoint, /localIdentifier|accessToken|grantSecret|deviceToken|uploadPrepared|UploadSessionTransport|URLSession|PHAsset|SecItem/);
+
+  // The caller must verify current Owner + unresolved ACKs under the gate
+  // BEFORE it can read or use a saved cursor.
+  const gate = start.indexOf('XDriveIOSOriginalRunGate.shared.acquire()');
+  const pending = start.indexOf('pendingCount(owner: selected)');
+  const focused = start.indexOf('try await self.runFocused(');
+  assert.ok(gate >= 0 && pending > gate && focused > pending);
+  assert.match(focus, /let visibleNow = PHAsset\.fetchAssets\(with: nil\)\.count/);
+  assert.match(focus, /let afterCount = try XDriveIOSPhotoKitLibraryEpoch\.capture\(\)/);
+  assert.ok(focus.indexOf('let afterCount =') < focus.indexOf('.resume('));
+  assert.match(focus, /var window = resume\.nextWindow/);
+  assert.match(focus, /var hadUnavailable = resume\.hadUnavailable/);
+  assert.match(focus, /var expectedTotal: Int\? = visibleNow/);
+  assert.match(focus, /case \.nextWindow\(let next\):[\s\S]*?saveCompletedWindow\([\s\S]*?state\.completedWindows \+= 1/);
+  assert.match(focus, /case \.finished:\s*XDriveIOSPhotoFocusedResumeStore\.shared\.clear\(owner: owner\)/);
+  assert.match(focus, /case \.pausedForReview:[\s\S]*?state\.pausedForReview = true/);
+  assert.match(ui, /native-ios-photos-focused-resumed-window/);
+  assert.match(ui, /本次确认新增/);
+  assert.match(ui, /不代表全部云端原件已备份/);
+});
