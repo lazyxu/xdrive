@@ -139,6 +139,7 @@ type agentController struct {
 	syncActivityKey       string
 	syncActivityPending   map[string][]syncactivity.Item
 	syncActivityLost      map[string]bool
+	syncActivityPrunedAt  time.Time
 	mu                    sync.RWMutex
 	snap                  agentSnapshot
 	snapshotRevision      uint64
