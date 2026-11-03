@@ -243,11 +243,11 @@ test('shared Photos video seek preview is bounded and never resumes a retired pl
   assert.match(video, /guard seeking, !finishingScrub, canControl,[\s\S]*?player\.currentItem === scrubbedItem/);
   assert.match(video, /ProcessInfo\.processInfo\.systemUptime/);
   assert.match(video, /now - lastPreviewSeekAt >= 0\.14/);
-  assert.match(video, /player\.seek\(to: target, toleranceBefore: tolerance, toleranceAfter: tolerance\)/);
+  assert.match(video, /player\.seek\(\s*to: target, toleranceBefore: tolerance,\s*toleranceAfter: tolerance\s*\)/);
   assert.match(video, /player\.seek\(to: target, toleranceBefore: \.zero, toleranceAfter: \.zero\) \{ completed in/);
   assert.match(video, /guard scrubEpoch == token else \{ return \}[\s\S]*?abortScrub\(\)[\s\S]*?guard completed, phase == \.active,[\s\S]*?player\.currentItem === item/);
   assert.match(video, /if resume \{ player\.play\(\) \}/);
-  assert.match(video, /\.onChange\(of: position\) \{ previewScrub\(at: \$0\) \}/);
+  assert.match(video, /\.onChange\(of: position\) \{ value in[\s\S]*?if let target = previewScrub\(at: value\)[\s\S]*?player\.seek\(/);
   assert.match(video, /\.onChange\(of: phase\)[\s\S]*?abortScrub\(\)/);
   assert.match(video, /\.onDisappear \{ abortScrub\(\) \}/);
   assert.match(video, /\.disabled\(!canControl \|\| seeking\)/);
