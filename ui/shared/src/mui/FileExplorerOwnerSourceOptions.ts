@@ -2,10 +2,23 @@ import { useEffect, useRef, useState } from 'react'
 import type { XDriveFileExplorerSearchSourceOption } from '../file-explorer-search'
 import { useXDriveFileExplorerOwnerFence } from './FileExplorerOwnerFence'
 
+export type XDriveFileExplorerManagedSourceEntry = {
+  id: number
+  name: string
+  direction: 'push' | 'pull'
+  targetNodeID: number
+}
+
+type SourceReadRow = XDriveFileExplorerSearchSourceOption & {
+  direction?: string
+  target_node_id?: number | null
+}
+
 type OwnerSourceSnapshot<THost extends object> = {
   host: THost
   ownerKey: string
   options: readonly XDriveFileExplorerSearchSourceOption[]
+  managedEntries: readonly XDriveFileExplorerManagedSourceEntry[]
   status: 'ready' | 'error'
 }
 
@@ -30,7 +43,7 @@ export function useXDriveFileExplorerOwnerSourceOptions<THost extends object>({
 }: {
   host: THost
   ownerKey: string
-  read: () => Promise<readonly XDriveFileExplorerSearchSourceOption[]>
+  read: () => Promise<readonly SourceReadRow[]>
   onError?: (error: unknown) => void
 }) {
   const { isCurrent } = useXDriveFileExplorerOwnerFence(host, ownerKey)
@@ -48,10 +61,20 @@ export function useXDriveFileExplorerOwnerSourceOptions<THost extends object>({
         setSnapshot({
           host, ownerKey, status: 'ready',
           options: sources.map(({ id, name }) => ({ id, name })),
+          managedEntries: sources.filter((source) =>
+            Number.isSafeInteger(source.id) && source.id > 0 &&
+            (source.direction === 'push' || source.direction === 'pull') &&
+            Number.isSafeInteger(source.target_node_id) && Number(source.target_node_id) > 0,
+          ).map((source) => ({
+            id: source.id,
+            name: source.name,
+            direction: source.direction as 'push' | 'pull',
+            targetNodeID: Number(source.target_node_id),
+          })),
         })
       } catch (error) {
         if (!active || !isCurrent()) return
-        setSnapshot({ host, ownerKey, status: 'error', options: EMPTY_SOURCE_OPTIONS })
+        setSnapshot({ host, ownerKey, status: 'error', options: EMPTY_SOURCE_OPTIONS, managedEntries: [] })
         onErrorRef.current?.(error)
       }
     })()
@@ -61,6 +84,7 @@ export function useXDriveFileExplorerOwnerSourceOptions<THost extends object>({
   const current = snapshot?.host === host && snapshot.ownerKey === ownerKey ? snapshot : null
   return {
     options: current?.options ?? EMPTY_SOURCE_OPTIONS,
+    managedEntries: current?.managedEntries ?? [],
     status: current?.status ?? 'unverified',
   }
 }
