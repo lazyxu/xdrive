@@ -579,13 +579,7 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 		return err
 	}
 	finishTransfer(task, nil)
-	emitEvent(Event{
-		Kind:           EventConflict,
-		Path:           conflictRel,
-		OriginalPath:   rel,
-		OriginalNodeID: base.node.ID,
-		ConflictNodeID: conflictNode.ID,
-	})
+	p.notifyConflict(conflictRel, rel, base.node.ID, conflictNode.ID)
 	if st, statErr := os.Stat(conflictAbs); statErr == nil {
 		baseline[conflictRel] = winState{node: conflictNode, localModTime: st.ModTime(), localSize: st.Size()}
 	}

@@ -59,3 +59,21 @@ func (p *winProvider) recordActivity(action, direction, oldPath, newPath string,
 		OldPath: oldPath, Path: newPath, LogicalBytes: logicalBytes,
 	})
 }
+
+// notifyConflict preserves the existing conflict notification and ties its
+// affected file to the current run without exposing a different Owner's data.
+func (p *winProvider) notifyConflict(conflictPath, originalPath string, originalNodeID, conflictNodeID uint64) {
+ if p.activityRunID == "" && p.activityTrigger != "" {
+  p.beginActivity(p.activityTrigger)
+ }
+ emitEvent(Event{
+  Kind: EventConflict,
+  Path: conflictPath,
+  OriginalPath: originalPath,
+  OriginalNodeID: originalNodeID,
+  ConflictNodeID: conflictNodeID,
+  RunID: p.activityRunID,
+  ActivityOwner: p.activityOwner,
+  ItemID: uuid.NewString(),
+ })
+}

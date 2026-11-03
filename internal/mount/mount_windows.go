@@ -570,13 +570,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 				return err
 			}
 			finishTransfer(task, nil)
-			emitEvent(Event{
-				Kind:           EventConflict,
-				Path:           conflictRel,
-				OriginalPath:   rel,
-				OriginalNodeID: base.node.ID,
-				ConflictNodeID: conflictNode.ID,
-			})
+			p.notifyConflict(conflictRel, rel, base.node.ID, conflictNode.ID)
 			if st, err := os.Stat(conflictAbs); err == nil {
 				local[conflictRel] = localEntry{isDir: false, size: st.Size(), modTime: st.ModTime()}
 				baseline[conflictRel] = winState{node: conflictNode, localModTime: st.ModTime(), localSize: st.Size()}
