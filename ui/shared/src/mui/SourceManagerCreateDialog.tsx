@@ -164,6 +164,11 @@ export function XDriveSourceCreateDialog({
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
             存储子目录：{yikeManagedTargetDisplayLabel}。连接成功后由服务器在既有固定根目录下按百度 UID 和账号名称创建；底层文件仍使用 xDrive CAS 存储。
           </XDriveStatusAlert>
+        ) : option.direction === 'pull' ? (
+          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
+            目标目录由服务器自动创建：同步文件夹 / 远程拉取 / {option.kind === 'synology_files' ? 'Synology Files' : 'Synology Photos'} / {values.name.trim() || '来源名称'}。
+            无需选择云端文件夹；不会占用已有的普通目录。服务器需能访问下面填写的 DSM 地址。
+          </XDriveStatusAlert>
         ) : targetBrowsingEnabled ? (
           <MuiBox sx={{ mb: 2, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
             <Stack
