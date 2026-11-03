@@ -301,3 +301,107 @@ ID 必须在当前 Owner/Server 实例下唯一且稳定；不得包含服务端
 - **Source 副本**：复制到普通位置后不继承 SourceItem 管理，后续同步更新不能修改副本；副本修改也不反写设备或远端。
 - **回收站中恢复的 Source 项**：不会因下轮 Mirror 再次丢失；历史来源证据仍可核实，原受管目录写入仍受控。
 - **浏览器取消**：目录列表、搜索、缩略图和 Viewer 的过时 HTTP 请求立即中止；已开始的 durable 同步/清理任务仅用户显式取消，页面离开不撤销。
+
+## 13. 交互细节（Files 内部，不改变全局导航）
+
+| 场景 | UI 规则 |
+| --- | --- |
+| 排序 | 入口顺序固定：全部文件、设备备份、远程拉取、备忘录（Mine / iOS）、回收站；每个 Source 内项目仍按用户的常规文件排序偏好 |
+| 显示 | 受管内容显示只读/来源标识；目录图标描述业务来源但不替代 Node/文件类型和缩略图 |
+| 未配置 | 未有 Push/Pull Source 时展示“到设备备份/远程拉取配置”，不伪造空 Source 或完成状态 |
+| 设备离线 | 继续显示此前已经可靠提交的云端内容，来源显示离线/未知；不能将心跳消失当作删除或当前同步成功 |
+| 备忘录未初始化 | 显式初始化动作；发现同名冲突返回错误及非破坏性处理说明 |
+| 正常 Notes | 双击进入专属 Notes 编辑/Viewer；通用 Files 菜单不允许修改 UUID.md 和 _assets |
+| iOS Notes | 显示“只读备份”及预览、下载、删除云端备份、复制为我的备忘录；不出现新增/编辑/保存 |
+| 上传/拖放 | 受管目标不接受；拖出到普通目录时执行授权的复制而非移动，目标缺失或受管则拒绝 |
+| Source 管理 | 仅显示“打开设备备份/远程拉取管理”链接；设备 Root/调度/Agent 控制不混入 Files |
+| 归档 Source | 确认文字明确“保留全部已同步云端文件，停止后续来源管理”；不可写成“删除文件夹” |
+| 清理 Source 数据 | 独立确认，列出精确来源、文件/目录数、逻辑大小、其他引用及将进入 Trash 的数量 |
+| 删除 Notes | “正文和图片将进入回收站”；删除 iOS 备份必须标注“不会删除 Apple Notes 原件” |
+| 回收站 | 一个 Note 显示一条逻辑可恢复记录；批量清空提供明确确认、持续任务和真实结果 |
+| 分享 | 只读分享需用户主动选择具体对象；iOS 备份默认不提供任何自动公开链接 |
+| 错误/延迟 | 保留上一份已授权列表和定位、在实际失败后重试；不可把未验证的空数组当成空目录 |
+
+- Web Desktop、Desktop/DSM 复用现有 FileExplorer 的列表/网格、Viewer、虚拟窗口、操作反馈；Mobile Web Files 浏览页使用相同业务规则，手机全局 52px Header、五模块导航与横屏行为不改变。
+- iOS/Android 原生文件 UI 需保持原生路由和切换历史；服务端权限和受管身份与 Web 一致，不能以“原生客户端没有隐藏按钮”为理由跳过服务端鉴权。
+- 10k/100k 项使用 Server 授权的分页/稀疏 Range、查询和取消，不逐层扫描全部 Source/Trash 数据合成前端数组。
+- 目录浏览请求生命周期与耐久同步/删除生命周期分开：离开 Files 取消无用预览和列表，不取消已开始的备份或清空回收站任务。
+
+## 14. 验收矩阵
+
+| ID | 场景 | 完成标准 |
+| --- | --- | --- |
+| V01 | 入口顺序、首次/重复点击、Back/Forward、横屏、账号切换 | 五入口稳定、保留原 Node/滚动定位；旧 Owner 的 UI/HTTP 不可泄漏 |
+| V02 | Source 无目标、旧目标含普通文件、重叠 Source、Note 同名冲突 | 不接管已有文件、不擅自迁移/清空；异常时读状态真实且写 fail-closed |
+| V03 | Push 设备 Root + token 验证；Web/其他设备直调 Source | 非拥有设备只能查看脱敏信息，无法控制 Agent、读取本机路径或修改 Source |
+| V04 | Pull 一刻/Synology、多类型文件、远端重命名 | 不猜 provider 稳定身份、不反向改远端；文件原件完整且只读 |
+| V05 | 受管文件直接修改/覆盖/删除/移动/重命名 | UI、REST、Agent IPC、批量操作、旧客户端均被 Go 统一拒绝 |
+| V06 | 受管文件复制到普通目标，CAS 去重及配额 | 新 Node 不带 SourceItem；副本可编辑，原件、来源身份、版本不变 |
+| V07 | 上传初始化后出现 Source 绑定、Share 降级、finalize 竞态 | 提交时实时授权，不能使用旧 session 突破受管写限制 |
+| V08 | 停用/移除 Push Source（有历史或运行中） | 保留云端文件和历史；无未经验证的硬删除；设备/Root 授权与写锁正确处理 |
+| V09 | Pull Source 归档、清理预览、独立清理 | 云端清理只限准确受影响的 Source 独占节点，不影响其他 Source/用户/远端 |
+| V10 | Mirror 可靠/不可靠缺失与恢复后再扫描 | 不完整扫描绝不删除；恢复副本不会再次被误删 |
+| V11 | Mine Note 创建、编辑、标题、Markdown、图片、版本与 Revision 冲突 | Notes 专属接口正常，通用 Files 绕过失败，409 不丢最新内容 |
+| V12 | iOS 备份普通新增/编辑、授权导入及用户删除 | 普通新增/编辑拒绝；授权导入正常；删除仅影响 Owner 云端副本 |
+| V13 | iOS ExternalID 重复导入、软删墓碑、显式恢复、再次导入 | 被删除项不自动复活；恢复后仍只读、稳定身份一致、无重复 Node |
+| V14 | 从 Trash 恢复多图 Note、历史版本、损坏图片/缺失父目录 | Note/Node/_assets 一起恢复或完全不恢复；没有孤立附件和假成功 |
+| V15 | Trash 普通/Note/Source 混合项目逐项 purge、清空中断/重试 | 幂等任务收据，准确进度和项级失败；CAS 引用不重复释放 |
+| V16 | 已分享普通父目录下出现私密 Notes、受管 read_only 分享 | 祖先 Share 不泄漏 Notes；只读授权限精确范围，附件票据不越界 |
+| V17 | Share view_upload 直调 create/upload/resume/chunk/finalize | 任一通路都不能向受管目录写入；Share 不提升成 Owner/设备身份 |
+| V18 | Web/Mobile Web/Desktop/DSM/iOS/Android 的入口和菜单 | 授权一致，平台未实现的按钮不伪装已支持，原有五模块与 Source 管理不退化 |
+| V19 | 100k Source/Trash、并发删除/同步、请求取消、断网 | 窗口有界、任务持久、无跨 Owner 读取、无锁逆序/CAS 破坏 |
+| V20 | 老版本客户端、深链接与已有数据库数据 | 不改 NodeID/TargetNodeID/Notes 路径；服务端拒绝旧客户端受管写请求 |
+
+测试应包括 Go 单元与真实 Postgres/Storage 集成、带竞态的并发/撤销/上传提交、FileExplorer 组件/实际浏览器、Share 鉴权、Desktop owning-device Agent、iOS/Android 原生入口和前后台、100k 逻辑/物理样本。只完成模拟验证时，不得声称真机/WAN/DSM 生产通过。无法访问的真机验收标记 **跳过（未验收）**。每个实现切片仍必须通过适用 PR CI/Final Gate 和分支保护后才能合入 master。
+
+## 15. 分阶段交付与 PR 边界
+
+| 阶段 | 内容 | 关键验收和退出条件 |
+| --- | --- | --- |
+| D0：本 PR | **只有设计 Markdown**；确定范围、用户动作与服务端权限合同 | 文档评审；不修改业务代码、不直接合入 |
+| P0-A：入口/只读投影 | Owner 侧五入口发现、Push/Pull/Notes/Trash 既有列表和深链接；不改变真实 Node | V01/V02/V18；没有读的副作用，不创建假 Source |
+| P0-B：受管写入禁令与复制 | 统一 SourceItem/受管根识别、普通 Files/批量/上传/Share 的服务端拒绝；可复制到普通目录 | V03–V07/V17；后端 direct API E2E |
+| P0-C：Notes 云端删除与业务恢复 | iOS 备份可删除但不可编辑；Mine/IOS 原子恢复、附件、复制为 Mine、抑制重导入 | V11–V15；完整事务、真实 CAS/历史 |
+| P1-A：Source 归档与独立清理 | 暂停/撤销未来写权限、保留历史+文件；单独清理预览和 Trash task | V08–V10；不能通过现有硬删除绕过 |
+| P1-B：Trash 手动清空与分享收口 | 业务项目批量 purge、祖先 read_only Share 隔离、禁受管匿名写 | V15–V17；撤销/并发验证 |
+| P1-C：原生与多端完善 | Web/Mobile Web、Desktop/DSM、iOS/Android native Files 入口与 Viewer/菜单对齐 | V01/V18–V20；分别标注已验收平台 |
+
+上表是**建议实现切片，不是授权现在实施**。下一步须先通过此设计 PR 的讨论与批准，然后逐项检查当时 master、相关在途 PR、真实权限和 CI 状态，避免与已开始/已通过 CI 的 Notes、Source 和移动端改动冲突。测试尚在队列里的 PR 不能因为“看起来没有冲突”就当作已经通过。
+
+## 16. 主要风险、拒绝条件与设计验收标准
+
+| 设计风险 | 必须采取的措施 |
+| --- | --- |
+| 快捷入口产生多份字节或伪造真实父目录 | 只保留业务 ID 投影；无自动物理迁移、无新 CAS 副本 |
+| Source 目标混有普通文件被全部锁死 | 只识别绑定 SourceItem + 根的结构权限；未知归属写操作拒绝并报告 |
+| Device Push 被 Web 当成可远程管理 | 仍要求 owning Agent/Root/Device token，Web 只做观察 |
+| 直接硬删除历史 Source 造成级联遗失 | 新 Archive/解绑代替有历史的 Source 硬删除；数据清理独立 |
+| Notes 只恢复 Markdown 而丢图片/索引 | Note/Node/附件/版本原子恢复；故障模拟必须完整回滚 |
+| 用户删除 iOS 备份后被同步立即恢复 | 保留稳定 ExternalID 的明确 tombstone/suppression 状态 |
+| 历史 Parent Share 自动曝光新建 Notes | 逐项 Share 列表/票据/ZIP/下载排除未显式授权受管 Notes |
+| 文件菜单虽灰但 API 仍能写 | 全写入口与最终事务二次授权；旧客户端不例外 |
+| Mirror 源端失败造成误删除 | 全清单+版本/运行证据，延用保守 Trash-only，不反向删源 |
+| 回收站清空导致 CAS 双重释放或错误统计 | 幂等收据、按 Owner/业务隔离、可取消且准确部分成功 |
+| 脱敏失败泄漏本机真实路径 | Owner 可见状态与 owning-device 私有写入信息分离 |
+| 当前 PR 评审被误解为已实施 | 明确设计/实现/测试/合入/部署/真机验收分层表述 |
+
+**评审通过判据**：
+
+1. 严格只有五个入口，不夹带安装包或其它新业务目录。
+2. 文件位置、Node/CAS、Source/Notes 现有身份无需迁移，后端只读/写权限没有路径或客户端信任漏洞。
+3. Source 移除默认保留云端文件/历史，文件清理完全独立。
+4. 我的 Notes 可完整增删改恢复；iOS Notes 仅授权导入、更改受信来源版本、用户只读但允许删除/恢复/复制为个人 Note，绝不改 iPhone 原件。
+5. Trash 按类型分派恢复/删除，保留现有保留策略，仅新增可确认的手动清空能力。
+6. 受管分享必须是 Owner 主动只读，不能间接通过父目录或匿名上传获得受管写权限。
+7. 各阶段 PR 明确测试范围；没有设备证据不宣称验收完成。
+
+## 17. 现有代码、业务规范与在途工作
+
+核心事实依据：
+
+- [NotesNamespace](../internal/api/notes_namespace.go)、[Note 模型](../internal/meta/notes.go)、[Notes 写与删](../internal/api/notes_write.go)、[Notes 图片](../internal/api/notes_images.go)。
+- [Source/SourceItem/SyncRun 模型](../internal/meta/external_sources.go)、[Source CRUD](../internal/api/sources.go)、[Mirror 删除约束](../internal/api/source_mirror.go)。
+- [Trash 与文件历史](../internal/api/history_trash.go)、[批量文件操作](../internal/api/file_operations.go)、[匿名上传鉴权](../internal/api/public_share_upload.go)、[Share](../internal/api/shares.go)。
+- [统一 FileExplorer](unified-file-explorer-core.md)、[设备备份与远程拉取](sync-folder-apps.md)、[Source 连接器](external-source-architecture.md)、[同步策略](sync-folder-sync-strategies.md)、[匿名分享上传](share-upload-session.md)。
+
+起草时已存在与 Notes 客户端/原生接入相关的在途 PR（例如 [#3708](https://github.com/lazyxu/xdrive/pull/3708)、[#3717](https://github.com/lazyxu/xdrive/pull/3717)、[#3720](https://github.com/lazyxu/xdrive/pull/3720)、[#3724](https://github.com/lazyxu/xdrive/pull/3724)、[#3725](https://github.com/lazyxu/xdrive/pull/3725)、[#3726](https://github.com/lazyxu/xdrive/pull/3726)）。**它们尚未因本设计 PR 变成已交付能力**。后续产品工作先核对相关 PR/CI 状态，不更新已开始或已通过 CI 的无关 HEAD，不触碰无关分支。
