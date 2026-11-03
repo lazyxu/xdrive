@@ -418,7 +418,8 @@ func migrateOneDedicatedSourceTx(tx *gorm.DB, source meta.Source) error {
 	if !stats.ordinary {
 		// All active subtree content belongs to this Source. This is a
 		// metadata-only move: every Node, FileVersion, share and CAS survives.
-		if err := migrateMoveSourceNodeTx(tx, &tree.nodes[target.ID], parent.ID, leaf, tree.bound); err != nil {
+		rootNode := tree.nodes[target.ID]
+		if err := migrateMoveSourceNodeTx(tx, &rootNode, parent.ID, leaf, tree.bound); err != nil {
 			return err
 		}
 		newTargetID = target.ID
