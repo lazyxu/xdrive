@@ -45,19 +45,19 @@ func TestDesktopSyncActivityAPIReadAndInputFencing(t *testing.T) {
  }
  handler:=newDesktopIPCHandler(ctrl,"secret",func(){})
  for _,tc:=range []struct{path string; code int}{
-  {"/v1/sync/activity/runs?limit=1",http.StatusOK},
-  {"/v1/sync/activity/run?run_id=run-1",http.StatusOK},
-  {"/v1/sync/activity/items?run_id=run-1&limit=1",http.StatusOK},
-  {"/v1/sync/activity/run?run_id=missing",http.StatusNotFound},
-  {"/v1/sync/activity/runs?limit=10000",http.StatusBadRequest},
-  {"/v1/sync/activity/runs?before_run_id=run-1",http.StatusBadRequest},
-  {"/v1/sync/activity/items?run_id=run-1&before_applied_at=12",http.StatusBadRequest},
-  {"/v1/sync/activity/items?limit=5",http.StatusBadRequest},
+  {"/v1/sync/runs?limit=1",http.StatusOK},
+  {"/v1/sync/runs/run-1",http.StatusOK},
+  {"/v1/sync/runs/run-1/items&limit=1",http.StatusOK},
+  {"/v1/sync/runs/missing",http.StatusNotFound},
+  {"/v1/sync/runs?limit=10000",http.StatusBadRequest},
+  {"/v1/sync/runs?before_run_id=run-1",http.StatusBadRequest},
+  {"/v1/sync/runs/run-1/items&before_applied_at=12",http.StatusBadRequest},
+  {"/v1/sync/runs/run-1/items?limit=5",http.StatusBadRequest},
  } {
   res:=desktopIPCRequest(t,handler,http.MethodGet,tc.path,"")
   if res.Code!=tc.code{t.Fatalf("%s status=%d want=%d body=%s",tc.path,res.Code,tc.code,res.Body.String())}
  }
- res:=desktopIPCRequest(t,handler,http.MethodGet,"/v1/sync/activity/runs?limit=1","")
+ res:=desktopIPCRequest(t,handler,http.MethodGet,"/v1/sync/runs?limit=1","")
  var result struct{Items []syncactivity.Run `json:"items"`; NextCursor map[string]any `json:"next_cursor"`}
  if err:=json.Unmarshal(res.Body.Bytes(),&result);err!=nil{t.Fatal(err)}
  if len(result.Items)!=1||result.Items[0].ID!="run-1"||result.NextCursor["before_run_id"]!="run-1"{
@@ -68,6 +68,6 @@ func TestDesktopSyncActivityAPIReadAndInputFencing(t *testing.T) {
 
 func TestDesktopSyncActivityUnsupportedFakeIsNotAvailable(t *testing.T){
  handler:=newDesktopIPCHandler(&fakeDesktopIPCController{revision:1},"secret",func(){})
- res:=desktopIPCRequest(t,handler,http.MethodGet,"/v1/sync/activity/runs?limit=1","")
+ res:=desktopIPCRequest(t,handler,http.MethodGet,"/v1/sync/runs?limit=1","")
  if res.Code!=http.StatusNotImplemented{t.Fatalf("unexpected unsupported reader status=%d body=%s",res.Code,res.Body.String())}
 }
