@@ -17,7 +17,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
 
-/** An actual MediaStore DATE_ADDED first-item position, not an Owner/server row.
+/** An actual MediaStore DATE_TAKEN (milliseconds) first-item position, not an Owner/server row.
  * `before` is the exact preceding keyset row, including across 512-row batches.
  * No photo URI, thumbnail, location or password is stored in this index.
  */
@@ -64,8 +64,8 @@ internal class NativeLocalFullDateIndexBuilder(
             "MediaStore date index returned duplicate/unordered rows"
         }
         for (row in keys) {
-            val localDate: LocalDate? = if (row.addedAtSeconds <= 0L) null else
-                runCatching { Instant.ofEpochSecond(row.addedAtSeconds)
+            val localDate: LocalDate? = if (row.capturedAtMillis <= 0L) null else
+                runCatching { Instant.ofEpochMilli(row.capturedAtMillis)
                     .atZone(zone).toLocalDate() }.getOrNull()
             val year = if (localDate == null) "unknown" else
                 String.format(Locale.ROOT, "%04d", localDate.year)
@@ -88,11 +88,11 @@ internal class NativeLocalFullDateIndexBuilder(
                     key, label, scanned, 1, previous)
                 else groups[key] = existing.copy(count = existing.count + 1)
             }
-            add(years, year, if (localDate == null) "加入日期未知"
+            add(years, year, if (localDate == null) "拍摄时间未知"
                 else "${localDate.year}年")
-            add(months, month, if (localDate == null) "加入日期未知"
+            add(months, month, if (localDate == null) "拍摄时间未知"
                 else "${localDate.year}年${localDate.monthValue}月")
-            add(days, day, if (localDate == null) "加入日期未知"
+            add(days, day, if (localDate == null) "拍摄时间未知"
                 else "${localDate.year}年${localDate.monthValue}月${localDate.dayOfMonth}日")
             previous = row
             scanned++
@@ -174,7 +174,7 @@ internal fun NativeLocalFullDatePicker(
                 else -> "日"
             }, style = MaterialTheme.typography.titleMedium)
             Text(
-                if (index.complete) "已索引当前授权范围的 ${index.scanned} 项（按加入时间）"
+                if (index.complete) "已索引当前授权范围的 ${index.scanned} 项（按拍摄时间）"
                 else "仅索引前 ${index.scanned} 项；扫描达到上限，更多日期尚未覆盖。",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(vertical = 8.dp)

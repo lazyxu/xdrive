@@ -12,8 +12,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
-/** Stable page anchor. Date and ID are ordered in descending MediaStore order. */
-internal data class NativeLocalPageKey(val addedAtSeconds: Long, val id: Long)
+/** Stable capture-time key. DATE_TAKEN is milliseconds; unknown dates sort last. */
+internal data class NativeLocalPageKey(val capturedAtMillis: Long, val id: Long)
 
 /** Fail closed if an OEM provider ignores the keyset predicate or SQL order. */
 internal fun nativeLocalStrictPageOrder(
@@ -22,10 +22,10 @@ internal fun nativeLocalStrictPageOrder(
 ): Boolean {
     var previous = after
     for (item in page) {
-        if (item.id <= 0 || item.addedAtSeconds < 0) return false
+        if (item.id <= 0 || item.capturedAtMillis < 0) return false
         val prior = previous
-        if (prior != null && (item.addedAtSeconds > prior.addedAtSeconds ||
-                (item.addedAtSeconds == prior.addedAtSeconds && item.id >= prior.id)))
+        if (prior != null && (item.capturedAtMillis > prior.capturedAtMillis ||
+                (item.capturedAtMillis == prior.capturedAtMillis && item.id >= prior.id)))
             return false
         previous = item
     }
@@ -39,9 +39,9 @@ internal data class NativeLocalMedia(
     val isVideo: Boolean,
     val albumId: String,
     val albumName: String,
-    val addedAtSeconds: Long = 0,
+    val capturedAtMillis: Long = 0,
 ) {
-    val pageKey: NativeLocalPageKey get() = NativeLocalPageKey(addedAtSeconds, id)
+    val pageKey: NativeLocalPageKey get() = NativeLocalPageKey(capturedAtMillis, id)
 }
 
 internal data class NativeLocalAlbum(
@@ -70,7 +70,7 @@ internal object NativeLocalMediaStore {
     private val columns = arrayOf(
         MediaStore.Files.FileColumns._ID,
         MediaStore.Files.FileColumns.MEDIA_TYPE,
-        MediaStore.Files.FileColumns.DATE_ADDED,
+        MediaStore.MediaColumns.DATE_TAKEN,
         MediaStore.MediaColumns.IS_PENDING,
         MediaStore.Images.ImageColumns.BUCKET_ID,
         MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME,
@@ -91,12 +91,15 @@ internal object NativeLocalMediaStore {
     ): List<NativeLocalMedia> = withContext(Dispatchers.IO) {
         cancellationSignal?.throwIfCanceled()
         require(limit in 1..SCAN_BATCH_SIZE)
-        require(after == null || (after.id > 0 && after.addedAtSeconds >= 0))
+        require(after == null || (after.id > 0 && after.capturedAtMillis >= 0))
         require(albumId == null || albumId.isNotBlank())
 
         val idColumn = MediaStore.Files.FileColumns._ID
         val mediaType = MediaStore.Files.FileColumns.MEDIA_TYPE
-        val dateColumn = MediaStore.Files.FileColumns.DATE_ADDED
+        val captureDateColumn = MediaStore.MediaColumns.DATE_TAKEN
+        // DATE_TAKEN is milliseconds. Normalize NULL/zero/invalid dates to
+        // zero so unknown dates form one stable final keyset range.
+        val captureOrder = "CASE WHEN $captureDateColumn > 0 THEN $captureDateColumn ELSE 0 END"
         val kinds = nativeLocalMediaTypesForKind(mediaKind)
         val selection = mutableListOf(
             "(" + kinds.joinToString(" OR ") { "$mediaType=?" } + ")",
@@ -111,15 +114,15 @@ internal object NativeLocalMediaStore {
             values += albumId
         }
         if (after != null) {
-            selection += "($dateColumn<? OR ($dateColumn=? AND $idColumn<?))"
-            values += after.addedAtSeconds.toString()
-            values += after.addedAtSeconds.toString()
+            selection += "($captureOrder<? OR ($captureOrder=? AND $idColumn<?))"
+            values += after.capturedAtMillis.toString()
+            values += after.capturedAtMillis.toString()
             values += after.id.toString()
         }
         val query = Bundle().apply {
             putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection.joinToString(" AND "))
             putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, values.toTypedArray())
-            putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "$dateColumn DESC, $idColumn DESC")
+            putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "$captureOrder DESC, $idColumn DESC")
             putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
         }
         val result = ArrayList<NativeLocalMedia>(limit)
@@ -133,7 +136,7 @@ internal object NativeLocalMediaStore {
             check(cursor.count <= limit) { "MediaStore ignored bounded keyset page" }
             val idIndex = cursor.getColumnIndexOrThrow(idColumn)
             val kindIndex = cursor.getColumnIndexOrThrow(mediaType)
-            val dateIndex = cursor.getColumnIndexOrThrow(dateColumn)
+            val captureDateIndex = cursor.getColumnIndexOrThrow(captureDateColumn)
             val pendingIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.IS_PENDING)
             val trashedIndex = if (Build.VERSION.SDK_INT >= 30)
                 cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.IS_TRASHED) else -1
@@ -145,8 +148,8 @@ internal object NativeLocalMediaStore {
                 currentCoroutineContext().ensureActive()
                 cancellationSignal?.throwIfCanceled()
                 val id = cursor.getLong(idIndex)
-                val dateAdded = cursor.getLong(dateIndex)
-                val key = NativeLocalPageKey(dateAdded, id)
+                val capturedAtMillis = cursor.getLong(captureDateIndex).coerceAtLeast(0L)
+                val key = NativeLocalPageKey(capturedAtMillis, id)
                 check(nativeLocalStrictPageOrder(previous, listOf(key))) {
                     "MediaStore returned a repeated or unordered Gallery page"
                 }
@@ -173,7 +176,7 @@ internal object NativeLocalMediaStore {
                 result += NativeLocalMedia(
                     id, ContentUris.withAppendedId(source, id), video, bucket,
                     cursor.getString(nameIndex)?.takeIf { it.isNotBlank() } ?: "未命名相册",
-                    dateAdded,
+                    capturedAtMillis,
                 )
             }
         } ?: throw IllegalStateException("设备媒体索引不可用")

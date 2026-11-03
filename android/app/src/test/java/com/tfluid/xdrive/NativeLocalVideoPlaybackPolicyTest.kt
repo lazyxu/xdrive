@@ -19,7 +19,7 @@ class NativeLocalVideoPlaybackPolicyTest {
             item, "content://media/external_primary/video/media/41")
         assertFalse(old == replacement)
         assertEquals(old, old.copy())
-        assertFalse(old == old.copy(item = item.copy(addedAtSeconds = 988L)))
+        assertFalse(old == old.copy(item = item.copy(capturedAtMillis = 988L)))
     }
 
     @Test fun localMotionNeverAutoplaysOnLateSourceAfterBackground() {

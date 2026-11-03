@@ -1,6 +1,7 @@
 package com.tfluid.xdrive
 
 import androidx.compose.ui.test.*
+import java.time.Instant
 import androidx.compose.ui.test.junit4.createComposeRule
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -11,7 +12,7 @@ class NativeLocalFullDateIndexUiTest {
     @get:Rule val compose = createComposeRule()
 
     @Test fun selectedMonthBeyondCurrent512TilesHasRealKeysetAnchor() {
-        val after = NativeLocalPageKey(1728000L, 811L)
+        val after = NativeLocalPageKey(Instant.parse("2023-09-01T00:00:00Z").toEpochMilli(), 811L)
         val group = NativeLocalFullDateGroup(
             "2023-09", "2023年9月", 1536, 52, after)
         val index = NativeLocalFullDateIndex(
