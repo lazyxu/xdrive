@@ -36,6 +36,22 @@ for (const required of [
   'return () => { active = false; abort.abort() }',
 ]) assert.ok(progress.includes(required), 'DSM scheduled Source status refresh lost: ' + required)
 assert.ok(!progress.includes('if (!batch?.running'), 'idle scheduled Source was not observed')
+// Unattended scheduled runs also appear in the same Source's history while
+// expanded. Never poll every NAS Source or retain timers across Owner switches.
+const localPanel = fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/SynologyBackupLocalPanel.tsx'), 'utf8')
+for (const required of [
+  'if (!sameOwningClient || expandedID === null ||',
+  "document.visibilityState === 'visible'",
+  'window.setInterval(refreshHistoryIfVisible, 60_000)',
+  "document.addEventListener('visibilitychange', refreshHistoryIfVisible)",
+  'window.clearInterval(timer)',
+  "document.removeEventListener('visibilitychange', refreshHistoryIfVisible)",
+  '}, [client, expandedID, sameOwningClient])',
+  'client.history(id, abort.signal)',
+  'return () => { active = false; abort.abort() }',
+]) assert.ok(localPanel.includes(required), 'DSM scheduled history refresh lost: ' + required)
+
 const validate = ctx.module.exports.xDriveValidateSynologyLocalBatch
 const valid = {
   source_id: 42, revision: 1, state: 'partial', running: false,
