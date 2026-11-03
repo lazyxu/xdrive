@@ -303,6 +303,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-photoasset-filmstrip-check"
           node --test desktop/tests/ios-native-cloud-filmstrip-contract.cjs
 
+      - name: Verify native Cloud Originals Viewer filmstrip Owner and exact Node identity
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudOriginalFilmstripPolicy.swift \
+            ios/tests/NativeCloudOriginalFilmstripPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-original-filmstrip-policy"
+          "$RUNNER_TEMP/xdrive-ios-original-filmstrip-policy"
+          node --test desktop/tests/ios-native-cloud-original-filmstrip.cjs
+
       - name: Verify native cloud PhotoAsset original still/video save-to-Photos boundaries
         run: node --test desktop/tests/ios-native-photoasset-original-restore.cjs
 
