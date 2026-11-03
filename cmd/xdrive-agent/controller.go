@@ -21,6 +21,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/diagnostics"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/shellintegration"
+	"github.com/lazyxu/xdrive/internal/syncactivity"
 	"github.com/lazyxu/xdrive/internal/transfer"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 	"github.com/lazyxu/xdrive/internal/version"
@@ -133,6 +134,9 @@ type agentController struct {
 	historyPath           string
 	historyKey            string
 	historyWriterDone     chan struct{}
+	syncActivityMu        sync.Mutex
+	syncActivity          *syncactivity.Store
+	syncActivityKey       string
 	mu                    sync.RWMutex
 	snap                  agentSnapshot
 	snapshotRevision      uint64
@@ -163,6 +167,11 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 		},
 	}
 	c.loadInitialTransferHistory()
+	c.loadInitialSyncActivity()
+	go func() {
+		<-ctx.Done()
+		c.closeSyncActivity()
+	}()
 	go func() {
 		defer close(c.historyWriterDone)
 		c.runTransferHistoryWriter(ctx)
@@ -827,6 +836,7 @@ func (c *agentController) authenticateWithConnectionIP(server, username, passwor
 		return err
 	}
 	c.switchTransferHistory(cfg)
+	c.switchSyncActivity(cfg)
 	c.setSnapshot(func(s *agentSnapshot) {
 		s.Configured = true
 		s.Username = resp.Username
@@ -1376,6 +1386,7 @@ func (c *agentController) Logout() error {
 		return err
 	}
 	c.stopTransferHistory()
+	c.closeSyncActivity()
 	c.setSnapshot(func(s *agentSnapshot) {
 		*s = agentSnapshot{
 			AuthStatus: "未登录",
