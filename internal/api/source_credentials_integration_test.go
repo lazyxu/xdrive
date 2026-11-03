@@ -58,7 +58,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SourceCredential{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceCredential{},
 	); err != nil {
 		t.Fatal(err)
 	}
