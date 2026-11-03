@@ -38,6 +38,7 @@ test('all Files six-dot handles removed; hold and mouse drag remain available', 
   assert.match(explorer, /touchDrag\.begin\(event, source\.map/)
   assert.match(mobile, /pointerDrag\.begin\(event, source\)/)
   assert.match(pointer, /session\.phase = 'dragging'/)
+  assert.match(pointer, /addEventListener\('touchmove', heldTouchMove, \{ capture: true, passive: false \}\)/)
   assert.equal(mobileState.includes('MOBILE_FILES_HOLD_MS = 350'), true)
   assert.equal(drag.includes('XDRIVE_FILE_ITEM_DRAG_HOLD_MS = 350'), true)
 })

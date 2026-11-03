@@ -252,6 +252,11 @@ export function useXDrivePointerDrag<Source>(options: Options<Source>) {
       disposeSession(session)
     }
     const visibility = () => { if (document.hidden) blur() }
+    // Preserve native scrolling before the hold, block it after drag starts.
+    const heldTouchMove = (next: TouchEvent) => {
+      if (session.phase === 'dragging' && next.cancelable) next.preventDefault()
+    }
+    if (touchHoldMs > 0) document.addEventListener('touchmove', heldTouchMove, { capture: true, passive: false })
     document.addEventListener('pointermove', move, { capture: true, passive: false })
     document.addEventListener('pointerup', finish, true)
     document.addEventListener('pointercancel', pointerCancel, true)
@@ -261,6 +266,7 @@ export function useXDrivePointerDrag<Source>(options: Options<Source>) {
     owner.addEventListener('lostpointercapture', lostCapture)
     view.addEventListener('blur', blur)
     session.detach = () => {
+      if (touchHoldMs > 0) document.removeEventListener('touchmove', heldTouchMove, true)
       document.removeEventListener('pointermove', move, true)
       document.removeEventListener('pointerup', finish, true)
       document.removeEventListener('pointercancel', pointerCancel, true)

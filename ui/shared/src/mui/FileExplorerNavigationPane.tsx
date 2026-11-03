@@ -1261,6 +1261,9 @@ export function XDriveFileExplorerNavigationPane({
                     aria-grabbed={draggedQuickAccessID === item.id || (pointerDrag.active && pointerOrder?.source.section === 'quickAccess' && pointerOrder.source.sourceID === item.id)}
                     aria-haspopup={onReorderQuickAccess ? 'menu' : undefined}
                     onPointerDown={(event) => {
+                      // Touch uses the held gesture, not native HTML5 DnD.
+                      event.currentTarget.draggable = event.pointerType !== 'touch' &&
+                        Boolean(onReorderQuickAccess) && sidebarPreferences.quickAccessSort === 'manual'
                       if (event.pointerType !== 'touch' || orderDisabledReason('quickAccess')) return
                       if (!orderSectionAvailable('quickAccess')) return
                       pointerDrag.begin(event, { section: 'quickAccess', sourceID: item.id, name: item.name, orderedIDs: orderEntries('quickAccess').map(entry => entry.id) })
@@ -1268,7 +1271,7 @@ export function XDriveFileExplorerNavigationPane({
                     onContextMenu={(event) => {
                       if (!onReorderQuickAccess) return
                       event.preventDefault()
-                      if ((event.nativeEvent as PointerEvent).pointerType === 'touch') return
+                      if (pointerDrag.active || (event.nativeEvent as PointerEvent).pointerType === 'touch') return
                       setOrderMenu({ anchor: event.currentTarget, section: 'quickAccess', sourceID: item.id })
                     }}
                     onKeyDown={(event) => {
@@ -1388,6 +1391,7 @@ export function XDriveFileExplorerNavigationPane({
                     aria-grabbed={draggedSavedSearchID === search.id || (pointerDrag.active && pointerOrder?.source.section === 'savedSearches' && pointerOrder.source.sourceID === search.id)}
                     aria-haspopup={onReorderSavedSearches ? 'menu' : undefined}
                     onPointerDown={(event) => {
+                      event.currentTarget.draggable = event.pointerType !== 'touch' && Boolean(onReorderSavedSearches)
                       if (event.pointerType !== 'touch' || orderDisabledReason('savedSearches')) return
                       if (!orderSectionAvailable('savedSearches')) return
                       pointerDrag.begin(event, { section: 'savedSearches', sourceID: search.id, name: search.name, orderedIDs: orderEntries('savedSearches').map(entry => entry.id) })
@@ -1395,7 +1399,7 @@ export function XDriveFileExplorerNavigationPane({
                     onContextMenu={(event) => {
                       if (!onReorderSavedSearches) return
                       event.preventDefault()
-                      if ((event.nativeEvent as PointerEvent).pointerType === 'touch') return
+                      if (pointerDrag.active || (event.nativeEvent as PointerEvent).pointerType === 'touch') return
                       setOrderMenu({ anchor: event.currentTarget, section: 'savedSearches', sourceID: search.id })
                     }}
                     onKeyDown={(event) => {

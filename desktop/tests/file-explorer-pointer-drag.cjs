@@ -328,3 +328,17 @@ test('sidebar mouse gesture starts immediately; owner changes cancel touch hold 
     assert.equal(cancelled.drops.length, 0)
   } finally { await cancelled.dispose() }
 })
+
+test('sidebar touch blocks scroll only after hold, then cleans all listeners', async () => {
+  const h = await mount({ touchHoldMs: 350 })
+  try {
+    await h.begin(undefined, { pointerType: 'touch' })
+    assert.equal((await h.emit('touchmove')).defaultPrevented, false)
+    await h.flushTimers()
+    assert.equal(h.active, true)
+    assert.equal((await h.emit('touchmove')).defaultPrevented, true)
+    await h.emit('pointerup', { pointerType: 'touch' })
+    assert.equal((await h.emit('touchmove')).defaultPrevented, false)
+    assert.equal(h.document.count, 0)
+  } finally { await h.dispose() }
+})
