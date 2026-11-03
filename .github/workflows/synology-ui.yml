@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'cmd/xd/backup_synology_ui.go'
+      - 'cmd/xdrive-agent/device_backup_local_full_agent_real_cas_e2e_test.go'
       - 'internal/api/local_push_common_native_versioned_multifile_e2e_integration_test.go'
       - 'internal/api/local_push_common_native_http_e2e_integration_test.go'
       - 'internal/api/local_push_common_native_process_kill_e2e_integration_test.go'
@@ -173,6 +174,7 @@ on:
     branches: [master]
     paths:
       - 'cmd/xd/backup_synology_ui.go'
+      - 'cmd/xdrive-agent/device_backup_local_full_agent_real_cas_e2e_test.go'
       - 'internal/api/local_push_common_native_versioned_multifile_e2e_integration_test.go'
       - 'internal/api/local_push_common_native_http_e2e_integration_test.go'
       - 'internal/api/local_push_common_native_process_kill_e2e_integration_test.go'
