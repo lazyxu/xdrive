@@ -1120,16 +1120,30 @@ class DriveAppTest {
         compose.onNodeWithTag("files-grid").assertExists()
     }
 
+    @Test fun globalFileSearchImeSubmitsOneScopedSearch() {
+        locateLargeFolder = true
+        startAndLogin()
+        compose.onNodeWithTag("files-global-search-input").performTextInput("target")
+        compose.onNodeWithTag("files-global-search-input").performImeAction()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.SEARCH &&
+                controller.state.value.collectionLoaded &&
+                controller.state.value.collectionItems.singleOrNull()?.node?.id == 1155L
+        }
+        compose.onNodeWithTag("files-collection-item-1155", useUnmergedTree = true).assertExists()
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, locateSearchRequests.get()) }
+    }
+
     @Test fun showInFolderSelectsExactFileOnFirstFrameInListAndGrid() {
         locateLargeFolder = true
         startAndLogin()
         compose.onNodeWithTag("files-global-search-input").performTextInput("target")
         compose.onNodeWithTag("files-global-search-input").assertTextContains("target")
-        compose.onNodeWithTag("files-global-search-submit").assertIsEnabled()
-        // Use the real Search IME action. On a 320dp emulator the keyboard
-        // may cover the button; the separate searchAllFiles test still verifies
-        // the visible button click. No search is automatically replayed.
-        compose.onNodeWithTag("files-global-search-input").performImeAction()
+        // Preserve the original visible submit-button interaction. A 320dp
+        // emulator's keyboard may overlap lazy-list chrome; bring this exact
+        // submit into view before the single real click, not an IME shortcut.
+        compose.onNodeWithTag("files-global-search-submit")
+            .performScrollTo().assertIsEnabled().assertIsDisplayed().performClick()
         try {
             compose.waitUntil(timeoutMillis = 10_000) {
                 controller.state.value.filesSection == FilesSection.SEARCH &&
