@@ -37,3 +37,9 @@ test('Task history is gated on verified Windows capability and identity scope', 
   assert.match(renderer, /syncActivitySessionKey:/)
   assert.match(task, /key=\{syncActivitySessionKey\}/)
 })
+
+test('metadata-only actions never pretend to download original file bytes', () => {
+  assert.match(panel, /item.direction === 'upload' \|\| item.direction === 'download'/)
+  assert.match(panel, /无网络传输/)
+  assert.match(panel, /网络字节未采集/)
+})

@@ -189,8 +189,10 @@ function XDriveSyncRunDetail({ source, runID }: {
                 <Typography variant="caption" color="text.secondary">
                   {directionLabels[item.direction] ?? item.direction} ·
                   {dateLabel(item.applied_at)}
-                  {item.transferred_bytes === null ? ' · 网络字节未采集' :
-                    ` · ${bytesLabel(item.transferred_bytes)}`}
+                  {item.direction === 'upload' || item.direction === 'download'
+                    ? item.transferred_bytes === null ? ' · 网络字节未采集' :
+                      ` · ${bytesLabel(item.transferred_bytes)}`
+                    : ' · 无网络传输'}
                 </Typography>
                 {item.error_code || item.error_message ? (
                   <Typography variant="caption" color="error" display="block">

@@ -134,7 +134,7 @@ func Open(path, owner string) (*Store, error) {
   if _,err:=db.ExecContext(ctx,"ALTER TABLE sync_runs ADD COLUMN unmeasured_network_count INTEGER NOT NULL DEFAULT 0");err!=nil {
    return fail(err)
   }
-  if _,err:=db.ExecContext(ctx,"UPDATE sync_runs SET transferred_bytes=NULL");err!=nil {
+  if _,err:=db.ExecContext(ctx,"UPDATE sync_runs SET transferred_bytes=NULL,unmeasured_network_count=1");err!=nil {
    return fail(err)
   }
  }
