@@ -200,15 +200,15 @@ func (s *Store) Append(ctx context.Context, x Item) error {
  if count==0 {
   var old Item
   var logical,transfer sql.NullInt64
-  var ts int64
+  var ignoredTimestamp int64
   err=tx.QueryRowContext(ctx,"SELECT "+itemColumns+" FROM sync_items WHERE run_id=? AND item_id=?",x.RunID,x.ID).
    Scan(&old.RunID,&old.ID,&old.Action,&old.Direction,&old.Status,&old.OldPath,&old.NewPath,
-    &logical,&transfer,&old.ErrorCode,&old.ErrorMessage,&ts)
+    &logical,&transfer,&old.ErrorCode,&old.ErrorMessage,&ignoredTimestamp)
   if err!=nil{return err}
   if old.Action!=x.Action || old.Direction!=x.Direction || old.Status!=x.Status ||
    old.OldPath!=x.OldPath || old.NewPath!=x.NewPath || old.ErrorCode!=x.ErrorCode ||
    old.ErrorMessage!=x.ErrorMessage || !sameNull(logical,nullInt(x.LogicalBytes)) ||
-   !sameNull(transfer,nullInt(x.TransferredBytes)) || ts!=x.AppliedAt.UnixNano() {return ErrReceiptConflict}
+   !sameNull(transfer,nullInt(x.TransferredBytes)) {return ErrReceiptConflict}
   return tx.Commit()
  }
  successful:=x.Status=="completed"
