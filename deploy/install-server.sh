@@ -2402,6 +2402,7 @@ ensure_env XD_BACKUP_RETENTION_DAYS "${XD_BACKUP_RETENTION_DAYS:-7}"
 ensure_env XD_BACKUP_SCHEDULE "${XD_BACKUP_SCHEDULE:-17 3 * * *}"
 ensure_env XD_STORAGE_INVENTORY_INTERVAL_SECONDS "${XD_STORAGE_INVENTORY_INTERVAL_SECONDS:-300}"
 set_env XD_HOST_CONTROL_HOST_DIR "$STATE_DIR/control"
+prepare_caddy_host_bridge_group_access
 # Optional large offline package staging is never placed in CAS, public
 # shares or the Host control request directory. Keep the host path fixed.
 update_import_dir="$STATE_DIR/update-imports"
@@ -2413,7 +2414,6 @@ if ! chmod 2770 "$update_import_dir" 2>/dev/null; then
   echo "[xDrive] warning: cannot secure offline staging directory; Web import will remain disabled." >&2
 fi
 set_env XD_UPDATE_IMPORT_HOST_DIR "$update_import_dir"
-prepare_caddy_host_bridge_group_access
 previous_source="$(existing_env_value XD_UPDATE_SOURCE)"
 ensure_env XD_UPDATE_SOURCE "$requested_source"
 ensure_env XD_RELEASE_CHANNEL "$requested_channel"
