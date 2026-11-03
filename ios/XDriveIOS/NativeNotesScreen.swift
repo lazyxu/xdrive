@@ -41,6 +41,29 @@ struct XDriveIOSNativeNotesScreen: View {
     @State private var createdNote: XDriveIOSNativeNoteSummary?
     @State private var reloadEpoch = 0
 
+    @ToolbarContentBuilder
+    private var notesListToolbar: some ToolbarContent {
+        if source.writable {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await createNote() }
+                } label: {
+                    Label("新建备忘录", systemImage: "square.and.pencil")
+                }
+                .disabled(isCreating || isLoading)
+            }
+        } else {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    importPickerOpen = true
+                } label: {
+                    Label("导入 Markdown 和图片", systemImage: "square.and.arrow.down")
+                }
+                .disabled(importingMarkdown || isLoading)
+            }
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Picker("备忘录来源", selection: $source) {
@@ -113,27 +136,7 @@ struct XDriveIOSNativeNotesScreen: View {
         }
         .navigationTitle("备忘录")
         .searchable(text: $search, prompt: "搜索标题或正文")
-        .toolbar {
-            if source.writable {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await createNote() }
-                    } label: {
-                        Label("新建备忘录", systemImage: "square.and.pencil")
-                    }
-                    .disabled(isCreating || isLoading)
-                }
-            } else {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        importPickerOpen = true
-                    } label: {
-                        Label("导入 Markdown 和图片", systemImage: "square.and.arrow.down")
-                    }
-                    .disabled(importingMarkdown || isLoading)
-                }
-            }
-        }
+        .toolbar { notesListToolbar }
         .fileImporter(isPresented: $importPickerOpen, allowedContentTypes: [.item],
                       allowsMultipleSelection: true) { result in
             Task { await importMarkdownFile(result) }
@@ -394,6 +397,44 @@ private struct XDriveIOSNativeNoteDetailScreen: View {
         return committed.title != title || committed.markdown != markdown
     }
 
+    @ToolbarContentBuilder
+    private var notesDetailToolbar: some ToolbarContent {
+        if committed != nil {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    showHistory = true
+                } label: {
+                    Label("版本历史", systemImage: "clock.arrow.circlepath")
+                }
+                Button {
+                    exporting = true
+                } label: {
+                    Label("导出 Markdown", systemImage: "square.and.arrow.up")
+                }
+                if source.writable {
+                    Button {
+                        imagePickerOpen = true
+                    } label: {
+                        Label("插入图片", systemImage: "photo.badge.plus")
+                    }
+                    .disabled(saving || deleting || conflict || imageUploading)
+                    Button {
+                        Task { await save() }
+                    } label: {
+                        Label("保存", systemImage: "checkmark")
+                    }
+                    .disabled(!dirty || conflict || saving || deleting)
+                    Button(role: .destructive) {
+                        askDelete = true
+                    } label: {
+                        Label("删除备忘录", systemImage: "trash")
+                    }
+                    .disabled(saving || deleting)
+                }
+            }
+        }
+    }
+
     var body: some View {
         Group {
             if loading && committed == nil {
@@ -469,42 +510,7 @@ private struct XDriveIOSNativeNoteDetailScreen: View {
         }
         .navigationTitle("备忘录")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if committed != nil {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        showHistory = true
-                    } label: {
-                        Label("版本历史", systemImage: "clock.arrow.circlepath")
-                    }
-                    Button {
-                        exporting = true
-                    } label: {
-                        Label("导出 Markdown", systemImage: "square.and.arrow.up")
-                    }
-                    if source.writable {
-                        Button {
-                            imagePickerOpen = true
-                        } label: {
-                            Label("插入图片", systemImage: "photo.badge.plus")
-                        }
-                        .disabled(saving || deleting || conflict || imageUploading)
-                        Button {
-                            Task { await save() }
-                        } label: {
-                            Label("保存", systemImage: "checkmark")
-                        }
-                        .disabled(!dirty || conflict || saving || deleting)
-                        Button(role: .destructive) {
-                            askDelete = true
-                        } label: {
-                            Label("删除备忘录", systemImage: "trash")
-                        }
-                        .disabled(saving || deleting)
-                    }
-                }
-            }
-        }
+        .toolbar { notesDetailToolbar }
         .confirmationDialog("删除这条备忘录？", isPresented: $askDelete) {
             Button("删除", role: .destructive) { Task { await delete() } }
         } message: {
