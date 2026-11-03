@@ -192,13 +192,12 @@ private final class XDriveIOSNativePhotoTimelineModel: ObservableObject {
     }
 }
 
-/// A date navigator around the existing native PhotoKit wall. It does not
-/// manufacture a 100k-row photo array or replace Viewer/backup ownership.
-/// The chosen date lands on the enclosing 64-slot wall page, which must read
+/// A date navigator around the continuous native PhotoKit wall. No user-visible
+/// pagination or 100k-row photo array; internal 64-slot viewport reads remain.
+/// The chosen date lands on the enclosing metadata range, which must read
 /// and reauthorize its own fresh PHFetchResult before showing any pixels.
-struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
+struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
     @Binding var savedOffset: Int
-    let content: Content
 
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativePhotoTimelineModel()
@@ -206,13 +205,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
     @State private var showingDates = false
     @State private var scale: XDriveIOSNativePhotoTimelineScale = .year
     @State private var wallRevision: UInt64 = 0
-    @State private var useContinuousWall = true
     @State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
-
-    init(savedOffset: Binding<Int>, @ViewBuilder content: () -> Content) {
-        self._savedOffset = savedOffset
-        self.content = content()
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -225,21 +218,6 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
                 }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("native-ios-local-timeline-open")
-                Menu {
-                    Button("连续滚动") { useContinuousWall = true }
-                    Button("按页查看") {
-                        // The legacy paginated wall is unfiltered. Never reuse
-                        // an image/video-only offset when returning to all media.
-                        mediaFilter = .all
-                        model.invalidate()
-                        savedOffset = 0
-                        useContinuousWall = false
-                        wallRevision &+= 1
-                    }
-                } label: {
-                    Label(useContinuousWall ? "连续" : "分页", systemImage: "rectangle.stack")
-                }
-                .accessibilityIdentifier("native-ios-local-timeline-browse-mode")
                 Spacer(minLength: 4)
                 if let index = model.index, model.indexFilter == mediaFilter {
                     Text("已索引 \(index.indexedMediaCount) 项")
@@ -249,14 +227,10 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 46)
-            if useContinuousWall {
-                XDriveIOSNativeLocalContinuousGalleryScreen(
-                    savedOffset: $savedOffset, mediaFilter: $mediaFilter
-                )
-                    .id(wallRevision)
-            } else {
-                content.id(wallRevision)
-            }
+            XDriveIOSNativeLocalContinuousGalleryScreen(
+                savedOffset: $savedOffset, mediaFilter: $mediaFilter
+            )
+            .id(wallRevision)
         }
         .sheet(isPresented: $showingDates) {
             NavigationStack {
@@ -283,12 +257,12 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
                               model.indexFilter == mediaFilter {
                         List {
                             Section {
-                                Button(mediaFilter == .videos ? "所有视频（返回第一页）" :
-                                       mediaFilter == .photos ? "所有照片（返回第一页）" :
-                                       mediaFilter == .favorites ? "所有收藏（返回第一页）" :
-                                       mediaFilter == .livePhotos ? "所有实况（返回第一页）" :
-                                       mediaFilter == .screenshots ? "所有截屏（返回第一页）" :
-                                       "所有媒体（返回第一页）") {
+                                Button(mediaFilter == .videos ? "所有视频（查看全部）" :
+                                       mediaFilter == .photos ? "所有照片（查看全部）" :
+                                       mediaFilter == .favorites ? "所有收藏（查看全部）" :
+                                       mediaFilter == .livePhotos ? "所有实况（查看全部）" :
+                                       mediaFilter == .screenshots ? "所有截屏（查看全部）" :
+                                       "所有媒体（查看全部）") {
                                     jump(to: 0)
                                 }
                                 .accessibilityIdentifier("native-ios-local-timeline-all")
@@ -359,7 +333,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
             model.invalidate()
             return
         }
-        // The existing wall independently clamps/validates its page cursor.
+        // The continuous wall independently clamps and validates its scroll anchor.
         savedOffset = requestedOffset
         wallRevision &+= 1
         showingDates = false

@@ -36,7 +36,7 @@ enum XDriveLocalPhotoAlbumPager {
     static let pageSize = 32
 
     static func readPage(offset: Int) async throws -> XDriveLocalPhotoAlbumPage {
-        guard offset >= 0, offset <= 10_000 else {
+        guard offset >= 0 else {
             throw XDriveLocalPhotoAlbumFailure.invalidRange
         }
         let startStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
