@@ -487,7 +487,15 @@ func migrate(db *gorm.DB) error {
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_xd_files_size_node ON xd_files(size, node_id)`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_name ON xd_sources(owner_id, lower(name))`).Error; err != nil {
+	// Archived sources retain their original name and immutable history.
+	// A new Source with the same display name is legal after archival; swap
+	// the old global unique index under one PostgreSQL transaction.
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_active_name ON xd_sources(owner_id, lower(name)) WHERE status <> 'archived'`).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`DROP INDEX IF EXISTS idx_xd_sources_owner_name`).Error
+	}); err != nil {
 		return err
 	}
 	if err := db.Exec(`
