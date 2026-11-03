@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import Photos
 import SwiftUI
+import UIKit
 
 /// A secondary PhotoKit observer keeps the in-memory calendar invalid if a
 /// user changes their Limited selection or edits the library while browsing.
@@ -196,6 +197,116 @@ private final class XDriveIOSNativePhotoTimelineModel: ObservableObject {
 /// pagination or 100k-row photo array; internal 64-slot viewport reads remain.
 /// The chosen date lands on the enclosing metadata range, which must read
 /// and reauthorize its own fresh PHFetchResult before showing any pixels.
+
+/**
+ * A visible calendar group requests exactly one PhotoKit thumbnail candidate.
+ * The index stores only numeric offsets: it never holds PHAsset IDs or pixels.
+ * This fetch goes through the same filtered, permission-fenced 64-slot scanner
+ * as the local continuous wall, and releases the scanner after each read.
+ */
+private struct XDriveIOSNativeTimelineCoverTile: View {
+    let group: XDriveIOSNativePhotoTimelineGroup
+    let totalSlots: Int
+    let mediaFilter: XDriveIOSNativePhotoMediaFilter
+
+    @State private var representative: XDrivePhotoKitScanCandidate?
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            Group {
+                if let representative {
+                    XDriveIOSNativeSquarePhotoTile(candidate: representative)
+                } else {
+                    Rectangle()
+                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                        .overlay {
+                            Image(systemName: "photo.on.rectangle")
+                                .font(.title)
+                                .foregroundStyle(.secondary)
+                        }
+                        .aspectRatio(1, contentMode: .fit)
+                }
+            }
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.72)],
+                startPoint: .center, endPoint: .bottom
+            )
+            VStack(alignment: .leading, spacing: 3) {
+                Text(group.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                Text("\(group.mediaCount) 项")
+                    .font(.caption)
+                    .monospacedDigit()
+            }
+            .foregroundStyle(.white)
+            .padding(10)
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(group.title)，\(group.mediaCount) 项")
+        .task(id: "\(group.id)-\(totalSlots)-\(mediaFilter.rawValue)") {
+            await readRepresentative()
+        }
+        .onDisappear { representative = nil }
+    }
+
+    private func matchesGroup(_ candidate: XDrivePhotoKitScanCandidate) -> Bool {
+        guard let date = candidate.capturedAt else { return group.key == "unknown" }
+        let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        let expected: String
+        switch group.scale {
+        case .year:
+            expected = parts.year.map(String.init) ?? "unknown"
+        case .month:
+            if let year = parts.year, let month = parts.month {
+                expected = "\(year)-\(month)"
+            } else { expected = "unknown" }
+        case .day:
+            if let year = parts.year, let month = parts.month, let day = parts.day {
+                expected = "\(year)-\(month)-\(day)"
+            } else { expected = "unknown" }
+        }
+        return expected == group.key
+    }
+
+    private func readRepresentative() async {
+        representative = nil
+        let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard permission == .authorized || permission == .limited,
+              totalSlots > 0, group.firstSlot >= 0,
+              group.firstSlot < totalSlots else { return }
+
+        let reader = XDriveIOSNativeGalleryMediaScanner()
+        let batch: XDrivePhotoKitScanPage
+        let count: Int
+        do {
+            count = try await reader.start(
+                atOffset: group.firstPageOffset, mediaFilter: mediaFilter
+            )
+            batch = try await reader.nextPage()
+            try Task.checkCancellation()
+        } catch {
+            await reader.reset()
+            return
+        }
+        await reader.reset()
+        let position = group.firstSlot - group.firstPageOffset
+        guard !Task.isCancelled,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission,
+              count == totalSlots, batch.totalAccessibleAssets == totalSlots,
+              batch.startOffset == group.firstPageOffset,
+              position >= 0, position < batch.items.count else { return }
+
+        let candidate = batch.items[position]
+        guard mediaFilter.includes(kind: candidate.kind),
+              matchesGroup(candidate) else { return }
+        representative = candidate
+    }
+}
+
 struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
     @Binding var savedOffset: Int
 
@@ -204,6 +315,8 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
     @StateObject private var changes = XDriveIOSNativePhotoTimelineChangeMonitor()
     @State private var showingDates = false
     @State private var scale: XDriveIOSNativePhotoTimelineScale = .year
+    @State private var selectedYearKey: String?
+    @State private var selectedMonthKey: String?
     @State private var wallRevision: UInt64 = 0
     @State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
 
@@ -242,6 +355,20 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
                     }
                     .pickerStyle(.segmented)
                     .padding(12)
+                    if scale == .month, selectedYearKey != nil {
+                        Button("所有年份") {
+                            selectedYearKey = nil
+                            selectedMonthKey = nil
+                            scale = .year
+                        }
+                        .accessibilityIdentifier("native-ios-local-timeline-back-years")
+                    } else if scale == .day, selectedMonthKey != nil {
+                        Button("返回月份") {
+                            selectedMonthKey = nil
+                            scale = .month
+                        }
+                        .accessibilityIdentifier("native-ios-local-timeline-back-months")
+                    }
 
                     if model.loading {
                         Spacer()
@@ -269,22 +396,49 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
                             } footer: {
                                 Text("仅索引当前授权的\(mediaFilter.title)（\(index.indexedMediaCount) 项）。日期定位使用当前媒体筛选的完整 PhotoKit 游标。")
                             }
-                            Section("\(scale.title) · \(index.groups(for: scale).count) 个日期分组") {
-                                ForEach(index.groups(for: scale)) { group in
-                                    Button {
-                                        jump(to: group.firstPageOffset)
-                                    } label: {
-                                        HStack {
-                                            Text(group.title)
-                                            Spacer(minLength: 8)
-                                            Text("\(group.mediaCount) 项")
-                                                .foregroundStyle(.secondary)
-                                                .monospacedDigit()
+                            Section("\(scale.title) · \(visibleGroupCount(index)) 个日期分组") {
+                                if scale == .day {
+                                    ForEach(index.groups(for: scale)) { group in
+                                        if shows(group) {
+                                            Button {
+                                                jump(to: group.firstPageOffset)
+                                            } label: {
+                                                HStack {
+                                                    Text(group.title)
+                                                    Spacer(minLength: 8)
+                                                    Text("\(group.mediaCount) 项")
+                                                        .foregroundStyle(.secondary)
+                                                        .monospacedDigit()
+                                                }
+                                                .contentShape(Rectangle())
+                                            }
+                                            .foregroundStyle(.primary)
+                                            .accessibilityIdentifier("native-ios-local-timeline-\(group.id)")
                                         }
-                                        .contentShape(Rectangle())
                                     }
-                                    .foregroundStyle(.primary)
-                                    .accessibilityIdentifier("native-ios-local-timeline-\(group.id)")
+                                } else {
+                                    LazyVGrid(columns: [
+                                        GridItem(.adaptive(minimum: 138, maximum: 230), spacing: 10)
+                                    ], spacing: 10) {
+                                        ForEach(index.groups(for: scale)) { group in
+                                            if shows(group) {
+                                                Button {
+                                                    openCalendarGroup(group)
+                                                } label: {
+                                                    XDriveIOSNativeTimelineCoverTile(
+                                                        group: group,
+                                                        totalSlots: index.totalSlots,
+                                                        mediaFilter: mediaFilter
+                                                    )
+                                                }
+                                                .buttonStyle(.plain)
+                                                .accessibilityIdentifier("native-ios-local-timeline-\(group.id)")
+                                            }
+                                        }
+                                    }
+                                    .listRowInsets(EdgeInsets(
+                                        top: 10, leading: 12, bottom: 10, trailing: 12
+                                    ))
                                 }
                             }
                         }
@@ -315,11 +469,58 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
             model.invalidate()
             showingDates = false
         }
+        .onChange(of: showingDates) { visible in
+            if visible {
+                selectedYearKey = nil
+                selectedMonthKey = nil
+                scale = .year
+            }
+        }
+        .onChange(of: scale) { value in
+            if value == .year {
+                selectedYearKey = nil
+                selectedMonthKey = nil
+            } else if value == .month {
+                selectedMonthKey = nil
+            }
+        }
         .onChange(of: phase) { state in
             if state != .active {
                 model.invalidate()
                 showingDates = false
             }
+        }
+    }
+
+    private func shows(_ group: XDriveIOSNativePhotoTimelineGroup) -> Bool {
+        if group.scale == .month, let year = selectedYearKey {
+            return group.key.hasPrefix(year + "-")
+        }
+        if group.scale == .day, let month = selectedMonthKey {
+            return group.key.hasPrefix(month + "-")
+        }
+        return true
+    }
+
+    private func visibleGroupCount(_ index: XDriveIOSNativePhotoTimelineIndex) -> Int {
+        index.groups(for: scale).filter { shows($0) }.count
+    }
+
+    private func openCalendarGroup(_ group: XDriveIOSNativePhotoTimelineGroup) {
+        let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard permission == .authorized || permission == .limited,
+              model.index != nil, model.indexFilter == mediaFilter else { return }
+        switch group.scale {
+        case .year where group.key != "unknown":
+            selectedYearKey = group.key
+            selectedMonthKey = nil
+            scale = .month
+        case .month where group.key != "unknown":
+            selectedYearKey = group.key.split(separator: "-").first.map(String.init)
+            selectedMonthKey = group.key
+            scale = .day
+        default:
+            jump(to: group.firstPageOffset)
         }
     }
 
