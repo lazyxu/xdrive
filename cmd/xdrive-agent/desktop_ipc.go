@@ -594,6 +594,14 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/local-disk-space", h.localDiskSpace)
 	mux.HandleFunc("POST /v1/cache/release", h.releaseCache)
 	mux.HandleFunc("GET /v1/cloud/root", h.cloudRoot)
+	mux.HandleFunc("POST /v1/cloud/notes/namespace", h.cloudNotesNamespace)
+	mux.HandleFunc("GET /v1/cloud/notes", h.cloudNotesList)
+	mux.HandleFunc("POST /v1/cloud/notes", h.cloudNotesCreate)
+	mux.HandleFunc("GET /v1/cloud/notes/version-content", h.cloudNotesVersionContent)
+	mux.HandleFunc("GET /v1/cloud/notes/{id}", h.cloudNotesRead)
+	mux.HandleFunc("PUT /v1/cloud/notes/{id}", h.cloudNotesUpdate)
+	mux.HandleFunc("DELETE /v1/cloud/notes/{id}", h.cloudNotesDelete)
+	mux.HandleFunc("GET /v1/cloud/notes/{id}/versions", h.cloudNotesVersions)
 	mux.HandleFunc("GET /v1/cloud/children", h.cloudChildren)
 	mux.HandleFunc("GET /v1/cloud/children/position", h.cloudChildPosition)
 	mux.HandleFunc("GET /v1/cloud/changes", h.cloudChanges)
@@ -941,6 +949,9 @@ func desktopIPCAuth(token string, next http.Handler) http.Handler {
 func (h *desktopIPCHandler) viewerDownloadCapabilities() []string {
 	capabilities := desktopIPCCapabilitiesForRuntime(h.backupOnly)
 	if !h.backupOnly {
+		if _, notes := h.ctrl.(desktopIPCNotesPort); notes {
+			capabilities = append(capabilities, "cloud-notes")
+		}
 		if _, supported := h.ctrl.(interface {
 			CloudDownloadWithClientRequestID(context.Context, uint64, string, string) error
 		}); supported {
