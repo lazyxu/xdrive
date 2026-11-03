@@ -145,6 +145,11 @@ func (s *Server) publicShareUploadAdmissionTx(
 	if err := notesRejectNodeWithReason(ctx, tx, ownerID, parent.ID); err != nil {
 		return share, errShareUploadDenied
 	}
+	// Share write privileges never override a Source-managed target, even
+	// when the Share was created on an ordinary ancestor years earlier.
+	if err := managedSourceRejectDestinationTx(ctx, tx, nil, ownerID, parent.ID); err != nil {
+		return share, errShareUploadDenied
+	}
 	allowed, err := publicShareUploadContainsNodeTx(ctx, tx, ownerID, root.ID, parent.ID)
 	if err != nil || !allowed {
 		return share, errShareUploadDenied
@@ -322,6 +327,9 @@ func (s *Server) publicShareCreateDirectory(c *gin.Context) {
 			c.Request.Context(), tx, share.ID, share.OwnerID, req.ParentID)
 		if err != nil {
 			return err
+		}
+		if err := managedSourceRejectDestinationTx(c.Request.Context(), tx, nil, share.OwnerID, req.ParentID); err != nil {
+			return errShareUploadDenied
 		}
 		if err := notesRejectDestinationWithReason(c.Request.Context(), tx, share.OwnerID, req.ParentID, req.Name); err != nil {
 			return errShareUploadDenied
