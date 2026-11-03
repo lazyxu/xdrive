@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// The run ID identifies one execution attempt (not an individual fle).
+// The run ID identifies one execution attempt (not an individual file).
 // The captured owner key is provided by the owning Agent at Mount creation;
 // an old Mount cannot write a subsequent account's history.
 func (p *winProvider) beginActivity(trigger string) string {
@@ -41,7 +41,7 @@ func (p *winProvider) deferActivity(runID string) {
 }
 
 // Only call after the actual remote/local metadata operation has committed.
-// Bytes transmitted by a resumable/CAS upload cannot be inferred from fle
+// Bytes transmitted by a resumable/CAS upload cannot be inferred from file
 // length, so this receipt intentionally leaves transferred_bytes unknown.
 func (p *winProvider) recordActivity(action, direction, oldPath, newPath string, logicalBytes *int64) {
 	if p.activityOwner == "" {
@@ -63,19 +63,19 @@ func (p *winProvider) recordActivity(action, direction, oldPath, newPath string,
 // notifyConflict preserves the existing conflict notification and ties its
 // affected file to the current run without exposing a different Owner's data.
 func (p *winProvider) notifyConflict(conflictPath, originalPath string, originalNodeID, conflictNodeID uint64) {
- if p.activityRunID == "" && p.activityTrigger != "" {
-  p.beginActivity(p.activityTrigger)
- }
- emitEvent(Event{
-  Kind: EventConflict,
-  Path: conflictPath,
-  OriginalPath: originalPath,
-  OriginalNodeID: originalNodeID,
-  ConflictNodeID: conflictNodeID,
-  RunID: p.activityRunID,
-  ActivityOwner: p.activityOwner,
-  ItemID: uuid.NewString(),
- })
+	if p.activityRunID == "" && p.activityTrigger != "" {
+		p.beginActivity(p.activityTrigger)
+	}
+	emitEvent(Event{
+		Kind:           EventConflict,
+		Path:           conflictPath,
+		OriginalPath:   originalPath,
+		OriginalNodeID: originalNodeID,
+		ConflictNodeID: conflictNodeID,
+		RunID:          p.activityRunID,
+		ActivityOwner:  p.activityOwner,
+		ItemID:         uuid.NewString(),
+	})
 }
 
 // finishBackgroundActivity avoids recording idle successful scans but persists
