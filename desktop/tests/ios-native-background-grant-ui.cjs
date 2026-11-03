@@ -99,3 +99,50 @@ test('native BG status differentiates a paused receipt window from a live author
   assert.match(control, /\.pausedForReview\(owner: owner\)/)
   assert.doesNotMatch(ui, /UploadSessionTransport|document\.cookie|grantSecret|deviceToken/)
 })
+
+test('background grant renewal is time-bounded, explicitly consented and Owner-scoped', () => {
+  const policy = read('ios/XDriveIOS/PhotoBackgroundGrantPolicy.swift');
+  const checks = read('ios/tests/PhotoBackgroundGrantPolicyChecks.swift');
+  assert.match(policy, /renewalWindow:\s*TimeInterval\s*=\s*72\s*\*\s*3600/);
+  assert.match(policy, /remaining > 0 && remaining <= renewalWindow/);
+  assert.match(checks, /mayOfferRenewal\(/);
+  for (const marker of ['native-ios-photo-background-renew',
+    'native-ios-photo-background-renew-confirm']) {
+    assert.ok(ui.includes(marker), 'missing ' + marker);
+  }
+  assert.match(ui, /backgroundRenewOwner = login\.owner/);
+  assert.match(ui, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/);
+  assert.match(ui, /background\.renew\(login: login, expectedOwner: selected\)/);
+  assert.match(ui, /showBackgroundRenewConsent = false/);
+  assert.match(ui, /backgroundRenewOwner = nil/);
+
+  const renew = control.slice(control.indexOf('func renew('), control.indexOf('func disable('));
+  assert.match(renew, /status\?\.enabled == true/);
+  assert.match(renew, /serverVerified, !pausedForReview/);
+  assert.match(renew, /mayOfferRenewal\(/);
+  assert.match(renew, /UIApplication\.shared\.applicationState == \.active/);
+  assert.match(renew, /PHPhotoLibrary\.authorizationStatus/);
+  assert.match(renew, /XDriveIOSOriginalRunGate\.shared\.acquire\(\)/);
+  assert.match(renew, /XDriveIOSOriginalRunGate\.shared\.release\(gate\)/);
+  assert.match(renew, /localStopGeneration/);
+  assert.match(renew, /login\.verifiedAuthorization\(\)/);
+  assert.match(renew, /manager\.verifyRemote\(/);
+  assert.match(renew, /XDriveIOSOriginalPendingReceiptPreflight/);
+  assert.match(renew, /pendingCount\(owner: expectedOwner\)/);
+  assert.match(renew, /manager\.rotateNativeBackgroundGrant\(/);
+  assert.match(renew, /expectedStopGeneration: stopVersion/);
+  assert.doesNotMatch(renew, /UploadSessionTransport|WKWebView|document\.cookie|grantSecret|deviceToken/);
+
+  const rotate = manager.slice(manager.indexOf('func rotateNativeBackgroundGrant('),
+    manager.indexOf('/// Stop local system background work', manager.indexOf('func rotateNativeBackgroundGrant(')));
+  assert.match(rotate, /verifyNativeBackgroundGrant\(owner: owner\)/);
+  assert.match(rotate, /stoppedBeforeWrite/);
+  assert.match(rotate, /stoppedAfterWrite/);
+  assert.match(rotate, /stoppedAfterInstall/);
+  assert.match(rotate, /blocked\.revokePending = true/);
+  assert.match(rotate, /XDriveIOSApprovedPhotoBGVault\.shared\.cancelLocally/);
+  assert.match(rotate, /stopLocally\(owner: owner\)/);
+  assert.match(rotate, /scheduleApprovedProbe/);
+  assert.match(rotate, /try save\(next, owner: owner\)/);
+  assert.doesNotMatch(rotate, /UserDefaults|WKWebView|document\.cookie/);
+});

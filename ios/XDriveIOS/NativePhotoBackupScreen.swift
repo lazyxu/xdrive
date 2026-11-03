@@ -27,7 +27,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @State private var showBackgroundEnableConsent = false
     @State private var showBackgroundDisableConsent = false
     @State private var showBackgroundResumeConsent = false
+    @State private var showBackgroundRenewConsent = false
     @State private var backgroundResumeOwner: XDriveNativeOwnerRoot?
+    @State private var backgroundRenewOwner: XDriveNativeOwnerRoot?
     @State private var backgroundEnableOwner: XDriveNativeOwnerRoot?
     @State private var backgroundDisableOwner: XDriveNativeOwnerRoot?
     @State private var catchUpConsentOwner: XDriveNativeOwnerRoot?
@@ -172,6 +174,25 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             Text("服务器：\(backgroundEnableOwner?.origin.host ?? "未验证")，Owner：\(backgroundEnableOwner?.username ?? "未验证")。系统会获得当前设备与 Owner 根目录的可撤销授权，后台任务仍受 iOS 调度和原件保护限制；不会保证锁屏或强制退出后备份。")
         }
         .confirmationDialog(
+            "续期当前设备的系统后台备份授权？",
+            isPresented: $showBackgroundRenewConsent,
+            titleVisibility: .visible
+        ) {
+            Button("确认：验证 Owner 与收据后轮换授权") {
+                guard let selected = backgroundRenewOwner,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
+                else {
+                    consentError = "服务器或账户已变化，续期确认失效。"
+                    return
+                }
+                backgroundRenewOwner = nil
+                background.renew(login: login, expectedOwner: selected)
+            }
+            .accessibilityIdentifier("native-ios-photo-background-renew-confirm")
+        } message: {
+            Text("仅在当前 Owner、设备、根目录授权仍有效且距离到期不足 72 小时、全部旧收据已核对后才续期。若轮换的服务器响应丢失，不会盲目重复申请；本机紧急停止仍优先。iOS 不保证后台执行时间。")
+        }
+        .confirmationDialog(
             "确认恢复当前 Owner 的系统后台原件备份？",
             isPresented: $showBackgroundResumeConsent,
             titleVisibility: .visible
@@ -226,7 +247,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             showBackgroundEnableConsent = false
             showBackgroundDisableConsent = false
             showBackgroundResumeConsent = false
+            showBackgroundRenewConsent = false
             backgroundResumeOwner = nil
+            backgroundRenewOwner = nil
             backgroundEnableOwner = nil
             backgroundDisableOwner = nil
             showManualConsent = false
@@ -294,7 +317,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             showBackgroundEnableConsent = false
             showBackgroundDisableConsent = false
             showBackgroundResumeConsent = false
+            showBackgroundRenewConsent = false
             backgroundResumeOwner = nil
+            backgroundRenewOwner = nil
             backgroundEnableOwner = nil
             backgroundDisableOwner = nil
             background.refresh(login: login)
@@ -599,6 +624,25 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     if let expiry = state.expiresAt {
                         Text("本机记录的授权到期时间：\(expiry.formatted(date: .abbreviated, time: .shortened))")
                             .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if state.enabled && background.serverVerified &&
+                       !background.pausedForReview &&
+                       XDriveIOSPhotoBackgroundGrantPolicy.mayOfferRenewal(
+                        expiresAt: state.expiresAt
+                       ) {
+                        Label("后台授权将在 72 小时内到期，可在本机前台续期",
+                              systemImage: "clock.badge.exclamationmark")
+                            .font(.footnote).foregroundStyle(.orange)
+                        Button("续期系统后台备份授权") {
+                            backgroundRenewOwner = login.owner
+                            showBackgroundRenewConsent = backgroundRenewOwner != nil
+                        }
+                        .disabled(background.busy || background.checking ||
+                                  controller.busy || login.owner == nil)
+                        .accessibilityIdentifier("native-ios-photo-background-renew")
+                    } else if state.enrolled && !state.enabled && !state.revokePending {
+                        Text("此授权已经过期或不可用，不能直接续期；请先停用、核对远端撤销后再重新申请。")
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                     if state.enrolled {
                         Button(state.revokePending ? "重试撤销服务器授权" : "停止本机后台备份并撤销授权",
