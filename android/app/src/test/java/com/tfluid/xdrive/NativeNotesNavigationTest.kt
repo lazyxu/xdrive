@@ -8,7 +8,7 @@ import org.junit.Test
 class NativeNotesNavigationTest {
     @Test fun notesFromAllUsesDynamicSlotAndNeverChangesFiveFixedTabs() {
         val initial = NativeHomeNavigation()
-        assertEquals(listOf("全部", "最近", "图库", "文件", "我的"), initial.labels)
+        assertEquals(listOf("全部", "地图", "图库", "文件", "我的"), initial.labels)
         val opened = initial.open(NativeHomeShortcut.NOTES)
         assertEquals(NativeHomeTab.DYNAMIC, opened.selected)
         assertEquals(NativeDynamicFeature.NOTES, opened.dynamicFeature)
