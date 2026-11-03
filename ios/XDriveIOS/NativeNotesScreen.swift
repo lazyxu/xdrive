@@ -49,6 +49,7 @@ struct XDriveIOSNativeNotesScreen: View {
     @State private var importingMarkdown = false
     @State private var errorMessage: String?
     @State private var createdNote: XDriveIOSNativeNoteSummary?
+    @State private var showCreatedNote = false
     @State private var reloadEpoch = 0
 
     @ViewBuilder
@@ -124,13 +125,21 @@ struct XDriveIOSNativeNotesScreen: View {
                     .disabled(isLoading)
                 }
                 if !isLoading && items.isEmpty && errorMessage == nil {
-                    ContentUnavailableView(
-                        source == .mine ? "暂无备忘录" : "暂无 iOS 备份",
-                        systemImage: "note.text",
-                        description: Text(source == .mine
+                    VStack(spacing: 10) {
+                        Image(systemName: "note.text")
+                            .font(.largeTitle)
+                            .foregroundStyle(.secondary)
+                        Text(source == .mine ? "暂无备忘录" : "暂无 iOS 备份")
+                            .font(.headline)
+                        Text(source == .mine
                             ? "点击右上角的新建按钮，创建 Markdown 备忘录。"
                             : "通过 Apple 快捷指令或手动导入，将原生备忘录备份至此。")
-                    )
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
                 }
             }
             .listStyle(.plain)
@@ -151,12 +160,14 @@ struct XDriveIOSNativeNotesScreen: View {
                       allowsMultipleSelection: true) { result in
             Task { await importMarkdownFile(result) }
         }
-        .navigationDestination(item: $createdNote) { note in
-            XDriveIOSNativeNoteDetailScreen(
-                login: login, id: note.id,
-                source: XDriveIOSNativeNoteSource(rawValue: note.source) ?? .mine,
-                onDeleted: { reloadEpoch &+= 1 }
-            )
+        .navigationDestination(isPresented: $showCreatedNote) {
+            if let note = createdNote {
+                XDriveIOSNativeNoteDetailScreen(
+                    login: login, id: note.id,
+                    source: XDriveIOSNativeNoteSource(rawValue: note.source) ?? .mine,
+                    onDeleted: { reloadEpoch &+= 1 }
+                )
+            }
         }
         .task(id: "\(source.rawValue)|\(search)|\(reloadEpoch)") {
             // Search is bound to the current native Owner/Source, and a rapid
@@ -342,6 +353,7 @@ struct XDriveIOSNativeNotesScreen: View {
             try Task.checkCancellation()
             if source == .ios_notes {
                 createdNote = committed
+                showCreatedNote = true
                 reloadEpoch &+= 1
                 if photos.count > requiredImages.count {
                     errorMessage = "正文与引用图片已导入；未引用的图片没有上传。"
@@ -371,6 +383,7 @@ struct XDriveIOSNativeNotesScreen: View {
                 throw XDriveIOSNativeNotesError.invalidResponse
             }
             createdNote = note
+            showCreatedNote = true
             reloadEpoch &+= 1
         } catch {
             errorMessage = error.localizedDescription
@@ -449,11 +462,16 @@ private struct XDriveIOSNativeNoteDetailScreen: View {
                 ProgressView("载入 Markdown…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if committed == nil {
-                ContentUnavailableView(
-                    "备忘录无法读取",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(errorMessage ?? "请检查当前服务器和登录状态。")
-                )
+                VStack(spacing: 12) {
+                    Label("备忘录无法读取", systemImage: "exclamationmark.triangle")
+                        .font(.headline)
+                    Text(errorMessage ?? "请检查当前服务器和登录状态。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
@@ -559,8 +577,8 @@ private struct XDriveIOSNativeNoteDetailScreen: View {
             }
         }
         .task(id: id) { await load(discard: false) }
-        .onChange(of: title) { _, _ in draftEpoch &+= 1 }
-        .onChange(of: markdown) { _, _ in draftEpoch &+= 1 }
+        .onChange(of: title) { _ in draftEpoch &+= 1 }
+        .onChange(of: markdown) { _ in draftEpoch &+= 1 }
         .task(id: draftEpoch) {
             guard draftEpoch > 0 else { return }
             do {
