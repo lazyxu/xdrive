@@ -58,6 +58,20 @@
         throw new Error("GitHub 分页返回重复内容，停止操作，避免漏查");
       }
       seenPages.add(pageIds);
+
+      // 对照服务器实际渲染的 Run 链接，防止读取到页面中的旧路由快照。
+      const domIds = new Set();
+      for (const link of documentCopy.querySelectorAll('a[href*="/actions/runs/"]')) {
+        const match = link.getAttribute("href")?.match(
+          /(?:^|\/)(?:lazyxu\/xdrive\/)?actions\/runs\/(\d+)(?:[/?#]|$)/);
+        if (match) domIds.add(match[1]);
+      }
+      const jsonIds = new Set(rows.map(run => String(run?.id)));
+      if (domIds.size && (domIds.size !== jsonIds.size ||
+          [...domIds].some(id => !jsonIds.has(id)))) {
+        throw new Error("第 " + page +
+          " 页显示的 Run 与内嵌 JSON 不一致，安全停止");
+      }
       console.log("第 " + page + " 页发现 " + rows.length + " 个 CI Run");
       for (const run of rows) {
         if (run?.branch?.name !== "refs/heads/master" ||
@@ -85,28 +99,50 @@
           .replace(/^WORKFLOW_RUN_STATUS_/, "");
         statusCounts[state] = (statusCounts[state] || 0) + 1;
       }
-      const uiActive = rows.filter(run =>
-        /queued|pending|waiting|in.?progress|running/i.test(
-          String(run?.timing?.text || "")));
-      const mismatch = uiActive.filter(run =>
-        /^(?:WORKFLOW_RUN_STATUS_)?(?:COMPLETED|CANCELLED|CANCELED)$/.test(
-          String(run?.state?.status || "")));
-      console.log("第 " + page + " 页状态:", statusCounts,
-        "界面显示待处理:", uiActive.length);
-      if (mismatch.length) {
-        console.warn("页面状态字段与显示文案不一致（不取消）：",
-          mismatch.map(run => run.id));
-      }
-      // 只有连续两个完整页面全部终态，才允许提前结束扫描。
-      // 界面显示排队/运行中的页面不能计入连续终态页。
+      // GitHub 的 state.status、timing.kind 和 timing.text 可能不同步。
+      // 任何一个来源表明仍在排队/等待/运行，都不能计为终态。
+      const active = /QUEUED|PENDING|WAITING|IN[_\\s-]*PROGRESS|RUNNING|STARTING/i;
+      const isActive = run => active.test([
+        run?.state?.status, run?.timing?.kind, run?.timing?.text
+      ].filter(Boolean).join(" "));
+      const uiActive = rows.filter(isActive);
       const terminalStatuses = new Set([
         "WORKFLOW_RUN_STATUS_COMPLETED",
         "WORKFLOW_RUN_STATUS_CANCELLED",
         "WORKFLOW_RUN_STATUS_CANCELED"
       ]);
+      const mismatch = uiActive.filter(run =>
+        terminalStatuses.has(run?.state?.status));
+
+      // HTML 中实际渲染的状态标记也作为否决信号（例如 Queued）。
+      const renderedActive = [...documentCopy.querySelectorAll(
+        "span, div, time, p, strong, [aria-label], [title]"
+      )].filter(node => {
+        const text = String(node.textContent || "").trim();
+        const label = String(node.getAttribute?.("aria-label") ||
+          node.getAttribute?.("title") || "").trim();
+        return ((node.childElementCount === 0 && text.length < 40 &&
+          /^(Queued|Pending|Waiting|Running|In[\\s-]*progress)$/i.test(text)) ||
+          /^(Queued|Pending|Waiting|Running|In[\\s-]*progress)$/i.test(label));
+      }).length;
+      const embeddedActive = /"text"\\s*:\\s*"(?:Queued|Pending|Waiting|Running|In[\\s-]*progress)"/i
+        .test(html);
+
+      console.log("第 " + page + " 页状态:", statusCounts,
+        "数据待处理:", uiActive.length,
+        "页面待处理标记:", renderedActive,
+        "内嵌状态待处理:", embeddedActive);
+      if (mismatch.length || renderedActive || embeddedActive) {
+        console.warn("第 " + page + " 页不能确认全部终态：",
+          mismatch.map(run => ({ id: run.id, status: run.state?.status,
+            timing: run.timing?.text, kind: run.timing?.kind })));
+      }
+
+      // 连续两个完整页面都确认为终态时才停止；任何矛盾均重置。
       const terminalPage = rows.length === 25 &&
         rows.every(run => terminalStatuses.has(run?.state?.status)) &&
-        mismatch.length === 0;
+        uiActive.length === 0 && renderedActive === 0 && !embeddedActive &&
+        domIds.size === jsonIds.size;
       consecutiveTerminalPages = terminalPage ? consecutiveTerminalPages + 1 : 0;
       console.log("连续终态页:", consecutiveTerminalPages + "/2");
       if (consecutiveTerminalPages >= 2) {
