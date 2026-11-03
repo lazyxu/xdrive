@@ -43,7 +43,7 @@ struct XDriveIOSNativeFilesBatchTrashChecks {
         check(P.validReceipt(accepted, for: list), "exact unordered result")
         let bulkReceipt = XDriveIOSNativeFilesBatchTrashReceipt(
             operation_id: accepted.operation_id,
-            deleted_ids: bulk.map(\.id).reversed()
+            deleted_ids: Array(bulk.map(\.id).reversed())
         )
         check(P.validReceipt(bulkReceipt, for: bulk),
               "200-item exact atomic Server receipt")
