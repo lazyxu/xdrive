@@ -39,7 +39,8 @@ test('directory rename and subtree trash use the existing versioned Node mutatio
   assert.match(mutation, /checkedResponse\(response, accepted: 204\)/)
   assert.match(go, /func \(s \*Server\) deleteNode\(c \*gin\.Context\)/)
   assert.match(go, /activeSubtreeIDsDB\(tx, userID\(c\), id\)/)
-  assert.match(go, /yikeManagedTargetInIDsDB\(c\.Request\.Context\(\), tx, userID\(c\), ids\)/)
+  assert.match(go, /managedSourceTargetInIDsDB\(c\.Request\.Context\(\), tx, userID\(c\), ids\)/)
+  assert.match(go, /requireOrdinarySourceMutationTx\(c\.Request\.Context\(\), tx, userID\(c\), n\.ID\)/)
   assert.match(go, /func \(s \*Server\) updateNode\(c \*gin\.Context\)/)
 })
 test('root and stale Owner cannot reach a directory mutation; one existing file transport is reused', () => {

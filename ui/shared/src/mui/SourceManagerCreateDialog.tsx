@@ -166,7 +166,7 @@ export function XDriveSourceCreateDialog({
           </XDriveStatusAlert>
         ) : option.direction === 'pull' ? (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            目标目录由服务器自动创建：同步文件夹 / 远程拉取 / {option.kind === 'synology_files' ? 'Synology Files' : 'Synology Photos'} / {values.name.trim() || '来源名称'}。
+            目标目录由服务器自动创建：远程拉取 / {option.kind === 'synology_files' ? 'Synology Files' : 'Synology Photos'} / {values.name.trim() || '来源名称'}。
             无需选择云端文件夹；不会占用已有的普通目录。服务器需能访问下面填写的 DSM 地址。
           </XDriveStatusAlert>
         ) : targetBrowsingEnabled ? (
