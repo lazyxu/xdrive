@@ -404,6 +404,30 @@ declare global {
   type AgentStorageCacheCleanupKind = StorageCacheCleanupKind
   type AgentCloudVersion = FileVersion
   type AgentCloudShare = FileShare
+  type AgentNotesSource = 'mine' | 'ios_notes'
+  type AgentNotesNamespace = {
+    system_node_id: number
+    notes_node_id: number
+    ios_backup_node_id: number
+    my_notes_node_id: number
+  }
+  type AgentNotesRow = {
+    id: string
+    source: AgentNotesSource
+    title: string
+    node_id: number
+    revision: number
+    sha256: string
+    bytes: number
+    created_at: string
+    updated_at: string
+  }
+  type AgentNotesDetail = AgentNotesRow & { markdown: string }
+  type AgentNotesPage = { items: AgentNotesRow[]; next_offset: number }
+  type AgentNotesVersion = { id: number; revision: number; sha256: string; bytes: number }
+  type AgentNotesVersions = { items: AgentNotesVersion[]; node_id: number }
+  type AgentNotesWrite = { title: string; markdown: string; expected_revision?: number }
+
   type AgentOwnerSharePage = OwnerFileSharePage
   type AgentOwnerShareLink = { url: string }
   type AgentCreatedCloudShare = {
@@ -1097,6 +1121,14 @@ declare global {
         cloudVersions: (nodeID: number) => Promise<DesktopResult<AgentCloudVersion[]>>
         cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudShares: (nodeID: number) => Promise<DesktopResult<AgentCloudShare[]>>
+        cloudNotesInitialize: () => Promise<DesktopResult<AgentNotesNamespace>>
+        cloudNotesList: (source: AgentNotesSource, query: string, offset: number) => Promise<DesktopResult<AgentNotesPage>>
+        cloudNotesRead: (id: string) => Promise<DesktopResult<AgentNotesDetail>>
+        cloudNotesCreate: (value: { title: string; markdown: string }) => Promise<DesktopResult<AgentNotesRow>>
+        cloudNotesUpdate: (id: string, value: { title: string; markdown: string; expected_revision: number }) => Promise<DesktopResult<AgentNotesRow>>
+        cloudNotesDelete: (id: string, revision: number) => Promise<DesktopResult<void>>
+        cloudNotesVersions: (id: string) => Promise<DesktopResult<AgentNotesVersions>>
+        cloudNotesReadVersion: (nodeID: number, versionID: number) => Promise<DesktopResult<{ markdown: string }>>
         cloudOwnerShares: (cursor: number, limit: number) => Promise<DesktopResult<AgentOwnerSharePage>>
         cloudOwnShareLink: (id: number) => Promise<DesktopResult<AgentOwnerShareLink>>
         cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) => Promise<DesktopResult<AgentCreatedCloudShare>>

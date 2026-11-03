@@ -201,6 +201,12 @@ import {
   type AgentCreatedCloudShare,
   type AgentOwnerSharePage,
   type AgentOwnerShareLink,
+  type AgentNotesNamespace,
+  type AgentNotesRow,
+  type AgentNotesDetail,
+  type AgentNotesPage,
+  type AgentNotesVersions,
+  type AgentNotesWrite,
   type AgentCloudSearchPage,
   type AgentCloudSearchRange,
   type AgentCloudSearchFilters,
@@ -8115,6 +8121,80 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudShares(nodeID)
   }, false))
+
+  // Renderer never receives the Server bearer. Only this explicit, versioned
+  // Notes channel uses the already-authenticated, full Desktop Agent.
+  const requireNotesAgent = async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-notes')
+    return requireAgentClient()
+  }
+  const notesID = (value: unknown): string => {
+    if (typeof value !== 'string' ||
+      !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Notes ID')
+    }
+    return value
+  }
+  const notesRevision = (value: unknown): number => {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Expected Notes revision is required')
+    }
+    return value
+  }
+  const notesWrite = (raw: unknown, requireRevision: boolean): AgentNotesWrite => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new AgentIPCError('invalid_input', 0, 'A Markdown Note is required')
+    }
+    const input = raw as Record<string, unknown>
+    if (typeof input.title !== 'string' || typeof input.markdown !== 'string' ||
+      input.title.trim() === '' ||
+      new TextEncoder().encode(input.title).length > 255 ||
+      new TextEncoder().encode(input.markdown).length > 1_048_576 ||
+      /[\u0000-\u001f\u007f]/.test(input.title) || input.markdown.includes('\u0000')) {
+      throw new AgentIPCError('invalid_input', 0, 'Markdown title or body is invalid')
+    }
+    const revision = requireRevision ? notesRevision(input.expected_revision) : undefined
+    return { title: input.title, markdown: input.markdown,
+      ...(revision ? { expected_revision: revision } : {}) }
+  }
+  ipcMain.handle('agent:cloud-notes-initialize', () =>
+    runAgentAction<AgentNotesNamespace>(async () => (await requireNotesAgent()).cloudNotesInitialize(), false))
+  ipcMain.handle('agent:cloud-notes-list',
+    (_event, source: unknown, query: unknown, offset: unknown) =>
+      runAgentAction<AgentNotesPage>(async () => {
+        const agent = await requireNotesAgent()
+        if ((source !== 'mine' && source !== 'ios_notes') || typeof query !== 'string' ||
+          new TextEncoder().encode(query).length > 200 ||
+          typeof offset !== 'number' || !Number.isSafeInteger(offset) ||
+          offset < 0 || offset > 10_000_000 || offset % 50 !== 0) {
+          throw new AgentIPCError('invalid_input', 0, 'Invalid Notes search or pagination')
+        }
+        return agent.cloudNotesList(source, query, offset)
+      }, false))
+  ipcMain.handle('agent:cloud-notes-read', (_event, noteID: unknown) =>
+    runAgentAction<AgentNotesDetail>(async () =>
+      (await requireNotesAgent()).cloudNotesRead(notesID(noteID)), false))
+  ipcMain.handle('agent:cloud-notes-create', (_event, input: unknown) =>
+    runAgentAction<AgentNotesRow>(async () =>
+      (await requireNotesAgent()).cloudNotesCreate(notesWrite(input, false)), false))
+  ipcMain.handle('agent:cloud-notes-update', (_event, noteID: unknown, input: unknown) =>
+    runAgentAction<AgentNotesRow>(async () =>
+      (await requireNotesAgent()).cloudNotesUpdate(notesID(noteID), notesWrite(input, true)), false))
+  ipcMain.handle('agent:cloud-notes-delete', (_event, noteID: unknown, revision: unknown) =>
+    runAgentAction<void>(async () =>
+      (await requireNotesAgent()).cloudNotesDelete(notesID(noteID), notesRevision(revision)), false))
+  ipcMain.handle('agent:cloud-notes-versions', (_event, noteID: unknown) =>
+    runAgentAction<AgentNotesVersions>(async () =>
+      (await requireNotesAgent()).cloudNotesVersions(notesID(noteID)), false))
+  ipcMain.handle('agent:cloud-notes-version-content',
+    (_event, nodeID: unknown, versionID: unknown) =>
+      runAgentAction<{ markdown: string }>(async () => {
+        const agent = await requireNotesAgent()
+        const ownedNode = notesRevision(nodeID)
+        const ownedVersion = notesRevision(versionID)
+        return agent.cloudNotesReadVersion(ownedNode, ownedVersion)
+      }, false))
 
   ipcMain.handle('agent:cloud-owner-shares', (_event, cursor: unknown, limit: unknown) => runAgentAction<AgentOwnerSharePage>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
