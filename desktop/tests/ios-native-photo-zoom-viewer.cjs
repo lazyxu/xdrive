@@ -127,7 +127,7 @@ test('iOS gallery still and Live Viewers use the same reversible, Owner-scoped i
   assert.match(local, /if showChrome, let still = model\.still/)
   assert.match(cloud, /if showChrome, let still/)
   assert.match(media, /if showChrome, let image/)
-  assert.match(local, /\.onChange\(of: viewed\.id\) \{ _ in showChrome = true \}/)
+  assert.match(local, /\.onChange\(of: viewed\.id\) \{ _ in\s+showChrome = true\s+showingPhotoInfo = false\s+photoLocation = nil\s+\}/)
   assert.match(cloud, /\.onChange\(of: error\) \{ message in/)
   assert.match(media, /\.onChange\(of: failure\) \{ message in/)
   for (const viewer of [local, cloud, media]) assert.match(viewer, /if (state|phase) != \.active \{/)
