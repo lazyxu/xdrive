@@ -357,6 +357,9 @@ func (s *Server) batchCopyNodes(c *gin.Context) {
 		if err := notesRejectDestinationWithReason(c.Request.Context(), tx, uid, req.ParentID, ""); err != nil {
 			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "managed notes cannot be changed through Files"}
 		}
+		if err := denyManagedSourceNodeTx(c.Request.Context(), tx, uid, req.ParentID); err != nil {
+			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_source_target", Message: "Source-managed destination is read-only"}
+		}
 		nested, err := batchSelectionHasAncestor(tx, uid, req.Items)
 		if err != nil {
 			return err
@@ -427,6 +430,9 @@ func (s *Server) batchMoveNodes(c *gin.Context) {
 		if err := notesRejectDestinationWithReason(c.Request.Context(), tx, uid, req.ParentID, ""); err != nil {
 			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes destination is protected"}
 		}
+		if err := denyManagedSourceNodeTx(c.Request.Context(), tx, uid, req.ParentID); err != nil {
+			return &batchMutationFailure{Status: http.StatusConflict, Code: "managed_source_target", Message: "Source-managed destination is read-only"}
+		}
 		nested, err := batchSelectionHasAncestor(tx, uid, req.Items)
 		if err != nil {
 			return err
@@ -441,6 +447,9 @@ func (s *Server) batchMoveNodes(c *gin.Context) {
 			}
 			if err := notesRejectNodeWithReason(c.Request.Context(), tx, uid, node.ID); err != nil {
 				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes node cannot be moved"}
+			}
+			if err := denyManagedSourceNodeTx(c.Request.Context(), tx, uid, node.ID); err != nil {
+				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "Source-managed item cannot be moved"}
 			}
 			if err := notesRejectDestinationWithReason(c.Request.Context(), tx, uid, req.ParentID, node.Name); err != nil {
 				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes destination is protected"}
@@ -548,6 +557,9 @@ func (s *Server) batchDeleteNodes(c *gin.Context) {
 			}
 			if err := notesRejectNodeWithReason(c.Request.Context(), tx, uid, node.ID); err != nil {
 				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_notes", Message: "managed Notes node cannot be deleted"}
+			}
+			if err := denyManagedSourceNodeTx(c.Request.Context(), tx, uid, node.ID); err != nil {
+				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "Source-managed item cannot be deleted"}
 			}
 			ids, err := activeSubtreeIDsDB(tx, uid, node.ID)
 			if err != nil {
