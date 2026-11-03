@@ -19,6 +19,9 @@ type Event struct {
 	ConflictNodeID uint64
 	Message        string
 	Notify         bool
+	RunID          string
+	Trigger        string
+	ActivityOwner  string
 }
 
 var mountEventSink struct {
