@@ -15,10 +15,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"sort"
-	"time"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -623,7 +623,6 @@ func (s *Server) adminFinalizeOfflineUpdateFile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"name": name, "state": "ready", "upload_sha256": digest})
 }
 
-
 // A persistent catalog makes a created Host import recoverable after a browser
 // refresh. No host filesystem path is accepted or disclosed by this endpoint.
 func (s *Server) adminListOfflineUpdateImports(c *gin.Context) {
@@ -712,4 +711,5 @@ func (s *Server) adminDeleteOfflineUpdateImport(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.Status(http.StatusNoContent)
+	c.Writer.WriteHeaderNow()
 }

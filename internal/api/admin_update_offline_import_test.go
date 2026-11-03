@@ -40,7 +40,9 @@ func offlineImportCreateTestID(t *testing.T, s *Server) string {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create offline import HTTP %d: %s", w.Code, w.Body.String())
 	}
-	var response struct{ ID string `json:"id"` }
+	var response struct {
+		ID string `json:"id"`
+	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
@@ -219,13 +221,13 @@ func TestAdminOfflineImportRoutesRequireAuthentication(t *testing.T) {
 	s := &Server{}
 	router := s.Router()
 	expected := map[string]bool{
-		"POST /api/v1/admin/update/offline/imports": false,
-		"GET /api/v1/admin/update/offline/imports": false,
-		"GET /api/v1/admin/update/offline/imports/:id": false,
-		"DELETE /api/v1/admin/update/offline/imports/:id": false,
-		"POST /api/v1/admin/update/offline/imports/:id/files/:name": false,
+		"POST /api/v1/admin/update/offline/imports":                              false,
+		"GET /api/v1/admin/update/offline/imports":                               false,
+		"GET /api/v1/admin/update/offline/imports/:id":                           false,
+		"DELETE /api/v1/admin/update/offline/imports/:id":                        false,
+		"POST /api/v1/admin/update/offline/imports/:id/files/:name":              false,
 		"PUT /api/v1/admin/update/offline/imports/:id/files/:name/chunks/:index": false,
-		"POST /api/v1/admin/update/offline/imports/:id/files/:name/finalize": false,
+		"POST /api/v1/admin/update/offline/imports/:id/files/:name/finalize":     false,
 	}
 	for _, route := range router.Routes() {
 		key := route.Method + " " + route.Path
@@ -245,7 +247,6 @@ func TestAdminOfflineImportRoutesRequireAuthentication(t *testing.T) {
 		t.Fatalf("anonymous offline import unexpectedly returned %d", response.Code)
 	}
 }
-
 
 func TestAdminOfflineImportCatalogAndSafeDeletion(t *testing.T) {
 	s, dir := offlineImportTestServer(t)

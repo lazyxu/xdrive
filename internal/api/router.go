@@ -73,7 +73,7 @@ type Server struct {
 	PhotoHostTrustRootSHA256       string
 	PhotoFacePreviewBaseURL        string
 	HostControlDir                 string
-	OfflineUpdateImportDir          string
+	OfflineUpdateImportDir         string
 	offlineUpdateImportMu          sync.Mutex
 	FilesDataHostPath              string
 	PostgresDataHostPath           string
