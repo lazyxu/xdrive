@@ -170,6 +170,9 @@ func TestManagedSourceGuardLargeSubtreeIDsBoundedSQL(t *testing.T) {
 
 func TestManagedSourceGuardBlocksAnonymousUploadWithinSharedAncestor(t *testing.T) {
 	db, server, owner, _, root := setupFilePropertiesTestDB(t)
+	if err := db.AutoMigrate(&meta.Share{}); err != nil {
+		t.Fatal(err)
+	}
 	shared := createFilePropertiesDir(t, db, owner.ID, root.ID, "shared-upload-root")
 	managed := createFilePropertiesDir(t, db, owner.ID, shared.ID, "synology-target")
 	ordinary := createFilePropertiesDir(t, db, owner.ID, shared.ID, "ordinary")
