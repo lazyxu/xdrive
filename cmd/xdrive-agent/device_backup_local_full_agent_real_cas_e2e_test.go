@@ -126,6 +126,9 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		Status: meta.SourceStatusPaused, Revision: 7, TargetNodeID: &target.ID,
 		LocalCreatorDeviceID: &deviceID,
 	}
+	// The manual first Source run arms the already-saved interval policy;
+	// only the owning Agent scheduler may later admit incremental work.
+	source.ScheduleType, source.ScheduleExpression = "interval", "1m"
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -428,4 +431,76 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	if unchangedAgain.ConfirmedFiles != 0 || unchangedAgain.SkippedFiles != 2 {
 		t.Fatalf("restart re-uploaded already committed originals: %+v", unchangedAgain)
 	}
+	// P0-0 scheduled incremental verification. The earlier manual CGI run
+	// persisted a verified partial checkpoint for this owning Root. A saved
+	// one-minute interval must NOT start early, and a due tick must use the
+	// SAME original Agent and immutable Server SQL/CAS writer (not a second
+	// DSM transfer queue). A fresh controller models Agent restart.
+	scheduledB := bytes.Repeat([]byte("scheduled-native-B-revision-"), 181)
+	if err := os.WriteFile(filepath.Join(originalDir, "bravo.bin"), scheduledB, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertCounters()
+	chunksBeforeSchedule, finalizesBeforeSchedule := lastChunk, lastFinalize
+	opsBeforeSchedule, versionsBeforeSchedule := lastOperation, lastVersion
+	scheduler := &agentController{ctx: context.Background()}
+	attempts := make(map[string]time.Time)
+	early := time.Now().UTC()
+	if err := scheduler.localPushAutoTick(context.Background(), early, attempts); err != nil {
+		t.Fatalf("owning scheduled Source discovery failed before due: %v", err)
+	}
+	scheduler.localCommonBatchJobMu.Lock()
+	earlyJob := scheduler.localCommonBatchJob
+	scheduler.localCommonBatchJobMu.Unlock()
+	if earlyJob != nil || chunks.Load() != chunksBeforeSchedule ||
+		finalizes.Load() != finalizesBeforeSchedule {
+		t.Fatal("not-yet-due NAS interval scheduled a physical upload")
+	}
+	// The due clock is injected only into the scheduler; the real Root
+	// inventory, native file bytes and Server SQL/CAS time remain untouched.
+	due := early.Add(2 * time.Minute)
+	if err := scheduler.localPushAutoTick(context.Background(), due, attempts); err != nil {
+		t.Fatalf("due NAS Source scheduler failed: %v", err)
+	}
+	scheduler.localCommonBatchJobMu.Lock()
+	job := scheduler.localCommonBatchJob
+	scheduler.localCommonBatchJobMu.Unlock()
+	if job == nil {
+		t.Fatal("due native Source did not enter the original owning Agent")
+	}
+	select {
+	case <-job.done:
+	case <-time.After(75 * time.Second):
+		t.Fatal("scheduled native Agent did not finish its SQL/CAS operation")
+	}
+	scheduled := localCommonBatchObservedResult(job)
+	if job.err != nil || scheduled.SourceID != source.ID ||
+		scheduled.Revision != source.Revision || scheduled.State != "partial" ||
+		scheduled.Running || scheduled.ConfirmedFiles != 1 ||
+		scheduled.SkippedFiles != 1 || scheduled.InspectedFiles != 2 ||
+		scheduled.ConfirmedBytes != int64(len(scheduledB)) ||
+		scheduled.UncertainFiles != 0 || scheduled.BackupComplete ||
+		scheduled.RetirementSafe || scheduled.CurrentCASVerified {
+		t.Fatalf("scheduled run misreported original SQL receipts: %+v %v", scheduled, job.err)
+	}
+	assertOriginal("alpha.bin", updated, 2)
+	assertOriginal("bravo.bin", scheduledB, 2)
+	assertCounters()
+	if lastOperation != opsBeforeSchedule+1 ||
+		lastVersion != versionsBeforeSchedule+1 ||
+		lastChunk <= chunksBeforeSchedule ||
+		lastFinalize <= finalizesBeforeSchedule {
+		t.Fatal("scheduled increment failed to create exactly one new SQL/CAS version")
+	}
+	// A repeated wake-up with the same attempt must respect the existing
+	// durable cooldown and never fabricate a second physical upload.
+	if err := scheduler.localPushAutoTick(context.Background(), due.Add(5*time.Second), attempts); err != nil {
+		t.Fatalf("repeated owning scheduler tick failed: %v", err)
+	}
+	assertCounters()
+	if lastOperation != opsBeforeSchedule+1 ||
+		lastVersion != versionsBeforeSchedule+1 {
+		t.Fatal("repeated scheduler tick wrote duplicate original SQL operations")
+	}
 }
+
