@@ -490,7 +490,7 @@ jobs:
             ios/tests/NativeFilesViewerPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-files-viewer-policy"
           "$RUNNER_TEMP/xdrive-ios-files-viewer-policy"
-          node --test desktop/tests/ios-native-files-viewer.cjs
+          node --test desktop/tests/ios-native-files-viewer.cjs desktop/tests/ios-native-files-image-immersive.cjs
 
       - name: Verify native Files folder creation name and Owner-scoped POST
         run: |
