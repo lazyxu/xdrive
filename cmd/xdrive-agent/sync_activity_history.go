@@ -26,9 +26,26 @@ func (c *agentController) loadInitialSyncActivity() {
  c.switchSyncActivity(cfg)
 }
 
+// Caller holds syncActivityMu. A shutdown/account change flushes accepted
+// receipts into the previous Owner's file before detaching that database.
+func (c *agentController) flushSyncActivityPendingLocked() {
+ if c.syncActivity!=nil {
+  ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
+  defer cancel()
+  for runID,items:=range c.syncActivityPending {
+   if len(items)==0{continue}
+   if err:=c.syncActivity.AppendBatch(ctx,items);err!=nil{
+    log.Printf("xDrive pending sync activity batch %s not saved: %v",runID,err)
+   }
+  }
+ }
+ c.syncActivityPending=make(map[string][]syncactivity.Item)
+}
+
 func (c *agentController) switchSyncActivity(cfg userconfig.Config) {
  c.syncActivityMu.Lock()
  defer c.syncActivityMu.Unlock()
+ c.flushSyncActivityPendingLocked()
  if c.syncActivity != nil{
   if err:=c.syncActivity.Close();err!=nil{log.Printf("xDrive sync activity close: %v",err)}
  }
@@ -46,6 +63,7 @@ func (c *agentController) switchSyncActivity(cfg userconfig.Config) {
 func (c *agentController) closeSyncActivity() {
  c.syncActivityMu.Lock()
  defer c.syncActivityMu.Unlock()
+ c.flushSyncActivityPendingLocked()
  if c.syncActivity!=nil{
   if err:=c.syncActivity.Close();err!=nil{log.Printf("xDrive sync activity close: %v",err)}
  }
