@@ -181,48 +181,62 @@ func nullInt(v *int64) sql.NullInt64 {
  return sql.NullInt64{Int64:*v, Valid:true}
 }
 
+// Append is a single-item convenience API. Large scanners should use the
+// bounded AppendBatch to avoid an fsync for every file.
 func (s *Store) Append(ctx context.Context, x Item) error {
- if !validItem(x) {return errors.New("invalid sync activity item")}
- if x.AppliedAt.IsZero(){x.AppliedAt=time.Now().UTC()}
+ return s.AppendBatch(ctx, []Item{x})
+}
+
+// AppendBatch commits at most 500 final receipts atomically, including their
+// aggregate counters. It rejects mixed-run batches and conflicting replays.
+func (s *Store) AppendBatch(ctx context.Context, items []Item) error {
+ if len(items)==0{return nil}
+ if len(items)>500{return errors.New("sync activity batch exceeds 500 items")}
+ runID:=items[0].RunID
+ for i:=range items {
+  if items[i].RunID!=runID || !validItem(items[i]){return errors.New("invalid or mixed-run sync activity batch")}
+  if items[i].AppliedAt.IsZero(){items[i].AppliedAt=time.Now().UTC()}
+ }
  tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return err}
  defer tx.Rollback()
- var status string
- if err:=tx.QueryRowContext(ctx,"SELECT status FROM sync_runs WHERE run_id=?",x.RunID).Scan(&status);err!=nil{
+ var state string
+ if err:=tx.QueryRowContext(ctx,"SELECT status FROM sync_runs WHERE run_id=?",runID).Scan(&state);err!=nil{
   if errors.Is(err,sql.ErrNoRows){return ErrNotFound};return err
  }
- // A late writer cannot mutate a finished run.
- if status!=StatusRunning{return ErrTerminal}
- res,err:=tx.ExecContext(ctx, "INSERT OR IGNORE INTO sync_items("+itemColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-  x.RunID,x.ID,x.Action,x.Direction,x.Status,x.OldPath,x.NewPath,
-  nullInt(x.LogicalBytes),nullInt(x.TransferredBytes),x.ErrorCode,x.ErrorMessage,x.AppliedAt.UnixNano())
- if err!=nil{return err}
- count,err:=res.RowsAffected();if err!=nil{return err}
- if count==0 {
-  var old Item
-  var logical,transfer sql.NullInt64
-  var ignoredTimestamp int64
-  err=tx.QueryRowContext(ctx,"SELECT "+itemColumns+" FROM sync_items WHERE run_id=? AND item_id=?",x.RunID,x.ID).
-   Scan(&old.RunID,&old.ID,&old.Action,&old.Direction,&old.Status,&old.OldPath,&old.NewPath,
-    &logical,&transfer,&old.ErrorCode,&old.ErrorMessage,&ignoredTimestamp)
+ if state!=StatusRunning{return ErrTerminal}
+ for _,x:=range items {
+  res,err:=tx.ExecContext(ctx,"INSERT OR IGNORE INTO sync_items("+itemColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+   x.RunID,x.ID,x.Action,x.Direction,x.Status,x.OldPath,x.NewPath,
+   nullInt(x.LogicalBytes),nullInt(x.TransferredBytes),x.ErrorCode,x.ErrorMessage,x.AppliedAt.UnixNano())
   if err!=nil{return err}
-  if old.Action!=x.Action || old.Direction!=x.Direction || old.Status!=x.Status ||
-   old.OldPath!=x.OldPath || old.NewPath!=x.NewPath || old.ErrorCode!=x.ErrorCode ||
-   old.ErrorMessage!=x.ErrorMessage || !sameNull(logical,nullInt(x.LogicalBytes)) ||
-   !sameNull(transfer,nullInt(x.TransferredBytes)) {return ErrReceiptConflict}
-  return tx.Commit()
+  count,err:=res.RowsAffected();if err!=nil{return err}
+  if count==0 {
+   var old Item
+   var logical,transfer sql.NullInt64
+   var ignoredTimestamp int64
+   err=tx.QueryRowContext(ctx,"SELECT "+itemColumns+" FROM sync_items WHERE run_id=? AND item_id=?",x.RunID,x.ID).
+    Scan(&old.RunID,&old.ID,&old.Action,&old.Direction,&old.Status,&old.OldPath,&old.NewPath,
+     &logical,&transfer,&old.ErrorCode,&old.ErrorMessage,&ignoredTimestamp)
+   if err!=nil{return err}
+   if old.Action!=x.Action || old.Direction!=x.Direction || old.Status!=x.Status ||
+    old.OldPath!=x.OldPath || old.NewPath!=x.NewPath || old.ErrorCode!=x.ErrorCode ||
+    old.ErrorMessage!=x.ErrorMessage || !sameNull(logical,nullInt(x.LogicalBytes)) ||
+    !sameNull(transfer,nullInt(x.TransferredBytes)) {return ErrReceiptConflict}
+   continue
+  }
+  successful:=x.Status=="completed"
+  hit:=func(action string)int64{if successful && x.Action==action{return 1};return 0}
+  cnt:=func(ok bool)int64{if ok{return 1};return 0}
+  var network sql.NullInt64
+  if successful && (x.Direction=="upload" || x.Direction=="download"){network=nullInt(x.TransferredBytes)}
+  _,err=tx.ExecContext(ctx,
+   "UPDATE sync_runs SET item_count=item_count+1,successful_count=successful_count+?, created_count=created_count+?,updated_count=updated_count+?,deleted_count=deleted_count+?,moved_count=moved_count+?,renamed_count=renamed_count+?,uploaded_count=uploaded_count+?,downloaded_count=downloaded_count+?,skipped_count=skipped_count+?,failed_count=failed_count+?,conflict_count=conflict_count+?,transferred_bytes=CASE WHEN ? IS NULL THEN transferred_bytes ELSE COALESCE(transferred_bytes,0)+? END WHERE run_id=?",
+   cnt(successful),hit("create"),hit("update"),hit("delete"),hit("move"),hit("rename"),
+   cnt(successful&&x.Direction=="upload"),cnt(successful&&x.Direction=="download"),
+   cnt(x.Status=="skipped"),cnt(x.Status=="failed"),cnt(x.Status=="conflict"),
+   network,network,x.RunID)
+  if err!=nil{return err}
  }
- successful:=x.Status=="completed"
- hit:=func(action string)int64{if successful && x.Action==action{return 1};return 0}
- cnt:=func(ok bool)int64{if ok{return 1};return 0}
- var network sql.NullInt64
- if successful && (x.Direction=="upload" || x.Direction=="download"){network=nullInt(x.TransferredBytes)}
- _,err=tx.ExecContext(ctx,
-  "UPDATE sync_runs SET item_count=item_count+1,successful_count=successful_count+?, created_count=created_count+?,updated_count=updated_count+?,deleted_count=deleted_count+?,moved_count=moved_count+?,renamed_count=renamed_count+?,uploaded_count=uploaded_count+?,downloaded_count=downloaded_count+?,skipped_count=skipped_count+?,failed_count=failed_count+?,conflict_count=conflict_count+?,transferred_bytes=CASE WHEN ? IS NULL THEN transferred_bytes ELSE COALESCE(transferred_bytes,0)+? END WHERE run_id=?",
-  cnt(successful),hit("create"),hit("update"),hit("delete"),hit("move"),hit("rename"),
-  cnt(successful&&x.Direction=="upload"),cnt(successful&&x.Direction=="download"),
-  cnt(x.Status=="skipped"),cnt(x.Status=="failed"),cnt(x.Status=="conflict"),
-  network,network,x.RunID)
- if err!=nil{return err}
  return tx.Commit()
 }
 
