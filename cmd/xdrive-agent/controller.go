@@ -137,6 +137,7 @@ type agentController struct {
 	syncActivityMu        sync.Mutex
 	syncActivity          *syncactivity.Store
 	syncActivityKey       string
+	syncActivityPending   map[string][]syncactivity.Item
 	mu                    sync.RWMutex
 	snap                  agentSnapshot
 	snapshotRevision      uint64
@@ -156,6 +157,7 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 		snapshotRevision:   1,
 		snapshotChanged:    make(chan struct{}),
 		transfers:          transfer.NewManager(transfer.DefaultHistoryLimit),
+		syncActivityPending: make(map[string][]syncactivity.Item),
 		historyWriterDone:  make(chan struct{}),
 		updates:            newClientUpdateManager(ctx),
 		thumbnailCache:     newAgentMediaThumbnailCache(agentMediaThumbnailCacheMaxEntries, agentMediaThumbnailCacheMaxBytes),
