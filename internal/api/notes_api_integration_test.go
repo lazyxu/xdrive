@@ -237,6 +237,30 @@ func TestMarkdownNotesMineVersionedAndIOSReadOnly(t *testing.T) {
 	if newIOS.ID != imported.ID || newIOS.Revision != 2 {
 		t.Fatalf("iOS new content did not update stable identity: %+v", newIOS)
 	}
+	// Apple Shortcuts does not always expose a stable native Note identity.
+	// Two same-title/same-body imports without an external_id MUST remain two
+	// independently downloadable read-only snapshots, never title-deduped.
+	manualBody := `{"title":"相同标题","markdown":"# 同一文本","external_id":""}`
+	firstManual := request(t, router, http.MethodPost, "/api/v1/notes/ios/import", a,
+		strings.NewReader(manualBody), http.StatusCreated)
+	secondManual := request(t, router, http.MethodPost, "/api/v1/notes/ios/import", a,
+		strings.NewReader(manualBody), http.StatusCreated)
+	var firstSnapshot, secondSnapshot notesDTO
+	if err := json.Unmarshal(firstManual.Body.Bytes(), &firstSnapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(secondManual.Body.Bytes(), &secondSnapshot); err != nil {
+		t.Fatal(err)
+	}
+	if firstSnapshot.ID == secondSnapshot.ID ||
+		firstSnapshot.NodeID == secondSnapshot.NodeID ||
+		firstSnapshot.Source != meta.NoteSourceIOS ||
+		secondSnapshot.Source != meta.NoteSourceIOS {
+		t.Fatalf("independent Apple Notes snapshots were silently merged: %+v %+v",
+			firstSnapshot, secondSnapshot)
+	}
+	request(t, router, http.MethodGet, "/api/v1/notes/"+firstSnapshot.ID, b,
+		nil, http.StatusNotFound)
 	request(t, router, http.MethodPut, "/api/v1/notes/"+newIOS.ID, a,
 		strings.NewReader(`{"title":"edit backup","markdown":"overwrite","expected_revision":2}`),
 		http.StatusForbidden)
