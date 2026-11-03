@@ -53,6 +53,7 @@ class DriveAppTest {
     private var textPreviewFailuresRemaining = 0
     private var locateLargeFolder = false
     private var locateRangeReads = 0
+    private val locateSearchRequests = AtomicInteger()
     private val locatedFile = DriveNode(1155, 1, "target-155.txt", "file", 12, revision = 2)
     private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
     private var galleryGpsOverviewFixture = false
@@ -465,13 +466,15 @@ class DriveAppTest {
         override suspend fun fileFavorites(accessToken: String) = listOf(
             DriveCollectionItem(DriveNode(7, 1, "favorite.txt", "file", 120), "favorite.txt",
                 listOf(DriveCrumb(1, ""), DriveCrumb(7, "favorite.txt"))))
-        override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage =
-            if (locateLargeFolder) FileSearchPage(listOf(
+        override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage {
+            if (locateLargeFolder) locateSearchRequests.incrementAndGet()
+            return if (locateLargeFolder) FileSearchPage(listOf(
                 DriveCollectionItem(locatedFile, "outdated/path/target-155.txt",
                     listOf(DriveCrumb(888, "stale")))), "")
             else FileSearchPage(listOf(
                 DriveCollectionItem(DriveNode(7, 1, "favorite.txt", "file", 120), "favorite.txt",
                     listOf(DriveCrumb(1, "")))), "")
+        }
         override suspend fun nodeLocation(accessToken: String, nodeId: Long): OwnedNodeLocation {
             check(locateLargeFolder && nodeId == locatedFile.id)
             return OwnedNodeLocation(nodeId, locatedFile.revision, 1, listOf(DriveCrumb(1, "")))
@@ -1121,12 +1124,31 @@ class DriveAppTest {
         locateLargeFolder = true
         startAndLogin()
         compose.onNodeWithTag("files-global-search-input").performTextInput("target")
-        compose.onNodeWithTag("files-global-search-submit").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) {
-            controller.state.value.filesSection == FilesSection.SEARCH &&
-                controller.state.value.collectionLoaded &&
-                controller.state.value.collectionItems.singleOrNull()?.node?.id == 1155L
+        compose.onNodeWithTag("files-global-search-input").assertTextContains("target")
+        compose.onNodeWithTag("files-global-search-submit").assertIsEnabled()
+        // Use the real Search IME action. On a 320dp emulator the keyboard
+        // may cover the button; the separate searchAllFiles test still verifies
+        // the visible button click. No search is automatically replayed.
+        compose.onNodeWithTag("files-global-search-input").performImeAction()
+        try {
+            compose.waitUntil(timeoutMillis = 10_000) {
+                controller.state.value.filesSection == FilesSection.SEARCH &&
+                    controller.state.value.collectionLoaded &&
+                    controller.state.value.collectionItems.singleOrNull()?.node?.id == 1155L
+            }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            // Fixture identifiers only: no user paths or account credentials.
+            val current = controller.state.value
+            throw AssertionError(
+                "Fixture global search never resolved: section=${current.filesSection}, " +
+                    "loaded=${current.collectionLoaded}, loading=${current.loading}, " +
+                    "queryAccepted=${current.searchQuery == "target"}, " +
+                    "resultIds=${current.collectionItems.map { it.node.id }}, " +
+                    "searchRequests=${locateSearchRequests.get()}, errorPresent=${current.error != null}",
+                failure,
+            )
         }
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, locateSearchRequests.get()) }
         compose.onNodeWithTag("files-collection-item-1155", useUnmergedTree = true)
             .performTouchInput { longClick() }
         compose.onNodeWithText("显示所在位置").performClick()
