@@ -1268,6 +1268,9 @@ export default function App({
         setView('remote-pull')
         return
       }
+      // Object-shaped notification intents have already been handled above.
+      // The workspace router accepts only its known string routes.
+      if (typeof target !== 'string') return
       setView(target)
     })
     return () => {
