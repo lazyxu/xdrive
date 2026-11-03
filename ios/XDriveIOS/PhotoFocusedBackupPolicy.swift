@@ -27,6 +27,19 @@ enum XDriveIOSPhotoFocusedBackupPolicy {
             )
     }
 
+    /// An incomplete/unavailable original is a gap in the completed scan
+    /// prefix: continuing to save later windows would skip it on restart.
+    /// Preserve only the last prior fully safe boundary, and recheck that
+    /// window on the next explicitly authorized foreground run.
+    static func canSaveCheckpoint(completedWindow: Int, nextWindow: Int,
+                                  visibleTotal: Int,
+                                  hadUnavailable: Bool) -> Bool {
+        !hadUnavailable && validCheckpoint(
+            completedWindow: completedWindow, nextWindow: nextWindow,
+            visibleTotal: visibleTotal
+        )
+    }
+
     /// Fail closed on edits, Full/Limited scope changes, iCloud behavior,
     /// changed authorized count, malformed offsets or completed libraries.
     /// A trusted scan checkpoint is NOT an original/Server receipt.
