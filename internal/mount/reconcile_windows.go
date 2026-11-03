@@ -827,6 +827,13 @@ func (p *winProvider) applyRemoteFileUpsertPageFast(
 				localModTime: st.ModTime(),
 				localSize:    st.Size(),
 			}
+			// Cloud Files placeholder metadata was applied locally; no
+			// original file bytes were downloaded by this reconciliation.
+			if plan.localExists {
+				p.recordActivity("update", "local", "", snapshot.rel, nil)
+			} else {
+				p.recordActivity("create", "local", "", snapshot.rel, nil)
+			}
 		}
 	}
 
@@ -947,6 +954,7 @@ func (p *winProvider) applyRemoteFileDeletePageFast(
 			return true, err
 		}
 		deleted = append(deleted, snapshot)
+		p.recordActivity("delete", "local", snapshot.rel, "", nil)
 	}
 	p.storeBaselinePathDeletes(deleted)
 	p.pruneTransientState()
