@@ -9,11 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-func isSynologyPullSource(source meta.Source) bool {
-	return source.Direction == meta.SourceDirectionPull &&
-		(source.Kind == synologySourceKind || source.Kind == synologyFilesSourceKind)
-}
-
 var (
 	errSourceManagedDirectoryOccupied = errors.New("managed Source destination is occupied")
 	errSourceManagedAncestorInUse     = errors.New("managed Source ancestor is targeted by another Source")
