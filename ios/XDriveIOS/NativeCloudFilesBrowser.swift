@@ -914,14 +914,36 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .disabled(selecting || model.loading)
                     Divider()
-                    Button { openManagement(for: nil) } label: {
-                        Label("新建文件夹或上传", systemImage: "folder.badge.plus")
+                    Button {
+                        openManagement(for: nil, quickAction: .createFolder)
+                    } label: {
+                        Label("新建文件夹", systemImage: "folder.badge.plus")
                     }
                     .disabled(model.loading || !model.verifiedPage || selecting ||
                               batchTrash.busy || batchTarget.busy ||
                               batchExport.busy || !batchExport.prepared.isEmpty ||
                               login.owner == nil || !activeQuery.isEmpty)
                     .accessibilityIdentifier("native-ios-files-folder-actions")
+                    Button {
+                        openManagement(for: nil, quickAction: .uploadFile)
+                    } label: {
+                        Label("上传文件", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(model.loading || !model.verifiedPage || selecting ||
+                              batchTrash.busy || batchTarget.busy ||
+                              batchExport.busy || !batchExport.prepared.isEmpty ||
+                              login.owner == nil || !activeQuery.isEmpty)
+                    .accessibilityIdentifier("native-ios-files-quick-upload")
+                    Button {
+                        openManagement(for: nil, quickAction: .uploadMultiple)
+                    } label: {
+                        Label("上传多个文件（最多 8 项）", systemImage: "square.stack.3d.up")
+                    }
+                    .disabled(model.loading || !model.verifiedPage || selecting ||
+                              batchTrash.busy || batchTarget.busy ||
+                              batchExport.busy || !batchExport.prepared.isEmpty ||
+                              login.owner == nil || !activeQuery.isEmpty)
+                    .accessibilityIdentifier("native-ios-files-quick-multi-upload")
                     Button {
                         reload()
                     } label: {
@@ -1425,7 +1447,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             owner: owner,
             file: node?.isDirectory == false ? node : nil,
             directory: node?.isDirectory == true ? node : nil,
-            quickAction: node == nil ? nil : quickAction
+            quickAction: quickAction
         )
     }
 
