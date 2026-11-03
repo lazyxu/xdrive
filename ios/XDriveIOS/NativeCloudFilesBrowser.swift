@@ -1382,6 +1382,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             Label("重命名", systemImage: "pencil")
         }
         Button {
+            openManagement(for: entry.node, quickAction: .favorite)
+        } label: {
+            Label("收藏", systemImage: "star")
+        }
+        Button {
             openManagement(for: entry.node, quickAction: .shareLink)
         } label: {
             Label("云端分享链接", systemImage: "link")
