@@ -38,7 +38,8 @@
     };
 
     const all = new Map();
-    for (let page = 1; page <= 3; page++) {
+    const seenPages = new Set();
+    for (let page = 1; ; page++) {
       const html = await read(root + "/actions/workflows/ci.yml?" +
         new URLSearchParams({ query: "branch:master", page }));
       const documentCopy = new DOMParser().parseFromString(html, "text/html");
@@ -50,6 +51,12 @@
       if (!Array.isArray(rows)) {
         throw new Error("第 " + page + " 页缺少 workflowRunsRoute.workflowRuns");
       }
+      if (!rows.length) break;
+      const pageIds = rows.map(run => String(run?.id)).join(",");
+      if (seenPages.has(pageIds)) {
+        throw new Error("GitHub 分页返回重复内容，停止操作，避免漏查");
+      }
+      seenPages.add(pageIds);
       console.log("第 " + page + " 页发现 " + rows.length + " 个 CI Run");
       for (const run of rows) {
         if (run?.branch?.name !== "refs/heads/master" ||
@@ -70,6 +77,13 @@
         });
       }
       if (rows.length < 25) break;
+      // 已足够填满原版 maxRequests，就不再下载更旧的历史页。
+      const queuedOld = [...all.values()].filter(run => run.sha !== head && run.queued);
+      if (queuedOld.length > maxRequests) {
+        console.log("排队中的旧 master CI 已超过单次请求上限 " + maxRequests +
+          "，停止继续翻页");
+        break;
+      }
     }
 
     if (!all.size) throw new Error("没有找到 master CI Run，安全停止");
