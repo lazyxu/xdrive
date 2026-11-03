@@ -72,7 +72,11 @@ private final class PhotoKitRequestGate: @unchecked Sendable {
                 try handle.write(contentsOf: data)
                 byteCount += incoming
             } catch {
-                failure = error
+                // The FileHandle failed to persist SOURCE bytes. This is a
+                // device-wide staging/storage failure, never a single PhotoKit
+                // resource unavailable outcome. The shared backup runner must
+                // abort this window instead of advancing its scan cursor.
+                failure = XDrivePhotoKitExportFailure.storageUnavailable
                 toCancel = requestID
             }
         }
@@ -176,11 +180,18 @@ enum XDrivePhotoKitOriginalExporter {
         // xDrive: never use untrusted PhotoKit filenames to build a path.
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("xdrive-photo-export-" + UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: folder, withIntermediateDirectories: false,
-            attributes: [.posixPermissions: NSNumber(value: 0o700),
-                         .protectionKey: FileProtectionType.complete]
-        )
+        do {
+            try FileManager.default.createDirectory(
+                at: folder, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: NSNumber(value: 0o700),
+                             .protectionKey: FileProtectionType.complete]
+            )
+        } catch {
+            // Disk exhaustion, protected-data denial and filesystem I/O
+            // failures all invalidate the entire staging pass. They must not
+            // be counted as one missing original while later items advance.
+            throw XDrivePhotoKitExportFailure.storageUnavailable
+        }
         var staged: [XDriveStagedPhotoKitResource] = []
         do {
             for (index, entry) in selected.enumerated() {
@@ -226,7 +237,12 @@ enum XDrivePhotoKitOriginalExporter {
     private static func writeResource(_ resource: PHAssetResource, to url: URL,
                                       options: PHAssetResourceRequestOptions,
                                       maximumBytes: Int64) async throws -> Int64 {
-        let handle = try FileHandle(forWritingTo: url)
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forWritingTo: url)
+        } catch {
+            throw XDrivePhotoKitExportFailure.storageUnavailable
+        }
         defer { try? handle.close() }
         let manager = PHAssetResourceManager.default()
         let gate = PhotoKitRequestGate(manager: manager, handle: handle,
@@ -247,7 +263,13 @@ enum XDrivePhotoKitOriginalExporter {
             gate.cancel()
         }
         try Task.checkCancellation()
-        try handle.synchronize()
+        do {
+            try handle.synchronize()
+        } catch {
+            // A completed PhotoKit callback is not a durable original if
+            // the staged bytes failed to sync to device storage.
+            throw XDrivePhotoKitExportFailure.storageUnavailable
+        }
         return copied
     }
 }
