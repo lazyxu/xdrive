@@ -289,6 +289,33 @@ func VerifySelection(dir string,m *Manifest,selection []string,extractDir string
 	}
 	return nil
 }
+// SnapshotSelection copies the candidate's exact signed archives into a
+// private directory BEFORE verification or Docker mutation. A group-writable
+// Web upload staging area can change concurrently; no part of the install is
+// allowed to read that live directory again after its snapshot was admitted.
+func SnapshotSelection(sourceDir,targetDir string,m *Manifest,selection []string)error{
+	if err:=os.Mkdir(targetDir,0700);err!=nil{return err}
+	for _,component:=range selection {
+		p,ok:=m.Packages[component];if !ok{return fail("invalid component selected")}
+		input,info,err:=SafeFile(filepath.Join(sourceDir,p.Filename));if err!=nil{return err}
+		if info.Size()!=p.Size {input.Close();return fail("offline staged archive size differs: %s",component)}
+		target:=filepath.Join(targetDir,p.Filename)
+		output,err:=os.OpenFile(target,os.O_CREATE|os.O_EXCL|os.O_WRONLY,0600)
+		if err!=nil{input.Close();return err}
+		hash:=sha256.New()
+		n,copyErr:=io.Copy(io.MultiWriter(output,hash),input)
+		readCloseErr:=input.Close()
+		writeCloseErr:=output.Close()
+		if copyErr!=nil{return copyErr}
+		if readCloseErr!=nil{return readCloseErr}
+		if writeCloseErr!=nil{return writeCloseErr}
+		if n!=p.Size || hex.EncodeToString(hash.Sum(nil))!=p.SHA256 {
+			return fail("offline staged archive SHA-256 differs: %s",component)
+		}
+	}
+	return nil
+}
+
 func VerifyArchive(filename string,p Package,extractDir string)error{
 	f,info,err:=SafeFile(filename);if err!=nil{return err}
 	defer f.Close()
