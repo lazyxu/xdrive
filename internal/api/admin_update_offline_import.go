@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"sort"
+	"time"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -138,6 +140,21 @@ func (s *Server) adminCreateOfflineUpdateImport(c *gin.Context) {
 		return
 	}
 	defer root.Close()
+	entries, err := root.ReadDir(".")
+	if err != nil {
+		offlineImportError(c, err)
+		return
+	}
+	active := 0
+	for _, entry := range entries {
+		if offlineImportIDPattern.MatchString(entry.Name()) {
+			active++
+		}
+	}
+	if active >= 24 {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too_many_offline_imports"})
+		return
+	}
 	var id string
 	for attempts := 0; attempts < 4; attempts++ {
 		var random [16]byte
@@ -596,3 +613,93 @@ func (s *Server) adminFinalizeOfflineUpdateFile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"name": name, "state": "ready"})
 }
 
+
+// A persistent catalog makes a created Host import recoverable after a browser
+// refresh. No host filesystem path is accepted or disclosed by this endpoint.
+func (s *Server) adminListOfflineUpdateImports(c *gin.Context) {
+	root, err := s.offlineUpdateImportRoot()
+	if err != nil {
+		offlineImportError(c, err)
+		return
+	}
+	defer root.Close()
+	entries, err := root.ReadDir(".")
+	if err != nil {
+		offlineImportError(c, err)
+		return
+	}
+	type item struct {
+		ID         string    `json:"id"`
+		ModifiedAt time.Time `json:"modified_at"`
+	}
+	items := make([]item, 0)
+	for _, entry := range entries {
+		if !offlineImportIDPattern.MatchString(entry.Name()) {
+			continue
+		}
+		info, err := root.Lstat(entry.Name())
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		items = append(items, item{ID: entry.Name(), ModifiedAt: info.ModTime().UTC()})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].ModifiedAt.After(items[j].ModifiedAt)
+	})
+	if len(items) > 24 {
+		items = items[:24]
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+// Deletion is deliberately limited to a known staging namespace. Unknown
+// host-preplaced paths and nested directories are never recursively removed.
+func (s *Server) adminDeleteOfflineUpdateImport(c *gin.Context) {
+	s.offlineUpdateImportMu.Lock()
+	defer s.offlineUpdateImportMu.Unlock()
+	if offlineImportBusy(s) {
+		c.JSON(http.StatusConflict, gin.H{"error": "update_in_progress"})
+		return
+	}
+	root, err := s.offlineUpdateImportRoot()
+	if err != nil {
+		offlineImportError(c, err)
+		return
+	}
+	defer root.Close()
+	id := c.Param("id")
+	session, err := openOfflineImport(root, id)
+	if err != nil {
+		offlineImportError(c, err)
+		return
+	}
+	entries, err := session.ReadDir(".")
+	_ = session.Close()
+	if err != nil {
+		offlineImportError(c, err)
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		base := strings.TrimSuffix(strings.TrimSuffix(name, ".upload.json"), ".part")
+		if !offlineImportAllowedFile(base) || entry.IsDir() {
+			c.JSON(http.StatusConflict, gin.H{"error": "offline_import_contains_unmanaged_data"})
+			return
+		}
+	}
+	// Root.Remove is path-contained, and refuses a directory with unexpected
+	// children. A failed partial cleanup is safe to retry.
+	for _, entry := range entries {
+		if err := root.Remove(id + "/" + entry.Name()); err != nil {
+			offlineImportError(c, err)
+			return
+		}
+	}
+	if err := root.Remove(id); err != nil {
+		offlineImportError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Status(http.StatusNoContent)
+}
