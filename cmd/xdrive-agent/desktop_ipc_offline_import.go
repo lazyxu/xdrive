@@ -78,7 +78,7 @@ func (h *desktopIPCHandler) offlineImport(w http.ResponseWriter,r *http.Request)
 		}
 		w.Header().Set("Cache-Control","no-store")
 		w.WriteHeader(http.StatusNoContent)
-	case r.Method=="POST" && id!="" && name!="" && r.PathValue("index")=="":
+	case r.Method=="POST" && id!="" && name!="" && r.PathValue("index")=="" && !strings.HasSuffix(r.URL.Path,"/finalize"):
 		var input struct{
 			Name string `json:"name"`
 			Size int64 `json:"size"`
