@@ -7,6 +7,7 @@ import type { XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 export const XDRIVE_WORKSPACE_ROUTE_TITLES = {
   overview: '主页',
   files: '文件',
+  notes: '备忘录',
   gallery: '图库',
   shares: '分享中心',
   'device-backup': '设备备份',

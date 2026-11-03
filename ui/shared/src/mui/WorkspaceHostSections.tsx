@@ -7,6 +7,7 @@ import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
+import NotesRoundedIcon from '@mui/icons-material/NotesRounded'
 import {
   xDriveDiagnosticsSidebarDestination,
   xDriveSettingsSidebarDestination,
@@ -22,6 +23,7 @@ export function xDriveWorkspaceHostSections({
   diagnosticsAriaLabel = 'xDrive 辅助功能',
   includeUtilityRoutes = true,
   showShareCenter = false,
+  showNotes = false,
 }: {
   adminRoleVerified?: boolean
   conflictCount?: number
@@ -30,6 +32,8 @@ export function xDriveWorkspaceHostSections({
    * Host-only utility pages have not been migrated to the browser. */
   includeUtilityRoutes?: boolean
   showShareCenter?: boolean
+  /** Available only with a verified Notes domain port for the current Owner. */
+  showNotes?: boolean
 } = {}): XDriveSidebarSectionModel[] {
   return [
     {
@@ -37,6 +41,11 @@ export function xDriveWorkspaceHostSections({
       placement: 'before-core',
       items: [{ key: 'overview', label: xDriveWorkspaceRouteTitle('overview'), icon: <DashboardRoundedIcon fontSize="small" /> }],
     },
+    ...(showNotes ? [{
+      key: 'notes',
+      placement: 'after-core' as const,
+      items: [{ key: 'notes', label: xDriveWorkspaceRouteTitle('notes'), icon: <NotesRoundedIcon fontSize="small" /> }],
+    }] : []),
     ...(showShareCenter ? [{
       key: 'shares',
       placement: 'after-core' as const,
