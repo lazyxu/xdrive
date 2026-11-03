@@ -20,7 +20,8 @@ test('native Photos exposes explicit Owner/Root/Device BG consent and honest sta
   assert.match(ui, /state\.revokePending/);
   assert.match(ui, /background\.serverVerified/);
   assert.match(ui, /强制退出后不保证运行/);
-  assert.match(ui, /每次最多新增 1 个原件/);
+  assert.ok(ui.includes('每次最多新增 \\(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件'),
+    'native BG consent must display the same bounded upload cap as the runner');
   assert.match(ui, /backgroundEnableOwner = login\.owner/);
   assert.match(ui, /backgroundDisableOwner = login\.owner/);
   assert.match(ui, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/);
@@ -83,7 +84,8 @@ test('mutable root revision is not identity; BGTask remains bounded and fail-clo
   assert.match(task, /UIApplication\.shared\.isProtectedDataAvailable/);
   assert.match(task, /XDriveIOSOriginalRunGate\.shared\.acquire\(\)/);
   assert.match(task, /XDriveIOSForegroundPhotoBackupMVP\(/);
-  assert.match(task, /maximumNewOriginals: 1/);
+  assert.match(task, /maximumNewOriginals: min\\(\\s*XDriveIOSBGOriginalWindowStore\\.maximumNewOriginalsPerRun,\\s*XDriveIOSForegroundPhotoBackupMVP\\.maxNewOriginalsPerRun\\s*\\)/);
+  assert.match(read('ios/XDriveIOS/BGOriginalWindowStore.swift'), /static let maximumNewOriginalsPerRun = 4/);
   assert.match(task, /progress\.needsReview == 0/);
   assert.doesNotMatch(control, /document\.cookie|window\.webkit|UserDefaults|grantSecret|deviceToken/);
 });
