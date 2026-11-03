@@ -40,7 +40,11 @@ func (p *winProvider) deferActivity(runID string) {
 // Bytes transmitted by a resumable/CAS upload cannot be inferred from file
 // length, so this receipt intentionally leaves transferred_bytes unknown.
 func (p *winProvider) recordActivity(action,direction,oldPath,newPath string,logicalBytes *int64) {
- if p.activityRunID=="" || p.activityOwner=="" {return}
+ if p.activityOwner=="" {return}
+ if p.activityRunID=="" && p.activityTrigger!="" {
+  p.beginActivity(p.activityTrigger)
+ }
+ if p.activityRunID=="" {return}
  emitEvent(Event{
   Kind:EventSyncItemCommitted,RunID:p.activityRunID,ActivityOwner:p.activityOwner,
   ItemID:uuid.NewString(),Action:action,Direction:direction,
