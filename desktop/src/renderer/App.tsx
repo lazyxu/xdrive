@@ -209,6 +209,10 @@ export default function App({
     { service: 'baidu-map'; tab: 'verify' } | undefined
   >(undefined)
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
+  const sourceRunFocusSequenceRef = useRef(0)
+  const [sourceRunFocus, setSourceRunFocus] = useState<{
+    sourceID: number; runID: string; server: string; username: string; requestID: number
+  } | null>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -1202,6 +1206,22 @@ export default function App({
     })
     const unsubscribeNavigate = window.xdriveDesktop.onNavigate((target) => {
       if (!active) return
+      if (typeof target === 'object' && target?.kind === 'source-run') {
+        if (!Number.isSafeInteger(target.sourceID) || target.sourceID <= 0 ||
+            typeof target.runID !== 'string' || !target.runID) return
+        sourceRunFocusSequenceRef.current += 1
+        setSourceRunFocus({ ...target, requestID: sourceRunFocusSequenceRef.current })
+        setTransferPopoverOpen(false)
+        setView('remote-pull')
+        return
+      }
+      if (target === 'sync-activity') {
+        // The completion notification must open the persistent Task Center,
+        // not the existing quick-transfer popover shortcut.
+        setTransferPopoverOpen(false)
+        setView('transfers')
+        return
+      }
       if (target === 'settings' || target === 'settings-update') {
         setSettingsOpen(true)
         if (target === 'settings-update') {
@@ -2977,6 +2997,12 @@ export default function App({
       remotePullPage: agent.hello?.capabilities.includes('external-sources')
         ? {
     directionFilter: "pull",
+    focusedRun: sourceRunFocus &&
+      sourceRunFocus.server === status?.server &&
+      sourceRunFocus.username === status?.username
+        ? { sourceID: sourceRunFocus.sourceID, runID: sourceRunFocus.runID,
+            requestID: sourceRunFocus.requestID }
+        : undefined,
     adapter: sourceManagerAdapter,
     defaultTargetLabel: "我的文件",
     defaultTargetPath: "",
