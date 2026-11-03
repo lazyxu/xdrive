@@ -23,7 +23,10 @@ test('one native Files modal opens from the current real page and reanchors afte
   assert.match(browser, /model\.entries\.contains\(where: \{ \$0\.node == next \}\)/);
   assert.match(browser, /lastViewedFile = next/);
   assert.match(browser, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/);
-  assert.match(browser, /private func suspendVisibleRange\(\) \{\s*guard selectedFile == nil else \{ return \}/);\n  assert.match(browser, /if let saved = rememberedPosition\(\) \{\s*offset = saved\.pageOffset\s*pendingNavigationReturnNodeID = saved\.nodeID/);\n  assert.match(browser, /model\.invalidate\(\)\s*\}\s*var body: some View/);\n  assert.match(browser, /\.onDisappear \{ suspendVisibleRange\(\) \}/);
+  assert.match(browser, /private func suspendVisibleRange\(\) \{\s*guard selectedFile == nil else \{ return \}/);
+  assert.match(browser, /if let saved = rememberedPosition\(\) \{\s*offset = saved\.pageOffset\s*pendingNavigationReturnNodeID = saved\.nodeID/);
+  assert.match(browser, /model\.invalidate\(\)\s*\}\s*var body: some View/);
+  assert.match(browser, /\.onDisappear \{ suspendVisibleRange\(\) \}/);
 });
 
 test('native image/video/PDF/audio/text viewers share one read-only lifecycle', () => {
