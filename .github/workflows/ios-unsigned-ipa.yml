@@ -266,6 +266,16 @@ jobs:
       - name: Verify native cloud Live Photo original pair add-to-Photos
         run: node --test desktop/tests/ios-native-photoasset-live-original-restore.cjs
 
+      - name: Verify native bounded PhotoKit metadata filename/date/media search
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoSearchQueryPolicy.swift \
+            ios/tests/NativePhotoSearchQueryPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-local-photo-search"
+          "$RUNNER_TEMP/xdrive-ios-local-photo-search"
+          node --test desktop/tests/ios-native-photo-metadata-search.cjs
+
       - name: Verify native whole-library PhotoKit calendar jump policy
         run: |
           set -euo pipefail
