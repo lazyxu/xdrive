@@ -99,4 +99,14 @@ func (c *agentController) captureMountSyncActivity(event mount.Event){
  if err!=nil && !errors.Is(err,syncactivity.ErrTerminal){
   log.Printf("xDrive sync activity receipt unavailable (%s): %v",event.Kind,err)
  }
+ if err==nil && event.Kind!=mount.EventSyncStarted &&
+  event.Kind!=mount.EventSyncItemCommitted &&
+  time.Since(c.syncActivityPrunedAt)>=24*time.Hour {
+  now:=time.Now().UTC()
+  if cleanupErr:=store.Prune(ctx,now);cleanupErr!=nil {
+   log.Printf("xDrive sync activity retention cleanup failed: %v",cleanupErr)
+  } else {
+   c.syncActivityPrunedAt=now
+  }
+ }
 }
