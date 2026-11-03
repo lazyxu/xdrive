@@ -2,11 +2,11 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"mime/multipart"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -56,7 +56,9 @@ func TestMarkdownNotesMineVersionedAndIOSReadOnly(t *testing.T) {
 		&meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{},
 		&meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{},
 		&meta.AuditEvent{}, &meta.FileOperation{}, &meta.NotesNamespace{}, &meta.Note{},
-	); err != nil { t.Fatal(err) }
+	); err != nil {
+		t.Fatal(err)
+	}
 	for _, sql := range []string{
 		"CREATE UNIQUE INDEX idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL",
 		"CREATE UNIQUE INDEX idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL",
@@ -71,7 +73,7 @@ func TestMarkdownNotesMineVersionedAndIOSReadOnly(t *testing.T) {
 	}
 	router := (&Server{
 		DB: db, Store: store,
-		Auth: auth.New("notes-crud-test-secret", time.Hour),
+		Auth:       auth.New("notes-crud-test-secret", time.Hour),
 		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost",
 		MaxUploadBytes: 10 << 20,
 	}).Router()
@@ -103,7 +105,9 @@ func TestMarkdownNotesMineVersionedAndIOSReadOnly(t *testing.T) {
 	}
 	res = request(t, router, http.MethodGet,
 		"/api/v1/notes?source=mine&q=%E6%A3%80%E7%B4%A2%E8%AF%8D6702", a, nil, http.StatusOK)
-	var found struct { Items []notesDTO `json:"items"` }
+	var found struct {
+		Items []notesDTO `json:"items"`
+	}
 	if err := json.Unmarshal(res.Body.Bytes(), &found); err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +117,9 @@ func TestMarkdownNotesMineVersionedAndIOSReadOnly(t *testing.T) {
 	res = request(t, router, http.MethodGet,
 		"/api/v1/notes?source=mine&q=%E6%A3%80%E7%B4%A2%E8%AF%8D6702",
 		b, nil, http.StatusOK)
-	var others struct { Items []notesDTO `json:"items"` }
+	var others struct {
+		Items []notesDTO `json:"items"`
+	}
 	if err := json.Unmarshal(res.Body.Bytes(), &others); err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +129,9 @@ func TestMarkdownNotesMineVersionedAndIOSReadOnly(t *testing.T) {
 	res = request(t, router, http.MethodGet,
 		"/api/v1/notes?source=ios_notes&q=%E6%A3%80%E7%B4%A2%E8%AF%8D6702",
 		a, nil, http.StatusOK)
-	var otherSource struct { Items []notesDTO `json:"items"` }
+	var otherSource struct {
+		Items []notesDTO `json:"items"`
+	}
 	if err := json.Unmarshal(res.Body.Bytes(), &otherSource); err != nil {
 		t.Fatal(err)
 	}
@@ -139,10 +147,10 @@ func TestMarkdownNotesMineVersionedAndIOSReadOnly(t *testing.T) {
 	}
 	imageRes := submitNoteImage(t, router, a, "/api/v1/notes/mine/"+mine.ID+"/images", imageBytes.Bytes(), http.StatusCreated)
 	var picture struct {
-		NodeID uint64 `json:"node_id"`
+		NodeID   uint64 `json:"node_id"`
 		Filename string `json:"filename"`
-		Path string `json:"relative_path"`
-		Bytes int64 `json:"bytes"`
+		Path     string `json:"relative_path"`
+		Bytes    int64  `json:"bytes"`
 	}
 	if err := json.Unmarshal(imageRes.Body.Bytes(), &picture); err != nil {
 		t.Fatal(err)
@@ -152,7 +160,7 @@ func TestMarkdownNotesMineVersionedAndIOSReadOnly(t *testing.T) {
 		!strings.HasSuffix(picture.Filename, ".png") {
 		t.Fatalf("invalid immutable Notes picture receipt: %+v", picture)
 	}
-	path := "/api/v1/notes/"+mine.ID+"/images/"+picture.Filename
+	path := "/api/v1/notes/" + mine.ID + "/images/" + picture.Filename
 	imageRead := request(t, router, http.MethodGet, path, a, nil, http.StatusOK)
 	if !bytes.Equal(imageRead.Body.Bytes(), imageBytes.Bytes()) {
 		t.Fatal("Notes image read returned different bytes")
@@ -196,7 +204,7 @@ func TestMarkdownNotesMineVersionedAndIOSReadOnly(t *testing.T) {
 	var history struct {
 		Items []struct {
 			Revision uint64 `json:"revision"`
-			SHA256 string `json:"sha256"`
+			SHA256   string `json:"sha256"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(res.Body.Bytes(), &history); err != nil {

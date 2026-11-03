@@ -173,7 +173,9 @@ func (s *Server) saveNote(c *gin.Context, source, requestedID string) {
 			if err := tx.Create(&meta.File{
 				NodeID: node.ID, Size: staged.size,
 				StorageKey: key, SHA256: staged.hash,
-			}).Error; err != nil { return err }
+			}).Error; err != nil {
+				return err
+			}
 			note.NodeID = node.ID
 			if err := tx.Create(&note).Error; err != nil {
 				return err
@@ -193,10 +195,14 @@ func (s *Server) saveNote(c *gin.Context, source, requestedID string) {
 		var node meta.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("File").
 			Where("owner_id = ? AND id = ? AND deleted_at IS NULL", uid, note.NodeID).
-			First(&node).Error; err != nil { return errNoteNotFound }
+			First(&node).Error; err != nil {
+			return errNoteNotFound
+		}
 		if node.ParentID == nil || *node.ParentID != parentID ||
-			node.Name != note.ID + ".md" || node.Type != meta.NodeTypeFile ||
-			node.File == nil { return errNotesNamespaceCorrupt }
+			node.Name != note.ID+".md" || node.Type != meta.NodeTypeFile ||
+			node.File == nil {
+			return errNotesNamespaceCorrupt
+		}
 		if requestedID != "" && node.Revision != req.ExpectedRevision {
 			return errNoteRevisionConflict
 		}
@@ -218,12 +224,16 @@ func (s *Server) saveNote(c *gin.Context, source, requestedID string) {
 				NodeID: node.ID, Revision: node.Revision, Size: node.File.Size,
 				StorageKey: node.File.StorageKey, SHA256: node.File.SHA256,
 				CreatedAt: now,
-			}).Error; err != nil { return err }
+			}).Error; err != nil {
+				return err
+			}
 			if err := tx.Model(&meta.File{}).Where("node_id = ?", node.ID).
 				Updates(map[string]any{
 					"size": staged.size, "storage_key": key,
 					"sha256": staged.hash, "updated_at": now,
-				}).Error; err != nil { return err }
+				}).Error; err != nil {
+				return err
+			}
 			node.File = &meta.File{
 				NodeID: node.ID, Size: staged.size, StorageKey: key, SHA256: staged.hash,
 			}
@@ -240,7 +250,9 @@ func (s *Server) saveNote(c *gin.Context, source, requestedID string) {
 		}
 		if err := tx.Model(&meta.Note{}).
 			Where("id = ? AND owner_id = ? AND source = ? AND deleted_at IS NULL", note.ID, uid, source).
-			Updates(map[string]any{"title": title, "search_text": req.Markdown, "updated_at": now}).Error; err != nil { return err }
+			Updates(map[string]any{"title": title, "search_text": req.Markdown, "updated_at": now}).Error; err != nil {
+			return err
+		}
 		note.Title = title
 		note.UpdatedAt = now
 		node.Revision++
@@ -280,7 +292,9 @@ func (s *Server) deleteMyNote(c *gin.Context) {
 		var note meta.Note
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", id, uid).
-			First(&note).Error; err != nil { return errNoteNotFound }
+			First(&note).Error; err != nil {
+			return errNoteNotFound
+		}
 		if note.Source != meta.NoteSourceMine {
 			return errNoteSourceReadOnly
 		}
@@ -295,7 +309,9 @@ func (s *Server) deleteMyNote(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
 				note.NodeID, uid, ns.MineNodeID, note.ID+".md").
-			First(&node).Error; err != nil { return errNoteNotFound }
+			First(&node).Error; err != nil {
+			return errNoteNotFound
+		}
 		if node.Revision != expected {
 			return errNoteRevisionConflict
 		}
@@ -343,7 +359,9 @@ func (s *Server) deleteMyNote(c *gin.Context) {
 		}
 		if err := tx.Model(&meta.Note{}).
 			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", id, uid).
-			Update("deleted_at", &now).Error; err != nil { return err }
+			Update("deleted_at", &now).Error; err != nil {
+			return err
+		}
 		return tx.Model(&meta.Node{}).
 			Where("id = ? AND owner_id = ? AND revision = ?", node.ID, uid, expected).
 			Updates(map[string]any{
@@ -357,4 +375,3 @@ func (s *Server) deleteMyNote(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
-

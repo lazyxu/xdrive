@@ -65,7 +65,8 @@ func notesImageType(filename string) (string, bool) {
 		return "image/webp", true
 	case "heic":
 		return "image/heic", true
-	default: return "", false
+	default:
+		return "", false
 	}
 }
 
@@ -199,12 +200,12 @@ func (s *Server) uploadNoteImage(c *gin.Context, source string) {
 	committed = true
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusCreated, gin.H{
-		"node_id": asset.ID,
-		"filename": assetName,
+		"node_id":       asset.ID,
+		"filename":      assetName,
 		"relative_path": notesAssetsDirectory + "/" + id + "/" + assetName,
-		"content_type": mime,
-		"sha256": digest,
-		"bytes": len(data),
+		"content_type":  mime,
+		"sha256":        digest,
+		"bytes":         len(data),
 	})
 }
 

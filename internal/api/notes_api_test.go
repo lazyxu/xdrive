@@ -7,8 +7,8 @@ import (
 
 func TestNoteMarkdownInputAndPaginationPolicy(t *testing.T) {
 	tests := []struct {
-		name string
-		req notesWriteRequest
+		name  string
+		req   notesWriteRequest
 		valid bool
 	}{
 		{name: "chinese title and markdown", req: notesWriteRequest{

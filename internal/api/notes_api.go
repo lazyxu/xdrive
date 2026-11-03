@@ -18,11 +18,11 @@ const notesMaximumMarkdownBytes = 1 << 20
 const notesListPageSize = 50
 
 var (
-	errNoteNotFound = errors.New("note not found")
-	errNoteSourceReadOnly = errors.New("iOS backed up notes are read-only")
+	errNoteNotFound         = errors.New("note not found")
+	errNoteSourceReadOnly   = errors.New("iOS backed up notes are read-only")
 	errNoteNamespaceMissing = errors.New("notes namespace is not initialized")
 	errNoteRevisionConflict = errors.New("note revision conflict")
-	errNoteInvalidContent = errors.New("invalid note title or Markdown")
+	errNoteInvalidContent   = errors.New("invalid note title or Markdown")
 )
 
 type notesWriteRequest struct {
@@ -111,7 +111,7 @@ func (s *Server) loadOwnedNote(uid uint64, id string) (meta.Note, meta.Node, err
 		return meta.Note{}, meta.Node{}, errNoteNotFound
 	}
 	if node.ParentID == nil || *node.ParentID != expectedParent ||
-		node.Name != note.ID + ".md" {
+		node.Name != note.ID+".md" {
 		return meta.Note{}, meta.Node{}, errNoteNotFound
 	}
 	return note, node, nil
@@ -140,7 +140,7 @@ func (s *Server) listNotes(c *gin.Context) {
 		stmt = stmt.Where("(title ILIKE ? OR search_text ILIKE ?)", needle, needle)
 	}
 	var notes []meta.Note
-	if err := stmt.Order("updated_at DESC, id DESC").Offset(offset).Limit(notesListPageSize+1).
+	if err := stmt.Order("updated_at DESC, id DESC").Offset(offset).Limit(notesListPageSize + 1).
 		Find(&notes).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "read notes failed")
 		return
@@ -271,4 +271,3 @@ func noteWriteError(c *gin.Context, err error) {
 		fail(c, http.StatusInternalServerError, "note write failed")
 	}
 }
-
