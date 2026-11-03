@@ -513,13 +513,26 @@ func TestNonLocalSourceWritesPreserveOwnerJWTCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	targetID := root.ID
+	// Keep this owner-JWT compatibility test, but use a real Yike managed
+	// target. The Owner root is not a Source-owned directory and 5B must
+	// never rename it just because a synthetic Source points there.
+	syncRoot := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
+	connector := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, yikeTargetConnectorName)
+	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "uid_12345_Pull owner JWT")
+	targetID := target.ID
 	source := meta.Source{OwnerID: owner.ID, Name: "Pull owner JWT", Kind: "yike_photos", Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1, TargetNodeID: &targetID}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
 	url := fmt.Sprintf("/api/v1/sources/%d", source.ID)
 	requestWithHeaders(t, router, http.MethodPatch, url, ownerJWT, strings.NewReader("{\"name\":\"Pull updated\"}"), http.StatusOK, map[string]string{"If-Match": "\"1\""})
+	var renamed meta.Node
+	if err := db.First(&renamed, target.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if renamed.Name != "uid_12345_Pull updated" || renamed.Revision != target.Revision+1 {
+		t.Fatalf("Owner JWT Yike rename did not atomically update the real target: %+v", renamed)
+	}
 	request(t, router, http.MethodPost, url+"/trigger", ownerJWT, nil, http.StatusAccepted)
 	requestWithHeaders(t, router, http.MethodDelete, url, ownerJWT, nil, http.StatusNoContent, map[string]string{"If-Match": "\"2\""})
 }
