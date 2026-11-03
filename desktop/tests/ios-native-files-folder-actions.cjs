@@ -15,7 +15,9 @@ test('native Files folder has separate accessible management action while preser
   assert.match(browser, /NavigationLink\(value: XDriveIOSNativeFilesFolder\(/)
   assert.match(browser, /openManagement\(for: entry\.node\)/)
   assert.match(browser, /native-ios-files-folder-more-/)
-  assert.match(browser, /Button\("文件夹操作"\) \{ openManagement\(for: entry\.node\) \}/)
+  // Apple Files-style row keeps management accessible in the verified long-press menu.
+  assert.match(browser, /Label\("显示简介", systemImage: "info\.circle"\)/)
+  assert.match(browser, /\.contextMenu \{[\s\S]*?nativeQuickActions\(for: entry\)/)
   assert.match(browser, /directory: node\?\.isDirectory == true \? node : nil/)
   assert.match(browser, /file: node\?\.isDirectory == false \? node : nil/)
   assert.match(browser, /directory: intent\.directory/)

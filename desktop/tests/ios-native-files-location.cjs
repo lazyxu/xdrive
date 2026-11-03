@@ -12,7 +12,8 @@ const server = read('internal/api/node_location.go')
 const position = read('internal/api/children_position.go')
 
 test('native Files search has bounded actual Server parent location from list and grid', () => {
-  assert.match(browser, /Button \{ requestLocation\(for: entry\) \}/)
+  assert.match(browser, /requestLocation\(for: entry\)/)
+  assert.match(browser, /Label\("显示位置", systemImage: "folder\.badge\.questionmark"\)/)
   assert.match(browser, /native-ios-files-locate-/)
   assert.match(browser, /private func requestLocation\(for entry: XDriveIOSNativeFilesEntry\)/)
   assert.match(browser, /model\.verifiedPage,[\s\S]*?!activeQuery\.isEmpty, !selecting/)
@@ -22,13 +23,16 @@ test('native Files search has bounded actual Server parent location from list an
   assert.match(browser, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/)
 })
 
-test('native Files locate buttons stay inside concrete rows before the context menu modifier', () => {
+test('native Files location remains in the long-press context menu without a permanent row button', () => {
   const start = browser.indexOf('@ViewBuilder private func fileEntryRow(')
   const end = browser.indexOf('private var filesContinuousStatus:', start)
   assert.ok(start >= 0 && end > start, 'native Files row must exist')
   const row = browser.slice(start, end)
-  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*nativeQuickActions\(for: entry\)\s*Button\("文件夹操作"\)/)
-  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*nativeQuickActions\(for: entry\)\s*Button\("文件操作"\)/)
+  assert.equal((row.match(/requestLocation\\(for: entry\\)/g) || []).length, 2)
+  assert.equal((row.match(/Label\\("显示位置", systemImage: "folder\\.badge\\.questionmark"\\)/g) || []).length, 2)
+  assert.match(row, /\\.contextMenu \\{[\\s\\S]*?nativeQuickActions\\(for: entry\\)/)
+  assert.doesNotMatch(row, /Image\\(systemName: "ellipsis\\.circle"\\)/)
+  assert.match(row, /native-ios-files-locate-/)
 })
 
 test('location is a server-confirmed Owner path, not guessed search-hit text', () => {
