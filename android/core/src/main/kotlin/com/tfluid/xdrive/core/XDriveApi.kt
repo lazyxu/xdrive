@@ -707,7 +707,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         if (raw.size > 50) invalidPayload()
         val items = raw.map { notesRow(it as? JsonObject ?: invalidPayload()) }
         val nextOffset = data.long("next_offset")
-        if (nextOffset < 0 || (nextOffset != 0 && nextOffset != offset + 50) ||
+        if (nextOffset < 0 || (nextOffset != 0L && nextOffset != offset.toLong() + 50L) ||
             items.any { it.source != source } ||
             items.map { it.id }.toSet().size != items.size) invalidPayload()
         return OwnerNotesPage(items, nextOffset.toInt())
