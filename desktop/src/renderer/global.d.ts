@@ -214,7 +214,7 @@ declare global {
   type AgentServerUpdateState = {
     supported: boolean
     state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
-    source: 'github' | 'gitlab' | 'xdrive'
+    source: 'github' | 'gitlab' | 'xdrive' | 'offline'
     channel: 'stable' | 'master'
     request_id?: string
     stage?: string
@@ -229,6 +229,23 @@ declare global {
     finished_at?: string
     runner_heartbeat_at?: string
   }
+
+  type AgentOfflineImportSummary = { id: string; modified_at: string }
+  type AgentOfflineImportFile = {
+    name: string
+    state: 'ready' | 'uploading'
+    size: number
+    uploaded_bytes: number
+    upload_sha256?: string
+  }
+  type AgentOfflineImportStatus = {
+    id: string
+    chunk_bytes: number
+    files: AgentOfflineImportFile[]
+    ready_to_verify: boolean
+  }
+  type AgentOfflineImportCreated = { id: string; chunk_bytes: number }
+  type AgentOfflineImportFinalized = { name: string; state: 'ready'; upload_sha256: string }
 
   type AgentUpdateState = {
     mode: AgentUpdateMode
@@ -1081,6 +1098,17 @@ declare global {
         ) => Promise<DesktopResult<AgentCloudSearchRange>>
         cloudQuota: (requestID?: string) => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
+        offlineImportList: () => Promise<DesktopResult<{ items: AgentOfflineImportSummary[] }>>
+        offlineImportCreate: () => Promise<DesktopResult<AgentOfflineImportCreated>>
+        offlineImportGet: (id: string) => Promise<DesktopResult<AgentOfflineImportStatus>>
+        offlineImportRegister: (id: string, name: string, size: number, sha?: string) =>
+          Promise<DesktopResult<{ ok: boolean }>>
+        offlineImportChunk: (id: string, name: string, index: number, bytes: ArrayBuffer, sha: string) =>
+          Promise<DesktopResult<{ ok: boolean }>>
+        offlineImportFinalize: (id: string, name: string) => Promise<DesktopResult<AgentOfflineImportFinalized>>
+        offlineImportDelete: (id: string) => Promise<DesktopResult<null>>
+        offlineImportActivate: (id: string, manifest: string, binary: string, backup: boolean) =>
+          Promise<DesktopResult<AgentServerUpdateState>>
         startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
         cloudStorageStats: (requestID?: string) => Promise<DesktopResult<AgentCloudStorageStats>>
         cloudCleanupStorageCache: (kind: AgentStorageCacheCleanupKind) => Promise<DesktopResult<AgentStorageCacheCleanup>>

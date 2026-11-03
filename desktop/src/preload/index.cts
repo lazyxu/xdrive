@@ -970,6 +970,18 @@ const agent = Object.freeze({
   ),
   cloudQuota: (requestID?: string) => ipcRenderer.invoke('agent:cloud-quota', requestID),
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
+  offlineImportList: () => ipcRenderer.invoke('agent:offline-import-list'),
+  offlineImportCreate: () => ipcRenderer.invoke('agent:offline-import-create'),
+  offlineImportGet: (id: string) => ipcRenderer.invoke('agent:offline-import-get', id),
+  offlineImportRegister: (id: string, name: string, size: number, sha = '') =>
+    ipcRenderer.invoke('agent:offline-import-register', id, name, size, sha),
+  offlineImportChunk: (id: string, name: string, index: number, bytes: ArrayBuffer, sha: string) =>
+    ipcRenderer.invoke('agent:offline-import-chunk', id, name, index, bytes, sha),
+  offlineImportFinalize: (id: string, name: string) =>
+    ipcRenderer.invoke('agent:offline-import-finalize', id, name),
+  offlineImportDelete: (id: string) => ipcRenderer.invoke('agent:offline-import-delete', id),
+  offlineImportActivate: (id: string, manifest: string, binary: string, backup: boolean) =>
+    ipcRenderer.invoke('agent:offline-import-activate', id, manifest, binary, backup),
   startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
     ipcRenderer.invoke('agent:start-server-update', source, channel, backupFileData),
   cloudStorageStats: (requestID?: string) => ipcRenderer.invoke('agent:cloud-storage-stats', requestID),
