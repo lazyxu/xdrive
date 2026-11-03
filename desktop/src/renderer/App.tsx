@@ -455,11 +455,11 @@ export default function App({
     if (!deviceBackupSource || !localFolderGrantSupported ||
       !agent.hello?.capabilities.includes('external-sources')) return undefined
     return {
-      create: async (name: string, targetNodeID: number) => {
+      create: async (name: string, _unusedTargetNodeID: number) => {
         const created = await sourceManagerAdapter.createSource({
           name, kind: 'local_folder', direction: 'push',
           sync_mode: 'backup', run_mode: 'sync', schedule_type: 'manual',
-          target_node_id: targetNodeID, ignore_rules: '',
+          target_node_id: 0, auto_target: true, ignore_rules: '',
         })
         return { id: created.id, revision: created.revision }
       },
