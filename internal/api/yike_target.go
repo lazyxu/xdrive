@@ -233,10 +233,9 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 			if currentAccountID != accountID {
 				return errYikeAccountMismatch
 			}
-			desiredLeaf, err := yikeManagedTargetLeaf(accountID, identity.AccountName)
-			if err != nil {
-				return err
-			}
+			// Credential refresh must never overwrite the Owner-controlled
+			// Source/target name with a changed remote account nickname.
+			desiredLeaf := currentTarget.Name
 			desiredParent, err := ensureYikeManagedParentTx(ctx, tx, source.OwnerID)
 			if err != nil {
 				return err
