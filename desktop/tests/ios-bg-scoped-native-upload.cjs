@@ -42,3 +42,28 @@ test('BG-specific URL policy matches only the protected Go aliases', () => {
   assert.doesNotMatch(native, /URLSessionConfiguration\.background\(/,
     'long-lived tokens must not travel in OS-replayed background URLSession')
 })
+
+test('staged file read failure stops the original scan without bypassing the sealed ACK journal', () => {
+  const writer = read('ios/XDriveIOS/IOSJournaledOriginalUpload.swift')
+  const runner = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const transport = native.slice(native.indexOf('private func uploadInternally('),
+    native.indexOf('private func statusFor('))
+  const hash = native.slice(native.indexOf('private func localSize('),
+    native.indexOf('private func sha('))
+  const readFailures = [transport, hash].join('\n')
+  assert.match(native, /case localStorageUnavailable/)
+  assert.equal((readFailures.match(/throw XDriveNativeUploadError\.localStorageUnavailable/g) || []).length,
+    5, 'the five local size/open/read/seek filesystem error paths must stop work')
+  assert.match(transport, /let fileSize = try localSize\(stagedFileURL\)[\s\S]*?let hashes = try fileHashes\(stagedFileURL, expectedSize: fileSize\)[\s\S]*?hooks\.beforeCreate\(\)/)
+  assert.match(transport, /do \{\s*try file\.seek\(toOffset: UInt64\(start\)\)\s*chunk = try file\.read\(upToCount: bytes\)\s*\} catch \{\s*throw XDriveNativeUploadError\.localStorageUnavailable/)
+  assert.match(hash, /do \{\s*attributes = try FileManager\.default\.attributesOfItem\(atPath: url\.path\)\s*\} catch \{\s*throw XDriveNativeUploadError\.localStorageUnavailable/)
+  assert.match(hash, /do \{\s*chunk = try file\.read\(upToCount: Self\.chunkBytes\)\s*\} catch \{\s*throw XDriveNativeUploadError\.localStorageUnavailable/)
+  const catchWriter = writer.slice(writer.indexOf('        } catch {', writer.indexOf('let hooks = XDriveNativeUploadCheckpointHooks(')))
+  const mark = catchWriter.indexOf('ledger.markUnknown(')
+  const typed = catchWriter.indexOf('case .localStorageUnavailable = storage')
+  assert.ok(mark >= 0 && typed > mark, 'uncertain remote write is journaled before translating storage failure')
+  assert.match(catchWriter, /throw XDrivePhotoKitExportFailure\.storageUnavailable/)
+  assert.match(runner, /case \.storageUnavailable = source \{\s*return true/)
+  assert.match(runner, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
+  assert.doesNotMatch(writer, /retryUpload|retryFinalize|clearLedger|removePersistentDomain/)
+});
