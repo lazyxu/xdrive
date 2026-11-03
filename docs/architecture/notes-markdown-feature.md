@@ -41,7 +41,7 @@ Owner 的文件根目录下：
 | Web/PWA 共享 Notes UI、Markdown、图片手动导入 | #3704、#3708、#3752 | 浏览器真实文件夹导入、断线恢复、多设备验收 |
 | iOS 原生、快捷指令文字、手动 Markdown/图片 | #3707、#3717 | iPhone 实机、快捷指令稳定 ID 配置、图片/历史实际读写验收 |
 | Android 原生 | #3720 | 原生图片插入能力与设备端验收；不能仅以 Markdown 文本编辑通过宣称完整 |
-| Desktop | #3724（Go Notes Client） | #3725 Agent Notes IPC 与 #3726 Electron/Renderer 尚未合入；图片专用传输缺口 |
+| Desktop | #3724（Go Notes Client）、#3725（Agent Notes IPC） | #3726 Electron/Renderer 尚未合入；图片专用传输缺口 |
 | DSM | 共用 XDriveApp 的基础架构已存在 | Notes 专用认证 CGI/Agent Host 数据接口、Owner 会话门禁与完整页面接线未完成 |
 
 适用 CI 与 Final Gate 均绿色、GitHub 无冲突且满足合并保护规则时才能合入 master；不以 master 单纯前进为理由重跑已经完成的有效 PR CI。正在运行或已验证通过的 PR 不重写 HEAD、不取消有效 CI；只有真实失败、兼容性或安全问题需要修复时才介入。iPhone/Android/DSM 真机行为没有实际执行必须记为「未验收」，不能以代码存在或 CI 通过替代。
