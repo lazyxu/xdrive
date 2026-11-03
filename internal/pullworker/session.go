@@ -68,6 +68,9 @@ func BeginRunSession(
 	if err != nil {
 		return nil, err
 	}
+	// Only the Server worker may mint an exact active SourceRun write
+	// capability. Ordinary Owner sessions do not get this scope.
+	api.SetSourceRun(source.ID, run.ID)
 	runCtx, cancel := context.WithCancel(ctx)
 	api.SetCancelRun(cancel)
 	go watchRunCancellation(
