@@ -202,8 +202,13 @@ struct XDriveIOSNativeFilesLocateScreen: View {
             if let target = model.target,
                XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner) {
                 if target.folder.id == openedOwner.rootNodeID {
+                    // The default Files tab now shows Locations. A located
+                    // root child must open the cloud location itself, never
+                    // the Browse landing page, to restore its verified row.
                     XDriveIOSNativeFilesBrowser(
-                        login: login, initialOffset: target.offset, focus: selected
+                        login: login, folderID: openedOwner.rootNodeID,
+                        folderName: "xDrive 云端",
+                        initialOffset: target.offset, focus: selected
                     )
                 } else {
                     XDriveIOSNativeFilesBrowser(
