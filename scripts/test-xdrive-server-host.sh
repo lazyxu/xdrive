@@ -373,7 +373,7 @@ for rejected in bad-id bad-manifest missing-trust; do
       --trusted-manifest-sha256 "$trusted_manifest" --trusted-installer-sha256 "$trusted_installer" >"$TMP/offline-$rejected.out" 2>"$TMP/offline-$rejected.err"; rc=$? ;;
     bad-manifest) TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
       bash "$HOST" update --source offline --channel master --offline-id "$offline_id" \
-      --trusted-manifest-sha256 "${trusted_manifest//a/b}" --trusted-installer-sha256 "$trusted_installer" >"$TMP/offline-$rejected.out" 2>"$TMP/offline-$rejected.err"; rc=$? ;;
+      --trusted-manifest-sha256 "0000000000000000000000000000000000000000000000000000000000000000" --trusted-installer-sha256 "$trusted_installer" >"$TMP/offline-$rejected.out" 2>"$TMP/offline-$rejected.err"; rc=$? ;;
     missing-trust) TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
       bash "$HOST" update --source offline --channel master --offline-id "$offline_id" >"$TMP/offline-$rejected.out" 2>"$TMP/offline-$rejected.err"; rc=$? ;;
   esac

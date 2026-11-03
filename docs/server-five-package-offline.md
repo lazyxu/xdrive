@@ -105,5 +105,37 @@ container. Do not claim this corner case solved before a real test.
 
 Offline mode refuses unverified bytes and forbids new Docker image pulls.
 For a first-time public domain, DNS-01 certificate issuance still requires
-access to the DNS provider. Offline package metadata and code are currently
-in an open PR, not yet a published or physically validated distribution.
+access to the DNS provider. Immutable offline manifests and component packages are now published through
+the offline GitHub Actions workflow. Publication and release hashes do not
+establish that a particular host has successfully upgraded; physical activation
+and rollback acceptance remain separate.
+
+## Fixed-identity Host import (UI and CLI share the same executor)
+
+Server administrators may stage the existing five-component Manifest release in
+`~/.xd/state/update-imports/<32-lowercase-hex-import-id>/`. The directory
+contains `manifest.json`, `xdrive-offline.py` and only the needed immutable
+component archives, plus optionally `delivery.json` and
+`delivery-attestation.jsonl`. The Host never resolves a free-form path from an
+admin request.
+
+```bash
+xdrive-server update --source offline --channel master \
+  --offline-id 0123456789abcdef0123456789abcdef \
+  --trusted-manifest-sha256 "$TRUSTED_MANIFEST_SHA256" \
+  --trusted-installer-sha256 "$TRUSTED_INSTALLER_SHA256"
+```
+
+The two SHA-256 values must come from an independent authenticated channel,
+not from checksums on the same untrusted drive. If the trusted Share verifier
+and Sigstore root are configured and signed delivery metadata is provided, the
+Host verifies release, manifest and installer publisher signatures and derives
+both hashes instead; an invalid signed delivery cannot fall back to manual
+hashes. Both paths then invoke the same authenticated `xdrive-offline.py
+verify/install` and existing xDrive transactional installer used by the Share
+provider. Files are reverified before import; no Docker or network pull occurs
+during a rejected preflight. This command does not install a Desktop APK/IPA
+or use DSM SPK update semantics.
+
+The pending browser/Host-controlled directory import UI uses this same CLI
+Host authority rather than embedding a second installation engine.

@@ -151,6 +151,16 @@ No user content is stored under `state/`. The `state/photo-face` runtime directo
 
 ## Host update control bridge
 
+The approved `offline` update request is an **additional transport** of
+the existing administrator Host Control update transaction. It may carry only a
+fixed 32-character hex import ID and, for manual trust, two 64-character
+independently trusted SHA-256 digests. Neither Server nor Desktop Renderer may
+supply a Host path, command, Docker socket or arbitrary URL. Host Control
+independently revalidates the request, and the signed or pinned offline installer
+still owns all image, backup, health and rollback gates.
+
+
+
 Web and Desktop may request a server update only through the authenticated administrator API. The API container does **not** execute Docker commands and does **not** receive `/var/run/docker.sock`.
 
 The supported flow is:

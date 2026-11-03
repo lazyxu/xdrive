@@ -149,7 +149,7 @@ test('host control reuses transactional xdrive-server update and installer progr
   assert.ok(hostControl.includes('update_args=(update --source "$source" --channel "$channel")'), 'host control must reuse xdrive-server update')
   assert.ok(hostControl.includes('update_args+=(--backup-file-data)'), 'host control must forward the file-data backup option')
   assert.ok(hostControl.includes('"backup_file_data":%s'), 'host control status must preserve the file-data backup mode')
-  assert.ok(hostControl.includes('case "$source" in github|gitlab|xdrive)'), 'host runner source whitelist missing')
+  assert.ok(hostControl.includes('case "$source" in github|gitlab|xdrive|offline)'), 'host runner source whitelist missing')
   assert.ok(hostControl.includes('case "$channel" in stable|master)'), 'host runner channel whitelist missing')
   assert.ok(hostControl.includes('heartbeat'), 'host runner heartbeat missing')
   assert.ok(hostControl.includes('exec 9>&-'), 'host runner must drop inherited installer lock fd')
