@@ -133,9 +133,12 @@
         "页面待处理标记:", renderedActive,
         "内嵌状态待处理:", embeddedActive);
       if (mismatch.length || renderedActive || embeddedActive) {
-        console.warn("第 " + page + " 页不能确认全部终态：",
-          mismatch.map(run => ({ id: run.id, status: run.state?.status,
-            timing: run.timing?.text, kind: run.timing?.kind })));
+        console.warn("第 " + page +
+          " 页存在 Queued/运行中迹象，不计为终态页；原始状态如下：");
+        console.table(rows.map(run => ({
+          runId: run.id, status: run.state?.status,
+          timing: run.timing?.text, kind: run.timing?.kind
+        })));
       }
 
       // 连续两个完整页面都确认为终态时才停止；任何矛盾均重置。
