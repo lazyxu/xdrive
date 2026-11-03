@@ -60,14 +60,20 @@ if IFS= read -r -t 0.1 leaked; then
   exit 97
 fi
 output=""
+preflight=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --output-dir) output="$2"; shift 2 ;;
     --config-dir) shift 2 ;;
     --leave-server-stopped) shift ;;
+    --preflight-only) preflight=1; shift ;;
     *) shift ;;
   esac
 done
+if [[ "$preflight" == 1 ]]; then
+  echo "[xDrive] Server identity and /data source admitted (read-only)."
+  exit 0
+fi
 dir="$output/xdrive-backup-pipe-test"
 mkdir -p "$dir"
 printf "%s\n" "$dir"
