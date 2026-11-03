@@ -67,18 +67,18 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 		return err
 	}
 	p := &winProvider{
-		cli:        cli,
-		root:       root,
-		baseline:   map[string]winState{},
-		hydrated:   map[uint64]time.Time{},
-		accessed:   map[uint64]time.Time{},
-		policy:     newSyncPolicy(opts),
-		cacheLimit: opts.CacheLimitBytes,
-		cacheGrace: 30 * time.Second,
-		statePath:  strings.TrimSpace(opts.StatePath),
-		manualSync: make(chan struct{}, 1),
-		retrySync:  make(chan chan error),
-		transfers:  opts.Transfers,
+		cli:           cli,
+		root:          root,
+		baseline:      map[string]winState{},
+		hydrated:      map[uint64]time.Time{},
+		accessed:      map[uint64]time.Time{},
+		policy:        newSyncPolicy(opts),
+		cacheLimit:    opts.CacheLimitBytes,
+		cacheGrace:    30 * time.Second,
+		statePath:     strings.TrimSpace(opts.StatePath),
+		manualSync:    make(chan struct{}, 1),
+		retrySync:     make(chan chan error),
+		transfers:     opts.Transfers,
 		activityOwner: opts.ActivityOwner,
 	}
 	activeWinProvider.Lock()
