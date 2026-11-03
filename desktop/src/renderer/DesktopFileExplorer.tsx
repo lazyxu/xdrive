@@ -312,12 +312,18 @@ export default function DesktopFileExplorer({
     onFeedback: (message) => onFeedback('good', message),
     onChanged: onTrashChanged,
   })
-  const loadSourceOptions = useCallback(async (): Promise<XDriveFileExplorerSearchSourceOption[]> => {
+  const loadSourceOptions = useCallback(async () => {
     const result = await hostPort.browse.getSources()
     if (!result.ok) throw new Error('当前 Agent 无法读取文件搜索来源。')
-    return xDriveFileExplorerProjectSearchSources(result.data)
+    const projected = xDriveFileExplorerProjectSearchSources(result.data)
+    const byID = new Map(result.data.map((source) => [source.id, source]))
+    return projected.map((entry) => ({
+      ...entry,
+      direction: byID.get(entry.id)?.direction,
+      target_node_id: byID.get(entry.id)?.target_node_id,
+    }))
   }, [hostPort])
-  const { options: searchSourceOptions } = useXDriveFileExplorerOwnerSourceOptions({
+  const { options: searchSourceOptions, managedEntries: managedSourceEntries } = useXDriveFileExplorerOwnerSourceOptions({
     host: hostPort,
     ownerKey: navigationSessionStorageKey ?? '',
     read: loadSourceOptions,
@@ -2269,6 +2275,15 @@ const desktopTransferLifecycleChildBatchSize = 1000
           <XDriveFileExplorerNavigationPane
             lifecycleKey={navigationSessionStorageKey ?? ''}
             currentCrumbs={crumbs}
+            managedSourceEntries={managedSourceEntries}
+            onNavigateManagedSource={(entry) => {
+              onCloseTrash()
+              const navigationIntentID = beginNavigationIntent()
+              void quickAccess.navigate(
+                entry.targetNodeID,
+                (nextCrumbs) => navigateTo(nextCrumbs, true, navigationIntentID),
+              )
+            }}
             trashActive={trashActive}
             onNavigateTrash={() => {
               beginNavigationIntent()
