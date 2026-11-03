@@ -1356,7 +1356,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     /// Context-menu shortcuts route through the existing Owner-scoped
-    /// management screen; no mutation is committed by pressing a menu item.
+    /// management screen. Favorite is an explicit idempotent action; deletion,
+    /// rename and transfers still require their existing user confirmation.
     @ViewBuilder private func nativeQuickActions(for entry: XDriveIOSNativeFilesEntry)
         -> some View {
         if !entry.node.isDirectory {
