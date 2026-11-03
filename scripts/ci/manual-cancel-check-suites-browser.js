@@ -101,7 +101,7 @@
       }
       // GitHub 的 state.status、timing.kind 和 timing.text 可能不同步。
       // 任何一个来源表明仍在排队/等待/运行，都不能计为终态。
-      const active = /QUEUED|PENDING|WAITING|IN[_\\s-]*PROGRESS|RUNNING|STARTING/i;
+      const active = /QUEUED|PENDING|WAITING|IN[_\s-]*PROGRESS|RUNNING|STARTING/i;
       const isActive = run => active.test([
         run?.state?.status, run?.timing?.kind, run?.timing?.text
       ].filter(Boolean).join(" "));
@@ -122,10 +122,10 @@
         const label = String(node.getAttribute?.("aria-label") ||
           node.getAttribute?.("title") || "").trim();
         return ((node.childElementCount === 0 && text.length < 40 &&
-          /^(Queued|Pending|Waiting|Running|In[\\s-]*progress)$/i.test(text)) ||
-          /^(Queued|Pending|Waiting|Running|In[\\s-]*progress)$/i.test(label));
+          /^(Queued|Pending|Waiting|Running|In[\s-]*progress)$/i.test(text)) ||
+          /^(Queued|Pending|Waiting|Running|In[\s-]*progress)$/i.test(label));
       }).length;
-      const embeddedActive = /"text"\\s*:\\s*"(?:Queued|Pending|Waiting|Running|In[\\s-]*progress)"/i
+      const embeddedActive = /"text"\s*:\s*"(?:Queued|Pending|Waiting|Running|In[\s-]*progress)"/i
         .test(html);
 
       console.log("第 " + page + " 页状态:", statusCounts,
