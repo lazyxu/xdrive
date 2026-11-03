@@ -36,14 +36,18 @@ func (c *agentController) captureMountSyncActivity(event mount.Event){
   if err==nil {
    if c.syncActivityPending==nil{c.syncActivityPending=make(map[string][]syncactivity.Item)}
    c.syncActivityPending[event.RunID]=nil
+   delete(c.syncActivityLost,event.RunID)
   }
  case mount.EventSyncItemCommitted:
   if c.syncActivityPending==nil {return}
   buffered,ok:=c.syncActivityPending[event.RunID]
   if !ok{return}
+  if c.syncActivityLost[event.RunID] {return}
   if len(buffered)>=500 {
-   // Never grow an unbounded in-memory backlog after a disk error.
-   log.Printf("xDrive sync activity buffer is full for run %s",event.RunID)
+   // Lost receipts must permanently downgrade the run to interrupted.
+   // Otherwise the UI could falsely imply its history is trustworthy.
+   c.syncActivityLost[event.RunID]=true
+   log.Printf("xDrive sync activity item buffer full for run %s",event.RunID)
    return
   }
   receipt:=syncactivity.Item{
@@ -56,15 +60,28 @@ func (c *agentController) captureMountSyncActivity(event mount.Event){
   c.syncActivityPending[event.RunID]=buffered
   if len(buffered)==500 {
    err=store.AppendBatch(ctx,buffered)
-   if err==nil{c.syncActivityPending[event.RunID]=nil}
+   if err==nil{
+    c.syncActivityPending[event.RunID]=nil
+   } else {
+    c.syncActivityLost[event.RunID]=true
+   }
   }
  case mount.EventSyncCompleted,mount.EventSyncDeferred,mount.EventSyncFailed:
+  lost:=c.syncActivityLost[event.RunID]
   if buffered,ok:=c.syncActivityPending[event.RunID];ok && len(buffered)>0 {
    if flushErr:=store.AppendBatch(ctx,buffered);flushErr!=nil{
+    lost=true
     log.Printf("xDrive sync activity terminal batch not durable (%s): %v",event.RunID,flushErr)
    }
   }
   delete(c.syncActivityPending,event.RunID)
+  delete(c.syncActivityLost,event.RunID)
+  if lost {
+   // When any committed item receipt was dropped, the run is not complete,
+   // regardless of a successful file-engine status transition.
+   err=store.Finish(ctx,event.RunID,syncactivity.StatusInterrupted,false)
+   break
+  }
   switch event.Kind {
   case mount.EventSyncCompleted:
    // The Mount code still has mutation paths without receipt coverage.
