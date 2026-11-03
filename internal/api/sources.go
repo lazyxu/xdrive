@@ -752,6 +752,14 @@ func (s *Server) deleteSource(c *gin.Context) {
 	}
 	var currentRevision uint64
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		// Archive is terminal. It cannot transition back to active, so an
+		// authenticated retry after the owning device's Root was removed
+		// must remain harmless even with the old expected revision.
+		var archived struct{ Status string }
+		if err := tx.Model(&meta.Source{}).Select("status").
+			Where("id = ? AND owner_id = ?", id, userID(c)).
+			Take(&archived).Error; err != nil { return err }
+		if archived.Status == meta.SourceStatusArchived { return nil }
 		if err := s.requireLocalSourceMutationTx(tx, c, id); err != nil {
 			return err
 		}
