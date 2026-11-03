@@ -83,9 +83,14 @@ test('disabled native-like Host actions use the same menu and shortcut boundary'
   assert.ok(dsmEntry.includes('const host = createXDriveSynologyHost()') &&
     !dsmEntry.includes('filesUnavailableActions:'),
     'DSM entry must use the authenticated Host adapter instead of a page-local capability list')
-  for (const key of ['copy','cut','paste','delete','moveTo','copyTo','manageTags']) {
+  for (const key of ['copy','cut','paste','moveTo','copyTo','manageTags']) {
     assert.ok(dsm.includes(key + ": 'DSM"), key + ' must be declared only at authenticated DSM Host boundary')
   }
+  assert.equal(dsm.includes("delete: 'DSM"), false, 'single-node Owner trash is authorized')
+  assert.ok(ownerFilesPage.includes('onDeleteItems={selected => {') &&
+    ownerFilesPage.includes('client.ownerDeleteNode(') &&
+    ownerFilesPage.includes('<XDriveConfirmDialog'),
+    'the shared Files delete command must use Owner-scoped confirm and typed Server trash')
   assert.equal(dsm.includes("rename: 'DSM"), false,
     'DSM rename is now provided by its exact-revision authenticated Owner operation')
   assert.ok(ownerFilesPage.includes('onRenameItem={async (item, name) => {'),

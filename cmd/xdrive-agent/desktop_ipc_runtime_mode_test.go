@@ -195,6 +195,7 @@ func TestBackupOnlyCloudFileReadAndExplicitOwnerMutations(t *testing.T) {
 	preview := false
 	createFolder := false
 	renameNode := false
+	deleteNode := false
 	for _, capability := range desktopIPCCapabilitiesForRuntime(true) {
 		if capability == "cloud-files-read" {
 			seen = true
@@ -208,11 +209,14 @@ func TestBackupOnlyCloudFileReadAndExplicitOwnerMutations(t *testing.T) {
 		if capability == "cloud-node-rename" {
 			renameNode = true
 		}
+		if capability == "cloud-node-delete" {
+			deleteNode = true
+		}
 		if capability == "cloud-files" {
 			t.Fatal("Backup-only cannot claim the full FileExplorer capability")
 		}
 	}
-	if !seen || !preview || !createFolder || !renameNode {
+	if !seen || !preview || !createFolder || !renameNode || !deleteNode {
 		t.Fatal("missing bounded Owner files, preview or folder-create capability")
 	}
 	if fullAgentOnlyRequest(http.MethodPost, "/v1/cloud/directories") {
@@ -226,9 +230,12 @@ func TestBackupOnlyCloudFileReadAndExplicitOwnerMutations(t *testing.T) {
 	if fullAgentOnlyRequest(http.MethodPatch, "/v1/cloud/nodes") {
 		t.Fatal("exact Owner node rename must be admitted in Backup-only mode")
 	}
-	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete} {
+	if fullAgentOnlyRequest(http.MethodDelete, "/v1/cloud/nodes") {
+		t.Fatal("exact authenticated single-Owner trash must be admitted in Backup-only mode")
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut} {
 		if !fullAgentOnlyRequest(method, "/v1/cloud/nodes") {
-			t.Fatalf("non-rename Owner cloud operation unexpectedly permitted: %s", method)
+			t.Fatalf("unapproved Owner cloud operation unexpectedly permitted: %s", method)
 		}
 	}
 	for _, route := range []string{"/v1/cloud/root", "/v1/cloud/children", "/v1/cloud/text-preview"} {

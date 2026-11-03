@@ -109,7 +109,7 @@ func TestDSMOwnerNodeDeleteRequiresCurrentPrincipalAndCSRF(t *testing.T) {
 	scope := dsmOwnerScope(key, "dsmadmin", "id=dsm-session",
 		"nas.example:5001", "https://drive.example.com", "owner")
 	body := fmt.Sprintf(
-		"{"id":42,"revision":7,"parent_id":17,"type":"file","name":"report.txt","owner_scope":%q}", scope,
+		`{"id":42,"revision":7,"parent_id":17,"type":"file","name":"report.txt","owner_scope":%q}`, scope,
 	)
 	token := getCSRF(t, g)
 	path := DSMCGIPath + "?op=cloud-delete-node"
@@ -124,7 +124,7 @@ func TestDSMOwnerNodeDeleteRequiresCurrentPrincipalAndCSRF(t *testing.T) {
 		{"foreign Owner", "POST", strings.Replace(body, scope, strings.Repeat("b", 64), 1),
 			"https://nas.example:5001", token, path},
 		{"unrelated query", "POST", body, "https://nas.example:5001", token, path + "&path=/volume1/photo"},
-		{"duplicate revision", "POST", strings.Replace(body, ""revision":7", ""revision":7,"revision":8", 1),
+		{"duplicate revision", "POST", strings.Replace(body, `"revision":7`, `"revision":7,"revision":8`, 1),
 			"https://nas.example:5001", token, path},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -136,7 +136,7 @@ func TestDSMOwnerNodeDeleteRequiresCurrentPrincipalAndCSRF(t *testing.T) {
 	}
 	ok := requestServerLogin(g, "POST", body, "https://nas.example:5001", token, path)
 	if ok.Code != http.StatusOK || owner.writes != 1 ||
-		strings.TrimSpace(ok.Body.String()) != "{"ok":true}" {
+		strings.TrimSpace(ok.Body.String()) != `{"ok":true}` {
 		t.Fatalf("valid Owner trash failed: %d %s", ok.Code, ok.Body.String())
 	}
 	owner.changeAfter = true
@@ -156,7 +156,7 @@ func TestDSMOwnerDeleteOldAgentCannotMutate(t *testing.T) {
 	scope := dsmOwnerScope(key, "dsmadmin", "id=dsm-session",
 		"nas.example:5001", "https://drive.example.com", "owner")
 	body := fmt.Sprintf(
-		"{"id":42,"revision":7,"parent_id":17,"type":"file","name":"report.txt","owner_scope":%q}", scope,
+		`{"id":42,"revision":7,"parent_id":17,"type":"file","name":"report.txt","owner_scope":%q}`, scope,
 	)
 	got := requestServerLogin(g, "POST", body, "https://nas.example:5001",
 		getCSRF(t, g), DSMCGIPath+"?op=cloud-delete-node")
