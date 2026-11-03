@@ -87,18 +87,13 @@ func admittedManagedLocalPushOperationTx(
 		return op, deny
 	}
 	if req.ParentID != nil {
-		if *req.ParentID != targetID || op.TargetParentID == nil ||
-			*op.TargetParentID != targetID || op.TargetNodeID != nil ||
-			req.Name != op.TargetName || req.ExpectedRevision != 0 ||
-			op.ExpectedRevision != 0 || meta.ValidateName(req.Name) != nil {
-			// A parent may also be a nested folder inside the verified root,
-			// checked by requireLocalPushCommonDescendantDirTx below.
-			if op.TargetParentID == nil || *op.TargetParentID != *req.ParentID ||
-				op.TargetNodeID != nil || req.Name != op.TargetName ||
-				req.ExpectedRevision != 0 || op.ExpectedRevision != 0 ||
-				meta.ValidateName(req.Name) != nil {
-				return op, deny
-			}
+		// A parent may be a nested folder inside this Source's managed root,
+		// not just the root itself. The ancestry is verified below.
+		if op.TargetParentID == nil || *op.TargetParentID != *req.ParentID ||
+			op.TargetNodeID != nil || req.Name != op.TargetName ||
+			req.ExpectedRevision != 0 || op.ExpectedRevision != 0 ||
+			meta.ValidateName(req.Name) != nil {
+			return op, deny
 		}
 	} else if req.NodeID == nil || op.TargetNodeID == nil ||
 		*req.NodeID != *op.TargetNodeID ||
