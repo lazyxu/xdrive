@@ -30,6 +30,7 @@ type sourceDTO struct {
 	ScheduleTimezone   string     `json:"schedule_timezone,omitempty"`
 	Revision           uint64     `json:"revision"`
 	TargetNodeID       *uint64    `json:"target_node_id,omitempty"`
+	TargetManaged      bool       `json:"target_managed,omitempty"`
 	TargetPath         string     `json:"target_path,omitempty"`
 	IgnoreRules        string     `json:"ignore_rules,omitempty"`
 	Checkpoint         string     `json:"checkpoint,omitempty"`
@@ -125,7 +126,7 @@ func toSourceDTO(source meta.Source) sourceDTO {
 		ID: source.ID, Name: source.Name, Kind: source.Kind, Direction: source.Direction,
 		SyncMode: source.SyncMode, RunMode: source.RunMode, Status: source.Status,
 		ScheduleType: source.ScheduleType, ScheduleExpression: source.ScheduleExpression, ScheduleTimezone: source.ScheduleTimezone,
-		Revision: source.Revision, TargetNodeID: source.TargetNodeID, IgnoreRules: source.IgnoreRules,
+		Revision: source.Revision, TargetNodeID: source.TargetNodeID, TargetManaged: source.TargetManaged, IgnoreRules: source.IgnoreRules,
 		Checkpoint: source.Checkpoint, LastRunAt: source.LastRunAt, LastSuccessAt: source.LastSuccessAt,
 		LastError: source.LastError, RunRequestedAt: source.RunRequestedAt,
 		CreatedAt: source.CreatedAt, UpdatedAt: source.UpdatedAt,
