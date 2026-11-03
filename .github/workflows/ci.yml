@@ -57,7 +57,7 @@ jobs:
             if git cat-file -e "$PR_HEAD_SHA^{commit}" 2>/dev/null; then
               if candidate="$(python3 scripts/ci/classify_pr_scope.py "$PR_BASE_SHA" "$PR_HEAD_SHA")"; then
                 case "$candidate" in
-                  full|docs|android|pwa) scope="$candidate" ;;
+                  full|docs|android|pwa|offline-release) scope="$candidate" ;;
                   *) echo "::warning title=Unknown CI scope::Using complete CI." ;;
                 esac
               else
@@ -65,7 +65,7 @@ jobs:
               fi
             fi
           fi
-          case "$scope" in full|docs|android|pwa) ;; *) exit 1 ;; esac
+          case "$scope" in full|docs|android|pwa|offline-release) ;; *) exit 1 ;; esac
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
           echo "xDrive CI scope: $scope (unknown or risky paths require full CI)"
 
@@ -188,6 +188,44 @@ jobs:
           set -euo pipefail
           [[ "$PR_COMMITS" =~ ^[1-9][0-9]*$ ]] || exit 1
           echo "PR has $PR_COMMITS commit(s); Squash Merge may retain a linear master."
+
+  # Publisher-only PRs need the exact immutable Share delivery contracts, not
+  # Android, Desktop, Go image builds or signed release publication. On master
+  # and stable tags both jobs run as part of the complete Final Gate.
+  offline-release-tests:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'offline-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Test exact GitHub package selection and Share upload/readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/mirror-server-to-share.py scripts/ci/mirror-clients-to-share.py
+          python3 scripts/ci/test-mirror-clients-to-share.py -q
+          python3 scripts/ci/test-mirror-server-to-share.py -q
+
+  offline-security-contract:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'offline-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify five-package archive, image identity, delivery and signed release
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/offline/build-five-packages.sh
+          python3 -m unittest discover -s scripts/offline -p 'test_*.py'
+          python3 scripts/test-xdrive-share-update.py -q
+          python3 scripts/test-release-attestation-contract.py
 
   desktop-tests:
     needs: pr-scope
@@ -2527,6 +2565,8 @@ jobs:
       - go-windows
       - test-backup-cli-windows
       - server-validation
+      - offline-release-tests
+      - offline-security-contract
       - server-image
       - photo-face-image
       - media-worker-image
@@ -2614,6 +2654,7 @@ jobs:
             if $scope == "docs" then accepted(["policy-contract"])
             elif $scope == "android" then accepted(["android-native"])
             elif $scope == "pwa" then accepted(["web", "desktop-tests"])
+            elif $scope == "offline-release" then accepted(["offline-release-tests", "offline-security-contract"])
             else false end
           ' >/dev/null
           echo "Scoped $CI_SCOPE PR validation passed; master and v* remain full."
