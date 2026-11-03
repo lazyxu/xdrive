@@ -297,6 +297,7 @@ func (s *Server) createSource(c *gin.Context) {
 		ScheduleExpression string `json:"schedule_expression"`
 		ScheduleTimezone   string `json:"schedule_timezone"`
 		TargetNodeID       uint64 `json:"target_node_id"`
+		AutoTarget         bool   `json:"auto_target"`
 		IgnoreRules        string `json:"ignore_rules"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -365,7 +366,14 @@ func (s *Server) createSource(c *gin.Context) {
 			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
 			return
 		}
+	} else if req.AutoTarget {
+		if req.TargetNodeID != 0 {
+			fail(c, http.StatusBadRequest, "auto_target requires target_node_id=0")
+			return
+		}
 	} else {
+		// Legacy clients still submit an explicit target. New first-party
+		// clients request an automatically provisioned private Source root.
 		if req.TargetNodeID == 0 {
 			fail(c, http.StatusBadRequest, "target_node_id is required")
 			return
@@ -397,8 +405,10 @@ func (s *Server) createSource(c *gin.Context) {
 			// Device enrollment and binding are a separate guarded delivery phase.
 			status = meta.SourceStatusPaused
 		}
-		value := req.TargetNodeID
-		target = &value
+		if !req.AutoTarget {
+			value := req.TargetNodeID
+			target = &value
+		}
 	}
 	source := meta.Source{
 		OwnerID: userID(c), Name: req.Name, Kind: req.Kind, Direction: req.Direction,
@@ -424,7 +434,20 @@ func (s *Server) createSource(c *gin.Context) {
 			if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
 				return errLocalSourceCreateDeviceUnauthorized
 			}
-			return tx.Create(&source).Error
+			if err := tx.Create(&source).Error; err != nil {
+				return err
+			}
+			if req.AutoTarget {
+				return bindCreatedManagedTargetTx(c.Request.Context(), tx, &source)
+			}
+			return nil
+		})
+	} else if req.AutoTarget && !isYike {
+		createErr = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&source).Error; err != nil {
+				return err
+			}
+			return bindCreatedManagedTargetTx(c.Request.Context(), tx, &source)
 		})
 	} else {
 		createErr = s.DB.WithContext(c.Request.Context()).Create(&source).Error
@@ -433,6 +456,8 @@ func (s *Server) createSource(c *gin.Context) {
 		switch {
 		case errors.Is(createErr, errLocalSourceCreateDeviceUnauthorized):
 			fail(c, http.StatusForbidden, "owning device credential invalid or revoked")
+		case errors.Is(createErr, errManagedTargetConflict):
+			fail(c, http.StatusConflict, "managed Source target unavailable")
 		case isDuplicate(createErr):
 			fail(c, http.StatusConflict, "source name already exists")
 		default:
@@ -521,6 +546,11 @@ func (s *Server) updateSource(c *gin.Context) {
 			}
 			if count != 0 {
 				return errSourceNameTaken
+			}
+			if name != current.Name && current.TargetNodeID != nil {
+				if err := renameCanonicalManagedSourceTargetTx(c.Request.Context(), tx, current, name); err != nil {
+					return err
+				}
 			}
 			updates["name"] = name
 		}
@@ -637,6 +667,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
+		case errors.Is(err, errManagedTargetConflict):
+			fail(c, http.StatusConflict, "managed Source directory name conflict")
 		case errors.Is(err, errSourceNameTaken), isDuplicate(err):
 			fail(c, http.StatusConflict, "source name already exists")
 		case errors.Is(err, errLocalFolderNotReady):
