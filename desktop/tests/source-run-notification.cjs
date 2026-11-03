@@ -83,7 +83,7 @@ test('mount status notification does not invent successful file transfers', () =
   const message = mountSyncCompletionPresentation()
   assert.match(message.body, /任务中心/)
   assert.match(message.body, /尚未记录/)
-  assert.doesNotMatch(message.body, /已同步 \\d+/)
+  assert.doesNotMatch(message.body, /已同步 \d+/)
 })
 
 test('source-run deep links keep run identity and enforce an account scope', () => {
