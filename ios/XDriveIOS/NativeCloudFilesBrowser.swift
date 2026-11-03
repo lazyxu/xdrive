@@ -657,7 +657,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @ViewBuilder private var filesBatchOperations: some View {
             if selecting {
                 Section("批量操作") {
-                    Text("已选 \(selectedIDs.count) 项（最多 64 项，可跨已加载的目录范围）")
+                    Text("已选 \(selectedIDs.count) 项（最多 200 项，限当前已验证的加载窗口）")
                         .font(.footnote).foregroundStyle(.secondary)
                     if batchExport.busy {
                         ProgressView("正在顺序下载和核对文件…")
@@ -742,10 +742,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .disabled(!canSelectPage || selectedIDs.isEmpty)
                 .accessibilityIdentifier("native-ios-files-batch-move")
                 Menu {
-                    Button("选择已加载的前 64 项") {
+                    Button("选择已加载项目（最多 200 项）") {
                         guard canSelectPage else { return }
                         let remaining = max(
-                            0, XDriveIOSNativeFilesPagePolicy.pageSize - selectedIDs.count
+                            0, XDriveIOSNativeFilesBatchTrashPolicy.maxSelected -
+                                selectedIDs.count
                         )
                         selectedIDs.formUnion(model.entries.filter {
                             !selectedIDs.contains($0.id)
@@ -1098,6 +1099,11 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onChange(of: model.verifiedPage) { now in
             if !now { selectedIDs.removeAll(); selecting = false }
         }
+        .onChange(of: model.entries.map(\.id)) { visibleIDs in
+            // A sliding Owner-verified four-range window can evict old rows.
+            // Never keep an invisible ID in the next batch write request.
+            selectedIDs.formIntersection(visibleIDs)
+        }
         .onChange(of: sort) { _ in reload(resetOffset: true) }
         .onChange(of: order) { _ in reload(resetOffset: true) }
         .onChange(of: model.loading) { loading in
@@ -1129,7 +1135,7 @@ struct XDriveIOSNativeFilesBrowser: View {
               model.entries.contains(where: { $0.node == entry.node }) else { return }
         if selectedIDs.contains(entry.id) {
             selectedIDs.remove(entry.id)
-        } else if selectedIDs.count < XDriveIOSNativeFilesPagePolicy.pageSize {
+        } else if selectedIDs.count < XDriveIOSNativeFilesBatchTrashPolicy.maxSelected {
             selectedIDs.insert(entry.id)
         }
     }
