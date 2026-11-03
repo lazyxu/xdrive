@@ -30,7 +30,9 @@ test('list and grid share verified-page selection, folder navigation, Viewer and
   assert.equal((browser.match(/Button \{ toggleSelection\(entry\) \}/g) || []).length, 2)
   assert.equal((browser.match(/Button \{ openViewer\(entry\) \}/g) || []).length, 2)
   assert.match(browser, /NavigationLink\(value: XDriveIOSNativeFilesFolder\(/)
-  assert.match(browser, /Button \{ openManagement\(for: entry\.node\) \}/)
+  // Management stays in the native long-press context menu, not a permanent row control.
+  assert.match(browser, /\.contextMenu \{[\s\S]*?nativeQuickActions\(for: entry\)/)
+  assert.match(browser, /Label\("显示简介", systemImage: "info\.circle"\)/)
   assert.match(browser, /native-ios-files-folder-more-/)
   assert.match(browser, /native-ios-files-file-/)
   assert.match(browser, /native-ios-files-select-/)
