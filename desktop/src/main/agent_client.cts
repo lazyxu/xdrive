@@ -141,7 +141,7 @@ export type AgentUpdateSource = 'github' | 'gitlab'
 export type AgentServerUpdateState = {
   supported: boolean
   state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
-  source: 'github' | 'gitlab' | 'xdrive'
+  source: 'github' | 'gitlab' | 'xdrive' | 'offline'
   channel: 'stable' | 'master'
   request_id?: string
   stage?: string
@@ -156,6 +156,23 @@ export type AgentServerUpdateState = {
   finished_at?: string
   runner_heartbeat_at?: string
 }
+
+export type AgentOfflineImportSummary = { id: string; modified_at: string }
+export type AgentOfflineImportFile = {
+  name: string
+  state: 'ready' | 'uploading'
+  size: number
+  uploaded_bytes: number
+  upload_sha256?: string
+}
+export type AgentOfflineImportStatus = {
+  id: string
+  chunk_bytes: number
+  files: AgentOfflineImportFile[]
+  ready_to_verify: boolean
+}
+export type AgentOfflineImportCreated = { id: string; chunk_bytes: number }
+export type AgentOfflineImportFinalized = { name: string; state: 'ready'; upload_sha256: string }
 
 export type AgentUpdateState = {
   mode: AgentUpdateMode
@@ -4685,6 +4702,55 @@ export class AgentIPCClient {
     }, 45_000)
   }
 
+  offlineImportList() {
+    return this.request<{ items: AgentOfflineImportSummary[] }>('GET', '/v1/server-offline-imports')
+  }
+
+  offlineImportCreate() {
+    return this.request<AgentOfflineImportCreated>('POST', '/v1/server-offline-imports', {})
+  }
+
+  offlineImportGet(id: string) {
+    return this.request<AgentOfflineImportStatus>('GET',
+      '/v1/server-offline-imports/' + encodeURIComponent(id))
+  }
+
+  offlineImportRegister(id: string, name: string, size: number, sha256 = '') {
+    return this.request<{ ok: true }>('POST',
+      '/v1/server-offline-imports/' + encodeURIComponent(id) +
+        '/files/' + encodeURIComponent(name), { name, size, sha256 })
+  }
+
+  offlineImportChunk(id: string, name: string, index: number, data: ArrayBuffer, sha256: string) {
+    if (data.byteLength === 0 || data.byteLength > 8 * 1024 * 1024) {
+      throw new AgentIPCError('invalid_input', 0, 'Offline chunk exceeds 8 MiB.')
+    }
+    return this.requestBinaryUpload(
+      '/v1/server-offline-imports/' + encodeURIComponent(id) +
+        '/files/' + encodeURIComponent(name) + '/chunks/' + index,
+      data, 120_000, 'application/octet-stream', { 'X-XDrive-Chunk-SHA256': sha256 },
+    )
+  }
+
+  offlineImportFinalize(id: string, name: string) {
+    return this.request<AgentOfflineImportFinalized>('POST',
+      '/v1/server-offline-imports/' + encodeURIComponent(id) +
+        '/files/' + encodeURIComponent(name) + '/finalize', {})
+  }
+
+  offlineImportDelete(id: string) {
+    return this.request<null>('DELETE', '/v1/server-offline-imports/' + encodeURIComponent(id))
+  }
+
+  offlineImportActivate(id: string, manifest: string, binary: string, backup: boolean) {
+    return this.request<AgentServerUpdateState>('POST',
+      '/v1/server-offline-imports/' + encodeURIComponent(id) + '/activate', {
+        trusted_manifest_sha256: manifest,
+        trusted_installer_sha256: binary,
+        backup_file_data: backup,
+      }, 45_000)
+  }
+
   cloudStorageStats(signal?: AbortSignal) {
     return this.request<AgentCloudStorageStats>('GET', '/v1/cloud/storage-stats', undefined, 10_000, signal)
   }
@@ -4912,6 +4978,8 @@ export class AgentIPCClient {
     endpoint: string,
     data: ArrayBuffer,
     timeoutMs = 10_000,
+    contentType = 'image/jpeg',
+    extraHeaders: Record<string, string> = {},
   ): Promise<void> {
     let lastError: unknown
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -4925,7 +4993,8 @@ export class AgentIPCClient {
           headers: {
             Authorization: `Bearer ${discovery.token}`,
             Accept: 'application/json',
-            'Content-Type': 'image/jpeg',
+            'Content-Type': contentType,
+            ...extraHeaders,
           },
           body: data,
           cache: 'no-store',
