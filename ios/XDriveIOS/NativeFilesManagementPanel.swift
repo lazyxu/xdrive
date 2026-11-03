@@ -192,6 +192,16 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                                            value: XDriveIOSNativeFilesDatePolicy.display(date))
                         }
                     }
+                    Section("收藏夹") {
+                        Button("收藏此文件夹") {
+                            favoriteMutation.add(directory, login: login)
+                        }
+                        .disabled(anyBusy)
+                        .accessibilityIdentifier("native-ios-files-add-folder-favorite")
+                        if let status = favoriteMutation.status {
+                            Text(status).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
                     Section("云端分享链接") {
                         Button("管理分享链接") { shareNode = directory }
                             .disabled(anyBusy)
