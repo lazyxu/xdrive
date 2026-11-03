@@ -2,7 +2,6 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import type { DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode, UIEvent } from 'react'
 import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
-import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
 import LabelRoundedIcon from '@mui/icons-material/LabelRounded'
 import ManageSearchRoundedIcon from '@mui/icons-material/ManageSearchRounded'
 import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded'
@@ -44,7 +43,7 @@ import type {
 } from '../../ui/shared/src'
 import {
   XDriveFileExplorerAvailabilityBadge, xDriveFileExplorerMarkThumbnailScrollActivity,
-  XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
+  XDriveCloudRootIcon, XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
   XDriveFileNameDialog, XDriveFilePropertiesDialog, XDriveStatePanel, XDriveMediaDetailsInspector,
   XDriveMobileHeaderNavigation, useXDriveMobileHeaderMode, xDriveFileSupportsThumbnail,
   useXDriveFileExplorerPropertiesController,
@@ -1843,7 +1842,7 @@ export default function MobileFiles(props: Props) {
 
   const pointerDown = (event: ReactPointerEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
     if (event.pointerType === 'touch' && !event.isPrimary) { closeHold(); pointerDrag.cancel(); return }
-    if (event.pointerType !== 'touch' || !event.isPrimary || selectionMode) return
+    if (event.pointerType !== 'touch' || !event.isPrimary) return
     closeHold()
     cancelClickRef.current = false
     const entry = { id: event.pointerId, item, x: event.clientX, y: event.clientY, timer: 0, held: false, moved: false }
@@ -1851,7 +1850,11 @@ export default function MobileFiles(props: Props) {
       if (holdRef.current !== entry) return
       entry.held = true
       cancelClickRef.current = true
-      if (!props.trashActive && !props.searchActive) pointerDrag.begin(event, [item])
+      if (!props.trashActive && !props.searchActive && !selectionLoad) {
+        const source = selectionMode && selected.has(mobileItemKey(item))
+          ? [...selected.values()] : [item]
+        pointerDrag.begin(event, source)
+      }
     }, MOBILE_FILES_HOLD_MS)
     holdRef.current = entry
   }
@@ -2435,7 +2438,7 @@ export default function MobileFiles(props: Props) {
         '&:focus-visible': { outline: '2px solid', outlineColor: IOS_FILES_MOBILE_BLUE } }}>
       <Box sx={{ flexShrink: 0, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {locationKind === 'cloud'
-          ? <CloudRoundedIcon sx={{ color: 'primary.main', fontSize: 32 }} />
+          ? <XDriveCloudRootIcon sx={{ color: 'primary.main', fontSize: 32 }} />
           : locationKind === 'trash'
             ? <DeleteOutlineRoundedIcon sx={{ color: 'text.secondary', fontSize: 31 }} />
             : locationKind === 'smart'
