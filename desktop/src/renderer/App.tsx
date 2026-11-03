@@ -95,6 +95,7 @@ import { desktopOverviewPort } from './desktopOverviewAdapter'
 import { createDesktopMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { desktopShareDialogAdapter } from './fileDialogAdapters'
 import { DesktopSettingsContent } from './DesktopSettingsContent'
+import { DesktopClientUpdatePanel } from './DesktopClientUpdatePanel'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import type {
   XDriveAppearance,
@@ -1242,11 +1243,11 @@ export default function App({
         return
       }
       if (target === 'settings' || target === 'settings-update') {
-        setSettingsOpen(true)
         if (target === 'settings-update') {
-          window.setTimeout(() => {
-            document.getElementById('client-update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          }, 120)
+          setSettingsOpen(false)
+          setView('client-update')
+        } else {
+          setSettingsOpen(true)
         }
         return
       }
@@ -2284,6 +2285,7 @@ export default function App({
     adminRoleVerified: status?.role === 'admin',
     conflictCount: status?.conflict_count,
     diagnosticsAriaLabel: '桌面版辅助功能',
+    includeClientUpdate: true,
     showShareCenter: agent.connected && configured && agent.hello?.capabilities.includes('cloud-files'),
   })
 
@@ -2791,11 +2793,26 @@ export default function App({
   // The shared policy has no Electron IPC or DSM permission of its own.
   const filesHostCapabilities = xDriveFileExplorerHostCapabilities(agent.hello?.capabilities)
   // UI-owned JSX for migrated routes is composed by the shared XDriveAppRouteContent.
+  const desktopClientUpdateProps = {
+    busy, updateSupported, clientUpdate, updateOperationBusy, updateCancelling,
+    updateCancelSupported, updateProgress, currentVersion: status?.version,
+    onUpdateSourceChange: (source: AgentUpdateSource) => { void changeUpdateSource(source) },
+    onUpdateModeChange: (mode: AgentUpdateMode) => { void changeUpdateMode(mode) },
+    onCheckUpdate: () => { void checkClientUpdate() },
+    onDownloadUpdate: () => { void downloadClientUpdate() },
+    onInstallUpdate: () => { void installClientUpdate() },
+    onCancelUpdate: () => { void cancelClientUpdate() },
+  }
+
   // Only authenticated domain data and real Desktop operations are injected.
   const workspaceHost: XDriveWorkspaceHostAdapter = {
     platform: 'desktop',
     adminRoleVerified: status?.role === 'admin',
     services: {
+      clientUpdatePage: {
+        clientUpdateContent: <DesktopClientUpdatePanel {...desktopClientUpdateProps} />,
+        buildInfo: info,
+      },
       shareCenterPage: agent.connected && configured && agent.hello?.capabilities.includes('cloud-files')
         ? desktopShareCenterPort : undefined,
       workspaceAlerts: {
@@ -3107,12 +3124,7 @@ export default function App({
             },
           onOpenStorage: () => setView('local-storage'),
           onOpenSettings: () => setSettingsOpen(true),
-          onOpenUpdateSettings: () => {
-              setSettingsOpen(true)
-              window.setTimeout(() => {
-                document.getElementById('client-update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-              }, 120)
-            },
+          onOpenUpdateSettings: () => { setSettingsOpen(false); setView('client-update') },
           onOpenLogs: () => {
               void run(
                 'open-logs',
@@ -3125,6 +3137,7 @@ export default function App({
       adminUpdatePage: status?.role === 'admin'
         ? {
         updatePort: serverUpdatePort,
+        clientUpdateContent: <DesktopClientUpdatePanel {...desktopClientUpdateProps} />,
         buildInfo: [
           { title: 'Server 构建信息', info: status?.server_build },
           { title: 'Desktop 构建信息', info },
@@ -3328,10 +3341,8 @@ export default function App({
         <XDriveAccountMenuActions
           onClose={() => setAccountMenuAnchor(null)}
           onAbout={() => {
-            setSettingsOpen(true)
-            window.setTimeout(() => {
-              document.getElementById('desktop-build-info')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            }, 120)
+            setSettingsOpen(false)
+            setView('client-update')
           }}
           aboutSecondary={info?.version ? `Desktop ${info.version}` : undefined}
           onLogout={requestLogout}
@@ -3365,7 +3376,7 @@ export default function App({
         <XDriveSettingsDialog
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
-          subtitle="外观、客户端更新、同步生命周期与本地缓存"
+          subtitle="外观、同步生命周期与本地缓存"
           maxWidth="lg"
           appearance={appearance}
           appearanceDisabled={busy === 'appearance'}
@@ -3377,19 +3388,6 @@ export default function App({
             onRestartAgent={() => { void restartAgent() }}
             onStartAtLoginChange={(enabled) => { void changeStartAtLogin(enabled) }}
             onCloseToTrayChange={(enabled) => { void changeCloseToTray(enabled) }}
-            updateSupported={updateSupported}
-            clientUpdate={clientUpdate}
-            updateOperationBusy={updateOperationBusy}
-            updateCancelling={updateCancelling}
-            updateCancelSupported={updateCancelSupported}
-            updateProgress={updateProgress}
-            currentVersion={status?.version}
-            onUpdateSourceChange={(source) => { void changeUpdateSource(source) }}
-            onUpdateModeChange={(mode) => { void changeUpdateMode(mode) }}
-            onCheckUpdate={() => { void checkClientUpdate() }}
-            onDownloadUpdate={() => { void downloadClientUpdate() }}
-            onInstallUpdate={() => { void installClientUpdate() }}
-            onCancelUpdate={() => { void cancelClientUpdate() }}
             settings={settings}
             mountPath={mountPath}
             cacheLimit={cacheLimit}
