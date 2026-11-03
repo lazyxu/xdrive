@@ -7,6 +7,9 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded'
+import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded'
+import type { XDriveFileExplorerManagedSourceEntry } from './FileExplorerOwnerSourceOptions'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
@@ -155,6 +158,8 @@ function loadNavigationSectionState(storageKey: string) {
 export function XDriveFileExplorerNavigationPane({
   lifecycleKey = '',
   currentCrumbs,
+  managedSourceEntries = [],
+  onNavigateManagedSource,
   trashActive = false,
   onNavigateTrash,
   loadDirectoryPage,
@@ -217,6 +222,8 @@ export function XDriveFileExplorerNavigationPane({
 }: {
   lifecycleKey?: string
   currentCrumbs: readonly XDriveFileExplorerNavigationTreeCrumb[]
+  managedSourceEntries?: readonly XDriveFileExplorerManagedSourceEntry[]
+  onNavigateManagedSource?: (entry: XDriveFileExplorerManagedSourceEntry) => void | Promise<void>
   trashActive?: boolean
   onNavigateTrash?: () => void | Promise<void>
   loadDirectoryPage: (
@@ -1170,6 +1177,42 @@ export function XDriveFileExplorerNavigationPane({
         </MenuItem>
       </Menu>
 
+      {onNavigateManagedSource && managedSourceEntries.length > 0 ? (
+        <Box component="nav" aria-label="同步文件夹" sx={{ px: 0.75, py: 0.5 }}>
+          {(['push', 'pull'] as const).map((direction) => {
+            const entries = managedSourceEntries.filter((item) => item.direction === direction)
+            if (entries.length === 0) return null
+            return (
+              <Box key={direction} sx={{ mb: 0.5 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, px: 1.5 }}>
+                  {direction === 'push' ? '设备备份' : '远程拉取'}
+                </Typography>
+                {entries.map((entry) => {
+                  const selected = currentCrumbs.some((crumb) => crumb.id === entry.targetNodeID)
+                  return (
+                    <ListItemButton
+                      key={entry.id}
+                      selected={selected}
+                      data-xdrive-managed-source-id={entry.id}
+                      aria-label={direction === 'push' ? '打开设备备份：' + entry.name : '打开远程拉取：' + entry.name}
+                      onClick={() => { void onNavigateManagedSource(entry) }}
+                      sx={{ minHeight: compactViewport ? 44 : 32, py: 0.25, pl: compactViewport ? 6.75 : 4.5,
+                        pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
+                    >
+                      {direction === 'push'
+                        ? <CloudUploadRoundedIcon sx={{ fontSize: 19, color: 'text.secondary' }} />
+                        : <CloudDownloadRoundedIcon sx={{ fontSize: 19, color: 'text.secondary' }} />}
+                      <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: selected ? 600 : 400 }}>
+                        {entry.name}
+                      </Typography>
+                    </ListItemButton>
+                  )
+                })}
+              </Box>
+            )
+          })}
+        </Box>
+      ) : null}
       {onNavigateTrash ? (
           <Box component="nav" aria-label="回收站" sx={{ px: 0.75, py: 0.5 }}>
             <ListItemButton
