@@ -188,6 +188,9 @@ func (s *Server) createFileShare(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	if access == shareAccessViewUpload && managedSourceWritePreflight(c, s.DB, userID(c), node.ID, false) {
+		return
+	}
 	now := time.Now()
 	if req.ExpiresAt != nil && !req.ExpiresAt.After(now) {
 		fail(c, http.StatusBadRequest, "expires_at must be in the future")
