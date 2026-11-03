@@ -81,7 +81,7 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	}
 	defer dbSQL.Close()
 	if err := db.AutoMigrate(
-		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.Source{},
+		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.Source{}, &meta.SyncRun{},
 		&meta.SourceItem{}, &meta.ClientDevice{}, &meta.LocalSourceBinding{},
 		&meta.LocalPushQuotaHold{}, &meta.UploadSession{}, &meta.UploadPart{},
 		&meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{},
@@ -503,4 +503,3 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		t.Fatal("repeated scheduler tick wrote duplicate original SQL operations")
 	}
 }
-
