@@ -497,6 +497,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 				return err
 			}
 			baseline[rel] = stateFromLocal(n, entry)
+			p.recordActivity("create", "none", "", rel, nil)
 		} else {
 			task, progress := p.uploadTransfer(rel, entry.size)
 			n, err := p.cli.UploadFileResumable(uploadTransferContext(ctx, task), parent.node.ID, absPath, slashBase(rel), progress)
@@ -508,6 +509,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 				return err
 			}
 			baseline[rel] = stateFromLocal(n, entry)
+			p.recordActivity("create", "upload", "", rel, &entry.size)
 		}
 	}
 
@@ -581,6 +583,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			return err
 		}
 		baseline[rel] = stateFromLocal(n, entry)
+		p.recordActivity("update", "upload", "", rel, &entry.size)
 	}
 
 	// Local deletions run after additions and writes. This ordering matters for
@@ -611,6 +614,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			}
 		}
 		deletedPrefixes.add(rel)
+		p.recordActivity("delete", "none", rel, "", nil)
 	}
 	deleteBaselinePrefixes(baseline, deletedPrefixes)
 
