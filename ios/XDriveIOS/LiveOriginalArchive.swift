@@ -16,6 +16,8 @@ enum XDriveIOSLiveArchiveFailure: Error {
     case tooLarge
     case resourceChanged
     case archiveFailed
+    // A local ZIP destination I/O failure invalidates the full scan window.
+    case storageUnavailable
 }
 
 enum XDriveIOSLiveOriginalArchive {
@@ -111,17 +113,26 @@ enum XDriveIOSLiveOriginalArchive {
         #endif
         guard FileManager.default.createFile(
             atPath: outputURL.path, contents: nil, attributes: attributes
-        ) else { throw XDriveIOSLiveArchiveFailure.archiveFailed }
+        ) else { throw XDriveIOSLiveArchiveFailure.storageUnavailable }
         var committed = false
         defer {
             if !committed { try? FileManager.default.removeItem(at: outputURL) }
         }
-        let handle = try FileHandle(forWritingTo: outputURL)
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forWritingTo: outputURL)
+        } catch {
+            throw XDriveIOSLiveArchiveFailure.storageUnavailable
+        }
         defer { try? handle.close() }
         var cursor: UInt64 = 0
         func write(_ data: Data) throws {
             try Task.checkCancellation()
-            try handle.write(contentsOf: data)
+            do {
+                try handle.write(contentsOf: data)
+            } catch {
+                throw XDriveIOSLiveArchiveFailure.storageUnavailable
+            }
             cursor += UInt64(data.count)
             guard cursor < UInt64(UInt32.max) else {
                 throw XDriveIOSLiveArchiveFailure.tooLarge
@@ -206,7 +217,11 @@ enum XDriveIOSLiveOriginalArchive {
         append(directoryOffset, to: &footer)
         append(UInt16(0), to: &footer)
         try write(footer)
-        try handle.synchronize()
+        do {
+            try handle.synchronize()
+        } catch {
+            throw XDriveIOSLiveArchiveFailure.storageUnavailable
+        }
         committed = true
         return Int64(cursor)
     }
