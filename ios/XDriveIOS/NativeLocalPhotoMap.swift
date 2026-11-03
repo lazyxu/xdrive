@@ -705,6 +705,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var focused = false
     @State private var error: String?
     @State private var selection: XDriveIOSMapPhotoSelection?
+    @State private var singleViewer: XDrivePhotoKitScanCandidate?
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var globalCells: [
         XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>
@@ -812,8 +813,18 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                         trusted.key == cell.key
                                   })
                             else { return }
-                            globalSelection = XDriveIOSMapSpatialSelection(
-                                cells: cells, viewport: globalViewport)
+                            if cells.count == 1, let only = cells.first,
+                               only.count == 1 {
+                                let candidate = only.representative.candidate
+                                guard XDriveIOSNativeMapViewerAdmission.allows(
+                                    candidate, in: [candidate],
+                                    sceneActive: phase == .active
+                                ) else { return }
+                                singleViewer = candidate
+                            } else {
+                                globalSelection = XDriveIOSMapSpatialSelection(
+                                    cells: cells, viewport: globalViewport)
+                            }
                         },
                         onCamera: { current in
                             guard mapScope == .library, globalComplete else { return }
@@ -902,7 +913,15 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                           ) else { return }
                     cameraReturn = region
                     cameraReturnOffset = currentPage.page.startOffset
-                    selection = XDriveIOSMapPhotoSelection(items: selected)
+                    if selected.count == 1, let only = selected.first,
+                       XDriveIOSNativeMapViewerAdmission.allows(
+                           only, in: currentPage.items.map(\.candidate),
+                           sceneActive: phase == .active
+                       ) {
+                        singleViewer = only
+                    } else {
+                        selection = XDriveIOSMapPhotoSelection(items: selected)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("native-ios-local-photo-map")
@@ -980,6 +999,21 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .fullScreenCover(item: $singleViewer, onDismiss: {
+            guard phase == .active else { invalidate(); return }
+            if mapScope == .page {
+                // Recheck the PhotoKit page while restoring the same camera.
+                refresh(at: offset)
+            } else if ![.authorized, .limited].contains(
+                PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            ) {
+                invalidate()
+            }
+        }) { initial in
+            XDriveIOSNativeLocalPhotoDetail(
+                candidate: initial, loadedItems: [initial]
+            )
+        }
         .onAppear {
             authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             changes.start()
@@ -1018,8 +1052,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         .onDisappear {
             // A presented cluster sheet may hide its map presenter. Keep
             // PhotoKit change observation active until the sheet is dismissed,
+            // or until a directly opened L3 Viewer is dismissed.
             // so permission/library changes revoke its transient member IDs.
-            if selection == nil && globalSelection == nil {
+            if selection == nil && globalSelection == nil && singleViewer == nil {
                 changes.stop()
                 clearReturnCamera()
                 focused = false
@@ -1182,6 +1217,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         page = nil
         selection = nil
         globalSelection = nil
+        singleViewer = nil
         globalCells = []
         globalComplete = false
         globalScanned = 0
