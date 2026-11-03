@@ -73,12 +73,13 @@ test('Gallery cannot silently re-enable missing Owner Files write operations', (
   const h = create()
   const disabled = h.services.ownerFilesPage.unavailableActions
   for (const action of ['uploadFolder',
-    'copy', 'cut', 'paste', 'moveTo', 'copyTo', 'manageTags']) {
+    'copy', 'cut', 'paste', 'copyTo', 'manageTags']) {
     assert.equal(typeof disabled[action], 'string', action)
     assert.ok(disabled[action].length > 5, action)
   }
   assert.equal(disabled.uploadFiles, undefined, 'bounded Owner file upload uses a verified Host')
   assert.equal(disabled.delete, undefined, 'single-node trash uses the verified Host confirmation')
+  assert.equal(disabled.moveTo, undefined, 'single-node move uses the verified Host destination picker')
   assert.equal(disabled.createFolder, undefined, 'DSM has one verified Owner folder-create action')
   assert.equal(disabled.search, undefined, 'DSM supplies a bounded authenticated Owner search adapter')
   assert.equal(disabled.rename, undefined, 'DSM permits only verified Owner node rename')

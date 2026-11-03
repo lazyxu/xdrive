@@ -13,6 +13,8 @@ on:
       - 'internal/localbackupipc/owner_files.go'
       - 'internal/localbackupipc/owner_upload.go'
       - 'internal/localbackupipc/owner_delete.go'
+      - 'internal/localbackupipc/owner_move.go'
+      - 'internal/localbackupipc/owner_move_test.go'
       - 'internal/localbackupipc/owner_delete_test.go'
       - 'internal/localbackupipc/owner_upload_test.go'
       - 'internal/localbackupipc/owner_search.go'
@@ -60,6 +62,8 @@ on:
       - 'ui/shared/src/mui/SynologyOwnerFilesSearch.ts'
       - 'internal/synologyui/owner_search.go'
       - 'internal/synologyui/owner_delete.go'
+      - 'internal/synologyui/owner_move.go'
+      - 'internal/synologyui/owner_move_test.go'
       - 'internal/synologyui/owner_delete_test.go'
       - 'internal/synologyui/owner_search_test.go'
       - 'cmd/xdrive-agent/desktop_ipc_owner_search.go'
@@ -69,6 +73,7 @@ on:
       - 'web/scripts/test-synology-owner-files.mjs'
       - 'web/scripts/test-synology-owner-upload.mjs'
       - 'web/scripts/test-synology-owner-delete.mjs'
+      - 'web/scripts/test-synology-owner-move.mjs'
       - 'web/scripts/test-synology-owner-search.mjs'
       - 'internal/localbackupipc/owner_quota_test.go'
       - 'cmd/xdrive-agent/desktop_ipc.go'
@@ -168,6 +173,8 @@ on:
       - 'internal/localbackupipc/owner_files.go'
       - 'internal/localbackupipc/owner_upload.go'
       - 'internal/localbackupipc/owner_delete.go'
+      - 'internal/localbackupipc/owner_move.go'
+      - 'internal/localbackupipc/owner_move_test.go'
       - 'internal/localbackupipc/owner_delete_test.go'
       - 'internal/localbackupipc/owner_upload_test.go'
       - 'internal/localbackupipc/owner_files_test.go'
@@ -215,6 +222,7 @@ on:
       - 'web/scripts/test-synology-owner-files.mjs'
       - 'web/scripts/test-synology-owner-upload.mjs'
       - 'web/scripts/test-synology-owner-delete.mjs'
+      - 'web/scripts/test-synology-owner-move.mjs'
       - 'web/scripts/test-synology-owner-search.mjs'
       - 'internal/localbackupipc/owner_quota_test.go'
       - 'cmd/xdrive-agent/desktop_ipc.go'
@@ -336,7 +344,7 @@ jobs:
             exit 1
           fi
           go test -count=1 ./internal/synologyui
-          go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerSearch|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|OwnerUploadedFile|OwnerDeleteNode|ServerLogin|RecoveryReview)'
+          go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerSearch|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|OwnerUploadedFile|OwnerDeleteNode|OwnerMoveNode|ServerLogin|RecoveryReview)'
           go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail|OwnerGallery|ReadVerifiedOwnerLiveMotion|OwnerLiveMotion)'
           go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|ExplicitOwnerSearch|OwnerMediaRange|OwnerThumbnail|RequiresAuthenticatedIPCBeforeScheduling|IPCServeFailureStopsScheduler)|OwnerGallery|OwnerLiveMotion|AgentOwnerSmallUpload)'
           # Keep the existing real authenticated xd→owning-Agent IPC two-pass
@@ -365,6 +373,7 @@ jobs:
           node web/scripts/test-synology-owner-files.mjs
           node web/scripts/test-synology-owner-upload.mjs
           node web/scripts/test-synology-owner-delete.mjs
+          node web/scripts/test-synology-owner-move.mjs
           node web/scripts/test-synology-owner-search.mjs
           node web/scripts/test-synology-media-preview.mjs
           node web/scripts/test-synology-owner-download.mjs
