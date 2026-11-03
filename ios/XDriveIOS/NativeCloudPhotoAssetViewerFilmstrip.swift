@@ -111,6 +111,10 @@ struct XDriveIOSNativeCloudPhotoAssetFilmstrip: View {
 
     @Environment(\.scenePhase) private var phase
 
+    @State private var scrubStartIndex: Int?
+    @State private var lastScrubbedKey: XDriveIOSNativeCloudFilmstripKey?
+    @State private var lastScrubDispatch: TimeInterval = 0
+
     private func key(_ item: XDriveIOSNativeMediaItem)
         -> XDriveIOSNativeCloudFilmstripKey {
         XDriveIOSNativeCloudFilmstripKey(
@@ -137,6 +141,42 @@ struct XDriveIOSNativeCloudPhotoAssetFilmstrip: View {
             XDriveIOSNativeCloudFilmstripPolicy.selectedIndex(
                 current: key(current), in: keys, authorized: true
             ) != nil
+    }
+
+    /// Scrub only this exact Owner/revision-scoped, previewable 48-item range.
+    /// The parent onNavigate route remains the final Server admission fence.
+    private func scrubChanged(_ translation: CGSize, force: Bool = false) {
+        guard admitted, !busy else { resetScrub(); return }
+        guard let origin = scrubStartIndex ??
+            XDriveIOSNativeCloudFilmstripPolicy.selectedIndex(
+                current: key(current), in: keys, authorized: admitted
+            ) else { return }
+        if scrubStartIndex == nil { scrubStartIndex = origin }
+        guard let target = XDriveIOSNativePhotoFilmstripScrubPolicy.targetIndex(
+            startingAt: origin, loadedCount: visible.count,
+            horizontal: translation.width, vertical: translation.height,
+            authorized: admitted
+        ), visible.indices.contains(target) else { return }
+        let candidate = visible[target]
+        let candidateKey = key(candidate)
+        guard candidateKey != key(current), candidateKey != lastScrubbedKey,
+              visible.contains(where: { $0.sameVisibleRevision(as: candidate) }),
+              XDriveIOSNativeCloudFilmstripPolicy.target(
+                current: key(current), requested: candidateKey,
+                in: keys, authorized: admitted
+              ) != nil else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || lastScrubDispatch == 0 ||
+              now - lastScrubDispatch >= 0.08 else { return }
+        lastScrubDispatch = now
+        lastScrubbedKey = candidateKey
+        onSelect(candidate)
+    }
+
+    private func resetScrub() {
+        scrubStartIndex = nil
+        lastScrubbedKey = nil
+        lastScrubDispatch = 0
     }
 
     var body: some View {
@@ -181,6 +221,16 @@ struct XDriveIOSNativeCloudPhotoAssetFilmstrip: View {
                 }
                 .frame(height: 72)
                 .background(.ultraThinMaterial)
+                // Horizontal drag scrubs the bounded page; a short tap keeps
+                // each tile's accessible Button action and native zoom intact.
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 18, coordinateSpace: .local)
+                        .onChanged { scrubChanged($0.translation) }
+                        .onEnded {
+                            scrubChanged($0.translation, force: true)
+                            resetScrub()
+                        }
+                )
                 .onAppear { scroll.scrollTo(current.id, anchor: .center) }
                 .onChange(of: current.id) { id in
                     guard admitted else { return }
@@ -190,6 +240,11 @@ struct XDriveIOSNativeCloudPhotoAssetFilmstrip: View {
                 }
             }
             .accessibilityIdentifier("native-ios-cloud-filmstrip")
+            .onChange(of: keys) { _ in resetScrub() }
+            .onChange(of: login.owner) { _ in resetScrub() }
+            .onChange(of: phase) { newPhase in
+                if newPhase != .active { resetScrub() }
+            }
         }
     }
 }
