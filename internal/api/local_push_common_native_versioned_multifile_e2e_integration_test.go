@@ -8,10 +8,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -80,7 +83,18 @@ func TestLocalPushCommonNativeVersionedFilesAThenBThenUpdatedA(t *testing.T) {
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
-	httpServer := httptest.NewServer(server.Router())
+	// The second no-change native pass must not send a new chunk or Finalize.
+	var chunks, finalizes atomic.Int64
+	router := server.Router()
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/chunks/") {
+			chunks.Add(1)
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/finalize") {
+			finalizes.Add(1)
+		}
+		router.ServeHTTP(w, r)
+	}))
 	defer httpServer.Close()
 	dir := filepath.Join(t.TempDir(), "native")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -198,6 +212,51 @@ func TestLocalPushCommonNativeVersionedFilesAThenBThenUpdatedA(t *testing.T) {
 		Count(&versionsBefore).Error; err != nil {
 		t.Fatal(err)
 	}
+
+	// Run an unchanged native inventory through the SAME original private
+	// uploader against real PostgreSQL/LocalCAS. It may reread the original
+	// immutable SQL receipts but cannot perform a second byte upload.
+	unchanged := scan()
+	if unchanged.SnapshotSHA256 != firstSnapshot.SnapshotSHA256 {
+		t.Fatal("unchanged native inventory unexpectedly changed its SHA")
+	}
+	firstChunks, firstFinalizes := chunks.Load(), finalizes.Load()
+	if firstChunks == 0 || firstFinalizes == 0 {
+		t.Fatalf("original A/B upload had no real byte/finalize requests: %d/%d",
+			firstChunks, firstFinalizes)
+	}
+	for _, tc := range []struct {
+		name string
+		original localpushcommon.Plan
+		receipt client.LocalPushCommonUploadReceipt
+	}{
+		{"alpha.bin", planA, firstA}, {"bravo.bin", planB, firstB},
+	} {
+		same := planFor(unchanged, tc.name, tc.original.Target)
+		if same != tc.original {
+			t.Fatalf("unchanged %s minted a new original operation", tc.name)
+		}
+		if receipt := upload(unchanged, same); receipt != tc.receipt {
+			t.Fatalf("unchanged %s rewrote original SQL receipt: %+v", tc.name, receipt)
+		}
+	}
+	var unchangedOperations, unchangedVersions int64
+	if err := db.Model(&meta.LocalPushCommonUploadOperation{}).
+		Where("source_id = ?", source.ID).Count(&unchangedOperations).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.FileVersion{}).Where("node_id = ?", firstA.NodeID).
+		Count(&unchangedVersions).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unchangedOperations != 2 || unchangedVersions != versionsBefore ||
+		chunks.Load() != firstChunks || finalizes.Load() != firstFinalizes {
+		t.Fatalf("no-change native replay wrote SQL/CAS: operations=%d versions=%d->%d chunks=%d->%d finalize=%d->%d",
+			unchangedOperations, versionsBefore, unchangedVersions,
+			firstChunks, chunks.Load(), firstFinalizes, finalizes.Load())
+	}
+	assertCAS(firstA, originalA)
+	assertCAS(firstB, originalB)
 
 	updatedA := bytes.Repeat([]byte("updated-A-new-version"), 1555)
 	if err := os.WriteFile(filepath.Join(dir, "alpha.bin"), updatedA, 0o600); err != nil {
