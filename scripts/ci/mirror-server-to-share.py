@@ -280,7 +280,9 @@ RELEASE_FILES = ('manifest.json', 'xdrive-offline.py', 'delivery.json',
                  'delivery-attestation.jsonl', 'xdrive-offline-attestation.json',
                  'SHA256SUMS.txt', 'MANIFEST_SHA256.txt')
 GO_INSTALLER_ASSET = 'xdrive-offline-linux-amd64'
-RELEASE_FILES_GO = RELEASE_FILES + (GO_INSTALLER_ASSET,)
+# Place Go before signed delivery metadata so interrupted draft publication can
+# always reconstruct a descriptor from the already-uploaded immutable ELF.
+RELEASE_FILES_GO = RELEASE_FILES[:2] + (GO_INSTALLER_ASSET,) + RELEASE_FILES[2:]
 BUNDLE_FILES = ('delivery-attestation.jsonl', 'xdrive-offline-attestation.json')
 
 
