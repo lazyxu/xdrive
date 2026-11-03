@@ -26,7 +26,7 @@ struct XDriveIOSNativeMarkdownDocument: FileDocument {
 }
 
 // Native SwiftUI "全部 → 备忘录", living in the existing dynamic module's
-// NavigationStack. Never add a sixth bottom tab or a Notes WKWebView.
+// NavigationStack. Never add a sixth bottom tab or an embedded browser fallback.
 struct XDriveIOSNativeNotesScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @State private var source: XDriveIOSNativeNoteSource = .mine

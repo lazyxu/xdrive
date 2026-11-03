@@ -108,7 +108,7 @@ private final class XDriveIOSNativeNotesNoRedirect: NSObject, URLSessionTaskDele
 }
 
 // A native UI transport for the exact Server/Owner already verified by the
-// existing native login. It never stores a bearer or opens a WKWebView.
+// existing native login. It never persists a bearer or launches embedded browser content.
 struct XDriveIOSNativeNotesClient {
     let origin: URL
     let accessToken: String

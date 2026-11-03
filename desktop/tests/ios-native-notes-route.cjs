@@ -39,7 +39,7 @@ test('iOS native Notes page shows source-specific edit policies, autosave and hi
   const screen = file('ios/XDriveIOS/NativeNotesScreen.swift')
   assert.match(screen, /Picker\("备忘录来源", selection: \$source\)/)
   assert.match(screen, /TextEditor\(text: \$markdown\)/)
-  assert.match(screen, /Text\(rendered\)/)
+  assert.match(screen, /XDriveIOSNativeNotesMarkdownPreview\(/)
   assert.match(screen, /let proof = try await login\.verifiedAuthorization\(\)/)
   assert.match(screen, /try await Task\.sleep\(nanoseconds: 1_200_000_000\)/)
   assert.match(screen, /guard source == \.mine, !saving, !deleting, !conflict/)
