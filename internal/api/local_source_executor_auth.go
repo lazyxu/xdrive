@@ -41,7 +41,7 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 	}
 	var source meta.Source
 	err := s.DB.WithContext(c.Request.Context()).
-		Select("id", "owner_id", "kind", "direction", "revision").
+		Select("id", "owner_id", "kind", "direction", "revision", "status").
 		Where("id = ? AND owner_id = ?", id, userID(c)).
 		Take(&source).Error
 	if err != nil {
@@ -51,6 +51,11 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 			fail(c, http.StatusInternalServerError, "load source for executor authorization failed")
 		}
 		return false
+	}
+	if source.Status == meta.SourceStatusArchived {
+		// No Root grant remains after archival. A retry of the same already
+		// archived Source must remain harmless and must never reactivate it.
+		return true
 	}
 	if source.Kind != meta.SourceKindLocalFolder {
 		// Never widen the execution requirements of Yike/Synology/other Sources.
