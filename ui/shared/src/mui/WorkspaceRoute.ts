@@ -41,6 +41,7 @@ export const XDRIVE_APP_WORKSPACE_ROUTES = [
   'admin-audit',
   'admin-storage',
   'admin-services',
+  'admin-update',
   'admin-maintenance',
 ] as const
 

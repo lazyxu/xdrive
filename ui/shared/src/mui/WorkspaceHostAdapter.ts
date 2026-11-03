@@ -11,6 +11,7 @@ import type XDriveAdminUsersPage from './AdminUsersPage'
 import type XDriveAdminAuditPage from './AdminAuditPage'
 import type XDriveGlobalStorageStatsPage from './GlobalStorageStatsPage'
 import type { XDriveSystemMaintenancePage } from './SystemMaintenancePage'
+import type { XDriveSystemUpdatePage } from './SystemUpdatePage'
 import type { XDriveServiceDependenciesPage } from './ServiceDependenciesPage'
 import type { XDriveConflictsPageProps } from './ConflictsPage'
 import type { XDriveDiagnosticsPage } from './DiagnosticsPage'
@@ -67,6 +68,7 @@ export type XDriveWorkspaceHostServices = {
   readonly remotePullPage?: XDriveSourceManagerProps
   readonly taskCenterPage?: XDriveTaskCenterPageProps
   readonly adminMaintenancePage?: ComponentProps<typeof XDriveSystemMaintenancePage>
+  readonly adminUpdatePage?: ComponentProps<typeof XDriveSystemUpdatePage>
   readonly adminUsersPage?: ComponentProps<typeof XDriveAdminUsersPage>
   readonly adminAuditPage?: ComponentProps<typeof XDriveAdminAuditPage>
   readonly adminStoragePage?: ComponentProps<typeof XDriveGlobalStorageStatsPage>

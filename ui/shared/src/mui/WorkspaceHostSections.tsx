@@ -6,6 +6,7 @@ import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
+import SystemUpdateRoundedIcon from '@mui/icons-material/SystemUpdateRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import NotesRoundedIcon from '@mui/icons-material/NotesRounded'
 import {
@@ -76,6 +77,7 @@ export function xDriveWorkspaceHostSections({
         { key: 'admin-audit', label: xDriveWorkspaceRouteTitle('admin-audit'), icon: <AssessmentRoundedIcon fontSize="small" /> },
         { key: 'admin-storage', label: xDriveWorkspaceRouteTitle('admin-storage'), icon: <StorageRoundedIcon fontSize="small" /> },
         { key: 'admin-services', label: xDriveWorkspaceRouteTitle('admin-services'), icon: <DnsRoundedIcon fontSize="small" /> },
+        { key: 'admin-update', label: xDriveWorkspaceRouteTitle('admin-update'), icon: <SystemUpdateRoundedIcon fontSize="small" /> },
         { key: 'admin-maintenance', label: xDriveWorkspaceRouteTitle('admin-maintenance'), icon: <BuildRoundedIcon fontSize="small" /> },
       ],
     }] : []),

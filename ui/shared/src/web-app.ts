@@ -25,6 +25,7 @@ export const XDRIVE_WEB_APP_IDS = [
   'admin-audit',
   'admin-storage',
   'admin-services',
+  'admin-update',
   'admin-maintenance',
 ] as const
 
@@ -116,6 +117,7 @@ export interface XDriveWebAppLaunchMap {
   'admin-audit': Record<string, never>
   'admin-storage': { section?: string; task?: string }
   'admin-services': XDriveSystemDependenciesLocation
+  'admin-update': Record<string, never>
   'admin-maintenance': Record<string, never>
 }
 
@@ -228,6 +230,7 @@ export function xDriveParseWebAppHash(hash: string): XDriveWebAppRoute | null {
     case 'shares':
     case 'notes':
     case 'admin-audit':
+    case 'admin-update':
     case 'admin-maintenance':
       return { app, params: {} } as XDriveWebAppRoute
   }
