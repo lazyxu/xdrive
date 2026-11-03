@@ -157,18 +157,15 @@ is **excluded**, not advertised as installable.
   configured and a real workflow has successfully completed. Physical device
   installation is **跳过（未验收）**.
 
-## Scope boundary: client mirror is not a Server update provider
+## Scope boundary: client archives are not a Server update provider
 
 The flat product directories contain **client installers, Backup CLI and Source
-Agent artifacts only**, not Docker images, deployment scripts or a full Server
-release bundle. It **must not** be passed to
-`xdrive-server update` as if it were GitHub or GitLab. An upload Share is also
-an untrusted distribution source: a colocated `.sha256` file can be forged
-alongside its binary. A future `--source xdrive` updater requires an
-authenticated/signature-verified, rollback-protected component manifest bound
-to exact image digests and a read-only download capability. The current
-five-component offline Manifest is tracked in PR #3625; until its manifest
-and the Share reader have passed separate CI/restore acceptance, keep the
-existing `--source github|gitlab` Server updater unchanged. The public
-download link should remain read-only, with a separate **private** uploader
-capability to the same Owner-controlled storage directory.
+Agent artifacts only**, not Docker images, deployment scripts or a Server
+release bundle. They **must not** be passed to `xdrive-server update`.
+An upload Share is not a trusted release authority; a colocated `.sha256` file
+can be forged alongside its binary. The separately implemented
+`--source xdrive` Server updater verifies signed publisher identity, rollback
+floor, component manifests and exact image identities from the unchanged
+`xDrive-Server/` namespace. The public download link should remain read-only,
+with a separate **private** uploader capability to the same Owner-controlled
+storage directory.
