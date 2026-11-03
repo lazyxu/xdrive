@@ -1172,6 +1172,8 @@ jobs:
           python3 -m unittest discover -s scripts/ci -p 'test_backup_restore_drill_evidence.py'
           bash -n scripts/test-server-backup-restore.sh
           bash -n scripts/test-server-chunk-storage.sh
+          bash -n scripts/offline/build-five-packages.sh
+          python3 -m unittest discover -s scripts/offline -p 'test_*.py'
           bash -n scripts/test-server-installer-bootstrap.sh
           bash scripts/test-server-installer-bootstrap.sh
           bash -n scripts/test-server-installer-transaction.sh
@@ -1187,6 +1189,9 @@ jobs:
           bash -n scripts/xdrive-server-host.sh
           bash -n scripts/test-xdrive-server-host.sh
           bash scripts/test-xdrive-server-host.sh
+          python3 scripts/test-xdrive-share-host.py
+          python3 scripts/test-xdrive-share-update.py
+          python3 scripts/ci/test-mirror-server-to-share.py
           python3 scripts/test-release-attestation-contract.py
           bash -n scripts/test-server-status-summary.sh
           bash scripts/test-server-status-summary.sh
@@ -1224,6 +1229,7 @@ jobs:
           python3 scripts/ci/test-gitlab-master-release-interrupt.py
           python3 scripts/ci/test-gitlab-master-publish-before-tests.py
           bash -n scripts/ci/gitlab-post-release-smoke.sh
+          python3 scripts/ci/test-gitlab-image-smoke.py
           bash -n scripts/ci/test-gitlab-release-assets.sh
           bash scripts/ci/test-gitlab-release-assets.sh
           XDRIVE_CI_GO_VERSION_OVERRIDE=go1.25.0 bash scripts/ci/check-go-min-version.sh 1.25
@@ -2632,6 +2638,21 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       publish: true
+    secrets: inherit
+
+  publish-content-addressed-offline:
+    # Keep ordinary master Snapshot fast. Offline component publication
+    # occurs automatically once the exact current master Final Gate passes.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [final-gate, publish-master]
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/offline-packages.yml
+    with:
+      ci_run_id: ${{ github.run_id }}
     secrets: inherit
 
   publish-stable:

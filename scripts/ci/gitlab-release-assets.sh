@@ -30,6 +30,7 @@ sha256sum \
   scripts/server-control.sh \
   scripts/caddy-env-config.py \
   scripts/caddy-admission.py \
+  scripts/xdrive-share-update.py \
   scripts/xdrive-server-host.sh \
   > "$deploy_hash_manifest"
 deploy_hash_manifest_b64="$(base64 -w0 "$deploy_hash_manifest")"
@@ -50,7 +51,7 @@ fi
 
 cp deploy/docker-compose.yml release/docker-compose.yml
 cp deploy/.env.example release/xdrive.env.example
-cp scripts/server-backup.sh scripts/server-backup-scheduled.sh scripts/server-restore.sh scripts/server-verify.sh scripts/server-doctor.sh scripts/server-migrate-user.sh release/
+cp scripts/server-backup.sh scripts/server-backup-scheduled.sh scripts/server-restore.sh scripts/server-verify.sh scripts/server-doctor.sh scripts/server-migrate-user.sh scripts/xdrive-share-update.py release/
 cp scripts/server-control.sh scripts/caddy-env-config.py scripts/caddy-admission.py release/
 cp scripts/xdrive-server-host.sh release/xdrive-server
 chmod +x release/server-backup.sh release/server-backup-scheduled.sh release/server-restore.sh release/server-verify.sh release/server-doctor.sh release/server-migrate-user.sh release/xdrive-server

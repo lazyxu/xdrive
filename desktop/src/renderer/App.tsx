@@ -711,7 +711,7 @@ export default function App({
     agent.hello?.capabilities.includes('cloud-change-feed') ?? false
   const serverUpdatePort = useMemo(() => ({
     getState: () => window.xdriveDesktop.agent.getServerUpdate(),
-    startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
+    startUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
       window.xdriveDesktop.agent.startServerUpdate(source, channel, backupFileData),
   }), [])
   const maintenanceBackupPort = useMemo<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupPort>(() => ({

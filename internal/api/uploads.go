@@ -323,6 +323,16 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		fail(c, http.StatusForbidden, "invalid share upload owner")
 		return
 	}
+	var shareGrant *meta.Share
+	if guest {
+		value, ok := c.Get("xdriveShareUploadGrant")
+		grant, valid := value.(meta.Share)
+		if !ok || !valid || grant.ID != guestID || grant.OwnerID != uid {
+			fail(c, http.StatusForbidden, "invalid share upload grant")
+			return
+		}
+		shareGrant = &grant
+	}
 	if req.SHA256 == "" && req.MD5 != "" {
 		resolved, ok, err := verifiedDigestSHA256(
 			c.Request.Context(), s.DB, uid, contentDigestAlgorithmMD5, req.MD5, req.Size,
@@ -513,15 +523,17 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	// lp2_ is reserved for an authenticated, durable local Push operation.
 	// Its normal UploadSession must bind to that operation before finalize;
 	// the generic immediate CAS fast path would commit before binding.
-	if req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") && !guest {
-		session, currentRevision, instant, err := s.tryInstantUploadSession(
-			c.Request.Context(), uid, req, chunkCount,
+	if req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") {
+		session, currentRevision, handled, err := s.tryInstantUploadSession(
+			c.Request.Context(), uid, req, chunkCount, shareGrant,
 		)
 		if err != nil {
 			if writeQuotaError(c, err) {
 				return
 			}
 			switch {
+			case errors.Is(err, errShareUploadDenied):
+				writePublicShareUploadError(c, err)
 			case errors.Is(err, errRevisionConflict):
 				revisionConflict(c, req.ExpectedRevision, currentRevision)
 			case errors.Is(err, errUploadNameTaken) || isDuplicate(err):
@@ -533,8 +545,8 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			}
 			return
 		}
-		if instant {
-			if session.Status == meta.UploadStatusSkipped {
+		if handled {
+			if !session.InstantCAS || session.Status != meta.UploadStatusFinalized {
 				s.writeUploadSession(c, session, http.StatusOK)
 				return
 			}
@@ -589,11 +601,20 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	}
 	requiredReservation := uploadReservationBytes(session.TotalSize, reusable)
 	session.ReservedBytes = requiredReservation
+	resumed := false
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
 		if guest {
 			if _, err := s.publicShareUploadAdmissionTx(
 				c.Request.Context(), tx, guestID, uid, *req.ParentID,
 			); err != nil {
+				return err
+			}
+			prior, err := publicShareUploadResumeTx(c.Request.Context(), tx, guestID, uid, req)
+			if err == nil {
+				session, resumed = prior, true
+				return nil
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
 		}
@@ -635,7 +656,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		return
 	}
-	s.writeUploadSession(c, session, http.StatusCreated)
+	if resumed {
+		s.writeUploadSession(c, session, http.StatusOK)
+	} else {
+		s.writeUploadSession(c, session, http.StatusCreated)
+	}
 }
 
 func (s *Server) getUploadSession(c *gin.Context) {
@@ -1208,7 +1233,8 @@ func (s *Server) writeUploadSession(c *gin.Context, session meta.UploadSession, 
 			"id": session.ID, "name": session.Name, "size": session.TotalSize,
 			"chunk_size": session.ChunkSize, "chunk_count": session.ChunkCount,
 			"status": session.Status, "expires_at": session.ExpiresAt,
-			"received_chunks": received,
+			"instant_cas_reused": session.InstantCAS,
+			"received_chunks":    received,
 		})
 		return
 	}

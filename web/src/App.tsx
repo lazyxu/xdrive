@@ -8,7 +8,6 @@ import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRol
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import InstallDesktopRoundedIcon from '@mui/icons-material/InstallDesktopRounded'
-import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import FullscreenRoundedIcon from '@mui/icons-material/FullscreenRounded'
 import {
   AppBar,
@@ -66,6 +65,7 @@ import {
   XDriveWorkspaceContent,
   XDriveWorkspaceRouteSurface,
   XDriveMobileAppHeader,
+  XDriveMobileHeaderPortalContext,
   xDriveWorkspaceRouteTitle,
   useXDriveRetainedWorkspaceRoute,
   xDriveWorkspaceNavigationAllowed,
@@ -102,7 +102,7 @@ import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveReadWebA
 import { XDRIVE_WEB_NARROW_QUERY, XDRIVE_WEB_TOUCH_ONLY_QUERY, xDriveWebCompactNavigation } from './webMobileNavigationLayout'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations, xDriveBrowserMobileGalleryShortcuts } from './MobileFiveSlotNavigation'
-import { xDriveMobileLauncherSections, xDriveMobileLauncherGalleryRoute } from './mobileLauncherSections'
+import { xDriveMobileLauncherSections, xDriveMobileLauncherGalleryRoute, xDriveMobileEmptyRecentMapRoute } from './mobileLauncherSections'
 import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileViewerSafeFallbackRoute, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused, xDriveMobileManualFocusTarget, xDriveMobileManualFocusActive, xDriveInitialMobileOverviewScroll, xDriveMobileOverviewScrollSlot, xDriveMobileOverviewScrollOffset, xDriveRememberMobileOverviewScroll, xDriveMobileSystemDependenciesRouteChanged } from './mobileFiveSlotState'
 import type { XDriveMobileSlot, XDriveMobileManualFocusSelection } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
@@ -121,7 +121,6 @@ import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
 import PwaOfflineDirectoryBrowser from './PwaOfflineDirectoryBrowser'
 import { xDrivePwaCaptureAlbumSummaries, xDrivePwaCaptureVisitedDirectory, xDrivePwaClearOfflineMetadata, xDrivePwaOfflineScopeKey, xDrivePwaReadOfflineDirectories, xDrivePwaObserveOfflinePurge } from './pwaOfflineDirectory'
 import type { XDrivePwaOfflineOwner } from './pwaOfflineDirectory'
-import XDriveManualConnectionDialog from './ManualConnectionDialog'
 import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload, xDriveObservePwaBeforeUnload } from './pwaTransferSafety'
 import { xDriveClearPwaWindowActivity, xDriveReportPwaWindowActivity } from './pwaWorkloadSafety'
 import { xDriveCanResumeBrowserUpload, xDrivePwaResumeFileError } from './pwaUploadResume'
@@ -278,13 +277,11 @@ function WebAccountMenu({
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [installOpen, setInstallOpen] = useState(false)
-  const [connectionOpen, setConnectionOpen] = useState(false)
   useEffect(() => {
     if (!disabled) return
     setAnchorEl(null)
     setSettingsOpen(false)
     setInstallOpen(false)
-    setConnectionOpen(false)
   }, [disabled])
 
   return (
@@ -307,13 +304,6 @@ function WebAccountMenu({
           <ListItemIcon><InstallDesktopRoundedIcon fontSize="small" /></ListItemIcon>
           <ListItemText>安装应用 / 运行环境</ListItemText>
         </MenuItem>
-        <MenuItem data-xdrive-manual-connection-menu onClick={() => {
-          setAnchorEl(null)
-          setConnectionOpen(true)
-        }}>
-          <ListItemIcon><DnsRoundedIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>手动切换公网 / 局域网入口</ListItemText>
-        </MenuItem>
         <XDriveAccountMenuActions
           onClose={() => setAnchorEl(null)}
           onSettings={() => { if (!disabled) setSettingsOpen(true) }}
@@ -330,8 +320,6 @@ function WebAccountMenu({
       >
         {offlineOwner ? <PwaOfflineDirectorySection owner={offlineOwner} onConsentChange={onOfflineConsentChange} /> : null}
       </XDriveSettingsDialog>
-      <XDriveManualConnectionDialog open={connectionOpen && !disabled}
-        onClose={() => setConnectionOpen(false)} />
       {installOpen && !disabled ? (
         <Suspense fallback={null}>
           <XDrivePwaInstallDialog open onClose={() => setInstallOpen(false)} />
@@ -776,7 +764,6 @@ function AuthView({
   const [usernameError, setUsernameError] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [installOpen, setInstallOpen] = useState(false)
-  const [connectionOpen, setConnectionOpen] = useState(false)
 
   const editLoginUsername = (next: string) => {
     if (next !== loginUsername) {
@@ -923,10 +910,6 @@ function AuthView({
         <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mt: 2 }}>
           账户由 xDrive 管理员创建。
         </Typography>
-        <Button data-xdrive-manual-connection-login variant="text" sx={{ minHeight: 44 }}
-          onClick={() => setConnectionOpen(true)}>
-          手动切换公网 / 局域网入口
-        </Button>
         <Button data-xdrive-pwa-login-entry variant="text" sx={{ minHeight: 44 }}
           onClick={() => setInstallOpen(true)}>
           安装 xDrive 到主屏幕 / 桌面
@@ -935,8 +918,6 @@ function AuthView({
           onClick={() => { window.location.hash = '#/offline/files' }}>
           查看此设备已保存的目录摘要（仅历史只读）
         </Button>
-        <XDriveManualConnectionDialog open={connectionOpen}
-          onClose={() => setConnectionOpen(false)} />
         {installOpen ? (
           <Suspense fallback={null}>
             <XDrivePwaInstallDialog open onClose={() => setInstallOpen(false)} />
@@ -978,6 +959,8 @@ function FileManager({
     maxTouchPoints: navigator.maxTouchPoints,
     touchOnly,
   })
+  const [mobilePageHeaderTarget, setMobilePageHeaderTarget] = useState<HTMLDivElement | null>(null)
+  const [mobilePageActionsTarget, setMobilePageActionsTarget] = useState<HTMLDivElement | null>(null)
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
   const placesEmbedRequested=new URLSearchParams(window.location.search)
@@ -2067,7 +2050,7 @@ function FileManager({
 
   const maintenanceUpdatePort = useMemo(() => ({
     getState: () => api.adminServerUpdate(),
-    startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
+    startUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
       api.adminStartServerUpdate(source, channel, backupFileData),
   }), [api])
 
@@ -2576,6 +2559,15 @@ function FileManager({
     const destination = mobileDestinations.find(item => item.key === key)
     return destination ? [{ key: destination.key, route: recent, label: destination.label, icon: destination.icon }] : []
   })
+  // On a first visit, use Gallery's real authorized Map rather than showing
+  // an empty dynamic tab. The Map route does not enter dynamic recents.
+  const mobileEmptyRecentMapRoute = xDriveMobileEmptyRecentMapRoute(
+    mobileRecentDestinations.length > 0,
+    Boolean(mobileOwnerScope) &&
+      mobileLauncherDestinations.some(item => item.key === 'gallery-places'),
+  )
+  const mobileEmptyRecentMapShortcut = mobileEmptyRecentMapRoute
+    ? mobileLauncherDestinations.find(item => item.key === 'gallery-places') : undefined
   const latestMobileDynamic = mobileRecentDestinations[0]
   // Capture the exact visible position before synchronous bottom-tab or
   // launcher navigation; passive scroll events cover browser Back/Forward.
@@ -2602,7 +2594,9 @@ function FileManager({
     }
   }
   const selectMobileSlot = (slot: XDriveMobileSlot) => {
-    const next = xDriveMobileRouteForSlot(currentMobileNavigation, slot, serverAdminVerified)
+    const next = slot === 'dynamic' && mobileEmptyRecentMapRoute
+      ? mobileEmptyRecentMapRoute
+      : xDriveMobileRouteForSlot(currentMobileNavigation, slot, serverAdminVerified)
     // Re-selecting the current fixed Tab must not create an invisible browser
     // History entry. Safari's Back swipe should reach the real previous route.
     // Compare canonical hashes, not route object identity or raw params order.
@@ -2660,6 +2654,11 @@ function FileManager({
   const mobileRouteTitle = route.app === 'overview'
     ? route.params.section === 'mine' ? '我的' : '全部'
     : mobileMapFocused ? '地图' : xDriveWorkspaceRouteTitle(appView)
+  // One 52px L1 shell header on every phone route. Files/Gallery supply the
+  // actual local Back/Title/actions into it; generic pages retain App Back.
+  const mobileHeaderMode = !compactWorkspace ? 'standalone'
+    : viewerActive || mobileMapFocused || mobileManualFocused ? 'hidden'
+    : appView === 'files' || appView === 'gallery' ? 'global' : 'shell'
   const browserWorkspaceHost = useMemo(
     () => createXDriveBrowserWorkspaceHost({
       adminRoleVerified: serverAdminVerified,
@@ -2975,6 +2974,11 @@ function FileManager({
         )}
       >
 
+        <XDriveMobileHeaderPortalContext.Provider value={{
+          mode: mobileHeaderMode,
+          navigationTarget: mobilePageHeaderTarget,
+          actionsTarget: mobilePageActionsTarget,
+        }}>
         <Box data-xdrive-mobile-app-frame sx={{ minWidth: 0, minHeight: 0, height: '100%', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* L2 Places map owns a 44px in-map Close control. Suppress the
               L1 52px app bar only for the actual verified Owner map panel,
@@ -2983,6 +2987,9 @@ function FileManager({
             <XDriveMobileAppHeader
               title={mobileRouteTitle}
               canGoBack={mobileCanGoBack}
+              pageNavigation={mobileHeaderMode === 'global'}
+              navigationSlotRef={setMobilePageHeaderTarget}
+              actionsSlotRef={setMobilePageActionsTarget}
               backLabel="返回当前功能上一级"
               disabled={viewerActive}
               onBack={goBackWithinMobileFeature}
@@ -3029,7 +3036,10 @@ function FileManager({
           // The Gallery's virtual grid owns its logical row/Node anchors.
           // Native scroll anchoring otherwise shifts main.scrollTop by one
           // tile row as the virtual window reflows through Viewer breakpoints.
-          sx={{ overflowAnchor: appView === 'gallery' ? 'none' : undefined }}
+          sx={{
+            overflowAnchor: appView === 'gallery' ? 'none' : undefined,
+            ...(compactWorkspace ? { px: 0, py: 0 } : {}),
+          }}
         >
         {appView === 'overview' ? (
           compactWorkspace && route.app === 'overview' && route.params.section === 'mine' ? (
@@ -3270,9 +3280,13 @@ function FileManager({
         {compactWorkspace && !viewerActive && !mobileMapFocused && !mobileManualFocused ? (
           <XDriveMobileFiveSlotNavigation
             selected={xDriveMobileSlotForRoute(route) ?? 'all'}
-            dynamicLabel={latestMobileDynamic?.label ?? '最近'}
-            dynamicIcon={latestMobileDynamic?.icon}
+            dynamicLabel={latestMobileDynamic?.label ?? mobileEmptyRecentMapShortcut?.label ?? '最近'}
+            dynamicIcon={latestMobileDynamic?.icon ?? mobileEmptyRecentMapShortcut?.icon}
             recent={mobileRecentDestinations}
+            emptyRecentFallback={mobileEmptyRecentMapRoute && mobileEmptyRecentMapShortcut
+              ? { key: 'gallery-places', route: mobileEmptyRecentMapRoute,
+                  label: mobileEmptyRecentMapShortcut.label, icon: mobileEmptyRecentMapShortcut.icon }
+              : null}
             recentOpen={mobileRecentOpen}
             onRecentOpenChange={setMobileRecentOpen}
             onSelect={selectMobileSlot}
@@ -3280,6 +3294,7 @@ function FileManager({
           />
         ) : null}
         </Box>
+        </XDriveMobileHeaderPortalContext.Provider>
       </XDriveWorkspaceFrame>
       </Box>
 

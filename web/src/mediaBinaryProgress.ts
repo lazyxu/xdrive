@@ -1,7 +1,7 @@
 /** Optional WebKit AbortSignal.throwIfAborted() is not available everywhere.
  * The standard boolean abort state remains authoritative; denied/unknown
  * observations cannot authorize reading private media bytes. */
-function xDriveAssertMediaReadActive(signal?: AbortSignal): void {
+export function xDriveAssertMediaReadActive(signal?: AbortSignal): void {
   if (!signal) return
   let active = false
   try { active = signal.aborted === false }

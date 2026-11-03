@@ -970,7 +970,7 @@ const agent = Object.freeze({
   ),
   cloudQuota: (requestID?: string) => ipcRenderer.invoke('agent:cloud-quota', requestID),
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
-  startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
+  startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
     ipcRenderer.invoke('agent:start-server-update', source, channel, backupFileData),
   cloudStorageStats: (requestID?: string) => ipcRenderer.invoke('agent:cloud-storage-stats', requestID),
   cloudCleanupStorageCache: (kind: 'media_thumbnail' | 'analysis_preview' | 'upload_staging' | 'storage_temp' | 'all') =>

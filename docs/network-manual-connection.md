@@ -1,3 +1,5 @@
+> **现行 Web / Mobile Web / PWA UI（2026-11-02）**：已取消 NET-M1 遗留的「手动切换公网 / 局域网入口」按钮、弹窗及仅用于该功能的浏览器地址存储逻辑。需要访问另一个已部署并受信任的 HTTPS Origin 时，用户自行通过浏览器地址栏或书签打开；这不会迁移登录 Cookie、PWA 安装身份或离线数据。原有非敏感地址键值不主动清除。下文 NET-M1/M2 叙述为历史阶段记录；本次不调整 Caddy 双入口、Web/PWA 同源登录、PWA 离线和 Desktop/Android 原生选路。
+
 > **当前策略（2026-10-31）**：用户端登录仅允许 HTTPS。下文历史阶段曾记录 HTTP LAN 手动切换和本机开发 HTTP 入口，均不代表新版 Desktop、Android、Web/PWA、xd CLI 仍允许 HTTP 登录。Server 内部 HTTP 反向代理与 Agent 的认证 Loopback IPC 不是面向用户的远端 Server 登录入口。
 
 ## Desktop 局域网首次信任：用户明确决定（TOFU）

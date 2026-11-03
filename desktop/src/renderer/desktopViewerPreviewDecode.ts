@@ -1,6 +1,22 @@
 import { xDriveRegisterViewerImageSource } from '@xdrive/shared'
 
 /**
+ * The legacy Agent analysis-preview route is a JPEG Q84 derivative. Keep its
+ * transient Viewer metadata identical in Files Quick Look and Gallery so the
+ * shared quality panel never labels this fallback as an original file.
+ */
+export function xDriveDesktopRegisterLegacyJPEGViewerPreviewURL(blob: Blob): string {
+  if (blob.size <= 0) throw new Error('Empty Desktop legacy JPEG Viewer preview')
+  const url = URL.createObjectURL(blob)
+  xDriveRegisterViewerImageSource(url, {
+    format: 'JPEG',
+    quality: 84,
+    byteSize: blob.size,
+  })
+  return url
+}
+
+/**
  * Both Desktop Gallery and Files Quick Look use one decode-gated 4K image
  * admission contract. The Agent's MIME/byte validation cannot establish that
  * the current Electron Chromium can decode a WebP or JPEG response.

@@ -3,7 +3,7 @@ import MapKit
 import SwiftUI
 import UIKit
 
-private enum XDriveIOSNativePhotoMapSource: String, CaseIterable {
+enum XDriveIOSNativePhotoMapSource: String, CaseIterable {
     case local, cloud
     var label: String { self == .local ? "本机位置" : "云端 Owner" }
 }
@@ -16,11 +16,13 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     // Source switches never reset the parent's map scope or page cursor.
     @Binding var localMapScope: XDriveIOSNativeLocalMapScope
     @Binding var localMapPageOffset: Int
+    @Binding var source: XDriveIOSNativePhotoMapSource
+    @Binding var cloudMapCamera: MKCoordinateRegion?
     var onFocusChange: ((Bool) -> Void)?
-    @State private var source: XDriveIOSNativePhotoMapSource = .local
 
     var body: some View {
-        VStack(spacing: 4) {
+        let expectedOwner = login.owner
+        return VStack(spacing: 4) {
             Picker("地图照片来源", selection: $source) {
                 ForEach(XDriveIOSNativePhotoMapSource.allCases, id: \.self) { item in
                     Text(item.label).tag(item)
@@ -39,7 +41,15 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                     )
                 case .cloud:
                     XDriveIOSNativeOwnerPhotoMapScreen(
-                        login: login, onFocusChange: onFocusChange)
+                        login: login, onFocusChange: onFocusChange,
+                        cameraReturn: cloudMapCamera,
+                        onCameraChange: { next in
+                            guard source == .cloud, let expectedOwner,
+                                  XDriveIOSNativePhotoOwnerScope.matches(
+                                    login.owner, expectedOwner
+                                  ) else { return }
+                            cloudMapCamera = next
+                        })
                 }
             }
         }
@@ -130,14 +140,17 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
     let coverImages: [String: UIImage]
     let markersEnabled: Bool
     let revision: UUID
+    let initialCamera: MKCoordinateRegion
     let onCameraWillChange: () -> Void
     let onCamera: (MKCoordinateRegion) -> Void
     let onPlace: (XDriveIOSNativeOwnerMapFacet) -> Void
+    let onPlaces: ([XDriveIOSNativeOwnerMapFacet]) -> Void
     let onAggregate: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onCameraWillChange: onCameraWillChange,
-                    onCamera: onCamera, onPlace: onPlace, onAggregate: onAggregate)
+                    onCamera: onCamera, onPlace: onPlace,
+                    onPlaces: onPlaces, onAggregate: onAggregate)
     }
 
     func makeUIView(context: Context) -> MKMapView {
@@ -149,10 +162,7 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
                      forAnnotationViewWithReuseIdentifier: "xdrive-owner-pin")
         map.register(XDriveIOSOwnerMapPhotoCover.self,
                      forAnnotationViewWithReuseIdentifier: "xdrive-owner-cluster")
-        map.setRegion(MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
-            span: MKCoordinateSpan(latitudeDelta: 160, longitudeDelta: 360)),
-            animated: false)
+        map.setRegion(initialCamera, animated: false)
         map.delegate = context.coordinator
         return map
     }
@@ -161,6 +171,7 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
         context.coordinator.onCameraWillChange = onCameraWillChange
         context.coordinator.onCamera = onCamera
         context.coordinator.onPlace = onPlace
+        context.coordinator.onPlaces = onPlaces
         context.coordinator.onAggregate = onAggregate
         context.coordinator.coverImages = coverImages
         context.coordinator.markersEnabled = markersEnabled
@@ -192,15 +203,18 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
         var onCameraWillChange: () -> Void
         var onCamera: (MKCoordinateRegion) -> Void
         var onPlace: (XDriveIOSNativeOwnerMapFacet) -> Void
+        var onPlaces: ([XDriveIOSNativeOwnerMapFacet]) -> Void
         var onAggregate: () -> Void
 
         init(onCameraWillChange: @escaping () -> Void,
              onCamera: @escaping (MKCoordinateRegion) -> Void,
              onPlace: @escaping (XDriveIOSNativeOwnerMapFacet) -> Void,
+             onPlaces: @escaping ([XDriveIOSNativeOwnerMapFacet]) -> Void,
              onAggregate: @escaping () -> Void) {
             self.onCameraWillChange = onCameraWillChange
             self.onCamera = onCamera
             self.onPlace = onPlace
+            self.onPlaces = onPlaces
             self.onAggregate = onAggregate
         }
 
@@ -267,8 +281,21 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
             mapView.deselectAnnotation(view.annotation, animated: false)
             guard markersEnabled else { return }
             if let cluster = view.annotation as? MKClusterAnnotation {
-                mapView.showAnnotations(cluster.memberAnnotations, animated: true)
-                onAggregate()
+                let members = cluster.memberAnnotations
+                let facets = members.compactMap {
+                    ($0 as? XDriveIOSOwnerPlaceAnnotation)?.facet
+                }
+                // Only complete, exact place-ID clusters may open photos.
+                // Virtual map-region samples are zoom targets, not credentials.
+                if members.count == facets.count, facets.count >= 2,
+                   facets.allSatisfy({
+                       XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange($0)
+                   }) {
+                    onPlaces(facets.sorted { $0.id < $1.id })
+                } else {
+                    mapView.showAnnotations(cluster.memberAnnotations, animated: true)
+                    onAggregate()
+                }
             } else if let point = view.annotation as? XDriveIOSOwnerPlaceAnnotation {
                 if XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(point.facet) {
                     onPlace(point.facet)
@@ -293,6 +320,9 @@ private struct XDriveIOSOwnerMapChosenPlace: Identifiable {
 struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     var onFocusChange: ((Bool) -> Void)?
+    // Transient same-Owner camera only, never serialized as GPS history.
+    var cameraReturn: MKCoordinateRegion? = nil
+    var onCameraChange: ((MKCoordinateRegion) -> Void)? = nil
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var overview: XDriveIOSNativeOwnerMapOverview?
@@ -308,6 +338,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @State private var epoch = UUID()
     @State private var task: Task<Void, Never>?
     @State private var selected: XDriveIOSOwnerMapChosenPlace?
+    @State private var selectedCluster: XDriveIOSOwnerMapChosenCluster?
     @State private var focused = false
     @State private var showingMapHelp = false
     @State private var camera = MKCoordinateRegion(
@@ -316,7 +347,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
 
     private var mapMarkersEnabled: Bool {
         guard phase == .active, !busy, login.owner != nil,
-              selected == nil, let verifiedBounds else { return false }
+              selected == nil, selectedCluster == nil,
+               let verifiedBounds else { return false }
         return XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
             verifiedBounds, current: currentBounds())
     }
@@ -336,10 +368,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             XDriveIOSOwnerMapSurface(
                 overview: overview, coverImages: coverImages,
                 markersEnabled: mapMarkersEnabled,
-                revision: revision,
+                revision: revision, initialCamera: cameraReturn ?? camera,
                 onCameraWillChange: { revokeCameraAuthorization() },
                 onCamera: { next in
                     camera = next
+                    onCameraChange?(next)
                     // Programmatic camera correction may occur during Owner
                     // HTTPS; compare pending as well as already-verified bounds.
                     if let authorized = verifiedBounds ?? requestedBounds,
@@ -367,6 +400,24 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     coverTask?.cancel()
                     coverTask = nil
                     selected = XDriveIOSOwnerMapChosenPlace(id: item.id)
+                },
+                onPlaces: { facets in
+                    guard phase == .active, !busy,
+                          selected == nil, selectedCluster == nil,
+                          let expected = login.owner,
+                          let overview, let verifiedBounds,
+                          XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
+                            verifiedBounds, current: currentBounds()
+                          ),
+                          XDriveIOSNativeOwnerMapSelectionPolicy.acceptsSelectedCluster(
+                            facets, currentlyVisible: overview.items
+                          ) else { return }
+                    cameraSettleTask?.cancel()
+                    cameraSettleTask = nil
+                    coverTask?.cancel()
+                    coverTask = nil
+                    selectedCluster = XDriveIOSOwnerMapChosenCluster(
+                        places: facets, owner: expected)
                 },
                 onAggregate: {
                     error = "聚合区域已放大；相机稳定后自动刷新，必要时可手动刷新。"
@@ -438,18 +489,32 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        .onAppear { if overview == nil && !busy && phase == .active { reload() } }
+        .sheet(item: $selectedCluster, onDismiss: {
+            if phase == .active { reload() } else { invalidate() }
+        }) { chosen in
+            NavigationStack {
+                XDriveIOSNativeOwnerMapClusterAlbum(
+                    login: login, selection: chosen)
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .onAppear {
+            if let cameraReturn { camera = cameraReturn }
+            if overview == nil && !busy && phase == .active { reload() }
+        }
         .onChange(of: login.owner) { _ in
             selected = nil
+            selectedCluster = nil
             invalidate()
             if phase == .active && login.owner != nil { reload() }
         }
         .onChange(of: phase) { new in
             if new == .active { reload() }
-            else { selected = nil; invalidate() }
+            else { selected = nil; selectedCluster = nil; invalidate() }
         }
         .onDisappear {
-            if selected == nil {
+            if selected == nil && selectedCluster == nil {
                 focused = false
                 onFocusChange?(false)
                 invalidate()
@@ -476,7 +541,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     private func scheduleCameraRefresh() {
         cameraSettleTask?.cancel()
         cameraSettleTask = nil
-        guard phase == .active, selected == nil,
+        guard phase == .active, selected == nil, selectedCluster == nil,
               login.owner != nil, currentBounds() != nil else { return }
         let ticket = epoch
         // One camera read after 500ms quiet, matching the two Baidu Hosts.
@@ -485,7 +550,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             do { try await Task.sleep(nanoseconds: 500_000_000) }
             catch { return }
             guard !Task.isCancelled, epoch == ticket,
-                  phase == .active, selected == nil,
+                  phase == .active, selected == nil, selectedCluster == nil,
                   login.owner != nil else { return }
             cameraSettleTask = nil
             reload()
@@ -505,8 +570,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             // credential. Sequential requests bound foreground memory/traffic.
             for facet in XDriveIOSNativeOwnerMapSelectionPolicy
                 .prioritizedPhotoCovers(result.items) {
-                guard !Task.isCancelled, epoch == ticket, selected == nil,
-                      phase == .active,
+                guard !Task.isCancelled, epoch == ticket,
+                      selected == nil, selectedCluster == nil, phase == .active,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
                       XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                         bounds, current: currentBounds())
@@ -516,7 +581,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     try Task.checkCancellation()
                     // An Owner or camera switch during the first await must
                     // not dispatch another thumbnail request for the old scope.
-                    guard epoch == ticket, selected == nil, phase == .active,
+                    guard epoch == ticket, selected == nil,
+                          selectedCluster == nil, phase == .active,
                           XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                             bounds, current: currentBounds())
@@ -525,7 +591,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     else { continue }
                     let cover = try await reader.thumbnail(first)
                     try Task.checkCancellation()
-                    guard epoch == ticket, selected == nil, phase == .active,
+                    guard epoch == ticket, selected == nil,
+                          selectedCluster == nil, phase == .active,
                           XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                             bounds, current: currentBounds())

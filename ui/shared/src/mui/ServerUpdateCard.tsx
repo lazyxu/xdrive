@@ -13,7 +13,7 @@ import {
 import type { SxProps, Theme } from '@mui/material/styles'
 import { formatBytes } from '../format'
 import {
-  xDriveServerUpdateChannels,
+  xDriveServerUpdateChannelsForSource,
   xDriveServerUpdateProgress,
   xDriveServerUpdateSources,
   xDriveServerUpdateStateLabel,
@@ -106,7 +106,7 @@ export function XDriveServerUpdateCard({
               disabled={buttonDisabled}
               onChange={(event) => onChannelChange(event.target.value as XDriveServerUpdateChannel)}
             >
-              {xDriveServerUpdateChannels.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
+              {xDriveServerUpdateChannelsForSource(source).map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
             </Select>
           </FormControl>
           <XDriveActionButton

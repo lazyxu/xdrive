@@ -1,4 +1,5 @@
 import CryptoKit
+import MapKit
 import Photos
 import SwiftUI
 
@@ -119,6 +120,10 @@ struct XDriveIOSNativePhotosDashboard: View {
     // the bounded Current Page mode explicitly.
     @State private var localMapScope: XDriveIOSNativeLocalMapScope = .library
     @State private var localMapPageOffset = 0
+    // Keep map source and cloud camera during native Gallery re-entry.
+    // Never persist camera/GPS coordinates with the navigation snapshot.
+    @State private var mapSource: XDriveIOSNativePhotoMapSource = .local
+    @State private var cloudMapCamera: MKCoordinateRegion?
     // A bounded navigation position; never holds a PhotoKit asset identity.
     @State private var localGalleryPageOffset = 0
     // Restore only the coarse 32-slot album directory, never album IDs.
@@ -127,6 +132,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var recentDynamic: [XDriveIOSNativeDynamicFeature] = []
     @State private var launcherQuery = ""
     @State private var showRecentPicker = false
+    @State private var showingLocalPhotoSearch = false
     @State private var galleryFocused = false
     // A source/tab/scene navigation creates a new focus owner even when
     // the user returns to the same source later (cloud -> map -> cloud).
@@ -214,6 +220,9 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .id(ownerScopeKey)
         .navigationBarBackButtonHidden(true)
+        .sheet(isPresented: $showingLocalPhotoSearch) {
+            XDriveIOSNativePhotoSearchScreen()
+        }
         .sheet(isPresented: $showRecentPicker) {
             NavigationStack {
                 List {
@@ -287,6 +296,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             // No push-route account card: parent root owns signed-out state.
             showSignOutConsent = false
             signOutConsentOwner = nil
+            showingLocalPhotoSearch = false
             if owner == nil {
                 navigationRouteStore.clear()
                 resetNavigation()
@@ -415,6 +425,9 @@ struct XDriveIOSNativePhotosDashboard: View {
                         Label("前台自动备份未开启", systemImage: "icloud.slash")
                     }
                     Spacer(minLength: 4)
+                    if gallerySource == .local || gallerySource == .albums {
+                        gallerySearchAction
+                    }
                     Button("备份设置") { openDynamic(.backup) }
                         .accessibilityIdentifier("native-ios-gallery-backup-settings")
                 }
@@ -450,6 +463,20 @@ struct XDriveIOSNativePhotosDashboard: View {
                 .padding(.horizontal, 12)
             }
             .padding(.vertical, 3)
+    }
+
+    private var gallerySearchAction: some View {
+        Button {
+            showingLocalPhotoSearch = true
+        } label: {
+            Image(systemName: "magnifyingglass")
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .disabled(photoAuthorization != .authorized &&
+                  photoAuthorization != .limited)
+        .accessibilityLabel("搜索本机照片")
+        .accessibilityIdentifier("native-ios-gallery-local-photo-search")
     }
 
     private var galleryCompactBackupAction: some View {
@@ -492,6 +519,9 @@ struct XDriveIOSNativePhotosDashboard: View {
                         !dynamicTypeSize.isAccessibilitySize {
                         HStack(spacing: 0) {
                             gallerySourceRow
+                            if gallerySource == .local || gallerySource == .albums {
+                                gallerySearchAction
+                            }
                             galleryCompactBackupAction
                         }
                         .frame(minHeight: 48)
@@ -532,6 +562,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                         login: login,
                         localMapScope: $localMapScope,
                         localMapPageOffset: $localMapPageOffset,
+                        source: $mapSource,
+                        cloudMapCamera: $cloudMapCamera,
                         onFocusChange: {
                             updateGalleryFocus(
                                 $0, from: .map, expectedOwnerKey: focusOwnerKey,
@@ -810,6 +842,8 @@ struct XDriveIOSNativePhotosDashboard: View {
         gallerySource = .local
         localMapScope = .library
         localMapPageOffset = 0
+        mapSource = .local
+        cloudMapCamera = nil
         localAlbumDirectoryOffset = 0
         localGalleryPageOffset = 0
         dynamicFeature = nil

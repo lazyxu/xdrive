@@ -84,7 +84,9 @@ struct XDriveIOSNativeFilesSearchRange: Decodable {
 enum XDriveIOSNativeFilesPagePolicy {
     static let pageSize = 64
     static let maximumCount = 10_000_000
+    static let minimumQueryCharacters = 2
     static let maximumQueryCharacters = 200
+    static let maximumQueryUTF8Bytes = 256
 
     static func validOffset(_ offset: Int) -> Bool {
         offset >= 0 && offset <= maximumCount &&
@@ -93,8 +95,9 @@ enum XDriveIOSNativeFilesPagePolicy {
 
     static func validSearch(_ query: String) -> Bool {
         let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !value.isEmpty &&
-            value.unicodeScalars.count <= maximumQueryCharacters
+        return value.unicodeScalars.count >= minimumQueryCharacters &&
+            value.unicodeScalars.count <= maximumQueryCharacters &&
+            value.utf8.count <= maximumQueryUTF8Bytes
     }
 
     static func validOrder(sort: String, order: String) -> Bool {
