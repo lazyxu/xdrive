@@ -242,9 +242,7 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 			p.activityTrigger = "remote"
 			err := p.reconcileRemote(ctx)
 			p.activityTrigger = ""
-			if p.activityRunID != "" {
-				p.finishActivity(p.activityRunID, err, false)
-			}
+			p.finishBackgroundActivity("remote", err)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "xd: Windows remote sync:", err)
 				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
@@ -257,9 +255,7 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 			p.activityTrigger = "audit"
 			err := p.reconcile(ctx)
 			p.activityTrigger = ""
-			if p.activityRunID != "" {
-				p.finishActivity(p.activityRunID, err, false)
-			}
+			p.finishBackgroundActivity("audit", err)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "xd: Windows full audit:", err)
 				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})

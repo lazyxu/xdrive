@@ -2,7 +2,10 @@
 
 package mount
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestWindowsActivityReceiptsKeepRunOwnerAndNoFakeDownload(t *testing.T) {
  p := &winProvider{activityOwner:"account-a",activityTrigger:"remote"}
@@ -29,4 +32,24 @@ func TestWindowsActivityReceiptsKeepRunOwnerAndNoFakeDownload(t *testing.T) {
  if len(events)!=4 || events[3].Kind!=EventSyncCompleted || p.activityRunID!="" {
   t.Fatalf("run not finalized: %+v",events)
  }
+}
+
+func TestWindowsBackgroundSyncFailureWithoutMutationIsRecorded(t *testing.T) {
+	p := &winProvider{activityOwner: "account-a"}
+	var events []Event
+	SetEventSink(func(ev Event) { events = append(events, ev) })
+	defer SetEventSink(nil)
+	p.finishBackgroundActivity("remote", nil)
+	if len(events) != 0 {
+		t.Fatalf("empty successful poll should not create a run: %+v", events)
+	}
+	p.finishBackgroundActivity("remote", errors.New("remote timeout"))
+	if len(events) != 2 || events[0].Kind != EventSyncStarted ||
+		events[0].Trigger != "remote" || events[1].Kind != EventSyncFailed ||
+		events[1].RunID != events[0].RunID {
+		t.Fatalf("failed poll must be persisted as a correlated batch: %+v", events)
+	}
+	if p.activityRunID != "" {
+		t.Fatal("failed poll left a running activity")
+	}
 }

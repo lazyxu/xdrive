@@ -77,3 +77,14 @@ func (p *winProvider) notifyConflict(conflictPath, originalPath string, original
   ItemID: uuid.NewString(),
  })
 }
+
+// finishBackgroundActivity avoids recording idle successful scans but persists
+// failed remote/audit attempts even when no file mutation was observed.
+func (p *winProvider) finishBackgroundActivity(trigger string, err error) {
+	if p.activityRunID == "" && err != nil {
+		p.beginActivity(trigger)
+	}
+	if p.activityRunID != "" {
+		p.finishActivity(p.activityRunID, err, false)
+	}
+}
