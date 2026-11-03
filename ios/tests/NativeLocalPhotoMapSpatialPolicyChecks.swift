@@ -136,6 +136,36 @@ struct NativeLocalMapSpatialPolicyChecks {
             Policy.includes(dateLine, latitude: $0.latitude, longitude: $0.longitude)
         })
 
+        // A visible MapKit cluster with multiple cells opens their union.
+        // Duplicate, stale, unverified, blank and unbounded IDs are denied.
+        let chosen = ["grid:0:9000:18000", "grid:0:9001:18000"]
+        let visible = chosen + ["grid:0:9002:18000"]
+        precondition(Policy.acceptsCellSelection(
+            selectedIDs: chosen, currentCellIDs: visible
+        ))
+        precondition(Policy.acceptsCellSelection(
+            selectedIDs: [chosen[0]], currentCellIDs: visible
+        ))
+        precondition(!Policy.acceptsCellSelection(
+            selectedIDs: [], currentCellIDs: visible
+        ))
+        precondition(!Policy.acceptsCellSelection(
+            selectedIDs: chosen + [chosen[0]], currentCellIDs: visible
+        ))
+        precondition(!Policy.acceptsCellSelection(
+            selectedIDs: chosen, currentCellIDs: [chosen[0], chosen[0]]
+        ))
+        precondition(!Policy.acceptsCellSelection(
+            selectedIDs: chosen, currentCellIDs: [chosen[0]]
+        ))
+        precondition(!Policy.acceptsCellSelection(
+            selectedIDs: [""], currentCellIDs: [""]
+        ))
+        let overLimit = (0...64).map { "grid:0:\($0):0" }
+        precondition(!Policy.acceptsCellSelection(
+            selectedIDs: overLimit, currentCellIDs: overLimit
+        ))
+
         var two = XDriveIOSNativeLocalMapSpatialIndex<String>()
         precondition(two.add(latitude: 0, longitude: 0, representative: "first"))
         precondition(two.add(latitude: 0, longitude: 0, representative: "second"))
