@@ -448,8 +448,15 @@ func (s *Server) createDirectory(c *gin.Context) {
 		return
 	}
 	n := meta.Node{ParentID: &parentID, Name: req.Name, Type: meta.NodeTypeDir, OwnerID: userID(c)}
-	if err := s.DB.Create(&n).Error; err != nil {
-		if isDuplicate(err) {
+	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, userID(c), parentID); err != nil {
+			return err
+		}
+		return tx.Create(&n).Error
+	}); err != nil {
+		if errors.Is(err, errManagedSourceWriteDenied) {
+			fail(c, http.StatusConflict, err.Error())
+		} else if isDuplicate(err) {
 			fail(c, http.StatusConflict, "name already exists")
 		} else {
 			fail(c, http.StatusInternalServerError, "create directory failed")
@@ -504,6 +511,9 @@ func (s *Server) copyNode(c *gin.Context) {
 
 	var copied meta.Node
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, uid, req.ParentID); err != nil {
+			return err
+		}
 		var current meta.Node
 		if err := tx.Preload("File").
 			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", source.ID, uid).
@@ -519,6 +529,8 @@ func (s *Server) copyNode(c *gin.Context) {
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, errManagedSourceWriteDenied):
+			fail(c, http.StatusConflict, err.Error())
 		case errors.Is(err, errCopyNameConflict) || isDuplicate(err):
 			fail(c, http.StatusConflict, "name already exists")
 		case errors.Is(err, gorm.ErrRecordNotFound):
@@ -738,7 +750,7 @@ func (s *Server) uploadFile(c *gin.Context) {
 		fail(c, statusForLookup(err), "parent directory not found")
 		return
 	}
-	if notesRejectDestination(c, s.DB, parentID, "") {
+	if notesRejectDestination(c, s.DB, parentID, "") || managedSourceWritePreflight(c, s.DB, userID(c), parentID, false) {
 		return
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, s.MaxUploadBytes+(8<<20))
@@ -804,6 +816,9 @@ func (s *Server) uploadMultipart(c *gin.Context, parent meta.Node, fh *multipart
 		retainedKey string
 	)
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, userID(c), parent.ID); err != nil {
+			return err
+		}
 		if _, err := s.ensureQuotaForStorageKey(tx, userID(c), size, casKey, true); err != nil {
 			return err
 		}
@@ -826,7 +841,9 @@ func (s *Server) uploadMultipart(c *gin.Context, parent meta.Node, fh *multipart
 		if writeQuotaError(c, err) {
 			return
 		}
-		if isDuplicate(err) {
+		if errors.Is(err, errManagedSourceWriteDenied) {
+			fail(c, http.StatusConflict, err.Error())
+		} else if isDuplicate(err) {
 			fail(c, http.StatusConflict, "name already exists")
 		} else {
 			fail(c, http.StatusInternalServerError, "metadata write failed")
@@ -942,6 +959,9 @@ func (s *Server) overwriteFile(c *gin.Context) {
 			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", id, userID(c)).First(&current).Error; err != nil {
 			return err
 		}
+		if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, userID(c), current.ID); err != nil {
+			return err
+		}
 		currentRevision = current.Revision
 		if current.Revision != expected {
 			return errRevisionConflict
@@ -973,6 +993,10 @@ func (s *Server) overwriteFile(c *gin.Context) {
 		}
 		if errors.Is(err, errRevisionConflict) {
 			revisionConflict(c, expected, currentRevision)
+			return
+		}
+		if errors.Is(err, errManagedSourceWriteDenied) {
+			fail(c, http.StatusConflict, err.Error())
 			return
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1056,18 +1080,22 @@ func (s *Server) updateNode(c *gin.Context) {
 	if notesRejectDestination(c, s.DB, newParent, newName) {
 		return
 	}
+	if len(updates) > 0 && (managedSourceWritePreflight(c, s.DB, userID(c), id, true) ||
+		managedSourceWritePreflight(c, s.DB, userID(c), newParent, false)) {
+		return
+	}
 	if len(updates) == 0 {
 		c.Header("ETag", fmt.Sprintf("\"%d\"", n.Revision))
 		c.JSON(http.StatusOK, toNodeDTO(n))
 		return
 	}
-	protected, err := yikeManagedTargetInSubtreeDB(c.Request.Context(), s.DB, userID(c), id)
+	protected, err := managedSourceTargetInSubtreeDB(c.Request.Context(), s.DB, userID(c), id)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "check managed source target failed")
 		return
 	}
 	if protected {
-		fail(c, http.StatusConflict, "managed Yike target path cannot be renamed or moved")
+		fail(c, http.StatusConflict, "managed source target cannot be renamed or moved")
 		return
 	}
 	if s.nameExists(userID(c), newParent, newName, id) {
@@ -1124,6 +1152,9 @@ func (s *Server) deleteNode(c *gin.Context) {
 		if err := notesRejectNodeWithReason(c.Request.Context(), tx, userID(c), n.ID); err != nil {
 			return err
 		}
+		if err := requireOrdinarySourceMutationTx(c.Request.Context(), tx, userID(c), n.ID); err != nil {
+			return err
+		}
 		currentRevision = n.Revision
 		if n.Revision != expected {
 			return errRevisionConflict
@@ -1132,7 +1163,7 @@ func (s *Server) deleteNode(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		protected, err := yikeManagedTargetInIDsDB(c.Request.Context(), tx, userID(c), ids)
+		protected, err := managedSourceTargetInIDsDB(c.Request.Context(), tx, userID(c), ids)
 		if err != nil {
 			return err
 		}
@@ -1162,8 +1193,8 @@ func (s *Server) deleteNode(c *gin.Context) {
 			fail(c, http.StatusBadRequest, "root cannot be deleted")
 		case errors.Is(err, errNotesManagedPath):
 			fail(c, http.StatusConflict, errNotesManagedPath.Error())
-		case errors.Is(err, errManagedSourceTarget):
-			fail(c, http.StatusConflict, "managed Yike target path cannot be deleted")
+		case errors.Is(err, errManagedSourceWriteDenied), errors.Is(err, errManagedSourceTarget):
+			fail(c, http.StatusConflict, errManagedSourceWriteDenied.Error())
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "node not found")
 		default:
