@@ -153,7 +153,7 @@ class ServerTests(unittest.TestCase):
              redirect_stderr(stderr):
             self.assertEqual(mirror.main(), 1)
         self.assertEqual(stderr.getvalue(),
-                         'Server release verification failed [share-package-app]; no publication may be assumed\\n'.replace('\\\\n', '\\n'))
+                         'Server release verification failed [share-package-app]; no publication may be assumed\n')
         self.assertNotIn(secret, stderr.getvalue())
         self.assertNotIn('PRIVATE-CAPABILITY', stderr.getvalue())
 
@@ -167,7 +167,7 @@ class ServerTests(unittest.TestCase):
              redirect_stderr(stderr):
             self.assertEqual(mirror.main(), 1)
         self.assertEqual(stderr.getvalue(),
-                         'Server release verification failed [github-package-postgres]; no publication may be assumed\\n'.replace('\\\\n', '\\n'))
+                         'Server release verification failed [github-package-postgres]; no publication may be assumed\n')
         self.assertNotIn(secret, stderr.getvalue())
 
     def test_duplicate_remote_names_fail_closed(self):
