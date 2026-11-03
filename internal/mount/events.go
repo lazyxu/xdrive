@@ -9,6 +9,7 @@ const (
 	EventSyncCompleted EventKind = "sync_completed"
 	EventSyncFailed    EventKind = "sync_failed"
 	EventSyncDeferred  EventKind = "sync_deferred"
+	EventSyncItemCommitted EventKind = "sync_item_committed"
 	EventConflict      EventKind = "conflict"
 )
 
@@ -23,6 +24,12 @@ type Event struct {
 	RunID          string
 	Trigger        string
 	ActivityOwner  string
+	ItemID         string
+	Action         string
+	Direction      string
+	OldPath        string
+	LogicalBytes   *int64
+	TransferredBytes *int64
 }
 
 var mountEventSink struct {
