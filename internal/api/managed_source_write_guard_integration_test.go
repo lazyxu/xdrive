@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
 )
 
 // The target marker must be earned by server provisioning/migration, never
@@ -164,4 +166,49 @@ func TestManagedSourceGuardLargeSubtreeIDsBoundedSQL(t *testing.T) {
 	if err != nil || found {
 		t.Fatalf("large ordinary subtree was misclassified: found=%v err=%v", found, err)
 	}
+}
+
+func TestManagedSourceGuardBlocksAnonymousUploadWithinSharedAncestor(t *testing.T) {
+	db, server, owner, _, root := setupFilePropertiesTestDB(t)
+	if err := db.AutoMigrate(&meta.Share{}); err != nil {
+		t.Fatal(err)
+	}
+	shared := createFilePropertiesDir(t, db, owner.ID, root.ID, "shared-upload-root")
+	managed := createFilePropertiesDir(t, db, owner.ID, shared.ID, "synology-target")
+	ordinary := createFilePropertiesDir(t, db, owner.ID, shared.ID, "ordinary")
+	source := meta.Source{
+		OwnerID: owner.ID, Name: managed.Name, Kind: synologySourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused,
+		Revision: 1, TargetNodeID: &managed.ID, TargetManaged: true,
+	}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatal(err)
+	}
+	share := meta.Share{
+		OwnerID: owner.ID, NodeID: shared.ID,
+		TokenHash: strings.Repeat("e", 64), Access: shareAccessViewUpload,
+	}
+	if err := db.Create(&share).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	verify := func(parentID uint64, allowed bool) {
+		t.Helper()
+		err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			_, err := server.publicShareUploadAdmissionTx(
+				ctx, tx, share.ID, owner.ID, parentID,
+			)
+			return err
+		})
+		if allowed && err != nil {
+			t.Fatalf("ordinary descendant unexpectedly denied Share upload: %v", err)
+		}
+		if !allowed && !errors.Is(err, errShareUploadDenied) {
+			t.Fatalf("ancestor Share reached protected Source subtree: %v", err)
+		}
+	}
+	verify(managed.ID, false)
+	verify(ordinary.ID, true)
+	verify(shared.ID, true)
 }
