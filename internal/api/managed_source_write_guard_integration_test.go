@@ -135,3 +135,33 @@ func TestManagedSourceGuardBlocksFilesWritesAndAllowsOrdinaryNeighbor(t *testing
 		t.Fatalf("managed photo modified by Files: %+v", reloaded)
 	}
 }
+
+func TestManagedSourceGuardLargeSubtreeIDsBoundedSQL(t *testing.T) {
+	db, _, owner, _, root := setupFilePropertiesTestDB(t)
+	id := root.ID
+	source := meta.Source{
+		OwnerID: owner.ID, Name: "Large test", Kind: synologySourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused,
+		Revision: 1, TargetNodeID: &id, TargetManaged: true,
+	}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 70k IDs intentionally exceed PostgreSQL's maximum expanded bind
+	// arguments, but checking Source roots should remain O(Source count).
+	many := make([]uint64, 70000)
+	for i := range many {
+		many[i] = uint64(i) + 100000
+	}
+	many[len(many)-1] = root.ID
+	found, err := managedSourceTargetInIDsDB(context.Background(), db, owner.ID, many)
+	if err != nil || !found {
+		t.Fatalf("large Source subtree lost a managed root: found=%v err=%v", found, err)
+	}
+	many[len(many)-1] = 99999999
+	found, err = managedSourceTargetInIDsDB(context.Background(), db, owner.ID, many)
+	if err != nil || found {
+		t.Fatalf("large ordinary subtree was misclassified: found=%v err=%v", found, err)
+	}
+}
