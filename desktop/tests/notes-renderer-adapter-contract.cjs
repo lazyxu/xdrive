@@ -127,6 +127,8 @@ test('Desktop Notes rejects forged pagination, revision, parent and content', as
   const agent = fakeAgent([])
   const port = create(agent, 'server:owner:session-3', () => true)
   await assert.rejects(() => port.readNote('../foreign-owner'), /标识不合法/)
+  await assert.rejects(() => port.exportNote(row.node_id, '-'.repeat(36) + '.md'), /文件名不合法/)
+  await assert.rejects(() => port.exportNote(row.node_id, 'a'.repeat(36) + '.md'), /文件名不合法/)
   await assert.rejects(() => port.listNotes('mine', 'x', 5), /分页参数不合法/)
   await assert.rejects(() => port.saveNote(noteID,
     { title: 'Hello', markdown, expected_revision: 0 }), /版本不合法/)
