@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { Box, Button, Stack, TextField, Typography, useTheme } from '@mui/material'
 import {
@@ -11,6 +11,7 @@ import { XDriveDSMLoginNoCommitError } from '@xdrive/ui/mui'
 import type { XDriveSynologyBackupLocalClient } from '@xdrive/ui/mui'
 import './styles.css'
 import { createXDriveSynologyHost } from './synologyHost'
+import { createXDriveDSMNotesPort } from './synologyNotesPort'
 import { readDSMLoginDraft, saveDSMLoginDraft } from './synologyLoginDraft'
 import { xDriveDSMLoginInputError, xDriveDSMLoginOwnerError } from './synologyLoginPreflight'
 
@@ -289,6 +290,59 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
 }) {
   const theme = useTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [notesOwnerScope, setNotesOwnerScope] = useState('')
+  // A DSM package login is not an xDrive Owner login. Only expose the shared
+  // Notes route after the original Agent's current Owner and Notes capability
+  // have been independently read. Invalidate on window refocus/account drift.
+  useEffect(() => {
+    const cgi = host.services?.localBackupClient
+    if (!cgi) return
+    let current: AbortController | null = null
+    let disposed = false
+    const inspect = () => {
+      current?.abort()
+      const controller = new AbortController()
+      current = controller
+      void (async () => {
+        try {
+          const first = await cgi.serverConnection(controller.signal)
+          if (!first.configured || first.must_change_password ||
+              !/^[0-9a-f]{64}$/.test(first.owner_scope) ||
+              !await cgi.notesAvailable(controller.signal)) {
+            if (!controller.signal.aborted && !disposed) setNotesOwnerScope('')
+            return
+          }
+          await cgi.ownerQuota(controller.signal)
+          const second = await cgi.serverConnection(controller.signal)
+          if (!controller.signal.aborted && !disposed) {
+            setNotesOwnerScope(second.configured && !second.must_change_password &&
+              first.owner_scope === second.owner_scope ? first.owner_scope : '')
+          }
+        } catch {
+          if (!controller.signal.aborted && !disposed) setNotesOwnerScope('')
+        }
+      })()
+    }
+    const visibility = () => { if (!document.hidden) inspect() }
+    inspect()
+    window.addEventListener('focus', inspect)
+    document.addEventListener('visibilitychange', visibility)
+    return () => {
+      disposed = true
+      current?.abort()
+      window.removeEventListener('focus', inspect)
+      document.removeEventListener('visibilitychange', visibility)
+    }
+  }, [host])
+  const notesPort = useMemo(() => {
+    const cgi = host.services?.localBackupClient
+    return cgi && notesOwnerScope
+      ? createXDriveDSMNotesPort(cgi, notesOwnerScope) : undefined
+  }, [host, notesOwnerScope])
+  const notesHost = useMemo(() => ({
+    ...host,
+    services: { ...host.services, notesPage: notesPort },
+  }), [host, notesPort])
   // Shared application navigation owns the same-route refresh lifecycle,
   // Server-admin gate and disposable foreground priority for every Host.
   // DSM contributes only authenticated domain ports, never page-specific JSX.
@@ -301,7 +355,7 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
 
   return (
     <XDriveApp
-      host={host}
+      host={notesHost}
       view={selected}
       shellSx={{ height: '100dvh', minHeight: 0 }}
       sidebar={{
@@ -312,6 +366,7 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
         compactPrimaryKeys: ['overview', 'files', 'gallery', 'transfers'],
         sections: xDriveWorkspaceHostSections({
           adminRoleVerified: host.adminRoleVerified === true,
+          showNotes: Boolean(notesPort),
         }),
       }}
       onNavigate={(key) => {
