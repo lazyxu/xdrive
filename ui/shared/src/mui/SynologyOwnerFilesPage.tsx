@@ -89,14 +89,13 @@ function itemForExplorer(node: XDriveSynologyOwnerFileNode): XDriveFileExplorerI
     revision: node.revision,
     createdAt: node.created_at,
     updatedAt: node.updated_at,
-    statusLabel: '只读',
     thumbnailEligible: xDriveFileSupportsThumbnail(node.name, node.type),
   }
 }
 
 /**
- * One canonical FileExplorer component, driven by a strictly read-only,
- * Server Owner-authenticated Agent data source in the DSM host.
+ * One canonical FileExplorer component, driven by an Owner-authenticated
+ * Agent data source with explicitly scoped Server file operations.
  * This is not an independent NAS file manager and cannot access DSM paths.
  */
 export function XDriveSynologyOwnerFilesPage({
