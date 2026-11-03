@@ -138,7 +138,7 @@ test('server update command boundary never mounts Docker socket into the API con
   assert.ok(apiRouter.includes('admin.POST("/update"'), 'admin update start route missing')
   assert.ok(apiUpdate.includes('input.Source != "github" && input.Source != "gitlab"'), 'API source whitelist missing')
   assert.ok(apiUpdate.includes('input.Channel != "stable" && input.Channel != "master"'), 'API channel whitelist missing')
-  assert.ok(apiUpdate.includes('BackupFileData bool'), 'API one-shot file-data backup option missing')
+  assert.ok(/BackupFileData\s+bool/.test(apiUpdate), 'API one-shot file-data backup option missing')
   assert.ok(compose.includes('XD_HOST_CONTROL_DIR: /host-control'), 'server host-control mount env missing')
   assert.ok(compose.includes(':/host-control'), 'server host-control bind mount missing')
   assert.equal(compose.includes('/var/run/docker.sock'), false, 'server API must never receive Docker socket access')

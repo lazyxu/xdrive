@@ -195,45 +195,53 @@ func TestAdminStartServerShareUpdatePreservesMasterSource(t *testing.T) {
 }
 
 func TestAdminOfflineUpdateOnlyQueuesFixedImportIdentity(t *testing.T) {
-  gin.SetMode(gin.TestMode)
-  for _, tc := range []struct{ name, manifest, installer string }{
-    {"manual", strings.Repeat("a", 64), strings.Repeat("b", 64)},
-    {"signed", "", ""},
-  } {
-    t.Run(tc.name, func(t *testing.T) {
-      dir := t.TempDir()
-      s := &Server{HostControlDir: dir}
-      writeServerUpdateTestStatus(t, dir, serverUpdateState{
-        State: "idle", Source: "github", Channel: "master",
-        RunnerHeartbeatAt: time.Now().UTC().Format(time.RFC3339),
-      })
-      importID := strings.Repeat("f", 32)
-      body, err := json.Marshal(map[string]any{
-        "source": "offline", "channel": "master", "offline_id": importID,
-        "trusted_manifest_sha256": tc.manifest,
-        "trusted_installer_sha256": tc.installer, "backup_file_data": true,
-      })
-      if err != nil { t.Fatal(err) }
-      req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/update", strings.NewReader(string(body)))
-      req.Header.Set("Content-Type", "application/json")
-      res := httptest.NewRecorder()
-      ctx, _ := gin.CreateTestContext(res)
-      ctx.Request = req
-      ctx.Set("user", meta.User{Username: "admin", Role: meta.UserRoleAdmin})
-      s.adminStartServerUpdate(ctx)
-      if res.Code != http.StatusAccepted { t.Fatalf("HTTP %d: %s", res.Code, res.Body.String()) }
-      raw, err := os.ReadFile(filepath.Join(dir, "request.json"))
-      if err != nil { t.Fatal(err) }
-      var out serverUpdateRequestFile
-      if err := json.Unmarshal(raw, &out); err != nil { t.Fatal(err) }
-      if out.Source != "offline" || out.Channel != "master" || out.OfflineID != importID ||
-        out.TrustedManifestSHA256 != tc.manifest || out.TrustedInstallerSHA256 != tc.installer ||
-        !out.BackupFileData || out.RequestedBy != "admin" {
-        t.Fatalf("invalid offline request: %+v", out)
-      }
-      if state := s.serverUpdateStatus(); state.State != "queued" || state.Source != "offline" {
-        t.Fatalf("offline update not represented in status: %+v", state)
-      }
-    })
-  }
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct{ name, manifest, installer string }{
+		{"manual", strings.Repeat("a", 64), strings.Repeat("b", 64)},
+		{"signed", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			s := &Server{HostControlDir: dir}
+			writeServerUpdateTestStatus(t, dir, serverUpdateState{
+				State: "idle", Source: "github", Channel: "master",
+				RunnerHeartbeatAt: time.Now().UTC().Format(time.RFC3339),
+			})
+			importID := strings.Repeat("f", 32)
+			body, err := json.Marshal(map[string]any{
+				"source": "offline", "channel": "master", "offline_id": importID,
+				"trusted_manifest_sha256":  tc.manifest,
+				"trusted_installer_sha256": tc.installer, "backup_file_data": true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/update", strings.NewReader(string(body)))
+			req.Header.Set("Content-Type", "application/json")
+			res := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(res)
+			ctx.Request = req
+			ctx.Set("user", meta.User{Username: "admin", Role: meta.UserRoleAdmin})
+			s.adminStartServerUpdate(ctx)
+			if res.Code != http.StatusAccepted {
+				t.Fatalf("HTTP %d: %s", res.Code, res.Body.String())
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, "request.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var out serverUpdateRequestFile
+			if err := json.Unmarshal(raw, &out); err != nil {
+				t.Fatal(err)
+			}
+			if out.Source != "offline" || out.Channel != "master" || out.OfflineID != importID ||
+				out.TrustedManifestSHA256 != tc.manifest || out.TrustedInstallerSHA256 != tc.installer ||
+				!out.BackupFileData || out.RequestedBy != "admin" {
+				t.Fatalf("invalid offline request: %+v", out)
+			}
+			if state := s.serverUpdateStatus(); state.State != "queued" || state.Source != "offline" {
+				t.Fatalf("offline update not represented in status: %+v", state)
+			}
+		})
+	}
 }
