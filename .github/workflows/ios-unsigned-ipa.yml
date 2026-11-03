@@ -258,6 +258,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-photo-filmstrip-check"
           node --test desktop/tests/ios-native-photo-filmstrip-contract.cjs
 
+      - name: Verify bounded native PhotoKit and Owner PhotoAsset filmstrip scrub gesture
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoFilmstripScrubPolicy.swift \
+            ios/tests/NativePhotoFilmstripScrubPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-filmstrip-scrub"
+          "$RUNNER_TEMP/xdrive-ios-photo-filmstrip-scrub"
+          node --test desktop/tests/ios-native-photo-filmstrip-scrub-contract.cjs
+
       - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail
@@ -271,6 +281,7 @@ jobs:
             desktop/tests/ios-native-cloud-original-thumbnail-wall.cjs \
             desktop/tests/ios-native-auto-foreground-root-lifecycle.cjs \
             desktop/tests/ios-native-album-navigation.cjs \
+            desktop/tests/ios-native-album-continuous.cjs \
             desktop/tests/ios-native-five-tab-navigation.cjs \
             desktop/tests/ios-native-photo-zoom-viewer.cjs \
             desktop/tests/ios-native-photo-viewer-return.cjs \
@@ -490,7 +501,7 @@ jobs:
             ios/tests/NativeFilesViewerPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-files-viewer-policy"
           "$RUNNER_TEMP/xdrive-ios-files-viewer-policy"
-          node --test desktop/tests/ios-native-files-viewer.cjs
+          node --test desktop/tests/ios-native-files-viewer.cjs desktop/tests/ios-native-files-image-immersive.cjs
 
       - name: Verify native Files folder creation name and Owner-scoped POST
         run: |

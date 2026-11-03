@@ -6,7 +6,10 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '../..');
 const read = pathInRepo => fs.readFileSync(path.join(root, pathInRepo), 'utf8');
 const local = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift').split('struct XDriveIOSNativeLocalGalleryScreen: View {')[1];
-const album = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift').split('struct XDriveIOSNativeAlbumContentsScreen: View {')[1].split('struct XDriveIOSNativePhotoAlbumsScreen: View {')[0];
+const albumSource = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift');
+const album = albumSource.split('struct XDriveIOSNativeAlbumContentsScreen: View {')[1].split('struct XDriveIOSNativePhotoAlbumsScreen: View {')[0];
+const albumVirtual = albumSource.split('private struct XDriveIOSNativeAlbumVirtualPage: View {')[1].split('struct XDriveIOSNativeAlbumContentsScreen: View {')[0];
+const continuous = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift');
 const policy = read('ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift');
 const cloud = read('ios/XDriveIOS/NativeServerMediaGallery.swift')
   .split('struct XDriveIOSNativeServerMediaWall: View {')[1]
@@ -16,12 +19,15 @@ for (const [name, view, tile] of [['PhotoKit full wall', local, 'candidate'], ['
   test(name + ' returns to exact authorized tile after bounded page reload', () => {
     assert.match(view, /ScrollViewReader \{ returnScroll in/);
     assert.match(view, /\.onChange\(of: pageRenderRevision\)/);
-    assert.match(view, /\.id\((?:candidate|item)\.id\)/);
+    const tileSurface = name === 'PhotoKit album wall' ? albumVirtual : view;
+    assert.match(tileSurface, /\.id\((?:candidate|item)\.id\)/);
     if (name === 'PhotoKit album wall') {
       // The authenticated album Viewer must freeze the current bounded page
       // before opening, so its later 64-slot boundary crossing cannot reuse
       // the initial wall's stale list or focus anchor.
-      assert.match(view, /viewerReturnID = item\.id\s+accessibilityFocusedTileID = nil\s+viewerPage = page\s+selected = item/);
+      assert.match(view, /viewerReturnID = item\.id\s+accessibilityFocusedTileID = nil\s+viewerPage = loadedPage\s+selected = item/);
+      assert.match(view, /accessibilityFocus: \$accessibilityFocusedTileID/);
+      assert.match(albumVirtual, /let accessibilityFocus: AccessibilityFocusState<String\?>\.Binding/);
     } else {
       assert.match(view, /viewerReturnID = (?:candidate|item)\.id\s+accessibilityFocusedTileID = nil\s+selected = (?:candidate|item)/);
     }
@@ -30,7 +36,11 @@ for (const [name, view, tile] of [['PhotoKit full wall', local, 'candidate'], ['
     assert.match(view, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/);
     assert.match(view, /scroll\.scrollTo\(target, anchor: \.center\)/);
     assert.match(view, /@AccessibilityFocusState private var accessibilityFocusedTileID: String\?/);
-    assert.match(view, /\.accessibilityFocused\(\$accessibilityFocusedTileID, equals: (?:candidate|item)\.id\)/);
+    if (name === 'PhotoKit album wall') {
+      assert.match(tileSurface, /\.accessibilityFocused\(accessibilityFocus, equals: item\.id\)/);
+    } else {
+      assert.match(view, /\.accessibilityFocused\(\$accessibilityFocusedTileID, equals: candidate\.id\)/);
+    }
     assert.match(view, /scroll\.scrollTo\(target, anchor: \.center\)[\s\S]*?accessibilityFocusedTileID = target/);
     assert.match(view, /private func clearViewerTileAnchor\(\) \{[\s\S]*?accessibilityFocusedTileID = nil/);
     assert.match(view, /clearViewerTileAnchor\(\)/);
@@ -39,6 +49,20 @@ for (const [name, view, tile] of [['PhotoKit full wall', local, 'candidate'], ['
     assert.doesNotMatch(view, /UserDefaults|@AppStorage|WKWebView/);
   });
 }
+test('active continuous PhotoKit wall revalidates the Viewer return tile and VoiceOver target', () => {
+  assert.match(continuous, /private struct XDriveIOSNativeVirtualPhotoPage: View/)
+  assert.match(continuous, /let accessibilityFocus: AccessibilityFocusState<String\?>\.Binding/)
+  assert.match(continuous, /\.accessibilityFocused\(accessibilityFocus, equals: candidate\.id\)/)
+  assert.match(continuous, /accessibilityFocus: \$accessibilityFocusedTileID/)
+  assert.match(continuous, /returnPageOffset == page\.startOffset/)
+  assert.match(continuous, /\$0\.id == expected && \$0\.capturedAt == returnDate/)
+  assert.match(continuous, /\$0\.modifiedAt == returnModified/)
+  assert.match(continuous, /scroll\.scrollTo\("photo:/)
+  assert.match(continuous, /accessibilityFocusedTileID = candidate\.id/)
+  assert.match(continuous, /\.onChange\(of: phase\)/)
+  assert.match(continuous, /invalidate\(with: nil\)/)
+})
+
 test('anchor policy does not persist PhotoKit local IDs or scroll without reauthorization', () => {
   assert.match(policy, /authorized,/);
   assert.match(policy, /currentPageIDs.count <= 64/);

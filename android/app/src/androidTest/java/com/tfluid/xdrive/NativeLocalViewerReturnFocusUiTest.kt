@@ -26,7 +26,7 @@ class NativeLocalViewerReturnFocusUiTest {
         isVideo = false,
         albumId = "camera",
         albumName = "Camera",
-        addedAtSeconds = 2000,
+        capturedAtMillis = 2000,
     )
 
     @Test fun dismissingViewerRestoresInputFocusToItsExactNativeSourceTile() {

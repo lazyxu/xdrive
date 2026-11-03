@@ -100,7 +100,8 @@ with tarfile.open(fileobj=io.BytesIO(payload), mode="r:xz") as body:
             assert 24 <= len(actual) <= (2 << 20) and actual.startswith(b"\x89PNG\r\n\x1a\n"), item
     config = json.load(body.extractfile(inner["ui/config"]))
     app = config[".url"]["com.xdrive.NASBackup"]
-    assert app["type"] == "url" and app["url"] == "3rdparty/xdrivenas/synology.html"
+    # dsmuidir mounts at /webman/3rdparty/<package>; /3rdparty/ is a DSM 404.
+    assert app["type"] == "url" and app["url"] == "/webman/3rdparty/xdrivenas/synology.html"
     assert app["icon"] == "images/icon_{0}.png"
     assert app["allUsers"] is True
     cgi = body.extractfile(inner["ui/backup.cgi"]).read()

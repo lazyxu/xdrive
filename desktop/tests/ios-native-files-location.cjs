@@ -27,8 +27,8 @@ test('native Files locate buttons stay inside concrete rows before the context m
   const end = browser.indexOf('private var filesContinuousStatus:', start)
   assert.ok(start >= 0 && end > start, 'native Files row must exist')
   const row = browser.slice(start, end)
-  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*Button\("文件夹操作"\)/)
-  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*Button\("文件操作"\)/)
+  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*nativeQuickActions\(for: entry\)\s*Button\("文件夹操作"\)/)
+  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*nativeQuickActions\(for: entry\)\s*Button\("文件操作"\)/)
 })
 
 test('location is a server-confirmed Owner path, not guessed search-hit text', () => {
@@ -59,7 +59,12 @@ test('return is inside same Files feature and reuses the only native browser', (
   assert.match(location, /XDriveIOSNativeFilesBrowser\(/)
   assert.match(location, /folderID: target\.folder\.id,/)
   assert.match(location, /target\.folder\.id == openedOwner\.rootNodeID/)
+  assert.match(location, /login: login, folderID: openedOwner\.rootNodeID,\s*folderName: "xDrive 云端",\s*initialOffset: target\.offset, focus: selected/)
+  assert.doesNotMatch(location, /login: login, initialOffset: target\.offset, focus: selected/)
+  assert.match(location, /folderID: target\.folder\.id,\s*folderName: target\.folder\.name,/)
   assert.match(location, /initialOffset: target\.offset, focus: selected/)
+  assert.match(browser, /private var isHome: Bool \{ folder == nil && activeQuery\.isEmpty \}/)
+  assert.match(browser, /native-ios-files-open-root-location/)
   assert.match(browser, /model\.entries\.contains\(where: \{ \$0\.node == focusedNode \}\)/)
   assert.match(browser, /returnScroll\.scrollTo\(focusedNode\.id, anchor: \.center\)/)
   assert.match(location, /\.onChange\(of: login\.owner\)/)

@@ -9,12 +9,12 @@ const source = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
 const shell = read('ios/XDriveIOS/NativePhotoTimelineBrowser.swift')
 const policy = read('ios/XDriveIOS/NativePhotoTimelinePolicy.swift')
 
-test('local PhotoKit Gallery defaults to continuous lazy virtual pages with legacy pagination fallback', () => {
-  assert.match(shell, /@State private var useContinuousWall = true/)
+test('local PhotoKit Gallery always mounts continuous lazy virtual pages without a pagination switch', () => {
+  assert.match(shell, /struct XDriveIOSNativeLocalPhotoTimelineContainer: View/)
   assert.match(shell, /XDriveIOSNativeLocalContinuousGalleryScreen\(\s*savedOffset: \$savedOffset, mediaFilter: \$mediaFilter/)
-  assert.match(shell, /content\.id\(wallRevision\)/)
-  assert.match(shell, /Button\("连续滚动"\) \{ useContinuousWall = true \}/)
-  assert.match(shell, /Button\("按页查看"\) \{[\s\S]*?mediaFilter = \.all/)
+  assert.match(shell, /\.id\(wallRevision\)/)
+  assert.doesNotMatch(shell, /useContinuousWall|Button\("按页查看"\)|content\.id\(wallRevision\)/)
+  assert.doesNotMatch(source, /Text\("当前照片页"\)|正在读取第/)
   assert.match(source, /LazyVStack\(alignment: \.leading/)
   assert.match(source, /ForEach\(0\.\.<XDriveIOSNativePhotoVirtualPagePolicy\.pageCount\(total: total\)/)
   assert.match(source, /ForEach\(daySections\)/)
@@ -196,7 +196,7 @@ test('native Favorites filter uses a real full-library PhotoKit predicate', () =
   assert.match(timeline, /if mediaFilter\.requiresFavorite \{\s*options\.predicate = NSPredicate\(format: "favorite == YES"\)/)
   assert.match(timeline, /case \.favorites:\s*snapshot = PHAsset\.fetchAssets\(with: options\)/)
   assert.match(timeline, /!mediaFilter\.requiresFavorite \|\| asset\.isFavorite/)
-  assert.match(timeline, /mediaFilter == \.favorites \? "所有收藏（返回第一页）"/)
+  assert.match(timeline, /mediaFilter == \.favorites \? "所有收藏（查看全部）"/)
   assert.match(source, /mediaFilter == \.favorites \? "当前已授权图库中没有收藏照片。"/)
 })
 

@@ -20,8 +20,8 @@ test('local and cloud still detail use one native UIKit zoom viewer', () => {
   assert.match(local, /XDriveIOSNativeZoomablePhotoView\(image: image\)/)
   assert.match(cloud, /XDriveIOSNativeZoomablePhotoView\(image: still\)/)
   assert.match(local, /PHLivePhotoView/)
-  assert.match(local, /VideoPlayer\(player: player\)/)
-  assert.match(cloud, /VideoPlayer\(player: player\)/)
+  assert.match(local, /XDriveIOSNativePhotoVideoSurface\(/)
+  assert.match(cloud, /XDriveIOSNativePhotoVideoSurface\(/)
 })
 
 test('pinch pan and double tap are bounded and reset for new media', () => {
@@ -132,4 +132,68 @@ test('iOS gallery still and Live Viewers use the same reversible, Owner-scoped i
   assert.match(media, /\.onChange\(of: failure\) \{ message in/)
   for (const viewer of [local, cloud, media]) assert.match(viewer, /if (state|phase) != \.active \{/)
   assert.doesNotMatch(zoom, /PHImageManager|URLSession|accessToken|Bearer|WKWebView/)
+})
+
+
+test('local PhotoKit and cloud PhotoAsset video, including Live fallback, use the same native scrubber', () => {
+  const source = read('ios/XDriveIOS/NativePhotoVideoSurface.swift')
+  const localDetail = local.slice(local.indexOf('struct XDriveIOSNativeLocalPhotoDetail: View'),
+    local.indexOf('/// Read-only, 64-at-a-time PhotoKit grid.'))
+  const cloudDetail = media.slice(media.indexOf('struct XDriveIOSNativeServerMediaPreview: View'),
+    media.indexOf('/// Root and album-specific media wall'))
+  assert.equal((localDetail.match(/XDriveIOSNativePhotoVideoSurface\(/g) || []).length, 1)
+  assert.equal((cloudDetail.match(/XDriveIOSNativePhotoVideoSurface\(/g) || []).length, 2)
+  assert.match(localDetail, /private func videoSurface\(_ player: AVPlayer\)/)
+  assert.match(localDetail, /onChromeTap: \{ toggleChrome\(\) \}/)
+  assert.match(localDetail, /if currentPageAuthorized \{ player\.play\(\) \}/)
+  assert.match(localDetail, /model\.player\?\.currentItem === item/)
+  assert.match(localDetail, /model\.playbackFailed\(item\)/)
+  assert.match(localDetail, /\.onDisappear \{ player\.pause\(\) \}/)
+  assert.match(cloudDetail, /XDriveIOSNativeAVPlayerStatusObserver\(/)
+  assert.match(cloudDetail, /onFailed: \{ playbackLoadFailed\(\$0\) \}/)
+  assert.match(cloudDetail, /\.id\(viewed\.id\)/)
+  assert.match(cloudDetail, /if ownerAuthorized \{ player\.play\(\) \}/)
+  assert.match(cloudDetail, /\.onDisappear \{ player\.pause\(\) \}/)
+  assert.match(cloudDetail, /private func toggleChrome\(\) \{\s*guard ownerAuthorized/)
+  assert.match(source, /native-ios-photo-video-timeline/)
+  assert.match(source, /native-ios-photo-video-mute/)
+  assert.match(source, /native-ios-photo-video-play/)
+  assert.match(source, /Slider\(/)
+  assert.match(source, /player\.seek\(/)
+  assert.match(source, /player\.isMuted = !player\.isMuted/)
+  assert.match(source, /phase == \.active/)
+  assert.doesNotMatch(source, /URLSession|Bearer|Keychain|UploadSession|UserDefaults/)
+})
+
+
+test('native video canvas pages through current authorized neighboring media, not the timeline Slider', () => {
+  const video = read('ios/XDriveIOS/NativePhotoVideoSurface.swift')
+  const localDetail = local.slice(local.indexOf('struct XDriveIOSNativeLocalPhotoDetail: View'),
+    local.indexOf('/// Read-only, 64-at-a-time PhotoKit grid.'))
+  const mediaDetail = media.slice(media.indexOf('struct XDriveIOSNativeServerMediaPreview: View'),
+    media.indexOf('/// Root and album-specific media wall'))
+  const originalDetail = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    cloud.indexOf('/// SwiftUI\'s ForEach identity'))
+  const canvas = video.slice(video.indexOf('XDriveIOSNativePhotoVideoLayer(player: player)'),
+    video.indexOf('if showChrome {'))
+  const controls = video.slice(video.indexOf('if showChrome {'))
+  assert.match(video, /let onNavigateSwipe: \(\(Int\) -> Void\)\?/)
+  assert.match(video, /onNavigateSwipe: \(\(Int\) -> Void\)\? = nil/)
+  assert.match(canvas, /\.simultaneousGesture\(\s*DragGesture\(minimumDistance: 72, coordinateSpace: \.local\)/)
+  assert.match(canvas, /guard canControl, !seeking,/)
+  assert.match(canvas, /XDriveIOSNativeViewerSwipePolicy\.direction\(/)
+  assert.match(canvas, /horizontal: value\.translation\.width,/)
+  assert.match(canvas, /vertical: value\.translation\.height,/)
+  assert.match(canvas, /onNavigateSwipe\(direction\)/)
+  assert.doesNotMatch(controls, /DragGesture|onNavigateSwipe/)
+  assert.match(controls, /Slider\(/)
+  assert.match(controls, /player\.seek\(/)
+  assert.match(controls, /native-ios-photo-video-mute/)
+  assert.equal((localDetail.match(/onNavigateSwipe: \{ showNeighbor\(\$0\) \}/g) || []).length, 1)
+  assert.equal((mediaDetail.match(/onNavigateSwipe: \{ navigateLoaded\(\$0\) \}/g) || []).length, 2)
+  assert.equal((originalDetail.match(/onNavigateSwipe: \{ showNeighbor\(\$0\) \}/g) || []).length, 2)
+  assert.match(localDetail, /guard currentPageAuthorized, !crossing, !photoActionBusy/)
+  assert.match(mediaDetail, /guard ownerAuthorized, !rangeCrossing, !photosRestoreBusy/)
+  assert.match(originalDetail, /private func showNeighbor\(_ direction: Int\)/)
+  assert.doesNotMatch(video, /URLSession|Bearer|Keychain|UploadSession|WKWebView/)
 })

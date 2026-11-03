@@ -156,7 +156,14 @@ declare global {
   type DesktopWindowState = { maximized: boolean; minimized: boolean; fullscreen: boolean }
   type DesktopBrowserCacheStats = { used_bytes: number }
   type DesktopBrowserCacheClearResult = { released_bytes: number; cleared_entries: number }
-  type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
+  type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'sync-activity' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
+  type DesktopNavigationIntent = DesktopViewTarget | {
+    kind: 'source-run'
+    sourceID: number
+    runID: string
+    server: string
+    username: string
+  }
 
   type AgentHello = {
     discovery_version: number
@@ -518,7 +525,7 @@ declare global {
       copyText: (text: string) => void
       hide: () => void
       quit: () => void
-      onNavigate: (callback: (view: DesktopViewTarget) => void) => () => void
+      onNavigate: (callback: (view: DesktopNavigationIntent) => void) => () => void
       agent: {
         getState: () => Promise<AgentConnectionState>
         getTransfers: () => Promise<AgentTransfers>

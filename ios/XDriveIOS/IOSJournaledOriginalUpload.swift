@@ -124,6 +124,15 @@ struct XDriveIOSJournaledOriginalUpload {
                ), last.state != .prepared, last.state != .confirmed {
                 _ = try? await ledger.markUnknown(scope: scope, id: operationID)
             }
+            // Only a real filesystem I/O failure is a global staging
+            // outage. Preserve the ledger's unknown-write state before
+            // translating it to the shared PhotoKit full-window abort.
+            // Hash/size mismatch and Server ACK errors retain their existing
+            // distinct review behavior.
+            if let storage = error as? XDriveNativeUploadError,
+               case .localStorageUnavailable = storage {
+                throw XDrivePhotoKitExportFailure.storageUnavailable
+            }
             throw error
         }
     }

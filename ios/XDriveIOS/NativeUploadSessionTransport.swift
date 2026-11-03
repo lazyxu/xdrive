@@ -14,6 +14,9 @@ struct XDriveNativeUploadReceipt {
 
 enum XDriveNativeUploadError: Error {
     case invalidLocalFile
+    // Reading a staged file failed at the filesystem level. Unlike a
+    // malformed or changed original, this must stop the whole scan window.
+    case localStorageUnavailable
     case invalidServerResponse
     case unauthorizedOrRejected(Int)
     case uncertainCommit
@@ -234,7 +237,12 @@ final class XDriveNativeUploadSessionTransport {
             throw XDriveNativeUploadError.invalidServerResponse
         }
 
-        let file = try FileHandle(forReadingFrom: stagedFileURL)
+        let file: FileHandle
+        do {
+            file = try FileHandle(forReadingFrom: stagedFileURL)
+        } catch {
+            throw XDriveNativeUploadError.localStorageUnavailable
+        }
         defer { try? file.close() }
         let received = try receivedParts(created, hashes: hashes.parts, size: fileSize)
         // Only exact Server-verified hashes and byte counts contribute.
@@ -249,8 +257,14 @@ final class XDriveNativeUploadSessionTransport {
             if received.contains(index) { continue }
             let start = Int64(index) * Int64(Self.chunkBytes)
             let bytes = Int(min(Int64(Self.chunkBytes), fileSize - start))
-            try file.seek(toOffset: UInt64(start))
-            guard let part = try file.read(upToCount: bytes), part.count == bytes,
+            let chunk: Data?
+            do {
+                try file.seek(toOffset: UInt64(start))
+                chunk = try file.read(upToCount: bytes)
+            } catch {
+                throw XDriveNativeUploadError.localStorageUnavailable
+            }
+            guard let part = chunk, part.count == bytes,
                   sha(part) == hashes.parts[index] else {
                 throw XDriveNativeUploadError.invalidLocalFile
             }
@@ -433,7 +447,12 @@ final class XDriveNativeUploadSessionTransport {
     }
 
     private func localSize(_ url: URL) throws -> Int64 {
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let attributes: [FileAttributeKey: Any]
+        do {
+            attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        } catch {
+            throw XDriveNativeUploadError.localStorageUnavailable
+        }
         guard (attributes[.type] as? FileAttributeType) == .typeRegular,
               let size = attributes[.size] as? NSNumber,
               size.int64Value >= 0 else { throw XDriveNativeUploadError.invalidLocalFile }
@@ -442,14 +461,25 @@ final class XDriveNativeUploadSessionTransport {
 
     private func fileHashes(_ url: URL, expectedSize: Int64) throws
         -> (full: String, parts: [String]) {
-        let file = try FileHandle(forReadingFrom: url)
+        let file: FileHandle
+        do {
+            file = try FileHandle(forReadingFrom: url)
+        } catch {
+            throw XDriveNativeUploadError.localStorageUnavailable
+        }
         defer { try? file.close() }
         var hasher = SHA256()
         var count: Int64 = 0
         var parts: [String] = []
         while true {
             if Task.isCancelled { throw CancellationError() }
-            guard let data = try file.read(upToCount: Self.chunkBytes), !data.isEmpty else { break }
+            let chunk: Data?
+            do {
+                chunk = try file.read(upToCount: Self.chunkBytes)
+            } catch {
+                throw XDriveNativeUploadError.localStorageUnavailable
+            }
+            guard let data = chunk, !data.isEmpty else { break }
             count += Int64(data.count)
             guard count <= expectedSize else { throw XDriveNativeUploadError.invalidLocalFile }
             hasher.update(data: data)

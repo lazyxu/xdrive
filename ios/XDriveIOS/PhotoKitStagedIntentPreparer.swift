@@ -7,6 +7,8 @@ enum XDriveIOSPhotoIntentPreparationError: Error {
     case originalNotEligible
     case invalidStagedOriginal
     case resourceChangedDuringHash
+    // Local staging/read I/O is a whole-window failure, not a missing photo.
+    case stagedStorageUnavailable
 }
 
 /// Read-only staged bytes -> one sealed Owner/Device photo intent.
@@ -300,28 +302,48 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
 
     private func hashStagedFile(_ url: URL, claimedSize: Int64) throws -> String {
         let fm = FileManager.default
-        let attributes = try fm.attributesOfItem(atPath: url.path)
+        let attributes: [FileAttributeKey: Any]
+        do {
+            attributes = try fm.attributesOfItem(atPath: url.path)
+        } catch {
+            throw XDriveIOSPhotoIntentPreparationError.stagedStorageUnavailable
+        }
         guard (attributes[.type] as? FileAttributeType) == .typeRegular,
               let size = attributes[.size] as? NSNumber,
               size.int64Value == claimedSize else {
             throw XDriveIOSPhotoIntentPreparationError.invalidStagedOriginal
         }
 
-        let file = try FileHandle(forReadingFrom: url)
+        let file: FileHandle
+        do {
+            file = try FileHandle(forReadingFrom: url)
+        } catch {
+            throw XDriveIOSPhotoIntentPreparationError.stagedStorageUnavailable
+        }
         defer { try? file.close() }
         var hash = SHA256()
         var readBytes: Int64 = 0
         while true {
             try Task.checkCancellation()
-            guard let data = try file.read(upToCount: 8 * 1_048_576),
-                  !data.isEmpty else { break }
+            let chunk: Data?
+            do {
+                chunk = try file.read(upToCount: 8 * 1_048_576)
+            } catch {
+                throw XDriveIOSPhotoIntentPreparationError.stagedStorageUnavailable
+            }
+            guard let data = chunk, !data.isEmpty else { break }
             readBytes += Int64(data.count)
             guard readBytes <= claimedSize else {
                 throw XDriveIOSPhotoIntentPreparationError.invalidStagedOriginal
             }
             hash.update(data: data)
         }
-        let finalAttributes = try fm.attributesOfItem(atPath: url.path)
+        let finalAttributes: [FileAttributeKey: Any]
+        do {
+            finalAttributes = try fm.attributesOfItem(atPath: url.path)
+        } catch {
+            throw XDriveIOSPhotoIntentPreparationError.stagedStorageUnavailable
+        }
         guard readBytes == claimedSize,
               (finalAttributes[.type] as? FileAttributeType) == .typeRegular,
               let finalSize = finalAttributes[.size] as? NSNumber,

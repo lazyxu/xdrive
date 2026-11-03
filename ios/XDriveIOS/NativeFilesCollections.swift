@@ -384,6 +384,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var selectedFile: XDriveIOSNativeFilesCollectionItem?
     @State private var selectedOwner: XDriveNativeOwnerRoot?
     @State private var returnFile: XDriveIOSNativeFilesNode?
+    @State private var locateIntent: XDriveIOSNativeFilesCollectionItem?
+    @State private var locateOwner: XDriveNativeOwnerRoot?
     // Match Browse's chosen presentation when switching between Files subroutes.
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
 
@@ -408,6 +410,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                         ForEach(model.items) { item in
                             gridTile(item)
                                 .id(item.id)
+                                .contextMenu {
+                                    Button { showLocation(for: item) } label: {
+                                        Label("显示所在文件夹", systemImage: "folder")
+                                    }
+                                }
                         }
                     }
                     .padding(.horizontal, 10)
@@ -419,6 +426,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     ForEach(model.items) { item in
                         row(item)
                             .id(item.id)
+                            .contextMenu {
+                                Button { showLocation(for: item) } label: {
+                                    Label("显示所在文件夹", systemImage: "folder")
+                                }
+                            }
                     }
                 }
                 if favorites.busy {
@@ -451,6 +463,23 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     .disabled(model.loading || favorites.busy)
                 }
             }
+            .sheet(item: $locateIntent, onDismiss: {
+                locateOwner = nil
+                reload()
+            }) { selected in
+                NavigationStack {
+                    if let openedOwner = locateOwner,
+                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner) {
+                        XDriveIOSNativeFilesLocateScreen(
+                            login: login, selected: selected.node,
+                            openedOwner: openedOwner
+                        )
+                    } else {
+                        Text("当前服务器或账户已变化，请关闭后重新定位。")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             .fullScreenCover(item: $selectedFile, onDismiss: {
                 selectedOwner = nil
                 reload()
@@ -479,7 +508,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .onAppear { reload() }
             .onDisappear {
-                if selectedFile == nil {
+                if selectedFile == nil && locateIntent == nil {
                     model.invalidate()
                     favorites.invalidate()
                 }
@@ -488,6 +517,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 selectedFile = nil
                 selectedOwner = nil
                 returnFile = nil
+                locateIntent = nil
+                locateOwner = nil
                 model.invalidate()
                 favorites.invalidate()
             }
@@ -499,6 +530,18 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 returnFile = nil
             }
         }
+    }
+
+    /// Recent and Favorite server projections expose a path label but no
+    /// guessed navigation target. Use the existing authoritative Node location
+    /// reader, which also validates exact Owner, root, parent and revision.
+    private func showLocation(for item: XDriveIOSNativeFilesCollectionItem) {
+        guard phase == .active, model.verified, !model.loading,
+              !favorites.busy, selectedFile == nil,
+              let owner = login.owner, model.items.contains(item),
+              item.node.parent_id != nil else { return }
+        locateOwner = owner
+        locateIntent = item
     }
 
     private func openFile(_ item: XDriveIOSNativeFilesCollectionItem) {

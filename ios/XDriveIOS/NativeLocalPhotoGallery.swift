@@ -925,7 +925,12 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     @ViewBuilder
     private func videoSurface(_ player: AVPlayer) -> some View {
         if let item = player.currentItem {
-            VideoPlayer(player: player)
+            XDriveIOSNativePhotoVideoSurface(
+                player: player, showChrome: showChrome,
+                onChromeTap: { toggleChrome() },
+                onNavigateSwipe: { showNeighbor($0) }
+            )
+                .id(viewed.id)
                 .onAppear { if currentPageAuthorized { player.play() } }
                 .onDisappear { player.pause() }
                 .onReceive(

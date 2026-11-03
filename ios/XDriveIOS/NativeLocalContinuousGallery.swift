@@ -5,7 +5,7 @@ import UIKit
 
 /// Only the continuous PhotoKit wall uses this 1:1 thumbnail.
 /// Legacy album/map/photo Viewer dimensions are intentionally unchanged.
-private struct XDriveIOSNativeSquarePhotoTile: View {
+struct XDriveIOSNativeSquarePhotoTile: View {
     let candidate: XDrivePhotoKitScanCandidate
     @StateObject private var loader = XDriveIOSPhotoImageLoader()
 
@@ -59,6 +59,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let density: XDriveIOSNativePhotoWallDensity
     let selectionMode: Bool
     let selectedIDs: Set<String>
+    let accessibilityFocus: AccessibilityFocusState<String?>.Binding
     let onSelect: (XDrivePhotoKitScanCandidate, XDrivePhotoKitScanPage) -> Void
     let onShare: (XDrivePhotoKitScanCandidate, Bool) -> Void
     let onRead: (XDrivePhotoKitScanPage) -> Void
@@ -82,14 +83,6 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                     previousCapturedAt: precedingCapturedAt,
                     hasPreviousPage: offset > 0, calendar: .current
                 )
-                HStack {
-                    Text("当前照片页")
-                    Spacer(minLength: 4)
-                    Text("\(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets)")
-                        .monospacedDigit()
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
                 ForEach(daySections) { section in
                     if !section.continuesPreviousPage {
                         Text(section.title)
@@ -130,6 +123,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                 }
                             }
                             .id("photo:\(candidate.id)")
+                            .accessibilityFocused(accessibilityFocus, equals: candidate.id)
                         } else {
                             placeholderTile.accessibilityHidden(true)
                         }
@@ -137,13 +131,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                     }
                 }
             } else {
-                HStack {
-                    Text("正在读取第 \(offset / 64 + 1) 组照片…")
-                    Spacer()
-                    ProgressView()
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                ProgressView()
+                    .accessibilityLabel("正在读取照片")
+                    .frame(maxWidth: .infinity)
                 // Match the number of real grid cells before PhotoKit finishes.
                 // A one-row spinner would shift the entire scroll offset later.
                 LazyVGrid(columns: [GridItem(.adaptive(
@@ -259,6 +249,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var shareSession: XDriveIOSNativeLocalPhotoShareSession?
     @State private var retainedShare: XDriveIOSNativeLocalPhotoShareSession?
     @State private var shareMessage: String?
+    // In-memory VoiceOver focus cannot outlive the current PhotoKit authority.
+    @AccessibilityFocusState private var accessibilityFocusedTileID: String?
 
     var body: some View {
         ScrollViewReader { scroll in
@@ -377,6 +369,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                     mediaFilter: mediaFilter, density: density,
                                     selectionMode: selectionMode,
                                     selectedIDs: Set(selectedCandidates.keys),
+                                    accessibilityFocus: $accessibilityFocusedTileID,
                                     onSelect: { asset, page in
                                         if selectionMode { toggleSelection(asset) }
                                         else { openViewer(asset, in: page) }
@@ -394,6 +387,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                             DispatchQueue.main.async {
                                                 guard phase == .active, returnID == expected else { return }
                                                 scroll.scrollTo("photo:\(candidate.id)", anchor: .center)
+                                                accessibilityFocusedTileID = candidate.id
                                                 clearReturn()
                                             }
                                         }
@@ -541,12 +535,14 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         .onChange(of: phase) { value in
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             if value != .active {
+                accessibilityFocusedTileID = nil
                 cancelSharePreparation()
                 invalidate(with: nil)
             }
             else if selected == nil && authorized { reload() }
         }
         .onDisappear {
+            accessibilityFocusedTileID = nil
             cancelSharePreparation()
             showingAlbumPicker = false
             albumPickerCandidates.removeAll()
@@ -692,6 +688,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         returnDate = candidate.capturedAt
         returnModified = candidate.modifiedAt
         returnPageOffset = page.startOffset
+        accessibilityFocusedTileID = nil
         selected = XDriveIOSNativeVirtualViewerSelection(candidate: candidate, page: page)
     }
 
@@ -733,6 +730,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     }
 
     private func invalidate(with message: String?) {
+        accessibilityFocusedTileID = nil
         cancelSharePreparation()
         selectedCandidates.removeAll()
         confirmingDelete = false

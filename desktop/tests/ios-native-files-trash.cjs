@@ -59,3 +59,32 @@ test('tab owner and background changes invalidate pending read/write and stale d
   assert.match(screen, /busy = false\s*running = nil\s*onConfirmed\(\)/)
   assert.match(screen, /private func reload\(\) \{\s*guard !mutation\.busy else \{ return \}/)
 })
+
+
+test('recycle bin continuously appends verified Server ranges without visible paging buttons', () => {
+  assert.doesNotMatch(screen, /Button\("上一页"\)|Button\("下一页"\)/)
+  assert.match(screen, /var canLoadMore: Bool/)
+  assert.match(screen, /model\.items\.last\?\.id == item\.id/)
+  assert.match(screen, /model\.loadMore\(login: login\)/)
+  assert.match(screen, /model\.retryMore\(login: login\)/)
+  assert.match(screen, /native-ios-files-trash-loading-more/)
+  assert.match(screen, /native-ios-files-trash-retry-more/)
+  assert.match(screen, /XDriveIOSNativeFilesTrashPolicy\.validAppend\(/)
+  assert.match(screen, /self\.loadedIDs\.formUnion\(page\.items\.map\(\\\.id\)\)/)
+  assert.match(policy, /alreadyLoadedIDs\.isDisjoint\(with: Set\(next\.items\.map\(\\\.id\)\)\)/)
+  assert.match(policy, /next\.offset == alreadyLoadedCount/)
+  assert.match(policy, /next\.total_count == total/)
+  assert.match(screen, /case \.invalidOwner, \.malformed,/)
+  assert.match(screen, /self\.items = \[\]\s*self\.loadedIDs\.removeAll\(\)/)
+})
+
+test('restore and permanent deletion revalidate the originating Server page, not a new viewport', () => {
+  assert.match(screen, /func pageOffset\(for item: XDriveIOSNativeFilesTrashNode\)/)
+  assert.match(screen, /index \/ XDriveIOSNativeFilesTrashPolicy\.pageSize/)
+  assert.match(screen, /let pageOffset = model\.pageOffset\(for: item\)/)
+  assert.match(screen, /mutation\.perform\(action, node: item, offset: pageOffset, login: login\)/)
+  assert.match(screen, /let verified = try await page\(offset, session: session\)/)
+  assert.match(screen, /guard verified\.items\.contains\(node\)/)
+  assert.match(screen, /forHTTPHeaderField: "If-Match"/)
+  assert.match(screen, /private func reload\(\) \{\s*guard !mutation\.busy else \{ return \}/)
+})

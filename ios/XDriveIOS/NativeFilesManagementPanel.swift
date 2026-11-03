@@ -9,6 +9,12 @@ private struct XDriveIOSNativeFilesManageDestinationIntent: Identifiable {
     let kind: XDriveIOSNativeFilesDestinationKind
 }
 
+/// No context-menu action bypasses the existing verified Owner-scoped
+/// operation or its destination / rename / destructive confirmation UI.
+enum XDriveIOSNativeFilesQuickAction {
+    case copy, move, rename, shareLink, download, trash
+}
+
 /// Native Server Files operations live beside, never inside, the independent
 /// read-only L3 Files Viewer. One modal owns one selected file or folder.
 struct XDriveIOSNativeFilesManagementPanel: View {
@@ -18,6 +24,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
     let folderName: String?
     let file: XDriveIOSNativeFilesNode?
     let directory: XDriveIOSNativeFilesNode?
+    let initialQuickAction: XDriveIOSNativeFilesQuickAction?
     let onConfirmed: @MainActor () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -33,6 +40,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
     @State private var showingCreate = false
     @State private var showingRename = false
     @State private var showingTrash = false
+    @State private var initialActionApplied = false
     @State private var folderDraft = ""
     @State private var renameDraft = ""
     @State private var createBusy = false
@@ -383,12 +391,46 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                 }
             }
         }
+        .onAppear { applyInitialQuickAction() }
         .onDisappear { invalidate() }
         .onChange(of: login.owner) { _ in
             if !verified {
                 invalidate()
                 dismiss()
             }
+        }
+    }
+
+    /// The user selected an explicit quick action. Only present the same
+    /// existing native interaction; write endpoints are still gated on a
+    /// fresh Owner/Node/revision comparison after user confirmation.
+    @MainActor
+    private func applyInitialQuickAction() {
+        guard !initialActionApplied else { return }
+        initialActionApplied = true
+        guard verified, !anyBusy,
+              let selected = file ?? directory,
+              let initialQuickAction else { return }
+        switch initialQuickAction {
+        case .copy:
+            destinationIntent = .init(node: selected, kind: .copy)
+        case .move:
+            destinationIntent = .init(node: selected, kind: .move)
+        case .rename:
+            renameDraft = selected.name
+            showingRename = true
+        case .shareLink:
+            shareNode = selected
+        case .download:
+            if let file {
+                exporter.prepare(file, login: login)
+            } else if let directory {
+                folderArchive.prepare(
+                    directory, login: login, expectedOwner: expectedOwner
+                )
+            }
+        case .trash:
+            showingTrash = true
         }
     }
 

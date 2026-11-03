@@ -14,7 +14,7 @@ assert.match(album, /PHPhotoLibrary\.shared\(\)\.register/);
 assert.match(album, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/);
 assert.match(album, /PHAsset\.fetchAssets\(in: collection, options: options\)/);
 assert.match(album, /offset \+ 64/);
-assert.match(album, /XDriveIOSLocalPhotoTile\(candidate: item\)/);
+assert.match(album, /XDriveIOSNativeSquarePhotoTile\(candidate: item\)/);
 assert.match(album, /XDriveIOSNativeLocalPhotoDetail\(\s*candidate: initial,/);
 // The active Viewer may cross a 64-item album boundary; its single verified
 // current page replaces the initially mounted wall page, without a full album
@@ -26,7 +26,7 @@ assert.match(album, /onCrossedPage: \{ next, verifiedPage in/);
 assert.match(album, /onViewed: \{ next in[\s\S]*?viewerReturnID = next\.id/);
 assert.match(album, /XDriveLocalPhotoAlbumPager\.readPage\(\s*offset: requestedOffset/);
 assert.match(album, /PHPhotoLibraryChangeObserver/);
-assert.ok(album.includes('libraryMonitor.start(); reload()'));
+assert.match(album, /isVisible = true\s*libraryMonitor\.start\(\)\s*reload\(\)/);
 assert.ok(album.includes('libraryMonitor.stop()'));
 assert.ok(album.includes('suspendForNavigation()'));
 assert.match(album, /XDriveIOSPhotoImageLoader/);
@@ -37,15 +37,18 @@ console.log('native iOS PhotoKit albums: bounded, permission-scoped, linked to r
 
 assert.match(dashboard, /@State private var localAlbumDirectoryOffset = 0/);
 assert.match(album, /@Binding var savedOffset: Int/);
-assert.match(album, /XDriveIOSNativeAlbumDirectoryCursorPolicy\.clamp\(/);
-assert.match(album, /catch XDriveLocalPhotoAlbumFailure\.invalidRange \{/);
+assert.match(album, /XDriveLocalPhotoAlbumPage\(/);
+assert.match(album, /if album\.id == page\.items\.last\?\.id/);
+assert.match(album, /ForEach\(0\.\.<XDriveIOSNativePhotoVirtualPagePolicy\.pageCount\(total: total\)/);
+assert.doesNotMatch(album, /Button\("上一页"\)|Button\("下一页"\)/);
 
 
 const timeline = read('ios/XDriveIOS/NativeLocalPhotoTimeline.swift');
 const timelineView = timeline.slice(
   timeline.indexOf('struct XDriveIOSNativeLocalPhotoTimelineScreen: View')
 );
-assert.match(album, /XDriveIOSNativeLocalPhotoTimelineScreen\(\)/);
+assert.match(album, /XDriveIOSNativeLocalPhotoTimelineContainer\(/);
+assert.doesNotMatch(album, /XDriveIOSNativeLocalPhotoTimelineScreen\(\)/);
 assert.match(album, /native-ios-gallery-timeline-entry/);
 assert.match(timeline, /case year, month, day, all/);
 assert.match(timeline, /calendar\.dateInterval\(of: component, for: date\)/);
