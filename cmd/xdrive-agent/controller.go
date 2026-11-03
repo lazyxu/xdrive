@@ -1202,6 +1202,9 @@ func mountOptionsFromConfig(cfg userconfig.Config, managers ...*transfer.Manager
 		transfers = managers[0]
 	}
 	opts := mount.Options{CacheLimitBytes: cfg.CacheLimitBytes, Transfers: transfers}
+	if _, owner, err := agentSyncActivityIdentity(cfg); err == nil {
+		opts.ActivityOwner = owner
+	}
 	if dir, err := userconfig.Dir(); err == nil {
 		if root, rootErr := userconfig.EffectiveMountPath(cfg); rootErr == nil {
 			key := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(cfg.Server)) + "\x00" +
