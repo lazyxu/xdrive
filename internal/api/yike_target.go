@@ -229,7 +229,9 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 			First(&currentTarget).Error; err != nil {
 			return err
 		}
+		boundManaged := false
 		if currentAccountID, managed := managedYikeTargetAccountID(currentTarget.Name); managed {
+			boundManaged = true
 			if currentAccountID != accountID {
 				return errYikeAccountMismatch
 			}
@@ -277,7 +279,8 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 			// ownership-aware migration.
 			return errYikeTargetContainsData
 		}
-		if source.Status != meta.SourceStatusActive {
+		if boundManaged {
+			if source.Status != meta.SourceStatusActive {
 			now := time.Now().UTC()
 			if err := tx.WithContext(ctx).Model(&meta.Source{}).
 				Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
@@ -292,7 +295,8 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 			source.Status = meta.SourceStatusActive
 			source.Revision++
 		}
-		return nil
+			return nil
+		}
 	}
 
 	target, err := ensureYikeManagedTargetTx(ctx, tx, source.OwnerID, identity)
