@@ -2369,6 +2369,65 @@ func (c *agentController) CloudQuota(ctx context.Context) (client.QuotaUsage, er
 	return cli.Quota(ctx)
 }
 
+// All offline imports remain Server-admin scoped. The authenticated cloud
+// client has no local filesystem or Docker authority.
+func (c *agentController) CloudOfflineImportList(ctx context.Context) (client.OfflineImportList, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.OfflineImportList{}, err
+	}
+	return cli.OfflineImportList(ctx)
+}
+func (c *agentController) CloudOfflineImportCreate(ctx context.Context) (client.OfflineImportCreated, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.OfflineImportCreated{}, err
+	}
+	return cli.OfflineImportCreate(ctx)
+}
+func (c *agentController) CloudOfflineImportGet(ctx context.Context, id string) (client.OfflineImportStatus, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.OfflineImportStatus{}, err
+	}
+	return cli.OfflineImportGet(ctx, id)
+}
+func (c *agentController) CloudOfflineImportRegister(ctx context.Context, id, name string, size int64, sha string) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.OfflineImportRegister(ctx, id, name, size, sha)
+}
+func (c *agentController) CloudOfflineImportChunk(ctx context.Context, id, name string, index uint32, body []byte, sha string) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.OfflineImportChunk(ctx, id, name, index, body, sha)
+}
+func (c *agentController) CloudOfflineImportFinalize(ctx context.Context, id, name string) (client.OfflineImportFinalized, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.OfflineImportFinalized{}, err
+	}
+	return cli.OfflineImportFinalize(ctx, id, name)
+}
+func (c *agentController) CloudOfflineImportDelete(ctx context.Context, id string) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.OfflineImportDelete(ctx, id)
+}
+func (c *agentController) CloudStartOfflineServerUpdate(ctx context.Context, id, manifestSHA, goSHA string, backup bool) (client.ServerUpdateState, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.ServerUpdateState{}, err
+	}
+	return cli.StartOfflineServerUpdate(ctx, id, manifestSHA, goSHA, backup)
+}
+
 func (c *agentController) CloudServerUpdateState(ctx context.Context) (client.ServerUpdateState, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
