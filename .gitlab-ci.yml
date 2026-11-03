@@ -419,6 +419,43 @@ server-validation:
   script:
     - bash scripts/ci/gitlab-server-validation.sh
 
+# GitLab MR/stable preserve immutable offline publication tests matching GitHub.
+# Master Snapshot publishing is independent of optional local diagnostics.
+offline-release-tests:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
+      allow_failure: true
+    - when: on_success
+  image: python:3.12-bookworm
+  stage: test
+  needs: []
+  tags:
+    - linux
+  script:
+    - python3 -m py_compile scripts/ci/mirror-server-to-share.py scripts/ci/mirror-clients-to-share.py
+    - python3 scripts/ci/test-mirror-clients-to-share.py -q
+    - python3 scripts/ci/test-mirror-server-to-share.py -q
+
+offline-security-contract:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
+      allow_failure: true
+    - when: on_success
+  image: python:3.12-bookworm
+  stage: test
+  needs: []
+  tags:
+    - linux
+  script:
+    - bash -n scripts/offline/build-five-packages.sh
+    - python3 -m unittest discover -s scripts/offline -p 'test_*.py'
+    - python3 scripts/test-xdrive-share-update.py -q
+    - python3 scripts/test-release-attestation-contract.py
+
 server-image:
   # Preserve only master snapshot publication prerequisites across frequent pushes.
   # Other tests remain interruptible; MR and stable behavior is unchanged.
@@ -804,6 +841,10 @@ final-gate:
     - job: test-backup-cli-windows
       artifacts: false
     - job: server-validation
+      artifacts: false
+    - job: offline-release-tests
+      artifacts: false
+    - job: offline-security-contract
       artifacts: false
     - job: server-image
       artifacts: false
