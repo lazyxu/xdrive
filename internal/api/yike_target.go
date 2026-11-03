@@ -219,24 +219,25 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 	if err := tx.WithContext(ctx).Model(&meta.SourceItem{}).Where("source_id = ?", source.ID).Count(&itemCount).Error; err != nil {
 		return err
 	}
-	// An already-populated Yike Source keeps the same target node ID. If it is
-	// one of xDrive's managed uid_* targets, move that node in-place to the
-	// current managed hierarchy instead of creating a second copy of the data.
-	if itemCount > 0 && source.TargetNodeID != nil {
+	// Once the server has bound a uid_* target, keep its Node ID and the
+	// Owner-controlled leaf name even before the first photo has synced.
+	// Credential refresh is not a folder rename operation.
+	if source.TargetNodeID != nil {
 		var currentTarget meta.Node
 		if err := tx.WithContext(ctx).
 			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", *source.TargetNodeID, source.OwnerID).
 			First(&currentTarget).Error; err != nil {
 			return err
 		}
+		boundManaged := false
 		if currentAccountID, managed := managedYikeTargetAccountID(currentTarget.Name); managed {
+			boundManaged = true
 			if currentAccountID != accountID {
 				return errYikeAccountMismatch
 			}
-			desiredLeaf, err := yikeManagedTargetLeaf(accountID, identity.AccountName)
-			if err != nil {
-				return err
-			}
+			// Credential refresh must never overwrite the Owner-controlled
+			// Source/target name with a changed remote account nickname.
+			desiredLeaf := currentTarget.Name
 			desiredParent, err := ensureYikeManagedParentTx(ctx, tx, source.OwnerID)
 			if err != nil {
 				return err
@@ -273,23 +274,29 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 					}
 				}
 			}
+		} else if itemCount > 0 {
+			// Never detach a populated legacy target without a verified
+			// ownership-aware migration.
+			return errYikeTargetContainsData
 		}
-		if source.Status != meta.SourceStatusActive {
-			now := time.Now().UTC()
-			if err := tx.WithContext(ctx).Model(&meta.Source{}).
-				Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
-				Updates(map[string]any{
-					"status":     meta.SourceStatusActive,
-					"revision":   gorm.Expr("revision + 1"),
-					"updated_at": now,
-					"last_error": "",
-				}).Error; err != nil {
-				return err
+		if boundManaged {
+			if source.Status != meta.SourceStatusActive {
+				now := time.Now().UTC()
+				if err := tx.WithContext(ctx).Model(&meta.Source{}).
+					Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+					Updates(map[string]any{
+						"status":     meta.SourceStatusActive,
+						"revision":   gorm.Expr("revision + 1"),
+						"updated_at": now,
+						"last_error": "",
+					}).Error; err != nil {
+					return err
+				}
+				source.Status = meta.SourceStatusActive
+				source.Revision++
 			}
-			source.Status = meta.SourceStatusActive
-			source.Revision++
+			return nil
 		}
-		return nil
 	}
 
 	target, err := ensureYikeManagedTargetTx(ctx, tx, source.OwnerID, identity)

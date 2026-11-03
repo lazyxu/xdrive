@@ -27,6 +27,15 @@ PWA_TESTS = frozenset({
     "desktop/tests/pwa-peer-denied-capability-getters.cjs",
     "desktop/tests/pwa-update-workload.cjs",
 })
+# A deliberately narrow publication-only allowlist. Installer, trust roots,
+# attestation signer, deployment workflows, uploader dependencies, and general
+# release logic MUST keep the complete cross-platform PR CI.
+OFFLINE_RELEASE_SOURCE = frozenset({
+    "scripts/ci/mirror-server-to-share.py",
+})
+OFFLINE_RELEASE_TESTS = frozenset({
+    "scripts/ci/test-mirror-server-to-share.py",
+})
 
 
 def classify_paths(paths: list[str]) -> str:
@@ -40,6 +49,9 @@ def classify_paths(paths: list[str]) -> str:
     allow = PWA_SOURCE | PWA_TESTS
     if all(p in allow for p in paths) and any(p in PWA_SOURCE for p in paths):
         return "pwa"
+    offline_allow = OFFLINE_RELEASE_SOURCE | OFFLINE_RELEASE_TESTS
+    if all(p in offline_allow for p in paths) and any(p in OFFLINE_RELEASE_SOURCE for p in paths):
+        return "offline-release"
     return "full"
 
 

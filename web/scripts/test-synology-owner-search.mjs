@@ -96,7 +96,12 @@ assert.match(filesSearch, /generation\.current !== id/)
 assert.match(ipc, /"GET \/v1\/cloud\/owner-search"/)
 assert.match(ipc, /capability == "cloud-owner-search-read"/)
 assert.doesNotMatch(host, /search: 'DSM 尚未接通/)
-for (const action of ['uploadFiles', 'uploadFolder', 'delete', 'copyTo', 'moveTo']) {
+// DSM search must not bypass current Owner capability gates. Only capabilities
+// backed by a verified same-origin Owner operation are enabled on this Host.
+for (const action of ["uploadFolder"]) {
   assert.match(host, new RegExp(action + ": 'DSM"))
+}
+for (const action of ["uploadFiles","delete","moveTo","copyTo"]) {
+  assert.doesNotMatch(host, new RegExp(action + ": 'DSM"))
 }
 console.log('DSM Owner search: current-user CGI, bounded cursor, strict path, shared FileExplorer and cancellation')

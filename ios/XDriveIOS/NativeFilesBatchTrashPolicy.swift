@@ -5,11 +5,13 @@ struct XDriveIOSNativeFilesBatchTrashReceipt: Decodable {
     let deleted_ids: [UInt64]
 }
 
-/// A batch is bounded to one actually verified native directory page, never a
-/// cached multi-page selection. The Server itself owns revision and subtree
-/// atomicity. Require an exact response before displaying success.
+/// A batch may include at most 200 different Nodes from the current verified
+/// sliding directory window (up to four real 64-item Server pages). The Go
+/// Server's atomic batch endpoint caps writes at the same 200 items; it still
+/// verifies each Node's Owner, revision, parent and subtree.
+
 enum XDriveIOSNativeFilesBatchTrashPolicy {
-    static let maxSelected = XDriveIOSNativeFilesPagePolicy.pageSize
+    static let maxSelected = 200
 
     static func validSelection(_ items: [XDriveIOSNativeFilesNode],
                                parentID: UInt64) -> Bool {

@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,11 +25,13 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -91,6 +95,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
     val thumbnailCache = remember { LruCache<String, ImageBitmap>(48) }
     val thumbnailFailures = remember { mutableStateMapOf<String, Boolean>() }
     var globalSearchText by remember { mutableStateOf("") }
+    val softwareKeyboard = LocalSoftwareKeyboardController.current
 
     if (state.filesSection != FilesSection.BROWSE) {
         // A new Owner-scoped section or search query must not inherit the
@@ -206,6 +211,13 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                     onValueChange = { globalSearchText = it.take(256) },
                     modifier = Modifier.weight(1f).testTag("files-global-search-input"),
                     singleLine = true, label = { Text("搜索全部文件") },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        // On a narrow screen the keyboard can cover the submit
+                        // button. The IME action invokes the same guarded search.
+                        softwareKeyboard?.hide()
+                        controller.submitGlobalSearch(globalSearchText)
+                    }),
                 )
                 TextButton(
                     onClick = { controller.submitGlobalSearch(globalSearchText) },

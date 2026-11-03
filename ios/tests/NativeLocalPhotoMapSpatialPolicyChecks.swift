@@ -171,6 +171,50 @@ struct NativeLocalMapSpatialPolicyChecks {
         precondition(two.add(latitude: 0, longitude: 0, representative: "second"))
         precondition(two.cells.count == 1 && two.cells[0].count == 2)
         precondition(two.cells[0].representative == "first")
+        // The settled camera is always contained by the overscanned GPS
+        // window; a short pan or zoom doesn't rescan 100k PhotoKit slots.
+        typealias Auto = XDriveIOSNativeLocalMapAutoRefinePolicy
+        let sanFrancisco = Policy.viewportBounds(
+            latitude: 37, longitude: -122,
+            latitudeSpan: 4, longitudeSpan: 6)!
+        let expandedSF = Auto.expandedViewport(
+            latitude: 37, longitude: -122,
+            latitudeSpan: 4, longitudeSpan: 6)!
+        precondition(Policy.containsViewport(expandedSF, current: sanFrancisco))
+        precondition(!Policy.containsViewport(sanFrancisco, current: expandedSF))
+        precondition(Auto.shouldRefine(sanFrancisco, scanned: nil))
+        precondition(!Auto.shouldRefine(sanFrancisco, scanned: expandedSF))
+        let nearby = Policy.viewportBounds(
+            latitude: 38, longitude: -121,
+            latitudeSpan: 4, longitudeSpan: 6)!
+        precondition(Policy.containsViewport(expandedSF, current: nearby))
+        precondition(!Auto.shouldRefine(nearby, scanned: expandedSF))
+        let zoomed = Policy.viewportBounds(
+            latitude: 37, longitude: -122,
+            latitudeSpan: 1, longitudeSpan: 1.5)!
+        precondition(Auto.shouldRefine(zoomed, scanned: expandedSF))
+        let farAway = Policy.viewportBounds(
+            latitude: 50, longitude: -122,
+            latitudeSpan: 4, longitudeSpan: 6)!
+        precondition(!Policy.containsViewport(expandedSF, current: farAway))
+        precondition(Auto.shouldRefine(farAway, scanned: expandedSF))
+        let worldCamera = Policy.viewportBounds(
+            latitude: 0, longitude: 0,
+            latitudeSpan: 160, longitudeSpan: 360)!
+        precondition(!Auto.shouldRefine(worldCamera, scanned: nil))
+        let datelineWindow = Auto.expandedViewport(
+            latitude: 10, longitude: 179,
+            latitudeSpan: 2, longitudeSpan: 4)!
+        let wrappedCamera = Policy.viewportBounds(
+            latitude: 10, longitude: -179,
+            latitudeSpan: 2, longitudeSpan: 4)!
+        precondition(Policy.containsViewport(datelineWindow, current: wrappedCamera))
+        precondition(!Auto.shouldRefine(wrappedCamera, scanned: datelineWindow))
+        precondition(Auto.expandedViewport(
+            latitude: 0, longitude: 0,
+            latitudeSpan: .nan, longitudeSpan: 4
+        ) == nil)
+
         print("native PhotoKit global GPS spatial policy: PASS")
     }
 }

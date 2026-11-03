@@ -8,7 +8,7 @@ import org.junit.Test
 /** Exact full-prefix keyset groups, not a 512-row snapshot of all media URIs. */
 class NativeLocalFullDateIndexTest {
     private fun key(t: String, id: Long) =
-        NativeLocalPageKey(Instant.parse(t).epochSecond, id)
+        NativeLocalPageKey(Instant.parse(t).toEpochMilli(), id)
     private val dayA = "2026-11-01T10:00:00Z"
     private val dayB = "2026-10-31T10:00:00Z"
 
@@ -44,7 +44,7 @@ class NativeLocalFullDateIndexTest {
         assertEquals(listOf("2026-11-01","2026-10-31","unknown"),
             index.days.map { it.key })
         assertEquals(listOf(null,newer,older), index.days.map { it.before })
-        assertEquals("加入日期未知", index.days.last().label)
+        assertEquals("拍摄时间未知", index.days.last().label)
     }
 
     @Test fun rejectsRepeatedKeyAndDoesNotTurnBudgetLimitIntoCompletion() {
@@ -63,7 +63,7 @@ class NativeLocalFullDateIndexTest {
 
     @Test fun manySameDayRowsUseOneGroupNotOnePhotoObjectPerItem() {
         val builder = NativeLocalFullDateIndexBuilder(ZoneId.of("UTC"))
-        val base = Instant.parse(dayA).epochSecond
+        val base = Instant.parse(dayA).toEpochMilli()
         repeat(128) { page ->
             val keys = (0 until 512).map { i ->
                 NativeLocalPageKey(base, 90000L - page * 512 - i)

@@ -63,6 +63,7 @@ const services = {
   overviewPage: { port: {} },
   galleryPage: { source: {} },
   shareCenterPage: { listPage() {}, getShareLink() {}, updateShare() {}, revokeShare() {} },
+  notesPage: { ownerScopeKey: 'verified-test-owner', listNotes() {}, readNote() {} },
   remotePullPage: { source: {} },
   deviceBackupPage: { source: {} },
   conflictsPage: { conflicts: [] },
@@ -71,6 +72,8 @@ const services = {
   cloudStorage: { load() {} },
   localStorage: { load() {} },
   adminMaintenancePage: { source: {} },
+  adminUpdatePage: { updatePort: {} },
+  clientUpdatePage: { clientUpdateContent: null },
   adminUsersPage: { source: {} },
   adminAuditPage: { source: {} },
   adminStoragePage: { source: {} },
@@ -81,6 +84,7 @@ const expected = {
   overview: 'XDriveOverviewPage',
   gallery: 'XDriveMediaGalleryPage',
   shares: 'XDriveShareCenterPage',
+  notes: 'XDriveNotesPage',
   'device-backup': 'XDriveDeviceBackupPage',
   'remote-pull': 'XDriveSourceManager',
   transfers: 'XDriveTaskCenterPage',
@@ -94,6 +98,8 @@ const expected = {
   'admin-storage': 'GlobalStorageStatsPage',
   'admin-services': 'XDriveServiceDependenciesPage',
   'admin-maintenance': 'XDriveSystemMaintenancePage',
+  'admin-update': 'XDriveSystemUpdatePage',
+  'client-update': 'XDriveClientUpdatePage',
 }
 const host = platform => ({
   platform, adminRoleVerified: true, services,
@@ -116,6 +122,18 @@ test('all shared pages render the same actual MUI page type on Desktop and DSM',
     assert.equal(dsm.type, expected[view], 'DSM route: ' + view)
     // The Host may change refresh policy, but must not switch page component.
     assert.equal(desktop.type, dsm.type)
+  }
+})
+
+test('Notes requires an actual authenticated Host port on Desktop and DSM', () => {
+  for (const platform of ['desktop', 'synology']) {
+    const noNotes = { ...host(platform), services: { ...services, notesPage: undefined } }
+    const result = render(noNotes, 'notes')
+    assert.equal(result.type, 'XDriveStatePanel')
+    assert.match(result.props.message, /unsupported notes/)
+    const real = render(host(platform), 'notes')
+    assert.equal(real.type, 'XDriveNotesPage')
+    assert.strictEqual(real.props.port, services.notesPage)
   }
 })
 

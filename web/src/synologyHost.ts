@@ -6,6 +6,7 @@ import {
 } from '@xdrive/ui/mui'
 import type { XDriveWorkspaceHostAdapter } from '@xdrive/ui/mui'
 import { createXDriveSynologyOwnerGallerySource } from '../../ui/shared/src/mui/SynologyOwnerGallerySource'
+import { xDriveSynologyReadOwnerLoginDiagnostics } from '../../ui/shared/src/synology-owner-diagnostics'
 
 /**
  * DSM-only authenticated transport adapter for the shared xDrive application.
@@ -21,18 +22,14 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter & { reado
       localBackupClient: local,
       ownerBackupReadFallback: true,
       // Only the verified same-origin DSM CGI methods are enabled. The shared
-      // Desktop Files command bar remains visible; no fake NAS upload/write.
+      // Desktop Files command bar remains visible; no generic NAS-path upload or unrestricted Agent write.
       ownerFilesPage: {
         client: local,
         unavailableActions: {
-          uploadFiles: 'DSM Owner 文件上传尚未接通已授权 Host API。',
           uploadFolder: 'DSM Owner 文件夹上传尚未接通已授权 Host API。',
           copy: 'DSM Owner 文件目前没有经过授权的云端复制接口。',
           cut: 'DSM Owner 文件目前没有经过授权的移动接口。',
           paste: 'DSM Owner 文件目前没有经过授权的粘贴接口。',
-          delete: 'DSM Owner 文件目前没有经过授权的删除接口。',
-          moveTo: 'DSM Owner 文件目前没有经过授权的移动到接口。',
-          copyTo: 'DSM Owner 文件目前没有经过授权的复制到接口。',
           manageTags: 'DSM Owner 文件目前没有经过授权的标签修改接口。',
         },
       },
@@ -47,8 +44,8 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter & { reado
       cloudStorageRefresh: { clearOnRefresh: true },
       localStorage: createXDriveSynologyNASStorageSource(local),
       diagnosticsSource: {
-        read: signal => local.diagnostics(signal),
-        scopeNotice: 'NAS 仅检测 DSM 登录授权和本机备份 Agent 读取；Server、磁盘、更新、传输等未检测。',
+        read: signal => xDriveSynologyReadOwnerLoginDiagnostics(local, signal),
+        scopeNotice: 'NAS 检查 DSM 登录、本机备份 Agent 和当前 Server Owner 的真实配额读取；未检测 Server 整体健康、更新或传输。',
         failureMessage: '当前 DSM 授权或本机备份 Agent 接口不可访问；未完成诊断。',
       },
     },

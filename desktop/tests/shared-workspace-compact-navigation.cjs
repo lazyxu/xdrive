@@ -135,7 +135,7 @@ function createLoader(react = createHookRuntime().react) {
   return load
 }
 
-function productionWebSections(profile) {
+function productionWebSections(profile, notesPort = undefined) {
   const filename = path.join(repo, 'web/src/App.tsx')
   const source = fs.readFileSync(filename, 'utf8')
   const sourceFile = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
@@ -144,7 +144,9 @@ function productionWebSections(profile) {
   const { xDriveWorkspaceHostSections } = createLoader()(
     'ui/shared/src/mui/WorkspaceHostSections.tsx',
   )
-  const dependencies = { profile, xDriveWorkspaceHostSections }
+  // The real Web sidebar reads this optional, Owner-authenticated Notes port.
+  // An absent port must not fabricate a Notes or administrator entry.
+  const dependencies = { profile, notesPort, xDriveWorkspaceHostSections }
   const visit = (node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)
       && node.name.text === 'webSidebarSections') initializer = node.initializer
@@ -293,7 +295,7 @@ test('the actual Web role-filtered sections feed the same compact menu for admin
   for (const { profile, expectedMore } of [
     { profile: undefined, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'shares'] },
     { profile: { role: 'user' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'shares'] },
-    { profile: { role: 'admin' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'shares', 'admin-users', 'global-tasks', 'admin-audit', 'admin-storage', 'admin-services', 'admin-maintenance'] },
+    { profile: { role: 'admin' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'shares', 'admin-users', 'global-tasks', 'admin-audit', 'admin-storage', 'admin-services', 'admin-update', 'admin-maintenance'] },
   ]) {
     const result = xDriveCompactWorkspaceNavigation({ sections: productionWebSections(profile), showLocalStorage: true })
     assert.deepEqual(keys(result.primary), ['overview', 'files', 'gallery', 'transfers'])
@@ -307,6 +309,31 @@ test('the actual Web role-filtered sections feed the same compact menu for admin
       assert.equal(globalTasks?.label, '全局后台任务')
     }
   }
+})
+
+test('Notes sidebar is present only when an authenticated Owner port exists and never widens admin access', () => {
+  const { xDriveCompactWorkspaceNavigation } = createLoader()(modelPath)
+  const withoutOwner = xDriveCompactWorkspaceNavigation({
+    sections: productionWebSections({ role: 'user' }),
+    showLocalStorage: true,
+  })
+  const withOwner = xDriveCompactWorkspaceNavigation({
+    sections: productionWebSections({ role: 'user' }, { ownerScopeKey: 'verified-server:owner' }),
+    showLocalStorage: true,
+  })
+  const ordinary = withOwner.moreSections.flatMap(section => keys(section.items))
+  assert.ok(!withoutOwner.moreSections.flatMap(section => keys(section.items)).includes('notes'))
+  assert.equal(ordinary.filter(key => key === 'notes').length, 1)
+  assert.ok(!ordinary.includes('global-tasks'))
+  assert.ok(!ordinary.includes('admin-users'))
+  const administrator = xDriveCompactWorkspaceNavigation({
+    sections: productionWebSections({ role: 'admin' }, { ownerScopeKey: 'verified-admin' }),
+    showLocalStorage: true,
+  })
+  const administratorKeys = administrator.moreSections.flatMap(section => keys(section.items))
+  assert.equal(administratorKeys.filter(key => key === 'notes').length, 1)
+  assert.ok(administratorKeys.includes('admin-users'))
+  assert.equal(keys(withOwner.primary).includes('notes'), false)
 })
 
 test('compact destination keys continue to resolve through the existing Web app registry', () => {

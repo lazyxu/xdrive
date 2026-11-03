@@ -141,6 +141,100 @@ enum XDriveIOSNativeLocalMapSpatialPolicy {
     }
 }
 
+
+
+/// The scanned PhotoKit viewport may be larger than the visible camera.
+/// Validate that every visible camera coordinate stays inside the bounded,
+/// currently verified scan, including WGS84 antimeridian wrap.
+extension XDriveIOSNativeLocalMapSpatialPolicy {
+    static func containsViewport(
+        _ scanned: XDriveIOSNativeLocalMapViewport,
+        current: XDriveIOSNativeLocalMapViewport?
+    ) -> Bool {
+        guard let current,
+              [scanned.west, scanned.south, scanned.east, scanned.north,
+               current.west, current.south, current.east, current.north]
+                .allSatisfy({ $0.isFinite }),
+              scanned.south <= scanned.north,
+              current.south <= current.north,
+              (-90...90).contains(scanned.south),
+              (-90...90).contains(scanned.north),
+              (-90...90).contains(current.south),
+              (-90...90).contains(current.north),
+              (-180...180).contains(scanned.west),
+              (-180...180).contains(scanned.east),
+              (-180...180).contains(current.west),
+              (-180...180).contains(current.east),
+              current.south >= scanned.south - 0.0000001,
+              current.north <= scanned.north + 0.0000001
+        else { return false }
+
+        func width(_ v: XDriveIOSNativeLocalMapViewport) -> Double {
+            v.west <= v.east ? v.east - v.west :
+                360 - v.west + v.east
+        }
+        let outer = width(scanned)
+        let inner = width(current)
+        guard outer > 0, inner > 0, inner <= outer + 0.0000001
+        else { return false }
+        if outer >= 359.999999 { return true }
+        let delta = (current.west - scanned.west)
+            .truncatingRemainder(dividingBy: 360)
+        let start = delta < 0 ? delta + 360 : delta
+        return start <= outer + 0.0000001 &&
+               start + inner <= outer + 0.0000001
+    }
+}
+
+/// A selective automatic refinement is NOT a new PhotoKit index: each actual
+/// scan still keeps <=64 representative cells. Only when the settled camera
+/// needs a new geographic scope do we rescan, never on every MapKit drag.
+enum XDriveIOSNativeLocalMapAutoRefinePolicy {
+    static let settleNanoseconds: UInt64 = 900_000_000
+    static let maximumLatitudeSpan = 24.0
+    static let maximumLongitudeSpan = 48.0
+
+    static func expandedViewport(
+        latitude: Double, longitude: Double,
+        latitudeSpan: Double, longitudeSpan: Double
+    ) -> XDriveIOSNativeLocalMapViewport? {
+        guard latitudeSpan.isFinite, longitudeSpan.isFinite,
+              latitudeSpan > 0, longitudeSpan > 0 else { return nil }
+        return XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
+            latitude: latitude, longitude: longitude,
+            latitudeSpan: min(180, latitudeSpan * 2),
+            longitudeSpan: min(360, longitudeSpan * 2)
+        )
+    }
+
+    static func shouldRefine(
+        _ camera: XDriveIOSNativeLocalMapViewport,
+        scanned: XDriveIOSNativeLocalMapViewport?
+    ) -> Bool {
+        let visibleLatitude = camera.north - camera.south
+        let visibleLongitude = camera.west <= camera.east ?
+            camera.east - camera.west : 360 - camera.west + camera.east
+        guard visibleLatitude.isFinite, visibleLongitude.isFinite,
+              visibleLatitude > 0, visibleLongitude > 0,
+              visibleLatitude <= maximumLatitudeSpan,
+              visibleLongitude <= maximumLongitudeSpan
+        else { return false }
+        guard let scanned else { return true }
+
+        if !XDriveIOSNativeLocalMapSpatialPolicy.containsViewport(
+            scanned, current: camera
+        ) { return true }
+
+        let scannedLatitude = scanned.north - scanned.south
+        let scannedLongitude = scanned.west <= scanned.east ?
+            scanned.east - scanned.west : 360 - scanned.west + scanned.east
+        // Once the camera has zoomed >=4x inside the last overscan, a finer
+        // 64-cell grid is useful. Ordinary pan inside overscan is free.
+        return visibleLatitude * 4 <= scannedLatitude &&
+               visibleLongitude * 4 <= scannedLongitude
+    }
+}
+
 struct XDriveIOSNativeLocalMapSpatialCell<Payload>: Identifiable {
     let key: XDriveIOSNativeLocalMapSpatialPolicy.Key
     let representative: Payload

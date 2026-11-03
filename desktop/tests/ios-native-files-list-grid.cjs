@@ -11,8 +11,10 @@ test('native Files list/grid switch is a real persisted presentation preference'
   assert.match(browser, /@AppStorage\("xdrive\.ios\.files\.view-mode\.v1"\) private var viewMode = "list"/)
   assert.match(browser, /Picker\("显示方式", selection: \$viewMode\)/)
   assert.match(browser, /Text\("列表"\)\.tag\("list"\)/)
-  assert.match(browser, /Text\("网格"\)\.tag\("grid"\)/)
-  assert.match(browser, /\.pickerStyle\(\.segmented\)/)
+  assert.match(browser, /Text\("图标"\)\.tag\("grid"\)/)
+  assert.match(browser, /Menu \{[\s\S]*?Picker\("显示方式", selection: \$viewMode\)/)
+  assert.match(browser, /native-ios-files-more-options/)
+  assert.doesNotMatch(browser, /\.pickerStyle\(\.segmented\)/)
   assert.match(browser, /if viewMode == "grid" \{[\s\S]*?LazyVGrid\(/)
   assert.match(browser, /GridItem\(\.adaptive\(minimum: 128, maximum: 184\), spacing: 10\)/)
   assert.match(browser, /\.listRowSeparator\(\.hidden\)/)
@@ -46,3 +48,20 @@ test('switching layout does not introduce another owner request, mutation or tra
   assert.match(browser, /XDriveIOSNativeFilesReader\(/)
   assert.doesNotMatch(browser, /import WebKit|WKWebView|URLSession\.shared|\.fileImporter\(/)
 })
+
+
+test('native Files list swipe actions preserve Owner-verified action gates and explicit trash confirmation', () => {
+  assert.match(browser, /ForEach\(model\.entries\) \{ entry in[\s\S]*?fileEntryRow\(entry\)[\s\S]*?\.swipeActions\(edge: \.trailing, allowsFullSwipe: false\)/)
+  assert.match(browser, /if !selecting && model\.verifiedPage && !model\.loading/)
+  assert.match(browser, /Label\("更多", systemImage: "ellipsis"\)/)
+  assert.match(browser, /openManagement\(for: entry\.node\)/)
+  assert.match(browser, /Label\("分享链接", systemImage: "link"\)/)
+  assert.match(browser, /quickAction: \.shareLink/)
+  assert.match(browser, /Button\(role: \.destructive\)/)
+  assert.match(browser, /Label\("删除", systemImage: "trash"\)/)
+  assert.match(browser, /quickAction: \.trash/)
+  assert.match(browser, /private func openManagement\([\s\S]*?guard !model\.loading, model\.verifiedPage, selectedFile == nil,/)
+  assert.match(browser, /nativeQuickActions\(for: entry\)/)
+  assert.match(browser, /onAppear \{ requestContinuousNeighbor\(for: entry\.id\) \}/)
+  assert.doesNotMatch(browser, /swipeActions\(edge: \.trailing, allowsFullSwipe: true\)/)
+});

@@ -36,7 +36,7 @@ enum XDriveLocalPhotoAlbumPager {
     static let pageSize = 32
 
     static func readPage(offset: Int) async throws -> XDriveLocalPhotoAlbumPage {
-        guard offset >= 0, offset <= 10_000 else {
+        guard offset >= 0 else {
             throw XDriveLocalPhotoAlbumFailure.invalidRange
         }
         let startStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -70,7 +70,7 @@ enum XDriveLocalPhotoAlbumPager {
                     }
                     let name = album.localizedTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
                     rows.append(XDriveLocalPhotoAlbumSummary(
-                        id: "album-page-\(position)", name: name?.isEmpty == false ? name! : "未命名相册",
+                        id: album.localIdentifier, name: name?.isEmpty == false ? name! : "未命名相册",
                         kind: kind,
                         collectionIdentifier: album.localIdentifier,
                         accessibleAssetCount: PHAsset.fetchAssets(in: album, options: nil).count

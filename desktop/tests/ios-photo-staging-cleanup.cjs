@@ -38,3 +38,34 @@ test('cleanup is best-effort and is invoked BEFORE new staging directory creatio
   assert.match(swiftTest, /createSymbolicLink\(/)
   assert.match(swiftTest, /PhotoStagingCleanup\.removeOrphans/)
 })
+
+test('local staging disk failures abort the whole backup window rather than advancing past files', () => {
+  const runner = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const gate = exporter.slice(exporter.indexOf('private final class PhotoKitRequestGate'),
+    exporter.indexOf('enum XDrivePhotoKitOriginalExporter'))
+  const stage = exporter.slice(exporter.indexOf('static func stage('),
+    exporter.indexOf('private static func writeResource('))
+  const copy = exporter.slice(exporter.indexOf('private static func writeResource('))
+
+  // A failed disk write can be received on a PhotoKit callback queue.
+  // It must cancel the resource request and enter the global abort branch.
+  assert.match(gate, /try handle\.write\(contentsOf: data\)/)
+  assert.match(gate, /catch \{[\s\S]*?failure = XDrivePhotoKitExportFailure\.storageUnavailable\s*toCancel = requestID/)
+  assert.match(gate, /if let toCancel \{ manager\.cancelDataRequest\(toCancel\) \}/)
+  assert.match(gate, /let error = failure \?\? photoError/)
+  assert.match(stage, /do \{\s*try FileManager\.default\.createDirectory\(/)
+  assert.match(stage, /catch \{[\s\S]*?throw XDrivePhotoKitExportFailure\.storageUnavailable\s*\}\s*var staged:/)
+  assert.match(stage, /else \{ throw XDrivePhotoKitExportFailure\.storageUnavailable \}/)
+  assert.match(stage, /catch \{\s*try\? FileManager\.default\.removeItem\(at: folder\)\s*throw error/)
+  assert.match(copy, /do \{\s*handle = try FileHandle\(forWritingTo: url\)\s*\} catch \{\s*throw XDrivePhotoKitExportFailure\.storageUnavailable/)
+  assert.match(copy, /try Task\.checkCancellation\(\)\s*do \{\s*try handle\.synchronize\(\)\s*\} catch \{[\s\S]*?throw XDrivePhotoKitExportFailure\.storageUnavailable/)
+  assert.match(runner, /case \.storageUnavailable = source \{\s*return true/)
+  assert.match(runner, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
+
+  // iCloud-only, unsupported and oversize resources remain distinct
+  // per-item outcomes; no new upload writer or background credential.
+  assert.match(exporter, /case originalResourceMissing/)
+  assert.match(exporter, /case incompleteLivePair/)
+  assert.match(exporter, /case resourceTooLarge/)
+  assert.doesNotMatch(exporter, /UploadSession|UserDefaults|kSecAttrAccessible|WKWebView/)
+});

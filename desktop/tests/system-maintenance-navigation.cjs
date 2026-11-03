@@ -10,7 +10,8 @@ const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const model = read('ui', 'shared', 'src', 'web-app.ts')
 const registry = read('web', 'src', 'webApps.ts')
 const settings = read('ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx')
-const maintenance = read('ui', 'shared', 'src', 'mui', 'SystemMaintenancePage.tsx')
+const maintenance = read('ui', 'shared', 'src', 'mui', 'SystemUpdatePage.tsx')
+const backups = read('ui', 'shared', 'src', 'mui', 'SystemMaintenancePage.tsx')
 const router = read('internal', 'api', 'router.go')
 
 test('administrator System Maintenance is typed and routed on Web/Desktop', () => {
@@ -21,13 +22,13 @@ test('administrator System Maintenance is typed and routed on Web/Desktop', () =
   assert.ok(registry.includes("workspaceKey: 'admin-maintenance', sidebar: true, admin: true"))
   const outlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
   assert.ok(web.includes("appView === 'admin-maintenance'") &&
-    web.includes('adminMaintenance: serverAdminVerified ? {') &&
+    web.includes('adminUpdate: serverAdminVerified ? {') &&
     web.includes('adminRoleVerified: serverAdminVerified') &&
     outlet.includes("case 'admin-maintenance':") &&
     outlet.includes('<XDriveSystemMaintenancePage {...services.adminMaintenancePage} />'),
     'the Web administrator uses a verified shared Host route')
   assert.ok(desktop.includes("adminMaintenancePage: status?.role === 'admin'") && read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx').includes("case 'admin-maintenance':"))
-  assert.ok(desktop.includes("view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-storage' || view === 'admin-services' || view === 'admin-maintenance'"))
+  assert.ok(desktop.includes("view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-storage' || view === 'admin-services' || view === 'admin-update' || view === 'admin-maintenance'"))
 })
 
 test('only admin group exposes System Maintenance in Web/Desktop including Mobile Web', () => {
@@ -57,6 +58,7 @@ test('instance-wide update is absent from personal Settings and mounted only in 
   assert.ok(maintenance.includes('open: true'))
   assert.ok(maintenance.includes('xDriveServerUpdateConfirmationDescription({'))
   assert.ok(maintenance.includes('<XDriveServerUpdateCard'))
+  assert.equal(backups.includes('<XDriveServerUpdateCard'), false, 'backups page must not retain update actions')
   assert.ok(maintenance.includes('<XDriveConfirmDialog'))
   assert.ok(maintenance.includes('confirmIntent="warning"'))
   assert.ok(maintenance.includes('离开此页面不会取消更新任务'))
@@ -70,17 +72,17 @@ test('existing Server admin REST and Desktop Agent IPC remain authoritative', ()
   assert.ok(web.includes('api.adminStartServerUpdate(source, channel, backupFileData)'))
   assert.ok(desktop.includes('getState: () => window.xdriveDesktop.agent.getServerUpdate()'))
   assert.ok(desktop.includes('window.xdriveDesktop.agent.startServerUpdate(source, channel, backupFileData)'))
-  assert.ok(desktop.includes('supported: serverUpdateSupported') && read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx').includes('<XDriveSystemMaintenancePage'))
+  assert.ok(desktop.includes('supported: serverUpdateSupported') && read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx').includes('<XDriveSystemUpdatePage'))
 })
 
 test('administrator maintenance requires explicit confirmation before posting a durable host update', () => {
   const ts = require('typescript')
-  const filename = path.join(root, 'ui/shared/src/mui/SystemMaintenancePage.tsx')
+  const filename = path.join(root, 'ui/shared/src/mui/SystemUpdatePage.tsx')
   const parsed = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const declaration = parsed.statements.find((node) =>
-    ts.isFunctionDeclaration(node) && node.name?.text === 'XDriveSystemMaintenancePage')
+    ts.isFunctionDeclaration(node) && node.name?.text === 'XDriveSystemUpdatePage')
   assert.ok(declaration, 'shared administrator page function must exist')
-  const program = ts.transpileModule(declaration.getText(parsed) + '\nexports.Page = XDriveSystemMaintenancePage;', {
+  const program = ts.transpileModule(declaration.getText(parsed) + '\nexports.Page = XDriveSystemUpdatePage;', {
     fileName: filename,
     compilerOptions: {
       module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
@@ -116,6 +118,8 @@ test('administrator maintenance requires explicit confirmation before posting a 
     // The unsupported-backup branch is now always visible and still has no
     // privileged Host action. Execute the original page with its real slots.
     XDriveSectionHeader: 'SectionHeader',
+    XDriveBuildInfoCard: 'BuildInfoCard',
+    Typography: 'Typography',
     XDriveActionButton: 'ActionButton',
     Stack: 'Stack',
   }
@@ -133,7 +137,7 @@ test('administrator maintenance requires explicit confirmation before posting a 
   }
   function render(disabled = false) {
     slot = 0
-    const tree = mod.exports.Page({ updatePort: {}, disabled })
+    const tree = mod.exports.Page({ updatePort: {}, disabled, buildInfo: [] })
     const card = all(tree).find((node) => node.type === 'ServerUpdateCard')
     const dialog = all(tree).find((node) => node.type === 'ConfirmDialog')
     assert.ok(card && dialog, 'shared status and confirmation must be mounted')

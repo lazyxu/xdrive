@@ -318,3 +318,20 @@ test('empty unfiltered root windows have bounded automatic scan budgets and expl
   assert.match(src, /for node in reply\.nodes \{[\s\S]*?model\.seenNodeIDs\.insert\(node\.id\)/)
   assert.match(src, /model\.scanned = min\(reply\.total, start \+ 48\)/)
 })
+
+
+test('cloud backup Originals Viewer exposes a current-Owner bottom save action, including single Live ZIP', () => {
+  const viewer = src.slice(src.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    src.indexOf('/// SwiftUI\'s ForEach identity'))
+  assert.match(viewer, /\.safeAreaInset\(edge: \.bottom\) \{\s*VStack\(spacing: 0\)/)
+  assert.match(viewer, /if showChrome && currentOwnerAuthorized &&\s*\(viewed\.isImage \|\| viewed\.isVideo \|\| viewed\.isLiveArchive\)/)
+  assert.match(viewer, /if restoringToPhotos \{\s*ProgressView\(\)/)
+  assert.match(viewer, /restoreCurrentOriginalToPhotos\(\)[\s\S]*?native-ios-original-bottom-save-to-photos/)
+  assert.match(viewer, /\.disabled\(exporter\.busy\)/)
+  assert.match(viewer, /Label\("保存到 iOS 照片", systemImage: "square\.and\.arrow\.down"\)/)
+  assert.match(viewer, /native-ios-cloud-original-save-to-photos/)
+  assert.match(viewer, /XDriveIOSNativeCloudOriginalViewerFilmstrip\(/)
+  assert.match(viewer, /private func restoreCurrentOriginalToPhotos\(\) \{\s*guard !restoringToPhotos, currentOwnerAuthorized,/)
+  assert.match(viewer, /cancelPhotoRestore\(\)/)
+  assert.doesNotMatch(viewer, /UploadSession|WKWebView|UserDefaults/)
+})

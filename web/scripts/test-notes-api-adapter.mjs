@@ -1,0 +1,232 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const source = readFileSync(resolve(here, '../src/notesDataPort.ts'), 'utf8')
+const compiled = ts.transpileModule(source, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  reportDiagnostics: true,
+})
+assert.equal(compiled.diagnostics?.length ?? 0, 0, 'Web Notes adapter must transpile')
+const transpileDataURL = (path) => {
+  const module = ts.transpileModule(readFileSync(resolve(here, path), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    reportDiagnostics: true,
+  })
+  assert.equal(module.diagnostics?.length ?? 0, 0, path + ' must transpile')
+  return 'data:text/javascript;base64,' + Buffer.from(module.outputText).toString('base64')
+}
+const manualURL = transpileDataURL('../../ui/shared/src/notes-manual-import.ts')
+const policyURL = transpileDataURL('../../ui/shared/src/notes-markdown-policy.ts')
+const executed = compiled.outputText
+  .replace(/from ['"]\.\.\/\.\.\/ui\/shared\/src\/notes-manual-import['"]/, "from '" + manualURL + "'")
+  .replace(/from ['"]\.\.\/\.\.\/ui\/shared\/src\/notes-markdown-policy['"]/, "from '" + policyURL + "'")
+assert.ok(executed.includes(manualURL) && executed.includes(policyURL),
+  'Notes adapter runtime dependencies must be loaded from the tested local sources')
+const { createXDriveWebNotesPort } = await import('data:text/javascript;base64,' +
+  Buffer.from(executed).toString('base64'))
+
+const calls = []
+const example = {
+  id: '12345678-1234-1234-1234-123456789abc',
+  title: 'Test', source: 'mine', node_id: 42,
+  revision: 1, sha256: 'a'.repeat(64), bytes: 5,
+  created_at: '', updated_at: '', markdown: '# Test',
+}
+const api = {
+  async notesInitialize() {
+    calls.push('initialize')
+    return { notes_node_id: 1, my_notes_node_id: 2, ios_backup_node_id: 3 }
+  },
+  async notesList(source, query, offset) {
+    calls.push(['list', source, query, offset])
+    return { items: [example], next_offset: 0 }
+  },
+  async notesRead(id) { calls.push(['read', id]); return example },
+  async notesCreate(value) { calls.push(['create', value]); return example },
+  async notesImportIOS(value) {
+    calls.push(['ios-import', value])
+    return { ...example, source: 'ios_notes' }
+  },
+  async notesSave(id, value) { calls.push(['save', id, value]); return example },
+  async notesDelete(id, revision) { calls.push(['delete', id, revision]) },
+  async notesVersions(id) {
+    calls.push(['versions', id])
+    return { items: [{ id: 55, revision: 1, bytes: 5, sha256: example.sha256 }] }
+  },
+  async notesUploadImage(id, file) {
+    calls.push(['image-upload', id, file.name])
+    return { relative_path: '_assets/' + id + '/12345678-1234-1234-1234-123456789abc.png' }
+  },
+  async notesImageBlob(id, relativePath) {
+    calls.push(['image-read', id, relativePath])
+    return new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' })
+  },
+  async notesReadVersion(node, version) {
+    calls.push(['history', node, version])
+    return 'old content'
+  },
+  async node(id) { calls.push(['node', id]); return { id, name: 'note.md' } },
+  async download(node) { calls.push(['download', node.id]) },
+}
+assert.throws(() => createXDriveWebNotesPort(api, ''), /验证/)
+const port = createXDriveWebNotesPort(api, 'server:owner:root')
+assert.equal(port.ownerScopeKey, 'server:owner:root')
+assert.deepEqual((await port.listNotes('mine', 'Test', 0)).items, [example])
+assert.deepEqual(await port.readNote(example.id), example)
+await port.createNote({ title: 'Test', markdown: '# Test' })
+const imported = await port.importIOSMarkdown({ title: 'Apple Notes', markdown: '# Backup' })
+assert.equal(imported.source, 'ios_notes')
+await port.saveNote(example.id, {
+  title: 'Test', markdown: '# Updated', expected_revision: 1,
+})
+assert.equal((await port.listVersions(example.id))[0].revision, 1)
+assert.equal(await port.readVersion(42, 55), 'old content')
+const fakeFile = { name: 'picture.png', size: 12 }
+const imageReceipt = await port.uploadImage(example.id, fakeFile)
+assert.equal(imageReceipt.relative_path,
+  '_assets/' + example.id + '/12345678-1234-1234-1234-123456789abc.png')
+const imageBlob = await port.readImageBlob(example.id, imageReceipt.relative_path)
+assert.equal(imageBlob.type, 'image/png')
+await port.exportNote(42, 'forged-name.txt')
+await port.deleteNote(example.id, 1)
+assert.equal(calls.filter(c => c === 'initialize').length, 1,
+  'exact Owner namespace initialized once, not once per API call')
+assert.deepEqual(calls.find(c => Array.isArray(c) && c[0] === 'save')[2],
+  { title: 'Test', markdown: '# Updated', expected_revision: 1 })
+assert.deepEqual(calls.find(c => Array.isArray(c) && c[0] === 'delete').slice(2), [1])
+assert.deepEqual(calls.find(c => Array.isArray(c) && c[0] === 'download'), ['download', 42])
+assert.deepEqual(calls.find(c => Array.isArray(c) && c[0] === 'ios-import')[1],
+  { title: 'Apple Notes', markdown: '# Backup', external_id: '' },
+  'manual imports must never manufacture a stable native Notes identifier')
+assert.deepEqual(calls.find(c => Array.isArray(c) && c[0] === 'image-upload'), ['image-upload', example.id, 'picture.png'])
+assert.deepEqual(calls.find(c => Array.isArray(c) && c[0] === 'image-read'),
+  ['image-read', example.id, imageReceipt.relative_path])
+await assert.rejects(() => port.readNote('../other-owner'), /非法备忘录标识/)
+
+// Two concurrent Notes components for the same verified Owner must share one
+// namespace initialization. A genuine transient failure must permit retry.
+let bootstrapCalls = 0
+const sharedBootstrap = createXDriveWebNotesPort({
+  ...api,
+  async notesInitialize() {
+    bootstrapCalls++
+    await Promise.resolve()
+    return { notes_node_id: 1, my_notes_node_id: 2, ios_backup_node_id: 3 }
+  },
+}, 'other-server:owner-42')
+await Promise.all([
+  sharedBootstrap.listNotes('mine', '', 0),
+  sharedBootstrap.listNotes('ios_notes', '', 0),
+])
+assert.equal(bootstrapCalls, 1, 'concurrent Owner reads duplicated namespace POST')
+let attempts = 0
+const transient = createXDriveWebNotesPort({
+  ...api,
+  async notesInitialize() {
+    attempts++
+    if (attempts === 1) throw new Error('temporary network loss')
+    return { notes_node_id: 1, my_notes_node_id: 2, ios_backup_node_id: 3 }
+  },
+}, 'owner-42:retry')
+await assert.rejects(transient.listNotes('mine', '', 0), /temporary network loss/)
+assert.equal((await transient.listNotes('mine', '', 0)).items.length, 1)
+assert.equal(attempts, 2, 'temporary bootstrap failure permanently poisoned Notes port')
+
+
+// One explicit export with one picture must create a single read-only Note
+// and then a second revision of THAT Note, never an unrelated duplicate.
+const bundleCalls = []
+const imageName = 'photo.png'
+const bundleMD = new File(['# Journal\n![x](photo.png)'], 'Journal.md', {
+  type: 'text/markdown',
+})
+const imageFile = new File([new Uint8Array([137, 80, 78, 71])], imageName, {
+  type: 'image/png',
+})
+const uuid = '11111111-1111-4111-8111-111111111111'
+const imageUUID = '22222222-2222-4222-8222-222222222222'
+const assetPath = '_assets/' + uuid + '/' + imageUUID + '.png'
+const separateUUID = '33333333-3333-4333-8333-333333333333'
+// Model the Server's uniqueness contract: same external_id updates one
+// immutable iOS backup, while a second manual import gets its OWN Note ID,
+// title and first revision. The mock must not fake an invalid receipt.
+const importedByExternalID = new Map()
+const imageApi = {
+  ...api,
+  async notesImportIOS(input) {
+    bundleCalls.push(['snapshot', input])
+    let entry = importedByExternalID.get(input.external_id)
+    if (!entry) {
+      const first = importedByExternalID.size === 0
+      entry = { id: first ? uuid : separateUUID,
+        node_id: first ? 77 : 79, revision: 0 }
+      importedByExternalID.set(input.external_id, entry)
+    }
+    entry.revision++
+    return {
+      ...example, id: entry.id, source: 'ios_notes', title: input.title,
+      node_id: entry.node_id, revision: entry.revision,
+    }
+  },
+  async notesImportIOSImage(id, value) {
+    bundleCalls.push(['asset', id, value.name])
+    return {
+      relative_path: assetPath, node_id: 88, bytes: value.size,
+      sha256: 'a'.repeat(64),
+    }
+  },
+}
+const bundlePort = createXDriveWebNotesPort(imageApi, 'notes-manual:owner')
+const completed = await bundlePort.importIOSMarkdownBundle([bundleMD, imageFile])
+assert.equal(completed.id, uuid)
+assert.equal(completed.revision, 2)
+assert.deepEqual(bundleCalls.map(x => x[0]), ['snapshot', 'asset', 'snapshot'])
+assert.equal(bundleCalls[0][1].external_id, bundleCalls[2][1].external_id)
+assert.match(bundleCalls[0][1].external_id, /^manual:[0-9a-f-]{36}$/)
+assert.equal(bundleCalls[0][1].markdown, '# Journal\n![x](photo.png)')
+assert.equal(bundleCalls[2][1].markdown, '# Journal\n![x](' + assetPath + ')')
+await assert.rejects(bundlePort.importIOSMarkdownBundle([
+  new File(['![missing](absent.png)'], 'Missing.md'),
+]), /缺少/)
+assert.equal(bundleCalls.length, 3, 'invalid bundle posted data before asset validation')
+const plain = await bundlePort.importIOSMarkdownBundle([
+  new File(['# Solo'], 'Solo.md'),
+])
+assert.equal(plain.source, 'ios_notes')
+assert.equal(plain.title, 'Solo')
+assert.notEqual(plain.id, completed.id,
+  'distinct manual imports must never re-use another backup Note ID')
+assert.equal(plain.revision, 1)
+assert.equal(bundleCalls.filter(x => x[0] === 'asset').length, 1)
+const afterPlain = bundleCalls.filter(x => x[0] === 'snapshot')
+assert.notEqual(afterPlain[0][1].external_id,
+  afterPlain[afterPlain.length - 1][1].external_id,
+  'separate Apple Notes imports incorrectly share an identity')
+
+const sourceApi = readFileSync(resolve(here, '../src/api.ts'), 'utf8')
+for (const route of [
+  '/api/v1/notes/namespace', '/api/v1/notes/ios/import',
+  '/api/v1/notes/', '/api/v1/files/',
+]) assert.ok(sourceApi.includes(route), 'must use canonical Server API: ' + route)
+assert.match(sourceApi, /notesReadVersion\(/)
+assert.match(sourceApi, /notesUploadImage\(/)
+assert.match(sourceApi, /notesImageBlob\(/)
+const notesUI = readFileSync(resolve(here, '../../ui/shared/src/mui/NotesPage.tsx'), 'utf8')
+assert.match(notesUI, /port\.uploadImage\(noteID, file\)/)
+assert.match(notesUI, /port\.readImageBlob\(selected\.id, path/)
+assert.match(notesUI, /URL\.revokeObjectURL/)
+assert.match(notesUI, /label="搜索标题或正文"/)
+assert.match(notesUI, /port\.importIOSMarkdownBundle\(files, controller\.signal\)/)
+assert.match(notesUI, /port\.importIOSMarkdown!\(\{ title: name, markdown \}\)/)
+assert.match(notesUI, /webkitdirectory/)
+assert.match(sourceApi, /notesImportIOSImage\(/)
+assert.match(notesUI, /勿重复导入/)
+assert.match(notesUI, /new TextDecoder\('utf-8', \{ fatal: true \}\)/)
+assert.match(sourceApi, /size > 20 \* 1024 \* 1024/)
+assert.match(sourceApi, /redirect: 'error'/)
+assert.match(sourceApi, /total > 1_048_576/)
+console.log('Web Notes adapter, Owner bootstrap and revision contracts: PASS')

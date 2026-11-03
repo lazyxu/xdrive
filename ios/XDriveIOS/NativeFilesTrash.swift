@@ -179,34 +179,72 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
     @Published private(set) var verified = false
     @Published private(set) var loading = false
     @Published private(set) var error: String?
+    @Published private(set) var continuationError: String?
 
+    private var loadedIDs = Set<UInt64>()
     private var epoch = UUID()
     private var running: Task<Void, Never>?
+
+    var canLoadMore: Bool {
+        verified && !loading && continuationError == nil &&
+            !items.isEmpty && items.count < total &&
+            XDriveIOSNativeFilesPagePolicy.validOffset(items.count)
+    }
+
+    func pageOffset(for item: XDriveIOSNativeFilesTrashNode) -> Int? {
+        guard verified, let index = items.firstIndex(of: item) else { return nil }
+        return index / XDriveIOSNativeFilesTrashPolicy.pageSize *
+            XDriveIOSNativeFilesTrashPolicy.pageSize
+    }
 
     func invalidate() {
         epoch = UUID()
         running?.cancel()
         running = nil
         items = []
+        loadedIDs.removeAll()
         total = 0
-        verified = false
         loading = false
+        verified = false
         error = nil
+        continuationError = nil
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel, offset: Int) {
         invalidate()
+        guard offset == 0 else {
+            error = "回收站仅从当前云端列表顶部开始读取。"
+            return
+        }
+        read(login: login, offset: 0, appending: false)
+    }
+
+    func loadMore(login: XDriveIOSNativeOwnerLoginModel) {
+        guard canLoadMore else { return }
+        read(login: login, offset: items.count, appending: true)
+    }
+
+    func retryMore(login: XDriveIOSNativeOwnerLoginModel) {
+        guard verified, !loading, continuationError != nil else { return }
+        continuationError = nil
+        loadMore(login: login)
+    }
+
+    private func read(login: XDriveIOSNativeOwnerLoginModel, offset: Int,
+                      appending: Bool) {
+        guard !loading, XDriveIOSNativeFilesPagePolicy.validOffset(offset) else { return }
         guard let expected = login.owner else {
+            invalidate()
             error = "请先验证服务器账户。"
             return
         }
         let ticket = epoch
         loading = true
-        running = Task { @MainActor in
+        running = Task { @MainActor [weak self] in
             defer {
-                if epoch == ticket {
-                    loading = false
-                    running = nil
+                if self?.epoch == ticket {
+                    self?.loading = false
+                    self?.running = nil
                 }
             }
             do {
@@ -218,31 +256,68 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
                     owner: auth.owner, accessToken: auth.accessToken
                 ).page(offset)
                 try Task.checkCancellation()
-                guard epoch == ticket,
+                guard let self, self.epoch == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
-                items = page.items
-                total = page.total_count
-                verified = true
-                error = nil
+
+                if appending {
+                    guard XDriveIOSNativeFilesTrashPolicy.validAppend(
+                        alreadyLoadedIDs: self.loadedIDs,
+                        alreadyLoadedCount: self.items.count,
+                        total: self.total, next: page
+                    ) else { throw XDriveIOSNativeFilesTrashFailure.malformed }
+                    self.items.append(contentsOf: page.items)
+                    self.loadedIDs.formUnion(page.items.map(\.id))
+                } else {
+                    self.items = page.items
+                    self.loadedIDs = Set(page.items.map(\.id))
+                    self.total = page.total_count
+                }
+                self.verified = true
+                self.error = nil
+                self.continuationError = nil
             } catch is CancellationError {
-                // An abandoned page must not publish old filenames.
+                // Navigation, background or a changed Owner retires this read.
             } catch {
-                guard epoch == ticket else { return }
-                items = []
-                total = 0
-                verified = false
+                guard let self, self.epoch == ticket else { return }
+                let fatal: Bool
+                if let reason = error as? XDriveIOSNativeFilesTrashFailure {
+                    switch reason {
+                    case .invalidOwner, .malformed,
+                         .server(401), .server(403), .server(404):
+                        fatal = true
+                    default:
+                        fatal = false
+                    }
+                } else {
+                    fatal = false
+                }
+                let message: String
                 if let reason = error as? XDriveIOSNativeFilesTrashFailure {
                     switch reason {
                     case .invalidOwner, .server(401), .server(403), .server(404):
-                        self.error = "账户或回收站访问已变化，请重新验证。"
+                        message = "账户或回收站访问已变化，请重新验证。"
+                    case .malformed:
+                        message = "回收站数量或排序已变化，请刷新重试。"
                     case .server(429), .server(503):
-                        self.error = "服务器暂时繁忙，请重试。"
+                        message = "服务器暂时繁忙，请重试。"
                     default:
-                        self.error = "回收站列表无法验证，请刷新重试。"
+                        message = "回收站列表无法验证，请刷新重试。"
                     }
                 } else {
-                    self.error = "读取回收站失败，请检查网络后重试。"
+                    message = "读取回收站失败，请检查网络后重试。"
+                }
+                if !appending || fatal {
+                    self.items = []
+                    self.loadedIDs.removeAll()
+                    self.total = 0
+                    self.verified = false
+                    self.error = message
+                    self.continuationError = nil
+                } else {
+                    // Keep previously verified rows; never publish a failed
+                    // range, and retry only after an explicit user action.
+                    self.continuationError = message
                 }
             }
         }
@@ -337,68 +412,86 @@ struct XDriveIOSNativeFilesTrashScreen: View {
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesTrashPageModel()
     @StateObject private var mutation = XDriveIOSNativeFilesTrashMutationModel()
-    @State private var offset = 0
     @State private var pendingDelete: XDriveIOSNativeFilesTrashNode?
     @State private var showingDeleteConfirmation = false
 
     var body: some View {
         List {
-            if model.loading {
+            if model.loading && model.items.isEmpty {
                 HStack { ProgressView(); Text("正在读取回收站…") }
             } else if let error = model.error {
                 Text(error).foregroundStyle(.orange)
-                Button("重试当前页") { reload() }
+                Button("重试") { reload() }
                     .accessibilityIdentifier("native-ios-files-trash-retry")
             } else if model.items.isEmpty {
-                Text(offset > 0 ? "本页已无项目，请返回上一页。" : "回收站为空。")
-                    .foregroundStyle(.secondary)
+                Text("回收站为空。").foregroundStyle(.secondary)
             }
             ForEach(model.items) { item in
-                VStack(alignment: .leading, spacing: 7) {
-                    Label(item.name, systemImage: item.isDirectory ? "folder" : "doc")
-                        .lineLimit(2)
-                    Text(item.isDirectory ? "已删除的文件夹（含子文件）" :
-                         ByteCountFormatter.string(
-                            fromByteCount: item.size, countStyle: .file
-                         ))
-                        .font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        Button("恢复到原位置") {
-                            run(.restore, item)
-                        }
-                        .disabled(!model.verified || mutation.busy || model.loading)
-                        .accessibilityIdentifier("native-ios-files-trash-restore-\(item.id)")
-                        Spacer()
-                        Button("彻底删除", role: .destructive) {
-                            pendingDelete = item
-                            showingDeleteConfirmation = true
-                        }
-                        .disabled(!model.verified || mutation.busy || model.loading)
-                        .accessibilityIdentifier("native-ios-files-trash-delete-\(item.id)")
+                HStack(spacing: 12) {
+                    Image(systemName: item.isDirectory ? "folder.fill" : "doc")
+                        .font(.system(size: 28))
+                        .foregroundStyle(item.isDirectory ? Color.accentColor : Color.secondary)
+                        .frame(width: 36, height: 40)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(item.name, systemImage: item.isDirectory ? "folder" : "doc")
+                            .labelStyle(.titleOnly)
+                            .lineLimit(2)
+                        Text(item.isDirectory ? "已删除的文件夹（含子文件）" :
+                             ByteCountFormatter.string(
+                                 fromByteCount: item.size, countStyle: .file
+                             ))
+                            .font(.caption).foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
+                    Spacer(minLength: 4)
                 }
-                .padding(.vertical, 5)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+                .contextMenu {
+                    Button("恢复到原位置") {
+                        run(.restore, item)
+                    }
+                    .disabled(!canActOn(item))
+                    .accessibilityIdentifier("native-ios-files-trash-restore-\(item.id)")
+                    Button("彻底删除", role: .destructive) {
+                        requestPermanentDeletion(item)
+                    }
+                    .disabled(!canActOn(item))
+                    .accessibilityIdentifier("native-ios-files-trash-delete-\(item.id)")
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button {
+                        run(.restore, item)
+                    } label: {
+                        Label("恢复", systemImage: "arrow.uturn.backward")
+                    }
+                    .tint(.blue)
+                    .disabled(!canActOn(item))
+                    Button(role: .destructive) {
+                        requestPermanentDeletion(item)
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                    .disabled(!canActOn(item))
+                }
+                .onAppear {
+                    guard !mutation.busy, model.canLoadMore,
+                          model.items.last?.id == item.id else { return }
+                    model.loadMore(login: login)
+                }
             }
-            Section {
+            if model.loading && !model.items.isEmpty {
                 HStack {
-                    Button("上一页") {
-                        offset = max(0, offset - XDriveIOSNativeFilesTrashPolicy.pageSize)
-                        reload()
-                    }
-                    .disabled(offset == 0 || mutation.busy || model.loading)
-                    Spacer()
-                    Text(model.total == 0 ? "0 / 0" :
-                        "\(offset + 1)–\(min(offset + model.items.count, model.total)) / \(model.total)")
-                        .font(.footnote.monospacedDigit())
-                    Spacer()
-                    Button("下一页") {
-                        offset += XDriveIOSNativeFilesTrashPolicy.pageSize
-                        reload()
-                    }
-                    .disabled(!model.verified || mutation.busy || model.loading ||
-                              offset + model.items.count >= model.total)
+                    ProgressView()
+                    Text("正在加载更多已删除项目…")
+                        .foregroundStyle(.secondary)
                 }
+                .accessibilityIdentifier("native-ios-files-trash-loading-more")
+            }
+            if let continuationError = model.continuationError {
+                Text(continuationError).foregroundStyle(.orange)
+                Button("重试加载更多") { model.retryMore(login: login) }
+                    .accessibilityIdentifier("native-ios-files-trash-retry-more")
             }
             if mutation.busy {
                 HStack { ProgressView(); Text("正在等待服务器确认…") }
@@ -408,7 +501,7 @@ struct XDriveIOSNativeFilesTrashScreen: View {
                     .accessibilityIdentifier("native-ios-files-trash-status")
             }
         }
-        .navigationTitle("回收站")
+        .navigationTitle("最近删除")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -445,7 +538,6 @@ struct XDriveIOSNativeFilesTrashScreen: View {
             mutation.invalidate()
             pendingDelete = nil
             showingDeleteConfirmation = false
-            offset = 0
             reload()
         }
         .onChange(of: phase) { current in
@@ -460,16 +552,30 @@ struct XDriveIOSNativeFilesTrashScreen: View {
         }
     }
 
+    /// The same verified Server range guards both long-press and swipe
+    /// actions. Permanent deletion still requires the existing confirmation.
+    private func canActOn(_ item: XDriveIOSNativeFilesTrashNode) -> Bool {
+        phase == .active && model.verified && !model.loading && !mutation.busy &&
+            model.items.contains(item) && model.pageOffset(for: item) != nil
+    }
+
+    private func requestPermanentDeletion(_ item: XDriveIOSNativeFilesTrashNode) {
+        guard canActOn(item) else { return }
+        pendingDelete = item
+        showingDeleteConfirmation = true
+    }
+
     private func reload() {
         guard !mutation.busy else { return }
-        model.load(login: login, offset: offset)
+        model.load(login: login, offset: 0)
     }
 
     private func run(_ action: XDriveIOSNativeFilesTrashTransport.Action,
                      _ item: XDriveIOSNativeFilesTrashNode) {
         guard model.verified, !model.loading, !mutation.busy,
-              model.items.contains(item) else { return }
-        mutation.perform(action, node: item, offset: offset, login: login) {
+              model.items.contains(item),
+              let pageOffset = model.pageOffset(for: item) else { return }
+        mutation.perform(action, node: item, offset: pageOffset, login: login) {
             reload()
         }
     }

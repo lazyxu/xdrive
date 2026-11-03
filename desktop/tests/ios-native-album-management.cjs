@@ -90,3 +90,45 @@ test('album names are bounded; original, cloud and backup writers remain isolate
   assert.doesNotMatch(allowed, /UploadSession|PhotoSyncLedger|ServerMedia|signedTicket|URLSession|WKWebView/)
   assert.doesNotMatch(writer, /PHAssetChangeRequest\.deleteAssets/)
 })
+
+
+test('PhotoKit destination picker scrolls through verified 32-item album windows without page buttons', () => {
+  assert.match(picker, /ForEach\(page\.items\.filter \{/)
+  assert.match(picker, /XDriveLocalPhotoAlbumPager\.pageSize/)
+  assert.match(picker, /if page\.hasNext && !writing \{/)
+  assert.match(picker, /\.id\("album-destination-tail:/)
+  assert.match(picker, /\.onAppear \{[\s\S]*?visibleTailOffset = tailOffset/)
+  assert.match(picker, /\.onChange\(of: busy\) \{ inProgress in/)
+  assert.match(picker, /guard !inProgress, message == nil,[\s\S]*?visibleTailOffset == page\.items\.count/)
+  assert.match(picker, /load\(at: page\.items\.count\)/)
+  assert.match(picker, /guard !writing, !busy, phase == \.active,/)
+  assert.match(picker, /previous\.total == result\.total/)
+  assert.match(picker, /previous\.limitedAuthorization == result\.limitedAuthorization/)
+  assert.match(picker, /Set\(previous\.items\.map\(\\\.collectionIdentifier\)\)\.isDisjoint/)
+  assert.match(picker, /items: previous\.items \+ result\.items/)
+  assert.match(picker, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(picker, /private func stopRead\(\) \{[\s\S]*?epoch = UUID\(\)/)
+  assert.match(picker, /XDriveIOSNativePhotoAlbumMutations\.add\(/)
+  assert.doesNotMatch(picker, /Button\("上一页"\)|Button\("下一页"\)|Button\("加载更多"\)/)
+})
+
+
+test('album identity is tied to the PhotoKit collection, not a changing directory position', () => {
+  assert.match(pager, /id: album\.localIdentifier, name:/)
+  assert.match(pager, /collectionIdentifier: album\.localIdentifier/)
+  assert.doesNotMatch(pager, /id: "album-page-\\?\(position\)"/)
+  assert.match(browser, /ForEach\(page\.items\) \{ album in/)
+  assert.match(browser, /scroll\.scrollTo\(target, anchor: \.top\)/)
+  assert.match(browser, /let target = page\.items\[min\(anchor, page\.items\.count - 1\)\]\.id/)
+})
+
+test('retiring an old tail cannot clear a newer visible destination tail', () => {
+  assert.match(picker, /@State private var visibleTailOffset: Int\?/)
+  assert.match(picker, /let tailOffset = page\.items\.count/)
+  assert.match(picker, /\.id\("album-destination-tail:\\?\(tailOffset\)"\)/)
+  assert.match(picker, /visibleTailOffset = tailOffset/)
+  assert.match(picker, /\.onDisappear \{\s*if visibleTailOffset == tailOffset \{\s*visibleTailOffset = nil/)
+  assert.match(picker, /guard !inProgress, message == nil,[\s\S]*?visibleTailOffset == page\.items\.count/)
+  assert.match(picker, /private func stopRead\(\) \{\s*visibleTailOffset = nil/)
+  assert.doesNotMatch(picker, /tailVisible/)
+})

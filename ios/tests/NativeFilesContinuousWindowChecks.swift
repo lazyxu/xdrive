@@ -74,6 +74,44 @@ struct XDriveIOSNativeFilesContinuousWindowChecks {
         require(Window.requestedOffset(direction: .next, startOffset: 1,
                                        loadedCount: 64, total: 100_000) == nil,
                 "reject unaligned range")
+        // Returning from a child folder or clearing global search must
+        // preserve a verified 64-entry page and the actual visible Node.
+        let middle = ids(64, 320)
+        require(Window.restoreAnchor(
+            lastAppearedNodeID: middle[130], startOffset: 64,
+            loadedIDs: middle, total: 100_000
+        ) == Window.RestoreAnchor(nodeID: middle[130], pageOffset: 192),
+                "return to a row inside a four-range sliding window")
+        let terminal = ids(128, 328)
+        require(Window.restoreAnchor(
+            lastAppearedNodeID: terminal.last, startOffset: 128,
+            loadedIDs: terminal, total: 328
+        ) == Window.RestoreAnchor(nodeID: 328, pageOffset: 320),
+                "return to a partial final page")
+        require(Window.restoreAnchor(
+            lastAppearedNodeID: 500, startOffset: 64,
+            loadedIDs: middle, total: 100_000
+        ) == nil, "do not restore an evicted Node")
+        require(Window.restoreAnchor(
+            lastAppearedNodeID: middle[10], startOffset: 7,
+            loadedIDs: middle, total: 100_000
+        ) == nil, "reject misaligned prior window")
+        require(Window.restoreAnchor(
+            lastAppearedNodeID: 40, startOffset: 0,
+            loadedIDs: ids(0, 40), total: 100_000
+        ) == nil, "reject a short nonterminal window")
+        require(Window.restoreAnchor(
+            lastAppearedNodeID: 63, startOffset: 0,
+            loadedIDs: ids(0, 63) + [63], total: 100_000
+        ) == nil, "reject duplicate Node IDs")
+        require(Window.restoreAnchor(
+            lastAppearedNodeID: 320, startOffset: 0,
+            loadedIDs: ids(0, 320), total: 100_000
+        ) == nil, "reject more than four loaded ranges")
+        require(Window.restoreAnchor(
+            lastAppearedNodeID: 0, startOffset: 0,
+            loadedIDs: ids(0, 64), total: 100_000
+        ) == nil, "reject zero Node identity")
         print("iOS Files bounded continuous scrolling policy passed")
     }
 }

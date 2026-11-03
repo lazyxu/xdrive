@@ -9,6 +9,12 @@ private struct XDriveIOSNativeFilesManageDestinationIntent: Identifiable {
     let kind: XDriveIOSNativeFilesDestinationKind
 }
 
+/// No context-menu action bypasses the existing verified Owner-scoped
+/// operation or its destination / rename / destructive confirmation UI.
+enum XDriveIOSNativeFilesQuickAction {
+    case createFolder, uploadFile, uploadMultiple, copy, move, rename, favorite, shareLink, download, trash
+}
+
 /// Native Server Files operations live beside, never inside, the independent
 /// read-only L3 Files Viewer. One modal owns one selected file or folder.
 struct XDriveIOSNativeFilesManagementPanel: View {
@@ -18,6 +24,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
     let folderName: String?
     let file: XDriveIOSNativeFilesNode?
     let directory: XDriveIOSNativeFilesNode?
+    let initialQuickAction: XDriveIOSNativeFilesQuickAction?
     let onConfirmed: @MainActor () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -33,6 +40,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
     @State private var showingCreate = false
     @State private var showingRename = false
     @State private var showingTrash = false
+    @State private var initialActionApplied = false
     @State private var folderDraft = ""
     @State private var renameDraft = ""
     @State private var createBusy = false
@@ -182,6 +190,16 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         if let date = directory.modifiedDate {
                             LabeledContent("修改时间",
                                            value: XDriveIOSNativeFilesDatePolicy.display(date))
+                        }
+                    }
+                    Section("收藏夹") {
+                        Button("收藏此文件夹") {
+                            favoriteMutation.add(directory, login: login)
+                        }
+                        .disabled(anyBusy)
+                        .accessibilityIdentifier("native-ios-files-add-folder-favorite")
+                        if let status = favoriteMutation.status {
+                            Text(status).font(.footnote).foregroundStyle(.secondary)
                         }
                     }
                     Section("云端分享链接") {
@@ -383,11 +401,64 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                 }
             }
         }
+        .onAppear { applyInitialQuickAction() }
         .onDisappear { invalidate() }
         .onChange(of: login.owner) { _ in
             if !verified {
                 invalidate()
                 dismiss()
+            }
+        }
+    }
+
+    /// The current-directory shortcuts open the same native alert/importers
+    /// already used by the management screen. No new upload or create writer,
+    /// and never use a guessed root or a stale Owner identity.
+    /// File and folder quick actions keep their existing version checks and
+    /// explicit confirmation where appropriate.
+    @MainActor
+    private func applyInitialQuickAction() {
+        guard !initialActionApplied else { return }
+        initialActionApplied = true
+        guard verified, !anyBusy, let initialQuickAction else { return }
+        switch initialQuickAction {
+        case .createFolder:
+            guard file == nil, directory == nil else { return }
+            folderDraft = ""
+            showingCreate = true
+        case .uploadFile:
+            guard file == nil, directory == nil else { return }
+            showingImporter = true
+        case .uploadMultiple:
+            guard file == nil, directory == nil else { return }
+            showingMultiImporter = true
+        case .copy, .move, .rename, .favorite, .shareLink, .download, .trash:
+            guard let selected = file ?? directory else { return }
+            switch initialQuickAction {
+            case .copy:
+                destinationIntent = .init(node: selected, kind: .copy)
+            case .move:
+                destinationIntent = .init(node: selected, kind: .move)
+            case .rename:
+                renameDraft = selected.name
+                showingRename = true
+            case .favorite:
+                // Reuse the existing Owner/Node revision checked writer.
+                favoriteMutation.add(selected, login: login)
+            case .shareLink:
+                shareNode = selected
+            case .download:
+                if let file {
+                    exporter.prepare(file, login: login)
+                } else if let directory {
+                    folderArchive.prepare(
+                        directory, login: login, expectedOwner: expectedOwner
+                    )
+                }
+            case .trash:
+                showingTrash = true
+            case .createFolder, .uploadFile, .uploadMultiple:
+                return
             }
         }
     }

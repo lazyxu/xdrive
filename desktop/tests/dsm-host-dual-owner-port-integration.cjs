@@ -22,6 +22,16 @@ const local = {
     assert.ok(signal instanceof AbortSignal)
     return Promise.resolve({ checks: [], summary: { pass: 0, warn: 0, fail: 0 } })
   },
+  serverConnection: async signal => {
+    assert.ok(signal instanceof AbortSignal)
+    return { configured: true, must_change_password: false,
+      server: 'https://server.example', username: 'owner',
+      owner_scope: 'a'.repeat(64) }
+  },
+  ownerQuota: async signal => {
+    assert.ok(signal instanceof AbortSignal)
+    return { capacity_bytes: 1000, used_bytes: 20 }
+  },
 }
 const gallery = { readOnlyOwnerGallery: true }
 const nasStorage = { nasVerified: true }
@@ -43,6 +53,15 @@ new Function('module', 'exports', 'require', 'window', compiled.outputText)(
         assert.strictEqual(client, local)
         return gallery
       },
+    }
+    if (name === '../../ui/shared/src/synology-owner-diagnostics') {
+      const filename = 'ui/shared/src/synology-owner-diagnostics.ts'
+      const src = fs.readFileSync(path.join(root, filename), 'utf8')
+      const result = ts.transpileModule(src, { fileName: filename,
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } })
+      const module = { exports: {} }
+      new Function('module', 'exports', result.outputText)(module, module.exports)
+      return module.exports
     }
     throw Error('Unexpected DSM Host dependency: ' + name)
   },
@@ -72,11 +91,15 @@ test('one real authenticated DSM client powers both Files and shared Gallery', (
 test('Gallery cannot silently re-enable missing Owner Files write operations', () => {
   const h = create()
   const disabled = h.services.ownerFilesPage.unavailableActions
-  for (const action of ['uploadFiles', 'uploadFolder',
-    'copy', 'cut', 'paste', 'delete', 'moveTo', 'copyTo', 'manageTags']) {
+  for (const action of ['uploadFolder',
+    'copy', 'cut', 'paste', 'manageTags']) {
     assert.equal(typeof disabled[action], 'string', action)
     assert.ok(disabled[action].length > 5, action)
   }
+  assert.equal(disabled.uploadFiles, undefined, 'bounded Owner file upload uses a verified Host')
+  assert.equal(disabled.delete, undefined, 'single-node trash uses the verified Host confirmation')
+  assert.equal(disabled.moveTo, undefined, 'single-node move uses the verified Host destination picker')
+  assert.equal(disabled.copyTo, undefined, 'single-node Owner copy uses the verified Host destination picker')
   assert.equal(disabled.createFolder, undefined, 'DSM has one verified Owner folder-create action')
   assert.equal(disabled.search, undefined, 'DSM supplies a bounded authenticated Owner search adapter')
   assert.equal(disabled.rename, undefined, 'DSM permits only verified Owner node rename')
@@ -90,7 +113,9 @@ test('Diagnostics stays a real, cancellable scoped Host read without native JSX'
   const host = create()
   const controller = new AbortController()
   const result = await host.services.diagnosticsSource.read(controller.signal)
-  assert.deepEqual(result.checks, [])
-  assert.equal(result.summary.pass, 0)
+  assert.equal(result.checks.length, 1)
+  assert.equal(result.checks[0].name, 'login session')
+  assert.equal(result.checks[0].status, 'PASS')
+  assert.equal(result.summary.pass, 1)
   assert.doesNotMatch(source, /XDriveSynologyDiagnosticsPanel|XDriveDiagnosticsHostController|window\.xdriveDesktop/)
 })

@@ -109,8 +109,40 @@ struct XDriveIOSNativeFilesViewer: View {
     // staged file belongs to exactly this L3 item, never the hidden page.
     @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
     @State private var exportFallbackEligible = false
+    @State private var showImageChrome = true
+    @State private var showVideoChrome = true
 
     private var viewed: XDriveIOSNativeFilesNode { active ?? initial }
+
+    private var isStillImage: Bool {
+        guard let display else { return false }
+        switch display {
+        case .image(_), .imageThumbnail(_): return true
+        default: return false
+        }
+    }
+
+    private var isNativeVideo: Bool {
+        guard let display else { return false }
+        if case .video = display { return true }
+        return false
+    }
+
+    private var chromeVisible: Bool {
+        (!isStillImage || showImageChrome) &&
+            (!isNativeVideo || showVideoChrome)
+    }
+
+    private func toggleImageChrome() {
+        guard authorized, isStillImage else { return }
+        withAnimation(.easeInOut(duration: 0.18)) { showImageChrome.toggle() }
+    }
+
+    private func toggleVideoChrome() {
+        guard authorized, isNativeVideo else { return }
+        withAnimation(.easeInOut(duration: 0.18)) { showVideoChrome.toggle() }
+    }
+
     private var authorized: Bool {
         phase == .active &&
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner)
@@ -131,31 +163,38 @@ struct XDriveIOSNativeFilesViewer: View {
                     case .image(let image):
                         XDriveIOSNativeZoomablePhotoView(image: image)
                             .onNavigateSwipe { move($0) }
+                            .onChromeTap { toggleImageChrome() }
                             .accessibilityLabel("图片，可双指缩放或双击")
                             .overlay(alignment: .topLeading) {
+                                if showImageChrome {
                                 XDriveIOSNativeViewerQualityPanel(
                                     fileName: viewed.name,
                                     source: "原件 · 适屏解码",
                                     image: image,
                                     originalBytes: viewed.size
                                 )
+                                }
                             }
                     case .imageThumbnail(let image):
                         VStack(spacing: 6) {
                             XDriveIOSNativeZoomablePhotoView(image: image)
                                 .onNavigateSwipe { move($0) }
+                                .onChromeTap { toggleImageChrome() }
                                 .accessibilityLabel("低清缩略图，可双指缩放")
                                 .overlay(alignment: .topLeading) {
+                                    if showImageChrome {
                                     XDriveIOSNativeViewerQualityPanel(
                                         fileName: viewed.name,
                                         source: "缩略图回退",
                                         image: image,
                                         originalBytes: viewed.size
                                     )
+                                    }
                                 }
                             // The selected 1 GiB-or-smaller original is exported
                             // only after a user tap. Keep controls scrollable in
                             // short landscape and at large Dynamic Type sizes.
+                            if showImageChrome {
                             ScrollView {
                                 VStack(spacing: 8) {
                                     Text("当前仅显示云端低清缩略图。可以在此下载当前版本原件，再选择保存到“文件”或用其他 App 打开；不会自动下载或保存。")
@@ -170,12 +209,19 @@ struct XDriveIOSNativeFilesViewer: View {
                             }
                             .frame(maxHeight: 160)
                             .accessibilityIdentifier("native-ios-files-viewer-thumbnail-recovery")
+                            }
                         }
                     case .video:
                         if let player {
                             observingPlayer(
-                                VideoPlayer(player: player)
-                                    .onAppear { if authorized { player.play() } },
+                                XDriveIOSNativePhotoVideoSurface(
+                                    player: player, showChrome: showVideoChrome,
+                                    onChromeTap: { toggleVideoChrome() },
+                                    onNavigateSwipe: { move($0) }
+                                )
+                                .id(viewed.id)
+                                .onAppear { if authorized { player.play() } }
+                                .onDisappear { player.pause() },
                                 player: player
                             )
                         }
@@ -233,6 +279,7 @@ struct XDriveIOSNativeFilesViewer: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(isStillImage || isNativeVideo ? Color.black : Color(uiColor: .systemBackground))
             .navigationTitle(viewed.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -272,7 +319,10 @@ struct XDriveIOSNativeFilesViewer: View {
                     .disabled(neighbor(1) == nil)
                 }
             }
+            .toolbar(chromeVisible ? .visible : .hidden,
+                     for: .navigationBar, .bottomBar)
         }
+        .statusBarHidden(!chromeVisible)
         .task(id: attempt) { await openCurrent() }
         // AVPlayer may fail AFTER a valid signed ticket and initial render.
         // Only this modal's current item may produce terminal retry feedback.
@@ -473,6 +523,10 @@ struct XDriveIOSNativeFilesViewer: View {
 
     @MainActor
     private func retire() {
+        // A failed load, Owner change, scene retirement, dismissal or next
+        // image must always restore visible escape and retry controls.
+        showImageChrome = true
+        showVideoChrome = true
         // Cancel the old item's signed download and delete any staged bytes
         // before a swipe, retry, Owner/scene exit or Viewer dismissal.
         exporter.invalidate()

@@ -14,7 +14,11 @@ test('BG task performs a bounded real original run only after current native gra
   assert.match(task,/\.reserveDue\(owner: owner, approved: approved\)/)
   assert.match(task,/XDriveIOSForegroundPhotoBackupMVP\(/)
   assert.match(task,/approvedBackgroundGrant: approved/)
-  assert.match(task,/maximumNewOriginals: 1/)
+  const bgPolicy = read('BGOriginalWindowStore.swift')
+  assert.match(bgPolicy, /static let maximumNewOriginalsPerRun = 4/)
+  assert.match(task, /maximumNewOriginals: min\(\s*XDriveIOSBGOriginalWindowStore\.maximumNewOriginalsPerRun,\s*XDriveIOSForegroundPhotoBackupMVP\.maxNewOriginalsPerRun\s*\)/)
+  assert.equal((task.match(/XDriveIOSForegroundPhotoBackupMVP\(/g) || []).length, 1,
+    'a BGTask may upload multiple originals but must still share one serial journaled runner')
   assert.match(task,/\.record\(\s*owner: owner, approved: approved, report: progress/)
   assert.match(task,/!progress\.stoppedForReview/)
   assert.match(task,/task\.expirationHandler = \{[\s\S]*?expiration\.systemExpired = true[\s\S]*?operation\.cancel\(\)/)
@@ -249,4 +253,46 @@ test('network or temporary-disk outage aborts whole original window instead of a
   assert.match(scan, /case \.requiresReview:\s*report\.needsReview \+= 1\s*report\.stoppedForReview = true/)
   assert.match(runner, /case \.creating, \.uploading, \.finalizing, \.needsReconciliation:/)
   assert.doesNotMatch(policy, /UploadSession|beginCreate|confirmReceipt|localIdentifier|UserDefaults/)
+})
+
+test('staged SHA reads and Live ZIP destination I/O stop the whole auto/BG window', () => {
+  const preparer = read('PhotoKitStagedIntentPreparer.swift')
+  const archive = read('LiveOriginalArchive.swift')
+  const runner = read('ForegroundPhotoBackupMVP.swift')
+  const hash = preparer.slice(preparer.indexOf('private func hashStagedFile('),
+    preparer.indexOf('private func validServerFilename('))
+  const zip = archive.slice(archive.indexOf('static func create('),
+    archive.indexOf('private static func extensionFor('))
+  const policy = runner.slice(runner.indexOf('private static func mustAbortRun('),
+    runner.indexOf('private static func isTransientConfirmedReadbackFailure('))
+  const scanning = runner.slice(runner.indexOf('scanning: while'),
+    runner.indexOf('private static func mustAbortRun('))
+
+  // The four real filesystem read sites are distinct from source-revision
+  // or unsupported-media validation; Task cancellation stays explicit.
+  assert.match(preparer, /case stagedStorageUnavailable/)
+  assert.equal((hash.match(/throw XDriveIOSPhotoIntentPreparationError\.stagedStorageUnavailable/g) || []).length, 4)
+  assert.match(hash, /attributes = try fm\.attributesOfItem\(atPath: url\.path\)/)
+  assert.match(hash, /file = try FileHandle\(forReadingFrom: url\)/)
+  assert.match(hash, /chunk = try file\.read\(upToCount: 8 \* 1_048_576\)/)
+  assert.match(hash, /finalAttributes = try fm\.attributesOfItem\(atPath: url\.path\)/)
+  assert.match(hash, /try Task\.checkCancellation\(\)/)
+  assert.match(hash, /throw XDriveIOSPhotoIntentPreparationError\.invalidStagedOriginal/)
+
+  // A Live archive must never be uploaded or called complete after a
+  // destination write/fdatasync failure. The existing defer removes the ZIP.
+  assert.match(archive, /case storageUnavailable/)
+  assert.equal((zip.match(/throw XDriveIOSLiveArchiveFailure\.storageUnavailable/g) || []).length, 4)
+  assert.match(zip, /handle = try FileHandle\(forWritingTo: outputURL\)/)
+  assert.match(zip, /try handle\.write\(contentsOf: data\)/)
+  assert.match(zip, /try handle\.synchronize\(\)/)
+  assert.match(zip, /if !committed \{ try\? FileManager\.default\.removeItem\(at: outputURL\) \}/)
+  assert.match(archive, /case resourceChanged/)
+  assert.match(archive, /case invalidPair/)
+
+  assert.match(policy, /case \.stagedStorageUnavailable = intent \{\s*return true/)
+  assert.match(policy, /case \.storageUnavailable = archive \{\s*return true/)
+  assert.match(policy, /case \.unverifiedOwnerOrDeviceScope = intent/)
+  assert.match(scanning, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
+  assert.doesNotMatch(policy, /UploadSession|beginCreate|confirmReceipt|UserDefaults/)
 })

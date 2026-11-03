@@ -3,6 +3,10 @@ name: CI
 on:
   pull_request:
     branches: ["master"]
+  # A queued merge must test the exact master + queued PR combination.
+  # This does not enforce the queue by itself: master Ruleset must require it.
+  merge_group:
+    types: [checks_requested]
   push:
     branches: ["master"]
     tags: ["v*"]
@@ -57,7 +61,7 @@ jobs:
             if git cat-file -e "$PR_HEAD_SHA^{commit}" 2>/dev/null; then
               if candidate="$(python3 scripts/ci/classify_pr_scope.py "$PR_BASE_SHA" "$PR_HEAD_SHA")"; then
                 case "$candidate" in
-                  full|docs|android|pwa) scope="$candidate" ;;
+                  full|docs|android|pwa|offline-release) scope="$candidate" ;;
                   *) echo "::warning title=Unknown CI scope::Using complete CI." ;;
                 esac
               else
@@ -65,7 +69,7 @@ jobs:
               fi
             fi
           fi
-          case "$scope" in full|docs|android|pwa) ;; *) exit 1 ;; esac
+          case "$scope" in full|docs|android|pwa|offline-release) ;; *) exit 1 ;; esac
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
           echo "xDrive CI scope: $scope (unknown or risky paths require full CI)"
 
@@ -92,6 +96,7 @@ jobs:
           node --check desktop/tests/agents-active-policy-archive.cjs
           node --test desktop/tests/agents-active-policy-archive.cjs
           python3 -m unittest discover -s scripts/ci -p 'test_pr_scope.py'
+          python3 -m unittest discover -s scripts/ci -p 'test_master_ci_gate.py'
 
   android-native:
     needs: pr-scope
@@ -188,6 +193,58 @@ jobs:
           set -euo pipefail
           [[ "$PR_COMMITS" =~ ^[1-9][0-9]*$ ]] || exit 1
           echo "PR has $PR_COMMITS commit(s); Squash Merge may retain a linear master."
+
+  # Publisher-only PRs need the exact immutable Share delivery contracts, not
+  # Android, Desktop, Go image builds or signed release publication. On master
+  # and stable tags both jobs run as part of the complete Final Gate.
+  offline-release-tests:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'offline-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Test exact GitHub package selection and Share upload/readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/mirror-server-to-share.py scripts/ci/mirror-clients-to-share.py
+          python3 scripts/ci/test-mirror-clients-to-share.py -q
+          python3 scripts/ci/test-mirror-server-to-share.py -q
+
+  offline-security-contract:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'offline-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify five-package archive, image identity, delivery and signed release
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/offline/build-five-packages.sh
+          python3 -m unittest discover -s scripts/offline -p 'test_*.py'
+          python3 scripts/test-xdrive-share-update.py -q
+          python3 scripts/test-release-attestation-contract.py
+      # A scoped PR can edit its own regression tests. Run the already trusted
+      # master tests on the candidate publisher too, so changing tests cannot
+      # silently weaken the existing security baseline.
+      - name: Re-run trusted base Share publisher regression suite
+        if: github.event_name == 'pull_request' && needs.pr-scope.outputs.scope == 'offline-release'
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          git show "$PR_BASE_SHA:scripts/ci/test-mirror-server-to-share.py" > scripts/ci/test-mirror-server-to-share.py
+          python3 scripts/ci/test-mirror-server-to-share.py -q
 
   desktop-tests:
     needs: pr-scope
@@ -1134,6 +1191,8 @@ jobs:
           python3 scripts/test-github-release-archive-contract.py
           go test ./cmd/backuprepo -count=1
           bash -n scripts/server-backup.sh
+          bash -n scripts/test-server-backup-data-source-preflight.sh
+          bash scripts/test-server-backup-data-source-preflight.sh
           bash -n scripts/server-backup-scheduled.sh
           bash -n scripts/test-server-backup-scheduled.sh
           bash scripts/test-server-backup-scheduled.sh
@@ -1172,8 +1231,6 @@ jobs:
           python3 -m unittest discover -s scripts/ci -p 'test_backup_restore_drill_evidence.py'
           bash -n scripts/test-server-backup-restore.sh
           bash -n scripts/test-server-chunk-storage.sh
-          bash -n scripts/offline/build-five-packages.sh
-          python3 -m unittest discover -s scripts/offline -p 'test_*.py'
           bash -n scripts/test-server-installer-bootstrap.sh
           bash scripts/test-server-installer-bootstrap.sh
           bash -n scripts/test-server-installer-transaction.sh
@@ -1190,9 +1247,6 @@ jobs:
           bash -n scripts/test-xdrive-server-host.sh
           bash scripts/test-xdrive-server-host.sh
           python3 scripts/test-xdrive-share-host.py
-          python3 scripts/test-xdrive-share-update.py
-          python3 scripts/ci/test-mirror-server-to-share.py
-          python3 scripts/test-release-attestation-contract.py
           bash -n scripts/test-server-status-summary.sh
           bash scripts/test-server-status-summary.sh
           bash -n scripts/ci/test-server-rootless-e2e.sh
@@ -2527,6 +2581,8 @@ jobs:
       - go-windows
       - test-backup-cli-windows
       - server-validation
+      - offline-release-tests
+      - offline-security-contract
       - server-image
       - photo-face-image
       - media-worker-image
@@ -2551,6 +2607,8 @@ jobs:
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           checkout_sha="$(git rev-parse HEAD)"
@@ -2570,22 +2628,38 @@ jobs:
               echo "::error title=PR candidate mismatch::Expected a two-parent candidate with the exact submitted Head"
               exit 1
             fi
-            # A queued PR event can still carry an older Base SHA when GitHub
-            # regenerates its synthetic merge candidate on a newer master.
-            # Admit only a verified fast-forward along the same master history.
+            # The first parent must be a real ancestor of current master,
+            # not an unrelated/replaced branch. An independently advanced
+            # master does NOT invalidate successful exact-HEAD PR checks.
+            # GitHub will still reject an actual merge conflict at merge time.
             git fetch --quiet --no-tags origin '+refs/heads/master:refs/remotes/origin/master'
+            live_master_sha="$(git rev-parse refs/remotes/origin/master)"
             if ! git merge-base --is-ancestor "$PR_BASE_SHA" "${actual_parents[0]}"; then
               echo "::error title=Invalid PR Base ancestry::Candidate Base must descend from the event Base"
               exit 1
             fi
-            if ! git merge-base --is-ancestor "${actual_parents[0]}" refs/remotes/origin/master; then
-              echo "::error title=Untrusted PR merge Base::Candidate Base must be on the current master ancestry"
+            if ! git merge-base --is-ancestor "${actual_parents[0]}" "$live_master_sha"; then
+              echo "::error title=Untrusted PR merge Base::Tested Base is not on current master ancestry."
               exit 1
             fi
-            if [[ "${actual_parents[0]}" != "$PR_BASE_SHA" ]]; then
-              echo "::notice title=GitHub advanced PR Base::Tested candidate Base ${actual_parents[0]} is a verified forward descendant of event Base $PR_BASE_SHA"
+            echo "PR candidate verified: exact event SHA, submitted Head, and trusted master ancestry."
+          elif [[ "$GITHUB_EVENT_NAME" == "merge_group" ]]; then
+            # GitHub's queue may group multiple PRs. Its head is the entire
+            # queued combination and is the unit that must pass full CI.
+            if [[ ! "$MERGE_GROUP_HEAD_SHA" =~ ^[a-f0-9]{40}$ ||
+                  ! "$MERGE_GROUP_BASE_SHA" =~ ^[a-f0-9]{40}$ ||
+                  "$checkout_sha" != "$MERGE_GROUP_HEAD_SHA" ]]; then
+              echo "::error title=Invalid Merge Queue candidate::Checkout must equal the queued head SHA"
+              exit 1
             fi
-            echo "PR candidate verified: exact event SHA, submitted Head, and forward-only trusted Base ancestry."
+            git fetch --quiet --no-tags origin '+refs/heads/master:refs/remotes/origin/master'
+            live_master_sha="$(git rev-parse refs/remotes/origin/master)"
+            if ! git merge-base --is-ancestor "$MERGE_GROUP_BASE_SHA" "$checkout_sha" ||
+               ! git merge-base --is-ancestor "$live_master_sha" "$checkout_sha"; then
+              echo "::error title=Stale Merge Queue candidate::Queued head does not contain the event Base and the live master; requeue required."
+              exit 1
+            fi
+            echo "Merge Queue candidate verified: exact queued head, event Base ancestry, and live master ancestry."
           else
             echo "Non-PR checkout verified against the exact workflow event SHA."
           fi
@@ -2614,13 +2688,17 @@ jobs:
             if $scope == "docs" then accepted(["policy-contract"])
             elif $scope == "android" then accepted(["android-native"])
             elif $scope == "pwa" then accepted(["web", "desktop-tests"])
+            elif $scope == "offline-release" then accepted(["offline-release-tests", "offline-security-contract"])
             else false end
           ' >/dev/null
           echo "Scoped $CI_SCOPE PR validation passed; master and v* remain full."
 
   publish-master:
+    # Build and package jobs may run in parallel, but *publishing* a Snapshot
+    # must wait for every applicable test, including the real Android emulator.
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs:
+      - final-gate
       - build-client-core
       - build-source-agent
       - package-linux-client

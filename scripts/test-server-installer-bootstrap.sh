@@ -96,14 +96,22 @@ services: {}
 set -euo pipefail
 output=""
 leave=0
+preflight=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config-dir) shift 2 ;;
     --output-dir) output="$2"; shift 2 ;;
     --leave-server-stopped) leave=1; shift ;;
+    --preflight-only) preflight=1; shift ;;
     *) shift ;;
   esac
 done
+if [[ "$preflight" == 1 ]]; then
+  # The mock models a safe read-only admission; a separate fixture covers
+  # denied identity/mount and ensures no service is stopped on rejection.
+  echo "[xDrive] Server identity and /data source admitted (read-only)."
+  exit 0
+fi
 [[ "$leave" == "1" ]]
 dir="$output/xdrive-backup-test"
 mkdir -p "$dir"

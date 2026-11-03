@@ -19,6 +19,31 @@ enum XDriveIOSNativeFilesContinuousWindowPolicy {
         let dropFromBack: Int
     }
 
+    /// A provisional on-screen Node anchor uses only the already verified,
+    /// bounded contiguous Server window. The returned page offset is aligned
+    /// for the existing 64-entry endpoint; it never scans an entire folder.
+    struct RestoreAnchor: Equatable {
+        let nodeID: UInt64
+        let pageOffset: Int
+    }
+
+    static func restoreAnchor(lastAppearedNodeID: UInt64?, startOffset: Int,
+                              loadedIDs: [UInt64], total: Int) -> RestoreAnchor? {
+        guard let nodeID = lastAppearedNodeID, nodeID > 0,
+              startOffset >= 0, startOffset % pageSize == 0,
+              total > 0, total <= maximumTotal,
+              !loadedIDs.isEmpty, loadedIDs.count <= maximumVisibleItems,
+              startOffset + loadedIDs.count <= total,
+              loadedIDs.count % pageSize == 0 ||
+                  startOffset + loadedIDs.count == total,
+              Set(loadedIDs).count == loadedIDs.count,
+              loadedIDs.allSatisfy({ $0 > 0 }),
+              let index = loadedIDs.firstIndex(of: nodeID)
+        else { return nil }
+        return RestoreAnchor(nodeID: nodeID,
+                             pageOffset: startOffset + (index / pageSize) * pageSize)
+    }
+
     static func requestedOffset(direction: Direction, startOffset: Int,
                                 loadedCount: Int, total: Int) -> Int? {
         guard startOffset >= 0, startOffset % pageSize == 0,

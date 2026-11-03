@@ -47,6 +47,7 @@ const sharedDiagnosticsPage = fs.readFileSync(path.join(root, '..', 'ui', 'share
 const desktopFilesPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
 const sharedFilesWorkspace = fs.readFileSync(path.join(root, '..', 'ui/shared/src/mui/FilesWorkspacePage.tsx'), 'utf8')
 const desktopSettingsContent = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
+const desktopClientUpdatePanel = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopClientUpdatePanel.tsx'), 'utf8')
 const desktopHostFrame = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopHostFrame.tsx'), 'utf8')
 const renderer = [
   rendererApp,
@@ -75,6 +76,7 @@ const renderer = [
   desktopFilesPage,
   sharedFilesWorkspace,
   desktopSettingsContent,
+  desktopClientUpdatePanel,
   desktopHostFrame,
 ].join('\n')
 const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx'), 'utf8')

@@ -817,6 +817,55 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         previewRequestID = UUID()
     }
 
+    /// A thumbnail is selectable only inside the one frozen verified Owner
+    /// page. The wall callback still verifies current Node/revision on tap.
+    private func originalFilmstripKey(_ item: XDriveIOSNativeCloudOriginal)
+        -> XDriveIOSNativeCloudOriginalFilmstripKey {
+        XDriveIOSNativeCloudOriginalFilmstripKey(
+            nodeID: item.id, revision: item.revision,
+            name: item.name, type: item.type, size: item.size,
+            kind: item.isLiveArchive ? "live" :
+                item.isVideo ? "video" : "image"
+        )
+    }
+
+    private func selectFilmstrip(_ next: XDriveIOSNativeCloudOriginal) {
+        guard currentOwnerAuthorized, !exporter.busy, !restoringToPhotos,
+              let target = loadedNodes.first(where: {
+                $0.id == next.id && $0.revision == next.revision &&
+                $0.name == next.name && $0.type == next.type &&
+                $0.size == next.size
+              }), target.id != viewed.id ||
+                  target.revision != viewed.revision
+        else { return }
+        let keys = loadedNodes.filter {
+            $0.isImage || $0.isVideo || $0.isLiveArchive
+        }.map(originalFilmstripKey)
+        guard XDriveIOSNativeCloudOriginalFilmstripPolicy.target(
+            current: originalFilmstripKey(viewed),
+            requested: originalFilmstripKey(target),
+            in: keys, authorized: currentOwnerAuthorized
+        ) != nil, onViewed?(target) == true else { return }
+        // Match next/previous retirement. Never keep an old signed stream,
+        // paired Live ZIP, export or Photos restore under the new selection.
+        cancelPhotoRestore()
+        exporter.invalidate()
+        player?.pause()
+        player = nil
+        still = nil
+        stillIsThumbnailOnly = false
+        error = nil
+        liveResources?.discard()
+        liveResources = nil
+        showingLiveMotion = false
+        nativeLiveReady = false
+        nativeLiveUnavailable = false
+        showsStaticStill = false
+        nativeLivePlaybackRequest = nil
+        activeNode = target
+        previewRequestID = UUID()
+    }
+
     private func toggleChrome() {
         guard currentOwnerAuthorized else { return }
         withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() }
@@ -830,7 +879,12 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         if showingLiveMotion, let player {
                             XDriveIOSNativeAVPlayerStatusObserver(
                                 player: player,
-                                content: VideoPlayer(player: player)
+                                content: XDriveIOSNativePhotoVideoSurface(
+                                    player: player, showChrome: showChrome,
+                                    onChromeTap: { toggleChrome() },
+                                    onNavigateSwipe: { showNeighbor($0) }
+                                )
+                                    .id(viewed.id)
                                     .onAppear {
                                         if currentOwnerAuthorized { player.play() }
                                     }
@@ -936,7 +990,12 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 } else if let player {
                     XDriveIOSNativeAVPlayerStatusObserver(
                         player: player,
-                        content: VideoPlayer(player: player)
+                        content: XDriveIOSNativePhotoVideoSurface(
+                                    player: player, showChrome: showChrome,
+                                    onChromeTap: { toggleChrome() },
+                                    onNavigateSwipe: { showNeighbor($0) }
+                                )
+                                    .id(viewed.id)
                             .onAppear {
                                 if currentOwnerAuthorized { player.play() }
                             }
@@ -972,6 +1031,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 viewed.isVideo ? "视频" : "照片")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
                 if showChrome && (loadedNodes.count > 1 || exporter.status != nil ||
                    (currentOwnerAuthorized && viewed.size > 512 * 1_048_576)) {
                     VStack(spacing: 8) {
@@ -983,6 +1043,16 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         if currentOwnerAuthorized && viewed.size > 512 * 1_048_576 {
                             Text("原件超过目前 512 MiB 的原生导出上限，无法在此直接导出。")
                                 .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if currentOwnerAuthorized && loadedNodes.count > 1 {
+                            XDriveIOSNativeCloudOriginalViewerFilmstrip(
+                                current: viewed, loaded: loadedNodes,
+                                openedOwner: presentingOwner,
+                                authorized: currentOwnerAuthorized,
+                                busy: exporter.busy || restoringToPhotos,
+                                login: login,
+                                onSelect: { next in selectFilmstrip(next) }
+                            )
                         }
                         if loadedNodes.count > 1 {
                             HStack(spacing: 12) {
@@ -1006,6 +1076,31 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.ultraThinMaterial)
+                }
+
+                if showChrome && currentOwnerAuthorized &&
+                   (viewed.isImage || viewed.isVideo || viewed.isLiveArchive) {
+                    HStack {
+                        Spacer(minLength: 8)
+                        if restoringToPhotos {
+                            ProgressView()
+                                .frame(minWidth: 44, minHeight: 44)
+                                .accessibilityLabel("正在恢复原件到 iOS 照片")
+                        } else {
+                            Button {
+                                restoreCurrentOriginalToPhotos()
+                            } label: {
+                                Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .disabled(exporter.busy)
+                            .accessibilityIdentifier("native-ios-original-bottom-save-to-photos")
+                        }
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.horizontal, 12)
+                    .background(.ultraThinMaterial)
+                }
                 }
             }
             .toolbar {

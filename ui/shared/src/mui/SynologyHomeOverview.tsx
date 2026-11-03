@@ -10,6 +10,7 @@ import { XDriveActionButton } from './ActionButton'
 import { XDriveMetricCard, XDriveMetricGrid } from './MetricCards'
 import { XDriveSectionHeader } from './SectionHeader'
 import { XDriveStatePanel } from './StatePanel'
+import { XDriveSynologyBackupSourceProgress } from './SynologyBackupSourceProgress'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
@@ -29,19 +30,33 @@ export function XDriveSynologyHomeOverview({
   onOpenDiagnostics?: () => void
   onOpenCloudStorage?: () => void
 }) {
-  const [sources, setSources] = useState<XDriveSynologyLocalSource[]>([])
+  // The same component instance can outlive a DSM Owner/Agent replacement.
+  // Never paint or expand old-Host Source names while a new Host authenticates.
+  const [sourceSnapshot, setSourceSnapshot] = useState<{
+    client: XDriveSynologyBackupLocalClient; items: XDriveSynologyLocalSource[]
+  } | null>(null)
+  const sourceScopeCurrent = sourceSnapshot?.client === client
+  const sources = sourceScopeCurrent && sourceSnapshot ? sourceSnapshot.items : []
+  const [expandedSourceID, setExpandedSourceID] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [quota, setQuota] = useState<QuotaUsage | null>(null)
+  const [rawQuota, setQuota] = useState<QuotaUsage | null>(null)
   const [quotaLoading, setQuotaLoading] = useState(true)
-  const [nasSpace, setNasSpace] = useState<XDriveSynologyNASVolumeSpace | null>(null)
+  const [rawNasSpace, setNasSpace] = useState<XDriveSynologyNASVolumeSpace | null>(null)
   const [nasSpaceLoading, setNasSpaceLoading] = useState(true)
   const [revision, setRevision] = useState(0)
+  // An Owner/Host switch must hide old metrics in the same render,
+  // without waiting for asynchronous passive-effect cleanup.
+  const quota = sourceScopeCurrent ? rawQuota : null
+  const nasSpace = sourceScopeCurrent ? rawNasSpace : null
+  const visibleExpandedSourceID = sourceScopeCurrent ? expandedSourceID : null
+  const oldOwnerPending = sourceSnapshot !== null && !sourceScopeCurrent
 
   useEffect(() => {
     let active = true
     const abort = new AbortController()
-    setSources([])
+    setSourceSnapshot(null)
+    setExpandedSourceID(null)
     setQuota(null)
     setQuotaLoading(true)
     setNasSpace(null)
@@ -49,7 +64,7 @@ export function XDriveSynologyHomeOverview({
     setLoading(true)
     setError('')
     void client.list(abort.signal).then((items) => {
-      if (active) setSources(items)
+      if (active && !abort.signal.aborted) setSourceSnapshot({ client, items })
     }).catch(() => {
       if (active) setError('DSM 会话或本机 Agent 来源列表读取失败；未确认任何设备和同步状态。')
     }).finally(() => {
@@ -80,14 +95,14 @@ export function XDriveSynologyHomeOverview({
     <XDriveWorkspaceSurface presentation="page" title="主页"
       subtitle="查看经 DSM 验证的本机备份、Server 账号配额和 xDrive 套件数据所在文件系统容量。"
       pageActions={<XDriveActionButton startIcon={<RefreshRoundedIcon />}
-        compact disabled={loading} onClick={() => setRevision((n) => n + 1)}>刷新</XDriveActionButton>}>
+        compact disabled={loading || oldOwnerPending} onClick={() => setRevision((n) => n + 1)}>刷新</XDriveActionButton>}>
       <Stack spacing={2.25}>
         <XDriveStatusAlert tone="neutral">
           本页只读当前 NAS 上经过 DSM 登录和 Agent Source 授权验证的备份来源。
           云端容量仅取自 Agent 当前 xDrive Server 账号的授权结果；
           文件系统容量仅表示 DSM 套件数据所在文件系统，不代表 NAS 全部磁盘或共享文件夹。
         </XDriveStatusAlert>
-        {loading ? (
+        {(loading || oldOwnerPending) ? (
           <Box data-xdrive-nas-home-first-read aria-busy="true" sx={{ minHeight: 180 }} />
         ) : error ? (
           <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
@@ -129,10 +144,24 @@ export function XDriveSynologyHomeOverview({
                   {sources.slice(0, previewLimit).map((item) => (
                     <Box key={item.source_id} sx={{ px: 1.25, py: 1,
                       border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
-                      <Typography variant="body2" fontWeight={650} noWrap>{item.name}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        已验证本机来源 · 尚未读取批次状态
-                      </Typography>
+                      <Stack direction="row" spacing={1} alignItems="center"
+                        justifyContent="space-between">
+                        <Typography variant="body2" fontWeight={650} noWrap>{item.name}</Typography>
+                        <XDriveActionButton compact onClick={() =>
+                          setExpandedSourceID(current =>
+                            current === item.source_id ? null : item.source_id)}>
+                          {visibleExpandedSourceID === item.source_id ? '收起进度' : '查看进度'}
+                        </XDriveActionButton>
+                      </Stack>
+                      {visibleExpandedSourceID === item.source_id ? (
+                        <XDriveSynologyBackupSourceProgress
+                          key={item.source_id + ':' + revision}
+                          client={client} sourceID={item.source_id} refreshEpoch={revision} />
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">
+                          已验证本机来源 · 展开后读取当前批次状态
+                        </Typography>
+                      )}
                     </Box>
                   ))}
                   {sources.length > previewLimit ? (

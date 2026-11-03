@@ -15,8 +15,13 @@ const router = read('internal/api/router.go')
 test('one real Owner-verified native Files page supports bounded multi-copy and multi-move', () => {
   assert.match(page, /@StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel\(\)/)
   assert.match(page, /private var canSelectPage: Bool \{[\s\S]*?model\.verifiedPage && activeQuery\.isEmpty/)
-  assert.match(page, /Button\("已选项复制到…"\)/)
-  assert.match(page, /Button\("已选项移动到…"\)/)
+  assert.match(page, /Label\("复制", systemImage: "doc\.on\.doc"\)/)
+  assert.match(page, /private var filesSelectionToolbar: some View/)
+  assert.match(page, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)/)
+  assert.match(page, /if selecting \{ filesSelectionToolbar \}/)
+  assert.match(page, /Label\("移动", systemImage: "folder"\)/)
+  assert.match(page, /Button \{\s*openBatchDestination\(\.copy\)/)
+  assert.match(page, /Button \{\s*openBatchDestination\(\.move\)/)
   assert.match(page, /private func openBatchDestination\(/)
   assert.match(page, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection\(\s*chosenItems, parentID: sourceParentID/)
   assert.match(page, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
@@ -27,7 +32,7 @@ test('one real Owner-verified native Files page supports bounded multi-copy and 
   assert.match(page, /batchTarget\.cancelCurrent\(\)/)
   assert.match(page, /native-ios-files-batch-target-status/)
   assert.match(page, /native-ios-files-batch-target-cancel/)
-  assert.match(sourcePolicy, /static let maxSelected = XDriveIOSNativeFilesPagePolicy\.pageSize/)
+  assert.match(sourcePolicy, /static let maxSelected = 200/)
 })
 
 test('existing native destination chooser validates every selected folder and retains single-item support', () => {
@@ -78,4 +83,16 @@ test('native batch action does not retry a lost commit and cancels on Owner or p
   // invalidating the independent copy/move mutation task.
   assert.match(page, /private func reload\(resetOffset: Bool = false\) \{\s*selecting = false\s*selectedIDs\.removeAll\(\)\s*batchExport\.invalidate\(\)\s*batchTarget\.invalidate\(\)/)
   assert.doesNotMatch(writer, /WKWebView|localStorage|URLSession\.shared|\/api\/v1\/uploads/)
+})
+
+
+test('native copy and move use the same 200-item bounded verified selection as Server', () => {
+  assert.match(sourcePolicy, /static let maxSelected = 200/)
+  assert.match(page, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
+  assert.match(page, /selectedIDs\.formIntersection\(visibleIDs\)/)
+  assert.match(page, /selectedIDs == Set\(intent\.items\.map\(\\\.id\)\)/)
+  assert.match(page, /model\.entries\.contains\(where: \{ \$0\.node == selected \}\)/)
+  assert.match(policy, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection/)
+  assert.match(writer, /XDriveIOSNativeFilesBatchTargetPolicy\.validSelection/)
+  assert.match(server, /const maxNodeBatchItems = 200/)
 })

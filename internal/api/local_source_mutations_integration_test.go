@@ -402,16 +402,21 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 	if unchanged.Revision != 1 || unchanged.Name != "A root" || unchanged.RunRequestedAt != nil {
 		t.Fatalf("rejected writes changed local Source: %+v", unchanged)
 	}
-	validChange := requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerJWT, strings.NewReader("{\"name\":\"A renamed root\"}"), http.StatusOK, own)
-	var changed sourceDTO
-	if err := json.Unmarshal(validChange.Body.Bytes(), &changed); err != nil {
+	// These synthetic bound Sources deliberately share the Owner's ordinary
+	// root. The owning device is authorized, but Source rename must fail closed
+	// until an exclusive managed target has been migrated/provisioned (5B).
+	// The ordinary root and Source metadata must stay unchanged together.
+	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerJWT,
+		strings.NewReader("{\"name\":\"A renamed root\"}"), http.StatusConflict, own)
+	var blockedRename meta.Source
+	if err := db.First(&blockedRename, sourceA.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if changed.Name != "A renamed root" || changed.Revision != 2 {
-		t.Fatalf("owning Desktop could not update its bound local Source: %+v", changed)
+	if blockedRename.Name != "A root" || blockedRename.Revision != 1 ||
+		blockedRename.TargetNodeID == nil || *blockedRename.TargetNodeID != targetID {
+		t.Fatalf("legacy shared root was renamed without migration: %+v", blockedRename)
 	}
 	fresh := copyHeaders()
-	fresh["If-Match"] = "\"2\""
 	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerJWT, strings.NewReader("{\"status\":\"active\"}"), http.StatusConflict, fresh)
 	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/trigger", ownerJWT, nil, http.StatusConflict, fresh)
 	if err := db.Model(&meta.Source{}).Where("id = ?", sourceA.ID).Update("status", meta.SourceStatusActive).Error; err != nil {
@@ -508,13 +513,26 @@ func TestNonLocalSourceWritesPreserveOwnerJWTCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	targetID := root.ID
+	// Keep this owner-JWT compatibility test, but use a real Yike managed
+	// target. The Owner root is not a Source-owned directory and 5B must
+	// never rename it just because a synthetic Source points there.
+	syncRoot := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
+	connector := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, yikeTargetConnectorName)
+	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "uid_12345_Pull owner JWT")
+	targetID := target.ID
 	source := meta.Source{OwnerID: owner.ID, Name: "Pull owner JWT", Kind: "yike_photos", Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1, TargetNodeID: &targetID}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
 	url := fmt.Sprintf("/api/v1/sources/%d", source.ID)
 	requestWithHeaders(t, router, http.MethodPatch, url, ownerJWT, strings.NewReader("{\"name\":\"Pull updated\"}"), http.StatusOK, map[string]string{"If-Match": "\"1\""})
+	var renamed meta.Node
+	if err := db.First(&renamed, target.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if renamed.Name != "uid_12345_Pull updated" || renamed.Revision != target.Revision+1 {
+		t.Fatalf("Owner JWT Yike rename did not atomically update the real target: %+v", renamed)
+	}
 	request(t, router, http.MethodPost, url+"/trigger", ownerJWT, nil, http.StatusAccepted)
 	requestWithHeaders(t, router, http.MethodDelete, url, ownerJWT, nil, http.StatusNoContent, map[string]string{"If-Match": "\"2\""})
 }

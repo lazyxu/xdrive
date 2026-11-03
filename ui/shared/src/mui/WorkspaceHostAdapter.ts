@@ -11,6 +11,8 @@ import type XDriveAdminUsersPage from './AdminUsersPage'
 import type XDriveAdminAuditPage from './AdminAuditPage'
 import type XDriveGlobalStorageStatsPage from './GlobalStorageStatsPage'
 import type { XDriveSystemMaintenancePage } from './SystemMaintenancePage'
+import type { XDriveSystemUpdatePage } from './SystemUpdatePage'
+import type { XDriveClientUpdatePage } from './ClientUpdatePage'
 import type { XDriveServiceDependenciesPage } from './ServiceDependenciesPage'
 import type { XDriveConflictsPageProps } from './ConflictsPage'
 import type { XDriveDiagnosticsPage } from './DiagnosticsPage'
@@ -19,6 +21,7 @@ import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import type { XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 import type { XDriveWorkspaceHostAlertsProps } from './WorkspaceHostAlerts'
 import type { XDriveShareCenterPort } from './ShareCenterPage'
+import type { XDriveNotesDataPort } from './NotesPage'
 import type { XDriveDiagnosticsReadSource } from './DiagnosticsHostController'
 
 /** Authenticated domain ports, not Host-owned JSX or a generic Agent proxy. */
@@ -54,6 +57,8 @@ export type XDriveWorkspaceHostServices = {
   readonly filesControllerContent?: ReactNode
   readonly deviceBackups?: XDriveDeviceBackupDataSource
   readonly shareCenterPage?: XDriveShareCenterPort
+  /** Only an authenticated, Owner-bound Notes API may enable editing. */
+  readonly notesPage?: XDriveNotesDataPort
   readonly cloudStorage?: XDriveCloudStorageDataSource
   /** Host-owned refresh policy, never inferred from a platform name. */
   readonly cloudStorageRefresh?: { readonly clearOnRefresh?: boolean }
@@ -64,6 +69,8 @@ export type XDriveWorkspaceHostServices = {
   readonly remotePullPage?: XDriveSourceManagerProps
   readonly taskCenterPage?: XDriveTaskCenterPageProps
   readonly adminMaintenancePage?: ComponentProps<typeof XDriveSystemMaintenancePage>
+  readonly adminUpdatePage?: ComponentProps<typeof XDriveSystemUpdatePage>
+  readonly clientUpdatePage?: ComponentProps<typeof XDriveClientUpdatePage>
   readonly adminUsersPage?: ComponentProps<typeof XDriveAdminUsersPage>
   readonly adminAuditPage?: ComponentProps<typeof XDriveAdminAuditPage>
   readonly adminStoragePage?: ComponentProps<typeof XDriveGlobalStorageStatsPage>

@@ -348,6 +348,11 @@ struct XDriveIOSNativeServerMediaPreview: View {
     var loadedRange: XDriveIOSNativeMediaRange? = nil
     var openedOwner: XDriveNativeOwnerRoot? = nil
     var onNavigate: ((XDriveIOSNativeMediaItem) -> Bool)? = nil
+    // Only iOS MapKit place-union Viewer opts into crossing a real place.
+    // Ordinary cloud Gallery leaves this optional callback nil.
+    var canCrossMapPlace: ((
+        XDriveIOSNativeMediaRange, XDriveIOSNativeMediaItem, Int
+    ) -> Bool)? = nil
     var onCrossRange: ((
         XDriveIOSNativeMediaRange, XDriveIOSNativeMediaItem, Int
     ) async throws -> XDriveIOSNativeMediaRange?)? = nil
@@ -441,11 +446,16 @@ struct XDriveIOSNativeServerMediaPreview: View {
         guard ownerAuthorized, !rangeCrossing, onCrossRange != nil,
               let page = visibleRange, let position = loadedPosition,
               page.items.count == visibleItems.count else { return false }
-        return XDriveIOSNativePhotoAssetRangeCursorPolicy.adjacentOffset(
+        if XDriveIOSNativePhotoAssetRangeCursorPolicy.adjacentOffset(
             current: page.offset, count: page.items.count,
             total: page.total_count, selectedIndex: position,
             direction: direction
-        ) != nil
+        ) != nil {
+            return true
+        }
+        // Camera clusters are visual only: the map Presenter reauthenticates
+        // the previous Owner Range and exact target place before crossing.
+        return canCrossMapPlace?(page, viewed, direction) == true
     }
 
     private func navigateLoaded(_ direction: Int) {
@@ -462,6 +472,36 @@ struct XDriveIOSNativeServerMediaPreview: View {
             return
         }
         crossRange(direction)
+    }
+
+    /// Select only another entry from the same verified Owner/Node revision
+    /// range. The L2 onNavigate callback retains the exact return anchor.
+    private func filmstripKey(_ item: XDriveIOSNativeMediaItem)
+        -> XDriveIOSNativeCloudFilmstripKey {
+        XDriveIOSNativeCloudFilmstripKey(
+            nodeID: item.id, revision: item.node.revision,
+            name: item.node.name, size: item.node.size,
+            kind: item.isLive ? "live" : item.isVideo ? "video" : "image"
+        )
+    }
+
+    private func selectFilmstrip(_ next: XDriveIOSNativeMediaItem) {
+        guard ownerAuthorized, !rangeCrossing, !photosRestoreBusy,
+              let target = visibleItems.first(where: {
+                  $0.sameVisibleRevision(as: next)
+              }), target.supportsPreview,
+              target.id != viewed.id ||
+                  target.node.revision != viewed.node.revision
+        else { return }
+        let keys = visibleItems.filter { $0.supportsPreview }.map(filmstripKey)
+        guard XDriveIOSNativeCloudFilmstripPolicy.target(
+            current: filmstripKey(viewed), requested: filmstripKey(target),
+            in: keys, authorized: ownerAuthorized
+        ) != nil,
+              onNavigate?(target) == true else { return }
+        cancelPhotosRestore()
+        retirePreview()
+        activeItem = target
     }
 
     private func crossRange(_ direction: Int) {
@@ -530,7 +570,12 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     if showingLiveMotion, let player {
                         XDriveIOSNativeAVPlayerStatusObserver(
                             player: player,
-                            content: VideoPlayer(player: player)
+                            content: XDriveIOSNativePhotoVideoSurface(
+                                player: player, showChrome: showChrome,
+                                onChromeTap: { toggleChrome() },
+                                onNavigateSwipe: { navigateLoaded($0) }
+                            )
+                                .id(viewed.id)
                                 .onAppear { if ownerAuthorized { player.play() } }
                                 .onDisappear { player.pause() },
                             onFailed: { playbackLoadFailed($0) }
@@ -642,7 +687,12 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 } else if let player {
                     XDriveIOSNativeAVPlayerStatusObserver(
                         player: player,
-                        content: VideoPlayer(player: player)
+                        content: XDriveIOSNativePhotoVideoSurface(
+                            player: player, showChrome: showChrome,
+                            onChromeTap: { toggleChrome() },
+                            onNavigateSwipe: { navigateLoaded($0) }
+                        )
+                            .id(viewed.id)
                             .onAppear { if ownerAuthorized { player.play() } }
                             .onDisappear { player.pause() },
                         onFailed: { playbackLoadFailed($0) }
@@ -703,8 +753,19 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 viewed.isVideo ? "视频" : "照片")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
                 if showChrome && (visibleItems.count > 1 || canCrossRange(-1) ||
                     canCrossRange(1) || rangeCrossing) {
+                    VStack(spacing: 6) {
+                        if ownerAuthorized && visibleItems.count > 1 {
+                            XDriveIOSNativeCloudPhotoAssetFilmstrip(
+                                current: viewed, loaded: visibleItems,
+                                openedOwner: openedOwner, authorized: ownerAuthorized,
+                                busy: rangeCrossing || photosRestoreBusy,
+                                login: login,
+                                onSelect: { next in selectFilmstrip(next) }
+                            )
+                        }
                     HStack(spacing: 12) {
                         Button("上一项") { navigateLoaded(-1) }
                             .disabled((neighbor(-1) == nil && !canCrossRange(-1)) ||
@@ -729,6 +790,31 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.ultraThinMaterial)
+                    }
+                }
+
+                if showChrome && ownerAuthorized && viewed.supportsPreview {
+                    HStack {
+                        Spacer(minLength: 8)
+                        if photosRestoreBusy {
+                            ProgressView()
+                                .frame(minWidth: 44, minHeight: 44)
+                                .accessibilityLabel("正在保存到 iOS 照片")
+                        } else {
+                            Button {
+                                restorePhotoAssetOriginal()
+                            } label: {
+                                Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .disabled(rangeCrossing)
+                            .accessibilityIdentifier("native-ios-photoasset-bottom-save-to-photos")
+                        }
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.horizontal, 12)
+                    .background(.ultraThinMaterial)
+                }
                 }
             }
             .toolbar {

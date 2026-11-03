@@ -1,4 +1,7 @@
-import type { XDriveLocalBackupCommonBatch } from './device-backups'
+import type {
+  XDriveLocalBackupCommonBatch, XDriveLocalBackupCommonBatchHistoryItem,
+  XDriveLocalBackupCommonBatchHistoryPage,
+} from './device-backups'
 
 const validStates = ['running', 'partial', 'uncertain', 'paused', 'cancelled']
 const count = (value: unknown) =>
@@ -30,4 +33,38 @@ export function xDriveValidateSynologyLocalBatch(
     throw new Error('Untrusted DSM local backup status')
   }
   return s as XDriveLocalBackupCommonBatch
+}
+
+/** A bounded owning-Agent receipt history; it is not current Server/CAS proof. */
+export function xDriveValidateSynologyLocalHistoryPage(
+  sourceID: number, input: unknown,
+): XDriveLocalBackupCommonBatchHistoryPage {
+  if (!count(sourceID) || sourceID === 0 || !input ||
+    typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Invalid owner-scoped DSM local history')
+  }
+  const page = input as Partial<XDriveLocalBackupCommonBatchHistoryPage>
+  if (page.source_id !== sourceID || !Array.isArray(page.items) || page.items.length > 20) {
+    throw new Error('Untrusted DSM local history page')
+  }
+  const seen = new Set<string>()
+  for (const raw of page.items) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new Error('Untrusted DSM local history entry')
+    }
+    const item = raw as Partial<XDriveLocalBackupCommonBatchHistoryItem>
+    if (item.source_id !== sourceID ||
+      typeof item.run_id !== 'string' || !item.run_id || item.run_id.length > 256 ||
+      seen.has(item.run_id) || !count(item.revision) || item.revision === 0 ||
+      !['partial', 'uncertain', 'paused', 'cancelled'].includes(item.state ?? '') ||
+      ![item.inspected_files, item.confirmed_files, item.skipped_files,
+        item.unsupported_files, item.uncertain_files, item.confirmed_bytes].every(count) ||
+      (item.confirmed_files as number) + (item.skipped_files as number) >
+        (item.inspected_files as number) ||
+      !Number.isFinite(Date.parse(item.finished_at ?? ''))) {
+      throw new Error('Untrusted DSM local history entry')
+    }
+    seen.add(item.run_id)
+  }
+  return page as XDriveLocalBackupCommonBatchHistoryPage
 }

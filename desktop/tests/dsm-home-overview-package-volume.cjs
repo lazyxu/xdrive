@@ -32,6 +32,10 @@ const dependencies = {
   './MetricCards': { XDriveMetricCard: 'MetricCard', XDriveMetricGrid: 'MetricGrid' },
   './SectionHeader': { XDriveSectionHeader: 'SectionHeader' },
   './StatePanel': { XDriveStatePanel: 'StatePanel' },
+  './SynologyBackupSourceProgress': {
+    XDriveSynologyBackupSourceProgress: ({ client, sourceID, refreshEpoch }) =>
+      React.createElement('SourceProgress', { client, sourceID, refreshEpoch }),
+  },
   './StatusAlert': { XDriveStatusAlert: 'StatusAlert' },
   './WorkspaceSurface': {
     XDriveWorkspaceSurface: ({ children, pageActions }) => {
@@ -157,4 +161,73 @@ test('DSM Home aborts an outstanding package filesystem read on unmount', async 
   assert.equal(requestSignal.aborted, false)
   await act(async () => view.unmount())
   assert.equal(requestSignal.aborted, true)
+})
+
+test('DSM Home loads Source progress only after expansion and never fans out to all Sources', async () => {
+  const client = {
+    ...clientWith(async () => ({ capacity_bytes: 4096, available_bytes: 1024 })),
+    list: async () => [
+      { source_id: 41, name: 'NAS-Photos' },
+      { source_id: 42, name: 'NAS-Media' },
+    ],
+  }
+  const view = await mount(client)
+  const progress = () => view.root.findAllByType('SourceProgress')
+  const action = (label) => view.root.findAll(node =>
+    node.type === 'ActionButton' && node.props.children === label)
+  try {
+    assert.equal(progress().length, 0, 'Home must not issue a Source status fan-out')
+    assert.equal(action('查看进度').length, 2)
+    await act(async () => { action('查看进度')[0].props.onClick(); await flushEffects() })
+    assert.equal(progress().length, 1)
+    assert.equal(progress()[0].props.client, client)
+    assert.equal(progress()[0].props.sourceID, 41)
+    await act(async () => { action('查看进度')[0].props.onClick(); await flushEffects() })
+    assert.equal(progress().length, 1)
+    assert.equal(progress()[0].props.sourceID, 42,
+      'switching the expanded Source cannot leave a second polling reader mounted')
+    await act(async () => { action('收起进度')[0].props.onClick(); await flushEffects() })
+    assert.equal(progress().length, 0)
+  } finally {
+    await act(async () => view.unmount())
+  }
+})
+
+test('DSM Home immediately hides old-Owner Source rows and expanded progress on Host switch', async () => {
+  const ownerA = {
+    ...clientWith(async () => ({ capacity_bytes: 4096, available_bytes: 1024 })),
+    list: async () => [{ source_id: 41, name: 'Owner-A-Photos' }],
+  }
+  let finishOwnerB
+  const ownerB = {
+    ...clientWith(async () => ({ capacity_bytes: 4096, available_bytes: 1024 })),
+    list: () => new Promise(resolve => { finishOwnerB = resolve }),
+  }
+  const view = await mount(ownerA)
+  const rowNames = () => view.root.findAll(node => node.type === 'Typography' &&
+    typeof node.props.children === 'string' && node.props.children.includes('Owner-A-Photos'))
+  const progress = () => view.root.findAllByType('SourceProgress')
+  try {
+    assert.equal(rowNames().length, 1)
+    const open = view.root.find(node =>
+      node.type === 'ActionButton' && node.props.children === '查看进度')
+    await act(async () => { open.props.onClick(); await flushEffects() })
+    assert.equal(progress().length, 1)
+    await act(async () => {
+      view.update(React.createElement(Home, { client: ownerB }))
+      await flushEffects()
+    })
+    // React batches act updates: assert after the new Host props commit,
+    // while the replacement Owner list request remains unresolved.
+    assert.equal(rowNames().length, 0, 'prior Owner Source leaked into new Host render')
+    assert.equal(progress().length, 0, 'prior Owner progress remained mounted')
+    assert.equal(rowNames().length, 0)
+    assert.equal(progress().length, 0)
+    await act(async () => { finishOwnerB([{ source_id: 42, name: 'Owner-B-Photos' }]); await flushEffects() })
+    assert.equal(progress().length, 0, 'new Owner must never auto-expand an old Owner Source ID')
+    assert.equal(view.root.findAll(node => node.type === 'Typography' &&
+      node.props.children === 'Owner-B-Photos').length, 1)
+  } finally {
+    await act(async () => view.unmount())
+  }
 })

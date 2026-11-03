@@ -139,6 +139,12 @@ func (s *Server) publicShareUploadAdmissionTx(
 		parentID, ownerID, meta.NodeTypeDir).First(&parent).Error; err != nil {
 		return share, errShareUploadDenied
 	}
+	if err := notesRejectNodeWithReason(ctx, tx, ownerID, root.ID); err != nil {
+		return share, errShareUploadDenied
+	}
+	if err := notesRejectNodeWithReason(ctx, tx, ownerID, parent.ID); err != nil {
+		return share, errShareUploadDenied
+	}
 	allowed, err := publicShareUploadContainsNodeTx(ctx, tx, ownerID, root.ID, parent.ID)
 	if err != nil || !allowed {
 		return share, errShareUploadDenied
@@ -316,6 +322,9 @@ func (s *Server) publicShareCreateDirectory(c *gin.Context) {
 			c.Request.Context(), tx, share.ID, share.OwnerID, req.ParentID)
 		if err != nil {
 			return err
+		}
+		if err := notesRejectDestinationWithReason(c.Request.Context(), tx, share.OwnerID, req.ParentID, req.Name); err != nil {
+			return errShareUploadDenied
 		}
 		if err := tx.Where(
 			"owner_id = ? AND parent_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL",

@@ -10,20 +10,20 @@ const policy = read('ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift')
 const api = read('internal/api/batch_nodes.go')
 const routes = read('internal/api/router.go')
 
-test('real native multi-select is bounded to 64 items in the verified Owner window', () => {
+test('real native multi-select accepts up to 200 verified loaded Owner Nodes', () => {
   assert.match(page, /@State private var selectedIDs = Set<UInt64>\(\)/)
   assert.match(page, /private var canSelectPage: Bool \{[\s\S]*?model\.verifiedPage && activeQuery\.isEmpty/)
   assert.match(page, /if selecting \{[\s\S]*?native-ios-files-select-/)
-  assert.match(page, /selectedIDs\.formUnion\(model\.entries\.filter \{/)
-  assert.match(page, /selectedIDs\.count < XDriveIOSNativeFilesPagePolicy\.pageSize/)
-  assert.match(page, /model\.cancelAdjacent\(\)/)
+  assert.match(page, /selectedIDs\.formUnion\(model\.entries\.filter/)
+  assert.match(page, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
+  assert.match(page, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
   assert.match(page, /native-ios-files-multi-select/)
   assert.match(page, /showingBatchTrashConfirmation = true/)
   assert.match(page, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
   assert.match(page, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection\(/)
   assert.match(page, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?batchTrash\.invalidate\(\)/)
   assert.match(page, /private func reload\(resetOffset: Bool = false\) \{\s*selecting = false\s*selectedIDs\.removeAll\(\)/)
-  assert.match(policy, /static let maxSelected = XDriveIOSNativeFilesPagePolicy\.pageSize/)
+  assert.match(policy, /static let maxSelected = 200/)
 })
 test('Server batch trash atomically validates revision/subtrees, not per-item fake progress', () => {
   assert.match(routes, /authed\.POST\("\/nodes\/batch\/delete", s\.batchDeleteNodes\)/)
@@ -49,4 +49,16 @@ test('Owner change and cancellation report uncertain write rather than replaying
   assert.match(trash, /结果可能不确定/)
   assert.match(page, /取消批量操作/)
   assert.match(page, /包括选中文件夹的所有子文件/)
+})
+
+
+test('200 selected Nodes are bounded to the current verified four-page window and Server limit', () => {
+  assert.match(page, /selectedIDs\.formIntersection\(visibleIDs\)/)
+  assert.match(page, /\.onChange\(of: model\.entries\.map\(\\\.id\)\)/)
+  assert.match(page, /XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected -\s*selectedIDs\.count/)
+  assert.match(page, /Text\("已选 \\\(selectedIDs\.count\) 项（最多 200 项/)
+  assert.match(policy, /static let maxSelected = 200/)
+  assert.match(api, /const maxNodeBatchItems = 200/)
+  assert.match(policy, /items\.count <= maxSelected/)
+  assert.match(page, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
 })

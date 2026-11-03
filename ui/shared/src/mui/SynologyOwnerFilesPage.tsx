@@ -8,6 +8,9 @@ import type {
 import { XDriveFileExplorer } from './FileExplorer'
 import { useXDriveSynologyOwnerFilesSearch } from './SynologyOwnerFilesSearch'
 import { XDriveFileNameDialog } from './FileNameDialog'
+import { XDriveConfirmDialog } from './ConfirmDialog'
+import { XDriveFileExplorerDestinationDialog } from './FileExplorerDestinationDialog'
+import { xDriveFileExplorerDestinationTargetDisabledReason } from '../file-explorer-controller'
 import { xDriveFindVerifiedOwnerSelection } from './FileExplorerVerifiedOwnerSelection'
 import { xDriveFileExplorerReadOnlyDownloadReason } from './FileExplorerReadOnlyDownloadAdmission'
 import { xDriveFileExplorerReadOnlyViewerSelection } from './FileExplorerReadOnlyViewerSelection'
@@ -133,6 +136,41 @@ export function XDriveSynologyOwnerFilesPage({
     client, rootRevision, authenticatedRootCurrent,
   )
   const [notice, setNotice] = useState('')
+  const [moveTarget, setMoveTarget] = useState<{
+    operation: 'move' | 'copy'
+    node: XDriveSynologyOwnerFileNode
+    sourceParent: number
+    client: XDriveSynologyBackupLocalClient
+    scopeKey: string
+    rootRevision: number
+  } | null>(null)
+  useEffect(() => setMoveTarget(null), [client, rootRevision, currentScopeKey])
+  const [deleteTarget, setDeleteTarget] = useState<{
+    node: XDriveSynologyOwnerFileNode
+    parentID: number
+    client: XDriveSynologyBackupLocalClient
+    scopeKey: string
+    rootRevision: number
+  } | null>(null)
+  const deleteAbort = useRef<AbortController | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  useEffect(() => {
+    setDeleteTarget(null)
+    setDeleting(false)
+    return () => {
+      deleteAbort.current?.abort()
+      deleteAbort.current = null
+    }
+  }, [client, rootRevision, currentScopeKey])
+  const uploadInputRef = useRef<HTMLInputElement | null>(null)
+  const uploadAbort = useRef<AbortController | null>(null)
+  const [uploading, setUploading] = useState<string | null>(null)
+  useEffect(() => {
+    return () => {
+      uploadAbort.current?.abort()
+      uploadAbort.current = null
+    }
+  }, [client, rootRevision, currentScopeKey])
   const [createFolderTarget, setCreateFolderTarget] = useState<{
     parentID: number; scopeKey: string; rootRevision: number
     client: XDriveSynologyBackupLocalClient
@@ -330,6 +368,56 @@ export function XDriveSynologyOwnerFilesPage({
       })
   }, [client, currentScopeKey, rootRevision, getDownloadDisabledReason, isCurrentOwner])
 
+
+  // A user-picked browser File is the only upload input. The original DSM
+  // CGI and owning Agent verify the current Owner and use the existing CAS
+  // upload writer. No browser-controlled absolute NAS path is accepted.
+  const uploadSmallOwnerFile = useCallback((file: File) => {
+    if (uploadAbort.current || !isCurrentOwner() || !currentScopeVerified ||
+      search.current || verifiedOverQuota === true) {
+      setNotice('请先进入当前已验证的云端文件夹，并等待正在执行的操作完成。')
+      return
+    }
+    if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > (4 << 20)) {
+      setNotice('DSM 当前每次仅支持上传 1 B～4 MiB 的单个文件；更大的文件暂请使用 Desktop/Web。')
+      return
+    }
+    const parentID = crumbs[crumbs.length - 1]?.id
+    if (!Number.isSafeInteger(parentID) || parentID < 1) return
+    const controller = new AbortController()
+    uploadAbort.current = controller
+    setUploading(file.name)
+    setNotice('')
+    void (async () => {
+      const status = await client.serverConnection(controller.signal)
+      if (!status.configured || !/^[0-9a-f]{64}$/.test(status.owner_scope) ||
+        !isCurrentOwner() || controller.signal.aborted) {
+        throw new Error('Server Owner login changed before upload')
+      }
+      const created = await client.ownerUploadSmallFile(
+        parentID, file, status.owner_scope, controller.signal)
+      if (controller.signal.aborted || !isCurrentOwner()) {
+        throw new Error('Server Owner changed during upload')
+      }
+      setPreview(null)
+      setCrumbs(previous => [...previous])
+      setNotice('已上传文件：' + created.name)
+    })().catch(() => {
+      if (uploadAbort.current === controller && isCurrentOwner()) {
+        // If HTTP abort/lost acknowledgement happens after CAS commit,
+        // never automatically retry and create an accidental duplicate.
+        setCrumbs(previous => [...previous])
+        setNotice('上传失败或结果尚未确认；请刷新目录核对后再重试，已有文件不会被覆盖。')
+      }
+    }).finally(() => {
+      if (uploadAbort.current === controller) {
+        uploadAbort.current = null
+        setUploading(null)
+      }
+    })
+  }, [client, crumbs, currentScopeVerified, isCurrentOwner,
+    search.current, verifiedOverQuota])
+
   const cancelDownload = useCallback(() => {
     if (!isCurrentOwner()) return
     downloadAbort.current?.abort()
@@ -510,6 +598,29 @@ export function XDriveSynologyOwnerFilesPage({
                 <XDriveActionButton compact onClick={cancelDownload}>取消下载</XDriveActionButton>
               </XDriveStatusAlert>
             ) : null}
+            <input
+              ref={uploadInputRef}
+              type="file"
+              hidden
+              aria-label="选择要上传到当前 Owner 文件夹的文件"
+              onChange={event => {
+                const file = event.currentTarget.files?.[0]
+                event.currentTarget.value = ''
+                if (file) uploadSmallOwnerFile(file)
+              }}
+            />
+            {uploading ? (
+              <XDriveStatusAlert tone="neutral">
+                正在上传并等待 Server 确认：{uploading}
+                <XDriveActionButton compact onClick={() => {
+                  uploadAbort.current?.abort()
+                  uploadAbort.current = null
+                  setUploading(null)
+                  setCrumbs(previous => [...previous])
+                  setNotice('已请求取消上传；Server 可能已经完成，请刷新后核对。')
+                }}>取消上传</XDriveActionButton>
+              </XDriveStatusAlert>
+            ) : null}
             <XDriveFileExplorer
               presentation="workspace"
               viewMode={viewMode}
@@ -532,6 +643,10 @@ export function XDriveSynologyOwnerFilesPage({
               unavailableActions={search.current
                 ? { ...unavailableActions,
                     createFolder: '退出搜索后可新建文件夹。',
+                    uploadFiles: '退出搜索后可上传文件。',
+                    delete: '退出搜索后进入目标文件夹才能移入回收站。',
+                    moveTo: '退出搜索后进入目标文件夹才能移动。',
+                    copyTo: '退出搜索后进入目标文件夹才能复制。',
                     rename: '退出搜索并进入文件夹后可重命名。' }
                 : unavailableActions}
               groupingEnabled={false}
@@ -547,6 +662,14 @@ export function XDriveSynologyOwnerFilesPage({
                 setCrumbs(current => current.slice(0, index + 1))
               }}
               onRefresh={search.current ? () => search.start(search.current!.query) : refreshAuthenticatedOwner}
+              onUpload={() => {
+                if (!isCurrentOwner() || !currentScopeVerified || search.current ||
+                  uploadAbort.current) {
+                  setNotice('当前文件夹尚未核实或有正在执行的上传，请稍后重试。')
+                  return
+                }
+                uploadInputRef.current?.click()
+              }}
               onCreateFolder={() => {
                 if (search.current) return
                 if (!isCurrentOwner() || !currentScopeVerified) {
@@ -557,6 +680,66 @@ export function XDriveSynologyOwnerFilesPage({
                 if (!Number.isSafeInteger(parent) || parent < 1) return
                 setCreateFolderTarget({
                   parentID: parent, scopeKey: currentScopeKey, rootRevision, client,
+                })
+              }}
+              onCopyItemsTo={selected => {
+                if (search.current || !currentScopeVerified || !isCurrentOwner() ||
+                  moveTarget !== null || deleteAbort.current || uploadAbort.current ||
+                  selected.length !== 1) {
+                  setNotice('DSM 当前仅允许从已验证目录逐个复制文件或文件夹。')
+                  return
+                }
+                const source = xDriveFindVerifiedOwnerSelection(
+                  selected[0], itemsRef.current)
+                const parentID = crumbs[crumbs.length - 1]?.id
+                if (!source || !Number.isSafeInteger(parentID) || parentID < 1 ||
+                  source.parent_id !== parentID) {
+                  setNotice('所选文件已改变，请先刷新当前 Owner 目录。')
+                  return
+                }
+                setMoveTarget({
+                  operation: 'copy', node: source, sourceParent: parentID,
+                  client, scopeKey: currentScopeKey, rootRevision,
+                })
+              }}
+              onMoveItemsTo={selected => {
+                if (search.current || !currentScopeVerified || !isCurrentOwner() ||
+                  moveTarget !== null || deleteAbort.current || uploadAbort.current ||
+                  selected.length !== 1) {
+                  setNotice('DSM 当前仅允许从已验证目录逐个移动文件或文件夹。')
+                  return
+                }
+                const source = xDriveFindVerifiedOwnerSelection(
+                  selected[0], itemsRef.current)
+                const parentID = crumbs[crumbs.length - 1]?.id
+                if (!source || !Number.isSafeInteger(parentID) || parentID < 1 ||
+                  source.parent_id !== parentID) {
+                  setNotice('所选文件已改变，请先刷新当前 Owner 目录。')
+                  return
+                }
+                setMoveTarget({
+                  operation: 'move', node: source, sourceParent: parentID,
+                  client, scopeKey: currentScopeKey, rootRevision,
+                })
+              }}
+              onDeleteItems={selected => {
+                if (deleteAbort.current || deleting || search.current ||
+                  !currentScopeVerified || !isCurrentOwner() ||
+                  selected.length !== 1) {
+                  setNotice('请进入已验证的文件夹，每次选择一个文件或文件夹再移入回收站。')
+                  return
+                }
+                const matched = xDriveFindVerifiedOwnerSelection(
+                  selected[0], itemsRef.current)
+                const parentID = crumbs[crumbs.length - 1]?.id
+                if (!matched || !Number.isSafeInteger(parentID) ||
+                  parentID < 1 || matched.parent_id !== parentID) {
+                  setNotice('所选文件已发生变化，请重新读取当前 Owner 文件夹。')
+                  return
+                }
+                setDeleteTarget({
+                  node: matched, parentID, client,
+                  scopeKey: currentScopeKey, rootRevision,
                 })
               }}
               onRenameItem={async (item, name) => {
@@ -606,6 +789,26 @@ export function XDriveSynologyOwnerFilesPage({
               onDownloadItems={downloadSelectedFiles}
               getSelectionActionDisabledReason={(action, selected, count) => {
                 if (search.current) return '先进入搜索结果所在的文件夹，再执行此操作。'
+                if (action === 'move-to' || action === 'copy-to') {
+                  if (moveTarget || deleteAbort.current || uploadAbort.current) {
+                    return '已有文件修改或移动操作正在执行。'
+                  }
+                  if (count !== 1 || selected.length !== 1) return 'DSM 当前仅支持逐个复制或移动。'
+                  if (!currentScopeVerified || !isCurrentOwner() ||
+                    !xDriveFindVerifiedOwnerSelection(selected[0], itemsRef.current)) {
+                    return '当前目录的 Owner 文件身份尚未验证。'
+                  }
+                  return null
+                }
+                if (action === 'delete') {
+                  if (deleteAbort.current || deleting) return '已有移入回收站操作正在执行。'
+                  if (count !== 1 || selected.length !== 1) return 'DSM 当前仅支持逐个移入回收站。'
+                  if (!currentScopeVerified || !isCurrentOwner() ||
+                    !xDriveFindVerifiedOwnerSelection(selected[0], itemsRef.current)) {
+                    return '所选 Owner 文件尚未经过当前目录验证。'
+                  }
+                  return null
+                }
                 return action === 'download' ? getDownloadDisabledReason(selected, count) : null
               }}
               onOpenItem={item => {
@@ -647,7 +850,7 @@ export function XDriveSynologyOwnerFilesPage({
                 }
               }}
               statusText={currentScopeVerified
-                ? `已核实 ${displayedItems.length.toLocaleString('zh-CN')} 项${hasMore ? ' · 仍有后续页' : ''} · 云端已开放新建文件夹与重命名`
+                ? `已核实 ${displayedItems.length.toLocaleString('zh-CN')} 项${hasMore ? ' · 仍有后续页' : ''} · 云端已开放新建文件夹、重命名及小文件上传`
                 : '云端账号目录尚未确认'}
             />
             {search.current?.hasMore ? (
@@ -671,6 +874,143 @@ export function XDriveSynologyOwnerFilesPage({
           </>
         ) : null}
       </Stack>
+      <XDriveFileExplorerDestinationDialog
+        open={moveTarget !== null}
+        lifecycleKey={rootRevision + ':' + currentScopeKey}
+        operation={moveTarget?.operation ?? 'move'}
+        sources={moveTarget ? [{
+          id: moveTarget.node.id, revision: moveTarget.node.revision,
+          name: moveTarget.node.name, type: moveTarget.node.type,
+          parent_id: moveTarget.sourceParent,
+        }] : []}
+        initialCrumbs={crumbs.length ? [{ id: crumbs[0].id, name: crumbs[0].name }] : []}
+        loadDirectoryPage={async (parentID, cursor = '') => {
+          if (!currentScopeVerified || !isCurrentOwner() || !moveTarget ||
+            moveTarget.client !== client || moveTarget.rootRevision !== rootRevision ||
+            moveTarget.scopeKey !== currentScopeKey) {
+            throw new Error('当前 Owner 已改变，请重新打开目标文件夹。')
+          }
+          const page = await client.ownerFilesPage(parentID, 200, 'name', 'asc', cursor)
+          if (!isCurrentOwner()) throw new Error('Server Owner 已改变。')
+          return {
+            items: page.items.filter(item => item.type === 'dir').map(item => ({
+              id: item.id, name: item.name, type: 'dir',
+            })),
+            nextCursor: page.next_cursor ?? '',
+            hasMore: page.has_more,
+          }
+        }}
+        onSubmit={async targetCrumbs => {
+          const target = moveTarget
+          const targetParent = targetCrumbs.at(-1)?.id
+          if (!target || !currentScopeVerified || !isCurrentOwner() ||
+            target.client !== client || target.rootRevision !== rootRevision ||
+            target.scopeKey !== currentScopeKey ||
+            crumbs[crumbs.length - 1]?.id !== target.sourceParent ||
+            !Number.isSafeInteger(targetParent) || !targetParent) {
+            throw new Error('当前 Owner 或目标文件夹已改变，请重新选择。')
+          }
+          const reason = xDriveFileExplorerDestinationTargetDisabledReason(
+            target.operation, [{
+              id: target.node.id, revision: target.node.revision,
+              name: target.node.name, type: target.node.type,
+              parent_id: target.sourceParent,
+            }], targetCrumbs)
+          if (reason) throw new Error(reason)
+          if (target.operation === 'copy' && targetParent === target.sourceParent) {
+            throw new Error('DSM 当前仅支持复制到其他文件夹。')
+          }
+          const row = xDriveFindVerifiedOwnerSelection(
+            itemForExplorer(target.node), itemsRef.current)
+          if (!row || row.parent_id !== target.sourceParent) {
+            throw new Error('所选文件版本已改变，请刷新当前文件夹。')
+          }
+          const connection = await client.serverConnection()
+          if (!connection.configured || connection.must_change_password ||
+            !/^[0-9a-f]{64}$/.test(connection.owner_scope) || !isCurrentOwner()) {
+            throw new Error('Server Owner 已改变，不能执行复制或移动。')
+          }
+          try {
+            const result = target.operation === 'copy'
+              ? await client.ownerCopyNode(
+                  row.id, row.revision, target.sourceParent, targetParent,
+                  row.type, row.name, connection.owner_scope)
+              : await client.ownerMoveNode(
+                  row.id, row.revision, target.sourceParent, targetParent,
+                  row.type, row.name, connection.owner_scope)
+            if (!isCurrentOwner()) throw new Error('Owner changed after Server commit')
+            setCrumbs(previous => [...previous])
+            setNotice((target.operation === 'copy' ? '已复制文件：' : '已移动文件：') + result.name)
+          } catch {
+            // A request may have reached the Server even if its reply was lost.
+            // Close the picker, refresh original Owner and NEVER auto-retry.
+            if (isCurrentOwner()) {
+              setCrumbs(previous => [...previous])
+              setNotice('复制或移动失败或结果不确定；请刷新目标与原文件夹确认后再操作。')
+            }
+          }
+        }}
+        onClose={() => setMoveTarget(null)}
+      />
+      <XDriveConfirmDialog
+        open={deleteTarget !== null}
+        title={deleteTarget ? `将“${deleteTarget.node.name}”移入回收站？` : '确认移入回收站'}
+        description={deleteTarget?.node.type === 'dir'
+          ? '该文件夹及其中的内容将从云端文件列表移入回收站，可在回收站恢复。'
+          : '该云端文件将移入回收站，可在回收站恢复。'}
+        confirmLabel="移入回收站"
+        confirmIntent="danger"
+        loading={deleting}
+        onCancel={() => { if (!deleting) setDeleteTarget(null) }}
+        onConfirm={() => {
+          const target = deleteTarget
+          if (!target || deleting || deleteAbort.current) return
+          const currentRow = xDriveFindVerifiedOwnerSelection(
+            itemForExplorer(target.node), itemsRef.current)
+          if (!currentRow || currentRow.parent_id !== target.parentID ||
+            target.client !== client || target.rootRevision !== rootRevision ||
+            target.scopeKey !== currentScopeKey || !currentScopeVerified ||
+            !isCurrentOwner() || crumbs[crumbs.length - 1]?.id !== target.parentID) {
+            setDeleteTarget(null)
+            setNotice('当前 Owner 目录已改变，请重新选择要移入回收站的项目。')
+            return
+          }
+          const controller = new AbortController()
+          deleteAbort.current = controller
+          setDeleting(true)
+          setNotice('')
+          void (async () => {
+            const connection = await client.serverConnection(controller.signal)
+            if (!connection.configured || connection.must_change_password ||
+              !/^[0-9a-f]{64}$/.test(connection.owner_scope) ||
+              controller.signal.aborted || !isCurrentOwner()) {
+              throw new Error('Server Owner session changed before delete')
+            }
+            await client.ownerDeleteNode(
+              currentRow.id, currentRow.revision, target.parentID,
+              currentRow.type, currentRow.name, connection.owner_scope,
+              controller.signal)
+            if (controller.signal.aborted || !isCurrentOwner()) {
+              throw new Error('Server Owner changed during delete')
+            }
+            setCrumbs(previous => [...previous])
+            setNotice('已移入回收站：' + currentRow.name)
+          })().catch(() => {
+            // A lost ACK may still mean deletion committed on the Server.
+            // Refresh the current directory; never retry a mutation implicitly.
+            if (!controller.signal.aborted && isCurrentOwner()) {
+              setCrumbs(previous => [...previous])
+              setNotice('移入回收站失败或结果不确定；请刷新核对，确认前不要重复操作。')
+            }
+          }).finally(() => {
+            if (deleteAbort.current === controller) {
+              deleteAbort.current = null
+              setDeleting(false)
+              setDeleteTarget(null)
+            }
+          })
+        }}
+      />
       <XDriveFileNameDialog
         open={createFolderTarget !== null}
         mode="create-folder"

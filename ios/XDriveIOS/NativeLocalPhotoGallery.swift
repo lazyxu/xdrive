@@ -468,6 +468,13 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         favoriteStatus = asset.isFavorite
     }
 
+    /// The native Photos-style bottom controls never bypass the same
+    /// authenticated, foreground PhotoKit action path as the overflow menu.
+    private var canUsePhotoActions: Bool {
+        currentPageAuthorized && !crossing && !photoActionBusy &&
+            !model.downloadingFromICloud && photoShareSession == nil
+    }
+
     private func shareOriginal(allowICloud: Bool) {
         guard currentPageAuthorized, !crossing, !photoActionBusy,
               photoShareSession == nil else { return }
@@ -619,6 +626,27 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         }
     }
 
+    /// Thumbnail selection stays in the current authorized PhotoKit page.
+    /// Existing show(next) independently revalidates PHAsset identity.
+    private func filmstripKey(_ item: XDrivePhotoKitScanCandidate)
+        -> XDriveIOSNativeLocalFilmstripKey {
+        XDriveIOSNativeLocalFilmstripKey(
+            id: item.id, kind: item.kind, isLive: item.isLive,
+            capturedAt: item.capturedAt, modifiedAt: item.modifiedAt
+        )
+    }
+
+    private func selectFilmstrip(_ next: XDrivePhotoKitScanCandidate) {
+        guard currentPageAuthorized, !crossing, !photoActionBusy,
+              !model.downloadingFromICloud, photoShareSession == nil else { return }
+        let keys = visibleItems.map { filmstripKey($0) }
+        guard XDriveIOSNativeLocalFilmstripPolicy.target(
+            current: filmstripKey(viewed), requested: filmstripKey(next),
+            in: keys, authorized: currentPageAuthorized
+        ) != nil else { return }
+        show(next)
+    }
+
     private func cancelCrossing() {
         crossingEpoch = UUID()
         crossingTask?.cancel()
@@ -732,6 +760,17 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                             .frame(minHeight: 44)
                             .accessibilityIdentifier("native-ios-local-viewer-icloud-load")
                         }
+                        // Uses only the already authorized, visible PhotoKit page.
+                        if currentPageAuthorized && visibleItems.count > 1 {
+                            XDriveIOSNativeLocalViewerFilmstrip(
+                                current: viewed,
+                                loaded: visibleItems,
+                                authorized: currentPageAuthorized,
+                                busy: crossing || photoActionBusy ||
+                                    model.downloadingFromICloud,
+                                onSelect: { next in selectFilmstrip(next) }
+                            )
+                        }
                         if visibleItems.count > 1 || canCross(-1) || canCross(1) {
                             HStack(spacing: 12) {
                                 Button("上一项") { showNeighbor(-1) }
@@ -753,6 +792,49 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.ultraThinMaterial)
+                }
+                // Match the system Photos' primary bottom actions without
+                // relocating any existing explicit-iCloud or retry commands.
+                if currentPageAuthorized {
+                    HStack(spacing: 16) {
+                        Button {
+                            shareOriginal(allowICloud: false)
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("分享本机原件")
+                        .accessibilityIdentifier("native-ios-local-viewer-bottom-share")
+                        .disabled(!canUsePhotoActions)
+
+                        Spacer(minLength: 8)
+
+                        Button {
+                            editFavorite(favoriteStatus != true)
+                        } label: {
+                            Image(systemName: favoriteStatus == true ? "heart.fill" : "heart")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel(favoriteStatus == true ? "取消收藏" : "收藏照片")
+                        .accessibilityIdentifier("native-ios-local-viewer-bottom-favorite")
+                        .disabled(!canUsePhotoActions || favoriteStatus == nil)
+
+                        Spacer(minLength: 8)
+
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("删除本机照片")
+                        .accessibilityIdentifier("native-ios-local-viewer-bottom-delete")
+                        .disabled(!canUsePhotoActions)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial)
+                    .accessibilityIdentifier("native-ios-local-viewer-bottom-actions")
                 }
                 if crossing {
                     ProgressView("正在读取相邻的 64 项照片…").font(.caption)
@@ -893,7 +975,12 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     @ViewBuilder
     private func videoSurface(_ player: AVPlayer) -> some View {
         if let item = player.currentItem {
-            VideoPlayer(player: player)
+            XDriveIOSNativePhotoVideoSurface(
+                player: player, showChrome: showChrome,
+                onChromeTap: { toggleChrome() },
+                onNavigateSwipe: { showNeighbor($0) }
+            )
+                .id(viewed.id)
                 .onAppear { if currentPageAuthorized { player.play() } }
                 .onDisappear { player.pause() }
                 .onReceive(

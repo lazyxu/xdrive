@@ -10,13 +10,14 @@ const policy = read('ios/XDriveIOS/NativePhotoTimelinePolicy.swift')
 const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 
 test('local Gallery mounts a full-authorized-library date navigator without replacing its native wall', () => {
-  assert.match(dashboard, /case \.local:\s*XDriveIOSNativeLocalPhotoTimelineContainer\(savedOffset: \$localGalleryPageOffset\)/)
-  assert.match(dashboard, /XDriveIOSNativeLocalGalleryScreen\(\s*savedOffset: \$localGalleryPageOffset\s*\)/)
+  assert.match(dashboard, /case \.local:\s*XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset\s*\)/)
+  assert.doesNotMatch(dashboard, /XDriveIOSNativeLocalGalleryScreen\(/)
   assert.match(browser, /Label\("按年／月／日定位", systemImage: "calendar"\)/)
   assert.match(browser, /ForEach\(XDriveIOSNativePhotoTimelineScale\.allCases\)/)
   assert.match(browser, /ForEach\(index\.groups\(for: scale\)\)/)
   assert.match(browser, /savedOffset = requestedOffset\s*wallRevision &\+= 1/)
-  assert.match(browser, /content\.id\(wallRevision\)/)
+  assert.match(browser, /\.id\(wallRevision\)/)
+  assert.doesNotMatch(browser, /useContinuousWall|content\.id\(wallRevision\)/)
 })
 
 test('calendar counts use original PhotoKit slots and invalidate on any library/permission change', () => {
@@ -51,7 +52,7 @@ test('date jump reuses the real PhotoKit media filter instead of all-photo offse
   assert.match(browser, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?model\.invalidate\(\)/)
   assert.match(browser, /let index = model\.index, model\.indexFilter == mediaFilter/)
   assert.match(browser, /requestedOffset % 64 == 0/)
-  assert.match(browser, /Button\("按页查看"\) \{[\s\S]*?mediaFilter = \.all[\s\S]*?savedOffset = 0/)
+  assert.doesNotMatch(browser, /Button\("按页查看"\)|Button\("连续滚动"\)/)
   assert.match(browser, /model\.load\(mediaFilter: mediaFilter\)/)
 });
 

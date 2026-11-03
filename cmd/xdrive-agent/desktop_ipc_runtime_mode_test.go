@@ -195,6 +195,9 @@ func TestBackupOnlyCloudFileReadAndExplicitOwnerMutations(t *testing.T) {
 	preview := false
 	createFolder := false
 	renameNode := false
+	deleteNode := false
+	moveNode := false
+	copyNode := false
 	for _, capability := range desktopIPCCapabilitiesForRuntime(true) {
 		if capability == "cloud-files-read" {
 			seen = true
@@ -208,11 +211,20 @@ func TestBackupOnlyCloudFileReadAndExplicitOwnerMutations(t *testing.T) {
 		if capability == "cloud-node-rename" {
 			renameNode = true
 		}
+		if capability == "cloud-node-delete" {
+			deleteNode = true
+		}
+		if capability == "cloud-node-move" {
+			moveNode = true
+		}
+		if capability == "cloud-node-copy" {
+			copyNode = true
+		}
 		if capability == "cloud-files" {
 			t.Fatal("Backup-only cannot claim the full FileExplorer capability")
 		}
 	}
-	if !seen || !preview || !createFolder || !renameNode {
+	if !seen || !preview || !createFolder || !renameNode || !deleteNode || !moveNode || !copyNode {
 		t.Fatal("missing bounded Owner files, preview or folder-create capability")
 	}
 	if fullAgentOnlyRequest(http.MethodPost, "/v1/cloud/directories") {
@@ -226,9 +238,28 @@ func TestBackupOnlyCloudFileReadAndExplicitOwnerMutations(t *testing.T) {
 	if fullAgentOnlyRequest(http.MethodPatch, "/v1/cloud/nodes") {
 		t.Fatal("exact Owner node rename must be admitted in Backup-only mode")
 	}
+	if fullAgentOnlyRequest(http.MethodDelete, "/v1/cloud/nodes") {
+		t.Fatal("exact authenticated single-Owner trash must be admitted in Backup-only mode")
+	}
+	if fullAgentOnlyRequest(http.MethodPatch, "/v1/cloud/move") {
+		t.Fatal("exact revision-checked Owner move must be admitted in Backup-only")
+	}
+	if fullAgentOnlyRequest(http.MethodPost, "/v1/cloud/copy") {
+		t.Fatal("one bounded Server Owner copy must be admitted in Backup-only")
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPatch, http.MethodPut, http.MethodDelete} {
+		if !fullAgentOnlyRequest(method, "/v1/cloud/copy") {
+			t.Fatalf("unapproved Owner copy method admitted: %s", method)
+		}
+	}
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete} {
+		if !fullAgentOnlyRequest(method, "/v1/cloud/move") {
+			t.Fatalf("unapproved Owner move method admitted: %s", method)
+		}
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut} {
 		if !fullAgentOnlyRequest(method, "/v1/cloud/nodes") {
-			t.Fatalf("non-rename Owner cloud operation unexpectedly permitted: %s", method)
+			t.Fatalf("unapproved Owner cloud operation unexpectedly permitted: %s", method)
 		}
 	}
 	for _, route := range []string{"/v1/cloud/root", "/v1/cloud/children", "/v1/cloud/text-preview"} {

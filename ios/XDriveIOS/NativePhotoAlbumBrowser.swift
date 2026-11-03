@@ -241,7 +241,7 @@ private struct XDriveIOSNativeAlbumCover: View {
     @StateObject private var loader = XDriveIOSPhotoImageLoader()
 
     var body: some View {
-        HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 5) {
             Group {
                 if let image = loader.image {
                     Image(uiImage: image).resizable().scaledToFill()
@@ -250,16 +250,13 @@ private struct XDriveIOSNativeAlbumCover: View {
                         .overlay { Image(systemName: "rectangle.stack").foregroundStyle(.secondary) }
                 }
             }
-            .frame(width: 74, height: 74)
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: .infinity)
             .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            VStack(alignment: .leading, spacing: 5) {
-                Text(album.name).font(.body.weight(.medium)).lineLimit(2)
-                Text("\(album.accessibleAssetCount) 项 · \(album.kind)")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+            Text(album.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+            Text("\(album.accessibleAssetCount) 项")
+                .font(.caption).foregroundStyle(.secondary)
         }
         .contentShape(Rectangle())
         .task(id: album.collectionIdentifier) {
@@ -268,7 +265,9 @@ private struct XDriveIOSNativeAlbumCover: View {
             ), let collection = PHAssetCollection.fetchAssetCollections(
                 withLocalIdentifiers: [album.collectionIdentifier], options: nil
             ).firstObject else { return }
-            if let asset = PHAsset.fetchAssets(in: collection, options: nil).firstObject {
+            let options = PHFetchOptions()
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            if let asset = PHAsset.fetchAssets(in: collection, options: options).firstObject {
                 loader.load(asset.localIdentifier, size: CGSize(width: 220, height: 220))
             }
         }
@@ -276,7 +275,103 @@ private struct XDriveIOSNativeAlbumCover: View {
     }
 }
 
-/// Genuine album-specific, bounded native media wall with the existing
+
+/// A visible 64-slot album range only; offscreen pages release their PhotoKit IDs.
+private struct XDriveIOSNativeAlbumVirtualPage: View {
+    let album: XDriveLocalPhotoAlbumSummary
+    let offset: Int
+    let expectedTotal: Int
+    let generation: UUID
+    let density: XDriveIOSNativePhotoWallDensity
+    let selectionMode: Bool
+    let selectedIDs: Set<String>
+    // The continuous album wall owns the Viewer return focus state. Pass the
+    // binding to virtual tiles so VoiceOver can resume on the verified item.
+    let accessibilityFocus: AccessibilityFocusState<String?>.Binding
+    let onSelect: (XDrivePhotoKitScanCandidate, XDrivePhotoKitScanPage) -> Void
+    let onRead: (XDrivePhotoKitScanPage) -> Void
+    let onFailure: () -> Void
+    @State private var page: XDrivePhotoKitScanPage?
+    @State private var reader: XDriveIOSNativeAlbumPageReader?
+
+    private var placeholder: some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(Color(uiColor: .secondarySystemGroupedBackground))
+            .aspectRatio(1, contentMode: .fit)
+            .accessibilityHidden(true)
+    }
+
+    var body: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(
+                minimum: density.minimumCellWidth,
+                maximum: density.maximumCellWidth
+            ), spacing: 2)],
+            spacing: 2
+        ) {
+            if let page {
+                ForEach(page.items) { item in
+                    if item.kind == "unsupported" {
+                        placeholder
+                    } else {
+                        Button { onSelect(item, page) } label: {
+                            ZStack(alignment: .topTrailing) {
+                                XDriveIOSNativeSquarePhotoTile(candidate: item)
+                                if selectionMode {
+                                    Image(systemName: selectedIDs.contains(item.id)
+                                        ? "checkmark.circle.fill" : "circle")
+                                        .font(.title2).foregroundStyle(.white)
+                                        .padding(6)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .id(item.id)
+                        .accessibilityFocused(accessibilityFocus, equals: item.id)
+                        .accessibilityLabel(selectionMode
+                            ? (selectedIDs.contains(item.id) ? "已选择照片" : "选择照片")
+                            : (item.kind == "video" ? "播放视频" : "查看照片"))
+                    }
+                }
+            } else {
+                ForEach(0..<min(64, max(0, expectedTotal - offset)), id: \.self) { _ in
+                    placeholder
+                }
+            }
+        }
+        .id("album-page:\(offset)")
+        .task(id: "\(generation)-\(album.collectionIdentifier)-\(offset)") {
+            page = nil
+            let next = XDriveIOSNativeAlbumPageReader()
+            reader = next
+            do {
+                let count = try await next.open(album)
+                let result = try await next.page(offset: offset)
+                try Task.checkCancellation()
+                guard count == expectedTotal,
+                      result.totalAccessibleAssets == expectedTotal,
+                      result.startOffset == offset,
+                      result.nextOffset == min(expectedTotal, offset + 64) else {
+                    throw XDriveIOSAlbumReadFailure.changed
+                }
+                page = result
+                onRead(result)
+            } catch is CancellationError {
+            } catch {
+                if !Task.isCancelled { onFailure() }
+            }
+            await next.reset()
+            if !Task.isCancelled { reader = nil }
+        }
+        .onDisappear {
+            page = nil
+            if let reader { Task { await reader.reset() } }
+            reader = nil
+        }
+    }
+}
+
+/// Continuous album media wall with the existing
 /// still/video/Live Viewer. No full album array, upload, or iCloud download.
 struct XDriveIOSNativeAlbumContentsScreen: View {
     let album: XDriveLocalPhotoAlbumSummary
@@ -286,6 +381,8 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
+    @State private var total: Int?
+    @State private var density: XDriveIOSNativePhotoWallDensity = .standard
     @State private var selected: XDrivePhotoKitScanCandidate?
     @State private var selectionMode = false
     @State private var selectedCandidates: [String: XDrivePhotoKitScanCandidate] = [:]
@@ -331,12 +428,25 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     Label("仅显示 iOS 已授权的部分照片", systemImage: "lock.shield")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if let page {
+                if let total {
                     HStack(spacing: 8) {
-                        Text(page.totalAccessibleAssets == 0 ? "相簿内没有可访问的媒体。" :
-                            "已显示 \(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets) 项")
+                        Text(total == 0 ? "相簿内没有可访问的媒体。" : "\(total) 项")
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer(minLength: 4)
+                        Menu {
+                            ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
+                                Button {
+                                    density = option
+                                } label: {
+                                    Label(option.title, systemImage: density == option
+                                        ? "checkmark.circle.fill" : "square.grid.3x3")
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "square.grid.3x3")
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel("缩略图大小：\(density.title)")
                         Button(selectionMode ? "取消选择" : "选择") {
                             selectionMode.toggle()
                             selectedCandidates.removeAll()
@@ -348,20 +458,16 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     }
                     if selectionMode {
                         HStack(spacing: 8) {
-                            Text("本页已选择 \(selectedCandidates.count) 项")
+                            Text("已选择 \(selectedCandidates.count) 项")
                                 .font(.caption).monospacedDigit()
                             Spacer(minLength: 4)
                             Menu("操作") {
-                                Button("分享选中原件") {
-                                    prepareAlbumShare(allowICloud: false)
-                                }
-                                .disabled(selectedCandidates.count >
-                                    XDriveIOSNativeLocalPhotoSharePolicy.maximumItems)
-                                Button("从 iCloud 下载后分享") {
-                                    prepareAlbumShare(allowICloud: true)
-                                }
-                                .disabled(selectedCandidates.count >
-                                    XDriveIOSNativeLocalPhotoSharePolicy.maximumItems)
+                                Button("分享选中原件") { prepareAlbumShare(allowICloud: false) }
+                                    .disabled(selectedCandidates.count >
+                                        XDriveIOSNativeLocalPhotoSharePolicy.maximumItems)
+                                Button("从 iCloud 下载后分享") { prepareAlbumShare(allowICloud: true) }
+                                    .disabled(selectedCandidates.count >
+                                        XDriveIOSNativeLocalPhotoSharePolicy.maximumItems)
                                 Button("收藏选中") { runAlbumAction(favorite: true) }
                                 Button("取消收藏") { runAlbumAction(favorite: false) }
                                 Button("添加到其他相簿") {
@@ -374,9 +480,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                                     confirmingAlbumRemove = true
                                 }
                                 .disabled(album.kind != "用户相册")
-                                Button("删除选中", role: .destructive) {
-                                    confirmingAlbumDelete = true
-                                }
+                                Button("删除选中", role: .destructive) { confirmingAlbumDelete = true }
                             }
                             .disabled(selectedCandidates.isEmpty ||
                                 albumActionBusy || albumShareBusy)
@@ -384,7 +488,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                         }
                         if selectedCandidates.count >
                             XDriveIOSNativeLocalPhotoSharePolicy.maximumItems {
-                            Text("一次最多分享 8 项原件；收藏和删除仅限当前页。")
+                            Text("一次最多分享 8 项原件；收藏和删除只处理当前验证范围。")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -396,44 +500,49 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     if let albumActionMessage {
                         Text(albumActionMessage).font(.caption).foregroundStyle(.secondary)
                     }
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)],
-                        spacing: 3
-                    ) {
-                        ForEach(page.items.filter { $0.kind != "unsupported" }) { item in
-                            Button {
-                                if selectionMode {
-                                    toggleAlbumSelection(item)
-                                } else {
-                                    viewerReturnID = item.id
-                                    accessibilityFocusedTileID = nil
-                                    viewerPage = page
-                                    selected = item
-                                }
-                            } label: {
-                                ZStack(alignment: .topTrailing) {
-                                    XDriveIOSLocalPhotoTile(candidate: item)
-                                    if selectionMode {
-                                        Image(systemName: selectedCandidates[item.id] != nil
-                                            ? "checkmark.circle.fill" : "circle")
-                                            .font(.title2).foregroundStyle(.white)
-                                            .padding(6)
+                    if total > 0 {
+                        ForEach(0..<XDriveIOSNativePhotoVirtualPagePolicy.pageCount(total: total), id: \.self) { number in
+                            let offset = number * 64
+                            XDriveIOSNativeAlbumVirtualPage(
+                                album: album, offset: offset, expectedTotal: total,
+                                generation: epoch, density: density,
+                                selectionMode: selectionMode,
+                                selectedIDs: Set(selectedCandidates.keys),
+                                accessibilityFocus: $accessibilityFocusedTileID,
+                                onSelect: { item, loadedPage in
+                                    if page?.startOffset != loadedPage.startOffset {
+                                        selectedCandidates.removeAll()
                                     }
+                                    page = loadedPage
+                                    savedOffset = loadedPage.startOffset
+                                    if selectionMode {
+                                        toggleAlbumSelection(item)
+                                    } else {
+                                        viewerReturnID = item.id
+                                        accessibilityFocusedTileID = nil
+                                        viewerPage = loadedPage
+                                        selected = item
+                                    }
+                                },
+                                onRead: { loadedPage in
+                                    if shouldRestoreViewerTile &&
+                                        loadedPage.startOffset == savedOffset {
+                                        page = loadedPage
+                                        pageRenderRevision &+= 1
+                                    }
+                                },
+                                onFailure: {
+                                    guard phase == .active, selected == nil else { return }
+                                    clearViewerTileAnchor()
+                                    invalidate()
+                                    error = "相簿或权限已变化，请刷新后重新查看。"
                                 }
+                            )
+                            .onAppear {
+                                if !shouldRestoreViewerTile { savedOffset = offset }
                             }
-                            .buttonStyle(.plain)
-                            .id(item.id)
-                            .accessibilityFocused($accessibilityFocusedTileID, equals: item.id)
                         }
                     }
-                    HStack {
-                        Button("上一页") { load(offset: max(0, page.startOffset - 64)) }
-                            .disabled(loading || page.startOffset == 0)
-                        Spacer()
-                        Button("下一页") { load(offset: page.nextOffset) }
-                            .disabled(loading || page.finished)
-                    }
-                    .buttonStyle(.bordered)
                 }
                 if loading { ProgressView("读取相册内容…") }
                 if let error {
@@ -447,8 +556,25 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             }
             .padding(12)
         }
+        .simultaneousGesture(
+            MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
+                guard albumAuthorized, phase == .active, selected == nil,
+                      !loading && !albumActionBusy && !albumShareBusy else { return }
+                density = density.applyingPinch(scale)
+            }
+        )
         .onChange(of: pageRenderRevision) { _ in
             restoreViewerTile(using: returnScroll)
+        }
+        .onChange(of: total) { count in
+            guard let count, count > 0, phase == .active else { return }
+            let anchor = XDriveIOSNativePhotoVirtualPagePolicy.normalizedAnchor(
+                requested: savedOffset, total: count
+            )
+            DispatchQueue.main.async {
+                guard phase == .active else { return }
+                returnScroll.scrollTo("album-page:\(anchor)", anchor: .top)
+            }
         }
         }
         }
@@ -465,7 +591,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .alert("相册说明", isPresented: $showingAlbumHelp) {
             Button("完成", role: .cancel) {}
         } message: {
-            Text("每页最多读取 64 项；只可选择当前页成员。分享原件需明确点击，删除遵循系统确认规则，不影响云端备份。")
+            Text("相簿照片连续滚动，每次只读取可见位置的 64 项；选择操作在当前验证范围内进行。分享原件需明确点击，删除不影响云端备份。")
         }
         .confirmationDialog(
             "删除本页选中的 \(selectedCandidates.count) 张系统照片？",
@@ -570,7 +696,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         }
         .onAppear {
             libraryMonitor.start()
-            if selected == nil && page == nil && !loading { reload() }
+            if selected == nil && total == nil && !loading { reload() }
         }
         .onChange(of: libraryMonitor.revision) { _ in
             clearViewerTileAnchor()
@@ -847,14 +973,19 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         loading = true
         task = Task { @MainActor in
             do {
-                _ = try await next.open(album)
-                let page = try await next.page(offset: offset)
+                let count = try await next.open(album)
                 try Task.checkCancellation()
-                guard epoch == ticket, phase == .active else { return }
+                guard epoch == ticket, phase == .active,
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) else { return }
                 permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                self.page = page
-                savedOffset = page.startOffset
-                pageRenderRevision &+= 1
+                total = count
+                savedOffset = XDriveIOSNativePhotoVirtualPagePolicy.normalizedAnchor(
+                    requested: offset, total: count
+                )
+                await next.reset()
+                reader = nil
             } catch is CancellationError {
             } catch {
                 guard epoch == ticket else { return }
@@ -882,6 +1013,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         if let reader { Task { await reader.reset() } }
         reader = nil
         page = nil
+        total = nil
         selected = nil
         viewerPage = nil
         loading = false
@@ -894,6 +1026,12 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
 struct XDriveIOSNativePhotoAlbumsScreen: View {
     // Parent-owned route hint, never a PhotoKit album ID.
     @Binding var savedOffset: Int
+    @State private var timelineOffset = 0
+    @State private var pendingRestoreOffset: Int?
+    // Only the presently visible last collection may request the next range.
+    // A former last item cannot resume a read after the list was appended.
+    @State private var visibleTailAlbumID: String?
+    @State private var isVisible = false
     @Environment(\.scenePhase) private var phase
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var page: XDriveLocalPhotoAlbumPage?
@@ -915,6 +1053,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
     @State private var albumMutationEpoch = UUID()
 
     var body: some View {
+        ScrollViewReader { scroll in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if permission == .notDetermined {
@@ -936,7 +1075,9 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     NavigationLink {
-                        XDriveIOSNativeLocalPhotoTimelineScreen()
+                        XDriveIOSNativeLocalPhotoTimelineContainer(
+                            savedOffset: $timelineOffset
+                        )
                     } label: {
                         Label("按年、月、日浏览全部照片", systemImage: "calendar")
                             .font(.headline)
@@ -951,47 +1092,59 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                     .accessibilityIdentifier("native-ios-gallery-timeline-entry")
 
                     if let page {
-                        Text(page.total == 0 ? "没有可访问的相册。" :
-                            "相册 \(page.offset + 1)–\(page.offset + page.items.count) / \(page.total)")
+                        Text(page.total == 0 ? "没有可访问的相簿。" : "\(page.total) 个相簿")
                             .font(.caption).foregroundStyle(.secondary)
-                        ForEach(page.items) { album in
-                            HStack(spacing: 8) {
-                                NavigationLink {
-                                    XDriveIOSNativeAlbumContentsScreen(album: album)
-                                } label: {
-                                    XDriveIOSNativeAlbumCover(album: album)
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(albumMutationBusy)
-                                .accessibilityIdentifier("native-ios-gallery-album-open")
-                                if album.kind == "用户相册" {
-                                    Menu {
-                                        Button("重命名相簿") {
-                                            renameTarget = album
-                                            renameName = album.name
-                                            showingRenameAlbum = true
-                                        }
-                                        Button("删除相簿", role: .destructive) {
-                                            deleteTarget = album
-                                            showingDeleteAlbum = true
-                                        }
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 145, maximum: 220), spacing: 12)],
+                            spacing: 16
+                        ) {
+                            ForEach(page.items) { album in
+                                ZStack(alignment: .topTrailing) {
+                                    NavigationLink {
+                                        XDriveIOSNativeAlbumContentsScreen(album: album)
                                     } label: {
-                                        Image(systemName: "ellipsis.circle")
-                                            .frame(width: 44, height: 44)
+                                        XDriveIOSNativeAlbumCover(album: album)
                                     }
+                                    .buttonStyle(.plain)
                                     .disabled(albumMutationBusy)
-                                    .accessibilityIdentifier("native-ios-album-manage-menu")
+                                    .accessibilityIdentifier("native-ios-gallery-album-open")
+                                    .onAppear {
+                                        // The last currently visible album owns the
+                                        // next 32-item request, even if it appears
+                                        // while another read is still in flight.
+                                        if album.id == page.items.last?.id {
+                                            visibleTailAlbumID = album.id
+                                            continueDirectoryIfReady()
+                                        }
+                                    }
+                                    .onDisappear {
+                                        // Ignore the retired tail's disappearance if
+                                        // a different tail has since become visible.
+                                        if visibleTailAlbumID == album.id {
+                                            visibleTailAlbumID = nil
+                                        }
+                                    }
+                                    if album.kind == "用户相册" {
+                                        Menu {
+                                            Button("重命名相簿") {
+                                                renameTarget = album
+                                                renameName = album.name
+                                                showingRenameAlbum = true
+                                            }
+                                            Button("删除相簿", role: .destructive) {
+                                                deleteTarget = album
+                                                showingDeleteAlbum = true
+                                            }
+                                        } label: {
+                                            Image(systemName: "ellipsis.circle")
+                                                .frame(width: 44, height: 44)
+                                        }
+                                        .disabled(albumMutationBusy)
+                                        .accessibilityIdentifier("native-ios-album-manage-menu")
+                                    }
                                 }
                             }
                         }
-                        HStack {
-                            Button("上一页") { load(offset: max(0, page.offset - 32)) }
-                                .disabled(loading || !page.hasPrevious)
-                            Spacer()
-                            Button("下一页") { load(offset: page.offset + page.items.count) }
-                                .disabled(loading || !page.hasNext)
-                        }
-                        .buttonStyle(.bordered)
                     }
                 }
                 if loading { ProgressView("读取已授权相册…") }
@@ -1001,12 +1154,20 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                 }
                 if let error {
                     Text(error).foregroundStyle(.red)
-                    Button("从第一页重试") { savedOffset = 0; reload() }
+                    Button("重新读取相簿") { reload() }
                 }
                 Button("刷新相册") { reload() }
-                    .disabled(loading || permission == .denied || permission == .restricted)
+                    .disabled(loading || albumMutationBusy ||
+                        permission == .denied || permission == .restricted)
             }
             .padding(12)
+        }
+        .onChange(of: loading) { active in
+            if !active {
+                restoreDirectoryIfReady(using: scroll)
+                continueDirectoryIfReady()
+            }
+        }
         }
         .navigationTitle("相册")
         .toolbar {
@@ -1065,10 +1226,14 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
         } message: {
             Text("仅删除相簿本身，照片仍在系统照片库，云端备份不受影响。")
         }
-        .onAppear { libraryMonitor.start(); reload() }
+        .onAppear {
+            isVisible = true
+            libraryMonitor.start()
+            reload()
+        }
         .onChange(of: libraryMonitor.revision) { _ in
-            // External changes and our own successful PhotoKit mutations
-            // both require a new authorized 32-item album directory.
+            // Own successful mutations and external library changes both
+            // require a fresh, permission-checked directory snapshot.
             if phase == .active && !albumMutationBusy { reload() }
             else { invalidate() }
         }
@@ -1076,6 +1241,8 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
             if state == .active { reload() } else { invalidate() }
         }
         .onDisappear {
+            isVisible = false
+            visibleTailAlbumID = nil
             libraryMonitor.stop()
             suspendForNavigation()
         }
@@ -1120,59 +1287,98 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
 
     private func reload() {
         permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        let anchor = savedOffset
         invalidate()
         guard permission == .authorized || permission == .limited else { return }
-        load(offset: savedOffset)
+        pendingRestoreOffset = XDriveIOSNativeAlbumDirectoryCursorPolicy.valid(anchor) &&
+            anchor > 0 ? anchor : nil
+        load(offset: 0)
+    }
+
+    /// Continue from the first real PhotoKit range until the previously
+    /// visible numeric block is present. Do not persist collection IDs.
+    private func restoreDirectoryIfReady(using scroll: ScrollViewProxy) {
+        guard isVisible, phase == .active, !loading,
+              let requested = pendingRestoreOffset, let page else { return }
+        let anchor = XDriveIOSNativeAlbumDirectoryCursorPolicy.clamp(
+            requested: requested, currentTotal: page.total
+        )
+        guard anchor > 0 else {
+            pendingRestoreOffset = nil
+            savedOffset = 0
+            return
+        }
+        if page.items.count <= anchor && page.hasNext {
+            load(offset: page.items.count)
+            return
+        }
+        guard !page.items.isEmpty else { pendingRestoreOffset = nil; return }
+        let target = page.items[min(anchor, page.items.count - 1)].id
+        pendingRestoreOffset = nil
+        DispatchQueue.main.async {
+            guard isVisible, phase == .active,
+                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission
+            else { return }
+            scroll.scrollTo(target, anchor: .top)
+        }
+    }
+
+    /// A last-item onAppear can occur while loading; retry that exact tail
+    /// when loading turns false. Never read from an old/hidden tail.
+    private func continueDirectoryIfReady() {
+        guard isVisible, phase == .active, !loading, !albumMutationBusy,
+              error == nil, pendingRestoreOffset == nil,
+              let page, page.offset == 0, page.hasNext,
+              visibleTailAlbumID == page.items.last?.id else { return }
+        load(offset: page.items.count)
     }
 
     private func load(offset requestedOffset: Int) {
-        invalidate()
+        guard !loading, isVisible, phase == .active else { return }
+        if requestedOffset > 0 {
+            guard let existing = page, existing.offset == 0,
+                  existing.items.count == requestedOffset, existing.hasNext else { return }
+        }
         let ticket = epoch
         loading = true
+        error = nil
         task = Task { @MainActor in
             do {
-                // Saved 32-slot offsets may become invalid after album deletion.
-                // Recheck the currently authorized index, never stale IDs.
-                var page: XDriveLocalPhotoAlbumPage
-                do {
-                    page = try await XDriveLocalPhotoAlbumPager.readPage(
-                        offset: requestedOffset
-                    )
-                } catch XDriveLocalPhotoAlbumFailure.invalidRange {
-                    let first = try await XDriveLocalPhotoAlbumPager.readPage(offset: 0)
-                    try Task.checkCancellation()
-                    let bounded = XDriveIOSNativeAlbumDirectoryCursorPolicy.clamp(
-                        requested: requestedOffset, currentTotal: first.total
-                    )
-                    if bounded == 0 {
-                        page = first
-                    } else {
-                        page = try await XDriveLocalPhotoAlbumPager.readPage(
-                            offset: bounded
-                        )
-                    }
-                }
-                try Task.checkCancellation()
-                if requestedOffset > 0 && page.total > 0 && page.items.isEmpty {
-                    let bounded = XDriveIOSNativeAlbumDirectoryCursorPolicy.clamp(
-                        requested: requestedOffset, currentTotal: page.total
-                    )
-                    if bounded != page.offset {
-                        page = try await XDriveLocalPhotoAlbumPager.readPage(
-                            offset: bounded
-                        )
-                    }
-                }
+                let next = try await XDriveLocalPhotoAlbumPager.readPage(
+                    offset: requestedOffset
+                )
                 try Task.checkCancellation()
                 guard epoch == ticket, phase == .active,
                       PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission
                 else { return }
-                self.page = page
-                savedOffset = page.offset
+                if requestedOffset == 0 {
+                    page = next
+                } else {
+                    guard let previous = page,
+                          previous.offset == 0,
+                          previous.items.count == requestedOffset,
+                          previous.total == next.total,
+                          previous.limitedAuthorization == next.limitedAuthorization,
+                          !next.items.isEmpty,
+                          Set(previous.items.map(\.collectionIdentifier)).isDisjoint(
+                            with: Set(next.items.map(\.collectionIdentifier))
+                          ) else {
+                        invalidate()
+                        error = "相簿目录已变化，请重新读取。"
+                        return
+                    }
+                    page = XDriveLocalPhotoAlbumPage(
+                        items: previous.items + next.items, offset: 0, total: next.total,
+                        limitedAuthorization: next.limitedAuthorization
+                    )
+                    savedOffset = requestedOffset
+                }
             } catch is CancellationError {
             } catch {
                 guard epoch == ticket else { return }
+                invalidate()
                 self.error = "相册目录或授权发生变化，请刷新后重新查看。"
+                return
             }
             if epoch == ticket { loading = false }
         }
@@ -1182,6 +1388,8 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
         epoch = UUID()
         task?.cancel()
         task = nil
+        pendingRestoreOffset = nil
+        visibleTailAlbumID = nil
         page = nil
         loading = false
         error = nil

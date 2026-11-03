@@ -9,7 +9,7 @@ const model = read('ios/XDriveIOS/NativeFilesBatchExport.swift')
 const browser = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
 const original = read('ios/XDriveIOS/NativeFilesDownloadExport.swift')
 
-test('one verified 64-item Owner page can batch-export only 2-8 actual files, aggregate <= 512 MiB', () => {
+test('verified Owner directory window still batch-exports only 2-8 actual files, aggregate <= 512 MiB', () => {
   assert.match(policy, /static let maximumFiles = 8/)
   assert.match(policy, /static let maximumAggregateBytes: Int64 = 512 \* 1_048_576/)
   assert.match(policy, /Set\(nodes\.map\(\\\.id\)\)\.count == nodes\.count/)
@@ -44,4 +44,29 @@ test('all staged bytes are retired on failure/cancel/Owner navigation, never cla
   assert.match(model, /UIActivityViewController\(activityItems: files, applicationActivities: nil\)/)
   assert.match(model, /尚未保存到 iPhone/)
   assert.doesNotMatch(model, /status = "已保存到|Data\(contentsOf:|UserDefaults/)
+})
+
+
+test('native safe-area editing toolbar retains bounded explicit export and cleanup', () => {
+  assert.match(browser, /\.safeAreaInset\(edge: \.bottom, spacing: 0\) \{\s*if selecting \{ filesSelectionToolbar \}/)
+  assert.match(browser, /private var filesSelectionToolbar: some View/)
+  assert.match(browser, /private func prepareSelectedExport\(\)/)
+  assert.match(browser, /Button\("已选项批量下载并导出"\) \{\s*prepareSelectedExport\(\)/)
+  assert.match(browser, /guard canSelectPage, let sourceParentID = parentID,/)
+  assert.match(browser, /XDriveIOSNativeFilesBatchExportPolicy\.validSelection\(/)
+  assert.match(browser, /batchExport\.prepare\(\s*chosenItems, parentID: sourceParentID, login: login/)
+  assert.match(browser, /Button\("已选项移入回收站", role: \.destructive\)/)
+  assert.match(browser, /showingBatchTrashConfirmation = true/)
+  assert.match(browser, /if !batchExport\.prepared\.isEmpty \{\s*Button\("用系统分享导出/)
+  assert.match(browser, /Button\("删除临时下载文件"\)/)
+  assert.match(browser, /native-ios-files-batch-toolbar/)
+  assert.match(browser, /native-ios-files-batch-more/)
+  assert.match(browser, /if !batchExport\.prepared\.isEmpty \{\s*Button \{\s*showingBatchShare = true/)
+  assert.match(browser, /Label\("导出", systemImage: "square\.and\.arrow\.up"\)/)
+  assert.match(browser, /native-ios-files-batch-share-toolbar/)
+  assert.match(browser, /native-ios-files-batch-discard-toolbar/)
+  assert.match(browser, /Button\("选择已加载项目（最多 200 项）"\)/)
+  assert.match(browser, /Button\("清空选择"\)/)
+  assert.match(browser, /Menu \{\s*Button\("选择已加载项目（最多 200 项）"\)/)
+  assert.doesNotMatch(browser, /position: fixed|bottom: 0px/)
 })

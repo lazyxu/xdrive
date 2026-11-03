@@ -83,6 +83,7 @@ export function XDriveSourceDetailsDialog({
   collectionItemPages,
   collectionPageSize,
   historyRuns,
+  focusedRunID,
   historyPage,
   historyHasNext,
   historyLoading,
@@ -114,6 +115,7 @@ export function XDriveSourceDetailsDialog({
   collectionItemPages: Record<number, XDriveSourceCollectionItemPage>
   collectionPageSize: number
   historyRuns: ExternalSourceRun[]
+  focusedRunID?: string | null
   historyPage: number
   historyHasNext: boolean
   historyLoading: boolean
@@ -291,6 +293,12 @@ export function XDriveSourceDetailsDialog({
             )}
 
             <XDriveSectionHeader level="h3" title="运行记录" sx={{ my: 2 }} />
+            {focusedRunID && historyReadState === 'ready' &&
+             !historyRuns.some((run) => run.id === focusedRunID) ? (
+              <XDriveStatusAlert tone="warning" sx={{ mb: 1 }}>
+                通知对应的运行不在当前历史页；请翻页查找，或该明细可能已过保留期。
+              </XDriveStatusAlert>
+            ) : null}
             {historyRuns.length > 0 ? (
               <Stack spacing={1}>
                 {historyRuns.map((run) => {
@@ -301,6 +309,7 @@ export function XDriveSourceDetailsDialog({
                   return (
                     <Accordion
                       key={run.id}
+                      defaultExpanded={run.id === focusedRunID}
                       disableGutters
                       elevation={0}
                       onChange={(_, expanded) => {

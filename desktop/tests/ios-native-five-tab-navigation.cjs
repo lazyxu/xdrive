@@ -6,7 +6,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '../..');
 const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const ui = read('ios/XDriveIOS/NativePhotosDashboard.swift');
-const local = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift');
+const local = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift');
 const albums = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift');
 test('native bottom destinations have fixed order and only one dynamic slot', () => {
   const order = [
@@ -26,7 +26,8 @@ test('native bottom destinations have fixed order and only one dynamic slot', ()
 });
 test('Gallery owns local, albums, cloud and map subroutes; media uses native fullscreen', () => {
   assert.match(ui, /@State private var localGalleryPageOffset = 0/);
-  assert.match(ui, /XDriveIOSNativeLocalGalleryScreen\(\s*savedOffset: \$localGalleryPageOffset\s*\)/);
+  assert.match(ui, /XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset\s*\)/);
+  assert.doesNotMatch(ui, /XDriveIOSNativeLocalGalleryScreen\(/);
   assert.match(ui, /\.onChange\(of: localGalleryPageOffset\) \{ _ in saveNavigationIfReady\(\) \}/);
   assert.match(ui, /localGalleryPageOffset = 0\s*dynamicFeature = nil/);
   assert.doesNotMatch(ui, /XDriveIOSNativeLocalGalleryScreen\(\s*\)/);
@@ -34,13 +35,14 @@ test('Gallery owns local, albums, cloud and map subroutes; media uses native ful
   assert.match(ui, /XDriveIOSNativeCloudOriginalGallery\([\s\S]*?login: login,[\s\S]*?confirmedOriginalUpdate: backup\.confirmedOriginalUpdate/);
   assert.match(ui, /gallerySource = source\s+tab = \.gallery/);
   assert.match(ui, /case \.map:/);
-  assert.match(local, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
+  assert.match(local, /\.fullScreenCover\(item: \$selected, onDismiss: restoreAfterViewer\)/);
+  assert.match(local, /onCrossPage: \{ page, anchor, direction in/);
   assert.match(albums, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
   const cloud = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
   assert.match(cloud, /\.fullScreenCover\(item: \$selected, onDismiss:/);
   assert.match(cloud, /if selected == nil \{\s*refreshAfterViewer = false\s*model\.invalidate\(\)/);
   assert.match(cloud, /\.onChange\(of: login.owner\)/);
-  assert.match(local, /if selected != nil \{ suspendForViewer\(\) \}/);
+  assert.match(local, /if value != \.active \{[\s\S]*?invalidate\(with: nil\)/);
   assert.match(albums, /if selected != nil \{ suspendForViewer\(\) \}/);
   assert.match(albums, /libraryMonitor.stop\(\); invalidate\(\)/);
 });

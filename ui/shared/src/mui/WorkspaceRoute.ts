@@ -33,13 +33,16 @@ export function xDriveWorkspacePresentation(
 export const XDRIVE_APP_WORKSPACE_ROUTES = [
   'overview',
   ...XDRIVE_CORE_WORKSPACE_KEYS,
+  'notes',
   'shares',
   'conflicts',
   'diagnostics',
+  'client-update',
   'admin-users',
   'admin-audit',
   'admin-storage',
   'admin-services',
+  'admin-update',
   'admin-maintenance',
 ] as const
 
