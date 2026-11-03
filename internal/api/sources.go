@@ -365,9 +365,10 @@ func (s *Server) createSource(c *gin.Context) {
 			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
 			return
 		}
-	} else if isSynologyPull {
-		// Deprecated clients may still submit the old picker value. Validate
-		// ownership for compatibility, but never use it as the new target.
+	} else if isSynologyPull || isLocalFolder {
+		// Older clients may still submit a selected Owner directory; validate
+		// its ownership for compatibility, but never adopt that directory as
+		// a new managed Pull or device-bound Push target.
 		if req.TargetNodeID != 0 {
 			if _, err := s.ownedDirectory(userID(c), req.TargetNodeID); err != nil {
 				fail(c, http.StatusBadRequest, "target directory not found")
@@ -406,7 +407,7 @@ func (s *Server) createSource(c *gin.Context) {
 			// Device enrollment and binding are a separate guarded delivery phase.
 			status = meta.SourceStatusPaused
 		}
-		if !isSynologyPull {
+		if !isSynologyPull && !isLocalFolder {
 			value := req.TargetNodeID
 			target = &value
 		}
@@ -435,7 +436,27 @@ func (s *Server) createSource(c *gin.Context) {
 			if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
 				return errLocalSourceCreateDeviceUnauthorized
 			}
-			return tx.Create(&source).Error
+			if err := tx.Create(&source).Error; err != nil {
+				return err
+			}
+			// Device identity comes from the device lock and credential, not
+			// the UI's target picker or an unauthenticated display name.
+			managed, err := createLocalPushManagedTargetTx(c.Request.Context(), tx, source, device)
+			if err != nil {
+				return err
+			}
+			result := tx.Model(&meta.Source{}).
+				Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+				Updates(map[string]any{"target_node_id": managed.ID, "target_managed": true})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errSourceManagedDirectoryOccupied
+			}
+			source.TargetNodeID = &managed.ID
+			source.TargetManaged = true
+			return nil
 		})
 	} else if isSynologyPull {
 		// A new Pull Source owns its newly-created leaf; older manual target
