@@ -106,8 +106,8 @@
     console.log("master:", head, "解析到的 master CI:", runs.size,
       "页面 Run 链接:", linkIds.size, "候选旧 master CI:", eligible.length);
 
-    if (!runs.size && linkIds.size) {
-      throw new Error("GitHub 页面显示了 Run，但未提供可验证的 master 元数据；未取消任何任务");
+    if (!runs.size) {
+      throw new Error("页面未提供可验证的 master CI 元数据；未取消任何任务");
     }
     if (missing.length) {
       throw new Error("发现 " + missing.length + " 个旧 master Run 缺少 Check Suite ID，停止操作");
