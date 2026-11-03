@@ -45,15 +45,17 @@ type InstalledState struct {
 var pinnedPostgres = regexp.MustCompile("^xdrive/offline-postgres:sha-[a-f0-9]{12}$")
 var profileNames = map[string]bool{"media-worker":true, "photo-intelligence":true, "caddy-rescue":true}
 
-func readEnvironment(home string)map[string]string{
+func readEnvironment(home string)(map[string]string,error){
 	out:=map[string]string{}
 	for _,name:=range []string{filepath.Join(home,"config",".env"),filepath.Join(home,".env")} {
 		f,_,err:=SafeFile(name)
 		if errors.Is(err,os.ErrNotExist){continue}
-		if err!=nil {break}
-		data,readErr:=io.ReadAll(io.LimitReader(f,1<<20))
-		f.Close()
-		if readErr!=nil {break}
+		if err!=nil {return nil,err}
+		data,readErr:=io.ReadAll(io.LimitReader(f,(1<<20)+1))
+		closeErr:=f.Close()
+		if readErr!=nil{return nil,readErr}
+		if closeErr!=nil{return nil,closeErr}
+		if len(data)>1<<20{return nil,fail("configuration exceeds offline read limit")}
 		for _,line:=range strings.Split(string(data),"\n"){
 			key,v,ok:=strings.Cut(line,"=")
 			if !ok||key==""{continue}
@@ -61,7 +63,7 @@ func readEnvironment(home string)map[string]string{
 		}
 		break
 	}
-	return out
+	return out,nil
 }
 func selectedSet(selection []string)map[string]bool{
 	m:=make(map[string]bool,len(selection))
@@ -99,7 +101,7 @@ func existingState(home string)(InstalledState,error){
 }
 func validateContracts(home string,m *Manifest,sel map[string]bool,profiles map[string]bool)(InstalledState,error){
 	state,err:=existingState(home);if err!=nil{return state,err}
-	env:=readEnvironment(home)
+	env,err:=readEnvironment(home);if err!=nil{return state,err}
 	rules:=[]struct{
 		Profile,Component,RefKey string
 		Keys []string
@@ -171,7 +173,7 @@ func allowExistingPostgresImage(ctx context.Context,m *Manifest)error{
 	return nil
 }
 func checkExistingPostgresSetting(home string,m *Manifest)error{
-	env:=readEnvironment(home)
+	env,err:=readEnvironment(home);if err!=nil{return err}
 	ref:=env["XD_POSTGRES_IMAGE"]
 	if ref!=""&&ref!=m.Images["postgres"].Ref&&ref!="postgres:17-alpine"&&!pinnedPostgres.MatchString(ref){
 		return fail("custom PostgreSQL image requires separate migration plan")
@@ -234,7 +236,7 @@ func writeInstalledState(home string,old InstalledState,m *Manifest,selection []
 		state.Installed[component]=InstalledComponent{Fingerprint:m.Fingerprints[component],
 			SHA256:p.SHA256,BuildCommit:p.BuiltFromCommit}
 	}
-	env:=readEnvironment(home)
+	env,err:=readEnvironment(home);if err!=nil{return err}
 	if ref:=env["XD_MEDIA_WORKER_IMAGE"];ref!=""{state.ActiveRefs["media-worker"]=ref}
 	if ref:=env["XD_PHOTO_FACE_IMAGE"];ref!=""{state.ActiveRefs["photo-intelligence"]=ref}
 	data,err:=json.Marshal(state);if err!=nil{return err}
@@ -277,7 +279,8 @@ func Install(ctx context.Context,m *Manifest,opts InstallOptions)error{
 		home=filepath.Join(base,".xd")
 	}
 	if err:=checkExistingPostgresSetting(home,m);err!=nil{return err}
-	profiles,err:=activeProfiles(readEnvironment(home),opts.EnableMedia,opts.EnableAI)
+	currentEnv,err:=readEnvironment(home);if err!=nil{return err}
+	profiles,err:=activeProfiles(currentEnv,opts.EnableMedia,opts.EnableAI)
 	if err!=nil{return err}
 	old,err:=validateContracts(home,m,selection,profiles);if err!=nil{return err}
 	root,err:=os.MkdirTemp(opts.Workdir,"xdrive-offline-")
