@@ -32,48 +32,48 @@ const (
 )
 
 type Stats struct {
- Items int64
- Successful int64
- Created int64
- Updated int64
- Deleted int64
- Moved int64
- Renamed int64
- Uploaded int64
- Downloaded int64
- Skipped int64
- Failed int64
- Conflicted int64
+ Items int64 `json:"items"`
+ Successful int64 `json:"successful"`
+ Created int64 `json:"created"`
+ Updated int64 `json:"updated"`
+ Deleted int64 `json:"deleted"`
+ Moved int64 `json:"moved"`
+ Renamed int64 `json:"renamed"`
+ Uploaded int64 `json:"uploaded"`
+ Downloaded int64 `json:"downloaded"`
+ Skipped int64 `json:"skipped"`
+ Failed int64 `json:"failed"`
+ Conflicted int64 `json:"conflicted"`
  // A nil value is "not measured", not zero network traffic.
- TransferredBytes *int64
+ TransferredBytes *int64 `json:"transferred_bytes"`
 }
 
 type Run struct {
- ID string
- Engine string
- Trigger string
- StartedAt time.Time
- FinishedAt *time.Time
- Status string
- Outcome string
- DetailComplete bool
- DetailsExpired bool
- Stats Stats
+ ID string `json:"run_id"`
+ Engine string `json:"engine_kind"`
+ Trigger string `json:"trigger"`
+ StartedAt time.Time `json:"started_at"`
+ FinishedAt *time.Time `json:"finished_at"`
+ Status string `json:"status"`
+ Outcome string `json:"outcome"`
+ DetailComplete bool `json:"detail_complete"`
+ DetailsExpired bool `json:"details_expired"`
+ Stats Stats `json:"stats"`
 }
 
 type Item struct {
- RunID string
- ID string
- Action string
- Direction string
- Status string
- OldPath string
- NewPath string
- LogicalBytes *int64
- TransferredBytes *int64
- ErrorCode string
- ErrorMessage string
- AppliedAt time.Time
+ RunID string `json:"run_id"`
+ ID string `json:"item_id"`
+ Action string `json:"action"`
+ Direction string `json:"direction"`
+ Status string `json:"status"`
+ OldPath string `json:"old_path"`
+ NewPath string `json:"new_path"`
+ LogicalBytes *int64 `json:"logical_bytes"`
+ TransferredBytes *int64 `json:"transferred_bytes"`
+ ErrorCode string `json:"error_code"`
+ ErrorMessage string `json:"error_message"`
+ AppliedAt time.Time `json:"applied_at"`
 }
 
 type RunCursor struct { StartedAt time.Time; ID string }
