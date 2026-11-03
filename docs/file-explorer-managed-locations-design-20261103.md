@@ -89,7 +89,7 @@
 
 ### 3.4 最终补充决议：Push/Pull 目录层级与历史迁移（2026-11-03）
 
-本节 **1A 2A 3A 4A 5B 优先级高于早期零搬迁与“显示名不改真实路径”的表述**。
+本节采用用户最终确认的 **1A 2A 3A 4A 5A**，优先于早期的“旧 Source 路径不变”与其他冲突描述。
 
 **规范的云端目标（逻辑 Node 目录，不是宿主机绝对路径）**：
 
@@ -109,7 +109,7 @@
 
 每一个 Source 独占一个真实目标根，目标根及全部后代对普通文件 API/匿名上传只读。只有通过设备/Source/Root/Run/Revision 验证的 Agent 或 Pull Worker 可同步更新、合法覆盖文件并保留版本历史；用户复制出站后产生不再受该 Source 管理的普通 Node。新建 Source 不再允许选择已有普通目录；目录及 Source 绑定须 Server 原子创建。设备显示名只用于组织展示，不构成授权依据，稳定身份仍是 SourceID/TargetNodeID。
 
-**数据库规范**：继续保留 xd_sources.id、xd_sources.name（单段显示/目标文件夹名称）、xd_sources.target_node_id、xd_nodes.id/parent_id/name；不存冗余完整云端目标路径。API 中 target_path 从 Node 祖先树实时计算。SourceItem.Path 是同步树内**相对路径**，必须保留；SyncRun.TargetNodeID 是运行快照不能更写旧历史；设备本地 Root 与 NAS 原始远端路径属于另一类来源配置，不能因为云端路径规范而删除。Source 改显示名（5B）必须在同一受控事务重命名真实目标根 Node.Name，并同步 Source.Revision/Node.Revision；名称冲突返回 409，不得只改显示名。
+**数据库规范**：继续保留 xd_sources.id、xd_sources.name（单段显示/目标文件夹名称）、xd_sources.target_node_id、xd_nodes.id/parent_id/name；不存冗余完整云端目标路径。API 中 target_path 从 Node 祖先树实时计算。SourceItem.Path 是同步树内**相对路径**，必须保留；SyncRun.TargetNodeID 是运行快照不能更写旧历史；设备本地 Root 与 NAS 原始远端路径属于另一类来源配置，不能因为云端路径规范而删除。Source 修改显示名称（5A）**只更新 Source.Name 和 Source.Revision**，不得自动重命名 Node.Name、调整 ParentID 或改变既有云端目标路径。目录叶名是首次创建时的稳定快照（附 SourceID 唯一后缀）；后续可从 Source ID 查询真实 Node 树，避免名称变化导致链接或同步目标改变。
 
 **旧 Source 自动迁移**（必须可中断、重试和审计）：
 
@@ -121,6 +121,14 @@
 6. 每一成功迁移必须能在 DB 事务提交后重试且无重复 Node；跨事务需要持久迁移状态/收据和运行版本隔离。崩溃后继续检验原计划和锁，防止旧 Agent/Worker 按旧路径写。源端文件、CAS 物理内容和历史 Run 不因路径迁移被重写。
 
 所谓“同步直接覆盖”，仅针对**具有完整 Source 授权与同步身份的受管目标**；绝不能以此为理由覆盖或销毁旧普通文件。Source 删除配置默认保留云端数据；归档后原受管根转为普通可编辑文件须确认所有写入已永久失效，清理数据另外确认。
+
+
+**必要的兼容边界（实施门禁）：**
+
+- 旧目标混合普通文件（2A）时，**只转移已能证明 SourceItem→Node 身份的文件和目录**，无归属文件留在原位。被移动文件保留 NodeID 和 FileVersion/CAS；原目录中混有普通后代的 SourceItem 目录须拆分受管层级、重建必要的结构目录，并在同一事务更新对应的 SourceItem.NodeID。若任何一步不可证明归属则本 Source 暂停，保留旧节点。
+- 迁移验证对象包含活跃 Source Run、上传会话、文件修订、其他 Source 绑定、Node 祖先/后代及 Share。只有当前状态与预检一致才允许提交；失败不会静默删除或覆盖旧内容。
+- **不会将整个“同步文件夹”父目录变为特殊文件夹**；整棵保护以具体 Source.TargetNodeID 为根，旧普通文件不受牵连。父目录的 read_only Share 仍按迁移后实际祖先关系访问合法 Push/Pull 文件。
+- 数据库没有需删掉的云端目标完整路径列。Source.TargetNodeID 与 Node.ParentID/Name 仍是权威；SourceItem.Path 和历史 SyncRun.TargetNodeID 是不可误删的相对身份/快照数据。API 的 target_path 继续实时计算。
 
 ## 4. 权限架构与矩阵
 
@@ -402,7 +410,7 @@ ID 必须在当前 Owner/Server 实例下唯一且稳定；不得包含服务端
 | P1-B：Trash 手动清空与分享收口 | 业务项目批量 purge、祖先 read_only Share 隔离、禁受管匿名写 | V15–V17；撤销/并发验证 |
 | P1-C：原生与多端完善 | Web/Mobile Web、Desktop/DSM、iOS/Android native Files 入口与 Viewer/菜单对齐 | V01/V18–V20；分别标注已验收平台 |
 
-用户已明确授权按最新 1A 2A 3A 4A 5B 决定开始 Push/Pull 实施，但各产品修改必须独立 PR/完整测试验证；不擅自修改其他已在 CI 的 PR。测试尚在队列里的 PR 不能因为“看起来没有冲突”就当作已经通过。
+用户已明确授权按最新 1A 2A 3A 4A 5A 决定开始 Push/Pull 实施，但各产品修改必须独立 PR/完整测试验证；不擅自修改其他已在 CI 的 PR。测试尚在队列里的 PR 不能因为“看起来没有冲突”就当作已经通过。
 
 ## 16. 主要风险、拒绝条件与设计验收标准
 
