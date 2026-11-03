@@ -29,9 +29,25 @@ struct XDriveIOSNativeFilesBatchTargetChecks {
                                  destinationID: 5, kind: .copy), "foreign parent")
         verify(!P.validSelection([], sourceParentID: 4,
                                  destinationID: 5, kind: .copy), "empty")
+        let bulk = (0..<200).map { index in
+            XDriveIOSNativeFilesNode(
+                id: UInt64(1_000 + index), parent_id: 4,
+                name: "file-\(index).pdf", type: "file",
+                size: 1, revision: 3
+            )
+        }
+        verify(P.validSelection(bulk, sourceParentID: 4,
+                                destinationID: 5, kind: .copy),
+               "200 verified same-parent copy candidates")
+        verify(P.validSelection(bulk, sourceParentID: 4,
+                                destinationID: 5, kind: .move),
+               "200 verified same-parent move candidates")
+        verify(!P.validSelection(bulk + [file], sourceParentID: 4,
+                                 destinationID: 5, kind: .copy),
+               "201 unique Nodes exceed atomic Server cap")
         verify(!P.validSelection(Array(repeating: file, count: 65),
                                  sourceParentID: 4, destinationID: 5,
-                                 kind: .copy), "single page cap")
+                                 kind: .copy), "reject duplicated IDs")
 
         let newFile = XDriveIOSNativeFilesNode(
             id: 21, parent_id: 5, name: "a (1).pdf", type: "file", size: 23, revision: 1
@@ -58,6 +74,31 @@ struct XDriveIOSNativeFilesBatchTargetChecks {
         verify(P.validReceipt(goodMove, original: selected,
                               sourceParentID: 4, destinationID: 5, kind: .move),
                "exact moved IDs and revision")
+        let bulkMoved = bulk.map { node in
+            XDriveIOSNativeFilesNode(
+                id: node.id, parent_id: 5, name: node.name,
+                type: "file", size: node.size, revision: node.revision + 1
+            )
+        }
+        let bulkCopied = bulk.enumerated().map { index, node in
+            XDriveIOSNativeFilesNode(
+                id: UInt64(3_000 + index), parent_id: 5, name: node.name,
+                type: "file", size: node.size, revision: 1
+            )
+        }
+        verify(P.validReceipt(.init(operation_id: receiptID, items: bulkMoved),
+                              original: bulk, sourceParentID: 4,
+                              destinationID: 5, kind: .move),
+               "200 exact moved Node receipts")
+        verify(P.validReceipt(.init(operation_id: receiptID, items: bulkCopied),
+                              original: bulk, sourceParentID: 4,
+                              destinationID: 5, kind: .copy),
+               "200 unique copy identities")
+        verify(!P.validReceipt(.init(operation_id: receiptID,
+                                     items: Array(bulkMoved.dropLast())),
+                               original: bulk, sourceParentID: 4,
+                               destinationID: 5, kind: .move),
+               "incomplete 200-item move receipt refused")
         let malformed = XDriveIOSNativeFilesBatchTargetReceipt(
             operation_id: "bad", items: goodCopy.items
         )
