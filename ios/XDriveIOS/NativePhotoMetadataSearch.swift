@@ -296,7 +296,7 @@ private struct XDriveIOSNativePhotoSearchWindowView: View {
     let generation: UUID
     let onSelect: (XDrivePhotoKitScanCandidate, [XDrivePhotoKitScanCandidate]) -> Void
     let onFailure: (UUID) -> Void
-    let onVisible: (Int) -> Void
+    let onVisibility: (Int, Bool) -> Void
 
     @State private var page: XDriveIOSNativePhotoMetadataSearchPage?
 
@@ -329,7 +329,7 @@ private struct XDriveIOSNativePhotoSearchWindowView: View {
             }
         }
         .id("search-window:\(window.id)")
-        .onAppear { onVisible(window.id) }
+        .onAppear { onVisibility(window.id, true) }
         .task(id: "\(generation)-\(window.startSlot)-\(query)") {
             page = nil
             do {
@@ -352,7 +352,10 @@ private struct XDriveIOSNativePhotoSearchWindowView: View {
                 if !Task.isCancelled { onFailure(generation) }
             }
         }
-        .onDisappear { page = nil }
+        .onDisappear {
+            page = nil
+            onVisibility(window.id, false)
+        }
     }
 }
 
@@ -373,6 +376,7 @@ struct XDriveIOSNativePhotoSearchScreen: View {
     @State private var query = ""
     @State private var acceptedQuery = ""
     @State private var selected: XDriveIOSNativePhotoSearchSelection?
+    @State private var visibleTailWindowID: Int?
 
     var body: some View {
         NavigationStack {
@@ -415,9 +419,17 @@ struct XDriveIOSNativePhotoSearchScreen: View {
                                     guard model.generation == failedGeneration else { return }
                                     model.invalidate()
                                 },
-                                onVisible: { visibleID in
-                                    guard selected == nil, phase == .active else { return }
-                                    model.scanMore(after: visibleID)
+                                onVisibility: { visibleID, isVisible in
+                                    if isVisible {
+                                        if model.windows.last?.id == visibleID {
+                                            visibleTailWindowID = visibleID
+                                            if selected == nil && phase == .active {
+                                                model.scanMore(after: visibleID)
+                                            }
+                                        }
+                                    } else if visibleTailWindowID == visibleID {
+                                        visibleTailWindowID = nil
+                                    }
                                 }
                             )
                         }
@@ -453,17 +465,33 @@ struct XDriveIOSNativePhotoSearchScreen: View {
         .onAppear { monitor.start() }
         .onChange(of: query) { _ in
             if XDriveIOSNativePhotoSearchQueryPolicy.normalized(query) !=
-                acceptedQuery { model.cancel() }
+                acceptedQuery {
+                visibleTailWindowID = nil
+                model.cancel()
+            }
+        }
+        .onChange(of: model.busy) { busy in
+            // A visible last window may have appeared while its next scan was
+            // still busy. Resume exactly once on completion, not via a button.
+            if !busy, selected == nil, phase == .active,
+               let visibleTailWindowID {
+                model.scanMore(after: visibleTailWindowID)
+            }
         }
         .onChange(of: monitor.revision) { _ in
+            visibleTailWindowID = nil
             model.invalidate()
         }
         .onChange(of: phase) { state in
-            if state != .active { model.cancel() }
+            if state != .active {
+                visibleTailWindowID = nil
+                model.cancel()
+            }
         }
         .onDisappear {
             if selected == nil {
                 monitor.stop()
+                visibleTailWindowID = nil
                 model.cancel()
             }
         }
@@ -474,6 +502,7 @@ struct XDriveIOSNativePhotoSearchScreen: View {
               let normalized = XDriveIOSNativePhotoSearchQueryPolicy.normalized(query)
         else { model.search(query); return }
         acceptedQuery = normalized
+        visibleTailWindowID = nil
         model.search(normalized)
     }
 }
