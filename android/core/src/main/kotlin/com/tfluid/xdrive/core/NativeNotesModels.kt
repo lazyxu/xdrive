@@ -35,7 +35,7 @@ data class OwnerNoteVersion(
 internal fun validNotesUUID(value: String): Boolean =
     value.matches(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"))
 
-internal fun validNotesInput(title: String, markdown: String): Boolean =
+fun validNotesInput(title: String, markdown: String): Boolean =
     title.isNotBlank() && title.toByteArray(Charsets.UTF_8).size <= 255 &&
         title.none { it.isISOControl() } &&
         markdown.toByteArray(Charsets.UTF_8).size <= 1_048_576 &&
