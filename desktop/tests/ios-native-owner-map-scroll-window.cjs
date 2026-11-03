@@ -10,7 +10,7 @@ test('native Owner map cluster only auto-pages at a visible LazyVGrid foot after
   assert.match(album, /\.onAppear \{ scrollFootVisible = true \}/)
   assert.match(album, /\.onDisappear \{ scrollFootVisible = false \}/)
   assert.match(album, /\.simultaneousGesture\(\s*DragGesture\(minimumDistance: 12\)\.onEnded/)
-  assert.match(album, /guard scrollFootVisible, activeOwner, !busy,\s*viewing == nil, page != nil, let next else \{ return \}/)
+  assert.match(album, /guard gesture\.translation\.height <= -12,[\s\S]*?scrollFootVisible, activeOwner, !busy,\s*viewing == nil, page != nil, let next else \{ return \}/)
   assert.match(album, /load\(next, history: earlier \+ \[cursor\],\s*autoAdvance: true\)/)
   assert.match(album, /private func load\(_ target: XDriveIOSOwnerClusterCursor,[\s\S]*?autoAdvance: Bool = false/)
   assert.doesNotMatch(album, /onAppear \{\s*load\(next|Timer\.scheduledTimer|URLSession\(|cacheAllPhotos/)
@@ -77,4 +77,29 @@ test('cloud map album returns to last verified Viewer Node and never restores a 
   assert.match(album, /private func invalidate\(\) \{[\s\S]*?viewerReturn = nil/)
   assert.match(album, /viewerReturn = nil\s*self\.error = "地点照片或 Owner 授权已变化/)
   assert.doesNotMatch(album, /UserDefaults\.set\(viewerReturn|localStorage|CacheSavedNodeID/)
+})
+
+
+test('Owner map rejects sparse, unaligned or duplicate exact place Ranges before advancing its cursor', () => {
+  assert.match(album, /target\.offset % XDriveIOSNativePhotoAssetRangeCursorPolicy\.pageSize == 0/)
+  assert.match(album, /reader\.page\(\s*offset: target\.offset, placeID: facet\.id\)/)
+  assert.match(album, /fetched\.total_count == facet\.item_count/)
+  assert.match(album, /fetched\.offset == target\.offset/)
+  assert.match(album, /fetched\.limit == XDriveIOSNativePhotoAssetRangeCursorPolicy\.pageSize/)
+  assert.match(album, /XDriveIOSNativePhotoAssetRangeCursorPolicy\.validPage\(\s*offset: fetched\.offset, count: fetched\.items\.count,\s*total: fetched\.total_count/)
+  assert.match(album, /Set\(fetched\.items\.map\(\\\.id\)\)\.count == fetched\.items\.count/)
+  assert.match(album, /if autoAdvance, let departingPage,\s*target != departingCursor,/)
+  assert.match(album, /!Set\(departingPage\.items\.map\(\\\.id\)\)\s*\.isDisjoint\(with: fetched\.items\.map\(\\\.id\)\)/)
+  assert.match(album, /throw XDriveIOSNativeMediaReadFailure\.invalidPage[\s\S]*?let after = fetched\.offset \+ fetched\.items\.count/)
+  assert.match(album, /let after = fetched\.offset \+ fetched\.items\.count[\s\S]*?cursor = target[\s\S]*?page = fetched/)
+})
+
+test('Owner map scroll foot cannot advance on a horizontal or backward gesture', () => {
+  assert.match(album, /DragGesture\(minimumDistance: 12\)\.onEnded \{ gesture in/)
+  assert.match(album, /gesture\.translation\.height <= -12/)
+  assert.match(album, /abs\(gesture\.translation\.height\) >\s*abs\(gesture\.translation\.width\)/)
+  assert.match(album, /scrollFootVisible, activeOwner, !busy,/)
+  assert.match(album, /viewing == nil, page != nil, let next else \{ return \}/)
+  assert.match(album, /load\(next, history: earlier \+ \[cursor\],\s*autoAdvance: true\)/)
+  assert.doesNotMatch(album, /DragGesture\(minimumDistance: 12\)\.onEnded \{ _ in/)
 })
