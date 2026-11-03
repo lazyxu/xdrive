@@ -139,7 +139,6 @@ export function XDriveSourceCreateDialog({
   const selectedTargetLabel = targetBrowsingEnabled
     ? (targetCrumbs.map((item) => item.name).join(' / ') || defaultTargetLabel)
     : defaultTargetLabel
-  const selectedTargetPath = targetBrowsingEnabled ? (selectedTarget?.path ?? '') : defaultTargetPath
 
   const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
   return (
