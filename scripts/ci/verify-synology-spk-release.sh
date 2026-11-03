@@ -81,5 +81,23 @@ for required in ui/config ui/backup.cgi ui/synology.html; do
   grep -Eq '^ui/assets/.+[.]js$' <<<"$payload_entries" || {
     echo "published DSM GUI payload lacks compiled JavaScript" >&2; exit 1;
   }
+  # dsmuidir="ui" is mounted by DSM at /webman/3rdparty/xdrivenas/.
+  # The old "3rdparty/..." URL opens /3rdparty/... and renders DSM's 404.
+  # Verify the shipped config, not merely that ui/config exists in the archive.
+  ui_config="$(tar -xOf "$spk" package.tgz | tar -xJOf - ui/config)" || {
+    echo "published DSM GUI config is unreadable" >&2; exit 1;
+  }
+  if ! python3 -c '
+import json, sys
+try:
+    app = json.load(sys.stdin)[".url"]["com.xdrive.NASBackup"]
+    if app["type"] != "url" or app["url"] != "/webman/3rdparty/xdrivenas/synology.html":
+        raise ValueError("invalid DSM launcher URL")
+except (KeyError, TypeError, ValueError):
+    sys.exit(1)
+' <<<"$ui_config"; then
+    echo "published DSM GUI launcher must use /webman/3rdparty/xdrivenas/synology.html" >&2
+    exit 1
+  fi
 fi
 echo "Verified exact DSM SPK and matching SHA256: $(basename "$spk")"
