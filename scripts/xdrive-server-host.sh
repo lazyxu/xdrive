@@ -40,6 +40,7 @@ xDrive server host manager
 
 Usage:
   xdrive-server update [--source github|gitlab|xdrive] [--channel stable|master] [--backup-file-data] [--prefetch-only]
+  xdrive-server update --source offline --channel master --offline-id HEX_ID [--trusted-manifest-sha256 HEX64 --trusted-installer-sha256 HEX64] [--backup-file-data|--prefetch-only]
   xdrive-server control <install|start|serve|stop|status>
   xdrive-server doctor [--strict]
   xdrive-server lan-ca export /absolute/path/root.crt
@@ -151,7 +152,8 @@ normalize_update_source() {
     ""|github) printf '%s\n' github ;;
     gitlab) printf '%s\n' gitlab ;;
     xdrive) printf '%s\n' xdrive ;;
-    *) echo "xdrive-server: invalid update source: $1 (expected github, gitlab or xdrive)" >&2; return 2 ;;
+    offline) printf '%s\n' offline ;;
+    *) echo "xdrive-server: invalid update source: $1 (expected github, gitlab, xdrive or offline)" >&2; return 2 ;;
   esac
 }
 
@@ -463,6 +465,132 @@ install_update_lock_busy() {
   return 0
 }
 
+
+# An operator stages one immutable manifest generation in a fixed Host subtree.
+# No API caller can pass a path, executable, URL, or Docker argument to the Host.
+# The identical branch is reached by CLI and Host Control's admin UI request.
+offline_import_identity() {
+  local import_dir="$1" manifest_sha="${2:-}" installer_sha="${3:-}"
+  command -v python3 >/dev/null 2>&1 || {
+    echo "xdrive-server: Python 3 is required for offline import." >&2; return 1;
+  }
+  python3 -B - "$import_dir" "$manifest_sha" "$installer_sha" \
+    "$BIN_DIR/xdrive-share-update.py" "$CONFIG_DIR/xdrive-share-update.json" <<'PY'
+import hashlib, importlib.util, json, os, pathlib, re, stat, sys
+directory = pathlib.Path(sys.argv[1])
+manual_manifest, manual_installer = sys.argv[2:4]
+helper_path, config_path = map(pathlib.Path, sys.argv[4:6])
+hex64 = re.compile(r'[a-f0-9]{64}\Z')
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+def regular(path):
+    path = pathlib.Path(path).absolute()
+    for parent in (path, *path.parents):
+        try:
+            mode = parent.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        require(not stat.S_ISLNK(mode), 'symlink in offline import path')
+    require(path.is_file() and path.stat().st_size > 0, 'missing offline release file')
+    return path
+def digest(path):
+    h = hashlib.sha256()
+    with regular(path).open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            h.update(chunk)
+    return h.hexdigest()
+try:
+    require(directory.is_dir() and not directory.is_symlink(), 'offline import directory unavailable')
+    manifest = regular(directory / 'manifest.json')
+    installer = regular(directory / 'xdrive-offline.py')
+    signed = config_path.is_file() and (directory / 'delivery.json').is_file()
+    if signed:
+        helper_path = regular(helper_path)
+        spec = importlib.util.spec_from_file_location('xdrive_share_update', str(helper_path))
+        # Hyphenated filename has no conventional import name, but its module is
+        # the trusted, already-installed xDrive Share verifier, not uploaded code.
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        config = module.read_config(config_path)
+        descriptor_path = regular(directory / 'delivery.json')
+        bundle = regular(directory / 'delivery-attestation.jsonl')
+        auth = dict(verifier_path=config['verifier_path'],
+                    verifier_sha256=config['verifier_sha256'],
+                    trust_root_sha256=config['trust_root_sha256'])
+        for target in (descriptor_path, manifest, installer):
+            module.verify_publisher(target, bundle, config['trust_root_path'], **auth)
+        descriptor = module.validate_descriptor(module.decode_json(descriptor_path.read_bytes()))
+        release = module.decode_json(manifest.read_bytes())
+        require(release.get('source_commit') == descriptor['source_commit'], 'release source commit differs from signed descriptor')
+        trusted_manifest = descriptor['manifest']['sha256']
+        trusted_installer = descriptor['installer']['sha256']
+    else:
+        require(bool(hex64.fullmatch(manual_manifest)) and bool(hex64.fullmatch(manual_installer)),
+                'independently trusted manifest and installer SHA-256 are required')
+        trusted_manifest, trusted_installer = manual_manifest, manual_installer
+    if manual_manifest:
+        require(hex64.fullmatch(manual_manifest) and manual_manifest == trusted_manifest,
+                'operator manifest digest differs from authenticated release')
+    if manual_installer:
+        require(hex64.fullmatch(manual_installer) and manual_installer == trusted_installer,
+                'operator installer digest differs from authenticated release')
+    require(digest(manifest) == trusted_manifest, 'offline Manifest digest mismatch')
+    require(digest(installer) == trusted_installer, 'offline installer digest mismatch')
+    print(trusted_manifest + ' ' + trusted_installer)
+except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+    print('xdrive-server: offline release admission failed: ' + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+offline_import_update() {
+  local offline_id="" manifest_sha="" installer_sha="" backup_file_data=0 prefetch_only=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --source|--channel) [[ $# -ge 2 ]] || return 2; shift 2 ;;
+      --offline-id) [[ $# -ge 2 ]] || return 2; offline_id="$2"; shift 2 ;;
+      --trusted-manifest-sha256) [[ $# -ge 2 ]] || return 2; manifest_sha="$2"; shift 2 ;;
+      --trusted-installer-sha256) [[ $# -ge 2 ]] || return 2; installer_sha="$2"; shift 2 ;;
+      --backup-file-data) backup_file_data=1; shift ;;
+      --prefetch-only) prefetch_only=1; shift ;;
+      *) echo "xdrive-server: unsupported offline update option." >&2; return 2 ;;
+    esac
+  done
+  [[ "$offline_id" =~ ^[a-f0-9]{32}$ ]] || {
+    echo "xdrive-server: offline import ID must be 32 lowercase hex digits." >&2; return 2;
+  }
+  [[ -z "$manifest_sha" || "$manifest_sha" =~ ^[a-f0-9]{64}$ ]] || return 2
+  [[ -z "$installer_sha" || "$installer_sha" =~ ^[a-f0-9]{64}$ ]] || return 2
+  local root="$STATE_DIR/update-imports" directory="$STATE_DIR/update-imports/$offline_id"
+  [[ -d "$root" && ! -L "$root" && -d "$directory" && ! -L "$directory" ]] || {
+    echo "xdrive-server: offline import directory unavailable." >&2; return 1;
+  }
+  local verified tool copied_digest
+  verified="$(offline_import_identity "$directory" "$manifest_sha" "$installer_sha")" || return 1
+  read -r manifest_sha installer_sha <<< "$verified"
+  [[ "$manifest_sha" =~ ^[a-f0-9]{64}$ && "$installer_sha" =~ ^[a-f0-9]{64}$ ]] || return 1
+  tool="$(mktemp "${TMPDIR:-/tmp}/xdrive-verified-offline.XXXXXX")" || return 1
+  # Snapshot only the independently authenticated executable, never run the
+  # user-controlled path directly. The package parser rehashes all members.
+  if ! cp -- "$directory/xdrive-offline.py" "$tool"; then rm -f -- "$tool"; return 1; fi
+  copied_digest="$(sha256sum "$tool" | cut -d' ' -f1)"
+  if [[ "$copied_digest" != "$installer_sha" ]]; then
+    echo "xdrive-server: offline installer changed during staging." >&2
+    rm -f -- "$tool"
+    return 1
+  fi
+  local status=0
+  python3 -B "$tool" verify --dir "$directory" --trusted-manifest-sha256 "$manifest_sha" || status=$?
+  if [[ "$status" == 0 && "$prefetch_only" != 1 ]]; then
+    python3 -B "$tool" install --dir "$directory" --trusted-manifest-sha256 "$manifest_sha" \
+      --config-dir "$XDRIVE_HOME" \
+      $([[ "$backup_file_data" == 1 ]] && printf '%s' '--backup-file-data') || status=$?
+  fi
+  rm -f -- "$tool"
+  return "$status"
+}
+
 update_cmd() (
   local tmp installer status target_commit audit_target="" previous="" update_source="" update_channel=""
 
@@ -497,7 +625,15 @@ update_cmd() (
   [[ -n "$update_source" ]] || update_source="$(env_value XD_UPDATE_SOURCE)"
   update_source="$(normalize_update_source "$update_source")"
 
-  if [[ "$update_source" == xdrive ]]; then
+  if [[ "$update_source" == offline ]]; then
+    [[ "$update_channel" == master ]] || {
+      echo "xdrive-server: offline imports support only the master channel." >&2; return 2;
+    }
+    local prefetch_only=0
+    for arg in "$@"; do [[ "$arg" != --prefetch-only ]] || prefetch_only=1; done
+    if offline_import_update "$@"; then status=0; else status=$?; fi
+    [[ "$prefetch_only" != 1 ]] || return "$status"
+  elif [[ "$update_source" == xdrive ]]; then
     [[ "$update_channel" == master ]] || {
       echo "xdrive-server: Share updates support only the master channel." >&2; return 2;
     }
