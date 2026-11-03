@@ -63,20 +63,20 @@ func managedSourceTargetInsideSubtreeTx(
 	var result struct {
 		Protected bool `gorm:"column:protected"`
 	}
+	// Walk UP from each Source target, not DOWN through potentially 100k
+	// ordinary files for every single upload or rename request.
 	err := tx.WithContext(ctx).Raw(
-		`WITH RECURSIVE tree AS (
-		  SELECT id, 0 AS depth
-		  FROM xd_nodes WHERE owner_id = ? AND id = ? AND deleted_at IS NULL
+		`WITH RECURSIVE target_ancestors AS (
+		  SELECT n.id, n.parent_id, 0 AS depth
+		  FROM xd_nodes n JOIN xd_sources s ON s.target_node_id = n.id
+		  WHERE s.owner_id = ? AND n.owner_id = ? AND n.deleted_at IS NULL
 		  UNION ALL
-		  SELECT child.id, parent.depth + 1
-		  FROM xd_nodes child JOIN tree parent ON child.parent_id = parent.id
-		  WHERE child.owner_id = ? AND child.deleted_at IS NULL AND parent.depth < 256
+		  SELECT p.id, p.parent_id, a.depth + 1
+		  FROM xd_nodes p JOIN target_ancestors a ON p.id = a.parent_id
+		  WHERE p.owner_id = ? AND p.deleted_at IS NULL AND a.depth < 256
 		)
-		SELECT EXISTS (
-		  SELECT 1 FROM xd_sources s JOIN tree t ON t.id = s.target_node_id
-		  WHERE s.owner_id = ? AND s.target_node_id IS NOT NULL
-		) AS protected`,
-		ownerID, nodeID, ownerID, ownerID,
+		SELECT EXISTS (SELECT 1 FROM target_ancestors WHERE id = ?) AS protected`,
+		ownerID, ownerID, ownerID, nodeID,
 	).Scan(&result).Error
 	return result.Protected, err
 }
