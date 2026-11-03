@@ -143,6 +143,7 @@ export type XDriveSynologyOwnerLiveMotion = {
   data: Uint8Array
 }
 export const XDRIVE_SYNOLOGY_OWNER_LIVE_MOTION_MAX_BYTES = 4 << 20
+export const XDRIVE_SYNOLOGY_OWNER_UPLOAD_MAX_BYTES = 4 << 20
 
 export type XDriveSynologyOwnerFileSort = XDriveSynologyOwnerFilePageResponse['sort']
 export type XDriveSynologyOwnerFileOrder = XDriveSynologyOwnerFilePageResponse['order']
@@ -176,6 +177,62 @@ export function xDriveValidateSynologyOwnerCreatedFolder(
     !validOwnerFileNode(raw, parentID) || raw.type !== 'dir' ||
     raw.name !== name || raw.size !== 0) {
     throw new Error('Invalid authenticated Owner created folder')
+  }
+  return raw
+}
+
+export function xDriveValidateSynologyOwnerUploadedFile(
+  raw: unknown, parentID: number, name: string, byteLength: number,
+): XDriveSynologyOwnerFileNode {
+  if (!Number.isSafeInteger(parentID) || parentID < 1 ||
+    !Number.isSafeInteger(byteLength) || byteLength < 1 ||
+    byteLength > XDRIVE_SYNOLOGY_OWNER_UPLOAD_MAX_BYTES ||
+    typeof name !== 'string' || !name || name !== name.trim() ||
+    name === '.' || name === '..' ||
+    /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+    new TextEncoder().encode(name).length > 255 ||
+    !validOwnerFileNode(raw, parentID) || raw.type !== 'file' ||
+    raw.name !== name || raw.size !== byteLength) {
+    throw new Error('Invalid verified DSM Owner upload acknowledgement')
+  }
+  return raw
+}
+
+export function xDriveValidateSynologyOwnerCopiedNode(
+  raw: unknown, sourceID: number, revision: number, sourceParent: number,
+  targetParent: number, kind: 'file' | 'dir', name: string,
+): XDriveSynologyOwnerFileNode {
+  if (![sourceID, revision, sourceParent, targetParent].every(
+      value => Number.isSafeInteger(value) && value > 0) ||
+    sourceID === targetParent || sourceParent === targetParent ||
+    (kind !== 'file' && kind !== 'dir') ||
+    typeof name !== 'string' || !name || name !== name.trim() ||
+    name === '.' || name === '..' ||
+    /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+    new TextEncoder().encode(name).length > 255 ||
+    !validOwnerFileNode(raw, targetParent) ||
+    raw.id === sourceID || raw.type !== kind) {
+    throw new Error('Invalid current Server Owner copy acknowledgement')
+  }
+  return raw
+}
+
+export function xDriveValidateSynologyOwnerMovedNode(
+  raw: unknown, nodeID: number, revision: number, sourceParent: number,
+  targetParent: number, kind: 'file' | 'dir', name: string,
+): XDriveSynologyOwnerFileNode {
+  if (![nodeID, revision, sourceParent, targetParent].every(
+      value => Number.isSafeInteger(value) && value > 0) ||
+    sourceParent === targetParent || nodeID === targetParent ||
+    (kind !== 'file' && kind !== 'dir') ||
+    typeof name !== 'string' || !name || name !== name.trim() ||
+    name === '.' || name === '..' ||
+    /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+    new TextEncoder().encode(name).length > 255 ||
+    !validOwnerFileNode(raw, targetParent) ||
+    raw.id !== nodeID || raw.revision <= revision ||
+    raw.type !== kind || raw.name !== name) {
+    throw new Error('Invalid current Server Owner move acknowledgement')
   }
   return raw
 }
@@ -521,6 +578,9 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   /** Current DSM Server Owner creates one named folder through the original Agent. */
   ownerCreateFolder(parentID: number, name: string, ownerScope: string,
     signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
+  /** Single nonempty file <=4 MiB; existing Agent stages and uses original CAS upload. */
+  ownerUploadSmallFile(parentID: number, file: File, ownerScope: string,
+    signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
   /** Bounded Server Owner Gallery wall and album read; never full Desktop Media RPC. */
   ownerGalleryItemsRange(
     kind: 'all' | 'image' | 'video', limit: number, offset: number,
@@ -559,6 +619,18 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
     nodeID: number, revision: number, total: number, sha256: string,
     mime: XDriveSynologyOwnerStreamMIME,
   ): string
+  /** One current Owner file/folder moves to Server trash, never permanent deletion. */
+  ownerDeleteNode(nodeID: number, revision: number, parentID: number,
+    kind: 'file' | 'dir', name: string, ownerScope: string,
+    signal?: AbortSignal): Promise<void>
+  /** One current Owner node copied to a different authorized folder. */
+  ownerCopyNode(nodeID: number, revision: number, sourceParent: number,
+    targetParent: number, kind: 'file' | 'dir', name: string, ownerScope: string,
+    signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
+  /** One exact-revision current-Owner move between authorized folders. */
+  ownerMoveNode(nodeID: number, revision: number, sourceParent: number,
+    targetParent: number, kind: 'file' | 'dir', name: string, ownerScope: string,
+    signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
   /** Exact-revision rename of one current Server Owner file or folder. */
   ownerRenameNode(
     nodeID: number, revision: number, parentID: number,
@@ -599,7 +671,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     if (!['bootstrap', 'sources', 'status', 'history', 'run', 'control', 'schedule',
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
-      'cloud-root', 'cloud-children', 'cloud-search', 'cloud-create-folder', 'cloud-rename-node', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
+      'cloud-root', 'cloud-children', 'cloud-search', 'cloud-create-folder', 'cloud-rename-node', 'cloud-delete-node', 'cloud-move-node', 'cloud-copy-node', 'cloud-upload-file', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-places',
        'cloud-gallery-place-items', 'cloud-gallery-map-overview',
        'cloud-live-motion', 'nas-shares',
@@ -967,6 +1039,109 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         await request<unknown>('/v1/cloud-create-folder', 'POST',
           { parent_id: parentID, name, owner_scope: ownerScope }, signal),
         parentID, name)
+    },
+    ownerUploadSmallFile: async (parentID, file, ownerScope, signal) => {
+      const name = file?.name
+      const size = file?.size
+      if (!Number.isSafeInteger(parentID) || parentID < 1 ||
+        typeof name !== 'string' || !name || name !== name.trim() ||
+        name === '.' || name === '..' ||
+        /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+        new TextEncoder().encode(name).length > 255 ||
+        typeof size !== 'number' || !Number.isSafeInteger(size) ||
+        size < 1 || size > XDRIVE_SYNOLOGY_OWNER_UPLOAD_MAX_BYTES ||
+        !/^[0-9a-f]{64}$/.test(ownerScope) ||
+        typeof file.arrayBuffer !== 'function') {
+        throw new Error('DSM 当前仅支持上传 1 B～4 MiB 的单个文件')
+      }
+      if (signal?.aborted) throw new Error('Owner upload cancelled')
+      if (!globalThis.crypto?.subtle) throw new Error('Owner upload digest unavailable')
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      if (signal?.aborted) throw new Error('Owner upload cancelled')
+      if (bytes.length !== size) throw new Error('Owner upload bytes changed')
+      const hash = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes))
+      if (signal?.aborted) throw new Error('Owner upload cancelled')
+      const sha256 = Array.from(hash, b => b.toString(16).padStart(2, '0')).join('')
+      // A bounded binary string avoids argument-list limits and arbitrary
+      // native paths. The authenticated CGI rechecks the digest independently.
+      let binary = ''
+      for (let offset = 0; offset < bytes.length; offset += 8192) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192))
+      }
+      const data = btoa(binary)
+      if (signal?.aborted) throw new Error('Owner upload cancelled')
+      const response = await request<unknown>('/v1/cloud-upload-file', 'POST', {
+        parent_id: parentID, name, owner_scope: ownerScope, sha256, data,
+      }, signal)
+      if (signal?.aborted) throw new Error('Owner upload acknowledgement cancelled')
+      return xDriveValidateSynologyOwnerUploadedFile(response, parentID, name, size)
+    },
+    ownerDeleteNode: async (nodeID, revision, parentID, kind, name, ownerScope, signal) => {
+      if (![nodeID, revision, parentID].every(value =>
+          Number.isSafeInteger(value) && value > 0) ||
+        (kind !== 'file' && kind !== 'dir') ||
+        typeof name !== 'string' || !name || name !== name.trim() ||
+        name === '.' || name === '..' ||
+        /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+        new TextEncoder().encode(name).length > 255 ||
+        !/^[0-9a-f]{64}$/.test(ownerScope)) {
+        throw new Error('Invalid Server Owner move-to-trash selector')
+      }
+      if (signal?.aborted) throw new Error('Owner move-to-trash cancelled before dispatch')
+      const ack = await request<unknown>('/v1/cloud-delete-node', 'POST', {
+        id: nodeID, revision, parent_id: parentID, type: kind,
+        name, owner_scope: ownerScope,
+      }, signal)
+      // If abort races a committed Server trash operation, never report a
+      // confirmed result. The UI refreshes current Owner instead of retrying.
+      if (signal?.aborted) throw new Error('Owner move-to-trash acknowledgement cancelled')
+      if (!ack || typeof ack !== 'object' || Array.isArray(ack) ||
+        Object.keys(ack).length !== 1 ||
+        (ack as Record<string, unknown>).ok !== true) {
+        throw new Error('Unverified Server Owner move-to-trash response')
+      }
+    },
+    ownerCopyNode: async (nodeID, revision, sourceParent, targetParent, kind, name, ownerScope, signal) => {
+      if (![nodeID, revision, sourceParent, targetParent].every(
+          value => Number.isSafeInteger(value) && value > 0) ||
+        sourceParent === targetParent || nodeID === targetParent ||
+        (kind !== 'file' && kind !== 'dir') ||
+        typeof name !== 'string' || !name || name !== name.trim() ||
+        name === '.' || name === '..' ||
+        /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+        new TextEncoder().encode(name).length > 255 ||
+        !/^[0-9a-f]{64}$/.test(ownerScope)) {
+        throw new Error('Invalid Owner copy selector')
+      }
+      if (signal?.aborted) throw new Error('Owner copy cancelled before dispatch')
+      const response = await request<unknown>('/v1/cloud-copy-node', 'POST', {
+        id: nodeID, revision, parent_id: sourceParent,
+        target_parent_id: targetParent, type: kind, name, owner_scope: ownerScope,
+      }, signal)
+      if (signal?.aborted) throw new Error('Owner copy acknowledgement cancelled')
+      return xDriveValidateSynologyOwnerCopiedNode(response,
+        nodeID, revision, sourceParent, targetParent, kind, name)
+    },
+    ownerMoveNode: async (nodeID, revision, sourceParent, targetParent, kind, name, ownerScope, signal) => {
+      if (![nodeID, revision, sourceParent, targetParent].every(
+          value => Number.isSafeInteger(value) && value > 0) ||
+        sourceParent === targetParent || nodeID === targetParent ||
+        (kind !== 'file' && kind !== 'dir') ||
+        typeof name !== 'string' || !name || name !== name.trim() ||
+        name === '.' || name === '..' ||
+        /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+        new TextEncoder().encode(name).length > 255 ||
+        !/^[0-9a-f]{64}$/.test(ownerScope)) {
+        throw new Error('Invalid Owner move selector')
+      }
+      if (signal?.aborted) throw new Error('Owner move cancelled before dispatch')
+      const response = await request<unknown>('/v1/cloud-move-node', 'POST', {
+        id: nodeID, revision, parent_id: sourceParent,
+        target_parent_id: targetParent, type: kind, name, owner_scope: ownerScope,
+      }, signal)
+      if (signal?.aborted) throw new Error('Owner move acknowledgement cancelled')
+      return xDriveValidateSynologyOwnerMovedNode(response,
+        nodeID, revision, sourceParent, targetParent, kind, name)
     },
     ownerRenameNode: async (nodeID, revision, parentID, kind, name, ownerScope, signal) => {
       if (![nodeID, revision, parentID].every(value =>

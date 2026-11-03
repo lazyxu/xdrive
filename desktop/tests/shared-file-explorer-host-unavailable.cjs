@@ -43,10 +43,10 @@ test('Host-disabled Search never dispatches even through direct command callback
   assert.deepEqual(calls, ['authorized'], 'Desktop keeps its original authenticated search')
 })
 
-test('shared Files toolbar disables unsupported operations while allowing verified Owner folder creation and search', () => {
+test('shared Files toolbar retains Host-disabled operations while admitting verified Owner upload and search', () => {
   for (const name of [
-    'uploadFiles', 'uploadFolder',
-    'copy', 'cut', 'paste', 'delete', 'moveTo', 'copyTo', 'manageTags',
+    'uploadFolder',
+    'copy', 'cut', 'paste', 'manageTags',
   ]) {
     assert.ok(explorer.includes("'" + name + "'"), name + ' missing from shared capability contract')
     assert.ok(host.includes(name + ": 'DSM"), name + ' missing genuine DSM Host explanation')
@@ -56,8 +56,31 @@ test('shared Files toolbar disables unsupported operations while allowing verifi
   assert.ok(dsm.includes('onSearch={search.start}') &&
     dsm.includes('searchEnabled'),
     'the shared search bar must dispatch only through the authenticated DSM search hook')
-  // DSM now explicitly supports only Owner-scoped new-folder creation;
-  // remaining unsupported mutations still require genuine Host reasons.
+  // Only the verified browser-selected single-file upload is admitted.
+  // Folder upload and unrelated mutations remain truly Host-disabled.
+  assert.equal(host.includes("copyTo: 'DSM"), false,
+    'one current-Owner copy is now admitted by Host')
+  assert.ok(dsm.includes('onCopyItemsTo={selected => {') && dsm.includes('client.ownerCopyNode('))
+  assert.equal(host.includes("moveTo: 'DSM"), false,
+    'exact Owner move capability must not remain falsely disabled')
+  assert.ok(dsm.includes('onMoveItemsTo={selected => {') &&
+    dsm.includes('client.ownerMoveNode('))
+  assert.equal(host.includes("delete: 'DSM"), false,
+    'one verified Owner item may be moved to Server trash')
+  assert.ok(dsm.includes('onDeleteItems={selected => {') &&
+    dsm.includes('client.ownerDeleteNode(') &&
+    dsm.includes('<XDriveConfirmDialog'),
+    'one Owner-scoped trash action requires current-row verification and confirmation')
+  assert.ok(dsm.includes("count !== 1 || selected.length !== 1"),
+    'bulk delete must remain disabled until its distinct authorized endpoint exists')
+  assert.equal(host.includes("uploadFiles: 'DSM"), false,
+    'Owner-scoped single-file upload must not be falsely disabled')
+  assert.ok(dsm.includes('onUpload={() => {') &&
+    dsm.includes('client.ownerUploadSmallFile(') &&
+    dsm.includes('uploadInputRef.current?.click()'),
+    'upload must use the typed current-Owner browser picker')
+  assert.ok(host.includes("uploadFolder: 'DSM"),
+    'unimplemented folder upload must remain unavailable')
   assert.equal(host.includes("createFolder: 'DSM"), false,
     'Owner-scoped new-folder action must not be falsely disabled by DSM Host')
   assert.equal(host.includes("rename: 'DSM"), false,
