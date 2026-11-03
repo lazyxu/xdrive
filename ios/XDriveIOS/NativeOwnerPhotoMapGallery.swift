@@ -339,6 +339,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @State private var task: Task<Void, Never>?
     @State private var selected: XDriveIOSOwnerMapChosenPlace?
     @State private var selectedCluster: XDriveIOSOwnerMapChosenCluster?
+    // A reverified one-photo exact Owner place opens native L3 directly.
+    @State private var singleViewer: XDriveIOSNativeMediaItem?
+    @State private var singlePage: XDriveIOSNativeMediaRange?
+    @State private var singleOwner: XDriveNativeOwnerRoot?
+    @State private var singleTask: Task<Void, Never>?
     @State private var focused = false
     @State private var showingMapHelp = false
     @State private var camera = MKCoordinateRegion(
@@ -348,7 +353,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     private var mapMarkersEnabled: Bool {
         guard phase == .active, !busy, login.owner != nil,
               selected == nil, selectedCluster == nil,
-               let verifiedBounds else { return false }
+              singleViewer == nil, singleTask == nil,
+              let verifiedBounds else { return false }
         return XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
             verifiedBounds, current: currentBounds())
     }
@@ -386,7 +392,10 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     }
                 },
                 onPlace: { item in
-                    guard phase == .active, !busy, login.owner != nil,
+                    guard phase == .active, !busy,
+                          selected == nil, selectedCluster == nil,
+                          singleViewer == nil, singleTask == nil,
+                          let expected = login.owner,
                           let overview, let verifiedBounds,
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                             verifiedBounds, current: currentBounds()),
@@ -399,11 +408,17 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     cameraSettleTask = nil
                     coverTask?.cancel()
                     coverTask = nil
-                    selected = XDriveIOSOwnerMapChosenPlace(id: item.id)
+                    if item.item_count == 1,
+                       XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(item) {
+                        openSinglePhoto(item, expected: expected, bounds: verifiedBounds)
+                    } else {
+                        selected = XDriveIOSOwnerMapChosenPlace(id: item.id)
+                    }
                 },
                 onPlaces: { facets in
                     guard phase == .active, !busy,
                           selected == nil, selectedCluster == nil,
+                          singleViewer == nil, singleTask == nil,
                           let expected = login.owner,
                           let overview, let verifiedBounds,
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
@@ -499,6 +514,18 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .fullScreenCover(item: $singleViewer, onDismiss: {
+            singlePage = nil
+            singleOwner = nil
+            if phase == .active { reload() } else { invalidate() }
+        }) { initial in
+            XDriveIOSNativeServerMediaPreview(
+                item: initial, login: login,
+                loadedItems: singlePage?.items ?? [],
+                loadedRange: singlePage,
+                openedOwner: singleOwner
+            )
+        }
         .onAppear {
             if let cameraReturn { camera = cameraReturn }
             if overview == nil && !busy && phase == .active { reload() }
@@ -506,15 +533,22 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         .onChange(of: login.owner) { _ in
             selected = nil
             selectedCluster = nil
+            singleViewer = nil
             invalidate()
             if phase == .active && login.owner != nil { reload() }
         }
         .onChange(of: phase) { new in
-            if new == .active { reload() }
-            else { selected = nil; selectedCluster = nil; invalidate() }
+            if new == .active {
+                if singleViewer == nil { reload() }
+            } else {
+                selected = nil
+                selectedCluster = nil
+                singleViewer = nil
+                invalidate()
+            }
         }
         .onDisappear {
-            if selected == nil && selectedCluster == nil {
+            if selected == nil && selectedCluster == nil && singleViewer == nil {
                 focused = false
                 onFocusChange?(false)
                 invalidate()
@@ -525,6 +559,74 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 coverTask = nil
                 task?.cancel()
                 task = nil
+            }
+        }
+    }
+
+    private func openSinglePhoto(
+        _ facet: XDriveIOSNativeOwnerMapFacet,
+        expected: XDriveNativeOwnerRoot,
+        bounds: XDriveIOSNativeOwnerMapBounds
+    ) {
+        guard phase == .active, !busy, singleTask == nil,
+              singleViewer == nil, facet.item_count == 1,
+              XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(facet)
+        else { return }
+        let ticket = epoch
+        busy = true
+        error = nil
+        singleTask = Task { @MainActor in
+            defer {
+                if epoch == ticket {
+                    singleTask = nil
+                    busy = false
+                }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard epoch == ticket, phase == .active,
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                      XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
+                          bounds, current: currentBounds()
+                      ) else { return }
+                let reader = XDriveIOSNativeMediaGalleryReader(
+                    owner: auth.owner, accessToken: auth.accessToken)
+                // MapKit annotations are not access credentials. A fresh
+                // Owner-scoped single-place Range must prove the L3 item.
+                let result = try await reader.page(offset: 0, placeID: facet.id)
+                try Task.checkCancellation()
+                guard epoch == ticket, phase == .active,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                      XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
+                          bounds, current: currentBounds()
+                      ),
+                      overview?.items.contains(where: {
+                          $0.id == facet.id && $0.item_count == 1
+                      }) == true,
+                      result.total_count == 1, result.items.count == 1,
+                      result.offset == 0, let item = result.items.first
+                else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                if item.supportsPreview {
+                    singlePage = result
+                    singleOwner = expected
+                    singleViewer = item
+                } else {
+                    selected = XDriveIOSOwnerMapChosenPlace(id: facet.id)
+                }
+            } catch is CancellationError {
+            } catch let failure as XDriveIOSNativeMediaReadFailure {
+                guard epoch == ticket else { return }
+                if case .response(let status) = failure,
+                   status == 401 || status == 403 {
+                    invalidate()
+                    error = "当前 Owner 权限已失效，请重新验证。"
+                    return
+                }
+                error = "该地点照片已变化或暂不可读取，请重试。"
+            } catch {
+                if epoch == ticket { self.error = "地点照片读取失败，请重试。" }
             }
         }
     }
@@ -542,6 +644,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         cameraSettleTask?.cancel()
         cameraSettleTask = nil
         guard phase == .active, selected == nil, selectedCluster == nil,
+              singleViewer == nil, singleTask == nil,
               login.owner != nil, currentBounds() != nil else { return }
         let ticket = epoch
         // One camera read after 500ms quiet, matching the two Baidu Hosts.
@@ -551,6 +654,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             catch { return }
             guard !Task.isCancelled, epoch == ticket,
                   phase == .active, selected == nil, selectedCluster == nil,
+                   singleViewer == nil, singleTask == nil,
                   login.owner != nil else { return }
             cameraSettleTask = nil
             reload()
@@ -632,6 +736,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         cameraSettleTask = nil
         coverTask?.cancel()
         coverTask = nil
+        singleTask?.cancel()
+        singleTask = nil
+        singleViewer = nil
+        singlePage = nil
+        singleOwner = nil
         task?.cancel()
         task = nil
         verifiedBounds = nil
@@ -644,6 +753,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
 
     private func invalidate() {
         epoch = UUID()
+        singleTask?.cancel()
+        singleTask = nil
+        singleViewer = nil
+        singlePage = nil
+        singleOwner = nil
         cameraSettleTask?.cancel()
         cameraSettleTask = nil
         cameraGesturePending = false

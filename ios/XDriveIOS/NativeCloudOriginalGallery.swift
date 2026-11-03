@@ -830,7 +830,11 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         if showingLiveMotion, let player {
                             XDriveIOSNativeAVPlayerStatusObserver(
                                 player: player,
-                                content: VideoPlayer(player: player)
+                                content: XDriveIOSNativePhotoVideoSurface(
+                                    player: player, showChrome: showChrome,
+                                    onChromeTap: { toggleChrome() }
+                                )
+                                    .id(viewed.id)
                                     .onAppear {
                                         if currentOwnerAuthorized { player.play() }
                                     }
@@ -936,7 +940,11 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 } else if let player {
                     XDriveIOSNativeAVPlayerStatusObserver(
                         player: player,
-                        content: VideoPlayer(player: player)
+                        content: XDriveIOSNativePhotoVideoSurface(
+                                    player: player, showChrome: showChrome,
+                                    onChromeTap: { toggleChrome() }
+                                )
+                                    .id(viewed.id)
                             .onAppear {
                                 if currentOwnerAuthorized { player.play() }
                             }

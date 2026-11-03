@@ -239,3 +239,23 @@ test('cluster album pages all real places with one verified 48-item Range and Vi
   assert.match(clusterAlbum, /reader\.thumbnail\(item\)/)
   assert.doesNotMatch(clusterAlbum, /isNetworkAccessAllowed = true|POST|UploadSession|map-region:q:|URLSession\(/)
 })
+
+
+test('single exact Owner map place opens L3 after fresh Owner-scoped Range, not a one-item location sheet', () => {
+  assert.match(map, /@State private var singleViewer: XDriveIOSNativeMediaItem\?/)
+  assert.match(map, /@State private var singlePage: XDriveIOSNativeMediaRange\?/)
+  assert.match(map, /if item\.item_count == 1,[\s\S]*?openSinglePhoto\(item, expected: expected, bounds: verifiedBounds\)/)
+  assert.match(map, /private func openSinglePhoto\(/)
+  assert.match(map, /login\.verifiedAuthorization\(\)/)
+  assert.match(map, /reader\.page\(offset: 0, placeID: facet\.id\)/)
+  assert.match(map, /result\.total_count == 1, result\.items\.count == 1/)
+  assert.match(map, /if item\.supportsPreview \{[\s\S]*?singlePage = result[\s\S]*?singleOwner = expected[\s\S]*?singleViewer = item/)
+  assert.match(map, /\.fullScreenCover\(item: \$singleViewer, onDismiss:/)
+  assert.match(map, /XDriveIOSNativeServerMediaPreview\([\s\S]*?loadedItems: singlePage\?\.items \?\? \[\],[\s\S]*?loadedRange: singlePage,[\s\S]*?openedOwner: singleOwner/)
+  assert.match(map, /singleTask\?\.cancel\(\)[\s\S]*?singleViewer = nil/)
+  assert.match(map, /if selected == nil && selectedCluster == nil && singleViewer == nil/)
+  assert.match(map, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/)
+  assert.match(map, /if case \.response\(let status\) = failure,[\s\S]*?status == 401 \|\| status == 403/)
+  assert.match(map, /selected = XDriveIOSOwnerMapChosenPlace\(id: facet\.id\)/)
+  assert.doesNotMatch(map, /UploadSession|isNetworkAccessAllowed = true|UserDefaults\.set\(single/)
+})

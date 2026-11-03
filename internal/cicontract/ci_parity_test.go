@@ -602,7 +602,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobNeeds(t, gitlab, "test-windows-rollback-artifact", []string{"package-windows-client"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
-	assertGitHubJobNeeds(t, github, "publish-master", []string{"build-client-core", "build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
+	assertGitHubJobNeeds(t, github, "publish-master", []string{"final-gate", "build-client-core", "build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
 	assertGitHubJobNeeds(t, github, "publish-stable", []string{"final-gate", "photo-ocr-master-smoke"})
 	assertGitLabSharedResourceGroup(t, gitlab, []string{
 		"test-windows-rollback-artifact",

@@ -85,6 +85,14 @@ test('authenticated DSM Host feeds the exact canonical Gallery JSX using a real 
       if (name === '../../ui/shared/src/mui/SynologyOwnerGallerySource') return {
         createXDriveSynologyOwnerGallerySource: compiledGallery(),
       }
+      if (name === '../../ui/shared/src/synology-owner-diagnostics') {
+        // Exercise the real scoped projection, not an inert mock Host method.
+        const path = 'ui/shared/src/synology-owner-diagnostics.ts'
+        const source = fs.readFileSync(require('node:path').join(root, path), 'utf8')
+        const mod = { exports: {} }
+        new Function('module', 'exports', compile(source, path))(mod, mod.exports)
+        return mod.exports
+      }
       throw Error('unexpected Host module ' + name)
     },
     { location: { href: 'https://nas.example/webman/3rdparty/xdrivenas/index.html' } },
