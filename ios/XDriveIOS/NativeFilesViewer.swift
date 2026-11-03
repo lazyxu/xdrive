@@ -110,6 +110,7 @@ struct XDriveIOSNativeFilesViewer: View {
     @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
     @State private var exportFallbackEligible = false
     @State private var showImageChrome = true
+    @State private var showVideoChrome = true
 
     private var viewed: XDriveIOSNativeFilesNode { active ?? initial }
 
@@ -121,10 +122,27 @@ struct XDriveIOSNativeFilesViewer: View {
         }
     }
 
+    private var isNativeVideo: Bool {
+        guard let display else { return false }
+        if case .video = display { return true }
+        return false
+    }
+
+    private var chromeVisible: Bool {
+        (!isStillImage || showImageChrome) &&
+            (!isNativeVideo || showVideoChrome)
+    }
+
     private func toggleImageChrome() {
         guard authorized, isStillImage else { return }
         withAnimation(.easeInOut(duration: 0.18)) { showImageChrome.toggle() }
     }
+
+    private func toggleVideoChrome() {
+        guard authorized, isNativeVideo else { return }
+        withAnimation(.easeInOut(duration: 0.18)) { showVideoChrome.toggle() }
+    }
+
     private var authorized: Bool {
         phase == .active &&
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner)
@@ -196,8 +214,14 @@ struct XDriveIOSNativeFilesViewer: View {
                     case .video:
                         if let player {
                             observingPlayer(
-                                VideoPlayer(player: player)
-                                    .onAppear { if authorized { player.play() } },
+                                XDriveIOSNativePhotoVideoSurface(
+                                    player: player, showChrome: showVideoChrome,
+                                    onChromeTap: { toggleVideoChrome() },
+                                    onNavigateSwipe: { move($0) }
+                                )
+                                .id(viewed.id)
+                                .onAppear { if authorized { player.play() } }
+                                .onDisappear { player.pause() },
                                 player: player
                             )
                         }
@@ -255,7 +279,7 @@ struct XDriveIOSNativeFilesViewer: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(isStillImage ? Color.black : Color(uiColor: .systemBackground))
+            .background(isStillImage || isNativeVideo ? Color.black : Color(uiColor: .systemBackground))
             .navigationTitle(viewed.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -295,10 +319,10 @@ struct XDriveIOSNativeFilesViewer: View {
                     .disabled(neighbor(1) == nil)
                 }
             }
-            .toolbar(showImageChrome || !isStillImage ? .visible : .hidden,
+            .toolbar(chromeVisible ? .visible : .hidden,
                      for: .navigationBar, .bottomBar)
         }
-        .statusBarHidden(isStillImage && !showImageChrome)
+        .statusBarHidden(!chromeVisible)
         .task(id: attempt) { await openCurrent() }
         // AVPlayer may fail AFTER a valid signed ticket and initial render.
         // Only this modal's current item may produce terminal retry feedback.
@@ -502,6 +526,7 @@ struct XDriveIOSNativeFilesViewer: View {
         // A failed load, Owner change, scene retirement, dismissal or next
         // image must always restore visible escape and retry controls.
         showImageChrome = true
+        showVideoChrome = true
         // Cancel the old item's signed download and delete any staged bytes
         // before a swipe, retry, Owner/scene exit or Viewer dismissal.
         exporter.invalidate()
