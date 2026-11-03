@@ -218,6 +218,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
       - name: Verify five-package archive, image identity, delivery and signed release
         shell: bash
         run: |
@@ -226,6 +227,19 @@ jobs:
           python3 -m unittest discover -s scripts/offline -p 'test_*.py'
           python3 scripts/test-xdrive-share-update.py -q
           python3 scripts/test-release-attestation-contract.py
+      # A scoped PR can edit its own regression tests. Run the already trusted
+      # master tests on the candidate publisher too, so changing tests cannot
+      # silently weaken the existing security baseline.
+      - name: Re-run trusted base Share publisher regression suite
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          git show "$PR_BASE_SHA:scripts/ci/test-mirror-server-to-share.py" > scripts/ci/test-mirror-server-to-share.py
+          python3 scripts/ci/test-mirror-server-to-share.py -q
 
   desktop-tests:
     needs: pr-scope
