@@ -246,6 +246,8 @@ export interface CreateExternalSourceInput {
   schedule_expression?: string
   schedule_timezone?: string
   target_node_id: number
+  /** A new Server-owned, Source-exclusive cloud directory. */
+  auto_target?: boolean
   ignore_rules?: string
 }
 
