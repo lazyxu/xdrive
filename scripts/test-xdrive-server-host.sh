@@ -342,6 +342,46 @@ test ! -e "$TMP/state/curl-url"
 flock -u 8
 exec 8>&-
 
+# A local offline import has an opaque fixed Host ID, not a user-provided
+# filesystem path. The same CLI branch is used by the admin Host Control.
+offline_id=0123456789abcdef0123456789abcdef
+offline_dir="$TMP/home/state/update-imports/$offline_id"
+mkdir -p "$offline_dir"
+cat > "$offline_dir/xdrive-offline.py" <<'PY'
+import os, sys
+with open(os.environ["TEST_STATE"] + "/offline-args", "a", encoding="utf-8") as log:
+    log.write(" ".join(sys.argv[1:]) + "\n")
+PY
+printf '{"schema":2,"channel":"master","platform":"linux/amd64"}\n' > "$offline_dir/manifest.json"
+trusted_manifest="$(sha256sum "$offline_dir/manifest.json" | cut -d' ' -f1)"
+trusted_installer="$(sha256sum "$offline_dir/xdrive-offline.py" | cut -d' ' -f1)"
+rm -f "$TMP/state/offline-args" "$TMP/state/curl-url"
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+  bash "$HOST" update --source offline --channel master --offline-id "$offline_id" \
+    --trusted-manifest-sha256 "$trusted_manifest" --trusted-installer-sha256 "$trusted_installer" \
+    --backup-file-data >"$TMP/offline-import.out" 2>"$TMP/offline-import.err"
+grep -q '^verify --dir ' "$TMP/state/offline-args"
+grep -q -- '--trusted-manifest-sha256' "$TMP/state/offline-args"
+grep -q -- '--backup-file-data$' "$TMP/state/offline-args"
+test ! -e "$TMP/state/curl-url"
+for rejected in bad-id bad-manifest missing-trust; do
+  rm -f "$TMP/state/offline-args"
+  set +e
+  case "$rejected" in
+    bad-id) TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+      bash "$HOST" update --source offline --channel master --offline-id ../../bad \
+      --trusted-manifest-sha256 "$trusted_manifest" --trusted-installer-sha256 "$trusted_installer" >"$TMP/offline-$rejected.out" 2>"$TMP/offline-$rejected.err"; rc=$? ;;
+    bad-manifest) TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+      bash "$HOST" update --source offline --channel master --offline-id "$offline_id" \
+      --trusted-manifest-sha256 "${trusted_manifest//a/b}" --trusted-installer-sha256 "$trusted_installer" >"$TMP/offline-$rejected.out" 2>"$TMP/offline-$rejected.err"; rc=$? ;;
+    missing-trust) TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+      bash "$HOST" update --source offline --channel master --offline-id "$offline_id" >"$TMP/offline-$rejected.out" 2>"$TMP/offline-$rejected.err"; rc=$? ;;
+  esac
+  set -e
+  [[ "$rc" -ne 0 ]]
+  test ! -e "$TMP/state/offline-args"
+done
+
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
