@@ -5,15 +5,18 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -23,10 +26,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/api"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/localbackupipc"
 	"github.com/lazyxu/xdrive/internal/localpush"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/secretstore"
 	"github.com/lazyxu/xdrive/internal/storage"
+	"github.com/lazyxu/xdrive/internal/synologyui"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -238,21 +243,135 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		lastChunk, lastFinalize, lastOperation, lastVersion =
 			chunks.Load(), finalizes.Load(), ops, versions
 	}
-	// Each invocation uses the actual Agent controller/worker. Replacing
-	// the controller is equivalent to losing its process-local task state;
-	// durable native Plans/receipts/checkpoints and the owning Server persist.
-	run := func() localBackupCommonBatchSummary {
+	// The DSM principal and the original Agent retain different authorities.
+	// Run each generation through the actual same-origin CGI -> protected
+	// loopback Agent IPC -> original Source worker -> Server SQL/CAS.
+	if err := synologyui.Authorize(configDir, "dsmadmin"); err != nil {
+		t.Fatal(err)
+	}
+	selector := strconv.FormatUint(source.ID, 10)
+	origin := "https://nas.example:5001"
+	run := func() localbackupipc.Summary {
 		t.Helper()
 		controller := &agentController{ctx: context.Background()}
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
-		result, err := controller.CloudRunLocalBoundBackupCommonBatch(ctx, source.ID)
-		if err != nil || result.SourceID != source.ID || result.Revision != source.Revision ||
-			result.State != "partial" || result.Running || result.UncertainFiles != 0 ||
-			result.BackupComplete || result.RetirementSafe || result.CurrentCASVerified {
-			t.Fatalf("owning original Agent did not verify its local batch: %+v %v", result, err)
+		secret := make([]byte, 32)
+		if _, err := rand.Read(secret); err != nil {
+			t.Fatal(err)
 		}
-		return result
+		bearer := hex.EncodeToString(secret)
+		ipc := httptest.NewServer(newDesktopIPCHandler(controller, bearer, func() {}, true))
+		defer ipc.Close()
+		record, err := json.Marshal(desktopIPCDiscovery{
+			Version: desktopIPCAPIVersion, BaseURL: ipc.URL, Token: bearer, PID: os.Getpid(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(configDir, desktopIPCDiscoveryName), record, 0600); err != nil {
+			t.Fatal(err)
+		}
+		principal := "dsmadmin"
+		bridge := synologyui.CGIHandler(&synologyui.Gateway{
+			ConfigDir: configDir, HTTPS: true,
+			Authenticate: func(context.Context) (string, error) { return principal, nil },
+			Connect: func(ctx context.Context) (synologyui.Agent, error) {
+				return localbackupipc.Connect(ctx, configDir)
+			},
+		})
+		send := func(method, query, csrf string) *httptest.ResponseRecorder {
+			request := httptest.NewRequest(method, origin+synologyui.DSMCGIPath+query, nil)
+			request.Header.Set("Cookie", "id=dsm-session")
+			if method == http.MethodPost {
+				request.Header.Set("Origin", origin)
+			}
+			if csrf != "" {
+				request.Header.Set("X-CSRF-Token", csrf)
+			}
+			reply := httptest.NewRecorder()
+			bridge.ServeHTTP(reply, request)
+			return reply
+		}
+		boot := send(http.MethodGet, "?op=bootstrap", "")
+		var session map[string]string
+		if boot.Code != http.StatusOK ||
+			json.Unmarshal(boot.Body.Bytes(), &session) != nil ||
+			len(session["csrf_token"]) != 64 ||
+			strings.Contains(boot.Body.String(), bearer) {
+			t.Fatalf("DSM session bootstrap failed: %d", boot.Code)
+		}
+		csrf := session["csrf_token"]
+		beforeChunks, beforeFinalizes := chunks.Load(), finalizes.Load()
+		if send(http.MethodPost, "?op=run&source_id="+selector, "").Code != http.StatusForbidden {
+			t.Fatal("missing DSM CSRF admitted native CAS backup")
+		}
+		principal = "other-dsm-user"
+		if send(http.MethodPost, "?op=run&source_id="+selector, csrf).Code != http.StatusForbidden {
+			t.Fatal("foreign DSM principal admitted native CAS backup")
+		}
+		principal = "dsmadmin"
+		if send(http.MethodPost, "?op=run&source_id="+strconv.FormatUint(source.ID+1, 10), csrf).Code != http.StatusForbidden {
+			t.Fatal("unbound local Source admitted by DSM")
+		}
+		if chunks.Load() != beforeChunks || finalizes.Load() != beforeFinalizes {
+			t.Fatal("denied DSM operation mutated original CAS")
+		}
+		sources := send(http.MethodGet, "?op=sources", "")
+		if sources.Code != http.StatusOK ||
+			!strings.Contains(sources.Body.String(), "\"source_id\":"+selector) ||
+			strings.Contains(sources.Body.String(), originalDir) ||
+			strings.Contains(sources.Body.String(), bearer) {
+			t.Fatalf("DSM current Agent Source list unavailable or leaked: HTTP %d", sources.Code)
+		}
+		ack := send(http.MethodPost, "?op=run&source_id="+selector, csrf)
+		var accepted localbackupipc.Summary
+		if ack.Code != http.StatusOK ||
+			json.Unmarshal(ack.Body.Bytes(), &accepted) != nil ||
+			!localbackupipc.ValidateSummary(accepted, source.ID) {
+			t.Fatalf("real DSM CGI could not start native Source batch: %d %s", ack.Code, ack.Body.String())
+		}
+		deadline := time.Now().Add(75 * time.Second)
+		for time.Now().Before(deadline) {
+			reply := send(http.MethodGet, "?op=status&source_id="+selector, "")
+			var result localbackupipc.Summary
+			if reply.Code != http.StatusOK ||
+				json.Unmarshal(reply.Body.Bytes(), &result) != nil ||
+				!localbackupipc.ValidateSummary(result, source.ID) {
+				t.Fatalf("DSM cannot inspect original Agent progress: %d %s", reply.Code, reply.Body.String())
+			}
+			if result.Running {
+				time.Sleep(25 * time.Millisecond)
+				continue
+			}
+			if result.Revision != source.Revision || result.State != "partial" ||
+				result.UncertainFiles != 0 || result.BackupComplete ||
+				result.RetirementSafe || result.CurrentCASVerified {
+				t.Fatalf("DSM falsely completed or lost Source batch: %+v", result)
+			}
+			historyReply := send(http.MethodGet, "?op=history&source_id="+selector, "")
+			var history localbackupipc.HistoryPage
+			if historyReply.Code != http.StatusOK ||
+				json.Unmarshal(historyReply.Body.Bytes(), &history) != nil ||
+				!localbackupipc.ValidateHistory(history, source.ID) {
+				t.Fatalf("DSM original Agent history unavailable: %d %s", historyReply.Code, historyReply.Body.String())
+			}
+			matched := false
+			for _, item := range history.Items {
+				if item.Revision == result.Revision && item.State == result.State &&
+					item.ConfirmedFiles == result.ConfirmedFiles &&
+					item.SkippedFiles == result.SkippedFiles &&
+					item.ConfirmedBytes == result.ConfirmedBytes {
+					matched = true
+					break
+				}
+			}
+			if !matched || strings.Contains(historyReply.Body.String(), originalDir) ||
+				strings.Contains(historyReply.Body.String(), bearer) {
+				t.Fatal("DSM did not return matching redacted Source receipt")
+			}
+			return result
+		}
+		t.Fatal("DSM-authenticated Agent Source batch timed out")
+		return localbackupipc.Summary{}
 	}
 
 	first := run()
