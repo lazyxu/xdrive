@@ -1619,7 +1619,7 @@ function FileManager({
   // A Notes page must be bound to the current /me-verified Owner. A logout,
   // server switch or account switch discards this port and all its drafts.
   const notesPort = useMemo(() => mobileOwnerScope
-    ? createXDriveWebNotesPort(api, `${mobileOwnerScope}:${authEpochRef.current}`)
+    ? createXDriveWebNotesPort(api, mobileOwnerScope)
     : undefined, [api, mobileOwnerScope])
   const shareCenterPort = useMemo(() => ({
     listPage: (cursor: number, limit: number, signal?: AbortSignal) => api.ownerShares(cursor, limit, signal),
@@ -2427,6 +2427,7 @@ function FileManager({
   // Shared with Desktop/DSM: browser-only settings stay in the account menu.
   // Do not advertise utility routes before the Browser Host implements them.
   const webSidebarSections = xDriveWorkspaceHostSections({
+    showNotes: Boolean(notesPort),
     adminRoleVerified: profile?.role === 'admin',
     includeUtilityRoutes: false,
     showShareCenter: true,
