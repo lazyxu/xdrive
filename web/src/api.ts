@@ -149,6 +149,9 @@ import {
 import type { XDriveWebActiveDownloadSink } from './downloadSink'
 import { xDriveTransferAbortError, xDriveUploadBytes, xDriveWaitForTransferPoll } from './transferTransport'
 import { xDriveFetchPwaSafeRead } from './pwaSafeReadRetry'
+import type {
+  XDriveNoteDetail, XDriveNoteSource, XDriveNoteSummary, XDriveNoteVersion,
+} from '../../ui/shared/src/mui/NotesPage'
 
 export type {
   XDriveUploadConflictPolicy,
@@ -877,6 +880,210 @@ export class XDriveApi {
     }
     if (response.status === 204) return undefined as T
     return response.json() as Promise<T>
+  }
+
+  notesInitialize() {
+    return this.request<{
+      system_node_id: number
+      notes_node_id: number
+      ios_backup_node_id: number
+      my_notes_node_id: number
+    }>('/api/v1/notes/namespace', { method: 'POST', body: '{}', cache: 'no-store' })
+  }
+
+  notesList(source: XDriveNoteSource, query = '', offset = 0, signal?: AbortSignal) {
+    const params = new URLSearchParams({ source, q: query, offset: String(offset) })
+    return this.request<{ items: XDriveNoteSummary[]; next_offset: number }>(
+      '/api/v1/notes?' + params.toString(), { cache: 'no-store', signal },
+    )
+  }
+
+  notesRead(id: string, signal?: AbortSignal) {
+    return this.request<XDriveNoteDetail>(
+      '/api/v1/notes/' + encodeURIComponent(id), { cache: 'no-store', signal },
+    )
+  }
+
+  notesCreate(input: { title: string; markdown: string }) {
+    return this.request<XDriveNoteSummary>('/api/v1/notes', {
+      method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+    })
+  }
+
+  notesImportIOS(input: { title: string; markdown: string; external_id?: string },
+                 signal?: AbortSignal) {
+    return this.request<XDriveNoteSummary>('/api/v1/notes/ios/import', {
+      method: 'POST', body: JSON.stringify({ ...input, external_id: input.external_id ?? '' }),
+      cache: 'no-store', signal,
+    })
+  }
+
+  /** A dedicated Owner-only import endpoint; regular Files and Notes update
+   * routes must never accept mutations to a read-only Apple Notes snapshot. */
+  notesImportIOSImage(noteID: string, image: File, signal?: AbortSignal) {
+    if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(noteID) ||
+        image.size <= 0 || image.size > 20 * 1024 * 1024 ||
+        !/\.(?:png|jpe?g|gif|webp|heic)$/i.test(image.name)) {
+      throw new Error('导入的图片或备忘录标识无效；单张图片最多 20 MiB。')
+    }
+    const form = new FormData()
+    form.append('image', image)
+    return this.request<{
+      node_id: number
+      filename: string
+      relative_path: string
+      content_type: string
+      bytes: number
+      sha256: string
+    }>('/api/v1/notes/ios/images/import/' + encodeURIComponent(noteID), {
+      method: 'POST', body: form, cache: 'no-store', signal,
+    })
+  }
+
+  notesSave(id: string, input: {
+    title: string
+    markdown: string
+    expected_revision: number
+  }) {
+    return this.request<XDriveNoteSummary>('/api/v1/notes/' + encodeURIComponent(id), {
+      method: 'PUT', body: JSON.stringify(input), cache: 'no-store',
+    })
+  }
+
+  notesDelete(id: string, expectedRevision: number) {
+    return this.request<void>('/api/v1/notes/' + encodeURIComponent(id), {
+      method: 'DELETE', headers: { 'If-Match': String(expectedRevision) },
+      cache: 'no-store',
+    })
+  }
+
+  notesVersions(id: string, signal?: AbortSignal) {
+    return this.request<{ items: XDriveNoteVersion[]; node_id: number }>(
+      '/api/v1/notes/' + encodeURIComponent(id) + '/versions',
+      { cache: 'no-store', signal },
+    )
+  }
+
+  notesUploadImage(noteID: string, image: File) {
+    if (!/^[a-f0-9-]{36}$/i.test(noteID) ||
+        image.size <= 0 || image.size > 20 * 1024 * 1024) {
+      throw new Error('图片或备忘录标识无效；单张图片最多 20 MiB。')
+    }
+    const form = new FormData()
+    form.append('image', image)
+    return this.request<{
+      node_id: number
+      filename: string
+      relative_path: string
+      content_type: string
+      bytes: number
+      sha256: string
+    }>('/api/v1/notes/mine/' + encodeURIComponent(noteID) + '/images', {
+      method: 'POST', body: form, cache: 'no-store',
+    })
+  }
+
+  /** Read a single same-Owner note image without allowing arbitrary URLs. */
+  async notesImageBlob(noteID: string, relativePath: string, signal?: AbortSignal) {
+    const uuid = '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
+    const pattern = new RegExp('^_assets/(' + uuid + ')/(' + uuid +
+      '\\.(?:png|jpg|gif|webp|heic))$', 'i')
+    const match = relativePath.match(pattern)
+    if (!match || match[1].toLowerCase() !== noteID.toLowerCase()) {
+      throw new Error('笔记图片的归属或路径无效')
+    }
+    await this.ensureFresh(signal)
+    signal?.throwIfAborted()
+    const path = '/api/v1/notes/' + encodeURIComponent(noteID) +
+      '/images/' + encodeURIComponent(match[2])
+    const send = () => fetch(API_BASE + path, {
+      method: 'GET', cache: 'no-store', redirect: 'error', credentials: 'same-origin',
+      headers: this.session.accessToken
+        ? { Authorization: 'Bearer ' + this.session.accessToken } : {},
+      signal,
+    })
+    let response = await send()
+    if (response.status === 401 && (this.session.refreshToken || this.session.browserSession)) {
+      await this.refresh(true, signal)
+      response = await send()
+    }
+    if (!response.ok) throw new ApiError(response.status, '笔记图片读取失败')
+    const mime = response.headers.get('Content-Type')?.split(';', 1)[0].toLowerCase()
+    if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/heic'].includes(mime ?? '')) {
+      throw new Error('笔记图片的媒体格式无效')
+    }
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('笔记图片无法读取')
+    const pieces: Uint8Array[] = []
+    let size = 0
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        size += value.byteLength
+        if (size > 20 * 1024 * 1024) {
+          await reader.cancel()
+          throw new Error('图片超过 20 MiB')
+        }
+        pieces.push(value)
+      }
+    } finally { reader.releaseLock() }
+    signal?.throwIfAborted()
+    const bytes = new Uint8Array(size)
+    let offset = 0
+    for (const piece of pieces) {
+      bytes.set(piece, offset)
+      offset += piece.byteLength
+    }
+    return new Blob([bytes.buffer], { type: mime })
+  }
+
+  /** A historical Markdown read uses the already protected Owner FileVersion
+   * route. Limit decoded bytes, deny redirects and preserve 401 refresh. */
+  async notesReadVersion(nodeID: number, versionID: number, signal?: AbortSignal) {
+    if (!Number.isSafeInteger(nodeID) || nodeID <= 0 ||
+        !Number.isSafeInteger(versionID) || versionID <= 0) {
+      throw new Error('非法备忘录版本标识。')
+    }
+    await this.ensureFresh(signal)
+    const path = '/api/v1/files/' + nodeID + '/versions/' + versionID + '/content'
+    const send = () => fetch(API_BASE + path, {
+      cache: 'no-store', redirect: 'error', credentials: 'same-origin',
+      headers: this.session.accessToken
+        ? { Authorization: 'Bearer ' + this.session.accessToken } : {},
+      signal,
+    })
+    let response = await send()
+    if (response.status === 401 && (this.session.refreshToken || this.session.browserSession)) {
+      await this.refresh(true, signal)
+      response = await send()
+    }
+    if (!response.ok) throw new ApiError(response.status, '备忘录历史版本读取失败')
+    const declared = Number(response.headers.get('Content-Length'))
+    if (Number.isFinite(declared) && declared > 1_048_576) {
+      throw new Error('备忘录历史版本超过 1 MiB。')
+    }
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('备忘录历史版本数据不可读。')
+    const pieces: Uint8Array[] = []
+    let total = 0
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        total += value.byteLength
+        if (total > 1_048_576) {
+          await reader.cancel()
+          throw new Error('备忘录历史版本超过 1 MiB。')
+        }
+        pieces.push(value)
+      }
+    } finally { reader.releaseLock() }
+    signal?.throwIfAborted()
+    const bytes = new Uint8Array(total)
+    let offset = 0
+    for (const piece of pieces) { bytes.set(piece, offset); offset += piece.byteLength }
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   }
 
   /** Authenticated Owner-only Viewer defaults. Never accept an Owner ID. */
@@ -2851,7 +3058,6 @@ export class XDriveApi {
     await this.ensureFresh(signal)
     const get = async (format: 'webp' | 'jpeg') => {
       xDriveAssertMediaReadActive(signal)
-      // Server resolves the authenticated Owner's effective Viewer preset.
       const query = new URLSearchParams({ format, preset: 'account' })
       if (revision && Number.isSafeInteger(revision)) query.set('revision', String(revision))
       const path = '/api/v1/media/items/' + nodeID + '/viewer-preview?' + query.toString()

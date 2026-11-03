@@ -110,6 +110,7 @@ import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBrid
 import { xDriveTakeMapScopeHandoffFromURL, xDriveAbandonMapScopeRequired, xDriveRestoreMapReferrerAfterScrub } from './mapScopeHandoff'
 import type { XDriveMapScopeHandoffState } from './mapScopeHandoff'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
+import { createXDriveWebNotesPort } from './notesDataPort'
 import { createXDriveBrowserWorkspaceHost, xDriveBrowserFilesRouteHost } from './browserWorkspaceHost'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import { xDriveBrowserStorageRead, xDriveBrowserStorageWrite, xDriveBrowserStorageRemove } from './browserSafeStorage'
@@ -321,7 +322,6 @@ function WebAccountMenu({
         subtitle="外观、Viewer 画质与服务端信息"
         appearance={appearance}
         onAppearanceChange={onAppearanceChange}
-        buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
       >
         {viewerQualityApi ? (
           <ViewerQualitySettingsSection api={viewerQualityApi}
@@ -1624,6 +1624,11 @@ function FileManager({
   const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
   const shareDialogAdapter = useMemo(() => createWebShareDialogAdapter(api), [api])
+  // A Notes page must be bound to the current /me-verified Owner. A logout,
+  // server switch or account switch discards this port and all its drafts.
+  const notesPort = useMemo(() => mobileOwnerScope
+    ? createXDriveWebNotesPort(api, mobileOwnerScope)
+    : undefined, [api, mobileOwnerScope])
   const shareCenterPort = useMemo(() => ({
     listPage: (cursor: number, limit: number, signal?: AbortSignal) => api.ownerShares(cursor, limit, signal),
     getShareLink: async (id: number) => {
@@ -2433,6 +2438,8 @@ function FileManager({
     adminRoleVerified: profile?.role === 'admin',
     includeUtilityRoutes: false,
     showShareCenter: true,
+    // The current authenticated Owner Notes port, not a UI role, unlocks this item.
+    showNotes: Boolean(notesPort),
   })
 
   const chooseUploadForResume = (id: string) => {
@@ -2692,12 +2699,15 @@ function FileManager({
           { replace: options?.replace },
         ),
       } : undefined,
-      adminMaintenance: serverAdminVerified ? {
+      adminUpdate: serverAdminVerified ? {
         updatePort: maintenanceUpdatePort,
-        backupPort: maintenanceBackupPort,
-        onOpenStorage: () => setAppView('admin-storage'),
+        buildInfo: [{ title: 'Server 构建信息', info: serverBuild }],
         unavailableLabel: 'Web/API',
         initialChannel: serverBuild?.channel === 'master' ? 'master' : 'stable',
+      } : undefined,
+      adminMaintenance: serverAdminVerified ? {
+        backupPort: maintenanceBackupPort,
+        onOpenStorage: () => setAppView('admin-storage'),
       } : undefined,
       adminStorage: serverAdminVerified ? {
         api,
@@ -2726,6 +2736,7 @@ function FileManager({
       cloudStorage: cloudStorageSource,
       localStorage: localStorageSource,
       shareCenter: shareCenterPort,
+      notes: notesPort,
       deviceBackup: { source: deviceBackupSource, initialSourceID: deviceBackupSourceID },
       remotePull: {
         adapter: sourceManagerAdapter,
@@ -2741,7 +2752,7 @@ function FileManager({
         },
       },
     }),
-    [cloudStorageSource, localStorageSource, shareCenterPort, deviceBackupSource,
+    [cloudStorageSource, localStorageSource, shareCenterPort, notesPort, deviceBackupSource,
       deviceBackupSourceID, sourceManagerAdapter, remotePullSourceID,
       isRemotePullRoute, current?.id, current?.name, remotePullTargetPath,
       handleError, launchWebApp, serverAdminVerified, taskCenter.pageProps,
@@ -3254,14 +3265,14 @@ function FileManager({
           ) : (
             <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
           )
-        ) : appView === 'shares' || appView === 'transfers' || appView === 'global-tasks' ? (
+        ) : appView === 'notes' || appView === 'shares' || appView === 'transfers' || appView === 'global-tasks' ? (
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : appView === 'local-storage' || appView === 'cloud-storage' ? (
           // First two real Browser Host-backed routes in the shared page
           // outlet; never admit Browser Files/admin/native DSM capabilities.
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : (appView === 'admin-users' || appView === 'admin-audit' ||
-          appView === 'admin-services' || appView === 'admin-maintenance' ||
+          appView === 'admin-services' || appView === 'admin-update' || appView === 'admin-maintenance' ||
           appView === 'admin-storage') && serverAdminVerified ? (
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : (
