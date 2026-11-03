@@ -6,7 +6,6 @@ import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
-import NotesRoundedIcon from '@mui/icons-material/NotesRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined'
 import type { XDriveSidebarBadgeValue } from './SidebarNav'
@@ -50,7 +49,6 @@ export function xDriveCoreWorkspaceDestinations({
 } = {}): (XDriveSidebarDestinationModel & { key: XDriveCoreWorkspaceKey })[] {
   return [
     { key: 'files', label: xDriveWorkspaceRouteTitle('files'), icon: <CloudOutlinedIcon fontSize="small" /> },
-    { key: 'notes', label: xDriveWorkspaceRouteTitle('notes'), icon: <NotesRoundedIcon fontSize="small" /> },
     { key: 'gallery', label: xDriveWorkspaceRouteTitle('gallery'), icon: <PhotoLibraryRoundedIcon fontSize="small" /> },
     { key: 'device-backup', label: xDriveWorkspaceRouteTitle('device-backup'), icon: <BackupRoundedIcon fontSize="small" /> },
     { key: 'remote-pull', label: xDriveWorkspaceRouteTitle('remote-pull'), icon: <CloudDownloadRoundedIcon fontSize="small" /> },
