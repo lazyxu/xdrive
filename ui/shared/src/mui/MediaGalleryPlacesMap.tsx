@@ -153,6 +153,9 @@ export function XDriveMediaGalleryPlacesMap({
     cancelStaleHandoff()
   }, [currentHandoffOwnerScope, currentHandoffPhotoScopeKey, cancelStaleHandoff])
   const desktopOnly = Boolean(onOpenSecureDesktopMap)
+  // The Owner GPS overview has no Album/favorite/date/type/sort filter port.
+  // Never show its full-library pins as if they matched a restricted Gallery.
+  const gpsScopeSupported = xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope)
   const embedIdentity=JSON.stringify([
     diagnosticScope??'',desktopEmbeddedPlacesURL??'',xDriveBaiduMapPhotoScopeKey(mapPhotoScope),
   ])
@@ -763,7 +766,7 @@ export function XDriveMediaGalleryPlacesMap({
             <Typography role="status" variant="caption"
               data-xdrive-desktop-places-restricted-scope sx={{display:'block',mb:1}}>
               当前地图包含受限相册、收藏或日期筛选；保留当前范围，不会静默切换到全部照片。
-              继续使用 GPS 备用地图。
+              GPS 备用地图无法应用当前筛选，因此不会展示不匹配的全图库位置。
             </Typography>
           ) : null}
           {desktopEmbedError ? (
@@ -779,7 +782,13 @@ export function XDriveMediaGalleryPlacesMap({
               返回 Web 共用地点地图
             </Button>
           ) : null}
-          {listPlacesMapOverview && onOpenPlace ? (
+          {!gpsScopeSupported ? (
+            <Typography role="status" variant="body2" color="text.secondary"
+              data-xdrive-owner-gps-filter-incompatible sx={{mb:1}}>
+              GPS 位置概览无法应用当前相册或照片筛选，已隐藏全图库的位置和数量。
+              当前筛选保持不变；可返回图库查看匹配的照片。
+            </Typography>
+          ) : listPlacesMapOverview && onOpenPlace ? (
             <XDriveMediaGalleryOwnerGPSOverview
               scope={diagnosticScope ?? ''} listPage={listPlacesMapOverview}
               loadCover={loadPlacesMapCover}
@@ -794,11 +803,19 @@ export function XDriveMediaGalleryPlacesMap({
             在独立 HTTPS 安全窗口打开百度动态地图
           </Button>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            主窗口显示可拖动、缩放和点击照片的 GPS 位置地图（无道路底图）。
+            {gpsScopeSupported
+              ? '主窗口显示可拖动、缩放和点击照片的 GPS 位置地图（无道路底图）。'
+              : '当前筛选下不展示无过滤能力的 GPS 概览；原相册范围仍保留。'}
             百度动态地图仍在独立 HTTPS 窗口运行，不在 Electron file 页面加载第三方脚本。
           </Typography>
         </Box>
-      ) : !getBaiduJSAPI4Status && listPlacesMapOverview && onOpenPlace ? (
+      ) : !getBaiduJSAPI4Status && !gpsScopeSupported ? (
+        <Box role="status" data-xdrive-owner-gps-filter-incompatible
+          sx={{px:1.5,pb:2}}>
+          GPS 位置概览无法应用当前照片筛选，已隐藏不匹配的全图库位置。
+          可返回当前图库照片墙；筛选条件不会被清除。
+        </Box>
+      ) : !getBaiduJSAPI4Status && gpsScopeSupported && listPlacesMapOverview && onOpenPlace ? (
         <XDriveMediaGalleryOwnerGPSOverview
           scope={diagnosticScope ?? ''} listPage={listPlacesMapOverview}
           loadCover={loadPlacesMapCover}

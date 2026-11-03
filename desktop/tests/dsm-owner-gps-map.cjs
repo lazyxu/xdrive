@@ -76,7 +76,9 @@ test('real GPS map offers bounded pan/zoom and only exact Owner place action',()
 
 test('the existing shared map only uses WGS84 fallback when no authenticated SDK Host is offered',() => {
   assert.match(source,/import \{ XDriveMediaGalleryOwnerGPSOverview \}/)
-  assert.match(source,/!getBaiduJSAPI4Status && listPlacesMapOverview && onOpenPlace/)
+  assert.match(source,/const gpsScopeSupported = xDriveBaiduMapScopeSurvivesFullReload\(mapPhotoScope\)/)
+  assert.match(source,/!getBaiduJSAPI4Status && !gpsScopeSupported \? \(/)
+  assert.match(source,/!getBaiduJSAPI4Status && gpsScopeSupported && listPlacesMapOverview && onOpenPlace/)
   assert.match(source,/<XDriveMediaGalleryOwnerGPSOverview[\s\S]*?listPage=\{listPlacesMapOverview\}/)
   assert.match(fallback,/WGS84 GPS 位置概览/)
   assert.match(fallback,/经纬度坐标示意（无地图底图）/)
