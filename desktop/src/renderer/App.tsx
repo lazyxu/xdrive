@@ -214,9 +214,21 @@ export default function App({
   const [sourceRunFocus, setSourceRunFocus] = useState<{
     sourceID: number; runID: string; server: string; username: string; requestID: number
   } | null>(null)
+  // Keep a notification intent while navigation is awaiting a guarded editor
+  // exit; clear it only after the destination was actually visited and left.
+  const sourceRunPageVisitedRef = useRef(false)
+  const syncActivityPageVisitedRef = useRef(false)
   useEffect(() => {
-    if (view !== 'remote-pull') setSourceRunFocus(null)
-    if (view !== 'transfers') setSyncActivityFromNotification(false)
+    if (view === 'remote-pull') sourceRunPageVisitedRef.current = true
+    else if (sourceRunPageVisitedRef.current) {
+      sourceRunPageVisitedRef.current = false
+      setSourceRunFocus(null)
+    }
+    if (view === 'transfers') syncActivityPageVisitedRef.current = true
+    else if (syncActivityPageVisitedRef.current) {
+      syncActivityPageVisitedRef.current = false
+      setSyncActivityFromNotification(false)
+    }
   }, [view])
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
