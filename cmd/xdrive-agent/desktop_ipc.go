@@ -145,6 +145,7 @@ var desktopIPCCapabilities = []string{
 	"transfer-lifecycle",
 	"transfer-lifecycle-child-batch",
 	"transfer-history-scope",
+	"sync-activity-history",
 	"diagnostics",
 	"diagnostic-actions",
 	"open-folder",
@@ -884,6 +885,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
 	mux.HandleFunc("POST /v1/file-availability", h.setFileAvailability)
 	mux.HandleFunc("POST /v1/file-availability/batch", h.fileAvailabilityBatch)
+	mux.HandleFunc("GET /v1/sync/activity/runs", h.syncActivityRuns)
+	mux.HandleFunc("GET /v1/sync/activity/run", h.syncActivityRun)
+	mux.HandleFunc("GET /v1/sync/activity/items", h.syncActivityItems)
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
 	mux.HandleFunc("GET /v1/transfer-events", h.transferEvents)
 	mux.HandleFunc("POST /v1/transfers/retry", h.retryTransfer)
