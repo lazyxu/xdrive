@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -215,7 +216,7 @@ func TestYikeSourceRenameKeepsAccountIDAndIgnoresCredentialNickname(t *testing.T
 		t.Fatal(err)
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
-		return bindYikeManagedTargetTx(t.Context(), tx, &changedSource, sourceCredentialTestDTO{
+		return bindYikeManagedTargetTx(context.Background(), tx, &changedSource, sourceCredentialTestDTO{
 			Valid: true, Kind: yikeSourceKind, AccountExternalID: "12345",
 			AccountName: "远端账号昵称已变化",
 		})
