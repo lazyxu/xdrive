@@ -132,7 +132,7 @@ func (s *Server) copyNodeReplaceOrMergeTxLoaded(
 		return copied, false, err
 	}
 	if source.Type == meta.NodeTypeDir && target.Type == meta.NodeTypeDir {
-		protected, err := managedSourceTargetInSubtreeDB(ctx, tx, uid, target.ID)
+		protected, err := managedSourceMutationTouchesDB(ctx, tx, uid, target.ID)
 		if err != nil {
 			return meta.Node{}, false, err
 		}
@@ -239,7 +239,7 @@ func (s *Server) moveNodeReplaceOrMergeTx(ctx context.Context, tx *gorm.DB, uid 
 		return moved, false, err
 	}
 	if source.Type == meta.NodeTypeDir && target.Type == meta.NodeTypeDir {
-		protected, err := managedSourceTargetInSubtreeDB(ctx, tx, uid, target.ID)
+		protected, err := managedSourceMutationTouchesDB(ctx, tx, uid, target.ID)
 		if err != nil {
 			return meta.Node{}, false, err
 		}
