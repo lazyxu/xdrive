@@ -162,7 +162,7 @@ export function XDriveSourceCreateDialog({
       <XDriveDialogContent dividers>
         {option.kind === 'yike_photos' ? (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            存储子目录：{yikeManagedTargetDisplayLabel}。连接成功后由服务器在既有固定根目录下按百度 UID 和账号名称创建；底层文件仍使用 xDrive CAS 存储。
+            系统将在“同步文件夹/远程拉取/一刻相册”下自动创建专属目录（{yikeManagedTargetDisplayLabel}）；无需选择云端目标，原件仍使用 CAS。
           </XDriveStatusAlert>
         ) : targetBrowsingEnabled ? (
           <MuiBox sx={{ mb: 2, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
@@ -220,9 +220,9 @@ export function XDriveSourceCreateDialog({
           </MuiBox>
         ) : (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标目录使用当前文件夹</MuiTypography>
+            <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>服务器自动创建专属同步目录</MuiTypography>
             <MuiTypography variant="body2">
-              当前目标：{selectedTargetLabel}{selectedTargetPath ? `（${selectedTargetPath}）` : '（我的文件根目录）'}
+              新建来源不占用既有普通文件夹；当前浏览位置（{selectedTargetLabel}{selectedTargetPath ? ` / ${selectedTargetPath}` : ''}）仅供参考，不会作为目标。
             </MuiTypography>
             {option.direction === 'pull' ? (
               <MuiTypography variant="body2" sx={{ mt: 0.5 }}>
