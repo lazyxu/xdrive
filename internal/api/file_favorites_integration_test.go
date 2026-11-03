@@ -384,9 +384,9 @@ func TestFileFavoritesPersistenceIsolationAndLiveBreadcrumbs(t *testing.T) {
 	// Favorite folder must follow its real, renamed parent chain after moving.
 	if err := db.Model(&meta.Node{}).Where("id = ?", projects.ID).
 		Updates(map[string]any{
-			"parent_id": archive.ID,
-			"name": "ProjectsMoved",
-			"revision": gorm.Expr("revision + 1"),
+			"parent_id":  archive.ID,
+			"name":       "ProjectsMoved",
+			"revision":   gorm.Expr("revision + 1"),
 			"updated_at": time.Now(),
 		}).Error; err != nil {
 		t.Fatal(err)
@@ -408,7 +408,7 @@ func TestFileFavoritesPersistenceIsolationAndLiveBreadcrumbs(t *testing.T) {
 	// Trashed folders must disappear, then reappear if the same Node recovers.
 	if err := db.Model(&meta.Node{}).Where("id = ?", projects.ID).
 		Updates(map[string]any{
-			"deleted_at": &deletedAt,
+			"deleted_at":    &deletedAt,
 			"trash_root_id": projects.ID,
 		}).Error; err != nil {
 		t.Fatal(err)
@@ -424,7 +424,7 @@ func TestFileFavoritesPersistenceIsolationAndLiveBreadcrumbs(t *testing.T) {
 	}
 	if err := db.Model(&meta.Node{}).Where("id = ?", projects.ID).
 		Updates(map[string]any{
-			"deleted_at": nil,
+			"deleted_at":    nil,
 			"trash_root_id": nil,
 		}).Error; err != nil {
 		t.Fatal(err)
