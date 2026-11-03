@@ -459,6 +459,21 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .monospacedDigit()
                     Text("视频新增 \(result.videoUploaded)，Live ZIP 新增 \(result.liveBundleUploaded)，待核对 \(result.needsReview)，不可用 \(result.unavailable)")
                         .font(.footnote)
+                    if result.issues.total > 0 {
+                        Text("本次扫描分段发现 \(result.issues.total) 项不可用或不支持；按扫描位置显示，位置会随图库变化，不是固定照片编号。")
+                            .font(.caption).foregroundStyle(.orange)
+                            .accessibilityIdentifier("native-ios-photo-window-issue-count")
+                        ForEach(result.issues.entries) { item in
+                            Label("第 \(item.position) 项 · \(item.mediaLabel)：\(item.reason.displayText)",
+                                  systemImage: "exclamationmark.triangle")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if result.issues.additionalCount > 0 {
+                            Text("另有 \(result.issues.additionalCount) 项未展开；重新扫描将重新检查，未被当作备份成功。")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("native-ios-photo-window-issue-overflow")
+                        }
+                    }
                     // This fraction counts only slots read in THIS 256-item
                     // window. It is not a remote backup coverage percentage.
                     if let window = XDriveIOSNativeBackupWindowReadProgress.current(

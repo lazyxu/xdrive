@@ -9,6 +9,7 @@ const policy = read('ios/XDriveIOS/NativeBackupWindowReadProgress.swift')
 const screen = read('ios/XDriveIOS/NativePhotoBackupScreen.swift')
 const scanner = read('ios/XDriveIOS/PhotoBackupScanWindow.swift')
 const writer = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+const issueSummary = read('ios/XDriveIOS/PhotoBackupIssueSummary.swift')
 
 test('scan bar is bounded to the real current 256-slot window, not the whole library', () => {
   assert.match(policy, /XDrivePhotoBackupScanWindow\.capacity\(/)
@@ -49,4 +50,27 @@ test('existing backup runner, Owner/ledger status and false whole-library comple
   // must not import, call or persist any PhotoKit/backup source.
   const executablePolicy = policy.replace(/\/\/[^\n]*/g, '')
   assert.doesNotMatch(executablePolicy, /UserDefaults|CoreData|PhotoKit|import Photos|PHAsset|UploadSession|PhotoSyncLedger/)
+})
+
+test('bounded per-item failure explanation never marks failed originals as backed up', () => {
+  assert.match(issueSummary, /static let maxVisible = 20/)
+  assert.match(issueSummary, /private\(set\) var additionalCount = 0/)
+  assert.match(issueSummary, /var total: Int \{ entries\.count \+ additionalCount \}/)
+  assert.match(issueSummary, /case incompleteLivePair/)
+  assert.match(issueSummary, /case resourceTooLarge/)
+  assert.match(issueSummary, /case sourceChanged/)
+  assert.match(writer, /var issues = XDriveIOSPhotoBackupIssueSummary\(\)/)
+  assert.match(writer, /report\.issues\.append\([\s\S]*?reason: \.unsupported/)
+  assert.match(writer, /report\.unavailable \+= 1\s*report\.issues\.append\([\s\S]*?reason: Self\.issueReason\(after: error\)/)
+  assert.match(writer, /XDrivePhotoKitExportFailure/)
+  assert.match(writer, /XDriveIOSPhotoIntentPreparationError/)
+  assert.match(screen, /if result\.issues\.total > 0 \{/)
+  assert.match(screen, /ForEach\(result\.issues\.entries\)/)
+  assert.match(screen, /native-ios-photo-window-issue-count/)
+  assert.match(screen, /native-ios-photo-window-issue-overflow/)
+  const summaryExecutable = issueSummary.replace(/\/\/[^\n]*/g, '')
+  assert.doesNotMatch(summaryExecutable, /localIdentifier|originalFilename|UserDefaults|Keychain|FileManager|URLSession|UploadSession|PHAsset/)
+  assert.doesNotMatch(writer.slice(writer.indexOf('    private static func issueReason('),
+                               writer.indexOf('    /// A global authorization/receipt trust loss')),
+                      /uploadPrepared|confirmReceipt|beginCreate/)
 })
