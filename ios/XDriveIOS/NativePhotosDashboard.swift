@@ -128,6 +128,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     // Never persist camera/GPS coordinates with the navigation snapshot.
     @State private var mapSource: XDriveIOSNativePhotoMapSource = .local
     @State private var cloudMapCamera: MKCoordinateRegion?
+    @State private var localMapJump: XDriveIOSNativeLocalMapJump?
     // A bounded navigation position; never holds a PhotoKit asset identity.
     @State private var localGalleryPageOffset = 0
     // Restore only the coarse 32-slot album directory, never album IDs.
@@ -158,7 +159,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     var body: some View {
-        TabView(selection: $tab) {
+        let expectedRouteOwnerKey = ownerScopeKey
+        return TabView(selection: $tab) {
             NavigationStack {
                 launcher
                     .navigationTitle("全部")
@@ -223,6 +225,20 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         }
         .id(ownerScopeKey)
+        .environment(\.xdriveNativeLocalMapJump, localMapJump)
+        .environment(\.xdriveOpenNativeLocalMap, { jump in
+            guard ownerScopeKey == expectedRouteOwnerKey, login.owner != nil,
+                  phase == .active,
+                  [.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                  ) else { return }
+            // Reuse the existing Gallery map; never spawn another map stack.
+            localMapJump = jump
+            localMapScope = .library
+            mapSource = .local
+            gallerySource = .map
+            tab = .gallery
+        })
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showingLocalPhotoSearch) {
             XDriveIOSNativePhotoSearchScreen()
@@ -279,6 +295,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             guard state == .active else {
                 galleryFocusGeneration = UUID()
                 galleryFocused = false
+                localMapJump = nil
                 return
             }
             // Settings may revoke PhotoKit permission or a BGTask may pause
@@ -445,6 +462,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 HStack(spacing: 8) {
                     ForEach(XDriveIOSNativeGallerySource.allCases) { source in
                         Button {
+                            if source == .map { localMapJump = nil }
                             gallerySource = source
                         } label: {
                             Text(source.title)
@@ -790,6 +808,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private func openGallery(_ source: XDriveIOSNativeGallerySource) {
+        if source == .map { localMapJump = nil }
         gallerySource = source
         tab = .gallery
         // Gallery/map/Viewer are never dynamic feature-slot destinations.
@@ -848,6 +867,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         gallerySource = .local
         localMapScope = .library
         localMapPageOffset = 0
+        localMapJump = nil
         mapSource = .local
         cloudMapCamera = nil
         localAlbumDirectoryOffset = 0
