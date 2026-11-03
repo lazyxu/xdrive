@@ -16,7 +16,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
 
-/** The source is MediaStore DATE_ADDED, not a synthetic full-library photo index.
+/** The source is MediaStore DATE_TAKEN in milliseconds, not a synthetic full-library photo index.
  * Pages stay in the provider's stable DESC keyset order; each group refers to
  * an actual index within the current bounded (max 512) authorized wall only.
  */
@@ -32,18 +32,18 @@ internal val nativeLocalDateWindowScales = listOf(
 )
 
 internal fun nativeLocalDateWindowGroups(
-    addedAtSeconds: List<Long>,
+    capturedAtMillis: List<Long>,
     scale: String,
     zone: ZoneId = ZoneId.systemDefault(),
 ): List<NativeLocalDateWindowGroup> {
     if (scale !in setOf("year", "month", "day")) return emptyList()
-    require(addedAtSeconds.size <= NativeLocalMediaStore.MAX_WALL_ITEMS) {
+    require(capturedAtMillis.size <= NativeLocalMediaStore.MAX_WALL_ITEMS) {
         "Date-window groups cannot enumerate an unbounded library"
     }
     val groups = linkedMapOf<String, NativeLocalDateWindowGroup>()
-    addedAtSeconds.forEachIndexed { index, seconds ->
-        val day: LocalDate? = if (seconds <= 0L) null else
-            runCatching { Instant.ofEpochSecond(seconds).atZone(zone).toLocalDate() }
+    capturedAtMillis.forEachIndexed { index, captureMillis ->
+        val day: LocalDate? = if (captureMillis <= 0L) null else
+            runCatching { Instant.ofEpochMilli(captureMillis).atZone(zone).toLocalDate() }
                 .getOrNull()
         val key = if (day == null) "unknown" else when (scale) {
             "year" -> String.format(Locale.ROOT, "%04d", day.year)
@@ -51,7 +51,7 @@ internal fun nativeLocalDateWindowGroups(
             else -> String.format(Locale.ROOT, "%04d-%02d-%02d",
                 day.year, day.monthValue, day.dayOfMonth)
         }
-        val label = if (day == null) "加入日期未知" else when (scale) {
+        val label = if (day == null) "拍摄时间未知" else when (scale) {
             "year" -> "${day.year}年"
             "month" -> "${day.year}年${day.monthValue}月"
             else -> "${day.year}年${day.monthValue}月${day.dayOfMonth}日"
@@ -106,7 +106,7 @@ internal fun NativeLocalDateWindowPicker(
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)
             .padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                "按加入时间跳转 · " + when (scale) {
+                "按拍摄时间跳转 · " + when (scale) {
                     "year" -> "年份"
                     "month" -> "月份"
                     else -> "日期"

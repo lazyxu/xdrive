@@ -27,7 +27,7 @@ class NativeLocalViewerReturnTest {
 
     @Test fun reusedNumericIdOrEvictedTileIsNeverFocused() {
         val anchor = NativeLocalViewerReturnAnchor(photo, false, null, 5)
-        val reused = photo.copy(isVideo = true, addedAtSeconds = 2001)
+        val reused = photo.copy(isVideo = true, capturedAtMillis = 2001)
         assertNull(nativeLocalViewerReturnIndex(anchor, listOf(reused), false, null, 5, true))
         assertNull(nativeLocalViewerReturnIndex(anchor, listOf(video), false, null, 5, true))
         assertEquals(0, nativeLocalViewerReturnIndex(anchor, rows, false, null, 5, true))

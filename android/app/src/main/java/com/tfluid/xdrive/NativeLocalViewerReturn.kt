@@ -5,7 +5,7 @@ internal data class NativeLocalViewerItemKey(
     val id: Long,
     val isVideo: Boolean,
     val albumId: String,
-    val addedAtSeconds: Long,
+    val capturedAtMillis: Long,
 )
 
 /** The same MediaStore ID can resolve to a different content URI on a new
@@ -17,7 +17,7 @@ internal data class NativeLocalVideoSourceKey(
 )
 
 internal fun NativeLocalMedia.viewerReturnKey() = NativeLocalViewerItemKey(
-    id = id, isVideo = isVideo, albumId = albumId, addedAtSeconds = addedAtSeconds)
+    id = id, isVideo = isVideo, albumId = albumId, capturedAtMillis = capturedAtMillis)
 
 /**
  * Transient only. Never save local MediaStore IDs, album names or URIs to
@@ -181,7 +181,7 @@ internal fun nativeLocalViewerNextPageDecision(
         mediaKind != request.mediaKind || pageIntent != request.requestId ||
         request.requestId <= 0 ||
         request.cursor != NativeLocalPageKey(
-            request.source.item.addedAtSeconds, request.source.item.id))
+            request.source.item.capturedAtMillis, request.source.item.id))
         return NativeLocalNextPageDecision.STALE
     val index = nativeLocalViewerLoadedIndex(loaded, activeSource.item)
         ?: return NativeLocalNextPageDecision.STALE

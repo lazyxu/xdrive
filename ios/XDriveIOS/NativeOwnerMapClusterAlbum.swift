@@ -32,6 +32,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     @State private var page: XDriveIOSNativeMediaRange?
     @State private var coverImages: [UInt64: UIImage] = [:]
     @State private var viewing: XDriveIOSNativeMediaItem?
+    // A Viewer may only promote an exact adjacent Range after verifying its
+    // prior signed place page. No guessed place or cached media identities.
+    @State private var pendingViewerCross: XDriveIOSOwnerClusterCursor?
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
 
     init(login: XDriveIOSNativeOwnerLoginModel,
@@ -128,7 +131,16 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         }
         .navigationTitle("位置照片")
         .navigationBarTitleDisplayMode(.inline)
-        .fullScreenCover(item: $viewing) { initial in
+        .fullScreenCover(item: $viewing, onDismiss: {
+            pendingViewerCross = nil
+            if activeOwner {
+                // Refetch the exact Owner page after L3; do not assume its
+                // thumbnail revisions remained valid while the Viewer covered it.
+                load(cursor, history: earlier)
+            } else {
+                invalidate()
+            }
+        }) { initial in
             XDriveIOSNativeServerMediaPreview(
                 item: initial, login: login,
                 loadedItems: page?.items ?? [],
@@ -139,6 +151,111 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                           page.items.contains(where: {
                               $0.sameVisibleRevision(as: neighbor)
                           }) else { return false }
+                    return true
+                },
+                onCrossRange: { previous, anchor, direction in
+                    guard activeOwner, viewing?.id == initial.id,
+                          let current = page,
+                          current.sameVisibleSnapshot(as: previous),
+                          previous.offset == cursor.offset,
+                          selection.places.indices.contains(cursor.placeIndex),
+                          let anchorIndex = previous.items.firstIndex(where: {
+                              $0.sameVisibleRevision(as: anchor)
+                          }),
+                          let targetOffset =
+                            XDriveIOSNativePhotoAssetRangeCursorPolicy.adjacentOffset(
+                                current: previous.offset, count: previous.items.count,
+                                total: previous.total_count,
+                                selectedIndex: anchorIndex, direction: direction
+                            )
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                    pendingViewerCross = nil
+                    let currentCursor = cursor
+                    let targetCursor = XDriveIOSOwnerClusterCursor(
+                        placeIndex: currentCursor.placeIndex, offset: targetOffset)
+                    let facet = selection.places[currentCursor.placeIndex]
+                    guard XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(facet),
+                          previous.total_count == facet.item_count
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                    let authorized = try await login.verifiedAuthorization()
+                    try Task.checkCancellation()
+                    guard activeOwner,
+                          XDriveIOSNativePhotoOwnerScope.matches(
+                            authorized.owner, selection.owner
+                          ),
+                          cursor == currentCursor,
+                          page?.sameVisibleSnapshot(as: previous) == true
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                    let reader = XDriveIOSNativeMediaGalleryReader(
+                        owner: authorized.owner, accessToken: authorized.accessToken)
+                    // Even if a new page has a valid offset, the old snapshot
+                    // must still be EXACTLY the one the Viewer left.
+                    let reread = try await reader.page(
+                        offset: currentCursor.offset, placeID: facet.id)
+                    guard previous.sameVisibleSnapshot(as: reread),
+                          reread.total_count == facet.item_count
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                    let following = try await reader.page(
+                        offset: targetOffset, placeID: facet.id)
+                    try Task.checkCancellation()
+                    guard activeOwner,
+                          XDriveIOSNativePhotoOwnerScope.matches(
+                            login.owner, selection.owner
+                          ),
+                          cursor == currentCursor,
+                          page?.sameVisibleSnapshot(as: previous) == true,
+                          following.total_count == facet.item_count,
+                          following.offset == targetOffset,
+                          XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
+                            offset: following.offset, count: following.items.count,
+                            total: following.total_count
+                          ),
+                          Set(following.items.map(\.id)).count == following.items.count
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                    pendingViewerCross = targetCursor
+                    return following
+                },
+                onCrossedRange: { opened, verifiedRange in
+                    guard activeOwner, viewing?.id == initial.id,
+                          let oldPage = page, let admitted = pendingViewerCross,
+                          admitted.placeIndex == cursor.placeIndex,
+                          admitted.offset == verifiedRange.offset,
+                          selection.places.indices.contains(cursor.placeIndex),
+                          verifiedRange.total_count ==
+                            selection.places[cursor.placeIndex].item_count,
+                          abs(verifiedRange.offset - oldPage.offset) ==
+                            XDriveIOSNativePhotoAssetRangeCursorPolicy.pageSize,
+                          XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
+                            offset: verifiedRange.offset,
+                            count: verifiedRange.items.count,
+                            total: verifiedRange.total_count
+                          ),
+                          verifiedRange.items.contains(where: {
+                              $0.sameVisibleRevision(as: opened)
+                          })
+                    else { return false }
+                    pendingViewerCross = nil
+                    if admitted.offset > cursor.offset {
+                        earlier.append(cursor)
+                    } else if earlier.last == admitted {
+                        earlier.removeLast()
+                    } else {
+                        earlier = []
+                    }
+                    cursor = admitted
+                    page = verifiedRange
+                    coverTask?.cancel()
+                    coverImages = [:]
+                    let after = verifiedRange.offset + verifiedRange.items.count
+                    if after < verifiedRange.total_count {
+                        next = XDriveIOSOwnerClusterCursor(
+                            placeIndex: admitted.placeIndex, offset: after)
+                    } else if admitted.placeIndex + 1 < selection.places.count {
+                        next = XDriveIOSOwnerClusterCursor(
+                            placeIndex: admitted.placeIndex + 1, offset: 0)
+                    } else {
+                        next = nil
+                    }
                     return true
                 }
             )
@@ -177,6 +294,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         viewing = nil
         next = nil
         earlier = []
+        pendingViewerCross = nil
         busy = false
     }
 
@@ -191,6 +309,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         loadTask?.cancel()
         coverTask?.cancel()
         coverImages = [:]
+        pendingViewerCross = nil
         error = nil
         busy = true
         loadTask = Task { @MainActor in

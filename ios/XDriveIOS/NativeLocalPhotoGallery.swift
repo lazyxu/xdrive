@@ -619,6 +619,27 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         }
     }
 
+    /// Thumbnail selection stays in the current authorized PhotoKit page.
+    /// Existing show(next) independently revalidates PHAsset identity.
+    private func filmstripKey(_ item: XDrivePhotoKitScanCandidate)
+        -> XDriveIOSNativeLocalFilmstripKey {
+        XDriveIOSNativeLocalFilmstripKey(
+            id: item.id, kind: item.kind, isLive: item.isLive,
+            capturedAt: item.capturedAt, modifiedAt: item.modifiedAt
+        )
+    }
+
+    private func selectFilmstrip(_ next: XDrivePhotoKitScanCandidate) {
+        guard currentPageAuthorized, !crossing, !photoActionBusy,
+              !model.downloadingFromICloud, photoShareSession == nil else { return }
+        let keys = visibleItems.map { filmstripKey($0) }
+        guard XDriveIOSNativeLocalFilmstripPolicy.target(
+            current: filmstripKey(viewed), requested: filmstripKey(next),
+            in: keys, authorized: currentPageAuthorized
+        ) != nil else { return }
+        show(next)
+    }
+
     private func cancelCrossing() {
         crossingEpoch = UUID()
         crossingTask?.cancel()
@@ -731,6 +752,17 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                             }
                             .frame(minHeight: 44)
                             .accessibilityIdentifier("native-ios-local-viewer-icloud-load")
+                        }
+                        // Uses only the already authorized, visible PhotoKit page.
+                        if currentPageAuthorized && visibleItems.count > 1 {
+                            XDriveIOSNativeLocalViewerFilmstrip(
+                                current: viewed,
+                                loaded: visibleItems,
+                                authorized: currentPageAuthorized,
+                                busy: crossing || photoActionBusy ||
+                                    model.downloadingFromICloud,
+                                onSelect: { next in selectFilmstrip(next) }
+                            )
                         }
                         if visibleItems.count > 1 || canCross(-1) || canCross(1) {
                             HStack(spacing: 12) {

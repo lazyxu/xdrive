@@ -214,6 +214,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/me/change-password/browser", s.changePassword)
 	authed.GET("/search", s.searchNodes)
 	authed.GET("/changes", s.listNodeChanges)
+	authed.POST("/notes/namespace", s.initializeNotesNamespace)
 	authed.GET("/nodes/root", s.root)
 	authed.GET("/nodes/:id", s.getNode)
 	authed.GET("/nodes/:id/children", s.children)

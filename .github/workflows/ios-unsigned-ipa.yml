@@ -102,6 +102,18 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
           "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
 
+      - name: Verify focused first-pass native PhotoKit window progression
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoBackupScanWindow.swift \
+            ios/XDriveIOS/PhotoAutoSchedulePolicy.swift \
+            ios/XDriveIOS/PhotoFocusedBackupPolicy.swift \
+            ios/tests/PhotoFocusedBackupPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-focused-policy-check"
+          "$RUNNER_TEMP/xdrive-ios-focused-policy-check"
+          node --test desktop/tests/ios-native-photo-focused-backup.cjs
+
       - name: Verify bounded private PhotoKit orphan staging cleanup
         run: |
           set -euo pipefail
@@ -236,6 +248,26 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-current-photo-receipt-check"
           node --test desktop/tests/ios-native-photo-current-receipt.cjs
 
+      - name: Verify bounded local PhotoKit Viewer filmstrip identity and thumbnail contract
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeLocalPhotoViewerFilmstripPolicy.swift \
+            ios/tests/NativeLocalPhotoViewerFilmstripPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-filmstrip-check"
+          "$RUNNER_TEMP/xdrive-ios-photo-filmstrip-check"
+          node --test desktop/tests/ios-native-photo-filmstrip-contract.cjs
+
+      - name: Verify bounded native PhotoKit and Owner PhotoAsset filmstrip scrub gesture
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoFilmstripScrubPolicy.swift \
+            ios/tests/NativePhotoFilmstripScrubPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-filmstrip-scrub"
+          "$RUNNER_TEMP/xdrive-ios-photo-filmstrip-scrub"
+          node --test desktop/tests/ios-native-photo-filmstrip-scrub-contract.cjs
+
       - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail
@@ -249,6 +281,7 @@ jobs:
             desktop/tests/ios-native-cloud-original-thumbnail-wall.cjs \
             desktop/tests/ios-native-auto-foreground-root-lifecycle.cjs \
             desktop/tests/ios-native-album-navigation.cjs \
+            desktop/tests/ios-native-album-continuous.cjs \
             desktop/tests/ios-native-five-tab-navigation.cjs \
             desktop/tests/ios-native-photo-zoom-viewer.cjs \
             desktop/tests/ios-native-photo-viewer-return.cjs \
@@ -259,6 +292,16 @@ jobs:
             desktop/tests/ios-native-local-viewer-on-demand-icloud.cjs \
             desktop/tests/ios-native-photo-cloud-confirmed-refresh.cjs \
             desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs
+
+      - name: Verify native PhotoAsset Viewer cloud filmstrip Owner and revision admission
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudPhotoAssetFilmstripPolicy.swift \
+            ios/tests/NativeCloudPhotoAssetFilmstripPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photoasset-filmstrip-check"
+          "$RUNNER_TEMP/xdrive-ios-photoasset-filmstrip-check"
+          node --test desktop/tests/ios-native-cloud-filmstrip-contract.cjs
 
       - name: Verify native cloud PhotoAsset original still/video save-to-Photos boundaries
         run: node --test desktop/tests/ios-native-photoasset-original-restore.cjs
@@ -458,7 +501,7 @@ jobs:
             ios/tests/NativeFilesViewerPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-files-viewer-policy"
           "$RUNNER_TEMP/xdrive-ios-files-viewer-policy"
-          node --test desktop/tests/ios-native-files-viewer.cjs
+          node --test desktop/tests/ios-native-files-viewer.cjs desktop/tests/ios-native-files-image-immersive.cjs
 
       - name: Verify native Files folder creation name and Owner-scoped POST
         run: |

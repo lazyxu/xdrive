@@ -81,10 +81,12 @@ test('mounted native map source picker borrows parent route hints for local MapK
 });
 
 
-test('native local PhotoKit Gallery retains only a bounded owner-scoped page cursor', () => {
-  const local = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeLocalPhotoGallery.swift'), 'utf8');
+test('native local continuous PhotoKit wall restores only an Owner-scoped numeric scroll anchor', () => {
+  const wall = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeLocalContinuousGallery.swift'), 'utf8');
+  const timeline = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativePhotoTimelineBrowser.swift'), 'utf8');
   assert.match(ui, /@State private var localGalleryPageOffset = 0/);
-  assert.match(ui, /XDriveIOSNativeLocalGalleryScreen\(\s*savedOffset: \$localGalleryPageOffset/);
+  assert.match(ui, /case \.local:\s*XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset/);
+  assert.doesNotMatch(ui, /XDriveIOSNativeLocalGalleryScreen\(/);
   assert.match(ui, /\.onChange\(of: localGalleryPageOffset\) \{ _ in saveNavigationIfReady\(\) \}/);
   assert.match(ui, /snapshot\.localGalleryPageOffset \?\? 0/);
   assert.match(ui, /localGalleryPageOffset: localGalleryPageOffset/);
@@ -92,19 +94,20 @@ test('native local PhotoKit Gallery retains only a bounded owner-scoped page cur
   assert.match(routes, /let localGalleryPageOffset: Int\?/);
   assert.match(routes, /Self\.validMapPageOffset\(saved\.localGalleryPageOffset \?\? 0\)/);
   assert.match(routes, /localGalleryPageOffset: Self\.validMapPageOffset\(localGalleryPageOffset\)/);
-  assert.match(routes, /enum XDriveIOSNativeLocalGalleryPageCursorPolicy \{/);
-  assert.match(local, /@Binding var savedOffset: Int/);
-  assert.doesNotMatch(local, /@State private var savedOffset = 0/);
-  assert.match(local, /XDriveIOSNativeLocalGalleryPageCursorPolicy\.clamp\(/);
-  assert.match(local, /let total = try await current\.start\(atOffset: offset\)/);
-  assert.match(local, /if bounded != offset \{[\s\S]*?current\.start\(atOffset: bounded\)/);
-  assert.match(local, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/);
-  assert.match(local, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
+  assert.match(routes, /value >= 0 && value <= 1_000_000 && value % 64 == 0/);
+  assert.match(wall, /@Binding var savedOffset: Int/);
+  assert.doesNotMatch(wall, /@State private var savedOffset = 0/);
+  assert.match(wall, /XDriveIOSNativePhotoVirtualPagePolicy\.normalizedAnchor\(/);
+  assert.match(wall, /scroll\.scrollTo\("page:/);
+  assert.match(wall, /reader\.start\(atOffset: 0, mediaFilter: mediaFilter\)/);
+  assert.match(wall, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/);
+  assert.match(wall, /\.fullScreenCover\(item: \$selected, onDismiss: restoreAfterViewer\)/);
+  assert.match(wall, /onCrossedPage: \{ next, page in\s*returnPageOffset = page\.startOffset/);
+  assert.match(timeline, /savedOffset = requestedOffset\s*wallRevision &\+= 1/);
   assert.doesNotMatch(routes, /PHAsset|localIdentifier|signedURL|accessToken|latitude|longitude/);
 });
 
-
-test('native local albums directory restores only Owner-scoped 32-slot page position', () => {
+test('native local album directory resumes 32-slot anchor through the continuous cover grid', () => {
   const album = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativePhotoAlbumBrowser.swift'), 'utf8');
   const list = album.split('struct XDriveIOSNativePhotoAlbumsScreen: View {')[1];
   assert.match(ui, /@State private var localAlbumDirectoryOffset = 0/);
@@ -120,13 +123,22 @@ test('native local albums directory restores only Owner-scoped 32-slot page posi
   assert.match(routes, /value >= 0 && value <= maximumOffset && value % pageSize == 0/);
   assert.match(list, /@Binding var savedOffset: Int/);
   assert.doesNotMatch(list, /@State private var offset = 0/);
-  assert.match(list, /XDriveLocalPhotoAlbumPager\.readPage\(\s*offset: requestedOffset/);
-  assert.match(list, /catch XDriveLocalPhotoAlbumFailure\.invalidRange \{/);
+  assert.match(list, /ScrollViewReader \{ scroll in/);
+  assert.match(list, /LazyVGrid\(/);
+  assert.match(list, /pendingRestoreOffset = XDriveIOSNativeAlbumDirectoryCursorPolicy\.valid\(anchor\)/);
+  assert.match(list, /private func restoreDirectoryIfReady\(using scroll: ScrollViewProxy\)/);
   assert.match(list, /XDriveIOSNativeAlbumDirectoryCursorPolicy\.clamp\(/);
-  assert.match(list, /requestedOffset > 0 && page\.total > 0 && page\.items\.isEmpty/);
-  assert.match(list, /savedOffset = page\.offset/);
+  assert.match(list, /if page\.items\.count <= anchor && page\.hasNext \{\s*load\(offset: page\.items\.count\)/);
+  assert.match(list, /scroll\.scrollTo\(target, anchor: \.top\)/);
+  assert.match(list, /XDriveLocalPhotoAlbumPager\.readPage\(\s*offset: requestedOffset/);
+  assert.match(list, /previous\.total == next\.total/);
+  assert.match(list, /previous\.limitedAuthorization == next\.limitedAuthorization/);
+  assert.match(list, /Set\(previous\.items\.map\(\\\.collectionIdentifier\)\)\.isDisjoint/);
+  assert.match(list, /savedOffset = requestedOffset/);
   assert.match(list, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == permission/);
-  assert.match(list, /libraryMonitor\.start\(\); reload\(\)/);
+  assert.match(list, /libraryMonitor\.start\(\)\s*reload\(\)/);
+  assert.match(list, /private func invalidate\(\) \{[\s\S]*?pendingRestoreOffset = nil/);
+  assert.doesNotMatch(list, /Button\("上一页"\)|Button\("下一页"\)/);
   assert.doesNotMatch(routes, /localIdentifier|collectionIdentifier|PHAsset|accessToken|latitude|longitude/);
 });
 

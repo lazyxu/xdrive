@@ -140,3 +140,33 @@ test('cloud original still and thumbnail bodies are streamed within their byte l
   assert.doesNotMatch(still, /client\.data\(for:/);
   assert.doesNotMatch(helper, /client\.data\(for:/);
 });
+
+
+test('cloud original video and Live-motion fallback share native photo timeline and mute controls', () => {
+  const video = fs.readFileSync(
+    path.join(root, 'ios/XDriveIOS/NativePhotoVideoSurface.swift'), 'utf8'
+  )
+  const detail = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    cloud.indexOf('private struct XDriveIOSNativeCloudOriginalTileIdentity'))
+  assert.match(video, /AVPlayerLayer/)
+  assert.match(video, /videoGravity = \.resizeAspect/)
+  assert.match(video, /playbackLayer\.player = nil/)
+  assert.match(video, /Slider\(/)
+  assert.match(video, /player\.seek\(/)
+  assert.match(video, /toleranceBefore: \.zero/)
+  assert.match(video, /player\.isMuted = !player\.isMuted/)
+  assert.match(video, /if !seeking, now\.isFinite/)
+  assert.match(video, /phase == \.active/)
+  assert.match(video, /\.onTapGesture\(perform: onChromeTap\)/)
+  assert.match(video, /if showChrome \{/)
+  assert.match(video, /native-ios-photo-video-timeline/)
+  assert.match(video, /native-ios-photo-video-play/)
+  assert.match(video, /native-ios-photo-video-mute/)
+  assert.equal((detail.match(/XDriveIOSNativePhotoVideoSurface\(/g) || []).length, 2)
+  assert.equal((detail.match(/XDriveIOSNativeAVPlayerStatusObserver\(/g) || []).length, 2)
+  assert.match(detail, /onChromeTap: \{ toggleChrome\(\) \}/)
+  assert.match(detail, /if currentOwnerAuthorized \{ player\.play\(\) \}/)
+  assert.match(detail, /\.onDisappear \{ player\.pause\(\) \}/)
+  assert.match(detail, /player\?\.pause\(\)[\s\S]*?liveResources\?\.discard\(\)/)
+  assert.doesNotMatch(video, /URLSession|Bearer|Keychain|UserDefaults|UploadSession|PHAssetCreationRequest/)
+})

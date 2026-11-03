@@ -208,6 +208,14 @@ struct XDriveIOSForegroundPhotoBackupMVP {
            case .unverifiedOwnerOrDeviceScope = intent {
             return true
         }
+        if let intent = error as? XDriveIOSPhotoIntentPreparationError,
+           case .stagedStorageUnavailable = intent {
+            return true
+        }
+        if let archive = error as? XDriveIOSLiveArchiveFailure,
+           case .storageUnavailable = archive {
+            return true
+        }
         return false
     }
 

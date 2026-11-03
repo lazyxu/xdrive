@@ -8,7 +8,7 @@ import org.junit.Test
 class NativeLocalMediaStorePagingTest {
     private fun key(time: Long, id: Long) = NativeLocalPageKey(time, id)
 
-    @Test fun validDateAndIdTiesAreStrictlyDescendingAcrossPages() {
+    @Test fun validCaptureTimeAndIdTiesAreStrictlyDescendingAcrossPages() {
         val first = listOf(key(202, 20), key(202, 19), key(201, 999), key(201, 2))
         assertTrue(nativeLocalStrictPageOrder(null, first))
         assertTrue(nativeLocalStrictPageOrder(first.last(),
@@ -39,6 +39,19 @@ class NativeLocalMediaStorePagingTest {
             listOf(key(6, 8), key(5, 9))))
         assertFalse(nativeLocalStrictPageOrder(retainedTail,
             listOf(key(5, 10), key(5, 9))))
+    }
+
+    @Test fun missingCaptureDatesSortAfterKnownDatesAndRemainKeysetStable() {
+        val newest = key(1_800_000_000_000L, 80)
+        val older = key(1_700_000_000_000L, 90)
+        val unknownNewestId = key(0L, 20)
+        val unknownOlderId = key(0L, 19)
+        assertTrue(nativeLocalStrictPageOrder(null,
+            listOf(newest, older, unknownNewestId, unknownOlderId)))
+        assertTrue(nativeLocalStrictPageOrder(unknownNewestId,
+            listOf(unknownOlderId)))
+        assertFalse(nativeLocalStrictPageOrder(unknownOlderId,
+            listOf(key(1L, 100))))
     }
 
     @Test fun invalidProviderKeyIsNeverSilentlySkipped() {
