@@ -1188,11 +1188,11 @@ export function XDriveFileExplorerNavigationPane({
                   {direction === 'push' ? '设备备份' : '远程拉取'}
                 </Typography>
                 {entries.map((entry) => {
-                  const selected = currentCrumbs.some((crumb) => crumb.id === entry.targetNodeID)
+                  const managedSourceActive = currentCrumbs.some((crumb) => crumb.id === entry.targetNodeID)
                   return (
                     <ListItemButton
                       key={entry.id}
-                      selected={selected}
+                      selected={managedSourceActive}
                       data-xdrive-managed-source-id={entry.id}
                       aria-label={direction === 'push' ? '打开设备备份：' + entry.name : '打开远程拉取：' + entry.name}
                       onClick={() => { void onNavigateManagedSource(entry) }}
@@ -1202,7 +1202,7 @@ export function XDriveFileExplorerNavigationPane({
                       {direction === 'push'
                         ? <CloudUploadRoundedIcon sx={{ fontSize: 19, color: 'text.secondary' }} />
                         : <CloudDownloadRoundedIcon sx={{ fontSize: 19, color: 'text.secondary' }} />}
-                      <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: selected ? 600 : 400 }}>
+                      <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: managedSourceActive ? 600 : 400 }}>
                         {entry.name}
                       </Typography>
                     </ListItemButton>
