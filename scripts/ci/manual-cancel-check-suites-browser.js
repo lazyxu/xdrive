@@ -76,14 +76,18 @@
           queued: run.state?.status === "WORKFLOW_RUN_STATUS_QUEUED"
         });
       }
-      if (rows.length < 25) break;
-      // 已足够填满原版 maxRequests，就不再下载更旧的历史页。
-      const queuedOld = [...all.values()].filter(run => run.sha !== head && run.queued);
-      if (queuedOld.length > maxRequests) {
-        console.log("排队中的旧 master CI 已超过单次请求上限 " + maxRequests +
-          "，停止继续翻页");
+      // 整页都是终态时停止；排队、等待、运行中或未知状态都继续查更旧页面。
+      // 不用 maxRequests 限制扫描，它只限制后面的取消请求数量。
+      const terminal = new Set([
+        "WORKFLOW_RUN_STATUS_COMPLETED",
+        "WORKFLOW_RUN_STATUS_CANCELLED",
+        "WORKFLOW_RUN_STATUS_CANCELED"
+      ]);
+      if (rows.every(run => terminal.has(run?.state?.status))) {
+        console.log("第 " + page + " 页全部结束或取消，停止翻页");
         break;
       }
+      if (rows.length < 25) break;
     }
 
     if (!all.size) throw new Error("没有找到 master CI Run，安全停止");
