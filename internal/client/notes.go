@@ -20,20 +20,20 @@ const NotesMaxMarkdownBytes = 1 << 20
 const NotesMaxPageSize = 50
 
 type NotesNamespace struct {
-	SystemNodeID uint64 `json:"system_node_id"`
-	NotesNodeID uint64 `json:"notes_node_id"`
+	SystemNodeID    uint64 `json:"system_node_id"`
+	NotesNodeID     uint64 `json:"notes_node_id"`
 	IOSBackupNodeID uint64 `json:"ios_backup_node_id"`
-	MyNotesNodeID uint64 `json:"my_notes_node_id"`
+	MyNotesNodeID   uint64 `json:"my_notes_node_id"`
 }
 
 type NotesRow struct {
-	ID string `json:"id"`
-	Source string `json:"source"`
-	Title string `json:"title"`
-	NodeID uint64 `json:"node_id"`
-	Revision uint64 `json:"revision"`
-	SHA256 string `json:"sha256"`
-	Bytes int64 `json:"bytes"`
+	ID        string `json:"id"`
+	Source    string `json:"source"`
+	Title     string `json:"title"`
+	NodeID    uint64 `json:"node_id"`
+	Revision  uint64 `json:"revision"`
+	SHA256    string `json:"sha256"`
+	Bytes     int64  `json:"bytes"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
@@ -44,25 +44,25 @@ type NotesDetail struct {
 }
 
 type NotesPage struct {
-	Items []NotesRow `json:"items"`
-	NextOffset int `json:"next_offset"`
+	Items      []NotesRow `json:"items"`
+	NextOffset int        `json:"next_offset"`
 }
 
 type NotesVersion struct {
-	ID uint64 `json:"id"`
+	ID       uint64 `json:"id"`
 	Revision uint64 `json:"revision"`
-	SHA256 string `json:"sha256"`
-	Bytes int64 `json:"bytes"`
+	SHA256   string `json:"sha256"`
+	Bytes    int64  `json:"bytes"`
 }
 
 type NotesVersions struct {
-	Items []NotesVersion `json:"items"`
-	NodeID uint64 `json:"node_id"`
+	Items  []NotesVersion `json:"items"`
+	NodeID uint64         `json:"node_id"`
 }
 
 type NotesWrite struct {
-	Title string `json:"title"`
-	Markdown string `json:"markdown"`
+	Title            string `json:"title"`
+	Markdown         string `json:"markdown"`
 	ExpectedRevision uint64 `json:"expected_revision,omitempty"`
 }
 
