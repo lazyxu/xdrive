@@ -544,8 +544,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             }
             NativeHomeTab.DYNAMIC -> {
                 nativeNavigation = next
-                controller.refreshTransferRecoveryNotices()
-                transferCenterOpen = true
+                if (next.dynamicFeature == NativeDynamicFeature.TRANSFERS) {
+                    controller.refreshTransferRecoveryNotices()
+                    transferCenterOpen = true
+                }
             }
             else -> nativeNavigation = next
         }
@@ -747,7 +749,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             transferCenterOpen = true
                             controller.refreshTransferRecoveryNotices()
                         },
-                        onChooseDynamic = { dynamicPickerOpen = true })
+                        onChooseDynamic = { dynamicPickerOpen = true },
+                        notesController = controller)
                     else -> Unit
                 }
             } else when (state.screen) {
