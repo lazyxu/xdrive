@@ -277,17 +277,19 @@ requireText(app, [
 requireText(browserHost, [
   'ports.adminRoleVerified === true && ports.adminServices',
   'ports.adminRoleVerified === true && ports.adminMaintenance',
+  'ports.adminRoleVerified === true && ports.adminUpdate',
   'ports.adminRoleVerified === true && ports.adminStorage',
 ], 'Browser verified Server infrastructure admin ports')
 requireText(app, [
   'adminServices: serverAdminVerified ?',
   'adminMaintenance: serverAdminVerified ?',
+  'adminUpdate: serverAdminVerified ?',
   'adminStorage: serverAdminVerified ?',
   'onUnsavedChange: setSystemDependenciesDraftDirty',
   'location: adminServicesLocation',
   'onOpenTaskCenter: openGlobalTaskCenter',
   'onRunStorageMaintenance: runStorageMaintenance',
-  "appView === 'admin-services' || appView === 'admin-maintenance'",
+  "appView === 'admin-services' || appView === 'admin-update' || appView === 'admin-maintenance'",
 ], 'Web shared Server infrastructure admin routes')
 
 requireText(sources, [

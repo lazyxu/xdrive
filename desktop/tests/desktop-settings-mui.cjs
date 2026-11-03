@@ -6,6 +6,7 @@ const path = require('node:path')
 const repo = path.join(__dirname, '..', '..')
 const page = [
   'DesktopSettingsContent.tsx', 'DesktopVirtualDriveSettings.tsx',
+  'DesktopClientUpdatePanel.tsx',
 ].map(file => fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', file), 'utf8')).join('\n')
 const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 

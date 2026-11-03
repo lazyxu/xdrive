@@ -28,7 +28,7 @@ test('Admin services is a Web workspace app behind the existing admin role', () 
     sharedRouteTitles.includes("'admin-services': '系统依赖'"),
     'administrator destination must use the canonical shared route')
   assert.ok(app.includes('adminServices: serverAdminVerified ? {') &&
-    app.includes("appView === 'admin-services' || appView === 'admin-maintenance' ||") &&
+    app.includes("appView === 'admin-services' || appView === 'admin-update' || appView === 'admin-maintenance' ||") &&
     app.includes('adminRoleVerified: serverAdminVerified') &&
     browserHost.includes('adminServicesPage: ports.adminServices') &&
     sharedOutlet.includes('<XDriveServiceDependenciesPage {...services.adminServicesPage} />'),

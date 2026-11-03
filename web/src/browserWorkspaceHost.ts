@@ -34,6 +34,7 @@ export function createXDriveBrowserWorkspaceHost(ports: {
   adminAudit?: NonNullable<XDriveWorkspaceHostServices['adminAuditPage']>
   adminServices?: NonNullable<XDriveWorkspaceHostServices['adminServicesPage']>
   adminMaintenance?: NonNullable<XDriveWorkspaceHostServices['adminMaintenancePage']>
+  adminUpdate?: NonNullable<XDriveWorkspaceHostServices['adminUpdatePage']>
   adminStorage?: NonNullable<XDriveWorkspaceHostServices['adminStoragePage']>
 }): XDriveWorkspaceHostAdapter {
   return {
@@ -74,6 +75,9 @@ export function createXDriveBrowserWorkspaceHost(ports: {
       } : {}),
       ...(ports.adminRoleVerified === true && ports.adminServices ? {
         adminServicesPage: ports.adminServices,
+      } : {}),
+      ...(ports.adminRoleVerified === true && ports.adminUpdate ? {
+        adminUpdatePage: ports.adminUpdate,
       } : {}),
       ...(ports.adminRoleVerified === true && ports.adminMaintenance ? {
         adminMaintenancePage: ports.adminMaintenance,
