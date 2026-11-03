@@ -4,115 +4,85 @@
   const intervalMs = 600;      // 每次请求之间间隔 600ms
   const maxRequests = 250;
 
-  // 只把固定 masterSuites 改为同源自动发现；其余第一版逻辑不变。
+  // 从 GitHub 同源 CI 列表自动获取旧 master Check Suite ID。
   const masterSuites = await (async () => {
     if (location.origin !== "https://github.com" ||
         !location.pathname.startsWith(root + "/")) {
       throw new Error("请在 xDrive 的 GitHub 页面执行");
     }
 
-    const getPage = async url => {
+    const read = async url => {
       const response = await fetch(url, {
-        credentials: "same-origin",
-        cache: "no-store",
-        headers: { accept: "text/html, application/json, application/atom+xml" }
+        credentials: "same-origin", cache: "no-store"
       });
-      if (!response.ok) throw new Error("发现 master CI 失败: HTTP " + response.status + " " + url);
+      if (!response.ok) throw new Error("读取 GitHub 失败: HTTP " + response.status);
       return response.text();
     };
-    const feed = await getPage(root + "/commits/master.atom");
+    const feed = await read(root + "/commits/master.atom");
     const first = feed.match(/<entry\b[\s\S]*?<\/entry>/i)?.[0] || "";
     const head = first.match(/Grit::Commit\/([0-9a-f]{40})/i)?.[1] ||
       first.match(/\/commit\/([0-9a-f]{40})/i)?.[1];
-    if (!head) throw new Error("无法确认当前 master SHA，停止操作");
+    if (!head) throw new Error("无法确认当前 master SHA");
 
-    const runs = new Map();
-    const linkIds = new Set();
-    const num = x => {
-      const n = Number(x);
-      return Number.isSafeInteger(n) && n > 0 ? n : null;
+    // 页面数据位于 workflowRunsRoute.workflowRuns，而不是 REST API 的字段结构。
+    const findRuns = (value, depth = 0) => {
+      if (!value || typeof value !== "object" || depth > 10) return null;
+      if (Array.isArray(value.workflowRunsRoute?.workflowRuns)) {
+        return value.workflowRunsRoute.workflowRuns;
+      }
+      for (const child of Object.values(value)) {
+        const runs = findRuns(child, depth + 1);
+        if (runs) return runs;
+      }
+      return null;
     };
-    const pick = (o, ...keys) => keys.map(k => o?.[k])
-      .find(v => v !== undefined && v !== null);
-    const walk = (rootNode, callback) => {
-      const seen = new Set();
-      const visit = (node, depth = 0) => {
-        if (!node || typeof node !== "object" || seen.has(node) || depth > 16) return;
-        seen.add(node);
-        callback(node);
-        for (const nested of Object.values(node)) visit(nested, depth + 1);
-      };
-      visit(rootNode);
-    };
-    const parse = raw => {
-      const roots = [];
-      try { roots.push(JSON.parse(raw)); } catch { /* HTML response */ }
-      const doc = new DOMParser().parseFromString(raw, "text/html");
-      for (const script of doc.querySelectorAll('script[type="application/json"]')) {
-        try { roots.push(JSON.parse(script.textContent)); } catch { /* ignore */ }
-      }
-      for (const link of doc.querySelectorAll('a[href*="/actions/runs/"]')) {
-        const m = link.getAttribute("href")?.match(
-          /(?:^|\/)lazyxu\/xdrive\/actions\/runs\/(\d+)(?:[/?#]|$)/);
-        if (m) linkIds.add(num(m[1]));
-      }
-      // 同源 React 数据可能包含转义的 run 链接。
-      const normalized = raw.replace(/\\u002[fF]/g, "/").replace(/\\\//g, "/");
-      for (const m of normalized.matchAll(/\/lazyxu\/xdrive\/actions\/runs\/(\d+)(?:[/?#"' <]|$)/g)) {
-        linkIds.add(num(m[1]));
-      }
-      for (const rootNode of roots) {
-        walk(rootNode, object => {
-          const id = num(pick(object, "id", "run_id", "runId", "workflowRunId"));
-          const sha = pick(object, "head_sha", "headSha");
-          const branch = pick(object, "head_branch", "headBranch");
-          const event = pick(object, "event", "eventType");
-          const path = pick(object, "path", "workflowPath", "workflow_path");
-          const created = pick(object, "created_at", "createdAt");
-          if (!id || !/^[0-9a-f]{40}$/.test(sha || "") ||
-              branch !== "master" || event !== "push" ||
-              path !== ".github/workflows/ci.yml" ||
-              !Number.isFinite(Date.parse(created))) return;
 
-          const suite = pick(object, "check_suite_id", "checkSuiteId");
-          const nested = pick(object, "check_suite", "checkSuite");
-          const suiteId = num(suite ?? (typeof nested === "object" ?
-            pick(nested, "id", "databaseId") : nested));
-          const previous = runs.get(id);
-          if (!previous || (!previous.suiteId && suiteId)) {
-            runs.set(id, {
-              id, suiteId, sha, created,
-              status: pick(object, "status"),
-              attempt: Number(pick(object, "run_attempt", "runAttempt"))
-            });
-          }
+    const all = new Map();
+    for (let page = 1; page <= 3; page++) {
+      const html = await read(root + "/actions/workflows/ci.yml?" +
+        new URLSearchParams({ query: "branch:master", page }));
+      const documentCopy = new DOMParser().parseFromString(html, "text/html");
+      let rows = null;
+      for (const script of documentCopy.querySelectorAll('script[type="application/json"]')) {
+        try { rows = findRuns(JSON.parse(script.textContent)); } catch { /* irrelevant JSON */ }
+        if (rows) break;
+      }
+      if (!Array.isArray(rows)) {
+        throw new Error("第 " + page + " 页缺少 workflowRunsRoute.workflowRuns");
+      }
+      console.log("第 " + page + " 页发现 " + rows.length + " 个 CI Run");
+      for (const run of rows) {
+        if (run?.branch?.name !== "refs/heads/master" ||
+            run.workflowFilePath !== ".github/workflows/ci.yml") continue;
+        const id = Number(run.id);
+        const sha = run.description?.linkUrl?.match(
+          /^\/lazyxu\/xdrive\/commit\/([0-9a-f]{40})$/)?.[1];
+        const suite = run.actions?.cancelUrl?.match(
+          /^\/lazyxu\/xdrive\/suites\/(\d+)\/cancel$/)?.[1];
+        if (!Number.isSafeInteger(id) || id <= 0 ||
+            !sha || !Number.isFinite(Date.parse(run.createdAt?.timestamp))) {
+          throw new Error("master Run 缺少 Commit/时间: " + run.id);
+        }
+        all.set(id, {
+          id, sha, suite,
+          created: run.createdAt.timestamp,
+          queued: run.state?.status === "WORKFLOW_RUN_STATUS_QUEUED"
         });
       }
-    };
-
-    // 只查询原版实际涉及的 CI Workflow，不读取当前页面的 PR Runs。
-    for (let page = 1; page <= 3; page++) {
-      const html = await getPage(root + "/actions/workflows/ci.yml?" +
-        new URLSearchParams({ query: "branch:master", page }));
-      parse(html);
+      if (rows.length < 25) break;
     }
 
-    const oldRuns = [...runs.values()].filter(r => r.sha !== head)
+    if (!all.size) throw new Error("没有找到 master CI Run，安全停止");
+    const old = [...all.values()].filter(run => run.sha !== head)
       .sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
-    // 保护当前 master（上方排除）以及最近 1 个旧 master Run。
-    const eligible = oldRuns.slice(1).filter(r =>
-      r.status === "queued" && r.attempt === 1);
-    const missing = eligible.filter(r => !r.suiteId);
-    console.log("master:", head, "解析到的 master CI:", runs.size,
-      "页面 Run 链接:", linkIds.size, "候选旧 master CI:", eligible.length);
-
-    if (!runs.size) {
-      throw new Error("页面未提供可验证的 master CI 元数据；未取消任何任务");
+    // 只保护当前 master 和最近 1 个旧 master Run，且只识别排队中的 Suite。
+    const selected = old.slice(1).filter(run => run.queued);
+    if (selected.some(run => !/^\d+$/.test(run.suite || ""))) {
+      throw new Error("候选 master Run 缺少 Check Suite 取消链接，安全停止");
     }
-    if (missing.length) {
-      throw new Error("发现 " + missing.length + " 个旧 master Run 缺少 Check Suite ID，停止操作");
-    }
-    return eligible.map(r => r.suiteId).join(" ");
+    console.log("当前 master:", head, "master CI:", all.size,
+      "旧 master:", old.length, "待取消 Suite:", selected.length);
+    return selected.map(run => run.suite).join(" ");
   })();
 
   // 已关闭 PR #410 的遗留 CI Check Suite
