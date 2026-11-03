@@ -475,6 +475,9 @@ func (s *Server) restoreFileVersion(c *gin.Context) {
 		if err := notesRejectNodeWithReason(c.Request.Context(), tx, userID(c), id); err != nil {
 			return err
 		}
+		if err := managedSourceRejectNodeTx(c.Request.Context(), tx, c, userID(c), id); err != nil {
+			return err
+		}
 		currentRevision = current.Revision
 		if current.Revision != expected {
 			return errRevisionConflict
