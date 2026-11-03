@@ -548,6 +548,38 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken)
+                if autoAdvance {
+                    // A stable item count does not guarantee that old and
+                    // new 48-item windows belong to the same media snapshot.
+                    // Refuse to append if a reindex/replacement changed even
+                    // one existing Node or revision during scrolling.
+                    guard let departingPage,
+                          history.last == departingCursor,
+                          target != departingCursor,
+                          selection.places.indices.contains(departingCursor.placeIndex),
+                          departingPage.offset == departingCursor.offset,
+                          XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
+                              offset: departingPage.offset,
+                              count: departingPage.items.count,
+                              total: departingPage.total_count
+                          ),
+                          departingPage.total_count ==
+                            selection.places[departingCursor.placeIndex].item_count
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                    let priorFacet = selection.places[departingCursor.placeIndex]
+                    guard XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(priorFacet)
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                    let currentOldPage = try await reader.page(
+                        offset: departingCursor.offset, placeID: priorFacet.id)
+                    try Task.checkCancellation()
+                    guard generation == ticket, activeOwner,
+                          XDriveIOSNativePhotoOwnerScope.matches(
+                              login.owner, selection.owner
+                          ),
+                          page?.sameVisibleSnapshot(as: departingPage) == true,
+                          currentOldPage.sameVisibleSnapshot(as: departingPage)
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                }
                 let fetched = try await reader.page(
                     offset: target.offset, placeID: facet.id)
                 try Task.checkCancellation()
