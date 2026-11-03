@@ -219,6 +219,37 @@ class MirrorTests(unittest.TestCase):
         self.assertEqual(share.directory_calls, [])
 
 
+    def test_snapshot_client_collector_pins_time_and_supporting_asset_hashes(self):
+        root = Path(__file__).resolve().parents[2]
+        source = (root / 'scripts/ci/collect-client-share-mirror.sh').read_text()
+        for filename in ('xdrive-backup-linux-amd64.tar.gz',
+                         'xdrive-backup-windows-amd64.zip',
+                         'xdrive-source-agent-linux-amd64',
+                         'xdrive-source-agent-linux-arm64'):
+            self.assertIn("--pattern '" + filename + "'", source)
+            self.assertIn('verify_release_asset "$supporting"', source)
+        self.assertIn('gh api "repos/$repo/commits/$sha"', source)
+        self.assertIn('commit_utc "$snapshot_sha"', source)
+        self.assertIn('commit_utc "$sha"', source)
+        self.assertIn('sha256sum --check --ignore-missing SHA256SUMS.txt', source)
+
+    def test_elf_architecture_and_backup_archive_types_are_exact(self):
+        for platform, machine in (('agent-linux-amd64', b'\x3e\x00'),
+                                  ('agent-linux-arm64', b'\xb7\x00')):
+            file = self.root / platform
+            file.write_bytes(self.elf(machine))
+            mirror.validate_source(file, platform)
+            wrong = b'\xb7\x00' if machine == b'\x3e\x00' else b'\x3e\x00'
+            file.write_bytes(self.elf(wrong))
+            with self.assertRaises(mirror.MirrorError):
+                mirror.validate_source(file, platform)
+        backup = self.root / 'xdrive-backup-windows-amd64.zip'
+        backup.write_bytes(self._zip_bytes('xdrive-backup.exe'))
+        mirror.validate_source(backup, 'backup-windows')
+        backup.write_bytes(b'PKinvalid')
+        with self.assertRaises(zipfile.BadZipFile):
+            mirror.validate_source(backup, 'backup-windows')
+
     def test_plan_b_group_names_and_stable_originals(self):
         time = '2026-11-03T12:34:56Z'
         commit = 'a' * 40
