@@ -82,6 +82,22 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		t.Fatalf("CI core job drift: GitHub=%v GitLab=%v", githubCoreJobs, gitlabCoreJobs)
 	}
 	assertGitLabJobNeeds(t, gitlab, "build-client-core", []string{"build-synology-ui"})
+	// Offline release checks are mandatory for GitLab MR/stable Final Gate,
+	// not exceptions to the cross-provider test job contract.
+	if gate, ok := gitlab["final-gate"].(map[string]any); ok {
+		gateNeeds := collectYAMLStrings(gate["needs"])
+		for _, name := range []string{"offline-release-tests", "offline-security-contract"} {
+			if !strings.Contains(gateNeeds, name) {
+				t.Errorf("GitLab final-gate must depend on %s", name)
+			}
+		}
+	} else {
+		t.Fatal("GitLab final-gate is missing")
+	}
+	assertGitLabJobTextContains(t, gitlab, "offline-release-tests",
+		"python3 scripts/ci/test-mirror-server-to-share.py -q")
+	assertGitLabJobTextContains(t, gitlab, "offline-security-contract",
+		"python3 scripts/test-release-attestation-contract.py")
 	requireRaw(t, "GitHub DSM source-exact build in client-core", githubRaw,
 		"name: Build source-exact DSM shared-MUI bundle",
 		"npm run build:synology --prefix web",
@@ -109,6 +125,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"package-linux-client":           "linux",
 		"package-windows-client":         "windows",
 		"server-validation":              "linux",
+		"offline-release-tests":          "linux",
+		"offline-security-contract":      "linux",
 		"server-image":                   "linux",
 		"photo-face-image":               "linux",
 		"media-worker-image":             "linux",
@@ -138,6 +156,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"package-linux-client":           "$XDRIVE_CI_GO_IMAGE",
 		"package-windows-client":         "",
 		"server-validation":              "$XDRIVE_CI_GO_IMAGE",
+		"offline-release-tests":          "python:3.12-bookworm",
+		"offline-security-contract":      "python:3.12-bookworm",
 		"server-image":                   "$XDRIVE_CI_GO_IMAGE",
 		"photo-face-image":               "$XDRIVE_CI_GO_IMAGE",
 		"media-worker-image":             "$XDRIVE_CI_GO_IMAGE",
@@ -602,7 +622,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobNeeds(t, gitlab, "test-windows-rollback-artifact", []string{"package-windows-client"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
-	assertGitHubJobNeeds(t, github, "publish-master", []string{"build-client-core", "build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
+	assertGitHubJobNeeds(t, github, "publish-master", []string{"final-gate", "build-client-core", "build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
 	assertGitHubJobNeeds(t, github, "publish-stable", []string{"final-gate", "photo-ocr-master-smoke"})
 	assertGitLabSharedResourceGroup(t, gitlab, []string{
 		"test-windows-rollback-artifact",

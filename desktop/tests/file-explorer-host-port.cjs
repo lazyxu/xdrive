@@ -37,7 +37,7 @@ test('native FileExplorer calls are supplied through one explicit, typed Desktop
   assert.ok(app.includes('hostPort: fileExplorerHostPort'))
 })
 
-test('DSM retains a distinct Owner-authorized read-only bridge', () => {
+test('DSM retains a distinct Owner-scoped transport without Desktop IPC', () => {
   assert.ok(dsm.includes('client.ownerFilesRoot(') &&
     dsm.includes('client.ownerFilesPage('), 'DSM must use genuine scoped Owner reads')
   assert.equal(dsm.includes('window.xdriveDesktop'), false)
@@ -47,7 +47,14 @@ test('DSM retains a distinct Owner-authorized read-only bridge', () => {
     dsm.includes('groupingEnabled={false}'))
   assert.ok(dsm.includes("createFolder: '退出搜索后可新建文件夹。'"),
     'current Owner search must not grant folder creation from a search result')
-  assert.equal(dsm.includes('onUpload='), false, 'Desktop owning upload capability must not leak to DSM')
+  assert.ok(dsm.includes('onUpload={() => {') &&
+    dsm.includes('uploadInputRef.current?.click()') &&
+    dsm.includes('client.ownerUploadSmallFile('),
+    'only the authorized DSM Owner file picker may initiate bounded browser upload')
+  assert.equal(dsm.includes('onUploadFolder='), false,
+    'unimplemented folder upload must remain disabled')
+  assert.equal(dsm.includes('window.xdriveDesktop'), false,
+    'DSM upload must not borrow Desktop native IPC')
 })
 
 test('viewport abort and private localhost media tickets belong to the Host, not the common-bound controller', () => {

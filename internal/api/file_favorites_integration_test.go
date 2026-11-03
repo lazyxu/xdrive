@@ -170,7 +170,7 @@ func TestFileFavoritesPersistenceIsolationAndLiveBreadcrumbs(t *testing.T) {
 		t,
 		router,
 		http.MethodPut,
-		fmt.Sprintf("/api/v1/file-favorites/%d", projects.ID),
+		fmt.Sprintf("/api/v1/file-favorites/%d", rootA.ID),
 		tokenA,
 		nil,
 		http.StatusBadRequest,
@@ -345,5 +345,120 @@ func TestFileFavoritesPersistenceIsolationAndLiveBreadcrumbs(t *testing.T) {
 	}
 	if len(empty) != 0 {
 		t.Fatalf("unfavorite did not remove item: %+v", empty)
+	}
+
+	// A non-root folder is the same Server favorite projection as a file,
+	// including authoritative breadcrumbs, per-Owner isolation and 204 undo.
+	res = request(t, router, http.MethodPut,
+		fmt.Sprintf("/api/v1/file-favorites/%d", projects.ID),
+		tokenA, nil, http.StatusCreated)
+	var favoriteFolder fileFavoriteItemDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &favoriteFolder); err != nil {
+		t.Fatal(err)
+	}
+	if favoriteFolder.Node.ID != projects.ID ||
+		favoriteFolder.Node.Type != meta.NodeTypeDir ||
+		favoriteFolder.Node.ParentID == nil ||
+		favoriteFolder.Path != "Projects" || len(favoriteFolder.Crumbs) != 2 {
+		t.Fatalf("expected actual non-root folder favorite with Owner breadcrumbs: %+v", favoriteFolder)
+	}
+	request(t, router, http.MethodPut,
+		fmt.Sprintf("/api/v1/file-favorites/%d", projects.ID),
+		tokenA, nil, http.StatusOK)
+	request(t, router, http.MethodPut,
+		fmt.Sprintf("/api/v1/file-favorites/%d", projects.ID),
+		tokenB, nil, http.StatusNotFound)
+	request(t, router, http.MethodDelete,
+		fmt.Sprintf("/api/v1/file-favorites/%d", projects.ID),
+		tokenB, nil, http.StatusNoContent)
+	var retainedFolderFavoriteCount int64
+	if err := db.Model(&meta.FileFavorite{}).
+		Where("owner_id = ? AND node_id = ?", rootModel.OwnerID, projects.ID).
+		Count(&retainedFolderFavoriteCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if retainedFolderFavoriteCount != 1 {
+		t.Fatalf("foreign user deleted Owner's folder favorite: count=%d", retainedFolderFavoriteCount)
+	}
+
+	// Favorite folder must follow its real, renamed parent chain after moving.
+	if err := db.Model(&meta.Node{}).Where("id = ?", projects.ID).
+		Updates(map[string]any{
+			"parent_id":  archive.ID,
+			"name":       "ProjectsMoved",
+			"revision":   gorm.Expr("revision + 1"),
+			"updated_at": time.Now(),
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	res = request(t, router, http.MethodGet, "/api/v1/file-favorites",
+		tokenA, nil, http.StatusOK)
+	var relocatedFolders []fileFavoriteItemDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &relocatedFolders); err != nil {
+		t.Fatal(err)
+	}
+	if len(relocatedFolders) != 1 ||
+		relocatedFolders[0].Node.ID != projects.ID ||
+		relocatedFolders[0].Node.Type != meta.NodeTypeDir ||
+		relocatedFolders[0].Path != "Archive/ProjectsMoved" ||
+		len(relocatedFolders[0].Crumbs) != 3 {
+		t.Fatalf("folder favorite did not follow real Owner path: %+v", relocatedFolders)
+	}
+
+	// Trashed folders must disappear, then reappear if the same Node recovers.
+	if err := db.Model(&meta.Node{}).Where("id = ?", projects.ID).
+		Updates(map[string]any{
+			"deleted_at":    &deletedAt,
+			"trash_root_id": projects.ID,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	res = request(t, router, http.MethodGet, "/api/v1/file-favorites",
+		tokenA, nil, http.StatusOK)
+	var hiddenFolders []fileFavoriteItemDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &hiddenFolders); err != nil {
+		t.Fatal(err)
+	}
+	if len(hiddenFolders) != 0 {
+		t.Fatalf("trashed folder leaked to Favorites: %+v", hiddenFolders)
+	}
+	if err := db.Model(&meta.Node{}).Where("id = ?", projects.ID).
+		Updates(map[string]any{
+			"deleted_at":    nil,
+			"trash_root_id": nil,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	res = request(t, router, http.MethodGet, "/api/v1/file-favorites",
+		tokenA, nil, http.StatusOK)
+	var recoveredFolders []fileFavoriteItemDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &recoveredFolders); err != nil {
+		t.Fatal(err)
+	}
+	if len(recoveredFolders) != 1 || recoveredFolders[0].Node.ID != projects.ID {
+		t.Fatalf("restored folder did not reappear in Favorites: %+v", recoveredFolders)
+	}
+
+	request(t, router, http.MethodDelete,
+		fmt.Sprintf("/api/v1/file-favorites/%d", projects.ID),
+		tokenA, nil, http.StatusNoContent)
+	request(t, router, http.MethodDelete,
+		fmt.Sprintf("/api/v1/file-favorites/%d", projects.ID),
+		tokenA, nil, http.StatusNoContent)
+	res = request(t, router, http.MethodGet, "/api/v1/file-favorites",
+		tokenA, nil, http.StatusOK)
+	var afterFolderUnfavorite []fileFavoriteItemDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &afterFolderUnfavorite); err != nil {
+		t.Fatal(err)
+	}
+	if len(afterFolderUnfavorite) != 0 {
+		t.Fatalf("folder remained favorited after confirmed remove: %+v", afterFolderUnfavorite)
+	}
+	var retainedFolder meta.Node
+	if err := db.First(&retainedFolder, projects.ID).Error; err != nil {
+		t.Fatalf("unfavoriting folder deleted its Node: %v", err)
+	}
+	if retainedFolder.ID != projects.ID || retainedFolder.Type != meta.NodeTypeDir {
+		t.Fatalf("unfavoriting folder changed original identity: %+v", retainedFolder)
 	}
 }

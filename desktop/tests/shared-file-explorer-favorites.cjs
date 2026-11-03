@@ -27,12 +27,12 @@ const serverFavorites = read('internal', 'api', 'file_favorites.go')
 const serverModel = read('internal', 'meta', 'file_favorite.go')
 const serverMain = read('cmd', 'server', 'main.go')
 
-test('file favorites stay separate from folder Quick Access and Gallery favorite', () => {
+test('file and folder Favorites remain separate from Quick Access and Gallery favorites', () => {
   for (const token of ['type FileFavorite struct','OwnerID','NodeID','xd_file_favorites','constraint:OnUpdate:CASCADE,OnDelete:CASCADE']) {
     assert.ok(serverModel.includes(token), 'server favorite model missing: ' + token)
   }
   assert.ok(serverMain.includes('&meta.FileFavorite{}'))
-  for (const token of ['fileFavoriteLimit = 256','fileFavoriteItems(','FROM xd_file_favorites q',"n.type = 'file'",'only files can be favorited']) {
+  for (const token of ['fileFavoriteLimit = 256','fileFavoriteItems(','FROM xd_file_favorites q',"n.type IN ('file', 'dir')","n.parent_id IS NOT NULL",'only non-root files and folders can be favorited']) {
     assert.ok(serverFavorites.includes(token), 'server favorite behavior missing: ' + token)
   }
   assert.equal(serverFavorites.includes('PhotoMetadata'), false)
@@ -62,7 +62,7 @@ test('shared controller and UI own file Star semantics', () => {
   assert.ok(sharedModel.includes('export type XDriveFileFavoriteItem'))
   assert.ok(muiIndex.includes("export * from './FileExplorerFavoriteController'"))
   for (const token of ['useXDriveFileExplorerFavorites','const favoriteIDs = useMemo','const favorite = useCallback','const unfavorite = useCallback','const toggle = useCallback','const activate = useCallback']) assert.ok(controller.includes(token))
-  for (const token of ['favoritesEnabled','favoriteItems','暂无收藏文件','onActivateFavorite','onUnfavorite','快速访问','收藏']) assert.ok(navigation.includes(token))
+  for (const token of ['favoritesEnabled','favoriteItems','暂无收藏项目','onActivateFavorite','onUnfavorite','快速访问','收藏']) assert.ok(navigation.includes(token))
   for (const token of ['onToggleFavorite',"id: 'toggle-favorite'","label: favorite ? '取消收藏' : '添加到收藏'",'favoriteDisabled']) assert.ok(actions.includes(token))
   assert.ok(actions.includes("id: 'toggle-quick-access'"))
 })
@@ -104,4 +104,26 @@ test('favorite activation is fenced by the shared navigation intent on Web and D
 
   assertFavoriteIntentFence(webExplorer, 'Web')
   assertFavoriteIntentFence(desktopExplorer, 'Desktop')
+})
+
+
+test('folder Favorites retain Server kind and navigate cloud directories on Web/Desktop', () => {
+  assert.match(controller, /type\?: string/)
+  assert.match(controller, /kind: 'file' \| 'dir'/)
+  assert.match(controller, /kind: item\.node\.type === 'dir' \? 'dir' : 'file'/)
+  assert.match(navigation, /kind: item\.kind/)
+  assert.match(navigation, /暂无收藏项目/)
+  assert.match(webExplorer, /favorites=\{favorites\.items\.map\(item => \(\{[\s\S]*?kind: item\.kind/)
+  assert.match(webExplorer, /onToggleFavorite: node\.type === 'file' \|\| node\.type === 'dir'/)
+  assert.match(webExplorer, /return favorites\.activate\(id, \(node, crumbs\) =>/)
+  assert.match(webExplorer, /if \(node\.type === 'dir'\) \{\s*return navigateTo\(crumbs, true, intent\)/)
+  assert.match(webExplorer, /void favorites\.activate\(nodeID, \(node, crumbs\) =>/)
+  assert.match(webExplorer, /if \(node\.type === 'dir'\) \{\s*void navigateTo\(crumbs, true, navigationIntentID\)/)
+  assert.match(desktopExplorer, /onToggleFavorite: \(node\.type === 'file' \|\| node\.type === 'dir'\) && favoritesSupported/)
+  assert.match(desktopExplorer, /void favorites\.activate\(nodeID, \(node, crumbs\) =>/)
+  assert.match(desktopExplorer, /if \(node\.type === 'dir'\) \{\s*return navigateTo\(crumbs, true, navigationIntentID\)/)
+  assert.match(desktopExplorer, /return openLocalNode\(node\)/)
+  assert.doesNotMatch(navigation, /kind: 'file',\s*size: item\.size/)
+  assert.match(serverFavorites, /n\.type IN \('file', 'dir'\)/)
+  assert.match(serverFavorites, /n\.parent_id IS NOT NULL/)
 })

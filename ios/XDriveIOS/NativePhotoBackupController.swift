@@ -11,6 +11,8 @@ struct XDriveIOSFocusedBackupSummary: Equatable {
     var totalWindows = 0
     var completedWindows = 0
     var currentWindow = 0
+    // Where this explicit session safely resumed, not an upload count.
+    var resumedFromWindow = 0
     var confirmedNew = 0
     var hadUnavailable = false
     var limitedAuthorization = false
@@ -399,11 +401,13 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     }
                 }
             } catch XDriveIOSFocusedBackupFailure.libraryChanged {
+                XDriveIOSPhotoFocusedResumeStore.shared.clear(owner: selected)
                 if self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                     self.errorMessage = "集中备份时系统相册或授权范围发生变化，已安全停止；请重新开始整库扫描，不会按旧位置跳过照片。"
                 }
             } catch XDriveIOSFocusedBackupFailure.invalidWindow {
+                XDriveIOSPhotoFocusedResumeStore.shared.clear(owner: selected)
                 if self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                     self.errorMessage = "集中备份返回的扫描进度无法校验，已停止以避免漏备或重复写入。"
@@ -456,11 +460,41 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         owner: XDriveNativeOwnerRoot, uiEpoch: UUID, allowICloud: Bool
     ) async throws {
         let initial = try XDriveIOSPhotoKitLibraryEpoch.capture()
-        var window = 0
+        // A constant-time PhotoKit fetch count plus a SECOND epoch witness
+        // protects the saved checkpoint from a permission/library mutation
+        // between capturing the generation and reading the authorized count.
+        let visibleNow = PHAsset.fetchAssets(with: nil).count
+        let afterCount = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard afterCount.authorization == initial.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(
+                initial.serialized, as: afterCount.token
+              ) else { throw XDriveIOSFocusedBackupFailure.libraryChanged }
+        // Reuse a checkpoint only after the caller's global current-Owner
+        // pending/unknown ACK preflight under the serial original writer gate.
+        // A cursor never substitutes for Server-confirmed Node receipts.
+        let resume = XDriveIOSPhotoFocusedResumeStore.shared.resume(
+            owner: owner, epoch: initial, totalVisible: visibleNow,
+            allowICloud: allowICloud
+        )
+        var window = resume.nextWindow
         var confirmedNew = 0
-        var hadUnavailable = false
-        var expectedTotal: Int?
-        focusedSummary = XDriveIOSFocusedBackupSummary()
+        var hadUnavailable = resume.hadUnavailable
+        var expectedTotal: Int? = visibleNow
+        var initialProgress = XDriveIOSFocusedBackupSummary()
+        initialProgress.resumedFromWindow = window
+        initialProgress.completedWindows = window
+        initialProgress.currentWindow = window
+        initialProgress.totalVisible = visibleNow
+        initialProgress.totalWindows = XDrivePhotoBackupScanWindow.count(
+            visibleTotal: visibleNow
+        )
+        initialProgress.hadUnavailable = hadUnavailable
+        initialProgress.limitedAuthorization = initial.authorization ==
+            PHAuthorizationStatus.limited.rawValue
+        focusedSummary = initialProgress
+        if window > 0 {
+            message = "已校验同一授权相册与账户，从第 \(window + 1) 段继续集中扫描；历史收据仍须逐项核验。"
+        }
         while true {
             try Task.checkCancellation()
             guard displayEpoch == uiEpoch,
@@ -559,9 +593,22 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 // prior confirmed original and Node; never trust stale flags.
                 window = same
             case .nextWindow(let next):
+                // Only a contiguous prefix with NO unavailable/unsupported
+                // media may be skipped on a later run. Once one original was
+                // unavailable, keep the previous safe checkpoint and let
+                // the next explicit run revisit the first unresolved window.
+                // Do not silently jump past the gap after later windows.
+                if !hadUnavailable {
+                    try XDriveIOSPhotoFocusedResumeStore.shared.saveCompletedWindow(
+                        owner: owner, completedWindow: window, nextWindow: next,
+                        totalVisible: result.totalVisible, epoch: after,
+                        allowICloud: allowICloud, hadUnavailable: hadUnavailable
+                    )
+                }
                 state.completedWindows += 1
                 window = next
             case .finished:
+                XDriveIOSPhotoFocusedResumeStore.shared.clear(owner: owner)
                 state.completedWindows = state.totalWindows
                 state.finishedScan = true
                 focusedSummary = state
@@ -578,6 +625,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 errorMessage = "集中备份因不确定上传收据暂停；需先只读核对，不会自动重传。"
                 return
             case .invalidProgress:
+                XDriveIOSPhotoFocusedResumeStore.shared.clear(owner: owner)
                 throw XDriveIOSFocusedBackupFailure.invalidWindow
             }
             focusedSummary = state

@@ -243,3 +243,38 @@ for (const kind of kinds) {
     assert.equal(activated, 1)
   })
 }
+
+
+test('favorite folder projection retains verified type and breadcrumbs for activation', async () => {
+  const runtime = createHookRuntime()
+  const hook = loadHook('FileExplorerFavoriteController.ts', 'useXDriveFileExplorerFavorites', runtime.react)
+  const directory = {
+    node: { id: 9, name: 'Documents', type: 'dir', revision: 3 },
+    path: 'My Files/Documents',
+    crumbs: [{ id: 1, name: 'My Files' }, { id: 9, name: 'Documents' }],
+    favorited_at: '2026-11-03T00:00:00Z',
+  }
+  let activations = 0
+  const render = () => runtime.render(() => hook({
+    lifecycleKey: 'server:owner',
+    loadItems: async () => [directory],
+    favoriteItem: async () => directory,
+    unfavoriteItem: async () => {},
+    onError: error => { throw error },
+  }))
+  render()
+  await flush()
+  let controller = render()
+  assert.equal(controller.items.length, 1)
+  assert.equal(controller.items[0].kind, 'dir')
+  assert.equal(controller.items[0].node.type, 'dir')
+  let target
+  assert.equal(await controller.activate(9, async (node, crumbs) => {
+    activations += 1
+    target = { node, crumbs }
+  }), true)
+  assert.equal(activations, 1)
+  assert.equal(target.node.id, directory.node.id)
+  assert.equal(target.node.type, 'dir')
+  assert.deepEqual(target.crumbs, directory.crumbs)
+})

@@ -111,7 +111,7 @@ struct XDriveIOSNativeFilesCollectionsTransport {
     private func requireCurrent(_ node: XDriveIOSNativeFilesNode,
                                 client: URLSession) async throws {
         guard node.id > 0, node.parent_id != nil, node.revision > 0,
-              node.type == "file" else {
+              (node.type == "file" || node.type == "dir") else {
             throw XDriveIOSNativeFilesCollectionFailure.staleNode
         }
         let data = try await send(
@@ -374,6 +374,14 @@ final class XDriveIOSNativeFilesFavoriteMutationModel: ObservableObject {
 
 /// Files-owned recent/favorites subroute. Entries always come from one exact
 /// Owner projection and open the same L3 native Files Viewer.
+/// Collection actions preserve the exact Owner and projected Node.
+private struct XDriveIOSNativeFilesCollectionManageIntent: Identifiable {
+    let id = UUID()
+    let owner: XDriveNativeOwnerRoot
+    let item: XDriveIOSNativeFilesCollectionItem
+    let quickAction: XDriveIOSNativeFilesQuickAction?
+}
+
 struct XDriveIOSNativeFilesCollectionScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let kind: XDriveIOSNativeFilesCollectionKind
@@ -386,6 +394,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var returnFile: XDriveIOSNativeFilesNode?
     @State private var locateIntent: XDriveIOSNativeFilesCollectionItem?
     @State private var locateOwner: XDriveNativeOwnerRoot?
+    @State private var managementIntent: XDriveIOSNativeFilesCollectionManageIntent?
     // Match Browse's chosen presentation when switching between Files subroutes.
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
 
@@ -411,9 +420,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                             gridTile(item)
                                 .id(item.id)
                                 .contextMenu {
-                                    Button { showLocation(for: item) } label: {
-                                        Label("显示所在文件夹", systemImage: "folder")
-                                    }
+                                    collectionQuickActions(for: item)
                                 }
                         }
                     }
@@ -426,11 +433,30 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     ForEach(model.items) { item in
                         row(item)
                             .id(item.id)
-                            .contextMenu {
-                                Button { showLocation(for: item) } label: {
-                                    Label("显示所在文件夹", systemImage: "folder")
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                if model.verified && !model.loading && !favorites.busy {
+                                    Button {
+                                        openManagement(for: item)
+                                    } label: {
+                                        Label("更多", systemImage: "ellipsis")
+                                    }
+                                    .tint(.gray)
+                                    Button {
+                                        openManagement(for: item, quickAction: .shareLink)
+                                    } label: {
+                                        Label("分享链接", systemImage: "link")
+                                    }
+                                    .tint(.blue)
+                                    Button(role: .destructive) {
+                                        openManagement(for: item, quickAction: .trash)
+                                    } label: {
+                                        Label("删除", systemImage: "trash")
+                                    }
                                 }
                             }
+                            .contextMenu {
+                                    collectionQuickActions(for: item)
+                                }
                     }
                 }
                 if favorites.busy {
@@ -461,6 +487,27 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                         Label("刷新", systemImage: "arrow.clockwise")
                     }
                     .disabled(model.loading || favorites.busy)
+                }
+            }
+
+            .sheet(item: $managementIntent, onDismiss: {
+                reload()
+            }) { intent in
+                if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
+                   let parentID = intent.item.node.parent_id, parentID > 0,
+                   XDriveIOSNativeFilesCollectionsPolicy.validItem(intent.item, kind: kind) {
+                    XDriveIOSNativeFilesManagementPanel(
+                        login: login, expectedOwner: intent.owner,
+                        folderID: parentID, folderName: nil,
+                        file: intent.item.node.isDirectory ? nil : intent.item.node,
+                        directory: intent.item.node.isDirectory ? intent.item.node : nil,
+                        initialQuickAction: intent.quickAction
+                    ) {
+                        managementIntent = nil
+                    }
+                } else {
+                    Text("文件或账户已变化，请关闭后重新选择。")
+                        .foregroundStyle(.secondary)
                 }
             }
             .sheet(item: $locateIntent, onDismiss: {
@@ -508,7 +555,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .onAppear { reload() }
             .onDisappear {
-                if selectedFile == nil && locateIntent == nil {
+                if selectedFile == nil && locateIntent == nil && managementIntent == nil {
                     model.invalidate()
                     favorites.invalidate()
                 }
@@ -519,6 +566,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 returnFile = nil
                 locateIntent = nil
                 locateOwner = nil
+                managementIntent = nil
                 model.invalidate()
                 favorites.invalidate()
             }
@@ -530,6 +578,74 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 returnFile = nil
             }
         }
+    }
+
+    /// Recent and Favorites reuse the existing Server Node operation panel.
+    /// Every menu item is actionable, with destination/version/delete checks
+    /// delegated to the same verified writers as the main Files browser.
+    @ViewBuilder
+    private func collectionQuickActions(
+        for item: XDriveIOSNativeFilesCollectionItem
+    ) -> some View {
+        if model.verified && !model.loading && !favorites.busy {
+            if !item.node.isDirectory {
+                Button { openFile(item) } label: {
+                    Label("预览", systemImage: "eye")
+                }
+            }
+            Button { openManagement(for: item, quickAction: .copy) } label: {
+                Label("复制到…", systemImage: "doc.on.doc")
+            }
+            Button { openManagement(for: item, quickAction: .move) } label: {
+                Label("移动到…", systemImage: "folder")
+            }
+            Button { openManagement(for: item, quickAction: .rename) } label: {
+                Label("重命名", systemImage: "pencil")
+            }
+            if kind == .favorites {
+                Button {
+                    guard model.items.contains(item) else { return }
+                    favorites.remove(item, login: login) { reload() }
+                } label: {
+                    Label("取消收藏", systemImage: "star.slash")
+                }
+            } else {
+                Button { openManagement(for: item, quickAction: .favorite) } label: {
+                    Label("收藏", systemImage: "star")
+                }
+            }
+            Button { openManagement(for: item, quickAction: .shareLink) } label: {
+                Label("云端分享链接", systemImage: "link")
+            }
+            Button { openManagement(for: item, quickAction: .download) } label: {
+                Label(item.node.isDirectory ? "下载文件夹 ZIP" : "下载原件",
+                      systemImage: "arrow.down.to.line")
+            }
+            Button { showLocation(for: item) } label: {
+                Label("显示所在文件夹", systemImage: "folder")
+            }
+            Button(role: .destructive) {
+                openManagement(for: item, quickAction: .trash)
+            } label: {
+                Label("移入回收站", systemImage: "trash")
+            }
+        }
+    }
+
+    private func openManagement(
+        for item: XDriveIOSNativeFilesCollectionItem,
+        quickAction: XDriveIOSNativeFilesQuickAction? = nil
+    ) {
+        guard phase == .active, model.verified, !model.loading,
+              !favorites.busy, selectedFile == nil, locateIntent == nil,
+              managementIntent == nil,
+              let owner = login.owner, let parentID = item.node.parent_id,
+              parentID > 0,
+              XDriveIOSNativeFilesCollectionsPolicy.validItem(item, kind: kind),
+              model.items.contains(item) else { return }
+        managementIntent = XDriveIOSNativeFilesCollectionManageIntent(
+            owner: owner, item: item, quickAction: quickAction
+        )
     }
 
     /// Recent and Favorite server projections expose a path label but no
@@ -565,6 +681,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     gridEntryLabel(item)
                 }
                 .buttonStyle(.plain)
+                .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-recent-folder-\(item.id)")
             } else {
                 Button { openFile(item) } label: {
@@ -574,7 +691,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-collection-open-\(item.id)")
             }
-            if kind == .favorites && !item.node.isDirectory {
+            if kind == .favorites {
                 Button {
                     guard model.verified, !model.loading,
                           model.items.contains(item) else { return }
@@ -623,6 +740,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 } label: {
                     entryLabel(item)
                 }
+                .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-recent-folder-\(item.id)")
             } else {
                 Button { openFile(item) } label: {
@@ -632,7 +750,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-collection-open-\(item.id)")
             }
-            if kind == .favorites && !item.node.isDirectory {
+            if kind == .favorites {
                 Button {
                     guard model.verified, !model.loading, model.items.contains(item) else {
                         return

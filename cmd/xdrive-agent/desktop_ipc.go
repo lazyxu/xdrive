@@ -123,7 +123,11 @@ var desktopIPCCapabilities = []string{
 	"cloud-quota-read",
 	"cloud-files-read",
 	"cloud-folder-create",
+	"cloud-owner-small-upload",
 	"cloud-node-rename",
+	"cloud-node-delete",
+	"cloud-node-move",
+	"cloud-node-copy",
 	"cloud-file-text-preview",
 	"cloud-media-range-read",
 	"cloud-thumbnail-read",
@@ -628,6 +632,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/recent/touch", h.cloudTouchFileRecent)
 	mux.HandleFunc("DELETE /v1/cloud/recent", h.cloudClearFileRecent)
 	mux.HandleFunc("POST /v1/cloud/directories", h.cloudCreateDir)
+	mux.HandleFunc("POST /v1/cloud/owner-small-upload", h.cloudOwnerSmallUpload)
 	mux.HandleFunc("PATCH /v1/cloud/nodes", h.cloudRename)
 	mux.HandleFunc("POST /v1/cloud/copy", h.cloudCopy)
 	mux.HandleFunc("PATCH /v1/cloud/move", h.cloudMove)

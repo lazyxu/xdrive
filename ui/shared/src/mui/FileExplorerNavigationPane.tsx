@@ -1615,7 +1615,7 @@ export function XDriveFileExplorerNavigationPane({
             <Box data-xdrive-sidebar-favorites-empty
               sx={{ minHeight: compactViewport ? 72 : 80, display: 'flex', alignItems: 'center' }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
-                暂无收藏文件。打开文件的“更多操作”，选择“添加到收藏”。文件夹可固定到快速访问。
+                暂无收藏项目。打开文件或文件夹的“更多操作”，选择“添加到收藏”；文件夹也可固定到快速访问。
               </Typography>
             </Box>
           ) : (
@@ -1637,7 +1637,7 @@ export function XDriveFileExplorerNavigationPane({
                     {renderItemVisual({
                       id: item.id,
                       name: item.name,
-                      kind: 'file',
+                      kind: item.kind,
                       size: item.size,
                       revision: item.revision,
                       updatedAt: item.updatedAt,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, SyntheticEvent } from 'react'
 import {
   Alert, Box, Button, CircularProgress, Dialog, DialogActions,
@@ -9,6 +9,7 @@ import {
   XDriveNotesMarkdownPreview,
   type XDriveNotesImageResolver,
 } from './NotesMarkdownPreview'
+import { xDriveNotesSafeRelativeAsset } from '../notes-markdown-policy'
 
 export type XDriveNoteSource = 'mine' | 'ios_notes'
 
@@ -43,6 +44,8 @@ export type XDriveNotesDataPort = {
     Promise<{ items: XDriveNoteSummary[]; next_offset: number }>
   readNote(id: string, signal?: AbortSignal): Promise<XDriveNoteDetail>
   createNote(value: { title: string; markdown: string }): Promise<XDriveNoteSummary>
+  /** Manual Apple Notes export: a fresh read-only snapshot, never title dedupe. */
+  importIOSMarkdown?: (input: { title: string; markdown: string }) => Promise<XDriveNoteSummary>
   saveNote(id: string, value: {
     title: string
     markdown: string
@@ -56,6 +59,8 @@ export type XDriveNotesDataPort = {
   /** File downloads remain host-owned and authenticated. */
   exportNote?: (nodeID: number, fileName: string) => Promise<void>
   resolveImage?: XDriveNotesImageResolver
+  uploadImage?: (noteID: string, file: File) => Promise<{ relative_path: string }>
+  readImageBlob?: (noteID: string, path: string, signal?: AbortSignal) => Promise<Blob>
 }
 
 function errorMessage(error: unknown): string {
@@ -104,6 +109,8 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
   const [historyBusy, setHistoryBusy] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const [showPreview, setShowPreview] = useState(true)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [imageURLs, setImageURLs] = useState<Record<string, string>>({})
   const readSeq = useRef(0)
   const listSeq = useRef(0)
   const savingRef = useRef(false)
@@ -113,6 +120,45 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
     mounted.current = true
     return () => { mounted.current = false; readSeq.current++ }
   }, [])
+
+  const assetPaths = useMemo(() => {
+    if (!selected) return [] as string[]
+    const paths = new Set<string>()
+    for (const body of [markdown, oldMarkdown ?? '']) {
+      for (const match of body.matchAll(/!\[[^\]]{0,180}\]\(([^)\s]{1,500})\)/g)) {
+        const path = match[1]
+        if (xDriveNotesSafeRelativeAsset(path) &&
+            path.startsWith('_assets/' + selected.id + '/')) paths.add(path)
+      }
+    }
+    return [...paths]
+  }, [markdown, oldMarkdown, selected?.id])
+  const assetPathSignature = assetPaths.join('|')
+  useEffect(() => {
+    const controller = new AbortController()
+    const urls: string[] = []
+    setImageURLs({})
+    if (selected?.id && port.readImageBlob) {
+      for (const path of assetPaths) {
+        void port.readImageBlob(selected.id, path, controller.signal).then(blob => {
+          if (controller.signal.aborted) return
+          const url = URL.createObjectURL(blob)
+          urls.push(url)
+          setImageURLs(previous => ({ ...previous, [path]: url }))
+        }).catch(() => {
+          // Missing or invalid assets remain an explicit, safe placeholder.
+        })
+      }
+    }
+    return () => {
+      controller.abort()
+      urls.forEach(url => URL.revokeObjectURL(url))
+    }
+  }, [selected?.id, port, assetPathSignature])
+  const resolveImage = useCallback(
+    (path: string) => imageURLs[path] ?? port.resolveImage?.(path) ?? null,
+    [imageURLs, port],
+  )
 
   const dirty = selected !== null && selected.source === 'mine' &&
     (title !== selected.title || markdown !== selected.markdown)
@@ -252,6 +298,58 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
     }
   }
 
+  const importMarkdownSnapshot = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || source !== 'ios_notes' || !port.importIOSMarkdown ||
+        busy || dirty || savingRef.current) return
+    if (!/\.(?:md|markdown)$/i.test(file.name) ||
+        file.size > 1_048_576 || file.size === 0) {
+      setMessage('请选择 1 MiB 以内的 .md 或 .markdown 文件。')
+      return
+    }
+    const title = file.name.replace(/\.(?:md|markdown)$/i, '').trim().slice(0, 255)
+    if (!title || /[\u0000-\u001f\u007f]/.test(title)) {
+      setMessage('文件名不能用作有效的备忘录标题。')
+      return
+    }
+    setBusy(true)
+    setMessage('')
+    let created: XDriveNoteSummary | null = null
+    try {
+      // Reject malformed Unicode rather than replacing characters silently.
+      const bytes = await file.arrayBuffer()
+      if (!mounted.current) return
+      const markdown = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+      created = await port.importIOSMarkdown({ title, markdown })
+      if (!mounted.current) return
+      if (created.source !== 'ios_notes') throw new Error('服务器返回的备份来源无效')
+      setReload(n => n + 1)
+      // A successful POST is authoritative. A failed follow-up GET must NOT
+      // cause a second import, since absent stable Notes IDs create snapshots.
+      const seq = ++readSeq.current
+      try {
+        const note = await port.readNote(created.id)
+        if (seq !== readSeq.current || !mounted.current) return
+        setSelected(note)
+        setTitle(note.title)
+        setMarkdown(note.markdown)
+        setConflict(false)
+        setHistoryOpen(false)
+        setVersions([])
+        setMessage('Markdown 已导入为独立的只读 iOS 备份。')
+      } catch {
+        if (mounted.current) setMessage('Markdown 已提交；读取回执失败，请刷新 iOS 备份列表核对，勿重复导入。')
+      }
+    } catch (error) {
+      if (mounted.current) setMessage(created
+        ? 'Markdown 已提交；后续核对失败，请在列表查找，勿重复导入。'
+        : '导入失败或提交结果不确定：' + errorMessage(error) + '。重复导入前请先核对列表。')
+    } finally {
+      if (mounted.current) setBusy(false)
+    }
+  }
+
   const loadMore = async () => {
     if (!nextOffset || listLoading) return
     const position = nextOffset
@@ -341,6 +439,40 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
   const onTitle = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setTitle(event.target.value)
   const onMarkdown = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setMarkdown(event.target.value)
 
+  const insertImage = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !selected || selected.source !== 'mine' || !port.uploadImage ||
+        busy || savingRef.current) return
+    const noteID = selected.id
+    const seq = readSeq.current
+    setUploadingImage(true)
+    setBusy(true)
+    setMessage('')
+    try {
+      const receipt = await port.uploadImage(noteID, file)
+      if (seq !== readSeq.current || !mounted.current) return
+      if (!xDriveNotesSafeRelativeAsset(receipt.relative_path) ||
+          !receipt.relative_path.startsWith('_assets/' + noteID + '/')) {
+        throw new Error('服务器返回的图片归属或相对路径无效')
+      }
+      const alt = file.name.replace(/[\r\n\\\[\]()]/g, ' ').slice(0, 100) || '图片'
+      setMarkdown(previous => previous +
+        (previous.endsWith('\n') || !previous ? '' : '\n') +
+        '\n![' + alt + '](' + receipt.relative_path + ')\n')
+      setShowPreview(true)
+      setMessage('图片已加入 Markdown，正在自动保存正文。')
+    } catch (error) {
+      if (mounted.current) setMessage(errorMessage(error))
+    } finally {
+      if (mounted.current) {
+        setUploadingImage(false)
+        setBusy(false)
+      }
+    }
+  }
+
+
   return <Box data-xdrive-notes-page sx={{ height: '100%', overflow: 'auto', minWidth: 0, pb: 3 }}>
     <Stack spacing={1} sx={{ mb: 2 }}>
       <Typography variant="h5" fontWeight={700}>备忘录</Typography>
@@ -357,10 +489,16 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
       gap: 2, minHeight: 440 }}>
       <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 1, minWidth: 0 }}>
         <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-          <TextField size="small" type="search" fullWidth label="搜索标题"
+          <TextField size="small" type="search" fullWidth label="搜索标题或正文"
             value={query} onChange={event => setQuery(event.target.value)} />
           {source === 'mine' && <Button disabled={busy || dirty || saving}
             onClick={() => void create()} variant="contained">新建</Button>}
+          {source === 'ios_notes' && port.importIOSMarkdown && <Button
+            component="label" variant="outlined" disabled={busy || saving}>
+            导入 Markdown
+            <input hidden type="file" accept=".md,.markdown,text/markdown"
+              onChange={event => void importMarkdownSnapshot(event)} />
+          </Button>}
         </Stack>
         {listError && <Alert severity="error">{listError}</Alert>}
         <List dense aria-label={source === 'mine' ? '我的备忘录' : 'iOS 备忘录备份'}>
@@ -409,13 +547,19 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
               size="small" onClick={() => setShowPreview(false)}>Markdown 编辑</Button>
             <Button variant={showPreview ? 'contained' : 'outlined'}
               size="small" onClick={() => setShowPreview(true)}>预览</Button>
+            {port.uploadImage && <Button component="label" size="small"
+              disabled={busy || saving || uploadingImage}>
+              {uploadingImage ? '上传图片中…' : '插入图片'}
+              <input hidden type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/heic"
+                onChange={event => void insertImage(event)} />
+            </Button>}
           </Stack>}
           {selected.source === 'mine' && !showPreview
             ? <TextField fullWidth multiline minRows={12} maxRows={28} label="Markdown 正文"
                 value={markdown} onChange={onMarkdown}
                 inputProps={{ spellCheck: true }}
                 helperText="编辑停止约 1.2 秒后自动保存；冲突时会保留当前草稿。" />
-            : <XDriveNotesMarkdownPreview markdown={markdown} resolveImage={port.resolveImage} />}
+            : <XDriveNotesMarkdownPreview markdown={markdown} resolveImage={resolveImage} />}
         </>}
       </Box>
     </Box>
@@ -448,7 +592,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
         {oldMarkdown !== null && <>
           <Divider sx={{ my: 2 }} />
           <Typography variant="subtitle2" sx={{ mb: 2 }}>旧版内容（只读）</Typography>
-          <XDriveNotesMarkdownPreview markdown={oldMarkdown} />
+          <XDriveNotesMarkdownPreview markdown={oldMarkdown} resolveImage={resolveImage} />
         </>}
       </DialogContent>
       <DialogActions><Button onClick={() => setHistoryOpen(false)}>关闭</Button></DialogActions>

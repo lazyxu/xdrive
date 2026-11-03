@@ -17,6 +17,7 @@ internal enum class NativeHomeTab(val title: String) {
 
 internal enum class NativeDynamicFeature(val title: String) {
     TRANSFERS("传输"),
+    NOTES("备忘录"),
 }
 
 /** Explicit destinations: Gallery map and both photo sources never use DYNAMIC. */
@@ -28,6 +29,7 @@ internal enum class NativeHomeShortcut {
     CLOUD_FILES,
     TRASH,
     TRANSFERS,
+    NOTES,
 }
 
 internal enum class NativeGallerySource { CLOUD, LOCAL, ALBUMS, MAP }
@@ -107,6 +109,7 @@ internal data class NativeHomeNavigation(
         NativeHomeShortcut.CLOUD_FILES, NativeHomeShortcut.TRASH ->
             copy(selected = NativeHomeTab.FILES)
         NativeHomeShortcut.TRANSFERS -> openDynamic(NativeDynamicFeature.TRANSFERS)
+        NativeHomeShortcut.NOTES -> openDynamic(NativeDynamicFeature.NOTES)
         }
         return routed.copy(
             recentShortcuts = (listOf(shortcut) + recentShortcuts.filterNot {

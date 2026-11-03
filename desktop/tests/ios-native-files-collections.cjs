@@ -12,6 +12,7 @@ const viewer = read('ios/XDriveIOS/NativeFilesViewer.swift')
 const location = read('ios/XDriveIOS/NativeFilesSearchLocation.swift')
 const serverRecent = read('internal/api/file_recent.go')
 const serverFavorites = read('internal/api/file_favorites.go')
+const serverFavoritesIntegration = read('internal/api/file_favorites_integration_test.go')
 const router = read('internal/api/router.go')
 
 test('native Files owns recent and favorites subroutes, including Server directory navigation', () => {
@@ -95,7 +96,7 @@ test('recent and favorites match Browse list/icon presentation without duplicati
 test('Recent and Favorites locate both list and grid items in the real Owner folder', () => {
   assert.match(screen, /@State private var locateIntent: XDriveIOSNativeFilesCollectionItem\?/)
   assert.match(screen, /@State private var locateOwner: XDriveNativeOwnerRoot\?/)
-  assert.equal((screen.match(/\.contextMenu \{\s*Button \{ showLocation\(for: item\) \}/g) || []).length, 2)
+  assert.equal((screen.match(/\.contextMenu \{\s*collectionQuickActions\(for: item\)\s*\}/g) || []).length, 2)
   assert.match(screen, /Label\("显示所在文件夹", systemImage: "folder"\)/)
   assert.match(screen, /private func showLocation\(for item: XDriveIOSNativeFilesCollectionItem\)/)
   assert.match(screen, /guard phase == \.active, model\.verified, !model\.loading,/)
@@ -104,11 +105,80 @@ test('Recent and Favorites locate both list and grid items in the real Owner fol
   assert.match(screen, /\.sheet\(item: \$locateIntent, onDismiss: \{\s*locateOwner = nil\s*reload\(\)/)
   assert.match(screen, /XDriveIOSNativeFilesLocateScreen\(\s*login: login, selected: selected\.node,/)
   assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, openedOwner\)/)
-  assert.match(screen, /if selectedFile == nil && locateIntent == nil/)
-  assert.match(screen, /locateIntent = nil\s*locateOwner = nil\s*model\.invalidate\(\)/)
+  assert.match(screen, /if selectedFile == nil && locateIntent == nil && managementIntent == nil/)
+  assert.match(screen, /locateIntent = nil\s*locateOwner = nil\s*managementIntent = nil\s*model\.invalidate\(\)/)
   // Root-originated results must open the cloud root itself, not Browse home.
   assert.match(location, /login: login, folderID: openedOwner\.rootNodeID,/)
   assert.match(location, /XDriveIOSNativeFilesLocateModel/)
   assert.match(location, /login\.verifiedAuthorization\(\)/)
   assert.doesNotMatch(screen, /import WebKit|WKWebView|URLSession\.shared|\/api\/v1\/uploads/)
+})
+
+
+test('native Files can favorite non-root folders with real Owner API and remove them in both layouts', () => {
+  // Backend and native validation accept exactly files or non-root directories.
+  assert.match(serverFavorites, /n\.type IN \('file', 'dir'\)/)
+  assert.match(serverFavorites, /n\.parent_id IS NOT NULL/)
+  assert.match(serverFavorites, /node\.ParentID == nil/)
+  assert.match(serverFavorites, /node\.Type != meta\.NodeTypeFile && node\.Type != meta\.NodeTypeDir/)
+  assert.match(serverFavorites, /LEFT JOIN xd_files file ON file\.node_id = n\.id/)
+  assert.match(serverFavorites, /COALESCE\(file\.size, 0\) AS size/)
+  assert.match(policy, /\(node\.type == "file" \|\| node\.type == "dir"\)/)
+  assert.match(policy, /node\.parent_id != nil/)
+  assert.match(screen, /private func requireCurrent\(_ node:[\s\S]*?\(node\.type == "file" \|\| node\.type == "dir"\)/)
+  assert.match(screen, /favorite\.node == node/)
+  assert.match(panel, /Button\("收藏此文件夹"\)/)
+  assert.match(panel, /favoriteMutation\.add\(directory, login: login\)/)
+  assert.match(panel, /native-ios-files-add-folder-favorite/)
+  assert.equal((screen.match(/if kind == \.favorites \{/g) || []).length, 3)
+  assert.match(screen, /favorites\.remove\(item, login: login\) \{ reload\(\) \}/)
+  assert.match(screen, /kind == \.favorites[\s\S]*?Label\("取消收藏", systemImage: "star\.slash"\)/)
+  assert.match(screen, /if item\.node\.isDirectory \{[\s\S]*?XDriveIOSNativeFilesBrowser\(/)
+
+  // Actual Gin/PostgreSQL tests cover create/idempotent put/other-owner deny,
+  // moved folder path, trash and restore, and an idempotent 204 undo.
+  assert.match(serverFavoritesIntegration, /expected actual non-root folder favorite/)
+  assert.match(serverFavoritesIntegration, /foreign user deleted Owner's folder favorite/)
+  assert.match(serverFavoritesIntegration, /Archive\/ProjectsMoved/)
+  assert.match(serverFavoritesIntegration, /trashed folder leaked to Favorites/)
+  assert.match(serverFavoritesIntegration, /restored folder did not reappear in Favorites/)
+  assert.match(serverFavoritesIntegration, /unfavoriting folder deleted its Node/)
+  assert.doesNotMatch(screen, /WKWebView|import WebKit|URLSession\.shared/)
+})
+
+
+test('native Files favorite shortcut reuses real Owner and revision verified file/folder writer', () => {
+  assert.match(browser, /openManagement\(for: entry\.node, quickAction: \.favorite\)/)
+  assert.match(browser, /Label\("收藏", systemImage: "star"\)/)
+  assert.match(panel, /case \.favorite:[\s\S]*?favoriteMutation\.add\(selected, login: login\)/)
+  assert.match(panel, /guard verified, !anyBusy,[\s\S]*?let selected = file \?\? directory/)
+  assert.match(screen, /private func requireCurrent\(_ node:[\s\S]*?current == node/)
+  assert.match(panel, /favoriteMutation\.invalidate\(\)/)
+  assert.match(panel, /favoriteMutation\.add\(directory, login: login\)/)
+  assert.match(panel, /favoriteMutation\.add\(file, login: login\)/)
+});
+
+test('Recent and Favorites expose native long-press and swipe operations through the same verified writers', () => {
+  assert.match(screen, /private struct XDriveIOSNativeFilesCollectionManageIntent: Identifiable/)
+  assert.match(screen, /@State private var managementIntent: XDriveIOSNativeFilesCollectionManageIntent\?/)
+  assert.match(screen, /private func collectionQuickActions\(/)
+  for (const action of ['copy', 'move', 'rename', 'shareLink', 'download', 'trash']) {
+    assert.match(screen, new RegExp('openManagement\\(for: item, quickAction: \\.' + action + '\\)'))
+  }
+  assert.match(screen, /if kind == \.favorites \{[\s\S]*?favorites\.remove\(item, login: login\) \{ reload\(\) \}/)
+  assert.match(screen, /openManagement\(for: item, quickAction: \.favorite\)/)
+  assert.match(screen, /if !item\.node\.isDirectory \{\s*Button \{ openFile\(item\) \}/)
+  assert.match(screen, /\.swipeActions\(edge: \.trailing, allowsFullSwipe: false\)/)
+  assert.match(screen, /private func openManagement\([\s\S]*?phase == \.active, model\.verified, !model\.loading,/)
+  assert.match(screen, /let owner = login\.owner, let parentID = item\.node\.parent_id,/)
+  assert.match(screen, /XDriveIOSNativeFilesCollectionsPolicy\.validItem\(item, kind: kind\),\s*model\.items\.contains\(item\)/)
+  assert.match(screen, /\.sheet\(item: \$managementIntent, onDismiss: \{\s*reload\(\)/)
+  assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, intent\.owner\)/)
+  assert.match(screen, /folderID: parentID, folderName: nil,/)
+  assert.match(screen, /file: intent\.item\.node\.isDirectory \? nil : intent\.item\.node/)
+  assert.match(screen, /directory: intent\.item\.node\.isDirectory \? intent\.item\.node : nil/)
+  assert.match(screen, /initialQuickAction: intent\.quickAction/)
+  assert.match(panel, /func applyInitialQuickAction\(\)/)
+  assert.match(panel, /showingTrash = true/)
+  assert.doesNotMatch(screen, /WKWebView|import WebKit|\/api\/v1\/uploads/)
 })

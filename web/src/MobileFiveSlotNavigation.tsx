@@ -8,6 +8,7 @@ import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import PhotoAlbumRoundedIcon from '@mui/icons-material/PhotoAlbumRounded'
 import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
+import NotesRoundedIcon from '@mui/icons-material/NotesRounded'
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import BackupRoundedIcon from '@mui/icons-material/BackupRounded'
 import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded'
@@ -34,6 +35,7 @@ import { xDriveMobileSupplementalDynamicDestinationKeys } from './mobileLauncher
 function xDriveBrowserMobileDestinationIcon(key: string): ReactNode {
   switch (key) {
     case 'files': return <FolderOpenRoundedIcon fontSize="small" />
+    case 'notes': return <NotesRoundedIcon fontSize="small" />
     case 'shares': return <ShareRoundedIcon fontSize="small" />
     case 'gallery': return <PhotoLibraryRoundedIcon fontSize="small" />
     case 'device-backup': return <BackupRoundedIcon fontSize="small" />

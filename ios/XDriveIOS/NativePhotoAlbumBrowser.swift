@@ -1028,6 +1028,9 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
     @Binding var savedOffset: Int
     @State private var timelineOffset = 0
     @State private var pendingRestoreOffset: Int?
+    // Only the presently visible last collection may request the next range.
+    // A former last item cannot resume a read after the list was appended.
+    @State private var visibleTailAlbumID: String?
     @State private var isVisible = false
     @Environment(\.scenePhase) private var phase
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
@@ -1106,11 +1109,19 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                                     .disabled(albumMutationBusy)
                                     .accessibilityIdentifier("native-ios-gallery-album-open")
                                     .onAppear {
-                                        // Only a visible tail can read the next 32
-                                        // entries. A mutation cannot race a read.
-                                        if album.id == page.items.last?.id &&
-                                            page.hasNext && !loading && !albumMutationBusy {
-                                            load(offset: page.items.count)
+                                        // The last currently visible album owns the
+                                        // next 32-item request, even if it appears
+                                        // while another read is still in flight.
+                                        if album.id == page.items.last?.id {
+                                            visibleTailAlbumID = album.id
+                                            continueDirectoryIfReady()
+                                        }
+                                    }
+                                    .onDisappear {
+                                        // Ignore the retired tail's disappearance if
+                                        // a different tail has since become visible.
+                                        if visibleTailAlbumID == album.id {
+                                            visibleTailAlbumID = nil
                                         }
                                     }
                                     if album.kind == "用户相册" {
@@ -1152,7 +1163,10 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
             .padding(12)
         }
         .onChange(of: loading) { active in
-            if !active { restoreDirectoryIfReady(using: scroll) }
+            if !active {
+                restoreDirectoryIfReady(using: scroll)
+                continueDirectoryIfReady()
+            }
         }
         }
         .navigationTitle("相册")
@@ -1228,6 +1242,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
         }
         .onDisappear {
             isVisible = false
+            visibleTailAlbumID = nil
             libraryMonitor.stop()
             suspendForNavigation()
         }
@@ -1308,6 +1323,16 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
         }
     }
 
+    /// A last-item onAppear can occur while loading; retry that exact tail
+    /// when loading turns false. Never read from an old/hidden tail.
+    private func continueDirectoryIfReady() {
+        guard isVisible, phase == .active, !loading, !albumMutationBusy,
+              error == nil, pendingRestoreOffset == nil,
+              let page, page.offset == 0, page.hasNext,
+              visibleTailAlbumID == page.items.last?.id else { return }
+        load(offset: page.items.count)
+    }
+
     private func load(offset requestedOffset: Int) {
         guard !loading, isVisible, phase == .active else { return }
         if requestedOffset > 0 {
@@ -1364,6 +1389,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
         task?.cancel()
         task = nil
         pendingRestoreOffset = nil
+        visibleTailAlbumID = nil
         page = nil
         loading = false
         error = nil

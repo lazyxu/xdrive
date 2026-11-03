@@ -48,3 +48,20 @@ test('switching layout does not introduce another owner request, mutation or tra
   assert.match(browser, /XDriveIOSNativeFilesReader\(/)
   assert.doesNotMatch(browser, /import WebKit|WKWebView|URLSession\.shared|\.fileImporter\(/)
 })
+
+
+test('native Files list swipe actions preserve Owner-verified action gates and explicit trash confirmation', () => {
+  assert.match(browser, /ForEach\(model\.entries\) \{ entry in[\s\S]*?fileEntryRow\(entry\)[\s\S]*?\.swipeActions\(edge: \.trailing, allowsFullSwipe: false\)/)
+  assert.match(browser, /if !selecting && model\.verifiedPage && !model\.loading/)
+  assert.match(browser, /Label\("更多", systemImage: "ellipsis"\)/)
+  assert.match(browser, /openManagement\(for: entry\.node\)/)
+  assert.match(browser, /Label\("分享链接", systemImage: "link"\)/)
+  assert.match(browser, /quickAction: \.shareLink/)
+  assert.match(browser, /Button\(role: \.destructive\)/)
+  assert.match(browser, /Label\("删除", systemImage: "trash"\)/)
+  assert.match(browser, /quickAction: \.trash/)
+  assert.match(browser, /private func openManagement\([\s\S]*?guard !model\.loading, model\.verifiedPage, selectedFile == nil,/)
+  assert.match(browser, /nativeQuickActions\(for: entry\)/)
+  assert.match(browser, /onAppear \{ requestContinuousNeighbor\(for: entry\.id\) \}/)
+  assert.doesNotMatch(browser, /swipeActions\(edge: \.trailing, allowsFullSwipe: true\)/)
+});

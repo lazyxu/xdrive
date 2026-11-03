@@ -21,13 +21,13 @@ test('Files still and thumbnail use same native photo single-tap chrome without 
 
 test('immersive still hides only image chrome; files PDF/audio/video/error and recoverable original export remain intact', () => {
   const viewer = file.slice(file.indexOf('struct XDriveIOSNativeFilesViewer: View'))
-  assert.match(viewer, /\.toolbar\(showImageChrome \|\| !isStillImage \? \.visible : \.hidden,\s*for: \.navigationBar, \.bottomBar\)/)
-  assert.match(viewer, /\.statusBarHidden\(isStillImage && !showImageChrome\)/)
-  assert.match(viewer, /\.background\(isStillImage \? Color\.black : Color\(uiColor: \.systemBackground\)\)/)
+  assert.match(viewer, /\.toolbar\(chromeVisible \? \.visible : \.hidden,\s*for: \.navigationBar, \.bottomBar\)/)
+  assert.match(viewer, /\.statusBarHidden\(!chromeVisible\)/)
+  assert.match(viewer, /\.background\(isStillImage \|\| isNativeVideo \? Color\.black : Color\(uiColor: \.systemBackground\)\)/)
   assert.match(viewer, /if showImageChrome \{\s*XDriveIOSNativeViewerQualityPanel\(/)
   assert.match(viewer, /if showImageChrome \{\s*ScrollView \{[\s\S]*?originalExportFallback/)
   assert.match(viewer, /native-ios-files-viewer-thumbnail-recovery/)
-  assert.match(viewer, /case \.video:[\s\S]*?VideoPlayer\(player: player\)/)
+  assert.match(viewer, /case \.video:[\s\S]*?XDriveIOSNativePhotoVideoSurface\(/)
   assert.match(viewer, /case \.audio:[\s\S]*?XDriveIOSNativeFileAudioSurface/)
   assert.match(viewer, /case \.pdf\(let document\):[\s\S]*?XDriveIOSNativePDFDocumentSurface/)
   assert.match(viewer, /case \.text\(let content, let truncated\):/)

@@ -26,10 +26,12 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 35
     steps:
-      - name: Checkout exact source commit
+      - name: Checkout exact tested PR merge candidate
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # PR checks need the real base+HEAD candidate so newer master
+          # source-backed Swift contracts are present; push uses event SHA.
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Verify cold launch recovery and BG registration safety
@@ -43,6 +45,15 @@ jobs:
           node --test desktop/tests/ios-native-launch-recovery.cjs
 
       # Pure Foundation contract test is quick and independent of signing.
+      - name: Verify Apple Notes import text and source identity policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeAppleNotesImportPolicy.swift \
+            ios/tests/NativeAppleNotesImportPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-notes-import-policy"
+          "$RUNNER_TEMP/xdrive-ios-notes-import-policy"
+
       - name: Verify bounded iOS PhotoKit scan-window math
         run: |
           set -euo pipefail
@@ -302,6 +313,16 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-photoasset-filmstrip-check"
           "$RUNNER_TEMP/xdrive-ios-photoasset-filmstrip-check"
           node --test desktop/tests/ios-native-cloud-filmstrip-contract.cjs
+
+      - name: Verify native Cloud Originals Viewer filmstrip Owner and exact Node identity
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudOriginalFilmstripPolicy.swift \
+            ios/tests/NativeCloudOriginalFilmstripPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-original-filmstrip-policy"
+          "$RUNNER_TEMP/xdrive-ios-original-filmstrip-policy"
+          node --test desktop/tests/ios-native-cloud-original-filmstrip.cjs
 
       - name: Verify native cloud PhotoAsset original still/video save-to-Photos boundaries
         run: node --test desktop/tests/ios-native-photoasset-original-restore.cjs

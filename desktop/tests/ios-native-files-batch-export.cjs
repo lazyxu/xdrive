@@ -9,7 +9,7 @@ const model = read('ios/XDriveIOS/NativeFilesBatchExport.swift')
 const browser = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
 const original = read('ios/XDriveIOS/NativeFilesDownloadExport.swift')
 
-test('one verified 64-item Owner page can batch-export only 2-8 actual files, aggregate <= 512 MiB', () => {
+test('verified Owner directory window still batch-exports only 2-8 actual files, aggregate <= 512 MiB', () => {
   assert.match(policy, /static let maximumFiles = 8/)
   assert.match(policy, /static let maximumAggregateBytes: Int64 = 512 \* 1_048_576/)
   assert.match(policy, /Set\(nodes\.map\(\\\.id\)\)\.count == nodes\.count/)
@@ -65,8 +65,8 @@ test('native safe-area editing toolbar retains bounded explicit export and clean
   assert.match(browser, /Label\("导出", systemImage: "square\.and\.arrow\.up"\)/)
   assert.match(browser, /native-ios-files-batch-share-toolbar/)
   assert.match(browser, /native-ios-files-batch-discard-toolbar/)
-  assert.match(browser, /Button\("选择已加载的前 64 项"\)/)
+  assert.match(browser, /Button\("选择已加载项目（最多 200 项）"\)/)
   assert.match(browser, /Button\("清空选择"\)/)
-  assert.match(browser, /Menu \{\s*Button\("选择已加载的前 64 项"\)/)
+  assert.match(browser, /Menu \{\s*Button\("选择已加载项目（最多 200 项）"\)/)
   assert.doesNotMatch(browser, /position: fixed|bottom: 0px/)
 })

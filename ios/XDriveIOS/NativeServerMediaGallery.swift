@@ -348,6 +348,11 @@ struct XDriveIOSNativeServerMediaPreview: View {
     var loadedRange: XDriveIOSNativeMediaRange? = nil
     var openedOwner: XDriveNativeOwnerRoot? = nil
     var onNavigate: ((XDriveIOSNativeMediaItem) -> Bool)? = nil
+    // Only iOS MapKit place-union Viewer opts into crossing a real place.
+    // Ordinary cloud Gallery leaves this optional callback nil.
+    var canCrossMapPlace: ((
+        XDriveIOSNativeMediaRange, XDriveIOSNativeMediaItem, Int
+    ) -> Bool)? = nil
     var onCrossRange: ((
         XDriveIOSNativeMediaRange, XDriveIOSNativeMediaItem, Int
     ) async throws -> XDriveIOSNativeMediaRange?)? = nil
@@ -441,11 +446,16 @@ struct XDriveIOSNativeServerMediaPreview: View {
         guard ownerAuthorized, !rangeCrossing, onCrossRange != nil,
               let page = visibleRange, let position = loadedPosition,
               page.items.count == visibleItems.count else { return false }
-        return XDriveIOSNativePhotoAssetRangeCursorPolicy.adjacentOffset(
+        if XDriveIOSNativePhotoAssetRangeCursorPolicy.adjacentOffset(
             current: page.offset, count: page.items.count,
             total: page.total_count, selectedIndex: position,
             direction: direction
-        ) != nil
+        ) != nil {
+            return true
+        }
+        // Camera clusters are visual only: the map Presenter reauthenticates
+        // the previous Owner Range and exact target place before crossing.
+        return canCrossMapPlace?(page, viewed, direction) == true
     }
 
     private func navigateLoaded(_ direction: Int) {
@@ -560,7 +570,12 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     if showingLiveMotion, let player {
                         XDriveIOSNativeAVPlayerStatusObserver(
                             player: player,
-                            content: VideoPlayer(player: player)
+                            content: XDriveIOSNativePhotoVideoSurface(
+                                player: player, showChrome: showChrome,
+                                onChromeTap: { toggleChrome() },
+                                onNavigateSwipe: { navigateLoaded($0) }
+                            )
+                                .id(viewed.id)
                                 .onAppear { if ownerAuthorized { player.play() } }
                                 .onDisappear { player.pause() },
                             onFailed: { playbackLoadFailed($0) }
@@ -672,7 +687,12 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 } else if let player {
                     XDriveIOSNativeAVPlayerStatusObserver(
                         player: player,
-                        content: VideoPlayer(player: player)
+                        content: XDriveIOSNativePhotoVideoSurface(
+                            player: player, showChrome: showChrome,
+                            onChromeTap: { toggleChrome() },
+                            onNavigateSwipe: { navigateLoaded($0) }
+                        )
+                            .id(viewed.id)
                             .onAppear { if ownerAuthorized { player.play() } }
                             .onDisappear { player.pause() },
                         onFailed: { playbackLoadFailed($0) }

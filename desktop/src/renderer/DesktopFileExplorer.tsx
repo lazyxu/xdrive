@@ -1724,7 +1724,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
         : undefined,
       quickAccessPinned: quickAccess.pinnedIDs.has(node.id),
       quickAccessDisabled: quickAccess.busyID !== null,
-      onToggleFavorite: node.type === 'file' && favoritesSupported
+      onToggleFavorite: (node.type === 'file' || node.type === 'dir') && favoritesSupported
         ? () => { void favorites.toggle(node.id) }
         : undefined,
       favorite: favorites.favoriteIDs.has(node.id),
@@ -2371,11 +2371,13 @@ const desktopTransferLifecycleChildBatchSize = 1000
             onActivateFavorite={(nodeID) => {
               onCloseTrash()
               const navigationIntentID = beginNavigationIntent()
-              void favorites.activate(nodeID, (node) => (
-                isNavigationIntentCurrent(navigationIntentID)
-                  ? openLocalNode(node)
-                  : undefined
-              ))
+              void favorites.activate(nodeID, (node, crumbs) => {
+                if (!isNavigationIntentCurrent(navigationIntentID)) return
+                if (node.type === 'dir') {
+                  return navigateTo(crumbs, true, navigationIntentID)
+                }
+                return openLocalNode(node)
+              })
             }}
             onUnfavorite={(nodeID) => { void favorites.unfavorite(nodeID) }}
             recentEnabled={recentSupported}
