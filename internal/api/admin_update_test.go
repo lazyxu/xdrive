@@ -148,6 +148,12 @@ func TestAdminStartServerUpdateRejectsArbitraryOptions(t *testing.T) {
 		`{"source":"shell","channel":"stable"}`,
 		`{"source":"github","channel":"nightly"}`,
 		`{"source":"xdrive","channel":"stable"}`,
+		`{"source":"offline","channel":"master"}`,
+		`{"source":"offline","channel":"stable","offline_id":"00000000000000000000000000000000","trusted_manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","trusted_installer_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`,
+		`{"source":"offline","channel":"master","offline_id":"../../admin","trusted_manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","trusted_installer_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`,
+		`{"source":"offline","channel":"master","offline_id":"00000000000000000000000000000000","trusted_manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
+		`{"source":"offline","channel":"master","offline_id":"00000000000000000000000000000000","trusted_manifest_sha256":"bad","trusted_installer_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`,
+		`{"source":"github","channel":"master","offline_id":"00000000000000000000000000000000"}`,
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/update", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -185,5 +191,42 @@ func TestAdminStartServerShareUpdatePreservesMasterSource(t *testing.T) {
 	state := server.serverUpdateStatus()
 	if state.State != "queued" || state.Source != "xdrive" || state.Channel != "master" || !state.BackupFileData {
 		t.Fatalf("Share request lost in queued status: %+v", state)
+	}
+}
+
+func TestAdminOfflineGoUpdateQueuesOnlyExactTrustedImport(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	s := &Server{HostControlDir: dir}
+	writeServerUpdateTestStatus(t, dir, serverUpdateState{
+		State: "idle", Source: "github", Channel: "master",
+		RunnerHeartbeatAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	id, manifest, goBinary := strings.Repeat("a", 32),
+		strings.Repeat("b", 64), strings.Repeat("c", 64)
+	body, err := json.Marshal(map[string]any{
+		"source":"offline", "channel":"master", "offline_id":id,
+		"trusted_manifest_sha256":manifest,
+		"trusted_installer_sha256":goBinary, "backup_file_data":true,
+	})
+	if err!=nil {t.Fatal(err)}
+	req:=httptest.NewRequest(http.MethodPost,"/api/v1/admin/update",strings.NewReader(string(body)))
+	req.Header.Set("Content-Type","application/json")
+	res:=httptest.NewRecorder()
+	ctx,_:=gin.CreateTestContext(res)
+	ctx.Request=req
+	ctx.Set("user",meta.User{Username:"admin",Role:meta.UserRoleAdmin})
+	s.adminStartServerUpdate(ctx)
+	if res.Code!=http.StatusAccepted {t.Fatalf("status %d: %s",res.Code,res.Body.String())}
+	queuedRaw,err:=os.ReadFile(filepath.Join(dir,"request.json"));if err!=nil{t.Fatal(err)}
+	var queued serverUpdateRequestFile
+	if err:=json.Unmarshal(queuedRaw,&queued);err!=nil{t.Fatal(err)}
+	if queued.Source!="offline"||queued.Channel!="master"||queued.OfflineID!=id||
+		queued.TrustedManifestSHA256!=manifest||queued.TrustedInstallerSHA256!=goBinary||
+		!queued.BackupFileData||queued.RequestedBy!="admin"{
+		t.Fatalf("unsupported imported Host request: %+v",queued)
+	}
+	if got:=s.serverUpdateStatus();got.Source!="offline"||got.State!="queued" {
+		t.Fatalf("offline status lost: %+v",got)
 	}
 }

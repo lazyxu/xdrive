@@ -342,6 +342,55 @@ test ! -e "$TMP/state/curl-url"
 flock -u 8
 exec 8>&-
 
+# Offline Go is a separately SHA-pinned ELF in production; this fake binary
+# proves argument confinement and dispatch without invoking Docker or Python.
+offline_id=0123456789abcdef0123456789abcdef
+import_dir="$TMP/home/state/update-imports/$offline_id"
+mkdir -p "$import_dir"
+printf '{"schema":2,"source":"github","channel":"master"}\n' > "$import_dir/manifest.json"
+cat > "$import_dir/xdrive-offline-linux-amd64" <<'OFFLINE'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$TEST_STATE/offline-go-args"
+[[ "$1" == verify || "$1" == install ]] || exit 91
+OFFLINE
+chmod 0600 "$import_dir/xdrive-offline-linux-amd64"
+trusted_manifest="$(sha256sum "$import_dir/manifest.json" | cut -d' ' -f1)"
+trusted_go="$(sha256sum "$import_dir/xdrive-offline-linux-amd64" | cut -d' ' -f1)"
+rm -f "$TMP/state/offline-go-args" "$TMP/state/curl-url"
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+  bash "$HOST" update --source offline --channel master --offline-id "$offline_id" \
+    --trusted-manifest-sha256 "$trusted_manifest" \
+    --trusted-installer-sha256 "$trusted_go" --backup-file-data \
+    >"$TMP/offline-go.out" 2>"$TMP/offline-go.err"
+grep -q "^verify --dir $import_dir --trusted-manifest-sha256 $trusted_manifest$" "$TMP/state/offline-go-args"
+grep -q -- "install --dir $import_dir --config-dir $TMP/home --trusted-manifest-sha256 $trusted_manifest --backup-file-data" "$TMP/state/offline-go-args"
+test ! -e "$TMP/state/curl-url"
+for rejected in missing-sha altered-tool traversal wrong-channel; do
+  rm -f "$TMP/state/offline-go-args"
+  set +e
+  case "$rejected" in
+    missing-sha) TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+      bash "$HOST" update --source offline --channel master --offline-id "$offline_id" \
+        --trusted-manifest-sha256 "$trusted_manifest" >"$TMP/$rejected.out" 2>"$TMP/$rejected.err"; rc=$? ;;
+    altered-tool) TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+      bash "$HOST" update --source offline --channel master --offline-id "$offline_id" \
+        --trusted-manifest-sha256 "$trusted_manifest" \
+        --trusted-installer-sha256 "$(printf '%064d' 0)" >"$TMP/$rejected.out" 2>"$TMP/$rejected.err"; rc=$? ;;
+    traversal) TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+      bash "$HOST" update --source offline --channel master --offline-id ../../xdrive \
+        --trusted-manifest-sha256 "$trusted_manifest" \
+        --trusted-installer-sha256 "$trusted_go" >"$TMP/$rejected.out" 2>"$TMP/$rejected.err"; rc=$? ;;
+    wrong-channel) TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+      bash "$HOST" update --source offline --channel stable --offline-id "$offline_id" \
+        --trusted-manifest-sha256 "$trusted_manifest" \
+        --trusted-installer-sha256 "$trusted_go" >"$TMP/$rejected.out" 2>"$TMP/$rejected.err"; rc=$? ;;
+  esac
+  set -e
+  [[ "$rc" -ne 0 ]]
+  test ! -e "$TMP/state/offline-go-args"
+done
+
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
