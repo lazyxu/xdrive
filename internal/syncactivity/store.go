@@ -352,6 +352,15 @@ func (s *Store) Prune(ctx context.Context,now time.Time)error{
  predicate:="((status IN ('completed','skipped') AND applied_at<?) OR (status NOT IN ('completed','skipped') AND applied_at<?)) AND run_id IN (SELECT run_id FROM sync_runs WHERE status<>'running')"
  if _,err=tx.ExecContext(ctx,"UPDATE sync_runs SET details_expired=1 WHERE run_id IN (SELECT run_id FROM sync_items WHERE "+predicate+")",successBefore,failureBefore);err!=nil{return err}
  if _,err=tx.ExecContext(ctx,"DELETE FROM sync_items WHERE "+predicate,successBefore,failureBefore);err!=nil{return err}
+ var count int64
+ if err=tx.QueryRowContext(ctx,"SELECT COUNT(*) FROM sync_items").Scan(&count);err!=nil{return err}
+ if count>200000 {
+  // Oldest successful terminal items go first; never prune active attempts.
+  doomed:="SELECT i.rowid FROM sync_items i JOIN sync_runs r ON r.run_id=i.run_id WHERE r.status<>'running' ORDER BY CASE WHEN i.status IN ('completed','skipped') THEN 0 ELSE 1 END,i.applied_at ASC,i.rowid ASC LIMIT ?"
+  excess:=count-200000
+  if _,err=tx.ExecContext(ctx,"UPDATE sync_runs SET details_expired=1 WHERE run_id IN (SELECT run_id FROM sync_items WHERE rowid IN ("+doomed+"))",excess);err!=nil{return err}
+  if _,err=tx.ExecContext(ctx,"DELETE FROM sync_items WHERE rowid IN ("+doomed+")",excess);err!=nil{return err}
+ }
  if _,err=tx.ExecContext(ctx,"DELETE FROM sync_runs WHERE status<>'running' AND finished_at<?",summaryBefore);err!=nil{return err}
  if _,err=tx.ExecContext(ctx,"DELETE FROM sync_runs WHERE run_id IN (SELECT run_id FROM sync_runs WHERE status<>'running' ORDER BY started_at DESC,run_id DESC LIMIT -1 OFFSET 5000)");err!=nil{return err}
  return tx.Commit()
