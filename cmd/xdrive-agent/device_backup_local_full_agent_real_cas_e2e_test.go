@@ -81,7 +81,7 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	}
 	defer dbSQL.Close()
 	if err := db.AutoMigrate(
-		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.Source{},
+		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.Source{}, &meta.SyncRun{},
 		&meta.SourceItem{}, &meta.ClientDevice{}, &meta.LocalSourceBinding{},
 		&meta.LocalPushQuotaHold{}, &meta.UploadSession{}, &meta.UploadPart{},
 		&meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{},
@@ -126,6 +126,9 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		Status: meta.SourceStatusPaused, Revision: 7, TargetNodeID: &target.ID,
 		LocalCreatorDeviceID: &deviceID,
 	}
+	// The manual first Source run arms the already-saved interval policy;
+	// only the owning Agent scheduler may later admit incremental work.
+	source.ScheduleType, source.ScheduleExpression = "interval", "1m"
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -427,5 +430,140 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	unchangedAgain := run()
 	if unchangedAgain.ConfirmedFiles != 0 || unchangedAgain.SkippedFiles != 2 {
 		t.Fatalf("restart re-uploaded already committed originals: %+v", unchangedAgain)
+	}
+	// P0-0 scheduled incremental verification. The earlier manual CGI run
+	// persisted a verified partial checkpoint for this owning Root. A saved
+	// one-minute interval must NOT start early, and a due tick must use the
+	// SAME original Agent and immutable Server SQL/CAS writer (not a second
+	// DSM transfer queue). A fresh controller models Agent restart.
+	scheduledB := bytes.Repeat([]byte("scheduled-native-B-revision-"), 181)
+	if err := os.WriteFile(filepath.Join(originalDir, "bravo.bin"), scheduledB, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertCounters()
+	chunksBeforeSchedule, finalizesBeforeSchedule := lastChunk, lastFinalize
+	opsBeforeSchedule, versionsBeforeSchedule := lastOperation, lastVersion
+	scheduler := &agentController{ctx: context.Background()}
+	attempts := make(map[string]time.Time)
+	early := time.Now().UTC()
+	if err := scheduler.localPushAutoTick(context.Background(), early, attempts); err != nil {
+		t.Fatalf("owning scheduled Source discovery failed before due: %v", err)
+	}
+	scheduler.localCommonBatchJobMu.Lock()
+	earlyJob := scheduler.localCommonBatchJob
+	scheduler.localCommonBatchJobMu.Unlock()
+	if earlyJob != nil || chunks.Load() != chunksBeforeSchedule ||
+		finalizes.Load() != finalizesBeforeSchedule {
+		t.Fatal("not-yet-due NAS interval scheduled a physical upload")
+	}
+	// The due clock is injected only into the scheduler; the real Root
+	// inventory, native file bytes and Server SQL/CAS time remain untouched.
+	due := early.Add(2 * time.Minute)
+	if err := scheduler.localPushAutoTick(context.Background(), due, attempts); err != nil {
+		t.Fatalf("due NAS Source scheduler failed: %v", err)
+	}
+	scheduler.localCommonBatchJobMu.Lock()
+	job := scheduler.localCommonBatchJob
+	scheduler.localCommonBatchJobMu.Unlock()
+	if job == nil {
+		t.Fatal("due native Source did not enter the original owning Agent")
+	}
+	select {
+	case <-job.done:
+	case <-time.After(75 * time.Second):
+		t.Fatal("scheduled native Agent did not finish its SQL/CAS operation")
+	}
+	scheduled := localCommonBatchObservedResult(job)
+	if job.err != nil || scheduled.SourceID != source.ID ||
+		scheduled.Revision != source.Revision || scheduled.State != "partial" ||
+		scheduled.Running || scheduled.ConfirmedFiles != 1 ||
+		scheduled.SkippedFiles != 1 || scheduled.InspectedFiles != 2 ||
+		scheduled.ConfirmedBytes != int64(len(scheduledB)) ||
+		scheduled.UncertainFiles != 0 || scheduled.BackupComplete ||
+		scheduled.RetirementSafe || scheduled.CurrentCASVerified {
+		t.Fatalf("scheduled run misreported original SQL receipts: %+v %v", scheduled, job.err)
+	}
+	assertOriginal("alpha.bin", updated, 2)
+	assertOriginal("bravo.bin", scheduledB, 2)
+	assertCounters()
+	if lastOperation != opsBeforeSchedule+1 ||
+		lastVersion != versionsBeforeSchedule+1 ||
+		lastChunk <= chunksBeforeSchedule ||
+		lastFinalize <= finalizesBeforeSchedule {
+		t.Fatal("scheduled increment failed to create exactly one new SQL/CAS version")
+	}
+	// A repeated wake-up with the same attempt must respect the existing
+	// durable cooldown and never fabricate a second physical upload.
+	if err := scheduler.localPushAutoTick(context.Background(), due.Add(5*time.Second), attempts); err != nil {
+		t.Fatalf("repeated owning scheduler tick failed: %v", err)
+	}
+	assertCounters()
+	if lastOperation != opsBeforeSchedule+1 ||
+		lastVersion != versionsBeforeSchedule+1 {
+		t.Fatal("repeated scheduler tick wrote duplicate original SQL operations")
+	}
+
+	// A later new nested NAS path must enter the SAME original SourceRun,
+	// preserve its directory hierarchy and create a new original, not
+	// rewrite either existing file or invent a prior FileVersion.
+	nestedRoot := filepath.Join(originalDir, "new-album", "winter")
+	if err := os.MkdirAll(nestedRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	newOriginal := bytes.Repeat([]byte("new-nested-native-file-"), 181)
+	if err := os.WriteFile(filepath.Join(nestedRoot, "charlie.bin"), newOriginal, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	beforeNewOperations, beforeNewVersions := lastOperation, lastVersion
+	beforeNewChunks, beforeNewFinalizes := lastChunk, lastFinalize
+	added := run()
+	if added.InspectedFiles != 3 || added.ConfirmedFiles != 1 ||
+		added.SkippedFiles != 2 || added.ConfirmedBytes != int64(len(newOriginal)) {
+		t.Fatalf("new nested native file did not enter incremental backup: %+v", added)
+	}
+	cloudParentID := target.ID
+	for _, name := range []string{"new-album", "winter"} {
+		var folder meta.Node
+		if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+			owner.ID, cloudParentID, name).Take(&folder).Error; err != nil {
+			t.Fatalf("native directory %s was not preserved in cloud: %v", name, err)
+		}
+		if folder.Type != meta.NodeTypeDir {
+			t.Fatalf("native directory %s has incorrect cloud type: %s", name, folder.Type)
+		}
+		cloudParentID = folder.ID
+	}
+	var nestedFile meta.Node
+	if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+		owner.ID, cloudParentID, "charlie.bin").Take(&nestedFile).Error; err != nil {
+		t.Fatalf("incremental nested file missing in cloud: %v", err)
+	}
+	if nestedFile.Type != meta.NodeTypeFile || nestedFile.Revision != 1 {
+		t.Fatalf("new nested file did not preserve its original revision: %+v", nestedFile)
+	}
+	var nestedRecord meta.File
+	if err := db.Where("node_id = ?", nestedFile.ID).Take(&nestedRecord).Error; err != nil {
+		t.Fatal(err)
+	}
+	newSHA := sha256.Sum256(newOriginal)
+	if nestedRecord.Size != int64(len(newOriginal)) ||
+		nestedRecord.SHA256 != hex.EncodeToString(newSHA[:]) {
+		t.Fatalf("nested original SQL digest or size changed: %+v", nestedRecord)
+	}
+	originalReader, err := localCAS.Open(context.Background(), nestedRecord.StorageKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	casBytes, readErr := io.ReadAll(originalReader)
+	_ = originalReader.Close()
+	if readErr != nil || !bytes.Equal(casBytes, newOriginal) {
+		t.Fatalf("new nested NAS original CAS bytes differ: %v", readErr)
+	}
+	assertOriginal("alpha.bin", updated, 2)
+	assertOriginal("bravo.bin", scheduledB, 2)
+	assertCounters()
+	if lastOperation != beforeNewOperations+1 || lastVersion != beforeNewVersions ||
+		lastChunk <= beforeNewChunks || lastFinalize <= beforeNewFinalizes {
+		t.Fatal("new nested Source item was not a single new original SQL/CAS operation")
 	}
 }
