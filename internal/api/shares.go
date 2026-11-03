@@ -287,6 +287,11 @@ func (s *Server) updateShare(c *gin.Context) {
 		if err := validateShareUploadSettings(access, node.Type); err != nil {
 			return err
 		}
+		if access == shareAccessViewUpload {
+			if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, updated.OwnerID, node.ID); err != nil {
+				return err
+			}
+		}
 		if err := tx.Model(&updated).Updates(map[string]any{
 			"access": access, "expires_at": req.ExpiresAt,
 			"max_downloads": int64(0),
@@ -302,6 +307,8 @@ func (s *Server) updateShare(c *gin.Context) {
 			fail(c, http.StatusNotFound, "share not found")
 		case errors.Is(err, errShareUnavailable):
 			fail(c, http.StatusGone, "share revoked")
+		case errors.Is(err, errManagedSourceWriteDenied):
+			fail(c, http.StatusConflict, errManagedSourceWriteDenied.Error())
 		default:
 			fail(c, http.StatusBadRequest, "share update rejected")
 		}
