@@ -169,7 +169,7 @@ export function XDriveSourceSettingsDialog({
               />
               {setting.source.kind === 'local_folder' ? (
                 <XDriveStatusAlert tone="neutral">
-                  此来源目前只能管理名称、目标路径和忽略规则。设备授权已可配置，
+                  此来源目前可管理名称与忽略规则。已验证的受管云端目标由服务器分配，名称修改将同步重命名目标目录，不支持手动改绑。设备授权已可配置，
                   但扫描、上传、镜像删除和自动任务仍未启用，当前不能激活来源。
                 </XDriveStatusAlert>
               ) : (
@@ -202,7 +202,7 @@ export function XDriveSourceSettingsDialog({
               <XDriveSourceTargetField
                 value={externalSourceDisplayTargetPath(setting.source)}
                 label={setting.source.kind === 'yike_photos' && setting.source.direction === 'pull' ? '存储子目录' : '目标目录'}
-                managed={setting.source.kind === 'yike_photos'}
+                managed={Boolean(setting.source.target_managed) || setting.source.kind === 'yike_photos'}
               />
               {setting.source.kind !== 'local_folder' ? (
                 <XDriveSourceScheduleFields
