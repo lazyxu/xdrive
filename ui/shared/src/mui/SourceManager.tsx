@@ -267,6 +267,8 @@ export function XDriveSourceManager({
   const createOption = externalSourceCreateOption(createPreset)
   const createProfile = externalSourceConnectorProfile(createOption.kind, createOption.direction)
   const createTarget = createTargetCrumbs.at(-1)
+  // Target picker is retained only for editing old Source settings; new
+  // Source creation no longer accepts a user-selected target node.
   const selectedCreateTargetNodeID = targetBrowser ? createTarget?.id : defaultTargetNodeID
 
   const settingsSourceID = setting?.source.id
@@ -672,10 +674,8 @@ export function XDriveSourceManager({
     setCreateSpacesError(spacesError)
     setCreateRootsError(rootsError)
     if (nameError || spacesError || rootsError) return
-    if (option.kind !== 'yike_photos' && !selectedCreateTargetNodeID) {
-      setErrorDialog({ title: `无法添加${sourceNoun}`, message: '当前目标文件夹尚未加载，请稍后重试。' })
-      return
-    }
+    // New Push/Pull roots are allocated exclusively by Server.SourceID.
+    // The legacy selected target is not used or trusted by the Server.
     const credentialPayload = profile.credential ? createCredentialPayload() : null
     if (profile.credential && !credentialPayload) {
       setErrorDialog({
@@ -708,7 +708,7 @@ export function XDriveSourceManager({
         schedule_type: values.schedule_type,
         schedule_expression: values.schedule_type === 'manual' ? '' : values.schedule_expression.trim(),
         schedule_timezone: values.schedule_type === 'cron' ? values.schedule_timezone.trim() : '',
-        target_node_id: option.kind === 'yike_photos' ? 0 : (selectedCreateTargetNodeID ?? 0),
+        target_node_id: 0,
         ignore_rules: values.ignore_rules ?? '',
       })
     } catch (error) {
@@ -1467,7 +1467,7 @@ export function XDriveSourceManager({
         nameError={createNameError}
         spacesError={createSpacesError}
         rootsError={createRootsError}
-        targetBrowsingEnabled={Boolean(targetBrowser)}
+        targetBrowsingEnabled={false}
         targetCrumbs={createTargetCrumbs}
         targetDirectories={createTargetDirectories}
         targetLoading={createTargetLoading}
