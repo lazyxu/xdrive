@@ -7,8 +7,9 @@ enum XDriveIOSNativeFilesDestinationKind: String, Equatable {
     var confirmLabel: String { self == .copy ? "复制到此文件夹" : "移动到此文件夹" }
 }
 
-/// Batch copy/move is limited to the one Owner-verified 64-row directory
-/// page and is committed atomically by the existing Go Server endpoints.
+/// Batch copy/move is limited to up to 200 Owner-verified Nodes within the
+/// current bounded continuous Files window and committed atomically by the
+/// existing Go Server endpoints.
 struct XDriveIOSNativeFilesBatchTargetReceipt: Decodable {
     let operation_id: String
     let items: [XDriveIOSNativeFilesNode]
