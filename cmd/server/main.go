@@ -310,6 +310,13 @@ func main() {
 		MediaIndexWakeups:           mediaIndexListener.Events,
 		FileOperationWakeups:        fileOperationListener.Wakeups,
 	}
+	// Migration may change Source target Node placement but never physical
+	// blob bytes or historical Source/Run identities. Run before accepting
+	// HTTP requests or scheduling any new connector work; each ambiguous
+	// legacy Source is paused while unrelated Sources continue.
+	if err := srv.ReconcileManagedSourceTargets(serverCtx); err != nil {
+		log.Fatalf("reconcile Source managed targets: %v", err)
+	}
 	// Internal xDrive-owned keys belong to this installation, not to Baidu.
 	// Provision safely once via PostgreSQL and the existing protected keyring.
 	// Managed signer/cookie keys are persistent across Server replicas;
