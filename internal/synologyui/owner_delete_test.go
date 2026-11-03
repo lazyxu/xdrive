@@ -62,10 +62,10 @@ func TestDSMOwnerDeleteStrictSingleNodeRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := map[string][]byte{
-		"duplicate": []byte(`{"id":42,"id":43,"revision":7,"parent_id":17,"type":"file","name":"report.txt","owner_scope":"` + strings.Repeat("a", 64) + `"}`),
-		"extra field": append(append([]byte{}, valid[:len(valid)-1]...), []byte(`,"local_path":"/volume1/photo"}`)...),
+		"duplicate":     []byte(`{"id":42,"id":43,"revision":7,"parent_id":17,"type":"file","name":"report.txt","owner_scope":"` + strings.Repeat("a", 64) + `"}`),
+		"extra field":   append(append([]byte{}, valid[:len(valid)-1]...), []byte(`,"local_path":"/volume1/photo"}`)...),
 		"missing field": []byte(`{"id":42,"revision":7}`),
-		"trailing": append(append([]byte{}, valid...), []byte(` {}`)...),
+		"trailing":      append(append([]byte{}, valid...), []byte(` {}`)...),
 	}
 	for label, payload := range cases {
 		if err := makeRequest(payload, ""); err == nil {
