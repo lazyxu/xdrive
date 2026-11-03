@@ -334,10 +334,16 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		shareGrant = &grant
 	}
 	if req.NodeID != nil {
+		if managedSourceWritePreflight(c, s.DB, uid, *req.NodeID, false) {
+			return
+		}
 		if notesRejectNodeMutation(c, s.DB, *req.NodeID) {
 			return
 		}
 	} else if req.ParentID != nil {
+		if managedSourceWritePreflight(c, s.DB, uid, *req.ParentID, false) {
+			return
+		}
 		if notesRejectDestination(c, s.DB, *req.ParentID, req.Name) {
 			return
 		}
@@ -541,6 +547,8 @@ func (s *Server) createUploadSession(c *gin.Context) {
 				return
 			}
 			switch {
+			case errors.Is(err, errManagedSourceWriteDenied):
+				fail(c, http.StatusConflict, err.Error())
 			case errors.Is(err, errShareUploadDenied):
 				writePublicShareUploadError(c, err)
 			case errors.Is(err, errRevisionConflict):
@@ -612,6 +620,15 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	session.ReservedBytes = requiredReservation
 	resumed := false
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if req.NodeID != nil {
+			if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, uid, *req.NodeID); err != nil {
+				return err
+			}
+		} else if req.ParentID != nil {
+			if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, uid, *req.ParentID); err != nil {
+				return err
+			}
+		}
 		if guest {
 			if _, err := s.publicShareUploadAdmissionTx(
 				c.Request.Context(), tx, guestID, uid, *req.ParentID,
@@ -649,6 +666,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
+		if errors.Is(err, errManagedSourceWriteDenied) {
+			fail(c, http.StatusConflict, err.Error())
+			return
+		}
 		if errors.Is(err, errShareUploadDenied) || errors.Is(err, errShareUploadBusy) {
 			writePublicShareUploadError(c, err)
 			return
@@ -1027,10 +1048,16 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		}
 		// An upload admitted before Notes initialization must not write into it.
 		if currentSession.NodeID != nil {
+			if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.NodeID); err != nil {
+				return err
+			}
 			if err := notesRejectNodeWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.NodeID); err != nil {
 				return err
 			}
 		} else if currentSession.ParentID != nil {
+			if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.ParentID); err != nil {
+				return err
+			}
 			if err := notesRejectDestinationWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.ParentID, currentSession.Name); err != nil {
 				return err
 			}
@@ -1191,6 +1218,8 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			return
 		}
 		switch {
+		case errors.Is(err, errManagedSourceWriteDenied):
+			fail(c, http.StatusConflict, err.Error())
 		case errors.Is(err, errUploadFinalized):
 			fresh, lookupErr := s.ownedUploadSession(session.OwnerID, session.ID)
 			if lookupErr != nil {
