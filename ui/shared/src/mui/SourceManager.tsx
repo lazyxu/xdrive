@@ -267,9 +267,7 @@ export function XDriveSourceManager({
   const createOption = externalSourceCreateOption(createPreset)
   const createProfile = externalSourceConnectorProfile(createOption.kind, createOption.direction)
   const createTarget = createTargetCrumbs.at(-1)
-  // Target picker is retained only for editing old Source settings; new
-  // Source creation no longer accepts a user-selected target node.
-  const selectedCreateTargetNodeID = targetBrowser ? createTarget?.id : defaultTargetNodeID
+  // Server chooses a stable, exclusive target when a Source is created.
 
   const settingsSourceID = setting?.source.id
   const settingsBrowseDirectories = setting?.credential?.configured && settingsSourceID !== undefined
