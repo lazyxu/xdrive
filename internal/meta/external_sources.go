@@ -60,6 +60,7 @@ type Source struct {
 	ScheduleTimezone   string     `gorm:"size:64"`
 	Revision           uint64     `gorm:"not null;default:1"`
 	TargetNodeID       *uint64    `gorm:"index"`
+	TargetManaged      bool       `gorm:"not null;default:false"` // set only by verified server-owned target provisioning/migration
 	IgnoreRules        string     `gorm:"type:text"`
 	Checkpoint         string     `gorm:"type:text"`
 	LastRunAt          *time.Time `gorm:"index"`
