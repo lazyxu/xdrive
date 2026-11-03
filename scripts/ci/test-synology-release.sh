@@ -31,7 +31,9 @@ fi
 # binaries and UI bytes are independently tested by test-synology-spk-ui.py.
 mkdir -p "$tmp/payload/ui/assets"
 printf 'DSM HTML entry' > "$tmp/payload/ui/synology.html"
-printf 'DSM config' > "$tmp/payload/ui/config"
+cat > "$tmp/payload/ui/config" <<'CONFIG'
+{".url":{"com.xdrive.NASBackup":{"type":"url","url":"/webman/3rdparty/xdrivenas/synology.html"}}}
+CONFIG
 printf 'DSM CGI' > "$tmp/payload/ui/backup.cgi"
 printf 'DSM JavaScript' > "$tmp/payload/ui/assets/app.js"
 tar -C "$tmp/payload" -cJf "$tmp/package/package.tgz" bin ui
@@ -43,6 +45,19 @@ tar --format=ustar -C "$tmp/package" -cf "$spk" INFO package.tgz
 (cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
 bash "$ROOT/scripts/ci/verify-synology-spk-release.sh" "$tmp/release" --require-mui
 bash "$ROOT/scripts/ci/verify-release-archive-allowlist.sh" "$tmp/release"
+
+# Regression: the formerly shipped URL omitted /webman/, causing a
+# Synology-branded 404 despite a valid SPK, symlink and GUI entrypoint.
+cp "$tmp/payload/ui/config" "$tmp/valid-dsm-ui-config"
+sed -i 's#/webman/3rdparty/#3rdparty/#' "$tmp/payload/ui/config"
+tar -C "$tmp/payload" -cJf "$tmp/package/package.tgz" bin ui
+tar --format=ustar -C "$tmp/package" -cf "$spk" INFO package.tgz
+(cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
+if bash "$ROOT/scripts/ci/verify-synology-spk-release.sh" "$tmp/release" --require-mui >/dev/null 2>&1; then
+  echo "DSM launcher without /webman/ was incorrectly accepted" >&2; exit 1
+fi
+cp "$tmp/valid-dsm-ui-config" "$tmp/payload/ui/config"
+tar -C "$tmp/payload" -cJf "$tmp/package/package.tgz" bin ui
 
 # Negative: the old GZIP package.tgz is a valid archive for generic TAR
 # readers but NOT the DSM toolkit's XZ payload. A valid recalculated digest
