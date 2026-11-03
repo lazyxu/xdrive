@@ -81,7 +81,7 @@ test('native cloud Live ZIP is verified, bounded and played from local originals
 })
 test('cloud Live still and motion are never faked, and disappear with Owner or scene', () => {
   assert.match(preview, /if viewed\.isLiveArchive, let still/)
-  assert.match(preview, /VideoPlayer\(player: player\)/)
+  assert.match(preview, /XDriveIOSNativePhotoVideoSurface\(/)
   assert.match(preview, /XDriveIOSNativeZoomablePhotoView\(image: still\)/)
   assert.match(preview, /native-ios-cloud-live-motion-toggle/)
   assert.match(preview, /let target = viewed/)
@@ -123,7 +123,7 @@ test('cloud Live pairs verified still/motion through native PHLivePhotoView with
   assert.match(preview, /nativeLiveUnavailable = true/)
   assert.match(preview, /native-ios-cloud-live-native-playback/)
   assert.match(preview, /native-ios-cloud-live-motion-toggle/)
-  assert.match(preview, /VideoPlayer\(player: player\)/)
+  assert.match(preview, /XDriveIOSNativePhotoVideoSurface\(/)
   assert.match(preview, /showingLiveMotion\.toggle\(\)/)
   assert.match(preview, /liveResources\?\.discard\(\)/)
   assert.match(preview, /nativeLivePlaybackRequest = nil/)

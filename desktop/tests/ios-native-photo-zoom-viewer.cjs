@@ -21,7 +21,7 @@ test('local and cloud still detail use one native UIKit zoom viewer', () => {
   assert.match(cloud, /XDriveIOSNativeZoomablePhotoView\(image: still\)/)
   assert.match(local, /PHLivePhotoView/)
   assert.match(local, /VideoPlayer\(player: player\)/)
-  assert.match(cloud, /VideoPlayer\(player: player\)/)
+  assert.match(cloud, /XDriveIOSNativePhotoVideoSurface\(/)
 })
 
 test('pinch pan and double tap are bounded and reset for new media', () => {
