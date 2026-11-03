@@ -209,6 +209,27 @@ export default function App({
     { service: 'baidu-map'; tab: 'verify' } | undefined
   >(undefined)
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
+  const [syncActivityFromNotification, setSyncActivityFromNotification] = useState(false)
+  const sourceRunFocusSequenceRef = useRef(0)
+  const [sourceRunFocus, setSourceRunFocus] = useState<{
+    sourceID: number; runID: string; server: string; username: string; requestID: number
+  } | null>(null)
+  // Keep a notification intent while navigation is awaiting a guarded editor
+  // exit; clear it only after the destination was actually visited and left.
+  const sourceRunPageVisitedRef = useRef(false)
+  const syncActivityPageVisitedRef = useRef(false)
+  useEffect(() => {
+    if (view === 'remote-pull') sourceRunPageVisitedRef.current = true
+    else if (sourceRunPageVisitedRef.current) {
+      sourceRunPageVisitedRef.current = false
+      setSourceRunFocus(null)
+    }
+    if (view === 'transfers') syncActivityPageVisitedRef.current = true
+    else if (syncActivityPageVisitedRef.current) {
+      syncActivityPageVisitedRef.current = false
+      setSyncActivityFromNotification(false)
+    }
+  }, [view])
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -1202,6 +1223,24 @@ export default function App({
     })
     const unsubscribeNavigate = window.xdriveDesktop.onNavigate((target) => {
       if (!active) return
+      if (typeof target === 'object' && target?.kind === 'source-run') {
+        if (!Number.isSafeInteger(target.sourceID) || target.sourceID <= 0 ||
+            typeof target.runID !== 'string' || !target.runID) return
+        sourceRunFocusSequenceRef.current += 1
+        setSourceRunFocus({ ...target, requestID: sourceRunFocusSequenceRef.current })
+        setSyncActivityFromNotification(false)
+        setTransferPopoverOpen(false)
+        setView('remote-pull')
+        return
+      }
+      if (target === 'sync-activity') {
+        // The completion notification must open the persistent Task Center,
+        // not the existing quick-transfer popover shortcut.
+        setTransferPopoverOpen(false)
+        setSyncActivityFromNotification(true)
+        setView('transfers')
+        return
+      }
       if (target === 'settings' || target === 'settings-update') {
         setSettingsOpen(true)
         if (target === 'settings-update') {
@@ -1229,6 +1268,9 @@ export default function App({
         setView('remote-pull')
         return
       }
+      // Object-shaped notification intents have already been handled above.
+      // The workspace router accepts only its known string routes.
+      if (typeof target !== 'string') return
       setView(target)
     })
     return () => {
@@ -2977,6 +3019,12 @@ export default function App({
       remotePullPage: agent.hello?.capabilities.includes('external-sources')
         ? {
     directionFilter: "pull",
+    focusedRun: sourceRunFocus &&
+      sourceRunFocus.server === status?.server &&
+      sourceRunFocus.username === status?.username
+        ? { sourceID: sourceRunFocus.sourceID, runID: sourceRunFocus.runID,
+            requestID: sourceRunFocus.requestID }
+        : undefined,
     adapter: sourceManagerAdapter,
     defaultTargetLabel: "我的文件",
     defaultTargetPath: "",
@@ -2988,6 +3036,9 @@ export default function App({
   } : undefined,
       taskCenterPage: {
     ...taskCenter.pageProps,
+    subtitle: syncActivityFromNotification && view === 'transfers'
+      ? '本轮 Mount 同步检查已结束。以下是已记录的任务与传输，不代表本轮完整的文件变更清单；逐项同步历史尚未接入。'
+      : taskCenter.pageProps.subtitle,
     globalTasksEnabled: status?.role === 'admin',
     globalTasksAvailable: Boolean(taskCenter.pageProps.globalTasksEnabled),
     backgroundScope: view === 'global-tasks' ? 'global' : 'mine',

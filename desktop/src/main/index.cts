@@ -72,6 +72,9 @@ import {
 import {
   sourceRunIsTerminal,
   sourceRunNotificationPresentation,
+  sourceRunNotificationTarget,
+  mountSyncCompletionPresentation,
+  type SourceRunNotificationTarget,
 } from './source_run_notification.cjs'
 import {
   defaultDesktopPreferences,
@@ -301,7 +304,8 @@ import {
 } from './agent_client.cjs'
 
 
-type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
+type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'sync-activity' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
+type DesktopNavigationIntent = DesktopViewTarget | SourceRunNotificationTarget
 
 type AgentConnectionState = {
   connected: boolean
@@ -382,7 +386,7 @@ let loginHistory: LoginHistory = emptyLoginHistory()
 let lastAutoLoginError = ''
 let windowStateSaveTimer: NodeJS.Timeout | null = null
 let closeDecisionPending = false
-let pendingDesktopView: DesktopViewTarget | null = null
+let pendingDesktopView: DesktopNavigationIntent | null = null
 let tray: Tray | null = null
 let quitting = false
 let quitReason = 'system-or-application'
@@ -1241,7 +1245,7 @@ function showMainWindow() {
   mainWindow.focus()
 }
 
-function showDesktopView(view: DesktopViewTarget) {
+function showDesktopView(view: DesktopNavigationIntent) {
   pendingDesktopView = view
   showMainWindow()
   if (rendererRecoveryExhausted) return
@@ -1994,10 +1998,17 @@ function createTray() {
   rebuildTrayMenu()
 }
 
-function showDesktopNotification(title: string, body: string, view?: DesktopViewTarget) {
+function showDesktopNotification(title: string, body: string, view?: DesktopNavigationIntent) {
   if (!Notification.isSupported()) return
   const notification = new Notification({ title, body })
   notification.on('click', () => {
+    // Never reopen an old source-run notification under another Owner/Server.
+    if (view && typeof view !== 'string' &&
+        (agentState.status?.server !== view.server ||
+         agentState.status?.username !== view.username)) {
+      showMainWindow()
+      return
+    }
     if (view) showDesktopView(view)
     else showMainWindow()
   })
@@ -2018,7 +2029,9 @@ function notifyAgentTransition(previous: AgentConnectionState, next: AgentConnec
     requestTaskbarAttention()
     showDesktopNotification('xDrive 冲突', `${after.conflict_count} 个未解决冲突需要处理。`, 'conflicts')
   } else if (before.sync_status === '正在同步' && after.sync_status === '同步正常') {
-    showDesktopNotification('xDrive', '同步已完成。', 'transfers')
+    // Mount completion carries no changed-file receipt or byte totals.
+    const presentation = mountSyncCompletionPresentation()
+    showDesktopNotification(presentation.title, presentation.body, 'sync-activity')
   }
 
   if (before.auth_status !== after.auth_status && (after.auth_status === '登录已过期' || after.auth_status === '账户已禁用')) {
@@ -2698,7 +2711,10 @@ function publishSourceRunSnapshot(rows: Array<{ source: AgentSource; run?: Agent
     )
     if (!initializing && becameTerminal) {
       const presentation = sourceRunNotificationPresentation(row.source, run)
-      showDesktopNotification(presentation.title, presentation.body, 'sources')
+      const target = sourceRunNotificationTarget(
+        row.source.id, run.id, agentState.status ?? {},
+      )
+      showDesktopNotification(presentation.title, presentation.body, target ?? 'sources')
     }
   }
 

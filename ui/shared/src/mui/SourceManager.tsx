@@ -94,6 +94,8 @@ export interface XDriveSourceManagerProps {
   adapter: XDriveSourceManagerAdapter
   directionFilter?: 'pull'
   initialSourceID?: number
+  // One notification may be clicked repeatedly; requestID scopes the focus.
+  focusedRun?: { sourceID: number; runID: string; requestID: number }
   defaultTargetNodeID?: number
   defaultTargetLabel: string
   defaultTargetPath: string
@@ -183,6 +185,7 @@ export function XDriveSourceManager({
   adapter,
   directionFilter,
   initialSourceID,
+  focusedRun,
   defaultTargetNodeID,
   defaultTargetLabel,
   defaultTargetPath,
@@ -194,6 +197,8 @@ export function XDriveSourceManager({
   const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
   const initialSourceOpenedRef = useRef<number | null>(null)
+  const focusedRequestOpenedRef = useRef<number | null>(null)
+  const focusedRunDetailsFetchedRef = useRef('')
   // The initial source overview has no authoritative zero count yet.
   // Never flash "尚未添加" before the first authenticated response.
   const [loading, setLoading] = useState(true)
@@ -205,6 +210,7 @@ export function XDriveSourceManager({
   const [failedItemsOpen, setFailedItemsOpen] = useState(false)
   const [failedItemsLimitReached, setFailedItemsLimitReached] = useState(false)
   const [historyRuns, setHistoryRuns] = useState<ExternalSourceRun[]>([])
+  const [focusedRunID, setFocusedRunID] = useState<string | null>(null)
   const [historyPage, setHistoryPage] = useState(1)
   const [historyHasNext, setHistoryHasNext] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -1282,12 +1288,13 @@ export function XDriveSourceManager({
     }
   }, [adapter])
 
-  const openDetails = async (row: ExternalSourceRow) => {
+  const openDetails = async (row: ExternalSourceRow, runID?: string) => {
     const scope = ++detailScopeRef.current
     collectionItemRequestRef.current = {}
     setHistoryReadState('unverified')
     setCollectionsReadState('unverified')
     setSelected(row)
+    setFocusedRunID(runID ?? null)
     onSelectedSourceChange?.(row.source.id)
     setFailedItems([])
     setFailedItemsOpen(false)
@@ -1323,6 +1330,38 @@ export function XDriveSourceManager({
     void openDetails(row)
   }, [initialSourceID, rows])
 
+  useEffect(() => {
+    if (!focusedRun || focusedRequestOpenedRef.current === focusedRun.requestID ||
+        !hasLoaded) return
+    const row = rows.find((item) => item.source.id === focusedRun.sourceID)
+    if (!row) {
+      if (!loadError) {
+        focusedRequestOpenedRef.current = focusedRun.requestID
+        setErrorDialog({
+          title: '无法定位同步记录',
+          message: '该来源不存在、已删除或当前账号无权读取。',
+        })
+      }
+      return
+    }
+    focusedRequestOpenedRef.current = focusedRun.requestID
+    void openDetails(row, focusedRun.runID)
+  }, [focusedRun, hasLoaded, rows, loadError])
+
+  useEffect(() => {
+    if (!focusedRun || selected?.source.id !== focusedRun.sourceID ||
+        focusedRunID !== focusedRun.runID) return
+    const run = historyRuns.find((item) => item.id === focusedRun.runID)
+    if (!run) return
+    const key = `${focusedRun.requestID}:${run.id}`
+    if (focusedRunDetailsFetchedRef.current === key) return
+    focusedRunDetailsFetchedRef.current = key
+    // Default-expanding an Accordion does not invoke its onChange fetch.
+    if (run.failed_items > 0) void loadRunFailures(focusedRun.sourceID, run.id, 1)
+    if (run.skipped_items > 0) void loadRunSkips(focusedRun.sourceID, run.id, 1)
+  }, [focusedRun, selected?.source.id, focusedRunID, historyRuns,
+      loadRunFailures, loadRunSkips])
+
   const closeDetails = () => {
     ++detailScopeRef.current
     collectionItemRequestRef.current = {}
@@ -1331,6 +1370,7 @@ export function XDriveSourceManager({
     setHistoryLoading(false)
     setFailedItemsLoading(false)
     setSelected(null)
+    setFocusedRunID(null)
     onSelectedSourceChange?.()
     setFailedItems([])
     setFailedItemsOpen(false)
@@ -1386,6 +1426,7 @@ export function XDriveSourceManager({
         collectionItemPages={collectionItemPages}
         collectionPageSize={SOURCE_COLLECTION_ITEM_PAGE_SIZE}
         historyRuns={historyRuns}
+        focusedRunID={focusedRunID}
         historyPage={historyPage}
         historyHasNext={historyHasNext}
         historyLoading={historyLoading}

@@ -1,5 +1,35 @@
 import { formatBytes } from './byte_format.cjs'
 
+// A Source Run has a durable identifier; a Mount status transition does not.
+export type SourceRunNotificationTarget = {
+  kind: 'source-run'
+  sourceID: number
+  runID: string
+  server: string
+  username: string
+}
+
+export function sourceRunNotificationTarget(
+  sourceID: number,
+  runID: string,
+  owner: { server?: string; username?: string },
+): SourceRunNotificationTarget | null {
+  const server = owner.server?.trim() ?? ''
+  const username = owner.username?.trim() ?? ''
+  const id = runID.trim()
+  if (!Number.isSafeInteger(sourceID) || sourceID <= 0 || !id || id.length > 128 ||
+      !server || !username) return null
+  return { kind: 'source-run', sourceID, runID: id, server, username }
+}
+
+// No per-file counts can be inferred from Agent's "同步正常" state.
+export function mountSyncCompletionPresentation() {
+  return {
+    title: 'xDrive · 同步检查结束',
+    body: '点击查看任务中心的现有传输记录；本轮逐项文件变更尚未记录。',
+  }
+}
+
 export type SourceRunNotificationStatus =
   | 'running'
   | 'completed'

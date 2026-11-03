@@ -1094,7 +1094,7 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   copyText: (text: string) => clipboard.writeText(text),
   hide: () => ipcRenderer.send('desktop:hide'),
   quit: () => ipcRenderer.send('desktop:quit'),
-  onNavigate: (callback: (view: string) => void) => {
+  onNavigate: (callback: (view: string | { kind: 'source-run'; sourceID: number; runID: string; server: string; username: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, view: string) => callback(view)
     ipcRenderer.on('desktop:navigate', handler)
     return () => ipcRenderer.removeListener('desktop:navigate', handler)
