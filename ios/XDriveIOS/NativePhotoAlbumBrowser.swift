@@ -1094,56 +1094,21 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                     if let page {
                         Text(page.total == 0 ? "没有可访问的相簿。" : "\(page.total) 个相簿")
                             .font(.caption).foregroundStyle(.secondary)
-                        LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 145, maximum: 220), spacing: 12)],
-                            spacing: 16
-                        ) {
-                            ForEach(page.items) { album in
-                                ZStack(alignment: .topTrailing) {
-                                    NavigationLink {
-                                        XDriveIOSNativeAlbumContentsScreen(album: album)
-                                    } label: {
-                                        XDriveIOSNativeAlbumCover(album: album)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .disabled(albumMutationBusy)
-                                    .accessibilityIdentifier("native-ios-gallery-album-open")
-                                    .onAppear {
-                                        // The last currently visible album owns the
-                                        // next 32-item request, even if it appears
-                                        // while another read is still in flight.
-                                        if album.id == page.items.last?.id {
-                                            visibleTailAlbumID = album.id
-                                            continueDirectoryIfReady()
-                                        }
-                                    }
-                                    .onDisappear {
-                                        // Ignore the retired tail's disappearance if
-                                        // a different tail has since become visible.
-                                        if visibleTailAlbumID == album.id {
-                                            visibleTailAlbumID = nil
-                                        }
-                                    }
-                                    if album.kind == "用户相册" {
-                                        Menu {
-                                            Button("重命名相簿") {
-                                                renameTarget = album
-                                                renameName = album.name
-                                                showingRenameAlbum = true
-                                            }
-                                            Button("删除相簿", role: .destructive) {
-                                                deleteTarget = album
-                                                showingDeleteAlbum = true
-                                            }
-                                        } label: {
-                                            Image(systemName: "ellipsis.circle")
-                                                .frame(width: 44, height: 44)
-                                        }
-                                        .disabled(albumMutationBusy)
-                                        .accessibilityIdentifier("native-ios-album-manage-menu")
-                                    }
-                                }
-                            }
+                        // Keep the PhotoKit cursor order unchanged. Split only
+                        // presentation into user-owned and system smart albums.
+                        let userAlbums = page.items.filter { $0.kind == "用户相册" }
+                        let systemAlbums = page.items.filter { $0.kind == "系统智能相册" }
+                        if !userAlbums.isEmpty {
+                            Text("我的相簿")
+                                .font(.title3.weight(.semibold))
+                                .accessibilityAddTraits(.isHeader)
+                            albumGrid(userAlbums, page: page)
+                        }
+                        if !systemAlbums.isEmpty {
+                            Text("系统相簿")
+                                .font(.title3.weight(.semibold))
+                                .accessibilityAddTraits(.isHeader)
+                            albumGrid(systemAlbums, page: page)
                         }
                     }
                 }
@@ -1246,6 +1211,71 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
             libraryMonitor.stop()
             suspendForNavigation()
         }
+    }
+
+    private func albumGrid(
+        _ albums: [XDriveLocalPhotoAlbumSummary],
+        page: XDriveLocalPhotoAlbumPage
+    ) -> some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 145, maximum: 220), spacing: 12)],
+            spacing: 16
+        ) {
+            ForEach(albums) { album in
+                albumCoverCell(album, page: page)
+            }
+        }
+    }
+
+    private func albumCoverCell(
+        _ album: XDriveLocalPhotoAlbumSummary,
+        page: XDriveLocalPhotoAlbumPage
+    ) -> some View {
+        ZStack(alignment: .topTrailing) {
+            NavigationLink {
+                XDriveIOSNativeAlbumContentsScreen(album: album)
+            } label: {
+                XDriveIOSNativeAlbumCover(album: album)
+            }
+            .buttonStyle(.plain)
+            .disabled(albumMutationBusy)
+            .accessibilityIdentifier("native-ios-gallery-album-open")
+            .onAppear {
+                // The real last collection (not the last of an earlier
+                // section) exclusively triggers the next bounded 32 rows.
+                if album.id == page.items.last?.id {
+                    visibleTailAlbumID = album.id
+                    continueDirectoryIfReady()
+                }
+            }
+            .onDisappear {
+                if visibleTailAlbumID == album.id {
+                    visibleTailAlbumID = nil
+                }
+            }
+            if album.kind == "用户相册" {
+                Menu {
+                    Button("重命名相簿") {
+                        renameTarget = album
+                        renameName = album.name
+                        showingRenameAlbum = true
+                    }
+                    Button("删除相簿", role: .destructive) {
+                        deleteTarget = album
+                        showingDeleteAlbum = true
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .frame(width: 44, height: 44)
+                }
+                .disabled(albumMutationBusy)
+                .accessibilityIdentifier("native-ios-album-manage-menu")
+            }
+        }
+        // ScrollViewReader needs the actual collection identity to restore
+        // the prior tile, even after the two presentation sections are built.
+        // This ID stays transient and is never persisted to route storage.
+        .id(album.id)
     }
 
     private func runAlbumMutation(
