@@ -328,4 +328,40 @@ final class XDriveIOSNativePhotoBackupDestinationModel: ObservableObject {
         }
         return try JSONDecoder().decode(XDriveIOSPhotoManagedDestinationDTO.self, from: bytes)
     }
+    /// Read-only upload admission. It never creates or renames a destination:
+    /// it requires an already registered Device and a Server-confirmed
+    /// Owner/Device/Source/Target binding before the shared CAS writer can run.
+    static func readExistingForUpload(
+        owner: XDriveNativeOwnerRoot, accessToken: String
+    ) async throws -> XDriveIOSManagedOriginalAuthority {
+        guard !accessToken.isEmpty,
+              let canonical = try? ServerAddress.parse(owner.origin.absoluteString),
+              canonical == owner.origin
+        else { throw XDriveIOSPhotoManagedDestinationFailure.invalidResponse }
+
+        // This verifies the current Owner session and already-enrolled iPhone
+        // against the same Server. It never silently enrolls another device.
+        guard let device = try await XDriveIOSDeviceEnrollment.shared
+            .backgroundPhotoDeviceProof(owner: owner, accessToken: accessToken)
+        else { throw XDriveIOSPhotoManagedDestinationFailure.missingDevice }
+
+        let reader = XDriveIOSNativePhotoBackupDestinationModel()
+        let dto = try await reader.request(
+            owner: owner, accessToken: accessToken, device: device,
+            method: "GET", body: nil
+        )
+        try Task.checkCancellation()
+        let destination = try reader.verifiedBinding(
+            dto, owner: owner, device: device
+        )
+        let authority = XDriveIOSManagedOriginalAuthority(
+            owner: owner, destination: destination,
+            device: device, accessToken: accessToken
+        )
+        guard authority.matches(owner) else {
+            throw XDriveIOSPhotoManagedDestinationFailure.invalidResponse
+        }
+        return authority
+    }
+
 }

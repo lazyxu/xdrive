@@ -64,7 +64,12 @@ test('only server response supplies actual target/source ID, local path cannot b
 test('native original backup is gated by a verified managed destination and uses the scoped CAS route', () => {
   assert.ok((screen.match(/!destination\.confirmedForCurrentName/g) || []).length >= 3,
     'manual, focused and automatic writers all require the confirmed current destination');
-  assert.match(controller, /readExistingForUpload/);
+  assert.match(model, /static func readExistingForUpload/);
+  const uploadAdmission = model.slice(model.indexOf('static func readExistingForUpload'));
+  assert.match(uploadAdmission, /backgroundPhotoDeviceProof/);
+  assert.match(uploadAdmission, /method: "GET", body: nil/);
+  assert.match(uploadAdmission, /verifiedBinding/);
+  assert.match(uploadAdmission, /XDriveIOSManagedOriginalAuthority/);
   assert.match(model, /not an upload permission/);
   assert.match(managedUpload, /func \(s \*Server\) iosPhotoManagedCreateUpload/);
   assert.match(managedUpload, /iosPhotoManagedAuthorizedScope\(c\)/);
