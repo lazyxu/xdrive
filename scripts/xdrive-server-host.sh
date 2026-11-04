@@ -465,10 +465,84 @@ install_update_lock_busy() {
   return 0
 }
 
+# Host-bootstrap trust: never ask an unverified imported Go ELF to verify itself.
+# An out-of-band, Host-owned trusted root enables *strict* local Sigstore
+# verification. With a configured root, bad/missing signatures must never
+# silently downgrade to user-supplied hashes.
+offline_go_verify_sigstore() (
+  set -euo pipefail
+  local directory="$1" tool="$2"
+  local trust_dir="$CONFIG_DIR/offline-trust" trust_root="$CONFIG_DIR/offline-trust/trusted-root.jsonl"
+  local entry owner mode work claims id commit signed_commit="" manifest_sha binary_sha delivery_sha
+  [[ -d "$trust_dir" && ! -L "$trust_dir" && -s "$trust_root" && ! -L "$trust_root" ]] || {
+    echo "xdrive-server: configured offline signing trust root is missing or unsafe." >&2
+    return 1
+  }
+  for entry in "$trust_dir" "$trust_root"; do
+    owner="$(stat -c %u -- "$entry")" || return 1
+    mode="$(stat -c %a -- "$entry")" || return 1
+    [[ "$owner" == "$(id -u)" && "$mode" =~ ^[0-7]{3,4}$ ]] || {
+      echo "xdrive-server: offline signing trust must be Host-owned." >&2; return 1;
+    }
+    (( (8#$mode & 8#022) == 0 )) || {
+      echo "xdrive-server: offline signing trust must not be group/world writable." >&2; return 1;
+    }
+  done
+  [[ -s "$directory/delivery-attestation.jsonl" && ! -L "$directory/delivery-attestation.jsonl" &&
+     -s "$directory/delivery.json" && ! -L "$directory/delivery.json" ]] || {
+    echo "xdrive-server: signed Go release requires delivery descriptor and local attestation bundle." >&2
+    return 1
+  }
+  command -v gh >/dev/null 2>&1 || {
+    echo "xdrive-server: configured offline signing trust requires GitHub CLI (gh)." >&2
+    return 1
+  }
+  work="$(mktemp -d "/tmp/xdrive-offline-trust.XXXXXX")" || return 1
+  trap 'rm -rf -- "$work"' EXIT
+  cp -- "$directory/manifest.json" "$work/manifest.json" || return 1
+  cp -- "$directory/delivery.json" "$work/delivery.json" || return 1
+  cp -- "$directory/delivery-attestation.jsonl" "$work/delivery-attestation.jsonl" || return 1
+  cp -- "$tool" "$work/xdrive-offline-linux-amd64" || return 1
+  cp -- "$trust_root" "$work/trusted-root.jsonl" || return 1
+  # Every signed subject must resolve to the same original repository ID
+  # AND the same master source commit. Repository-name checks alone are not
+  # sufficient when verifying previously downloaded bundles offline.
+  for entry in "$work/manifest.json" "$work/delivery.json" "$work/xdrive-offline-linux-amd64"; do
+    if ! claims="$(gh attestation verify "$entry" \
+        --repo lazyxu/xdrive --bundle "$work/delivery-attestation.jsonl" \
+        --custom-trusted-root "$work/trusted-root.jsonl" \
+        --signer-workflow lazyxu/xdrive/.github/workflows/offline-packages.yml \
+        --source-ref refs/heads/master --deny-self-hosted-runners \
+        --format json \
+        --jq '.[].verificationResult.signature.certificate | [.sourceRepositoryIdentifier, .sourceRepositoryDigest] | @tsv' 2>/dev/null)"; then
+      echo "xdrive-server: signed offline artifact provenance failed; refusing installation." >&2
+      return 1
+    fi
+    [[ -n "$claims" ]] || {
+      echo "xdrive-server: signed offline artifact has no verified publisher identity." >&2; return 1;
+    }
+    while IFS=$'\t' read -r id commit; do
+      [[ "$id" == 1382670236 && "$commit" =~ ^[a-f0-9]{40}$ ]] || {
+        echo "xdrive-server: offline signer repository identity is invalid." >&2; return 1;
+      }
+      if [[ -n "$signed_commit" && "$signed_commit" != "$commit" ]]; then
+        echo "xdrive-server: offline release artifacts have different signed source commits." >&2
+        return 1
+      fi
+      signed_commit="$commit"
+    done <<< "$claims"
+  done
+  manifest_sha="$(sha256sum "$work/manifest.json" | cut -d' ' -f1)" || return 1
+  binary_sha="$(sha256sum "$work/xdrive-offline-linux-amd64" | cut -d' ' -f1)" || return 1
+  delivery_sha="$(sha256sum "$work/delivery.json" | cut -d' ' -f1)" || return 1
+  printf '%s %s %s\n' "$manifest_sha" "$binary_sha" "$delivery_sha"
+)
+
 # Go offline installer: CLI and Host Control enter the same immutable release
 # and existing transaction. UI never supplies an executable path or Docker
-# command. Both independently trusted SHA-256 values are mandatory until the
-# signed Go ELF delivery protocol is enabled; never fall back to untrusted code.
+# command. Prefer a separately Host-owned trusted Sigstore root; without it
+# require two independent trusted hashes. Failed signed verification never
+# downgrades to manually supplied hashes or an untrusted interpreter.
 offline_go_update() {
   local id="" manifest_sha="" binary_sha="" backup_file_data=0 prefetch_only=0
   while [[ $# -gt 0 ]]; do
@@ -482,10 +556,18 @@ offline_go_update() {
       *) echo "xdrive-server: unsupported offline update option." >&2; return 2 ;;
     esac
   done
-  [[ "$id" =~ ^[a-f0-9]{32}$ && "$manifest_sha" =~ ^[a-f0-9]{64}$ && "$binary_sha" =~ ^[a-f0-9]{64}$ ]] || {
-    echo "xdrive-server: offline update requires a fixed import ID and two independently trusted SHA-256 values." >&2
+  local trust_root="$CONFIG_DIR/offline-trust/trusted-root.jsonl" signed_mode=0
+  [[ ! -e "$trust_root" && ! -L "$trust_root" ]] || signed_mode=1
+  [[ "$id" =~ ^[a-f0-9]{32}$ &&
+     ( -z "$manifest_sha" || "$manifest_sha" =~ ^[a-f0-9]{64}$ ) &&
+     ( -z "$binary_sha" || "$binary_sha" =~ ^[a-f0-9]{64}$ ) ]] || {
+    echo "xdrive-server: offline update requires a fixed import ID and valid trusted SHA-256 inputs." >&2
     return 2
   }
+  if [[ "$signed_mode" != 1 && ( -z "$manifest_sha" || -z "$binary_sha" ) ]]; then
+    echo "xdrive-server: configure a Host signing trust root or provide two independently trusted SHA-256 values." >&2
+    return 2
+  fi
   local parent="$STATE_DIR/update-imports" directory="$STATE_DIR/update-imports/$id"
   [[ -d "$parent" && ! -L "$parent" && -d "$directory" && ! -L "$directory" ]] || {
     echo "xdrive-server: offline import has not been admitted on this Host." >&2; return 1
@@ -505,19 +587,42 @@ offline_go_update() {
   actual="$(sha256sum "$tool" | cut -d' ' -f1)" || {
     rm -f -- "$tool"; return 1;
   }
+  if [[ "$signed_mode" == 1 ]]; then
+    local signed_pair signed_manifest_sha signed_binary_sha signed_delivery_sha
+    if ! signed_pair="$(offline_go_verify_sigstore "$directory" "$tool")"; then
+      rm -f -- "$tool"; return 1;
+    fi
+    read -r signed_manifest_sha signed_binary_sha signed_delivery_sha <<< "$signed_pair"
+    if [[ ! "$signed_manifest_sha" =~ ^[a-f0-9]{64}$ ||
+          ! "$signed_delivery_sha" =~ ^[a-f0-9]{64}$ ||
+          "$signed_binary_sha" != "$actual" ||
+          ( -n "$manifest_sha" && "$manifest_sha" != "$signed_manifest_sha" ) ||
+          ( -n "$binary_sha" && "$binary_sha" != "$signed_binary_sha" ) ]]; then
+      echo "xdrive-server: signed release differs from supplied hashes or Host snapshot." >&2
+      rm -f -- "$tool"; return 1;
+    fi
+    manifest_sha="$signed_manifest_sha"
+    binary_sha="$signed_binary_sha"
+    printf '[xDrive] Offline Go ELF, Manifest and delivery publisher provenance verified locally.\n'
+  fi
   if [[ "$actual" != "$binary_sha" ]]; then
     echo "xdrive-server: imported Go installer differs from independent SHA-256." >&2
     rm -f -- "$tool"
     return 1
   fi
   chmod 0700 "$tool"
-  if ! "$tool" verify --dir "$directory" --trusted-manifest-sha256 "$manifest_sha"; then
+  local -a signed_args=()
+  if [[ "$signed_mode" == 1 ]]; then
+    signed_args=(--signed-delivery --trusted-installer-sha256 "$binary_sha"
+                 --trusted-delivery-sha256 "$signed_delivery_sha")
+  fi
+  if ! "$tool" verify --dir "$directory" --trusted-manifest-sha256 "$manifest_sha" "${signed_args[@]}"; then
     rm -f -- "$tool"
     return 1
   fi
   if [[ "$prefetch_only" != 1 ]]; then
     local -a args=(install --dir "$directory" --config-dir "$XDRIVE_HOME"
-                   --trusted-manifest-sha256 "$manifest_sha")
+                   --trusted-manifest-sha256 "$manifest_sha" "${signed_args[@]}")
     [[ "$backup_file_data" != 1 ]] || args+=(--backup-file-data)
     "$tool" "${args[@]}" || exit_code=$?
   fi
