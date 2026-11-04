@@ -19,6 +19,7 @@ struct XDriveIOSPhotoBackupProgress: Equatable {
     var liveNotSupported = 0
     var videosNotSupported = 0
     var unavailable = 0
+    var skippedBeforeBaseline = 0
     // Bounded in-memory reasons for THIS window, not a persistent retry queue.
     var issues = XDriveIOSPhotoBackupIssueSummary()
     var needsReview = 0
@@ -62,13 +63,16 @@ struct XDriveIOSForegroundPhotoBackupMVP {
 
     func run(allowICloudOriginals: Bool, startOffset: Int = 0,
              maximumNewOriginals: Int = Self.maxNewOriginalsPerRun,
+             newOnlySince: Date? = nil,
              onPotentialWrite: @MainActor @escaping () -> Void = {},
              onProgress: @MainActor @escaping (XDriveIOSPhotoBackupProgress) -> Void)
         async throws -> XDriveIOSPhotoBackupProgress {
         guard startOffset >= 0, maximumNewOriginals > 0,
               maximumNewOriginals <= Self.maxNewOriginalsPerRun,
               owner.ownerID > 0, owner.rootNodeID > 0,
-              !owner.instanceID.isEmpty else {
+              !owner.instanceID.isEmpty,
+              (newOnlySince?.timeIntervalSince1970.isFinite ?? true)
+        else {
             throw XDriveIOSPhotoBackupMVPError.identityNotVerified
         }
         // BGTasks may be admitted after suspension. Legacy journal keys and
@@ -110,6 +114,30 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         break scanning
                     }
                     report.scanned += 1
+                    if let newOnlySince {
+                        switch XDriveIOSPhotoAutoSchedulePolicy.newOnlyCandidate(
+                            capturedAt: candidate.capturedAt,
+                            modifiedAt: candidate.modifiedAt,
+                            since: newOnlySince
+                        ) {
+                        case .eligible:
+                            break
+                        case .olderThanStart:
+                            report.skippedBeforeBaseline += 1
+                            report.stage = "旧照片未在启用后修改，按仅备份新照片规则跳过"
+                            await onProgress(report)
+                            continue
+                        case .unknownDates:
+                            report.unavailable += 1
+                            report.issues.append(
+                                position: startOffset + report.scanned,
+                                mediaKind: candidate.kind, reason: .unavailable
+                            )
+                            report.stage = "照片日期不可判定；未当作新照片或已备份"
+                            await onProgress(report)
+                            continue
+                        }
+                    }
                     // Live uses one atomic ZIP Node containing both originals.
                     // Never run it through the still-only resource path.
                     guard candidate.isLive && candidate.kind == "image" ||
