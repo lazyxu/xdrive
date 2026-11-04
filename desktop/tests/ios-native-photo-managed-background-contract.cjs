@@ -32,7 +32,7 @@ test('new BG grant binds one exact server-owned Source and real Node, not Owner 
   assert.match(grant, /SourceID: previous\.SourceID, TargetNodeID: previous\.TargetNodeID/);
   assert.match(grant, /"upload_authorized": authorized/);
   assert.match(grant, /"source_id": g\.SourceID, "target_node_id": g\.TargetNodeID/);
-  assert.match(grant, /"upload_path_base": "\/api\/v1\/ios\/photos\/background-managed"/);
+  assert.match(grant, /"upload_path_base":\s*"\/api\/v1\/ios\/photos\/background-managed"/);
   assert.match(manager, /grant\.hasManagedDestination/);
   assert.match(manager, /proof\.source_id == grant\.sourceID/);
   assert.match(manager, /proof\.target_node_id == grant\.targetNodeID/);
