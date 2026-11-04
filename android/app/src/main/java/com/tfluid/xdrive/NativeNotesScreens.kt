@@ -125,7 +125,7 @@ internal fun NativeNotesScreen(controller: DriveController) {
                 nextOffset = page.nextOffset
             }
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) { error = failure.message ?: "备忘录读取失败" }
+        catch (failure: Exception) { error = failure.message ?: "笔记读取失败" }
         finally { if (source == requestedSource && query == requestedQuery) loading = false }
     }
 
@@ -135,10 +135,10 @@ internal fun NativeNotesScreen(controller: DriveController) {
             onDeleted = { selected = null; refresh++ })
     } else {
         Column(Modifier.fillMaxSize().padding(12.dp).testTag("native-notes-page")) {
-            Text("备忘录", style = MaterialTheme.typography.titleLarge)
+            Text("笔记", style = MaterialTheme.typography.titleLarge)
             Row {
                 TextButton(onClick = { source = "mine" }) {
-                    Text(if (source == "mine") "✓ 我的备忘录" else "我的备忘录")
+                    Text(if (source == "mine") "✓ 我的笔记" else "我的笔记")
                 }
                 TextButton(onClick = { source = "ios_notes" }) {
                     Text(if (source == "ios_notes") "✓ iOS 备份" else "iOS 备份")
@@ -159,12 +159,12 @@ internal fun NativeNotesScreen(controller: DriveController) {
                     scope.launch {
                         try {
                             controller.notesInitialize()
-                            selected = controller.notesCreate("未命名备忘录", "")
+                            selected = controller.notesCreate("未命名笔记", "")
                         } catch (cancelled: CancellationException) { throw cancelled }
                         catch (failure: Exception) { error = failure.message }
                     }
                 }, enabled = !loading, modifier = Modifier.testTag("native-notes-create")) {
-                    Text("新建备忘录")
+                    Text("新建笔记")
                 }
             }
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -174,7 +174,7 @@ internal fun NativeNotesScreen(controller: DriveController) {
                     TextButton(onClick = { selected = row }, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth()) {
                             Text(row.title, style = MaterialTheme.typography.titleMedium)
-                            Text((if (row.writable) "我的备忘录" else "只读备份") +
+                            Text((if (row.writable) "我的笔记" else "只读备份") +
                                 " · 版本 " + row.revision,
                                 style = MaterialTheme.typography.bodySmall)
                         }
@@ -347,7 +347,7 @@ private fun NativeNoteEditor(
         confirmButton = { TextButton(onClick = { discard = false; onBack() }) { Text("放弃并返回") } },
         dismissButton = { TextButton(onClick = { discard = false }) { Text("继续编辑") } })
     if (deleting) AlertDialog(onDismissRequest = { deleting = false },
-        title = { Text("删除备忘录？") },
+        title = { Text("删除笔记？") },
         confirmButton = { TextButton(onClick = {
             deleting = false
             val revision = committed?.row?.revision ?: return@TextButton
@@ -364,7 +364,7 @@ private fun NativeNoteEditor(
     Column(Modifier.fillMaxSize().padding(12.dp).testTag("native-notes-editor")) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = { if (dirty || saving || uploadingImage) discard = true else onBack() }) { Text("返回") }
-            Text(if (note.writable) "我的备忘录" else "iOS 备份 · 只读")
+            Text(if (note.writable) "我的笔记" else "iOS 备份 · 只读")
             TextButton(onClick = { export.launch(note.id + ".md") },
                 enabled = committed != null) { Text("导出") }
         }

@@ -22,7 +22,10 @@ assert.equal(registry.xDriveWorkspaceNavigationAllowed('notes', false), true,
 assert.equal(registry.xDriveWorkspaceRouteRequiresAdmin('notes'), false)
 
 const titles = read('ui/shared/src/mui/WorkspaceRouteTitles.ts')
-assert.match(titles, /notes: '备忘录'/)
+const namespace = read('internal/api/notes_namespace.go')
+assert.match(namespace, /const notesRootDirectory = "@笔记"/)
+assert.match(namespace, /const notesMineDirectory = "我的笔记"/)
+assert.match(titles, /notes: '笔记'/)
 const shared = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
 assert.match(shared, /case 'notes':/)
 assert.match(shared, /if \(services\.notesPage\) page = <XDriveNotesPage port=\{services\.notesPage\} \/>/)

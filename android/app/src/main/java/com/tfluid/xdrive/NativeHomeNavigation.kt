@@ -17,7 +17,7 @@ internal enum class NativeHomeTab(val title: String) {
 
 internal enum class NativeDynamicFeature(val title: String) {
     TRANSFERS("传输"),
-    NOTES("备忘录"),
+    NOTES("笔记"),
 }
 
 /** Explicit destinations: Gallery map and both photo sources never use DYNAMIC. */

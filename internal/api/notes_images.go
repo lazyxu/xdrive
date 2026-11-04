@@ -20,7 +20,7 @@ import (
 )
 
 // Note images live in actual Owner Files:
-// /@xDrive/@备忘录/{我的备忘录,iOS备份}/_assets/<note-uuid>/<asset-uuid>.<ext>
+// /@xDrive/@笔记/{我的笔记,iOS备份}/_assets/<note-uuid>/<asset-uuid>.<ext>
 // They are immutable so every Markdown FileVersion keeps its old images.
 const notesMaxImageBytes = 20 << 20
 const notesAssetsDirectory = "_assets"
@@ -121,7 +121,7 @@ func (s *Server) uploadNoteImage(c *gin.Context, source string) {
 	hash := sha256.Sum256(data)
 	digest := hex.EncodeToString(hash[:])
 	casKey, _ := storage.ContentAddressedKey(digest)
-	stagedKey := storageKey(uid, "@xDrive/@备忘录/_assets", uuid.NewString())
+	stagedKey := storageKey(uid, "@xDrive/@笔记/_assets", uuid.NewString())
 	written, err := s.Store.Put(c.Request.Context(), stagedKey, bytes.NewReader(data))
 	if err != nil || written != int64(len(data)) {
 		_ = s.Store.Delete(c.Request.Context(), stagedKey)

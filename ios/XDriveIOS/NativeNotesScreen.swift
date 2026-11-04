@@ -35,7 +35,7 @@ struct XDriveIOSNativeMarkdownDocument: FileDocument {
     }
 }
 
-// Native SwiftUI "全部 → 备忘录", living in the existing dynamic module's
+// Native SwiftUI "全部 → 笔记", living in the existing dynamic module's
 // NavigationStack. Never add a sixth bottom tab or an embedded browser fallback.
 struct XDriveIOSNativeNotesScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
@@ -58,7 +58,7 @@ struct XDriveIOSNativeNotesScreen: View {
             Button {
                 Task { await createNote() }
             } label: {
-                Label("新建备忘录", systemImage: "square.and.pencil")
+                Label("新建笔记", systemImage: "square.and.pencil")
             }
             .disabled(isCreating || isLoading)
         } else {
@@ -73,7 +73,7 @@ struct XDriveIOSNativeNotesScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("备忘录来源", selection: $source) {
+            Picker("笔记来源", selection: $source) {
                 ForEach(XDriveIOSNativeNoteSource.allCases) { option in
                     Text(option.title).tag(option)
                 }
@@ -129,11 +129,11 @@ struct XDriveIOSNativeNotesScreen: View {
                         Image(systemName: "note.text")
                             .font(.largeTitle)
                             .foregroundStyle(.secondary)
-                        Text(source == .mine ? "暂无备忘录" : "暂无 iOS 备份")
+                        Text(source == .mine ? "暂无笔记" : "暂无 iOS 备份")
                             .font(.headline)
                         Text(source == .mine
-                            ? "点击右上角的新建按钮，创建 Markdown 备忘录。"
-                            : "通过 Apple 快捷指令或手动导入，将原生备忘录备份至此。")
+                            ? "点击右上角的新建按钮，创建 Markdown 笔记。"
+                            : "通过 Apple 快捷指令或手动导入，将 Apple 备忘录备份至此。")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -145,11 +145,11 @@ struct XDriveIOSNativeNotesScreen: View {
             .listStyle(.plain)
             .overlay {
                 if isLoading && items.isEmpty {
-                    ProgressView("读取备忘录…")
+                    ProgressView("读取笔记…")
                 }
             }
         }
-        .navigationTitle("备忘录")
+        .navigationTitle("笔记")
         .searchable(text: $search, prompt: "搜索标题或正文")
         .xDriveNotesToolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -377,7 +377,7 @@ struct XDriveIOSNativeNotesScreen: View {
             let client = try await authorizedClient()
             try await client.initializeNamespace()
             let note = try await client.create(
-                title: "未命名备忘录", markdown: ""
+                title: "未命名笔记", markdown: ""
             )
             guard note.isMine else {
                 throw XDriveIOSNativeNotesError.invalidResponse
@@ -449,7 +449,7 @@ private struct XDriveIOSNativeNoteDetailScreen: View {
                 Button(role: .destructive) {
                     askDelete = true
                 } label: {
-                    Label("删除备忘录", systemImage: "trash")
+                    Label("删除笔记", systemImage: "trash")
                 }
                 .disabled(saving || deleting)
             }
@@ -463,7 +463,7 @@ private struct XDriveIOSNativeNoteDetailScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if committed == nil {
                 VStack(spacing: 12) {
-                    Label("备忘录无法读取", systemImage: "exclamationmark.triangle")
+                    Label("笔记无法读取", systemImage: "exclamationmark.triangle")
                         .font(.headline)
                     Text(errorMessage ?? "请检查当前服务器和登录状态。")
                         .font(.subheadline)
@@ -475,7 +475,7 @@ private struct XDriveIOSNativeNoteDetailScreen: View {
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Label(source.writable ? "我的备忘录" : "iOS 只读备份",
+                        Label(source.writable ? "我的笔记" : "iOS 只读备份",
                               systemImage: source.writable ? "note.text" : "lock.doc")
                         .font(.caption).foregroundStyle(.secondary)
                         Spacer()
@@ -534,17 +534,17 @@ private struct XDriveIOSNativeNoteDetailScreen: View {
                 .padding(.top, 10)
             }
         }
-        .navigationTitle("备忘录")
+        .navigationTitle("笔记")
         .navigationBarTitleDisplayMode(.inline)
         .xDriveNotesToolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 notesDetailToolbarButtons
             }
         }
-        .confirmationDialog("删除这条备忘录？", isPresented: $askDelete) {
+        .confirmationDialog("删除这条笔记？", isPresented: $askDelete) {
             Button("删除", role: .destructive) { Task { await delete() } }
         } message: {
-            Text("仅删除我的备忘录和该笔记的图片；iOS 备份不受影响。")
+            Text("仅删除我的笔记和该笔记的图片；iOS 备份不受影响。")
         }
         .confirmationDialog("放弃尚未保存的修改？", isPresented: $askDiscard) {
             Button("放弃并重新加载", role: .destructive) {
@@ -712,7 +712,7 @@ private struct XDriveIOSNativeNoteDetailScreen: View {
     private func delete() async {
         guard source == .mine, !deleting, !saving,
               let note = committed, !dirty else {
-            errorMessage = "请先保存草稿，再删除备忘录。"
+            errorMessage = "请先保存草稿，再删除笔记。"
             return
         }
         deleting = true

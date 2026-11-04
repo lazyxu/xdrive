@@ -12,7 +12,7 @@ class NativeNotesNavigationTest {
         val opened = initial.open(NativeHomeShortcut.NOTES)
         assertEquals(NativeHomeTab.DYNAMIC, opened.selected)
         assertEquals(NativeDynamicFeature.NOTES, opened.dynamicFeature)
-        assertEquals(listOf("全部", "备忘录", "图库", "文件", "我的"), opened.labels)
+        assertEquals(listOf("全部", "笔记", "图库", "文件", "我的"), opened.labels)
         assertEquals(NativeHomeTab.GALLERY, opened.select(NativeHomeTab.GALLERY).selected)
         assertEquals(NativeDynamicFeature.NOTES,
             opened.select(NativeHomeTab.GALLERY).dynamicFeature)

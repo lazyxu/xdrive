@@ -14,9 +14,9 @@ import (
 )
 
 const notesSystemDirectory = "@xDrive"
-const notesRootDirectory = "@备忘录"
+const notesRootDirectory = "@笔记"
 const notesIOSDirectory = "iOS备份"
-const notesMineDirectory = "我的备忘录"
+const notesMineDirectory = "我的笔记"
 
 var errNotesManagedPath = errors.New("notes managed directory must be changed through notes API")
 var errNotesPathConflict = errors.New("notes managed path already occupied")
@@ -89,7 +89,7 @@ func notesExistingNamespaceTx(ctx context.Context, tx *gorm.DB, uid uint64) (met
 
 // POST is deliberate: first use is the only place where the notes directory
 // tree is created. GET /nodes remains a side-effect-free Files operation.
-// Existing user content at /@xDrive/@备忘录 is never silently claimed.
+// Existing user content at /@xDrive/@笔记 is never silently claimed.
 func (s *Server) initializeNotesNamespace(c *gin.Context) {
 	uid := userID(c)
 	if uid == 0 {
