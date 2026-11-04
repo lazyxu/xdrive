@@ -237,3 +237,22 @@ test('Files video uses Gallery native timeline and Owner-gated canvas paging wit
   assert.match(video, /player\.isMuted = !player\.isMuted/);
   assert.doesNotMatch(video, /URLSession|Bearer|UploadSession|Keychain|WKWebView/);
 });
+
+test('shared Photos video seek preview is bounded and never resumes a retired player', () => {
+  const video = read('ios/XDriveIOS/NativePhotoVideoSurface.swift');
+  assert.match(video, /@State private var scrubbedItem: AVPlayerItem\?/);
+  assert.match(video, /private func beginScrub\(\)[\s\S]*?resumesAfterScrub = player\.rate > 0[\s\S]*?player\.pause\(\)/);
+  assert.match(video, /private func previewScrub\(at value: Double\)/);
+  assert.match(video, /guard seeking, !finishingScrub, canControl,[\s\S]*?player\.currentItem === scrubbedItem/);
+  assert.match(video, /ProcessInfo\.processInfo\.systemUptime/);
+  assert.match(video, /now - lastPreviewSeekAt >= 0\.14/);
+  assert.match(video, /player\.seek\(\s*to: target, toleranceBefore: tolerance,\s*toleranceAfter: tolerance\s*\)/);
+  assert.match(video, /player\.seek\(to: target, toleranceBefore: \.zero, toleranceAfter: \.zero\) \{ completed in/);
+  assert.match(video, /guard scrubEpoch == token else \{ return \}[\s\S]*?abortScrub\(\)[\s\S]*?guard completed, phase == \.active,[\s\S]*?player\.currentItem === item/);
+  assert.match(video, /if resume \{ player\.play\(\) \}/);
+  assert.match(video, /\.onChange\(of: position\) \{ value in[\s\S]*?if let target = previewScrub\(at: value\)[\s\S]*?player\.seek\(/);
+  assert.match(video, /\.onChange\(of: phase\)[\s\S]*?abortScrub\(\)/);
+  assert.match(video, /\.onDisappear \{ abortScrub\(\) \}/);
+  assert.match(video, /\.disabled\(!canControl \|\| seeking\)/);
+  assert.doesNotMatch(video, /onEditingChanged: \{ editing in\s*seeking = editing/);
+});
