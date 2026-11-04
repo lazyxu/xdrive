@@ -51,10 +51,16 @@ Server packages use the separate [signed Share update publisher](server-share-up
 4. Once permitted and trusted, set repository variable
    `XDRIVE_CLIENT_MIRROR_ENABLED=true`. Each **successfully published master
    GitHub Snapshot** triggers an upload via the existing trusted
-   `xdrive_snapshot_published` repository dispatch. The daily **04:37 UTC**
-   schedule retries any late/failed mirror attempt; no new client build is
-   started. `workflow_dispatch` with `dry_run=false` runs on demand even
-   if the repository variable is not yet enabled (but requires secrets).
+   `xdrive_snapshot_published` repository dispatch. Additionally, merging a
+   change to the **mirror workflow or its collector/uploader** into `master`
+   reconciles already-verified Snapshot and successful mobile assets into the
+   current directory layout, **even if full master CI has not yet published a
+   newer Snapshot**. This push trigger has an explicit three-file path allowlist,
+   keeps the same opt-in variable and never rebuilds or signs clients; ordinary
+   master feature merges do **not** launch extra mirror jobs. The daily
+   **04:37 UTC** schedule retries late/failed mirror attempts.
+   `workflow_dispatch` with `dry_run=false` remains available on demand
+   even when the repository variable is off (but still requires secrets).
 5. Confirm product directories `Desktop/`, `Mobile/`, `DSM/`, `Backup-CLI/`
    and `Source-Agent/` under the **shared root folder**, each containing flat,
    versioned files with `<archived-filename>.sha256` companions.
