@@ -103,12 +103,12 @@ type Schedule struct {
 	Revision           uint64 `json:"revision"`
 	ScheduleType       string `json:"schedule_type"`
 	ScheduleExpression string `json:"schedule_expression"`
-	ScheduleTimezone   string     `json:"schedule_timezone"`
+	ScheduleTimezone   string `json:"schedule_timezone"`
 	// Optional read-only observation from the original owning Agent; never
 	// supplied by the Server or used to grant an upload. No Root path, token,
 	// receipt ID or precise execution guarantee is exposed.
-	AutoReadiness       string     `json:"auto_readiness,omitempty"`
-	NextScheduledAt     *time.Time `json:"next_scheduled_at,omitempty"`
+	AutoReadiness   string     `json:"auto_readiness,omitempty"`
+	NextScheduledAt *time.Time `json:"next_scheduled_at,omitempty"`
 }
 
 func ValidateSchedule(s Schedule, sourceID uint64) bool {
