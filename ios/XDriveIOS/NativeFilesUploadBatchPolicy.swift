@@ -39,3 +39,32 @@ enum XDriveIOSNativeFilesUploadBatchPolicy {
         return Set(names.map { $0.lowercased() }).count == files.count
     }
 }
+
+
+/// Foreground-only folder picker MVP. The scan must admit the entire picked
+/// subtree before any directory POST or UploadSession can start. These are
+/// transfer caps, not a background uploader or an implicit overwrite policy.
+enum XDriveIOSNativeFilesFolderUploadPolicy {
+    static let maximumFiles = 64
+    static let maximumDirectories = 32  // Includes the picked root folder.
+    static let maximumDepth = 8          // Includes the picked root folder.
+    static let maximumTotalBytes: Int64 = 256 * 1_048_576
+
+    static func validComponent(_ name: String) -> Bool {
+        XDriveIOSNativeFilesFolderNamePolicy.normalized(name) == name &&
+            !name.hasSuffix(" ")
+    }
+
+    static func acceptsDirectory(existing: Int, depth: Int) -> Bool {
+        existing >= 0 && existing < maximumDirectories &&
+            depth > 0 && depth <= maximumDepth
+    }
+
+    static func acceptsFile(existing: Int, totalBytes: Int64,
+                            nextBytes: Int64, depth: Int) -> Bool {
+        existing >= 0 && existing < maximumFiles &&
+            depth > 0 && depth <= maximumDepth &&
+            totalBytes >= 0 && totalBytes <= maximumTotalBytes &&
+            nextBytes >= 0 && nextBytes <= maximumTotalBytes - totalBytes
+    }
+}

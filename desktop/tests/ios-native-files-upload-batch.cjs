@@ -62,16 +62,26 @@ test('cancellation or any uncertain ACK stops subsequent uploads without invente
   assert.doesNotMatch(upload, /DispatchQueue\.main\.asyncAfter|Task\.sleep|retry\(/)
 })
 
-test('every foreground file stages within 1 GiB and remains sequential, with no background claim', () => {
+test('foreground file upload stays sequential; only cancellable folder preflight may detach', () => {
   assert.match(policy, /maximumStagedFileBytes: Int64 = 1_073_741_824/)
   assert.match(policy, /freeDiskReserveBytes: Int64 = 128 \* 1_048_576/)
   assert.match(stager, /mayStage\(\s*bytes: originalSize\.int64Value, freeDiskBytes: freeBytes/)
   assert.match(stager, /try fm\.copyItem\(at: pickedURL, to: target\)/)
   assert.match(upload, /当前文件超过 1 GiB/)
   assert.match(panel, /批量最多 8 个文件，逐项核对收据/)
-  assert.doesNotMatch(upload, /URLSession\.shared|Task\.detached|resumeKey:|downloadTask/)
-})
 
+  // Folder enumeration is bounded preflight work, not an upload transport.
+  // It runs off the main actor only so large provider trees do not freeze UI,
+  // and cancellation must cancel that scan before any Server write.
+  assert.match(upload, /let scanning = Task\.detached\(priority: \.userInitiated\) \{\s*try XDriveIOSNativeFilesFolderUploadPlan\.scan\(folderURL\)\s*\}/)
+  assert.match(upload, /withTaskCancellationHandler\(operation: \{\s*try await scanning\.value\s*\}, onCancel: \{\s*scanning\.cancel\(\)\s*\}\)/)
+
+  // The actual per-file transfer remains in the existing foreground task and
+  // sole UploadSession writer; no detached/background or alternate transport.
+  const uploadOne = upload.slice(upload.indexOf('private func uploadOne('))
+  assert.ok(uploadOne.includes('writer.uploadOnce('))
+  assert.doesNotMatch(uploadOne, /URLSession\.shared|Task\.detached|resumeKey:|downloadTask/)
+})
 test('native Files progress counts only Server-acknowledged original bytes, never a submitted buffer', () => {
   assert.match(writer, /onChunkConfirmed: @escaping \(Int64, Int64\) -> Void = \{ _, _ in \}/)
   assert.match(writer, /onChunkConfirmed: onChunkConfirmed/)

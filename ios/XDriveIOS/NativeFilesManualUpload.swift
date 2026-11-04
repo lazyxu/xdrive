@@ -126,6 +126,131 @@ private struct XDriveIOSNativeFilesUploadReadback {
     }
 }
 
+
+/// A *complete*, bounded, deterministic-enough provider inventory is required
+/// before a remote mutation. Never silently skip hidden files, nested folders,
+/// symlinks, packages or unreadable provider entries.
+private enum XDriveIOSNativeFilesFolderUploadFailure: Error {
+    case invalidFolder
+    case invalidEntry
+    case exceedsLimit
+    case duplicateName
+    case incompleteProviderListing
+}
+
+private struct XDriveIOSNativeFilesFolderUploadPlan {
+    struct Step {
+        let components: [String] // includes the picked root folder's name
+        let fileURL: URL?        // nil means create a directory
+        var key: String { components.joined(separator: "/") }
+        var parentKey: String { components.dropLast().joined(separator: "/") }
+        var name: String { components.last ?? "" }
+    }
+
+    static func scan(_ picked: URL) throws -> [Step] {
+        guard picked.isFileURL,
+              XDriveIOSNativeFilesFolderUploadPolicy.validComponent(
+                picked.lastPathComponent
+              ) else {
+            throw XDriveIOSNativeFilesFolderUploadFailure.invalidFolder
+        }
+        let fm = FileManager.default
+        let root = picked.standardizedFileURL
+        let rootInfo = try root.resourceValues(forKeys: [
+            .isDirectoryKey, .isSymbolicLinkKey, .isPackageKey
+        ])
+        guard rootInfo.isDirectory == true, rootInfo.isSymbolicLink != true,
+              rootInfo.isPackage != true else {
+            throw XDriveIOSNativeFilesFolderUploadFailure.invalidFolder
+        }
+        let rootComponents = root.pathComponents
+        var steps: [Step] = [
+            Step(components: [root.lastPathComponent], fileURL: nil)
+        ]
+        var directoryCount = 1
+        var fileCount = 0
+        var byteCount: Int64 = 0
+        var namesByParent: [String: Set<String>] = [:]
+        var unreadable: Error?
+        guard let iterator = fm.enumerator(
+            at: root,
+            includingPropertiesForKeys: [
+                .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
+                .isPackageKey, .fileSizeKey
+            ],
+            options: [],
+            errorHandler: { _, error in
+                unreadable = error
+                return false
+            }
+        ) else {
+            throw XDriveIOSNativeFilesFolderUploadFailure.incompleteProviderListing
+        }
+
+        for case let child as URL in iterator {
+            try Task.checkCancellation()
+            if unreadable != nil {
+                throw XDriveIOSNativeFilesFolderUploadFailure.incompleteProviderListing
+            }
+            let normalized = child.standardizedFileURL
+            let childComponents = normalized.pathComponents
+            guard childComponents.starts(with: rootComponents),
+                  childComponents.count > rootComponents.count else {
+                throw XDriveIOSNativeFilesFolderUploadFailure.invalidEntry
+            }
+            let names = [root.lastPathComponent] +
+                Array(childComponents.dropFirst(rootComponents.count))
+            guard let name = names.last,
+                  XDriveIOSNativeFilesFolderUploadPolicy.validComponent(name) else {
+                throw XDriveIOSNativeFilesFolderUploadFailure.invalidEntry
+            }
+            let parentKey = names.dropLast().joined(separator: "/")
+            var existing = namesByParent[parentKey] ?? Set<String>()
+            guard existing.insert(
+                name.precomposedStringWithCanonicalMapping.lowercased()
+            ).inserted else {
+                throw XDriveIOSNativeFilesFolderUploadFailure.duplicateName
+            }
+            namesByParent[parentKey] = existing
+
+            let info = try normalized.resourceValues(forKeys: [
+                .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
+                .isPackageKey, .fileSizeKey
+            ])
+            guard info.isSymbolicLink != true,
+                  info.isPackage != true else {
+                throw XDriveIOSNativeFilesFolderUploadFailure.invalidEntry
+            }
+            if info.isDirectory == true {
+                guard XDriveIOSNativeFilesFolderUploadPolicy.acceptsDirectory(
+                    existing: directoryCount, depth: names.count
+                ) else {
+                    throw XDriveIOSNativeFilesFolderUploadFailure.exceedsLimit
+                }
+                directoryCount += 1
+                steps.append(Step(components: names, fileURL: nil))
+            } else if info.isRegularFile == true {
+                guard let bytes = info.fileSize.map(Int64.init),
+                      XDriveIOSNativeFilesFolderUploadPolicy.acceptsFile(
+                        existing: fileCount, totalBytes: byteCount,
+                        nextBytes: bytes, depth: names.count
+                      ) else {
+                    throw XDriveIOSNativeFilesFolderUploadFailure.exceedsLimit
+                }
+                fileCount += 1
+                byteCount += bytes
+                steps.append(Step(components: names, fileURL: normalized))
+            } else {
+                throw XDriveIOSNativeFilesFolderUploadFailure.invalidEntry
+            }
+        }
+        guard unreadable == nil else {
+            throw XDriveIOSNativeFilesFolderUploadFailure.incompleteProviderListing
+        }
+        return steps
+    }
+}
+
 /// One or at most eight explicit foreground files. A single Owner-bound
 /// OriginalRunGate covers the whole sequential batch, and each document is
 /// staged/verified/retired separately using ONE UploadSession/CAS writer.
@@ -266,6 +391,134 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
                     }
                 } else {
                     status = prefix + "上传未获得完整确认；请刷新目录核对，不要盲目重复提交。"
+                }
+            }
+        }
+    }
+
+
+    /// Preserve the picked root and relative subdirectories. All names, sizes,
+    /// traversal errors and duplicate siblings are rejected before the first
+    /// remote POST. Directories use the existing verified creator; files reuse
+    /// uploadOne's sole gated UploadSession + SHA/readback protocol.
+    func start(folderURL: URL, login: XDriveIOSNativeOwnerLoginModel,
+               parentID: UInt64, expectedFolderName: String?,
+               onConfirmed: @MainActor @escaping () -> Void) {
+        guard !busy, running == nil, parentID > 0,
+              folderURL.isFileURL, let expected = login.owner else {
+            status = "当前账户或选取的文件夹不可上传；请刷新。"
+            return
+        }
+        guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
+            status = "另一项原件上传或退出操作正在进行，本次未开始。"
+            return
+        }
+        let ticket = UUID()
+        epoch = ticket
+        fileProgressTicket = UUID()
+        lastConfirmedPercent = -1
+        cancelRequested = false
+        busy = true
+        status = "正在完整检查文件夹的目录、文件大小和名称；尚未上传…"
+        running = Task { @MainActor in
+            var confirmedDirectories = 0
+            var confirmedFiles = 0
+            var plannedFiles = 0
+            var possiblySubmitted = false
+            let scope = folderURL.startAccessingSecurityScopedResource()
+            defer {
+                if scope { folderURL.stopAccessingSecurityScopedResource() }
+                XDriveIOSOriginalRunGate.shared.release(gate)
+                if epoch == ticket {
+                    running = nil
+                    busy = false
+                }
+            }
+            do {
+                let scanning = Task.detached(priority: .userInitiated) {
+                    try XDriveIOSNativeFilesFolderUploadPlan.scan(folderURL)
+                }
+                let steps = try await withTaskCancellationHandler(operation: {
+                    try await scanning.value
+                }, onCancel: {
+                    scanning.cancel()
+                })
+                try Task.checkCancellation()
+                guard epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
+                    throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+                }
+                plannedFiles = steps.filter { $0.fileURL != nil }.count
+                status = "已检查 \(steps.count) 项；正在逐项创建目录并上传原件…"
+                var directoryIDs: [String: UInt64] = ["": parentID]
+
+                for step in steps {
+                    try Task.checkCancellation()
+                    guard epoch == ticket,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                          let targetParent = directoryIDs[step.parentKey] else {
+                        throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+                    }
+                    let parentName = step.components.count == 1
+                        ? expectedFolderName
+                        : step.components[step.components.count - 2]
+
+                    if let pickedFile = step.fileURL {
+                        // uploadOne revalidates Owner+parent before/after
+                        // each original and verifies the exact durable SHA.
+                        possiblySubmitted = true
+                        _ = try await uploadOne(
+                            fileURL: pickedFile, index: confirmedFiles,
+                            count: plannedFiles, login: login, expected: expected,
+                            ticket: ticket, parentID: targetParent,
+                            expectedFolderName: parentName
+                        )
+                        confirmedFiles += 1
+                    } else {
+                        let auth = try await login.verifiedAuthorization()
+                        try Task.checkCancellation()
+                        guard epoch == ticket,
+                              XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected),
+                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
+                            throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+                        }
+                        try await XDriveIOSNativeFilesUploadReadback(
+                            owner: auth.owner, accessToken: auth.accessToken
+                        ).requireDestination(targetParent, expectedName: parentName)
+                        try Task.checkCancellation()
+                        possiblySubmitted = true
+                        let created = try await XDriveIOSNativeFilesDirectoryCreator(
+                            owner: auth.owner, accessToken: auth.accessToken
+                        ).create(parentID: targetParent, name: step.name)
+                        let afterward = try await login.verifiedAuthorization()
+                        try Task.checkCancellation()
+                        guard epoch == ticket,
+                              XDriveIOSNativePhotoOwnerScope.matches(afterward.owner, expected),
+                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
+                            throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+                        }
+                        directoryIDs[step.key] = created
+                        confirmedDirectories += 1
+                    }
+                    status = "服务器已确认 \(confirmedDirectories) 个目录、\(confirmedFiles)/\(plannedFiles) 个文件；正在继续。"
+                }
+                try Task.checkCancellation()
+                guard epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
+                    throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+                }
+                status = "已逐项核对 \(confirmedDirectories) 个目录及全部 \(confirmedFiles) 个原件收据。"
+                onConfirmed()
+            } catch is CancellationError {
+                if epoch == ticket {
+                    status = "已确认 \(confirmedDirectories) 个目录、\(confirmedFiles) 个文件。已取消；可能有已提交的写入，请刷新后核对，勿自动重传。"
+                }
+            } catch {
+                guard epoch == ticket else { return }
+                if !possiblySubmitted {
+                    status = "文件夹检查未通过：含无效/重复名称、不可读取项、链接，或超过 64 文件/32 目录/256 MiB/8 层限制。未提交写入。"
+                } else {
+                    status = "仅确认 \(confirmedDirectories) 个目录、\(confirmedFiles)/\(plannedFiles) 个文件。操作中止；可能存在结果不确定的写入，请先刷新目录逐项核对，不要自动重传。"
                 }
             }
         }
