@@ -38,6 +38,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         XDriveIOSNativeFilesDestinationMutationModel()
     @State private var showingImporter = false
     @State private var showingMultiImporter = false
+    @State private var showingFolderImporter = false
     @State private var showingCreate = false
     @State private var showingRename = false
     @State private var showingTrash = false
@@ -358,6 +359,33 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             }
                         }
                         .accessibilityIdentifier("native-ios-files-manual-batch-upload")
+
+                        Button("从 iOS“文件”上传整个文件夹") {
+                            showingFolderImporter = true
+                        }
+                        .disabled(anyBusy)
+                        .fileImporter(
+                            isPresented: $showingFolderImporter,
+                            allowedContentTypes: [.folder]
+                        ) { result in
+                            switch result {
+                            case .success(let pickedFolder):
+                                guard verified else {
+                                    uploader.pickerFailed()
+                                    return
+                                }
+                                uploader.start(
+                                    folderURL: pickedFolder, login: login,
+                                    parentID: folderID, expectedFolderName: folderName,
+                                    onConfirmed: finishConfirmed
+                                )
+                            case .failure:
+                                uploader.pickerFailed()
+                            }
+                        }
+                        .accessibilityIdentifier("native-ios-files-folder-upload")
+                        Text("完整保留选中文件夹及子目录。前台最多 64 个文件、32 个目录、总计 256 MiB、8 层；先完成整棵目录检查，失败不自动重传。")
+                            .font(.footnote).foregroundStyle(.secondary)
                         Text("单文件最大 1 GiB（需足够本机暂存空间）；批量最多 8 个文件，逐项核对收据。失败或结果未知时停止后续上传。")
                             .font(.footnote).foregroundStyle(.secondary)
                         if uploader.busy {
@@ -509,6 +537,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         showingTrash = false
         showingImporter = false
         showingMultiImporter = false
+        showingFolderImporter = false
         destinationIntent = nil
         shareNode = nil
         exporter.invalidate()
