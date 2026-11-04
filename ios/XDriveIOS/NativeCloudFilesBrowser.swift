@@ -1427,7 +1427,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
                 XDriveIOSNativeFilesManagementPanel(
                     login: login, expectedOwner: intent.owner,
-                    folderID: folder?.id ?? intent.owner.rootNodeID,
+                    folderID: folder?.id ?? intent.file?.parent_id ??
+                        intent.directory?.parent_id ?? intent.owner.rootNodeID,
                     folderName: folder?.name,
                     file: intent.file,
                     directory: intent.directory,
