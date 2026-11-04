@@ -72,7 +72,7 @@ for (const untrusted of [
   { ...saved, schedule_type: 'completed' },
   { ...saved, schedule_expression: '' },
   { ...saved, schedule_timezone: 'UTC' },
-  { ...saved, schedule_expression: '6h\\nOwner token' },
+  { ...saved, schedule_expression: '6h' + String.fromCharCode(10) + 'Owner token' },
   { ...saved, schedule_type: 'manual' },
   { ...saved, schedule_type: 'cron', schedule_timezone: 'Asia/Shanghai' },
   { ...saved, schedule_type: 'cron', schedule_expression: '0 3 * * *' },
