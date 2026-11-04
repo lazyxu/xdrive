@@ -145,6 +145,14 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
                       [.authorized, .limited].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { throw XDriveIOSNativeSessionError.staleSession }
+                // A BG grant is not valid for Owner root; the precise
+                // managed Source/Node must exist before issuing any grant.
+                _ = try await XDriveIOSNativePhotoBackupDestinationModel
+                    .readExistingForUpload(owner: expectedOwner, accessToken: auth.accessToken)
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+                      XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion
+                else { throw XDriveIOSNativeSessionError.staleSession }
                 _ = try await manager.enableAfterNativeConfirmation(
                     owner: expectedOwner, accessToken: auth.accessToken
                 )

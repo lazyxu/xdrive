@@ -327,10 +327,16 @@ actor XDrivePhotoSyncLedger {
     func existingReceiptForCurrentOriginal(
         scope: XDrivePhotoSyncScope,
         role: XDrivePhotoSyncResourceRole,
-        name: String, size: Int64, sha256: String
+        name: String, size: Int64, sha256: String,
+        verifiedParentID: UInt64? = nil
     ) throws -> XDrivePhotoSyncOperation? {
+        // Historical review may explicitly use the previous Owner root.
+        // Current managed-target coverage supplies a Server-verified NodeID,
+        // never merely the user's editable folder name or a synthesized path.
+        let expectedParentID = verifiedParentID ?? scope.rootNodeID
         guard role == .still || role == .video || role == .liveBundle,
-              scope.rootNodeID > 0, validName(name),
+              scope.rootNodeID > 0, expectedParentID > 0,
+              validName(name),
               size > 0, validSHA256(sha256),
               sha256 == sha256.lowercased() else {
             throw XDrivePhotoSyncLedgerError.invalidResource
@@ -346,7 +352,7 @@ actor XDrivePhotoSyncLedger {
 
         func consider(_ item: XDrivePhotoSyncOperation) throws {
             guard item.role == role,
-                  item.destinationParentID == scope.rootNodeID,
+                  item.destinationParentID == expectedParentID,
                   item.destinationName == name,
                   item.byteSize == size,
                   item.sha256 == sha256 else { return }

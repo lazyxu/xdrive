@@ -18,6 +18,10 @@ final class XDriveIOSBGOriginalWindowStore {
         var dueAt: Date
         var pausedForReview: Bool
         var lastCommittedAt: Date?
+        // Device-managed target identity. Old root-only cursors decode nil;
+        // never resume those offsets against a newly created empty folder.
+        var targetSourceID: UInt64? = nil
+        var targetNodeID: UInt64? = nil
         // Optional to decode old BG schedules without migrating or exposing
         // original PhotoKit localIdentifiers or any background secret.
         var libraryChangeEpoch: Data? = nil
@@ -65,10 +69,26 @@ final class XDriveIOSBGOriginalWindowStore {
                     approved: XDriveIOSApprovedPhotoBGCredential,
                     now: Date = Date()) throws -> Int? {
         guard approved.matches(owner, now: now),
+              approved.hasManagedDestination,
               XDriveIOSBGApprovalPolicy.validInterval(
                 approved.intervalMinutes
               ) else { return nil }
         var state = try current(owner: owner)
+        // Reset the library scan offset on any Source/Node change. Never
+        // reset the pause bit or promote old root receipts to new success.
+        if !XDriveIOSPhotoBackupDestinationCursorPolicy.sameManagedTarget(
+            savedSourceID: state.targetSourceID,
+            savedTargetNodeID: state.targetNodeID,
+            currentSourceID: approved.sourceID ?? 0,
+            currentTargetNodeID: approved.targetNodeID ?? 0,
+            ownerRootNodeID: owner.rootNodeID
+        ) {
+            state.windowIndex = 0
+            state.libraryChangeEpoch = nil
+            state.libraryAuthorizationRaw = nil
+            state.targetSourceID = approved.sourceID
+            state.targetNodeID = approved.targetNodeID
+        }
         guard !state.pausedForReview, state.dueAt <= now else { return nil }
         let next = now.addingTimeInterval(
             TimeInterval(approved.intervalMinutes * 60)
@@ -97,10 +117,15 @@ final class XDriveIOSBGOriginalWindowStore {
                 approved: XDriveIOSApprovedPhotoBGCredential,
                 report: XDriveIOSPhotoBackupProgress,
                 now: Date = Date()) throws {
-        guard approved.matches(owner, now: now) else {
+        guard approved.matches(owner, now: now),
+              approved.hasManagedDestination else {
             throw XDrivePhotoSyncLedgerError.identityMismatch
         }
         var state = try current(owner: owner)
+        guard state.targetSourceID == approved.sourceID,
+              state.targetNodeID == approved.targetNodeID else {
+            throw XDrivePhotoSyncLedgerError.identityMismatch
+        }
         let unresolved = report.needsReview > 0 || report.stoppedForReview
         // The same strategy as visible runs. Do not skip a 256-item window
         // just because a large original exhausted this BGTask's bounded upload budget.
@@ -146,7 +171,8 @@ final class XDriveIOSBGOriginalWindowStore {
         trustedPending: Int,
         now: Date = Date()
     ) throws {
-        guard trustedPending == 0, approved.matches(owner, now: now) else {
+        guard trustedPending == 0, approved.matches(owner, now: now),
+              approved.hasManagedDestination else {
             throw XDrivePhotoSyncLedgerError.identityMismatch
         }
         var state = try current(owner: owner)
@@ -154,6 +180,19 @@ final class XDriveIOSBGOriginalWindowStore {
             throw XDrivePhotoSyncLedgerError.identityMismatch
         }
         state.pausedForReview = false
+        if !XDriveIOSPhotoBackupDestinationCursorPolicy.sameManagedTarget(
+            savedSourceID: state.targetSourceID,
+            savedTargetNodeID: state.targetNodeID,
+            currentSourceID: approved.sourceID ?? 0,
+            currentTargetNodeID: approved.targetNodeID ?? 0,
+            ownerRootNodeID: owner.rootNodeID
+        ) {
+            state.windowIndex = 0
+            state.libraryChangeEpoch = nil
+            state.libraryAuthorizationRaw = nil
+            state.targetSourceID = approved.sourceID
+            state.targetNodeID = approved.targetNodeID
+        }
         // The OS request is scheduled separately. Never spin in-place or
         // force a foreground upload; preserve old window/epoch counters.
         state.dueAt = now

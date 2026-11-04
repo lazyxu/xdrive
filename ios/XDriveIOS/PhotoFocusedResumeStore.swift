@@ -29,6 +29,10 @@ final class XDriveIOSPhotoFocusedResumeStore {
         let allowICloud: Bool
         let libraryEpoch: Data
         let hadUnavailable: Bool
+        // Optional for V1 root-only checkpoints. A different destination
+        // starts at zero even if the PhotoKit library epoch did not change.
+        let sourceID: UInt64?
+        let targetNodeID: UInt64?
     }
 
     private func key(for owner: XDriveNativeOwnerRoot) -> String {
@@ -45,7 +49,8 @@ final class XDriveIOSPhotoFocusedResumeStore {
     /// reconcile pending/unknown receipts under the shared original gate.
     func resume(owner: XDriveNativeOwnerRoot,
                 epoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot,
-                totalVisible: Int, allowICloud: Bool) -> Resume {
+                totalVisible: Int, allowICloud: Bool,
+                sourceID: UInt64, targetNodeID: UInt64) -> Resume {
         let fresh = Resume(nextWindow: 0, totalVisible: totalVisible,
                            hadUnavailable: false)
         let name = key(for: owner)
@@ -55,6 +60,12 @@ final class XDriveIOSPhotoFocusedResumeStore {
         guard data.count <= 100_000,
               let state = try? JSONDecoder().decode(State.self, from: data),
               state.version == 1,
+              XDriveIOSPhotoBackupDestinationCursorPolicy.sameManagedTarget(
+                savedSourceID: state.sourceID,
+                savedTargetNodeID: state.targetNodeID,
+                currentSourceID: sourceID, currentTargetNodeID: targetNodeID,
+                ownerRootNodeID: owner.rootNodeID
+              ),
               !state.hadUnavailable,
               !state.libraryEpoch.isEmpty, state.libraryEpoch.count <= 65_536
         else {
@@ -87,9 +98,12 @@ final class XDriveIOSPhotoFocusedResumeStore {
         owner: XDriveNativeOwnerRoot,
         completedWindow: Int, nextWindow: Int, totalVisible: Int,
         epoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot,
-        allowICloud: Bool, hadUnavailable: Bool
+        allowICloud: Bool, hadUnavailable: Bool,
+        sourceID: UInt64, targetNodeID: UInt64
     ) throws {
-        guard XDriveIOSPhotoFocusedBackupPolicy.canSaveCheckpoint(
+        guard sourceID > 0, targetNodeID > 0,
+              targetNodeID != owner.rootNodeID,
+              XDriveIOSPhotoFocusedBackupPolicy.canSaveCheckpoint(
             completedWindow: completedWindow, nextWindow: nextWindow,
             visibleTotal: totalVisible, hadUnavailable: hadUnavailable
         ), !epoch.serialized.isEmpty, epoch.serialized.count <= 65_536
@@ -98,7 +112,8 @@ final class XDriveIOSPhotoFocusedResumeStore {
             version: 1, nextWindow: nextWindow,
             totalVisible: totalVisible, authorizationRaw: epoch.authorization,
             allowICloud: allowICloud, libraryEpoch: epoch.serialized,
-            hadUnavailable: hadUnavailable
+            hadUnavailable: hadUnavailable, sourceID: sourceID,
+            targetNodeID: targetNodeID
         )
         let data = try JSONEncoder().encode(checkpoint)
         guard data.count <= 100_000 else { throw Failure.persistenceUnavailable }

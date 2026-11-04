@@ -317,6 +317,12 @@ func (s *Server) createSource(c *gin.Context) {
 	req.Direction = strings.TrimSpace(req.Direction)
 	req.SyncMode = strings.TrimSpace(req.SyncMode)
 	req.RunMode = strings.TrimSpace(req.RunMode)
+	// iOS Photos device destinations are created only by the narrowly scoped
+	// Owner+native-iPhone endpoint. Generic Source creation cannot spoof one.
+	if req.Kind == meta.SourceKindIOSPhotos {
+		fail(c, http.StatusForbidden, "ios photos target requires native device proof")
+		return
+	}
 	if req.SyncMode == "" {
 		req.SyncMode = meta.SourceSyncModeBackup
 	}
@@ -570,6 +576,9 @@ func (s *Server) updateSource(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&current).Error; err != nil {
 			return err
+		}
+		if current.Kind == meta.SourceKindIOSPhotos {
+			return errLocalSourceExecutorTransactionUnauthorized
 		}
 		currentRevision = current.Revision
 		if current.Revision != expected {
@@ -885,6 +894,9 @@ func (s *Server) deleteSource(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&source).Error; err != nil {
 			return err
+		}
+		if source.Kind == meta.SourceKindIOSPhotos {
+			return errLocalSourceExecutorTransactionUnauthorized
 		}
 		currentRevision = source.Revision
 		if source.Revision != expected {

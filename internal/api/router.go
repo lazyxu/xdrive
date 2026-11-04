@@ -168,6 +168,17 @@ func (s *Server) Router() *gin.Engine {
 	iosPhotoBackground.POST("/uploads/:id/finalize", s.iosBackgroundFinalizeUpload)
 	iosPhotoBackground.POST("/uploads/resume-lookup", s.iosBackgroundResumeLookup)
 	iosPhotoBackground.GET("/receipts/nodes/:id", s.iosBackgroundReceipt)
+	// Independently granted BGProcessingTask writes into its exact managed
+	// iPhone Source/Node, reusing the same CAS and private upload admission.
+	// This group never accepts a general Owner bearer or Desktop Agent token.
+	iosPhotoManagedBG := v1.Group("/ios/photos/background-managed")
+	iosPhotoManagedBG.Use(s.requireIOSPhotoBackgroundGrant())
+	iosPhotoManagedBG.POST("/uploads", s.iosPhotoManagedCreateUpload)
+	iosPhotoManagedBG.GET("/uploads/:id", s.iosPhotoManagedGetUpload)
+	iosPhotoManagedBG.PUT("/uploads/:id/chunks/:index", s.iosPhotoManagedPutChunk)
+	iosPhotoManagedBG.POST("/uploads/:id/finalize", s.iosPhotoManagedFinalize)
+	iosPhotoManagedBG.POST("/uploads/resume-lookup", s.iosPhotoManagedResumeLookup)
+	iosPhotoManagedBG.GET("/receipts/nodes/:id", s.iosPhotoManagedReceipt)
 	v1.GET("/public/share", s.publicShareMetadata)
 	v1.POST("/public/share/children", s.publicFolderShareChildren)
 	v1.POST("/public/share/directories", s.publicShareCreateDirectory)
@@ -446,6 +457,16 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/devices/:id/revoke", s.revokeClientDevice)
 	// Explicit current-Owner issuance/list/revoke, never reachable by an
 	// identity-only iOS device token or an already-issued background grant.
+	// Managed Photos aliases reuse the existing CAS UploadSession engine
+	// only after exact current Owner+iOS Device+Source+Target Node proof.
+	authed.POST("/ios/photos/managed/uploads", s.iosPhotoManagedCreateUpload)
+	authed.GET("/ios/photos/managed/uploads/:id", s.iosPhotoManagedGetUpload)
+	authed.PUT("/ios/photos/managed/uploads/:id/chunks/:index", s.iosPhotoManagedPutChunk)
+	authed.POST("/ios/photos/managed/uploads/:id/finalize", s.iosPhotoManagedFinalize)
+	authed.POST("/ios/photos/managed/uploads/resume-lookup", s.iosPhotoManagedResumeLookup)
+	authed.GET("/ios/photos/managed/receipts/nodes/:id", s.iosPhotoManagedReceipt)
+	authed.GET("/ios/photos/backup-destination", s.getIOSPhotoBackupDestination)
+	authed.PUT("/ios/photos/backup-destination", s.putIOSPhotoBackupDestination)
 	authed.POST("/ios/photos/background-grants", s.createIOSPhotoBackgroundGrant)
 	authed.GET("/ios/photos/background-grants", s.listIOSPhotoBackgroundGrants)
 	authed.POST("/ios/photos/background-grants/:id/revoke", s.revokeIOSPhotoBackgroundGrant)

@@ -11,6 +11,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @StateObject private var background = XDriveIOSNativeBackgroundPhotoControls()
     @StateObject private var coverage = XDriveIOSNativePhotoCoverageModel()
     @StateObject private var originalProof = XDriveIOSNativeCurrentPhotoReceiptModel()
+    @StateObject private var destination = XDriveIOSNativePhotoBackupDestinationModel()
     @State private var selectedOriginalToVerify: PhotosPickerItem?
     @State private var selectedOriginalIdentifier: String?
     @State private var checkICloudOriginal = false
@@ -171,6 +172,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                             isPresented: $showManualConsent, titleVisibility: .visible) {
             Button("确认备份到已核验的云端账户") {
                 guard let expected = manualConsentOwner,
+                      destination.confirmedForCurrentName,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else {
                     consentError = "服务器或账户已变化，本次确认失效；没有上传文件。"
@@ -190,6 +192,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         ) {
             Button("确认连续备份到当前云端 Owner") {
                 guard let expected = focusedConsentOwner,
+                      destination.confirmedForCurrentName,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else {
                     consentError = "服务器或账户已变化，集中备份授权失效；未上传文件。"
@@ -209,6 +212,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                             isPresented: $showAutoConsent, titleVisibility: .visible) {
             Button("确认启用") {
                 guard let expected = autoConsentOwner,
+                      destination.confirmedForCurrentName,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else {
                     consentError = "服务器或账户已变化，自动备份授权失效；未开启计划。"
@@ -288,6 +292,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     return
                 }
                 backgroundEnableOwner = nil
+                guard destination.confirmedForCurrentName else {
+                    consentError = "请先保存并核验当前 iPhone 的受管备份目的地。"
+                    return
+                }
                 background.enable(login: login, expectedOwner: selected)
             }
         } message: {
@@ -354,11 +362,13 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         .onAppear {
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             syncSavedAutomaticSettings()
+            destination.refresh(login: login)
             receipts.refresh(login: login)
             background.refresh(login: login)
             updateFocusedIdleTimer(active: focusedPresentationActive)
         }
         .onDisappear {
+            destination.cancel()
             // Restore the exact prior global idle timer setting on navigation.
             updateFocusedIdleTimer(active: false)
             focusedDimmed = false
@@ -433,6 +443,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             )
         }
         .onChange(of: login.owner) { _ in
+            destination.reset()
+            destination.refresh(login: login)
             originalProof.cancel()
             selectedOriginalToVerify = nil
             selectedOriginalIdentifier = nil
@@ -474,9 +486,61 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     // Never duplicate mutable consent controls in parallel view trees.
     @ViewBuilder
     private var backupSettingsSections: some View {
+            Section("备份目的地（必选）") {
+                Text("输入一个文件夹名称，默认使用本机设备名称；不输入云端完整路径。服务器按 Push/Pull 的受管目录规则自动创建实际目标。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                TextField("备份文件夹名称", text: $destination.folderName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .disabled(destination.busy || controller.busy)
+                    .accessibilityIdentifier("native-ios-photos-destination-name")
+                if destination.needsDeviceRegistration {
+                    Text("当前 iPhone 尚未注册到此 Owner，必须先明确注册设备。")
+                        .font(.footnote).foregroundStyle(.orange)
+                    Button("注册当前 iPhone") {
+                        destination.registerDevice(login: login)
+                    }
+                    .disabled(destination.busy || controller.busy || login.owner == nil)
+                    .accessibilityIdentifier("native-ios-photos-destination-device-register")
+                }
+                HStack {
+                    Button("保存并核验目标目录") {
+                        destination.save(login: login)
+                    }
+                    .disabled(!destination.canSave || controller.busy || login.owner == nil)
+                    .accessibilityIdentifier("native-ios-photos-destination-save")
+                    Button("刷新已绑定目录") {
+                        destination.refresh(login: login)
+                    }
+                    .disabled(destination.busy || login.owner == nil)
+                    .accessibilityIdentifier("native-ios-photos-destination-refresh")
+                }
+                if destination.busy {
+                    ProgressView("正在核验当前 Owner、设备和受管目标…")
+                }
+                if let verified = destination.confirmed {
+                    Label(destination.confirmedForCurrentName
+                          ? "服务器已确认备份目标" : "文件夹名已修改，请重新保存后再备份",
+                          systemImage: destination.confirmedForCurrentName
+                              ? "checkmark.circle" : "exclamationmark.triangle")
+                    Text(verified.targetPath)
+                        .font(.footnote).textSelection(.enabled)
+                        .accessibilityIdentifier("native-ios-photos-destination-target-path")
+                    Text("受管目标 ID：\(verified.targetNodeID)。此 ID 仅用于核验，不由 iPhone 拼接或选择完整云端路径。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text(destination.message)
+                    .font(.caption).foregroundStyle(.secondary)
+                if let failure = destination.errorMessage {
+                    Text(failure).font(.footnote).foregroundStyle(.red)
+                        .accessibilityIdentifier("native-ios-photos-destination-error")
+                }
+                Text("已绑定目标的前台手动、集中和自动备份使用受管 UploadSession 与真实 Node 收据；系统后台权限仍需单独完成受管目标绑定，不能将旧根目录收据当作新目录完成记录。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("备份范围") {
                 Text("当前账户：\(login.owner?.username ?? "未登录")")
-                Text("照片、视频与 Live Photo 双原件 ZIP 会保存到当前 Owner 云端根目录。每轮最多检查 256 项、新增 20 个原件；上传前后核验身份与收据。")
+                Text("照片、视频和 Live Photo ZIP 的前台原件备份须先保存上方受管目录，写入时再次验证当前 Owner、设备与 Node；历史 Owner 根目录原件仍保留。")
                     .font(.footnote).foregroundStyle(.secondary)
                 Toggle("手动备份允许下载 iCloud 原件", isOn: $allowICloud)
                     .disabled(controller.busy)
@@ -499,6 +563,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     showManualConsent = manualConsentOwner != nil
                 }
                     .disabled(controller.busy || background.busy || login.owner == nil ||
+                              !destination.confirmedForCurrentName ||
                               (photoAuthorization != .authorized && photoAuthorization != .limited))
                     .accessibilityIdentifier("native-ios-photos-manual-start")
                 Button("集中备份授权照片（仅前台连续）") {
@@ -508,6 +573,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     showFocusedConsent = focusedConsentOwner != nil
                 }
                 .disabled(controller.busy || background.busy || login.owner == nil ||
+                          !destination.confirmedForCurrentName ||
                           (photoAuthorization != .authorized && photoAuthorization != .limited))
                 .accessibilityIdentifier("native-ios-photos-focused-start")
                 Text("适用于首次大量备份：连续处理已授权的分段，每段最多新增 20 个原件。停止或重启后可从已完整扫描的分段继续，但必须重新验证当前账户、相册版本、授权范围和 iCloud 设置；不确定收据仍须先核对。扫描进度不代表全部云端原件已备份。")
@@ -676,6 +742,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         showAutoConsent = autoConsentOwner != nil
                     }
                         .disabled(controller.busy || background.busy || login.owner == nil ||
+                                  !destination.confirmedForCurrentName ||
                                   (photoAuthorization != .authorized && photoAuthorization != .limited))
                         .accessibilityIdentifier("native-ios-photos-auto-enable")
                 }
@@ -773,7 +840,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("可选系统后台原件备份") {
-                Text("前台自动备份与系统 BGProcessing 相互独立。后台需要单独授权当前设备及 Owner 根目录；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 \(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
+                Text("前台自动备份与系统 BGProcessing 相互独立。必须先保存并核验受管备份目的地，后台再单独授权当前 iPhone、Owner 和对应 Source/Node；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 \(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
                     .font(.footnote).foregroundStyle(.secondary)
                 if background.checking {
                     ProgressView("正在验证本机后台授权…")
@@ -848,7 +915,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                             showBackgroundEnableConsent = backgroundEnableOwner != nil
                         }
                         .disabled(background.busy || background.checking || controller.busy ||
-                                  login.owner == nil)
+                                  login.owner == nil || !destination.confirmedForCurrentName)
                         .accessibilityIdentifier("native-ios-photo-background-enable")
                     }
                 } else if !background.checking {

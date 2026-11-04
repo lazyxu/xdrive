@@ -58,13 +58,23 @@ func iosPhotoGrantValid(g meta.IOSPhotoBackgroundGrant, device meta.ClientDevice
 		root.OwnerID == g.OwnerID && root.Type == meta.NodeTypeDir
 }
 
+// Unbound legacy grants remain revocable and readable but are NOT new
+// managed-target write permission.
+func iosPhotoGrantHasManagedTarget(g meta.IOSPhotoBackgroundGrant) bool {
+	return g.SourceID != nil && *g.SourceID > 0 &&
+		g.TargetNodeID != nil && *g.TargetNodeID > 0 &&
+		*g.TargetNodeID != g.RootNodeID
+}
+
 func iosPhotoGrantDTO(grant meta.IOSPhotoBackgroundGrant) gin.H {
 	return gin.H{
-		"id":           grant.ID,
-		"device_id":    grant.DeviceID,
-		"root_node_id": grant.RootNodeID,
-		"expires_at":   grant.ExpiresAt,
-		"revoked":      grant.RevokedAt != nil,
+		"id":             grant.ID,
+		"device_id":      grant.DeviceID,
+		"root_node_id":   grant.RootNodeID,
+		"source_id":      grant.SourceID,
+		"target_node_id": grant.TargetNodeID,
+		"expires_at":     grant.ExpiresAt,
+		"revoked":        grant.RevokedAt != nil,
 	}
 }
 
@@ -131,6 +141,14 @@ func (s *Server) createIOSPhotoBackgroundGrant(c *gin.Context) {
 			return err
 		}
 		grant.RootNodeID = root.ID
+		// Only a current device-owned, server-provisioned iOS Photos
+		// Source/Node may receive a background-write grant.
+		source, target, err := iosPhotoDestinationBindingTx(tx, device)
+		if err != nil || source.OwnerID != user.ID || target.ID == root.ID {
+			return errIOSPhotoGrantDenied
+		}
+		grant.SourceID = &source.ID
+		grant.TargetNodeID = &target.ID
 		if err := tx.Model(&meta.IOSPhotoBackgroundGrant{}).
 			Where("owner_id = ? AND device_id = ? AND revoked_at IS NULL",
 				user.ID, device.ID).
@@ -223,12 +241,25 @@ func (s *Server) proveIOSPhotoBackgroundGrant(c *gin.Context) {
 		return
 	}
 	c.Header("Cache-Control", "private, no-store")
+	authorized := false
+	if iosPhotoGrantHasManagedTarget(g) {
+		var device meta.ClientDevice
+		if err := s.DB.WithContext(c.Request.Context()).
+			Where("id = ? AND owner_id = ? AND revoked_at IS NULL",
+				g.DeviceID, g.OwnerID).Take(&device).Error; err == nil {
+			if source, target, err := iosPhotoDestinationBindingTx(s.DB.WithContext(c.Request.Context()), device); err == nil &&
+				source.ID == *g.SourceID && target.ID == *g.TargetNodeID {
+				authorized = true
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"grant_id": g.ID, "owner_id": g.OwnerID,
 		"device_id": g.DeviceID, "root_node_id": g.RootNodeID,
+		"source_id": g.SourceID, "target_node_id": g.TargetNodeID,
 		"server_instance_id": g.ServerInstance, "expires_at": g.ExpiresAt,
-		"upload_authorized": true, // ONLY the exact Owner-root iOS upload aliases
-		"upload_path_base":  "/api/v1/ios/photos/background",
+		"upload_authorized": authorized,
+		"upload_path_base":  "/api/v1/ios/photos/background-managed",
 	})
 }
 
@@ -249,6 +280,7 @@ func (s *Server) rotateIOSPhotoBackgroundGrant(c *gin.Context) {
 	next := meta.IOSPhotoBackgroundGrant{
 		ID: uuid.NewString(), OwnerID: previous.OwnerID,
 		DeviceID: previous.DeviceID, RootNodeID: previous.RootNodeID,
+		SourceID: previous.SourceID, TargetNodeID: previous.TargetNodeID,
 		ServerInstance: previous.ServerInstance,
 		SessionVersion: previous.SessionVersion, CredentialHash: digest,
 		CreatedAt: now, UpdatedAt: now, ExpiresAt: now.Add(iosPhotoGrantTTL),
@@ -262,6 +294,15 @@ func (s *Server) rotateIOSPhotoBackgroundGrant(c *gin.Context) {
 		}
 		if device.Platform != "ios" || !clientDeviceIdentityCredentialMatches(
 			device, c.GetHeader("X-XDrive-Device-Token")) {
+			return errIOSPhotoGrantDenied
+		}
+		// An old Owner-root grant or a re-bound Source may not be renewed.
+		if !iosPhotoGrantHasManagedTarget(previous) {
+			return errIOSPhotoGrantDenied
+		}
+		source, target, err := iosPhotoDestinationBindingTx(tx, device)
+		if err != nil || source.ID != *previous.SourceID ||
+			target.ID != *previous.TargetNodeID {
 			return errIOSPhotoGrantDenied
 		}
 		result := tx.Model(&meta.IOSPhotoBackgroundGrant{}).

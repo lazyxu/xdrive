@@ -34,6 +34,15 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
     }
 
     init(owner: XDriveNativeOwnerRoot, scope: XDrivePhotoSyncScope,
+         managedForeground: XDriveIOSManagedOriginalAuthority,
+         ledger: XDrivePhotoSyncLedger) {
+        self.owner = owner
+        self.scope = scope
+        self.authorization = .managedForeground(managedForeground)
+        self.ledger = ledger
+    }
+
+    init(owner: XDriveNativeOwnerRoot, scope: XDrivePhotoSyncScope,
          approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential,
          ledger: XDrivePhotoSyncLedger) {
         self.owner = owner
@@ -127,7 +136,7 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
         }
         let prepared = try await ledger.prepare(
             scope: scope, localIdentifier: localIdentifier,
-            role: .liveBundle, parentID: owner.rootNodeID,
+            role: .liveBundle, parentID: authorization.destinationParentID(owner: owner),
             name: name, byteSize: bytes, sha256: hash
         )
         return XDriveIOSLivePreparedArchive(operation: prepared, fileURL: archiveURL)
@@ -270,7 +279,7 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
             scope: scope,
             localIdentifier: localIdentifier,
             role: role,
-            parentID: owner.rootNodeID,
+            parentID: authorization.destinationParentID(owner: owner),
             name: destinationName,
             byteSize: original.byteCount,
             sha256: fullHash

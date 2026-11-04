@@ -69,6 +69,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     private var displayEpoch = UUID()
     private var manualLibraryEpoch: Data?
     private var manualAuthorizationRaw: Int?
+    // RAM-only checkpoint identity. An unchanged PhotoKit epoch cannot make
+    // a position scanned for Owner-root or Source A valid for Source B.
+    private var manualSourceID: UInt64?
+    private var manualTargetNodeID: UInt64?
     private var libraryObserver: XDriveIOSForegroundPhotoLibraryObserver?
 
     /// Observe changes without enumerating PhotoKit or starting a writer.
@@ -112,6 +116,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             manualNextWindow = 0
             manualLibraryEpoch = nil
             manualAuthorizationRaw = nil
+            manualSourceID = nil
+            manualTargetNodeID = nil
             progress = nil
             message = "未启动相册备份"
             errorMessage = nil
@@ -222,15 +228,28 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   ) else {
                 throw XDriveIOSNativeSessionError.staleSession
             }
+            // A verified Owner root is NOT an authorized photo destination.
+            // Fail closed before persisting any new automatic plan.
+            let managed = try await XDriveIOSNativePhotoBackupDestinationModel
+                .readExistingForUpload(owner: selected, accessToken: second.accessToken)
+            try Task.checkCancellation()
+            guard displayEpoch == uiEpoch,
+                  store.localStopGeneration == stopVersion,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                  UIApplication.shared.applicationState == .active else {
+                throw XDriveIOSNativeSessionError.staleSession
+            }
             schedule = try store.configure(
-                owner: selected, minutes: minutes, allowICloud: allowICloud
+                owner: selected, minutes: minutes, allowICloud: allowICloud,
+                sourceID: managed.destination.sourceID,
+                targetNodeID: managed.destination.targetNodeID
             )
             message = "已开启原生前台自动增量备份。仅 App 活跃时按计划检查，系统不保证锁屏或强制退出后定时执行。"
             configured = true
         } catch {
             if displayEpoch == uiEpoch,
                XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
-                errorMessage = "无法验证当前 Owner 或既有加密账本，自动备份未开启；不会清除不确定收据。"
+                errorMessage = "无法验证当前 Owner、设备备份目标或加密账本，自动备份未开启；不会清除不确定收据。"
             }
         }
         // Do not tick while holding the shared writer gate: it would reject
@@ -359,10 +378,23 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     return
                 }
 
+                // Do this read-only current Owner+Device+Source/Node proof
+                // BEFORE reserveDue. An unconfigured target may not consume
+                // the schedule or fall back to the old Owner-root writer.
+                let managed = try await XDriveIOSNativePhotoBackupDestinationModel
+                    .readExistingForUpload(owner: selected, accessToken: verified.accessToken)
+                try Task.checkCancellation()
+                guard self.displayEpoch == uiEpoch,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                      UIApplication.shared.applicationState == .active else {
+                    throw XDriveIOSNativeSessionError.staleSession
+                }
                 if kind == .focused {
                     try await self.runFocused(
                         login: login, owner: selected, uiEpoch: uiEpoch,
-                        allowICloud: allowICloud
+                        allowICloud: allowICloud,
+                        initialSourceID: managed.destination.sourceID,
+                        initialTargetNodeID: managed.destination.targetNodeID
                     )
                 } else {
                     let window: Int
@@ -370,7 +402,9 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     let manualStartEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?
                     if kind == .automatic {
                         guard let due = try XDriveIOSPhotoAutoScheduleStore.shared
-                            .reserveDue(owner: selected) else {
+                            .reserveDue(owner: selected,
+                                        sourceID: managed.destination.sourceID,
+                                        targetNodeID: managed.destination.targetNodeID) else {
                             self.refresh(owner: selected)
                             return
                         }
@@ -381,8 +415,25 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     } else {
                         // Manual and automatic passes share the same 256-slot
                         // completion policy, but NOT the saved auto schedule.
-                        // An old positional index is unusable after Photos edits
-                        // or Full/Limited access changes; restart from the front.
+                        // Even with an unchanged PhotoKit epoch, an index
+                        // scanned for a previous Source/Node must not skip
+                        // originals in the new managed destination.
+                        let sameTarget = XDriveIOSPhotoBackupDestinationCursorPolicy.sameManagedTarget(
+                            savedSourceID: self.manualSourceID,
+                            savedTargetNodeID: self.manualTargetNodeID,
+                            currentSourceID: managed.destination.sourceID,
+                            currentTargetNodeID: managed.destination.targetNodeID,
+                            ownerRootNodeID: selected.rootNodeID
+                        )
+                        if !sameTarget {
+                            self.manualNextWindow = 0
+                            self.manualLibraryEpoch = nil
+                            self.manualAuthorizationRaw = nil
+                        }
+                        self.manualSourceID = managed.destination.sourceID
+                        self.manualTargetNodeID = managed.destination.targetNodeID
+                        // An old positional index is also unusable after
+                        // Photos edits or Full/Limited access changes.
                         let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
                         window = XDrivePhotoCursorEpochPolicy.trustedWindow(
                             requested: self.manualNextWindow,
@@ -403,7 +454,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         ? "自动增量备份正在检查第 \(window + 1) 段…"
                         : "手动备份正在检查第 \(window + 1) 段…"
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
-                        owner: selected, accessToken: verified.accessToken
+                        owner: selected, managedForeground: managed
                     ).run(allowICloudOriginals: cloud, startOffset: offset,
                           onPotentialWrite: { beganOriginalWrite = true }) { [weak self] value in
                         guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
@@ -420,7 +471,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     self.progress = result
                     if kind == .automatic {
                         self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared.recordResult(
-                            owner: selected, progress: result
+                            owner: selected,
+                            sourceID: managed.destination.sourceID,
+                            targetNodeID: managed.destination.targetNodeID,
+                            progress: result
                         )
                     } else if let initial = manualStartEpoch {
                         // Never advance a manual cursor if PhotoKit changed while
@@ -492,7 +546,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                     self.errorMessage = scheduledNetworkRetry
                         ? "尚未开始原件写入时网络中断：已保留当前扫描段，前台约 5 分钟后可再次检查；仍需重新验证 Owner 与收据。"
-                        : "本轮未完成：请检查当前 Owner、PhotoKit 权限、连接与本机加密账本；不能假定上传成功。"
+                        : "本轮未完成：请检查当前 Owner、iPhone 设备、受管目标目录、照片权限和加密账本；没有证据的原件不会被当作已备份。"
                 }
             }
             // A successful original may be followed by a PhotoKit scan error,
@@ -529,7 +583,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     /// re-verifies the Owner to allow native refresh while the App is visible.
     private func runFocused(
         login: XDriveIOSNativeOwnerLoginModel,
-        owner: XDriveNativeOwnerRoot, uiEpoch: UUID, allowICloud: Bool
+        owner: XDriveNativeOwnerRoot, uiEpoch: UUID, allowICloud: Bool,
+        initialSourceID: UInt64, initialTargetNodeID: UInt64
     ) async throws {
         let initial = try XDriveIOSPhotoKitLibraryEpoch.capture()
         // A constant-time PhotoKit fetch count plus a SECOND epoch witness
@@ -546,7 +601,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         // A cursor never substitutes for Server-confirmed Node receipts.
         let resume = XDriveIOSPhotoFocusedResumeStore.shared.resume(
             owner: owner, epoch: initial, totalVisible: visibleNow,
-            allowICloud: allowICloud
+            allowICloud: allowICloud,
+            sourceID: initialSourceID, targetNodeID: initialTargetNodeID
         )
         var window = resume.nextWindow
         var confirmedNew = 0
@@ -596,12 +652,27 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   UIApplication.shared.applicationState == .active else {
                 throw XDriveIOSNativeSessionError.staleSession
             }
+            // Never reuse a previously authorized destination across a
+            // later first-pass window, or allow a renamed/revoked Source.
+            let managed = try await XDriveIOSNativePhotoBackupDestinationModel
+                .readExistingForUpload(owner: owner, accessToken: auth.accessToken)
+            guard managed.destination.sourceID == initialSourceID,
+                  managed.destination.targetNodeID == initialTargetNodeID else {
+                XDriveIOSPhotoFocusedResumeStore.shared.clear(owner: owner)
+                throw XDriveIOSFocusedBackupFailure.libraryChanged
+            }
+            try Task.checkCancellation()
+            guard displayEpoch == uiEpoch,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                  UIApplication.shared.applicationState == .active else {
+                throw XDriveIOSNativeSessionError.staleSession
+            }
             message = "集中备份正在处理第 \(window + 1) 段…"
             let alreadyNew = confirmedNew
             let unavailableBefore = hadUnavailable
             let currentWindow = window
             let result = try await XDriveIOSForegroundPhotoBackupMVP(
-                owner: owner, accessToken: auth.accessToken
+                owner: owner, managedForeground: managed
             ).run(allowICloudOriginals: allowICloud, startOffset: offset) { [weak self] value in
                 guard let self,
                       self.displayEpoch == uiEpoch,
@@ -674,7 +745,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     try XDriveIOSPhotoFocusedResumeStore.shared.saveCompletedWindow(
                         owner: owner, completedWindow: window, nextWindow: next,
                         totalVisible: result.totalVisible, epoch: after,
-                        allowICloud: allowICloud, hadUnavailable: hadUnavailable
+                        allowICloud: allowICloud, hadUnavailable: hadUnavailable,
+                        sourceID: initialSourceID, targetNodeID: initialTargetNodeID
                     )
                 }
                 state.completedWindows += 1

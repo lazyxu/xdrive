@@ -14,6 +14,10 @@ struct XDriveIOSApprovedPhotoBGCredential: Codable, CustomStringConvertible {
     let instanceID: String
     let ownerID: UInt64
     let rootNodeID: UInt64
+    // Decode legacy root-only grants for explicit STOP; never let them
+    // create new originals or masquerade as a managed destination.
+    let sourceID: UInt64?
+    let targetNodeID: UInt64?
     let rootRevision: UInt64
     let username: String
     let deviceID: String
@@ -27,6 +31,11 @@ struct XDriveIOSApprovedPhotoBGCredential: Codable, CustomStringConvertible {
     var description: String {
         "XDriveIOSApprovedPhotoBGCredential(owner: \(ownerID), " +
         "device: [redacted], grant: [redacted])"
+    }
+
+    var hasManagedDestination: Bool {
+        guard let sourceID, let targetNodeID else { return false }
+        return sourceID > 0 && targetNodeID > 0 && targetNodeID != rootNodeID
     }
 
     func matches(_ owner: XDriveNativeOwnerRoot, now: Date = Date()) -> Bool {
@@ -107,19 +116,22 @@ actor XDriveIOSApprovedPhotoBGVault {
     func install(owner: XDriveNativeOwnerRoot,
                  device: XDriveIOSBackgroundDeviceProof,
                  grantID: String, grantSecret: String, expiresAt: Date,
-                 intervalMinutes: Int = 360) throws {
+                 intervalMinutes: Int = 360,
+                 sourceID: UInt64?, targetNodeID: UInt64?) throws {
         let now = Date()
         let candidate = XDriveIOSApprovedPhotoBGCredential(
             origin: owner.origin.absoluteString,
             instanceID: owner.instanceID,
             ownerID: owner.ownerID, rootNodeID: owner.rootNodeID,
+            sourceID: sourceID, targetNodeID: targetNodeID,
             rootRevision: owner.rootRevision,
             username: owner.username, deviceID: device.deviceID,
             deviceToken: device.secret, grantID: grantID,
             grantSecret: grantSecret, expiresAt: expiresAt,
             approvedAt: now, intervalMinutes: intervalMinutes
         )
-        guard candidate.matches(owner, now: now) else {
+        guard candidate.matches(owner, now: now),
+              candidate.hasManagedDestination else {
             throw XDriveIOSPhotoBGVaultFailure.corrupt
         }
         if let existing = try current(),
@@ -182,7 +194,8 @@ actor XDriveIOSApprovedPhotoBGVault {
     func proveInBackground() async throws -> XDriveIOSApprovedPhotoBGCredential {
         guard let item = try current(),
               let owner = try? item.ownerScope(),
-              item.matches(owner) else {
+              item.matches(owner),
+              item.hasManagedDestination else {
             throw XDriveIOSPhotoBGVaultFailure.corrupt
         }
         var parts = URLComponents(url: owner.origin, resolvingAgainstBaseURL: false)
@@ -235,6 +248,8 @@ actor XDriveIOSApprovedPhotoBGVault {
               proof.owner_id == item.ownerID,
               proof.device_id == item.deviceID,
               proof.root_node_id == item.rootNodeID,
+              proof.source_id == item.sourceID,
+              proof.target_node_id == item.targetNodeID,
               proof.server_instance_id == item.instanceID,
               proof.upload_authorized,
               let serverExpiry = XDriveIOSBGDateParser.parse(proof.expires_at),
@@ -259,6 +274,8 @@ private struct XDriveIOSBGOwnerProof: Decodable {
     let owner_id: UInt64
     let device_id: String
     let root_node_id: UInt64
+    let source_id: UInt64?
+    let target_node_id: UInt64?
     let server_instance_id: String
     let expires_at: String
     let upload_authorized: Bool

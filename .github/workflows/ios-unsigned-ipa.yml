@@ -141,6 +141,36 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
           "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
 
+      - name: Verify native iPhone managed Photos backup destination contract
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativePhotoBackupDestinationNamePolicy.swift \
+            ios/tests/NativePhotoBackupDestinationNamePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-destination-name-check"
+          "$RUNNER_TEMP/xdrive-ios-photo-destination-name-check"
+          node --test \
+            desktop/tests/ios-native-photo-managed-destination-contract.cjs \
+            desktop/tests/ios-native-photo-destination-ui.cjs
+
+      - name: Verify native managed original upload route and exact receipts
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/BackgroundOriginalRoutePolicy.swift \
+            ios/XDriveIOS/ManagedPhotoUploadRoutePolicy.swift \
+            ios/tests/ManagedPhotoUploadRoutePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-managed-upload-route-check"
+          "$RUNNER_TEMP/xdrive-ios-managed-upload-route-check"
+          node --test \
+            desktop/tests/ios-native-photo-managed-foreground-contract.cjs \
+            desktop/tests/ios-native-photo-managed-background-contract.cjs
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/PhotoBackupDestinationCursorPolicy.swift \
+            ios/tests/PhotoBackupDestinationCursorPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-managed-cursor-check"
+          "$RUNNER_TEMP/xdrive-ios-photo-managed-cursor-check"
+
       - name: Verify focused first-pass native PhotoKit window progression
         run: |
           set -euo pipefail

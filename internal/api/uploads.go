@@ -558,7 +558,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	// lp2_ is reserved for an authenticated, durable local Push operation.
 	// Its normal UploadSession must bind to that operation before finalize;
 	// the generic immediate CAS fast path would commit before binding.
-	if req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") && !scopedRun {
+	// Managed iOS Photos must pass the exact Source/Device/Node transaction
+	// admission; generic instant CAS is not scoped and cannot skip it.
+	_, managedIOSPhoto := currentIOSPhotoManagedUploadScope(c)
+	if req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") &&
+		!scopedRun && !managedIOSPhoto {
 		session, currentRevision, handled, err := s.tryInstantUploadSession(
 			c.Request.Context(), uid, req, chunkCount, shareGrant,
 		)

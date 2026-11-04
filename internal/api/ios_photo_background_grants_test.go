@@ -109,3 +109,27 @@ func TestIOSPhotoGrantIsNotGenericUploadAuthorization(t *testing.T) {
 		t.Fatal("grant must not impersonate the standard JWT access token")
 	}
 }
+
+func TestIOSPhotoGrantRequiresExactManagedSourceAndNode(t *testing.T) {
+	sourceID, targetID, rootID := uint64(81), uint64(90), uint64(31)
+	grant := meta.IOSPhotoBackgroundGrant{RootNodeID: rootID}
+	if iosPhotoGrantHasManagedTarget(grant) {
+		t.Fatal("legacy root-only grant acquired managed upload rights")
+	}
+	grant.SourceID = &sourceID
+	if iosPhotoGrantHasManagedTarget(grant) {
+		t.Fatal("grant missing target Node was admitted")
+	}
+	grant.TargetNodeID = &rootID
+	if iosPhotoGrantHasManagedTarget(grant) {
+		t.Fatal("Owner root was accepted as managed destination")
+	}
+	grant.TargetNodeID = &targetID
+	if !iosPhotoGrantHasManagedTarget(grant) {
+		t.Fatal("registered Source/Node pair rejected")
+	}
+	sourceID = 0
+	if iosPhotoGrantHasManagedTarget(grant) {
+		t.Fatal("zero SourceID accepted")
+	}
+}
