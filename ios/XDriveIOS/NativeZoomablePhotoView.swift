@@ -55,7 +55,12 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
                   let pan = recognizer as? UIPanGestureRecognizer,
                   pan.numberOfTouches == 1 else { return false }
             let velocity = pan.velocity(in: scroll)
-            return abs(velocity.x) > abs(velocity.y) * 1.15
+            let movement = pan.translation(in: scroll)
+            return XDriveIOSNativeViewerSwipePolicy.shouldBeginPaging(
+                translationX: movement.x, translationY: movement.y,
+                velocityX: velocity.x, velocityY: velocity.y,
+                zoom: scroll.zoomScale, minimum: scroll.minimumZoomScale
+            )
         }
 
         private func snap(_ photo: UIImageView, to offset: CGFloat,

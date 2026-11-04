@@ -4,6 +4,26 @@ import Foundation
 /// pinched/zoomed image keeps its pan gesture rather than switching files.
 /// Direction -1 means previous and +1 means next.
 enum XDriveIOSNativeViewerSwipePolicy {
+    /// Accept deliberate slow horizontal drags as well as fast flicks.
+    /// Velocity alone misses a finger that moves slowly; translation alone
+    /// misses a short but fast flick. Final paging still requires direction()
+    /// and the owning Viewer's verified neighbor/Owner admission.
+    static func shouldBeginPaging(
+        translationX dx: CGFloat, translationY dy: CGFloat,
+        velocityX vx: CGFloat, velocityY vy: CGFloat,
+        zoom: CGFloat, minimum: CGFloat
+    ) -> Bool {
+        guard dx.isFinite, dy.isFinite, vx.isFinite, vy.isFinite,
+              zoom.isFinite, minimum.isFinite, minimum > 0,
+              zoom >= minimum - 0.01, zoom <= minimum + 0.01
+        else { return false }
+        let draggedHorizontally = abs(dx) >= 8 &&
+            abs(dx) > abs(dy) * 1.5
+        let flickedHorizontally = abs(vx) >= 120 &&
+            abs(vx) > abs(vy) * 1.5
+        return draggedHorizontally || flickedHorizontally
+    }
+
     static func direction(
         horizontal: CGFloat, vertical: CGFloat,
         zoom: CGFloat, minimum: CGFloat
