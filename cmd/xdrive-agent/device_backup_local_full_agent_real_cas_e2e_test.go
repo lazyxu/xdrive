@@ -145,8 +145,18 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	var chunks, finalizes atomic.Int64
+	// This switch models a genuinely unavailable Server while the original
+	// NAS Source scheduler performs its authorized Owner-device discovery.
+	// Never replace the Agent, uploader, PostgreSQL or LocalCAS in this test.
+	var serverOffline atomic.Bool
+	var offlineRequests atomic.Int64
 	router := srv.Router()
 	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serverOffline.Load() {
+			offlineRequests.Add(1)
+			http.Error(w, "disposable Server temporarily offline", http.StatusServiceUnavailable)
+			return
+		}
 		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/chunks/") {
 			chunks.Add(1)
 		}
@@ -469,12 +479,43 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	// The due clock is injected only into the scheduler; the real Root
 	// inventory, native file bytes and Server SQL/CAS time remain untouched.
 	due := early.Add(2 * time.Minute)
-	if err := scheduler.localPushAutoTick(context.Background(), due, attempts); err != nil {
-		t.Fatalf("due NAS Source scheduler failed: %v", err)
+	// At the due instant the Server may be offline. The Agent must not
+	// consume its scheduled admission, create a job or fabricate a successful
+	// original receipt. Reconnect at the same due clock and recover through
+	// the existing Agent, with no GUI/CLI manual run or second CAS writer.
+	serverOffline.Store(true)
+	if err := scheduler.localPushAutoTick(context.Background(), due, attempts); err == nil {
+		t.Fatal("offline NAS scheduled discovery incorrectly succeeded")
 	}
+	serverOffline.Store(false)
 	scheduler.localCommonBatchJobMu.Lock()
-	job := scheduler.localCommonBatchJob
+	offlineJob := scheduler.localCommonBatchJob
 	scheduler.localCommonBatchJobMu.Unlock()
+	if offlineRequests.Load() == 0 || offlineJob != nil || len(attempts) != 0 {
+		t.Fatalf("offline scheduler admitted a job without a verified Server: requests=%d job=%v attempts=%d",
+			offlineRequests.Load(), offlineJob != nil, len(attempts))
+	}
+	assertCounters()
+	if lastChunk != chunksBeforeSchedule || lastFinalize != finalizesBeforeSchedule ||
+		lastOperation != opsBeforeSchedule || lastVersion != versionsBeforeSchedule {
+		t.Fatal("offline discovery wrote CAS chunks, finalized an upload or changed SQL receipts")
+	}
+	// A stopped Backup-only Agent loses its in-memory discovery and attempt
+	// state. A fresh owning controller must still catch up from the same
+	// persisted Source plan and checkpoint after the Server reconnects.
+	// Automatic recovery, not a second manual DSM SourceRun, must commit B
+	// and the new nested original through the ordinary operation queue.
+	restartedScheduler := &agentController{ctx: context.Background()}
+	restartedAttempts := make(map[string]time.Time)
+	if err := restartedScheduler.localPushAutoTick(context.Background(), due, restartedAttempts); err != nil {
+		t.Fatalf("restarted due NAS scheduler did not resume: %v", err)
+	}
+	restartedScheduler.localCommonBatchJobMu.Lock()
+	job := restartedScheduler.localCommonBatchJob
+	restartedScheduler.localCommonBatchJobMu.Unlock()
+	if len(attempts) != 0 || len(restartedAttempts) != 1 {
+		t.Fatal("offline discovery consumed admission or restarted Agent did not record its due admission")
+	}
 	if job == nil {
 		t.Fatal("due native Source did not enter the original owning Agent")
 	}
@@ -550,7 +591,7 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	}
 	// A repeated wake-up with the same attempt must respect the existing
 	// durable cooldown and never fabricate a second physical upload.
-	if err := scheduler.localPushAutoTick(context.Background(), due.Add(5*time.Second), attempts); err != nil {
+	if err := restartedScheduler.localPushAutoTick(context.Background(), due.Add(5*time.Second), restartedAttempts); err != nil {
 		t.Fatalf("repeated owning scheduler tick failed: %v", err)
 	}
 	assertCounters()
