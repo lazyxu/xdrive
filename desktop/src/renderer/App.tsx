@@ -3062,11 +3062,10 @@ export default function App({
       galleryPage: {
     source: mediaGallerySource,
     preferenceScope: `desktop:${status?.server ?? ''}:${status?.username ?? ''}`,
-    desktopEmbeddedPlacesURL: xDriveDesktopEmbeddedPlacesURL(status?.server),
-    onPrepareDesktopPlaces: async scope => {
-      const result=await window.xdriveDesktop.preparePlacesEmbed(scope)
-      return result.ok && result.data.allowed===true
-    },
+    // The isolated Web guest has no authenticated Desktop session and
+    // would display a second xDrive login form inside the map. Keep the
+    // Agent-authenticated, Owner-scoped interactive GPS map in this window.
+    // Full Baidu Web maps remain available in the separate HTTPS window.
     onOpenSecureDesktopMap: (scope) => {
               void run('baidu-secure-map', () => window.xdriveDesktop.openBaiduMapSecure(scope))
                 .catch((openError) => setError(
@@ -3527,15 +3526,3 @@ export default function App({
   )
 }
 
-
-// Desktop's Agent-authenticated origin only. Main independently verifies this
-// exact HTTPS guest URL before allowing an Electron <webview> to attach.
-function xDriveDesktopEmbeddedPlacesURL(rawServer: string | null | undefined): string | undefined {
-  if (!rawServer || rawServer.length>2048 || rawServer.trim()!==rawServer) return undefined
-  try {
-    const url=new URL(rawServer)
-    if (url.protocol!=='https:' || !url.hostname || url.username || url.password ||
-        url.search || url.hash || (url.pathname!=='/' && url.pathname!=='')) return undefined
-    return url.origin+'/?desktop_places_embed=1#/app/gallery?section=places'
-  } catch { return undefined }
-}
