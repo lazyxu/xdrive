@@ -117,8 +117,27 @@ func TestDesktopNotesImagesAreOwnerAndLoopbackOnly(t *testing.T) {
 	}
 
 	backup := newDesktopIPCHandler(f, "secret", nil, true)
-	if res := invokeNotesIPC(backup, http.MethodGet, readURL, "", "secret"); res.Code < 400 {
-		t.Fatalf("Backup-only gained unapproved binary Notes capability: HTTP %d", res.Code)
+	if res := invokeNotesIPC(backup, http.MethodGet, readURL, "", "secret"); res.Code != http.StatusOK {
+		t.Fatalf("bounded Backup-only Owner Notes image read unavailable: HTTP %d", res.Code)
+	}
+	if res := invokeNotesIPC(backup, http.MethodPost, upload, string(postBody), "secret"); res.Code != http.StatusCreated {
+		t.Fatalf("bounded Backup-only Owner Notes image upload unavailable: HTTP %d", res.Code)
+	}
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodDelete, upload},
+		{http.MethodGet, "/v1/cloud/notes/" + strings.ToUpper(ipcNotesTestID) + "/images"},
+		{http.MethodGet, upload + "/other"},
+		{http.MethodPost, upload + "/other"},
+	} {
+		if !fullAgentOnlyRequest(tc.method, tc.path) {
+			t.Fatalf("Backup-only admitted unknown binary Notes action: %s %s", tc.method, tc.path)
+		}
+		if res := invokeNotesIPC(backup, tc.method, tc.path, "", "secret"); res.Code != http.StatusConflict {
+			t.Fatalf("Backup-only path guard did not reject %s %s: HTTP %d", tc.method, tc.path, res.Code)
+		}
+	}
+	if len(f.imageCalls) != 4 {
+		t.Fatalf("rejected image calls reached owner Agent: %v", f.imageCalls)
 	}
 }
 
@@ -160,7 +179,16 @@ func TestDesktopNotesImagesCapabilityIsNotImpliedByTextNotes(t *testing.T) {
 	if json.Unmarshal(hello.Body.Bytes(), &result) != nil {
 		t.Fatal("invalid Backup-only hello")
 	}
+	if !strings.Contains(strings.Join(result.Capabilities, ","), "cloud-notes-images") {
+		t.Fatal("Owner-capable Backup-only Agent omitted verified Notes image capability")
+	}
+	textBackup := newDesktopIPCHandler(textOnly, "secret", nil, true)
+	hello = invokeNotesIPC(textBackup, http.MethodGet, "/v1/hello", "", "secret")
+	result = desktopIPCHello{}
+	if json.Unmarshal(hello.Body.Bytes(), &result) != nil {
+		t.Fatal("invalid text-only Backup-only hello")
+	}
 	if strings.Contains(strings.Join(result.Capabilities, ","), "cloud-notes-images") {
-		t.Fatal("Backup-only advertised binary Notes image support")
+		t.Fatal("text-only Backup-only Agent falsely advertised binary image support")
 	}
 }

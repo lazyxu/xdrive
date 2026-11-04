@@ -156,6 +156,13 @@ func backupOnlyAllowedNotesRequest(method, path string) bool {
 		id = strings.TrimSuffix(id, "/versions")
 		return validBackupOnlyNoteID(id) && method == http.MethodGet
 	}
+	// One immutable image per canonical Note ID. These are the ONLY binary
+	// methods admitted for Backup-only; unknown suffixes and verbs fail closed.
+	if strings.HasSuffix(id, "/images") {
+		id = strings.TrimSuffix(id, "/images")
+		return validBackupOnlyNoteID(id) &&
+			(method == http.MethodGet || method == http.MethodPost)
+	}
 	return validBackupOnlyNoteID(id) &&
 		(method == http.MethodGet || method == http.MethodPut || method == http.MethodDelete)
 }

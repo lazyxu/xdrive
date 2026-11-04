@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import './test-xdrive-host-routes.mjs'
+import './test-synology-notes-image-host.mjs'
 // Source-level Desktop/DSM view parity; NOT a physical DSM acceptance test.
 import fs from 'node:fs'
 import path from 'node:path'

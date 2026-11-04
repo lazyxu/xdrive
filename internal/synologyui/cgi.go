@@ -38,6 +38,7 @@ func CGIHandler(next http.Handler) http.Handler {
 			"cloud-notes-capability", "cloud-notes-namespace", "cloud-notes-list", "cloud-notes-read",
 			"cloud-notes-create", "cloud-notes-save", "cloud-notes-delete",
 			"cloud-notes-versions", "cloud-notes-history",
+			"cloud-notes-image-capability", "cloud-notes-image-upload", "cloud-notes-image-read",
 			"server-connection", "server-login", "nas-share-create", "nas-draft-bind", "nas-drafts", "recovery-review":
 		default:
 			http.Error(w, "unknown CGI operation", http.StatusNotFound)

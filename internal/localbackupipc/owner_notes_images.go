@@ -27,6 +27,13 @@ type OwnerNotesImageData struct {
 
 const ownerNotesImageIPCReplyMax = (client.NotesMaxImageBytes+2)/3*4 + 8192
 
+// Notes images must be independently advertised by the owning Agent.
+// A text-only Backup-only Agent does not unlock image uploads or reads.
+func (c *Client) OwnerNotesImagesAvailable() bool {
+	return c != nil && hasCapability(c.capabilities, "cloud-notes") &&
+		hasCapability(c.capabilities, "cloud-notes-images")
+}
+
 func (c *Client) requireOwnerNotesImages(ctx context.Context, noteID string) error {
 	if c == nil || c.http == nil || ctx == nil || ctx.Err() != nil ||
 		!hasCapability(c.capabilities, "cloud-notes") ||
