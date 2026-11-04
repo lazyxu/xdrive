@@ -210,6 +210,11 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 	if source == nil || source.ID == 0 || source.Kind != yikeSourceKind {
 		return nil
 	}
+	// A successful Cookie refresh must never move or reactivate an archived
+	// Source. Restoration is an explicit revision-checked operation.
+	if source.Status == meta.SourceStatusArchived {
+		return errSourceArchived
+	}
 	accountID, err := yikeAccountID(identity)
 	if err != nil {
 		return err

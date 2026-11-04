@@ -122,6 +122,10 @@ func (s *Server) putSourceConnectorConfig(c *gin.Context) {
 		fail(c, statusForLookup(err), "source not found")
 		return
 	}
+	if source.Status == meta.SourceStatusArchived {
+		fail(c, http.StatusConflict, "source is archived; restore it before editing connector settings")
+		return
+	}
 
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSourceConnectorConfigBytes+4096)
 	var req struct {
@@ -149,6 +153,17 @@ func (s *Server) putSourceConnectorConfig(c *gin.Context) {
 	var out meta.SourceConnectorConfig
 	var currentRevision uint64
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// Keep Source -> connector config lock order consistent with archive
+		// and block a refresh that passed preflight before archival.
+		var live meta.Source
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ?", sourceID, userID(c)).
+			Take(&live).Error; err != nil {
+			return err
+		}
+		if live.Status == meta.SourceStatusArchived {
+			return errSourceArchived
+		}
 		var row meta.SourceConnectorConfig
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("source_id = ?", sourceID).First(&row).Error
@@ -181,6 +196,10 @@ func (s *Server) putSourceConnectorConfig(c *gin.Context) {
 	})
 	if errors.Is(err, errRevisionConflict) {
 		revisionConflict(c, expected, currentRevision)
+		return
+	}
+	if errors.Is(err, errSourceArchived) {
+		fail(c, http.StatusConflict, "source is archived; restore it before editing connector settings")
 		return
 	}
 	if err != nil {

@@ -422,6 +422,10 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
 	}
+	if source.Status == meta.SourceStatusArchived {
+		fail(c, http.StatusConflict, "source is archived; restore it before changing credentials")
+		return
+	}
 
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSourceCredentialPayloadBytes+4096)
 	var req struct {
@@ -481,6 +485,9 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 			Take(&live).Error; err != nil {
 			return err
 		}
+		if live.Status == meta.SourceStatusArchived {
+			return errSourceArchived
+		}
 		if live.Revision != source.Revision || live.Kind != source.Kind ||
 			live.Direction != source.Direction {
 			return errRevisionConflict
@@ -513,6 +520,10 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 		return tx.Where("source_id = ?", source.ID).First(&row).Error
 	})
 	if err != nil {
+		if errors.Is(err, errSourceArchived) {
+			fail(c, http.StatusConflict, "source is archived; restore it before changing credentials")
+			return
+		}
 		if errors.Is(err, errRevisionConflict) {
 			fail(c, http.StatusConflict, "Source changed during credential verification; reload and retry")
 			return
@@ -562,7 +573,22 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
 	}
+	if source.Status == meta.SourceStatusArchived {
+		fail(c, http.StatusConflict, "source is archived; restore it before changing credentials")
+		return
+	}
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// Serialize credential deletion with archive and restore, and
+		// prevent stale preflight from silently unarchiving a Source.
+		var live meta.Source
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+			Take(&live).Error; err != nil {
+			return err
+		}
+		if live.Status == meta.SourceStatusArchived {
+			return errSourceArchived
+		}
 		if err := sourcecredential.Delete(c.Request.Context(), tx, source.ID); err != nil {
 			return err
 		}
@@ -576,7 +602,14 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 			}).Error
 	})
 	if err != nil {
-		fail(c, http.StatusInternalServerError, "delete source credential failed")
+		switch {
+		case errors.Is(err, errSourceArchived):
+			fail(c, http.StatusConflict, "source is archived; restore it before changing credentials")
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			fail(c, http.StatusNotFound, "source not found")
+		default:
+			fail(c, http.StatusInternalServerError, "delete source credential failed")
+		}
 		return
 	}
 	recordSourceCredentialAudit(c, s.DB, auditpkg.ActionSourceCredentialDelete, source, 0)
