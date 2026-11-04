@@ -204,6 +204,10 @@ test('native Files search matches PWA source and tag filters, including filter-o
   assert.match(view, /private final class XDriveIOSNativeFilesSearchOptionsModel/);
   assert.match(view, /async let sourceRead = reader\.searchSources\(\)/);
   assert.match(view, /async let tagRead = reader\.searchTags\(\)/);
+  assert.match(view, /func belongs\(to owner: XDriveNativeOwnerRoot\?\) -> Bool[\s\S]*?matches\(owner, loadedOwner\)/);
+  assert.match(view, /private var hasVerifiedSearchOptionsForOwner: Bool[\s\S]*?searchOptions\.matches\(login\.owner\)/);
+  assert.match(view, /if searchOptions\.loading && hasSearchOptionsStateForOwner/);
+  assert.match(view, /else if hasSearchOptionsStateForOwner, let error = searchOptions\.errorMessage/);
   assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/);
   assert.match(view, /native-ios-files-search-source-filter/);
   assert.match(view, /native-ios-files-search-tag-filter/);
