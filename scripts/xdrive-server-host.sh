@@ -40,6 +40,7 @@ xDrive server host manager
 
 Usage:
   xdrive-server update [--source github|gitlab|xdrive] [--channel stable|master] [--backup-file-data] [--prefetch-only]
+  xdrive-server update --source offline --channel master --offline-id HEX32 --trusted-manifest-sha256 SHA256 --trusted-installer-sha256 SHA256 [--backup-file-data|--prefetch-only]
   xdrive-server control <install|start|serve|stop|status>
   xdrive-server doctor [--strict]
   xdrive-server lan-ca export /absolute/path/root.crt
@@ -151,7 +152,8 @@ normalize_update_source() {
     ""|github) printf '%s\n' github ;;
     gitlab) printf '%s\n' gitlab ;;
     xdrive) printf '%s\n' xdrive ;;
-    *) echo "xdrive-server: invalid update source: $1 (expected github, gitlab or xdrive)" >&2; return 2 ;;
+    offline) printf '%s\n' offline ;;
+    *) echo "xdrive-server: invalid update source: $1 (expected github, gitlab, xdrive or offline)" >&2; return 2 ;;
   esac
 }
 
@@ -463,6 +465,66 @@ install_update_lock_busy() {
   return 0
 }
 
+# Go offline installer: CLI and Host Control enter the same immutable release
+# and existing transaction. UI never supplies an executable path or Docker
+# command. Both independently trusted SHA-256 values are mandatory until the
+# signed Go ELF delivery protocol is enabled; never fall back to untrusted code.
+offline_go_update() {
+  local id="" manifest_sha="" binary_sha="" backup_file_data=0 prefetch_only=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --source|--channel) [[ $# -ge 2 ]] || return 2; shift 2 ;;
+      --offline-id) [[ $# -ge 2 ]] || return 2; id="$2"; shift 2 ;;
+      --trusted-manifest-sha256) [[ $# -ge 2 ]] || return 2; manifest_sha="$2"; shift 2 ;;
+      --trusted-installer-sha256) [[ $# -ge 2 ]] || return 2; binary_sha="$2"; shift 2 ;;
+      --backup-file-data) backup_file_data=1; shift ;;
+      --prefetch-only) prefetch_only=1; shift ;;
+      *) echo "xdrive-server: unsupported offline update option." >&2; return 2 ;;
+    esac
+  done
+  [[ "$id" =~ ^[a-f0-9]{32}$ && "$manifest_sha" =~ ^[a-f0-9]{64}$ && "$binary_sha" =~ ^[a-f0-9]{64}$ ]] || {
+    echo "xdrive-server: offline update requires a fixed import ID and two independently trusted SHA-256 values." >&2
+    return 2
+  }
+  local parent="$STATE_DIR/update-imports" directory="$STATE_DIR/update-imports/$id"
+  [[ -d "$parent" && ! -L "$parent" && -d "$directory" && ! -L "$directory" ]] || {
+    echo "xdrive-server: offline import has not been admitted on this Host." >&2; return 1
+  }
+  [[ -f "$directory/manifest.json" && ! -L "$directory/manifest.json" &&
+     -f "$directory/xdrive-offline-linux-amd64" && ! -L "$directory/xdrive-offline-linux-amd64" ]] || {
+    echo "xdrive-server: required offline Manifest or Go installer is missing." >&2; return 1
+  }
+  # Snapshot the executable into a private Host-owned file before hashing or
+  # running it. A browser-writable staging file must never be executed in-place.
+  local tool actual exit_code=0
+  tool="$(mktemp "${TMPDIR:-/tmp}/xdrive-offline-go.XXXXXX")" || return 1
+  if ! cp -- "$directory/xdrive-offline-linux-amd64" "$tool"; then
+    rm -f -- "$tool"
+    return 1
+  fi
+  actual="$(sha256sum "$tool" | cut -d' ' -f1)" || {
+    rm -f -- "$tool"; return 1;
+  }
+  if [[ "$actual" != "$binary_sha" ]]; then
+    echo "xdrive-server: imported Go installer differs from independent SHA-256." >&2
+    rm -f -- "$tool"
+    return 1
+  fi
+  chmod 0700 "$tool"
+  if ! "$tool" verify --dir "$directory" --trusted-manifest-sha256 "$manifest_sha"; then
+    rm -f -- "$tool"
+    return 1
+  fi
+  if [[ "$prefetch_only" != 1 ]]; then
+    local -a args=(install --dir "$directory" --config-dir "$XDRIVE_HOME"
+                   --trusted-manifest-sha256 "$manifest_sha")
+    [[ "$backup_file_data" != 1 ]] || args+=(--backup-file-data)
+    "$tool" "${args[@]}" || exit_code=$?
+  fi
+  rm -f -- "$tool"
+  return "$exit_code"
+}
+
 update_cmd() (
   local tmp installer status target_commit audit_target="" previous="" update_source="" update_channel=""
 
@@ -497,7 +559,15 @@ update_cmd() (
   [[ -n "$update_source" ]] || update_source="$(env_value XD_UPDATE_SOURCE)"
   update_source="$(normalize_update_source "$update_source")"
 
-  if [[ "$update_source" == xdrive ]]; then
+  if [[ "$update_source" == offline ]]; then
+    [[ "$update_channel" == master ]] || {
+      echo "xdrive-server: offline imports support only master." >&2; return 2;
+    }
+    local prefetch_only=0
+    for arg in "$@"; do [[ "$arg" != --prefetch-only ]] || prefetch_only=1; done
+    if offline_go_update "$@"; then status=0; else status=$?; fi
+    [[ "$prefetch_only" != 1 ]] || return "$status"
+  elif [[ "$update_source" == xdrive ]]; then
     [[ "$update_channel" == master ]] || {
       echo "xdrive-server: Share updates support only the master channel." >&2; return 2;
     }
