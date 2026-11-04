@@ -28,7 +28,7 @@ func migrateLegacyYikeTargets(db *gorm.DB) error {
 	}
 	var sources []meta.Source
 	if err := db.
-		Where("kind = ? AND target_node_id IS NOT NULL", "yike_photos").
+		Where("kind = ? AND target_node_id IS NOT NULL AND status <> ?", "yike_photos", meta.SourceStatusArchived).
 		Find(&sources).Error; err != nil {
 		return err
 	}
