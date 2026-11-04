@@ -44,4 +44,14 @@ Go 校验必须继续满足 PR #3693 的约束：
 - **CI 端到端**：真正离线五组件产物完整签名、Go/Python 同一 Manifest 验证结果、受控 Docker Store classic/containerd 各一次、恢复锁、App-only 与启用可选 profile。
 - **实机**：Gen10 离线导入、更新及回滚、恢复后 Server/Postgres 健康、旧 Source/共享/文件完整性与配置；未执行之前状态始终标注「未验收」。
 
-当前 Go Draft PR 只完成 **G0 的代码草案**，还没有替换生产发行；G1/G2/G3 应在 G0 验证之后独立检查再接入。
+Go 核心 PR #3751 已通过准确 HEAD 的 CI 并合入 `master`，完成 G0 的源码接入，**生产默认离线安装器尚未切换**。当前 PR #3760 提供 G1/G2 的增量发行改动，必须单独通过其准确 HEAD 的适用 CI 与 Final Gate；G3 的 Host/CLI Go 接入由 #3758 独立验证。不得把上游 G0 的绿色 CI 视为本发行分支已验收。
+
+## G1 实施分支：新版 Release 追加签名 Go ELF（尚未默认启用）
+
+- `offline-packages.yml` 在新发布时使用 Go 1.25 构建 `linux/amd64` 的独立可执行文件 `xdrive-offline-linux-amd64`；构建流程对最终 ELF 字节出具 attestation，不以源代码 SHA 代替二进制信任。
+- `delivery.json` 仍保留已有 `schema: 1`、`installer: xdrive-offline.py`，仅对新 Release 增加 `go_installer` 的名称、大小与 SHA-256；旧 Python Share 客户端仍可按已签名旧字段完成下载和升级。
+- GitHub 发布资产名单支持且只支持两种精确集合：旧的七文件 Release，或包含额外 Go ELF 的八文件 Release。新发布先上传 Go ELF，再上传签名描述与完成标识，保证中断后可以验证式恢复。永久禁止修改已完成旧 Release。
+- Share 镜像按需把 Go ELF 作为额外**已签名**文件复制到同一个版本目录，仍然最后发布 `delivery.json` 完成标识。
+- `xdrive-server update --source offline` 的 Go Host 集成由后续 Draft #3758 承担；新 Go ELF 在正式签名和运行时验收前不会替代 `xdrive-server update --source xdrive` 的旧 Python 兼容下载器。
+
+仍须完成新旧 Release 的真实签名 CI、OCI Docker 导入与 Gen10 实机离线升级验收。以上只是新发布的附加签名 Go 工具阶段，不代表 4B 全自动信任和 UI 3C 上传已完成。
