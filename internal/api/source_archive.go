@@ -103,7 +103,7 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 		// retain pointer fields whose database value was set to NULL (notably
 		// run_requested_at) in the already-populated destination struct.
 		updated = meta.Source{}
-		return tx.Where("id = ? AND owner_id = ?", updated.ID, updated.OwnerID).
+		return tx.Where("id = ? AND owner_id = ?", id, userID(c)).
 			Take(&updated).Error
 	})
 	if err != nil {
