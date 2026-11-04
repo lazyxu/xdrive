@@ -169,46 +169,93 @@ test('Host A -> B -> A and stale Source responses cannot render another Owner pr
   await act(async () => tree.unmount())
 })
 
-test('only one expanded running Source polls, only in visible tab, and stops on terminal read', async () => {
+test('one expanded Source observes running, idle and failed Agent status only in the visible tab', async () => {
   const oldWindow = global.window, oldDocument = global.document
   let nextTimer = 0
   const timers = new Map()
-  let reads = 0
+  const visibilityListeners = new Set()
+  const calls = []
   global.window = {
     setInterval: (callback, ms) => {
-      assert.equal(ms, 10000)
+      assert.ok([10000, 30000, 60000].includes(ms), 'unexpected Agent poll cadence')
       const id = ++nextTimer
-      timers.set(id, callback)
+      timers.set(id, { callback, ms })
       return id
     },
     clearInterval: id => { timers.delete(id) },
   }
-  global.document = { visibilityState: 'hidden' }
+  global.document = {
+    visibilityState: 'hidden',
+    addEventListener: (name, callback) => {
+      assert.equal(name, 'visibilitychange')
+      visibilityListeners.add(callback)
+    },
+    removeEventListener: (name, callback) => {
+      assert.equal(name, 'visibilitychange')
+      visibilityListeners.delete(callback)
+    },
+  }
   let tree
   try {
-    const client = { inspect: async id => {
-      reads += 1
-      return reads === 1
-        ? current(id, { revision: 0, state: 'running', running: true })
-        : current(id, { state: 'partial', running: false })
+    const client = { inspect: async (id, signal) => {
+      calls.push({ id, signal })
+      if (calls.length === 1) return current(id, { revision: 0, state: 'running', running: true })
+      if (calls.length <= 3) return current(id, { state: 'partial', running: false })
+      throw new Error('private Agent failure must not reach DSM UI')
     } }
+    const onlyTimer = (delay) => {
+      assert.equal(timers.size, 1, 'only one expanded Source may own a timer')
+      assert.equal(visibilityListeners.size, 1, 'only one foreground listener may remain')
+      const timer = [...timers.values()][0]
+      assert.equal(timer.ms, delay)
+      return timer.callback
+    }
     tree = await mount(client)
-    assert.equal(reads, 1)
-    assert.equal(timers.size, 1)
+    assert.deepEqual(calls.map(call => call.id), [57])
+    const tickRunning = onlyTimer(10000)
     await act(async () => {
-      for (const tick of [...timers.values()]) tick()
+      tickRunning()
       await Promise.resolve()
     })
-    assert.equal(reads, 1, 'hidden DSM page must not poll the owning Agent')
+    assert.equal(calls.length, 1, 'hidden DSM page must not poll the owning Agent')
+    // Returning to the visible tab refreshes immediately without waiting
+    // for the next timer. An idle, verified batch must KEEP polling, because
+    // the Agent may start a new scheduled run without this page's involvement.
     global.document.visibilityState = 'visible'
     await act(async () => {
-      for (const tick of [...timers.values()]) tick()
+      for (const listener of [...visibilityListeners]) listener()
       await Promise.resolve()
     })
-    assert.equal(reads, 2)
-    assert.equal(timers.size, 0, 'terminal Source must stop polling immediately')
+    assert.equal(calls.length, 2)
+    assert.equal(tree.root.findByType('status-badge').props.label, 'partial')
+    const tickIdle = onlyTimer(30000)
+    global.document.visibilityState = 'hidden'
+    await act(async () => {
+      tickIdle()
+      await Promise.resolve()
+    })
+    assert.equal(calls.length, 2, 'hidden idle Source must not poll the Agent')
+    global.document.visibilityState = 'visible'
+    await act(async () => {
+      tickIdle()
+      await Promise.resolve()
+    })
+    assert.equal(calls.length, 3, 'idle Source must discover an unattended scheduled run')
+    onlyTimer(30000)
+    await act(async () => {
+      for (const listener of [...visibilityListeners]) listener()
+      await Promise.resolve()
+    })
+    assert.equal(calls.length, 4)
+    assert.equal(tree.root.findAllByType('status-badge').length, 0)
+    assert.match(textOf(tree.toJSON()), /不会使用历史记录假定本次备份成功/)
+    onlyTimer(60000)
+    assert.ok(calls.every(call => call.id === 57))
   } finally {
     if (tree) await act(async () => tree.unmount())
+    assert.equal(timers.size, 0, 'Source unmount must clear the poll timer')
+    assert.equal(visibilityListeners.size, 0, 'Source unmount must detach visibility listener')
+    assert.ok(calls.every(call => call.signal.aborted), 'Source unmount must abort Agent reads')
     if (oldWindow === undefined) delete global.window
     else global.window = oldWindow
     if (oldDocument === undefined) delete global.document

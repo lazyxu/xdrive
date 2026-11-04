@@ -4,6 +4,14 @@ import type {
 } from './device-backups'
 
 const validStates = ['running', 'partial', 'uncertain', 'paused', 'cancelled']
+
+/** The DSM Source card is mounted only while expanded. A scheduled run can
+ * start while its previous, trusted checkpoint is idle, so idle status also
+ * needs bounded foreground polling. Failure backs off; no hidden-tab reads. */
+export function xDriveDSMBackupStatusPollDelay(running: boolean, failed: boolean): number {
+  if (failed) return 60_000
+  return running ? 10_000 : 30_000
+}
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 
