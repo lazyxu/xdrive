@@ -76,7 +76,7 @@ func TestLegacyYikeFlatMixedSplitPreservesDirectSharesAndCAS(t *testing.T) {
 		db.First(&rootShareAfter, rootShare.ID).Error,
 		db.First(&childShareAfter, childShare.ID).Error,
 		db.First(&fileAfter, file.NodeID).Error,
-		db.First(&versionAfter, version.ID).Error, db.First(&runAfter, run.ID).Error,
+		db.First(&versionAfter, version.ID).Error, db.Where("id = ?", run.ID).First(&runAfter).Error,
 	} {
 		if err != nil {
 			t.Fatal(err)
