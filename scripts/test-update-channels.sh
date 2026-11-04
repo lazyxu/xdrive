@@ -251,6 +251,13 @@ XDRIVE_TEST_INSTALLER="$BAKED_GITLAB_INSTALLER" run_case gitlab-baked
 [[ "$(env_value "$TMP/gitlab-baked" XD_RELEASE_COMMIT)" == "$FULL_SHA" ]]
 [[ "$(env_value "$TMP/gitlab-baked" XD_IMAGE_REGISTRY)" == "registry.gitlab.example/xuliang/xdrive" ]]
 [[ "$(env_value "$TMP/gitlab-baked" XD_SERVER_IMAGE)" == "registry.gitlab.example/xuliang/xdrive/xdrive-server:sha-$SHORT_SHA" ]]
+# Persisted local GitLab Registry must win over a freshly baked public value.
+mkdir -p "$TMP/gitlab-retained/config"
+printf 'XD_UPDATE_SOURCE=gitlab\nXD_IMAGE_REGISTRY=127.0.0.1:5050/xuliang/xdrive\n' > "$TMP/gitlab-retained/config/.env"
+XDRIVE_TEST_INSTALLER="$BAKED_GITLAB_INSTALLER" run_case gitlab-retained
+[[ "$(env_value "$TMP/gitlab-retained" XD_IMAGE_REGISTRY)" == "127.0.0.1:5050/xuliang/xdrive" ]]
+[[ "$(env_value "$TMP/gitlab-retained" XD_SERVER_IMAGE)" == "127.0.0.1:5050/xuliang/xdrive/xdrive-server:sha-$SHORT_SHA" ]]
+
 grep -q "Using packaged release source: $FULL_SHA" "$TMP/gitlab-baked.out"
 if grep -q 'Resolved latest fully published' "$TMP/gitlab-baked.out"; then
   echo "baked GitLab installer must use its packaged release without re-resolving the channel" >&2

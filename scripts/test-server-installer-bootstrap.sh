@@ -168,6 +168,12 @@ bash "$INSTALLER" >"$TMP/ok.out" 2>"$TMP/ok.err"
 grep -q '\[xDrive\] \[1/9\] resolve release channel' "$TMP/ok.out"
 grep -q 'Resolved latest fully published master snapshot: 0123456789ab' "$TMP/ok.out"
 grep -q '\[xDrive\] \[9/9\] complete' "$TMP/ok.out"
+grep -q '\[xDrive\] download: 1/12 docker-compose.yml' "$TMP/ok.out"
+grep -q '\[xDrive\] download: 12/12 xdrive-server' "$TMP/ok.out"
+if grep -Eq '\[xDrive\] download: [0-9]+/9 ' "$TMP/ok.out"; then
+  echo "deployment asset count confused with install stages" >&2
+  exit 1
+fi
 grep -q "XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-$MASTER_SHORT" "$TMP/config-ok/config/.env"
 grep -q "XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-$MASTER_SHORT" "$TMP/config-ok/config/.env"
 grep -q "XD_PHOTO_FACE_IMAGE=ghcr.io/lazyxu/xdrive-photo-face:sha-$MASTER_SHORT" "$TMP/config-ok/config/.env"

@@ -1336,6 +1336,10 @@ if [[ -z "$OFFLINE_ASSET_DIR" && "$requested_source" == "gitlab" ]]; then
     fi
   done
 fi
+# The download counter follows the same list as offline staging; it is
+# independent of the nine top-level installer stages.
+maintenance_scripts=(server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py)
+deployment_asset_total=$(( ${#maintenance_scripts[@]} + 2 ))
 if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
   # These assets were already verified against the independently trusted
   # offline manifest. The embedded release hashes are checked again below.
@@ -1347,22 +1351,22 @@ if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
     cp -- "$source" "$target"
   }
   offline_copy_asset deploy/docker-compose.yml "$STAGING_DIR/docker-compose.yml"
-  for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
+  for maintenance_script in "${maintenance_scripts[@]}"; do
     offline_copy_asset "scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script"
     chmod 700 "$STAGING_DIR/$maintenance_script"
   done
   offline_copy_asset scripts/xdrive-server-host.sh "$STAGING_DIR/xdrive-server"
   echo "[xDrive] offline: staged deployment assets without network requests."
 else
-  fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/9 docker-compose.yml"
+  fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/$deployment_asset_total docker-compose.yml"
   asset_no=1
-  for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
+  for maintenance_script in "${maintenance_scripts[@]}"; do
     asset_no=$((asset_no + 1))
-    fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/9 $maintenance_script"
+    fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/$deployment_asset_total $maintenance_script"
     chmod 700 "$STAGING_DIR/$maintenance_script"
   done
   asset_no=$((asset_no + 1))
-  fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/9 xdrive-server"
+  fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/$deployment_asset_total xdrive-server"
 fi
 chmod 700 "$STAGING_DIR/xdrive-server"
 chmod 600 "$STAGING_DIR/docker-compose.yml"
@@ -2418,19 +2422,23 @@ previous_source="$(existing_env_value XD_UPDATE_SOURCE)"
 ensure_env XD_UPDATE_SOURCE "$requested_source"
 ensure_env XD_RELEASE_CHANNEL "$requested_channel"
 ensure_env XD_RELEASE_COMMIT "${requested_commit:-}"
-# A registry baked into a provider-specific release is only that provider's
-# default. When the user explicitly switches providers, discard the baked
-# default unless XD_IMAGE_REGISTRY was explicitly supplied at runtime.
-if [[ -z "${XD_IMAGE_REGISTRY:-}" && "$requested_source" != "$BUILT_SOURCE" ]] && ! is_template_placeholder "$BUILT_SOURCE"; then
+# A rendered Release Registry is the publisher default, not a mandate to
+# replace this host's provider-specific local mirror (including HTTP loopback
+# Registry with an independently configured GitLab JWT realm).
+# Never inherit another provider's Registry, or rewrite an offline bundle's
+# immutable image identity.
+existing_registry="$(existing_env_value XD_IMAGE_REGISTRY)"
+if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+  : # The verified offline installer owns its image provenance.
+elif [[ -n "${XD_IMAGE_REGISTRY:-}" ]]; then
+  IMAGE_REGISTRY="$XD_IMAGE_REGISTRY"
+elif [[ -n "$existing_registry" && ( "$previous_source" == "$requested_source" || ( -z "$previous_source" && "$requested_source" == "github" ) ) ]]; then
+  IMAGE_REGISTRY="$existing_registry"
+elif [[ "$requested_source" != "$BUILT_SOURCE" ]] && ! is_template_placeholder "$BUILT_SOURCE"; then
   IMAGE_REGISTRY=""
 fi
 if [[ -z "$IMAGE_REGISTRY" ]] || is_template_placeholder "$IMAGE_REGISTRY"; then
-  existing_registry="$(existing_env_value XD_IMAGE_REGISTRY)"
-  if [[ -n "${XD_IMAGE_REGISTRY:-}" ]]; then
-    IMAGE_REGISTRY="$XD_IMAGE_REGISTRY"
-  elif [[ -n "$existing_registry" && ( "$previous_source" == "$requested_source" || ( -z "$previous_source" && "$requested_source" == "github" ) ) ]]; then
-    IMAGE_REGISTRY="$existing_registry"
-  elif [[ "$requested_source" == "gitlab" ]]; then
+  if [[ "$requested_source" == "gitlab" ]]; then
     IMAGE_REGISTRY="$(resolve_gitlab_registry)"
   else
     IMAGE_REGISTRY="ghcr.io/lazyxu"
