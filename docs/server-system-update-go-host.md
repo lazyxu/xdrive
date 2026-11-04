@@ -44,3 +44,15 @@ xdrive-server update --source offline --channel master \
 **边界**：本 PR 实现 CLI/Host 的自动 Sigstore 引导；Server API、Web/Desktop 当前仍要求双 SHA 输入。要让 UI 无需手工输入，需要后续 PR 修改 API、Host Control 和 UI 端到端合同并验证。不可将整个 4B 体验提前记为已完成。
 
 测试：`python3 -m unittest discover -s scripts/offline -p 'test_host_go_sigstore.py'`，后续还需真实 `gh`、可信根和离线 Release 的验收。
+
+## 4B 后端请求协议（分阶段集成）
+
+本阶段在现有管理员 `POST /api/v1/admin/update` 引入显式 `offline_trust_mode`：
+
+- `sigstore`：只传固定 32 位 `offline_id`，**禁止**同时提供手工 Manifest/ELF SHA-256。Server 仅认证管理员并保存有限制的请求；Host Control 重新验证枚举和参数，再调用 `xdrive-server update --source offline --offline-id ID`。宿主机若无独立配置的可信根，会直接拒绝，无降级安装。
+- `sha256` 或省略此字段：兼容旧客户端，**必须**同时提供两项独立可信来源的 64 位 SHA-256，Host Control 原样转发，Go 安装器负责重新核对。配置本地信任根后，即便是手工模式也须走签名验证，签名失败不得绕过。
+- 对 GitHub、GitLab、xDrive Share 在线来源禁止提交 `offline_trust_mode`、导入 ID 或离线 SHA；未识别的模式直接 400。Server 本身不能访问宿主机可信根，也不能因上传回执判断发布者可信。
+
+Web/Desktop 的默认签名优先交互将在后续共享 UI 适配阶段对接；不能在此后端协议 PR 合入前提前显示可用按钮。UI 应在导入的 `manifest.json`、`delivery.json`、`delivery-attestation.jsonl`、`xdrive-offline-linux-amd64` 均完成传输后才允许申请 `sigstore`，并对 Host 缺失受信根给出明确失败信息；需要非签名兼容时再由管理员明确选择独立双 SHA。
+
+测试：`go test ./internal/api -run 'TestAdminOfflineSigstoreRequest|TestAdminStartServerUpdateRejectsArbitraryOptions'`；`python3 -m unittest discover -s scripts/offline -p 'test_host_sigstore_request.py'`；`bash -n scripts/server-control.sh`。该 PR 堆叠在 #3797 之上，必须在其合入后重新取得适用 CI 与 Final Gate。

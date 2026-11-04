@@ -154,6 +154,10 @@ func TestAdminStartServerUpdateRejectsArbitraryOptions(t *testing.T) {
 		`{"source":"offline","channel":"master","offline_id":"00000000000000000000000000000000","trusted_manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
 		`{"source":"offline","channel":"master","offline_id":"00000000000000000000000000000000","trusted_manifest_sha256":"bad","trusted_installer_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`,
 		`{"source":"github","channel":"master","offline_id":"00000000000000000000000000000000"}`,
+		`{"source":"offline","channel":"master","offline_id":"00000000000000000000000000000000","offline_trust_mode":"sigstore","trusted_manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
+		`{"source":"offline","channel":"master","offline_id":"00000000000000000000000000000000","offline_trust_mode":"unsafe"}`,
+		`{"source":"offline","channel":"master","offline_id":"00000000000000000000000000000000","offline_trust_mode":"sha256"}`,
+		`{"source":"github","channel":"master","offline_trust_mode":"sigstore"}`,
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/update", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -237,5 +241,53 @@ func TestAdminOfflineGoUpdateQueuesOnlyExactTrustedImport(t *testing.T) {
 	}
 	if got := s.serverUpdateStatus(); got.Source != "offline" || got.State != "queued" {
 		t.Fatalf("offline status lost: %+v", got)
+	}
+}
+
+// The UI may request Host-owned Sigstore verification without manual hashes.
+// The API does not equate this request with successful publisher verification;
+// the isolated Host is authoritative and fails closed if no trust root exists.
+func TestAdminOfflineSigstoreRequestQueuesOnlyExplicitMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	s := &Server{HostControlDir: dir}
+	writeServerUpdateTestStatus(t, dir, serverUpdateState{
+		State: "idle", Source: "github", Channel: "master",
+		RunnerHeartbeatAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	id := strings.Repeat("a", 32)
+	body, err := json.Marshal(map[string]any{
+		"source": "offline", "channel": "master", "offline_id": id,
+		"offline_trust_mode": "sigstore", "backup_file_data": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/update", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(res)
+	ctx.Request = req
+	ctx.Set("user", meta.User{Username: "admin", Role: meta.UserRoleAdmin})
+	s.adminStartServerUpdate(ctx)
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "request.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved serverUpdateRequestFile
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.OfflineID != id || saved.OfflineTrustMode != "sigstore" ||
+		saved.TrustedManifestSHA256 != "" || saved.TrustedInstallerSHA256 != "" ||
+		!saved.BackupFileData || saved.RequestedBy != "admin" {
+		t.Fatalf("signed request was not pinned to Host verification: %+v", saved)
+	}
+	if got := s.serverUpdateStatus(); !got.Supported || got.State != "queued" ||
+		got.Source != "offline" {
+		t.Fatalf("Host-signature request disappeared before processing: %+v", got)
 	}
 }
