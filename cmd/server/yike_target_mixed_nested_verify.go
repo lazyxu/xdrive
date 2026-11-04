@@ -15,6 +15,7 @@ const maxLegacyYikeNestedBranches = 64
 type legacyYikeNestedNode struct {
 	ID           uint64
 	ParentID     *uint64
+	OwnerID      uint64
 	Name         string
 	Type         string
 	Revision     uint64
@@ -30,15 +31,15 @@ func listLegacyYikeNestedBranchTx(tx *gorm.DB, source meta.Source, top meta.Node
 	var nodes []legacyYikeNestedNode
 	err := tx.Raw(`
 WITH RECURSIVE tree AS (
- SELECT id, parent_id, name, type, revision, name::text AS relative_path, 1 AS depth
+ SELECT id, parent_id, owner_id, name, type, revision, name::text AS relative_path, 1 AS depth
  FROM xd_nodes WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
  UNION ALL
- SELECT n.id, n.parent_id, n.name, n.type, n.revision,
+ SELECT n.id, n.parent_id, n.owner_id, n.name, n.type, n.revision,
   tree.relative_path || '/' || n.name, tree.depth + 1
  FROM xd_nodes AS n JOIN tree ON n.parent_id = tree.id
- WHERE n.owner_id = ? AND n.deleted_at IS NULL AND tree.depth < 128
+ WHERE n.deleted_at IS NULL AND tree.depth < 128
 )
-SELECT * FROM tree ORDER BY id LIMIT ?`, top.ID, source.OwnerID, source.OwnerID, maxLegacyYikeNestedBranchNodes+1).Scan(&nodes).Error
+SELECT * FROM tree ORDER BY id LIMIT ?`, top.ID, source.OwnerID, maxLegacyYikeNestedBranchNodes+1).Scan(&nodes).Error
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +54,8 @@ func sameLegacyYikeNestedInventory(a, b []legacyYikeNestedNode) bool {
 		return false
 	}
 	for i := range a {
-		if a[i].ID != b[i].ID || a[i].Name != b[i].Name || a[i].Type != b[i].Type ||
+		if a[i].ID != b[i].ID || a[i].OwnerID != b[i].OwnerID ||
+			a[i].Name != b[i].Name || a[i].Type != b[i].Type ||
 			a[i].Revision != b[i].Revision || a[i].RelativePath != b[i].RelativePath ||
 			a[i].Depth != b[i].Depth || a[i].ParentID == nil || b[i].ParentID == nil ||
 			*a[i].ParentID != *b[i].ParentID {
@@ -85,6 +87,12 @@ func verifyLegacyYikeOwnedNestedBranchTx(
 	ids := make([]uint64, 0, len(before))
 	seen := make(map[uint64]bool, len(before))
 	for _, entry := range before {
+		// Node.ParentID does not enforce equal OwnerID at the database
+		// boundary. Never silently skip a foreign-owner child when proving
+		// the subtree is exclusively owned by this Source.
+		if entry.OwnerID != source.OwnerID {
+			return blocked("nested legacy branch has foreign-owner descendants")
+		}
 		if entry.Depth >= 128 || entry.Revision == 0 ||
 			(entry.Type != meta.NodeTypeDir && entry.Type != meta.NodeTypeFile) || seen[entry.ID] {
 			return blocked("nested legacy branch is cyclic, too deep or invalid")
