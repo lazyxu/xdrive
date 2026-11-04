@@ -171,12 +171,27 @@ func TestRunnerScansAndSyncsEncryptedSynologyCredential(t *testing.T) {
 	if err := db.Create(&root).Error; err != nil {
 		t.Fatal(err)
 	}
+	// Real Pull executors may write only into a server-managed canonical
+	// Source root. Never use Owner's cloud root as a synthetic target:
+	// that would disable SourceRun target fencing or weaken Files ACL.
+	parent := root
+	for _, segment := range []string{"同步文件夹", "远程拉取", "Synology Photos", "Synology Photos Pull"} {
+		parentID := parent.ID
+		node := meta.Node{Name: segment, Type: meta.NodeTypeDir,
+			OwnerID: owner.ID, ParentID: &parentID, Revision: 1}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		parent = node
+	}
+	target := parent
+	const canonicalPrefix = "同步文件夹/远程拉取/Synology Photos/Synology Photos Pull/"
 	source := meta.Source{
 		OwnerID: owner.ID, Name: "Synology Photos Pull", Kind: synologysync.SourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusActive,
 		ScheduleType: "interval", ScheduleExpression: "6h",
-		Revision: 1, TargetNodeID: &root.ID,
+		Revision: 1, TargetNodeID: &target.ID, TargetManaged: true,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
@@ -311,11 +326,11 @@ func TestRunnerScansAndSyncsEncryptedSynologyCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	personalNode, ok := nodes["Personal/Trips/IMG_0001.jpg"]
+	personalNode, ok := nodes[canonicalPrefix+"Personal/Trips/IMG_0001.jpg"]
 	if !ok {
 		t.Fatalf("personal media missing or renamed unexpectedly: %+v", nodes)
 	}
-	sharedNode, ok := nodes["Shared/Family/shared.jpg"]
+	sharedNode, ok := nodes[canonicalPrefix+"Shared/Family/shared.jpg"]
 	if !ok {
 		t.Fatalf("shared media missing or renamed unexpectedly: %+v", nodes)
 	}
@@ -362,13 +377,13 @@ func TestRunnerScansAndSyncsEncryptedSynologyCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := nodes["Personal/Trips/IMG_0001.jpg"]; ok {
+	if _, ok := nodes[canonicalPrefix+"Personal/Trips/IMG_0001.jpg"]; ok {
 		t.Fatalf("old Synology path still exists after move: %+v", nodes)
 	}
-	if _, ok := nodes["Personal/Trips/IMG_RENAMED.jpg"]; !ok {
+	if _, ok := nodes[canonicalPrefix+"Personal/Trips/IMG_RENAMED.jpg"]; !ok {
 		t.Fatalf("renamed Synology media missing: %+v", nodes)
 	}
-	if _, ok := nodes["Shared/Family/shared.jpg"]; !ok {
+	if _, ok := nodes[canonicalPrefix+"Shared/Family/shared.jpg"]; !ok {
 		t.Fatalf("missing remote item deleted backed-up xDrive node: %+v", nodes)
 	}
 
