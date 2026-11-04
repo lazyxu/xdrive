@@ -192,7 +192,7 @@ const hostAdapterSource = fs.readFileSync(path.join(repo, 'web/src/synologyHost.
 assert.match(hostEntrySource, /const host = createXDriveSynologyHost\(\)/)
 assert.match(hostEntrySource, /<XDriveApp\s+host=\{notesHost\}/)
 assert.match(hostEntrySource, /services:\s*\{\s*\.\.\.host\.services,\s*notesPage:\s*notesPort\s*\}/)
-assert.match(hostEntrySource, /return cgi && notesOwnerScope\s*\? createXDriveDSMNotesPort\(cgi, notesOwnerScope\) : undefined/)
+assert.match(hostEntrySource, /return cgi && notesOwnerScope\s*\? createXDriveDSMNotesPort\(cgi, notesOwnerScope, notesImagesEnabled\) : undefined/)
 assert.match(hostAdapterSource, /ownerFilesPage:\s*\{\s*client:\s*local,\s*unavailableActions:\s*\{/)
 assert.match(hostOutletSource, /client=\{services\.ownerFilesPage\.client\}/)
 assert.match(hostOutletSource, /unavailableActions=\{services\.ownerFilesPage\.unavailableActions\}/)

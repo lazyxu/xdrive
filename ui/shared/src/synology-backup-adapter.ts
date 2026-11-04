@@ -542,9 +542,21 @@ export type XDriveSynologyServerConnection = {
   must_change_password: boolean
 }
 
+export type XDriveSynologyNotesImageReceipt = {
+  node_id: number
+  filename: string
+  relative_path: string
+  content_type: string
+  bytes: number
+  sha256: string
+}
+
 export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommonBatchActions, XDriveLocalBackupScheduleActions {
   /** Same-origin, Server Owner-scoped Notes only. No generic Agent proxy. */
   notesAvailable(signal?: AbortSignal): Promise<boolean>
+  notesImagesAvailable(signal?: AbortSignal): Promise<boolean>
+  notesUploadImage(ownerScope: string, id: string, image: File): Promise<XDriveSynologyNotesImageReceipt>
+  notesReadImage(id: string, relativePath: string, signal?: AbortSignal): Promise<Blob>
   notesNamespace(ownerScope: string): Promise<void>
   notesList(source: XDriveNoteSource, query: string, offset: number, signal?: AbortSignal):
     Promise<{ items: XDriveNoteSummary[]; next_offset: number }>
@@ -690,6 +702,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
        'cloud-live-motion', 'nas-shares',
        'cloud-notes-capability', 'cloud-notes-namespace', 'cloud-notes-list', 'cloud-notes-read', 'cloud-notes-create',
        'cloud-notes-save', 'cloud-notes-delete', 'cloud-notes-versions', 'cloud-notes-history',
+       'cloud-notes-image-capability', 'cloud-notes-image-upload', 'cloud-notes-image-read',
       'nas-share-preflight', 'nas-share-create', 'nas-draft-bind', 'nas-drafts', 'server-connection', 'server-login',
       'recovery-review'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
@@ -757,11 +770,97 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       throw new Error('备忘录标题或 Markdown 超出允许范围')
     }
   }
+  const notesAsset = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.(png|jpg|gif|webp|heic)$/
+  const notesAssetPath = (id: string, relative: string): string => {
+    const prefix = '_assets/' + notesValidID(id) + '/'
+    if (!relative.startsWith(prefix) || relative.length > 160 ||
+        !notesAsset.test(relative.slice(prefix.length))) {
+      throw new Error('无效或跨笔记的图片资源路径')
+    }
+    return relative
+  }
+  const notesMime: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic',
+  }
+  const notesDigest = async (data: ArrayBuffer): Promise<string> =>
+    Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', data)),
+      b => b.toString(16).padStart(2, '0')).join('')
+  const notesBase64 = (bytes: Uint8Array): string => {
+    let text = ''
+    for (let start = 0; start < bytes.length; start += 24576) {
+      text += String.fromCharCode(...bytes.subarray(start, start + 24576))
+    }
+    return btoa(text)
+  }
+  const notesImageMaxBytes = 20 * 1_048_576
   const api: XDriveSynologyBackupLocalClient = {
     async notesAvailable(signal) {
       const value = await request<{ available: boolean }>(
         '/v1/cloud-notes-capability', 'GET', undefined, signal)
       return value.available === true
+    },
+    async notesImagesAvailable(signal) {
+      try {
+        const result = await request<{ available: boolean }>(
+          '/v1/cloud-notes-image-capability', 'GET', undefined, signal)
+        return result.available === true
+      } catch {
+        // An older Backup-only Agent has text Notes but no binary capability.
+        return false
+      }
+    },
+    async notesUploadImage(ownerScope, id, file) {
+      const noteID = notesValidID(id)
+      if (!file || file.size < 1 || file.size > notesImageMaxBytes ||
+          !/\.(png|jpe?g|gif|webp|heic)$/i.test(file.name)) {
+        throw new Error('无效或超过 20 MiB 的备忘录图片')
+      }
+      const original = await file.arrayBuffer()
+      if (original.byteLength !== file.size) throw new Error('图片读取期间发生变化')
+      const bytes = new Uint8Array(original)
+      const result = await request<XDriveSynologyNotesImageReceipt>('/v1/cloud-notes-image-upload',
+        'POST', { owner_scope: notesOwnerScope(ownerScope), id: noteID, image: notesBase64(bytes) })
+      const relative = notesAssetPath(noteID, result.relative_path)
+      const filename = relative.slice(relative.lastIndexOf('/') + 1)
+      const extension = filename.slice(filename.lastIndexOf('.') + 1)
+      const checksum = await notesDigest(original)
+      if (result.node_id <= 0 || !Number.isSafeInteger(result.node_id) ||
+          result.filename !== filename || result.content_type !== notesMime[extension] ||
+          result.bytes !== original.byteLength || result.sha256?.toLowerCase() !== checksum) {
+        throw new Error('图片上传回执与当前 Owner 内容不一致，请核对后再重试')
+      }
+      return result
+    },
+    async notesReadImage(id, relativePath, signal) {
+      const path = notesAssetPath(id, relativePath)
+      const extension = path.slice(path.lastIndexOf('.') + 1)
+      const params = new URLSearchParams({ id: notesValidID(id), relative_path: path })
+      const result = await request<{
+        content_type: string; bytes: number; sha256: string; image: string
+      }>('/v1/cloud-notes-image-read?' + params.toString(), 'GET', undefined, signal)
+      if (!result || result.content_type !== notesMime[extension] ||
+          !Number.isSafeInteger(result.bytes) || result.bytes < 1 ||
+          result.bytes > notesImageMaxBytes || !/^[0-9a-f]{64}$/i.test(result.sha256) ||
+          typeof result.image !== 'string' ||
+          result.image.length > Math.ceil(notesImageMaxBytes / 3) * 4 + 4 ||
+          !/^[A-Za-z0-9+/]*={0,2}$/.test(result.image)) {
+        throw new Error('备忘录图片回执格式、MIME 或大小无效')
+      }
+      let decoded: Uint8Array
+      try {
+        const raw = atob(result.image)
+        decoded = Uint8Array.from(raw, c => c.charCodeAt(0))
+      } catch {
+        throw new Error('备忘录图片编码无效')
+      }
+      if (decoded.byteLength !== result.bytes) throw new Error('备忘录图片长度与回执不一致')
+      const owned = new ArrayBuffer(decoded.byteLength)
+      new Uint8Array(owned).set(decoded)
+      const digest = await notesDigest(owned)
+      if (digest.toLowerCase() !== result.sha256.toLowerCase()) {
+        throw new Error('备忘录图片内容 SHA-256 校验失败')
+      }
+      return new Blob([owned], { type: result.content_type })
     },
     async notesNamespace(ownerScope) {
       const data = await request<{ my_notes_node_id: number; ios_backup_node_id: number }>(

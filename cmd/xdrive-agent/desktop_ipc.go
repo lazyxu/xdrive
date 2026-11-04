@@ -991,11 +991,16 @@ func (h *desktopIPCHandler) viewerDownloadCapabilities() []string {
 		if _, folders := h.ctrl.(desktopIPCRecentFoldersPort); folders {
 			capabilities = append(capabilities, "file-recent-folders")
 		}
-		if _, images := h.ctrl.(desktopIPCNotesImagePort); images {
-			if _, notes := h.ctrl.(desktopIPCNotesPort); notes {
-				capabilities = append(capabilities, "cloud-notes-images")
-			}
+	}
+	// Backup-only declares binary Notes only when BOTH the owning Notes
+	// interface and the bounded image port are implemented. Exact route
+	// filtering still applies at request time, after loopback authentication.
+	if _, images := h.ctrl.(desktopIPCNotesImagePort); images {
+		if _, notes := h.ctrl.(desktopIPCNotesPort); notes {
+			capabilities = append(capabilities, "cloud-notes-images")
 		}
+	}
+	if !h.backupOnly {
 		if _, supported := h.ctrl.(interface {
 			CloudDownloadWithClientRequestID(context.Context, uint64, string, string) error
 		}); supported {

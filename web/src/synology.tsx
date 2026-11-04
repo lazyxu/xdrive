@@ -293,6 +293,7 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
   const theme = useTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [notesOwnerScope, setNotesOwnerScope] = useState('')
+  const [notesImagesEnabled, setNotesImagesEnabled] = useState(false)
   // A DSM package login is not an xDrive Owner login. Only expose the shared
   // Notes route after the original Agent's current Owner and Notes capability
   // have been independently read. Invalidate on window refocus/account drift.
@@ -311,17 +312,26 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
           if (!first.configured || first.must_change_password ||
               !/^[0-9a-f]{64}$/.test(first.owner_scope) ||
               !await cgi.notesAvailable(controller.signal)) {
-            if (!controller.signal.aborted && !disposed) setNotesOwnerScope('')
+            if (!controller.signal.aborted && !disposed) {
+              setNotesOwnerScope('')
+              setNotesImagesEnabled(false)
+            }
             return
           }
           await cgi.ownerQuota(controller.signal)
+          const imageOK = await cgi.notesImagesAvailable(controller.signal)
           const second = await cgi.serverConnection(controller.signal)
           if (!controller.signal.aborted && !disposed) {
-            setNotesOwnerScope(second.configured && !second.must_change_password &&
-              first.owner_scope === second.owner_scope ? first.owner_scope : '')
+            const sameOwner = second.configured && !second.must_change_password &&
+              first.owner_scope === second.owner_scope
+            setNotesOwnerScope(sameOwner ? first.owner_scope : '')
+            setNotesImagesEnabled(sameOwner && imageOK)
           }
         } catch {
-          if (!controller.signal.aborted && !disposed) setNotesOwnerScope('')
+          if (!controller.signal.aborted && !disposed) {
+              setNotesOwnerScope('')
+              setNotesImagesEnabled(false)
+            }
         }
       })()
     }
@@ -339,8 +349,8 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
   const notesPort = useMemo(() => {
     const cgi = host.services?.localBackupClient
     return cgi && notesOwnerScope
-      ? createXDriveDSMNotesPort(cgi, notesOwnerScope) : undefined
-  }, [host, notesOwnerScope])
+      ? createXDriveDSMNotesPort(cgi, notesOwnerScope, notesImagesEnabled) : undefined
+  }, [host, notesOwnerScope, notesImagesEnabled])
   const notesHost = useMemo(() => ({
     ...host,
     services: { ...host.services, notesPage: notesPort },

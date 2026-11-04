@@ -7,6 +7,7 @@ import type { XDriveSynologyBackupLocalClient } from '../../ui/shared/src/synolo
  * authenticated HTTPS CGI may access the owning Backup-only Agent. */
 export function createXDriveDSMNotesPort(
   cgi: XDriveSynologyBackupLocalClient, ownerScope: string,
+  imagesEnabled = false,
 ): XDriveNotesDataPort {
   if (!/^[a-f0-9]{64}$/.test(ownerScope)) {
     throw new Error('当前 DSM Server Owner 未经验证')
@@ -50,6 +51,17 @@ export function createXDriveDSMNotesPort(
 
   return {
     ownerScopeKey: 'dsm:' + ownerScope,
+    ...(imagesEnabled ? {
+      async uploadImage(noteID: string, file: File) {
+        await ensure()
+        const result = await call(() => cgi.notesUploadImage(ownerScope, noteID, file))
+        return { relative_path: result.relative_path }
+      },
+      async readImageBlob(noteID: string, path: string, signal?: AbortSignal): Promise<Blob> {
+        await ensure()
+        return call(() => cgi.notesReadImage(noteID, path, signal), signal)
+      },
+    } : {}),
     async listNotes(source, query, offset, signal) {
       await ensure()
       const result = await call(() => cgi.notesList(source, query, offset, signal), signal)

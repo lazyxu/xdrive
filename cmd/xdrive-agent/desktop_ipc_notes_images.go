@@ -26,11 +26,9 @@ func validDesktopNotesImageID(id string) bool {
 }
 
 func (h *desktopIPCHandler) notesImagePort(w http.ResponseWriter) (desktopIPCNotesImagePort, bool) {
-	if h.backupOnly {
-		writeDesktopIPCError(w, http.StatusForbidden, "notes_images_unavailable",
-			"Notes image transport is unavailable in Backup-only Agent")
-		return nil, false
-	}
+	// Backup-only is permitted only through restrictBackupOnlyEndpoints'
+	// exact method + canonical Note UUID /images gate. desktopIPCAuth still
+	// requires same-user loopback bearer before reaching this handler.
 	if _, ok := h.ctrl.(desktopIPCNotesPort); !ok {
 		writeDesktopIPCError(w, http.StatusNotImplemented, "notes_unavailable",
 			"Owner Notes transport is unavailable")
