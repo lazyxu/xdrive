@@ -87,6 +87,7 @@ struct XDriveIOSLocalPhotoTile: View {
 final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
     @Published var still: UIImage?
     @Published var live: PHLivePhoto?
+    @Published private(set) var liveIsFinal = false
     @Published var player: AVPlayer?
     @Published var message: String?
     // iCloud originals are requested only after a direct tap in the Viewer.
@@ -191,7 +192,13 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
                                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
                               ) else { return }
                         if let photo {
-                            self.live = photo
+                            // A degraded PhotoKit callback is only a temporary
+                            // still; the native hint must wait for final Live
+                            // pairing and must not regress final to degraded.
+                            if !degraded || !self.liveIsFinal {
+                                self.live = photo
+                                if !degraded { self.liveIsFinal = true }
+                            }
                             self.needsICloudFetch = false
                             self.message = nil
                         } else if !degraded && !cancelled {
@@ -235,6 +242,7 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
         player = nil
         live = nil
         still = nil
+        liveIsFinal = false
         message = nil
     }
 }
@@ -242,9 +250,11 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
 private struct XDriveIOSNativeLivePhotoView: UIViewRepresentable {
     let live: PHLivePhoto
     let playbackRequest: UUID?
+    let hintReady: Bool
 
     final class Coordinator {
         var lastPlaybackRequest: UUID?
+        var didHint = false
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -260,11 +270,24 @@ private struct XDriveIOSNativeLivePhotoView: UIViewRepresentable {
             view.stopPlayback()
             view.livePhoto = live
             context.coordinator.lastPlaybackRequest = nil
+            context.coordinator.didHint = false
         }
         if let request = playbackRequest,
            request != context.coordinator.lastPlaybackRequest {
+            // A deliberate full playback always wins over a background hint.
             context.coordinator.lastPlaybackRequest = request
             view.startPlayback(with: .full)
+        } else if hintReady, playbackRequest == nil,
+                  context.coordinator.lastPlaybackRequest == nil,
+                  !context.coordinator.didHint {
+            // Start only once per mounted final PHLivePhoto. A low-resolution
+            // temporary callback, background scene or Reduce Motion setting
+            // cannot generate an unsolicited animation.
+            context.coordinator.didHint = true
+            if UIApplication.shared.applicationState == .active &&
+               !UIAccessibility.isReduceMotionEnabled {
+                view.startPlayback(with: .hint)
+            }
         }
     }
 
@@ -272,6 +295,7 @@ private struct XDriveIOSNativeLivePhotoView: UIViewRepresentable {
         view.stopPlayback()
         view.livePhoto = nil
         coordinator.lastPlaybackRequest = nil
+        coordinator.didHint = false
     }
 }
 
@@ -731,7 +755,9 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                                 .accessibilityLabel("实况静态照片，可双指缩放")
                         } else {
                             XDriveIOSNativeLivePhotoView(
-                                live: live, playbackRequest: livePlaybackRequest
+                                live: live, playbackRequest: livePlaybackRequest,
+                                hintReady: model.liveIsFinal && currentPageAuthorized &&
+                                    !model.downloadingFromICloud
                             )
                             .xdriveNativeViewerPaging { showNeighbor($0) }
                             .simultaneousGesture(TapGesture().onEnded { toggleChrome() })
