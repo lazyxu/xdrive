@@ -403,6 +403,22 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                         .accessibilityIdentifier("native-ios-local-wall-framing")
                                     }
                                 }
+                                Section("快速定位") {
+                                    Button {
+                                        jumpToEdge(newest: true, using: scroll)
+                                    } label: {
+                                        Label("最新拍摄", systemImage: "arrow.up.to.line")
+                                    }
+                                    .accessibilityIdentifier("native-ios-local-wall-jump-newest")
+                                    Button {
+                                        jumpToEdge(newest: false, using: scroll)
+                                    } label: {
+                                        Label("最早拍摄", systemImage: "arrow.down.to.line")
+                                    }
+                                    .accessibilityIdentifier("native-ios-local-wall-jump-oldest")
+                                }
+                                .disabled(total == 0 || loading || actionBusy ||
+                                          shareBusy || selected != nil)
                             } label: {
                                 Image(systemName: "square.grid.3x3")
                                     .frame(width: 44, height: 44)
@@ -708,6 +724,22 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     }
 
     private var authorized: Bool { permission == .authorized || permission == .limited }
+
+    /// Position-only navigation across already enumerated numeric 64-slot
+    /// descriptors. The target page re-opens and revalidates PhotoKit on mount.
+    /// Never walk the whole photo library or create a media-identifier array.
+    private func jumpToEdge(newest: Bool, using scroll: ScrollViewProxy) {
+        guard authorized, phase == .active, selected == nil,
+              !loading, !actionBusy, !shareBusy, total > 0 else { return }
+        let requested = newest ? 0 : total - 1
+        let offset = XDriveIOSNativePhotoVirtualPagePolicy.normalizedAnchor(
+            requested: requested, total: total
+        )
+        clearReturn()
+        requestedOffset = nil
+        savedOffset = offset
+        scroll.scrollTo("page:\(offset)", anchor: .top)
+    }
 
     private func resetDragSelection() {
         dragPreviousSlot = nil
