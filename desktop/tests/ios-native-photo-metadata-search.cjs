@@ -152,3 +152,40 @@ test('capture-date order changes the same bounded PhotoKit reader and invalidate
   assert.match(model, /windows = \[\]/)
   assert.doesNotMatch(scanner, /URLSession|UploadSession|requestAVAsset|UserDefaults/)
 });
+
+
+test('search thumbnails offer uncropped full composition without invalidating results or rescanning', () => {
+  const tile = reader.slice(
+    reader.indexOf('private struct XDriveIOSNativePhotoSearchTile: View'),
+    reader.indexOf('/// One visible result range.')
+  )
+  const windows = reader.slice(
+    reader.indexOf('private struct XDriveIOSNativePhotoSearchWindowView: View'),
+    reader.indexOf('private struct XDriveIOSNativePhotoSearchSelection: Identifiable')
+  )
+  const density = read('ios/XDriveIOS/NativePhotoWallDensityPolicy.swift')
+  const photoLoader = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
+  assert.match(density, /enum XDriveIOSNativePhotoWallFraming: String, CaseIterable, Identifiable/)
+  assert.match(density, /case square, complete/)
+  assert.match(view, /@State private var framing: XDriveIOSNativePhotoWallFraming = \.square/)
+  assert.match(view, /Picker\("预览构图", selection: \$framing\)/)
+  assert.match(view, /ForEach\(XDriveIOSNativePhotoWallFraming\.allCases\)/)
+  assert.match(view, /native-ios-photo-search-framing/)
+  assert.match(view, /sortOrder: sortOrder, framing: framing,\s*generation: model\.generation/)
+  assert.match(windows, /let framing: XDriveIOSNativePhotoWallFraming/)
+  assert.match(windows, /XDriveIOSNativePhotoSearchTile\(candidate: item, framing: framing\)/)
+  assert.match(tile, /let framing: XDriveIOSNativePhotoWallFraming/)
+  assert.match(tile, /if framing == \.complete \{\s*Image\(uiImage: image\)\.resizable\(\)\.scaledToFit\(\)/)
+  assert.match(tile, /Image\(uiImage: image\)\.resizable\(\)\.scaledToFill\(\)/)
+  assert.match(tile, /contentMode: framing == \.complete \? \.aspectFit : \.aspectFill/)
+  assert.match(tile, /\.task\(id: "\\\(candidate\.id\)-\\\(framing\.rawValue\)"\)/)
+  assert.match(tile, /\.frame\(width: geometry\.size\.width, height: geometry\.size\.height\)/)
+  assert.match(tile, /\.aspectRatio\(1, contentMode: \.fit\)/)
+  assert.match(photoLoader, /settings\.isNetworkAccessAllowed = false/)
+  assert.match(photoLoader, /contentMode: PHImageContentMode = \.aspectFill/)
+  // Changing the presentation mode reissues only the visible derivative.
+  assert.match(windows, /\.task\(id: "\\\(generation\)-\\\(window\.startSlot\)-\\\(query\)-\\\(sortOrder\.rawValue\)"\)/)
+  assert.doesNotMatch(windows, /task\(id:.*framing/)
+  assert.doesNotMatch(view, /\.onChange\(of: framing\) \{ _ in[\s\S]*?model\.(?:cancel|search|invalidate)/)
+  assert.doesNotMatch(tile, /requestImageData|URLSession|UploadSession|requestAVAsset/)
+});
