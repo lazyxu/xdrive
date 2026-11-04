@@ -171,7 +171,7 @@ test('foreground auto iCloud and interval settings show the stored current Owner
   assert.match(setup, /autoConsentAllowICloud = autoAllowICloud/)
   assert.match(setup, /manualConsentAllowICloud = allowICloud/)
   assert.match(ui, /\.onAppear \{\s*photoAuthorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)\s*syncSavedAutomaticSettings\(\)/)
-  assert.match(ui, /allowICloud = false\s*autoAllowICloud = false\s*interval = 60\s*syncSavedAutomaticSettings\(\)/)
+  assert.match(ui, /allowICloud = false\s*autoAllowICloud = false\s*autoStartRule = \.everything\s*interval = 60\s*syncSavedAutomaticSettings\(\)/)
   assert.match(hydrate, /controller\.refresh\(owner: login\.owner\)/)
   assert.match(hydrate, /if let active = controller\.schedule, active\.enabled \{\s*interval = active\.intervalMinutes\s*autoAllowICloud = active\.allowICloudOriginals/)
   assert.match(store, /var intervalMinutes: Int/)
