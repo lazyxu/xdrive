@@ -74,6 +74,24 @@ struct XDriveIOSNativeFilesReader {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    func searchSources() async throws -> [XDriveIOSNativeFilesSearchSourceOption] {
+        let url = try endpoint("/api/v1/sources", query: [])
+        let items: [XDriveIOSNativeFilesSearchSourceOption] = try await get(url)
+        guard XDriveIOSNativeFilesPagePolicy.validSearchSources(items) else {
+            throw XDriveIOSNativeFilesReadError.malformed
+        }
+        return items
+    }
+
+    func searchTags() async throws -> [XDriveIOSNativeFilesSearchTagOption] {
+        let url = try endpoint("/api/v1/file-tags", query: [])
+        let items: [XDriveIOSNativeFilesSearchTagOption] = try await get(url)
+        guard XDriveIOSNativeFilesPagePolicy.validSearchTags(items) else {
+            throw XDriveIOSNativeFilesReadError.malformed
+        }
+        return items
+    }
+
     func children(parentID: UInt64, offset: Int,
                   sort: String, order: String) async throws -> XDriveIOSNativeFilesRange {
         guard parentID > 0,
@@ -96,18 +114,20 @@ struct XDriveIOSNativeFilesReader {
     func search(_ query: String, offset: Int,
                 sort: String, order: String,
                 filters: XDriveIOSNativeFilesSearchFilterState) async throws -> XDriveIOSNativeFilesSearchRange {
-        guard XDriveIOSNativeFilesPagePolicy.validSearch(query),
-              XDriveIOSNativeFilesPagePolicy.validSearchFilters(filters),
+        guard XDriveIOSNativeFilesPagePolicy.validSearchRequest(query: query, filters: filters),
               XDriveIOSNativeFilesPagePolicy.validOffset(offset),
               XDriveIOSNativeFilesPagePolicy.validOrder(sort: sort, order: order)
         else { throw XDriveIOSNativeFilesReadError.invalidPage }
         var queryItems = [
-            URLQueryItem(name: "q", value: query.trimmingCharacters(in: .whitespacesAndNewlines)),
             URLQueryItem(name: "offset", value: String(offset)),
             URLQueryItem(name: "limit", value: String(XDriveIOSNativeFilesPagePolicy.pageSize)),
             URLQueryItem(name: "sort", value: sort),
             URLQueryItem(name: "order", value: order)
         ]
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedQuery.isEmpty {
+            queryItems.append(URLQueryItem(name: "q", value: trimmedQuery))
+        }
         if filters.kind != "all" {
             queryItems.append(URLQueryItem(name: "kind", value: filters.kind))
         }
@@ -122,6 +142,12 @@ struct XDriveIOSNativeFilesReader {
         }
         if let maxSize = filters.maxSize {
             queryItems.append(URLQueryItem(name: "max_size", value: String(maxSize)))
+        }
+        if let sourceID = filters.sourceID {
+            queryItems.append(URLQueryItem(name: "source_id", value: String(sourceID)))
+        }
+        if let tagID = filters.tagID {
+            queryItems.append(URLQueryItem(name: "tag_id", value: String(tagID)))
         }
         let url = try endpoint("/api/v1/search", query: queryItems)
         let page: XDriveIOSNativeFilesSearchRange = try await get(url)
@@ -205,7 +231,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 )
                 let found: [XDriveIOSNativeFilesEntry]
                 let count: Int
-                if query.isEmpty {
+                if query.isEmpty && !filters.hasActiveFilters {
                     let page = try await reader.children(
                         parentID: folderID, offset: offset, sort: sort, order: order
                     )
@@ -294,7 +320,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 let found: [XDriveIOSNativeFilesEntry]
                 let returnedTotal: Int
                 let returnedOffset: Int
-                if query.isEmpty {
+                if query.isEmpty && !filters.hasActiveFilters {
                     let page = try await reader.children(
                         parentID: folderID, offset: requestOffset, sort: sort, order: order
                     )
