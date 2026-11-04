@@ -30,7 +30,7 @@ test('calendar counts use original PhotoKit slots and invalidate on any library/
   assert.match(browser, /if asset\.mediaType == \.image \|\| asset\.mediaType == \.video/)
   assert.match(browser, /index\.append\(capturedAt: asset\.creationDate, slot: slot\)/)
   assert.match(browser, /try verify\(status: status, observer: observer, revision: revision\)/)
-  assert.match(browser, /\.onChange\(of: changes\.revision\) \{ _ in model\.invalidate\(\) \}/)
+  assert.match(browser, /\.onChange\(of: changes\.revision\) \{ _ in\s*exactDateTarget = nil\s*model\.invalidate\(\)/)
   assert.match(browser, /\.onChange\(of: phase\)/)
   assert.match(policy, /var firstPageOffset: Int \{ \(firstSlot \/ 64\) \* 64 \}/)
   assert.doesNotMatch(policy, /import Photos|PHAsset\.fetchAssets|localIdentifier:|accessToken|uploadSession/)
