@@ -119,3 +119,20 @@ test('cluster photo wall hides transport pagination while retaining verified scr
   assert.match(body, /\.disabled\(busy \|\| !activeOwner \|\| next == nil \|\| viewing != nil\)/)
   assert.match(body, /accessibilityIdentifier\("native-ios-owner-map-cluster-more"\)/)
 })
+
+
+test('verified cloud map auto-paging restores the retained last tile when the two-window grid rotates', () => {
+  assert.match(album, /@State private var autoScrollReturn: XDriveIOSNativeMediaItem\?/)
+  assert.match(album, /if let anchor = autoScrollReturn \{[\s\S]*?activeOwner,[\s\S]*?priorWindow\?\.items\.contains\(where: \{[\s\S]*?\$0\.sameVisibleRevision\(as: anchor\)/)
+  assert.match(album, /returnScroll\.scrollTo\(anchor\.id, anchor: \.bottom\)[\s\S]*?autoScrollReturn = nil/)
+  assert.match(album, /if autoAdvance, let departingPage,[\s\S]*?priorWindow = departingPage\s*priorWindowCursor = departingCursor\s*autoScrollReturn = departingPage\.items\.last/)
+  assert.match(album, /autoScrollReturn = departingPage\.items\.last[\s\S]*?cursor = target\s*earlier = history\s*next = following\s*page = fetched\s*visiblePageRevision = UUID\(\)/)
+  assert.match(album, /private func invalidate\(\) \{[\s\S]*?viewerReturn = nil\s*autoScrollReturn = nil/)
+  assert.match(album, /if autoAdvance \|\| target != cursor \{ viewerReturn = nil \}\s*autoScrollReturn = nil/)
+  assert.match(album, /if !autoAdvance \{[\s\S]*?priorWindow = nil\s*priorWindowCursor = nil/)
+  assert.match(album, /\} else \{\s*priorWindow = nil\s*priorWindowCursor = nil\s*autoScrollReturn = nil\s*coverImages = \[:\]/)
+  assert.match(album, /returnScroll\.scrollTo\(anchor\.id, anchor: \.center\)\s*viewerReturn = nil/)
+  assert.match(album, /currentOldPage\.sameVisibleSnapshot\(as: departingPage\)/)
+  assert.match(album, /fetched\.total_count == facet\.item_count/)
+  assert.doesNotMatch(album, /UserDefaults\.set\(autoScrollReturn|Timer\.scheduledTimer|cacheAllPhotos|UploadSession/)
+})
