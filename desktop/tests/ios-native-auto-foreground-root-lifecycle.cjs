@@ -113,7 +113,17 @@ test('backup display and delayed original progress never cross Owner changes or 
   assert.match(callback, /guard XDriveIOSNativePhotoOwnerScope\.matches\(self\?\.runningOwner, selected\),\s*self\?\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)\s*else \{ return \}/)
   assert.match(start, /guard XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\),\s*self\.displayEpoch == uiEpoch else \{\s*throw XDriveIOSNativeSessionError\.staleSession/)
   assert.match(terminal, /catch is CancellationError \{\s*if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
-  assert.match(terminal, /\} catch \{\s*if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
+  // The catch now first checks an eligible *pre-write* transient network
+  // retry. Both that retry and the terminal error message must remain fenced
+  // to the exact live UI epoch and currently signed-in Owner.
+  const catchBranch = terminal.slice(
+    terminal.indexOf('            } catch {\n                var scheduledNetworkRetry = false'),
+    terminal.indexOf('            // A successful original may be followed'))
+  assert.ok(catchBranch.startsWith('            } catch {\n                var scheduledNetworkRetry = false'),
+    'the Owner-scoped catch path must remain present')
+  assert.match(catchBranch, /if kind == \.automatic,[\s\S]*?!beganOriginalWrite, !Task\.isCancelled,[\s\S]*?self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\),\s*UIApplication\.shared\.applicationState == \.active/)
+  assert.match(catchBranch, /if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\) \{\s*self\.errorMessage = scheduledNetworkRetry/)
+  assert.doesNotMatch(catchBranch, /uploadPrepared|confirmReceipt|\.run\(|start\(login:/)
   assert.match(terminal, /if let current = self\.progress, current\.uploaded > 0,\s*self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(self\.runningOwner, selected\),\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
   assert.doesNotMatch(refresh, /cancel\(|delete\(|disable\(|uploadPrepared|confirmReceipt|reserveDue/)
 })
