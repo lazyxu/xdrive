@@ -335,3 +335,32 @@ test('cloud backup Originals Viewer exposes a current-Owner bottom save action, 
   assert.match(viewer, /cancelPhotoRestore\(\)/)
   assert.doesNotMatch(viewer, /UploadSession|WKWebView|UserDefaults/)
 })
+
+
+test('native cloud Live requests only already decoded bounded still dimensions', () => {
+  const paired = fs.readFileSync(
+    path.join(root, 'ios/XDriveIOS/NativeCloudPairedLivePhotoView.swift'), 'utf8'
+  )
+  const originals = fs.readFileSync(
+    path.join(root, 'ios/XDriveIOS/NativeCloudOriginalGallery.swift'), 'utf8'
+  )
+  const photoAsset = fs.readFileSync(
+    path.join(root, 'ios/XDriveIOS/NativeServerMediaGalleryTransport.swift'), 'utf8'
+  )
+  assert.match(paired, /private static func nativeTargetSize\(for placeholder: UIImage\) -> CGSize/)
+  assert.match(paired, /placeholder\.cgImage\?\.width \?\?/)
+  assert.match(paired, /placeholder\.cgImage\?\.height \?\?/)
+  assert.match(paired, /let maxPixel: CGFloat = 3072/)
+  assert.match(paired, /let width = CGFloat\(max\(1, pixelWidth\)\)/)
+  assert.match(paired, /let height = CGFloat\(max\(1, pixelHeight\)\)/)
+  assert.match(paired, /let scale = min\(1, maxPixel \/ max\(width, height\)\)/)
+  assert.match(paired, /width: max\(1, width \* scale\)/)
+  assert.match(paired, /height: max\(1, height \* scale\)/)
+  assert.match(paired, /PHLivePhoto\.request\([\s\S]*?targetSize: Self\.nativeTargetSize\(for: placeholder\),[\s\S]*?contentMode: \.aspectFit/)
+  assert.doesNotMatch(paired, /targetSize: CGSize\(width: 1800, height: 1800\)/)
+  assert.match(paired, /PHLivePhoto\.cancelRequest\(withRequestID: requestID\)/)
+  assert.match(paired, /view\?\.stopPlayback\(\)/)
+  assert.match(originals, /kCGImageSourceThumbnailMaxPixelSize as String: 4096/)
+  assert.match(photoAsset, /kCGImageSourceThumbnailMaxPixelSize as String: 4096/)
+  assert.doesNotMatch(paired, /URLSession|UIImage\(contentsOfFile:|PHAssetCreationRequest|UploadSession|UserDefaults/)
+})
