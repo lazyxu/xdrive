@@ -18,7 +18,7 @@ func TestDSMExistingScheduleCGIRedactsAndForwardsOnlyAgentRuleDue(t *testing.T) 
 	agent.savedSchedule = localbackupipc.Schedule{
 		SourceID: 42, Revision: 7, ScheduleType: "interval",
 		ScheduleExpression: "6h",
-		AutoReadiness: "checkpoint_ready", NextScheduledAt: &due,
+		AutoReadiness:      "checkpoint_ready", NextScheduledAt: &due,
 	}
 	read := func() *httptest.ResponseRecorder {
 		t.Helper()
