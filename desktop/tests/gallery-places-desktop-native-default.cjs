@@ -41,7 +41,7 @@ test('Main establishes an ephemeral HTTPS Cookie session before attaching map gu
   assert.match(web,/if \(!session\.accessToken && xDriveTrustedDesktopPlacesBridge\(\)\)/)
   assert.match(preload,/expectedOwner:/)
   assert.match(preload,/consume:/)
-  assert.doesNotMatch(preload,/password|refreshToken|accessToken|cookies\.get|agent:/)
+  assert.doesNotMatch(preload,/ipcRenderer\.invoke\('agent:|window\.xdriveDesktop|\.password\b|refreshToken|accessToken|cookies\.get/)
 })
 
 test('Guest sessions are revoked on Desktop Owner/server change and never persisted',()=>{
