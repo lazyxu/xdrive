@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
 )
@@ -142,7 +143,7 @@ func TestLegacyYikeVerifiedNestedMixedSplitPreservesIdentity(t *testing.T) {
 }
 
 func TestLegacyYikeNestedMixedSplitFailsClosedOnUnprovenDescendant(t *testing.T) {
-	for _, scenario := range []string{"untracked", "stale-revision", "foreign-claim"} {
+	for _, scenario := range []string{"untracked", "stale-revision", "foreign-claim", "foreign-owner"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := openYikeMigrationTestDB(t)
 			user, oldRoot, album, photo, _, source := buildLegacyYikeNestedMixedFixture(t, db)
@@ -158,6 +159,19 @@ func TestLegacyYikeNestedMixedSplitFailsClosedOnUnprovenDescendant(t *testing.T)
 				}
 			case "stale-revision":
 				if err := db.Model(&meta.Node{}).Where("id = ?", photo.ID).Update("revision", 2).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "foreign-owner":
+				foreign := meta.User{Username: "migration-foreign-" + uuid.NewString(), PasswordHash: "x", Role: meta.UserRoleUser}
+				if err := db.Create(&foreign).Error; err != nil {
+					t.Fatal(err)
+				}
+				// A legacy cross-owner parent link may be present in a
+				// damaged database. The nested inventory must detect it
+				// rather than silently skipping foreign-owner children.
+				alien := meta.Node{OwnerID: foreign.ID, ParentID: &day.ID,
+					Name: "foreign-secret.jpg", Type: meta.NodeTypeFile, Revision: 1}
+				if err := db.Create(&alien).Error; err != nil {
 					t.Fatal(err)
 				}
 			case "foreign-claim":
