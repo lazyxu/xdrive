@@ -52,6 +52,50 @@ for (const required of [
   'return () => { active = false; abort.abort() }',
 ]) assert.ok(localPanel.includes(required), 'DSM scheduled history refresh lost: ' + required)
 
+// Only one expanded DSM Source may read the *saved* schedule. A configured
+// interval/Cron is not proof of an armed private Agent checkpoint or next due.
+const viewSchedule = ctx.module.exports.xDriveDSMBackupScheduleView
+const saved = {
+  source_id: 42, revision: 7, schedule_type: 'interval',
+  schedule_expression: '6h', schedule_timezone: '',
+}
+assert.match(viewSchedule(42, saved).title, /每 6h/)
+assert.equal(viewSchedule(42, saved).enabled, true)
+assert.equal(viewSchedule(42, { ...saved, schedule_type: 'manual',
+  schedule_expression: '' }).enabled, false)
+assert.match(viewSchedule(42, { ...saved, schedule_type: '',
+  schedule_expression: '' }).title, /未明确开启/)
+assert.match(viewSchedule(42, { ...saved, schedule_type: 'cron',
+  schedule_expression: '0 3 * * *', schedule_timezone: 'Asia/Shanghai' }).title, /Cron/)
+for (const untrusted of [
+  { ...saved, source_id: 43 }, { ...saved, revision: 0 },
+  { ...saved, schedule_type: 'completed' },
+  { ...saved, schedule_expression: '' },
+  { ...saved, schedule_timezone: 'UTC' },
+  { ...saved, schedule_expression: '6h\\nOwner token' },
+  { ...saved, schedule_type: 'manual' },
+  { ...saved, schedule_type: 'cron', schedule_timezone: 'Asia/Shanghai' },
+  { ...saved, schedule_type: 'cron', schedule_expression: '0 3 * * *' },
+]) assert.throws(() => viewSchedule(42, untrusted), /Untrusted DSM backup schedule/)
+assert.throws(() => viewSchedule(0, saved), /Untrusted DSM backup schedule/)
+const planSurface = fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/SynologyBackupScheduleStatus.tsx'), 'utf8')
+for (const required of [
+  'client.load(sourceID)',
+  'xDriveDSMBackupScheduleView(sourceID, raw)',
+  'return () => { active = false }',
+  '当前 Agent 尚未提供可核验的调度时间',
+]) assert.ok(planSurface.includes(required), 'DSM auto plan summary lost: ' + required)
+assert.ok(localPanel.includes('<XDriveSynologyBackupScheduleStatus'),
+  'DSM panel must render the schedule only for the expanded local Source')
+assert.ok(localPanel.includes("key={'schedule:' + renderedHostEpoch + ':' + item.source_id}"),
+  'DSM plan view must be remounted on owning Host/Source generation')
+assert.ok(!planSurface.includes('client.list('), 'Do not fan out schedule reads to all Sources')
+const localActions = fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/DeviceBackupLocalPrimaryActions.tsx'), 'utf8')
+assert.ok(localActions.includes('手动增量备份'), 'shared Desktop/DSM manual action missing')
+assert.ok(!localActions.includes('手动增量备份（试用）'), 'obsolete trial label remains')
+
 const validate = ctx.module.exports.xDriveValidateSynologyLocalBatch
 const valid = {
   source_id: 42, revision: 1, state: 'partial', running: false,
