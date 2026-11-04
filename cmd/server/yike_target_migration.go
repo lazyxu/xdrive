@@ -32,6 +32,10 @@ func migrateLegacyYikeTargets(db *gorm.DB) error {
 	}
 
 	for _, source := range sources {
+		// An outdated startup attempt must never pause a Source that another
+		// replica/user has already revised or safely rebound. Capture the
+		// exact row locked for the attempted migration, not the initial list.
+		var attempted meta.Source
 		err := db.Transaction(func(tx *gorm.DB) error {
 			// The Source revision and target are decision inputs, not a
 			// stale snapshot captured before opening this transaction.
@@ -45,6 +49,7 @@ func migrateLegacyYikeTargets(db *gorm.DB) error {
 			if err != nil {
 				return err
 			}
+			attempted = current
 			return migrateLegacyYikeTarget(tx, current)
 		})
 		if err == nil {
@@ -53,20 +58,36 @@ func migrateLegacyYikeTargets(db *gorm.DB) error {
 		if !errors.Is(err, errLegacyYikeTargetMigrationBlocked) {
 			return err
 		}
-
-		now := time.Now().UTC()
-		if updateErr := db.Model(&meta.Source{}).
-			Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
-			Updates(map[string]any{
-				"status":     meta.SourceStatusPaused,
-				"last_error": "一刻相册旧目标迁移已暂停：目录内容归属未核实、其他来源重叠、同步仍在运行或新位置冲突；原文件与分享保持原位，请核对后再迁移",
-				"revision":   gorm.Expr("revision + 1"),
-				"updated_at": now,
-			}).Error; updateErr != nil {
-			return updateErr
+		if err := pauseBlockedLegacyYikeSourceCAS(db, attempted); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// A migration conflict aborts its transaction, releasing Source/Node locks.
+// Another replica may then update or successfully migrate the same Source
+// BEFORE the failed startup pass tries to pause it. Compare-and-swap the
+// observed status, revision and target identity together; a stale attempt
+// must not pause a newer Source or consume its revision.
+func pauseBlockedLegacyYikeSourceCAS(db *gorm.DB, attempted meta.Source) error {
+	if db == nil || attempted.ID == 0 || attempted.OwnerID == 0 {
+		return fmt.Errorf("invalid legacy Yike migration pause snapshot")
+	}
+	query := db.Model(&meta.Source{}).
+		Where("id = ? AND owner_id = ? AND revision = ? AND status = ?",
+			attempted.ID, attempted.OwnerID, attempted.Revision, attempted.Status)
+	if attempted.TargetNodeID == nil {
+		query = query.Where("target_node_id IS NULL")
+	} else {
+		query = query.Where("target_node_id = ?", *attempted.TargetNodeID)
+	}
+	return query.Updates(map[string]any{
+		"status":     meta.SourceStatusPaused,
+		"last_error": "一刻相册旧目标迁移已暂停：目录内容归属未核实、其他来源重叠、同步仍在运行或新位置冲突；原文件与分享保持原位，请核对后再迁移",
+		"revision":   gorm.Expr("revision + 1"),
+		"updated_at": time.Now().UTC(),
+	}).Error
 }
 
 func migrateLegacyYikeTarget(tx *gorm.DB, source meta.Source) error {
