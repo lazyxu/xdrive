@@ -23,8 +23,8 @@ type LocalBoundBackupSchedule struct {
 	// Set only by the owning Agent after revalidating its private Root and
 	// checkpoint. The Server's saved Source projection cannot establish this
 	// status; old Clients/Agents omit both optional fields.
-	AutoReadiness       string     `json:"auto_readiness,omitempty"`
-	NextScheduledAt     *time.Time `json:"next_scheduled_at,omitempty"`
+	AutoReadiness   string     `json:"auto_readiness,omitempty"`
+	NextScheduledAt *time.Time `json:"next_scheduled_at,omitempty"`
 }
 
 // LocalBoundSchedule does not fall back to the generic owner-readable GET,
