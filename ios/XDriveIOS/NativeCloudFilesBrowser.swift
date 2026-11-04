@@ -412,9 +412,13 @@ private final class XDriveIOSNativeFilesSearchOptionsModel: ObservableObject {
         errorMessage = nil
     }
 
-    func matches(_ owner: XDriveNativeOwnerRoot?) -> Bool {
-        guard verified, let owner, let loadedOwner else { return false }
+    func belongs(to owner: XDriveNativeOwnerRoot?) -> Bool {
+        guard let owner, let loadedOwner else { return false }
         return XDriveIOSNativePhotoOwnerScope.matches(owner, loadedOwner)
+    }
+
+    func matches(_ owner: XDriveNativeOwnerRoot?) -> Bool {
+        verified && belongs(to: owner)
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel) {
@@ -583,6 +587,14 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private var isGlobalSearch: Bool {
         !activeQuery.isEmpty || searchFilters.hasActiveFilters
+    }
+
+    private var hasVerifiedSearchOptionsForOwner: Bool {
+        searchOptions.matches(login.owner)
+    }
+
+    private var hasSearchOptionsStateForOwner: Bool {
+        searchOptions.belongs(to: login.owner)
     }
 
     private var searchSourceFilterTitle: String {
@@ -788,11 +800,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                                 .font(.subheadline)
                         }
                         .accessibilityIdentifier("native-ios-files-search-size-filter")
-                        if (searchOptions.verified && !searchOptions.sources.isEmpty) ||
+                        if (hasVerifiedSearchOptionsForOwner && !searchOptions.sources.isEmpty) ||
                             searchFilters.hasSourceFilter {
                             Menu {
                                 Button("全部同步文件夹") { searchFilters.sourceID = nil }
-                                if searchOptions.verified {
+                                if hasVerifiedSearchOptionsForOwner {
                                     ForEach(searchOptions.sources) { source in
                                         Button {
                                             searchFilters.sourceID = source.id
@@ -811,11 +823,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                             }
                             .accessibilityIdentifier("native-ios-files-search-source-filter")
                         }
-                        if (searchOptions.verified && !searchOptions.tags.isEmpty) ||
+                        if (hasVerifiedSearchOptionsForOwner && !searchOptions.tags.isEmpty) ||
                             searchFilters.hasTagFilter {
                             Menu {
                                 Button("全部标签") { searchFilters.tagID = nil }
-                                if searchOptions.verified {
+                                if hasVerifiedSearchOptionsForOwner {
                                     ForEach(searchOptions.tags) { tag in
                                         Button {
                                             searchFilters.tagID = tag.id
@@ -839,13 +851,13 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 .disabled(login.owner == nil)
             }
-            if searchOptions.loading {
+            if searchOptions.loading && hasSearchOptionsStateForOwner {
                 HStack(spacing: 8) {
                     ProgressView()
                     Text("正在读取同步文件夹和标签…")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-            } else if let error = searchOptions.errorMessage {
+            } else if hasSearchOptionsStateForOwner, let error = searchOptions.errorMessage {
                 HStack {
                     Text(error).font(.footnote).foregroundStyle(.secondary)
                     Spacer(minLength: 8)

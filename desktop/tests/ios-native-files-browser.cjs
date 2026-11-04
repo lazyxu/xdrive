@@ -24,6 +24,10 @@ test('native Files replaces its fixed-tab placeholder without returning to WebVi
 test('directory and full-library search use canonical counted Owner Range', () => {
   assert.match(view, /login\.verifiedAuthorization\(\)/);
   assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/);
+  assert.match(view, /func belongs\(to owner: XDriveNativeOwnerRoot\?\) -> Bool[\s\S]*?matches\(owner, loadedOwner\)/);
+  assert.match(view, /private var hasVerifiedSearchOptionsForOwner: Bool[\s\S]*?searchOptions\.matches\(login\.owner\)/);
+  assert.match(view, /if searchOptions\.loading && hasSearchOptionsStateForOwner/);
+  assert.match(view, /else if hasSearchOptionsStateForOwner, let error = searchOptions\.errorMessage/);
   assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/);
   assert.match(view, /\/api\/v1\/nodes\/\\\(parentID\)\/children/);
   assert.match(view, /\/api\/v1\/search/);
