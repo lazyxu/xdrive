@@ -128,3 +128,25 @@ test('Browse home displays only verified favorite folders as native direct navig
   assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*return/)
   assert.doesNotMatch(home, /XDriveIOSNativeFilesCollectionsTransport\(|URLSession|\/api\/v1\/file-favorites/)
 })
+
+
+test('native Files full-library search debounces valid keyboard drafts and cancels superseded searches', () => {
+  const chrome = view.slice(view.indexOf('private var filesChrome:'), view.indexOf('private var filesModals:'))
+  assert.match(chrome, /\.searchable\(\s*text: \$queryDraft,/)
+  assert.match(chrome, /\.onSubmit\(of: \.search\) \{ submitSearch\(\) \}/)
+  assert.match(chrome, /\.task\(id: queryDraft\) \{/)
+  assert.match(chrome, /let query = queryDraft\.trimmingCharacters\(in: \.whitespacesAndNewlines\)/)
+  assert.match(chrome, /XDriveIOSNativeFilesPagePolicy\.validSearch\(query\)/)
+  assert.match(chrome, /query != activeQuery/)
+  assert.match(chrome, /Task\.sleep\(nanoseconds: 400_000_000\)/)
+  assert.match(chrome, /try Task\.checkCancellation\(\)/)
+  assert.match(chrome, /guard !Task\.isCancelled, phase == \.active,/)
+  assert.match(chrome, /login\.owner != nil, !selecting,/)
+  assert.match(chrome, /query == queryDraft\.trimmingCharacters\(in: \.whitespacesAndNewlines\)/)
+  assert.match(chrome, /submitSearch\(\)\s*\}\s*\.onChange\(of: queryDraft\)/)
+  // Enter and debounce use exactly the one existing validated Server search path.
+  assert.equal((view.match(/private func submitSearch\(\)/g) || []).length, 1)
+  assert.match(view, /reader\.search\(/)
+  assert.match(view, /private func clearSearch\(\)[\s\S]*?pendingNavigationReturnNodeID = restoreNodeID\s*reload\(\)/)
+  assert.doesNotMatch(chrome, /URLSession|\/api\/v1\/search|XDriveIOSNativeFilesReader\(/)
+})
