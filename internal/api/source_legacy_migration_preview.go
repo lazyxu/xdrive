@@ -142,7 +142,7 @@ FROM tree ORDER BY depth, id LIMIT ?`, target.ID, maxSourceLegacyPreviewNodes+2)
 		}
 		var sourceItems []meta.SourceItem
 		if err := tx.Where("source_id = ?", source.ID).
-			Limit(maxSourceLegacyPreviewNodes+2).Find(&sourceItems).Error; err != nil {
+			Limit(maxSourceLegacyPreviewNodes + 2).Find(&sourceItems).Error; err != nil {
 			return err
 		}
 		if len(sourceItems) > maxSourceLegacyPreviewNodes+1 {
