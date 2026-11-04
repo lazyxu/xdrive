@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // verifyLegacyYikeTargetOwnershipTx runs before an old uid_* root is
@@ -28,9 +30,48 @@ func verifyLegacyYikeTargetOwnershipTx(
 		return fmt.Errorf("%w: inconsistent Source/Node ownership", errLegacyYikeTargetMigrationBlocked)
 	}
 
+	// Before reparenting an entire clean legacy root, freeze its exact
+	// Node revision and check pending owner writers just as the mixed-root
+	// splitter does. Being fully SourceItem-owned does not prove that a
+	// previously created upload/queued Files operation is already finished.
+	// The Source itself was FOR UPDATE locked by migrateLegacyYikeTargets.
+	var currentTarget meta.Node
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+			target.ID, source.OwnerID, meta.NodeTypeDir).
+		Take(&currentTarget).Error; err != nil {
+		return fmt.Errorf("%w: clean legacy target cannot be locked: %v", errLegacyYikeTargetMigrationBlocked, err)
+	}
+	if currentTarget.Revision != target.Revision || currentTarget.Name != target.Name ||
+		currentTarget.ParentID == nil || target.ParentID == nil ||
+		*currentTarget.ParentID != *target.ParentID {
+		return fmt.Errorf("%w: clean legacy target changed before migration", errLegacyYikeTargetMigrationBlocked)
+	}
+
+	var pending int64
+	if err := tx.Model(&meta.UploadSession{}).
+		Where("owner_id = ? AND status = ? AND expires_at > ?",
+			source.OwnerID, meta.UploadStatusActive, time.Now().UTC()).
+		Count(&pending).Error; err != nil {
+		return err
+	}
+	if pending != 0 {
+		return fmt.Errorf("%w: an Owner upload is still active", errLegacyYikeTargetMigrationBlocked)
+	}
+	if err := tx.Model(&meta.FileOperation{}).
+		Where("owner_id = ? AND status IN ?", source.OwnerID, []string{
+			meta.FileOperationStatusQueued,
+			meta.FileOperationStatusRunning,
+			meta.FileOperationStatusCancelRequested,
+		}).Count(&pending).Error; err != nil {
+		return err
+	}
+	if pending != 0 {
+		return fmt.Errorf("%w: an Owner Files operation is not terminal", errLegacyYikeTargetMigrationBlocked)
+	}
+
 	// Another Source bound to the old ancestor OR any of its descendants
-	// cannot be silently detached by reparenting this root. The Source
-	// itself was locked by the migration caller.
+	// cannot be silently detached by reparenting this root.
 	var overlapping bool
 	if err := tx.Raw(`
 WITH RECURSIVE subtree AS (
