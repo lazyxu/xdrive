@@ -544,79 +544,67 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     @ViewBuilder private func fileEntryRow(_ entry: XDriveIOSNativeFilesEntry) -> some View {
-                    if selecting {
-                        Button { toggleSelection(entry) } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: selectedIDs.contains(entry.id)
-                                      ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(Color.accentColor)
-                                row(entry)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!canSelectPage)
-                        .accessibilityIdentifier("native-ios-files-select-\(entry.id)")
-                    } else if entry.node.isDirectory {
-                        HStack(spacing: 8) {
-                            NavigationLink(value: XDriveIOSNativeFilesFolder(
-                                id: entry.node.id, name: entry.node.name
-                            )) {
-                                row(entry)
-                            }
-                            .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
-                            Button {
-                                openManagement(for: entry.node)
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .frame(minWidth: 44, minHeight: 44)
-                            }
-                            .accessibilityLabel("管理文件夹 \(entry.node.name)")
-                            .accessibilityIdentifier("native-ios-files-folder-more-\(entry.node.id)")
-                            if !activeQuery.isEmpty {
-                                Button { requestLocation(for: entry) } label: {
-                                    Image(systemName: "folder.badge.questionmark")
-                                        .frame(minWidth: 44, minHeight: 44)
-                                }
-                                .accessibilityLabel("定位文件夹 \(entry.node.name) 的位置")
-                                .accessibilityIdentifier("native-ios-files-locate-\(entry.id)")
-                            }
-                        }
-                        .contextMenu {
-                            nativeQuickActions(for: entry)
-                            Button("文件夹操作") { openManagement(for: entry.node) }
-                        }
-                        .id(entry.node.id)
-                    } else {
-                        HStack(spacing: 8) {
-                            Button { openViewer(entry) } label: {
-                                row(entry)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("native-ios-files-file-\(entry.node.id)")
-                            Button {
-                                openManagement(for: entry.node)
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .frame(minWidth: 44, minHeight: 44)
-                            }
-                            .accessibilityLabel("管理 \(entry.node.name)")
-                            .accessibilityIdentifier("native-ios-files-more-\(entry.node.id)")
-                            if !activeQuery.isEmpty {
-                                Button { requestLocation(for: entry) } label: {
-                                    Image(systemName: "folder.badge.questionmark")
-                                        .frame(minWidth: 44, minHeight: 44)
-                                }
-                                .accessibilityLabel("定位 \(entry.node.name) 所在文件夹")
-                                .accessibilityIdentifier("native-ios-files-locate-\(entry.id)")
-                            }
-                        }
-                        .contextMenu {
-                            nativeQuickActions(for: entry)
-                            Button("文件操作") { openManagement(for: entry.node) }
-                            Button("版本历史") { openVersionHistory(for: entry.node) }
-                        }
-                        .id(entry.node.id)
+        if selecting {
+            Button { toggleSelection(entry) } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: selectedIDs.contains(entry.id)
+                          ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(Color.accentColor)
+                    row(entry)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSelectPage)
+            .accessibilityIdentifier("native-ios-files-select-\(entry.id)")
+        } else if entry.node.isDirectory {
+            NavigationLink(value: XDriveIOSNativeFilesFolder(
+                id: entry.node.id, name: entry.node.name
+            )) {
+                row(entry)
+            }
+            .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
+            .contextMenu {
+                nativeQuickActions(for: entry)
+                Button {
+                    openManagement(for: entry.node)
+                } label: {
+                    Label("显示简介", systemImage: "info.circle")
+                }
+                .accessibilityIdentifier("native-ios-files-folder-more-\(entry.node.id)")
+                if !activeQuery.isEmpty {
+                    Button {
+                        requestLocation(for: entry)
+                    } label: {
+                        Label("显示位置", systemImage: "folder.badge.questionmark")
                     }
+                    .accessibilityIdentifier("native-ios-files-locate-\(entry.id)")
+                }
+            }
+            .id(entry.node.id)
+        } else {
+            Button { openViewer(entry) } label: { row(entry) }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("native-ios-files-file-\(entry.node.id)")
+                .contextMenu {
+                    nativeQuickActions(for: entry)
+                    Button {
+                        openManagement(for: entry.node)
+                    } label: {
+                        Label("显示简介", systemImage: "info.circle")
+                    }
+                    .accessibilityIdentifier("native-ios-files-more-\(entry.node.id)")
+                    Button("版本历史") { openVersionHistory(for: entry.node) }
+                    if !activeQuery.isEmpty {
+                        Button {
+                            requestLocation(for: entry)
+                        } label: {
+                            Label("显示位置", systemImage: "folder.badge.questionmark")
+                        }
+                        .accessibilityIdentifier("native-ios-files-locate-\(entry.id)")
+                    }
+                }
+                .id(entry.node.id)
+        }
     }
 
     private var filesContinuousStatus: some View {
@@ -881,28 +869,41 @@ struct XDriveIOSNativeFilesBrowser: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if selecting { filesSelectionToolbar }
         }
-        .navigationTitle(folder?.name ?? "文件")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(isHome ? "浏览" : (folder?.name ?? "搜索结果"))
+        .navigationBarTitleDisplayMode(isHome ? .large : .inline)
         .navigationDestination(for: XDriveIOSNativeFilesFolder.self) { next in
             XDriveIOSNativeFilesBrowser(login: login, folder: next)
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(selecting ? "完成多选" : "多选") {
-                    guard canSelectPage || selecting,
-                          !batchTrash.busy, !batchTarget.busy,
-                          !batchExport.busy, batchExport.prepared.isEmpty
-                    else { return }
-                    model.cancelAdjacent()
-                    selecting.toggle()
-                    selectedIDs.removeAll()
+                if selecting {
+                    Button("完成") {
+                        guard !batchTrash.busy, !batchTarget.busy,
+                              !batchExport.busy, batchExport.prepared.isEmpty else { return }
+                        model.cancelAdjacent()
+                        selecting = false
+                        selectedIDs.removeAll()
+                    }
+                    .disabled(batchTrash.busy || batchTarget.busy ||
+                              batchExport.busy || !batchExport.prepared.isEmpty)
+                    .accessibilityIdentifier("native-ios-files-selection-done")
                 }
-                .disabled((!canSelectPage && !selecting) || batchTarget.busy ||
-                          batchExport.busy || !batchExport.prepared.isEmpty)
-                .accessibilityIdentifier("native-ios-files-multi-select")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
+                if !selecting {
+                    Menu {
+                        Button {
+                            guard canSelectPage, !batchTrash.busy, !batchTarget.busy,
+                                  !batchExport.busy, batchExport.prepared.isEmpty else { return }
+                            model.cancelAdjacent()
+                            selecting = true
+                            selectedIDs.removeAll()
+                        } label: {
+                            Label("选择", systemImage: "checkmark.circle")
+                        }
+                        .disabled(!canSelectPage)
+                        .accessibilityIdentifier("native-ios-files-multi-select")
+                        Divider()
                     Picker("显示方式", selection: $viewMode) {
                         Text("列表").tag("list")
                         Text("图标").tag("grid")
@@ -963,6 +964,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Label("更多", systemImage: "ellipsis.circle")
                 }
                 .accessibilityIdentifier("native-ios-files-more-options")
+                }
             }
         }
     }
@@ -1278,37 +1280,31 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("native-ios-files-file-\(entry.node.id)")
             }
-            if !selecting {
-                Button { openManagement(for: entry.node) } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("管理 \(entry.node.name)")
-                .accessibilityIdentifier(entry.node.isDirectory
-                    ? "native-ios-files-folder-more-\(entry.id)"
-                    : "native-ios-files-more-\(entry.id)")
-                if !activeQuery.isEmpty {
-                    Button { requestLocation(for: entry) } label: {
-                        Label("定位", systemImage: "folder.badge.questionmark")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    .accessibilityIdentifier("native-ios-files-locate-\(entry.id)")
-                }
-            }
         }
-        .padding(8)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(Color(uiColor: .secondarySystemGroupedBackground),
-                    in: RoundedRectangle(cornerRadius: 12))
+        .contentShape(Rectangle())
         .contextMenu {
             if !selecting {
                 nativeQuickActions(for: entry)
-                Button(entry.node.isDirectory ? "文件夹操作" : "文件操作") {
+                Button {
                     openManagement(for: entry.node)
+                } label: {
+                    Label("显示简介", systemImage: "info.circle")
                 }
+                .accessibilityIdentifier(entry.node.isDirectory
+                    ? "native-ios-files-folder-more-\(entry.id)"
+                    : "native-ios-files-more-\(entry.id)")
                 if !entry.node.isDirectory {
                     Button("版本历史") { openVersionHistory(for: entry.node) }
+                }
+                if !activeQuery.isEmpty {
+                    Button {
+                        requestLocation(for: entry)
+                    } label: {
+                        Label("显示位置", systemImage: "folder.badge.questionmark")
+                    }
+                    .accessibilityIdentifier("native-ios-files-locate-\(entry.id)")
                 }
             }
         }
