@@ -24,10 +24,9 @@ type desktopIPCNotesPort interface {
 }
 
 func (h *desktopIPCHandler) notesPort(w http.ResponseWriter) (desktopIPCNotesPort, bool) {
-	if h.backupOnly {
-		writeDesktopIPCError(w, http.StatusForbidden, "notes_unavailable", "backup-only Agent cannot access Notes")
-		return nil, false
-	}
+	// Backup-only Notes are admitted only by the exact route allowlist in
+	// restrictBackupOnlyEndpoints. The loopback bearer and current Owner
+	// cloudClient() still authorize every request; no arbitrary proxy exists.
 	port, ok := h.ctrl.(desktopIPCNotesPort)
 	if !ok {
 		writeDesktopIPCError(w, http.StatusNotImplemented, "notes_unavailable", "Owner Notes transport is unavailable")
