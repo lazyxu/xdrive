@@ -1,13 +1,33 @@
 import Combine
+import Foundation
 import Photos
 import SwiftUI
 import UIKit
+
+/// Presentation-only duration label for a verified, visible PhotoKit video.
+/// Unavailable/invalid metadata shows a play icon instead of a fabricated time.
+private enum XDriveIOSNativeVideoDurationBadgePolicy {
+    static func label(seconds raw: TimeInterval) -> String? {
+        guard raw.isFinite, raw >= 0, raw < TimeInterval(Int.max / 2) else {
+            return nil
+        }
+        let total = Int(raw.rounded())
+        let hours = total / 3600
+        let minutes = (total / 60) % 60
+        let seconds = total % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%d:%02d", total / 60, seconds)
+    }
+}
 
 /// Only the continuous PhotoKit wall uses this 1:1 thumbnail.
 /// Legacy album/map/photo Viewer dimensions are intentionally unchanged.
 struct XDriveIOSNativeSquarePhotoTile: View {
     let candidate: XDrivePhotoKitScanCandidate
     @StateObject private var loader = XDriveIOSPhotoImageLoader()
+    @State private var durationLabel: String?
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -28,8 +48,24 @@ struct XDriveIOSNativeSquarePhotoTile: View {
                 .frame(width: geometry.size.width, height: geometry.size.height)
                 .clipped()
             }
-            if candidate.kind == "video" || candidate.isLive {
-                Image(systemName: candidate.kind == "video" ? "play.circle.fill" : "livephoto")
+            if candidate.kind == "video" {
+                Group {
+                    if let durationLabel {
+                        Text(durationLabel)
+                            .font(.caption2.weight(.semibold))
+                            .monospacedDigit()
+                    } else {
+                        Image(systemName: "play.fill")
+                            .font(.caption2.weight(.semibold))
+                    }
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 3)
+                .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4))
+                .padding(4)
+            } else if candidate.isLive {
+                Image(systemName: "livephoto")
                     .font(.title3)
                     .foregroundStyle(.white)
                     .padding(5)
@@ -39,13 +75,32 @@ struct XDriveIOSNativeSquarePhotoTile: View {
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 3))
         .task(id: candidate.id) {
+            durationLabel = nil
             // Only visible cells request local PhotoKit derivatives; never
             // fetch iCloud originals when zooming the thumbnail grid.
             loader.load(candidate.id, size: CGSize(width: 420, height: 420))
+            // A video duration is PhotoKit metadata, not a media download.
+            // Independently verify identity before displaying the badge.
+            guard candidate.kind == "video",
+                  [.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                  ), let asset = PHAsset.fetchAssets(
+                    withLocalIdentifiers: [candidate.id], options: nil
+                  ).firstObject,
+                  asset.mediaType == .video,
+                  asset.creationDate == candidate.capturedAt,
+                  asset.modificationDate == candidate.modifiedAt else { return }
+            durationLabel = XDriveIOSNativeVideoDurationBadgePolicy.label(
+                seconds: asset.duration
+            )
         }
-        .onDisappear { loader.cancel() }
+        .onDisappear {
+            loader.cancel()
+            durationLabel = nil
+        }
         .accessibilityLabel(candidate.isLive ? "实况照片" :
-            candidate.kind == "video" ? "视频" : "照片")
+            candidate.kind == "video" ?
+                (durationLabel.map { "视频，时长 \($0)" } ?? "视频") : "照片")
     }
 }
 
