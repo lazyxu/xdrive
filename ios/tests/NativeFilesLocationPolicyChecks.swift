@@ -71,6 +71,22 @@ struct NativeFilesLocationPolicyChecks {
             node_id: 40, revision: 3, index: 5,
             sort: "name", order: "asc", group: "none", folders_first: false
         )) == nil, "grouping changed")
+        var copyFile = fileLocation
+        copyFile.path = "2026/photo.HEIC"
+        check(P.currentCopyPath(of: file, at: copyFile, ownerRootID: 10) ==
+              "2026/photo.HEIC", "current file path")
+        var copyFolder = dirLocation
+        copyFolder.path = "2026"
+        check(P.currentCopyPath(of: dir, at: copyFolder, ownerRootID: 10) ==
+              "2026", "current folder path")
+        var tampered = copyFile
+        tampered.path = "2026/wrong.HEIC"
+        check(P.currentCopyPath(of: file, at: tampered, ownerRootID: 10) == nil,
+              "reject mismatched server path")
+        check(P.currentCopyPath(of: file, at: copyFile, ownerRootID: 11) == nil,
+              "reject wrong root")
+        check(P.currentCopyPath(of: file, at: fileLocation, ownerRootID: 10) == nil,
+              "reject missing path")
         print("native Files search locate verified ancestor and page policy: PASS")
     }
 }

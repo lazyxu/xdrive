@@ -88,3 +88,28 @@ test('native location refuses cookie redirects, cross-owner and stale responses'
   assert.match(location, /ServerAddress\.parse\(owner\.origin\.absoluteString\)/)
   assert.match(location, /maximumBytes: 2 \* 1_048_576/)
 })
+
+
+
+test('native Files copies only a current Owner-verified cloud path', () => {
+  const panel = read('ios/XDriveIOS/NativeFilesManagementPanel.swift')
+  assert.match(server, /Path:\s+currentPath/)
+  assert.match(policy, /var path: String\? = nil/)
+  assert.match(policy, /static func currentCopyPath\(/)
+  assert.match(policy, /parent\(of: selected, at: location, ownerRootID: ownerRootID\) != nil/)
+  assert.match(policy, /parts\.joined\(separator: "\/"\) == serverPath/)
+  assert.match(location, /struct XDriveIOSNativeFilesLocateReader/)
+  const copy = location.slice(location.indexOf('func copyPath('), location.indexOf('func locate('))
+  assert.match(copy, /let before: XDriveIOSNativeFilesNode = try await read/)
+  assert.match(copy, /let location: XDriveIOSNativeFilesLocationDTO = try await read/)
+  assert.match(copy, /XDriveIOSNativeFilesLocationPolicy\.currentCopyPath/)
+  assert.match(copy, /let after: XDriveIOSNativeFilesNode = try await read/)
+  assert.match(copy, /guard after == selected/)
+  assert.doesNotMatch(copy, /children\/position|method: "POST"|file-favorites/)
+  assert.match(panel, /if verified, let selected = file \?\? directory/)
+  assert.match(panel, /native-ios-files-copy-path/)
+  assert.match(panel, /copyCurrentPath\(selected\)/)
+  assert.match(panel, /UIPasteboard\.general\.string = currentPath/)
+  assert.match(panel, /copyPathEpoch = UUID\(\)[\s\S]*?copyPathTask\?\.cancel\(\)/)
+  assert.doesNotMatch(panel, /WKWebView|evaluateJavaScript|URLSession\.shared/)
+});
