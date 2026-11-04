@@ -9,6 +9,13 @@ import java.util.Locale
 object NativeNotesManualImportPolicy {
     const val maxImages = 32
     const val maxImageBytes = 20 * 1_048_576
+
+    /** Bind a file-picker result to the Owner and read-only archive active
+     * when the picker was opened. A later account/source switch cancels it. */
+    fun isCurrentOwnerImportSession(
+        capturedOwnerEpoch: Long?, currentOwnerEpoch: Long, source: String,
+    ): Boolean = capturedOwnerEpoch != null &&
+        capturedOwnerEpoch == currentOwnerEpoch && source == "ios_notes"
     private val supportedExtensions = setOf("png", "jpg", "jpeg", "gif", "webp", "heic")
     private val imagePattern = Regex("""!\[[^\]\r\n]{0,180}\]\(([^)\r\n]{1,512})\)""")
 

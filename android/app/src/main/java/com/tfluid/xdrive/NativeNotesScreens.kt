@@ -80,6 +80,9 @@ internal fun NativeNotesScreen(controller: DriveController) {
     var nextOffset by remember(owner.nativeUiSessionId) { mutableIntStateOf(0) }
     var loading by remember(owner.nativeUiSessionId) { mutableStateOf(false) }
     var importing by remember(owner.nativeUiSessionId) { mutableStateOf(false) }
+    // A picker result belongs to the Owner that opened the picker, not
+    // whichever account happens to be active when the user returns.
+    var importOwnerEpoch by remember(owner.nativeUiSessionId) { mutableStateOf<Long?>(null) }
     var error by remember(owner.nativeUiSessionId) { mutableStateOf<String?>(null) }
     var refresh by remember(owner.nativeUiSessionId) { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -88,8 +91,16 @@ internal fun NativeNotesScreen(controller: DriveController) {
     val importPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
-        if (uris.isNotEmpty() && source == "ios_notes" && !importing) {
-            val ownerEpoch = owner.nativeUiSessionId
+        val capturedOwnerEpoch = importOwnerEpoch
+        val currentOwnerEpoch = controller.state.value.nativeUiSessionId
+        if (uris.isEmpty()) {
+            importOwnerEpoch = null
+        } else if (!NativeNotesManualImportPolicy.isCurrentOwnerImportSession(
+                capturedOwnerEpoch, currentOwnerEpoch, source)) {
+            importOwnerEpoch = null
+            error = "账号或备份来源已切换，已取消导入。"
+        } else if (!importing) {
+            val ownerEpoch = requireNotNull(capturedOwnerEpoch)
             importing = true
             error = null
             scope.launch {
@@ -183,8 +194,11 @@ internal fun NativeNotesScreen(controller: DriveController) {
                             "。请先核对备份列表，勿重复导入。"
                 } finally {
                     importing = false
+                    importOwnerEpoch = null
                 }
             }
+        } else {
+            importOwnerEpoch = null
         }
     }
 
@@ -227,6 +241,7 @@ internal fun NativeNotesScreen(controller: DriveController) {
                 singleLine = true, modifier = Modifier.fillMaxWidth().testTag("native-notes-search"))
             if (source == "ios_notes") {
                 Button(onClick = {
+                    importOwnerEpoch = owner.nativeUiSessionId
                     importPicker.launch(arrayOf("*/*"))
                 }, enabled = !loading && !importing,
                     modifier = Modifier.testTag("native-notes-import-markdown-bundle")) {

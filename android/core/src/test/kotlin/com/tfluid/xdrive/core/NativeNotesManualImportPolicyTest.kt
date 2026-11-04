@@ -11,6 +11,13 @@ class NativeNotesManualImportPolicyTest {
     private val asset = "00000000-0000-4000-8000-000000000001.png"
     private val serverPath = "_assets/$noteID/$asset"
 
+    @Test fun manualImportPickerResultIsBoundToTheOriginalOwnerAndArchive() {
+        assertTrue(NativeNotesManualImportPolicy.isCurrentOwnerImportSession(7L, 7L, "ios_notes"))
+        assertFalse(NativeNotesManualImportPolicy.isCurrentOwnerImportSession(null, 7L, "ios_notes"))
+        assertFalse(NativeNotesManualImportPolicy.isCurrentOwnerImportSession(7L, 8L, "ios_notes"))
+        assertFalse(NativeNotesManualImportPolicy.isCurrentOwnerImportSession(7L, 7L, "mine"))
+    }
+
     @Test fun onlyExplicitlyReferencedLocalImagesAreSelected() {
         val markdown = "# 标题\n\n![一](images/one.png)\n![二](two.webp)\n![重复](images/one.png)"
         assertEquals(listOf("one.png", "two.webp"),
