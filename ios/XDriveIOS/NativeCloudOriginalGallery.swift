@@ -763,6 +763,15 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         return XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
     }
 
+    /// Show a real current Live cover in the filmstrip only after the exact
+    /// Owner-scoped ZIP still and motion pair has been verified and staged.
+    /// Neighboring ZIPs remain lightweight glyphs until explicitly opened.
+    private var displayedLiveFilmstripStill: UIImage? {
+        guard currentOwnerAuthorized, viewed.isLiveArchive,
+              liveResources != nil, !stillIsThumbnailOnly else { return nil }
+        return still
+    }
+
     private var exportNode: XDriveIOSNativeFilesNode? {
         // Files export re-reads this exact Node and rejects a changed revision,
         // parent, name or size before and after the signed original download.
@@ -1051,6 +1060,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                 openedOwner: presentingOwner,
                                 authorized: currentOwnerAuthorized,
                                 busy: exporter.busy || restoringToPhotos,
+                                selectedLiveStill: displayedLiveFilmstripStill,
                                 login: login,
                                 onSelect: { next in selectFilmstrip(next) }
                             )
