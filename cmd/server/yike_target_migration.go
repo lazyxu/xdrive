@@ -207,6 +207,18 @@ func pruneLegacyMigrationParents(tx *gorm.DB, ownerID, connectorID, rootID uint6
 	if childCount != 0 {
 		return nil
 	}
+	// Direct Shares are anchored to this exact NodeID. Deleting an empty
+	// connector would silently invalidate its existing link/Token, even
+	// though the Yike managed target moved safely elsewhere.
+	var directShares int64
+	if err := tx.Model(&meta.Share{}).
+		Where("owner_id = ? AND node_id = ?", ownerID, connectorID).
+		Count(&directShares).Error; err != nil {
+		return err
+	}
+	if directShares != 0 {
+		return nil
+	}
 
 	now := time.Now().UTC()
 	if err := tx.Model(&meta.Node{}).
@@ -225,6 +237,14 @@ func pruneLegacyMigrationParents(tx *gorm.DB, ownerID, connectorID, rootID uint6
 		return err
 	}
 	if childCount != 0 {
+		return nil
+	}
+	if err := tx.Model(&meta.Share{}).
+		Where("owner_id = ? AND node_id = ?", ownerID, rootID).
+		Count(&directShares).Error; err != nil {
+		return err
+	}
+	if directShares != 0 {
 		return nil
 	}
 	return tx.Model(&meta.Node{}).
