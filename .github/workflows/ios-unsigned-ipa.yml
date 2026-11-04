@@ -144,6 +144,17 @@ jobs:
             desktop/tests/ios-native-photo-managed-destination-contract.cjs \
             desktop/tests/ios-native-photo-destination-ui.cjs
 
+      - name: Verify native managed original upload route and exact receipts
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/BackgroundOriginalRoutePolicy.swift \
+            ios/XDriveIOS/ManagedPhotoUploadRoutePolicy.swift \
+            ios/tests/ManagedPhotoUploadRoutePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-managed-upload-route-check"
+          "$RUNNER_TEMP/xdrive-ios-managed-upload-route-check"
+          node --test desktop/tests/ios-native-photo-managed-foreground-contract.cjs
+
       - name: Verify focused first-pass native PhotoKit window progression
         run: |
           set -euo pipefail

@@ -61,3 +61,29 @@ Acceptance for the next P0 delivery:
    retain their old parent and remain readable/reconcilable.
 5. Real iPhone, large-video/Live/iCloud, logout/revoke, duplicate folder name,
    and matching Node-identity acceptance before claiming product MVP.
+
+## Stage 3 — native foreground managed original path (development)
+
+Native manual, scheduled foreground, and focused first-pass windows now use
+a read-only verified Owner + registered iOS Device + current Source/Target
+lookup **before** reserving an automatic interval or staging a new original.
+The same sealed HMAC resume key and ledger are retained, but each new intent
+is keyed by the actual `target_node_id`; old Owner-root receipts remain in
+the original namespace and can still be reconciled.
+
+The native transport translates only exact canonical UploadSession operations
+to `/api/v1/ios/photos/managed/uploads`, with current Owner JWT and enrolled
+iPhone token; all writes and Node proof are rechecked by Go against the
+current Source/Node/Device. The explicit native TextField must match the
+confirmed name before enabling a new UI action; a modified unsaved name is
+not silently sent to the old destination. Any missing/unverified target
+**fails closed**, not to Owner root.
+
+**Still NOT complete:** iOS `BGProcessingTask` is a separate, previously
+Owner-root-scoped grant; its grant, upload, receipt and resume proof must
+be rebound to the real Server-managed Source/Target before declaring all
+automatic modes 1:1. Until then, native foreground support is a scoped
+milestone, not the complete Synology-style automatic backup MVP.
+
+Exact HEAD Go/Postgres, iOS IPA, full CI/Final Gate and real iPhone hardware
+acceptance still required, and old roots/journals must not be silently migrated.

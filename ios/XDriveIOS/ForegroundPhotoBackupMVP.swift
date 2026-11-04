@@ -44,6 +44,12 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     }
 
     init(owner: XDriveNativeOwnerRoot,
+         managedForeground: XDriveIOSManagedOriginalAuthority) {
+        self.owner = owner
+        self.authorization = .managedForeground(managedForeground)
+    }
+
+    init(owner: XDriveNativeOwnerRoot,
          approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential) {
         self.owner = owner
         self.authorization = .background(approvedBackgroundGrant)
@@ -307,6 +313,11 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                 owner: owner, scope: binding.scope,
                 accessToken: token, ledger: journal
             )
+        case .managedForeground(let authority):
+            preparer = XDriveIOSPhotoKitStagedIntentPreparer(
+                owner: owner, scope: binding.scope,
+                managedForeground: authority, ledger: journal
+            )
         case .background(let approved):
             preparer = XDriveIOSPhotoKitStagedIntentPreparer(
                 owner: owner, scope: binding.scope,
@@ -387,6 +398,11 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                     writer = XDriveIOSJournaledOriginalUpload(
                         owner: owner, scope: binding.scope,
                         accessToken: token, ledger: journal
+                    )
+                case .managedForeground(let authority):
+                    writer = XDriveIOSJournaledOriginalUpload(
+                        owner: owner, scope: binding.scope,
+                        managedForeground: authority, ledger: journal
                     )
                 case .background(let approved):
                     writer = XDriveIOSJournaledOriginalUpload(

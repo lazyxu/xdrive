@@ -76,6 +76,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                             isPresented: $showManualConsent, titleVisibility: .visible) {
             Button("确认备份到已核验的云端账户") {
                 guard let expected = manualConsentOwner,
+                      destination.confirmedForCurrentName,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else {
                     consentError = "服务器或账户已变化，本次确认失效；没有上传文件。"
@@ -95,6 +96,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         ) {
             Button("确认连续备份到当前云端 Owner") {
                 guard let expected = focusedConsentOwner,
+                      destination.confirmedForCurrentName,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else {
                     consentError = "服务器或账户已变化，集中备份授权失效；未上传文件。"
@@ -114,6 +116,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                             isPresented: $showAutoConsent, titleVisibility: .visible) {
             Button("确认启用") {
                 guard let expected = autoConsentOwner,
+                      destination.confirmedForCurrentName,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else {
                     consentError = "服务器或账户已变化，自动备份授权失效；未开启计划。"
@@ -412,7 +415,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     ProgressView("正在核验当前 Owner、设备和受管目标…")
                 }
                 if let verified = destination.confirmed {
-                    Label("服务器已确认备份目标", systemImage: "checkmark.circle")
+                    Label(destination.confirmedForCurrentName
+                          ? "服务器已确认备份目标" : "文件夹名已修改，请重新保存后再备份",
+                          systemImage: destination.confirmedForCurrentName
+                              ? "checkmark.circle" : "exclamationmark.triangle")
                     Text(verified.targetPath)
                         .font(.footnote).textSelection(.enabled)
                         .accessibilityIdentifier("native-ios-photos-destination-target-path")
@@ -425,12 +431,12 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     Text(failure).font(.footnote).foregroundStyle(.red)
                         .accessibilityIdentifier("native-ios-photos-destination-error")
                 }
-                Text("本阶段只完成目标目录绑定：直到服务器放行精确受管 Source 的原件 UploadSession、后台授权和 Node 收据，不能把目录配置当作已完成照片备份。")
+                Text("已绑定目标的前台手动、集中和自动备份使用受管 UploadSession 与真实 Node 收据；系统后台权限仍需单独完成受管目标绑定，不能将旧根目录收据当作新目录完成记录。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("备份范围") {
                 Text("当前账户：\(login.owner?.username ?? "未登录")")
-                Text("照片、视频与 Live Photo 双原件 ZIP 的新目标必须使用上方服务器确认的受管目录。旧版上传器仍写 Owner 根目录，正式切换前不得将目标配置视为原件上传成功。")
+                Text("照片、视频和 Live Photo ZIP 的前台原件备份须先保存上方受管目录，写入时再次验证当前 Owner、设备与 Node；历史 Owner 根目录原件仍保留。")
                     .font(.footnote).foregroundStyle(.secondary)
                 Toggle("手动备份允许下载 iCloud 原件", isOn: $allowICloud)
                     .disabled(controller.busy)
@@ -453,6 +459,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     showManualConsent = manualConsentOwner != nil
                 }
                     .disabled(controller.busy || background.busy || login.owner == nil ||
+                              !destination.confirmedForCurrentName ||
                               (photoAuthorization != .authorized && photoAuthorization != .limited))
                     .accessibilityIdentifier("native-ios-photos-manual-start")
                 Button("集中备份授权照片（仅前台连续）") {
@@ -462,6 +469,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     showFocusedConsent = focusedConsentOwner != nil
                 }
                 .disabled(controller.busy || background.busy || login.owner == nil ||
+                          !destination.confirmedForCurrentName ||
                           (photoAuthorization != .authorized && photoAuthorization != .limited))
                 .accessibilityIdentifier("native-ios-photos-focused-start")
                 Text("适用于首次大量备份：连续处理已授权的分段，每段最多新增 20 个原件。停止或重启后可从已完整扫描的分段继续，但必须重新验证当前账户、相册版本、授权范围和 iCloud 设置；不确定收据仍须先核对。扫描进度不代表全部云端原件已备份。")
@@ -627,6 +635,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         showAutoConsent = autoConsentOwner != nil
                     }
                         .disabled(controller.busy || background.busy || login.owner == nil ||
+                                  !destination.confirmedForCurrentName ||
                                   (photoAuthorization != .authorized && photoAuthorization != .limited))
                         .accessibilityIdentifier("native-ios-photos-auto-enable")
                 }

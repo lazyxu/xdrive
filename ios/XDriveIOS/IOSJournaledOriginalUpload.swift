@@ -19,6 +19,15 @@ struct XDriveIOSJournaledOriginalUpload {
     }
 
     init(owner: XDriveNativeOwnerRoot, scope: XDrivePhotoSyncScope,
+         managedForeground: XDriveIOSManagedOriginalAuthority,
+         ledger: XDrivePhotoSyncLedger) {
+        self.owner = owner
+        self.scope = scope
+        self.authorization = .managedForeground(managedForeground)
+        self.ledger = ledger
+    }
+
+    init(owner: XDriveNativeOwnerRoot, scope: XDrivePhotoSyncScope,
          approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential,
          ledger: XDrivePhotoSyncLedger) {
         self.owner = owner
@@ -36,7 +45,7 @@ struct XDriveIOSJournaledOriginalUpload {
               scope.ownerID == owner.ownerID,
               scope.rootNodeID == owner.rootNodeID,
               !scope.deviceID.isEmpty,
-              requested.destinationParentID == owner.rootNodeID,
+              requested.destinationParentID == authorization.destinationParentID(owner: owner),
               requested.state == .prepared,
               requested.sessionID == nil else {
             throw XDrivePhotoSyncLedgerError.identityMismatch

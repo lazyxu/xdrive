@@ -60,6 +60,15 @@ final class XDriveIOSNativePhotoBackupDestinationModel: ObservableObject {
         !busy && XDriveIOSPhotoBackupDestinationNamePolicy.normalized(folderName) != nil
     }
 
+    /// When a user edits the text after saving, the old binding is no
+    /// longer the requested destination. Do not silently write there.
+    var confirmedForCurrentName: Bool {
+        guard !busy, let stored = confirmed,
+              let name = XDriveIOSPhotoBackupDestinationNamePolicy.normalized(folderName)
+        else { return false }
+        return stored.name == name
+    }
+
     func cancel() {
         generation = UUID()
         job?.cancel()

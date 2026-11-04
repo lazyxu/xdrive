@@ -222,6 +222,17 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   ) else {
                 throw XDriveIOSNativeSessionError.staleSession
             }
+            // A verified Owner root is NOT an authorized photo destination.
+            // Fail closed before persisting any new automatic plan.
+            _ = try await XDriveIOSNativePhotoBackupDestinationModel
+                .readExistingForUpload(owner: selected, accessToken: second.accessToken)
+            try Task.checkCancellation()
+            guard displayEpoch == uiEpoch,
+                  store.localStopGeneration == stopVersion,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                  UIApplication.shared.applicationState == .active else {
+                throw XDriveIOSNativeSessionError.staleSession
+            }
             schedule = try store.configure(
                 owner: selected, minutes: minutes, allowICloud: allowICloud
             )
@@ -230,7 +241,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         } catch {
             if displayEpoch == uiEpoch,
                XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
-                errorMessage = "无法验证当前 Owner 或既有加密账本，自动备份未开启；不会清除不确定收据。"
+                errorMessage = "无法验证当前 Owner、设备备份目标或加密账本，自动备份未开启；不会清除不确定收据。"
             }
         }
         // Do not tick while holding the shared writer gate: it would reject
@@ -355,6 +366,17 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     return
                 }
 
+                // Do this read-only current Owner+Device+Source/Node proof
+                // BEFORE reserveDue. An unconfigured target may not consume
+                // the schedule or fall back to the old Owner-root writer.
+                let managed = try await XDriveIOSNativePhotoBackupDestinationModel
+                    .readExistingForUpload(owner: selected, accessToken: verified.accessToken)
+                try Task.checkCancellation()
+                guard self.displayEpoch == uiEpoch,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                      UIApplication.shared.applicationState == .active else {
+                    throw XDriveIOSNativeSessionError.staleSession
+                }
                 if kind == .focused {
                     try await self.runFocused(
                         login: login, owner: selected, uiEpoch: uiEpoch,
@@ -398,7 +420,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         ? "自动增量备份正在检查第 \(window + 1) 段…"
                         : "手动备份正在检查第 \(window + 1) 段…"
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
-                        owner: selected, accessToken: verified.accessToken
+                        owner: selected, managedForeground: managed
                     ).run(allowICloudOriginals: cloud, startOffset: offset) { [weak self] value in
                         guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
                               self?.displayEpoch == uiEpoch,
@@ -463,7 +485,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             } catch {
                 if self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
-                    self.errorMessage = "本轮未完成：请检查当前 Owner、PhotoKit 权限、连接与本机加密账本；不能假定上传成功。"
+                    self.errorMessage = "本轮未完成：请检查当前 Owner、iPhone 设备、受管目标目录、照片权限和加密账本；没有证据的原件不会被当作已备份。"
                 }
             }
             // A successful original may be followed by a PhotoKit scan error,
@@ -567,12 +589,22 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   UIApplication.shared.applicationState == .active else {
                 throw XDriveIOSNativeSessionError.staleSession
             }
+            // Never reuse a previously authorized destination across a
+            // later first-pass window, or allow a renamed/revoked Source.
+            let managed = try await XDriveIOSNativePhotoBackupDestinationModel
+                .readExistingForUpload(owner: owner, accessToken: auth.accessToken)
+            try Task.checkCancellation()
+            guard displayEpoch == uiEpoch,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                  UIApplication.shared.applicationState == .active else {
+                throw XDriveIOSNativeSessionError.staleSession
+            }
             message = "集中备份正在处理第 \(window + 1) 段…"
             let alreadyNew = confirmedNew
             let unavailableBefore = hadUnavailable
             let currentWindow = window
             let result = try await XDriveIOSForegroundPhotoBackupMVP(
-                owner: owner, accessToken: auth.accessToken
+                owner: owner, managedForeground: managed
             ).run(allowICloudOriginals: allowICloud, startOffset: offset) { [weak self] value in
                 guard let self,
                       self.displayEpoch == uiEpoch,

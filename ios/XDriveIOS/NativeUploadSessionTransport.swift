@@ -76,12 +76,12 @@ private final class NativePhotoDenyRedirects: NSObject, URLSessionTaskDelegate {
     }
 }
 
-/// Two strictly isolated *authentication envelopes* for the SAME reliable
-/// Swift file/chunk/Finalize/ACK state machine. The background grant cannot
-/// authenticate to generic /api/v1/uploads or other User APIs.
+/// Three strictly isolated authentication envelopes use the SAME native
+/// chunk/Finalize/ACK state machine. No scoped alias exposes generic Files.
 private enum XDriveNativeUploadAuthorization {
     case foregroundBearer(String)
     case scopedIOSBackground(XDriveIOSApprovedPhotoBGCredential)
+    case managedIOSPhoto(XDriveIOSManagedOriginalAuthority)
 }
 
 /// One native staged file -> existing Go UploadSession / CAS protocol.
@@ -114,6 +114,17 @@ final class XDriveNativeUploadSessionTransport {
         }
         try self.init(origin: origin,
                       authorization: .scopedIOSBackground(approvedBackgroundGrant))
+    }
+
+    /// Native Owner JWT and exact registered iPhone Source proof; accepted
+    /// only on /ios/photos/managed UploadSession aliases, never on /nodes.
+    convenience init(origin: URL, managedForeground authority: XDriveIOSManagedOriginalAuthority)
+        throws {
+        guard authority.matches(authority.owner),
+              authority.owner.origin == origin else {
+            throw XDriveNativeUploadError.unauthorizedOrRejected(403)
+        }
+        try self.init(origin: origin, authorization: .managedIOSPhoto(authority))
     }
 
     private init(origin: URL, authorization: XDriveNativeUploadAuthorization) throws {
@@ -166,6 +177,15 @@ final class XDriveNativeUploadSessionTransport {
                   ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
               }) else {
             throw XDriveNativeUploadError.invalidLocalFile
+        }
+        if case .managedIOSPhoto(let authority) = authorization {
+            guard authority.matches(authority.owner),
+                  parentID == authority.destination.targetNodeID,
+                  XDriveIOSBackgroundOriginalNamePolicy.valid(name),
+                  expectedSize > 0,
+                  expectedSize <= 1_073_741_824 + 1_048_576 else {
+                throw XDriveNativeUploadError.unauthorizedOrRejected(403)
+            }
         }
         if case .scopedIOSBackground(let credential) = authorization {
             guard parentID == credential.rootNodeID,
@@ -385,6 +405,11 @@ final class XDriveNativeUploadSessionTransport {
                 throw XDriveNativeUploadError.invalidServerResponse
             }
             targetPath = path
+        case .managedIOSPhoto(let authority):
+            guard authority.matches(authority.owner),
+                  let translated = XDriveIOSManagedPhotoUploadRoutePolicy.translatedPath(path)
+            else { throw XDriveNativeUploadError.unauthorizedOrRejected(403) }
+            targetPath = translated
         case .scopedIOSBackground(let approved):
             // Device-side offline stop must fence EVERY subsequent POST/PUT
             // and ACK read, even if this writer captured an older credential.
@@ -418,6 +443,15 @@ final class XDriveNativeUploadSessionTransport {
         switch authorization {
         case .foregroundBearer(let token):
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        case .managedIOSPhoto(let authority):
+            // No upload without a current Owner AND the enrolled iPhone
+            // Device proof. Go rechecks both and the Source/Node in SQL.
+            request.setValue("Bearer " + authority.accessToken,
+                             forHTTPHeaderField: "Authorization")
+            request.setValue(authority.device.deviceID,
+                             forHTTPHeaderField: "X-XDrive-Device-ID")
+            request.setValue(authority.device.secret,
+                             forHTTPHeaderField: "X-XDrive-Device-Token")
         case .scopedIOSBackground(let credential):
             // Never attach these long-lived secrets to a background
             // URLSession: its system redirect callbacks differ. The existing
