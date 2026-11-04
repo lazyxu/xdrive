@@ -68,7 +68,9 @@ test('paused schedule resumes only with explicit consent, zero trusted pending, 
   assert.match(resume, /XDriveIOSOriginalRunGate\.shared\.release\(gate\)/)
   assert.match(ui, /\.confirmationDialog\("确认恢复当前 Owner 的前台自动备份？"/)
   assert.match(ui, /receipts\.pending == 0 && receipts\.hasLedgerScope/)
-  assert.match(store, /windowIndex: existing\?\.windowIndex \?\? 0/)
+  assert.match(store, /windowIndex: sameTarget \? \(existing\?\.windowIndex \?\? 0\) : 0/)
+  assert.match(store, /targetSourceID: sourceID/)
+  assert.match(store, /targetNodeID: targetNodeID/)
 })
 
 test('system BG pause resumes only after separate consent and trusted zero-pending Owner proof', () => {
@@ -109,6 +111,15 @@ test('system BG pause resumes only after separate consent and trusted zero-pendi
   assert.match(store, /state\.dueAt = now/)
   const middle = store.slice(store.indexOf('func resumeAfterTrustedReview('),
     store.indexOf('func pause(owner:', store.indexOf('func resumeAfterTrustedReview(')))
-  assert.doesNotMatch(middle, /state\.windowIndex =|state\.libraryChangeEpoch =|state\.libraryAuthorizationRaw =|disable\(owner:/)
+  const targetReset = middle.slice(
+    middle.indexOf('if !XDriveIOSPhotoBackupDestinationCursorPolicy.sameManagedTarget('),
+    middle.indexOf('// The OS request is scheduled separately.'))
+  assert.match(targetReset, /state\.windowIndex = 0/)
+  assert.match(targetReset, /state\.libraryChangeEpoch = nil/)
+  assert.match(targetReset, /state\.libraryAuthorizationRaw = nil/)
+  assert.match(targetReset, /state\.targetSourceID = approved\.sourceID/)
+  assert.match(targetReset, /state\.targetNodeID = approved\.targetNodeID/)
+  assert.match(middle, /state\.dueAt = now/)
+  assert.doesNotMatch(middle, /disable\(owner:/)
   assert.doesNotMatch(task, /resumeAfterTrustedReview\(/)
 })

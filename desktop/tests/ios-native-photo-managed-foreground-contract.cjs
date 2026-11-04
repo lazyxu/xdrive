@@ -61,7 +61,8 @@ test('managed route uses separate device proof, deny-redirects, and actual final
   assert.match(transport, /authority\.device\.deviceID/);
   assert.match(transport, /authority\.device\.secret/);
   assert.match(transport, /completionHandler\(nil\)/);
-  assert.match(auth, /parts\.path = "\/api\/v1\/ios\/photos\/managed\/receipts\/nodes\\\(receipt\.nodeID\)"/);
+  assert.ok(auth.includes('parts.path = "/api/v1/ios/photos/managed/receipts/nodes/\\(receipt.nodeID)"'),
+    'managed receipt readback must use the exact route and receipt Node ID');
   assert.match(auth, /node\.parent_id == parentID/);
   assert.match(auth, /node\.sha256\.lowercased\(\) == receipt\.sha256/);
   assert.match(auth, /node\.revision == receipt\.revision/);
