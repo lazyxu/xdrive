@@ -2,6 +2,9 @@ import type {
   XDriveNoteDetail, XDriveNoteSource, XDriveNoteSummary,
   XDriveNotesDataPort, XDriveNoteVersion,
 } from '../../../ui/shared/src/mui/NotesPage'
+import {
+  xDriveNotesPlanManualExport, xDriveNotesSelectManualExport,
+} from '../../../ui/shared/src/notes-manual-import'
 
 /** Only eight explicit Notes operations cross Electron IPC. No Server token,
  * origin selection, arbitrary URL or general-purpose HTTP proxy is exposed. */
@@ -10,7 +13,8 @@ export type DesktopNotesAgentPort = Pick<
   'cloudNotesInitialize' | 'cloudNotesList' | 'cloudNotesRead' |
   'cloudNotesCreate' | 'cloudNotesUpdate' | 'cloudNotesDelete' |
   'cloudNotesVersions' | 'cloudNotesReadVersion' | 'cloudDownload' |
-  'cloudNotesUploadImage' | 'cloudNotesReadImage'
+  'cloudNotesUploadImage' | 'cloudNotesReadImage' |
+  'cloudNotesImportIOS' | 'cloudNotesImportIOSImage'
 >
 
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
@@ -187,6 +191,22 @@ export function createDesktopNotesDataPort(
       }
       return row
     },
+    async importIOSMarkdown(value) {
+      checkedTitle(value.title)
+      checkedMarkdown(value.markdown)
+      await ready()
+      // A single Markdown file has no stable Apple Notes identity. Keep it as
+      // a distinct read-only snapshot; only a bundle import creates a private
+      // one-shot transaction ID for the image-follow-up version update.
+      const row = checkedRow(await write(() => agent.cloudNotesImportIOS({
+        title: value.title, markdown: value.markdown, external_id: '',
+      })))
+      if (row.source !== 'ios_notes' || row.title !== value.title ||
+          row.bytes !== encoder.encode(value.markdown).byteLength || row.revision !== 1) {
+        throw new Error('iOS 备份导入回执与提交内容不匹配。')
+      }
+      return row
+    },
     async saveNote(id, value) {
       checkedID(id)
       checkedTitle(value.title)
@@ -238,6 +258,89 @@ export function createDesktopNotesDataPort(
     // display upload/image actions until the same Owner's Agent explicitly
     // advertises cloud-notes-images.
     ...(imagesEnabled ? {
+      /** One explicitly selected Markdown file and its exact referenced local images. */
+      async importIOSMarkdownBundle(files: readonly File[], signal?: AbortSignal) {
+        const { markdownFile, assets } = xDriveNotesSelectManualExport(files)
+        checkOwner(signal)
+        const bytes = await markdownFile.arrayBuffer()
+        checkOwner(signal)
+        let markdown: string
+        try {
+          markdown = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+        } catch {
+          throw new Error('Markdown 文件不是有效的 UTF-8 编码。')
+        }
+        const plan = xDriveNotesPlanManualExport(markdown, markdownFile, assets)
+        await ready()
+        checkOwner(signal)
+        if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
+          throw new Error('当前 Desktop 不支持安全的导入会话标识。')
+        }
+        const external_id = 'manual:' + crypto.randomUUID()
+        let created: XDriveNoteSummary | null = null
+        try {
+          created = checkedRow(await write(() => agent.cloudNotesImportIOS({
+            title: plan.title, markdown, external_id,
+          })))
+          checkOwner(signal)
+          if (created.source !== 'ios_notes' || created.title !== plan.title ||
+              created.revision < 1 || created.node_id <= 0) {
+            throw new Error('服务器返回的备份来源或文件节点无效。')
+          }
+          const noteID = checkedID(created.id)
+          const assetPaths = new Map<string, string>()
+          const uploaded = new Map<File, string>()
+          for (const reference of plan.references) {
+            checkOwner(signal)
+            let relative = uploaded.get(reference.asset)
+            if (!relative) {
+              const data = await reference.asset.arrayBuffer()
+              checkOwner(signal)
+              if (data.byteLength !== reference.asset.size ||
+                  data.byteLength <= 0 || data.byteLength > 20 * 1_048_576) {
+                throw new Error('图片在读取期间发生变化或超过 20 MiB。')
+              }
+              const receipt = await write(() => agent.cloudNotesImportIOSImage(noteID, data))
+              checkOwner(signal)
+              const match = checkedAssetPath(noteID, receipt.relative_path)
+              const digest = await crypto.subtle.digest('SHA-256', data)
+              checkOwner(signal)
+              const hash = Array.from(new Uint8Array(digest),
+                value => value.toString(16).padStart(2, '0')).join('')
+              if (!Number.isSafeInteger(receipt.node_id) || receipt.node_id <= 0 ||
+                  receipt.filename !== match.filename || receipt.bytes !== data.byteLength ||
+                  receipt.content_type !== match.mime ||
+                  !sha256.test(receipt.sha256) || hash.toLowerCase() !== receipt.sha256.toLowerCase()) {
+                throw new Error('服务器返回的图片归属、大小或 SHA-256 无效。')
+              }
+              relative = receipt.relative_path
+              uploaded.set(reference.asset, relative)
+            }
+            assetPaths.set(reference.source, relative)
+          }
+          if (!plan.references.length) return created
+          const revised = plan.rewrite(assetPaths)
+          if (revised === markdown) return created
+          checkOwner(signal)
+          const updated = checkedRow(await write(() => agent.cloudNotesImportIOS({
+            title: plan.title, markdown: revised, external_id,
+          })))
+          checkOwner(signal)
+          if (updated.source !== 'ios_notes' || updated.id !== created.id ||
+              updated.node_id !== created.node_id || updated.revision <= created.revision) {
+            throw new Error('原笔记未完成图片引用的版本更新。')
+          }
+          return updated
+        } catch (error) {
+          if (signal?.aborted) throw error
+          if (created) {
+            throw new Error('已创建只读 iOS 备份，但图片或引用未全部完成。请在 iOS 备份中核对笔记 ' +
+              created.id + '，避免重复导入。' +
+              (error instanceof Error ? ' 原因：' + error.message : ''))
+          }
+          throw error
+        }
+      },
       async uploadImage(noteID: string, file: File): Promise<{ relative_path: string }> {
         const id = checkedID(noteID)
         if (id !== id.toLowerCase() || !file || file.size <= 0 ||

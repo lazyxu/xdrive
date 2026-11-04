@@ -47,6 +47,15 @@ func (f *notesIPCControllerFixture) CloudNotesCreate(_ context.Context, write cl
 	f.calls = append(f.calls, "create:"+write.Title)
 	return f.receipt(write.Markdown, 1), nil
 }
+func (f *notesIPCControllerFixture) CloudNotesImportIOS(
+	_ context.Context, write client.NotesImportWrite,
+) (client.NotesRow, error) {
+	f.calls = append(f.calls, "import-ios:"+write.ExternalID)
+	row := f.receipt(write.Markdown, 1)
+	row.Source = "ios_notes"
+	row.Title = write.Title
+	return row, nil
+}
 func (f *notesIPCControllerFixture) CloudNotesUpdate(_ context.Context, id string, write client.NotesWrite) (client.NotesRow, error) {
 	f.calls = append(f.calls, "update:"+id)
 	return f.receipt(write.Markdown, 2), nil
@@ -131,5 +140,49 @@ func TestDesktopNotesIPCRequiresLoopbackAndOwnerMethods(t *testing.T) {
 	old := invokeNotesIPC(h, http.MethodGet, "/v1/cloud/notes/version-content?node_id=87&version_id=91", "", "secret")
 	if old.Code != http.StatusOK || !strings.Contains(old.Body.String(), "\"markdown\":\"text\"") {
 		t.Fatalf("Notes old Markdown was not preserved: %d %s", old.Code, old.Body.String())
+	}
+}
+
+
+func TestDesktopNotesManualIOSImportIsExplicitAndBackupOnlyBounded(t *testing.T) {
+	f := &notesIPCControllerFixture{}
+	h := newDesktopIPCHandler(f, "secret", nil)
+	body := `{"title":"Manual export","markdown":"# Apple","external_id":"manual:00000000-0000-4000-8000-000000000001"}`
+	res := invokeNotesIPC(h, http.MethodPost, "/v1/cloud/notes/import-ios", body, "secret")
+	if res.Code != http.StatusCreated {
+		t.Fatalf("manual iOS Notes import failed: %d %s", res.Code, res.Body.String())
+	}
+	var row client.NotesRow
+	if err := json.Unmarshal(res.Body.Bytes(), &row); err != nil {
+		t.Fatal(err)
+	}
+	if row.Source != "ios_notes" || row.Title != "Manual export" || row.Revision != 1 {
+		t.Fatalf("manual import did not return a read-only archive row: %+v", row)
+	}
+	if len(f.calls) != 1 || !strings.HasPrefix(f.calls[0], "import-ios:manual:") {
+		t.Fatalf("unexpected manual import calls: %v", f.calls)
+	}
+	backup := newDesktopIPCHandler(f, "secret", nil, true)
+	res = invokeNotesIPC(backup, http.MethodPost, "/v1/cloud/notes/import-ios", body, "secret")
+	if res.Code != http.StatusCreated {
+		t.Fatalf("Backup-only manual iOS import unavailable: %d %s", res.Code, res.Body.String())
+	}
+	if fullAgentOnlyRequest(http.MethodPost, "/v1/cloud/notes/import-ios") ||
+		!fullAgentOnlyRequest(http.MethodGet, "/v1/cloud/notes/import-ios") ||
+		!fullAgentOnlyRequest(http.MethodPut, "/v1/cloud/notes/import-ios") {
+		t.Fatal("Backup-only iOS import route must admit POST only")
+	}
+	before := len(f.calls)
+	for _, invalid := range []string{
+		`{"title":"Manual export","markdown":"# Apple","external_id":"native-apple-id"}`,
+		`{"title":"Manual export","markdown":"# Apple","external_id":"manual:00000000-0000-4000-8000-000000000001","unexpected":true}`,
+	} {
+		res = invokeNotesIPC(h, http.MethodPost, "/v1/cloud/notes/import-ios", invalid, "secret")
+		if res.Code < 400 {
+			t.Fatalf("invalid manual import body admitted: %d %s", res.Code, res.Body.String())
+		}
+	}
+	if len(f.calls) != before {
+		t.Fatalf("invalid manual import reached Owner controller: %v", f.calls)
 	}
 }

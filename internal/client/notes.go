@@ -168,6 +168,43 @@ func (c *Client) NotesRead(ctx context.Context, id string) (NotesDetail, error) 
 	return out, nil
 }
 
+type NotesImportWrite struct {
+	Title      string `json:"title"`
+	Markdown   string `json:"markdown"`
+	ExternalID string `json:"external_id"`
+}
+
+// NotesImportIOS creates one read-only snapshot from an explicit manual export.
+// A manual UUID is only a transaction identity for the image-follow-up update;
+// it is never presented as an Apple Notes native identity.
+func (c *Client) NotesImportIOS(ctx context.Context, write NotesImportWrite) (NotesRow, error) {
+	content := NotesWrite{Title: write.Title, Markdown: write.Markdown}
+	if err := validateNotesWrite(content); err != nil {
+		return NotesRow{}, err
+	}
+	if write.ExternalID != "" {
+		const prefix = "manual:"
+		if !strings.HasPrefix(write.ExternalID, prefix) {
+			return NotesRow{}, errors.New("invalid manual Notes import identity")
+		}
+		rawID := strings.TrimPrefix(write.ExternalID, prefix)
+		parsed, err := uuid.Parse(rawID)
+		if err != nil || parsed.String() != strings.ToLower(rawID) {
+			return NotesRow{}, errors.New("invalid manual Notes import identity")
+		}
+	}
+	var out NotesRow
+	if err := c.json(ctx, http.MethodPost, "/api/v1/notes/ios/import", write, &out); err != nil {
+		return out, err
+	}
+	if out.Source != "ios_notes" || out.Title != strings.TrimSpace(write.Title) ||
+		(write.ExternalID == "" && out.Revision != 1) ||
+		notesContentReceipt(out, write.Markdown) != nil {
+		return NotesRow{}, errors.New("iOS Notes import receipt mismatch")
+	}
+	return out, nil
+}
+
 func (c *Client) NotesCreate(ctx context.Context, write NotesWrite) (NotesRow, error) {
 	if err := validateNotesWrite(write); err != nil {
 		return NotesRow{}, err

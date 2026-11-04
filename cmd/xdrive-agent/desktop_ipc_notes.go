@@ -23,6 +23,20 @@ type desktopIPCNotesPort interface {
 	CloudNotesReadVersion(context.Context, uint64, uint64) (string, error)
 }
 
+type desktopIPCNotesImportPort interface {
+	CloudNotesImportIOS(context.Context, client.NotesImportWrite) (client.NotesRow, error)
+}
+
+func (h *desktopIPCHandler) notesImportPort(w http.ResponseWriter) (desktopIPCNotesImportPort, bool) {
+	port, ok := h.ctrl.(desktopIPCNotesImportPort)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "notes_import_unavailable",
+			"Owner iOS Notes import transport is unavailable")
+		return nil, false
+	}
+	return port, true
+}
+
 func (h *desktopIPCHandler) notesPort(w http.ResponseWriter) (desktopIPCNotesPort, bool) {
 	// Backup-only Notes are admitted only by the exact route allowlist in
 	// restrictBackupOnlyEndpoints. The loopback bearer and current Owner
@@ -92,6 +106,23 @@ func (h *desktopIPCHandler) cloudNotesRead(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, value)
+}
+
+func (h *desktopIPCHandler) cloudNotesImportIOS(w http.ResponseWriter, r *http.Request) {
+	port, ok := h.notesImportPort(w)
+	if !ok {
+		return
+	}
+	var input client.NotesImportWrite
+	if !decodeDesktopIPCJSONLimit(w, r, &input, 6*client.NotesMaxMarkdownBytes+8192) {
+		return
+	}
+	value, err := port.CloudNotesImportIOS(r.Context(), input)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusCreated, value)
 }
 
 func (h *desktopIPCHandler) cloudNotesCreate(w http.ResponseWriter, r *http.Request) {

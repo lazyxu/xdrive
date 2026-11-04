@@ -195,3 +195,48 @@ func TestNotesReadVersionBoundsRawHTTPBody(t *testing.T) {
 		})
 	}
 }
+
+
+func TestNotesImportIOSManualTransactionIdentityIsVersionedAndBounded(t *testing.T) {
+	const externalID = "manual:00000000-0000-4000-8000-000000000001"
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/notes/ios/import" ||
+			r.Header.Get("Authorization") != "Bearer owner-bearer" {
+			t.Errorf("unexpected iOS import request: %s %s", r.Method, r.URL)
+		}
+		var body NotesImportWrite
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("invalid import body: %v", err)
+		}
+		if body.ExternalID != externalID || body.Title != "Manual export" {
+			t.Errorf("manual import identity/title mismatch: %+v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(testNotesReceipt(
+			body.Title, body.Markdown, "ios_notes", uint64(requests)))
+	}))
+	defer srv.Close()
+	cli := New(srv.URL, "owner-bearer")
+	first, err := cli.NotesImportIOS(context.Background(), NotesImportWrite{
+		Title: "Manual export", Markdown: "# First", ExternalID: externalID,
+	})
+	if err != nil || first.Source != "ios_notes" || first.Revision != 1 {
+		t.Fatalf("manual iOS import failed: %+v %v", first, err)
+	}
+	second, err := cli.NotesImportIOS(context.Background(), NotesImportWrite{
+		Title: "Manual export", Markdown: "# With images", ExternalID: externalID,
+	})
+	if err != nil || second.ID != first.ID || second.Revision != 2 {
+		t.Fatalf("manual iOS image follow-up did not version the same note: %+v %v", second, err)
+	}
+	if _, err := cli.NotesImportIOS(context.Background(), NotesImportWrite{
+		Title: "Manual export", Markdown: "# Bad", ExternalID: "native-apple-id",
+	}); err == nil {
+		t.Fatal("accepted an unverified Apple Notes native identity as a manual transaction ID")
+	}
+	if requests != 2 {
+		t.Fatalf("invalid import identity reached Server: %d requests", requests)
+	}
+}

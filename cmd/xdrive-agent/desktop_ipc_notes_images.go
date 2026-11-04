@@ -17,6 +17,7 @@ import (
 // write operation or become a general Server/file proxy.
 type desktopIPCNotesImagePort interface {
 	CloudNotesUploadImage(context.Context, string, []byte) (client.NotesImageReceipt, error)
+	CloudNotesImportIOSImage(context.Context, string, []byte) (client.NotesImageReceipt, error)
 	CloudNotesReadImage(context.Context, string, string) ([]byte, error)
 }
 
@@ -83,6 +84,48 @@ func (h *desktopIPCHandler) cloudNotesUploadImage(w http.ResponseWriter, r *http
 		!strings.EqualFold(receipt.SHA256, hex.EncodeToString(hash[:])) {
 		writeDesktopIPCError(w, http.StatusBadGateway, "notes_image_receipt_invalid",
 			"Owner Notes image receipt mismatch; check the Note before retry")
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusCreated, receipt)
+}
+
+// POST imports one selected immutable image into the read-only iOS archive.
+// It is separate from the editable Mine-image route and never accepts a path.
+func (h *desktopIPCHandler) cloudNotesImportIOSImage(w http.ResponseWriter, r *http.Request) {
+	port, ok := h.notesImagePort(w)
+	if !ok {
+		return
+	}
+	id := r.PathValue("id")
+	if !validDesktopNotesImageID(id) || r.URL.RawQuery != "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_notes_image",
+			"invalid Note identity or query")
+		return
+	}
+	var payload struct {
+		Image []byte
+	}
+	const maxPayload = client.NotesMaxImageBytes*4/3 + 8192
+	if !decodeDesktopIPCJSONLimit(w, r, &payload, maxPayload) {
+		return
+	}
+	if len(payload.Image) == 0 || len(payload.Image) > client.NotesMaxImageBytes {
+		writeDesktopIPCError(w, http.StatusRequestEntityTooLarge, "invalid_notes_image",
+			"iOS Notes image must be nonempty and at most 20 MiB")
+		return
+	}
+	receipt, err := port.CloudNotesImportIOSImage(r.Context(), id, payload.Image)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	name, mime, valid := client.NotesImageFilename(id, receipt.RelativePath)
+	hash := sha256.Sum256(payload.Image)
+	if !valid || receipt.NodeID == 0 || receipt.Filename != name ||
+		receipt.ContentType != mime || receipt.Bytes != int64(len(payload.Image)) ||
+		!strings.EqualFold(receipt.SHA256, hex.EncodeToString(hash[:])) {
+		writeDesktopIPCError(w, http.StatusBadGateway, "notes_image_receipt_invalid",
+			"Owner iOS Notes image receipt mismatch; check the backup before retry")
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusCreated, receipt)
