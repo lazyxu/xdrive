@@ -37,7 +37,7 @@ test('iOS Markdown Notes client honors verified Owner and real versioned Server 
 
 test('iOS native Notes page shows source-specific edit policies, autosave and history', () => {
   const screen = file('ios/XDriveIOS/NativeNotesScreen.swift')
-  assert.match(screen, /Picker\("备忘录来源", selection: \$source\)/)
+  assert.match(screen, /Picker\("笔记来源", selection: \$source\)/)
   assert.match(screen, /TextEditor\(text: \$markdown\)/)
   assert.match(screen, /XDriveIOSNativeNotesMarkdownPreview\(/)
   assert.match(screen, /let proof = try await login\.verifiedAuthorization\(\)/)
