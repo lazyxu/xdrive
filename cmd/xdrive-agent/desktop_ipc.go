@@ -611,6 +611,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PUT /v1/cloud/notes/{id}", h.cloudNotesUpdate)
 	mux.HandleFunc("DELETE /v1/cloud/notes/{id}", h.cloudNotesDelete)
 	mux.HandleFunc("GET /v1/cloud/notes/{id}/versions", h.cloudNotesVersions)
+	mux.HandleFunc("POST /v1/cloud/notes/{id}/images", h.cloudNotesUploadImage)
+	mux.HandleFunc("GET /v1/cloud/notes/{id}/images", h.cloudNotesReadImage)
 	mux.HandleFunc("GET /v1/cloud/children", h.cloudChildren)
 	mux.HandleFunc("GET /v1/cloud/children/position", h.cloudChildPosition)
 	mux.HandleFunc("GET /v1/cloud/changes", h.cloudChanges)
@@ -975,6 +977,14 @@ func (h *desktopIPCHandler) viewerDownloadCapabilities() []string {
 	// Backup-only IPC Notes allowlist permits its operations.
 	if _, notes := h.ctrl.(desktopIPCNotesPort); notes {
 		capabilities = append(capabilities, "cloud-notes")
+	}
+	// Backup-only declares binary Notes only when BOTH the owning Notes
+	// interface and the bounded image port are implemented. Exact route
+	// filtering still applies at request time, after loopback authentication.
+	if _, images := h.ctrl.(desktopIPCNotesImagePort); images {
+		if _, notes := h.ctrl.(desktopIPCNotesPort); notes {
+			capabilities = append(capabilities, "cloud-notes-images")
+		}
 	}
 	if !h.backupOnly {
 		if _, supported := h.ctrl.(interface {
