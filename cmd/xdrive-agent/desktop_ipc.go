@@ -110,6 +110,7 @@ var desktopIPCCapabilities = []string{
 	"upload-conflict-preflight-batch",
 	"upload-conflict-policy",
 	"server-update",
+	"server-offline-import",
 	"media-gallery",
 	"media-index-status",
 	"media-selection-snapshot",
@@ -742,6 +743,16 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
 	mux.HandleFunc("GET /v1/server-update", h.serverUpdateState)
 	mux.HandleFunc("POST /v1/server-update", h.startServerUpdate)
+	// Renderer cannot provide a Server credential or Host path; local Agent IPC
+	// forwards only fixed admin import identities and bounded bytes.
+	mux.HandleFunc("GET /v1/offline-imports", h.offlineImport)
+	mux.HandleFunc("POST /v1/offline-imports", h.offlineImport)
+	mux.HandleFunc("GET /v1/offline-imports/{id}", h.offlineImport)
+	mux.HandleFunc("DELETE /v1/offline-imports/{id}", h.offlineImport)
+	mux.HandleFunc("POST /v1/offline-imports/{id}/files/{name}", h.offlineImport)
+	mux.HandleFunc("PUT /v1/offline-imports/{id}/files/{name}/chunks/{index}", h.offlineImport)
+	mux.HandleFunc("POST /v1/offline-imports/{id}/files/{name}/finalize", h.offlineImport)
+	mux.HandleFunc("POST /v1/offline-imports/{id}/start", h.offlineImport)
 	mux.HandleFunc("GET /v1/cloud/storage-stats", h.cloudStorageStats)
 	mux.HandleFunc("POST /v1/cloud/storage-cache/cleanup", h.cloudCleanupStorageCache)
 	mux.HandleFunc("GET /v1/cloud/trash", h.cloudTrash)

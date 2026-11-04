@@ -8022,6 +8022,94 @@ function registerIPCHandlers() {
       requireAgentCapability(hello, 'cloud-files')
       return requireAgentClient().cloudQuota(signal)
     }), false))
+  // Offline packages must be sent only by the trusted Desktop main frame.
+  // Unlike general file uploads, this IPC always forwards to Server
+  // requireAdmin via authenticated Go Agent; no Server credential or host
+  // executable path is accepted from the renderer.
+  const offlineID = /^[a-f0-9]{32}$/
+  const offlineSHA = /^[a-f0-9]{64}$/
+  const offlinePackageName = /^xdrive-(app|postgres|media-worker|ai-runtime|ai-models)-[a-f0-9]{12}\.tar\.gz$/
+  const validOfflineName = (name: unknown): name is string =>
+    typeof name === 'string' && (
+      name === 'manifest.json' || name === 'xdrive-offline-linux-amd64' ||
+      name === 'delivery.json' || name === 'delivery-attestation.jsonl' ||
+      offlinePackageName.test(name)
+    )
+  const offlineImportClient = async (event: Electron.IpcMainInvokeEvent) => {
+    if (!mainWindow || mainWindow.isDestroyed() ||
+      event.sender !== mainWindow.webContents ||
+      event.senderFrame !== event.sender.mainFrame ||
+      agentState.status?.role !== 'admin') {
+      throw new AgentIPCError('offline_admin_denied', 403, 'Only the authenticated Desktop administrator can import offline updates.')
+    }
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'server-offline-import')
+    return requireAgentClient()
+  }
+  ipcMain.handle('agent:offline-import', (event, actionValue: unknown, inputValue: unknown) =>
+    runAgentAction<unknown>(async () => {
+      const client = await offlineImportClient(event)
+      const input = inputValue !== null && typeof inputValue === 'object'
+        ? inputValue as Record<string, unknown> : {}
+      const id = input.id
+      const name = input.name
+      if (actionValue !== 'list' && actionValue !== 'create' &&
+          (typeof id !== 'string' || !offlineID.test(id))) {
+        throw new AgentIPCError('invalid_offline_id', 0, 'Invalid offline import ID.')
+      }
+      switch (actionValue) {
+        case 'list': return client.offlineImports()
+        case 'create': return client.offlineImportCreate()
+        case 'get': return client.offlineImportGet(id as string)
+        case 'remove': return client.offlineImportDelete(id as string)
+        case 'register': {
+          if (!validOfflineName(name) || typeof input.size !== 'number' ||
+            !Number.isSafeInteger(input.size) || input.size <= 0 ||
+            input.size > 8 * 1024 * 1024 * 1024 ||
+            (input.sha256 !== undefined && (typeof input.sha256 !== 'string' ||
+              (input.sha256 !== '' && !offlineSHA.test(input.sha256))))) {
+            throw new AgentIPCError('invalid_offline_file', 0, 'Invalid offline file or size.')
+          }
+          return client.offlineImportRegister(id as string, name, input.size, (input.sha256 as string) || '')
+        }
+        case 'finalize':
+          if (!validOfflineName(name)) throw new AgentIPCError('invalid_offline_file', 0, 'Invalid offline filename.')
+          return client.offlineImportFinalize(id as string, name)
+        case 'start':
+          if (typeof input.manifest !== 'string' || !offlineSHA.test(input.manifest) ||
+              typeof input.go !== 'string' || !offlineSHA.test(input.go) ||
+              typeof input.backup !== 'boolean') {
+            throw new AgentIPCError('invalid_offline_trust', 0, 'Independent publisher SHA-256 is required.')
+          }
+          return client.offlineImportStart(id as string, input.manifest, input.go, input.backup)
+        default:
+          throw new AgentIPCError('invalid_offline_action', 0, 'Unsupported offline administration action.')
+      }
+    }, false))
+  ipcMain.handle('agent:offline-import-chunk', (event, idValue: unknown, nameValue: unknown,
+    indexValue: unknown, byteValue: unknown, shaValue: unknown) =>
+    runAgentAction<void>(async () => {
+      const client = await offlineImportClient(event)
+      if (typeof idValue !== 'string' || !offlineID.test(idValue) ||
+          !validOfflineName(nameValue) ||
+          typeof indexValue !== 'number' || !Number.isSafeInteger(indexValue) ||
+          indexValue < 0 || indexValue > 1 << 20 ||
+          typeof shaValue !== 'string' || !offlineSHA.test(shaValue)) {
+        throw new AgentIPCError('invalid_offline_chunk', 0, 'Invalid offline chunk identity.')
+      }
+      let data: ArrayBuffer
+      if (byteValue instanceof ArrayBuffer) {
+        data = byteValue
+      } else if (ArrayBuffer.isView(byteValue)) {
+        data = byteValue.buffer.slice(byteValue.byteOffset, byteValue.byteOffset + byteValue.byteLength) as ArrayBuffer
+      } else {
+        throw new AgentIPCError('invalid_offline_chunk', 0, 'Offline chunk data must be binary.')
+      }
+      if (data.byteLength === 0 || data.byteLength > 8 * 1024 * 1024) {
+        throw new AgentIPCError('offline_chunk_too_large', 0, 'Offline chunk exceeds 8 MiB.')
+      }
+      await client.offlineImportChunk(idValue, nameValue, indexValue, data, shaValue)
+    }, false))
   ipcMain.handle('agent:get-server-update', () => runAgentAction<AgentServerUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'server-update')

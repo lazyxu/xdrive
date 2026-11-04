@@ -9,6 +9,8 @@ import {
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveBuildInfoCard } from './BuildInfoCard'
 import { XDriveServerUpdateCard } from './ServerUpdateCard'
+import { XDriveOfflineSystemUpdatePanel } from './OfflineSystemUpdatePanel'
+import type { XDriveOfflineImportPort } from '../offline-update'
 import { useXDriveServerUpdateController, type XDriveServerUpdatePort } from './ServerUpdateController'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
@@ -18,6 +20,7 @@ export function XDriveSystemUpdatePage({
   updatePort,
   buildInfo = [],
   clientUpdateContent,
+  offlinePort,
   supported = true,
   disabled = false,
   initialChannel = 'stable',
@@ -28,6 +31,7 @@ export function XDriveSystemUpdatePage({
   updatePort: XDriveServerUpdatePort
   buildInfo?: { title: string; info?: BuildInfo | null }[]
   clientUpdateContent?: ReactNode
+  offlinePort?: XDriveOfflineImportPort
   supported?: boolean
   disabled?: boolean
   initialChannel?: XDriveServerUpdateChannel
@@ -81,6 +85,10 @@ export function XDriveSystemUpdatePage({
           onStart={() => { if (!actionDisabled) setConfirmationOpen(true) }}
         />
         {update.error ? <XDriveStatusAlert tone="warning">{update.error}</XDriveStatusAlert> : null}
+        {offlinePort ? (
+          <XDriveOfflineSystemUpdatePanel port={offlinePort} disabled={actionDisabled}
+            onSubmitted={() => { void update.refresh() }} />
+        ) : null}
         {clientUpdateContent}
       </Stack>
       <XDriveConfirmDialog

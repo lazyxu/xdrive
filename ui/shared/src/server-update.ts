@@ -5,7 +5,7 @@ export type XDriveServerUpdatePhase = 'unavailable' | 'idle' | 'queued' | 'runni
 export interface XDriveServerUpdateState {
   supported: boolean
   state: XDriveServerUpdatePhase
-  source: XDriveServerUpdateSource
+  source: XDriveServerUpdateSource | 'offline'
   channel: XDriveServerUpdateChannel
   backup_file_data?: boolean
   request_id?: string

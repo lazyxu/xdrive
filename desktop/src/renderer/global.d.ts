@@ -211,10 +211,20 @@ declare global {
   type AgentUpdateMode = 'manual' | 'check' | 'download' | 'install'
   type AgentUpdateSource = 'github' | 'gitlab'
 
+  type AgentOfflineImportStatus = {
+    id: string
+    chunk_bytes: number
+    ready_to_verify: boolean
+    files: Array<{ name: string; state: 'uploading' | 'ready'; size: number; uploaded_bytes: number; upload_sha256?: string }>
+  }
+  type AgentOfflineImportCreated = { id: string; chunk_bytes: number }
+  type AgentOfflineImportList = { items: Array<{ id: string; modified_at: string }> }
+  type AgentOfflineImportFinalize = { name: string; state: 'ready'; upload_sha256: string }
+
   type AgentServerUpdateState = {
     supported: boolean
     state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
-    source: 'github' | 'gitlab' | 'xdrive'
+    source: 'github' | 'gitlab' | 'xdrive' | 'offline'
     channel: 'stable' | 'master'
     request_id?: string
     stage?: string
@@ -1106,6 +1116,10 @@ declare global {
         cloudQuota: (requestID?: string) => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
         startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
+        offlineImport: <T>(action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'start',
+          input?: Record<string, unknown>) => Promise<DesktopResult<T>>
+        offlineImportChunk: (id: string, name: string, index: number, data: ArrayBuffer, sha256: string) =>
+          Promise<DesktopResult<void>>
         cloudStorageStats: (requestID?: string) => Promise<DesktopResult<AgentCloudStorageStats>>
         cloudCleanupStorageCache: (kind: AgentStorageCacheCleanupKind) => Promise<DesktopResult<AgentStorageCacheCleanup>>
         cloudTrash: () => Promise<DesktopResult<AgentCloudNode[]>>
