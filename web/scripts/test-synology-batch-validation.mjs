@@ -36,6 +36,12 @@ for (const required of [
   'return () => { active = false; abort.abort() }',
 ]) assert.ok(progress.includes(required), 'DSM scheduled Source status refresh lost: ' + required)
 assert.ok(!progress.includes('if (!batch?.running'), 'idle scheduled Source was not observed')
+for (const required of [
+  "已跳过 {batch.skipped_files.toLocaleString('zh-CN')}",
+  "未支持 {batch.unsupported_files.toLocaleString('zh-CN')}",
+  "待核对 {batch.uncertain_files.toLocaleString('zh-CN')}",
+  '自动调度不会依据不确定收据继续',
+]) assert.ok(progress.includes(required), 'DSM actual Agent count visibility lost: ' + required)
 // Unattended scheduled runs also appear in the same Source's history while
 // expanded. Never poll every NAS Source or retain timers across Owner switches.
 const localPanel = fs.readFileSync(path.join(root,
