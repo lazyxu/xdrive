@@ -538,7 +538,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                     onPageHidden: { hiddenOffset in
                                         dragLoadedPages.removeValue(forKey: hiddenOffset)
                                     },
-                                    onFailure: { invalidate(with: "照片库已变化，旧页面已废弃，请重新读取。") }
+                                    onFailure: {
+                                        exactDateTarget = nil
+                                        invalidate(with: "照片库已变化，旧页面已废弃，请重新读取。")
+                                    }
                                 )
                                 .onAppear { savedOffset = offset }
                             }
@@ -769,6 +772,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     private func jumpToEdge(newest: Bool, using scroll: ScrollViewProxy) {
         guard authorized, phase == .active, selected == nil,
               !loading, !actionBusy, !shareBusy, total > 0 else { return }
+        exactDateTarget = nil
         let requested = newest ? 0 : total - 1
         let offset = XDriveIOSNativePhotoVirtualPagePolicy.normalizedAnchor(
             requested: requested, total: total

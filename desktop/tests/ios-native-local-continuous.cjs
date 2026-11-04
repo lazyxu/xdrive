@@ -306,3 +306,11 @@ test('verified PhotoKit slot and capture day restore the exact calendar photo, n
   assert.match(method, /exactDateTarget = nil/)
   assert.doesNotMatch(method, /PHAsset\.fetchAssets|URLSession|UploadSession|UserDefaults/)
 })
+
+
+test('manual edge navigation and stale PhotoKit snapshots cannot replay a pending date jump', () => {
+  assert.match(source, /private func jumpToEdge\(newest: Bool, using scroll: ScrollViewProxy\) \{\s*guard authorized,[\s\S]*?exactDateTarget = nil\s*let requested/)
+  assert.match(source, /onFailure: \{\s*exactDateTarget = nil\s*invalidate\(with: "照片库已变化/)
+  assert.match(source, /\.onChange\(of: mediaFilter\) \{ _ in\s*exactDateTarget = nil/)
+  assert.match(source, /if value != \.active \{\s*exactDateTarget = nil/)
+})

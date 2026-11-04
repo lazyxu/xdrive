@@ -513,7 +513,10 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
             changes.stop()
             model.invalidate()
         }
-        .onChange(of: changes.revision) { _ in model.invalidate() }
+        .onChange(of: changes.revision) { _ in
+            exactDateTarget = nil
+            model.invalidate()
+        }
         .onChange(of: mediaFilter) { _ in
             model.invalidate()
             exactDateTarget = nil

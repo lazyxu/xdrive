@@ -141,3 +141,10 @@ test('date navigation passes a transient exact photo slot into the canonical con
   assert.match(wall, /alignExactDateTarget\(in: page, using: scroll\)/)
   assert.doesNotMatch(browser, /UserDefaults.*exactDateTarget|UploadSession.*exactDateTarget/)
 })
+
+
+test('date jump is retired when the PhotoKit date index becomes stale', () => {
+  assert.match(browser, /\.onChange\(of: changes\.revision\) \{ _ in\s*exactDateTarget = nil\s*model\.invalidate\(\)/)
+  assert.match(browser, /if state != \.active \{\s*model\.invalidate\(\)\s*exactDateTarget = nil/)
+  assert.match(browser, /if visible \{\s*selectedYearKey = nil\s*selectedMonthKey = nil\s*exactDateTarget = nil/)
+})
