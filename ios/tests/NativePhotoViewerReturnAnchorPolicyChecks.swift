@@ -111,6 +111,34 @@ struct XDriveNativePhotoViewerReturnAnchorChecks {
         check(swipe(.nan, 0) == nil, "nonfinite horizontal delta")
         check(swipe(100, .infinity) == nil, "nonfinite vertical delta")
 
+        // Gesture recognition starts on a deliberate one-finger horizontal
+        // drag even without a fast velocity, then the existing 72pt final
+        // swipe threshold and Owner/PhotoKit gates decide navigation.
+        func mayBegin(_ dx: CGFloat, _ dy: CGFloat, _ vx: CGFloat, _ vy: CGFloat,
+                      zoom: CGFloat = 1, minimum: CGFloat = 1) -> Bool {
+            XDriveIOSNativeViewerSwipePolicy.shouldBeginPaging(
+                translationX: dx, translationY: dy,
+                velocityX: vx, velocityY: vy,
+                zoom: zoom, minimum: minimum
+            )
+        }
+        check(mayBegin(12, 0, 0, 0), "slow horizontal drag begins")
+        check(mayBegin(-12, 1, -10, 0), "slow reverse drag begins")
+        check(mayBegin(0, 0, -160, 4), "fast horizontal flick begins")
+        check(!mayBegin(7, 0, 0, 0), "tiny movement does not begin")
+        check(!mayBegin(0, 0, 0, 0), "stationary touch does not begin")
+        check(!mayBegin(2, 24, 2, 220), "vertical drag preserves scrolling")
+        check(!mayBegin(12, 10, 0, 0), "diagonal drag does not steal scroll")
+        check(!mayBegin(0, 0, 160, 140), "diagonal flick does not begin")
+        check(!mayBegin(20, 0, 200, 0, zoom: 1.3), "zoomed image keeps pan")
+        check(mayBegin(12, 0, 0, 0, zoom: 1.005),
+              "base zoom tolerance admits slow drag")
+        check(!mayBegin(12, 0, 0, 0, zoom: 0), "invalid zoom never pages")
+        check(!mayBegin(12, 0, 0, 0, minimum: 0),
+              "invalid minimum never pages")
+        check(!mayBegin(.nan, 0, 200, 0), "NaN translation never pages")
+        check(!mayBegin(12, 0, .infinity, 0), "infinite velocity never pages")
+
         print("native PhotoKit Viewer tile anchor and swipe policy checks passed")
     }
 }

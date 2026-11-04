@@ -27,6 +27,43 @@ test('iOS local, cloud and map-photo still viewers drag decoded images before pa
     'switch only after the visual page transition, not immediately on finger-up')
 })
 
+test('slow deliberate horizontal still drags begin native paging without stealing zoom or vertical scroll', () => {
+  const policy = fs.readFileSync(path.resolve(__dirname,
+    '../../ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift'), 'utf8')
+  const checks = fs.readFileSync(path.resolve(__dirname,
+    '../../ios/tests/NativePhotoViewerReturnAnchorPolicyChecks.swift'), 'utf8')
+  const start = view.indexOf('func gestureRecognizerShouldBegin(')
+  const end = view.indexOf('private func snap(', start)
+  const admission = view.slice(start, end)
+  assert.ok(start >= 0 && end > start)
+  assert.match(admission, /onSwipe != nil/)
+  assert.match(admission, /scroll\.zoomScale <= scroll\.minimumZoomScale \+ 0\.01/)
+  assert.match(admission, /pan\.numberOfTouches == 1/)
+  assert.match(admission, /let movement = pan\.translation\(in: scroll\)/)
+  assert.match(admission, /XDriveIOSNativeViewerSwipePolicy\.shouldBeginPaging\(/)
+  assert.match(admission, /translationX: movement\.x, translationY: movement\.y/)
+  assert.match(admission, /velocityX: velocity\.x, velocityY: velocity\.y/)
+  assert.match(policy, /static func shouldBeginPaging\(/)
+  assert.match(policy, /dx\.isFinite, dy\.isFinite, vx\.isFinite, vy\.isFinite/)
+  assert.match(policy, /zoom >= minimum - 0\.01, zoom <= minimum \+ 0\.01/)
+  assert.match(policy, /abs\(dx\) >= 8[\s\S]*?abs\(dx\) > abs\(dy\) \* 1\.5/)
+  assert.match(policy, /abs\(vx\) >= 120[\s\S]*?abs\(vx\) > abs\(vy\) \* 1\.5/)
+  assert.match(policy, /return draggedHorizontally \|\| flickedHorizontally/)
+  for (const reason of [
+    'slow horizontal drag begins', 'slow reverse drag begins',
+    'fast horizontal flick begins', 'tiny movement does not begin',
+    'stationary touch does not begin', 'vertical drag preserves scrolling',
+    'diagonal drag does not steal scroll', 'diagonal flick does not begin',
+    'zoomed image keeps pan', 'base zoom tolerance admits slow drag',
+    'invalid zoom never pages', 'invalid minimum never pages',
+    'NaN translation never pages', 'infinite velocity never pages'
+  ]) assert.ok(checks.includes(reason), 'missing native executable case: ' + reason)
+  assert.match(view, /scroll\.panGestureRecognizer\.require\(toFail: pagingPan\)/)
+  assert.match(view, /case \.ended:[\s\S]*?XDriveIOSNativeViewerSwipePolicy\.direction\(/)
+  assert.doesNotMatch(policy + admission, /URLSession|UploadSession|Bearer|PHAssetCreationRequest|UserDefaults/)
+})
+
+
 test('existing iOS gesture and data-scope contracts are preserved', () => {
   const local = fs.readFileSync(path.resolve(__dirname, '../../ios/XDriveIOS/NativeLocalPhotoGallery.swift'), 'utf8')
   const cloud = fs.readFileSync(path.resolve(__dirname, '../../ios/XDriveIOS/NativeServerMediaGallery.swift'), 'utf8')
