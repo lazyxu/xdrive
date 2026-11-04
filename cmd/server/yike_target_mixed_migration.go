@@ -17,10 +17,10 @@ type legacyYikeVerifiedChild struct {
 	item meta.SourceItem
 }
 
-// splitLegacyYikeMixedTargetTx intentionally handles only flat, verifiable
-// mixed roots. Nested mixed trees are paused instead of guessing at ownership.
-// The original root/ordinary children/direct Share bindings remain untouched;
-// only SourceItem-verified file Nodes move to a newly created managed root.
+// splitLegacyYikeMixedTargetTx moves only fully SourceItem-verified top-level
+// file Nodes or whole, exclusively tracked nested directory branches. Untracked
+// ordinary directories and partly owned nested branches still fail closed.
+// The original root and its direct Share bindings remain untouched.
 func splitLegacyYikeMixedTargetTx(
 	tx *gorm.DB, source meta.Source, legacyRoot, connector, target meta.Node,
 ) error {
@@ -121,14 +121,10 @@ func splitLegacyYikeMixedTargetTx(
 	if len(children) == 0 || len(children) > maxLegacyYikeMixedChildren {
 		return blocked("empty or oversized mixed legacy target")
 	}
-	childIDs := make(map[uint64]meta.Node, len(children))
 	for _, child := range children {
-		// A directory may contain mixed descendants; never relocate or clone
-		// its hierarchy unless every nested ownership boundary is verified.
-		if child.Type != meta.NodeTypeFile || child.Revision == 0 {
-			return blocked("nested or invalid legacy content needs reviewed migration")
+		if child.Revision == 0 || (child.Type != meta.NodeTypeFile && child.Type != meta.NodeTypeDir) {
+			return blocked("invalid legacy content needs reviewed migration")
 		}
-		childIDs[child.ID] = child
 	}
 
 	var foreignClaims bool
@@ -165,29 +161,60 @@ func splitLegacyYikeMixedTargetTx(
 			return blocked("multiple SourceItems refer to the same Node")
 		}
 		byNode[*item.NodeID] = item
-		if item.State == meta.SourceItemStateSynced {
-			if _, inside := childIDs[*item.NodeID]; !inside {
-				return blocked("synced SourceItem is outside the legacy target")
-			}
-		}
+
 	}
 	verified := make([]legacyYikeVerifiedChild, 0, len(children))
+	covered := make(map[uint64]bool, len(items))
 	ordinary := 0
+	nestedBranches := 0
 	for _, child := range children {
 		item, known := byNode[child.ID]
 		if !known {
+			// An untracked directory might contain another user's files or a
+			// partially tracked subtree; preserving its old Share scope alone
+			// is not enough to prove that no Source child is stranded.
+			if child.Type == meta.NodeTypeDir {
+				return blocked("untracked legacy directory requires reviewed split")
+			}
 			ordinary++
 			continue
 		}
-		if item.State != meta.SourceItemStateSynced ||
-			item.Kind != meta.SourceItemKindFile ||
+		kind := meta.SourceItemKindFile
+		if child.Type == meta.NodeTypeDir {
+			kind = meta.SourceItemKindDirectory
+		}
+		if item.State != meta.SourceItemStateSynced || item.Kind != kind ||
 			item.Path != child.Name || item.NodeRevision != child.Revision {
 			return blocked("SourceItem ownership, path or revision is unverified")
 		}
+		if child.Type == meta.NodeTypeDir {
+			nestedBranches++
+			if nestedBranches > maxLegacyYikeNestedBranches {
+				return blocked("too many nested branches for atomic migration")
+			}
+			ids, err := verifyLegacyYikeOwnedNestedBranchTx(tx, source, child, byNode)
+			if err != nil {
+				return err
+			}
+			for _, id := range ids {
+				covered[id] = true
+			}
+		} else {
+			covered[child.ID] = true
+		}
 		verified = append(verified, legacyYikeVerifiedChild{node: child, item: item})
 	}
+	// A synced SourceItem outside the retained relative tree would be lost
+	// during rebinding, even if all observed children otherwise looked safe.
+	for _, item := range items {
+		if item.State == meta.SourceItemStateSynced {
+			if item.NodeID == nil || !covered[*item.NodeID] {
+				return blocked("synced SourceItem is outside verified legacy subtree")
+			}
+		}
+	}
 	if ordinary == 0 || len(verified) == 0 {
-		return blocked("legacy target is not a proven flat mixed Source root")
+		return blocked("legacy target is not a proven mixed Source root")
 	}
 
 	// The old root must be a direct child of the actual Owner root. Never
