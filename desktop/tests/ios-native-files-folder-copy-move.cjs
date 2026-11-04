@@ -26,7 +26,8 @@ test('native directory copy/move reuse current Owner destination and Server Node
 })
 test('directory cannot select self or descend into itself; root blocked and Server denies cycles', () => {
   assert.match(picker, /allSelected\.contains\(where: \{ \$0\.isDirectory && \$0\.id == folder\.id \}\)/)
-  assert.match(picker, /\.disabled\(allSelected\.contains\(where: \{ \$0\.isDirectory && \$0\.id == entry\.id \}\)\)/)
+  // New-folder admission also freezes navigation while a real Server create is in flight.
+  assert.match(picker, /\.disabled\(creating \|\|\s*allSelected\.contains\(where: \{ \$0\.isDirectory && \$0\.id == entry\.id \}\)\)/)
   assert.match(policy, /targetID != original\.id/)
   assert.match(policy, /original\.parent_id != nil/)
   assert.match(policy, /result\.type == original\.type/)

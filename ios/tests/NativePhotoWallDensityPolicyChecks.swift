@@ -32,6 +32,10 @@ struct NativePhotoWallDensityPolicyChecks {
         precondition(Density.standard.applyingPinch(0.7) == .compact)
         precondition(Density.large.applyingPinch(0.7) == .standard)
         precondition(Density.compact.applyingPinch(1.35) == .standard)
-        print("native local PhotoKit square wall density: PASS")
+        typealias Framing = XDriveIOSNativePhotoWallFraming
+        precondition(Framing.allCases == [.square, .complete])
+        precondition(Framing.square.title == "方形裁切")
+        precondition(Framing.complete.title == "完整图片（原比例）")
+        print("native local PhotoKit square wall density and framing: PASS")
     }
 }

@@ -207,6 +207,8 @@ import {
   type AgentNotesPage,
   type AgentNotesVersions,
   type AgentNotesWrite,
+  type AgentNotesImageReceipt,
+  type AgentNotesImageData,
   type AgentCloudSearchPage,
   type AgentCloudSearchRange,
   type AgentCloudSearchFilters,
@@ -8342,6 +8344,46 @@ function registerIPCHandlers() {
         const ownedNode = notesRevision(nodeID)
         const ownedVersion = notesRevision(versionID)
         return agent.cloudNotesReadVersion(ownedNode, ownedVersion)
+      }, false))
+
+  // Binary Notes are a distinct named capability; the original 8 text
+  // methods remain available with older Agents and no false image buttons.
+  const requireNotesImageAgent = async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-notes')
+    requireAgentCapability(hello, 'cloud-notes-images')
+    return requireAgentClient()
+  }
+  const notesImageID = (id: unknown) => {
+    const checked = notesID(id)
+    if (checked !== checked.toLowerCase()) {
+      throw new AgentIPCError('invalid_input', 0, 'Notes image ID must be canonical')
+    }
+    return checked
+  }
+  ipcMain.handle('agent:cloud-notes-upload-image',
+    (_event, noteID: unknown, rawBytes: unknown) =>
+      runAgentAction<AgentNotesImageReceipt>(async () => {
+        const agent = await requireNotesImageAgent()
+        const id = notesImageID(noteID)
+        if (!(rawBytes instanceof ArrayBuffer) || rawBytes.byteLength < 1 ||
+            rawBytes.byteLength > 20 * 1_048_576) {
+          throw new AgentIPCError('invalid_input', 0, 'Notes image must be at most 20 MiB')
+        }
+        return agent.cloudNotesUploadImage(id, rawBytes)
+      }, false))
+  ipcMain.handle('agent:cloud-notes-read-image',
+    (_event, noteID: unknown, relativePath: unknown) =>
+      runAgentAction<AgentNotesImageData>(async () => {
+        const agent = await requireNotesImageAgent()
+        const id = notesImageID(noteID)
+        if (typeof relativePath !== 'string' || relativePath.length > 160 ||
+            !relativePath.startsWith('_assets/' + id + '/') ||
+            !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.(?:png|jpg|gif|webp|heic)$/.test(
+              relativePath.slice(('_assets/' + id + '/').length))) {
+          throw new AgentIPCError('invalid_input', 0, 'Notes image path is not an immutable Owner asset')
+        }
+        return agent.cloudNotesReadImage(id, relativePath)
       }, false))
 
   ipcMain.handle('agent:cloud-owner-shares', (_event, cursor: unknown, limit: unknown) => runAgentAction<AgentOwnerSharePage>(async () => {

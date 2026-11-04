@@ -108,6 +108,8 @@ const ui = {
   XDriveFileNameDialog: sharedNameDialog,
   XDriveStatePanel: 'state-panel',
   XDriveFileExplorerAvailabilityBadge: 'availability-badge',
+  XDriveCloudRootIcon: 'xdrive-cloud-root-icon',
+  XDRIVE_CLOUD_ROOT_LABEL: 'xDrive 云端',
   XDriveFileExplorerItemIcon: 'file-icon',
   XDriveFileExplorerThumbnail: 'file-thumbnail',
   XDriveFileExplorerThumbnailProvider: 'thumbnail-provider',
@@ -660,7 +662,15 @@ test('100k grouped positions keep viewport work bounded while crossing a group b
 
 test('Browse home uses distinct location symbols while real folders remain blue', async () => {
   await withView(async h => {
-    for (const icon of ['CloudRounded', 'DeleteOutlineRounded', 'ManageSearchRounded', 'LabelRounded']) {
+    // The cloud location now has its own external-drive glyph rather than
+    // CloudRounded. Scope this to the visible Browse-home location: the
+    // mocked closed ancestor menu may independently mount the root glyph.
+    const locations = find(h.view, 'data-mobile-files-group', 'locations')
+    assert.equal(locations.findAll(node => node.type === 'xdrive-cloud-root-icon').length, 1,
+      'Browse-home cloud location must show the xDrive cloud-root icon')
+    assert.equal(locations.findAll(node => node.type === 'CloudRounded').length, 0,
+      'the former generic cloud icon must not replace the root identity')
+    for (const icon of ['DeleteOutlineRounded', 'ManageSearchRounded', 'LabelRounded']) {
       assert.equal(h.view.root.findAll(node => node.type === icon).length, 1, icon)
     }
     // React's host Menu mock renders the closed breadcrumb menu too. Those

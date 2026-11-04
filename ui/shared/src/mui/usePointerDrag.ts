@@ -7,6 +7,7 @@ type Options<Source> = {
   ownerRef: RefObject<HTMLElement | null>
   scrollHostRef: RefObject<HTMLElement | null>
   enabled: boolean
+  touchHoldMs?: number
   scopeKey: string
   onMove: (source: Source, point: XDrivePointerDragPoint) => void
   onDrop: (source: Source, point: XDrivePointerDragPoint) => void
@@ -22,7 +23,8 @@ type Session<Source> = {
   view: Window
   start: XDrivePointerDragPoint
   point: XDrivePointerDragPoint
-  phase: 'pending' | 'dragging' | 'cancelled'
+  phase: 'holding' | 'pending' | 'dragging' | 'cancelled'
+  holdTimer: number | null
   frame: number | null
   detach: () => void
 }
@@ -39,6 +41,8 @@ function releaseCapture<Source>(session: Session<Source>) {
 }
 
 function disposeSession<Source>(session: Session<Source>) {
+  if (session.holdTimer !== null) session.view.clearTimeout(session.holdTimer)
+  session.holdTimer = null
   session.detach()
   stopFrame(session)
   releaseCapture(session)
@@ -99,6 +103,8 @@ export function useXDrivePointerDrag<Source>(options: Options<Source>) {
     const session = sessionRef.current
     if (!session || session.phase === 'cancelled') return
     session.phase = 'cancelled'
+    if (session.holdTimer !== null) session.view.clearTimeout(session.holdTimer)
+    session.holdTimer = null
     stopFrame(session)
     releaseCapture(session)
     setActive(false)
@@ -128,9 +134,11 @@ export function useXDrivePointerDrag<Source>(options: Options<Source>) {
     event.stopPropagation()
     const document = owner.ownerDocument
     const point = { clientX: event.clientX, clientY: event.clientY }
+    const touchHoldMs = event.pointerType === 'touch' ? Math.max(0, current.touchHoldMs ?? 0) : 0
     const session: Session<Source> = {
       source, scopeKey: current.scopeKey, pointerID: event.pointerId, owner, view,
-      start: point, point, phase: 'pending', frame: null, detach: () => {},
+      start: point, point, phase: touchHoldMs ? 'holding' : 'pending',
+      holdTimer: null, frame: null, detach: () => {},
     }
     sessionRef.current = session
 
@@ -172,10 +180,26 @@ export function useXDrivePointerDrag<Source>(options: Options<Source>) {
       if (delta === 0) stopFrame(session)
       else if (session.frame === null) session.frame = view.requestAnimationFrame(frame)
     }
+    // A completed hold owns the gesture, including a stationary release.
+    // Touch movement before the hold belongs to native scrolling.
+    if (touchHoldMs > 0) {
+      session.holdTimer = view.setTimeout(() => {
+        session.holdTimer = null
+        if (!currentSession() || session.phase !== 'holding') return
+        session.phase = 'dragging'
+        try { owner.setPointerCapture(session.pointerID) } catch { /* Document keeps the contact. */ }
+        setActive(true)
+        update()
+      }, touchHoldMs)
+    }
     const move = (next: PointerEvent) => {
       if (next.pointerId !== session.pointerID || !currentSession()) return
       if (!Number.isFinite(next.clientX) || !Number.isFinite(next.clientY)) return
       session.point = { clientX: next.clientX, clientY: next.clientY }
+      if (session.phase === 'holding') {
+        if (Math.hypot(next.clientX - session.start.clientX, next.clientY - session.start.clientY) >= 8) cancel()
+        return
+      }
       if (session.phase === 'pending') {
         if (Math.hypot(next.clientX - session.start.clientX, next.clientY - session.start.clientY) < 8) return
         session.phase = 'dragging'
@@ -194,7 +218,7 @@ export function useXDrivePointerDrag<Source>(options: Options<Source>) {
       sessionRef.current = null
       disposeSession(session)
       setActive(false)
-      if (phase !== 'pending') {
+      if (phase !== 'pending' && phase !== 'holding') {
         next.preventDefault()
         next.stopPropagation()
         suppressReleaseClick(session)
@@ -228,6 +252,11 @@ export function useXDrivePointerDrag<Source>(options: Options<Source>) {
       disposeSession(session)
     }
     const visibility = () => { if (document.hidden) blur() }
+    // Preserve native scrolling before the hold, block it after drag starts.
+    const heldTouchMove = (next: TouchEvent) => {
+      if (session.phase === 'dragging' && next.cancelable) next.preventDefault()
+    }
+    if (touchHoldMs > 0) document.addEventListener('touchmove', heldTouchMove, { capture: true, passive: false })
     document.addEventListener('pointermove', move, { capture: true, passive: false })
     document.addEventListener('pointerup', finish, true)
     document.addEventListener('pointercancel', pointerCancel, true)
@@ -237,6 +266,7 @@ export function useXDrivePointerDrag<Source>(options: Options<Source>) {
     owner.addEventListener('lostpointercapture', lostCapture)
     view.addEventListener('blur', blur)
     session.detach = () => {
+      if (touchHoldMs > 0) document.removeEventListener('touchmove', heldTouchMove, true)
       document.removeEventListener('pointermove', move, true)
       document.removeEventListener('pointerup', finish, true)
       document.removeEventListener('pointercancel', pointerCancel, true)

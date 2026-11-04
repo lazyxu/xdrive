@@ -121,12 +121,27 @@ func TestRunnerSyncsArbitraryFilesAndPreservesEmptyDirectories(t *testing.T) {
 	if err := db.Create(&root).Error; err != nil {
 		t.Fatal(err)
 	}
+	// Real Pull executors may write only into a server-managed canonical
+	// Source root. Never use Owner's cloud root as a synthetic target:
+	// that would disable SourceRun target fencing or weaken Files ACL.
+	parent := root
+	for _, segment := range []string{"同步文件夹", "远程拉取", "Synology Files", "Synology Files Pull"} {
+		parentID := parent.ID
+		node := meta.Node{Name: segment, Type: meta.NodeTypeDir,
+			OwnerID: owner.ID, ParentID: &parentID, Revision: 1}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		parent = node
+	}
+	target := parent
+	const canonicalPrefix = "同步文件夹/远程拉取/Synology Files/Synology Files Pull/"
 	source := meta.Source{
 		OwnerID: owner.ID, Name: "Synology Files Pull", Kind: synologyfilesync.SourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
 		ScheduleType: "interval", ScheduleExpression: "6h",
-		Revision: 1, TargetNodeID: &root.ID,
+		Revision: 1, TargetNodeID: &target.ID, TargetManaged: true,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
@@ -214,7 +229,7 @@ func TestRunnerSyncsArbitraryFilesAndPreservesEmptyDirectories(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, directory := range []string{"documents", "documents/Empty", "documents/Reports"} {
-		node, ok := nodes[directory]
+		node, ok := nodes[canonicalPrefix+directory]
 		if !ok || node.Type != meta.NodeTypeDir {
 			t.Fatalf("directory %q missing: %+v", directory, nodes)
 		}
@@ -224,7 +239,7 @@ func TestRunnerSyncsArbitraryFilesAndPreservesEmptyDirectories(t *testing.T) {
 		"documents/archive.zip":        zipPayload,
 		"documents/Reports/report.pdf": pdfPayload,
 	} {
-		node, ok := nodes[path]
+		node, ok := nodes[canonicalPrefix+path]
 		if !ok || node.Type != meta.NodeTypeFile {
 			t.Fatalf("file %q missing: %+v", path, nodes)
 		}
@@ -262,7 +277,7 @@ func TestRunnerSyncsArbitraryFilesAndPreservesEmptyDirectories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := nodes["documents/archive.zip"]; !ok {
+	if _, ok := nodes[canonicalPrefix+"documents/archive.zip"]; !ok {
 		t.Fatalf("backup semantics deleted missing remote file: %+v", nodes)
 	}
 	var missing meta.SourceItem

@@ -98,24 +98,24 @@ test('Electron main owns the absolute path and starts the OS drag', () => {
   )
 })
 
-test('shared FileExplorer keeps internal drag/drop and exposes a separate native drag handle', () => {
+test('shared FileExplorer supports internal row drag and Alt+row native drag without six-dot handles', () => {
   const shared = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
   const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 
   for (const token of [
     'onNativeDragOutItem?: (item: XDriveFileExplorerItem) => void',
-    'data-xdrive-native-drag-out',
-    'title="拖到系统文件管理器"',
+    'if (onNativeDragOutItem && event.altKey)',
     'event.preventDefault()',
     'event.stopPropagation()',
     'onNativeDragOutItem(item)',
+    'onDragStart={(event) => startItemDrag(event, item)}',
+    'draggable={!compactTouch && Boolean(onDropItemsToFolder || onNativeDragOutItem) && !renaming}',
+    'Alt+拖动到系统文件管理器',
   ]) {
-    assert.ok(shared.includes(token), 'shared native drag handle missing: ' + token)
+    assert.ok(shared.includes(token), 'full-row native drag contract missing: ' + token)
   }
-  assert.ok(
-    shared.includes('onDragStart={(event) => startItemDrag(event, item)}'),
-    'ordinary row/card drag must remain the internal xDrive drag source',
-  )
+  assert.doesNotMatch(shared, /data-xdrive-native-drag-out|nativeDragOutHandle|DragIndicatorRoundedIcon/,
+    'the old drag handle must not remain in Files rows or grid cards')
   for (const token of [
     "keyboardProfile === 'windows' || keyboardProfile === 'macos'",
     'nativePort.startNativeDragOut(relativePath)',
@@ -125,17 +125,9 @@ test('shared FileExplorer keeps internal drag/drop and exposes a separate native
   }
 })
 
-
-test('native drag-out handle is hover/focus only and never reserves Details name-column width', () => {
+test('native drag-out no longer reserves room in Details or Grid', () => {
   const shared = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
-  for (const token of [
-    "placement: 'details' | 'grid'",
-    'opacity: 0',
-    "pointerEvents: 'none'",
-    "'&:hover [data-xdrive-native-drag-out], &:focus-visible [data-xdrive-native-drag-out], &:focus-within [data-xdrive-native-drag-out]'",
-    "nativeDragOutHandle(item, 'details')",
-    "nativeDragOutHandle(item, 'grid')",
-  ]) {
-    assert.ok(shared.includes(token), 'hover-only native drag-out contract missing: ' + token)
-  }
+  assert.equal(shared.includes('nativeDragOutHandle('), false)
+  assert.equal(shared.includes('data-xdrive-native-drag-out'), false)
+  assert.ok(shared.includes("onDragStart={(event) => startItemDrag(event, item)}"))
 })

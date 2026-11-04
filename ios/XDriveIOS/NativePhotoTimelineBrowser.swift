@@ -208,6 +208,16 @@ private struct XDriveIOSNativeTimelineCoverTile: View {
     let group: XDriveIOSNativePhotoTimelineGroup
     let totalSlots: Int
     let mediaFilter: XDriveIOSNativePhotoMediaFilter
+    let showsTextOverlay: Bool
+
+    init(group: XDriveIOSNativePhotoTimelineGroup, totalSlots: Int,
+         mediaFilter: XDriveIOSNativePhotoMediaFilter,
+         showsTextOverlay: Bool = true) {
+        self.group = group
+        self.totalSlots = totalSlots
+        self.mediaFilter = mediaFilter
+        self.showsTextOverlay = showsTextOverlay
+    }
 
     @State private var representative: XDrivePhotoKitScanCandidate?
 
@@ -227,21 +237,23 @@ private struct XDriveIOSNativeTimelineCoverTile: View {
                         .aspectRatio(1, contentMode: .fit)
                 }
             }
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.72)],
-                startPoint: .center, endPoint: .bottom
-            )
-            VStack(alignment: .leading, spacing: 3) {
-                Text(group.title)
-                    .font(.headline)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                Text("\(group.mediaCount) 项")
-                    .font(.caption)
-                    .monospacedDigit()
+            if showsTextOverlay {
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.72)],
+                    startPoint: .center, endPoint: .bottom
+                )
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(group.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                    Text("\(group.mediaCount) 项")
+                        .font(.caption)
+                        .monospacedDigit()
+                }
+                .foregroundStyle(.white)
+                .padding(10)
             }
-            .foregroundStyle(.white)
-            .padding(10)
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -403,13 +415,28 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
                                             Button {
                                                 jump(to: group.firstPageOffset)
                                             } label: {
-                                                HStack {
-                                                    Text(group.title)
-                                                    Spacer(minLength: 8)
-                                                    Text("\(group.mediaCount) 项")
-                                                        .foregroundStyle(.secondary)
-                                                        .monospacedDigit()
+                                                HStack(spacing: 12) {
+                                                    XDriveIOSNativeTimelineCoverTile(
+                                                        group: group,
+                                                        totalSlots: index.totalSlots,
+                                                        mediaFilter: mediaFilter,
+                                                        showsTextOverlay: false
+                                                    )
+                                                    .frame(width: 76, height: 76)
+                                                    VStack(alignment: .leading, spacing: 5) {
+                                                        Text(group.title)
+                                                            .font(.subheadline.weight(.semibold))
+                                                        Text("\(group.mediaCount) 项")
+                                                            .font(.caption)
+                                                            .foregroundStyle(.secondary)
+                                                            .monospacedDigit()
+                                                    }
+                                                    Spacer(minLength: 0)
+                                                    Image(systemName: "chevron.right")
+                                                        .font(.caption.weight(.semibold))
+                                                        .foregroundStyle(.tertiary)
                                                 }
+                                                .padding(.vertical, 3)
                                                 .contentShape(Rectangle())
                                             }
                                             .foregroundStyle(.primary)

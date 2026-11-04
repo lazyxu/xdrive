@@ -80,7 +80,12 @@ test('Web and Desktop keep only clipboard adapters and share path semantics', ()
   assert.ok(desktop.includes('.map((item) => xDriveFileExplorerCopyPath(item, explorerCrumbs))'),
     'Desktop must retain unchanged local FileExplorer path semantics')
 
-  assert.ok(web.includes('navigator.clipboard?.writeText'), 'Web must use the browser clipboard adapter')
+  const browserClipboard = read('web', 'src', 'browserClipboard.ts')
+  assert.ok(web.includes('xDriveBrowserCopyText(text)'), 'Web Copy Path must call guarded clipboard adapter')
+  assert.ok(browserClipboard.includes('navigator.clipboard'), 'Web adapter must prefer the async browser clipboard')
+  assert.ok(browserClipboard.includes("document.execCommand('copy')"), 'Web adapter must support HTTP LAN copy fallback')
+  assert.equal(web.includes('navigator.clipboard?.writeText'), false,
+    'Web Copy Path must not dereference unavailable clipboard directly')
   assert.ok(desktop.includes('nativePort.copyText(text)'), 'Desktop must use the Electron clipboard adapter')
   assert.ok(preload.includes("import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'"),
     'Desktop preload must import Electron clipboard')

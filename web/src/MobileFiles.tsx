@@ -2,7 +2,6 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import type { DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode, UIEvent } from 'react'
 import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
-import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
 import LabelRoundedIcon from '@mui/icons-material/LabelRounded'
 import ManageSearchRoundedIcon from '@mui/icons-material/ManageSearchRounded'
 import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded'
@@ -44,7 +43,7 @@ import type {
 } from '../../ui/shared/src'
 import {
   XDriveFileExplorerAvailabilityBadge, xDriveFileExplorerMarkThumbnailScrollActivity,
-  XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
+  XDriveCloudRootIcon, XDRIVE_CLOUD_ROOT_LABEL, XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
   XDriveFileNameDialog, XDriveFilePropertiesDialog, XDriveStatePanel, XDriveMediaDetailsInspector,
   XDriveMobileHeaderNavigation, useXDriveMobileHeaderMode, xDriveFileSupportsThumbnail,
   useXDriveFileExplorerPropertiesController,
@@ -1843,7 +1842,7 @@ export default function MobileFiles(props: Props) {
 
   const pointerDown = (event: ReactPointerEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
     if (event.pointerType === 'touch' && !event.isPrimary) { closeHold(); pointerDrag.cancel(); return }
-    if (event.pointerType !== 'touch' || !event.isPrimary || selectionMode) return
+    if (event.pointerType !== 'touch' || !event.isPrimary) return
     closeHold()
     cancelClickRef.current = false
     const entry = { id: event.pointerId, item, x: event.clientX, y: event.clientY, timer: 0, held: false, moved: false }
@@ -1851,7 +1850,11 @@ export default function MobileFiles(props: Props) {
       if (holdRef.current !== entry) return
       entry.held = true
       cancelClickRef.current = true
-      if (!props.trashActive && !props.searchActive) pointerDrag.begin(event, [item])
+      if (!props.trashActive && !props.searchActive && !selectionLoad) {
+        const source = selectionMode && selected.has(mobileItemKey(item))
+          ? [...selected.values()] : [item]
+        pointerDrag.begin(event, source)
+      }
     }, MOBILE_FILES_HOLD_MS)
     holdRef.current = entry
   }
@@ -2435,7 +2438,7 @@ export default function MobileFiles(props: Props) {
         '&:focus-visible': { outline: '2px solid', outlineColor: IOS_FILES_MOBILE_BLUE } }}>
       <Box sx={{ flexShrink: 0, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {locationKind === 'cloud'
-          ? <CloudRoundedIcon sx={{ color: 'primary.main', fontSize: 32 }} />
+          ? <XDriveCloudRootIcon sx={{ color: 'primary.main', fontSize: 32 }} />
           : locationKind === 'trash'
             ? <DeleteOutlineRoundedIcon sx={{ color: 'text.secondary', fontSize: 31 }} />
             : locationKind === 'smart'
@@ -2509,7 +2512,7 @@ export default function MobileFiles(props: Props) {
     )
   }
   const heading = props.trashActive ? '最近删除' : section === 'recent' ? '最近' : section === 'favorites' ? '收藏' :
-    showDirectory ? (props.searchActive ? '搜索结果' : props.crumbs.at(-1)?.name ?? '云端文件') : '浏览'
+    showDirectory ? (props.searchActive ? '搜索结果' : props.crumbs.length === 1 ? XDRIVE_CLOUD_ROOT_LABEL : props.crumbs.at(-1)?.name ?? '云端文件') : '浏览'
   const editTitle = editBrowseHome && section === 'browse' && !showDirectory
   const compactTitleVisible = showDirectory || scrollTop > 48 || selectionActive || editTitle
   const hasFolderAncestors = !savedResumePending && showDirectory &&
@@ -3173,9 +3176,11 @@ export default function MobileFiles(props: Props) {
                 // navigation is awaiting its Server-authoritative commit.
                 props.onCrumbClick(index)
               }}>
-              <ListItemIcon><MobileFolderIcon size={23}/></ListItemIcon>
-              <Typography noWrap dir="auto" title={crumb.name || '根目录'}
-                sx={{ unicodeBidi: 'plaintext' }}>{crumb.name || '根目录'}</Typography>
+              <ListItemIcon>
+                {index === 0 ? <XDriveCloudRootIcon sx={{ fontSize: 23, color: 'primary.main' }} /> : <MobileFolderIcon size={23}/>}
+              </ListItemIcon>
+              <Typography noWrap dir="auto" title={index === 0 ? XDRIVE_CLOUD_ROOT_LABEL : crumb.name || '根目录'}
+                sx={{ unicodeBidi: 'plaintext' }}>{index === 0 ? XDRIVE_CLOUD_ROOT_LABEL : crumb.name || '根目录'}</Typography>
               {index === props.crumbs.length - 1
                 ? <CheckRoundedIcon sx={{ ml: 'auto', fontSize: 18, color: IOS_FILES_MOBILE_BLUE }}/> : null}
             </MenuItem>

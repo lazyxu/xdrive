@@ -672,7 +672,7 @@ export function XDriveSourceManager({
     setCreateSpacesError(spacesError)
     setCreateRootsError(rootsError)
     if (nameError || spacesError || rootsError) return
-    if (option.kind !== 'yike_photos' && !selectedCreateTargetNodeID) {
+    if (option.direction !== 'pull' && !selectedCreateTargetNodeID) {
       setErrorDialog({ title: `无法添加${sourceNoun}`, message: '当前目标文件夹尚未加载，请稍后重试。' })
       return
     }
@@ -708,7 +708,7 @@ export function XDriveSourceManager({
         schedule_type: values.schedule_type,
         schedule_expression: values.schedule_type === 'manual' ? '' : values.schedule_expression.trim(),
         schedule_timezone: values.schedule_type === 'cron' ? values.schedule_timezone.trim() : '',
-        target_node_id: option.kind === 'yike_photos' ? 0 : (selectedCreateTargetNodeID ?? 0),
+        target_node_id: option.direction === 'pull' ? 0 : (selectedCreateTargetNodeID ?? 0),
         ignore_rules: values.ignore_rules ?? '',
       })
     } catch (error) {

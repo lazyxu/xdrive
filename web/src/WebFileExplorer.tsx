@@ -84,6 +84,7 @@ import type { XDriveFileExplorerDataAdapter } from '../../ui/shared/src/file-exp
 import { xDriveFileExplorerVerifiedChildReanchor, xDriveFileExplorerVerifiedChildReveal } from '../../ui/shared/src/mui/FileExplorerReanchor'
 import { xDriveResolveRoutedDirectoryAncestors } from './routedDirectoryAncestors'
 import { xDriveRememberMobileFilesSearchReturn, xDriveReadMobileFilesSearchReturn, xDriveClearMobileFilesSearchReturn } from './mobileFilesSearchReturn'
+import { xDriveBrowserCopyText } from './browserClipboard'
 
 /** The existing Files Search input in either responsive presentation. */
 function xDriveWebFilesSearchInput(target: Element | null): target is HTMLInputElement {
@@ -1198,10 +1199,7 @@ export default function WebFileExplorer({
       .map((item) => xDriveFileExplorerCopyPath(item, inlineCrumbsForItem(item)))
       .join('\n')
     try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error('当前浏览器不支持写入剪贴板。')
-      }
-      await navigator.clipboard.writeText(text)
+      await xDriveBrowserCopyText(text)
       onFeedback(
         'good',
         selected.length === 1

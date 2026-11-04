@@ -1,3 +1,6 @@
+// Files-only long hold; Gallery keeps its own threshold.
+export const XDRIVE_FILE_ITEM_DRAG_HOLD_MS = 350
+
 export const XDRIVE_FILE_EXPLORER_DRAG_MIME =
   'application/x-xdrive-fileexplorer'
 

@@ -135,6 +135,30 @@ final class XDriveIOSPhotoAutoScheduleStore {
         return state
     }
 
+    /// Called only after the native runner proved a transient networking
+    /// failure occurred BEFORE any original write. Do not alter the PhotoKit
+    /// generation, cursor, encrypted receipts or existing Owner consent.
+    /// The reserved next-due time acts as a CAS lease: a disabled, replaced
+    /// or already advanced plan must not be rescheduled by a stale task.
+    @discardableResult
+    func rescheduleSafePrewriteNetworkFailure(
+        owner: XDriveNativeOwnerRoot,
+        expectedNextDueAt: Date,
+        now: Date = Date()
+    ) throws -> State? {
+        guard var state = status(owner: owner),
+              state.enabled, !state.pausedForReview,
+              state.nextDueAt == expectedNextDueAt,
+              let soon = XDriveIOSPhotoAutoSchedulePolicy
+                .earlierDueAfterSafePrewriteNetworkFailure(
+                    currentDueAt: state.nextDueAt, at: now
+                )
+        else { return nil }
+        state.nextDueAt = soon
+        try persist(state, owner: owner)
+        return state
+    }
+
     /// Emergency STOP-only operation for every local Owner scope. This
     /// does not require the Server, enumerate PhotoKit or touch any CAS bytes.
     /// Only this app's exact SHA-256 auto-schedule keys can be deleted;

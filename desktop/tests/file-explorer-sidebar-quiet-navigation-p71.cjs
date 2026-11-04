@@ -38,6 +38,11 @@ function loadOriginal() {
     './AutoLoadSentinel': { XDriveAutoLoadSentinel: 'auto-sentinel' },
     './FileExplorerExternalDrop': { xDriveFileExplorerReadExternalDrop: () => null },
     './FileExplorerThumbnail': { XDriveFileExplorerThumbnail: 'thumbnail' },
+    './XDriveCloudRootIcon': {
+      XDriveCloudRootIcon: 'xdrive-cloud-root-icon',
+      XDRIVE_CLOUD_ROOT_LABEL: 'xDrive 云端',
+    },
+
     './FileExplorer': {
       XDriveFileExplorerAvailabilityBadge: 'availability',
       XDriveFileExplorerItemIcon: 'file-icon',
@@ -96,7 +101,7 @@ test('P71 original Web/Desktop sidebar first reads stay 360ms quiet, geometry-st
     assert.equal(treeReads, 0, 'lazy tree must never fetch a folder that is not expanded')
     const rootNode = one(view, 'role', 'treeitem')
     assert.equal(rootNode.props['aria-busy'], undefined)
-    const expand = one(view, 'aria-label', '展开 我的文件')
+    const expand = one(view, 'aria-label', '展开 xDrive 云端')
     await act(async () => { expand.props.onClick({ stopPropagation() {} }) })
     assert.equal(treeReads, 1, 'real folder read begins immediately on expand, not after a display timer')
     assert.equal(rootNode.props['aria-busy'], true)

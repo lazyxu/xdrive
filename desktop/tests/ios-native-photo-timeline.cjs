@@ -82,3 +82,22 @@ test('year/month navigator shows verified PhotoKit covers and drills to the cont
   assert.match(browser, /jump\(to: group\.firstPageOffset\)/)
   assert.doesNotMatch(browser, /Button\("上一页"\)|Button\("下一页"\)/)
 })
+
+
+test('day navigation uses actual visible PhotoKit covers instead of text-only dates', () => {
+  const start = browser.indexOf('Section("\\(scale.title) ·')
+  const end = browser.indexOf('                        .listStyle(.plain)', start)
+  const dates = browser.slice(start, end)
+  assert.match(dates, /if scale == \.day \{\s*ForEach\(index\.groups\(for: scale\)\)/)
+  assert.match(dates, /if shows\(group\) \{/)
+  assert.match(dates, /XDriveIOSNativeTimelineCoverTile\(\s*group: group,\s*totalSlots: index\.totalSlots,\s*mediaFilter: mediaFilter,\s*showsTextOverlay: false/)
+  assert.match(dates, /\.frame\(width: 76, height: 76\)/)
+  assert.match(dates, /Text\(group\.title\)/)
+  assert.match(dates, /Text\("\\\(group\.mediaCount\) 项"\)/)
+  assert.match(dates, /jump\(to: group\.firstPageOffset\)/)
+  assert.match(browser, /if showsTextOverlay \{\s*LinearGradient\(/)
+  assert.match(browser, /showsTextOverlay: Bool = true/)
+  assert.match(browser, /\.task\(id: "\\\(group\.id\)-\\\(totalSlots\)-\\\(mediaFilter\.rawValue\)"\)/)
+  assert.match(browser, /\.onDisappear \{ representative = nil \}/)
+  assert.doesNotMatch(dates, /Button\("上一页"\)|Button\("下一页"\)|PHAsset\.fetchAssets/)
+})
