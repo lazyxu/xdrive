@@ -187,6 +187,8 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
     @Published private(set) var continuationError: String?
 
     private var loadedIDs = Set<UInt64>()
+    private var loadedSort: String?
+    private var loadedOrder: String?
     private var epoch = UUID()
     private var running: Task<Void, Never>?
 
@@ -194,6 +196,10 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
         verified && !loading && continuationError == nil &&
             !items.isEmpty && items.count < total &&
             XDriveIOSNativeFilesPagePolicy.validOffset(items.count)
+    }
+
+    func matches(sort: String, order: String) -> Bool {
+        verified && loadedSort == sort && loadedOrder == order
     }
 
     func pageOffset(for item: XDriveIOSNativeFilesTrashNode) -> Int? {
@@ -208,6 +214,8 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
         running = nil
         items = []
         loadedIDs.removeAll()
+        loadedSort = nil
+        loadedOrder = nil
         total = 0
         loading = false
         verified = false
@@ -223,16 +231,19 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
             error = "回收站仅从当前云端列表顶部开始读取。"
             return
         }
+        loadedSort = sort
+        loadedOrder = order
         read(login: login, offset: 0, appending: false, sort: sort, order: order)
     }
 
     func loadMore(login: XDriveIOSNativeOwnerLoginModel, sort: String, order: String) {
-        guard canLoadMore else { return }
+        guard canLoadMore, loadedSort == sort, loadedOrder == order else { return }
         read(login: login, offset: items.count, appending: true, sort: sort, order: order)
     }
 
     func retryMore(login: XDriveIOSNativeOwnerLoginModel, sort: String, order: String) {
-        guard verified, !loading, continuationError != nil else { return }
+        guard verified, !loading, continuationError != nil,
+              loadedSort == sort, loadedOrder == order else { return }
         continuationError = nil
         loadMore(login: login, sort: sort, order: order)
     }
@@ -587,7 +598,8 @@ struct XDriveIOSNativeFilesTrashScreen: View {
     /// The same verified Server range guards both long-press and swipe
     /// actions. Permanent deletion still requires the existing confirmation.
     private func canActOn(_ item: XDriveIOSNativeFilesTrashNode) -> Bool {
-        phase == .active && model.verified && !model.loading && !mutation.busy &&
+        phase == .active && model.matches(sort: sort, order: order) &&
+            !model.loading && !mutation.busy &&
             model.items.contains(item) && model.pageOffset(for: item) != nil
     }
 
@@ -604,8 +616,8 @@ struct XDriveIOSNativeFilesTrashScreen: View {
 
     private func run(_ action: XDriveIOSNativeFilesTrashTransport.Action,
                      _ item: XDriveIOSNativeFilesTrashNode) {
-        guard model.verified, !model.loading, !mutation.busy,
-              model.items.contains(item),
+        guard model.matches(sort: sort, order: order),
+              !model.loading, !mutation.busy, model.items.contains(item),
               let pageOffset = model.pageOffset(for: item) else { return }
         mutation.perform(
             action, node: item, offset: pageOffset, sort: sort, order: order, login: login
