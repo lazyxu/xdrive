@@ -34,3 +34,17 @@ test('SQLite change token and queued asset IDs commit atomically without inventi
   assert.match(store, /state='missingLocal'/)
   assert.doesNotMatch(store, /markConfirmed\(|\.upload\(|\.deleteNode\(/)
 })
+
+test('a receipt or item-local failure settles only the currently queued revision', () => {
+  assert.match(store, /enum Settled: String/)
+  assert.match(store, /case confirmed/)
+  assert.match(store, /case failed/)
+  assert.match(store, /func settle\(_ candidate: Pending, result: Settled\)/)
+  assert.match(store, /WHERE asset_id=\? AND revision=\? AND state='pending'/)
+  assert.match(store, /return sqlite3_changes\(database\) == 1/)
+  assert.match(store, /func retryFailed\(_ candidate: Pending\)/)
+  assert.match(store, /WHERE asset_id=\? AND revision=\? AND state='failed'/)
+  assert.match(store, /ON CONFLICT\(asset_id\) DO UPDATE SET revision=entries.revision\+1/)
+  assert.match(store, /state='missingLocal'/)
+  assert.doesNotMatch(store, /\.uploadPrepared\(|\.finalize\(|\.deleteNode\(/)
+})

@@ -55,6 +55,36 @@ import Foundation
                 fatalError("expected auth guard")
             } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.baselineChanged {}
         }
+        // A verified receipt for one revision cannot clear later edits.
+        // An item-local failure is isolated until explicit user retry.
+        do {
+            let store = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: url)
+            let initial = try store.pending()
+            guard let old = initial.first(where: { $0.localIdentifier == "old" }) else {
+                fatalError("expected original pending old revision")
+            }
+            try expect(try store.settle(old, result: .confirmed))
+            try expect(try !store.settle(old, result: .confirmed))
+            _ = try store.apply(inserted: [], updated: ["old"], deleted: [],
+                                expectedToken: later, nextToken: Data([5]), authorization: 3)
+            let modified = try store.pending()
+            guard let newer = modified.first(where: { $0.localIdentifier == "old" }) else {
+                fatalError("expected edited original requeue")
+            }
+            precondition(newer.revision > old.revision)
+            try expect(try !store.settle(old, result: .confirmed))
+            try expect(try store.settle(newer, result: .failed))
+            try expect(try !store.settle(newer, result: .failed))
+            try expect(try store.retryFailed(newer))
+            try expect(try !store.retryFailed(newer))
+            let again = try store.pending()
+            precondition(again.contains(where: { $0.localIdentifier == "old" && $0.revision == newer.revision }))
+            _ = try store.apply(inserted: [], updated: [], deleted: ["old"],
+                                expectedToken: Data([5]), nextToken: Data([6]), authorization: 3)
+            let remainingAfterDeletion = try store.pending()
+            precondition(!remainingAfterDeletion.contains(where: { $0.localIdentifier == "old" }))
+            try expect(try !store.settle(newer, result: .confirmed))
+        }
         let isolated = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: dir.appendingPathComponent("owner-b.sqlite3"))
         try expect(try isolated.baseline() == nil)
         try expect(try isolated.pending().isEmpty)

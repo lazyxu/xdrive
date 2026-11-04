@@ -30,6 +30,13 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         let deleted: Int
     }
 
+    /// Only the existing live Owner Node receipt verifier can authorize a
+    /// confirmed transition. A queue row or a PhotoKit token proves nothing.
+    enum Settled: String {
+        case confirmed
+        case failed
+    }
+
     private var database: OpaquePointer?
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -158,6 +165,44 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
                                    revision: sqlite3_column_int64(statement, 1),
                                    priority: Int(sqlite3_column_int(statement, 2))))
         }
+    }
+
+    /// Compare-and-set after the shared original writer returns a verified
+    /// Node receipt, or a proven item-local failure. A concurrent PhotoKit edit
+    /// increments the row revision, so an old callback cannot clear new work.
+    @discardableResult
+    func settle(_ candidate: Pending, result: Settled) throws -> Bool {
+        try validateIdentifier(candidate.localIdentifier)
+        guard candidate.revision > 0 else { throw Failure.invalidInput }
+        let statement = try prepare(
+            "UPDATE entries SET state=? WHERE asset_id=? AND revision=? AND state='pending'"
+        )
+        defer { sqlite3_finalize(statement) }
+        try bind(result.rawValue, into: statement, position: 1)
+        try bind(candidate.localIdentifier, into: statement, position: 2)
+        guard sqlite3_bind_int64(statement, 3, candidate.revision) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        try stepDone(statement)
+        return sqlite3_changes(database) == 1
+    }
+
+    /// Explicit user retry only, after receipt review if a write may have
+    /// occurred; this routine never writes cloud data or marks success.
+    @discardableResult
+    func retryFailed(_ candidate: Pending) throws -> Bool {
+        try validateIdentifier(candidate.localIdentifier)
+        guard candidate.revision > 0 else { throw Failure.invalidInput }
+        let statement = try prepare(
+            "UPDATE entries SET state='pending' WHERE asset_id=? AND revision=? AND state='failed'"
+        )
+        defer { sqlite3_finalize(statement) }
+        try bind(candidate.localIdentifier, into: statement, position: 1)
+        guard sqlite3_bind_int64(statement, 2, candidate.revision) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        try stepDone(statement)
+        return sqlite3_changes(database) == 1
     }
 
     private func validateToken(_ bytes: Data) throws {
