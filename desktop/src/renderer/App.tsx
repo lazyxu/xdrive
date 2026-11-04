@@ -90,6 +90,7 @@ import { desktopWindowHostAdapter } from './desktopWindowHostAdapter'
 import { readDesktopLoginDraft, saveDesktopLoginDraft } from './loginDraft'
 import { createDesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
 import { createDesktopCloudFilesHostPort } from './desktopCloudFilesHostPort'
+import { createDesktopNotesDataPort } from './desktopNotesDataPort'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { desktopOverviewPort } from './desktopOverviewAdapter'
 import { createDesktopMediaGalleryDataSource } from './mediaGalleryAdapter'
@@ -377,6 +378,30 @@ export default function App({
     (matchingLoginProfile?.connection_route?.lan_ip || '') === connectionRoute.lan_ip
 
   const status = agent.status
+  // Notes uses the existing authenticated Agent and its allowlisted IPC.
+  // Never expose a Server token or invent a route when the Agent capability
+  // is missing. Epoch changes on logout/account/server or Agent replacement.
+  const notesEnabled = Boolean(agent.connected && status?.configured &&
+    !status?.must_change_password && status?.username && status?.server &&
+    status.server.startsWith('https://') &&
+    status.auth_status !== '需要重新登录' &&
+    agent.hello?.capabilities.includes('cloud-notes'))
+  const notesIdentity = notesEnabled
+    ? [status?.server, status?.username, String(agent.hello?.pid ?? 0)].join('|') : ''
+  const notesEpoch = useRef({ identity: '', generation: 0 })
+  if (notesEpoch.current.identity !== notesIdentity) {
+    notesEpoch.current = {
+      identity: notesIdentity, generation: notesEpoch.current.generation + 1,
+    }
+  }
+  const notesOwnerScope = notesIdentity
+    ? notesIdentity + ':' + notesEpoch.current.generation : ''
+  const notesActiveScopeRef = useRef(notesOwnerScope)
+  notesActiveScopeRef.current = notesOwnerScope
+  const desktopNotesPort = useMemo(() => notesOwnerScope
+    ? createDesktopNotesDataPort(window.xdriveDesktop.agent,
+      notesOwnerScope, () => notesActiveScopeRef.current === notesOwnerScope)
+    : undefined, [notesOwnerScope])
   const baiduDiagnosticScope = `desktop:${status?.server ?? ''}:${status?.username ?? ''}`
   // Desktop file: owns no provider SDK; only clear this process-local
   // bounded hint when identity changes or the renderer goes away.
@@ -2287,6 +2312,7 @@ export default function App({
     diagnosticsAriaLabel: '桌面版辅助功能',
     includeClientUpdate: true,
     showShareCenter: agent.connected && configured && agent.hello?.capabilities.includes('cloud-files'),
+    showNotes: Boolean(desktopNotesPort),
   })
 
   if (!agent.connected) {
@@ -2815,6 +2841,7 @@ export default function App({
       },
       shareCenterPage: agent.connected && configured && agent.hello?.capabilities.includes('cloud-files')
         ? desktopShareCenterPort : undefined,
+      notesPage: desktopNotesPort,
       workspaceAlerts: {
         lastError: status?.last_error,
         paused: status?.paused,

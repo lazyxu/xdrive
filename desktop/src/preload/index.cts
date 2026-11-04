@@ -989,6 +989,20 @@ const agent = Object.freeze({
   cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) =>
     ipcRenderer.invoke('agent:cloud-restore-version', nodeID, revision, versionID),
   cloudShares: (nodeID: number) => ipcRenderer.invoke('agent:cloud-shares', nodeID),
+  cloudNotesInitialize: () => ipcRenderer.invoke('agent:cloud-notes-initialize'),
+  cloudNotesList: (source: 'mine' | 'ios_notes', query = '', offset = 0) =>
+    ipcRenderer.invoke('agent:cloud-notes-list', source, query, offset),
+  cloudNotesRead: (id: string) => ipcRenderer.invoke('agent:cloud-notes-read', id),
+  cloudNotesCreate: (value: { title: string; markdown: string }) =>
+    ipcRenderer.invoke('agent:cloud-notes-create', value),
+  cloudNotesUpdate: (id: string, value: {
+    title: string; markdown: string; expected_revision: number
+  }) => ipcRenderer.invoke('agent:cloud-notes-update', id, value),
+  cloudNotesDelete: (id: string, revision: number) =>
+    ipcRenderer.invoke('agent:cloud-notes-delete', id, revision),
+  cloudNotesVersions: (id: string) => ipcRenderer.invoke('agent:cloud-notes-versions', id),
+  cloudNotesReadVersion: (nodeID: number, versionID: number) =>
+    ipcRenderer.invoke('agent:cloud-notes-version-content', nodeID, versionID),
   cloudOwnerShares: (cursor: number, limit: number) => ipcRenderer.invoke('agent:cloud-owner-shares', cursor, limit),
   cloudOwnShareLink: (id: number) => ipcRenderer.invoke('agent:cloud-share-link', id),
   cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) =>

@@ -14,6 +14,30 @@ export type AgentHello = {
   capabilities: string[]
 }
 
+export type AgentNotesSource = 'mine' | 'ios_notes'
+export type AgentNotesNamespace = {
+  system_node_id: number
+  notes_node_id: number
+  ios_backup_node_id: number
+  my_notes_node_id: number
+}
+export type AgentNotesRow = {
+  id: string
+  source: AgentNotesSource
+  title: string
+  node_id: number
+  revision: number
+  sha256: string
+  bytes: number
+  created_at: string
+  updated_at: string
+}
+export type AgentNotesDetail = AgentNotesRow & { markdown: string }
+export type AgentNotesPage = { items: AgentNotesRow[]; next_offset: number }
+export type AgentNotesVersion = { id: number; revision: number; sha256: string; bytes: number }
+export type AgentNotesVersions = { items: AgentNotesVersion[]; node_id: number }
+export type AgentNotesWrite = { title: string; markdown: string; expected_revision?: number }
+
 export type AgentBuildInfo = {
   version: string
   channel?: string
@@ -4745,6 +4769,50 @@ export class AgentIPCClient {
     return this.request<AgentCloudShare[]>('GET', `/v1/cloud/shares?${query.toString()}`)
   }
 
+  cloudNotesInitialize() {
+    return this.request<AgentNotesNamespace>('POST', '/v1/cloud/notes/namespace', {})
+  }
+
+  cloudNotesList(source: AgentNotesSource, query: string, offset: number, signal?: AbortSignal) {
+    const params = new URLSearchParams({ source, q: query, offset: String(offset) })
+    return this.request<AgentNotesPage>('GET', '/v1/cloud/notes?' + params.toString(),
+      undefined, 30_000, signal)
+  }
+
+  cloudNotesRead(id: string, signal?: AbortSignal) {
+    return this.request<AgentNotesDetail>(
+      'GET', '/v1/cloud/notes/' + encodeURIComponent(id), undefined, 30_000, signal)
+  }
+
+  cloudNotesCreate(write: AgentNotesWrite) {
+    return this.request<AgentNotesRow>('POST', '/v1/cloud/notes', {
+      title: write.title, markdown: write.markdown,
+    }, 30_000, undefined, false)
+  }
+
+  cloudNotesUpdate(id: string, write: AgentNotesWrite) {
+    return this.request<AgentNotesRow>('PUT', '/v1/cloud/notes/' + encodeURIComponent(id),
+      write, 30_000, undefined, false)
+  }
+
+  cloudNotesDelete(id: string, expectedRevision: number) {
+    const params = new URLSearchParams({ revision: String(expectedRevision) })
+    return this.request<void>('DELETE',
+      '/v1/cloud/notes/' + encodeURIComponent(id) + '?' + params.toString(),
+      undefined, 30_000, undefined, false)
+  }
+
+  cloudNotesVersions(id: string, signal?: AbortSignal) {
+    return this.request<AgentNotesVersions>(
+      'GET', '/v1/cloud/notes/' + encodeURIComponent(id) + '/versions', undefined, 30_000, signal)
+  }
+
+  cloudNotesReadVersion(nodeID: number, versionID: number, signal?: AbortSignal) {
+    const params = new URLSearchParams({ node_id: String(nodeID), version_id: String(versionID) })
+    return this.request<{ markdown: string }>(
+      'GET', '/v1/cloud/notes/version-content?' + params.toString(), undefined, 30_000, signal)
+  }
+
   cloudOwnerShares(cursor = 0, limit = 50) {
     const query = new URLSearchParams({ cursor: String(cursor), limit: String(limit) })
     return this.request<AgentOwnerSharePage>('GET', `/v1/cloud/shares/all?${query.toString()}`)
@@ -5110,9 +5178,12 @@ export class AgentIPCClient {
     body?: unknown,
     timeoutMs = 10_000,
     externalSignal?: AbortSignal,
+    // Only explicitly marked Notes mutations disable transport replay;
+    // a lost response can follow a successfully committed POST/PUT/DELETE.
+    mayRetryUncertainResult = true,
   ): Promise<T> {
     let lastError: unknown
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < (mayRetryUncertainResult ? 2 : 1); attempt++) {
       if (externalSignal?.aborted) throw new AgentIPCError('aborted', 0, 'Desktop IPC request was cancelled.')
       const discovery = await this.loadDiscovery(attempt > 0)
       if (externalSignal?.aborted) throw new AgentIPCError('aborted', 0, 'Desktop IPC request was cancelled.')
@@ -5154,7 +5225,7 @@ export class AgentIPCClient {
             : `xdrive-agent request failed with HTTP ${response.status}.`
           const detail = typeof errorPayload.detail === 'string' ? errorPayload.detail : undefined
           const apiError = new AgentIPCError(code, response.status, message, detail)
-          if (response.status === 401 && attempt === 0) {
+          if (response.status === 401 && attempt === 0 && mayRetryUncertainResult) {
             this.invalidate()
             lastError = apiError
             continue
@@ -5169,6 +5240,10 @@ export class AgentIPCClient {
         if (error instanceof AgentIPCError) throw error
         lastError = error
         this.invalidate()
+        if (!mayRetryUncertainResult) {
+          throw new AgentIPCError('notes_commit_uncertain', 0,
+            'Notes write outcome unknown; inspect the current Owner notes before retry.')
+        }
         if (attempt === 0) continue
       } finally {
         clearTimeout(timer)
