@@ -43,7 +43,7 @@ func openYikeMigrationTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.Share{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.Share{}, &meta.UploadSession{}, &meta.FileOperation{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
@@ -235,14 +235,14 @@ func TestLegacyYikeMigrationVerifiedFilesKeepNodeAndShareIdentity(t *testing.T) 
 	}
 }
 
-func TestLegacyYikeMigrationMixedTreePausesAndPreservesOriginalShare(t *testing.T) {
+func TestLegacyYikeMigrationNestedMixedTreePausesAndPreservesOriginalShare(t *testing.T) {
 	db := openYikeMigrationTestDB(t)
 	user, root, connector, target, source := createLegacyYikeMigrationFixture(t, db)
 	targetID := target.ID
 	photo := meta.Node{OwnerID: user.ID, ParentID: &targetID, Name: "tracked.jpg",
 		Type: meta.NodeTypeFile, Revision: 1}
-	ordinary := meta.Node{OwnerID: user.ID, ParentID: &targetID, Name: "ordinary.pdf",
-		Type: meta.NodeTypeFile, Revision: 1}
+	ordinary := meta.Node{OwnerID: user.ID, ParentID: &targetID, Name: "ordinary-directory",
+		Type: meta.NodeTypeDir, Revision: 1}
 	if err := db.Create(&photo).Error; err != nil {
 		t.Fatal(err)
 	}
