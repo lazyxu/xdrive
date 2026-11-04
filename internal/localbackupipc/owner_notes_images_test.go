@@ -63,7 +63,7 @@ func TestOwnerNotesImageIPCAuthenticatedUploadAndRead(t *testing.T) {
 	c := &Client{
 		baseURL: srv.URL, token: "secret",
 		capabilities: []string{"cloud-notes", "cloud-notes-images"},
-		http: srv.Client(),
+		http:         srv.Client(),
 	}
 	receipt, err := c.OwnerNotesUploadImage(context.Background(), notesImageIPCNote, image)
 	if err != nil || receipt.RelativePath != relative || receipt.Bytes != int64(len(image)) {
@@ -88,7 +88,7 @@ func TestOwnerNotesImageIPCRejectsUnsafeIdentityAndMissingCapabilityBeforeNetwor
 	defer srv.Close()
 	c := &Client{baseURL: srv.URL, token: "secret",
 		capabilities: []string{"cloud-notes", "cloud-notes-images"},
-		http: srv.Client()}
+		http:         srv.Client()}
 	for _, noteID := range []string{"../foreign", "missing-uuid", strings.ToUpper(notesImageIPCNote)} {
 		if _, err := c.OwnerNotesUploadImage(context.Background(), noteID, []byte("GIF89a")); err == nil {
 			t.Fatalf("invalid note ID upload accepted: %q", noteID)
@@ -153,7 +153,7 @@ func TestOwnerNotesImageIPCRejectsCorruptedImageReceipt(t *testing.T) {
 	defer srv.Close()
 	c := &Client{baseURL: srv.URL, token: "secret",
 		capabilities: []string{"cloud-notes", "cloud-notes-images"},
-		http: srv.Client()}
+		http:         srv.Client()}
 	for mode := int32(0); mode <= 4; mode++ {
 		badMode.Store(mode)
 		if _, err := c.OwnerNotesReadImage(context.Background(), notesImageIPCNote, relative); err == nil {
