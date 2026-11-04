@@ -101,6 +101,10 @@ test('only explicitly mounted Source reads a verified actual Agent status and re
   assert.equal(calls[0].signal.aborted, false)
   assert.equal(tree.root.findByType('status-badge').props.label, 'partial')
   assert.match(textOf(tree.toJSON()), /已检查 8/)
+  assert.match(textOf(tree.toJSON()), /已跳过 1/)
+  assert.match(textOf(tree.toJSON()), /未支持 1/)
+  assert.match(textOf(tree.toJSON()), /待核对 2/)
+  assert.match(textOf(tree.toJSON()), /勿盲目重传/)
   assert.match(textOf(tree.toJSON()), /800 B/)
   assert.match(textOf(tree.toJSON()), /不代表整份备份完成/)
   await act(async () => {
@@ -110,6 +114,21 @@ test('only explicitly mounted Source reads a verified actual Agent status and re
   assert.deepEqual(calls.map(x => x.id), [57, 57])
   await act(async () => tree.unmount())
   assert.equal(calls[1].signal.aborted, true)
+})
+
+test('a verified Source with no unsupported or uncertain files shows no false warning', async () => {
+  const tree = await mount({
+    inspect: async id => current(id, {
+      skipped_files: 4, unsupported_files: 0, uncertain_files: 0,
+      confirmed_files: 4,
+    }),
+  })
+  const body = textOf(tree.toJSON())
+  assert.match(body, /已跳过 4/)
+  assert.match(body, /未支持 0/)
+  assert.match(body, /待核对 0/)
+  assert.doesNotMatch(body, /勿盲目重传/)
+  await act(async () => tree.unmount())
 })
 
 test('invalid completion/CAS claims, wrong Source and Agent errors show no false progress', async () => {
