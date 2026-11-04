@@ -365,6 +365,15 @@ func (s *Server) createSource(c *gin.Context) {
 			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
 			return
 		}
+	} else if isSynologyPull {
+		// Deprecated clients may still submit the old picker value. Validate
+		// ownership for compatibility, but never use it as the new target.
+		if req.TargetNodeID != 0 {
+			if _, err := s.ownedDirectory(userID(c), req.TargetNodeID); err != nil {
+				fail(c, http.StatusBadRequest, "target directory not found")
+				return
+			}
+		}
 	} else {
 		if req.TargetNodeID == 0 {
 			fail(c, http.StatusBadRequest, "target_node_id is required")
@@ -397,8 +406,10 @@ func (s *Server) createSource(c *gin.Context) {
 			// Device enrollment and binding are a separate guarded delivery phase.
 			status = meta.SourceStatusPaused
 		}
-		value := req.TargetNodeID
-		target = &value
+		if !isSynologyPull {
+			value := req.TargetNodeID
+			target = &value
+		}
 	}
 	source := meta.Source{
 		OwnerID: userID(c), Name: req.Name, Kind: req.Kind, Direction: req.Direction,
@@ -426,11 +437,39 @@ func (s *Server) createSource(c *gin.Context) {
 			}
 			return tx.Create(&source).Error
 		})
+	} else if isSynologyPull {
+		// A new Pull Source owns its newly-created leaf; older manual target
+		// selections are ignored. Source + Node creation must commit together.
+		createErr = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&source).Error; err != nil {
+				return err
+			}
+			managed, err := createSynologyPullManagedTargetTx(c.Request.Context(), tx, source)
+			if err != nil {
+				return err
+			}
+			updated := tx.Model(&meta.Source{}).
+				Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+				Updates(map[string]any{"target_node_id": managed.ID, "target_managed": true})
+			if updated.Error != nil {
+				return updated.Error
+			}
+			if updated.RowsAffected != 1 {
+				return errSourceManagedDirectoryOccupied
+			}
+			source.TargetNodeID = &managed.ID
+			source.TargetManaged = true
+			return nil
+		})
 	} else {
 		createErr = s.DB.WithContext(c.Request.Context()).Create(&source).Error
 	}
 	if createErr != nil {
 		switch {
+		case errors.Is(createErr, errSourceManagedDirectoryOccupied), errors.Is(createErr, errYikeTargetPathConflict):
+			fail(c, http.StatusConflict, "managed source target name/path is occupied")
+		case errors.Is(createErr, errSourceManagedAncestorInUse):
+			fail(c, http.StatusConflict, "managed source hierarchy overlaps an existing Source")
 		case errors.Is(createErr, errLocalSourceCreateDeviceUnauthorized):
 			fail(c, http.StatusForbidden, "owning device credential invalid or revoked")
 		case isDuplicate(createErr):

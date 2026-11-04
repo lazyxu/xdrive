@@ -66,6 +66,15 @@ func (s *Server) tryInstantUploadSession(
 
 	var currentRevision uint64
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if req.NodeID != nil {
+			if err := requireOrdinarySourceTargetTx(ctx, tx, uid, *req.NodeID); err != nil {
+				return err
+			}
+		} else if req.ParentID != nil {
+			if err := requireOrdinarySourceTargetTx(ctx, tx, uid, *req.ParentID); err != nil {
+				return err
+			}
+		}
 		if shareGrant != nil {
 			if err := s.publicShareInstantUploadAdmissionTx(ctx, tx, *shareGrant, uid, req, storageKey); err != nil {
 				return err

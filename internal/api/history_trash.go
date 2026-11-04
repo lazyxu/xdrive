@@ -248,6 +248,9 @@ func (s *Server) trashRestore(c *gin.Context) {
 			First(&parent).Error; err != nil {
 			return errTrashParentUnavailable
 		}
+		if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, userID(c), *root.ParentID); err != nil {
+			return err
+		}
 		if err := notesRejectDestinationWithReason(c.Request.Context(), tx, userID(c), *root.ParentID, root.Name); err != nil {
 			return err
 		}
@@ -276,6 +279,8 @@ func (s *Server) trashRestore(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errNotesManagedPath):
 			fail(c, http.StatusConflict, errNotesManagedPath.Error())
+		case errors.Is(err, errManagedSourceWriteDenied):
+			fail(c, http.StatusConflict, err.Error())
 		case errors.Is(err, errTrashParentUnavailable):
 			fail(c, http.StatusConflict, "original parent is unavailable or still in trash")
 		case errors.Is(err, errTrashNameConflict), isDuplicate(err):
@@ -475,6 +480,9 @@ func (s *Server) restoreFileVersion(c *gin.Context) {
 		if err := notesRejectNodeWithReason(c.Request.Context(), tx, userID(c), id); err != nil {
 			return err
 		}
+		if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, userID(c), id); err != nil {
+			return err
+		}
 		currentRevision = current.Revision
 		if current.Revision != expected {
 			return errRevisionConflict
@@ -517,7 +525,9 @@ func (s *Server) restoreFileVersion(c *gin.Context) {
 			}))
 	})
 	if err != nil {
-		if errors.Is(err, errNotesManagedPath) {
+		if errors.Is(err, errManagedSourceWriteDenied) {
+			fail(c, http.StatusConflict, err.Error())
+		} else if errors.Is(err, errNotesManagedPath) {
 			fail(c, http.StatusConflict, errNotesManagedPath.Error())
 		} else if errors.Is(err, errRevisionConflict) {
 			revisionConflict(c, expected, currentRevision)

@@ -96,3 +96,34 @@ func TestPreviewResourceStreamJWT(t *testing.T) {
 		t.Fatal("empty resource fingerprint was accepted")
 	}
 }
+
+func TestSourceRunJWTClaimsAreExactAndOrdinaryJWTStaysUnscoped(t *testing.T) {
+	manager := New("test-secret-that-is-long-enough", time.Hour)
+	ordinary, err := manager.Issue(42, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordinaryClaims, err := manager.ParseClaims(ordinary)
+	if err != nil || ordinaryClaims.SourceID != 0 || ordinaryClaims.SourceRunID != "" {
+		t.Fatalf("ordinary JWT acquired SourceRun scope: %+v err=%v", ordinaryClaims, err)
+	}
+
+	runToken, err := manager.IssueSourceRunAccess(42, 7, 33, "b743a2ec-74c8-4b36-9e61-2f9016eb71ff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runClaims, err := manager.ParseClaims(runToken)
+	if err != nil || runClaims.UserID != 42 || runClaims.SessionVersion != 7 ||
+		runClaims.SourceID != 33 || runClaims.SourceRunID != "b743a2ec-74c8-4b36-9e61-2f9016eb71ff" {
+		t.Fatalf("SourceRun JWT claims are not exact: %+v err=%v", runClaims, err)
+	}
+	if _, _, err := New("different-secret", time.Hour).Parse(runToken); err == nil {
+		t.Fatal("SourceRun JWT signed with the wrong secret was accepted")
+	}
+	if _, err := manager.IssueSourceRunAccess(42, 7, 0, "b743a2ec-74c8-4b36-9e61-2f9016eb71ff"); err == nil {
+		t.Fatal("zero SourceID was accepted")
+	}
+	if _, err := manager.IssueSourceRunAccess(42, 7, 33, ""); err == nil {
+		t.Fatal("empty SourceRunID was accepted")
+	}
+}

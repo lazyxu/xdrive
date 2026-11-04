@@ -370,6 +370,9 @@ func (s *Server) executeRedoCopyTx(
 		if err := notesRejectDestinationWithReason(ctx, tx, uid, snapshot.ParentID, snapshot.Name); err != nil {
 			return redoConflict(index, root.ID, "managed Notes destination is protected")
 		}
+		if err := requireOrdinarySourceTargetTx(ctx, tx, uid, snapshot.ParentID); err != nil {
+			return redoConflict(index, root.ID, "managed Source destination is read-only")
+		}
 		exists, err := batchNameExistsTx(tx, uid, snapshot.ParentID, snapshot.Name, root.ID)
 		if err != nil {
 			return err
@@ -446,6 +449,12 @@ func (s *Server) executeRedoMoveTx(
 		}
 		if err := notesRejectDestinationWithReason(ctx, tx, uid, snapshot.ParentID, snapshot.Name); err != nil {
 			return redoConflict(index, node.ID, "managed Notes destination is protected")
+		}
+		if err := requireOrdinarySourceMutationTx(ctx, tx, uid, node.ID); err != nil {
+			return redoConflict(index, node.ID, "managed Source node is read-only")
+		}
+		if err := requireOrdinarySourceTargetTx(ctx, tx, uid, snapshot.ParentID); err != nil {
+			return redoConflict(index, node.ID, "managed Source destination is read-only")
 		}
 		currentParentID := *node.ParentID
 		currentName := node.Name
@@ -538,6 +547,9 @@ func (s *Server) executeRedoDeleteTx(
 
 		if err := notesRejectNodeWithReason(ctx, tx, uid, root.ID); err != nil {
 			return redoConflict(index, root.ID, "managed Notes cannot be deleted")
+		}
+		if err := requireOrdinarySourceMutationTx(ctx, tx, uid, root.ID); err != nil {
+			return redoConflict(index, root.ID, "managed Source node is read-only")
 		}
 		currentNodes, err := fileOperationActiveNodeRefsTx(tx, uid, root.ID)
 		if err != nil {

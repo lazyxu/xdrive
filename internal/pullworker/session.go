@@ -68,6 +68,8 @@ func BeginRunSession(
 	if err != nil {
 		return nil, err
 	}
+	// Only the active Pull executor receives this narrowly scoped capability.
+	api.SetSourceRun(source.ID, run.ID)
 	runCtx, cancel := context.WithCancel(ctx)
 	api.SetCancelRun(cancel)
 	go watchRunCancellation(

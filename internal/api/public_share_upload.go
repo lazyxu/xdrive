@@ -145,6 +145,11 @@ func (s *Server) publicShareUploadAdmissionTx(
 	if err := notesRejectNodeWithReason(ctx, tx, ownerID, parent.ID); err != nil {
 		return share, errShareUploadDenied
 	}
+	// A view_upload Share on an ordinary ancestor never authorizes writes to
+	// its managed Source descendants, even if the Share predates migration.
+	if err := requireOrdinarySourceTargetTx(ctx, tx, ownerID, parent.ID); err != nil {
+		return share, errShareUploadDenied
+	}
 	allowed, err := publicShareUploadContainsNodeTx(ctx, tx, ownerID, root.ID, parent.ID)
 	if err != nil || !allowed {
 		return share, errShareUploadDenied

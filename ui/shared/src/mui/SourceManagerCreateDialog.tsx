@@ -164,6 +164,11 @@ export function XDriveSourceCreateDialog({
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
             存储子目录：{yikeManagedTargetDisplayLabel}。连接成功后由服务器在既有固定根目录下按百度 UID 和账号名称创建；底层文件仍使用 xDrive CAS 存储。
           </XDriveStatusAlert>
+        ) : option.direction === 'pull' ? (
+          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
+            目标目录由服务器自动创建：远程拉取 / {option.kind === 'synology_files' ? 'Synology Files' : 'Synology Photos'} / {values.name.trim() || '来源名称'}。
+            无需选择云端文件夹；不会占用已有的普通目录。服务器需能访问下面填写的 DSM 地址。
+          </XDriveStatusAlert>
         ) : targetBrowsingEnabled ? (
           <MuiBox sx={{ mb: 2, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
             <Stack
@@ -212,11 +217,6 @@ export function XDriveSourceCreateDialog({
                 </MuiButton>
               ))}
             </Stack>
-            {option.direction === 'pull' ? (
-              <MuiTypography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                服务器会直接连接 DSM，请确保 xDrive Server 能访问下面填写的 DSM 地址。
-              </MuiTypography>
-            ) : null}
           </MuiBox>
         ) : (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
@@ -224,11 +224,6 @@ export function XDriveSourceCreateDialog({
             <MuiTypography variant="body2">
               当前目标：{selectedTargetLabel}{selectedTargetPath ? `（${selectedTargetPath}）` : '（我的文件根目录）'}
             </MuiTypography>
-            {option.direction === 'pull' ? (
-              <MuiTypography variant="body2" sx={{ mt: 0.5 }}>
-                服务器会直接连接 DSM，请确保 xDrive Server 能访问下面填写的 DSM 地址。
-              </MuiTypography>
-            ) : null}
           </XDriveStatusAlert>
         )}
 

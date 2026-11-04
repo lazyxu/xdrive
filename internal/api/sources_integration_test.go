@@ -102,8 +102,10 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(fileCreate.Body.Bytes(), &fileSource); err != nil {
 		t.Fatal(err)
 	}
-	if fileSource.Status != meta.SourceStatusPaused || fileSource.Revision != 1 || fileSource.TargetPath != "Synology" {
-		t.Fatalf("File Station source should start paused with its persisted target path: %+v", fileSource)
+	if fileSource.Status != meta.SourceStatusPaused || fileSource.Revision != 1 ||
+		fileSource.TargetNodeID == nil || *fileSource.TargetNodeID == targetA.ID ||
+		fileSource.TargetPath != "同步文件夹/远程拉取/Synology Files/Synology Files" {
+		t.Fatalf("File Station source should start paused with an exclusive managed target: %+v", fileSource)
 	}
 	filePath := fmt.Sprintf("/api/v1/sources/%d", fileSource.ID)
 	requestWithHeaders(t, router, http.MethodPatch, filePath, tokenA,

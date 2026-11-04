@@ -266,6 +266,9 @@ func (s *Server) executeUndoCopyTx(
 		if err := notesRejectNodeWithReason(ctx, tx, uid, root.ID); err != nil {
 			return undoConflict(index, root.ID, "managed Notes cannot be changed")
 		}
+		if err := requireOrdinarySourceMutationTx(ctx, tx, uid, root.ID); err != nil {
+			return undoConflict(index, root.ID, "managed Source node is read-only")
+		}
 		if root.Revision != snapshot.Root.Revision {
 			return undoConflict(index, root.ID, "copied item changed after the copy operation")
 		}
@@ -383,6 +386,12 @@ func (s *Server) executeUndoMoveTx(
 		if err := notesRejectDestinationWithReason(ctx, tx, uid, snapshot.ParentID, snapshot.Name); err != nil {
 			return undoConflict(index, node.ID, "managed Notes destination is protected")
 		}
+		if err := requireOrdinarySourceMutationTx(ctx, tx, uid, node.ID); err != nil {
+			return undoConflict(index, node.ID, "managed Source node is read-only")
+		}
+		if err := requireOrdinarySourceTargetTx(ctx, tx, uid, snapshot.ParentID); err != nil {
+			return undoConflict(index, node.ID, "managed Source destination is read-only")
+		}
 		redoParentID := *node.ParentID
 		redoName := node.Name
 		if _, err := batchTargetDirectoryTx(tx, uid, snapshot.ParentID); err != nil {
@@ -478,6 +487,9 @@ func (s *Server) executeUndoDeleteTx(
 		}
 		if err := notesRejectDestinationWithReason(ctx, tx, uid, *root.ParentID, root.Name); err != nil {
 			return undoConflict(index, root.ID, "managed Notes destination is protected")
+		}
+		if err := requireOrdinarySourceTargetTx(ctx, tx, uid, *root.ParentID); err != nil {
+			return undoConflict(index, root.ID, "managed Source destination is read-only")
 		}
 		var count int64
 		if err := tx.Model(&meta.Node{}).
