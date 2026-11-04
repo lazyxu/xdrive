@@ -21,7 +21,7 @@ test('foreground bearer and approved iOS background grant reuse EXACTLY one nati
   assert.match(native, /XDriveIOSBackgroundOriginalNamePolicy\.valid\(name\)/)
   assert.match(native, /parentID == credential\.targetNodeID/)
   assert.match(native, /guard case \.foregroundBearer = authorization else/)
-  assert.match(native, /XDriveIOSBackgroundUploadRoutePolicy\.translatedPath\(path\)/)
+  assert.match(native, /XDriveIOSManagedPhotoBackgroundUploadRoutePolicy\.translatedPath\(path\)/)
   assert.match(native, /credential\.grantSecret/)
   assert.match(native, /X-XDrive-Device-Token/)
   assert.match(native, /X-XDrive-IOS-Photo-Grant/)
