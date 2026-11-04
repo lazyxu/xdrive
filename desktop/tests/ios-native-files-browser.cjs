@@ -212,6 +212,8 @@ test('native Files search matches PWA source and tag filters, including filter-o
   assert.match(view, /folderID: folder\?\.id \?\? intent\.file\?\.parent_id \?\?[\s\S]*?intent\.directory\?\.parent_id/);
   assert.match(source, /if \(filters\.sourceID\) params\.set\('source_id', String\(Math\.max\(1, Math\.trunc\(filters\.sourceID\)\)\)\)/);
   assert.match(source, /if \(filters\.tagID\) params\.set\('tag_id', String\(Math\.max\(1, Math\.trunc\(filters\.tagID\)\)\)\)/);
+  assert.match(source, /sources\(\) \{\s*return this\.request<ExternalSource\[]>\('\/api\/v1\/sources'\)/);
+  assert.match(source, /fileTags\(\) \{\s*return this\.request<XDriveFileTag\[]>\('\/api\/v1\/file-tags'\)/);
   assert.match(server, /filters\.SourceID = sourceID/);
   assert.match(server, /filters\.TagID = tagID/);
   assert.match(web, /useXDriveFileExplorerOwnerSourceOptions/);

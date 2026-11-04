@@ -837,6 +837,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .disabled(login.owner == nil)
             }
             if searchOptions.loading {
                 HStack(spacing: 8) {
