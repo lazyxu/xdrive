@@ -73,6 +73,8 @@ type Server struct {
 	PhotoHostTrustRootSHA256       string
 	PhotoFacePreviewBaseURL        string
 	HostControlDir                 string
+	OfflineUpdateImportDir         string
+	offlineUpdateImportMu          sync.Mutex
 	FilesDataHostPath              string
 	PostgresDataHostPath           string
 	BackupRootHostPath             string
@@ -607,6 +609,15 @@ func (s *Server) Router() *gin.Engine {
 	admin.POST("/background-tasks/control", s.adminControlBackgroundTask)
 	admin.GET("/update", s.adminServerUpdateStatus)
 	admin.POST("/update", s.adminStartServerUpdate)
+	// Admin-only bytes transport. These endpoints do not execute Docker or
+	// authorize an installer: the separate Host verifies signed identities.
+	admin.POST("/update/offline/imports", s.adminCreateOfflineUpdateImport)
+	admin.GET("/update/offline/imports", s.adminListOfflineUpdateImports)
+	admin.GET("/update/offline/imports/:id", s.adminGetOfflineUpdateImport)
+	admin.DELETE("/update/offline/imports/:id", s.adminDeleteOfflineUpdateImport)
+	admin.POST("/update/offline/imports/:id/files/:name", s.adminRegisterOfflineUpdateFile)
+	admin.PUT("/update/offline/imports/:id/files/:name/chunks/:index", s.adminUploadOfflineUpdateChunk)
+	admin.POST("/update/offline/imports/:id/files/:name/finalize", s.adminFinalizeOfflineUpdateFile)
 	admin.GET("/backups", s.adminBackupManagement)
 	admin.GET("/backups/snapshots", s.adminBackupSnapshotPage)
 	admin.POST("/backups/actions", s.adminSubmitBackupManagement)
