@@ -39,7 +39,7 @@ type UpgradePlan struct {
 	SelectedExpandedBytes    int64                  `json:"selected_expanded_bytes"`
 	MinimumTemporaryBytes    int64                  `json:"minimum_temporary_bytes"`
 	EstimatedFullDiskBytes   *int64                 `json:"estimated_full_disk_bytes"` // null: Docker and backup cannot be predicted
-	HostProbe                *HostRuntimeProbe      `json:"host_probe,omitempty"`        // opt-in live read-only observations
+	HostProbe                *HostRuntimeProbe      `json:"host_probe,omitempty"`      // opt-in live read-only observations
 	RequiresHostVerification []string               `json:"requires_host_verification"`
 }
 
