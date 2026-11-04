@@ -93,12 +93,12 @@ test('Owner browse, media/Viewer and write/task interfaces are disjoint exact al
   const capturedMediaCalls = [...explorer.matchAll(/\bagent\.([A-Za-z]\w*)\s*\(/g)]
   assert.ok(capturedMediaCalls.every(m => media.includes(m[1])),
     'Late preview/LivePhoto cleanup must stay on originally bound media session')
-assert.ok(browse.includes('cloudFileRecentFolders'), 'browse domain includes recent-folder reads')
+  assert.ok(browse.includes('cloudFileRecentFolders'), 'browse domain includes recent-folder reads')
   assert.ok(media.includes('getMediaViewerPreview') && media.includes('getMediaAnalysisPreview'),
     'Viewer 4K and legacy JPEG reads must stay in the exact typed media allowlist')
   assert.ok(!browse.includes('getMediaViewerPreview') && !write.includes('getMediaViewerPreview'),
     'Viewer preview cannot become a browsing or write capability')
-assert.ok(write.includes('cloudTouchFileRecentFolder') && write.includes('cloudClearFileRecentFolders'), 'write domain contains only explicit recent-folder mutations')
+  assert.ok(write.includes('cloudTouchFileRecentFolder') && write.includes('cloudClearFileRecentFolders'), 'write domain contains only explicit recent-folder mutations')
   const joined = [...browse, ...media, ...write]
   assert.deepEqual(joined.sort(), allowed)
   for (const name of ['browse', 'media', 'write']) {
