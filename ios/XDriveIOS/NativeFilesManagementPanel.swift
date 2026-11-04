@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 private struct XDriveIOSNativeFilesManageDestinationIntent: Identifiable {
@@ -49,13 +50,18 @@ struct XDriveIOSNativeFilesManagementPanel: View {
     @State private var createTask: Task<Void, Never>?
     @State private var destinationIntent: XDriveIOSNativeFilesManageDestinationIntent?
     @State private var shareNode: XDriveIOSNativeFilesNode?
+    @State private var copyPathEpoch = UUID()
+    @State private var copyPathTask: Task<Void, Never>?
+    @State private var copyPathBusy = false
+    @State private var copyPathStatus: String?
 
     private var verified: Bool {
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
     }
     private var anyBusy: Bool {
         createBusy || exporter.busy || folderArchive.busy || uploader.busy ||
-            mutator.busy || destinationWriter.busy || favoriteMutation.busy
+            mutator.busy || destinationWriter.busy || favoriteMutation.busy ||
+            copyPathBusy
     }
 
     var body: some View {
@@ -368,6 +374,24 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         }
                     }
                 }
+                if verified, let selected = file ?? directory {
+                    Section("云端路径") {
+                        Button {
+                            copyCurrentPath(selected)
+                        } label: {
+                            Label(copyPathBusy ? "正在核对路径…" : "复制路径",
+                                  systemImage: "doc.on.doc")
+                        }
+                        .disabled(anyBusy)
+                        .accessibilityIdentifier("native-ios-files-copy-path")
+                        if let copyPathStatus {
+                            Text(copyPathStatus)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("native-ios-files-copy-path-status")
+                        }
+                    }
+                }
             }
             .navigationTitle(file?.name ?? directory?.name ?? "文件夹操作")
             .navigationBarTitleDisplayMode(.inline)
@@ -470,6 +494,11 @@ struct XDriveIOSNativeFilesManagementPanel: View {
     }
 
     private func invalidate() {
+        copyPathEpoch = UUID()
+        copyPathTask?.cancel()
+        copyPathTask = nil
+        copyPathBusy = false
+        copyPathStatus = nil
         createEpoch = UUID()
         createTask?.cancel()
         createTask = nil
@@ -488,6 +517,52 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         mutator.invalidate()
         destinationWriter.invalidate()
         favoriteMutation.invalidate()
+    }
+
+    /// Copy only the current Server-confirmed path, not a cached display hint.
+    @MainActor
+    private func copyCurrentPath(_ node: XDriveIOSNativeFilesNode) {
+        guard verified, !anyBusy, file == node || directory == node else {
+            copyPathStatus = "当前文件或账户不可用，请刷新。"
+            return
+        }
+        let ticket = UUID()
+        copyPathEpoch = ticket
+        copyPathBusy = true
+        copyPathStatus = "正在验证云端文件位置…"
+        copyPathTask = Task { @MainActor in
+            defer {
+                if copyPathEpoch == ticket {
+                    copyPathBusy = false
+                    copyPathTask = nil
+                }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard copyPathEpoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(
+                        auth.owner, expectedOwner
+                      ), verified else { return }
+                let currentPath = try await XDriveIOSNativeFilesLocateReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                ).copyPath(node)
+                try Task.checkCancellation()
+                let after = try await login.verifiedAuthorization()
+                guard copyPathEpoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(
+                        after.owner, expectedOwner
+                      ), verified else { return }
+                UIPasteboard.general.string = currentPath
+                copyPathStatus = "已复制当前云端路径。"
+            } catch is CancellationError {
+                if copyPathEpoch == ticket { copyPathStatus = "已取消读取路径。" }
+            } catch {
+                if copyPathEpoch == ticket {
+                    copyPathStatus = "未能确认当前云端路径，请刷新后重试。"
+                }
+            }
+        }
     }
 
     private func createDirectory() {
