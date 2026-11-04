@@ -11,9 +11,9 @@ struct XDriveBackupAppleNoteIntent: AppIntent {
     )
     static var openAppWhenRun = false
 
-    @Parameter(title: "备忘录标题") var noteTitle: String
-    @Parameter(title: "备忘录纯文本或 Markdown") var noteText: String
-    @Parameter(title: "稳定的原生备忘录标识（选填）") var sourceIdentifier: String?
+    @Parameter(title: "Apple 备忘录标题") var noteTitle: String
+    @Parameter(title: "Apple 备忘录纯文本或 Markdown") var noteText: String
+    @Parameter(title: "Apple 备忘录稳定标识（选填）") var sourceIdentifier: String?
 
     static var parameterSummary: some ParameterSummary {
         Summary("将 \(\.$noteTitle) 备份到 xDrive")
@@ -24,7 +24,7 @@ struct XDriveBackupAppleNoteIntent: AppIntent {
             title: noteTitle, text: noteText, sourceIdentifier: sourceIdentifier
         )
         if result.newNote {
-            return .result(dialog: "xDrive 已保存新的只读 Markdown 备忘录。")
+            return .result(dialog: "xDrive 已保存新的只读笔记备份。")
         }
         return .result(dialog: "xDrive 已核对并保存本次备份；旧版本保留。")
     }
@@ -47,10 +47,10 @@ enum XDriveIOSNotesImportError: LocalizedError {
         case .anotherUploadActive:
             return "有其他原件备份操作正在进行，本次未开始。"
         case .server(let status):
-            if status == 404 { return "服务器暂不支持新版备忘录 API，请升级 xDrive Server。" }
-            return "备忘录接口请求失败（HTTP \(status)）。"
+            if status == 404 { return "服务器暂不支持新版笔记 API，请升级 xDrive Server。" }
+            return "笔记接口请求失败（HTTP \(status)）。"
         case .invalidReceipt:
-            return "服务器备忘录收据、Owner 目录或内容哈希核对失败。"
+            return "服务器笔记收据、Owner 目录或内容哈希核对失败。"
         case .uncertainCommit:
             return "备份提交结果不确定，请在云端 iOS备份 中核对，避免手动重复提交。"
         }

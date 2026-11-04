@@ -26,7 +26,7 @@ private enum XDriveIOSNativeDynamicFeature: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .notes: return "备忘录"
+        case .notes: return "笔记"
         case .backup: return "相册备份"
         case .transfers: return "传输任务"
         case .sync: return "同步"
@@ -61,7 +61,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
         case .originals: return "备份原件"
         case .map: return "地图"
         case .files: return "文件"
-        case .notes: return "备忘录"
+        case .notes: return "笔记"
         case .backup: return "相册备份"
         case .transfers: return "传输"
         case .sync: return "同步"

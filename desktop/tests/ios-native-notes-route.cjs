@@ -10,7 +10,7 @@ test('iOS All launcher opens one native Notes feature inside existing five tabs'
   assert.match(source, /case local, albums, cloud, originals, map, files, notes/)
   assert.match(source, /case \.notes:\s+openDynamic\(\.notes\)/)
   assert.match(source, /case \.notes:\s+XDriveIOSNativeNotesScreen\(login: login\)/)
-  assert.match(source, /case \.notes: return "备忘录"/)
+  assert.match(source, /case \.notes: return "笔记"/)
   assert.match(source, /case \.local, \.albums, \.cloud, \.originals, \.map, \.files, \.notes: return "内容浏览"/)
   assert.match(source, /private enum XDriveIOSNativeBottomTab: String \{\s+case launcher, dynamic, gallery, files, mine/)
   assert.doesNotMatch(source, /WKWebView|WebView\(/)
