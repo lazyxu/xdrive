@@ -44,7 +44,7 @@ func TestLocalPushAutoManagedTargetAndDraftCancellation(t *testing.T) {
 		CredentialHash: deviceCredentialDigest(secretB), CreatedAt: now, UpdatedAt: now,
 	}
 	for _, device := range []meta.ClientDevice{deviceA, deviceB} {
-		if err := db.Create(&device).Error {
+		if err := db.Create(&device).Error; err != nil {
 			t.Fatal(err)
 		}
 	}

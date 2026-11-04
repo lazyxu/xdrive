@@ -21,10 +21,13 @@ test('Device Backup local creation is only wired by Desktop Agent capabilities',
   assert.match(page, /target: Boolean\(localTarget && targetBrowser\)/)
   assert.match(page, /localActions\.target \?/)
   assert.equal(web.includes('localCreate='), false)
-  assert.match(page, /localCreate && targetBrowser/)
+  assert.match(page, /localCreate && source/) 
+  // Creation no longer asks the user to pick an ordinary cloud folder.
+  // Only the already device-scoped Server chooses the actual target Node.
+  assert.doesNotMatch(dialog, /targetBrowser|target!\.id/)
   assert.match(page, /currentLocalDevice,/)
   assert.match(page, /xDriveLocalBackupFeatureAccess\(\{/)
-  assert.match(dialog, /actions\.create\(name\.trim\(\), target!\.id\)/)
+  assert.match(dialog, /actions\.create\(normalizedName, 0\)/)
   assert.match(dialog, /actions\.authorize\(current\.id\)/)
   assert.match(dialog, /actions\.discard\(current\.id, current\.revision\)/)
   assert.equal(dialog.includes('X-XDrive-Device-Token'), false)
