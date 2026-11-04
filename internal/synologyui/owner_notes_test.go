@@ -69,7 +69,7 @@ func (f *dsmNotesFixture) OwnerNotesCreate(_ context.Context, write client.Notes
 }
 func (f *dsmNotesFixture) OwnerNotesUpdate(_ context.Context, id string, write client.NotesWrite) (client.NotesRow, error) {
 	f.writes++
-	return f.notesRow(write.Markdown, write.ExpectedRevision + 1), nil
+	return f.notesRow(write.Markdown, write.ExpectedRevision+1), nil
 }
 func (f *dsmNotesFixture) OwnerNotesDelete(context.Context, string, uint64) error {
 	f.writes++
@@ -120,7 +120,7 @@ func TestDSMNotesCGIOwnerScopedNoGeneralProxy(t *testing.T) {
 		t.Fatalf("Notes capability preflight failed: %d %s", res.Code, res.Body.String())
 	}
 	namespace := dsmNotesRequest(h, http.MethodPost, "cloud-notes-namespace", "",
-		`{"owner_scope":"` + ownerScope + `"}`, csrf)
+		`{"owner_scope":"`+ownerScope+`"}`, csrf)
 	if namespace.Code != 200 || f.writes != 1 {
 		t.Fatalf("Notes namespace denied: %d %s", namespace.Code, namespace.Body.String())
 	}
@@ -139,15 +139,15 @@ func TestDSMNotesCGIOwnerScopedNoGeneralProxy(t *testing.T) {
 		t.Fatalf("Owner Notes reads not isolated: %d", f.reads)
 	}
 	if res := dsmNotesRequest(h, http.MethodPost, "cloud-notes-create", "",
-		`{"owner_scope":"` + ownerScope + `","title":"Title","markdown":"text"}`, csrf); res.Code != 200 {
+		`{"owner_scope":"`+ownerScope+`","title":"Title","markdown":"text"}`, csrf); res.Code != 200 {
 		t.Fatalf("Notes create rejected: %d %s", res.Code, res.Body.String())
 	}
 	if res := dsmNotesRequest(h, http.MethodPost, "cloud-notes-save", "",
-		`{"owner_scope":"` + ownerScope + `","id":"` + dsmNotesFixtureID + `","title":"Title","markdown":"updated","expected_revision":1}`, csrf); res.Code != 200 {
+		`{"owner_scope":"`+ownerScope+`","id":"`+dsmNotesFixtureID+`","title":"Title","markdown":"updated","expected_revision":1}`, csrf); res.Code != 200 {
 		t.Fatalf("Notes save rejected: %d %s", res.Code, res.Body.String())
 	}
 	if res := dsmNotesRequest(h, http.MethodPost, "cloud-notes-delete", "",
-		`{"owner_scope":"` + ownerScope + `","id":"` + dsmNotesFixtureID + `","revision":2}`, csrf); res.Code != 200 {
+		`{"owner_scope":"`+ownerScope+`","id":"`+dsmNotesFixtureID+`","revision":2}`, csrf); res.Code != 200 {
 		t.Fatalf("Notes delete rejected: %d %s", res.Code, res.Body.String())
 	}
 	if f.writes != 4 {
@@ -160,9 +160,9 @@ func TestDSMNotesCGIOwnerScopedNoGeneralProxy(t *testing.T) {
 		want                            int
 	}{
 		{"foreignOwner", http.MethodPost, "cloud-notes-delete", "",
-			`{"owner_scope":"` + badScope + `","id":"` + dsmNotesFixtureID + `","revision":2}`, csrf, 409},
+			`{"owner_scope":"`+badScope+`","id":"`+dsmNotesFixtureID+`","revision":2}`, csrf, 409},
 		{"withoutCSRF", http.MethodPost, "cloud-notes-namespace", "",
-			`{"owner_scope":"` + ownerScope + `"}`, "", 403},
+			`{"owner_scope":"`+ownerScope+`"}`, "", 403},
 		{"duplicateQuery", http.MethodGet, "cloud-notes-read", "id=" + dsmNotesFixtureID + "&id=" + dsmNotesFixtureID, "", "", 400},
 		{"invalidRevision", http.MethodGet, "cloud-notes-history", "node_id=0&version_id=1", "", "", 400},
 		{"notNotesRoute", http.MethodGet, "cloud-notes-arbitrary", "", "", "", 404},
@@ -178,7 +178,7 @@ func TestDSMNotesCGIOwnerScopedNoGeneralProxy(t *testing.T) {
 	}
 	f.owner = "bob"
 	if res := dsmNotesRequest(h, http.MethodPost, "cloud-notes-namespace", "",
-		`{"owner_scope":"` + ownerScope + `"}`, csrf); res.Code != 409 {
+		`{"owner_scope":"`+ownerScope+`"}`, csrf); res.Code != 409 {
 		t.Fatalf("old Owner scope reused after switch: HTTP %d", res.Code)
 	}
 	f.owner = "alice"
