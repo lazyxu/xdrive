@@ -22,7 +22,7 @@ test('native Photos wall offers three square thumbnail densities, no change to o
     assert.ok(density.includes(item), 'missing density policy: ' + item)
   }
   assert.match(page, /let density: XDriveIOSNativePhotoWallDensity/)
-  assert.match(page, /XDriveIOSNativeSquarePhotoTile\(candidate: candidate\)/)
+  assert.match(page, /XDriveIOSNativeSquarePhotoTile\(\s*candidate: candidate, framing: framing/)
   assert.equal((page.match(/minimum: density\.minimumCellWidth/g) || []).length, 2)
   assert.equal((page.match(/maximum: density\.maximumCellWidth/g) || []).length, 2)
   assert.match(square, /GeometryReader \{ geometry in/)
@@ -52,7 +52,7 @@ test('changing density never changes PhotoKit identity, backup scans or UI item 
   assert.match(page, /loaded\.startOffset == offset/)
   assert.match(page, /\.onDisappear \{\s*page = nil/)
   assert.match(square, /\.task\(id: "\\\(candidate\.id\)-\\\(framing\.rawValue\)"\)/)
-  assert.match(square, /loader\.load\(candidate\.id, size: CGSize\(width: 420, height: 420\)\)/)
+  assert.match(square, /loader\.load\(\s*candidate\.id, size: CGSize\(width: 420, height: 420\),\s*contentMode: framing == \.complete \? \.aspectFit : \.aspectFill/)
   assert.match(square, /loader\.cancel\(\)/)
   assert.match(page, /\.id\("photo:\/?\\\(candidate\.id\)"\)/)
   assert.match(page, /\.id\("page:\/?\\\(offset\)"\)/)
