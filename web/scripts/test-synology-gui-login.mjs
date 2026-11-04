@@ -15,6 +15,12 @@ const schema = read('internal/synologyui/server_login.go')
 const workflow = read('.github/workflows/synology-ui.yml')
 
 assert.match(gui, /<XDriveSettingsDialog/)
+assert.match(gui, /normalizeXDriveAppearance\(xDriveBrowserStorageRead\(DSM_APPEARANCE_KEY\)\)/)
+assert.match(gui, /xDriveBrowserStorageWrite\(DSM_APPEARANCE_KEY, next\)/)
+assert.match(gui, /onAppearanceChange=\{updateAppearance\}/)
+assert.match(gui, /'xdrive\.dsm\.appearance\.v1'/)
+assert.doesNotMatch(gui, /window\.localStorage/)
+
 assert.match(gui, /<TextField label="Server HTTPS 地址"/)
 assert.match(gui, /type=\{showPassword \? 'text' : 'password'\}/)
 assert.match(gui, /client\.serverConnection\(controller\.signal\)\.then\(/)
