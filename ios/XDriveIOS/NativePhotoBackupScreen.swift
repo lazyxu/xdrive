@@ -127,7 +127,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
             }
         } message: {
-            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证")。仅前台运行，每 \(autoConsentMinutes) 分钟检查授权相册；每轮最多新增 20 个原件。")
+            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证")。新开启的计划将自动处理首次积压：未扫完时仅在前台约每分钟继续一轮，扫描完成后恢复每 \(autoConsentMinutes) 分钟检查；每轮最多新增 20 个原件。不保证锁屏或强制退出后执行。")
         }
         .confirmationDialog("确认恢复当前 Owner 的前台自动备份？",
                             isPresented: $showResumeConsent, titleVisibility: .visible) {
@@ -559,7 +559,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .disabled(login.owner == nil)
                         .accessibilityIdentifier("native-ios-photos-catchup-enable")
                     }
-                    Text("积压加速默认关闭。手动同意后，仅 App 前台且收据正常时，每轮最多新增 20 个原件；有积压时约 60 秒后尝试下一轮。扫描完一遍后恢复所选间隔。")
+                    Text("新启用的前台自动备份默认加速首次积压；既有计划保留此前的加速选择。仅 App 前台且收据正常时，每轮最多新增 20 个原件；未扫描完时约 60 秒后继续，完成整库一遍扫描后恢复所选间隔。")
                         .font(.caption).foregroundStyle(.secondary)
                     Button("关闭当前账户自动备份", role: .destructive) {
                         controller.disable(owner: login.owner)
@@ -576,7 +576,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                                   (photoAuthorization != .authorized && photoAuthorization != .limited))
                         .accessibilityIdentifier("native-ios-photos-auto-enable")
                 }
-                Text("自动计划仅采用启用时确认的检查间隔和 iCloud 设置；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
+                Text("自动计划采用启用时确认的检查间隔、iCloud 设置和首次积压策略；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
     }

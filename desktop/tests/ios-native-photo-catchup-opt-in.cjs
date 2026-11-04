@@ -9,9 +9,15 @@ const policy = read('ios/XDriveIOS/PhotoAutoSchedulePolicy.swift')
 const schedule = read('ios/XDriveIOS/PhotoAutoScheduleStore.swift')
 const screen = read('ios/XDriveIOS/NativePhotoBackupScreen.swift')
 
-test('catch-up is never silently enabled for an old or ordinary Owner schedule', () => {
+test('newly consented auto plans catch up while old saved Owner preferences are preserved', () => {
   assert.match(schedule, /var catchUpWhenBehind: Bool\? = nil/)
-  assert.match(schedule, /catchUpWhenBehind: existing\?\.catchUpWhenBehind/)
+  assert.match(policy, /static func initialCatchUpPreference\(/)
+  assert.match(policy, /hasExistingPlan \? \(savedPreference \?\? false\) : true/)
+  assert.match(schedule, /catchUpWhenBehind: XDriveIOSPhotoAutoSchedulePolicy\.initialCatchUpPreference\(/)
+  assert.match(schedule, /hasExistingPlan: existing != nil/)
+  assert.match(schedule, /savedPreference: existing\?\.catchUpWhenBehind/)
+  assert.match(screen, /新开启的计划将自动处理首次积压/)
+  assert.match(screen, /新启用的前台自动备份默认加速首次积压/)
   assert.match(schedule, /if state\.catchUpWhenBehind == true/)
   assert.match(schedule, /guard var state = status\(owner: owner\), state\.enabled/)
   assert.match(schedule, /\(!enabled \|\| !state\.pausedForReview\)/)

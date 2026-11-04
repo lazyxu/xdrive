@@ -2,6 +2,13 @@ import Foundation
 @main struct XDriveIOSPhotoAutoSchedulePolicyChecks {
   static func main() {
     let p = XDriveIOSPhotoAutoSchedulePolicy.self
+    // An explicitly confirmed NEW plan starts first-pass catch-up; legacy
+    // plans and deliberate prior opt-outs are never silently rewritten.
+    precondition(p.initialCatchUpPreference(hasExistingPlan: false, savedPreference: nil))
+    precondition(p.initialCatchUpPreference(hasExistingPlan: false, savedPreference: false))
+    precondition(!p.initialCatchUpPreference(hasExistingPlan: true, savedPreference: nil))
+    precondition(!p.initialCatchUpPreference(hasExistingPlan: true, savedPreference: false))
+    precondition(p.initialCatchUpPreference(hasExistingPlan: true, savedPreference: true))
     precondition(p.accepts(minutes: 15))
     precondition(p.accepts(minutes: 60))
     precondition(p.accepts(minutes: 1440))
