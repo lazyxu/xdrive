@@ -15,6 +15,65 @@ export function xDriveDSMBackupStatusPollDelay(running: boolean, failed: boolean
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 
+export interface XDriveDSMBackupScheduleView {
+  enabled: boolean
+  title: string
+  detail: string
+  sourceRevision: number
+}
+
+/** Owner-scoped DSM schedule *configuration*, not proof that a timer ran.
+ * The Agent has not exposed its private verified checkpoint or cooldown as a
+ * browser-readable next-run timestamp. Never infer "armed" or a next due time
+ * from the mere existence of this saved Server configuration. */
+export function xDriveDSMBackupScheduleView(
+  sourceID: number, input: unknown,
+): XDriveDSMBackupScheduleView {
+  if (!Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+    !input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Untrusted DSM backup schedule')
+  }
+  const s = input as Record<string, unknown>
+  if (s.source_id !== sourceID || !Number.isSafeInteger(s.revision) ||
+    (s.revision as number) <= 0 ||
+    !['', 'manual', 'interval', 'cron'].includes(String(s.schedule_type)) ||
+    typeof s.schedule_expression !== 'string' ||
+    typeof s.schedule_timezone !== 'string' ||
+    s.schedule_expression.length > 256 || s.schedule_timezone.length > 128 ||
+    /[\u0000-\u001f\u007f]/.test(s.schedule_expression + s.schedule_timezone)) {
+    throw new Error('Untrusted DSM backup schedule')
+  }
+  const kind = s.schedule_type
+  const expression = s.schedule_expression
+  const timezone = s.schedule_timezone
+  if (((kind === '' || kind === 'manual') && (expression !== '' || timezone !== '')) ||
+    (kind === 'interval' && (!expression || timezone !== '')) ||
+    (kind === 'cron' && (!expression || !timezone ||
+      expression.trim().split(/\s+/).length !== 5))) {
+    throw new Error('Untrusted DSM backup schedule')
+  }
+  const sourceRevision = s.revision as number
+  if (kind === 'manual') return {
+    enabled: false, title: '仅手动备份 · 自动计划已关闭',
+    detail: 'Agent 不会按时间自动执行；可以使用“手动增量备份”。',
+    sourceRevision,
+  }
+  if (kind === '') return {
+    enabled: false, title: '尚未明确开启自动备份',
+    detail: '请在“配置本机同步计划”中保存间隔或 Cron。历史默认值不代表已开启。',
+    sourceRevision,
+  }
+  return {
+    enabled: true,
+    title: kind === 'interval'
+      ? '自动计划已保存 · 每 ' + expression
+      : '自动计划已保存 · Cron ' + expression + '（' + timezone + '）',
+    detail: '计划已保存不等于已开始执行。当前版本需先完成可信的手动备份；' +
+      'Owner、Root、Agent、未确认收据和冷却状态均由 Agent 再核对。',
+    sourceRevision,
+  }
+}
+
 /** Reject forged, stale or completion-claiming DSM Agent status at the UI boundary. */
 export function xDriveValidateSynologyLocalBatch(
   sourceID: number, input: unknown,

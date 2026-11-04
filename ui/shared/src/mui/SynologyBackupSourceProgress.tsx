@@ -87,10 +87,24 @@ export function XDriveSynologyBackupSourceProgress({
             <Typography variant="caption" color="text.secondary">
               已检查 {batch.inspected_files.toLocaleString('zh-CN')} ·
               已确认 {batch.confirmed_files.toLocaleString('zh-CN')} ·
+              已跳过 {batch.skipped_files.toLocaleString('zh-CN')} ·
+              未支持 {batch.unsupported_files.toLocaleString('zh-CN')} ·
               待核对 {batch.uncertain_files.toLocaleString('zh-CN')} ·
               {formatBytes(batch.confirmed_bytes)}
             </Typography>
           </Stack>
+          {batch.unsupported_files > 0 ? (
+            <Typography variant="caption" color="text.secondary">
+              本轮有 {batch.unsupported_files.toLocaleString('zh-CN')} 项未支持或未处理，
+              不计入成功备份；请检查来源文件和单文件上传额度。
+            </Typography>
+          ) : null}
+          {batch.uncertain_files > 0 ? (
+            <Typography variant="caption" role="alert" color="error">
+              本轮有 {batch.uncertain_files.toLocaleString('zh-CN')} 项结果待核对。
+              自动调度不会依据不确定收据继续；请在手动增量备份的诊断入口只读核对，勿盲目重传。
+            </Typography>
+          ) : null}
           {batch.stop_requested ? (
             <Typography variant="caption" color="text.secondary">
               已请求{batch.stop_requested === 'pause' ? '暂停' : '取消'}；实际状态以 Agent 下一次核对为准。

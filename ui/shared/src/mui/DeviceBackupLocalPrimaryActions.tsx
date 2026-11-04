@@ -16,7 +16,7 @@ export function XDriveDeviceBackupLocalPrimaryActions({
     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
       {onRun ? (
         <Button size="small" variant="contained" onClick={onRun}>
-          手动增量备份（试用）
+          手动增量备份
         </Button>
       ) : null}
       {onSchedule ? (
