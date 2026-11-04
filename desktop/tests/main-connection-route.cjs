@@ -38,6 +38,9 @@ function fixture(routeFailure, gate) {
     decryptLoginPassword: () => { events.push(['decrypt']); return 'fixture-password' },
     encryptLoginPassword: () => 'synthetic-ciphertext',
     runAgentAction: action => action(), closeSecureBaiduMapWindow: () => {},
+    // The map guest preauthentication is independent from Agent routing.
+    // Stub only the HTTPS cookie exchange; exercise the actual login handler.
+    seedDesktopPlacesWebAuth: async () => true,
     closeDesktopPlacesGuests: () => { events.push(['close-map-guests']) },
     requireAgentClient: () => ({ login: async input => { events.push(['login', input]); return { ok: true, data: {} } }, logout: async () => { events.push(['logout']); return { ok: true, data: {} } } }),
     recordSuccessfulLogin: (current, input) => { stored = input; return history.recordSuccessfulLogin(current, input) },

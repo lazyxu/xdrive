@@ -27,7 +27,7 @@ test('Main establishes an ephemeral HTTPS Cookie session before attaching map gu
   const web=read('web/src/App.tsx')
   const preload=read('desktop/src/preload/places_embed.cts')
   assert.match(main,/const desktopPlacesWebPartition = 'xdrive-places-web'/)
-  assert.match(main,/session\.fromPartition\(desktopPlacesWebPartition\)/)
+  assert.match(main,/session\.fromPartition\(desktopPlacesWebPartition,\s*\{cache:false\}\)/)
   assert.match(main,/places\.fetch\(identity\.origin \+ '\/api\/v1\/auth\/browser\/login'/)
   assert.match(main,/credentials: 'include'/)
   assert.match(main,/name: '__Host-xdrive_refresh'/)
