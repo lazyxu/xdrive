@@ -79,7 +79,7 @@ test('visible video tiles present real duration metadata and preserve Live badge
 })
 
 
-test('local wall complete-photo option preserves geometry and original pixels', () => {
+test('local wall complete-photo option fits the full image within stable square slots', () => {
   const loader = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
   const checks = read('ios/tests/NativePhotoWallDensityPolicyChecks.swift')
   assert.match(density, /enum XDriveIOSNativePhotoWallFraming:/)
