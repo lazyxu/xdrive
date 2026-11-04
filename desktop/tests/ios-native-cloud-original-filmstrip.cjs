@@ -90,3 +90,19 @@ test('backed-up Original filmstrip scrubs with existing bounded PhotoKit/Owner g
   ]) assert.ok(executable.includes(label), 'missing executable Swift policy regression: ' + label)
   assert.doesNotMatch(filmstrip, /UploadSession|downloadOriginal|livePreview\(|UserDefaults|WKWebView/)
 })
+
+
+test('selected cloud Live original uses its already verified still for filmstrip cover', () => {
+  assert.match(filmstrip, /let selectedLiveStill: UIImage\?/)
+  assert.match(filmstrip, /private var visibleStill: UIImage\?/)
+  assert.match(filmstrip, /guard authorized else \{ return nil \}/)
+  assert.match(filmstrip, /if selected && node\.isLiveArchive \{ return selectedLiveStill \}/)
+  assert.match(filmstrip, /if let visibleStill \{\s*Image\(uiImage: visibleStill\)/)
+  assert.match(filmstrip, /selected: key\(node\) == key\(current\),\s*selectedLiveStill: selectedLiveStill/)
+  assert.match(gallery, /private var displayedLiveFilmstripStill: UIImage\?/)
+  assert.match(gallery, /guard currentOwnerAuthorized, viewed\.isLiveArchive,\s*liveResources != nil, !stillIsThumbnailOnly else \{ return nil \}/)
+  assert.match(gallery, /selectedLiveStill: displayedLiveFilmstripStill/)
+  assert.match(filmstrip, /guard authorized, !node\.isLiveArchive,/)
+  assert.match(gallery, /still = nil[\s\S]*?liveResources\?\.discard\(\)[\s\S]*?liveResources = nil[\s\S]*?activeNode = target/)
+  assert.doesNotMatch(filmstrip, /livePreview\(|downloadOriginal|URLSession|UploadSession/)
+})

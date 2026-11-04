@@ -26,6 +26,9 @@ private struct XDriveIOSNativeOriginalFilmstripTile: View {
     let node: XDriveIOSNativeCloudOriginal
     let key: XDriveIOSNativeCloudOriginalFilmstripKey
     let selected: Bool
+    // Already decoded, validated still from the currently selected Live ZIP.
+    // No neighboring Live ZIP is fetched or unpacked for the filmstrip.
+    let selectedLiveStill: UIImage?
     let owner: XDriveNativeOwnerRoot
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
 
@@ -41,10 +44,18 @@ private struct XDriveIOSNativeOriginalFilmstripTile: View {
             XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
     }
 
+    private var visibleStill: UIImage? {
+        // A selected Live tile can reuse only its presenting Viewer's already
+        // verified still. Hide all decoded pixels when the Owner/scene retires.
+        guard authorized else { return nil }
+        if selected && node.isLiveArchive { return selectedLiveStill }
+        return image
+    }
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            if let image {
-                Image(uiImage: image).resizable().scaledToFill()
+            if let visibleStill {
+                Image(uiImage: visibleStill).resizable().scaledToFill()
             } else {
                 Rectangle().fill(Color(uiColor: .secondarySystemBackground))
                     .overlay {
@@ -113,6 +124,8 @@ struct XDriveIOSNativeCloudOriginalViewerFilmstrip: View {
     let openedOwner: XDriveNativeOwnerRoot?
     let authorized: Bool
     let busy: Bool
+    // The presenting Viewer retains ownership of this transient Live still.
+    let selectedLiveStill: UIImage?
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let onSelect: (XDriveIOSNativeCloudOriginal) -> Void
 
@@ -203,6 +216,7 @@ struct XDriveIOSNativeCloudOriginalViewerFilmstrip: View {
                                 XDriveIOSNativeOriginalFilmstripTile(
                                     node: node, key: key(node),
                                     selected: key(node) == key(current),
+                                    selectedLiveStill: selectedLiveStill,
                                     owner: openedOwner, login: login
                                 )
                             }
