@@ -37,6 +37,9 @@ test('SQLite change token and queued asset IDs commit atomically without inventi
 
 test('a receipt or item-local failure settles only the currently queued revision', () => {
   assert.match(store, /enum Settled: String/)
+  assert.match(store, /enum ItemState: String/)
+  assert.match(store, /func status\(for localIdentifier: String\) throws -> ItemStatus\?/)
+  assert.match(store, /SELECT revision,state FROM entries WHERE asset_id=\?/)
   assert.match(store, /case confirmed/)
   assert.match(store, /case failed/)
   assert.match(store, /func settle\(_ candidate: Pending, result: Settled\)/)

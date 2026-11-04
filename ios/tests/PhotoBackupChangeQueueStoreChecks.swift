@@ -64,6 +64,7 @@ import Foundation
                 fatalError("expected original pending old revision")
             }
             try expect(try store.settle(old, result: .confirmed))
+            try expect(try store.status(for: "old")?.state == .confirmed)
             try expect(try !store.settle(old, result: .confirmed))
             _ = try store.apply(inserted: [], updated: ["old"], deleted: [],
                                 expectedToken: later, nextToken: Data([5]), authorization: 3)
@@ -72,8 +73,10 @@ import Foundation
                 fatalError("expected edited original requeue")
             }
             precondition(newer.revision > old.revision)
+            try expect(try store.status(for: "old")?.state == .pending)
             try expect(try !store.settle(old, result: .confirmed))
             try expect(try store.settle(newer, result: .failed))
+            try expect(try store.status(for: "old")?.state == .failed)
             try expect(try !store.settle(newer, result: .failed))
             try expect(try store.retryFailed(newer))
             try expect(try !store.retryFailed(newer))
@@ -83,6 +86,8 @@ import Foundation
                                 expectedToken: Data([5]), nextToken: Data([6]), authorization: 3)
             let remainingAfterDeletion = try store.pending()
             precondition(!remainingAfterDeletion.contains(where: { $0.localIdentifier == "old" }))
+            try expect(try store.status(for: "old")?.state == .missingLocal)
+            try expect(try store.status(for: "not-here") == nil)
             try expect(try !store.settle(newer, result: .confirmed))
         }
         let isolated = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: dir.appendingPathComponent("owner-b.sqlite3"))

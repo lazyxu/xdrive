@@ -37,6 +37,18 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         case failed
     }
 
+    /// Read-only per-item queue state; not the full-library cloud completion.
+    enum ItemState: String {
+        case pending
+        case confirmed
+        case failed
+        case missingLocal
+    }
+    struct ItemStatus: Equatable {
+        let revision: Int64
+        let state: ItemState
+    }
+
     private var database: OpaquePointer?
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -203,6 +215,22 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         }
         try stepDone(statement)
         return sqlite3_changes(database) == 1
+    }
+
+    /// One indexed state read for a visible PhotoKit item, not a 100k ID map.
+    func status(for localIdentifier: String) throws -> ItemStatus? {
+        try validateIdentifier(localIdentifier)
+        let statement = try prepare("SELECT revision,state FROM entries WHERE asset_id=?")
+        defer { sqlite3_finalize(statement) }
+        try bind(localIdentifier, into: statement, position: 1)
+        let code = sqlite3_step(statement)
+        if code == SQLITE_DONE { return nil }
+        guard code == SQLITE_ROW,
+              let raw = sqlite3_column_text(statement, 1),
+              let state = ItemState(rawValue: String(cString: raw)) else {
+            throw Failure.database(code == SQLITE_ROW ? SQLITE_MISMATCH : code)
+        }
+        return ItemStatus(revision: sqlite3_column_int64(statement, 0), state: state)
     }
 
     private func validateToken(_ bytes: Data) throws {
