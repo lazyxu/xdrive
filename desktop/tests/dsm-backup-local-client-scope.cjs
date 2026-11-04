@@ -40,6 +40,7 @@ const imports = {
   './StatePanel': { XDriveStatePanel: stub('state-panel') },
   './SynologyBackupSourceSetup': { XDriveSynologyBackupSourceSetup: stub('source-setup') },
   './SynologyBackupSourceProgress': { XDriveSynologyBackupSourceProgress: stub('source-progress') },
+  './SynologyBackupScheduleStatus': { XDriveSynologyBackupScheduleStatus: stub('schedule-status') },
   './StatusAlert': { XDriveStatusAlert: stub('status-alert') },
 }
 const filename = path.resolve(__dirname, '../../ui/shared/src/mui/SynologyBackupLocalPanel.tsx')
@@ -100,6 +101,8 @@ test('DSM Host replacement never renders old-owner Source names, history, task d
   assert.equal(tree.root.findAllByType('folder-accordion').length, 1)
   assert.equal(tree.root.findAllByType('source-progress').length, 0,
     'DSM must not prefetch progress for all listed Sources')
+  assert.equal(tree.root.findAllByType('schedule-status').length, 0,
+    'DSM must not prefetch saved plans for all NAS Sources')
   await act(async () => {
     tree.root.findByType('folder-accordion').props.onExpandedChange(true)
     await Promise.resolve()
@@ -107,6 +110,8 @@ test('DSM Host replacement never renders old-owner Source names, history, task d
   assert.equal(tree.root.findByType('history-list').props.entries.length, 1)
   assert.equal(tree.root.findByType('source-progress').props.sourceID, 57,
     'exactly the expanded owning Source gets one Agent status component')
+  assert.equal(tree.root.findByType('schedule-status').props.sourceID, 57,
+    'only the expanded owning Source gets the saved schedule observer')
   await act(async () => {
     tree.root.findByType('local-actions').props.onRun()
   })
@@ -123,6 +128,7 @@ test('DSM Host replacement never renders old-owner Source names, history, task d
   assert.deepEqual(calls, [], 'replacement Agent may not read old Source history on the Host swap')
   assert.equal(tree.root.findAllByType('folder-accordion').length, 0)
   assert.equal(tree.root.findAllByType('source-progress').length, 0)
+  assert.equal(tree.root.findAllByType('schedule-status').length, 0)
   assert.equal(tree.root.findAllByType('batch-dialog').length, 0)
   assert.equal(tree.root.findAllByType('workspace').length, 1)
   await act(async () => {
@@ -216,7 +222,8 @@ test('DSM ignores a prior Agent schedule completion and close after Host replace
   assert.equal(tree.root.findAllByType('schedule-dialog').length, 0)
   assert.equal(tree.root.findAllByType('status-alert').length, 1,
     'current Host completion notice must still work')
-  assert.equal(ownerBReads, 2, 'same-Host schedule completion may refresh its own listing')
+  assert.equal(ownerBReads, 1,
+    'saving one Source schedule must not refetch all NAS Source names or collapse the card')
   await act(async () => tree.unmount())
 })
 
