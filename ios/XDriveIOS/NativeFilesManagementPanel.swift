@@ -59,9 +59,9 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
     }
     private var anyBusy: Bool {
-        createBusy || copyPathBusy || exporter.busy || folderArchive.busy ||
-            uploader.busy || mutator.busy || destinationWriter.busy ||
-            favoriteMutation.busy
+        createBusy || exporter.busy || folderArchive.busy || uploader.busy ||
+            mutator.busy || destinationWriter.busy || favoriteMutation.busy ||
+            copyPathBusy
     }
 
     var body: some View {

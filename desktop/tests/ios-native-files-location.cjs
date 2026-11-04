@@ -111,5 +111,7 @@ test('native Files copies only a current Owner-verified cloud path', () => {
   assert.match(panel, /copyCurrentPath\(selected\)/)
   assert.match(panel, /UIPasteboard\.general\.string = currentPath/)
   assert.match(panel, /copyPathEpoch = UUID\(\)[\s\S]*?copyPathTask\?\.cancel\(\)/)
+  assert.match(panel, /favoriteMutation\.busy \|\|\s*copyPathBusy/)
+  assert.match(panel, /\.disabled\(anyBusy\)/)
   assert.doesNotMatch(panel, /WKWebView|evaluateJavaScript|URLSession\.shared/)
 });
