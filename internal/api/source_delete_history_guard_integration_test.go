@@ -63,7 +63,7 @@ func TestSourceHardDeleteRequiresArchiveForRetainedHistory(t *testing.T) {
 				run := meta.SyncRun{
 					ID: uuid.NewString(), SourceID: src.ID, SourceRevision: src.Revision,
 					Mode: meta.SourceRunModeScan, Trigger: meta.SyncRunTriggerManual,
-					Status: meta.SyncRunStatusCompleted,
+					Status:    meta.SyncRunStatusCompleted,
 					StartedAt: finished.Add(-time.Minute), FinishedAt: &finished,
 				}
 				if err := db.Create(&run).Error; err != nil {
