@@ -229,4 +229,3 @@ func TestSourceArchiveRejectsActiveSyncWithoutMutatingSource(t *testing.T) {
 	requestWithHeaders(t, router, http.MethodPost, url+"/archive", token, nil,
 		http.StatusOK, map[string]string{"If-Match": `"1"`})
 }
-
