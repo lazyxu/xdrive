@@ -4,6 +4,57 @@ import Photos
 import SwiftUI
 import UIKit
 
+/// Transient, one-shot location handoff into the existing Gallery map.
+/// No local photo ID or GPS position is persisted or sent to a server.
+struct XDriveIOSNativeLocalMapJump: Equatable {
+    let id = UUID()
+    let latitude: Double
+    let longitude: Double
+
+    init?(latitude: Double, longitude: Double) {
+        guard XDriveIOSNativePhotoMapPolicy.validCoordinate(
+            latitude: latitude, longitude: longitude
+        ) else { return nil }
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+
+    var camera: MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+            span: MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
+        )
+    }
+
+    var nearbyViewport: XDriveIOSNativeLocalMapViewport? {
+        XDriveIOSNativeLocalMapAutoRefinePolicy.expandedViewport(
+            latitude: latitude, longitude: longitude,
+            latitudeSpan: camera.span.latitudeDelta,
+            longitudeSpan: camera.span.longitudeDelta
+        )
+    }
+}
+
+private struct XDriveIOSNativeLocalMapJumpKey: EnvironmentKey {
+    static let defaultValue: XDriveIOSNativeLocalMapJump? = nil
+}
+
+private struct XDriveIOSNativeLocalMapOpenKey: EnvironmentKey {
+    static let defaultValue: ((XDriveIOSNativeLocalMapJump) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var xdriveNativeLocalMapJump: XDriveIOSNativeLocalMapJump? {
+        get { self[XDriveIOSNativeLocalMapJumpKey.self] }
+        set { self[XDriveIOSNativeLocalMapJumpKey.self] = newValue }
+    }
+
+    var xdriveOpenNativeLocalMap: ((XDriveIOSNativeLocalMapJump) -> Void)? {
+        get { self[XDriveIOSNativeLocalMapOpenKey.self] }
+        set { self[XDriveIOSNativeLocalMapOpenKey.self] = newValue }
+    }
+}
+
 private final class XDriveIOSMapPhotoPin: NSObject, MKAnnotation {
     typealias Cell = XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>
     let candidate: XDrivePhotoKitScanCandidate
@@ -734,6 +785,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     var onFocusChange: ((Bool) -> Void)?
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.xdriveNativeLocalMapJump) private var incomingMapJump
     @StateObject private var changes = XDriveIOSMapPhotoChanges()
     @State private var scanner: XDrivePhotoKitBoundedSnapshotScanner?
     @State private var page: XDrivePhotoKitLocatedPage?
@@ -762,6 +814,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var globalCameraMoving = false
     @State private var autoRefineTask: Task<Void, Never>?
     @State private var showingMapHelp = false
+    @State private var handledMapJumpID: UUID?
 
     private var refinedViewportIsCurrent: Bool {
         guard let scanned = globalViewport else { return true }
@@ -1068,6 +1121,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         .onAppear {
             authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             changes.start()
+            if focusOnRequestedPhotoLocation() { return }
             if mapScope == .page, page == nil, !busy, phase == .active {
                 refresh(at: offset)
             } else if mapScope == .library && !globalComplete && !busy &&
@@ -1076,6 +1130,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 // Do not request iCloud originals or retain all asset IDs.
                 scanFullLibrary()
             }
+        }
+        .onChange(of: incomingMapJump?.id) { _ in
+            _ = focusOnRequestedPhotoLocation()
         }
         .onChange(of: mapScope) { next in
             clearReturnCamera()
@@ -1112,6 +1169,20 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 invalidate()
             } else { suspendForSheet() }
         }
+    }
+
+    /// Reuse the SAME PhotoKit/MapKit route for nearby media rather than
+    /// constructing an unrelated map screen in each Viewer.
+    private func focusOnRequestedPhotoLocation() -> Bool {
+        guard mapScope == .library, phase == .active,
+              [.authorized, .limited].contains(
+                PHPhotoLibrary.authorizationStatus(for: .readWrite)
+              ), let jump = incomingMapJump, handledMapJumpID != jump.id,
+              let viewport = jump.nearbyViewport else { return false }
+        handledMapJumpID = jump.id
+        globalCamera = jump.camera
+        scanFullLibrary(viewport: viewport)
+        return true
     }
 
     /// A bounded PhotoKit metadata read is scheduled only after 900ms of
