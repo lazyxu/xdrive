@@ -50,11 +50,11 @@ func TestMigrateInstallsNotValidNodeParentOwnerFenceAndFencesChildInsert(t *test
 		t.Fatal(err)
 	}
 	owner := meta.User{
-		Username: "node-parent-owner-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12],
+		Username:     "node-parent-owner-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12],
 		PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1,
 	}
 	foreignOwner := meta.User{
-		Username: "node-parent-foreign-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12],
+		Username:     "node-parent-foreign-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12],
 		PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1,
 	}
 	if err := db.Create(&owner).Error; err != nil {
