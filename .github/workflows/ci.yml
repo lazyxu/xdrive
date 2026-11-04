@@ -166,6 +166,9 @@ jobs:
           api-level: 35
           arch: x86_64
           target: google_apis
+          # Constrain AVD userdata on GitHub runners after SDK/Gradle builds.
+          # Preserve the actual API-35 emulator and connected Compose assertions.
+          disk-size: 4096M
           disable-animations: true
           working-directory: android
           script: bash gradlew --no-daemon :app:connectedDebugAndroidTest
