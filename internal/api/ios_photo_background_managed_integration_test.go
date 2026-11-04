@@ -22,7 +22,7 @@ import (
 // and an old grant can still be revoked without new upload rights.
 func TestIOSPhotoBackgroundGrantBindsCurrentManagedDestination(t *testing.T) {
 	db, server, owner, _, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.IOSPhotoBackgroundGrant{}); err != nil {
+	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.IOSPhotoBackgroundGrant{}, &meta.SyncRun{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
@@ -159,7 +159,7 @@ func TestIOSPhotoBackgroundGrantBindsCurrentManagedDestination(t *testing.T) {
 // token can authorize a fresh managed Source or root upload.
 func TestIOSPhotoBackgroundLegacyGrantIsReadOnly(t *testing.T) {
 	db, server, owner, _, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.IOSPhotoBackgroundGrant{}); err != nil {
+	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.IOSPhotoBackgroundGrant{}, &meta.SyncRun{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
@@ -220,7 +220,7 @@ func TestIOSPhotoBackgroundLegacyGrantIsReadOnly(t *testing.T) {
 
 func TestIOSPhotoBackgroundScopedTransactionCannotOutliveGrant(t *testing.T) {
 	db, server, owner, _, _ := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.IOSPhotoBackgroundGrant{}); err != nil {
+	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.IOSPhotoBackgroundGrant{}, &meta.SyncRun{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
