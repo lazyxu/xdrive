@@ -125,3 +125,19 @@ test('native calendar picker only jumps to exact authorized capture-day groups',
   assert.match(browser, /wallRevision &\+= 1/)
   assert.doesNotMatch(browser, /Button\("上一页"\)|Button\("下一页"\)|UserDefaults|UploadSession/)
 })
+
+
+test('date navigation passes a transient exact photo slot into the canonical continuous wall', () => {
+  const wall = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
+  assert.match(browser, /@State private var exactDateTarget: XDriveIOSNativePhotoExactDateTarget\?/)
+  assert.match(browser, /exactDateTarget: \$exactDateTarget/)
+  assert.match(browser, /prepareExactDateTarget\(for: group\)\s*jump\(to: group\.firstPageOffset\)/)
+  assert.match(browser, /exactDateTarget = XDriveIOSNativePhotoExactDateTarget\(/)
+  assert.match(browser, /group: group, total: index\.totalSlots, filterValue: mediaFilter\.rawValue/)
+  assert.match(browser, /exactDateTarget = nil\s*jump\(to: 0\)/)
+  assert.match(browser, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?exactDateTarget = nil/)
+  assert.match(browser, /if state != \.active \{\s*model\.invalidate\(\)\s*exactDateTarget = nil/)
+  assert.match(wall, /@Binding var exactDateTarget: XDriveIOSNativePhotoExactDateTarget\?/)
+  assert.match(wall, /alignExactDateTarget\(in: page, using: scroll\)/)
+  assert.doesNotMatch(browser, /UserDefaults.*exactDateTarget|UploadSession.*exactDateTarget/)
+})

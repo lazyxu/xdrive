@@ -275,3 +275,34 @@ test('native local wall jumps to latest and earliest via numeric 64-slot anchors
   assert.match(source, /\.disabled\(total == 0 \|\| loading \|\| actionBusy \|\|\s*shareBusy \|\| selected != nil\)/)
   assert.doesNotMatch(source, /Button\("上一页"\)|Button\("下一页"\)/)
 });
+
+
+test('verified PhotoKit slot and capture day restore the exact calendar photo, never a guessed tile', () => {
+  const exact = read('ios/XDriveIOS/NativePhotoTimelinePolicy.swift')
+  const method = source.slice(
+    source.indexOf('private func alignExactDateTarget('),
+    source.indexOf('private func jumpToEdge(')
+  )
+  assert.match(exact, /struct XDriveIOSNativePhotoExactDateTarget: Identifiable, Equatable/)
+  assert.match(exact, /let slot: Int/)
+  assert.match(exact, /let total: Int/)
+  assert.match(exact, /let dayKey: String/)
+  assert.match(exact, /var pageOffset: Int \{/)
+  assert.match(exact, /group\.scale == \.day \|\| group\.key == "unknown"/)
+  assert.match(exact, /total == pageTotal, self\.pageOffset == pageOffset/)
+  assert.match(exact, /filterValue == self\.filterValue/)
+  assert.match(exact, /kind == "image" \|\| kind == "video"/)
+  assert.match(exact, /itemIndex == slot - pageOffset/)
+  assert.match(exact, /return dayKey == "\\\(year\)-\\\(month\)-\\\(day\)"/)
+  assert.match(method, /guard let target = exactDateTarget,[\s\S]*target\.pageOffset == page\.startOffset/)
+  assert.match(method, /index >= 0 && index < page\.items\.count/)
+  assert.match(method, /target\.matches\(/)
+  assert.match(method, /pageTotal: page\.totalAccessibleAssets/)
+  assert.match(method, /kind: \$0\.kind, capturedAt: \$0\.capturedAt/)
+  assert.match(method, /exactDateTarget\?\.id == target\.id/)
+  assert.match(method, /phase == \.active, authorized/)
+  assert.match(method, /guard verified, let candidate else \{/)
+  assert.match(method, /scroll\.scrollTo\("photo:\\\(candidate\.id\)", anchor: \.top\)/)
+  assert.match(method, /exactDateTarget = nil/)
+  assert.doesNotMatch(method, /PHAsset\.fetchAssets|URLSession|UploadSession|UserDefaults/)
+})
