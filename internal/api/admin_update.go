@@ -41,15 +41,15 @@ type serverUpdateState struct {
 }
 
 type serverUpdateRequestFile struct {
-	RequestID      string `json:"request_id"`
-	Source         string `json:"source"`
-	Channel        string `json:"channel"`
-	BackupFileData bool   `json:"backup_file_data"`
-	OfflineID string `json:"offline_id,omitempty"`
-	TrustedManifestSHA256 string `json:"trusted_manifest_sha256,omitempty"`
+	RequestID              string `json:"request_id"`
+	Source                 string `json:"source"`
+	Channel                string `json:"channel"`
+	BackupFileData         bool   `json:"backup_file_data"`
+	OfflineID              string `json:"offline_id,omitempty"`
+	TrustedManifestSHA256  string `json:"trusted_manifest_sha256,omitempty"`
 	TrustedInstallerSHA256 string `json:"trusted_installer_sha256,omitempty"`
-	RequestedBy    string `json:"requested_by,omitempty"`
-	CreatedAt      string `json:"created_at"`
+	RequestedBy            string `json:"requested_by,omitempty"`
+	CreatedAt              string `json:"created_at"`
 }
 
 func (s *Server) adminServerUpdateStatus(c *gin.Context) {
@@ -59,11 +59,11 @@ func (s *Server) adminServerUpdateStatus(c *gin.Context) {
 
 func (s *Server) adminStartServerUpdate(c *gin.Context) {
 	var input struct {
-		Source         string `json:"source"`
-		Channel        string `json:"channel"`
-		BackupFileData bool   `json:"backup_file_data"`
-		OfflineID string `json:"offline_id"`
-		TrustedManifestSHA256 string `json:"trusted_manifest_sha256"`
+		Source                 string `json:"source"`
+		Channel                string `json:"channel"`
+		BackupFileData         bool   `json:"backup_file_data"`
+		OfflineID              string `json:"offline_id"`
+		TrustedManifestSHA256  string `json:"trusted_manifest_sha256"`
 		TrustedInstallerSHA256 string `json:"trusted_installer_sha256"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -123,15 +123,15 @@ func (s *Server) adminStartServerUpdate(c *gin.Context) {
 		requestedBy = user.Username
 	}
 	request := serverUpdateRequestFile{
-		RequestID:      requestID,
-		Source:         input.Source,
-		Channel:        input.Channel,
-		BackupFileData: input.BackupFileData,
-		OfflineID: input.OfflineID,
-		TrustedManifestSHA256: input.TrustedManifestSHA256,
+		RequestID:              requestID,
+		Source:                 input.Source,
+		Channel:                input.Channel,
+		BackupFileData:         input.BackupFileData,
+		OfflineID:              input.OfflineID,
+		TrustedManifestSHA256:  input.TrustedManifestSHA256,
 		TrustedInstallerSHA256: input.TrustedInstallerSHA256,
-		RequestedBy:    requestedBy,
-		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
+		RequestedBy:            requestedBy,
+		CreatedAt:              time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := s.writeServerUpdateRequest(request); err != nil {
 		if errors.Is(err, os.ErrExist) {
