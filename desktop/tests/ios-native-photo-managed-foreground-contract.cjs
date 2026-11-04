@@ -33,7 +33,7 @@ test('automatic schedule cannot enable or reserve a window before Owner+device+S
   assert.match(controller, /owner: owner, managedForeground: managed/);
   assert.match(model, /static func readExistingForUpload\(/);
   const admission = model.slice(model.indexOf('static func readExistingForUpload('),
-    model.indexOf('private func verifiedBinding('));
+    model.length);
   assert.match(admission, /method: "GET", body: nil/);
   assert.doesNotMatch(admission, /\.enroll\(|method: "PUT"/);
   assert.match(admission, /backgroundPhotoDeviceProof\(/);
