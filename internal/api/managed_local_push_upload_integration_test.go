@@ -25,7 +25,7 @@ func TestManagedLocalPushUploadRequiresDurableDeviceOperation(t *testing.T) {
 		ID: uuid.NewString(), OwnerID: owner.ID,
 		Name: "Desktop", Platform: "windows",
 		CredentialHash: strings.Repeat("a", 64),
-		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		CreatedAt:      time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	if err := db.Create(&device).Error; err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestManagedLocalPushUploadRequiresDurableDeviceOperation(t *testing.T) {
 		ID: uuid.NewString(), OwnerID: owner.ID, ParentID: &managed.ID,
 		Name: op.TargetName, RequestedName: op.TargetName,
 		ConflictPolicy: meta.UploadConflictPolicyFail,
-		ResumeKey: resumeKey, TotalSize: op.TotalSize,
+		ResumeKey:      resumeKey, TotalSize: op.TotalSize,
 		SHA256: sha, ChunkSize: 4 << 20, ChunkCount: 1,
 		Status: meta.UploadStatusActive, ExpiresAt: time.Now().UTC().Add(time.Hour),
 	}
@@ -121,7 +121,7 @@ func TestManagedLocalPushUploadRequiresDurableDeviceOperation(t *testing.T) {
 	if err := db.Model(&meta.LocalPushCommonUploadOperation{}).
 		Where("operation_id = ?", op.OperationID).
 		Updates(map[string]any{
-			"state": meta.LocalPushCommonUploadBound,
+			"state":             meta.LocalPushCommonUploadBound,
 			"upload_session_id": session.ID,
 		}).Error; err != nil {
 		t.Fatal(err)
