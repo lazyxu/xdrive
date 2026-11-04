@@ -225,3 +225,22 @@ test('local native Photos Viewer exposes bottom share, favorite and delete actio
   assert.match(detail, /XDriveIOSNativeLocalViewerFilmstrip\(/)
   assert.doesNotMatch(detail, /URLSession|UploadSession|WKWebView|UserDefaults/)
 })
+
+test('shared native still zoom supports VoiceOver rotor without extra media access', () => {
+  assert.match(zoom, /scroll\.isAccessibilityElement = true/)
+  assert.match(zoom, /scroll\.accessibilityTraits\.insert\(\.image\)/)
+  assert.match(zoom, /scroll\.accessibilityCustomActions = \[/)
+  for (const label of ['放大照片', '缩小照片', '恢复原始大小']) {
+    assert.ok(zoom.includes('name: "' + label + '"'), 'missing VoiceOver action: ' + label)
+  }
+  assert.match(zoom, /@objc func accessibilityZoomIn\(_ action: UIAccessibilityCustomAction\) -> Bool/)
+  assert.match(zoom, /@objc func accessibilityZoomOut\(_ action: UIAccessibilityCustomAction\) -> Bool/)
+  assert.match(zoom, /@objc func accessibilityResetZoom\(_ action: UIAccessibilityCustomAction\) -> Bool/)
+  assert.match(zoom, /let target = min\(scroll\.maximumZoomScale,[\s\S]*?max\(scroll\.minimumZoomScale, current \* factor\)\)/)
+  assert.match(zoom, /\(scroll\.contentOffset\.x \+ scroll\.bounds\.midX\) \/ current/)
+  assert.match(zoom, /scroll\.zoom\(to: rect, animated: !UIAccessibility\.isReduceMotionEnabled\)/)
+  assert.match(zoom, /func scrollViewDidZoom\(_ scrollView: UIScrollView\)[\s\S]*?refreshAccessibilityZoom\(scrollView\)/)
+  assert.match(zoom, /if photo\.image !== image \{[\s\S]*?refreshAccessibilityZoom\(scroll\)/)
+  assert.match(zoom, /func gestureRecognizerShouldBegin[\s\S]*?scroll\.zoomScale <= scroll\.minimumZoomScale \+ 0\.01/)
+  assert.doesNotMatch(zoom, /URLSession|PHImageManager|PHAsset|Authorization|Bearer|\.upload\(/)
+})
