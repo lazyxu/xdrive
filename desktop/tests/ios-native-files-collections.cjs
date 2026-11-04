@@ -106,7 +106,7 @@ test('Recent and Favorites locate both list and grid items in the real Owner fol
   assert.match(screen, /XDriveIOSNativeFilesLocateScreen\(\s*login: login, selected: selected\.node,/)
   assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, openedOwner\)/)
   assert.match(screen, /if selectedFile == nil && locateIntent == nil && managementIntent == nil/)
-  assert.match(screen, /locateIntent = nil\s*locateOwner = nil\s*managementIntent = nil\s*filterQuery = ""\s*model\.invalidate\(\)\s*favorites\.invalidate\(\)/)
+  assert.match(screen, /locateIntent = nil\s*locateOwner = nil\s*managementIntent = nil\s*filterQuery = ""\s*showingClearRecentConfirmation = false\s*model\.invalidate\(\)\s*favorites\.invalidate\(\)\s*recentClear\.invalidate\(\)/)
   // Root-originated results must open the cloud root itself, not Browse home.
   assert.match(location, /login: login, folderID: openedOwner\.rootNodeID,/)
   assert.match(location, /XDriveIOSNativeFilesLocateModel/)
@@ -196,7 +196,7 @@ test('native Recent/Favorites search only filters bounded verified Owner results
   assert.match(screen, /native-ios-files-collection-no-search-matches/)
   assert.match(screen, /filteredItems\.contains\(where: \{ \$0\.node == next \}\)/)
   assert.match(screen, /let neighbors = filteredItems\.filter \{/)
-  assert.match(screen, /filterQuery = ""\s*model\.invalidate\(\)/)
+  assert.match(screen, /filterQuery = ""\s*showingClearRecentConfirmation = false\s*model\.invalidate\(\)\s*favorites\.invalidate\(\)\s*recentClear\.invalidate\(\)/)
   assert.match(screen, /filteredItems\.contains\(item\), model\.items\.contains\(item\)/)
   assert.doesNotMatch(screen, /\/api\/v1\/search|WKWebView|import WebKit|URLSession\.shared/)
   assert.match(policy, /self == \.recent \? 50 : 256/)
