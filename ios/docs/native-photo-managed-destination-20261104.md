@@ -28,16 +28,26 @@ Contract introduced by this scoped, stacked development PR:
 - All old Owner-root photo files and encrypted upload receipts remain intact.
   This stage does **not** silently reparent, delete or declare them transferred.
 
-**Explicitly NOT completed by stage 1:** The iOS UI consent/control wiring,
-mandatory gating of *all* manual/automatic/BG photo uploads, scoped managed
-UploadSession create/finalize/receipt admission, changeover of old sealed
-Owner-root journal records, or iPhone hardware acceptance. A managed Node
+**Native UI now staged in this development branch:** iOS Photos displays a
+required single-name TextField, only registers a device after an explicit tap,
+uses a verified Owner session plus exact registered-device proof for the Server
+GET/PUT, and displays only the returned target_path and Node ID. Cancellation
+and Owner-switch invalidate pending results. There is no JS/WebView or local
+cloud-path construction. The UI does not grant write permission.
+
+**Explicitly NOT completed:** mandatory runtime gating of *all* old
+manual/automatic/BG photo uploads, scoped managed UploadSession create/finalize/
+receipt admission, changeover of old sealed Owner-root journal records, or
+iPhone hardware acceptance. The existing uploader still targets Owner root. A managed Node
 rejects generic Files uploads, so **never** substitute this new NodeID into
 the existing iOS uploader before the dedicated Go upload authorization and
 both foreground/background receipt verifiers are integrated.
 
 Parent: #3757. This branch is stacked on its development HEAD (not merged
-into master). The parent retains its own CI; no running/green PR HEAD changed.
+into master). Parent #3757 actual Go syntax and outdated Cloud Picker test failures
+were repaired in #3757 with 0d1d59e8, then integrated into this child
+**development** branch without touching master. The correct new test must
+continue requiring server-owned Source/Node creation and no picker.
 
 Acceptance for the next P0 delivery:
 1. Explicit device registration, Owner proof and destination name before

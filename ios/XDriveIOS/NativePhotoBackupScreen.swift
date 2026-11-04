@@ -11,6 +11,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @StateObject private var background = XDriveIOSNativeBackgroundPhotoControls()
     @StateObject private var coverage = XDriveIOSNativePhotoCoverageModel()
     @StateObject private var originalProof = XDriveIOSNativeCurrentPhotoReceiptModel()
+    @StateObject private var destination = XDriveIOSNativePhotoBackupDestinationModel()
     @State private var selectedOriginalToVerify: PhotosPickerItem?
     @State private var selectedOriginalIdentifier: String?
     @State private var checkICloudOriginal = false
@@ -258,10 +259,12 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         .onAppear {
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             syncSavedAutomaticSettings()
+            destination.refresh(login: login)
             receipts.refresh(login: login)
             background.refresh(login: login)
         }
         .onDisappear {
+            destination.cancel()
             originalProof.cancel()
             selectedOriginalIdentifier = nil
             selectedOriginalToVerify = nil
@@ -333,6 +336,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             )
         }
         .onChange(of: login.owner) { _ in
+            destination.reset()
+            destination.refresh(login: login)
             originalProof.cancel()
             selectedOriginalToVerify = nil
             selectedOriginalIdentifier = nil
@@ -374,9 +379,58 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     // Never duplicate mutable consent controls in parallel view trees.
     @ViewBuilder
     private var backupSettingsSections: some View {
+            Section("备份目的地（必选）") {
+                Text("输入一个文件夹名称，默认使用本机设备名称；不输入云端完整路径。服务器按 Push/Pull 的受管目录规则自动创建实际目标。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                TextField("备份文件夹名称", text: $destination.folderName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .disabled(destination.busy || controller.busy)
+                    .accessibilityIdentifier("native-ios-photos-destination-name")
+                if destination.needsDeviceRegistration {
+                    Text("当前 iPhone 尚未注册到此 Owner，必须先明确注册设备。")
+                        .font(.footnote).foregroundStyle(.orange)
+                    Button("注册当前 iPhone") {
+                        destination.registerDevice(login: login)
+                    }
+                    .disabled(destination.busy || controller.busy || login.owner == nil)
+                    .accessibilityIdentifier("native-ios-photos-destination-device-register")
+                }
+                HStack {
+                    Button("保存并核验目标目录") {
+                        destination.save(login: login)
+                    }
+                    .disabled(!destination.canSave || controller.busy || login.owner == nil)
+                    .accessibilityIdentifier("native-ios-photos-destination-save")
+                    Button("刷新已绑定目录") {
+                        destination.refresh(login: login)
+                    }
+                    .disabled(destination.busy || login.owner == nil)
+                    .accessibilityIdentifier("native-ios-photos-destination-refresh")
+                }
+                if destination.busy {
+                    ProgressView("正在核验当前 Owner、设备和受管目标…")
+                }
+                if let verified = destination.confirmed {
+                    Label("服务器已确认备份目标", systemImage: "checkmark.circle")
+                    Text(verified.targetPath)
+                        .font(.footnote).textSelection(.enabled)
+                        .accessibilityIdentifier("native-ios-photos-destination-target-path")
+                    Text("受管目标 ID：\(verified.targetNodeID)。此 ID 仅用于核验，不由 iPhone 拼接或选择完整云端路径。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text(destination.message)
+                    .font(.caption).foregroundStyle(.secondary)
+                if let failure = destination.errorMessage {
+                    Text(failure).font(.footnote).foregroundStyle(.red)
+                        .accessibilityIdentifier("native-ios-photos-destination-error")
+                }
+                Text("本阶段只完成目标目录绑定：直到服务器放行精确受管 Source 的原件 UploadSession、后台授权和 Node 收据，不能把目录配置当作已完成照片备份。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("备份范围") {
                 Text("当前账户：\(login.owner?.username ?? "未登录")")
-                Text("照片、视频与 Live Photo 双原件 ZIP 会保存到当前 Owner 云端根目录。每轮最多检查 256 项、新增 20 个原件；上传前后核验身份与收据。")
+                Text("照片、视频与 Live Photo 双原件 ZIP 的新目标必须使用上方服务器确认的受管目录。旧版上传器仍写 Owner 根目录，正式切换前不得将目标配置视为原件上传成功。")
                     .font(.footnote).foregroundStyle(.secondary)
                 Toggle("手动备份允许下载 iCloud 原件", isOn: $allowICloud)
                     .disabled(controller.busy)
