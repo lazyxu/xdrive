@@ -164,6 +164,23 @@ actor XDriveIOSNativeAlbumPageReader {
         )
     }
 
+    /// A single authorized predecessor date decides whether the first day
+    /// heading of the next 64-item window should repeat. The current reader
+    /// verifies both the snapshot revision and the Photos permission.
+    func precedingCaptureDate(beforeOffset offset: Int) throws -> Date? {
+        guard let result = snapshot, let permission else {
+            throw XDriveIOSAlbumReadFailure.missing
+        }
+        try verify(permission)
+        guard offset > 0, offset <= result.count, offset % 64 == 0 else {
+            throw XDriveIOSAlbumReadFailure.changed
+        }
+        try Task.checkCancellation()
+        let capture = result.object(at: offset - 1).creationDate
+        try verify(permission)
+        return capture
+    }
+
     /// Admit exactly one neighbor album page from a newly verified PhotoKit
     /// snapshot. Validate EVERY slot of the previous 64-item page and the
     /// exact edge item; an insertion, edit or album membership change must not
@@ -311,6 +328,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
     let onRead: (XDrivePhotoKitScanPage) -> Void
     let onFailure: () -> Void
     @State private var page: XDrivePhotoKitScanPage?
+    @State private var precedingCapturedAt: Date?
     @State private var reader: XDriveIOSNativeAlbumPageReader?
 
     private var placeholder: some View {
@@ -321,51 +339,79 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
     }
 
     var body: some View {
-        LazyVGrid(
-            columns: [GridItem(.adaptive(
-                minimum: density.minimumCellWidth,
-                maximum: density.maximumCellWidth
-            ), spacing: 2)],
-            spacing: 2
-        ) {
+        VStack(alignment: .leading, spacing: 7) {
             if let page {
-                ForEach(page.items) { item in
-                    if item.kind == "unsupported" {
-                        placeholder
-                    } else {
-                        Button { onSelect(item, page) } label: {
-                            ZStack(alignment: .topTrailing) {
-                                XDriveIOSNativeSquarePhotoTile(candidate: item)
-                                if selectionMode {
-                                    Image(systemName: selectedIDs.contains(item.id)
-                                        ? "checkmark.circle.fill" : "circle")
-                                        .font(.title2).foregroundStyle(.white)
-                                        .padding(6)
+                let daySections = XDriveIOSNativePhotoDayGroupingPolicy.sections(
+                    dates: page.items.map(\.capturedAt),
+                    previousCapturedAt: precedingCapturedAt,
+                    hasPreviousPage: offset > 0,
+                    calendar: .current
+                )
+                ForEach(daySections) { section in
+                    if !section.continuesPreviousPage {
+                        Text(section.title)
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(
+                            minimum: density.minimumCellWidth,
+                            maximum: density.maximumCellWidth
+                        ), spacing: 2)], spacing: 2
+                    ) {
+                        ForEach(page.items[section.startIndex..<section.endIndex]) { item in
+                            if item.kind == "unsupported" {
+                                placeholder
+                            } else {
+                                Button { onSelect(item, page) } label: {
+                                    ZStack(alignment: .topTrailing) {
+                                        XDriveIOSNativeSquarePhotoTile(candidate: item)
+                                        if selectionMode {
+                                            Image(systemName: selectedIDs.contains(item.id)
+                                                ? "checkmark.circle.fill" : "circle")
+                                                .font(.title2).foregroundStyle(.white)
+                                                .padding(6)
+                                        }
+                                    }
                                 }
+                                .buttonStyle(.plain)
+                                .id(item.id)
+                                .accessibilityFocused(accessibilityFocus, equals: item.id)
+                                .accessibilityLabel(selectionMode
+                                    ? (selectedIDs.contains(item.id)
+                                        ? "已选择照片" : "选择照片")
+                                    : (item.kind == "video" ? "播放视频" : "查看照片"))
                             }
                         }
-                        .buttonStyle(.plain)
-                        .id(item.id)
-                        .accessibilityFocused(accessibilityFocus, equals: item.id)
-                        .accessibilityLabel(selectionMode
-                            ? (selectedIDs.contains(item.id) ? "已选择照片" : "选择照片")
-                            : (item.kind == "video" ? "播放视频" : "查看照片"))
                     }
                 }
             } else {
-                ForEach(0..<min(64, max(0, expectedTotal - offset)), id: \.self) { _ in
-                    placeholder
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(
+                        minimum: density.minimumCellWidth,
+                        maximum: density.maximumCellWidth
+                    ), spacing: 2)], spacing: 2
+                ) {
+                    ForEach(0..<min(64, max(0, expectedTotal - offset)), id: \.self) { _ in
+                        placeholder
+                    }
                 }
             }
         }
         .id("album-page:\(offset)")
         .task(id: "\(generation)-\(album.collectionIdentifier)-\(offset)-\(sortOrder.rawValue)") {
             page = nil
+            precedingCapturedAt = nil
             let next = XDriveIOSNativeAlbumPageReader()
             reader = next
             do {
                 let count = try await next.open(album, sortOrder: sortOrder)
                 let result = try await next.page(offset: offset)
+                var preceding: Date?
+                if offset > 0 {
+                    preceding = try await next.precedingCaptureDate(beforeOffset: offset)
+                }
                 try Task.checkCancellation()
                 guard count == expectedTotal,
                       result.totalAccessibleAssets == expectedTotal,
@@ -373,6 +419,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
                       result.nextOffset == min(expectedTotal, offset + 64) else {
                     throw XDriveIOSAlbumReadFailure.changed
                 }
+                precedingCapturedAt = preceding
                 page = result
                 onRead(result)
             } catch is CancellationError {
@@ -386,6 +433,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
             page = nil
             if let reader { Task { await reader.reset() } }
             reader = nil
+            precedingCapturedAt = nil
         }
     }
 }

@@ -129,3 +129,37 @@ test('album capture-date sort keeps all 64-slot reads, Viewer and writes on the 
   assert.match(albums, /\.task\(id: "\\\(generation\)-\\\(album\.collectionIdentifier\)-\\\(offset\)-\\\(sortOrder\.rawValue\)"\)/)
   assert.doesNotMatch(wall, /Button\("上一页"\)|Button\("下一页"\)/)
 })
+
+
+test('album contents share native capture-day headers with exact 64-slot PhotoKit boundaries', () => {
+  const reader = albums.slice(
+    albums.indexOf('actor XDriveIOSNativeAlbumPageReader'),
+    albums.indexOf('/// Visible album-cover cells')
+  )
+  const page = albums.slice(
+    albums.indexOf('private struct XDriveIOSNativeAlbumVirtualPage: View'),
+    albums.indexOf('/// Continuous album media wall')
+  )
+  const day = read('ios/XDriveIOS/NativePhotoDayGroupingPolicy.swift')
+  assert.match(page, /@State private var precedingCapturedAt: Date\?/)
+  assert.match(page, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
+  assert.match(page, /dates: page\.items\.map\(\\\.capturedAt\)/)
+  assert.match(page, /previousCapturedAt: precedingCapturedAt/)
+  assert.match(page, /hasPreviousPage: offset > 0/)
+  assert.match(page, /ForEach\(daySections\) \{ section in/)
+  assert.match(page, /if !section\.continuesPreviousPage \{/)
+  assert.match(page, /Text\(section\.title\)/)
+  assert.match(page, /\.accessibilityAddTraits\(\.isHeader\)/)
+  assert.match(page, /ForEach\(page\.items\[section\.startIndex\.\.<section\.endIndex\]\)/)
+  assert.match(page, /XDriveIOSNativeSquarePhotoTile\(candidate: item\)/)
+  assert.match(page, /ForEach\(0\.\.<min\(64, max\(0, expectedTotal - offset\)\)/)
+  assert.match(reader, /func precedingCaptureDate\(beforeOffset offset: Int\) throws -> Date\?/)
+  assert.match(reader, /offset > 0, offset <= result\.count, offset % 64 == 0/)
+  assert.match(reader, /try verify\(permission\)\s*return capture/)
+  assert.match(page, /preceding = try await next\.precedingCaptureDate\(beforeOffset: offset\)/)
+  assert.match(page, /precedingCapturedAt = preceding\s*page = result\s*onRead\(result\)/)
+  assert.match(page, /\.onDisappear \{\s*page = nil[\s\S]*?precedingCapturedAt = nil/)
+  assert.match(page, /sortOrder\.rawValue/)
+  assert.match(day, /hasPreviousPage: Bool = false, calendar: Calendar = \.current/)
+  assert.doesNotMatch(page, /Button\("上一页"\)|Button\("下一页"\)|fetchAssets\(withLocalIdentifiers/)
+})
