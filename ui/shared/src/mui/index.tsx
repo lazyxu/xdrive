@@ -137,6 +137,7 @@ export type { XDriveViewerDownloadReceiptPort } from './useViewerDownloadReceipt
 export * from './usePreviewSlideshow'
 export * from './LivePhotoSurface'
 export * from './FolderIcon'
+export * from './XDriveCloudRootIcon'
 export * from './FileExplorer'
 export * from '../file-explorer-capabilities'
 export * from './PublicShareReadOnlyExplorer'

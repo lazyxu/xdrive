@@ -34,6 +34,11 @@ function originalPane() {
     './AutoLoadSentinel': { XDriveAutoLoadSentinel: 'auto-sentinel' },
     './FileExplorerExternalDrop': { xDriveFileExplorerReadExternalDrop: () => null },
     './FileExplorerThumbnail': { XDriveFileExplorerThumbnail: 'thumbnail' },
+    './XDriveCloudRootIcon': {
+      XDriveCloudRootIcon: 'xdrive-cloud-root-icon',
+      XDRIVE_CLOUD_ROOT_LABEL: 'xDrive 云端',
+    },
+
     './FileExplorer': {
       XDriveFileExplorerAvailabilityBadge: 'availability',
       XDriveFileExplorerItemIcon: 'file-icon', xDriveFileSupportsThumbnail: () => false,
@@ -86,11 +91,11 @@ test('P101 ORIGINAL mounted Web/Desktop tree is silent for held first page, then
     await act(async () => { view = Renderer.create(React.createElement(Pane, props(load))) })
     assert.equal(count(view, 'role', 'treeitem'), 1)
     assert.equal(count(view, 'role', 'group'), 0)
-    await act(async () => { one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
     assert.deepEqual(calls, [[1, undefined]], 'real bounded network read starts immediately')
     assert.equal(one(view, 'role', 'treeitem').props['aria-expanded'], false)
     assert.equal(one(view, 'role', 'treeitem').props['aria-busy'], true)
-    one(view, 'aria-label', '取消展开 我的文件')
+    one(view, 'aria-label', '取消展开 xDrive 云端')
     assert.equal(count(view, 'role', 'group'), 0)
     await act(async () => { await wait(370) })
     assert.equal(count(view, 'role', 'group'), 0, 'held >350ms has no temporary height/Loading')
@@ -103,9 +108,9 @@ test('P101 ORIGINAL mounted Web/Desktop tree is silent for held first page, then
     await act(async () => { more.findAll(x => x.type === 'auto-sentinel')[0].props.onLoad() })
     assert.equal(count(view, 'role', 'treeitem'), 3, 'the real page-2 cursor still appends nodes')
     assert.equal(calls.length, 2)
-    await act(async () => { one(view, 'aria-label', '折叠 我的文件').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '折叠 xDrive 云端').props.onClick({ stopPropagation() {} }) })
     assert.equal(count(view, 'role', 'group'), 0)
-    await act(async () => { one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
     assert.equal(count(view, 'role', 'treeitem'), 3)
     assert.equal(calls.length, 2, 'accepted cached page reveals without another GET')
   } finally {
@@ -121,14 +126,14 @@ test('P101 second activation cancels only unverified visual reveal; late first p
   let view
   try {
     await act(async () => { view = Renderer.create(React.createElement(Pane, props(load))) })
-    await act(async () => { one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} }) })
-    await act(async () => { one(view, 'aria-label', '取消展开 我的文件').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '取消展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
     assert.equal(count(view, 'role', 'group'), 0)
-    one(view, 'aria-label', '展开 我的文件')
+    one(view, 'aria-label', '展开 xDrive 云端')
     await act(async () => { first.resolve(page([[2, '后台完成的目录']])); await first.promise })
     assert.equal(count(view, 'role', 'group'), 0, 'late response cannot reopen cancelled group')
     assert.equal(calls.length, 1)
-    await act(async () => { one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
     assert.equal(count(view, 'role', 'group'), 1)
     assert.equal(calls.length, 1, 'verified cached children need no second read')
   } finally {
@@ -148,12 +153,12 @@ test('P101 failed original tree GET stays closed, and retry reveals only verifie
       view = Renderer.create(React.createElement(Pane,
         props(load, { onError: e => errors.push(e.message) })))
     })
-    await act(async () => { one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
     await act(async () => { first.reject(new Error('真实网络失败')); await first.promise.catch(() => {}) })
     assert.deepEqual(errors, ['真实网络失败'])
     assert.equal(count(view, 'role', 'group'), 0)
-    one(view, 'aria-label', '展开 我的文件')
-    await act(async () => { one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} }) })
+    one(view, 'aria-label', '展开 xDrive 云端')
+    await act(async () => { one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
     assert.equal(count(view, 'role', 'group'), 1)
     assert.equal(reads, 2)
   } finally {
@@ -169,7 +174,7 @@ test('P101 a new authenticated account cannot reveal a stale held tree disclosur
   const nextLoad = async () => page([[72, '当前账户目录']])
   try {
     await act(async () => { view = Renderer.create(React.createElement(Pane, props(originalLoad))) })
-    await act(async () => { one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
     assert.equal(count(view, 'role', 'group'), 0)
     await act(async () => {
       view.update(React.createElement(Pane, props(nextLoad, {
@@ -182,7 +187,7 @@ test('P101 a new authenticated account cannot reveal a stale held tree disclosur
     await act(async () => { first.resolve(page([[2, '旧账户目录']])); await first.promise })
     assert.equal(count(view, 'role', 'group'), 0)
     assert.equal(view.root.findAll(node => node.props?.['aria-label'] === '旧账户目录').length, 0)
-    await act(async () => { one(view, 'aria-label', '展开 新账户').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
     assert.equal(count(view, 'role', 'group'), 1)
     one(view, 'data-xdrive-file-explorer-tree-verified-group', 71)
   } finally {
@@ -197,13 +202,13 @@ test('P101 verified zero-child directory stays a leaf without empty group or fak
   let view
   try {
     await act(async () => { view = Renderer.create(React.createElement(Pane, props(load))) })
-    await act(async () => { one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
     assert.equal(reads, 1)
     assert.equal(count(view, 'role', 'group'), 0)
     assert.equal(count(view, 'role', 'treeitem'), 1)
     assert.equal(one(view, 'role', 'treeitem').props['aria-expanded'], undefined)
     assert.equal(one(view, 'role', 'treeitem').props['aria-busy'], undefined)
-    assert.equal(view.root.findAll(n => n.props?.['aria-label'] === '展开 我的文件').length, 0)
+    assert.equal(view.root.findAll(n => n.props?.['aria-label'] === '展开 xDrive 云端').length, 0)
   } finally {
     if (view) await act(async () => { view.unmount() })
   }
@@ -216,9 +221,9 @@ test('P101 rapid expand/cancel/re-expand coalesces original pending GET but stil
   let view
   try {
     await act(async () => { view = Renderer.create(React.createElement(Pane, props(load))) })
-    await act(async () => { one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} }) })
-    await act(async () => { one(view, 'aria-label', '取消展开 我的文件').props.onClick({ stopPropagation() {} }) })
-    await act(async () => { one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '取消展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
+    await act(async () => { one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} }) })
     assert.equal(reads, 1, 'one real request must be coalesced, never duplicated')
     assert.equal(count(view, 'role', 'group'), 0)
     await act(async () => { await wait(370) })
@@ -271,7 +276,7 @@ test('P101 folder, trash, Owner and unmount retire obsolete tree GETs even when 
     try {
       await act(async () => { view = Renderer.create(React.createElement(Pane, props(loader))) })
       await act(async () => {
-        one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} })
+        one(view, 'aria-label', '展开 xDrive 云端').props.onClick({ stopPropagation() {} })
       })
       assert.equal(signals.length, 1)
       assert.equal(signals[0].aborted, false)

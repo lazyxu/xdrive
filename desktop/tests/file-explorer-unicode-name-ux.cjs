@@ -31,7 +31,7 @@ test('U07 Mobile iOS27 file/collection/folder names and ancestor crumbs expose f
     'data-mobile-files-collection-title variant="body2"',
     'dir="auto" title={entry.name}',
     'data-mobile-files-compact-title', 'dir="auto" title={compactTitle}',
-    'title={crumb.name ||',
+    'title={index === 0 ? XDRIVE_CLOUD_ROOT_LABEL : crumb.name ||',
   ]) assert(mobile.includes(token), token)
   assert.equal((mobile.match(/dir="auto" title=\{compactTitle\}/g)||[]).length, 2)
   assert(mobile.includes("fontSize: effectiveGrid ? 14 : 16"))

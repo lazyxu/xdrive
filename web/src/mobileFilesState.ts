@@ -13,7 +13,8 @@ export type MobileFilesSavedState = {
   view: 'details' | 'grid'
 }
 
-export const MOBILE_FILES_HOLD_MS = 450
+// Mobile Web Files uses a 350 ms hold to match the shared Files gesture.
+export const MOBILE_FILES_HOLD_MS = 350
 export const MOBILE_FILES_MOVE_PX = 10
 export const MOBILE_FILES_ROW_HEIGHT = 68
 export const MOBILE_FILES_ITEM_TEXT_GAP_PX = 12
