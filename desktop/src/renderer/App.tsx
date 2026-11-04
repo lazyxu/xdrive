@@ -919,7 +919,7 @@ export default function App({
   const fileFavoritesSupported =
     agent.hello?.capabilities.includes('file-favorites') ?? false
   const fileRecentSupported =
-    agent.hello?.capabilities.includes('file-recent') ?? false
+    agent.hello?.capabilities.includes('file-recent-folders') ?? false
   const filePropertiesStatsSupported =
     agent.hello?.capabilities.includes('file-properties-stats') ?? false
   const fileMediaDetailsSupported =

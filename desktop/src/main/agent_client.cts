@@ -4240,6 +4240,19 @@ export class AgentIPCClient {
     return this.request<{ ok: boolean }>('POST', '/v1/cloud/favorites/unfavorite', { id: nodeID })
   }
 
+  cloudFileRecentFolders(limit = 8, signal?: AbortSignal) {
+    const query = new URLSearchParams({ limit: String(Math.min(50, Math.max(1, Math.trunc(limit)))) })
+    return this.request<AgentCloudRecentItem[]>('GET', `/v1/cloud/recent-folders?${query.toString()}`, undefined, 10_000, signal)
+  }
+
+  cloudTouchFileRecentFolder(nodeID: number) {
+    return this.request<AgentCloudRecentItem>('POST', '/v1/cloud/recent-folders/touch', { id: nodeID })
+  }
+
+  cloudClearFileRecentFolders() {
+    return this.request<{ ok: boolean }>('DELETE', '/v1/cloud/recent-folders')
+  }
+
   cloudFileRecent(limit = 16, signal?: AbortSignal) {
     const query = new URLSearchParams({ limit: String(Math.min(50, Math.max(1, Math.trunc(limit)))) })
     return this.request<AgentCloudRecentItem[]>('GET', `/v1/cloud/recent?${query.toString()}`, undefined, 10_000, signal)

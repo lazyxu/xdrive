@@ -959,6 +959,9 @@ declare global {
         cloudFileRecent: (limit?: number, requestID?: string) => Promise<DesktopResult<AgentCloudRecentItem[]>>
         cloudTouchFileRecent: (nodeID: number) => Promise<DesktopResult<AgentCloudRecentItem>>
         cloudClearFileRecent: () => Promise<DesktopResult<{ ok: boolean }>>
+        cloudFileRecentFolders: (limit?: number, requestID?: string) => Promise<DesktopResult<AgentCloudRecentItem[]>>
+        cloudTouchFileRecentFolder: (nodeID: number) => Promise<DesktopResult<AgentCloudRecentItem>>
+        cloudClearFileRecentFolders: () => Promise<DesktopResult<{ ok: boolean }>>
         cloudCreateDirectory: (parentID: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
         cloudRename: (id: number, revision: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
         cloudCopy: (id: number, parentID: number) => Promise<DesktopResult<AgentCloudNode>>

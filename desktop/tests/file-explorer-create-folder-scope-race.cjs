@@ -123,6 +123,7 @@ test('Desktop create-folder dialog keeps the directory scope that opened it', as
   )
 
   const parents = []
+  const confirmedWorkingFolders = []
   const token = { key: 'create-folder', generation: 1 }
   const createFolder = compileExpression(
     createSource.filename,
@@ -145,6 +146,7 @@ test('Desktop create-folder dialog keeps the directory scope that opened it', as
         },
       },
       refreshCurrentDirectoryIfCurrent: async () => {},
+      recentFolderUsage: { confirm: async (id) => { confirmedWorkingFolders.push(id); return true } },
       onFeedback: () => {},
       finishActionBusy: () => {},
     },
@@ -157,6 +159,8 @@ test('Desktop create-folder dialog keeps the directory scope that opened it', as
     [101],
     'navigating to directory B while the dialog is open must not redirect the create request into B',
   )
+  assert.deepEqual(confirmedWorkingFolders, [101],
+    'successful create records its actual parent, not the navigated-to folder')
 })
 
 test('Web create-folder dialog keeps the directory scope that opened it', async () => {

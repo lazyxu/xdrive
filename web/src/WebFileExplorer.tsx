@@ -24,6 +24,7 @@ import {
   xDriveProjectFileExplorerNode,
   useXDriveFileExplorerFavorites,
   useXDriveFileExplorerRecent,
+  useXDriveFileExplorerRecentFolderUsage,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerOwnerSourceOptions,
   useXDriveFileExplorerLocalReveal,
@@ -278,9 +279,14 @@ export default function WebFileExplorer({
 
   const recent = useXDriveFileExplorerRecent<Node>({
     lifecycleKey: navigationSessionStorageKey ?? '',
-    loadItems: () => api.fileRecent(16),
-    touchItem: (nodeID) => api.touchFileRecent(nodeID),
-    clearItems: () => api.clearFileRecent(),
+    loadItems: () => api.fileRecentFolders(8),
+    touchItem: (nodeID) => api.touchFileRecentFolder(nodeID),
+    clearItems: () => api.clearFileRecentFolders(),
+  })
+  const recentFolderUsage = useXDriveFileExplorerRecentFolderUsage({
+    lifecycleKey: navigationSessionStorageKey ?? '',
+    enabled: !trashActive,
+    record: recent.record,
   })
 
   const {
@@ -386,8 +392,10 @@ export default function WebFileExplorer({
       return page.items[0] ?? null
     },
     searchCrumbsForResult: (result) => result.crumbs,
-    onDirectoryAccess: (nodeID) => { void recent.record(nodeID) },
-    onFileAccess: (nodeID) => { void recent.record(nodeID) },
+    onDirectoryAccess: (nodeID) => { recentFolderUsage.consider(nodeID) },
+    onFileAccess: (_nodeID, parentID) => {
+      if (parentID) void recentFolderUsage.confirm(parentID)
+    },
     onError,
   })
 
@@ -1561,7 +1569,10 @@ export default function WebFileExplorer({
               inlineParentCrumbs(ownerID ?? current?.id ?? 0))
           }}
           onQuickLookItem={trashActive ? undefined : item => {
-            void recent.record(Number(item.id))
+            if (item.kind === 'file') {
+              const parentID = nodeByID.get(Number(item.id))?.parent_id ?? current?.id
+              if (parentID) void recentFolderUsage.confirm(parentID)
+            }
             openWebQuickLook({ item, logicalIndex: logicalIndexForItem(item) })
           }}
           onOpenError={onError}
@@ -1640,7 +1651,7 @@ export default function WebFileExplorer({
           }}
           onReorderQuickAccess={ids => quickAccess.reorder(ids)}
           onReorderSavedSearches={ids => organization.reorderSavedSearches(ids)}
-          onClearRecent={() => recent.clear()}
+          onClearRecent={() => { recentFolderUsage.cancel(); return recent.clear() }}
           onUnfavorite={id => favorites.unfavorite(id)}
           onCollectionAction={collectionAction}
           onPrepareNativeShareFile={(entry, signal) => api.prepareNativeShareFile(Number(entry.id), signal)}
@@ -1801,7 +1812,10 @@ export default function WebFileExplorer({
         onOpenItemInNewTab={!trashActive && canNewTab
           ? (item) => { void openItemInNewTab(item) }
           : undefined}
-        onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}
+        onPreviewItem={trashActive ? undefined : (item) => { if (item.kind === 'file') {
+              const parentID = nodeByID.get(Number(item.id))?.parent_id ?? current?.id
+              if (parentID) void recentFolderUsage.confirm(parentID)
+            } }}
         onOpenQuickLook={trashActive ? undefined : openWebQuickLook}
         loadColumnPage={trashActive || searchStatusText ? undefined : loadColumnPage}
         onColumnNavigate={trashActive || searchStatusText ? undefined : (nextCrumbs) => {
@@ -2000,7 +2014,7 @@ export default function WebFileExplorer({
                   void navigateTo(crumbs, true, navigationIntentID)
                   return
                 }
-                void recent.record(node.id)
+                if (node.parent_id) void recentFolderUsage.confirm(node.parent_id)
                 openWebNode(node)
               })
             }}
@@ -2024,7 +2038,7 @@ export default function WebFileExplorer({
                 },
               })
             }}
-            onClearRecent={() => { void recent.clear() }}
+            onClearRecent={() => { recentFolderUsage.cancel(); void recent.clear() }}
             onError={onError}
           />
         )}

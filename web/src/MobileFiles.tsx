@@ -3611,7 +3611,7 @@ export default function MobileFiles(props: Props) {
         </Dialog>
         <Dialog open={clearRecentConfirm} onClose={() => setClearRecentConfirm(false)} fullWidth maxWidth="xs">
           <DialogTitle>清空最近记录？</DialogTitle>
-          <DialogContent><Typography variant="body2">只清除最近打开的记录，不删除云端文件。</Typography></DialogContent>
+          <DialogContent><Typography variant="body2">只清除最近使用的文件夹记录，不删除云端文件。</Typography></DialogContent>
           <DialogActions>
             <Button onClick={() => setClearRecentConfirm(false)}>取消</Button>
             <Button color="error" onClick={() => {

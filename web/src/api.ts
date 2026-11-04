@@ -3609,6 +3609,20 @@ export class XDriveApi {
     })
   }
 
+  fileRecentFolders(limit = 8, signal?: AbortSignal) {
+    return this.request<XDriveFileRecentItem<Node>[]>(`/api/v1/file-recent-folders?limit=${Math.min(50, Math.max(1, Math.trunc(limit)))}`, { signal })
+  }
+
+  touchFileRecentFolder(nodeID: number) {
+    return this.request<XDriveFileRecentItem<Node>>(`/api/v1/file-recent-folders/${nodeID}`, {
+      method: 'POST', body: JSON.stringify({}),
+    })
+  }
+
+  clearFileRecentFolders() {
+    return this.request<void>('/api/v1/file-recent-folders', { method: 'DELETE' })
+  }
+
   fileRecent(limit = 16, signal?: AbortSignal) {
     return this.request<XDriveFileRecentItem<Node>[]>(`/api/v1/file-recent?limit=${Math.min(50, Math.max(1, Math.trunc(limit)))}`, { signal })
   }
