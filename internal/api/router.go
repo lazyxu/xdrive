@@ -210,6 +210,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/me", s.me)
 	authed.GET("/me/quota", s.quotaUsage)
 	authed.GET("/me/storage", s.storageStats)
+	authed.GET("/me/viewer-quality", s.getViewerQualityPreference)
+	authed.PUT("/me/viewer-quality", s.putViewerQualityPreference)
 	authed.POST("/me/change-password", s.changePassword)
 	// Authenticated browser password rotation gets a new HttpOnly cookie,
 	// without exposing the new durable refresh token in JSON.
@@ -564,6 +566,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services/caddy/https/preflight", s.adminCaddyHTTPSPreflight)
 	admin.GET("/services/caddy/https/adoption-candidate", s.adminCaddyHostAdoptionCandidate)
 	admin.GET("/services/caddy/https/host-plan", s.adminCaddyHTTPSHostPlan)
+	admin.GET("/services/viewer-quality", s.adminGetViewerQuality)
+	admin.PUT("/services/viewer-quality", s.adminPutViewerQuality)
 	admin.GET("/services/media-worker", s.adminMediaWorkerConfig)
 	admin.PUT("/services/media-worker", s.adminSaveMediaWorkerConfig)
 	admin.POST("/services/media-worker/apply", s.adminApplyMediaWorker)
@@ -632,6 +636,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/storage/staging", s.adminUploadStaging)
 	admin.POST("/storage/staging/cleanup", s.adminCleanupUploadStaging)
 	admin.POST("/storage/cache/cleanup", s.adminCleanupStorageCache)
+	admin.GET("/storage/cache/viewer", s.adminViewerCacheStatus)
+	admin.POST("/storage/cache/viewer/evict", s.adminEvictViewerCache)
 	admin.GET("/storage/staging/cleanup-runs", s.adminStagingCleanupRuns)
 	admin.GET("/storage/staging/cleanup-runs/:runID/failures", s.adminStagingCleanupFailures)
 	admin.POST("/users", s.adminCreateUser)

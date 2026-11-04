@@ -221,7 +221,7 @@ requireText(files.synologyGuide, ['群晖 DSM 配置', 'DSM 操作示意图', '�
 if (/<Alert\b/.test(files.synologyGuide)) throw new Error('群晖 DSM 向导仍在直接渲染原生 MUI Alert')
 if (/<DialogContent(?:\s|>)/.test(files.synologyGuide)) throw new Error('群晖 DSM 向导仍在直接渲染原生 MUI DialogContent')
 requireText(files.main, ['XDriveAppearanceThemeProvider', 'normalizeXDriveAppearance', "xdrive.appearance", '<App appearance={appearance} onAppearanceChange={changeAppearance} />'], 'MUI Web 入口')
-requireText(files.app + files.settingsDialog + files.accountChrome, ['XDriveAccountMenuActions', '设置', 'subtitle="外观与服务端信息"', 'XDriveAppearanceField', 'XDriveBuildInfoCard', 'Server 构建信息'], 'Web 设置弹窗')
+requireText(files.app + files.settingsDialog + files.accountChrome, ['XDriveAccountMenuActions', '设置', 'subtitle="外观、Viewer 画质与服务端信息"', 'XDriveAppearanceField', 'XDriveBuildInfoCard', 'Server 构建信息'], 'Web 设置弹窗')
 if (/antd|ConfigProvider|AntApp|zhCN/.test(files.main)) throw new Error('Web 入口仍保留 Ant Design provider')
 if (/\.ant-[a-zA-Z0-9_-]+/.test(files.styles)) throw new Error('Web CSS 仍保留 Ant Design 选择器')
 

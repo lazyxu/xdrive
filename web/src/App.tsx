@@ -122,6 +122,7 @@ import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
 import PwaOfflineDirectoryBrowser from './PwaOfflineDirectoryBrowser'
 import { xDrivePwaCaptureAlbumSummaries, xDrivePwaCaptureVisitedDirectory, xDrivePwaClearOfflineMetadata, xDrivePwaOfflineScopeKey, xDrivePwaReadOfflineDirectories, xDrivePwaObserveOfflinePurge } from './pwaOfflineDirectory'
 import type { XDrivePwaOfflineOwner } from './pwaOfflineDirectory'
+import ViewerQualitySettingsSection from './ViewerQualitySettingsSection'
 import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload, xDriveObservePwaBeforeUnload } from './pwaTransferSafety'
 import { xDriveClearPwaWindowActivity, xDriveReportPwaWindowActivity } from './pwaWorkloadSafety'
 import { xDriveCanResumeBrowserUpload, xDrivePwaResumeFileError } from './pwaUploadResume'
@@ -260,6 +261,8 @@ function WebAccountMenu({
   username,
   serverBuild,
   appearance,
+  viewerQualityApi,
+  isAdmin = false,
   disabled = false,
   onAppearanceChange,
   onLogout,
@@ -269,6 +272,8 @@ function WebAccountMenu({
   username: string
   serverBuild: BuildInfo | null
   appearance: XDriveAppearance
+  viewerQualityApi?: XDriveApi
+  isAdmin?: boolean
   disabled?: boolean
   onAppearanceChange: (appearance: XDriveAppearance) => void
   onLogout: () => void
@@ -314,10 +319,14 @@ function WebAccountMenu({
       <XDriveSettingsDialog
         open={settingsOpen && !disabled}
         onClose={() => setSettingsOpen(false)}
-        subtitle="外观与服务端信息"
+        subtitle="外观、Viewer 画质与服务端信息"
         appearance={appearance}
         onAppearanceChange={onAppearanceChange}
       >
+        {viewerQualityApi ? (
+          <ViewerQualitySettingsSection api={viewerQualityApi}
+            open={settingsOpen && !disabled} isAdmin={isAdmin} />
+        ) : null}
         {offlineOwner ? <PwaOfflineDirectorySection owner={offlineOwner} onConsentChange={onOfflineConsentChange} /> : null}
       </XDriveSettingsDialog>
       {installOpen && !disabled ? (
@@ -2515,6 +2524,8 @@ function FileManager({
   )
   const accountAction = (
     <WebAccountMenu
+      viewerQualityApi={api}
+      isAdmin={profile?.role === 'admin'}
       disabled={viewerActive}
       offlineOwner={offlineOwner}
       onOfflineConsentChange={setOfflineConsent}

@@ -231,11 +231,26 @@ func loadProtectedThumbnailKeys(
 				}
 				protected[key] = struct{}{}
 			}
-			// Viewer quality derivatives are protected for current revisions.
-			// Obsolete revisions remain eligible for the existing aged GC.
-			for _, format := range []string{"webp", "jpeg"} {
-				key := mediapkg.ViewerPreviewStorageKey(row.NodeID, row.NodeRevision, row.SHA256, format)
-				protected[key] = struct{}{}
+			// Current revision variants remain protected from the legacy aged
+			// GC. Never delete an active quality tier or touch original CAS.
+			// Byte-budgeted, access-aware eviction must be introduced before
+			// enabling additional presets in user-facing clients.
+			for _, preset := range []mediapkg.ViewerQualityPreset{
+				mediapkg.ViewerQualityEconomy,
+				mediapkg.ViewerQualityBalanced,
+				mediapkg.ViewerQualityHigh,
+			} {
+				for _, format := range []string{"webp", "jpeg"} {
+					variant, err := mediapkg.ViewerQualityVariantFor(preset, format)
+					if err != nil {
+						return nil, err
+					}
+					key, err := mediapkg.ViewerQualityStorageKey(row.NodeID, row.NodeRevision, row.SHA256, variant)
+					if err != nil {
+						return nil, err
+					}
+					protected[key] = struct{}{}
+				}
 			}
 		}
 	}

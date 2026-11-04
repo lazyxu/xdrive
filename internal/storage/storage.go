@@ -131,3 +131,13 @@ type ManagedFileWalker interface {
 type ManagedTempCleanupLocker interface {
 	TryExclusiveTempCleanup(context.Context) (release func(), acquired bool, err error)
 }
+
+// ViewerCacheLifecycleLocker is optional and implemented by Local storage.
+// Its fixed cross-process lock coordinates pinned Viewer reads against
+// byte-budgeted eviction. The returned release MUST be called only after
+// the opened image handle has been closed. A busy exclusive lock means that
+// eviction must skip, never invalidate a displayed image.
+type ViewerCacheLifecycleLocker interface {
+	OpenPinnedViewerCache(context.Context, string) (*os.File, func(), error)
+	TryExclusiveViewerCacheEviction(context.Context) (release func(), acquired bool, err error)
+}
