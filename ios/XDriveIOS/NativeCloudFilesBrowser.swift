@@ -362,6 +362,94 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     }
 }
 
+@MainActor
+private final class XDriveIOSNativeFilesSearchOptionsModel: ObservableObject {
+    @Published private(set) var sources: [XDriveIOSNativeFilesSearchSourceOption] = []
+    @Published private(set) var tags: [XDriveIOSNativeFilesSearchTagOption] = []
+    @Published private(set) var loading = false
+    @Published private(set) var verified = false
+    @Published private(set) var errorMessage: String?
+
+    private var epoch = UUID()
+    private var job: Task<Void, Never>?
+    private var loadedOwner: XDriveNativeOwnerRoot?
+
+    func invalidate() {
+        epoch = UUID()
+        job?.cancel()
+        job = nil
+        loadedOwner = nil
+        sources = []
+        tags = []
+        loading = false
+        verified = false
+        errorMessage = nil
+    }
+
+    func matches(_ owner: XDriveNativeOwnerRoot?) -> Bool {
+        guard verified, let owner, let loadedOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(owner, loadedOwner)
+    }
+
+    func load(login: XDriveIOSNativeOwnerLoginModel) {
+        guard let expected = login.owner else {
+            invalidate()
+            return
+        }
+        if verified, let loadedOwner,
+           XDriveIOSNativePhotoOwnerScope.matches(loadedOwner, expected) {
+            return
+        }
+        if loading, let loadedOwner,
+           XDriveIOSNativePhotoOwnerScope.matches(loadedOwner, expected) {
+            return
+        }
+
+        invalidate()
+        loadedOwner = expected
+        let ticket = epoch
+        loading = true
+        job = Task { @MainActor [weak self] in
+            defer {
+                if self?.epoch == ticket {
+                    self?.loading = false
+                    self?.job = nil
+                }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected) else {
+                    throw XDriveIOSNativeFilesReadError.invalidScope
+                }
+                let reader = XDriveIOSNativeFilesReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                )
+                async let sourceRead = reader.searchSources()
+                async let tagRead = reader.searchTags()
+                let (loadedSources, loadedTags) = try await (sourceRead, tagRead)
+                try Task.checkCancellation()
+                guard let self, self.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
+                else { return }
+                self.sources = loadedSources
+                self.tags = loadedTags
+                self.verified = true
+                self.errorMessage = nil
+            } catch is CancellationError {
+                // An owner switch or screen teardown invalidates both reads.
+            } catch {
+                guard let self, self.epoch == ticket else { return }
+                self.sources = []
+                self.tags = []
+                self.verified = false
+                self.errorMessage = "无法读取同步文件夹和标签筛选项，请检查网络后重试。"
+            }
+        }
+    }
+}
+
 private struct XDriveIOSNativeFilesBatchDestinationIntent: Identifiable {
     let id = UUID()
     let owner: XDriveNativeOwnerRoot
