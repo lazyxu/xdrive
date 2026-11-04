@@ -520,6 +520,9 @@ func (s *Server) Router() *gin.Engine {
 	authed.DELETE("/sources/:id/local-staging/:stageID", s.requireLocalSourceExecutor(), s.cancelLocalPushStage)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
+	// M10: reversible archive/paused restore, distinct from cloud-only cleanup.
+	authed.POST("/sources/:id/archive", s.requireLocalSourceExecutor(), s.archiveSource)
+	authed.POST("/sources/:id/restore", s.requireLocalSourceExecutor(), s.restoreArchivedSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
 	authed.DELETE("/sources/:id/local-draft", s.discardLocalSourceDraft)
 	authed.POST("/sources/:id/trigger", s.requireLocalSourceExecutor(), s.triggerSource)

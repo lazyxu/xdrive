@@ -20,8 +20,9 @@ const (
 	SourceRunModeSync = "sync"
 	SourceRunModeScan = "scan"
 
-	SourceStatusActive = "active"
-	SourceStatusPaused = "paused"
+	SourceStatusActive   = "active"
+	SourceStatusPaused   = "paused"
+	SourceStatusArchived = "archived" // only the explicit archive endpoint may set this durable state
 
 	SourceItemKindFile      = "file"
 	SourceItemKindDirectory = "directory"
