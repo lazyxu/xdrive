@@ -26,6 +26,14 @@ private enum XDriveIOSNativeVideoDurationBadgePolicy {
 /// Legacy album/map/photo Viewer dimensions are intentionally unchanged.
 struct XDriveIOSNativeSquarePhotoTile: View {
     let candidate: XDrivePhotoKitScanCandidate
+    let framing: XDriveIOSNativePhotoWallFraming
+
+    init(candidate: XDrivePhotoKitScanCandidate,
+         framing: XDriveIOSNativePhotoWallFraming = .square) {
+        self.candidate = candidate
+        self.framing = framing
+    }
+
     @StateObject private var loader = XDriveIOSPhotoImageLoader()
     @State private var durationLabel: String?
 
@@ -34,9 +42,15 @@ struct XDriveIOSNativeSquarePhotoTile: View {
             GeometryReader { geometry in
                 Group {
                     if let image = loader.image {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
+                        if framing == .complete {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                        } else {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                        }
                     } else {
                         Rectangle()
                             .fill(Color(uiColor: .secondarySystemGroupedBackground))
@@ -46,6 +60,7 @@ struct XDriveIOSNativeSquarePhotoTile: View {
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .clipped()
             }
             if candidate.kind == "video" {
@@ -74,11 +89,13 @@ struct XDriveIOSNativeSquarePhotoTile: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 3))
-        .task(id: candidate.id) {
+        .task(id: "\(candidate.id)-\(framing.rawValue)") {
             durationLabel = nil
-            // Only visible cells request local PhotoKit derivatives; never
-            // fetch iCloud originals when zooming the thumbnail grid.
-            loader.load(candidate.id, size: CGSize(width: 420, height: 420))
+            // Presentation change reissues only this visible thumbnail.
+            loader.load(
+                candidate.id, size: CGSize(width: 420, height: 420),
+                contentMode: framing == .complete ? .aspectFit : .aspectFill
+            )
             // A video duration is PhotoKit metadata, not a media download.
             // Independently verify identity before displaying the badge.
             guard candidate.kind == "video",
@@ -112,6 +129,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let generation: UUID
     let mediaFilter: XDriveIOSNativePhotoMediaFilter
     let density: XDriveIOSNativePhotoWallDensity
+    let framing: XDriveIOSNativePhotoWallFraming
     let selectionMode: Bool
     let selectedIDs: Set<String>
     let accessibilityFocus: AccessibilityFocusState<String?>.Binding
@@ -154,7 +172,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                         if candidate.kind != "unsupported" {
                             Button { onSelect(candidate, page) } label: {
                                 ZStack(alignment: .topTrailing) {
-                                    XDriveIOSNativeSquarePhotoTile(candidate: candidate)
+                                    XDriveIOSNativeSquarePhotoTile(
+                                        candidate: candidate, framing: framing
+                                    )
                                     if selectionMode {
                                         Image(systemName: selectedIDs.contains(candidate.id)
                                             ? "checkmark.circle.fill" : "circle")
@@ -278,6 +298,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @Environment(\.scenePhase) private var phase
     @State private var total = 0
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @State private var framing: XDriveIOSNativePhotoWallFraming = .square
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false
     @State private var failure: String?
@@ -337,6 +358,17 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                     } label: {
                                         Label(option.title, systemImage: density == option
                                               ? "checkmark.circle.fill" : "square.grid.3x3")
+                                    }
+                                }
+                                Section("图片显示") {
+                                    ForEach(XDriveIOSNativePhotoWallFraming.allCases) { option in
+                                        Button {
+                                            framing = option
+                                        } label: {
+                                            Label(option.title, systemImage: framing == option
+                                                ? "checkmark.circle.fill" : "photo")
+                                        }
+                                        .accessibilityIdentifier("native-ios-local-wall-framing")
                                     }
                                 }
                             } label: {
@@ -422,7 +454,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 XDriveIOSNativeVirtualPhotoPage(
                                     offset: offset, expectedTotal: total, generation: generation,
                                     mediaFilter: mediaFilter, density: density,
-                                    selectionMode: selectionMode,
+                                    framing: framing, selectionMode: selectionMode,
                                     selectedIDs: Set(selectedCandidates.keys),
                                     accessibilityFocus: $accessibilityFocusedTileID,
                                     onSelect: { asset, page in
