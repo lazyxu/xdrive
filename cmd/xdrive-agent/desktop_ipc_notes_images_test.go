@@ -28,12 +28,12 @@ func (f *notesImageIPCFixture) CloudNotesUploadImage(
 	f.imageCalls = append(f.imageCalls, "upload:"+id)
 	sum := sha256.Sum256(data)
 	return client.NotesImageReceipt{
-		NodeID: 123,
-		Filename: ipcNotesImageName,
+		NodeID:       123,
+		Filename:     ipcNotesImageName,
 		RelativePath: "_assets/" + id + "/" + ipcNotesImageName,
-		ContentType: "image/gif",
-		Bytes: int64(len(data)),
-		SHA256: hex.EncodeToString(sum[:]),
+		ContentType:  "image/gif",
+		Bytes:        int64(len(data)),
+		SHA256:       hex.EncodeToString(sum[:]),
 	}, nil
 }
 
@@ -96,13 +96,13 @@ func TestDesktopNotesImagesAreOwnerAndLoopbackOnly(t *testing.T) {
 		t.Fatalf("unexpected Owner image method count: %v", f.imageCalls)
 	}
 
-	for _, attempt := range []struct{method, path, body string}{
-		{http.MethodGet, upload+"?relative_path="+url.QueryEscape("https://evil.invalid/x.gif"), ""},
-		{http.MethodGet, upload+"?relative_path="+url.QueryEscape("../"+asset), ""},
-		{http.MethodGet, upload+"?relative_path="+url.QueryEscape("_assets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/"+ipcNotesImageName), ""},
-		{http.MethodGet, upload+"?relative_path="+url.QueryEscape(asset)+"&relative_path=x", ""},
-		{http.MethodGet, upload+"?other=value", ""},
-		{http.MethodPost, upload+"?other=value", string(postBody)},
+	for _, attempt := range []struct{ method, path, body string }{
+		{http.MethodGet, upload + "?relative_path=" + url.QueryEscape("https://evil.invalid/x.gif"), ""},
+		{http.MethodGet, upload + "?relative_path=" + url.QueryEscape("../"+asset), ""},
+		{http.MethodGet, upload + "?relative_path=" + url.QueryEscape("_assets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/"+ipcNotesImageName), ""},
+		{http.MethodGet, upload + "?relative_path=" + url.QueryEscape(asset) + "&relative_path=x", ""},
+		{http.MethodGet, upload + "?other=value", ""},
+		{http.MethodPost, upload + "?other=value", string(postBody)},
 		{http.MethodPost, upload, `{"image":"not-base64"}`},
 		{http.MethodPost, upload, `{"image":"","unexpected":true}`},
 		{http.MethodPost, upload, `{"image":""}`},
@@ -147,13 +147,19 @@ func TestDesktopNotesImagesCapabilityIsNotImpliedByTextNotes(t *testing.T) {
 	}
 	found := false
 	for _, cap := range result.Capabilities {
-		if cap == "cloud-notes-images" { found = true }
+		if cap == "cloud-notes-images" {
+			found = true
+		}
 	}
-	if !found { t.Fatal("Owner image capable Agent omitted image capability") }
+	if !found {
+		t.Fatal("Owner image capable Agent omitted image capability")
+	}
 	backup := newDesktopIPCHandler(withImages, "secret", nil, true)
 	hello = invokeNotesIPC(backup, http.MethodGet, "/v1/hello", "", "secret")
 	result = desktopIPCHello{}
-	if json.Unmarshal(hello.Body.Bytes(), &result) != nil { t.Fatal("invalid Backup-only hello") }
+	if json.Unmarshal(hello.Body.Bytes(), &result) != nil {
+		t.Fatal("invalid Backup-only hello")
+	}
 	if strings.Contains(strings.Join(result.Capabilities, ","), "cloud-notes-images") {
 		t.Fatal("Backup-only advertised binary Notes image support")
 	}
