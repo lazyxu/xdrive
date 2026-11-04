@@ -111,6 +111,12 @@ export interface XDriveLocalBoundBackupSchedule {
   schedule_type: '' | 'manual' | 'interval' | 'cron'
   schedule_expression: string
   schedule_timezone: string
+  // Only the owning Agent can project these optional private checkpoint
+  // observations. A saved plan alone does not prove automatic execution.
+  auto_readiness?: 'not_enabled' | 'manual' | 'ineligible_source' |
+    'checkpoint_unverified' | 'review_required' | 'checkpoint_ready' | 'unavailable'
+  /** Agent-computed schedule-rule due time, never a promised upload ETA. */
+  next_scheduled_at?: string
 }
 
 // Desktop owning-Agent-only completed local metadata summary.

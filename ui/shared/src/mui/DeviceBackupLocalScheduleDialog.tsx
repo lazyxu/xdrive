@@ -4,6 +4,7 @@ import {
   DialogTitle, FormControlLabel, Radio, RadioGroup, Stack, TextField, Typography,
 } from '@mui/material'
 import type { XDriveLocalBoundBackupSchedule } from '../device-backups'
+import { xDriveLocalBackupAutoReadinessView } from '../device-backup-auto-readiness'
 
 type ScheduleKind = 'manual' | 'interval' | 'cron'
 type SavedSchedule = {
@@ -90,6 +91,7 @@ export function XDriveDeviceBackupLocalScheduleDialog({
       proposal.schedule_expression !== loaded.schedule_expression ||
       proposal.schedule_timezone !== loaded.schedule_timezone)
   const canSave = !loading && !busy && loaded !== null && Boolean(changed) && proposal !== null
+  const readiness = loaded ? xDriveLocalBackupAutoReadinessView(loaded) : null
 
   const select = (next: ScheduleKind) => {
     setKind(next)
@@ -134,6 +136,23 @@ export function XDriveDeviceBackupLocalScheduleDialog({
             <Typography variant="caption" color="text.secondary">
               当前没有显式保存计划。历史默认值不代表此设备已启用自动同步。
             </Typography>
+          ) : null}
+          {readiness ? (
+            <Alert severity={readiness.needsAttention ? 'warning' : 'info'}>
+              <Typography variant="subtitle2">{readiness.title}</Typography>
+              <Typography variant="body2">{readiness.detail}</Typography>
+              {readiness.nextScheduledAt ? (
+                <Typography variant="body2">
+                  计划到期（本机时区）：{new Date(readiness.nextScheduledAt).toLocaleString('zh-CN')}。
+                  此时间不是实际开始上传或整份备份完成的承诺。
+                </Typography>
+              ) : null}
+              {changed ? (
+                <Typography variant="caption">
+                  上述结论只对应已保存的计划；当前编辑中的设置尚未提交给 Agent。
+                </Typography>
+              ) : null}
+            </Alert>
           ) : null}
           <RadioGroup value={kind} onChange={(event) => {
             if (event.target.value === 'manual' || event.target.value === 'interval' || event.target.value === 'cron') {

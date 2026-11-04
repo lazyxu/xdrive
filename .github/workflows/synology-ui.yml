@@ -120,6 +120,15 @@ on:
       - 'desktop/tests/shared-workspace-compact-navigation.cjs'
       - 'ui/shared/src/mui/TaskCenterPage.tsx'
       - 'ui/shared/src/mui/SynologyLocalTaskSection.tsx'
+      - 'ui/shared/src/device-backup-auto-readiness.ts'
+      - 'ui/shared/src/device-backups.ts'
+      - 'ui/shared/src/mui/DeviceBackupLocalScheduleDialog.tsx'
+      - 'internal/client/local_bound_schedule.go'
+      - 'internal/localbackupipc/types.go'
+      - 'internal/localbackupipc/auto_schedule_projection_test.go'
+      - 'cmd/xdrive-agent/device_backup_local_auto_observation*.go'
+      - 'cmd/xdrive-agent/desktop_ipc_device_backup_auto_observation_test.go'
+      - 'web/scripts/test-synology-auto-readiness.mjs'
       - 'ui/shared/src/synology-task-status.ts'
       - 'web/scripts/test-synology-batch-validation.mjs'
       - 'ui/shared/src/synology-browser-storage.ts'
@@ -276,6 +285,15 @@ on:
       - 'desktop/tests/shared-workspace-compact-navigation.cjs'
       - 'ui/shared/src/mui/TaskCenterPage.tsx'
       - 'ui/shared/src/mui/SynologyLocalTaskSection.tsx'
+      - 'ui/shared/src/device-backup-auto-readiness.ts'
+      - 'ui/shared/src/device-backups.ts'
+      - 'ui/shared/src/mui/DeviceBackupLocalScheduleDialog.tsx'
+      - 'internal/client/local_bound_schedule.go'
+      - 'internal/localbackupipc/types.go'
+      - 'internal/localbackupipc/auto_schedule_projection_test.go'
+      - 'cmd/xdrive-agent/device_backup_local_auto_observation*.go'
+      - 'cmd/xdrive-agent/desktop_ipc_device_backup_auto_observation_test.go'
+      - 'web/scripts/test-synology-auto-readiness.mjs'
       - 'ui/shared/src/synology-task-status.ts'
       - 'web/scripts/test-synology-batch-validation.mjs'
       - 'ui/shared/src/synology-browser-storage.ts'
@@ -371,13 +389,15 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Native DSM session, owner ACL and CSRF negative contracts
         run: |
-          unformatted="$(gofmt -l internal/synologyui internal/localbackupipc/server_login*.go internal/localbackupipc/recovery_review*.go cmd/xd/backup_synology_ui.go)"
+          unformatted="$(gofmt -l internal/synologyui internal/localbackupipc/server_login*.go internal/localbackupipc/recovery_review*.go internal/localbackupipc/types.go internal/localbackupipc/auto_schedule_projection_test.go internal/client/local_bound_schedule.go cmd/xdrive-agent/device_backup_local_auto_observation*.go cmd/xdrive-agent/desktop_ipc_device_backup_auto_observation_test.go cmd/xd/backup_synology_ui.go)"
           if test -n "$unformatted"; then
             echo "::error title=DSM Go formatting::Unformatted source files detected"
             printf '%s\n' "$unformatted" >&2
             exit 1
           fi
           go test -count=1 ./internal/synologyui
+          go test -count=1 ./internal/localbackupipc -run '^TestAgentScheduleReadinessWireIsOptionalBoundedAndNeverAuthorizesWrites$'
+          go test -count=1 ./cmd/xdrive-agent -run '^Test(LocalAutoReadiness|DesktopIPCExistingScheduleCarriesRedactedAgentRuleTime)'
           go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerSearch|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|OwnerUploadedFile|OwnerDeleteNode|OwnerMoveNode|OwnerCopyNode|ServerLogin|RecoveryReview)'
           go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail|OwnerGallery|ReadVerifiedOwnerLiveMotion|OwnerLiveMotion)'
           go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|ExplicitOwnerSearch|OwnerMediaRange|OwnerThumbnail|RequiresAuthenticatedIPCBeforeScheduling|IPCServeFailureStopsScheduler)|OwnerGallery|OwnerLiveMotion|AgentOwnerSmallUpload)'
@@ -411,6 +431,7 @@ jobs:
           node web/scripts/test-synology-nas-storage.mjs
           node web/scripts/test-synology-backup-target-browser.mjs
           node web/scripts/test-synology-batch-validation.mjs
+          node web/scripts/test-synology-auto-readiness.mjs
           node web/scripts/test-synology-request-cancel.mjs
           node web/scripts/test-synology-owner-read.mjs
           node web/scripts/test-synology-owner-quota.mjs
