@@ -17,6 +17,62 @@ import (
 	"time"
 )
 
+func TestUploadFileResumableEmptyFileFinalizesWithoutChunks(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.txt")
+	if err := os.WriteFile(path, []byte{}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	emptyHashBytes := sha256.Sum256([]byte{})
+	emptyHash := hex.EncodeToString(emptyHashBytes[:])
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/uploads":
+			var init UploadInit
+			if err := json.NewDecoder(r.Body).Decode(&init); err != nil {
+				t.Fatal(err)
+			}
+			if init.Size != 0 || init.SHA256 != emptyHash || len(init.ChunkSHA256) != 0 ||
+				init.ChunkSize != DefaultUploadChunkSize || init.ConflictPolicy != UploadConflictPolicyFail ||
+				len(init.ResumeKey) != 64 || init.Name != "empty.txt" || init.ParentID == nil || *init.ParentID != 1 {
+				t.Fatalf("unexpected zero-byte upload init: %+v", init)
+			}
+			_ = json.NewEncoder(w).Encode(UploadSession{
+				ID: "empty-session", ParentID: init.ParentID, Name: init.Name,
+				Size: 0, ChunkSize: init.ChunkSize, ChunkCount: 0,
+				SHA256: emptyHash, ResumeKey: init.ResumeKey, Status: "active",
+				ExpiresAt: time.Now().Add(time.Hour),
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/uploads/empty-session/finalize":
+			_ = json.NewEncoder(w).Encode(UploadSession{
+				ID: "empty-session", Status: "finalized", SHA256: emptyHash,
+				Result: &Node{ID: 88, ParentID: uint64Ptr(1), Name: "empty.txt", Type: "file",
+					Size: 0, Revision: 1, SHA256: emptyHash},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	result, err := cli.UploadFileResumableWithConflictPolicyResult(
+		context.Background(), 1, path, "empty.txt", UploadConflictPolicyFail, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Node.ID != 88 || result.Node.Size != 0 || result.Node.SHA256 != emptyHash || result.SHA256 != emptyHash {
+		t.Fatalf("zero-byte upload result=%+v", result)
+	}
+	if len(requests) != 2 || requests[0] != "POST /api/v1/uploads" ||
+		requests[1] != "POST /api/v1/uploads/empty-session/finalize" {
+		t.Fatalf("zero-byte upload must finalize without chunk requests: %v", requests)
+	}
+}
+
 func TestUploadChunkBufferBoundedToSingleChunk(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -35,6 +35,23 @@ func TestDSMOwnerSmallUploadRequiresExactBoundedDigest(t *testing.T) {
 		return record
 	}
 	_ = request(packed)
+	emptyPayload := []byte{}
+	emptySum := sha256.Sum256(emptyPayload)
+	empty := map[string]any{
+		"parent_id": 17, "name": "empty.txt",
+		"owner_scope": strings.Repeat("a", 64),
+		"sha256":      hex.EncodeToString(emptySum[:]), "data": emptyPayload,
+	}
+	emptyPacked, err := json.Marshal(empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyRequest := httptest.NewRequest("POST", "https://nas.example/v1/cloud-upload-file", bytes.NewReader(emptyPacked))
+	emptyParsed, err := parseDSMOwnerSmallUpload(emptyRequest)
+	if err != nil || emptyParsed.Data == nil || len(emptyParsed.Data) != 0 ||
+		emptyParsed.SHA256 != hex.EncodeToString(emptySum[:]) {
+		t.Fatalf("valid zero-byte Owner upload rejected: %+v %v", emptyParsed, err)
+	}
 	for name, body := range map[string][]byte{
 		"duplicate": []byte(`{"parent_id":17,"parent_id":18,"name":"leaf.txt","owner_scope":"` + strings.Repeat("a", 64) + `","sha256":"` + hex.EncodeToString(sum[:]) + `","data":"AAECB/+A"}`),
 		"unknown":   append(append([]byte(nil), packed[:len(packed)-1]...), []byte(`,"local_path":"/volume1/photo"}`)...),
@@ -50,12 +67,12 @@ func TestDSMOwnerSmallUploadRequiresExactBoundedDigest(t *testing.T) {
 		})
 	}
 	for name, mutate := range map[string]func(map[string]any){
-		"parent": func(m map[string]any) { m["parent_id"] = 0 },
-		"scope":  func(m map[string]any) { m["owner_scope"] = "forged" },
-		"path":   func(m map[string]any) { m["name"] = "../attack" },
-		"hash":   func(m map[string]any) { m["sha256"] = strings.Repeat("0", 64) },
-		"empty":  func(m map[string]any) { m["data"] = []byte{} },
-		"large":  func(m map[string]any) { m["data"] = make([]byte, (4<<20)+1) },
+		"parent":    func(m map[string]any) { m["parent_id"] = 0 },
+		"scope":     func(m map[string]any) { m["owner_scope"] = "forged" },
+		"path":      func(m map[string]any) { m["name"] = "../attack" },
+		"hash":      func(m map[string]any) { m["sha256"] = strings.Repeat("0", 64) },
+		"null data": func(m map[string]any) { m["data"] = nil },
+		"large":     func(m map[string]any) { m["data"] = make([]byte, (4<<20)+1) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			m := make(map[string]any, len(good))

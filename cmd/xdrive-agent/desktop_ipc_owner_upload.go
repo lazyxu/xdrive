@@ -31,7 +31,7 @@ func validAgentOwnerSmallUpload(v agentOwnerSmallUploadInput) bool {
 		v.Name == "" || v.Name != strings.TrimSpace(v.Name) ||
 		len(v.Name) > 255 || !utf8.ValidString(v.Name) ||
 		v.Name == "." || v.Name == ".." || strings.ContainsAny(v.Name, "/\\") ||
-		len(v.Data) < 1 || len(v.Data) > dsmOwnerSmallUploadMaxBytes ||
+		v.Data == nil || len(v.Data) > dsmOwnerSmallUploadMaxBytes ||
 		len(v.SHA256) != 64 {
 		return false
 	}

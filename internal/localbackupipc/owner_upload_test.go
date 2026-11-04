@@ -15,6 +15,15 @@ func TestOwnerUploadedFileMustBeExactCurrentOwnerAcknowledgement(t *testing.T) {
 	if !ValidateOwnerUploadedFile(valid, parent, "photo.jpg", 3) {
 		t.Fatal("exact uploaded Server file rejected")
 	}
+	empty := valid
+	empty.Name = "empty.txt"
+	empty.Size = 0
+	if !ValidateOwnerUploadedFile(empty, parent, "empty.txt", 0) {
+		t.Fatal("exact zero-byte uploaded Server file rejected")
+	}
+	if ValidateOwnerUploadedFile(empty, parent, "empty.txt", -1) {
+		t.Fatal("negative-size upload acknowledgement accepted")
+	}
 	for name, mutate := range map[string]func(*OwnerFileNode){
 		"wrong name":        func(n *OwnerFileNode) { n.Name = "other.jpg" },
 		"wrong parent":      func(n *OwnerFileNode) { x := uint64(99); n.ParentID = &x },

@@ -16,7 +16,7 @@ const OwnerSmallUploadMaxBytes = 4 << 20
 // fabricated success inferred from bytes supplied by the DSM browser.
 func ValidateOwnerUploadedFile(n OwnerFileNode, parentID uint64, name string, size int) bool {
 	return ValidOwnerFileID(parentID) && ValidOwnerFolderName(name) &&
-		size >= 1 && size <= OwnerSmallUploadMaxBytes &&
+		size >= 0 && size <= OwnerSmallUploadMaxBytes &&
 		ValidOwnerFileID(n.ID) && ValidOwnerFileID(n.Revision) &&
 		n.ParentID != nil && *n.ParentID == parentID &&
 		n.Type == "file" && n.Name == name && n.Size == int64(size) &&
@@ -32,7 +32,7 @@ func (c *Client) OwnerUploadSmallFile(
 		return OwnerFileNode{}, errors.New("owning Agent small upload unavailable")
 	}
 	if !ValidOwnerFileID(parentID) || !ValidOwnerFolderName(name) ||
-		len(data) < 1 || len(data) > OwnerSmallUploadMaxBytes {
+		data == nil || len(data) > OwnerSmallUploadMaxBytes {
 		return OwnerFileNode{}, errors.New("invalid Owner upload parameters")
 	}
 	digest := sha256.Sum256(data)
