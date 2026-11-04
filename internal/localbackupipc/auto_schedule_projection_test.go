@@ -2,6 +2,7 @@ package localbackupipc
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,8 +28,8 @@ func TestAgentScheduleReadinessWireIsOptionalBoundedAndNeverAuthorizesWrites(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) == "" || !containsJSONField(string(data), "auto_readiness") ||
-		!containsJSONField(string(data), "next_scheduled_at") {
+	if string(data) == "" || !strings.Contains(string(data), `"auto_readiness":`) ||
+		!strings.Contains(string(data), `"next_scheduled_at":`) {
 		t.Fatal("verified Agent readiness did not survive private IPC encoding")
 	}
 	var back Schedule
@@ -75,11 +76,3 @@ func TestAgentScheduleReadinessWireIsOptionalBoundedAndNeverAuthorizesWrites(t *
 	}
 }
 
-func containsJSONField(data, field string) bool {
-	for i := 0; i+len(field)+2 <= len(data); i++ {
-		if data[i:i+len(field)+2] == "\"" + field + "\"" {
-			return true
-		}
-	}
-	return false
-}
