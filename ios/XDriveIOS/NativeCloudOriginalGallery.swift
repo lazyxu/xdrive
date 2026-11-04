@@ -724,6 +724,9 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     let presentingOwner: XDriveNativeOwnerRoot?
     let loadedNodes: [XDriveIOSNativeCloudOriginal]
     let onViewed: ((XDriveIOSNativeCloudOriginal) -> Bool)?
+    /// Parent only exposes adjacent already-scanned immutable Owner pages.
+    let canCrossLoadedWindow: ((XDriveIOSNativeCloudOriginal, Int) -> Bool)?
+    let onCrossLoadedWindow: ((XDriveIOSNativeCloudOriginal, Int) -> XDriveIOSNativeCloudOriginal?)?
     @State private var activeNode: XDriveIOSNativeCloudOriginal?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
@@ -802,7 +805,42 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         return loadedNodes[index]
     }
 
+    private func canNavigate(_ direction: Int) -> Bool {
+        currentOwnerAuthorized && (
+            neighbor(direction) != nil ||
+            canCrossLoadedWindow?(viewed, direction) == true
+        )
+    }
+
     private func showNeighbor(_ direction: Int) {
+        // A verified gallery wall can have more than one already-loaded
+        // 48-item page. The parent validates the exact immutable slice,
+        // currently presented Owner, and adjacent Node before crossing.
+        if neighbor(direction) == nil {
+            guard currentOwnerAuthorized, !exporter.busy, !restoringToPhotos,
+                  canCrossLoadedWindow?(viewed, direction) == true,
+                  let next = onCrossLoadedWindow?(viewed, direction)
+            else { return }
+            // Match the original within-page retirement exactly: no old
+            // signed bytes, AVPlayer or Live pair survive a page boundary.
+            cancelPhotoRestore()
+            exporter.invalidate()
+            player?.pause()
+            player = nil
+            still = nil
+            stillIsThumbnailOnly = false
+            error = nil
+            liveResources?.discard()
+            liveResources = nil
+            showingLiveMotion = false
+            nativeLiveReady = false
+            nativeLiveUnavailable = false
+            showsStaticStill = false
+            nativeLivePlaybackRequest = nil
+            activeNode = next
+            previewRequestID = UUID()
+            return
+        }
         guard let next = neighbor(direction), onViewed?(next) == true else { return }
         cancelPhotoRestore()
         // Retire the previous signed still/video, Live pair and temporary
@@ -1042,7 +1080,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 0) {
-                if showChrome && (loadedNodes.count > 1 || exporter.status != nil ||
+                if showChrome && (loadedNodes.count > 1 ||
+                   canNavigate(-1) || canNavigate(1) || exporter.status != nil ||
                    (currentOwnerAuthorized && viewed.size > 512 * 1_048_576)) {
                     VStack(spacing: 8) {
                         if let status = exporter.status {
@@ -1065,10 +1104,10 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                 onSelect: { next in selectFilmstrip(next) }
                             )
                         }
-                        if loadedNodes.count > 1 {
+                        if loadedNodes.count > 1 || canNavigate(-1) || canNavigate(1) {
                             HStack(spacing: 12) {
                                 Button("上一项") { showNeighbor(-1) }
-                                    .disabled(neighbor(-1) == nil)
+                                    .disabled(!canNavigate(-1))
                                     .frame(minHeight: 44)
                                     .accessibilityIdentifier("native-ios-original-viewer-previous")
                                 Spacer(minLength: 4)
@@ -1079,7 +1118,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                     .accessibilityIdentifier("native-ios-original-viewer-position")
                                 Spacer(minLength: 4)
                                 Button("下一项") { showNeighbor(1) }
-                                    .disabled(neighbor(1) == nil)
+                                    .disabled(!canNavigate(1))
                                     .frame(minHeight: 44)
                                     .accessibilityIdentifier("native-ios-original-viewer-next")
                             }
@@ -1600,6 +1639,60 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
     // the entire Server root simply because a short list fits on screen.
     private let maxAutomaticEmptyScans = 4
 
+    /// Cross a Viewer boundary only into the next *already scanned* wall
+    /// slice. This is a pure read: swipe/button enablement never changes the
+    /// Owner, scanned root, selected Viewer, cache, or upload state.
+    private func adjacentLoadedOriginal(
+        from current: XDriveIOSNativeCloudOriginal, direction: Int
+    ) -> (node: XDriveIOSNativeCloudOriginal, window: [XDriveIOSNativeCloudOriginal])? {
+        guard phase == .active, !refreshAfterViewer,
+              !needsForegroundReload, selected != nil,
+              direction == -1 || direction == 1,
+              let owner = viewerOwner,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+              let returning = viewerReturnNode,
+              returning.id == current.id,
+              returning.revision == current.revision,
+              returning.name == current.name,
+              returning.size == current.size,
+              returning.type == current.type,
+              let currentIndex = model.nodes.firstIndex(where: {
+                  $0.id == current.id && $0.revision == current.revision &&
+                  $0.name == current.name && $0.size == current.size &&
+                  $0.type == current.type
+              })
+        else { return nil }
+        let start = (currentIndex / 48) * 48
+        let end = min(start + 48, model.nodes.count)
+        let expected = Array(model.nodes[start..<end])
+        guard viewerLoadedNodes.count == expected.count,
+              zip(viewerLoadedNodes, expected).allSatisfy({
+                  $0.0.id == $0.1.id && $0.0.revision == $0.1.revision &&
+                  $0.0.name == $0.1.name && $0.0.size == $0.1.size &&
+                  $0.0.type == $0.1.type
+              }),
+              (direction < 0 && currentIndex == start) ||
+              (direction > 0 && currentIndex == end - 1)
+        else { return nil }
+        let nextIndex = currentIndex + direction
+        guard model.nodes.indices.contains(nextIndex) else { return nil }
+        let target = model.nodes[nextIndex]
+        guard target.id > 0, target.revision > 0,
+              target.type == "file", target.size >= 0,
+              target.isImage || target.isVideo || target.isLiveArchive
+        else { return nil }
+        let nextStart = (nextIndex / 48) * 48
+        let nextEnd = min(nextStart + 48, model.nodes.count)
+        let window = Array(model.nodes[nextStart..<nextEnd])
+        guard window.count <= 48,
+              window.contains(where: {
+                  $0.id == target.id && $0.revision == target.revision &&
+                  $0.name == target.name && $0.size == target.size
+              })
+        else { return nil }
+        return (target, window)
+    }
+
     var body: some View {
         ScrollViewReader { returnScroll in
         GeometryReader { viewport in
@@ -1744,6 +1837,18 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     viewerReturnNode = next
                     accessibilityFocusedNodeID = nil
                     return true
+                },
+                canCrossLoadedWindow: { current, direction in
+                    adjacentLoadedOriginal(from: current, direction: direction) != nil
+                },
+                onCrossLoadedWindow: { current, direction in
+                    guard let next = adjacentLoadedOriginal(
+                        from: current, direction: direction
+                    ) else { return nil }
+                    viewerLoadedNodes = next.window
+                    viewerReturnNode = next.node
+                    accessibilityFocusedNodeID = nil
+                    return next.node
                 }
             )
         }
