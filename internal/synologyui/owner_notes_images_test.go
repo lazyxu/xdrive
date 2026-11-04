@@ -109,6 +109,7 @@ func TestDSMNotesImageCGIRequiresExactOwnerCSRFAndPaths(t *testing.T) {
 
 	check(http.MethodPost, "cloud-notes-image-upload", "", string(body), "", 403)
 	check(http.MethodGet, "cloud-notes-image-upload", "", "", "", 405)
+	check(http.MethodPost, "cloud-notes-image-read", "", string(body), csrf, 403)
 	check(http.MethodPost, "cloud-notes-image-read", "", "", csrf, 405)
 	check(http.MethodGet, "cloud-notes-image-read",
 		"id="+dsmNotesFixtureID+"&relative_path="+url.QueryEscape("../"+asset), "", "", 400)
