@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -22,10 +23,10 @@ func main() {
 }
 func run(argv []string) error {
 	if len(argv) == 0 {
-		return fmt.Errorf("usage: xdrive-offline <list|verify|install> --dir DIRECTORY")
+		return fmt.Errorf("usage: xdrive-offline <list|verify|plan|install> --dir DIRECTORY")
 	}
 	verb := argv[0]
-	if verb != "list" && verb != "verify" && verb != "install" {
+	if verb != "list" && verb != "verify" && verb != "plan" && verb != "install" {
 		return fmt.Errorf("unknown offline operation: %s", verb)
 	}
 	fs := flag.NewFlagSet(verb, flag.ContinueOnError)
@@ -49,8 +50,12 @@ func run(argv []string) error {
 	if fs.NArg() != 0 || *dir == "" {
 		return fmt.Errorf("offline %s requires --dir with no trailing arguments", verb)
 	}
-	if verb != "install" && (*noStart || *enableMedia || *enableAI || *source != "" || *backup || *configDir != "" || *workdir != "") {
+	if verb != "install" && (*noStart || *source != "" || *backup || *workdir != "" ||
+		(verb != "plan" && (*enableMedia || *enableAI || *configDir != ""))) {
 		return fmt.Errorf("installation options require install operation")
+	}
+	if verb == "plan" && *trusted == "" {
+		return fmt.Errorf("offline plan requires independently authenticated Manifest SHA-256")
 	}
 	if *signedDelivery {
 		if verb == "list" || *trustedInstaller == "" || *trustedDelivery == "" {
@@ -63,7 +68,7 @@ func run(argv []string) error {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("offline release directory is missing or unsafe")
 	}
-	manifest, err := offlinebundle.ReadManifest(*dir, *trusted, verb == "install")
+	manifest, err := offlinebundle.ReadManifest(*dir, *trusted, verb == "install" || verb == "plan")
 	if err != nil {
 		return err
 	}
@@ -92,6 +97,32 @@ func run(argv []string) error {
 		return nil
 	case "verify":
 		return offlinebundle.VerifySelection(*dir, manifest, selected, "")
+	case "plan":
+		// A preview is never an installation authorization. The Host will
+		// recheck the publisher, snapshot bytes and live Docker state.
+		home := *configDir
+		if home == "" {
+			base, err := os.UserHomeDir()
+			if err != nil {
+				return err
+			}
+			home = filepath.Join(base, ".xd")
+		}
+		home, err = filepath.Abs(home)
+		if err != nil {
+			return err
+		}
+		plan, err := offlinebundle.BuildUpgradePlan(*dir, manifest, selected, home, *enableMedia, *enableAI)
+		if err != nil {
+			return err
+		}
+		plan.TrustBasis = "independently_pinned_manifest_sha256"
+		if *signedDelivery {
+			plan.TrustBasis = "host_attested_sigstore_delivery"
+		}
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(plan)
 	case "install":
 		if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 			return fmt.Errorf("offline install supports linux/amd64 only")
