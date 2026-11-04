@@ -255,3 +255,23 @@ test('native local photo selection paints contiguous authorized visible ranges a
   assert.match(source, /resetDragSelection\(\)/)
   assert.doesNotMatch(source, /\[PHAsset\]|PHAsset\.fetchAssets\(withLocalIdentifiers: dragTileFrames/)
 })
+
+
+test('native local wall jumps to latest and earliest via numeric 64-slot anchors only', () => {
+  assert.match(source, /Section\("快速定位"\)/)
+  assert.match(source, /Label\("最新拍摄", systemImage: "arrow\.up\.to\.line"\)/)
+  assert.match(source, /Label\("最早拍摄", systemImage: "arrow\.down\.to\.line"\)/)
+  assert.match(source, /native-ios-local-wall-jump-newest/)
+  assert.match(source, /native-ios-local-wall-jump-oldest/)
+  assert.match(source, /jumpToEdge\(newest: true, using: scroll\)/)
+  assert.match(source, /jumpToEdge\(newest: false, using: scroll\)/)
+  assert.match(source, /private func jumpToEdge\(newest: Bool, using scroll: ScrollViewProxy\)/)
+  assert.match(source, /guard authorized, phase == \.active, selected == nil,[\s\S]*?total > 0 else \{ return \}/)
+  assert.match(source, /let requested = newest \? 0 : total - 1/)
+  assert.match(source, /XDriveIOSNativePhotoVirtualPagePolicy\.normalizedAnchor\(\s*requested: requested, total: total/)
+  assert.match(source, /clearReturn\(\)\s*requestedOffset = nil\s*savedOffset = offset/)
+  assert.match(source, /scroll\.scrollTo\("page:\\\(offset\)", anchor: \.top\)/)
+  assert.match(policy, /static func normalizedAnchor\(requested: Int, total: Int\)/)
+  assert.match(source, /\.disabled\(total == 0 \|\| loading \|\| actionBusy \|\|\s*shareBusy \|\| selected != nil\)/)
+  assert.doesNotMatch(source, /Button\("上一页"\)|Button\("下一页"\)/)
+});
