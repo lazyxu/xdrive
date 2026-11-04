@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -373,20 +372,21 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Source deletion removes only source metadata/history. The target xDrive node remains.
+	// A completed run is durable history. Generic DELETE must not cascade
+	// away its provenance while an explicit Source archive flow is pending.
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenA,
-		nil, http.StatusNoContent, map[string]string{"If-Match": `"2"`})
-	if err := db.First(&meta.Source{}, created.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatalf("source survived deletion: %v", err)
+		nil, http.StatusConflict, map[string]string{"If-Match": `"2"`})
+	if err := db.First(&meta.Source{}, created.ID).Error; err != nil {
+		t.Fatalf("source history guard removed its Source: %v", err)
 	}
 	if err := db.First(&meta.Node{}, targetA.ID).Error; err != nil {
-		t.Fatalf("source deletion removed target node: %v", err)
+		t.Fatalf("source history guard removed its target node: %v", err)
 	}
 	var runCount int64
 	if err := db.Model(&meta.SyncRun{}).Where("source_id = ?", created.ID).Count(&runCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if runCount != 0 {
-		t.Fatalf("source runs survived source deletion: %d", runCount)
+	if runCount != 2 {
+		t.Fatalf("source history guard discarded completed/cancelled runs: %d", runCount)
 	}
 }
