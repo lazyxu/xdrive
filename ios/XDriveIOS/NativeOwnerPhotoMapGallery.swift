@@ -367,7 +367,9 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             accessibilityText: dynamicTypeSize.isAccessibilitySize
         )
         VStack(spacing: compactMap ? 4 : 8) {
-            if !compactMap {
+            // Source details live in map help during ordinary photo browsing.
+            // Large accessibility text retains the full inline explanation.
+            if !compactMap && dynamicTypeSize.isAccessibilitySize {
                 Text("当前 Server Owner 已索引的 WGS84 云端位置，不是本机 PhotoKit 相册。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
@@ -443,27 +445,22 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             if let overview {
                 if verifiedBounds != nil {
                     Text("当前视窗已有 \(overview.total_photo_count) 张已索引照片；地图显示 \(overview.items.count) 个位置代表项。")
-                        .font(.footnote).monospacedDigit()
+                        .font(.caption).monospacedDigit().lineLimit(1)
                 } else {
                     // Retain old annotations VISUALLY during pan/zoom but do
                     // not mislabel them as the newly authorized camera count.
                     Text("上次验证视窗有 \(overview.total_photo_count) 张已索引照片；地图移动后旧标记暂不可打开。")
-                        .font(.footnote).monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .font(.caption).monospacedDigit()
+                        .foregroundStyle(.secondary).lineLimit(1)
                 }
                 if overview.aggregated {
                     Text("区域仍为聚合结果；放大后刷新才能进入精确地点照片。")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             if busy { ProgressView("核对当前 Owner 地图位置…") }
             if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
-            Button("刷新当前视窗") { reload() }
-                .disabled(busy || login.owner == nil || phase != .active)
-                .frame(minHeight: 44)
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("native-ios-owner-map-refresh")
-            if !compactMap {
+            if !compactMap && dynamicTypeSize.isAccessibilitySize {
                 Text("选择真实地点后仅打开当前 Owner 重新验证的 48 项 PhotoAsset 分页与原生 Viewer；聚合区域不能当成照片访问凭证。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
@@ -477,6 +474,18 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             Text("当前地图仅展示已经验证的 Server Owner 位置代表项。地图移动后旧封面暂不可操作；相机稳定后重新核对。只有实际授权地点才可打开当前 Owner 的 48 项 PhotoAsset 分页与 Viewer；聚合区域不是照片访问凭证。")
         }
         .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    // Keep explicit retry/refresh accessible without occupying
+                    // another fixed-height row under the photo map.
+                    Button("刷新当前视窗") { reload() }
+                        .disabled(busy || login.owner == nil || phase != .active)
+                        .accessibilityIdentifier("native-ios-owner-map-refresh")
+                } label: {
+                    Label("地图操作", systemImage: "ellipsis.circle")
+                }
+                .accessibilityIdentifier("native-ios-owner-map-actions")
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(focused ? "显示底部导航" : "专注地图") {
                     focused.toggle()
