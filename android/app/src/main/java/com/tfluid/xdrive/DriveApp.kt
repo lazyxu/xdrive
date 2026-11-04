@@ -441,6 +441,24 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     }
     fun selectNativeTab(tab: NativeHomeTab) {
         if (!nativeAuthenticated || photoViewerOpen) return
+        if (tab == NativeHomeTab.DYNAMIC && nativeNavigation.emptyDynamicMapFallback) {
+            // Keep the actual authenticated Gallery Map as the only Map Host.
+            // A blocked Files/Trash transition cannot hijack Gallery source.
+            val canEnterGallery = when (state.screen) {
+                Screen.GALLERY -> true
+                Screen.FILES -> state.canNavigateFiles()
+                Screen.TRASH -> !state.trashRestoreAttempted &&
+                    !state.hasActiveNativeTransfer()
+                else -> false
+            }
+            if (!canEnterGallery) return
+            mapOriginSource = nativeGalleryMapReturnSource(
+                nativeNavigation.gallerySource, mapOriginSource)
+            nativeNavigation = nativeNavigation.copy(gallerySource = NativeGallerySource.MAP)
+            pendingRoutes = pendingRoutes.copy(galleryMap = true)
+            selectNativeTab(NativeHomeTab.GALLERY)
+            return
+        }
         if (tab != NativeHomeTab.GALLERY) cloudViewerReturn = null
         galleryFirstPending = false // Explicit user choice always wins.
         pendingRoutes = pendingRoutes.afterExplicitTab(tab)
@@ -603,7 +621,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text(when (nativeNavigation.selected) {
                         NativeHomeTab.ALL -> "全部"
-                        NativeHomeTab.DYNAMIC -> nativeNavigation.dynamicFeature?.title ?: "最近"
+                        NativeHomeTab.DYNAMIC -> nativeNavigation.labels[NativeHomeTab.DYNAMIC.ordinal]
                         NativeHomeTab.MINE -> "我的"
                         else -> ""
                     }, style = MaterialTheme.typography.titleMedium)
@@ -749,6 +767,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             transferCenterOpen = true
                             controller.refreshTransferRecoveryNotices()
                         },
+                        onOpenDefaultMap = { selectNativeTab(NativeHomeTab.DYNAMIC) },
                         onChooseDynamic = { dynamicPickerOpen = true },
                         notesController = controller)
                     else -> Unit
@@ -1001,6 +1020,17 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             title = { Text("选择动态功能") },
             text = {
                 Column {
+                    // Empty Recent exposes the same Gallery Map shortcut.
+                    if (nativeNavigation.emptyDynamicMapFallback) {
+                        TextButton(
+                            onClick = {
+                                dynamicPickerOpen = false
+                                selectNativeTab(NativeHomeTab.DYNAMIC)
+                            },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .testTag("native-dynamic-choice-map"),
+                        ) { Text("地图（默认）") }
+                    }
                     // Only implemented native features, scoped to the current Owner session.
                     val choices = (nativeNavigation.recentDynamic +
                         NativeDynamicFeature.entries).distinct()

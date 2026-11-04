@@ -66,7 +66,9 @@ internal fun NativeHomeBottomBar(
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(painterResource(icons[index]), null, Modifier.size(18.dp))
+                            Icon(painterResource(
+                                if (navigation.emptyDynamicMapFallback) R.drawable.xd_view_carousel
+                                else icons[index]), null, Modifier.size(18.dp))
                             Spacer(Modifier.width(3.dp))
                             Text(navigation.labels[index], fontSize = 11.sp,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -122,8 +124,10 @@ internal fun NativeHomeBottomBar(
                             color = if (navigation.selected == tab)
                                 MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
                         ) {
-                            Icon(painterResource(icons[index]), null,
-                                Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                            Icon(painterResource(
+                                if (navigation.emptyDynamicMapFallback) R.drawable.xd_view_carousel
+                                else icons[index]), null,
+                                Modifier.padding(horizontal = 20.dp)
                                     .size(24.dp))
                         }
                         Text(navigation.labels[index], fontSize = 11.sp,
@@ -283,6 +287,7 @@ internal fun NativeHomeDynamic(
     navigation: NativeHomeNavigation,
     state: DriveState,
     onOpenTransfers: () -> Unit,
+    onOpenDefaultMap: () -> Unit,
     onChooseDynamic: () -> Unit = {},
     notesController: DriveController? = null,
 ) {
@@ -315,7 +320,14 @@ internal fun NativeHomeDynamic(
             Button(onClick = onOpenTransfers,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     .testTag("native-dynamic-transfers")) { Text("查看传输与恢复") }
-        } else Text("暂无最近使用的动态功能。请从“全部”打开传输中心。")
+        } else {
+            Text("尚无最近动态功能，地图作为默认入口。")
+            Button(onClick = onOpenDefaultMap,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .testTag("native-dynamic-map-fallback")) {
+                Text("打开地图")
+            }
+        }
     }
 }
 

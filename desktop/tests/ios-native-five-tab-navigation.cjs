@@ -17,7 +17,7 @@ test('native bottom destinations have fixed order and only one dynamic slot', ()
     '.tag(XDriveIOSNativeBottomTab.mine)'
   ].map(x => ui.indexOf(x));
   assert.ok(order.every(x => x >= 0) && order.every((x,i)=>i===0||x>order[i-1]));
-  assert.match(ui, /dynamicFeature\?\.title \?\? "最近"/);
+  assert.match(ui, /dynamicFeature\?\.title \?\? \(emptyDynamicMapFallback \? "地图" : "最近"\)/);
   assert.match(ui, /recentDynamic\.removeAll \{ \$0 == feature \}/);
   assert.match(ui, /recentDynamic\.insert\(feature, at: 0\)/);
   assert.match(ui, /if recentDynamic\.count > 6/);
@@ -56,4 +56,18 @@ test('Owner scope and unsupported native routes never claim production parity', 
   assert.match(ui, /该功能在其他平台存在，但 iOS 原生数据与权限接口尚未实现/);
   assert.match(ui, /服务器管理员入口只在真实验证 Server 管理员角色后开放/);
   assert.match(ui, /XDriveIOSNativePhotoBackupScreen\(login: login, controller: backup\)/);
+});
+
+test('empty recent Dynamic slot opens the existing Gallery map instead of a blank page', () => {
+  assert.match(ui, /private var emptyDynamicMapFallback: Bool/);
+  assert.match(ui, /dynamicFeature == nil && recentDynamic\.isEmpty/);
+  assert.match(ui, /dynamicSlotTitle/);
+  assert.match(ui, /dynamicSlotSymbol/);
+  assert.match(ui, /if destination == \.dynamic && emptyDynamicMapFallback \{\s*openGallery\(\.map\)/);
+  assert.match(ui, /if next == \.dynamic && emptyDynamicMapFallback \{\s*openGallery\(\.map\)/);
+  assert.match(ui, /Label\("地图（默认）", systemImage: "map"\)/);
+  assert.match(ui, /Button\("打开地图"\) \{ openGallery\(\.map\) \}/);
+  assert.match(ui, /gallerySource = source\s+tab = \.gallery/);
+  assert.match(ui, /recentDynamic\.insert\(feature, at: 0\)/);
+  assert.doesNotMatch(ui, /recentDynamic\.insert\(\.map/);
 });

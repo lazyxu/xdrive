@@ -144,6 +144,18 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var routeRestoreScopeKey: String?
     private let navigationRouteStore = XDriveIOSNativeNavigationRouteStore()
 
+    // The Dynamic slot is a map shortcut until the verified Owner has used
+    // a real dynamic feature. Never store Gallery Map as a dynamic recent.
+    private var emptyDynamicMapFallback: Bool {
+        dynamicFeature == nil && recentDynamic.isEmpty
+    }
+    private var dynamicSlotTitle: String {
+        dynamicFeature?.title ?? (emptyDynamicMapFallback ? "地图" : "最近")
+    }
+    private var dynamicSlotSymbol: String {
+        dynamicFeature?.symbol ?? (emptyDynamicMapFallback ? "map" : "clock.arrow.circlepath")
+    }
+
     private var ownerScopeKey: String {
         guard let owner = login.owner else { return "signed-out" }
         return "\(owner.origin.absoluteString)|\(owner.instanceID)|\(owner.ownerID)|\(owner.rootNodeID)"
@@ -168,7 +180,7 @@ struct XDriveIOSNativePhotosDashboard: View {
 
             NavigationStack {
                 dynamicPage
-                    .navigationTitle(dynamicFeature?.title ?? "最近")
+                    .navigationTitle(dynamicSlotTitle)
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
                             Button {
@@ -180,8 +192,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                     }
             }
             .tabItem {
-                Label(dynamicFeature?.title ?? "最近",
-                      systemImage: dynamicFeature?.symbol ?? "clock.arrow.circlepath")
+                Label(dynamicSlotTitle,
+                      systemImage: dynamicSlotSymbol)
             }
             .tag(XDriveIOSNativeBottomTab.dynamic)
 
@@ -231,8 +243,13 @@ struct XDriveIOSNativePhotosDashboard: View {
             NavigationStack {
                 List {
                     if recentDynamic.isEmpty {
-                        Text("还没有打开过其他功能。可以从「全部」启动相册备份。")
-                            .foregroundStyle(.secondary)
+                        Button {
+                            showRecentPicker = false
+                            openGallery(.map)
+                        } label: {
+                            Label("地图（默认）", systemImage: "map")
+                        }
+                        .accessibilityIdentifier("native-ios-dynamic-map-fallback")
                     }
                     ForEach(recentDynamic) { feature in
                         Button {
@@ -307,6 +324,11 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         }
         .onChange(of: tab) { _ in saveNavigationIfReady() }
+        .onChange(of: tab) { next in
+            if next == .dynamic && emptyDynamicMapFallback {
+                openGallery(.map)
+            }
+        }
         .onChange(of: gallerySource) { _ in saveNavigationIfReady() }
         .onChange(of: dynamicFeature) { _ in saveNavigationIfReady() }
         .onChange(of: recentDynamic) { _ in saveNavigationIfReady() }
@@ -334,8 +356,8 @@ struct XDriveIOSNativePhotosDashboard: View {
 
             navigationButton(
                 .dynamic,
-                title: dynamicFeature?.title ?? "最近",
-                symbol: dynamicFeature?.symbol ?? "clock.arrow.circlepath"
+                title: dynamicSlotTitle,
+                symbol: dynamicSlotSymbol
             )
             .contextMenu {
                 Button {
@@ -374,7 +396,11 @@ struct XDriveIOSNativePhotosDashboard: View {
     ) -> some View {
         let selected = tab == destination
         return Button {
-            tab = destination
+            if destination == .dynamic && emptyDynamicMapFallback {
+                openGallery(.map)
+            } else {
+                tab = destination
+            }
         } label: {
             Group {
                 if verticalSizeClass == .compact {
@@ -685,12 +711,12 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         } else {
             VStack(spacing: 15) {
-                Label("最近功能", systemImage: "clock.arrow.circlepath")
+                Label("地图", systemImage: "map")
                     .font(.headline)
-                Text("从「全部」选择相册备份、设备或任务。这里会记住最近打开的非固定功能。")
+                Text("尚无最近动态功能，地图作为默认入口。")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                Button("打开相册备份") { openDynamic(.backup) }
+                Button("打开地图") { openGallery(.map) }
                     .buttonStyle(.borderedProminent)
             }
             .padding(24)
