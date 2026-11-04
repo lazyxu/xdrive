@@ -160,9 +160,9 @@ func TestDSMNotesCGIOwnerScopedNoGeneralProxy(t *testing.T) {
 		want                            int
 	}{
 		{"foreignOwner", http.MethodPost, "cloud-notes-delete", "",
-			`{"owner_scope":"`+badScope+`","id":"`+dsmNotesFixtureID+`","revision":2}`, csrf, 409},
+			`{"owner_scope":"` + badScope + `","id":"` + dsmNotesFixtureID + `","revision":2}`, csrf, 409},
 		{"withoutCSRF", http.MethodPost, "cloud-notes-namespace", "",
-			`{"owner_scope":"`+ownerScope+`"}`, "", 403},
+			`{"owner_scope":"` + ownerScope + `"}`, "", 403},
 		{"duplicateQuery", http.MethodGet, "cloud-notes-read", "id=" + dsmNotesFixtureID + "&id=" + dsmNotesFixtureID, "", "", 400},
 		{"invalidRevision", http.MethodGet, "cloud-notes-history", "node_id=0&version_id=1", "", "", 400},
 		{"notNotesRoute", http.MethodGet, "cloud-notes-arbitrary", "", "", "", 404},
