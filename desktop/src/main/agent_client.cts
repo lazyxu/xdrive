@@ -4793,11 +4793,11 @@ export class AgentIPCClient {
   offlineImportDelete(id: string) {
     return this.request<void>('DELETE', '/v1/offline-imports/' + encodeURIComponent(id))
   }
-  offlineImportStart(id: string, manifestSHA: string, goSHA: string, backup: boolean) {
+  offlineImportStart(id: string, manifestSHA: string, goSHA: string, backup: boolean, trustMode: 'sigstore' | 'sha256') {
     return this.request<AgentServerUpdateState>('POST',
       '/v1/offline-imports/' + encodeURIComponent(id) + '/start', {
         trusted_manifest_sha256: manifestSHA, trusted_installer_sha256: goSHA,
-        backup_file_data: backup,
+        offline_trust_mode: trustMode, backup_file_data: backup,
       }, 45_000)
   }
 

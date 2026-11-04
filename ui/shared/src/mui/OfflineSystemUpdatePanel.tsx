@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Box, Button, Checkbox, FormControlLabel, LinearProgress, MenuItem, Select, Stack, TextField, Typography } from '@mui/material'
-import type { XDriveOfflineImportPort, XDriveOfflineImportStatus, XDriveOfflineImportSummary } from '../offline-update'
+import type { XDriveOfflineImportPort, XDriveOfflineImportStatus, XDriveOfflineImportSummary, XDriveOfflineTrustMode } from '../offline-update'
 import { XDRIVE_OFFLINE_CHUNK_BYTES, xDriveValidOfflineDigest, xDriveValidOfflineFilename, xDriveValidOfflineImportID } from '../offline-update'
 import { formatBytes } from '../format'
 import { XDriveConfirmDialog } from './ConfirmDialog'
@@ -27,6 +27,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [fileName, setFileName] = useState('')
+  const [trustMode, setTrustMode] = useState<XDriveOfflineTrustMode>('sigstore')
   const [manifestSHA, setManifestSHA] = useState('')
   const [goSHA, setGoSHA] = useState('')
   const [backupFiles, setBackupFiles] = useState(false)
@@ -109,7 +110,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
         await refresh()
       }
       setFiles([])
-      setMessage('传输完成；请从独立可信渠道获取 Manifest 与 Go ELF 的 SHA-256 后再执行更新。')
+      setMessage('传输已完成，但不代表身份可信。可使用 Host 自动 Sigstore 验签，或明确切换为独立双 SHA 校验。')
     } catch (e) { setError(e instanceof Error ? e.message : '上传失败，已完成的分块可重试。') }
     finally { abortRef.current = null; setBusy(false); setUploading(false); setFileName('') }
   }
@@ -126,25 +127,28 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
     } catch (e) { setError(e instanceof Error ? e.message : '暂存目录无法安全清理。') }
     finally { setBusy(false) }
   }
+  const signedFilesReady = ['manifest.json', 'delivery.json', 'delivery-attestation.jsonl', 'xdrive-offline-linux-amd64']
+    .every((name) => status?.files.some((file) => file.name === name && file.state === 'ready') === true)
+  const manualSHAReady = xDriveValidOfflineDigest(manifestSHA) && xDriveValidOfflineDigest(goSHA)
+  const canStart = !disabled && !busy && status?.id === id && status?.ready_to_verify &&
+    (trustMode === 'sigstore' ? signedFilesReady : manualSHAReady)
   const activate = async () => {
     setConfirmOpen(false)
-    if (disabled || busy || !status?.ready_to_verify || !xDriveValidOfflineDigest(manifestSHA) ||
-      !xDriveValidOfflineDigest(goSHA)) return
+    if (!canStart) return
     setBusy(true); setError('')
     try {
-      await port.start(id, manifestSHA, goSHA, backupFiles)
+      await port.start(id, trustMode === 'sigstore' ? '' : manifestSHA,
+        trustMode === 'sigstore' ? '' : goSHA, backupFiles, trustMode)
       onSubmitted?.()
-      setMessage('已提交 Host 更新请求。真正状态以服务端更新任务为准。')
+      setMessage('已提交 Host 验证与更新请求；成功与否以服务端任务状态为准。')
     } catch (e) { setError(e instanceof Error ? e.message : '提交离线升级失败。') }
     finally { setBusy(false) }
   }
-  const canStart = !disabled && !busy && status?.ready_to_verify &&
-    xDriveValidOfflineDigest(manifestSHA) && xDriveValidOfflineDigest(goSHA)
   return (
     <Box data-xdrive-admin-offline-update sx={{ p: 2, border: 1, borderColor: 'divider', borderRadius: 2 }}>
       <Stack spacing={2}>
         <Typography variant="subtitle1" fontWeight={700}>离线包更新 · Linux AMD64</Typography>
-        <Alert severity="warning">上传成功并不证明发布者身份。只能输入从独立可信渠道获得的 Manifest 和 Go 安装器 SHA-256；不能把本地上传摘要当作签名。</Alert>
+        <Alert severity="warning">上传完成仅表示传输完整，不等于签名受信。默认由宿主机验证独立配置的可信根和 GitHub Sigstore 证明；失败时绝不自动退回未签名安装。</Alert>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
           <Button variant="outlined" disabled={disabled || busy} onClick={() => { void create() }}>创建导入</Button>
           <Select size="small" displayEmpty value={id} disabled={disabled || busy || items.length === 0}
@@ -181,15 +185,32 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
             {file.state === 'ready' ? '传输完成' : '正在上传'} · {file.name} · {formatBytes(file.uploaded_bytes)} / {formatBytes(file.size)}
           </Typography>)}
         </Stack> : null}
-        <Typography variant="body2" fontWeight={600}>独立信任凭据</Typography>
-        <TextField label="可信 Manifest SHA-256" size="small" value={manifestSHA}
-          onChange={(e) => setManifestSHA(e.target.value.trim().toLowerCase())}
-          error={Boolean(manifestSHA) && !xDriveValidOfflineDigest(manifestSHA)}
-          inputProps={{ maxLength: 64, autoComplete: 'off' }} />
-        <TextField label="可信 Go ELF SHA-256" size="small" value={goSHA}
-          onChange={(e) => setGoSHA(e.target.value.trim().toLowerCase())}
-          error={Boolean(goSHA) && !xDriveValidOfflineDigest(goSHA)}
-          inputProps={{ maxLength: 64, autoComplete: 'off' }} />
+        <Typography variant="body2" fontWeight={600}>发布者身份验证方式</Typography>
+        <Select size="small" value={trustMode} disabled={disabled || busy}
+          onChange={(event) => setTrustMode(event.target.value as XDriveOfflineTrustMode)}
+          aria-label="离线发布信任方式">
+          <MenuItem value="sigstore">Host 自动验证 Sigstore 签名（优先）</MenuItem>
+          <MenuItem value="sha256">手动输入独立双 SHA-256（兼容）</MenuItem>
+        </Select>
+        {trustMode === 'sigstore' ? (
+          <Alert severity={signedFilesReady ? 'info' : 'warning'}>
+            自动签名模式需要 Manifest、Delivery、Attestation 和 Go ELF 均传输完成，
+            且宿主机已独立配置可信根。Host 会验证签名、发布者身份及文件摘要；
+            未配置可信根或验签失败时将拒绝更新，不会切换到手工模式。
+          </Alert>
+        ) : (
+          <>
+            <Alert severity="warning">手工模式必须使用两项独立可信来源的发布摘要，禁止将网页上传回执作为信任依据。</Alert>
+            <TextField label="可信 Manifest SHA-256" size="small" value={manifestSHA}
+              onChange={(e) => setManifestSHA(e.target.value.trim().toLowerCase())}
+              error={Boolean(manifestSHA) && !xDriveValidOfflineDigest(manifestSHA)}
+              inputProps={{ maxLength: 64, autoComplete: 'off' }} />
+            <TextField label="可信 Go ELF SHA-256" size="small" value={goSHA}
+              onChange={(e) => setGoSHA(e.target.value.trim().toLowerCase())}
+              error={Boolean(goSHA) && !xDriveValidOfflineDigest(goSHA)}
+              inputProps={{ maxLength: 64, autoComplete: 'off' }} />
+          </>
+        )}
         <FormControlLabel label="额外备份文件数据（数据库和一致性备份始终保留）"
           control={<Checkbox checked={backupFiles} disabled={disabled || busy}
             onChange={(_, checked) => setBackupFiles(checked)} />} />
@@ -198,7 +219,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
         {error ? <Alert severity="error">{error}</Alert> : null}
       </Stack>
       <XDriveConfirmDialog open={confirmOpen} title="确认执行离线系统更新？"
-        description={'导入 ID：' + id + '。Host 将再次核对独立信任、组件、镜像身份、备份及回滚；文件数据备份：' + (backupFiles ? '开启' : '关闭') + '。服务可能短暂中断。'}
+        description={'导入 ID：' + id + '；信任方式：' + (trustMode === 'sigstore' ? 'Host Sigstore 签名验证（失败即拒绝）' : '独立双 SHA-256') + '。Host 将再次校验组件与镜像身份，并执行原有备份/回滚；文件数据额外备份：' + (backupFiles ? '开启' : '关闭') + '。服务可能短暂中断。'}
         confirmLabel="提交宿主机" confirmIntent="warning" loading={busy}
         onCancel={() => setConfirmOpen(false)} onConfirm={() => { void activate() }} />
     </Box>

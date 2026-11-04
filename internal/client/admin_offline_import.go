@@ -158,16 +158,26 @@ func (c *Client) AdminOfflineImportDelete(ctx context.Context, id string) error 
 	return c.json(ctx, http.MethodDelete, path, nil, nil)
 }
 
-func (c *Client) AdminOfflineImportStart(ctx context.Context, id, manifestSHA, installerSHA string, backup bool) (ServerUpdateState, error) {
+func (c *Client) AdminOfflineImportStart(ctx context.Context, id, manifestSHA, installerSHA string, backup bool, trustMode string) (ServerUpdateState, error) {
 	var out ServerUpdateState
 	if _, err := offlineImportPath(id); err != nil {
 		return out, err
 	}
-	if !offlineImportHashPattern.MatchString(manifestSHA) || !offlineImportHashPattern.MatchString(installerSHA) {
-		return out, fmt.Errorf("invalid independent offline release digests")
+	switch trustMode {
+	case "sigstore":
+		if manifestSHA != "" || installerSHA != "" {
+			return out, fmt.Errorf("Host signature verification does not accept uploader-supplied digests")
+		}
+	case "sha256":
+		if !offlineImportHashPattern.MatchString(manifestSHA) || !offlineImportHashPattern.MatchString(installerSHA) {
+			return out, fmt.Errorf("invalid independent offline release digests")
+		}
+	default:
+		return out, fmt.Errorf("unsupported offline publisher trust mode")
 	}
 	err := c.json(ctx, http.MethodPost, "/api/v1/admin/update", map[string]any{
 		"source": "offline", "channel": "master", "offline_id": id,
+		"offline_trust_mode":       trustMode,
 		"trusted_manifest_sha256":  manifestSHA,
 		"trusted_installer_sha256": installerSHA,
 		"backup_file_data":         backup,

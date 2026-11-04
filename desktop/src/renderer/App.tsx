@@ -793,8 +793,8 @@ export default function App({
         name: string; state: 'ready'; upload_sha256: string
       }>('finalize', { id, name }),
       remove: async (id) => { await call<null>('remove', { id }) },
-      start: async (id, manifest, goBinary, backup) => {
-        await call<AgentServerUpdateState>('start', { id, manifest, go: goBinary, backup })
+      start: async (id, manifest, goBinary, backup, trustMode) => {
+        await call<AgentServerUpdateState>('start', { id, manifest, go: goBinary, backup, mode: trustMode })
       },
     }
   }, [])

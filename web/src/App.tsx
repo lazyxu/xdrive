@@ -2751,8 +2751,8 @@ function FileManager({
     },
     finalize: (id: string, name: string) => api.adminOfflineImportFinalize(id, name),
     remove: async (id: string) => { await api.adminOfflineImportRemove(id) },
-    start: async (id: string, manifest: string, binary: string, backup: boolean) => {
-      await api.adminStartOfflineServerUpdate(id, manifest, binary, backup)
+    start: async (id: string, manifest: string, binary: string, backup: boolean, trustMode: 'sigstore' | 'sha256') => {
+      await api.adminStartOfflineServerUpdate(id, manifest, binary, backup, trustMode)
     },
   }), [api])
   const browserWorkspaceHost = useMemo(

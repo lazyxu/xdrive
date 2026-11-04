@@ -50,11 +50,27 @@ func TestOfflineImportClientRejectsMalformedChunksAndTrustBeforeNetwork(t *testi
 			}
 		})
 	}
-	if _, err := cli.AdminOfflineImportStart(ctx, id, validSHA, "evil", false); err == nil {
+	if _, err := cli.AdminOfflineImportStart(ctx, id, validSHA, "evil", false, "sha256"); err == nil {
 		t.Fatal("untrusted Go ELF hash accepted")
 	}
-	if _, err := cli.AdminOfflineImportStart(ctx, "/etc", validSHA, validSHA, false); err == nil {
+	if _, err := cli.AdminOfflineImportStart(ctx, "/etc", validSHA, validSHA, false, "sha256"); err == nil {
 		t.Fatal("untrusted Host path accepted")
+	}
+	for _, item := range []struct {
+		name, mode, manifest, goSHA string
+	}{
+		{"signed mixed SHA", "sigstore", validSHA, ""},
+		{"signed mixed Go SHA", "sigstore", "", validSHA},
+		{"unknown trust mode", "command", "", ""},
+		{"empty trust mode", "", "", ""},
+		{"manual without Go SHA", "sha256", validSHA, ""},
+		{"manual without Manifest SHA", "sha256", "", validSHA},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			if _, err := cli.AdminOfflineImportStart(ctx, id, item.manifest, item.goSHA, false, item.mode); err == nil {
+				t.Fatal("malformed offline Host trust request crossed the Go Client boundary")
+			}
+		})
 	}
 	if err := cli.AdminOfflineImportRegister(ctx, id, "evil.sh", 99, ""); err == nil {
 		t.Fatal("arbitrary installer filename accepted")
