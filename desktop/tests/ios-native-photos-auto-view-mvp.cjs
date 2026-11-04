@@ -408,7 +408,7 @@ test('only-new foreground consent installs its durable PhotoKit baseline and rep
   assert.match(configure, /let second = try await login\.verifiedAuthorization\(\)/)
   assert.match(automatic, /activePlan\.backupStartRule == \.onlyNew/)
   const replay = automatic.indexOf('changeQueue.replay(')
-  const reserve = automatic.indexOf('.reserveDue(owner: selected)')
+  const reserve = automatic.indexOf('.reserveDue(owner: selected,')
   assert.ok(replay >= 0 && reserve > replay, 'durable replay must precede automatic due reservation')
   assert.match(automatic, /requiresExplicitBaseline[\s\S]*?never install a newer token automatically/)
   assert.match(changeQueue, /guard \(1\.\.\.4\)\.contains\(maximumEvents\)/)
