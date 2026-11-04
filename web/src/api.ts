@@ -1684,12 +1684,14 @@ export class XDriveApi {
       })
   }
 
-  adminStartOfflineServerUpdate(id: string, manifestSHA256: string, goSHA256: string, backupFileData: boolean) {
+  adminStartOfflineServerUpdate(id: string, manifestSHA256: string, goSHA256: string, backupFileData: boolean, trustMode: 'sigstore' | 'sha256') {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update', {
       method: 'POST', cache: 'no-store',
       body: JSON.stringify({
         source: 'offline', channel: 'master', offline_id: id,
-        trusted_manifest_sha256: manifestSHA256, trusted_installer_sha256: goSHA256,
+        offline_trust_mode: trustMode,
+        trusted_manifest_sha256: trustMode === 'sigstore' ? '' : manifestSHA256,
+        trusted_installer_sha256: trustMode === 'sigstore' ? '' : goSHA256,
         backup_file_data: backupFileData,
       }),
     })

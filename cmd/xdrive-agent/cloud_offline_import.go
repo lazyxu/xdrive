@@ -58,10 +58,10 @@ func (c *agentController) CloudOfflineImportDelete(ctx context.Context, id strin
 	}
 	return cli.AdminOfflineImportDelete(ctx, id)
 }
-func (c *agentController) CloudOfflineImportStart(ctx context.Context, id, manifestSHA, goSHA string, backup bool) (client.ServerUpdateState, error) {
+func (c *agentController) CloudOfflineImportStart(ctx context.Context, id, manifestSHA, goSHA string, backup bool, trustMode string) (client.ServerUpdateState, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
 		return client.ServerUpdateState{}, err
 	}
-	return cli.AdminOfflineImportStart(ctx, id, manifestSHA, goSHA, backup)
+	return cli.AdminOfflineImportStart(ctx, id, manifestSHA, goSHA, backup, trustMode)
 }

@@ -29,7 +29,7 @@ type desktopOfflineImportController interface {
 	CloudOfflineImportChunk(context.Context, string, string, int, []byte, string) error
 	CloudOfflineImportFinalize(context.Context, string, string) (client.OfflineImportFinalizeReceipt, error)
 	CloudOfflineImportDelete(context.Context, string) error
-	CloudOfflineImportStart(context.Context, string, string, string, bool) (client.ServerUpdateState, error)
+	CloudOfflineImportStart(context.Context, string, string, string, bool, string) (client.ServerUpdateState, error)
 }
 
 func validDesktopOfflineName(name string) bool {
@@ -144,17 +144,22 @@ func (h *desktopIPCHandler) offlineImport(w http.ResponseWriter, r *http.Request
 		var input struct {
 			TrustedManifest string `json:"trusted_manifest_sha256"`
 			TrustedGo       string `json:"trusted_installer_sha256"`
+			TrustMode       string `json:"offline_trust_mode"`
 			BackupFileData  bool   `json:"backup_file_data"`
 		}
 		if !decodeDesktopIPCJSON(w, r, &input) {
 			return
 		}
-		if !desktopOfflineDigestPattern.MatchString(input.TrustedManifest) ||
-			!desktopOfflineDigestPattern.MatchString(input.TrustedGo) {
-			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_offline_trust", "offline publisher SHA-256 is required")
+		signed := input.TrustMode == "sigstore" && input.TrustedManifest == "" && input.TrustedGo == ""
+		manual := input.TrustMode == "sha256" &&
+			desktopOfflineDigestPattern.MatchString(input.TrustedManifest) &&
+			desktopOfflineDigestPattern.MatchString(input.TrustedGo)
+		if !signed && !manual {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_offline_trust", "invalid offline release trust mode or proof")
 			return
 		}
-		out, err := provider.CloudOfflineImportStart(ctx, id, input.TrustedManifest, input.TrustedGo, input.BackupFileData)
+		out, err := provider.CloudOfflineImportStart(ctx, id, input.TrustedManifest,
+			input.TrustedGo, input.BackupFileData, input.TrustMode)
 		if err != nil {
 			writeDesktopIPCControllerError(w, err)
 			return

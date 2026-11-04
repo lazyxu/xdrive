@@ -16,3 +16,13 @@
 ## 待上线依赖
 
 4B 的 Go ELF Sigstore 自动可信验证尚未实现，本轮 UI 仅允许手工双 SHA 安全路径。必须等 #3760 的受信 Go 发布、#3758 Host 执行器、#3763 上传 mount，以及后续签名 Host 接口全部通过适用 CI 后才可声称「浏览器直接离线升级」已完成。DSM 复用相同 UI 但不能绕过其 Host capability；Gen10 真实断网升级和失败回滚均需独立实机验收。
+
+## Sigstore 优先的共享界面（待后端 #3809 完成）
+
+共享 Web/Desktop 离线面板默认选择 `sigstore`。要启用提交，候选目录必须已完整暂存 `manifest.json`、`delivery.json`、`delivery-attestation.jsonl`、`xdrive-offline-linux-amd64`，并通过后端目录清单确认每项为 `ready`。界面不会把文件上传完整性当成签名通过；宿主机若未配置其独立管理的可信根，则更新请求会失败且不得自动降级。
+
+管理员可明确选择 `sha256` 兼容模式。这时显示来自独立受信渠道的两项 SHA-256 输入，并强制均为 64 位小写十六进制，无法只提供一项。界面确认对话框显示将使用的信任模式及额外备份选项。无需上传可信根，Renderer 不暴露任意 Host 路径或 Docker 操作。
+
+Web 与 Desktop 的端到端接口统一传递枚举 `offline_trust_mode`。Electron 主进程、Go Agent IPC、Go Client 均独立检查签名模式不得携带双 SHA，手工模式必须携带双 SHA。只有 #3758 → #3797 → #3809 完成并合入后，本 UI PR 才可解除 Draft 并经其最新 master 的完整 CI/Final Gate 合入。
+
+以上只是界面与传输参数接线，不能代替真实 Sigstore Bundle、可信根、Docker 五组件安装或 Gen10 实机回滚验收。

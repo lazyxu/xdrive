@@ -19,6 +19,8 @@ export interface XDriveOfflineImportSummary {
   modified_at: string
 }
 
+export type XDriveOfflineTrustMode = 'sigstore' | 'sha256'
+
 export interface XDriveOfflineImportPort {
   list: () => Promise<{ items: XDriveOfflineImportSummary[] }>
   create: () => Promise<{ id: string; chunk_bytes: number }>
@@ -27,7 +29,7 @@ export interface XDriveOfflineImportPort {
   putChunk: (id: string, name: string, index: number, data: Blob, chunkSHA256: string, signal?: AbortSignal) => Promise<void>
   finalize: (id: string, name: string) => Promise<{ name: string; state: 'ready'; upload_sha256: string }>
   remove: (id: string) => Promise<void>
-  start: (id: string, manifestSHA256: string, goSHA256: string, backupFileData: boolean) => Promise<void>
+  start: (id: string, manifestSHA256: string, goSHA256: string, backupFileData: boolean, trustMode: XDriveOfflineTrustMode) => Promise<void>
 }
 
 export const XDRIVE_OFFLINE_CHUNK_BYTES = 8 * 1024 * 1024
