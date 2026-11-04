@@ -4599,8 +4599,14 @@ class DriveController(
     suspend fun notesCreate(title: String, markdown: String): OwnerNoteRow =
         withNotesOwner { service, token -> service.notesCreate(token, title, markdown) }
 
-    suspend fun notesImportIOSMarkdown(title: String, markdown: String): OwnerNoteRow =
-        withNotesOwner { service, token -> service.notesImportIOSMarkdown(token, title, markdown) }
+    suspend fun notesImportIOSMarkdown(
+        title: String, markdown: String, externalID: String? = null,
+    ): OwnerNoteRow = withNotesOwner { service, token ->
+        service.notesImportIOSMarkdown(token, title, markdown, externalID)
+    }
+
+    suspend fun notesImportIOSImage(noteID: String, image: ByteArray): OwnerNoteImageReceipt =
+        withNotesOwner { service, token -> service.notesImportIOSImage(token, noteID, image) }
 
     suspend fun notesUpdate(
         id: String, title: String, markdown: String, revision: Long,

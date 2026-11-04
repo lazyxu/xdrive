@@ -36,6 +36,19 @@ class NativeNotesApiTest {
         assertFalse(mine.copy(source = "ios_notes").writable)
     }
 
+    @Test fun invalidManualImportIdentityNeverReachesServer() = runBlocking {
+        MockWebServer().use { server ->
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                try {
+                    api.notesImportIOSMarkdown(
+                        "owner-secret", "Test", "# Test", "manual-md:../foreign")
+                    fail("Unsafe manual import identity was accepted")
+                } catch (_: IllegalArgumentException) { }
+                assertEquals(0, server.requestCount)
+            }
+        }
+    }
+
     @Test fun notesUseOwnerBearerAndVersionedAPI() = runBlocking {
         MockWebServer().use { server ->
             XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
@@ -60,6 +73,25 @@ class NativeNotesApiTest {
                 val manualBody = Json.parseToJsonElement(manual.body.readUtf8()).jsonObject
                 assertEquals("# Test", manualBody["markdown"]!!.jsonPrimitive.content)
                 assertNull(manualBody["external_id"])
+
+                val manualID = "manual-md:00000000-0000-4000-8000-000000000001"
+                server.enqueue(MockResponse().setBody(row(source = "ios_notes")))
+                val firstBundle = api.notesImportIOSMarkdown(
+                    "owner-secret", "Test", "# Test", manualID)
+                assertEquals(1L, firstBundle.revision)
+                val firstBundleRequest = server.takeRequest()
+                assertEquals("/api/v1/notes/ios/import", firstBundleRequest.path)
+                assertEquals(manualID, Json.parseToJsonElement(
+                    firstBundleRequest.body.readUtf8()).jsonObject["external_id"]!!.jsonPrimitive.content)
+
+                server.enqueue(MockResponse().setBody(
+                    row(source = "ios_notes", revision = 2, markdown = "# Test with image")))
+                val completedBundle = api.notesImportIOSMarkdown(
+                    "owner-secret", "Test", "# Test with image", manualID)
+                assertEquals(2L, completedBundle.revision)
+                val updateBundleRequest = server.takeRequest()
+                assertEquals(manualID, Json.parseToJsonElement(
+                    updateBundleRequest.body.readUtf8()).jsonObject["external_id"]!!.jsonPrimitive.content)
 
 
                 server.enqueue(MockResponse().setBody(
@@ -144,6 +176,34 @@ class NativeNotesApiTest {
                 assertNull(upload.getHeader("Cookie"))
                 assertTrue(upload.getHeader("Content-Type")!!.startsWith("multipart/form-data;"))
                 assertTrue(upload.body.readUtf8().contains("name=\"image\""))
+
+                server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
+                    .setBody("""{"node_id":94,"filename":"$asset",
+                        "relative_path":"$path","content_type":"image/gif",
+                        "bytes":$size,"sha256":"$sha"}"""))
+                val importedImage = api.notesImportIOSImage("owner-secret", id, bytes)
+                assertEquals(94L, importedImage.nodeId)
+                val importImageRequest = server.takeRequest()
+                assertEquals("POST", importImageRequest.method)
+                assertEquals("/api/v1/notes/ios/images/import/$id", importImageRequest.path)
+                assertEquals("Bearer owner-secret", importImageRequest.getHeader("Authorization"))
+                assertNull(importImageRequest.getHeader("Cookie"))
+                assertTrue(importImageRequest.getHeader("Content-Type")!!.startsWith("multipart/form-data;"))
+                assertTrue(importImageRequest.body.readUtf8().contains("name=\"image\""))
+
+                server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
+                    .setResponseCode(201)
+                    .setBody("""{"node_id":94,"filename":"$asset",
+                        "relative_path":"_assets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/$asset",
+                        "content_type":"image/gif","bytes":$size,"sha256":"$sha"}"""))
+                try {
+                    api.notesImportIOSImage("owner-secret", id, bytes)
+                    fail("Foreign note iOS image receipt was accepted")
+                } catch (e: ApiException) {
+                    assertEquals(ApiFailureReason.INVALID_RESPONSE, e.reason)
+                }
+                val rejectedImport = server.takeRequest()
+                assertEquals("/api/v1/notes/ios/images/import/$id", rejectedImport.path)
 
                 server.enqueue(MockResponse().setHeader("Content-Type", "image/gif")
                     .setHeader("ETag", "\"$sha\"").setBody(Buffer().write(bytes)))

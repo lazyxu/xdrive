@@ -5,11 +5,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.content.Context
+import android.net.Uri
 import android.provider.OpenableColumns
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
+import java.util.UUID
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -34,6 +37,38 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private data class NativeNotesImportDocument(val uri: Uri, val name: String)
+private data class NativeNotesImportPlan(
+    val title: String,
+    val markdown: String,
+    val images: Map<String, NativeNotesImportDocument>,
+    val references: List<String>,
+)
+
+private fun nativeNotesImportDisplayName(context: Context, uri: Uri): String {
+    return context.contentResolver.query(
+        uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null,
+    )?.use { cursor ->
+        if (cursor.moveToFirst()) cursor.getString(0) else null
+    }?.takeIf { it.isNotBlank() } ?: throw IOException("无法读取所选文件名")
+}
+
+private fun readNativeNotesImportFile(context: Context, uri: Uri, maxBytes: Int): ByteArray {
+    val input = context.contentResolver.openInputStream(uri)
+        ?: throw IOException("无法读取所选文件内容")
+    return input.use {
+        val sink = ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (true) {
+            val count = it.read(buffer)
+            if (count < 0) break
+            if (sink.size() + count > maxBytes) throw IOException("所选文件超过大小限制")
+            sink.write(buffer, 0, count)
+        }
+        sink.toByteArray()
+    }
+}
+
 /** A native Compose child of DYNAMIC; no WebView and no separate credentials. */
 @Composable
 internal fun NativeNotesScreen(controller: DriveController) {
@@ -50,58 +85,102 @@ internal fun NativeNotesScreen(controller: DriveController) {
     val scope = rememberCoroutineScope()
 
     val context = LocalContext.current
-    val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null && source == "ios_notes" && !importing) {
+    val importPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (uris.isNotEmpty() && source == "ios_notes" && !importing) {
             val ownerEpoch = owner.nativeUiSessionId
             importing = true
+            error = null
             scope.launch {
+                var created: OwnerNoteRow? = null
                 try {
-                    val (title, markdown) = withContext(Dispatchers.IO) {
-                        val resolver = context.contentResolver
-                        val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME),
-                            null, null, null)?.use { cursor ->
-                            if (cursor.moveToFirst()) cursor.getString(0) else null
-                        } ?: throw IOException("无法读取 Markdown 文件名")
-                        if (!displayName.endsWith(".md", ignoreCase = true) &&
-                            !displayName.endsWith(".markdown", ignoreCase = true)) {
-                            throw IOException("请选择 .md 或 .markdown 文件")
+                    val plan = withContext(Dispatchers.IO) {
+                        val documents = uris.map { uri ->
+                            NativeNotesImportDocument(uri, nativeNotesImportDisplayName(context, uri))
                         }
-                        val fileTitle = displayName.substringBeforeLast('.').trim()
-                        val content = resolver.openInputStream(uri)?.use { input ->
-                            val sink = ByteArrayOutputStream()
-                            val buffer = ByteArray(8192)
-                            while (true) {
-                                val read = input.read(buffer)
-                                if (read < 0) break
-                                if (sink.size() + read > 1_048_576)
-                                    throw IOException("Markdown 正文超过 1 MiB")
-                                sink.write(buffer, 0, read)
-                            }
-                            sink.toByteArray()
-                        } ?: throw IOException("无法读取 Markdown 文件内容")
-                        val text = Charsets.UTF_8.newDecoder()
-                            .onMalformedInput(CodingErrorAction.REPORT)
-                            .onUnmappableCharacter(CodingErrorAction.REPORT)
-                            .decode(ByteBuffer.wrap(content)).toString()
-                        if (!validNotesInput(fileTitle, text))
+                        val markdownFiles = documents.filter {
+                            it.name.endsWith(".md", ignoreCase = true) ||
+                                it.name.endsWith(".markdown", ignoreCase = true)
+                        }
+                        if (markdownFiles.size != 1)
+                            throw IOException("请同时选择且只选择一份 .md 或 .markdown 文件")
+                        val imageFiles = documents.filter {
+                            it.name.substringAfterLast('.', "").lowercase() in
+                                setOf("png", "jpg", "jpeg", "gif", "webp", "heic")
+                        }
+                        if (imageFiles.size > NativeNotesManualImportPolicy.maxImages)
+                            throw IOException("一次最多选择 32 张图片")
+                        val markdownFile = markdownFiles.single()
+                        val title = markdownFile.name.substringBeforeLast('.').trim()
+                        val markdownBytes = readNativeNotesImportFile(
+                            context, markdownFile.uri, 1_048_576)
+                        val markdown = try {
+                            Charsets.UTF_8.newDecoder()
+                                .onMalformedInput(CodingErrorAction.REPORT)
+                                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                                .decode(ByteBuffer.wrap(markdownBytes)).toString()
+                        } catch (_: Exception) {
+                            throw IOException("Markdown 文件不是有效的 UTF-8 编码")
+                        }
+                        if (!validNotesInput(title, markdown))
                             throw IOException("文件名或 Markdown 内容无效")
-                        Pair(fileTitle, text)
+                        val references = NativeNotesManualImportPolicy.references(markdown)
+                        NativeNotesManualImportPolicy.selectedImages(
+                            references, imageFiles.map { it.name })
+                        NativeNotesImportPlan(
+                            title, markdown, imageFiles.associateBy { it.name }, references)
                     }
-                    if (owner.nativeUiSessionId != ownerEpoch || source != "ios_notes")
-                        return@launch
+                    if (controller.state.value.nativeUiSessionId != ownerEpoch ||
+                        source != "ios_notes") return@launch
                     controller.notesInitialize()
-                    val imported = controller.notesImportIOSMarkdown(title, markdown)
-                    if (imported.source != "ios_notes")
+                    val externalID = if (plan.references.isEmpty()) null
+                        else "manual-md:" + UUID.randomUUID().toString().lowercase()
+                    created = controller.notesImportIOSMarkdown(
+                        plan.title, plan.markdown, externalID)
+                    if (controller.state.value.nativeUiSessionId != ownerEpoch ||
+                        source != "ios_notes") return@launch
+                    refresh++
+                    if (created?.source != "ios_notes")
                         throw IOException("服务器未返回只读 iOS 备份")
-                    if (owner.nativeUiSessionId == ownerEpoch && source == "ios_notes") {
-                        selected = imported
-                        refresh++
+                    var finalNote = requireNotNull(created)
+                    var rewritten = plan.markdown
+                    for (name in plan.references) {
+                        if (controller.state.value.nativeUiSessionId != ownerEpoch ||
+                            source != "ios_notes") return@launch
+                        val document = plan.images[name]
+                            ?: throw IOException("Markdown 引用的图片未被选择")
+                        val bytes = withContext(Dispatchers.IO) {
+                            readNativeNotesImportFile(
+                                context, document.uri, NativeNotesManualImportPolicy.maxImageBytes)
+                        }
+                        val receipt = controller.notesImportIOSImage(finalNote.id, bytes)
+                        if (!validNotesImagePath(finalNote.id, receipt.relativePath))
+                            throw IOException("服务器返回的图片归属或路径无效")
+                        rewritten = NativeNotesManualImportPolicy.replacing(
+                            rewritten, name, receipt.relativePath, finalNote.id)
+                    }
+                    if (rewritten != plan.markdown) {
+                        val updated = controller.notesImportIOSMarkdown(
+                            plan.title, rewritten, externalID)
+                        if (updated.id != finalNote.id || updated.source != "ios_notes" ||
+                            updated.revision <= finalNote.revision)
+                            throw IOException("图片引用更新回执与原笔记不匹配")
+                        finalNote = updated
+                    }
+                    if (controller.state.value.nativeUiSessionId == ownerEpoch &&
+                        source == "ios_notes") {
+                        selected = finalNote
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
-                    error = "导入结果未确认：" + (failure.message ?: "请求失败") +
-                        "。请先核对备份列表，勿重复导入。"
+                    error = if (created != null)
+                        "笔记备份已创建，但图片导入或引用更新未完成：" +
+                            (failure.message ?: "请求失败") + "。请先核对备份列表，勿重复导入。"
+                    else
+                        "导入结果未确认：" + (failure.message ?: "请求失败") +
+                            "。请先核对备份列表，勿重复导入。"
                 } finally {
                     importing = false
                 }
@@ -148,10 +227,10 @@ internal fun NativeNotesScreen(controller: DriveController) {
                 singleLine = true, modifier = Modifier.fillMaxWidth().testTag("native-notes-search"))
             if (source == "ios_notes") {
                 Button(onClick = {
-                    importPicker.launch(arrayOf("text/*", "application/octet-stream"))
+                    importPicker.launch(arrayOf("*/*"))
                 }, enabled = !loading && !importing,
-                    modifier = Modifier.testTag("native-notes-import-markdown")) {
-                    Text(if (importing) "正在导入…" else "从文件导入 Markdown")
+                    modifier = Modifier.testTag("native-notes-import-markdown-bundle")) {
+                    Text(if (importing) "正在导入…" else "导入 Markdown + 图片")
                 }
             }
             if (source == "mine") {

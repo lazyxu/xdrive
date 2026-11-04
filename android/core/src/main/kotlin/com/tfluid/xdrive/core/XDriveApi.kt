@@ -384,8 +384,13 @@ interface XDriveService {
         throw ApiException(501, "Owner Notes detail API unavailable")
     suspend fun notesCreate(accessToken: String, title: String, markdown: String): OwnerNoteRow =
         throw ApiException(501, "Owner Notes create API unavailable")
-    suspend fun notesImportIOSMarkdown(accessToken: String, title: String, markdown: String): OwnerNoteRow =
-        throw ApiException(501, "Owner iOS Markdown import API unavailable")
+    suspend fun notesImportIOSMarkdown(
+        accessToken: String, title: String, markdown: String, externalID: String? = null,
+    ): OwnerNoteRow = throw ApiException(501, "Owner iOS Markdown import API unavailable")
+    /** Explicit user-selected immutable image import into the read-only iOS archive. */
+    suspend fun notesImportIOSImage(
+        accessToken: String, noteId: String, image: ByteArray,
+    ): OwnerNoteImageReceipt = throw ApiException(501, "Owner iOS Notes image import unavailable")
     suspend fun notesUpdate(accessToken: String, id: String, title: String,
         markdown: String, revision: Long): OwnerNoteRow =
         throw ApiException(501, "Owner Notes update API unavailable")
@@ -751,12 +756,19 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     }
 
     override suspend fun notesImportIOSMarkdown(
-        accessToken: String, title: String, markdown: String,
+        accessToken: String, title: String, markdown: String, externalID: String?,
     ): OwnerNoteRow {
         require(validNotesInput(title, markdown))
-        val row = notesRow(request("notes/ios/import", accessToken,
-            values = mapOf("title" to title, "markdown" to markdown)))
-        if (row.source != "ios_notes" || row.revision != 1L ||
+        val identity = externalID.orEmpty()
+        if (identity.isNotEmpty()) require(
+            Regex("^manual-md:[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
+                .matches(identity)
+        )
+        val values = mutableMapOf("title" to title, "markdown" to markdown)
+        if (identity.isNotEmpty()) values["external_id"] = identity
+        val row = notesRow(request("notes/ios/import", accessToken, values = values))
+        if (row.source != "ios_notes" || row.revision <= 0L ||
+            (identity.isEmpty() && row.revision != 1L) ||
             !notesReceiptMatchesInput(row, title, markdown)) invalidPayload()
         return row
     }
@@ -857,6 +869,90 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                     } catch (_: Exception) {
                         if (continuation.isActive) continuation.resumeWithException(
                             ApiException(response.code, "Invalid Notes image receipt",
+                                ApiFailureReason.INVALID_RESPONSE))
+                    }
+                }
+            })
+        }
+    }
+
+    /** Upload one explicitly selected image into the read-only iOS archive.
+     * This endpoint is only for the manual import transaction, never the editor. */
+    override suspend fun notesImportIOSImage(
+        accessToken: String, noteId: String, image: ByteArray,
+    ): OwnerNoteImageReceipt {
+        require(validToken(accessToken) && validNotesUUID(noteId))
+        require(image.isNotEmpty() && image.size <= 20 * 1_048_576)
+        val url = address.url.toHttpUrlOrNull()!!.newBuilder()
+            .addPathSegments("api/v1/notes/ios/images/import")
+            .addPathSegment(noteId).build()
+        val payload = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("image", "native-note-import-image",
+                image.toRequestBody("application/octet-stream".toMediaType()))
+            .build()
+        val req = Request.Builder().url(url)
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept", "application/json")
+            .post(payload).build()
+        val digest = MessageDigest.getInstance("SHA-256").digest(image)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return suspendCancellableCoroutine { continuation ->
+            val call = http.newCall(req)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (continuation.isActive)
+                        continuation.resumeWithException(transportFailure(e))
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        val receipt = response.use {
+                            if (!it.isSuccessful)
+                                throw ApiException(it.code, "iOS Notes image import rejected")
+                            if (!it.header("Content-Type").orEmpty()
+                                    .lowercase().startsWith("application/json")) invalidPayload()
+                            val body = it.body ?: invalidPayload()
+                            if (body.contentLength() > 4096) invalidPayload()
+                            val buffer = Buffer()
+                            val source = body.source()
+                            while (buffer.size <= 4096L) {
+                                if (source.read(buffer, minOf(8192L, 4097L - buffer.size)) == -1L)
+                                    break
+                            }
+                            if (buffer.size > 4096L) invalidPayload()
+                            val raw = json.parseToJsonElement(buffer.readUtf8()) as? JsonObject
+                                ?: invalidPayload()
+                            val relative = raw.string("relative_path")
+                            val filename = raw.string("filename")
+                            val mime = raw.string("content_type")
+                            val sha = raw.string("sha256")
+                            val size = raw.long("bytes")
+                            val node = raw.long("node_id")
+                            val ext = filename.substringAfterLast('.', "")
+                            val expectedMime = when (ext) {
+                                "png" -> "image/png"
+                                "jpg" -> "image/jpeg"
+                                "gif" -> "image/gif"
+                                "webp" -> "image/webp"
+                                "heic" -> "image/heic"
+                                else -> invalidPayload()
+                            }
+                            if (!validNotesImagePath(noteId, relative) ||
+                                relative != "_assets/$noteId/$filename" ||
+                                mime != expectedMime || node <= 0 ||
+                                size != image.size.toLong() ||
+                                !sha.equals(digest, ignoreCase = true)) invalidPayload()
+                            OwnerNoteImageReceipt(node, relative, digest, size, mime)
+                        }
+                        if (continuation.isActive) continuation.resume(receipt)
+                    } catch (e: ApiException) {
+                        if (continuation.isActive) continuation.resumeWithException(e)
+                    } catch (e: IOException) {
+                        if (continuation.isActive)
+                            continuation.resumeWithException(transportFailure(e))
+                    } catch (_: Exception) {
+                        if (continuation.isActive) continuation.resumeWithException(
+                            ApiException(response.code, "Invalid iOS Notes image receipt",
                                 ApiFailureReason.INVALID_RESPONSE))
                     }
                 }
