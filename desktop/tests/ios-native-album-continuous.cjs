@@ -30,8 +30,8 @@ test('local album member wall renders virtual 64-slot photo tiles without page c
   assert.match(albums, /let offset = number \* 64/)
   assert.match(albums, /XDriveIOSNativeSquarePhotoTile\(candidate: item\)/)
   assert.match(albums, /ForEach\(0\.\.<min\(64, max\(0, expectedTotal - offset\)\)/)
-  assert.match(albums, /\.task\(id: "\\\(generation\)-\\\(album\.collectionIdentifier\)-\\\(offset\)"\)/)
-  assert.match(albums, /let count = try await next\.open\(album\)/)
+  assert.match(albums, /\.task\(id: "\\\(generation\)-\\\(album\.collectionIdentifier\)-\\\(offset\)-\\\(sortOrder\.rawValue\)"\)/)
+  assert.match(albums, /let count = try await next\.open\(album, sortOrder: sortOrder\)/)
   assert.match(albums, /let result = try await next\.page\(offset: offset\)/)
   assert.match(albums, /result\.totalAccessibleAssets == expectedTotal/)
   assert.match(albums, /result\.startOffset == offset/)
@@ -98,4 +98,34 @@ test('native album directory groups user and smart collections without changing 
   assert.match(directory, /scroll\.scrollTo\(target, anchor: \.top\)/)
   assert.match(directory, /previous\.items \+ next\.items/)
   assert.doesNotMatch(directory, /Button\("上一页"\)|Button\("下一页"\)/)
+})
+
+
+test('album capture-date sort keeps all 64-slot reads, Viewer and writes on the same snapshot order', () => {
+  const reader = albums.slice(
+    albums.indexOf('actor XDriveIOSNativeAlbumPageReader'),
+    albums.indexOf('/// Visible album-cover cells')
+  )
+  const wall = albums.slice(
+    albums.indexOf('struct XDriveIOSNativeAlbumContentsScreen: View'),
+    albums.indexOf('/// Photos-first list of local smart/user albums.')
+  )
+  assert.match(albums, /enum XDriveIOSNativeAlbumSortOrder: String, CaseIterable, Identifiable/)
+  assert.match(albums, /case newest, oldest/)
+  assert.match(albums, /var ascending: Bool \{ self == \.oldest \}/)
+  assert.match(reader, /sortOrder: XDriveIOSNativeAlbumSortOrder = \.newest/)
+  assert.match(reader, /NSSortDescriptor\(key: "creationDate", ascending: sortOrder\.ascending\)/)
+  assert.doesNotMatch(reader, /NSSortDescriptor\(key: "modificationDate"/)
+  assert.match(wall, /@State private var sortOrder: XDriveIOSNativeAlbumSortOrder = \.newest/)
+  assert.match(wall, /Section\("拍摄时间顺序"\)/)
+  assert.match(wall, /ForEach\(XDriveIOSNativeAlbumSortOrder\.allCases\)/)
+  assert.match(wall, /native-ios-album-sort-order/)
+  assert.match(wall, /sortOrder: sortOrder, selectionMode: selectionMode/)
+  assert.match(wall, /onCrossPage: \{ oldPage, anchor, direction in[\s\S]*?adjacentReader\.open\(album, sortOrder: sortOrder\)/)
+  assert.match(wall, /let verifier = XDriveIOSNativeAlbumPageReader\(\)[\s\S]*verifier\.open\(album, sortOrder: sortOrder\)/)
+  assert.match(wall, /let count = try await next\.open\(album, sortOrder: sortOrder\)/)
+  assert.match(wall, /\.onChange\(of: sortOrder\) \{ _ in[\s\S]*selectionMode = false\s*selectedCandidates\.removeAll\(\)\s*clearViewerTileAnchor\(\)\s*savedOffset = 0\s*reload\(\)/)
+  assert.match(albums, /XDriveIOSNativeAlbumVirtualPage: View \{[\s\S]*?let sortOrder: XDriveIOSNativeAlbumSortOrder/)
+  assert.match(albums, /\.task\(id: "\\\(generation\)-\\\(album\.collectionIdentifier\)-\\\(offset\)-\\\(sortOrder\.rawValue\)"\)/)
+  assert.doesNotMatch(wall, /Button\("上一页"\)|Button\("下一页"\)/)
 })
