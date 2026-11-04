@@ -107,8 +107,8 @@ test('only numeric ranges persist while every visible search window rereads and 
   assert.match(model, /let request = generation/)
   assert.match(model, /task\?\.cancel\(\)/)
   assert.doesNotMatch(model, /@Published.*\[XDrivePhotoKitScanCandidate\]/)
-  assert.match(windowView, /\.task\(id: "\\\(generation\)-\\\(window\.startSlot\)-\\\(query\)"\)/)
-  assert.match(windowView, /\.read\(query: query, startingAt: window\.startSlot\)/)
+  assert.match(windowView, /\.task\(id: "\\\(generation\)-\\\(window\.startSlot\)-\\\(query\)-\\\(sortOrder\.rawValue\)"\)/)
+  assert.match(windowView, /\.read\(query: query, startingAt: window\.startSlot, sortOrder: sortOrder\)/)
   assert.match(windowView, /fresh\.nextSlot == window\.nextSlot/)
   assert.match(windowView, /fresh\.totalAuthorizedSlots == window\.totalAuthorizedSlots/)
   assert.match(windowView, /fresh\.items\.count == window\.matchCount/)
@@ -117,3 +117,38 @@ test('only numeric ranges persist while every visible search window rereads and 
   assert.match(view, /model\.invalidate\(\)/)
   assert.doesNotMatch(model + windowView, /URLSession|UploadSession|requestImageData|UserDefaults/)
 })
+
+
+test('capture-date order changes the same bounded PhotoKit reader and invalidates prior search windows', () => {
+  const model = reader.slice(
+    reader.indexOf('@MainActor\nprivate final class XDriveIOSNativePhotoMetadataSearchModel'),
+    reader.indexOf('private final class XDriveIOSNativePhotoSearchChangeMonitor:')
+  )
+  const windowView = reader.slice(
+    reader.indexOf('private struct XDriveIOSNativePhotoSearchWindowView: View'),
+    reader.indexOf('private struct XDriveIOSNativePhotoSearchSelection: Identifiable')
+  )
+  assert.match(reader, /enum XDriveIOSNativePhotoSearchSortOrder: String, CaseIterable, Identifiable/)
+  assert.match(reader, /case newest, oldest/)
+  assert.match(reader, /var ascending: Bool \{ self == \.oldest \}/)
+  assert.match(scanner, /sortOrder: XDriveIOSNativePhotoSearchSortOrder = \.newest/)
+  assert.match(scanner, /NSSortDescriptor\(key: "creationDate", ascending: sortOrder\.ascending\)/)
+  assert.match(scanner, /NSSortDescriptor\(key: "modificationDate", ascending: sortOrder\.ascending\)/)
+  assert.match(model, /currentSortOrder: XDriveIOSNativePhotoSearchSortOrder = \.newest/)
+  assert.match(model, /let order = currentSortOrder/)
+  assert.match(model, /\.read\(query: term, startingAt: offset, sortOrder: order\)/)
+  assert.match(model, /self\.currentSortOrder == order/)
+  assert.match(windowView, /let sortOrder: XDriveIOSNativePhotoSearchSortOrder/)
+  assert.match(windowView, /\.read\(query: query, startingAt: window\.startSlot, sortOrder: sortOrder\)/)
+  assert.match(windowView, /\.task\(id: "\\\(generation\)-\\\(window\.startSlot\)-\\\(query\)-\\\(sortOrder\.rawValue\)"\)/)
+  assert.match(view, /Picker\("按拍摄时间排序", selection: \$sortOrder\)/)
+  assert.match(view, /ForEach\(XDriveIOSNativePhotoSearchSortOrder\.allCases\)/)
+  assert.match(view, /native-ios-photo-search-capture-order/)
+  assert.match(view, /\.onChange\(of: sortOrder\) \{ _ in/)
+  assert.match(view, /visibleTailWindowID = nil\s*guard selected == nil, phase == \.active/)
+  assert.match(view, /model\.search\(acceptedQuery, sortOrder: sortOrder\)/)
+  assert.match(view, /sortOrder: sortOrder, generation: model\.generation/)
+  assert.match(view, /model\.search\(normalized, sortOrder: sortOrder\)/)
+  assert.match(model, /windows = \[\]/)
+  assert.doesNotMatch(scanner, /URLSession|UploadSession|requestAVAsset|UserDefaults/)
+});
