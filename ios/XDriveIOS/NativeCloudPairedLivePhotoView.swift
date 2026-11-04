@@ -37,6 +37,27 @@ struct XDriveIOSNativeCloudPairedLivePhotoView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
+    /// Live playback should not be limited to the old fixed 1800px still
+    /// when the same already-verified original decoded more pixels. Use only
+    /// available placeholder dimensions and cap the native Photos request:
+    /// no extra fetch, original decode, or full-resolution memory spike.
+    private static func nativeTargetSize(for placeholder: UIImage) -> CGSize {
+        let pixelWidth = placeholder.cgImage?.width ??
+            Int(placeholder.size.width * placeholder.scale)
+        let pixelHeight = placeholder.cgImage?.height ??
+            Int(placeholder.size.height * placeholder.scale)
+        let maxPixel: CGFloat = 3072
+        let width = CGFloat(max(1, pixelWidth))
+        let height = CGFloat(max(1, pixelHeight))
+        // Scale both axes together. Clamping each axis independently would
+        // squash landscape Live Photos into a different aspect ratio.
+        let scale = min(1, maxPixel / max(width, height))
+        return CGSize(
+            width: max(1, width * scale),
+            height: max(1, height * scale)
+        )
+    }
+
     func makeUIView(context: Context) -> PHLivePhotoView {
         let view = PHLivePhotoView()
         view.backgroundColor = .clear
@@ -50,7 +71,7 @@ struct XDriveIOSNativeCloudPairedLivePhotoView: UIViewRepresentable {
         coordinator.requestID = PHLivePhoto.request(
             withResourceFileURLs: [files.stillURL, files.motionURL],
             placeholderImage: placeholder,
-            targetSize: CGSize(width: 1800, height: 1800),
+            targetSize: Self.nativeTargetSize(for: placeholder),
             contentMode: .aspectFit
         ) { [weak coordinator] photo, info in
             Task { @MainActor in
