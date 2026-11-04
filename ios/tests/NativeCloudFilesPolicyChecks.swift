@@ -74,6 +74,36 @@ struct XDriveIOSNativeFilesPageChecks {
                 "reject invalid kind parameter")
         require(XDriveIOSNativeFilesPagePolicy.searchKindLabel("image") == "图片",
                 "localized kind label")
+        var structured = XDriveIOSNativeFilesSearchFilterState()
+        structured.kind = "image"
+        structured.modifiedFrom = "2026-11-01T00:00:00Z"
+        structured.minSize = 0
+        structured.maxSize = (1 << 20) - 1
+        require(XDriveIOSNativeFilesPagePolicy.validSearchFilters(structured),
+                "valid Server date and size filters")
+        structured.modifiedTo = "2026-11-02T00:00:00.000Z"
+        require(XDriveIOSNativeFilesPagePolicy.validSearchFilters(structured),
+                "valid fractional RFC3339 upper bound")
+        structured.modifiedFrom = "not-a-date"
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchFilters(structured),
+                "reject malformed modified_from")
+        structured.modifiedFrom = "2026-11-03T00:00:00Z"
+        structured.modifiedTo = "2026-11-02T00:00:00Z"
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchFilters(structured),
+                "reject reversed modified date range")
+        structured.modifiedTo = nil
+        structured.minSize = -1
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchFilters(structured),
+                "reject negative minimum size")
+        structured.minSize = 100
+        structured.maxSize = 99
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchFilters(structured),
+                "reject reversed size range")
+        structured.minSize = nil
+        structured.maxSize = nil
+        structured.kind = "unknown"
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchFilters(structured),
+                "reject unsupported kind with structured filters")
         require(XDriveIOSNativeFilesPagePolicy.validSearch(" hello "), "search string")
         require(!XDriveIOSNativeFilesPagePolicy.validSearch("a"), "reject single ASCII character")
         require(!XDriveIOSNativeFilesPagePolicy.validSearch("中"), "reject single Unicode scalar")

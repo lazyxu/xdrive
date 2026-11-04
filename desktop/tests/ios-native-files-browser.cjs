@@ -155,12 +155,30 @@ test('native Files full-library search debounces valid keyboard drafts and cance
 test('native Files kind filter matches PWA Server semantics on all 64-item windows', () => {
   assert.match(page, /static func validSearchKind\(_ kind: String\) -> Bool/);
   assert.match(page, /"folder": "文件夹", "file": "全部文件"/);
-  assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearchKind\(kind\)/);
-  assert.match(view, /if kind != "all" \{\s*queryItems\.append\(URLQueryItem\(name: "kind", value: kind\)\)/);
+  assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearchFilters\(filters\)/);
+  assert.match(view, /if filters\.kind != "all" \{\s*queryItems\.append\(URLQueryItem\(name: "kind", value: filters\.kind\)\)/);
   assert.match(source, /if \(filters\.kind\) params\.set\('kind', filters\.kind\)/);
-  assert.match(view, /query: activeQuery, kind: searchKind, sort: sort, order: order/g);
-  assert.match(view, /query, offset: requestOffset, sort: sort, order: order, kind: kind/);
+  assert.match(view, /query: activeQuery, filters: searchFilters, sort: sort, order: order/g);
+  assert.match(view, /query, offset: requestOffset, sort: sort, order: order, filters: filters/);
   assert.match(view, /native-ios-files-search-kind-filter/);
-  assert.match(view, /\.onChange\(of: searchKind\)[\s\S]*?reload\(resetOffset: true\)/);
-  assert.match(view, /activeQuery = ""\s*queryDraft = ""\s*searchKind = "all"/);
+  assert.match(view, /\.onChange\(of: searchFilters\)[\s\S]*?reload\(resetOffset: true\)/);
+  assert.match(view, /activeQuery = ""\s*queryDraft = ""\s*searchFilters = XDriveIOSNativeFilesSearchFilterState\(\)/);
+});
+
+test('native Files date and size filters use the complete Server search index on every range', () => {
+  assert.match(page, /struct XDriveIOSNativeFilesSearchFilterState: Equatable/);
+  assert.match(page, /static func validSearchFilters\(_ filters: XDriveIOSNativeFilesSearchFilterState\) -> Bool/);
+  assert.match(view, /URLQueryItem\(name: "modified_from", value: modifiedFrom\)/);
+  assert.match(view, /URLQueryItem\(name: "modified_to", value: modifiedTo\)/);
+  assert.match(view, /URLQueryItem\(name: "min_size", value: String\(minSize\)\)/);
+  assert.match(view, /URLQueryItem\(name: "max_size", value: String\(maxSize\)\)/);
+  assert.match(view, /query: activeQuery, filters: searchFilters, sort: sort, order: order/g);
+  assert.match(view, /query, offset: requestOffset, sort: sort, order: order, filters: filters/);
+  assert.match(view, /Button\("最近 7 天"\)/);
+  assert.match(view, /Button\("最近 30 天"\)/);
+  assert.match(view, /Button\("1–100 MiB"\)/);
+  assert.match(view, /Button\("100 MiB–1 GiB"\)/);
+  assert.match(view, /\.onChange\(of: searchFilters\)[\s\S]*?reload\(resetOffset: true\)/);
+  assert.match(view, /native-ios-files-search-date-filter/);
+  assert.match(view, /native-ios-files-search-size-filter/);
 });
