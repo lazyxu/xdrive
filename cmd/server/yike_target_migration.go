@@ -18,6 +18,8 @@ const (
 	yikeTargetConnectorName  = "一刻相册"
 )
 
+const legacyYikeTargetMigrationPauseReason = "一刻相册旧目标迁移已暂停：目录内容归属未核实、其他来源重叠、同步仍在运行或新位置冲突；原文件与分享保持原位，请核对后再迁移"
+
 var errLegacyYikeTargetMigrationBlocked = errors.New("legacy Yike target migration blocked")
 
 func migrateLegacyYikeTargets(db *gorm.DB) error {
@@ -74,6 +76,12 @@ func pauseBlockedLegacyYikeSourceCAS(db *gorm.DB, attempted meta.Source) error {
 	if db == nil || attempted.ID == 0 || attempted.OwnerID == 0 {
 		return fmt.Errorf("invalid legacy Yike migration pause snapshot")
 	}
+	// Restarting against the same blocked Source should not churn its
+	// revision or invalidate unrelated Source history every time.
+	if attempted.Status == meta.SourceStatusPaused &&
+		attempted.LastError == legacyYikeTargetMigrationPauseReason {
+		return nil
+	}
 	query := db.Model(&meta.Source{}).
 		Where("id = ? AND owner_id = ? AND revision = ? AND status = ?",
 			attempted.ID, attempted.OwnerID, attempted.Revision, attempted.Status)
@@ -84,7 +92,7 @@ func pauseBlockedLegacyYikeSourceCAS(db *gorm.DB, attempted meta.Source) error {
 	}
 	return query.Updates(map[string]any{
 		"status":     meta.SourceStatusPaused,
-		"last_error": "一刻相册旧目标迁移已暂停：目录内容归属未核实、其他来源重叠、同步仍在运行或新位置冲突；原文件与分享保持原位，请核对后再迁移",
+		"last_error": legacyYikeTargetMigrationPauseReason,
 		"revision":   gorm.Expr("revision + 1"),
 		"updated_at": time.Now().UTC(),
 	}).Error

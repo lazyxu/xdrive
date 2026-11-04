@@ -80,6 +80,20 @@ func TestBlockedLegacyYikePauseCASRequiresExactSourceSnapshot(t *testing.T) {
 					afterRetry.LastError != actual.LastError {
 					t.Fatalf("stale retry consumed another revision: %+v", afterRetry)
 				}
+				// A second full startup reads the CURRENT paused snapshot.
+				// Keeping the same actionable migration blocker must be an
+				// idempotent no-op rather than another revision bump.
+				if err := pauseBlockedLegacyYikeSourceCAS(db, afterRetry); err != nil {
+					t.Fatal(err)
+				}
+				var nextStartup meta.Source
+				if err := db.First(&nextStartup, source.ID).Error; err != nil {
+					t.Fatal(err)
+				}
+				if nextStartup.Revision != afterRetry.Revision ||
+					nextStartup.LastError != afterRetry.LastError {
+					t.Fatalf("second startup churned already paused Source: %+v", nextStartup)
+				}
 			case "newer-revision":
 				if actual.Revision != 2 || actual.Status != meta.SourceStatusActive ||
 					actual.Name != "newer source config" || actual.LastError != "" {
