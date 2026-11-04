@@ -38,7 +38,7 @@ private final class XDriveIOSNativeAlbumChangeMonitor: NSObject, ObservableObjec
 /// Per-album chronological order. PhotoKit does not expose a reliable
 /// public "date added to library" key; use the actual capture date only.
 /// Every album reader (wall, Viewer and mutation recheck) shares this order.
-private enum XDriveIOSNativeAlbumSortOrder: String, CaseIterable, Identifiable {
+enum XDriveIOSNativeAlbumSortOrder: String, CaseIterable, Identifiable {
     case newest, oldest
     var id: String { rawValue }
     var title: String {

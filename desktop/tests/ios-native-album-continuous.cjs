@@ -110,7 +110,7 @@ test('album capture-date sort keeps all 64-slot reads, Viewer and writes on the 
     albums.indexOf('struct XDriveIOSNativeAlbumContentsScreen: View'),
     albums.indexOf('/// Photos-first list of local smart/user albums.')
   )
-  assert.match(albums, /private enum XDriveIOSNativeAlbumSortOrder: String, CaseIterable, Identifiable/)
+  assert.match(albums, /enum XDriveIOSNativeAlbumSortOrder: String, CaseIterable, Identifiable/)
   assert.match(albums, /case newest, oldest/)
   assert.match(albums, /var ascending: Bool \{ self == \.oldest \}/)
   assert.match(reader, /sortOrder: XDriveIOSNativeAlbumSortOrder = \.newest/)
