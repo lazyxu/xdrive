@@ -115,7 +115,7 @@ test('native GPS find-next skips only a bounded PhotoKit snapshot, not 100k asse
 test('full-library GPS map opts in to a transient bounded PhotoKit snapshot', () => {
   assert.match(map, /Picker\("本机地图扫描范围", selection: \$mapScope\)/)
   assert.match(map, /case page, library/)
-  assert.match(map, /Button\(globalComplete \? "重新扫描已授权图库位置" : "扫描已授权图库位置"\)/)
+  assert.match(map, /if !globalComplete && !busy \{[\s\S]*?Button\("扫描已授权图库位置"\) \{ scanFullLibrary\(\) \}/)
   assert.match(map, /private func scanFullLibrary\([\s\S]*?viewport: XDriveIOSNativeLocalMapViewport\? = nil[\s\S]*?worker\.start\(atOffset: 0\)/)
   assert.match(map, /while scanned < total \{[\s\S]*?worker\.nextLocatedPage\(\)/)
   assert.match(map, /XDriveIOSNativePhotoMapPolicy\.validPage\([\s\S]*?next\.page\.startOffset == scanned/)
@@ -243,8 +243,8 @@ test('short landscape local map preserves controls and PhotoKit authority while 
   assert.match(map, /GeometryReader \{ viewport in[\s\S]*?XDriveIOSNativePhotoMapPolicy\.compactViewport\(/);
   assert.match(map, /accessibilityText: dynamicTypeSize\.isAccessibilitySize/);
   assert.match(map, /VStack\(spacing: compactMap \? 4 : 8\)/);
-  assert.match(map, /if !compactMap \{\s*Text\(mapScope == \.page/);
-  assert.match(map, /if !compactMap \{\s*Text\("地图只使用本机授权照片/);
+  assert.match(map, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\(mapScope == \.page/);
+  assert.match(map, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\("地图只使用本机授权照片/);
   assert.match(map, /\.alert\("本机照片地图说明", isPresented: \$showingMapHelp\)/);
   assert.match(map, /\.accessibilityIdentifier\("native-ios-map-layout-help"\)/);
   assert.match(map, /Button\("查找下一批有定位照片"\)/);
@@ -354,4 +354,26 @@ test('verified native Viewer GPS opens the existing Gallery local map and nearby
   assert.match(dashboard, /ownerScopeKey == expectedRouteOwnerKey[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?localMapJump = jump\s+localMapScope = \.library\s+mapSource = \.local\s+gallerySource = \.map\s+tab = \.gallery/)
   assert.match(dashboard, /localMapJump = nil\s+mapSource = \.local/)
   assert.doesNotMatch(map, /WKWebView|URLSession\(|UploadSession|UserDefaults/)
+})
+
+
+test('PhotoKit full-library map is photo-first after scan, with manual scan and refine in the toolbar', () => {
+  const localMap = map.slice(map.indexOf('struct XDriveIOSNativeLocalPhotoMapScreen: View'))
+  const onScreen = localMap.slice(localMap.indexOf('var body: some View {'),
+                                 localMap.indexOf('.toolbar {'))
+  const fullLibrary = onScreen.slice(onScreen.indexOf('} else if mapScope == .library {'),
+                                     onScreen.indexOf('} else if let page {'))
+  assert.match(fullLibrary, /XDriveIOSMapKitPhotoPage\([\s\S]*?\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/)
+  assert.match(fullLibrary, /if !globalComplete && !busy \{\s*Button\("扫描已授权图库位置"\)/)
+  assert.doesNotMatch(fullLibrary, /Button\("重新扫描已授权图库位置"\)|Button\("细化当前视窗的定位照片"\)|Button\("还原已授权全库概览"\)/)
+  assert.match(localMap, /\.toolbar \{\s*if mapScope == \.library && globalComplete \{\s*ToolbarItem\(placement: \.navigationBarTrailing\) \{\s*Menu \{/)
+  assert.match(localMap, /Button\("重新扫描已授权图库位置"\) \{ scanFullLibrary\(\) \}[\s\S]*?\.disabled\(busy\)/)
+  assert.match(localMap, /Button\("细化当前视窗的定位照片"\) \{[\s\S]*?XDriveIOSNativeLocalMapSpatialPolicy\.viewportBounds\([\s\S]*?scanFullLibrary\(viewport: view\)/)
+  assert.match(localMap, /Button\("还原已授权全库概览"\) \{ scanFullLibrary\(\) \}/)
+  assert.match(localMap, /Label\("地图操作", systemImage: "ellipsis.circle"\)/)
+  assert.match(localMap, /accessibilityIdentifier\("native-ios-local-map-actions"\)/)
+  assert.match(localMap, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\(mapScope == \.page/)
+  assert.match(localMap, /\.font\(\.caption\)\.monospacedDigit\(\)\.lineLimit\(1\)\s*\.accessibilityIdentifier\("native-ios-map-full-library-summary"\)/)
+  assert.match(localMap, /Button\(focused \? "显示底部导航" : "专注地图"\)/)
+  assert.match(localMap, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?clearReturnCamera\(\)\s*invalidate\(\)/)
 })
