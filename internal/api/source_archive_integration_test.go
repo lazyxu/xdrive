@@ -111,6 +111,12 @@ func TestSourceArchiveRetainsHistorySharesCASAndRestoresPaused(t *testing.T) {
 	if !found {
 		t.Fatal("archived Source cannot be recovered from owner list")
 	}
+	// Credential refresh can auto-activate a Yike/Synology Pull Source in
+	// older code; archived status must never be cleared through these APIs.
+	request(t, router, http.MethodDelete, url+"/credential", token, nil, http.StatusConflict)
+	requestWithHeaders(t, router, http.MethodPut, url+"/connector-config", token,
+		strings.NewReader(`{"payload":{"roots":["/photos"]}}`),
+		http.StatusConflict, map[string]string{"If-Match": `"1"`})
 	request(t, router, http.MethodPost, url+"/trigger", token, nil, http.StatusConflict)
 	requestWithHeaders(t, router, http.MethodPatch, url, token, strings.NewReader(`{"name":"altered"}`),
 		http.StatusConflict, map[string]string{"If-Match": `"2"`})
