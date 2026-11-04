@@ -98,6 +98,17 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 		!errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("ordinary Owner gained SourceRun Finalize rights: %v", err)
 	}
+	// Cancellation revokes a still-signed SourceRun writer before the JWT
+	// expires, including Finalize on an already prepared UploadSession.
+	cancelled := time.Now().UTC()
+	if err := db.Model(&meta.SyncRun{}).Where("id = ?", runID).
+		Update("cancel_requested_at", &cancelled).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, scoped, session, child.ID);
+		!errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("cancelled SourceRun still finalized a managed upload: %v", err)
+	}
 	if err := db.Model(&meta.SyncRun{}).Where("id = ?", runID).
 		Update("status", meta.SyncRunStatusCompleted).Error; err != nil {
 		t.Fatal(err)
