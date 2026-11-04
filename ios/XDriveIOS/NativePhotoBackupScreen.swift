@@ -45,6 +45,27 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @State private var autoConsentAllowICloud = false
     @State private var resumeConsentOwner: XDriveNativeOwnerRoot?
     @State private var consentError: String?
+    // Focused Backup is explicit foreground-only work. The display lease is
+    // local to this visible screen and never authorizes an upload or BG task.
+    @State private var focusedDimmed = false
+    @State private var focusedWakeCounter = 0
+    @State private var previousIdleTimerDisabled: Bool?
+
+    private var focusedPresentationActive: Bool {
+        controller.busy && (controller.focusedSummary?.totalWindows ?? 0) > 0 &&
+            phase == .active && login.owner != nil
+    }
+
+    private func updateFocusedIdleTimer(active: Bool) {
+        if active {
+            guard previousIdleTimerDisabled == nil else { return }
+            previousIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
+            UIApplication.shared.isIdleTimerDisabled = true
+        } else if let previousIdleTimerDisabled {
+            UIApplication.shared.isIdleTimerDisabled = previousIdleTimerDisabled
+            self.previousIdleTimerDisabled = nil
+        }
+    }
 
     var body: some View {
         GeometryReader { viewport in
@@ -69,6 +90,58 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
                 .accessibilityIdentifier("native-ios-backup-portrait-form")
             }
+        }
+        // Synology-style focused display: dark, not locked. A tap wakes the
+        // native status screen without cancelling or restarting the uploader.
+        .overlay {
+            if focusedPresentationActive && focusedDimmed {
+                Button {
+                    focusedDimmed = false
+                    focusedWakeCounter &+= 1
+                } label: {
+                    ZStack {
+                        Color.black.ignoresSafeArea()
+                        VStack(spacing: 16) {
+                            Image(systemName: "moon.stars.fill")
+                                .font(.title2)
+                            Text("集中备份正在运行")
+                                .font(.headline)
+                            if let focused = controller.focusedSummary {
+                                Text("已扫描 \(focused.completedWindows)/\(focused.totalWindows) 段")
+                                Text("本次确认新增 \(focused.confirmedNew) 个原件")
+                            }
+                            Text("保持 App 在前台 · 轻点屏幕查看进度或停止")
+                                .font(.footnote)
+                                .foregroundStyle(.white.opacity(0.72))
+                        }
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white)
+                        .padding(24)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("唤醒集中备份显示")
+                .accessibilityHint("继续备份并显示详细进度和停止按钮")
+                .accessibilityIdentifier("native-ios-photos-focused-dim-overlay")
+            }
+        }
+        .task(id: "\(focusedPresentationActive)-\(focusedWakeCounter)") {
+            focusedDimmed = false
+            guard focusedPresentationActive else { return }
+            // A lifecycle-cancellable wait; no retained timer or BG writer.
+            do {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled && focusedPresentationActive else { return }
+            focusedDimmed = true
+        }
+        .onChange(of: focusedPresentationActive) { active in
+            updateFocusedIdleTimer(active: active)
+            if !active { focusedDimmed = false }
         }
         .navigationTitle("相册备份")
         .confirmationDialog("确认开始上传已授权的照片/视频/Live 原件？",
@@ -260,8 +333,12 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             syncSavedAutomaticSettings()
             receipts.refresh(login: login)
             background.refresh(login: login)
+            updateFocusedIdleTimer(active: focusedPresentationActive)
         }
         .onDisappear {
+            // Restore the exact prior global idle timer setting on navigation.
+            updateFocusedIdleTimer(active: false)
+            focusedDimmed = false
             originalProof.cancel()
             selectedOriginalIdentifier = nil
             selectedOriginalToVerify = nil
@@ -411,6 +488,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                           (photoAuthorization != .authorized && photoAuthorization != .limited))
                 .accessibilityIdentifier("native-ios-photos-focused-start")
                 Text("适用于首次大量备份：连续处理已授权的分段，每段最多新增 20 个原件。停止或重启后可从已完整扫描的分段继续，但必须重新验证当前账户、相册版本、授权范围和 iCloud 设置；不确定收据仍须先核对。扫描进度不代表全部云端原件已备份。")
+                Text("本页面运行集中备份时暂时阻止自动锁屏，约 10 秒后进入深色专注显示；轻点恢复，离开页面、进入后台或任务停止即恢复原有锁屏设置。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-photos-focused-display-guidance")
                     .font(.caption).foregroundStyle(.secondary)
                 if let focused = controller.focusedSummary {
                     if focused.resumedFromWindow > 0 {
