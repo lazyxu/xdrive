@@ -782,6 +782,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     // Parent-owned route hints; all PhotoKit GPS/thumbnail data stays transient.
     @Binding var mapScope: XDriveIOSNativeLocalMapScope
     @Binding var offset: Int
+    var cameraOnEntry: MKCoordinateRegion? = nil
+    var onLibraryCameraChange: ((MKCoordinateRegion?) -> Void)? = nil
     var onFocusChange: ((Bool) -> Void)?
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -933,6 +935,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         onCamera: { current in
                             guard mapScope == .library, globalComplete else { return }
                             globalCamera = current
+                            onLibraryCameraChange?(current)
                             globalCameraMoving = false
                             scheduleAutomaticRefinement(current)
                         },
@@ -1138,27 +1141,36 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         }
         .onAppear {
             authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            if authorization != .authorized && authorization != .limited {
+                onLibraryCameraChange?(nil)
+            }
             changes.start()
             if focusOnRequestedPhotoLocation() { return }
             if mapScope == .page, page == nil, !busy, phase == .active {
                 refresh(at: offset)
             } else if mapScope == .library && !globalComplete && !busy &&
                 phase == .active && (authorization == .authorized || authorization == .limited) {
-                // One initial bounded PhotoKit metadata scan per live map.
-                // Do not request iCloud originals or retain all asset IDs.
-                scanFullLibrary()
+                // First re-entry rescans current PhotoKit authority; reuse
+                // only the parent's transient camera, never old cell IDs.
+                if let cameraOnEntry {
+                    scanFullLibrary(returningCamera: cameraOnEntry)
+                } else {
+                    scanFullLibrary()
+                }
             }
         }
         .onChange(of: incomingMapJump?.id) { _ in
             _ = focusOnRequestedPhotoLocation()
         }
         .onChange(of: mapScope) { next in
+            if next == .page { onLibraryCameraChange?(nil) }
             clearReturnCamera()
             invalidate()
             if next == .page && phase == .active { refresh(at: offset) }
             if next == .library && phase == .active { scanFullLibrary() }
         }
         .onChange(of: changes.revision) { _ in
+            onLibraryCameraChange?(nil)
             clearReturnCamera()
             invalidate()
             error = "照片库已改变，旧地图已经清除；请刷新。"
@@ -1171,6 +1183,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 else { scanFullLibrary() } // A new PhotoKit generation must re-scan.
             } else {
                 changes.stop()
+                onLibraryCameraChange?(nil)
                 clearReturnCamera()
                 invalidate()
             }
@@ -1265,8 +1278,14 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
 
     private func scanFullLibrary(
         viewport: XDriveIOSNativeLocalMapViewport? = nil,
-        preserveCurrentMap: Bool = false
+        preserveCurrentMap: Bool = false,
+        returningCamera: MKCoordinateRegion? = nil
     ) {
+        // Manual overview/re-scan discards the remembered camera; only
+        // a new, authorized source entry may supply its prior region.
+        if viewport == nil && returningCamera == nil {
+            onLibraryCameraChange?(nil)
+        }
         authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         clearReturnCamera()
         // A new region scan must preserve its native camera on repaint, but
@@ -1281,6 +1300,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         } else {
             invalidate()
             globalCamera = restoreCamera
+            if viewport == nil, let returningCamera {
+                globalCamera = returningCamera
+            }
         }
         guard mapScope == .library, phase == .active,
               authorization == .authorized || authorization == .limited else { return }
