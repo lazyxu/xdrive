@@ -500,15 +500,22 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		lastOperation != opsBeforeSchedule || lastVersion != versionsBeforeSchedule {
 		t.Fatal("offline discovery wrote CAS chunks, finalized an upload or changed SQL receipts")
 	}
-	// Existing saved policy remains due after the transient Server failure.
+	// A stopped Backup-only Agent loses its in-memory discovery and attempt
+	// state. A fresh owning controller must still catch up from the same
+	// persisted Source plan and checkpoint after the Server reconnects.
 	// Automatic recovery, not a second manual DSM SourceRun, must commit B
 	// and the new nested original through the ordinary operation queue.
-	if err := scheduler.localPushAutoTick(context.Background(), due, attempts); err != nil {
-		t.Fatalf("reconnected due NAS scheduler did not resume: %v", err)
+	restartedScheduler := &agentController{ctx: context.Background()}
+	restartedAttempts := make(map[string]time.Time)
+	if err := restartedScheduler.localPushAutoTick(context.Background(), due, restartedAttempts); err != nil {
+		t.Fatalf("restarted due NAS scheduler did not resume: %v", err)
 	}
-	scheduler.localCommonBatchJobMu.Lock()
-	job := scheduler.localCommonBatchJob
-	scheduler.localCommonBatchJobMu.Unlock()
+	restartedScheduler.localCommonBatchJobMu.Lock()
+	job := restartedScheduler.localCommonBatchJob
+	restartedScheduler.localCommonBatchJobMu.Unlock()
+	if len(attempts) != 0 || len(restartedAttempts) != 1 {
+		t.Fatal("offline discovery consumed admission or restarted Agent did not record its due admission")
+	}
 	if job == nil {
 		t.Fatal("due native Source did not enter the original owning Agent")
 	}
@@ -584,7 +591,7 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	}
 	// A repeated wake-up with the same attempt must respect the existing
 	// durable cooldown and never fabricate a second physical upload.
-	if err := scheduler.localPushAutoTick(context.Background(), due.Add(5*time.Second), attempts); err != nil {
+	if err := restartedScheduler.localPushAutoTick(context.Background(), due.Add(5*time.Second), restartedAttempts); err != nil {
 		t.Fatalf("repeated owning scheduler tick failed: %v", err)
 	}
 	assertCounters()
