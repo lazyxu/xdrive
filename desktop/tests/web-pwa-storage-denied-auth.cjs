@@ -32,6 +32,9 @@ function initializer(ast, name) {
   return result
 }
 const sessionCode = transpile([
+  // The actual initialSession now checks the dedicated Electron map preload.
+  // Preserve that helper instead of executing a partial/undefined AST fixture.
+  functionDeclaration(appAST, 'xDriveTrustedDesktopPlacesBridge'),
   functionDeclaration(appAST, 'initialSession'),
   'exports.initialSession = initialSession;',
   'exports.persistSession = ' + initializer(appAST, 'persistSession') + ';',
@@ -40,7 +43,9 @@ const sessionCode = transpile([
 const rootCode = transpile(functionDeclaration(mainAST, 'Root') + '\nexports.Root = Root;')
 
 function createHarness(storage, denyGetter = false) {
-  const win = {}
+  // A normal HTTPS PWA has no trusted Electron map preload. Keep the
+  // realistic origin so these tests prove it never inherits guest auth.
+  const win = { location: { protocol: 'https:', pathname: '/', search: '' } }
   if (denyGetter) {
     Object.defineProperty(win, 'localStorage', { get() { throw new Error('SecurityError') } })
   } else {

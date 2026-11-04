@@ -124,7 +124,10 @@ test('HTTPS cookie restoration never reads an old localStorage Access/Refresh JW
     AUTH_STORAGE_KEYS: ['xdrive.access_token','xdrive.token','xdrive.refresh_token',
       'xdrive.access_expires_at','xdrive.username'],
   }
-  const env = { ...storage, ...keys, window: { location: { protocol: 'https:' } } }
+  const env = { ...storage, ...keys,
+    // Standalone HTTPS browser: no trusted Electron Places guest bridge.
+    xDriveTrustedDesktopPlacesBridge: () => null,
+    window: { location: { protocol: 'https:' } } }
   const exports = {}
   new Function('exports', ...Object.keys(env), transpiled)(exports, ...Object.values(env))
   assert.deepEqual(exports.run(), {
@@ -353,6 +356,8 @@ function cookieBootstrapFixture({ tombstone = false } = {}) {
     constructor(status, message) { super(message); this.status = status }
   }
   const vars = {
+    // Cookie login fixture covers the browser path, not the trusted map guest.
+    xDriveTrustedDesktopPlacesBridge: () => null,
     cookieBootPending: true, authEpochRef: epoch,
     COOKIE_LOGOUT_PENDING_KEY: 'xdrive.auth_cookie_logout_pending',
     COOKIE_LOGOUT_OWNER_KEY: 'xdrive.auth_cookie_logout_owner',

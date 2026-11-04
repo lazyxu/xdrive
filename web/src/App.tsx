@@ -193,6 +193,24 @@ const COOKIE_LOGOUT_PENDING_KEY = 'xdrive.auth_cookie_logout_pending'
 const COOKIE_LOGOUT_OWNER_KEY = 'xdrive.auth_cookie_logout_owner'
 // Share one rotation across StrictMode effect replays on the same browser page.
 let browserCookieStartup: Promise<AuthResult> | null = null
+// Electron's one-purpose HTTPS map guest is preauthenticated by Main with a
+// memory-only HttpOnly cookie. StrictMode cannot rotate it twice on boot.
+let desktopPlacesCookieStartup: Promise<{owner:string;result:AuthResult}> | null = null
+
+function xDriveTrustedDesktopPlacesBridge():
+  {expectedOwner:()=>Promise<string|null>} | null {
+  if (typeof window === 'undefined' || window.location.protocol !== 'https:' ||
+      (window.location.pathname !== '/' && window.location.pathname !== '/index.html')) return null
+  const params = new URLSearchParams(window.location.search)
+  if (params.getAll('desktop_places_embed').length !== 1 ||
+      params.get('desktop_places_embed') !== '1') return null
+  // Only Electron's approved, sandboxed guest preload exposes this bridge.
+  // A query parameter alone must never enable browser-session restoration.
+  const bridge = (window as Window & {xdrivePlacesEmbedBridge?:{
+    expectedOwner:()=>Promise<string|null>
+  }}).xdrivePlacesEmbedBridge
+  return typeof bridge?.expectedOwner === 'function' ? bridge : null
+}
 function broadcastXDriveAuthEvent(type: 'logout' | 'login', username = ''): void {
   if (typeof BroadcastChannel === 'undefined') return
   try {
@@ -232,6 +250,8 @@ type ConfirmAction = {
 }
 
 function initialSession(): AuthSession {
+  if (xDriveTrustedDesktopPlacesBridge())
+    return {accessToken:'', refreshToken:'', accessExpiresAt:0, browserSession:true}
   // Legacy localStorage credentials from an HTTP Origin may not be restored
   // after HTTPS-only cutover. Remove them before any authenticated request.
   if (typeof window !== 'undefined' && window.location.protocol !== 'https:') {
@@ -355,8 +375,9 @@ function App({
   const [logoutInProgress, setLogoutInProgress] = useState(false)
   const [cookieBootPending, setCookieBootPending] = useState(() =>
     typeof window !== 'undefined' && window.location.protocol === 'https:' &&
-    ((xDriveBrowserStorageRead(REMEMBER_LOGIN_KEY) !== 'false' &&
-      xDriveBrowserStorageRead(COOKIE_MODE_KEY) === 'cookie') ||
+    (Boolean(xDriveTrustedDesktopPlacesBridge()) ||
+      (xDriveBrowserStorageRead(REMEMBER_LOGIN_KEY) !== 'false' &&
+        xDriveBrowserStorageRead(COOKIE_MODE_KEY) === 'cookie') ||
       (xDriveBrowserStorageRead(COOKIE_LOGOUT_PENDING_KEY) ?? '').startsWith('1')))
   const transferApiRef = useRef<XDriveApi | null>(null)
   const authEpochRef = useRef(0)
@@ -517,6 +538,7 @@ function App({
     // Owner changes in this tab, or a logout/account switch from another tab,
     // must fence even an already-started Cookie bootstrap Promise.
     const bootstrapEpoch = authEpochRef.current
+    const desktopBridge = xDriveTrustedDesktopPlacesBridge()
     const logoutMarker = xDriveBrowserStorageRead(COOKIE_LOGOUT_PENDING_KEY) ?? ''
     const logoutPending = logoutMarker.startsWith('1')
     const logoutOwner = logoutPending ? xDriveBrowserStorageRead(COOKIE_LOGOUT_OWNER_KEY) : null
@@ -526,7 +548,27 @@ function App({
         ? logoutOwner ?? undefined
         : xDriveBrowserStorageRead(USER_KEY) ?? undefined,
     })
-    const work: Promise<void> = logoutPending
+    const work: Promise<void> = desktopBridge
+      ? (() => {
+          if (!desktopPlacesCookieStartup) {
+            desktopPlacesCookieStartup = desktopBridge.expectedOwner().then(owner => {
+              if (!owner || owner.length > 128)
+                throw new ApiError(401, 'Desktop map Owner is unavailable')
+              // A verified Main-owned Owner, not a mutable Web storage hint.
+              return new XDriveApi({browserSession:true,username:owner})
+                .restoreBrowserSession().then(result => ({owner,result}))
+            })
+          }
+          return desktopPlacesCookieStartup
+        })().then(({owner,result}) => {
+          if (!active || bootstrapEpoch !== authEpochRef.current) return
+          if (!result.browser_session || result.username !== owner)
+            throw new ApiError(401, 'Desktop map Owner changed')
+          // Ephemeral WebView: no token, username or Cookie mode in storage.
+          persistSession(sessionFromAuth(result), false)
+          setUsername(result.username)
+        })
+      : logoutPending
       ? (bootstrap.hasBrowserOwner()
           ? bootstrap.logout().then(() => {
               if (!active || bootstrapEpoch !== authEpochRef.current ||
@@ -570,7 +612,9 @@ function App({
         })
     void work.catch((error: unknown) => {
       if (!active || bootstrapEpoch !== authEpochRef.current) return
-      if (logoutPending) {
+      if (desktopBridge) {
+        setAuthNotice('Desktop 地图临时浏览器会话验证失败。请从 Desktop 重试地图。')
+      } else if (logoutPending) {
         // Keep the tombstone until remote revocation actually succeeds.
         setAuthNotice('离线退出尚未完成服务器会话撤销，当前不会自动登录。')
       } else if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
@@ -675,6 +719,22 @@ function App({
       <XDriveAuthShell viewport decorated spacing="compact">
         <XDriveAuthPanel size="compact">
           <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="large" subtitle="正在验证已保存的登录会话…" />
+        </XDriveAuthPanel>
+      </XDriveAuthShell>
+    )
+  }
+
+  if (!session.accessToken && xDriveTrustedDesktopPlacesBridge()) {
+    // Never place a second full xDrive login form inside the Desktop map.
+    // No implicit switch to an unrestricted Owner when this session fails.
+    return (
+      <XDriveAuthShell viewport decorated spacing="compact">
+        <XDriveAuthPanel size="compact">
+          <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="large"
+            subtitle={authNotice || '正在等待 Desktop 地图会话验证…'} />
+          <Button onClick={() => window.location.reload()}>
+            重试地图会话
+          </Button>
         </XDriveAuthPanel>
       </XDriveAuthShell>
     )
