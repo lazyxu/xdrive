@@ -13,6 +13,7 @@ import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveSynologyBackupSourceSetup } from './SynologyBackupSourceSetup'
 import { XDriveSynologyBackupSourceProgress } from './SynologyBackupSourceProgress'
+import { XDriveSynologyBackupScheduleStatus } from './SynologyBackupScheduleStatus'
 import { XDriveStatusAlert } from './StatusAlert'
 
 type LocalHistory = {
@@ -210,6 +211,12 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
                         onSchedule={() => { if (isCurrentHost()) setScheduleID(item.source_id) }}
                       />
                       {expandedID === item.source_id && sameOwningClient ? (
+                        <XDriveSynologyBackupScheduleStatus
+                          key={'schedule:' + renderedHostEpoch + ':' + item.source_id}
+                          client={client} sourceID={item.source_id}
+                          refreshEpoch={historyRevision} />
+                      ) : null}
+                      {expandedID === item.source_id && sameOwningClient ? (
                         <XDriveSynologyBackupSourceProgress
                           key={renderedHostEpoch + ':' + item.source_id}
                           client={client} sourceID={item.source_id}
@@ -246,7 +253,9 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
             if (!isCurrentHost()) return
             setScheduleID(null)
             setNotice(message)
-            setRefreshID((n) => n + 1)
+            // Refresh the one expanded Source's saved plan and history. No
+            // NAS-wide list fan-out or collapse after a normal plan edit.
+            setHistoryRevision((n) => n + 1)
           }}
         />
       )}
