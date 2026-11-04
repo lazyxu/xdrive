@@ -84,7 +84,7 @@ assert.ok(!dsm.includes('pages: {') && !dsm.includes('<XDriveHomePage') &&
   'DSM provides domain ports and no independent page JSX')
 assert.ok(dsm.includes('const host = createXDriveSynologyHost()') &&
   dsm.includes('services: { ...host.services, notesPage: notesPort }') &&
-  dsm.includes('createXDriveDSMNotesPort(cgi, notesOwnerScope)') &&
+  dsm.includes('createXDriveDSMNotesPort(cgi, notesOwnerScope, notesImagesEnabled)') &&
   dsm.includes('showNotes: Boolean(notesPort)') &&
   dsmHost.includes('services: {') &&
   dsmHost.includes('createXDriveSynologyBackupLocalClient(cgi.href)') &&
