@@ -202,7 +202,11 @@ func sourceRunDTOForRead(run meta.SyncRun, source meta.Source) syncRunDTO {
 
 func (s *Server) listSources(c *gin.Context) {
 	var sources []meta.Source
-	if err := s.DB.Where("owner_id = ?", userID(c)).Order("lower(name) ASC, id ASC").Find(&sources).Error; err != nil {
+	query := s.DB.Where("owner_id = ?", userID(c))
+	if c.Query("include_archived") != "true" {
+		query = query.Where("status <> ?", meta.SourceStatusArchived)
+	}
+	if err := query.Order("lower(name) ASC, id ASC").Find(&sources).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list sources failed")
 		return
 	}
@@ -216,7 +220,11 @@ func (s *Server) listSources(c *gin.Context) {
 
 func (s *Server) listSourceOverview(c *gin.Context) {
 	var sources []meta.Source
-	if err := s.DB.Where("owner_id = ?", userID(c)).Order("lower(name) ASC, id ASC").Find(&sources).Error; err != nil {
+	query := s.DB.Where("owner_id = ?", userID(c))
+	if c.Query("include_archived") != "true" {
+		query = query.Where("status <> ?", meta.SourceStatusArchived)
+	}
+	if err := query.Order("lower(name) ASC, id ASC").Find(&sources).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list sources failed")
 		return
 	}
@@ -545,6 +553,9 @@ func (s *Server) updateSource(c *gin.Context) {
 		if current.Revision != expected {
 			return errRevisionConflict
 		}
+		if current.Status == meta.SourceStatusArchived {
+			return errSourceArchived
+		}
 		updates := map[string]any{}
 		resetMirrorEvidence := false
 		if req.Name != nil {
@@ -684,6 +695,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
+		case errors.Is(err, errSourceArchived):
+			fail(c, http.StatusConflict, "source is archived; restore it before editing")
 		case errors.Is(err, errSourceTargetNameConflict):
 			fail(c, http.StatusConflict, "managed target folder name already exists")
 		case errors.Is(err, errSourceTargetMigrationRequired):
@@ -823,6 +836,9 @@ func (s *Server) deleteSource(c *gin.Context) {
 		if source.Revision != expected {
 			return errRevisionConflict
 		}
+		if source.Status == meta.SourceStatusArchived {
+			return errSourceArchived
+		}
 		var activeRuns int64
 		if err := tx.Model(&meta.SyncRun{}).
 			Where("source_id = ? AND status = ?", source.ID, meta.SyncRunStatusRunning).
@@ -843,6 +859,8 @@ func (s *Server) deleteSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errSourceRunActive):
 			fail(c, http.StatusConflict, "source already has an active run")
+		case errors.Is(err, errSourceArchived):
+			fail(c, http.StatusConflict, "archived source must be restored before removal")
 		case errors.Is(err, errLocalSourceRemovalWouldDropHistory):
 			fail(c, http.StatusConflict, "local backup with history cannot be removed; archival support pending")
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
