@@ -27,9 +27,14 @@ struct XDriveIOSNativeFilesTrashRange: Decodable {
 /// No synthetic trash records or cross-page selection. A restored Node must
 /// be the exact same Node at its original parent, with a newer revision.
 enum XDriveIOSNativeFilesTrashPolicy {
-    static let sort = "updated"
-    static let order = "desc"
+    static let defaultSort = "name"
+    static let defaultOrder = "asc"
     static let pageSize = XDriveIOSNativeFilesPagePolicy.pageSize
+
+    static func validSortOrder(sort: String, order: String) -> Bool {
+        ["name", "updated", "size", "type"].contains(sort) &&
+            (order == "asc" || order == "desc")
+    }
 
     static func validDeleted(_ item: XDriveIOSNativeFilesTrashNode) -> Bool {
         item.id > 0 && item.parent_id != nil && item.revision > 0 &&
@@ -39,8 +44,11 @@ enum XDriveIOSNativeFilesTrashPolicy {
     }
 
     static func validRange(_ page: XDriveIOSNativeFilesTrashRange,
-                           offset: Int) -> Bool {
-        guard XDriveIOSNativeFilesPagePolicy.validOffset(offset),
+                           offset: Int,
+                           sort: String = XDriveIOSNativeFilesTrashPolicy.defaultSort,
+                           order: String = XDriveIOSNativeFilesTrashPolicy.defaultOrder) -> Bool {
+        guard validSortOrder(sort: sort, order: order),
+              XDriveIOSNativeFilesPagePolicy.validOffset(offset),
               page.offset == offset, page.limit == pageSize,
               page.sort == sort, page.order == order,
               page.total_count_included,
@@ -60,7 +68,9 @@ enum XDriveIOSNativeFilesTrashPolicy {
     /// A fresh mutation re-reads the *original* 64-item Server page by offset.
     static func validAppend(
         alreadyLoadedIDs: Set<UInt64>, alreadyLoadedCount: Int, total: Int,
-        next: XDriveIOSNativeFilesTrashRange
+        next: XDriveIOSNativeFilesTrashRange,
+        sort: String = XDriveIOSNativeFilesTrashPolicy.defaultSort,
+        order: String = XDriveIOSNativeFilesTrashPolicy.defaultOrder
     ) -> Bool {
         guard alreadyLoadedCount > 0,
               alreadyLoadedIDs.count == alreadyLoadedCount,
@@ -68,7 +78,7 @@ enum XDriveIOSNativeFilesTrashPolicy {
               XDriveIOSNativeFilesPagePolicy.validOffset(alreadyLoadedCount),
               next.offset == alreadyLoadedCount,
               next.total_count == total,
-              validRange(next, offset: alreadyLoadedCount),
+              validRange(next, offset: alreadyLoadedCount, sort: sort, order: order),
               !next.items.isEmpty,
               (next.items.count == pageSize ||
                alreadyLoadedCount + next.items.count == total),
