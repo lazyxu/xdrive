@@ -91,6 +91,10 @@ assert.ok(localPanel.includes('<XDriveSynologyBackupScheduleStatus'),
 assert.ok(localPanel.includes("key={'schedule:' + renderedHostEpoch + ':' + item.source_id}"),
   'DSM plan view must be remounted on owning Host/Source generation')
 assert.ok(!planSurface.includes('client.list('), 'Do not fan out schedule reads to all Sources')
+assert.ok(localPanel.includes('refreshEpoch={planRevision}'),
+  'history polling must not repeatedly reload the saved Source schedule')
+assert.ok(localPanel.includes('setPlanRevision((n) => n + 1)'),
+  'saved plans must re-read after owning Host schedule edits')
 const localActions = fs.readFileSync(path.join(root,
   'ui/shared/src/mui/DeviceBackupLocalPrimaryActions.tsx'), 'utf8')
 assert.ok(localActions.includes('手动增量备份'), 'shared Desktop/DSM manual action missing')
