@@ -71,6 +71,7 @@ func TestFileRecentTracksRealAccessWithLiveBreadcrumbsAndIsolation(t *testing.T)
 		&meta.File{},
 		&meta.AuditEvent{},
 		&meta.FileRecentAccess{},
+		&meta.FileRecentFolderAccess{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -133,6 +134,47 @@ func TestFileRecentTracksRealAccessWithLiveBreadcrumbsAndIsolation(t *testing.T)
 	}
 	if len(empty) != 0 {
 		t.Fatalf("initial recent=%+v", empty)
+	}
+
+	// Folder history is independent of old navigation touches and file opens.
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/file-recent-folders/%d", file.ID),
+		tokenA, strings.NewReader("{}"), http.StatusNotFound)
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/file-recent-folders/%d", rootA.ID),
+		tokenA, strings.NewReader("{}"), http.StatusNoContent)
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/file-recent-folders/%d", projects.ID),
+		tokenA, strings.NewReader("{}"), http.StatusOK)
+	res = request(t, router, http.MethodGet, "/api/v1/file-recent-folders?limit=8", tokenA, nil, http.StatusOK)
+	var working []fileRecentItemDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &working); err != nil {
+		t.Fatal(err)
+	}
+	if len(working) != 1 || working[0].Node.ID != projects.ID || working[0].Node.Type != meta.NodeTypeDir {
+		t.Fatalf("expected only confirmed folder, got %+v", working)
+	}
+	// The same folder is upserted; file Recents remain untouched.
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/file-recent-folders/%d", projects.ID),
+		tokenA, strings.NewReader("{}"), http.StatusOK)
+	res = request(t, router, http.MethodGet, "/api/v1/file-recent-folders", tokenA, nil, http.StatusOK)
+	if err := json.Unmarshal(res.Body.Bytes(), &working); err != nil {
+		t.Fatal(err)
+	}
+	if len(working) != 1 {
+		t.Fatalf("same folder inserted duplicate: %+v", working)
+	}
+	res = request(t, router, http.MethodGet, "/api/v1/file-recent", tokenA, nil, http.StatusOK)
+	if err := json.Unmarshal(res.Body.Bytes(), &empty); err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("folder event polluted file Recents: %+v", empty)
+	}
+	request(t, router, http.MethodDelete, "/api/v1/file-recent-folders", tokenA, nil, http.StatusNoContent)
+	res = request(t, router, http.MethodGet, "/api/v1/file-recent-folders", tokenA, nil, http.StatusOK)
+	if err := json.Unmarshal(res.Body.Bytes(), &working); err != nil {
+		t.Fatal(err)
+	}
+	if len(working) != 0 {
+		t.Fatalf("clear folder history failed: %+v", working)
 	}
 
 	request(

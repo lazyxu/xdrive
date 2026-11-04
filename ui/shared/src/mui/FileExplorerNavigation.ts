@@ -909,6 +909,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
       tabs: [...currentState.tabs, nextTab],
       activeTabID: id,
     }))
+    finishNavigation(nextCrumbs) // newly selected tab supersedes pending folder usage
     return true
   }
 

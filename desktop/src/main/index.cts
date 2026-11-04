@@ -6562,6 +6562,29 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudUnfavoriteFile(nodeID)
   }, false))
+  ipcMain.handle('agent:cloud-recent-folders', (event, limit: unknown, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudRecentItem[]>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'file-recent-folders')
+      const value = limit === undefined ? 8 : limit
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 50) {
+        throw new AgentIPCError('invalid_input', 0, 'Recent item limit must be between 1 and 50.')
+      }
+      return requireAgentClient().cloudFileRecentFolders(value, signal)
+    }), false))
+  ipcMain.handle('agent:cloud-recent-folders-touch', (_event, nodeID: unknown) => runAgentAction<AgentCloudRecentItem>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-recent-folders')
+    if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Node id is required.')
+    }
+    return requireAgentClient().cloudTouchFileRecentFolder(nodeID)
+  }, false))
+  ipcMain.handle('agent:cloud-recent-folders-clear', () => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-recent-folders')
+    return requireAgentClient().cloudClearFileRecentFolders()
+  }, false))
   ipcMain.handle('agent:cloud-recent', (event, limit: unknown, requestID: unknown = undefined) =>
     runAgentAction<AgentCloudRecentItem[]>(() => viewportRequests.run(event.sender, requestID, async signal => {
       const hello = await requireAgentLifecycle().ensureRunning()

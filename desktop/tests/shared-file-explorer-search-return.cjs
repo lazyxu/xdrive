@@ -624,6 +624,7 @@ function registerMutationSearchIntentCases() {
           actionBusyRef: { current: null }, actionGenerationRef: { current: 1 },
           setActionBusy: () => {}, fileOperationBusy: false, uploadBusy: false,
           onFeedback: () => {}, onError: error => { throw error },
+          recentFolderUsage: { confirm: () => Promise.resolve(true) },
           api: { rename: () => submission.promise },
           window: { xdriveDesktop: { agent: { cloudRename: () => submission.promise } } },
         }

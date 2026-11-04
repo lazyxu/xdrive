@@ -90,22 +90,16 @@ test('shared Recent controller refreshes live identity and silently records acce
   assert.equal(controller.includes('localStorage'), false, 'Recent must remain server-side')
 })
 
-test('only successful user navigation, explicit file open and Quick Look record Recent', () => {
-  assert.ok(navigation.includes('onAfterNavigate?: (crumbs: TCrumb[]) => void'), 'navigation access callback is missing')
-  assert.ok(navigation.includes('finishNavigation(nextCrumbs)'), 'navigateTo must record after load succeeds')
-  assert.ok(navigation.includes('finishNavigation(next)'), 'history navigation must record after load succeeds')
-  assert.ok(navigation.includes('finishNavigation(targetCrumbs)'), 'tab activation must record after load succeeds')
-
-  assert.ok(workspace.includes('onDirectoryAccess?: (nodeID: number)'), 'workspace directory access callback is missing')
-  assert.ok(workspace.includes('onFileAccess?: (nodeID: number)'), 'workspace file access callback is missing')
-  assert.ok(workspace.includes('if (target && nextCrumbs.length > 1) void onDirectoryAccess?.(target.id)'), 'root must not be recorded as Recent')
-  assert.ok(workspace.includes("if (item.kind === 'file') void onFileAccess?.(Number(item.id))"), 'explicit file open must record Recent')
-
-  assert.ok(explorer.includes('onPreviewItem?: (item: XDriveFileExplorerItem) => void'), 'Quick Look access callback is missing')
-  assert.ok(explorer.includes('onPreviewItem?.(item)'), 'opening Quick Look must record Recent')
-  assert.ok(explorer.includes('onPreviewItem?.(target)'), 'Quick Look previous/next must record Recent')
-
-  assert.equal(navigation.includes('onAfterNavigate?.()'), false, 'navigation callback must carry the actual target')
+test('successful navigation proposes a folder; file-open confirms its parent', () => {
+  assert.ok(navigation.includes('finishNavigation(nextCrumbs)'), 'navigation completion required')
+  assert.ok(navigation.includes('finishNavigation(next)'), 'back/forward must retain navigation semantics')
+  assert.ok(navigation.includes('finishNavigation(targetCrumbs)'), 'tab activation must retain navigation semantics')
+  assert.ok(workspace.includes('onDirectoryAccess?: (nodeID: number)'), 'folder candidate hook missing')
+  assert.ok(workspace.includes('onFileAccess?: (nodeID: number, parentID?: number)'), 'actual file parent hook missing')
+  assert.ok(workspace.includes('if (target && nextCrumbs.length > 1) void onDirectoryAccess?.(target.id)'), 'root must be excluded')
+  assert.ok(workspace.includes('node?.parent_id'), 'file open must target parent folder')
+  assert.ok(explorer.includes('onPreviewItem?.(item)'), 'Quick Look must be observed')
+  assert.ok(explorer.includes('onPreviewItem?.(target)'), 'Quick Look neighbor must be observed')
 })
 
 test('one shared navigation pane renders Recent above the lazy folder tree', () => {
@@ -121,31 +115,33 @@ test('one shared navigation pane renders Recent above the lazy folder tree', () 
   ]) assert.ok(pane.includes(token), 'shared Recent navigation UI missing: ' + token)
 })
 
-test('Web and Desktop share Recent state and keep only transport adapters local', () => {
+test('Web/Desktop show only confirmed working folders, not traversed ancestors or files', () => {
   for (const token of [
     'useXDriveFileExplorerRecent<Node>',
-    'loadItems: () => api.fileRecent(16)',
-    'touchItem: (nodeID) => api.touchFileRecent(nodeID)',
-    'clearItems: () => api.clearFileRecent()',
-    'onDirectoryAccess: (nodeID) => { void recent.record(nodeID) }',
-    'onFileAccess: (nodeID) => { void recent.record(nodeID) }',
-    'onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}',
+    'loadItems: () => api.fileRecentFolders(8)',
+    'touchItem: (nodeID) => api.touchFileRecentFolder(nodeID)',
+    'clearItems: () => api.clearFileRecentFolders()',
+    'useXDriveFileExplorerRecentFolderUsage({',
+    'recentFolderUsage.consider(nodeID)',
+    'recentFolderUsage.confirm(parentID)',
     'recentItems={recent.items}',
-  ]) assert.ok(webExplorer.includes(token), 'Web Recent adapter missing: ' + token)
+  ]) assert.ok(webExplorer.includes(token), 'Web folder usage missing: ' + token)
 
   for (const token of [
     'useXDriveFileExplorerRecent<AgentCloudNode>',
     'enabled: recentSupported',
-    'cloudFileRecent(16)',
-    'cloudTouchFileRecent(nodeID)',
-    'cloudClearFileRecent()',
-    'onDirectoryAccess: (nodeID) => { void recent.record(nodeID) }',
-    'onFileAccess: (nodeID) => { void recent.record(nodeID) }',
-    'onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}',
+    'cloudFileRecentFolders(8)',
+    'cloudTouchFileRecentFolder(nodeID)',
+    'cloudClearFileRecentFolders()',
+    'useXDriveFileExplorerRecentFolderUsage({',
+    'recentFolderUsage.consider(nodeID)',
+    'recentFolderUsage.confirm(parentID)',
     'recentItems={recent.items}',
-  ]) assert.ok(desktopExplorer.includes(token), 'Desktop Recent adapter missing: ' + token)
+  ]) assert.ok(desktopExplorer.includes(token), 'Desktop folder usage missing: ' + token)
 
-  assert.ok(desktopApp.includes("capabilities.includes('file-recent')"), 'Desktop must capability-gate Recent')
+  assert.ok(desktopApp.includes("capabilities.includes('file-recent-folders')"), 'Desktop requires current folder capability')
+  assert.equal(webExplorer.includes('void recent.record(nodeID)'), false, 'navigation must not touch old file Recents')
+  assert.equal(desktopExplorer.includes('void recent.record(nodeID)'), false, 'navigation must not touch old file Recents')
 })
 
 test('Recent crosses Server, Go client, Agent and Electron bridges', () => {
@@ -193,4 +189,61 @@ test('Recent crosses Server, Go client, Agent and Electron bridges', () => {
     'touchFileRecent(nodeID: number)',
     'clearFileRecent()',
   ]) assert.ok(webApi.includes(token), 'Web Recent REST adapter missing: ' + token)
+})
+
+test('folder usage has a distinct Server and Desktop transport, leaving iOS file Recents intact', () => {
+  const native = read('ios', 'XDriveIOS', 'NativeFilesCollections.swift')
+  const model = read('internal', 'meta', 'file_recent.go')
+  const server = read('internal', 'api', 'file_recent.go')
+  const hostPort = read('desktop', 'src', 'renderer', 'DesktopFileExplorerHostPort.ts')
+  for (const token of ['type FileRecentFolderAccess struct', 'xd_file_recent_folder_access']) {
+    assert.ok(model.includes(token), token)
+  }
+  assert.ok(server.includes('fileRecentFolderRetention = 64'))
+  assert.ok(server.includes("n.type = 'dir' AND n.parent_id IS NOT NULL"), 'folder history must exclude root/files')
+  assert.ok(server.includes('func (s *Server) listFileRecentFolders('))
+  assert.ok(server.includes('func (s *Server) touchFileRecentFolder('))
+  assert.ok(native.includes('/api/v1/file-recent/'), 'iOS file history must preserve its existing contract')
+
+  for (const token of [
+    '/api/v1/file-recent-folders',
+    'FileRecentFolder(ctx context.Context',
+    'TouchFileRecentFolder(ctx context.Context',
+    'ClearFileRecentFolder(ctx context.Context)',
+  ]) assert.ok(goClient.includes(token), 'Go client folder bridge missing: ' + token)
+
+  for (const token of [
+    'CloudFileRecentFolder',
+    'CloudTouchFileRecentFolder',
+    'CloudClearFileRecentFolder',
+  ]) assert.ok(agentCloud.includes(token), 'Agent folder bridge missing: ' + token)
+
+  for (const token of [
+    '"file-recent-folders"',
+    'GET /v1/cloud/recent-folders',
+    'POST /v1/cloud/recent-folders/touch',
+    'DELETE /v1/cloud/recent-folders',
+  ]) assert.ok(agentIPC.includes(token), 'Agent IPC folder capability missing: ' + token)
+
+  for (const token of [
+    'cloudFileRecentFolders(limit = 8',
+    'cloudTouchFileRecentFolder(nodeID: number)',
+    'cloudClearFileRecentFolders()',
+  ]) assert.ok(agentClient.includes(token), 'Desktop client folder transport missing: ' + token)
+
+  for (const token of [
+    "ipcMain.handle('agent:cloud-recent-folders'",
+    "ipcMain.handle('agent:cloud-recent-folders-touch'",
+    "ipcMain.handle('agent:cloud-recent-folders-clear'",
+    "requireAgentCapability(hello, 'file-recent-folders')",
+  ]) assert.ok(desktopMain.includes(token), 'Desktop IPC folder gate missing: ' + token)
+
+  for (const token of ['cloudFileRecentFolders:', 'cloudTouchFileRecentFolder:', 'cloudClearFileRecentFolders:']) {
+    assert.ok(preload.includes(token), 'preload missing: ' + token)
+    assert.ok(rendererTypes.includes(token), 'renderer type missing: ' + token)
+    assert.ok(hostPort.includes(token), 'host port must explicitly allow: ' + token)
+  }
+  assert.ok(webApi.includes('fileRecentFolders(limit = 8'))
+  assert.ok(webApi.includes('touchFileRecentFolder(nodeID: number)'))
+  assert.ok(webApi.includes('clearFileRecentFolders()'))
 })

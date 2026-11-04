@@ -113,7 +113,7 @@ export function useXDriveFileExplorerWorkspace<
     state: XDriveFileExplorerNavigationState<XDriveFileExplorerWorkspaceCrumb>,
   ) => void
   onDirectoryAccess?: (nodeID: number) => void | Promise<void>
-  onFileAccess?: (nodeID: number) => void | Promise<void>
+  onFileAccess?: (nodeID: number, parentID?: number) => void | Promise<void>
   onError: (error: unknown) => void
 }) {
   const searchActiveRef = useRef(false)
@@ -145,6 +145,7 @@ export function useXDriveFileExplorerWorkspace<
     onAfterNavigate: (nextCrumbs) => {
       const target = nextCrumbs.at(-1)
       if (target && nextCrumbs.length > 1) void onDirectoryAccess?.(target.id)
+      else void onDirectoryAccess?.(0) // cancel a pending child when returning to root
     },
   })
 
@@ -416,7 +417,10 @@ export function useXDriveFileExplorerWorkspace<
       openFile,
       navigate: navigation.navigateTo,
     })
-    if (item.kind === 'file') void onFileAccess?.(Number(item.id))
+    if (item.kind === 'file') {
+      const node = projection.nodeByID.get(Number(item.id))
+      void onFileAccess?.(Number(item.id), node?.parent_id)
+    }
   }
 
   const openItemInNewTab = async (item: XDriveFileExplorerItem) => {

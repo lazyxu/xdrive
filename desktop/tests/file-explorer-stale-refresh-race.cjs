@@ -228,6 +228,7 @@ test('Desktop conflict-aware upload completion cannot refresh an old directory a
       refreshCurrentDirectoryIfCurrent: (expectedCurrentID: number | undefined) => Promise<boolean>,
       onQuotaChanged: () => Promise<void>,
       onError: (error: string) => void,
+      recentFolderUsage: { confirm: (id: number) => Promise<boolean> },
     ) => {
       const uploadConflictAwareTargets = ${uploadTargetsSource}
       return uploadConflictAwareTargets
@@ -247,6 +248,7 @@ test('Desktop conflict-aware upload completion cannot refresh an old directory a
 
   let visibleDirectoryID = 10
   const refreshes = []
+  const confirmedWorkingFolders = []
   const uploadTargets = makeUploadTargets(
     false,
     { current: null },
@@ -264,6 +266,7 @@ test('Desktop conflict-aware upload completion cannot refresh an old directory a
     },
     async () => {},
     (error) => { throw new Error(error) },
+    { confirm: async id => { confirmedWorkingFolders.push(id); return true } },
   )
 
   const pending = uploadTargets(
@@ -286,4 +289,6 @@ test('Desktop conflict-aware upload completion cannot refresh an old directory a
     [],
     'stale Desktop upload completion must not refresh the directory captured by its old render',
   )
+  assert.deepEqual(confirmedWorkingFolders, [10],
+    'confirmed upload is attributed to its real target even if navigation moved away')
 })
