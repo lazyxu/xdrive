@@ -9,12 +9,29 @@ export type DesktopNotesAgentPort = Pick<
   Window['xdriveDesktop']['agent'],
   'cloudNotesInitialize' | 'cloudNotesList' | 'cloudNotesRead' |
   'cloudNotesCreate' | 'cloudNotesUpdate' | 'cloudNotesDelete' |
-  'cloudNotesVersions' | 'cloudNotesReadVersion' | 'cloudDownload'
+  'cloudNotesVersions' | 'cloudNotesReadVersion' | 'cloudDownload' |
+  'cloudNotesUploadImage' | 'cloudNotesReadImage'
 >
 
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
 const sha256 = /^[0-9a-f]{64}$/i
 const maxMarkdownBytes = 1_048_576
+const noteAsset = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.(?:png|jpg|gif|webp|heic)$/
+function checkedAssetPath(noteID: string, path: string): { filename: string; mime: string } {
+  const prefix = '_assets/' + noteID + '/'
+  if (typeof path !== 'string' || !path.startsWith(prefix) || path.length > 160) {
+    throw new Error('非法备忘录图片路径。')
+  }
+  const filename = path.slice(prefix.length)
+  if (!noteAsset.test(filename)) throw new Error('图片不是该备忘录的不可变资源。')
+  const extension = filename.slice(filename.lastIndexOf('.') + 1)
+  const mime: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif',
+    webp: 'image/webp', heic: 'image/heic',
+  }
+  return { filename, mime: mime[extension] }
+}
+
 const encoder = new TextEncoder()
 
 function checkedID(id: string) {
@@ -76,6 +93,7 @@ export function createDesktopNotesDataPort(
   agent: DesktopNotesAgentPort,
   ownerScopeKey: string,
   ownerCurrent: () => boolean,
+  imagesEnabled = false,
 ): XDriveNotesDataPort {
   if (!ownerScopeKey.trim() || !ownerCurrent()) {
     throw new Error('当前 Desktop Owner 未经验证。')
@@ -216,6 +234,70 @@ export function createDesktopNotesDataPort(
         () => agent.cloudNotesReadVersion(nodeID, versionID), signal)
       return checkedMarkdown(value.markdown)
     },
+    // An old Agent still serves text Notes. The shared page must NEVER
+    // display upload/image actions until the same Owner's Agent explicitly
+    // advertises cloud-notes-images.
+    ...(imagesEnabled ? {
+      async uploadImage(noteID: string, file: File): Promise<{ relative_path: string }> {
+        const id = checkedID(noteID)
+        if (id !== id.toLowerCase() || !file || file.size <= 0 ||
+            file.size > 20 * 1_048_576 ||
+            !/\.(?:png|jpe?g|gif|webp|heic)$/i.test(file.name)) {
+          throw new Error('图片无效或超过 20 MiB。')
+        }
+        await ready()
+        checkOwner()
+        const data = await file.arrayBuffer()
+        checkOwner()
+        if (data.byteLength !== file.size || data.byteLength <= 0) {
+          throw new Error('备忘录图片在读取期间发生变化。')
+        }
+        const receipt = await write(() => agent.cloudNotesUploadImage(id, data))
+        const match = checkedAssetPath(id, receipt.relative_path)
+        if (!Number.isSafeInteger(receipt.node_id) || receipt.node_id <= 0 ||
+            receipt.filename !== match.filename || receipt.bytes !== data.byteLength ||
+            receipt.content_type !== match.mime || !sha256.test(receipt.sha256)) {
+          throw new Error('图片上传结果不确定，请核对备忘录后再重试。')
+        }
+        return { relative_path: receipt.relative_path }
+      },
+      async readImageBlob(noteID: string, path: string, signal?: AbortSignal): Promise<Blob> {
+        const id = checkedID(noteID)
+        if (id !== id.toLowerCase()) throw new Error('备忘录图片来源无效。')
+        const { mime } = checkedAssetPath(id, path)
+        await ready()
+        const result = await read(() => agent.cloudNotesReadImage(id, path), signal)
+        if (!result || result.content_type !== mime || !sha256.test(result.sha256) ||
+            !Number.isSafeInteger(result.bytes) || result.bytes <= 0 ||
+            result.bytes > 20 * 1_048_576 || typeof result.image !== 'string' ||
+            result.image.length > Math.ceil(20 * 1_048_576 / 3) * 4 + 4 ||
+            !/^[A-Za-z0-9+/]*={0,2}$/.test(result.image)) {
+          throw new Error('备忘录图片回执的格式或大小无效。')
+        }
+        let data: Uint8Array
+        try {
+          const decoded = atob(result.image)
+          data = Uint8Array.from(decoded, char => char.charCodeAt(0))
+        } catch {
+          throw new Error('备忘录图片编码无效。')
+        }
+        if (data.byteLength !== result.bytes) {
+          throw new Error('备忘录图片长度与回执不一致。')
+        }
+        // The Go Client has already verified the Server ETag. The Renderer
+        // independently validates the returned bytes before making a Blob URL.
+        const owned = new ArrayBuffer(data.byteLength)
+        new Uint8Array(owned).set(data)
+        const digest = await crypto.subtle.digest('SHA-256', owned)
+        checkOwner(signal)
+        const hash = Array.from(new Uint8Array(digest),
+          value => value.toString(16).padStart(2, '0')).join('')
+        if (hash.toLowerCase() !== result.sha256.toLowerCase()) {
+          throw new Error('备忘录图片内容校验失败。')
+        }
+        return new Blob([owned], { type: mime })
+      },
+    } : {}),
     async exportNote(nodeID, filename) {
       checkedRevision(nodeID)
       if (typeof filename !== 'string' || !filename.toLowerCase().endsWith('.md') ||

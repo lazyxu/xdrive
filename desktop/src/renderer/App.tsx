@@ -386,6 +386,8 @@ export default function App({
     status.server.startsWith('https://') &&
     status.auth_status !== '需要重新登录' &&
     agent.hello?.capabilities.includes('cloud-notes'))
+  const notesImagesEnabled = notesEnabled &&
+    agent.hello?.capabilities.includes('cloud-notes-images') === true
   const notesIdentity = notesEnabled
     ? [status?.server, status?.username, String(agent.hello?.pid ?? 0)].join('|') : ''
   const notesEpoch = useRef({ identity: '', generation: 0 })
@@ -400,8 +402,9 @@ export default function App({
   notesActiveScopeRef.current = notesOwnerScope
   const desktopNotesPort = useMemo(() => notesOwnerScope
     ? createDesktopNotesDataPort(window.xdriveDesktop.agent,
-      notesOwnerScope, () => notesActiveScopeRef.current === notesOwnerScope)
-    : undefined, [notesOwnerScope])
+      notesOwnerScope, () => notesActiveScopeRef.current === notesOwnerScope,
+      notesImagesEnabled)
+    : undefined, [notesOwnerScope, notesImagesEnabled])
   const baiduDiagnosticScope = `desktop:${status?.server ?? ''}:${status?.username ?? ''}`
   // Desktop file: owns no provider SDK; only clear this process-local
   // bounded hint when identity changes or the renderer goes away.
