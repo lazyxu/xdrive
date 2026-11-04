@@ -80,7 +80,7 @@ func parseDSMOwnerSmallUpload(r *http.Request) (dsmOwnerSmallUploadInput, error)
 	if !localbackupipc.ValidOwnerFileID(out.ParentID) ||
 		!localbackupipc.ValidOwnerFolderName(out.Name) ||
 		!nasSelectionID.MatchString(out.OwnerScope) ||
-		len(out.Data) < 1 || len(out.Data) > localbackupipc.OwnerSmallUploadMaxBytes ||
+		out.Data == nil || len(out.Data) > localbackupipc.OwnerSmallUploadMaxBytes ||
 		len(out.SHA256) != 64 {
 		return out, errors.New("invalid Owner upload selector")
 	}

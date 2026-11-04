@@ -186,7 +186,7 @@ export function xDriveValidateSynologyOwnerUploadedFile(
   raw: unknown, parentID: number, name: string, byteLength: number,
 ): XDriveSynologyOwnerFileNode {
   if (!Number.isSafeInteger(parentID) || parentID < 1 ||
-    !Number.isSafeInteger(byteLength) || byteLength < 1 ||
+    !Number.isSafeInteger(byteLength) || byteLength < 0 ||
     byteLength > XDRIVE_SYNOLOGY_OWNER_UPLOAD_MAX_BYTES ||
     typeof name !== 'string' || !name || name !== name.trim() ||
     name === '.' || name === '..' ||
@@ -603,7 +603,7 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   /** Current DSM Server Owner creates one named folder through the original Agent. */
   ownerCreateFolder(parentID: number, name: string, ownerScope: string,
     signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
-  /** Single nonempty file <=4 MiB; existing Agent stages and uses original CAS upload. */
+  /** Single file (including zero-byte files) <=4 MiB; existing Agent stages and uses original CAS upload. */
   ownerUploadSmallFile(parentID: number, file: File, ownerScope: string,
     signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
   /** Bounded Server Owner Gallery wall and album read; never full Desktop Media RPC. */
@@ -1244,10 +1244,10 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         /[\/\\\u0000-\u001f\u007f]/.test(name) ||
         new TextEncoder().encode(name).length > 255 ||
         typeof size !== 'number' || !Number.isSafeInteger(size) ||
-        size < 1 || size > XDRIVE_SYNOLOGY_OWNER_UPLOAD_MAX_BYTES ||
+        size < 0 || size > XDRIVE_SYNOLOGY_OWNER_UPLOAD_MAX_BYTES ||
         !/^[0-9a-f]{64}$/.test(ownerScope) ||
         typeof file.arrayBuffer !== 'function') {
-        throw new Error('DSM 当前仅支持上传 1 B～4 MiB 的单个文件')
+        throw new Error('DSM 当前仅支持上传 0 B～4 MiB 的单个文件')
       }
       if (signal?.aborted) throw new Error('Owner upload cancelled')
       if (!globalThis.crypto?.subtle) throw new Error('Owner upload digest unavailable')

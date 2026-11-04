@@ -52,6 +52,35 @@ func TestAgentOwnerSmallUploadStagesIntoOriginalUploader(t *testing.T) {
 	}
 }
 
+func TestAgentOwnerSmallUploadStagesZeroByteFileIntoOriginalUploader(t *testing.T) {
+	empty := []byte{}
+	digest := sha256.Sum256(empty)
+	input := agentOwnerSmallUploadInput{
+		ParentID: 17, Name: "empty.txt", SHA256: hex.EncodeToString(digest[:]), Data: empty,
+	}
+	called := false
+	var staged string
+	node, err := stageAgentOwnerSmallUpload(context.Background(), input,
+		func(_ context.Context, parentID uint64, path, name string) (client.Node, error) {
+			called = true
+			staged = path
+			if parentID != 17 || name != "empty.txt" {
+				t.Fatalf("wrong zero-byte Owner destination: %d %q", parentID, name)
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil || data == nil || len(data) != 0 {
+				t.Fatalf("Agent did not stage an actual empty file: %v %#v", readErr, data)
+			}
+			return client.Node{ID: 43}, nil
+		})
+	if err != nil || !called || node.ID != 43 {
+		t.Fatalf("zero-byte upload did not use original CAS uploader: %v %#v called=%v", err, node, called)
+	}
+	if _, err := os.Stat(staged); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("zero-byte staged file remains after upload: %v", err)
+	}
+}
+
 func TestAgentOwnerSmallUploadRejectsInvalidPayloadBeforeWriting(t *testing.T) {
 	data := []byte("payload")
 	sum := sha256.Sum256(data)

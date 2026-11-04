@@ -24,6 +24,10 @@ const node = {
   id: 42, parent_id: 17, revision: 2, type: 'file', name: '测试.bin',
   size: content.length, created_at: iso, updated_at: iso,
 }
+const emptyContent = Buffer.alloc(0)
+const emptySha = createHash('sha256').update(emptyContent).digest('hex')
+const emptyNode = { ...node, id: 43, name: 'empty.txt', size: 0 }
+let expected = { name: node.name, content, sha256: sha }
 let receipt = node
 let responseStatus = 200
 const sent = []
@@ -53,11 +57,11 @@ const ctx = vm.createContext({
     assert.equal(options.headers['X-CSRF-Token'], 'f'.repeat(64))
     const body = JSON.parse(options.body)
     assert.deepEqual(Object.keys(body).sort(), ['data','name','owner_scope','parent_id','sha256'])
-    assert.equal(body.name, node.name)
+    assert.equal(body.name, expected.name)
     assert.equal(body.parent_id, 17)
     assert.equal(body.owner_scope, ownerScope)
-    assert.equal(body.sha256, sha)
-    assert.deepEqual(Buffer.from(body.data, 'base64'), content)
+    assert.equal(body.sha256, expected.sha256)
+    assert.deepEqual(Buffer.from(body.data, 'base64'), expected.content)
     return { ok: responseStatus === 200, status: responseStatus,
       headers: { get: () => 'application/json' }, json: async () => receipt }
   },
@@ -72,11 +76,26 @@ const picked = {
 const good = await client.ownerUploadSmallFile(17, picked, ownerScope)
 assert.equal(good.id, 42)
 assert.equal(sent.length, 2)
+
+// A genuine zero-byte File must traverse the same CGI/Agent/CAS upload path.
+expected = { name: emptyNode.name, content: emptyContent, sha256: emptySha }
+receipt = emptyNode
+const emptyPicked = {
+  name: emptyNode.name, size: 0,
+  arrayBuffer: async () => new ArrayBuffer(0),
+}
+const emptyGood = await client.ownerUploadSmallFile(17, emptyPicked, ownerScope)
+assert.equal(emptyGood.id, 43)
+assert.equal(emptyGood.size, 0)
+assert.equal(sent.length, 3)
+
+expected = { name: node.name, content, sha256: sha }
+receipt = node
 const calls = () => sent.length
 for (const invalid of [
   { ...picked, name: '../escape' },
   { ...picked, name: '  white-space.txt' },
-  { ...picked, size: 0 },
+  { ...picked, size: -1 },
   { ...picked, size: (4 << 20) + 1 },
   { ...picked, size: content.length + 1 },
   { ...picked, arrayBuffer: null },
@@ -115,4 +134,6 @@ assert.match(page, /uploadAbort\.current\?\.abort\(\)/)
 assert.doesNotMatch(host, /uploadFiles: 'DSM Owner 文件上传尚未接通/)
 assert.match(host, /uploadFolder: 'DSM Owner 文件夹上传尚未接通/)
 assert.doesNotMatch(page, /window\.xdriveDesktop|local_path|Client\.CloudUpload\(/)
+assert.ok(page.includes('file.size < 0'), 'DSM Files must admit zero-byte files')
+assert.ok(page.includes('0 B～4 MiB'), 'DSM Files must explain the zero-byte upload limit')
 console.log('DSM bounded Owner upload: real bytes + digest, fail-on-conflict, no native path, exact Server receipt.')
