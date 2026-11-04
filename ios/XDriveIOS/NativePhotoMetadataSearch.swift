@@ -34,7 +34,7 @@ private enum XDriveIOSNativePhotoSearchFailure: Error {
     case invalidOffset
 }
 
-/// Scan at most 2,048 metadata slots per explicit user action, returning no
+/// Scan at most 2,048 metadata slots per bounded read, returning no
 /// more than 64 matches. Never download original pixels or iCloud resources.
 private actor XDriveIOSNativePhotoMetadataSearchReader {
     static let maximumScanned = 2048
@@ -115,19 +115,41 @@ private actor XDriveIOSNativePhotoMetadataSearchReader {
     }
 }
 
+/// Numeric descriptors, not a growing array of PhotoKit identifiers.
+private struct XDriveIOSNativePhotoSearchWindow: Identifiable, Equatable {
+    let startSlot: Int
+    let nextSlot: Int
+    let totalAuthorizedSlots: Int
+    let matchCount: Int
+    var id: Int { startSlot }
+}
+
 @MainActor
 private final class XDriveIOSNativePhotoMetadataSearchModel: ObservableObject {
-    @Published private(set) var page: XDriveIOSNativePhotoMetadataSearchPage?
+    @Published private(set) var windows: [XDriveIOSNativePhotoSearchWindow] = []
+    @Published private(set) var currentQuery: String?
+    @Published private(set) var scannedThrough = 0
+    @Published private(set) var totalAuthorizedSlots: Int?
+    @Published private(set) var matchCount = 0
+    @Published private(set) var generation = UUID()
     @Published private(set) var busy = false
     @Published private(set) var message: String?
-    private var epoch = UUID()
     private var task: Task<Void, Never>?
 
+    var hasMore: Bool {
+        guard currentQuery != nil else { return false }
+        return totalAuthorizedSlots.map { scannedThrough < $0 } ?? true
+    }
+
     func cancel() {
-        epoch = UUID()
+        generation = UUID()
         task?.cancel()
         task = nil
-        page = nil
+        windows = []
+        currentQuery = nil
+        scannedThrough = 0
+        totalAuthorizedSlots = nil
+        matchCount = 0
         busy = false
         message = nil
     }
@@ -137,31 +159,75 @@ private final class XDriveIOSNativePhotoMetadataSearchModel: ObservableObject {
         message = "系统照片库或访问权限已变化，请重新搜索。"
     }
 
-    func search(_ query: String, from offset: Int) {
+    func search(_ query: String) {
         cancel()
         guard let term = XDriveIOSNativePhotoSearchQueryPolicy.normalized(query) else {
             message = "请输入文件名、年份、月份或媒体类型（照片、视频、实况、截屏）。"
             return
         }
-        let request = epoch
+        currentQuery = term
+        scanMore()
+    }
+
+    /// Called by a newly visible tail, never by a separate Next Page button.
+    /// A run skips empty matches automatically but stops after its first
+    /// nonempty 64-match window. All historical ranges retain only four ints.
+    func scanMore(after visibleWindowID: Int? = nil) {
+        guard !busy, let term = currentQuery,
+              UIApplication.shared.applicationState == .active else { return }
+        if let visibleWindowID {
+            guard windows.last?.id == visibleWindowID else { return }
+        }
+        if let total = totalAuthorizedSlots, scannedThrough >= total { return }
+
+        let request = generation
+        var offset = scannedThrough
+        var expectedTotal = totalAuthorizedSlots
         busy = true
         task = Task { @MainActor [weak self] in
+            guard let self else { return }
             do {
-                let result = try await XDriveIOSNativePhotoMetadataSearchReader()
-                    .read(query: term, startingAt: offset)
-                try Task.checkCancellation()
-                guard self?.epoch == request,
-                      UIApplication.shared.applicationState == .active else { return }
-                self?.page = result
+                while true {
+                    let page = try await XDriveIOSNativePhotoMetadataSearchReader()
+                        .read(query: term, startingAt: offset)
+                    try Task.checkCancellation()
+                    guard self.generation == request,
+                          self.currentQuery == term,
+                          UIApplication.shared.applicationState == .active else { return }
+                    // An insertion/deletion or permission-scope change between
+                    // bounded reads must retire all previously displayed hits.
+                    guard page.startSlot == offset,
+                          page.nextSlot > offset || offset == page.totalAuthorizedSlots,
+                          page.nextSlot <= page.totalAuthorizedSlots,
+                          expectedTotal == nil || expectedTotal == page.totalAuthorizedSlots,
+                          page.items.count <= XDriveIOSNativePhotoMetadataSearchReader.maximumMatches
+                    else { self.invalidate(); return }
+
+                    expectedTotal = page.totalAuthorizedSlots
+                    self.totalAuthorizedSlots = page.totalAuthorizedSlots
+                    self.scannedThrough = page.nextSlot
+                    if !page.items.isEmpty {
+                        self.windows.append(XDriveIOSNativePhotoSearchWindow(
+                            startSlot: page.startSlot,
+                            nextSlot: page.nextSlot,
+                            totalAuthorizedSlots: page.totalAuthorizedSlots,
+                            matchCount: page.items.count
+                        ))
+                        self.matchCount += page.items.count
+                    }
+                    offset = page.nextSlot
+                    if !page.hasMore || !page.items.isEmpty { break }
+                    // A query with no matches must not require fifty manual
+                    // taps to scan a 100k-item library.
+                    await Task.yield()
+                }
             } catch is CancellationError {
             } catch {
-                if self?.epoch == request {
-                    self?.message = "搜索期间照片库或授权已变化，请重新搜索。"
-                }
+                if self.generation == request { self.invalidate() }
             }
-            if self?.epoch == request {
-                self?.busy = false
-                self?.task = nil
+            if self.generation == request {
+                self.busy = false
+                self.task = nil
             }
         }
     }
@@ -222,8 +288,86 @@ private struct XDriveIOSNativePhotoSearchTile: View {
     }
 }
 
-/// A real local PhotoKit search with explicit bounded continuation. The
-/// result count is per examined segment, never misrepresented as all hits.
+/// One visible result range. It reads the same PhotoKit metadata cursor
+/// again and verifies its numeric descriptor, then releases IDs when offscreen.
+private struct XDriveIOSNativePhotoSearchWindowView: View {
+    let window: XDriveIOSNativePhotoSearchWindow
+    let query: String
+    let generation: UUID
+    let onSelect: (XDrivePhotoKitScanCandidate, [XDrivePhotoKitScanCandidate]) -> Void
+    let onFailure: (UUID) -> Void
+    let onVisibility: (Int, Bool) -> Void
+
+    @State private var page: XDriveIOSNativePhotoMetadataSearchPage?
+
+    var body: some View {
+        LazyVGrid(columns: [
+            GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)
+        ], spacing: 3) {
+            if let page {
+                ForEach(page.items) { item in
+                    Button {
+                        onSelect(item, page.items)
+                    } label: {
+                        XDriveIOSNativePhotoSearchTile(candidate: item)
+                    }
+                    .buttonStyle(.plain)
+                    .id("search:\(item.id)")
+                    .accessibilityLabel(item.kind == "video" ?
+                                        "查看匹配视频" : "查看匹配照片")
+                    .accessibilityIdentifier("native-ios-photo-search-result")
+                }
+            } else {
+                // Exactly the same number of square cells retains the scroll
+                // geometry while a visible descriptor is revalidated.
+                ForEach(0..<window.matchCount, id: \.self) { _ in
+                    Rectangle()
+                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                        .aspectRatio(1, contentMode: .fit)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .id("search-window:\(window.id)")
+        .onAppear { onVisibility(window.id, true) }
+        .task(id: "\(generation)-\(window.startSlot)-\(query)") {
+            page = nil
+            do {
+                let fresh = try await XDriveIOSNativePhotoMetadataSearchReader()
+                    .read(query: query, startingAt: window.startSlot)
+                try Task.checkCancellation()
+                guard fresh.startSlot == window.startSlot,
+                      fresh.nextSlot == window.nextSlot,
+                      fresh.totalAuthorizedSlots == window.totalAuthorizedSlots,
+                      fresh.items.count == window.matchCount,
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) else {
+                    onFailure(generation)
+                    return
+                }
+                page = fresh
+            } catch is CancellationError {
+            } catch {
+                if !Task.isCancelled { onFailure(generation) }
+            }
+        }
+        .onDisappear {
+            page = nil
+            onVisibility(window.id, false)
+        }
+    }
+}
+
+private struct XDriveIOSNativePhotoSearchSelection: Identifiable {
+    let candidate: XDrivePhotoKitScanCandidate
+    let loadedItems: [XDrivePhotoKitScanCandidate]
+    var id: String { candidate.id }
+}
+
+/// Photos-like continuous search results over the authorized local library.
+/// Numeric descriptors are cheap even for 100k assets; only visible matched
+/// pages hold ephemeral IDs and request PhotoKit thumbnails.
 struct XDriveIOSNativePhotoSearchScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
@@ -231,12 +375,13 @@ struct XDriveIOSNativePhotoSearchScreen: View {
     @StateObject private var monitor = XDriveIOSNativePhotoSearchChangeMonitor()
     @State private var query = ""
     @State private var acceptedQuery = ""
-    @State private var selected: XDrivePhotoKitScanCandidate?
+    @State private var selected: XDriveIOSNativePhotoSearchSelection?
+    @State private var visibleTailWindowID: Int?
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         TextField("原始文件名、2026-11、视频、实况…", text: $query)
                             .textInputAutocapitalization(.never)
@@ -251,45 +396,54 @@ struct XDriveIOSNativePhotoSearchScreen: View {
                     }
                     Text("搜索当前已授权的本机照片元数据：原始文件名、拍摄日期及媒体类型。不是人物、内容识别或云端搜索。")
                         .font(.caption).foregroundStyle(.secondary)
-                    if model.busy { ProgressView("正在搜索本机照片元数据…") }
+
+                    if let total = model.totalAuthorizedSlots {
+                        Text("已检查 \(model.scannedThrough) / \(total) 项，当前找到 \(model.matchCount) 项")
+                            .font(.caption).monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
                     if let message = model.message {
                         Text(message).font(.footnote).foregroundStyle(.secondary)
                     }
-                    if let page = model.page {
-                        Text("本批扫描 \(page.nextSlot - page.startSlot) 项，匹配 \(page.items.count) 项；已检查到第 \(page.nextSlot) / \(page.totalAuthorizedSlots) 项。")
-                            .font(.caption).monospacedDigit()
-                        if page.items.isEmpty {
-                            Text(page.hasMore ?
-                                 "本批没有匹配结果，可继续扫描后续照片。" :
-                                 "已检查完当前授权照片，没有找到匹配项。")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            LazyVGrid(columns: [
-                                GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)
-                            ], spacing: 3) {
-                                ForEach(page.items) { item in
-                                    Button { selected = item } label: {
-                                        XDriveIOSNativePhotoSearchTile(candidate: item)
+                    if let currentQuery = model.currentQuery {
+                        ForEach(model.windows) { window in
+                            XDriveIOSNativePhotoSearchWindowView(
+                                window: window, query: currentQuery,
+                                generation: model.generation,
+                                onSelect: { candidate, neighbors in
+                                    selected = XDriveIOSNativePhotoSearchSelection(
+                                        candidate: candidate, loadedItems: neighbors
+                                    )
+                                },
+                                onFailure: { failedGeneration in
+                                    guard model.generation == failedGeneration else { return }
+                                    model.invalidate()
+                                },
+                                onVisibility: { visibleID, isVisible in
+                                    if isVisible {
+                                        if model.windows.last?.id == visibleID {
+                                            visibleTailWindowID = visibleID
+                                            if selected == nil && phase == .active {
+                                                model.scanMore(after: visibleID)
+                                            }
+                                        }
+                                    } else if visibleTailWindowID == visibleID {
+                                        visibleTailWindowID = nil
                                     }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel(item.kind == "video" ?
-                                                        "查看匹配视频" : "查看匹配照片")
-                                    .accessibilityIdentifier("native-ios-photo-search-result")
                                 }
-                            }
+                            )
                         }
-                        if page.hasMore {
-                            Button("继续搜索后续照片") {
-                                guard XDriveIOSNativePhotoSearchQueryPolicy.normalized(
-                                    query
-                                ) == acceptedQuery else { return }
-                                model.search(acceptedQuery, from: page.nextSlot)
+                        if model.busy {
+                            ProgressView("正在继续搜索本机照片…")
+                                .frame(maxWidth: .infinity)
+                        } else if !model.hasMore {
+                            if model.windows.isEmpty {
+                                Text("已检查完当前授权照片，没有找到匹配项。")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Label("当前授权照片已全部检查", systemImage: "checkmark.circle")
+                                    .font(.caption).foregroundStyle(.secondary)
                             }
-                            .disabled(model.busy)
-                            .accessibilityIdentifier("native-ios-photo-search-more")
-                        } else {
-                            Label("当前授权照片已全部检查", systemImage: "checkmark.circle")
-                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -305,23 +459,39 @@ struct XDriveIOSNativePhotoSearchScreen: View {
         }
         .fullScreenCover(item: $selected) { first in
             XDriveIOSNativeLocalPhotoDetail(
-                candidate: first, loadedItems: model.page?.items ?? []
+                candidate: first.candidate, loadedItems: first.loadedItems
             )
         }
         .onAppear { monitor.start() }
         .onChange(of: query) { _ in
             if XDriveIOSNativePhotoSearchQueryPolicy.normalized(query) !=
-                acceptedQuery { model.cancel() }
+                acceptedQuery {
+                visibleTailWindowID = nil
+                model.cancel()
+            }
+        }
+        .onChange(of: model.busy) { busy in
+            // A visible last window may have appeared while its next scan was
+            // still busy. Resume exactly once on completion, not via a button.
+            if !busy, selected == nil, phase == .active,
+               let visibleTailWindowID {
+                model.scanMore(after: visibleTailWindowID)
+            }
         }
         .onChange(of: monitor.revision) { _ in
-            if selected == nil { model.invalidate() }
+            visibleTailWindowID = nil
+            model.invalidate()
         }
         .onChange(of: phase) { state in
-            if state != .active { model.cancel() }
+            if state != .active {
+                visibleTailWindowID = nil
+                model.cancel()
+            }
         }
         .onDisappear {
             if selected == nil {
                 monitor.stop()
+                visibleTailWindowID = nil
                 model.cancel()
             }
         }
@@ -330,8 +500,9 @@ struct XDriveIOSNativePhotoSearchScreen: View {
     private func submitNew() {
         guard phase == .active,
               let normalized = XDriveIOSNativePhotoSearchQueryPolicy.normalized(query)
-        else { model.search(query, from: 0); return }
+        else { model.search(query); return }
         acceptedQuery = normalized
-        model.search(normalized, from: 0)
+        visibleTailWindowID = nil
+        model.search(normalized)
     }
 }
