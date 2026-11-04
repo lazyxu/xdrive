@@ -49,6 +49,15 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
     @Environment(\.dismiss) private var dismiss
     @State private var page: XDriveIOSNativeFilesRange?
     @State private var offset = 0
+    @State private var visibleNodes: [XDriveIOSNativeFilesNode] = []
+    @State private var startOffset = 0
+    @State private var totalCount = 0
+    @State private var loadingAdjacent = false
+    @State private var adjacentFailure: String?
+    @State private var failedDirection: XDriveIOSNativeFilesContinuousWindowPolicy.Direction?
+    @State private var adjacentTicket = UUID()
+    @State private var adjacentWork: Task<Void, Never>?
+    @State private var lastAutoRequestedFolderID: UInt64?
     @State private var busy = false
     @State private var failure: String?
     @State private var epoch = UUID()
@@ -65,15 +74,29 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
     }
 
     private var canUseTarget: Bool {
-        page != nil && !busy && failure == nil && !creating &&
+        page != nil && !busy && failure == nil && !creating && !loadingAdjacent &&
             XDriveIOSNativePhotoOwnerScope.matches(login.owner, originalOwner) &&
             !allSelected.contains(where: { $0.isDirectory && $0.id == folder.id }) &&
             !(kind == .move && allSelected.contains(where: { $0.parent_id == folder.id }))
     }
 
     private var canCreateFolder: Bool {
-        page != nil && !busy && failure == nil && !creating &&
+        page != nil && !busy && failure == nil && !creating && !loadingAdjacent &&
             XDriveIOSNativePhotoOwnerScope.matches(login.owner, originalOwner)
+    }
+
+    private var canLoadNext: Bool {
+        XDriveIOSNativeFilesContinuousWindowPolicy.requestedOffset(
+            direction: .next, startOffset: startOffset,
+            loadedCount: visibleNodes.count, total: totalCount
+        ) != nil
+    }
+
+    private var canLoadPrevious: Bool {
+        XDriveIOSNativeFilesContinuousWindowPolicy.requestedOffset(
+            direction: .previous, startOffset: startOffset,
+            loadedCount: visibleNodes.count, total: totalCount
+        ) != nil
     }
 
     var body: some View {
@@ -106,41 +129,50 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
                 } else if let failure {
                     Text(failure).foregroundStyle(.secondary)
                     Button("重试") { load() }
-                } else if let page {
-                    ForEach(page.items.filter(\.isDirectory)) { entry in
+                } else if page != nil {
+                    if canLoadPrevious {
+                        Button("加载前面的文件夹") { requestAdjacent(.previous) }
+                            .disabled(loadingAdjacent || creating)
+                            .accessibilityIdentifier("native-ios-files-destination-load-previous")
+                    }
+                    ForEach(visibleNodes.filter(\.isDirectory)) { entry in
                         NavigationLink(value: XDriveIOSNativeFilesDestination(
                             id: entry.id, name: entry.name
                         )) {
                             Label(entry.name, systemImage: "folder.fill")
                                 .frame(minHeight: 44, alignment: .leading)
                         }
-                        // Prevent entering this folder or any of its
-                        // descendants as a copy/move destination. The Server
-                        // also rejects cycles if the tree changes after GET.
                         .disabled(creating ||
                             allSelected.contains(where: { $0.isDirectory && $0.id == entry.id }))
+                        .onAppear { requestNextIfAtEnd(of: entry.id) }
                     }
-                    if !page.items.contains(where: \.isDirectory) {
-                        Text("本页没有子文件夹")
+                    if !visibleNodes.contains(where: \.isDirectory) {
+                        Text(totalCount == 0 ? "这里没有子文件夹" : "已加载范围没有子文件夹")
                             .foregroundStyle(.secondary)
                     }
-                    HStack {
-                        Button("上一页") {
-                            offset = max(0, offset - XDriveIOSNativeFilesPagePolicy.pageSize)
-                            load()
+                    if loadingAdjacent {
+                        ProgressView("正在继续查找子文件夹…")
+                    }
+                    if let adjacentFailure {
+                        Text(adjacentFailure).font(.footnote).foregroundStyle(.secondary)
+                        Button("重试加载") {
+                            let direction = failedDirection ?? .next
+                            self.adjacentFailure = nil
+                            self.failedDirection = nil
+                            requestAdjacent(direction)
                         }
-                        .disabled(busy || creating || offset == 0)
-                        Spacer()
-                        Text("\(offset + page.items.count) / \(page.total_count)")
-                            .font(.footnote.monospacedDigit())
+                        .disabled(loadingAdjacent || creating)
+                    } else if canLoadNext {
+                        // Sparse folders need explicit continuation; never scan
+                        // a large file-only directory in an unbounded loop.
+                        Button("继续查找子文件夹") { requestAdjacent(.next) }
+                            .disabled(loadingAdjacent || creating)
+                            .accessibilityIdentifier("native-ios-files-destination-load-next")
+                    }
+                    if totalCount > 0 {
+                        Text("已读取 \(startOffset + visibleNodes.count) / \(totalCount) 项")
+                            .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("下一页") {
-                            offset += XDriveIOSNativeFilesPagePolicy.pageSize
-                            load()
-                        }
-                        .disabled(busy || creating ||
-                            offset + page.items.count >= page.total_count)
                     }
                 } else {
                     Text("尚未验证当前目录").foregroundStyle(.secondary)
@@ -255,6 +287,16 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
         epoch = UUID()
         work?.cancel()
         work = nil
+        adjacentTicket = UUID()
+        adjacentWork?.cancel()
+        adjacentWork = nil
+        loadingAdjacent = false
+        adjacentFailure = nil
+        failedDirection = nil
+        lastAutoRequestedFolderID = nil
+        visibleNodes = []
+        startOffset = 0
+        totalCount = 0
         creationEpoch = UUID()
         creationTask?.cancel()
         creationTask = nil
@@ -264,6 +306,95 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
         page = nil
         busy = false
         failure = nil
+    }
+
+    /// Prefetch one next Range when the last visible folder appears.
+    /// File-only Ranges never trigger recursive automatic scans.
+    private func requestNextIfAtEnd(of id: UInt64) {
+        guard !busy, !loadingAdjacent, !creating, canLoadNext,
+              visibleNodes.last(where: { $0.isDirectory })?.id == id,
+              lastAutoRequestedFolderID != id else { return }
+        lastAutoRequestedFolderID = id
+        requestAdjacent(.next)
+    }
+
+    /// Keep at most four contiguous, verified 64-node Server Ranges.
+    private func requestAdjacent(
+        _ direction: XDriveIOSNativeFilesContinuousWindowPolicy.Direction
+    ) {
+        guard !busy, !creating, !loadingAdjacent, adjacentFailure == nil,
+              page != nil, failure == nil,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, originalOwner)
+        else { return }
+        let oldNodes = visibleNodes
+        let oldIDs = oldNodes.map(\.id)
+        let oldStart = startOffset
+        let oldTotal = totalCount
+        guard let requestedOffset = XDriveIOSNativeFilesContinuousWindowPolicy.requestedOffset(
+            direction: direction, startOffset: oldStart,
+            loadedCount: oldNodes.count, total: oldTotal
+        ) else { return }
+
+        let ticket = UUID()
+        adjacentTicket = ticket
+        let parentTicket = epoch
+        loadingAdjacent = true
+        failedDirection = nil
+        adjacentWork = Task { @MainActor in
+            defer {
+                if epoch == parentTicket && adjacentTicket == ticket {
+                    loadingAdjacent = false
+                    adjacentWork = nil
+                }
+            }
+            do {
+                let credentials = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard epoch == parentTicket, adjacentTicket == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(
+                        credentials.owner, originalOwner
+                      ), XDriveIOSNativePhotoOwnerScope.matches(
+                        login.owner, originalOwner
+                      ) else { return }
+                let reader = XDriveIOSNativeFilesReader(
+                    owner: credentials.owner, accessToken: credentials.accessToken
+                )
+                let response = try await reader.children(
+                    parentID: folder.id, offset: requestedOffset, sort: "name", order: "asc"
+                )
+                try Task.checkCancellation()
+                guard epoch == parentTicket, adjacentTicket == ticket,
+                      startOffset == oldStart, totalCount == oldTotal,
+                      visibleNodes.map(\.id) == oldIDs,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, originalOwner)
+                else { return }
+                guard let plan = XDriveIOSNativeFilesContinuousWindowPolicy.mergePlan(
+                    direction: direction, startOffset: oldStart,
+                    currentIDs: oldIDs, incomingIDs: response.items.map(\.id),
+                    pageOffset: response.offset, total: oldTotal,
+                    returnedTotal: response.total_count
+                ) else {
+                    adjacentFailure = "目录内容发生变化，请刷新后重新选择目标。"
+                    failedDirection = direction
+                    return
+                }
+                var merged = direction == .next
+                    ? oldNodes + response.items : response.items + oldNodes
+                if plan.dropFromFront > 0 { merged.removeFirst(plan.dropFromFront) }
+                if plan.dropFromBack > 0 { merged.removeLast(plan.dropFromBack) }
+                visibleNodes = merged
+                startOffset = plan.startOffset
+                offset = plan.startOffset
+                page = response
+                adjacentFailure = nil
+            } catch is CancellationError {
+                // Owner changes and navigation retire obsolete reads.
+            } catch {
+                guard epoch == parentTicket, adjacentTicket == ticket else { return }
+                adjacentFailure = "无法继续验证子文件夹，请重试或刷新当前目录。"
+                failedDirection = direction
+            }
+        }
     }
 
     private func load() {
@@ -296,6 +427,9 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, originalOwner)
                 else { return }
                 page = response
+                visibleNodes = response.items
+                startOffset = response.offset
+                totalCount = response.total_count
             } catch is CancellationError {
             } catch {
                 guard epoch == ticket else { return }
