@@ -82,7 +82,7 @@ test('restore and permanent deletion revalidate the originating Server page, not
   assert.match(screen, /func pageOffset\(for item: XDriveIOSNativeFilesTrashNode\)/)
   assert.match(screen, /index \/ XDriveIOSNativeFilesTrashPolicy\.pageSize/)
   assert.match(screen, /let pageOffset = model\.pageOffset\(for: item\)/)
-  assert.match(screen, /mutation\.perform\(\s*action, node: item, offset: pageOffset, sort: sort, order: order, login: login\)/)
+  assert.match(screen, /mutation\.perform\(\s*action, node: item, offset: pageOffset, sort: sort, order: order, login: login\s*\)/)
   assert.match(screen, /let verified = try await page\(offset, session: session\)/)
   assert.match(screen, /guard verified\.items\.contains\(node\)/)
   assert.match(screen, /forHTTPHeaderField: "If-Match"/)
