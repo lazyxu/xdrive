@@ -41,6 +41,7 @@ xDrive server host manager
 Usage:
   xdrive-server update [--source github|gitlab|xdrive] [--channel stable|master] [--backup-file-data] [--prefetch-only]
   xdrive-server update --source offline --channel master --offline-id HEX32 --trusted-manifest-sha256 SHA256 --trusted-installer-sha256 SHA256 [--backup-file-data|--prefetch-only]
+  xdrive-server update --source offline --channel master --offline-id HEX32 [--trusted-manifest-sha256 SHA256 --trusted-installer-sha256 SHA256] --plan-only  # read-only, Host verifies trust
   xdrive-server control <install|start|serve|stop|status>
   xdrive-server doctor [--strict]
   xdrive-server lan-ca export /absolute/path/root.crt
@@ -612,7 +613,7 @@ offline_go_verify_sigstore() (
 # require two independent trusted hashes. Failed signed verification never
 # downgrades to manually supplied hashes or an untrusted interpreter.
 offline_go_update() {
-  local id="" manifest_sha="" binary_sha="" backup_file_data=0 prefetch_only=0
+  local id="" manifest_sha="" binary_sha="" backup_file_data=0 prefetch_only=0 plan_only=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --source|--channel) [[ $# -ge 2 ]] || return 2; shift 2 ;;
@@ -621,9 +622,14 @@ offline_go_update() {
       --trusted-installer-sha256) [[ $# -ge 2 ]] || return 2; binary_sha="$2"; shift 2 ;;
       --backup-file-data) backup_file_data=1; shift ;;
       --prefetch-only) prefetch_only=1; shift ;;
+      --plan-only) plan_only=1; shift ;;
       *) echo "xdrive-server: unsupported offline update option." >&2; return 2 ;;
     esac
   done
+  if [[ "$plan_only" == 1 && ( "$prefetch_only" == 1 || "$backup_file_data" == 1 ) ]]; then
+    echo "xdrive-server: read-only plan cannot request backup or prefetch execution." >&2
+    return 2
+  fi
   local trust_root="$CONFIG_DIR/offline-trust/trusted-root.jsonl" signed_mode=0
   [[ ! -e "$trust_root" && ! -L "$trust_root" ]] || signed_mode=1
   [[ "$id" =~ ^[a-f0-9]{32}$ &&
@@ -671,7 +677,12 @@ offline_go_update() {
     fi
     manifest_sha="$signed_manifest_sha"
     binary_sha="$signed_binary_sha"
-    printf '[xDrive] Offline Go ELF, Manifest and delivery publisher provenance verified locally.\n'
+    # Keep stdout exclusively JSON for machine-readable read-only plans.
+    if [[ "$plan_only" == 1 ]]; then
+      printf '[xDrive] Offline Go ELF, Manifest and delivery publisher provenance verified locally.\n' >&2
+    else
+      printf '[xDrive] Offline Go ELF, Manifest and delivery publisher provenance verified locally.\n'
+    fi
   fi
   if [[ "$actual" != "$binary_sha" ]]; then
     echo "xdrive-server: imported Go installer differs from independent SHA-256." >&2
@@ -683,6 +694,17 @@ offline_go_update() {
   if [[ "$signed_mode" == 1 ]]; then
     signed_args=(--signed-delivery --trusted-installer-sha256 "$binary_sha"
                  --trusted-delivery-sha256 "$signed_delivery_sha")
+  fi
+  if [[ "$plan_only" == 1 ]]; then
+    # The same trusted ELF authenticates and verifies selected archives. The
+    # optional live probe only reads Docker info/inspect and filesystem space.
+    if ! "$tool" plan --dir "$directory" --config-dir "$XDRIVE_HOME" \
+        --trusted-manifest-sha256 "$manifest_sha" "${signed_args[@]}" --probe-host; then
+      rm -f -- "$tool"
+      return 1
+    fi
+    rm -f -- "$tool"
+    return 0
   fi
   if ! "$tool" verify --dir "$directory" --trusted-manifest-sha256 "$manifest_sha" "${signed_args[@]}"; then
     rm -f -- "$tool"
@@ -736,11 +758,20 @@ update_cmd() (
     [[ "$update_channel" == master ]] || {
       echo "xdrive-server: offline imports support only master." >&2; return 2;
     }
-    local prefetch_only=0
-    for arg in "$@"; do [[ "$arg" != --prefetch-only ]] || prefetch_only=1; done
+    local prefetch_only=0 plan_only=0
+    for arg in "$@"; do
+      [[ "$arg" != --prefetch-only ]] || prefetch_only=1
+      [[ "$arg" != --plan-only ]] || plan_only=1
+    done
     if offline_go_update "$@"; then status=0; else status=$?; fi
-    [[ "$prefetch_only" != 1 ]] || return "$status"
+    [[ "$prefetch_only" != 1 && "$plan_only" != 1 ]] || return "$status"
   elif [[ "$update_source" == xdrive ]]; then
+    for arg in "$@"; do
+      if [[ "$arg" == --plan-only ]]; then
+        echo "xdrive-server: --plan-only only supports an authenticated offline import." >&2
+        return 2
+      fi
+    done
     [[ "$update_channel" == master ]] || {
       echo "xdrive-server: Share updates support only the master channel." >&2; return 2;
     }
@@ -762,6 +793,12 @@ update_cmd() (
     # Prefetch verifies availability; it is not an installed update receipt.
     [[ "$prefetch_only" != 1 ]] || return "$status"
   else
+    for arg in "$@"; do
+      if [[ "$arg" == --plan-only ]]; then
+        echo "xdrive-server: --plan-only only supports an authenticated offline import." >&2
+        return 2
+      fi
+    done
     echo "[xDrive] downloading $update_channel host installer from $update_source..."
     download_installer "$update_source" "$installer" "$update_channel"
     chmod 700 "$installer"

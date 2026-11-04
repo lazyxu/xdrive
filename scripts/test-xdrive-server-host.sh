@@ -365,7 +365,8 @@ cat > "$import_dir/xdrive-offline-linux-amd64" <<'OFFLINE'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$TEST_STATE/offline-go-args"
-[[ "$1" == verify || "$1" == install ]] || exit 91
+[[ "$1" == verify || "$1" == install || "$1" == plan ]] || exit 91
+if [[ "$1" == plan ]]; then printf '{"schema":1,"read_only":true}\n'; fi
 OFFLINE
 chmod 0600 "$import_dir/xdrive-offline-linux-amd64"
 trusted_manifest="$(sha256sum "$import_dir/manifest.json" | cut -d' ' -f1)"
@@ -379,6 +380,51 @@ TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" 
 grep -q "^verify --dir $import_dir --trusted-manifest-sha256 $trusted_manifest$" "$TMP/state/offline-go-args"
 grep -q -- "install --dir $import_dir --config-dir $TMP/home --trusted-manifest-sha256 $trusted_manifest --backup-file-data" "$TMP/state/offline-go-args"
 test ! -e "$TMP/state/curl-url"
+# A signed/manual trusted Host preview runs one read-only plan against exactly
+# the same SHA-pinned private Go executable; never verify+install or claim an
+# update audit on success. The fake Go binary returns a typed JSON stub.
+cp "$TMP/state/audit-calls" "$TMP/audit-before-plan"
+rm -f "$TMP/state/offline-go-args" "$TMP/state/curl-url"
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+  bash "$HOST" update --source offline --channel master --offline-id "$offline_id" \
+    --trusted-manifest-sha256 "$trusted_manifest" \
+    --trusted-installer-sha256 "$trusted_go" --plan-only \
+    >"$TMP/offline-plan.json" 2>"$TMP/offline-plan.err"
+grep -Fxq '{"schema":1,"read_only":true}' "$TMP/offline-plan.json"
+grep -Fxq "plan --dir $import_dir --config-dir $TMP/home --trusted-manifest-sha256 $trusted_manifest --probe-host" "$TMP/state/offline-go-args"
+[[ "$(wc -l < "$TMP/state/offline-go-args")" -eq 1 ]]
+cmp "$TMP/audit-before-plan" "$TMP/state/audit-calls"
+test ! -e "$TMP/state/curl-url"
+for bad_plan_flags in "--plan-only --backup-file-data" "--plan-only --prefetch-only"; do
+  rm -f "$TMP/state/offline-go-args"
+  read -ra invalid_args <<< "$bad_plan_flags"
+  set +e
+  TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+    bash "$HOST" update --source offline --channel master --offline-id "$offline_id" \
+      --trusted-manifest-sha256 "$trusted_manifest" \
+      --trusted-installer-sha256 "$trusted_go" "${invalid_args[@]}" \
+      >"$TMP/offline-plan-invalid.out" 2>"$TMP/offline-plan-invalid.err"
+  plan_rc=$?
+  set -e
+  [[ "$plan_rc" -ne 0 ]]
+  test ! -e "$TMP/state/offline-go-args"
+done
+
+# Plan is strictly an offline import feature. Even a trusted manual SHA
+# cannot enable it on GitHub or xDrive Share online update sources.
+for plan_source in github xdrive; do
+  rm -f "$TMP/state/offline-go-args" "$TMP/state/curl-url"
+  set +e
+  TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+    bash "$HOST" update --source "$plan_source" --channel master --plan-only \
+      >"$TMP/online-plan-$plan_source.out" 2>"$TMP/online-plan-$plan_source.err"
+  plan_rc=$?
+  set -e
+  [[ "$plan_rc" -ne 0 ]]
+  test ! -e "$TMP/state/offline-go-args"
+  test ! -e "$TMP/state/curl-url"
+done
+
 for rejected in missing-sha altered-tool traversal wrong-channel; do
   rm -f "$TMP/state/offline-go-args"
   set +e

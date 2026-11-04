@@ -44,13 +44,18 @@ func run(argv []string) error {
 	enableAI := fs.Bool("enable-ai", false, "activate photo intelligence profile")
 	source := fs.String("update-source", "", "pinned update transport preference (xdrive only)")
 	backup := fs.Bool("backup-file-data", false, "include canonical file data in rollback snapshot")
+	probeHost := fs.Bool("probe-host", false, "opt-in read-only live Docker and filesystem observations for plan")
 	if err := fs.Parse(argv[1:]); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 || *dir == "" {
 		return fmt.Errorf("offline %s requires --dir with no trailing arguments", verb)
 	}
-	if verb != "install" && (*noStart || *source != "" || *backup || *workdir != "" ||
+	if verb != "plan" && *probeHost {
+		return fmt.Errorf("--probe-host is only supported by the read-only plan operation")
+	}
+	if verb != "install" && (*noStart || *source != "" || *backup ||
+		(*workdir != "" && (verb != "plan" || !*probeHost)) ||
 		(verb != "plan" && (*enableMedia || *enableAI || *configDir != ""))) {
 		return fmt.Errorf("installation options require install operation")
 	}
@@ -115,6 +120,13 @@ func run(argv []string) error {
 		plan, err := offlinebundle.BuildUpgradePlan(*dir, manifest, selected, home, *enableMedia, *enableAI)
 		if err != nil {
 			return err
+		}
+		if *probeHost {
+			plan.HostProbe, err = offlinebundle.ProbeHostRuntime(context.Background(), manifest, selected,
+				home, plan.MinimumTemporaryBytes, *workdir)
+			if err != nil {
+				return err
+			}
 		}
 		plan.TrustBasis = "independently_pinned_manifest_sha256"
 		if *signedDelivery {
