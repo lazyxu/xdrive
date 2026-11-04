@@ -26,24 +26,24 @@ type sourceLegacyMigrationNode struct {
 }
 
 type sourceLegacyMigrationPreview struct {
-	SourceID	uint64	`json:"source_id"`
-	TargetNodeID	*uint64	`json:"target_node_id,omitempty"`
-	TargetManaged	bool	`json:"target_managed"`
-	ReadOnly	bool	`json:"read_only"`
-	CheckedAt	time.Time	`json:"checked_at"`
-	InspectedNodes	int	`json:"inspected_nodes"`
-	VerifiedNodes	int	`json:"verified_nodes"`
-	OrdinaryNodes	int	`json:"ordinary_nodes"`
-	UnverifiedClaims	int	`json:"unverified_claims"`
-	ForeignOwnerNodes	int	`json:"foreign_owner_nodes"`
-	DirectRootShares	int64	`json:"direct_root_shares"`
-	ActiveRuns	int64	`json:"active_runs"`
-	ActiveUploads	int64	`json:"active_uploads"`
-	UnfinishedFilesJobs	int64	`json:"unfinished_files_jobs"`
-	OtherSourceClaims	int64	`json:"other_source_claims"`
-	InventoryTruncated	bool	`json:"inventory_truncated"`
-	Classification	string	`json:"classification"`
-	Blockers	[]string	`json:"blockers"`
+	SourceID            uint64    `json:"source_id"`
+	TargetNodeID        *uint64   `json:"target_node_id,omitempty"`
+	TargetManaged       bool      `json:"target_managed"`
+	ReadOnly            bool      `json:"read_only"`
+	CheckedAt           time.Time `json:"checked_at"`
+	InspectedNodes      int       `json:"inspected_nodes"`
+	VerifiedNodes       int       `json:"verified_nodes"`
+	OrdinaryNodes       int       `json:"ordinary_nodes"`
+	UnverifiedClaims    int       `json:"unverified_claims"`
+	ForeignOwnerNodes   int       `json:"foreign_owner_nodes"`
+	DirectRootShares    int64     `json:"direct_root_shares"`
+	ActiveRuns          int64     `json:"active_runs"`
+	ActiveUploads       int64     `json:"active_uploads"`
+	UnfinishedFilesJobs int64     `json:"unfinished_files_jobs"`
+	OtherSourceClaims   int64     `json:"other_source_claims"`
+	InventoryTruncated  bool      `json:"inventory_truncated"`
+	Classification      string    `json:"classification"`
+	Blockers            []string  `json:"blockers"`
 }
 
 // This endpoint is a read-only migration *preview*, not a token or permission
