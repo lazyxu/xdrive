@@ -73,11 +73,17 @@ test('PhotoKit native fetches avoid unsupported localIdentifier sort and fence a
     'creation date must precede the supported modification date')
   assert.ok(start.indexOf(secondary) < start.indexOf('PHAsset.fetchAssets(with: options)'),
     'sort order must apply to the actual PhotoKit fetch')
-  assert.match(start, /requireStableResume && resumeOffset > 0 &&/)
-  assert.match(start, /resumeOffset < snapshot\.count/)
-  assert.match(start, /previous\.creationDate != current\.creationDate/)
-  assert.match(start, /previous\.modificationDate != current\.modificationDate/)
-  assert.match(start, /throw XDrivePhotoKitScanFailure\.snapshotChanged/)
+  assert.match(start, /if requireStableResume \{/)
+  assert.match(start, /XDrivePhotoBackupScanWindow\.maxItems/)
+  assert.match(start, /Self\.stableBackupBoundaryIndices\(/)
+  assert.match(start, /observer\.currentVersion\(\) == beginVersion/)
+  assert.match(scanner, /for boundary in Set\(\[windowStart, windowEnd\]\)\.sorted\(\)/)
+  assert.match(scanner, /sameSortKeys\(before, after\)/)
+  assert.match(scanner, /XDrivePhotoBackupTieBoundaryPolicy\.maximumGroupSize/)
+  assert.match(scanner, /XDrivePhotoBackupTieBoundaryPolicy\.mappingForGroup\(/)
+  assert.match(scanner, /throw XDrivePhotoKitScanFailure\.snapshotChanged/)
+  assert.match(scanner, /stableBoundaryPhysicalIndices\[index\] \?\? index/)
+  assert.match(scanner, /stableBoundaryPhysicalIndices\.removeAll\(\)/)
   assert.match(backup, /scanner\.start\(\s*atOffset: startOffset, requireStableResume: true/)
   assert.match(scanner, /static let pageSize = 64/)
   assert.match(scanner, /observer\.currentVersion\(\) == changeVersion/)
@@ -90,9 +96,9 @@ test('PhotoKit native fetches avoid unsupported localIdentifier sort and fence a
     assert.doesNotMatch(nativeSource, /NSSortDescriptor\s*\(\s*key:\s*["']localIdentifier["']/,
       file + ' must not use the unsupported PhotoKit sort key')
   }
-  // The 100k slot-window arithmetic is independently covered in
-  // PhotoBackupScanWindowChecks; a synthetic ID sort cannot prove native
-  // PhotoKit's ordering is stable when both date fields tie.
+  // The pure deterministic tie mapping test covers 257/4096 identifiers,
+  // duplicate IDs and overflow. Actual PhotoKit ordering is still covered
+  // by the unchanged persistent-generation + authorization fences.
   assert.doesNotMatch(scanner, /UserDefaults|JSONEncoder|SecItemAdd|localStorage/,
     'scanner must not persist or expose PhotoKit identities')
 })

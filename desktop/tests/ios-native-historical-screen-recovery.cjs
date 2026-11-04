@@ -64,7 +64,14 @@ test('continuous scan virtualizes 64-slot metadata windows and invalidates stale
   assert.match(view, /item\.isLive/)
   assert.match(scanner, /static let pageSize = 64/)
   assert.match(scanner, /func start\(atOffset requestedOffset: Int = 0,\s*requireStableResume: Bool = false\)/)
-  assert.match(scanner, /requireStableResume && resumeOffset > 0/)
+  // Preview pages remain ordinary PhotoKit ordering. Only a verified
+  // original-backup scan may resolve equal-date 256-slot boundaries.
+  assert.match(view, /let count = try await current\.start\(atOffset: offset\)/)
+  assert.match(scanner, /if requireStableResume \{[\s\S]*?Self\.stableBackupBoundaryIndices\(/)
+  assert.match(scanner, /\} else \{\s*boundaryIndices = \[:\]/)
+  assert.match(scanner, /observer\.currentVersion\(\) == beginVersion,[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == status/)
+  assert.match(scanner, /stableBoundaryPhysicalIndices = boundaryIndices/)
+  assert.match(scanner, /stableBoundaryPhysicalIndices\.removeAll\(\)/)
   assert.match(scanner, /func nextPage\(\)/)
   assert.match(scanner, /observer\.currentVersion\(\) == changeVersion/)
   assert.match(scanner, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
