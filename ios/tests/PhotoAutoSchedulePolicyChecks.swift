@@ -77,6 +77,17 @@ import Foundation
     precondition(p.nextDueAfterCompletedWindow(at:now,intervalMinutes:1,
       currentWindow:0,followingWindow:1,visibleTotal:10000,scanned:256,
       uploaded:0,needsReview:false,libraryUnchanged:true) == nil)
-    print("iOS foreground auto backup interval/cursor/opt-in catch-up safety: PASS")
+    // A PhotoKit edit or new media wakes only a future due time. An already
+    // scheduled earlier/due check is never postponed or requeued repeatedly.
+    let soon = now.addingTimeInterval(5)
+    precondition(p.earlierDueAfterLibraryChange(
+      currentDueAt: normal, at: now) == soon)
+    precondition(p.earlierDueAfterLibraryChange(
+      currentDueAt: soon, at: now) == nil)
+    precondition(p.earlierDueAfterLibraryChange(
+      currentDueAt: now.addingTimeInterval(2), at: now) == nil)
+    precondition(p.earlierDueAfterLibraryChange(
+      currentDueAt: now.addingTimeInterval(-1), at: now) == nil)
+    print("iOS foreground auto backup interval/cursor/opt-in catch-up/library wake: PASS")
   }
 }

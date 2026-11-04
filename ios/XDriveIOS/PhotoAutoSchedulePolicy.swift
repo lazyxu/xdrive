@@ -7,9 +7,20 @@ enum XDriveIOSPhotoAutoSchedulePolicy {
     static let windowSize = 256
     static let maxNewFiles = 20
     static let catchUpCooldown: TimeInterval = 60
+    // PHChange callbacks are advisory. Give PhotoKit a short settling delay;
+    // the existing 60-second active-scene timer remains the only poller.
+    static let photoLibraryChangeDelay: TimeInterval = 5
 
     static func accepts(minutes: Int) -> Bool {
         supportedMinutes.contains(minutes)
+    }
+
+    /// An authorized library change can make a long regular interval stale.
+    /// Never delay an already-due check, and never create a timer/upload here.
+    static func earlierDueAfterLibraryChange(currentDueAt: Date,
+                                              at now: Date) -> Date? {
+        let soon = now.addingTimeInterval(photoLibraryChangeDelay)
+        return currentDueAt > soon ? soon : nil
     }
 
     static func nextWindow(current: Int, visibleTotal: Int,
