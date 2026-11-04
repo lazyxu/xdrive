@@ -71,6 +71,21 @@ func (s *Server) previewLegacySourceMigration(c *gin.Context) {
 		Blockers: make([]string, 0),
 	}
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var live meta.Source
+		if err := tx.Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+			Take(&live).Error; err != nil {
+			return err
+		}
+		// Snapshot a consistent Source binding and revision with the Node
+		// inventory. A concurrently changed Source must be re-previewed.
+		if live.Revision != source.Revision || live.Status != source.Status ||
+			(live.TargetNodeID == nil) != (source.TargetNodeID == nil) {
+			return errRevisionConflict
+		}
+		if live.TargetNodeID != nil && *live.TargetNodeID != *source.TargetNodeID {
+			return errRevisionConflict
+		}
+		source = live
 		if source.TargetNodeID == nil {
 			preview.Classification = "no_target"
 			preview.Blockers = append(preview.Blockers, "source_target_unbound")
@@ -108,7 +123,7 @@ WITH RECURSIVE tree AS (
   AND NOT n.id = ANY(tree.visited)
 )
 SELECT id, owner_id, name, type, revision, relative_path, depth
-FROM tree ORDER BY id LIMIT ?`, target.ID, maxSourceLegacyPreviewNodes+2).Scan(&nodes).Error; err != nil {
+FROM tree ORDER BY depth, id LIMIT ?`, target.ID, maxSourceLegacyPreviewNodes+2).Scan(&nodes).Error; err != nil {
 			return err
 		}
 		if len(nodes) > maxSourceLegacyPreviewNodes+1 {
@@ -134,12 +149,14 @@ FROM tree ORDER BY id LIMIT ?`, target.ID, maxSourceLegacyPreviewNodes+2).Scan(&
 			preview.Blockers = append(preview.Blockers, "source_item_limit_exceeded")
 		}
 		byID := make(map[uint64][]meta.SourceItem, len(sourceItems))
+		visited := make(map[uint64]bool, len(nodes))
 		for _, item := range sourceItems {
 			if item.NodeID != nil {
 				byID[*item.NodeID] = append(byID[*item.NodeID], item)
 			}
 		}
 		for _, node := range nodes {
+			visited[node.ID] = true
 			if node.ID == target.ID {
 				continue
 			}
@@ -166,6 +183,13 @@ FROM tree ORDER BY id LIMIT ?`, target.ID, maxSourceLegacyPreviewNodes+2).Scan(&
 				continue
 			}
 			preview.VerifiedNodes++
+		}
+		for _, item := range sourceItems {
+			if item.State == meta.SourceItemStateSynced &&
+				(item.NodeID == nil || !visited[*item.NodeID]) {
+				preview.Blockers = append(preview.Blockers, "synced_source_item_outside_inventory")
+				break
+			}
 		}
 		if preview.ForeignOwnerNodes != 0 {
 			preview.Blockers = append(preview.Blockers, "foreign_owner_descendants")
@@ -233,6 +257,10 @@ FROM tree ORDER BY id LIMIT ?`, target.ID, maxSourceLegacyPreviewNodes+2).Scan(&
 		}
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if errors.Is(err, errRevisionConflict) {
+		fail(c, http.StatusConflict, "source changed during migration preview; reload and retry")
+		return
+	}
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "legacy migration preview failed")
 		return
