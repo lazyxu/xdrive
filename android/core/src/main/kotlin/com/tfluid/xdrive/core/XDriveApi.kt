@@ -396,6 +396,12 @@ interface XDriveService {
         throw ApiException(501, "Owner Notes versions API unavailable")
     suspend fun notesReadVersion(accessToken: String, nodeID: Long, versionID: Long): String =
         throw ApiException(501, "Owner Notes version content API unavailable")
+    /** Dedicated writable-note image endpoint; never a generic Files upload. */
+    suspend fun notesUploadImage(accessToken: String, noteId: String, image: ByteArray): OwnerNoteImageReceipt =
+        throw ApiException(501, "Owner Notes image upload unavailable")
+    /** A single immutable same-Owner image, never a Markdown-supplied URL. */
+    suspend fun notesReadImage(accessToken: String, noteId: String, relativePath: String): ByteArray =
+        throw ApiException(501, "Owner Notes image read unavailable")
     suspend fun root(accessToken: String): DriveNode
     suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange
     /** Keep old fixtures default-only; never pretend unsupported sort succeeded. */
@@ -772,6 +778,164 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     override suspend fun notesDelete(accessToken: String, id: String, revision: Long) {
         require(validNotesUUID(id) && revision > 0)
         request("notes/$id", accessToken, method = "DELETE", ifMatch = revision, emptyResponse = true)
+    }
+
+    /** Upload one user-selected image to the exact Owner/mine Notes endpoint.
+     * No retry on an uncertain commit; callers must first inspect the Note. */
+    override suspend fun notesUploadImage(
+        accessToken: String, noteId: String, image: ByteArray,
+    ): OwnerNoteImageReceipt {
+        require(validToken(accessToken) && validNotesUUID(noteId))
+        require(image.isNotEmpty() && image.size <= 20 * 1_048_576)
+        val url = address.url.toHttpUrlOrNull()!!.newBuilder()
+            .addPathSegments("api/v1/notes/mine")
+            .addPathSegment(noteId).addPathSegment("images").build()
+        val payload = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("image", "native-note-image",
+                image.toRequestBody("application/octet-stream".toMediaType()))
+            .build()
+        val req = Request.Builder().url(url)
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept", "application/json")
+            .post(payload).build()
+        val digest = MessageDigest.getInstance("SHA-256").digest(image)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return suspendCancellableCoroutine { continuation ->
+            val call = http.newCall(req)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (continuation.isActive)
+                        continuation.resumeWithException(transportFailure(e))
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        val receipt = response.use {
+                            if (!it.isSuccessful)
+                                throw ApiException(it.code, "Notes image upload rejected")
+                            if (!it.header("Content-Type").orEmpty()
+                                    .lowercase().startsWith("application/json")) invalidPayload()
+                            val body = it.body ?: invalidPayload()
+                            if (body.contentLength() > 4096) invalidPayload()
+                            val buffer = Buffer()
+                            val source = body.source()
+                            while (buffer.size <= 4096L) {
+                                if (source.read(buffer, minOf(8192L, 4097L - buffer.size)) == -1L)
+                                    break
+                            }
+                            if (buffer.size > 4096L) invalidPayload()
+                            val raw = json.parseToJsonElement(buffer.readUtf8()) as? JsonObject
+                                ?: invalidPayload()
+                            val relative = raw.string("relative_path")
+                            val filename = raw.string("filename")
+                            val mime = raw.string("content_type")
+                            val sha = raw.string("sha256")
+                            val size = raw.long("bytes")
+                            val node = raw.long("node_id")
+                            val ext = filename.substringAfterLast('.', "")
+                            val expectedMime = when (ext) {
+                                "png" -> "image/png"
+                                "jpg" -> "image/jpeg"
+                                "gif" -> "image/gif"
+                                "webp" -> "image/webp"
+                                "heic" -> "image/heic"
+                                else -> invalidPayload()
+                            }
+                            if (!validNotesImagePath(noteId, relative) ||
+                                relative != "_assets/$noteId/$filename" ||
+                                mime != expectedMime || node <= 0 ||
+                                size != image.size.toLong() ||
+                                !sha.equals(digest, ignoreCase = true)) invalidPayload()
+                            OwnerNoteImageReceipt(node, relative, digest, size, mime)
+                        }
+                        if (continuation.isActive) continuation.resume(receipt)
+                    } catch (e: ApiException) {
+                        if (continuation.isActive) continuation.resumeWithException(e)
+                    } catch (e: IOException) {
+                        if (continuation.isActive)
+                            continuation.resumeWithException(transportFailure(e))
+                    } catch (_: Exception) {
+                        if (continuation.isActive) continuation.resumeWithException(
+                            ApiException(response.code, "Invalid Notes image receipt",
+                                ApiFailureReason.INVALID_RESPONSE))
+                    }
+                }
+            })
+        }
+    }
+
+    /** Fetch one known note image with pinned TLS, cancellation, bounded bytes
+     * and content-addressed ETag verification. No public/signed image URLs. */
+    override suspend fun notesReadImage(
+        accessToken: String, noteId: String, relativePath: String,
+    ): ByteArray {
+        require(validToken(accessToken) && validNotesImagePath(noteId, relativePath))
+        val filename = relativePath.substringAfterLast('/')
+        val mime = when (filename.substringAfterLast('.')) {
+            "png" -> "image/png"
+            "jpg" -> "image/jpeg"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "heic" -> "image/heic"
+            else -> throw IllegalArgumentException("Invalid Notes image extension")
+        }
+        val url = address.url.toHttpUrlOrNull()!!.newBuilder()
+            .addPathSegments("api/v1/notes")
+            .addPathSegment(noteId).addPathSegment("images")
+            .addPathSegment(filename).build()
+        val req = Request.Builder().url(url)
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept", mime).get().build()
+        return suspendCancellableCoroutine { continuation ->
+            val call = http.newCall(req)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (continuation.isActive)
+                        continuation.resumeWithException(transportFailure(e))
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        val bytes = response.use {
+                            if (!it.isSuccessful)
+                                throw ApiException(it.code, "Notes image unavailable")
+                            if (it.header("Content-Type")?.substringBefore(';')?.trim()
+                                    ?.lowercase() != mime) invalidPayload()
+                            val etag = it.header("ETag")?.removeSurrounding("\"") ?: invalidPayload()
+                            if (!etag.matches(Regex("[a-fA-F0-9]{64}"))) invalidPayload()
+                            val body = it.body ?: invalidPayload()
+                            if (body.contentLength() > 20L * 1_048_576) invalidPayload()
+                            val buffer = Buffer()
+                            val source = body.source()
+                            while (buffer.size <= 20L * 1_048_576) {
+                                if (source.read(buffer,
+                                        minOf(8192L, 20L * 1_048_576 + 1 - buffer.size)) == -1L)
+                                    break
+                            }
+                            if (buffer.size <= 0 || buffer.size > 20L * 1_048_576)
+                                invalidPayload()
+                            val content = buffer.readByteArray()
+                            val sha = MessageDigest.getInstance("SHA-256").digest(content)
+                                .joinToString("") { value ->
+                                    "%02x".format(value.toInt() and 0xff)
+                                }
+                            if (!sha.equals(etag, ignoreCase = true)) invalidPayload()
+                            content
+                        }
+                        if (continuation.isActive) continuation.resume(bytes)
+                    } catch (e: ApiException) {
+                        if (continuation.isActive) continuation.resumeWithException(e)
+                    } catch (e: IOException) {
+                        if (continuation.isActive)
+                            continuation.resumeWithException(transportFailure(e))
+                    } catch (_: Exception) {
+                        if (continuation.isActive) continuation.resumeWithException(
+                            ApiException(response.code, "Invalid Notes image response",
+                                ApiFailureReason.INVALID_RESPONSE))
+                    }
+                }
+            })
+        }
     }
 
     override suspend fun notesVersions(accessToken: String, id: String): List<OwnerNoteVersion> {

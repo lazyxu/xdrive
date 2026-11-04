@@ -4618,6 +4618,12 @@ class DriveController(
     suspend fun notesPreviousMarkdown(nodeID: Long, versionID: Long): String =
         withNotesOwner { service, token -> service.notesReadVersion(token, nodeID, versionID) }
 
+    suspend fun notesUploadImage(noteID: String, image: ByteArray): OwnerNoteImageReceipt =
+        withNotesOwner { service, token -> service.notesUploadImage(token, noteID, image) }
+
+    suspend fun notesImage(noteID: String, relativePath: String): ByteArray =
+        withNotesOwner { service, token -> service.notesReadImage(token, noteID, relativePath) }
+
     /** Any new Owner request cancels the prior transport, including SAF export.
      * Only the originating download request is allowed to keep download chrome;
      * a folder change, refresh, search or other request clears it immediately. */

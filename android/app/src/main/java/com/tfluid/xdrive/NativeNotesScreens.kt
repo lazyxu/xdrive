@@ -3,11 +3,14 @@ package com.tfluid.xdrive
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.provider.OpenableColumns
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +19,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -217,6 +223,63 @@ private fun NativeNoteEditor(
     var deleting by remember(owner.nativeUiSessionId, note.id) { mutableStateOf(false) }
     var discard by remember(owner.nativeUiSessionId, note.id) { mutableStateOf(false) }
     var history by remember(owner.nativeUiSessionId, note.id) { mutableStateOf(false) }
+    var uploadingImage by remember(owner.nativeUiSessionId, note.id) { mutableStateOf(false) }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && note.writable && committed != null &&
+            !uploadingImage && !saving && !conflict) {
+            val epoch = owner.nativeUiSessionId
+            val projected = "_assets/" + note.id +
+                "/00000000-0000-4000-8000-000000000000.heic"
+            if (!runCatching {
+                    validNotesInput(title, appendNotesImageMarkdown(markdown, note.id, projected))
+                }.getOrDefault(false)) {
+                error = "当前笔记已达到 Markdown 1 MiB 限制，不能再插入图片。"
+            } else {
+                uploadingImage = true
+                error = null
+                scope.launch {
+                    try {
+                        val imageBytes = withContext(Dispatchers.IO) {
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                val output = ByteArrayOutputStream()
+                                val buffer = ByteArray(8192)
+                                while (true) {
+                                    val read = input.read(buffer)
+                                    if (read < 0) break
+                                    if (read == 0) continue
+                                    if (output.size() > 20 * 1_048_576 - read)
+                                        throw IOException("图片超过 20 MiB")
+                                    output.write(buffer, 0, read)
+                                }
+                                output.toByteArray()
+                            } ?: throw IOException("无法读取所选图片")
+                        }
+                        if (imageBytes.isEmpty()) throw IOException("图片为空")
+                        if (controller.state.value.nativeUiSessionId != epoch)
+                            return@launch
+                        val receipt = controller.notesUploadImage(note.id, imageBytes)
+                        if (!validNotesImagePath(note.id, receipt.relativePath))
+                            throw IOException("笔记图片的服务器回执无效")
+                        if (controller.state.value.nativeUiSessionId != epoch)
+                            return@launch
+                        markdown = appendNotesImageMarkdown(markdown, note.id, receipt.relativePath)
+                        preview = true
+                        error = "图片已加入草稿，正在自动保存。"
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        if (controller.state.value.nativeUiSessionId == epoch)
+                            error = "图片上传或插入结果未确认：" +
+                                (failure.message ?: "请求失败") +
+                                "。请先核对当前笔记及图片，勿盲目重复上传。"
+                    } finally {
+                        if (controller.state.value.nativeUiSessionId == epoch)
+                            uploadingImage = false
+                    }
+                }
+            }
+        }
+    }
     val dirty = committed?.let { it.row.title != title || it.markdown != markdown } ?: false
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
         if (uri != null && committed != null) {
@@ -248,7 +311,7 @@ private fun NativeNoteEditor(
     }
     suspend fun save() {
         val old = committed ?: return
-        if (!note.writable || saving || conflict || !dirty) return
+        if (!note.writable || saving || uploadingImage || conflict || !dirty) return
         if (!validNotesInput(title, markdown)) {
             error = "Markdown 限制 1 MiB，标题不能包含非法字符"
             return
@@ -270,14 +333,14 @@ private fun NativeNoteEditor(
     }
 
     LaunchedEffect(note.id, owner.nativeUiSessionId) { load() }
-    LaunchedEffect(title, markdown, committed?.row?.revision, conflict) {
-        if (note.writable && dirty && !conflict && !saving) {
+    LaunchedEffect(title, markdown, committed?.row?.revision, conflict, uploadingImage) {
+        if (note.writable && dirty && !conflict && !saving && !uploadingImage) {
             delay(1200)
             save()
         }
     }
     BackHandler {
-        if (dirty || saving) discard = true else onBack()
+        if (dirty || saving || uploadingImage) discard = true else onBack()
     }
     if (discard) AlertDialog(onDismissRequest = { discard = false },
         title = { Text("放弃未保存的草稿？") },
@@ -288,7 +351,7 @@ private fun NativeNoteEditor(
         confirmButton = { TextButton(onClick = {
             deleting = false
             val revision = committed?.row?.revision ?: return@TextButton
-            if (dirty || saving) { error = "先保存或放弃草稿"; return@TextButton }
+            if (dirty || saving || uploadingImage) { error = "先保存或放弃草稿"; return@TextButton }
             scope.launch {
                 try { controller.notesDelete(note.id, revision); onDeleted() }
                 catch (cancelled: CancellationException) { throw cancelled }
@@ -300,23 +363,32 @@ private fun NativeNoteEditor(
 
     Column(Modifier.fillMaxSize().padding(12.dp).testTag("native-notes-editor")) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { if (dirty || saving) discard = true else onBack() }) { Text("返回") }
+            TextButton(onClick = { if (dirty || saving || uploadingImage) discard = true else onBack() }) { Text("返回") }
             Text(if (note.writable) "我的备忘录" else "iOS 备份 · 只读")
             TextButton(onClick = { export.launch(note.id + ".md") },
                 enabled = committed != null) { Text("导出") }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (uploadingImage) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (committed != null) {
             if (note.writable) {
                 OutlinedTextField(title, { title = it }, label = { Text("标题") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                    singleLine = true, enabled = !uploadingImage && !saving,
+                    modifier = Modifier.fillMaxWidth())
                 Row {
                     TextButton(onClick = { preview = !preview }) {
                         Text(if (preview) "编辑 Markdown" else "预览 Markdown")
                     }
                     TextButton(onClick = { scope.launch { save() } },
-                        enabled = dirty && !conflict && !saving) { Text("保存") }
-                    TextButton(onClick = { deleting = true }) { Text("删除") }
+                        enabled = dirty && !conflict && !saving && !uploadingImage) { Text("保存") }
+                    TextButton(onClick = { imagePicker.launch(arrayOf("image/*")) },
+                        enabled = !uploadingImage && !saving && !conflict,
+                        modifier = Modifier.testTag("native-notes-insert-image")) {
+                        Text(if (uploadingImage) "正在上传图片…" else "插入图片")
+                    }
+                    TextButton(onClick = { deleting = true }, enabled = !uploadingImage) {
+                        Text("删除")
+                    }
                 }
             } else Text(title, style = MaterialTheme.typography.titleLarge)
             Row {
@@ -324,10 +396,11 @@ private fun NativeNoteEditor(
                 TextButton(onClick = { history = true }) { Text("历史版本") }
             }
             if (preview || !note.writable) {
-                NativeNotesMarkdownPreview(markdown, Modifier.weight(1f))
+                NativeNotesMarkdownPreview(controller, note.id, owner.nativeUiSessionId,
+                    markdown, Modifier.weight(1f))
             } else {
                 OutlinedTextField(markdown, { markdown = it },
-                    label = { Text("Markdown 正文") },
+                    label = { Text("Markdown 正文") }, enabled = !uploadingImage && !saving,
                     modifier = Modifier.fillMaxWidth().weight(1f).testTag("native-notes-markdown"),
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace))
             }
@@ -335,34 +408,118 @@ private fun NativeNoteEditor(
     }
 }
 
-private data class NativeNoteLine(val text: String, val kind: Int)
+private data class NativeNoteLine(
+    val text: String, val kind: Int, val imagePath: String? = null,
+)
 
 @Composable
-private fun NativeNotesMarkdownPreview(markdown: String, modifier: Modifier = Modifier) {
-    val lines = remember(markdown) {
+private fun NativeNotesMarkdownPreview(
+    controller: DriveController, noteID: String, ownerEpoch: Long,
+    markdown: String, modifier: Modifier = Modifier,
+) {
+    // Render only immutable same-note _assets references. Untrusted Markdown
+    // and code text never initiate network requests.
+    val lines = remember(markdown, noteID) {
         var fenced = false
-        markdown.replace("\r\n", "\n").lines().mapNotNull { line ->
-            when {
-                line.startsWith(96.toChar().toString().repeat(3)) -> {
-                    fenced = !fenced; null
+        val images = Regex("""!\[([^\]\r\n]{0,180})\]\(([^)\r\n]{1,220})\)""")
+        buildList {
+            for (line in markdown.replace("\r\n", "\n").lines()) {
+                when {
+                    line.startsWith(96.toChar().toString().repeat(3)) ||
+                        line.startsWith("~~~") -> fenced = !fenced
+                    fenced -> add(NativeNoteLine(line, 3))
+                    else -> {
+                        val matches = images.findAll(line).toList()
+                        if (matches.isEmpty()) {
+                            add(when {
+                                line.startsWith("# ") -> NativeNoteLine(line.drop(2), 1)
+                                line.startsWith("## ") -> NativeNoteLine(line.drop(3), 2)
+                                line.startsWith("- ") -> NativeNoteLine("• " + line.drop(2), 0)
+                                else -> NativeNoteLine(line, 0)
+                            })
+                        } else {
+                            var cursor = 0
+                            for (match in matches) {
+                                if (match.range.first > cursor)
+                                    add(NativeNoteLine(line.substring(cursor, match.range.first), 0))
+                                val path = match.groupValues[2]
+                                if (validNotesImagePath(noteID, path)) {
+                                    add(NativeNoteLine(match.groupValues[1], 4, path))
+                                } else {
+                                    add(NativeNoteLine(match.value, 0))
+                                }
+                                cursor = match.range.last + 1
+                            }
+                            if (cursor < line.length)
+                                add(NativeNoteLine(line.substring(cursor), 0))
+                        }
+                    }
                 }
-                fenced -> NativeNoteLine(line, 3)
-                line.startsWith("# ") -> NativeNoteLine(line.drop(2), 1)
-                line.startsWith("## ") -> NativeNoteLine(line.drop(3), 2)
-                line.startsWith("- ") -> NativeNoteLine("• " + line.drop(2), 0)
-                else -> NativeNoteLine(line, 0)
             }
         }
     }
     LazyColumn(modifier.testTag("native-notes-preview")) {
         items(lines) { line ->
-            Text(line.text,
-                style = when (line.kind) {
-                    1 -> MaterialTheme.typography.headlineSmall
-                    2 -> MaterialTheme.typography.titleLarge
-                    else -> MaterialTheme.typography.bodyMedium
-                },
-                fontFamily = if (line.kind == 3) FontFamily.Monospace else null)
+            if (line.imagePath != null) {
+                NativeNotesImage(controller, noteID, ownerEpoch, line.imagePath,
+                    line.text.ifBlank { "笔记图片" })
+            } else {
+                Text(line.text,
+                    style = when (line.kind) {
+                        1 -> MaterialTheme.typography.headlineSmall
+                        2 -> MaterialTheme.typography.titleLarge
+                        else -> MaterialTheme.typography.bodyMedium
+                    },
+                    fontFamily = if (line.kind == 3) FontFamily.Monospace else null)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NativeNotesImage(
+    controller: DriveController, noteID: String, ownerEpoch: Long,
+    path: String, alt: String,
+) {
+    var bitmap by remember(noteID, path, ownerEpoch) { mutableStateOf<ImageBitmap?>(null) }
+    var error by remember(noteID, path, ownerEpoch) { mutableStateOf<String?>(null) }
+    LaunchedEffect(noteID, path, ownerEpoch) {
+        try {
+            val bytes = controller.notesImage(noteID, path)
+            val decoded = withContext(Dispatchers.Default) {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0)
+                    throw IOException("图片格式不受设备支持")
+                var sample = 1
+                while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048)
+                    sample *= 2
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                    ?.asImageBitmap() ?: throw IOException("图片解码失败")
+            }
+            if (controller.state.value.nativeUiSessionId == ownerEpoch)
+                bitmap = decoded
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            if (controller.state.value.nativeUiSessionId == ownerEpoch)
+                error = "当前图片无法预览"
+        }
+    }
+    Column(Modifier.fillMaxWidth().testTag("native-notes-image")) {
+        when {
+            bitmap != null -> Image(
+                bitmap = requireNotNull(bitmap), contentDescription = alt,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+            )
+            error != null -> Text(alt + " · " + error,
+                color = MaterialTheme.colorScheme.error)
+            else -> LinearProgressIndicator(Modifier.fillMaxWidth())
         }
     }
 }
