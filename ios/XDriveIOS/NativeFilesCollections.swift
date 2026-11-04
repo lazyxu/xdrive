@@ -108,6 +108,23 @@ struct XDriveIOSNativeFilesCollectionsTransport {
         return try await list(kind, in: client)
     }
 
+    /// Owner-only, metadata-only clear; a 204 requires empty list readback.
+    func clearRecent() async throws {
+        let client = session()
+        defer { client.invalidateAndCancel() }
+        let bytes = try await send(
+            request("/api/v1/file-recent", method: "DELETE"),
+            in: client, accepted: [204], maximumBytes: 0
+        )
+        guard bytes.isEmpty else {
+            throw XDriveIOSNativeFilesCollectionFailure.malformed
+        }
+        let remaining = try await list(.recent, in: client)
+        guard remaining.isEmpty else {
+            throw XDriveIOSNativeFilesCollectionFailure.malformed
+        }
+    }
+
     private func requireCurrent(_ node: XDriveIOSNativeFilesNode,
                                 client: URLSession) async throws {
         guard node.id > 0, node.parent_id != nil, node.revision > 0,
@@ -372,6 +389,71 @@ final class XDriveIOSNativeFilesFavoriteMutationModel: ObservableObject {
     }
 }
 
+/// A lost DELETE acknowledgment is never automatically replayed.
+@MainActor
+final class XDriveIOSNativeFilesRecentClearModel: ObservableObject {
+    @Published private(set) var busy = false
+    @Published private(set) var status: String?
+    private var epoch = UUID()
+    private var running: Task<Void, Never>?
+
+    func invalidate() {
+        epoch = UUID()
+        running?.cancel()
+        running = nil
+        busy = false
+        status = nil
+    }
+
+    func clear(login: XDriveIOSNativeOwnerLoginModel,
+               onConfirmed: @MainActor @escaping () -> Void) {
+        guard !busy, running == nil, let expected = login.owner else {
+            status = "请先验证当前账户。"
+            return
+        }
+        let ticket = UUID()
+        epoch = ticket
+        busy = true
+        status = "正在清空最近使用记录…"
+        running = Task { @MainActor in
+            defer {
+                if epoch == ticket {
+                    busy = false
+                    running = nil
+                }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { throw XDriveIOSNativeFilesCollectionFailure.invalidOwner }
+                try await XDriveIOSNativeFilesCollectionsTransport(
+                    owner: auth.owner, accessToken: auth.accessToken
+                ).clearRecent()
+                try Task.checkCancellation()
+                let after = try await login.verifiedAuthorization()
+                guard epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(after.owner, expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
+                status = "最近使用记录已清空，云端文件及收藏未删除。"
+                busy = false
+                running = nil
+                onConfirmed()
+            } catch is CancellationError {
+                if epoch == ticket {
+                    status = "已停止等待；若请求已提交，请刷新确认。"
+                }
+            } catch {
+                guard epoch == ticket else { return }
+                status = "清空结果未确认，请刷新最近使用；不要自动重试。"
+            }
+        }
+    }
+}
+
 /// Files-owned recent/favorites subroute. Entries always come from one exact
 /// Owner projection and open the same L3 native Files Viewer.
 /// Collection actions preserve the exact Owner and projected Node.
@@ -389,6 +471,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesCollectionPageModel()
     @StateObject private var favorites = XDriveIOSNativeFilesFavoriteMutationModel()
+    @StateObject private var recentClear = XDriveIOSNativeFilesRecentClearModel()
+    @State private var showingClearRecentConfirmation = false
     @State private var selectedFile: XDriveIOSNativeFilesCollectionItem?
     @State private var selectedOwner: XDriveNativeOwnerRoot?
     @State private var returnFile: XDriveIOSNativeFilesNode?
@@ -481,7 +565,15 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if let status = favorites.status {
                     Text(status).foregroundStyle(.secondary).font(.footnote)
                 }
+                if recentClear.busy {
+                    HStack { ProgressView(); Text("正在清空最近记录…") }
+                }
+                if let status = recentClear.status {
+                    Text(status).foregroundStyle(.secondary).font(.footnote)
+                        .accessibilityIdentifier("native-ios-files-recent-clear-status")
+                }
             }
+            .disabled(recentClear.busy)
             .listStyle(.plain)
             .searchable(
                 text: $filterQuery,
@@ -490,6 +582,23 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             )
             .navigationTitle(kind.title)
             .navigationBarTitleDisplayMode(.inline)
+            .confirmationDialog(
+                "清空最近使用记录？",
+                isPresented: $showingClearRecentConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("清空最近使用记录", role: .destructive) {
+                    guard kind == .recent, phase == .active, model.verified,
+                          !model.loading, !model.items.isEmpty,
+                          !favorites.busy, !recentClear.busy,
+                          selectedFile == nil, locateIntent == nil,
+                          managementIntent == nil, login.owner != nil else { return }
+                    recentClear.clear(login: login) { reload() }
+                }
+                .accessibilityIdentifier("native-ios-files-recent-clear-confirm")
+            } message: {
+                Text("只清除当前账号的最近访问记录，不会删除文件、文件夹或收藏。")
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -499,10 +608,27 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                         }
                         .accessibilityIdentifier("native-ios-files-collection-view-mode")
                         Divider()
+                        if kind == .recent {
+                            Button(role: .destructive) {
+                                guard phase == .active, model.verified,
+                                      !model.loading, !model.items.isEmpty,
+                                      !favorites.busy, !recentClear.busy,
+                                      selectedFile == nil, locateIntent == nil,
+                                      managementIntent == nil,
+                                      login.owner != nil else { return }
+                                showingClearRecentConfirmation = true
+                            } label: {
+                                Label("清空最近使用记录", systemImage: "trash")
+                            }
+                            .disabled(!model.verified || model.loading ||
+                                      model.items.isEmpty || favorites.busy ||
+                                      recentClear.busy)
+                            .accessibilityIdentifier("native-ios-files-recent-clear")
+                        }
                         Button { reload() } label: {
                             Label("刷新", systemImage: "arrow.clockwise")
                         }
-                        .disabled(model.loading || favorites.busy)
+                        .disabled(model.loading || favorites.busy || recentClear.busy)
                     } label: {
                         Label("更多", systemImage: "ellipsis.circle")
                     }
@@ -578,6 +704,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if selectedFile == nil && locateIntent == nil && managementIntent == nil {
                     model.invalidate()
                     favorites.invalidate()
+                    recentClear.invalidate()
+                    showingClearRecentConfirmation = false
                 }
             }
             .onChange(of: login.owner) { _ in
@@ -588,8 +716,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 locateOwner = nil
                 managementIntent = nil
                 filterQuery = ""
+                showingClearRecentConfirmation = false
                 model.invalidate()
                 favorites.invalidate()
+                recentClear.invalidate()
             }
             .onChange(of: model.loading) { now in
                 guard !now, selectedFile == nil, let target = returnFile else { return }
@@ -799,7 +929,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     }
 
     private func reload() {
-        guard !favorites.busy else { return }
+        guard !favorites.busy, !recentClear.busy else { return }
         model.load(kind, login: login)
     }
 }
