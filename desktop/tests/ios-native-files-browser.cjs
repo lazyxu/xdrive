@@ -150,3 +150,17 @@ test('native Files full-library search debounces valid keyboard drafts and cance
   assert.match(view, /private func clearSearch\(\)[\s\S]*?pendingNavigationReturnNodeID = restoreNodeID\s*reload\(\)/)
   assert.doesNotMatch(chrome, /URLSession|\/api\/v1\/search|XDriveIOSNativeFilesReader\(/)
 })
+
+
+test('native Files kind filter matches PWA Server semantics on all 64-item windows', () => {
+  assert.match(page, /static func validSearchKind\(_ kind: String\) -> Bool/);
+  assert.match(page, /"folder": "文件夹", "file": "全部文件"/);
+  assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearchKind\(kind\)/);
+  assert.match(view, /if kind != "all" \{\s*queryItems\.append\(URLQueryItem\(name: "kind", value: kind\)\)/);
+  assert.match(source, /if \(filters\.kind\) params\.set\('kind', filters\.kind\)/);
+  assert.match(view, /query: activeQuery, kind: searchKind, sort: sort, order: order/g);
+  assert.match(view, /query, offset: requestOffset, sort: sort, order: order, kind: kind/);
+  assert.match(view, /native-ios-files-search-kind-filter/);
+  assert.match(view, /\.onChange\(of: searchKind\)[\s\S]*?reload\(resetOffset: true\)/);
+  assert.match(view, /activeQuery = ""\s*queryDraft = ""\s*searchKind = "all"/);
+});
