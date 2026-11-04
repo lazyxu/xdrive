@@ -364,11 +364,16 @@ final class XDriveIOSNativePhotoReceiptReviewController: ObservableObject {
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ),
                       let current = scheduleStore.status(owner: expected),
-                      current.enabled, current.pausedForReview
+                      current.enabled, current.pausedForReview,
+                      let savedRule = current.backupStartRule
                 else { throw XDriveIOSNativeSessionError.staleSession }
+                // Receipt review only resumes the existing Owner plan. Never
+                // create a new "only new" baseline or broaden it to "all".
                 _ = try scheduleStore.configure(
                     owner: expected, minutes: current.intervalMinutes,
-                    allowICloud: current.allowICloudOriginals
+                    allowICloud: current.allowICloudOriginals,
+                    startRule: savedRule,
+                    enabledAt: current.newOnlySince ?? Date()
                 )
                 self.pending = 0
                 self.hasLedgerScope = true
