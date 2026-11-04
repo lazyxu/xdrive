@@ -321,6 +321,7 @@ private struct XDriveIOSNativeVirtualViewerSelection: Identifiable {
 struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @Binding var savedOffset: Int
     @Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter
+    @Binding var exactDateTarget: XDriveIOSNativePhotoExactDateTarget?
     @Environment(\.scenePhase) private var phase
     @State private var total = 0
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
@@ -520,6 +521,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                     },
                                     onRead: { page in
                                         dragLoadedPages[page.startOffset] = page
+                                        alignExactDateTarget(in: page, using: scroll)
                                         if let expected = returnID, returnPageOffset == page.startOffset,
                                            let candidate = page.items.first(where: {
                                                $0.id == expected && $0.capturedAt == returnDate &&
@@ -536,7 +538,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                     onPageHidden: { hiddenOffset in
                                         dragLoadedPages.removeValue(forKey: hiddenOffset)
                                     },
-                                    onFailure: { invalidate(with: "照片库已变化，旧页面已废弃，请重新读取。") }
+                                    onFailure: {
+                                        exactDateTarget = nil
+                                        invalidate(with: "照片库已变化，旧页面已废弃，请重新读取。")
+                                    }
                                 )
                                 .onAppear { savedOffset = offset }
                             }
@@ -691,6 +696,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             if authorized && selected == nil && !loading && total == 0 { reload() }
         }
         .onChange(of: mediaFilter) { _ in
+            exactDateTarget = nil
             guard phase == .active else { return }
             selectionMode = false
             selectedCandidates.removeAll()
@@ -702,6 +708,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         .onChange(of: phase) { value in
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             if value != .active {
+                exactDateTarget = nil
                 accessibilityFocusedTileID = nil
                 cancelSharePreparation()
                 invalidate(with: nil)
@@ -728,9 +735,44 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     /// Position-only navigation across already enumerated numeric 64-slot
     /// descriptors. The target page re-opens and revalidates PhotoKit on mount.
     /// Never walk the whole photo library or create a media-identifier array.
+    /// Never scroll to an unverified PhotoKit asset or an old-date row.
+    /// The numeric date index is only a hint; the visible scanner decides
+    /// the actual identity before a UI scroll is allowed.
+    private func alignExactDateTarget(
+        in page: XDrivePhotoKitScanPage, using scroll: ScrollViewProxy
+    ) {
+        guard let target = exactDateTarget,
+              target.pageOffset == page.startOffset else { return }
+        let index = target.slot - page.startOffset
+        let candidate = (index >= 0 && index < page.items.count)
+            ? page.items[index] : nil
+        let verified = candidate.map {
+            target.matches(
+                pageOffset: page.startOffset,
+                pageTotal: page.totalAccessibleAssets,
+                itemIndex: index,
+                kind: $0.kind, capturedAt: $0.capturedAt,
+                filterValue: mediaFilter.rawValue
+            )
+        } ?? false
+        DispatchQueue.main.async {
+            guard exactDateTarget?.id == target.id,
+                  phase == .active, authorized,
+                  total == target.total else { return }
+            guard verified, let candidate else {
+                exactDateTarget = nil
+                invalidate(with: "选定日期的照片或权限已变化，请重新读取日期索引。")
+                return
+            }
+            scroll.scrollTo("photo:\(candidate.id)", anchor: .top)
+            exactDateTarget = nil
+        }
+    }
+
     private func jumpToEdge(newest: Bool, using scroll: ScrollViewProxy) {
         guard authorized, phase == .active, selected == nil,
               !loading, !actionBusy, !shareBusy, total > 0 else { return }
+        exactDateTarget = nil
         let requested = newest ? 0 : total - 1
         let offset = XDriveIOSNativePhotoVirtualPagePolicy.normalizedAnchor(
             requested: requested, total: total

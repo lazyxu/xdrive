@@ -331,6 +331,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
     @State private var selectedMonthKey: String?
     @State private var jumpDate = Date()
     @State private var jumpDateMessage: String?
+    @State private var exactDateTarget: XDriveIOSNativePhotoExactDateTarget?
     @State private var wallRevision: UInt64 = 0
     @State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
 
@@ -355,7 +356,8 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
             .padding(.horizontal, 12)
             .frame(minHeight: 46)
             XDriveIOSNativeLocalContinuousGalleryScreen(
-                savedOffset: $savedOffset, mediaFilter: $mediaFilter
+                savedOffset: $savedOffset, mediaFilter: $mediaFilter,
+                exactDateTarget: $exactDateTarget
             )
             .id(wallRevision)
         }
@@ -404,6 +406,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
                                        mediaFilter == .livePhotos ? "所有实况（查看全部）" :
                                        mediaFilter == .screenshots ? "所有截屏（查看全部）" :
                                        "所有媒体（查看全部）") {
+                                    exactDateTarget = nil
                                     jump(to: 0)
                                 }
                                 .accessibilityIdentifier("native-ios-local-timeline-all")
@@ -431,6 +434,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
                                     ForEach(index.groups(for: scale)) { group in
                                         if shows(group) {
                                             Button {
+                                                prepareExactDateTarget(for: group)
                                                 jump(to: group.firstPageOffset)
                                             } label: {
                                                 HStack(spacing: 12) {
@@ -509,9 +513,13 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
             changes.stop()
             model.invalidate()
         }
-        .onChange(of: changes.revision) { _ in model.invalidate() }
+        .onChange(of: changes.revision) { _ in
+            exactDateTarget = nil
+            model.invalidate()
+        }
         .onChange(of: mediaFilter) { _ in
             model.invalidate()
+            exactDateTarget = nil
             jumpDateMessage = nil
             showingDates = false
         }
@@ -519,6 +527,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
             if visible {
                 selectedYearKey = nil
                 selectedMonthKey = nil
+                exactDateTarget = nil
                 jumpDateMessage = nil
                 scale = .year
             }
@@ -535,6 +544,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
         .onChange(of: phase) { state in
             if state != .active {
                 model.invalidate()
+                exactDateTarget = nil
                 showingDates = false
             }
         }
@@ -568,6 +578,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
             selectedMonthKey = group.key
             scale = .day
         default:
+            prepareExactDateTarget(for: group)
             jump(to: group.firstPageOffset)
         }
     }
@@ -598,7 +609,18 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
             return
         }
         jumpDateMessage = nil
+        prepareExactDateTarget(for: group)
         jump(to: group.firstPageOffset)
+    }
+
+    private func prepareExactDateTarget(for group: XDriveIOSNativePhotoTimelineGroup) {
+        guard let index = model.index, model.indexFilter == mediaFilter else {
+            exactDateTarget = nil
+            return
+        }
+        exactDateTarget = XDriveIOSNativePhotoExactDateTarget(
+            group: group, total: index.totalSlots, filterValue: mediaFilter.rawValue
+        )
     }
 
     private func jump(to requestedOffset: Int) {
@@ -608,6 +630,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
               requestedOffset >= 0,
               requestedOffset <= max(0, ((max(1, index.totalSlots) - 1) / 64) * 64),
               requestedOffset % 64 == 0 else {
+            exactDateTarget = nil
             model.invalidate()
             return
         }
