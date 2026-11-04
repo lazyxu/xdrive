@@ -367,7 +367,33 @@ struct XDriveIOSNativeMediaGalleryReader {
     /// The native access bearer is never part of the signed URL.
     func preview(_ item: XDriveIOSNativeMediaItem) async throws
         -> (image: UIImage?, videoURL: URL?) {
+        try await preview(item, maxDecodedPixel: 4096)
+    }
+
+    /// Only a user magnifying a displayed ordinary cloud still calls this.
+    /// Re-verify the complete selected Owner/Node identity before and after
+    /// the same signed preview reader, never mint a second media authority.
+    func enhancedStill(_ item: XDriveIOSNativeMediaItem) async throws -> UIImage {
+        guard item.supportsPreview, !item.isVideo, !item.isLive else {
+            throw XDriveIOSNativeMediaReadFailure.unsupported
+        }
+        _ = try await currentOriginal(item)
+        try Task.checkCancellation()
+        let high = try await preview(item, maxDecodedPixel: 6144)
+        try Task.checkCancellation()
+        _ = try await currentOriginal(item)
+        guard let image = high.image else {
+            throw XDriveIOSNativeMediaStillPreviewFallback.unavailable
+        }
+        return image
+    }
+
+    private func preview(_ item: XDriveIOSNativeMediaItem, maxDecodedPixel: Int) async throws
+        -> (image: UIImage?, videoURL: URL?) {
         guard item.supportsPreview else {
+            throw XDriveIOSNativeMediaReadFailure.unsupported
+        }
+        guard maxDecodedPixel == 4096 || maxDecodedPixel == 6144 else {
             throw XDriveIOSNativeMediaReadFailure.unsupported
         }
         let ticketURL = try endpoint("/api/v1/files/\(item.id)/preview-ticket")
@@ -414,7 +440,7 @@ struct XDriveIOSNativeMediaGalleryReader {
             let options: [String: Any] = [
                 kCGImageSourceCreateThumbnailFromImageAlways as String: true,
                 kCGImageSourceCreateThumbnailWithTransform as String: true,
-                kCGImageSourceThumbnailMaxPixelSize as String: 4096,
+                kCGImageSourceThumbnailMaxPixelSize as String: maxDecodedPixel,
                 kCGImageSourceShouldCacheImmediately as String: false
             ]
             let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)

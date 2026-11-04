@@ -68,7 +68,10 @@ test('native PhotoAsset Viewer foreground cancellation reaches both detached Ima
   assert.match(tile, /client\.invalidateAndCancel\(\)/)
   assert.match(viewer, /endpoint\("\/api\/v1\/files\/\\\(item\.id\)\/preview-ticket"\)/)
   assert.match(viewer, /read\(signedURL, bearer: false, maximum: 32 \* 1_048_576\)/)
-  assert.match(viewer, /kCGImageSourceThumbnailMaxPixelSize as String: 4096/)
+  assert.match(viewer, /kCGImageSourceThumbnailMaxPixelSize as String: maxDecodedPixel/)
+  assert.match(viewer, /try await preview\(item, maxDecodedPixel: 4096\)/)
+  assert.match(viewer, /let high = try await preview\(item, maxDecodedPixel: 6144\)/)
+  assert.match(viewer, /guard maxDecodedPixel == 4096 \|\| maxDecodedPixel == 6144/)
   assert.doesNotMatch(media, /UploadSessionTransport|PHAssetCreationRequest/)
 })
 

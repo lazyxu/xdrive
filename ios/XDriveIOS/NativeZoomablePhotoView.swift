@@ -7,6 +7,8 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
     let image: UIImage
     var onSwipe: ((Int) -> Void)? = nil
     var onTap: (() -> Void)? = nil
+    var highResolutionSource: String? = nil
+    var onHighResolutionRequest: (() -> Void)? = nil
 
     /// Keep the same still-view initializer for Files, local Photos and cloud.
     /// Only the owning Viewer can accept/reject a bounded neighbor.
@@ -24,11 +26,23 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         return copy
     }
 
+    /// Only an explicitly magnified, same-identity still opts into a
+    /// bounded higher-quality request. Files and other Viewers do not.
+    func onZoomHighResolution(source: String, request: @escaping () -> Void) -> Self {
+        var copy = self
+        copy.highResolutionSource = source
+        copy.onHighResolutionRequest = request
+        return copy
+    }
+
     final class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
         weak var photo: UIImageView?
         weak var scroll: UIScrollView?
         var onSwipe: ((Int) -> Void)?
         var onTap: (() -> Void)?
+        var onHighResolutionRequest: (() -> Void)?
+        var highResolutionSource: String?
+        var didRequestHighResolution = false
 
         private var pagingEpoch: UInt64 = 0
 
@@ -118,6 +132,19 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
             refreshAccessibilityZoom(scrollView)
+            guard scrollView.zoomScale >= 1.5,
+                  let source = highResolutionSource,
+                  !didRequestHighResolution, onHighResolutionRequest != nil
+            else { return }
+            didRequestHighResolution = true
+            // A zoom delegate can run during a SwiftUI update; defer the
+            // request, then reject a retired or reused image source.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.highResolutionSource == source,
+                      self.didRequestHighResolution,
+                      (self.scroll?.zoomScale ?? 1) >= 1.5 else { return }
+                self.onHighResolutionRequest?()
+            }
         }
 
         private func accessibilityZoom(by factor: CGFloat) -> Bool {
@@ -216,6 +243,8 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         context.coordinator.scroll = scroll
         context.coordinator.onSwipe = onSwipe
         context.coordinator.onTap = onTap
+        context.coordinator.highResolutionSource = highResolutionSource
+        context.coordinator.onHighResolutionRequest = onHighResolutionRequest
         // Make the shared still image an accessible focus target. The owning
         // SwiftUI Viewer continues providing its media-specific label.
         scroll.isAccessibilityElement = true
@@ -263,11 +292,30 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
     func updateUIView(_ scroll: UIScrollView, context: Context) {
         context.coordinator.onSwipe = onSwipe
         context.coordinator.onTap = onTap
+        context.coordinator.onHighResolutionRequest = onHighResolutionRequest
+        let sameSource = highResolutionSource != nil &&
+            context.coordinator.highResolutionSource == highResolutionSource
+        if !sameSource {
+            context.coordinator.highResolutionSource = highResolutionSource
+            context.coordinator.didRequestHighResolution = false
+        }
         guard let photo = context.coordinator.photo else { return }
-        // A reused detail view must never retain another picture's zoom.
+        // Preserve the finger's zoom only for extra pixels from the verified
+        // SAME source. A neighbor or ordinary image replacement resets 1x.
         if photo.image !== image {
+            let previousPixels = max(
+                photo.image?.cgImage?.width ?? 0, photo.image?.cgImage?.height ?? 0
+            )
+            let updatedPixels = max(
+                image.cgImage?.width ?? 0, image.cgImage?.height ?? 0
+            )
+            let isSameImageUpgrade = sameSource &&
+                context.coordinator.didRequestHighResolution &&
+                updatedPixels > previousPixels
             context.coordinator.retirePageAnimation()
-            scroll.setZoomScale(scroll.minimumZoomScale, animated: false)
+            if !isSameImageUpgrade {
+                scroll.setZoomScale(scroll.minimumZoomScale, animated: false)
+            }
             photo.image = image
             context.coordinator.refreshAccessibilityZoom(scroll)
         }
