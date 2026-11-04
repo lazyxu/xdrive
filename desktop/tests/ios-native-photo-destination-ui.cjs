@@ -8,6 +8,7 @@ const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 
 const screen = read('ios/XDriveIOS/NativePhotoBackupScreen.swift');
 const model = read('ios/XDriveIOS/NativePhotoBackupDestinationModel.swift');
+const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift');
 const server = read('internal/api/ios_photo_backup_destination.go');
 const managedUpload = read('internal/api/ios_photo_managed_uploads.go');
 const router = read('internal/api/router.go');
@@ -63,7 +64,7 @@ test('only server response supplies actual target/source ID, local path cannot b
 test('native original backup is gated by a verified managed destination and uses the scoped CAS route', () => {
   assert.ok((screen.match(/!destination\.confirmedForCurrentName/g) || []).length >= 3,
     'manual, focused and automatic writers all require the confirmed current destination');
-  assert.match(model, /readExistingForUpload/);
+  assert.match(controller, /readExistingForUpload/);
   assert.match(model, /not an upload permission/);
   assert.match(managedUpload, /func \(s \*Server\) iosPhotoManagedCreateUpload/);
   assert.match(managedUpload, /iosPhotoManagedAuthorizedScope\(c\)/);

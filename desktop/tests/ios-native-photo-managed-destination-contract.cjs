@@ -34,7 +34,7 @@ test('server is sole authority for actual Node/Path and never adopts a user-supp
   assert.match(server, /managedPushDeviceFolderName\(device\)/);
   assert.match(server, /renameManagedSourceTargetTx\(tx, source, name\)/);
   assert.match(server, /"target_node_id": target\.ID/);
-  assert.match(server, /"target_path": path/);
+  assert.match(server, /"target_path":\s*path/);
   assert.match(server, /"configured": false/);
   assert.match(server, /"suggested_name": suggestedIOSPhotoDestinationName\(device\.Name\)/);
   assert.match(managed, /"设备备份"/);
