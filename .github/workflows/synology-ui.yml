@@ -120,6 +120,15 @@ on:
       - 'desktop/tests/shared-workspace-compact-navigation.cjs'
       - 'ui/shared/src/mui/TaskCenterPage.tsx'
       - 'ui/shared/src/mui/SynologyLocalTaskSection.tsx'
+      - 'ui/shared/src/device-backup-auto-readiness.ts'
+      - 'ui/shared/src/device-backups.ts'
+      - 'ui/shared/src/mui/DeviceBackupLocalScheduleDialog.tsx'
+      - 'internal/client/local_bound_schedule.go'
+      - 'internal/localbackupipc/types.go'
+      - 'internal/localbackupipc/auto_schedule_projection_test.go'
+      - 'cmd/xdrive-agent/device_backup_local_auto_observation*.go'
+      - 'cmd/xdrive-agent/desktop_ipc_device_backup_auto_observation_test.go'
+      - 'web/scripts/test-synology-auto-readiness.mjs'
       - 'ui/shared/src/synology-task-status.ts'
       - 'web/scripts/test-synology-batch-validation.mjs'
       - 'ui/shared/src/synology-browser-storage.ts'
@@ -276,6 +285,15 @@ on:
       - 'desktop/tests/shared-workspace-compact-navigation.cjs'
       - 'ui/shared/src/mui/TaskCenterPage.tsx'
       - 'ui/shared/src/mui/SynologyLocalTaskSection.tsx'
+      - 'ui/shared/src/device-backup-auto-readiness.ts'
+      - 'ui/shared/src/device-backups.ts'
+      - 'ui/shared/src/mui/DeviceBackupLocalScheduleDialog.tsx'
+      - 'internal/client/local_bound_schedule.go'
+      - 'internal/localbackupipc/types.go'
+      - 'internal/localbackupipc/auto_schedule_projection_test.go'
+      - 'cmd/xdrive-agent/device_backup_local_auto_observation*.go'
+      - 'cmd/xdrive-agent/desktop_ipc_device_backup_auto_observation_test.go'
+      - 'web/scripts/test-synology-auto-readiness.mjs'
       - 'ui/shared/src/synology-task-status.ts'
       - 'web/scripts/test-synology-batch-validation.mjs'
       - 'ui/shared/src/synology-browser-storage.ts'
@@ -371,13 +389,108 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Native DSM session, owner ACL and CSRF negative contracts
         run: |
-          unformatted="$(gofmt -l internal/synologyui internal/localbackupipc/server_login*.go internal/localbackupipc/recovery_review*.go cmd/xd/backup_synology_ui.go)"
+          unformatted="$(gofmt -l internal/synologyui internal/localbackupipc/server_login*.go internal/localbackupipc/recovery_review*.go internal/localbackupipc/types.go internal/localbackupipc/auto_schedule_projection_test.go internal/client/local_bound_schedule.go cmd/xdrive-agent/device_backup_local_auto_observation*.go cmd/xdrive-agent/desktop_ipc_device_backup_auto_observation_test.go cmd/xd/backup_synology_ui.go)"
           if test -n "$unformatted"; then
             echo "::error title=DSM Go formatting::Unformatted source files detected"
             printf '%s\n' "$unformatted" >&2
             exit 1
           fi
           go test -count=1 ./internal/synologyui
+          go test -count=1 ./internal/localbackupipc -run '^TestAgentScheduleReadinessWireIsOptionalBoundedAndNeverAuthorizesWrites
+          go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerSearch|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|OwnerUploadedFile|OwnerDeleteNode|OwnerMoveNode|OwnerCopyNode|ServerLogin|RecoveryReview)'
+          go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail|OwnerGallery|ReadVerifiedOwnerLiveMotion|OwnerLiveMotion)'
+          go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|ExplicitOwnerSearch|OwnerMediaRange|OwnerThumbnail|RequiresAuthenticatedIPCBeforeScheduling|IPCServeFailureStopsScheduler)|OwnerGallery|OwnerLiveMotion|AgentOwnerSmallUpload)'
+          # Keep the existing real authenticated xd→owning-Agent IPC two-pass
+          # fixture in the DSM gate. Its Server responses are simulated:
+          # first-file and unchanged-file observations are not physical CAS proof.
+          go test -count=1 ./cmd/xd \
+            -run '^Test(Backup|HeadlessCLIInitAndIncrementalsShareOneAuthenticatedAgent)'
+          # Reuse the original Agent's per-file SQL receipt, no-change skip,
+          # and restart recovery safety regressions; no DSM-specific writer.
+          go test -count=1 ./cmd/xdrive-agent \
+            -run '^(TestCommonBatchFileAThenFileBThenUpdatedA|TestLocalCommonIncrementalSkipRechecksCurrentParentWithoutWrites|TestLocalCommonSkipRechecksCurrentFileBeforeCountingUnchanged|TestPrivateStageRestartOnlyHistoricalPhysicalReceiptCountsAsObserved|TestLocalCommonBatchFailedWorkerNeverReturnsConfirmedPartial)$'
+      - name: P0-0 original native first, unchanged, updated and crash recovery SQL/CAS
+        shell: bash
+        run: |
+          set -euo pipefail
+          # These original Server tests use PostgreSQL, LocalCAS and real
+          # native file bytes, unlike the separate CGI/CLI mock fixtures.
+          # They do not assert entire DSM SourceRun or physical Package Center.
+          go test -count=1 -v -timeout=8m ./internal/api -run '^Test(LocalPushCommonNativeVersionedFilesAThenBThenUpdatedA|LocalPushCommonNativeHTTPPhysicalOriginalReplay|LocalPushCommonActualProcessKillAfterSQLCommitReplay|LocalPushCommonActualProcessKillBeforeAdmissionACKReplay)$'
+          # Verify the ORIGINAL Agent's whole native Source batch against the
+          # same disposable PostgreSQL/CAS fixture, including status after
+          # an in-process Agent-controller restart (not physical DSM/CGI).
+          go test -count=1 -v -timeout=8m ./cmd/xdrive-agent -run '^TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental$'
+      - name: Check Desktop and DSM shared backup presentation contracts
+        run: node web/scripts/check-synology-desktop-backup-parity.mjs
+      - name: Build isolated DSM-only shared MUI page
+        run: |
+          npm ci --prefix web
+          node web/scripts/test-synology-browser-storage.mjs
+          node web/scripts/test-synology-nas-storage.mjs
+          node web/scripts/test-synology-backup-target-browser.mjs
+          node web/scripts/test-synology-batch-validation.mjs
+          node web/scripts/test-synology-auto-readiness.mjs
+          node web/scripts/test-synology-request-cancel.mjs
+          node web/scripts/test-synology-owner-read.mjs
+          node web/scripts/test-synology-owner-quota.mjs
+          node web/scripts/test-synology-owner-gallery.mjs
+          node web/scripts/test-synology-owner-live-motion.mjs
+          node web/scripts/test-synology-owner-files.mjs
+          node web/scripts/test-synology-owner-upload.mjs
+          node web/scripts/test-synology-owner-delete.mjs
+          node web/scripts/test-synology-owner-move.mjs
+          node web/scripts/test-synology-owner-copy.mjs
+          node web/scripts/test-synology-owner-search.mjs
+          node web/scripts/test-synology-media-preview.mjs
+          node web/scripts/test-synology-owner-download.mjs
+          node web/scripts/test-synology-owner-preview.mjs
+          node web/scripts/test-synology-owner-thumbnail.mjs
+          node web/scripts/test-synology-media-stream.mjs
+          node web/scripts/test-synology-nas-shares.mjs
+          node web/scripts/test-synology-nas-preflight.mjs
+          node web/scripts/test-synology-gui-login.mjs
+          node web/scripts/test-synology-nas-drafts.mjs
+          node web/scripts/test-synology-nas-draft-bind.mjs
+          node web/scripts/test-synology-nas-source-create.mjs
+          node web/scripts/test-synology-recovery-review.mjs
+          npm run build:synology --prefix web
+      - name: Verify static artifacts remain relative to DSM launcher
+        run: |
+          test -s web/dist-synology/synology.html
+          test -s web/dist-synology/.vite/manifest.json
+          node web/scripts/verify-synology-ui.mjs
+      - name: Package CLI-only and optional shared-MUI ARMv7 SPKs separately
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x scripts/build-synology-spk.sh  # Preserve original executable file mode in SPK release tooling.
+          sh -n packaging/synology/ui/backup.cgi
+          export XDRIVE_BUILD_VERSION=0.1.0+synology-dev
+          bash scripts/build-synology-spk.sh 0.1.0-1 release/synology-cli
+          python3 scripts/ci/test-synology-spk.py \
+            release/synology-cli/xdrivenas-armada38x-0.1.0-1.spk \
+            release/synology-cli/core 0.1.0-1
+          bash scripts/build-synology-spk.sh 0.1.0-1 \
+            release/synology-ui release/synology-cli/core web/dist-synology
+          python3 scripts/ci/test-synology-spk-ui.py \
+            release/synology-ui/xdrivenas-armada38x-0.1.0-1.spk \
+            release/synology-cli/core 0.1.0-1 web/dist-synology
+          bash scripts/build-synology-spk.sh 0.1.0-1 \
+            release/synology-repeat release/synology-cli/core web/dist-synology
+          cmp release/synology-ui/xdrivenas-armada38x-0.1.0-1.spk \
+            release/synology-repeat/xdrivenas-armada38x-0.1.0-1.spk
+      - name: Retain source-exact optional DSM MUI candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdrivenas-mui-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            release/synology-ui/*.spk
+            release/synology-ui/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+          go test -count=1 ./cmd/xdrive-agent -run '^Test(LocalAutoReadiness|DesktopIPCExistingScheduleCarriesRedactedAgentRuleTime)'
           go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerSearch|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|OwnerUploadedFile|OwnerDeleteNode|OwnerMoveNode|OwnerCopyNode|ServerLogin|RecoveryReview)'
           go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail|OwnerGallery|ReadVerifiedOwnerLiveMotion|OwnerLiveMotion)'
           go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|ExplicitOwnerSearch|OwnerMediaRange|OwnerThumbnail|RequiresAuthenticatedIPCBeforeScheduling|IPCServeFailureStopsScheduler)|OwnerGallery|OwnerLiveMotion|AgentOwnerSmallUpload)'
