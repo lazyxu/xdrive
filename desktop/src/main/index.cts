@@ -363,7 +363,7 @@ function resetDesktopPlacesWebAuth() {
   // Serialize revocation behind any in-flight cookie login so a stale
   // Set-Cookie cannot restore a previous Owner after sign-out/account switch.
   const clear = desktopPlacesWebQueue.then(() =>
-    session.fromPartition(desktopPlacesWebPartition).clearStorageData({
+    session.fromPartition(desktopPlacesWebPartition, {cache:false}).clearStorageData({
       storages: ['cookies', 'localstorage'],
     }))
   desktopPlacesWebQueue = clear.catch(() => {})
@@ -393,11 +393,13 @@ function seedDesktopPlacesWebAuth(server: string, owner: string,
   const pending = desktopPlacesWebQueue.then(async () => {
     if (generation !== desktopPlacesWebGeneration ||
         !desktopPlacesWebOwnerStillCurrent(identity)) return false
-    const places = session.fromPartition(desktopPlacesWebPartition)
+    const places = session.fromPartition(desktopPlacesWebPartition, {cache:false})
     // Chromium's network stack owns TLS validation and the partition Cookie
     // jar. The password is used only for this same-origin HTTPS POST in Main.
     const response = await places.fetch(identity.origin + '/api/v1/auth/browser/login', {
       method: 'POST', credentials: 'include',
+      // A redirect must never forward the user's password to another host.
+      redirect: 'error', signal: AbortSignal.timeout(12_000),
       headers: {
         'Origin': identity.origin,
         'Content-Type': 'application/json',
