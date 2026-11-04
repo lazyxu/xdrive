@@ -99,6 +99,10 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 		if changed.RowsAffected != 1 {
 			return errRevisionConflict
 		}
+		// Clear the pre-update snapshot before reloading. GORM may otherwise
+		// retain pointer fields whose database value was set to NULL (notably
+		// run_requested_at) in the already-populated destination struct.
+		updated = meta.Source{}
 		return tx.Where("id = ? AND owner_id = ?", updated.ID, updated.OwnerID).
 			Take(&updated).Error
 	})
