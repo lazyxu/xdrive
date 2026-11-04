@@ -491,6 +491,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
     @StateObject private var favoriteShortcuts = XDriveIOSNativeFilesCollectionPageModel()
+    @StateObject private var searchOptions = XDriveIOSNativeFilesSearchOptionsModel()
     @State private var favoriteShortcutsOwner: XDriveNativeOwnerRoot?
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
     @StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel()
@@ -554,8 +555,22 @@ struct XDriveIOSNativeFilesBrowser: View {
         return folder?.id ?? owner.rootNodeID
     }
 
+    private var isGlobalSearch: Bool {
+        !activeQuery.isEmpty || searchFilters.hasActiveFilters
+    }
+
+    private var searchSourceFilterTitle: String {
+        guard let id = searchFilters.sourceID else { return "同步文件夹" }
+        return searchOptions.sources.first(where: { $0.id == id })?.name ?? "同步文件夹已筛选"
+    }
+
+    private var searchTagFilterTitle: String {
+        guard let id = searchFilters.tagID else { return "标签" }
+        return searchOptions.tags.first(where: { $0.id == id })?.name ?? "标签已筛选"
+    }
+
     private var canSelectPage: Bool {
-        !model.loading && model.verifiedPage && activeQuery.isEmpty &&
+        !model.loading && model.verifiedPage && !isGlobalSearch &&
             login.owner != nil && !model.entries.isEmpty &&
             !batchTrash.busy && !batchTarget.busy &&
             !batchExport.busy && batchExport.prepared.isEmpty
@@ -567,7 +582,7 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     /// Native Files Browse starts at locations and shortcuts, not inside an
     /// arbitrary server directory. Enter the verified cloud root explicitly.
-    private var isHome: Bool { folder == nil && activeQuery.isEmpty }
+    private var isHome: Bool { folder == nil && !isGlobalSearch }
 
     /// Present only a few folders from the existing, bounded and
     /// Owner-verified Favorites projection. Never infer navigation IDs from
@@ -666,18 +681,20 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
-    @ViewBuilder private var filesHeader: some View {
-        if !activeQuery.isEmpty || searchError != nil || locatedFileNotice != nil {
-            Section {
-                if !activeQuery.isEmpty {
-                    HStack {
-                        Text("全库搜索：\(activeQuery)")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Spacer(minLength: 8)
-                        Button("清除") { clearSearch() }
-                            .accessibilityIdentifier("native-ios-files-clear-search")
-                    }
-                    if !selecting {
+        @ViewBuilder private var filesHeader: some View {
+        Section("全库筛选") {
+            if isGlobalSearch {
+                HStack {
+                    Text(activeQuery.isEmpty ? "全库筛选结果" : "全库搜索：\(activeQuery)")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Button("清除") { clearSearch() }
+                        .accessibilityIdentifier("native-ios-files-clear-search")
+                }
+            }
+            if !selecting {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 18) {
                         Menu {
                             Picker("搜索类型", selection: $searchFilters.kind) {
                                 Text("全部类型").tag("all")
@@ -745,14 +762,75 @@ struct XDriveIOSNativeFilesBrowser: View {
                                 .font(.subheadline)
                         }
                         .accessibilityIdentifier("native-ios-files-search-size-filter")
+                        if (searchOptions.verified && !searchOptions.sources.isEmpty) ||
+                            searchFilters.hasSourceFilter {
+                            Menu {
+                                Button("全部同步文件夹") { searchFilters.sourceID = nil }
+                                if searchOptions.verified {
+                                    ForEach(searchOptions.sources) { source in
+                                        Button {
+                                            searchFilters.sourceID = source.id
+                                        } label: {
+                                            if searchFilters.sourceID == source.id {
+                                                Label(source.name, systemImage: "checkmark")
+                                            } else {
+                                                Text(source.name)
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Label(searchSourceFilterTitle, systemImage: "folder")
+                                    .font(.subheadline)
+                            }
+                            .accessibilityIdentifier("native-ios-files-search-source-filter")
+                        }
+                        if (searchOptions.verified && !searchOptions.tags.isEmpty) ||
+                            searchFilters.hasTagFilter {
+                            Menu {
+                                Button("全部标签") { searchFilters.tagID = nil }
+                                if searchOptions.verified {
+                                    ForEach(searchOptions.tags) { tag in
+                                        Button {
+                                            searchFilters.tagID = tag.id
+                                        } label: {
+                                            if searchFilters.tagID == tag.id {
+                                                Label(tag.name, systemImage: "checkmark")
+                                            } else {
+                                                Text(tag.name)
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Label(searchTagFilterTitle, systemImage: "tag")
+                                    .font(.subheadline)
+                            }
+                            .accessibilityIdentifier("native-ios-files-search-tag-filter")
+                        }
                     }
+                    .padding(.vertical, 4)
                 }
-                if let searchError {
-                    Text(searchError).foregroundStyle(.orange).font(.footnote)
+            }
+            if searchOptions.loading {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("正在读取同步文件夹和标签…")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
-                if let locatedFileNotice {
-                    Text(locatedFileNotice).foregroundStyle(.orange).font(.footnote)
+            } else if let error = searchOptions.errorMessage {
+                HStack {
+                    Text(error).font(.footnote).foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Button("重试") { searchOptions.load(login: login) }
+                        .accessibilityIdentifier("native-ios-files-search-options-retry")
                 }
+            }
+            if let searchError {
+                Text(searchError).foregroundStyle(.orange).font(.footnote)
+            }
+            if let locatedFileNotice {
+                Text(locatedFileNotice).foregroundStyle(.orange).font(.footnote)
             }
         }
     }
