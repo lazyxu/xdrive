@@ -7,6 +7,14 @@ enum XDriveIOSPhotoAutoSchedulePolicy {
     static let windowSize = 256
     static let maxNewFiles = 20
     static let catchUpCooldown: TimeInterval = 60
+    /// Explicitly enabling a NEW automatic plan also authorizes safe
+    /// foreground first-pass catch-up. Never upgrade a legacy saved plan's
+    /// nil preference behind the user's back, or override a saved false.
+    static func initialCatchUpPreference(
+        hasExistingPlan: Bool, savedPreference: Bool?
+    ) -> Bool {
+        hasExistingPlan ? (savedPreference ?? false) : true
+    }
     // PHChange callbacks are advisory. Give PhotoKit a short settling delay;
     // the existing 60-second active-scene timer remains the only poller.
     static let photoLibraryChangeDelay: TimeInterval = 5

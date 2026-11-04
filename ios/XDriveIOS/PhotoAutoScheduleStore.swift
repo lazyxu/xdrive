@@ -68,7 +68,10 @@ final class XDriveIOSPhotoAutoScheduleStore {
             nextDueAt: Date(), lastCompletedAt: existing?.lastCompletedAt,
             libraryChangeEpoch: existing?.libraryChangeEpoch,
             libraryAuthorizationRaw: existing?.libraryAuthorizationRaw,
-            catchUpWhenBehind: existing?.catchUpWhenBehind
+            catchUpWhenBehind: XDriveIOSPhotoAutoSchedulePolicy.initialCatchUpPreference(
+                hasExistingPlan: existing != nil,
+                savedPreference: existing?.catchUpWhenBehind
+            )
         )
         try persist(state, owner: owner)
         return state
