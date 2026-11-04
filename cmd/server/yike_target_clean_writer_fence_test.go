@@ -156,4 +156,3 @@ func TestLegacyYikeCleanMigrationIgnoresExpiredUploadAndTerminalOperation(t *tes
 		t.Fatalf("expired/terminal work incorrectly blocked migration: %+v", moved)
 	}
 }
-
