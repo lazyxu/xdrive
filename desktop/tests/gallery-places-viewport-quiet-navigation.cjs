@@ -75,10 +75,6 @@ function loadSharedMap() {
     },
     // P0-01 extracted an opt-in diagnostic. Keep this map-lifecycle test
     // scoped to the map: coverage is exercised by its own contract tests.
-    './MediaGalleryOwnerGPSOverview': {
-      XDriveMediaGalleryOwnerGPSOverview: props =>
-        React.createElement('owner-gps-overview', props),
-    },
     './MediaGalleryMapGPSCoverage': {
       XDriveMediaGalleryMapGPSCoverage: props =>
         React.createElement('gps-coverage', props),
@@ -103,7 +99,6 @@ const base = {
     child_origin:'https://map.example.test', ticket:'dummy' }),
   onOpenBaiduNativeCell:() => {},
   getBaiduJSAPIPrototype:async () => ({provider:'baidu-jsapi-4.0',browser_ak:'public-browser-ak',revision:1}),
-  listPlacesMapOverview:async () => ({items:[],total_photo_count:0,aggregated:false}),
 }
 async function render(props) {
   let view
@@ -178,13 +173,12 @@ test('GPS place wall navigation remains available when SDK is blocked', async ()
   await act(async () => view.unmount())
 })
 
-test('DSM mounts bounded current Owner GPS overview without an SDK Host', async () => {
+test('DSM without an SDK Host reports map unavailable instead of mounting another provider', async () => {
   global.window.location.href = 'https://gallery.example.test/gallery'
   const view = await render({ onOpenPlace: () => {}, diagnosticScope: 'owner-dsm' })
-  const overview = view.root.findAllByType('owner-gps-overview')
-  assert.equal(overview.length, 1)
-  assert.equal(overview[0].props.listPage, base.listPlacesMapOverview)
   assert.equal(view.root.findAllByType('isolated-child').length, 0)
+  assert.equal(view.root.findAll(node =>
+    node.props['data-xdrive-baidu-map-unavailable'] !== undefined).length, 1)
   await act(async () => view.unmount())
 })
 
