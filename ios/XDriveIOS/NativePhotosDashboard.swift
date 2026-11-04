@@ -128,6 +128,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     // Never persist camera/GPS coordinates with the navigation snapshot.
     @State private var mapSource: XDriveIOSNativePhotoMapSource = .local
     @State private var cloudMapCamera: MKCoordinateRegion?
+    // Session-only local WGS84 camera; never stored with navigation snapshot.
+    @State private var localMapCamera: MKCoordinateRegion?
     @State private var localMapJump: XDriveIOSNativeLocalMapJump?
     // A bounded navigation position; never holds a PhotoKit asset identity.
     @State private var localGalleryPageOffset = 0
@@ -246,6 +248,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                   ) else { return }
             // Reuse the existing Gallery map; never spawn another map stack.
             localMapJump = jump
+            localMapCamera = jump.camera
             localMapScope = .library
             mapSource = .local
             gallerySource = .map
@@ -313,6 +316,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 galleryFocusGeneration = UUID()
                 galleryFocused = false
                 localMapJump = nil
+                localMapCamera = nil
                 return
             }
             // Settings may revoke PhotoKit permission or a BGTask may pause
@@ -610,6 +614,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                         localMapPageOffset: $localMapPageOffset,
                         source: $mapSource,
                         cloudMapCamera: $cloudMapCamera,
+                        localMapCamera: $localMapCamera,
                         onFocusChange: {
                             updateGalleryFocus(
                                 $0, from: .map, expectedOwnerKey: focusOwnerKey,
@@ -896,6 +901,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         localMapJump = nil
         mapSource = .local
         cloudMapCamera = nil
+        localMapCamera = nil
         localAlbumDirectoryOffset = 0
         localGalleryPageOffset = 0
         dynamicFeature = nil

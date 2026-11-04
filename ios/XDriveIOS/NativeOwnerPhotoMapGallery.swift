@@ -18,6 +18,7 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     @Binding var localMapPageOffset: Int
     @Binding var source: XDriveIOSNativePhotoMapSource
     @Binding var cloudMapCamera: MKCoordinateRegion?
+    @Binding var localMapCamera: MKCoordinateRegion?
     var onFocusChange: ((Bool) -> Void)?
 
     var body: some View {
@@ -28,6 +29,14 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                 XDriveIOSNativeLocalPhotoMapScreen(
                     mapScope: $localMapScope,
                     offset: $localMapPageOffset,
+                    cameraOnEntry: localMapCamera,
+                    onLibraryCameraChange: { next in
+                        guard source == .local, let expectedOwner,
+                              XDriveIOSNativePhotoOwnerScope.matches(
+                                login.owner, expectedOwner
+                              ) else { return }
+                        localMapCamera = next
+                    },
                     onFocusChange: onFocusChange
                 )
             case .cloud:

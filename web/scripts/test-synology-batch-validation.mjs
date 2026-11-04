@@ -36,6 +36,12 @@ for (const required of [
   'return () => { active = false; abort.abort() }',
 ]) assert.ok(progress.includes(required), 'DSM scheduled Source status refresh lost: ' + required)
 assert.ok(!progress.includes('if (!batch?.running'), 'idle scheduled Source was not observed')
+for (const required of [
+  "已跳过 {batch.skipped_files.toLocaleString('zh-CN')}",
+  "未支持 {batch.unsupported_files.toLocaleString('zh-CN')}",
+  "待核对 {batch.uncertain_files.toLocaleString('zh-CN')}",
+  '自动调度不会依据不确定收据继续',
+]) assert.ok(progress.includes(required), 'DSM actual Agent count visibility lost: ' + required)
 // Unattended scheduled runs also appear in the same Source's history while
 // expanded. Never poll every NAS Source or retain timers across Owner switches.
 const localPanel = fs.readFileSync(path.join(root,
@@ -51,6 +57,54 @@ for (const required of [
   'client.history(id, abort.signal)',
   'return () => { active = false; abort.abort() }',
 ]) assert.ok(localPanel.includes(required), 'DSM scheduled history refresh lost: ' + required)
+
+// Only one expanded DSM Source may read the *saved* schedule. A configured
+// interval/Cron is not proof of an armed private Agent checkpoint or next due.
+const viewSchedule = ctx.module.exports.xDriveDSMBackupScheduleView
+const saved = {
+  source_id: 42, revision: 7, schedule_type: 'interval',
+  schedule_expression: '6h', schedule_timezone: '',
+}
+assert.match(viewSchedule(42, saved).title, /每 6h/)
+assert.equal(viewSchedule(42, saved).enabled, true)
+assert.equal(viewSchedule(42, { ...saved, schedule_type: 'manual',
+  schedule_expression: '' }).enabled, false)
+assert.match(viewSchedule(42, { ...saved, schedule_type: '',
+  schedule_expression: '' }).title, /未明确开启/)
+assert.match(viewSchedule(42, { ...saved, schedule_type: 'cron',
+  schedule_expression: '0 3 * * *', schedule_timezone: 'Asia/Shanghai' }).title, /Cron/)
+for (const untrusted of [
+  { ...saved, source_id: 43 }, { ...saved, revision: 0 },
+  { ...saved, schedule_type: 'completed' },
+  { ...saved, schedule_expression: '' },
+  { ...saved, schedule_timezone: 'UTC' },
+  { ...saved, schedule_expression: '6h' + String.fromCharCode(10) + 'Owner token' },
+  { ...saved, schedule_type: 'manual' },
+  { ...saved, schedule_type: 'cron', schedule_timezone: 'Asia/Shanghai' },
+  { ...saved, schedule_type: 'cron', schedule_expression: '0 3 * * *' },
+]) assert.throws(() => viewSchedule(42, untrusted), /Untrusted DSM backup schedule/)
+assert.throws(() => viewSchedule(0, saved), /Untrusted DSM backup schedule/)
+const planSurface = fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/SynologyBackupScheduleStatus.tsx'), 'utf8')
+for (const required of [
+  'client.load(sourceID)',
+  'xDriveDSMBackupScheduleView(sourceID, raw)',
+  'return () => { active = false }',
+  '当前 Agent 尚未提供可核验的调度时间',
+]) assert.ok(planSurface.includes(required), 'DSM auto plan summary lost: ' + required)
+assert.ok(localPanel.includes('<XDriveSynologyBackupScheduleStatus'),
+  'DSM panel must render the schedule only for the expanded local Source')
+assert.ok(localPanel.includes("key={'schedule:' + renderedHostEpoch + ':' + item.source_id}"),
+  'DSM plan view must be remounted on owning Host/Source generation')
+assert.ok(!planSurface.includes('client.list('), 'Do not fan out schedule reads to all Sources')
+assert.ok(localPanel.includes('refreshEpoch={planRevision}'),
+  'history polling must not repeatedly reload the saved Source schedule')
+assert.ok(localPanel.includes('setPlanRevision((n) => n + 1)'),
+  'saved plans must re-read after owning Host schedule edits')
+const localActions = fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/DeviceBackupLocalPrimaryActions.tsx'), 'utf8')
+assert.ok(localActions.includes('手动增量备份'), 'shared Desktop/DSM manual action missing')
+assert.ok(!localActions.includes('手动增量备份（试用）'), 'obsolete trial label remains')
 
 const validate = ctx.module.exports.xDriveValidateSynologyLocalBatch
 const valid = {

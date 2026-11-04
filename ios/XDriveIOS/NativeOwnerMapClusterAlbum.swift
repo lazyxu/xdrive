@@ -41,6 +41,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // Restore the last successfully viewed Node+revision in the bounded
     // Owner page after L3 closes, without persisting any photo identities.
     @State private var viewerReturn: XDriveIOSNativeMediaItem?
+    // During a verified automatic append, preserve the last visible tile
+    // while the former two-window head rotates out of the LazyVGrid.
+    @State private var autoScrollReturn: XDriveIOSNativeMediaItem?
     @State private var visiblePageRevision = UUID()
     // A Viewer may only promote an exact adjacent Range after verifying its
     // prior signed place page. No guessed place or cached media identities.
@@ -124,6 +127,18 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 }
             )
             .onChange(of: visiblePageRevision) { _ in
+                // Auto paging replaces the previous pair of 48-photo windows.
+                // Re-anchor only to a Node+revision still present in the exact
+                // verified retained prior Range, never a stale photo ID.
+                if let anchor = autoScrollReturn {
+                    if activeOwner,
+                       priorWindow?.items.contains(where: {
+                           $0.sameVisibleRevision(as: anchor)
+                       }) == true {
+                        returnScroll.scrollTo(anchor.id, anchor: .bottom)
+                    }
+                    autoScrollReturn = nil
+                }
                 // Only the reverified current Owner page can restore focus.
                 // An unavailable, deleted or modified Node is never scrolled
                 // to using a stale visible ID from the old Viewer.
@@ -509,6 +524,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         coverTask = nil
         page = nil
         viewerReturn = nil
+        autoScrollReturn = nil
         priorWindow = nil
         priorWindowCursor = nil
         scrollFootVisible = false
@@ -536,6 +552,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         // Ordinary pagination does not carry a stale Viewer anchor into a
         // different place or new 48-item Range. Dismissal reloads the SAME.
         if autoAdvance || target != cursor { viewerReturn = nil }
+        autoScrollReturn = nil
         scrollFootVisible = false
         loadTask?.cancel()
         coverTask?.cancel()
@@ -638,6 +655,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                    target != departingCursor {
                     priorWindow = departingPage
                     priorWindowCursor = departingCursor
+                    autoScrollReturn = departingPage.items.last
                     let admitted = Set(
                         departingPage.items.map(\.id) + fetched.items.map(\.id)
                     )
@@ -647,6 +665,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 } else {
                     priorWindow = nil
                     priorWindowCursor = nil
+                    autoScrollReturn = nil
                     coverImages = [:]
                 }
                 cursor = target

@@ -22,7 +22,8 @@ test('managed iPhone originals have a dedicated Owner-and-device upload route', 
     ['GET','/ios/photos/managed/receipts/nodes/:id','iosPhotoManagedReceipt'],
   ]) assert.ok(routes.includes('authed.' + method + '("' + route + '", s.' + handler + ')'),
     'missing dedicated original route ' + route);
-  assert.match(upload, /iosPhotoDestinationDeviceTx\(c, tx, owner\.ID\)/);
+  assert.match(upload, /ownerID = owner\.ID/);
+  assert.match(upload, /iosPhotoDestinationDeviceTx\(c, tx, ownerID\)/);
   assert.match(upload, /iosPhotoDestinationBindingTx\(tx, device\)/);
   assert.match(upload, /clientDeviceIdentityCredentialMatches\(device, c\.GetHeader\("X-XDrive-Device-Token"\)\)/);
   assert.match(upload, /device\.Platform != "ios"/);

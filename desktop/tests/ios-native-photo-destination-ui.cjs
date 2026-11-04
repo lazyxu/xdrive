@@ -9,6 +9,7 @@ const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const screen = read('ios/XDriveIOS/NativePhotoBackupScreen.swift');
 const model = read('ios/XDriveIOS/NativePhotoBackupDestinationModel.swift');
 const server = read('internal/api/ios_photo_backup_destination.go');
+const managedUpload = read('internal/api/ios_photo_managed_uploads.go');
 const router = read('internal/api/router.go');
 
 test('iOS native backup destination is a user-confirmed mandatory named folder with real Server path', () => {
@@ -59,9 +60,18 @@ test('only server response supplies actual target/source ID, local path cannot b
   assert.doesNotMatch(model, /\.rootNodeID\s*\+\s*["']/);
 });
 
-test('staged UI does not pretend folder provisioning is working UploadSession entitlement', () => {
-  assert.match(screen, /本阶段只完成目标目录绑定/);
-  assert.match(screen, /受管 Source 的原件 UploadSession/);
+test('native original backup is gated by a verified managed destination and uses the scoped CAS route', () => {
+  assert.ok((screen.match(/!destination\.confirmedForCurrentName/g) || []).length >= 3,
+    'manual, focused and automatic writers all require the confirmed current destination');
+  assert.match(model, /readExistingForUpload/);
   assert.match(model, /not an upload permission/);
+  assert.match(managedUpload, /func \(s \*Server\) iosPhotoManagedCreateUpload/);
+  assert.match(managedUpload, /iosPhotoManagedAuthorizedScope\(c\)/);
+  assert.match(managedUpload, /validIOSPhotoManagedUploadInit\(req, scope\)/);
+  assert.match(managedUpload, /s\.createUploadSession\(c\)/);
+  assert.match(managedUpload, /requireIOSPhotoManagedUploadTx/);
+  assert.match(router, /authed\.POST\("\/ios\/photos\/managed\/uploads", s\.iosPhotoManagedCreateUpload\)/);
+  assert.match(router, /iosPhotoManagedBG\.POST\("\/uploads", s\.iosPhotoManagedCreateUpload\)/);
+  assert.doesNotMatch(screen, /本阶段只完成目标目录绑定/);
   assert.doesNotMatch(server, /\bcreateUploadSession\(|\bfinalizeUploadSession\(/);
 });

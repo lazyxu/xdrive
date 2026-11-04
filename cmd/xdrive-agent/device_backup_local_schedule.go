@@ -32,6 +32,10 @@ func (c *agentController) CloudLocalBoundBackupSchedule(ctx context.Context, sou
 	if err := localBackupRuleSessionUnchanged(cfg); err != nil {
 		return client.LocalBoundBackupSchedule{}, err
 	}
+	result = localBoundAgentAutoReadiness(ctx, cfg, source, proof, result)
+	if err := localBackupRuleSessionUnchanged(cfg); err != nil {
+		return client.LocalBoundBackupSchedule{}, err
+	}
 	return result, nil
 }
 

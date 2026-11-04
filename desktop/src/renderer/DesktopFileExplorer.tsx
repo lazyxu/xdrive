@@ -58,6 +58,7 @@ import {
   xDriveProjectFileExplorerNode,
   useXDriveFileExplorerFavorites,
   useXDriveFileExplorerRecent,
+  useXDriveFileExplorerRecentFolderUsage,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
   useXDriveFileExplorerUploadController,
@@ -350,20 +351,25 @@ export default function DesktopFileExplorer({
     lifecycleKey: navigationSessionStorageKey ?? '',
     enabled: recentSupported,
     loadItems: async () => {
-      const result = await hostPort.browse.cloudFileRecent(16)
+      const result = await hostPort.browse.cloudFileRecentFolders(8)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     touchItem: async (nodeID) => {
-      const result = await hostPort.write.cloudTouchFileRecent(nodeID)
+      const result = await hostPort.write.cloudTouchFileRecentFolder(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     clearItems: async () => {
-      const result = await hostPort.write.cloudClearFileRecent()
+      const result = await hostPort.write.cloudClearFileRecentFolders()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+  })
+  const recentFolderUsage = useXDriveFileExplorerRecentFolderUsage({
+    lifecycleKey: navigationSessionStorageKey ?? '',
+    enabled: recentSupported && !trashActive,
+    record: recent.record,
   })
 
   const {
@@ -486,8 +492,10 @@ export default function DesktopFileExplorer({
       return result.data.items[0] ?? null
     },
     searchCrumbsForResult: (result) => result.crumbs,
-    onDirectoryAccess: (nodeID) => { void recent.record(nodeID) },
-    onFileAccess: (nodeID) => { void recent.record(nodeID) },
+    onDirectoryAccess: (nodeID) => { recentFolderUsage.consider(nodeID) },
+    onFileAccess: (_nodeID, parentID) => {
+      if (parentID) void recentFolderUsage.confirm(parentID)
+    },
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
 
@@ -1478,6 +1486,9 @@ const desktopTransferLifecycleChildBatchSize = 1000
       const targets = await resolveTargets()
       const result = await runUploadTargets(targets, busyState)
       const shouldRefresh = result.uploaded > 0 || refreshEvenWithoutUploads
+      if (result.uploaded > 0 && targets[0]?.parentID) {
+        void recentFolderUsage.confirm(targets[0].parentID)
+      }
       if (refreshCurrentDirectory && shouldRefresh) {
         await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
       }
@@ -1559,7 +1570,10 @@ const desktopTransferLifecycleChildBatchSize = 1000
     if (result.uploaded > 0 || result.skipped > 0) {
       await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
     }
-    if (result.uploaded > 0) await onQuotaChanged()
+    if (result.uploaded > 0) {
+      void recentFolderUsage.confirm(expectedCurrentID)
+      await onQuotaChanged()
+    }
   }
 
   const uploadFiles = async () => {
@@ -1581,6 +1595,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
       }
       if (result.data.canceled) return
       if (result.data.uploaded.length > 0) {
+        void recentFolderUsage.confirm(expectedCurrentID)
         await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
         await onQuotaChanged()
       }
@@ -1623,6 +1638,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
       if (!result.ok) throw new Error(result.error.message)
       await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
       if (!isActionBusyCurrent(busyToken)) return
+      void recentFolderUsage.confirm(expectedCurrentID)
       onFeedback('good', '文件夹已创建。')
     } finally {
       finishActionBusy(busyToken)
@@ -1684,6 +1700,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
       clearSearch()
       await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
       if (!isActionBusyCurrent(busyToken)) return
+      void recentFolderUsage.confirm(expectedCurrentID)
       onFeedback('good', '已重命名。')
     } catch (error) {
       if (isActionBusyCurrent(busyToken)) {
@@ -2121,7 +2138,12 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onOpenItemInNewTab={!trashActive && canNewTab
           ? (item) => { void openItemInNewTab(item) }
           : undefined}
-        onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}
+        onPreviewItem={trashActive ? undefined : (item) => {
+          if (item.kind === 'file') {
+            const parentID = nodeByID.get(Number(item.id))?.parent_id ?? current?.id
+            if (parentID) void recentFolderUsage.confirm(parentID)
+          }
+        }}
         onNativeDragOutItem={!trashActive && nativeDragOutSupported
           ? startNativeDragOut
           : undefined}
@@ -2399,7 +2421,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
                 },
               })
             }}
-            onClearRecent={() => { void recent.clear() }}
+            onClearRecent={() => { recentFolderUsage.cancel(); void recent.clear() }}
             getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}
             onAvailabilityItemsChange={
               fileAvailabilitySupported ? handleNavigationAvailabilityItemsChange : undefined

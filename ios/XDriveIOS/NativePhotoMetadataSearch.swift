@@ -276,6 +276,7 @@ private final class XDriveIOSNativePhotoSearchChangeMonitor: NSObject,
 
 private struct XDriveIOSNativePhotoSearchTile: View {
     let candidate: XDrivePhotoKitScanCandidate
+    let framing: XDriveIOSNativePhotoWallFraming
     @StateObject private var loader = XDriveIOSPhotoImageLoader()
 
     var body: some View {
@@ -283,7 +284,11 @@ private struct XDriveIOSNativePhotoSearchTile: View {
             GeometryReader { geometry in
                 Group {
                     if let image = loader.image {
-                        Image(uiImage: image).resizable().scaledToFill()
+                        if framing == .complete {
+                            Image(uiImage: image).resizable().scaledToFit()
+                        } else {
+                            Image(uiImage: image).resizable().scaledToFill()
+                        }
                     } else {
                         Rectangle().fill(Color(uiColor: .secondarySystemGroupedBackground))
                             .overlay {
@@ -292,6 +297,7 @@ private struct XDriveIOSNativePhotoSearchTile: View {
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .clipped()
             }
             if candidate.kind == "video" || candidate.isLive {
@@ -302,8 +308,11 @@ private struct XDriveIOSNativePhotoSearchTile: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 3))
-        .task(id: candidate.id) {
-            loader.load(candidate.id, size: CGSize(width: 420, height: 420))
+        .task(id: "\(candidate.id)-\(framing.rawValue)") {
+            loader.load(
+                candidate.id, size: CGSize(width: 420, height: 420),
+                contentMode: framing == .complete ? .aspectFit : .aspectFill
+            )
         }
         .onDisappear { loader.cancel() }
     }
@@ -315,6 +324,7 @@ private struct XDriveIOSNativePhotoSearchWindowView: View {
     let window: XDriveIOSNativePhotoSearchWindow
     let query: String
     let sortOrder: XDriveIOSNativePhotoSearchSortOrder
+    let framing: XDriveIOSNativePhotoWallFraming
     let generation: UUID
     let onSelect: (XDrivePhotoKitScanCandidate, [XDrivePhotoKitScanCandidate]) -> Void
     let onFailure: (UUID) -> Void
@@ -331,7 +341,7 @@ private struct XDriveIOSNativePhotoSearchWindowView: View {
                     Button {
                         onSelect(item, page.items)
                     } label: {
-                        XDriveIOSNativePhotoSearchTile(candidate: item)
+                        XDriveIOSNativePhotoSearchTile(candidate: item, framing: framing)
                     }
                     .buttonStyle(.plain)
                     .id("search:\(item.id)")
@@ -398,6 +408,7 @@ struct XDriveIOSNativePhotoSearchScreen: View {
     @State private var query = ""
     @State private var acceptedQuery = ""
     @State private var sortOrder: XDriveIOSNativePhotoSearchSortOrder = .newest
+    @State private var framing: XDriveIOSNativePhotoWallFraming = .square
     @State private var selected: XDriveIOSNativePhotoSearchSelection?
     @State private var visibleTailWindowID: Int?
 
@@ -432,6 +443,19 @@ struct XDriveIOSNativePhotoSearchScreen: View {
                         .pickerStyle(.menu)
                         .accessibilityIdentifier("native-ios-photo-search-capture-order")
                     }
+                    HStack {
+                        Text("图片显示")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Picker("预览构图", selection: $framing) {
+                            ForEach(XDriveIOSNativePhotoWallFraming.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .accessibilityIdentifier("native-ios-photo-search-framing")
+                    }
 
                     if let total = model.totalAuthorizedSlots {
                         Text("已检查 \(model.scannedThrough) / \(total) 项，当前找到 \(model.matchCount) 项")
@@ -445,7 +469,8 @@ struct XDriveIOSNativePhotoSearchScreen: View {
                         ForEach(model.windows) { window in
                             XDriveIOSNativePhotoSearchWindowView(
                                 window: window, query: currentQuery,
-                                sortOrder: sortOrder, generation: model.generation,
+                                sortOrder: sortOrder, framing: framing,
+                                generation: model.generation,
                                 onSelect: { candidate, neighbors in
                                     selected = XDriveIOSNativePhotoSearchSelection(
                                         candidate: candidate, loadedItems: neighbors

@@ -168,17 +168,6 @@ func (s *Server) Router() *gin.Engine {
 	iosPhotoBackground.POST("/uploads/:id/finalize", s.iosBackgroundFinalizeUpload)
 	iosPhotoBackground.POST("/uploads/resume-lookup", s.iosBackgroundResumeLookup)
 	iosPhotoBackground.GET("/receipts/nodes/:id", s.iosBackgroundReceipt)
-	// Independently granted BGProcessingTask writes into its exact managed
-	// iPhone Source/Node, reusing the same CAS and private upload admission.
-	// This group never accepts a general Owner bearer or Desktop Agent token.
-	iosPhotoManagedBG := v1.Group("/ios/photos/background-managed")
-	iosPhotoManagedBG.Use(s.requireIOSPhotoBackgroundGrant())
-	iosPhotoManagedBG.POST("/uploads", s.iosPhotoManagedCreateUpload)
-	iosPhotoManagedBG.GET("/uploads/:id", s.iosPhotoManagedGetUpload)
-	iosPhotoManagedBG.PUT("/uploads/:id/chunks/:index", s.iosPhotoManagedPutChunk)
-	iosPhotoManagedBG.POST("/uploads/:id/finalize", s.iosPhotoManagedFinalize)
-	iosPhotoManagedBG.POST("/uploads/resume-lookup", s.iosPhotoManagedResumeLookup)
-	iosPhotoManagedBG.GET("/receipts/nodes/:id", s.iosPhotoManagedReceipt)
 	v1.GET("/public/share", s.publicShareMetadata)
 	v1.POST("/public/share/children", s.publicFolderShareChildren)
 	v1.POST("/public/share/directories", s.publicShareCreateDirectory)
@@ -264,6 +253,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.PUT("/file-favorites/:id", s.favoriteFile)
 	authed.DELETE("/file-favorites/:id", s.unfavoriteFile)
 	authed.GET("/file-recent", s.listFileRecent)
+	authed.GET("/file-recent-folders", s.listFileRecentFolders)
 	authed.GET("/background-tasks", s.listBackgroundTasks)
 	authed.GET("/background-tasks/page", s.listBackgroundTaskPage)
 	authed.GET("/background-tasks/active-summary", s.backgroundTaskActiveSummary)
@@ -271,6 +261,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/photo-intelligence/reanalyze", s.reanalyzePhotoIntelligence)
 	authed.POST("/file-recent/:id", s.touchFileRecent)
 	authed.DELETE("/file-recent", s.clearFileRecent)
+	authed.POST("/file-recent-folders/:id", s.touchFileRecentFolder)
+	authed.DELETE("/file-recent-folders", s.clearFileRecentFolders)
 	authed.POST("/nodes/:id/directories", s.createDirectory)
 	authed.POST("/nodes/:id/files", s.uploadFile)
 	authed.POST("/nodes/:id/copy", s.copyNode)
@@ -454,18 +446,6 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/devices/:id/revoke", s.revokeClientDevice)
 	// Explicit current-Owner issuance/list/revoke, never reachable by an
 	// identity-only iOS device token or an already-issued background grant.
-	// Only this dedicated Owner + registered iPhone route may provision or
-	// rename its managed photo destination. It is NOT a local_folder runner.
-    // Managed Photos aliases use the existing CAS UploadSession engine but
-    // may write only after exact current Owner+iOS Device+Source+Node proof.
-    authed.POST("/ios/photos/managed/uploads", s.iosPhotoManagedCreateUpload)
-    authed.GET("/ios/photos/managed/uploads/:id", s.iosPhotoManagedGetUpload)
-    authed.PUT("/ios/photos/managed/uploads/:id/chunks/:index", s.iosPhotoManagedPutChunk)
-    authed.POST("/ios/photos/managed/uploads/:id/finalize", s.iosPhotoManagedFinalize)
-    authed.POST("/ios/photos/managed/uploads/resume-lookup", s.iosPhotoManagedResumeLookup)
-    authed.GET("/ios/photos/managed/receipts/nodes/:id", s.iosPhotoManagedReceipt)
-	authed.GET("/ios/photos/backup-destination", s.getIOSPhotoBackupDestination)
-	authed.PUT("/ios/photos/backup-destination", s.putIOSPhotoBackupDestination)
 	authed.POST("/ios/photos/background-grants", s.createIOSPhotoBackgroundGrant)
 	authed.GET("/ios/photos/background-grants", s.listIOSPhotoBackgroundGrants)
 	authed.POST("/ios/photos/background-grants/:id/revoke", s.revokeIOSPhotoBackgroundGrant)
@@ -554,6 +534,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/sources/:id/connector-config", s.getSourceConnectorConfig)
 	authed.PUT("/sources/:id/connector-config", s.putSourceConnectorConfig)
 	authed.GET("/sources/:id/browse", s.browseSourceDirectories)
+	// M05 read-only diagnostics; this response never authorizes a migration.
+	authed.GET("/sources/:id/migration-preview", s.previewLegacySourceMigration)
 	authed.GET("/sources/:id/items", s.listSourceItems)
 	authed.GET("/sources/:id/collections", s.listSourceCollections)
 	authed.GET("/sources/:id/collections/:collectionID/items", s.listSourceCollectionItems)
@@ -640,6 +622,8 @@ func (s *Server) Router() *gin.Engine {
 	// authorize an installer: the separate Host verifies signed identities.
 	admin.POST("/update/offline/imports", s.adminCreateOfflineUpdateImport)
 	admin.GET("/update/offline/imports", s.adminListOfflineUpdateImports)
+	admin.GET("/update/offline/cleanup", s.adminCleanupOfflineUpdateImports)
+	admin.POST("/update/offline/cleanup", s.adminCleanupOfflineUpdateImports)
 	admin.GET("/update/offline/imports/:id", s.adminGetOfflineUpdateImport)
 	admin.DELETE("/update/offline/imports/:id", s.adminDeleteOfflineUpdateImport)
 	admin.POST("/update/offline/imports/:id/files/:name", s.adminRegisterOfflineUpdateFile)

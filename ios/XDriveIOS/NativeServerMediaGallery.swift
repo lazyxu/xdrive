@@ -663,69 +663,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
                             .onNavigateSwipe { navigateLoaded($0) }
                             .onChromeTap { toggleChrome() }
                     }
-                    if showChrome && liveResources != nil {
-                        HStack(spacing: 12) {
-                            if ownerAuthorized && !nativeLiveUnavailable &&
-                                !showingLiveMotion {
-                                Button(showsStaticStill ? "返回原生实况" : "放大静态照片") {
-                                    guard ownerAuthorized else { return }
-                                    // Unmount PHLivePhotoView (stopping playback)
-                                    // before displaying the native zoom/swipe still.
-                                    livePlaybackRequest = nil
-                                    nativeLiveReady = false
-                                    showsStaticStill.toggle()
-                                }
-                                .accessibilityIdentifier("native-ios-photoasset-live-still-toggle")
-                            }
-                            if nativeLiveReady && !nativeLiveUnavailable &&
-                                !showingLiveMotion && !showsStaticStill {
-                                Button("播放原生实况") {
-                                    guard phase == .active,
-                                          let currentOwner = liveOwner,
-                                          XDriveIOSNativePhotoOwnerScope.matches(
-                                            login.owner, currentOwner
-                                          ) else { return }
-                                    livePlaybackRequest = UUID()
-                                }
-                                .accessibilityIdentifier("native-ios-photoasset-live-play")
-                            }
-                            if ownerAuthorized && nativeLiveUnavailable &&
-                                !showingLiveMotion {
-                                Button("重试原生实况配对") {
-                                    guard ownerAuthorized, liveResources != nil else { return }
-                                    // Re-pair the existing verified still/MOV locally;
-                                    // a failed Photos pairing needs no new Server ticket.
-                                    livePlaybackRequest = nil
-                                    nativeLiveReady = false
-                                    showsStaticStill = false
-                                    nativeLiveUnavailable = false
-                                }
-                                .accessibilityIdentifier("native-ios-photoasset-live-pair-retry")
-                            }
-                            Button(showingLiveMotion ? "返回静态照片" : "播放原始动态视频") {
-                                guard ownerAuthorized, player != nil,
-                                      let currentOwner = liveOwner,
-                                      XDriveIOSNativePhotoOwnerScope.matches(
-                                        login.owner, currentOwner
-                                      ) else { return }
-                                if showingLiveMotion {
-                                    player?.pause()
-                                } else {
-                                    // Dismantle Photos' paired player before
-                                    // starting the independent local MOV.
-                                    livePlaybackRequest = nil
-                                    nativeLiveReady = false
-                                }
-                                showingLiveMotion.toggle()
-                            }
-                            .disabled(!ownerAuthorized || player == nil)
-                            .accessibilityIdentifier("native-ios-photoasset-live-motion")
-                        }
-                        Text(nativeLiveUnavailable
-                             ? "原生 Live 配对不可用，仍可播放已校验的动态资源。"
-                             : "已取得当前账户的 Live 双资源；原生配对优先，视频为回退。")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+                    // Live Photo's verified native canvas occupies the available area.
+                    // Nonstandard playback/fallback commands remain in More.
                     if let failure {
                         Text(failure).foregroundStyle(.secondary)
                             .font(.caption).padding(.horizontal)
@@ -810,43 +749,18 @@ struct XDriveIOSNativeServerMediaPreview: View {
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 0) {
-                if showChrome && (visibleItems.count > 1 || canCrossRange(-1) ||
-                    canCrossRange(1) || rangeCrossing) {
-                    VStack(spacing: 6) {
-                        if ownerAuthorized && visibleItems.count > 1 {
-                            XDriveIOSNativeCloudPhotoAssetFilmstrip(
-                                current: viewed, loaded: visibleItems,
-                                openedOwner: openedOwner, authorized: ownerAuthorized,
-                                busy: rangeCrossing || photosRestoreBusy,
-                                login: login,
-                                onSelect: { next in selectFilmstrip(next) }
-                            )
-                        }
-                    HStack(spacing: 12) {
-                        Button("上一项") { navigateLoaded(-1) }
-                            .disabled((neighbor(-1) == nil && !canCrossRange(-1)) ||
-                                rangeCrossing || photosRestoreBusy)
-                            .frame(minHeight: 44)
-                            .accessibilityIdentifier("native-ios-photoasset-viewer-previous")
-                        Spacer(minLength: 4)
-                        Text(loadedPosition.map { index in
-                            if let range = visibleRange {
-                                return "\(range.offset + index + 1)/\(range.total_count)"
-                            }
-                            return "\(index + 1)/\(visibleItems.count)（已加载）"
-                        } ?? "当前媒体已变化")
-                            .font(.caption).monospacedDigit()
-                            .accessibilityIdentifier("native-ios-photoasset-viewer-position")
-                        Spacer(minLength: 4)
-                        Button("下一项") { navigateLoaded(1) }
-                            .disabled((neighbor(1) == nil && !canCrossRange(1)) ||
-                                rangeCrossing || photosRestoreBusy)
-                            .frame(minHeight: 44)
-                            .accessibilityIdentifier("native-ios-photoasset-viewer-next")
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 6)
+                // Match Photos: the bottom strip is for thumbnails, not a
+                // persistent previous/next/count toolbar.
+                if showChrome && ownerAuthorized && visibleItems.count > 1 {
+                    XDriveIOSNativeCloudPhotoAssetFilmstrip(
+                        current: viewed, loaded: visibleItems,
+                        openedOwner: openedOwner, authorized: ownerAuthorized,
+                        busy: rangeCrossing || photosRestoreBusy,
+                        login: login,
+                        onSelect: { next in selectFilmstrip(next) }
+                    )
+                    .padding(.vertical, 6)
                     .background(.ultraThinMaterial)
-                    }
                 }
 
                 if showChrome && ownerAuthorized && viewed.supportsPreview {
@@ -880,39 +794,106 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     }
                     .accessibilityIdentifier("native-ios-photoasset-viewer-back")
                 }
-                // Available even if an AVPlayer stalls without a terminal
-                // status or the bottom controls are cramped in landscape.
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if ownerAuthorized, player != nil {
-                        Button {
-                            retirePreview()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .accessibilityLabel("重新加载云端视频")
-                        .accessibilityIdentifier("native-ios-photoasset-player-reload")
-                    }
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if ownerAuthorized && imageIsThumbnailOnly {
-                        Button { retirePreview() } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .accessibilityLabel("重新加载高清照片预览")
-                        .accessibilityIdentifier("native-ios-photoasset-still-reload")
-                    }
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if photosRestoreBusy {
-                        ProgressView().accessibilityLabel("正在保存云端原件到 iOS 照片")
+                        ProgressView()
+                            .accessibilityLabel("正在保存云端原件到 iOS 照片")
                     } else {
-                        Button {
-                            restorePhotoAssetOriginal()
+                        Menu {
+                            // Keep a secondary save command for short landscape
+                            // layouts without duplicating a top-level toolbar button.
+                            if viewed.supportsPreview {
+                                Button {
+                                    restorePhotoAssetOriginal()
+                                } label: {
+                                    Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
+                                }
+                                .disabled(rangeCrossing)
+                                .accessibilityIdentifier("native-ios-photoasset-original-save-to-photos")
+                            }
+                            if visibleItems.count > 1 || canCrossRange(-1) ||
+                                canCrossRange(1) {
+                                Divider()
+                                // Native swipe/filmstrip stays primary. Menu
+                                // actions retain explicit VoiceOver navigation.
+                                Button("上一项") { navigateLoaded(-1) }
+                                    .disabled(neighbor(-1) == nil && !canCrossRange(-1))
+                                    .accessibilityIdentifier("native-ios-photoasset-viewer-previous")
+                                Button("下一项") { navigateLoaded(1) }
+                                    .disabled(neighbor(1) == nil && !canCrossRange(1))
+                                    .accessibilityIdentifier("native-ios-photoasset-viewer-next")
+                            }
+                            if viewed.isLive && liveResources != nil {
+                                Divider()
+                                if ownerAuthorized && !nativeLiveUnavailable &&
+                                    !showingLiveMotion {
+                                    Button(showsStaticStill ? "返回原生实况" : "放大静态照片") {
+                                        guard ownerAuthorized else { return }
+                                        // Stop the paired player before showing the zoomable still.
+                                        livePlaybackRequest = nil
+                                        nativeLiveReady = false
+                                        showsStaticStill.toggle()
+                                    }
+                                    .accessibilityIdentifier("native-ios-photoasset-live-still-toggle")
+                                }
+                                if nativeLiveReady && !nativeLiveUnavailable &&
+                                    !showingLiveMotion && !showsStaticStill {
+                                    Button("播放原生实况") {
+                                        guard phase == .active,
+                                              let currentOwner = liveOwner,
+                                              XDriveIOSNativePhotoOwnerScope.matches(
+                                                login.owner, currentOwner
+                                              ) else { return }
+                                        livePlaybackRequest = UUID()
+                                    }
+                                    .accessibilityIdentifier("native-ios-photoasset-live-play")
+                                }
+                                if ownerAuthorized && nativeLiveUnavailable &&
+                                    !showingLiveMotion {
+                                    Button("重试原生实况配对") {
+                                        guard ownerAuthorized, liveResources != nil else { return }
+                                        // Re-pair verified local resources; never request a new ticket.
+                                        livePlaybackRequest = nil
+                                        nativeLiveReady = false
+                                        showsStaticStill = false
+                                        nativeLiveUnavailable = false
+                                    }
+                                    .accessibilityIdentifier("native-ios-photoasset-live-pair-retry")
+                                    Text("原生配对暂不可用，仍可播放已核验动态视频")
+                                }
+                                Button(showingLiveMotion ? "返回静态照片" : "播放原始动态视频") {
+                                    guard ownerAuthorized, player != nil,
+                                          let currentOwner = liveOwner,
+                                          XDriveIOSNativePhotoOwnerScope.matches(
+                                            login.owner, currentOwner
+                                          ) else { return }
+                                    if showingLiveMotion {
+                                        player?.pause()
+                                    } else {
+                                        livePlaybackRequest = nil
+                                        nativeLiveReady = false
+                                    }
+                                    showingLiveMotion.toggle()
+                                }
+                                .disabled(!ownerAuthorized || player == nil)
+                                .accessibilityIdentifier("native-ios-photoasset-live-motion")
+                            }
+                            if ownerAuthorized && (player != nil || imageIsThumbnailOnly) {
+                                Divider()
+                                if player != nil {
+                                    Button("重新加载云端视频") { retirePreview() }
+                                        .accessibilityIdentifier("native-ios-photoasset-player-reload")
+                                }
+                                if imageIsThumbnailOnly {
+                                    Button("重新加载高清照片预览") { retirePreview() }
+                                        .accessibilityIdentifier("native-ios-photoasset-still-reload")
+                                }
+                            }
                         } label: {
-                            Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
+                            Label("照片操作", systemImage: "ellipsis.circle")
                         }
-                        .disabled(!ownerAuthorized || !viewed.supportsPreview)
-                        .accessibilityIdentifier("native-ios-photoasset-original-save-to-photos")
+                        .disabled(!ownerAuthorized || rangeCrossing || photosRestoreBusy)
+                        .accessibilityIdentifier("native-ios-photoasset-viewer-more")
                     }
                 }
             }

@@ -99,11 +99,11 @@ requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAc
 requireText(files.accountChrome, ['XDriveAccountAvatarButton', 'aria-label="账户菜单"', 'XDriveAccountSummary', 'XDriveAccountMenu', 'XDriveAccountMenuActions', '<Avatar', '<Menu', '<Divider', '设置', '退出登录'], '共享账号 chrome')
 if ((files.app.match(/<WebAccountMenu/g) || []).length !== 2) throw new Error('Web 两个已登录 Header 没有统一复用账号菜单')
 if (files.app.includes('LogoutOutlined')) throw new Error('Web 顶栏仍保留 AntD 退出图标')
-// Browser Cookie restore is a separate pre-auth screen: it must reuse the
+// Browser Cookie restore and trusted Desktop map recovery are pre-auth screens: they must reuse the
 // same brand as login and both authenticated navigation headers.
 const brandLockups = files.app.match(/<XDriveBrandLockup\b[^>]*\/>/g) || []
-if (brandLockups.length !== 4 ||
-    brandLockups.filter(markup => markup.includes('variant="large"')).length !== 2 ||
+if (brandLockups.length !== 5 ||
+    brandLockups.filter(markup => markup.includes('variant="large"')).length !== 3 ||
     brandLockups.filter(markup => markup.includes('variant="titlebar"')).length !== 2) {
   throw new Error('Web 登录、会话恢复与两个导航品牌位必须复用共享品牌区')
 }

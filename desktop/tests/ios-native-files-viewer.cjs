@@ -241,7 +241,7 @@ test('Files video uses Gallery native timeline and Owner-gated canvas paging wit
 test('shared Photos video seek preview is bounded and never resumes a retired player', () => {
   const video = read('ios/XDriveIOS/NativePhotoVideoSurface.swift');
   assert.match(video, /@State private var scrubbedItem: AVPlayerItem\?/);
-  assert.match(video, /private func beginScrub\(\)[\s\S]*?resumesAfterScrub = player\.rate > 0[\s\S]*?player\.pause\(\)/);
+  assert.match(video, /private func beginScrub\(\)[\s\S]*?resumesAfterScrub = player\.timeControlStatus != \.paused[\s\S]*?player\.pause\(\)/);
   assert.match(video, /private func previewScrub\(at value: Double\)/);
   assert.match(video, /guard seeking, !finishingScrub, canControl,[\s\S]*?player\.currentItem === scrubbedItem/);
   assert.match(video, /ProcessInfo\.processInfo\.systemUptime/);

@@ -425,6 +425,33 @@ func (c *agentController) CloudUnfavoriteFile(ctx context.Context, nodeID uint64
 	return cli.UnfavoriteFile(ctx, nodeID)
 }
 
+func (c *agentController) CloudFileRecentFolder(ctx context.Context, limit int) ([]client.FileRecentItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.FileRecentFolder(ctx, limit)
+}
+
+func (c *agentController) CloudTouchFileRecentFolder(ctx context.Context, nodeID uint64) (client.FileRecentItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileRecentItem{}, err
+	}
+	if nodeID == 0 {
+		return client.FileRecentItem{}, fmt.Errorf("node id is required")
+	}
+	return cli.TouchFileRecentFolder(ctx, nodeID)
+}
+
+func (c *agentController) CloudClearFileRecentFolder(ctx context.Context) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.ClearFileRecentFolder(ctx)
+}
+
 func (c *agentController) CloudFileRecent(ctx context.Context, limit int) ([]client.FileRecentItem, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

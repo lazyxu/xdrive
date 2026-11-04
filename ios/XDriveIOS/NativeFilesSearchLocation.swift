@@ -20,7 +20,7 @@ private final class XDriveIOSNativeFilesLocateNoRedirects: NSObject, URLSessionT
 
 /// Re-read the selected Node on both sides of the Server-authoritative
 /// location projection; only its exact current parent becomes a route.
-private struct XDriveIOSNativeFilesLocateReader {
+struct XDriveIOSNativeFilesLocateReader {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 
@@ -73,6 +73,35 @@ private struct XDriveIOSNativeFilesLocateReader {
             throw XDriveIOSNativeFilesLocateFailure.invalidLocation
         }
         return result
+    }
+
+    /// Reuse the existing Owner-scoped GET transport; never copy a stale hit.
+    func copyPath(_ selected: XDriveIOSNativeFilesNode) async throws -> String {
+        guard selected.id > 0, selected.revision > 0,
+              selected.parent_id != nil else {
+            throw XDriveIOSNativeFilesLocateFailure.nodeChanged
+        }
+        let before: XDriveIOSNativeFilesNode = try await read(
+            "/api/v1/nodes/\(selected.id)", maximumBytes: 65_536
+        )
+        guard before == selected else {
+            throw XDriveIOSNativeFilesLocateFailure.nodeChanged
+        }
+        let location: XDriveIOSNativeFilesLocationDTO = try await read(
+            "/api/v1/nodes/\(selected.id)/location",
+            maximumBytes: 2 * 1_048_576
+        )
+        guard let path = XDriveIOSNativeFilesLocationPolicy.currentCopyPath(
+            of: selected, at: location, ownerRootID: owner.rootNodeID
+        ) else { throw XDriveIOSNativeFilesLocateFailure.invalidLocation }
+        try Task.checkCancellation()
+        let after: XDriveIOSNativeFilesNode = try await read(
+            "/api/v1/nodes/\(selected.id)", maximumBytes: 65_536
+        )
+        guard after == selected else {
+            throw XDriveIOSNativeFilesLocateFailure.nodeChanged
+        }
+        return path
     }
 
     func locate(_ selected: XDriveIOSNativeFilesNode) async throws

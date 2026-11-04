@@ -230,7 +230,7 @@ test('cloud-backed originals Viewer navigates only frozen same-Owner loaded 48-r
   assert.match(viewer, /reader\.preview\(target\)/)
   assert.match(viewer, /native-ios-original-viewer-previous/)
   assert.match(viewer, /native-ios-original-viewer-next/)
-  assert.match(viewer, /（已加载）/)
+  assert.doesNotMatch(viewer, /（已加载）/)
   assert.match(wall, /let start = \(index \/ 48\) \* 48/)
   assert.match(wall, /model\.nodes\[start\.\.<min\(start \+ 48, model\.nodes\.count\)\]/)
   assert.match(wall, /viewerOwner = owner[\s\S]*?selected = node/)
@@ -243,6 +243,43 @@ test('cloud-backed originals Viewer navigates only frozen same-Owner loaded 48-r
   assert.match(wall, /onChange\(of: login\.owner\) \{ _ in[\s\S]*?viewerOwner = nil[\s\S]*?model\.invalidate\(\)/)
   assert.doesNotMatch(viewer + wall, /UserDefaults|@AppStorage|CloudKit\.modifyRecords|UploadSessionTransport/)
 });
+
+
+
+test('cloud Originals keeps Live canvas and filmstrip native; nonstandard actions move to More', () => {
+  const start = src.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View {')
+  const end = src.indexOf("/// SwiftUI's ForEach identity", start)
+  const viewer = src.slice(start, end)
+  const body = viewer.slice(viewer.indexOf('    var body: some View {'))
+  const bottomStart = body.indexOf('.safeAreaInset(edge: .bottom)')
+  const toolbarStart = body.indexOf('            .toolbar {', bottomStart)
+  const toolbarEnd = body.indexOf('            .toolbar(showChrome', toolbarStart)
+  assert.ok(start >= 0 && end > start && bottomStart >= 0 &&
+    toolbarStart > bottomStart && toolbarEnd > toolbarStart)
+  const canvas = body.slice(0, bottomStart)
+  const bottom = body.slice(bottomStart, toolbarStart)
+  const menu = body.slice(toolbarStart, toolbarEnd)
+  assert.match(canvas, /XDriveIOSNativeCloudPairedLivePhotoView\(/)
+  assert.match(canvas, /XDriveIOSNativeZoomablePhotoView\(/)
+  assert.doesNotMatch(canvas, /Button\("播放原生实况"\)|Button\(showsStaticStill \?/)
+  assert.doesNotMatch(canvas, /已校验 Live ZIP 双资源|原生实况配对不可用/)
+  assert.match(bottom, /XDriveIOSNativeCloudOriginalViewerFilmstrip\(/)
+  assert.match(bottom, /native-ios-original-bottom-save-to-photos/)
+  assert.doesNotMatch(bottom, /Button\("上一项"\)|Button\("下一项"\)|（已加载）/)
+  assert.match(menu, /Menu \{/)
+  assert.match(menu, /Label\("照片操作", systemImage: "ellipsis.circle"\)/)
+  for (const id of [
+    'native-ios-original-viewer-previous', 'native-ios-original-viewer-next',
+    'native-ios-cloud-live-native-playback', 'native-ios-original-live-still-toggle',
+    'native-ios-original-live-pair-retry', 'native-ios-cloud-live-motion-toggle',
+    'native-ios-original-player-reload', 'native-ios-original-still-reload',
+    'native-ios-original-export', 'native-ios-original-share',
+    'native-ios-cloud-original-save-to-photos'
+  ]) assert.ok(menu.includes(id), 'missing More operation: ' + id)
+  assert.match(menu, /!currentOwnerAuthorized \|\| restoringToPhotos/)
+  assert.match(viewer, /private func showNeighbor\(_ direction: Int\)/)
+  assert.match(viewer, /liveResources\?\.discard\(\)/)
+})
 
 
 test('cloud backed-up original Viewer exports via the existing verified native Files model', () => {

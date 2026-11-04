@@ -73,7 +73,9 @@ test('mounted native map source picker borrows parent route hints for local MapK
   const wrapper = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift'), 'utf8');
   assert.match(wrapper, /@Binding var localMapScope: XDriveIOSNativeLocalMapScope/);
   assert.match(wrapper, /@Binding var localMapPageOffset: Int/);
-  assert.match(wrapper, /XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset,\s*onFocusChange: onFocusChange/);
+  assert.match(wrapper, /@Binding var localMapCamera: MKCoordinateRegion\?/);
+  assert.match(wrapper, /XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset,\s*cameraOnEntry: localMapCamera,\s*onLibraryCameraChange: \{ next in/);
+  assert.match(wrapper, /guard source == \.local, let expectedOwner,\s*XDriveIOSNativePhotoOwnerScope\.matches\(\s*login\.owner, expectedOwner\s*\) else \{ return \}\s*localMapCamera = next\s*\},\s*onFocusChange: onFocusChange/);
   assert.match(wrapper, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\(/);
   assert.match(wrapper, /Picker\("地图照片来源", selection: \$source\)/);
   assert.match(wrapper, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/);

@@ -421,6 +421,12 @@ type desktopIPCController interface {
 	OpenManagedPathWith(path string) error
 }
 
+type desktopIPCRecentFoldersPort interface {
+	CloudFileRecentFolder(context.Context, int) ([]client.FileRecentItem, error)
+	CloudTouchFileRecentFolder(context.Context, uint64) (client.FileRecentItem, error)
+	CloudClearFileRecentFolder(context.Context) error
+}
+
 type desktopIPCServer struct {
 	server        *http.Server
 	discoveryPath string
@@ -638,6 +644,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/recent", h.cloudFileRecent)
 	mux.HandleFunc("POST /v1/cloud/recent/touch", h.cloudTouchFileRecent)
 	mux.HandleFunc("DELETE /v1/cloud/recent", h.cloudClearFileRecent)
+	mux.HandleFunc("GET /v1/cloud/recent-folders", h.cloudFileRecentFolders)
+	mux.HandleFunc("POST /v1/cloud/recent-folders/touch", h.cloudTouchFileRecentFolder)
+	mux.HandleFunc("DELETE /v1/cloud/recent-folders", h.cloudClearFileRecentFolders)
 	mux.HandleFunc("POST /v1/cloud/directories", h.cloudCreateDir)
 	mux.HandleFunc("POST /v1/cloud/owner-small-upload", h.cloudOwnerSmallUpload)
 	mux.HandleFunc("PATCH /v1/cloud/nodes", h.cloudRename)
@@ -979,6 +988,9 @@ func (h *desktopIPCHandler) viewerDownloadCapabilities() []string {
 		capabilities = append(capabilities, "cloud-notes")
 	}
 	if !h.backupOnly {
+		if _, folders := h.ctrl.(desktopIPCRecentFoldersPort); folders {
+			capabilities = append(capabilities, "file-recent-folders")
+		}
 		if _, images := h.ctrl.(desktopIPCNotesImagePort); images {
 			if _, notes := h.ctrl.(desktopIPCNotesPort); notes {
 				capabilities = append(capabilities, "cloud-notes-images")
@@ -1841,6 +1853,78 @@ func (h *desktopIPCHandler) cloudUnfavoriteFile(w http.ResponseWriter, r *http.R
 		return
 	}
 	if err := h.ctrl.CloudUnfavoriteFile(r.Context(), input.ID); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// Controllers without this optional interface do not expose folder Recents.
+// Reject direct calls too: the capability handshake alone is not authorization.
+func (h *desktopIPCHandler) recentFoldersPort(w http.ResponseWriter) (desktopIPCRecentFoldersPort, bool) {
+	if h.backupOnly {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "recent_folders_unavailable", "recent folders require full Desktop mode")
+		return nil, false
+	}
+	folders, ok := h.ctrl.(desktopIPCRecentFoldersPort)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "recent_folders_unsupported", "recent folders are not supported by this Agent")
+		return nil, false
+	}
+	return folders, true
+}
+
+func (h *desktopIPCHandler) cloudFileRecentFolders(w http.ResponseWriter, r *http.Request) {
+	folders, ok := h.recentFoldersPort(w)
+	if !ok {
+		return
+	}
+	limit := 8
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 50 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_recent_limit", "limit must be between 1 and 50")
+			return
+		}
+		limit = value
+	}
+	items, err := folders.CloudFileRecentFolder(r.Context(), limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudTouchFileRecentFolder(w http.ResponseWriter, r *http.Request) {
+	folders, ok := h.recentFoldersPort(w)
+	if !ok {
+		return
+	}
+	var input struct {
+		ID uint64 `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_recent", "id is required")
+		return
+	}
+	item, err := folders.CloudTouchFileRecentFolder(r.Context(), input.ID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, item)
+}
+
+func (h *desktopIPCHandler) cloudClearFileRecentFolders(w http.ResponseWriter, r *http.Request) {
+	folders, ok := h.recentFoldersPort(w)
+	if !ok {
+		return
+	}
+	if err := folders.CloudClearFileRecentFolder(r.Context()); err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}

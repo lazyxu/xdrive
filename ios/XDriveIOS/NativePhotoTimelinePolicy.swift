@@ -110,6 +110,53 @@ struct XDriveIOSNativePhotoTimelineBuilder {
 }
 
 
+
+/// A transient, numeric PhotoKit index target. The saved route only retains a
+/// page offset; this target is in memory until the photo wall verifies the
+/// exact slot, capture day, filter and authorized snapshot count.
+struct XDriveIOSNativePhotoExactDateTarget: Identifiable, Equatable {
+    let id: UUID
+    let slot: Int
+    let total: Int
+    let dayKey: String
+    let filterValue: String
+
+    init?(group: XDriveIOSNativePhotoTimelineGroup,
+          total: Int, filterValue: String) {
+        guard total > 0, group.firstSlot >= 0, group.firstSlot < total,
+              group.scale == .day || group.key == "unknown",
+              !filterValue.isEmpty else { return nil }
+        id = UUID()
+        slot = group.firstSlot
+        self.total = total
+        dayKey = group.key
+        self.filterValue = filterValue
+    }
+
+    var pageOffset: Int {
+        (slot / XDriveIOSNativePhotoVirtualPagePolicy.pageSize) *
+            XDriveIOSNativePhotoVirtualPagePolicy.pageSize
+    }
+
+    func matches(
+        pageOffset: Int, pageTotal: Int, itemIndex: Int,
+        kind: String, capturedAt: Date?, filterValue: String,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard total == pageTotal, self.pageOffset == pageOffset,
+              itemIndex == slot - pageOffset,
+              filterValue == self.filterValue,
+              kind == "image" || kind == "video" else { return false }
+        guard let capturedAt else { return dayKey == "unknown" }
+        let components = calendar.dateComponents(
+            [.year, .month, .day], from: capturedAt
+        )
+        guard let year = components.year, let month = components.month,
+              let day = components.day else { return false }
+        return dayKey == "\(year)-\(month)-\(day)"
+    }
+}
+
 /// Numeric-only virtual page policy. The LazyVStack stores N/64 page
 /// descriptors, never a library-sized list of PhotoKit identifiers.
 enum XDriveIOSNativePhotoVirtualPagePolicy {

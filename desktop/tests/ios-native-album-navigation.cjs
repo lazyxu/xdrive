@@ -65,7 +65,7 @@ assert.match(navigator, /ForEach\(XDriveIOSNativePhotoTimelineScale\.allCases\)/
 assert.match(navigator, /ForEach\(index\.groups\(for: scale\)\)/);
 assert.match(navigator, /savedOffset = requestedOffset\s*wallRevision &\+= 1/);
 assert.match(navigator, /XDriveIOSNativeLocalContinuousGalleryScreen\(/);
-assert.match(navigator, /\.onChange\(of: changes\.revision\) \{ _ in model\.invalidate\(\) \}/);
+assert.match(navigator, /\.onChange\(of: changes\.revision\) \{ _ in\s*exactDateTarget = nil\s*model\.invalidate\(\)\s*\}/);
 assert.match(navigator, /\.onChange\(of: phase\)/);
 assert.match(wall, /ForEach\(0\.\.<XDriveIOSNativePhotoVirtualPagePolicy\.pageCount\(total: total\)/);
 assert.match(wall, /scroll\.scrollTo\("photo:/);

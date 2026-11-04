@@ -314,8 +314,8 @@ test('Recent and Favorites have long-press/context menu without dangerous per-ro
   assert.match(mobileSource, /setCollectionMenu\(\{ entry: press\.entry/)
   assert.match(mobileSource, /props\.onUnfavorite\(id\)/)
   assert.match(mobileSource, /props\.onClearRecent\(\)/)
-  assert.match(mobileSource, /只清除最近打开的记录，不删除云端文件/)
-  assert.match(webAdapter, /onClearRecent=\{\(\) => recent\.clear\(\)\}/)
+  assert.match(mobileSource, /只清除最近使用的文件夹记录，不删除云端文件/)
+  assert.match(webAdapter, /onClearRecent=\{\(\) => \{ recentFolderUsage\.cancel\(\); return recent\.clear\(\) \}\}/)
   assert.match(webAdapter, /onUnfavorite=\{id => favorites\.unfavorite\(id\)\}/)
 })
 

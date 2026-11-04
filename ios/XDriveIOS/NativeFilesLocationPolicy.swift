@@ -13,6 +13,8 @@ struct XDriveIOSNativeFilesLocationDTO: Decodable {
     let node_type: String
     let parent_id: UInt64?
     let breadcrumbs: [XDriveIOSNativeFilesLocationCrumb]
+    // Optional for old responses; no guessed fallback path.
+    var path: String? = nil
 }
 
 struct XDriveIOSNativeFilesLocatedParent: Equatable {
@@ -91,4 +93,21 @@ enum XDriveIOSNativeFilesLocationPolicy {
             name: parent.id == ownerRootID ? "云端根目录" : parent.name
         )
     }
+    /// Only the current Owner-confirmed cloud-relative Server path can be copied.
+    static func currentCopyPath(
+        of selected: XDriveIOSNativeFilesNode,
+        at location: XDriveIOSNativeFilesLocationDTO,
+        ownerRootID: UInt64
+    ) -> String? {
+        guard parent(of: selected, at: location, ownerRootID: ownerRootID) != nil,
+              let serverPath = location.path, !serverPath.isEmpty,
+              serverPath.utf8.count <= 65_536,
+              !serverPath.hasPrefix("/"), !serverPath.contains("\0"),
+              !selected.name.isEmpty else { return nil }
+        var parts = location.breadcrumbs.map(\.name).filter { !$0.isEmpty }
+        if selected.type == "file" { parts.append(selected.name) }
+        guard parts.joined(separator: "/") == serverPath else { return nil }
+        return serverPath
+    }
+
 }

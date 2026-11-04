@@ -259,7 +259,7 @@ func (s *Server) proveIOSPhotoBackgroundGrant(c *gin.Context) {
 		"source_id": g.SourceID, "target_node_id": g.TargetNodeID,
 		"server_instance_id": g.ServerInstance, "expires_at": g.ExpiresAt,
 		"upload_authorized": authorized,
-		"upload_path_base": "/api/v1/ios/photos/background-managed",
+		"upload_path_base":  "/api/v1/ios/photos/background-managed",
 	})
 }
 

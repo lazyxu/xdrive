@@ -37,13 +37,13 @@ func TestIOSPhotoBackgroundGrantBindsCurrentManagedDestination(t *testing.T) {
 	device := meta.ClientDevice{
 		ID: uuid.NewString(), OwnerID: owner.ID, Name: "iPhone 17", Platform: "ios",
 		CredentialHash: deviceCredentialDigest(secret),
-		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		CreatedAt:      time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	if err := db.Create(&device).Error; err != nil {
 		t.Fatal(err)
 	}
 	headers := map[string]string{
-		"X-XDrive-Device-ID": device.ID,
+		"X-XDrive-Device-ID":    device.ID,
 		"X-XDrive-Device-Token": secret,
 	}
 	grantPath := "/api/v1/ios/photos/background-grants"
@@ -57,7 +57,7 @@ func TestIOSPhotoBackgroundGrantBindsCurrentManagedDestination(t *testing.T) {
 		strings.NewReader(string(grantBody)), http.StatusForbidden, headers)
 
 	type destination struct {
-		SourceID uint64 `json:"source_id"`
+		SourceID     uint64 `json:"source_id"`
 		TargetNodeID uint64 `json:"target_node_id"`
 	}
 	created := requestWithHeaders(t, router, http.MethodPut,
@@ -74,12 +74,12 @@ func TestIOSPhotoBackgroundGrantBindsCurrentManagedDestination(t *testing.T) {
 	res := requestWithHeaders(t, router, http.MethodPost, grantPath, token,
 		strings.NewReader(string(grantBody)), http.StatusCreated, headers)
 	var grant struct {
-		ID string `json:"id"`
-		DeviceID string `json:"device_id"`
-		RootNodeID uint64 `json:"root_node_id"`
-		SourceID *uint64 `json:"source_id"`
+		ID           string  `json:"id"`
+		DeviceID     string  `json:"device_id"`
+		RootNodeID   uint64  `json:"root_node_id"`
+		SourceID     *uint64 `json:"source_id"`
 		TargetNodeID *uint64 `json:"target_node_id"`
-		Secret string `json:"grant_secret"`
+		Secret       string  `json:"grant_secret"`
 	}
 	if err := json.Unmarshal(res.Body.Bytes(), &grant); err != nil {
 		t.Fatal(err)
@@ -100,15 +100,15 @@ func TestIOSPhotoBackgroundGrantBindsCurrentManagedDestination(t *testing.T) {
 		t.Fatalf("durable grant missing exact managed authority: %+v", persisted)
 	}
 	bound := map[string]string{
-		"X-XDrive-Device-ID": device.ID,
-		"X-XDrive-Device-Token": secret,
+		"X-XDrive-Device-ID":       device.ID,
+		"X-XDrive-Device-Token":    secret,
 		"X-XDrive-IOS-Photo-Grant": grant.Secret,
 	}
 	proof := requestWithHeaders(t, router, http.MethodGet,
 		grantPath+"/proof", "", nil, http.StatusOK, bound)
 	var status struct {
-		Authorized bool `json:"upload_authorized"`
-		SourceID *uint64 `json:"source_id"`
+		Authorized   bool    `json:"upload_authorized"`
+		SourceID     *uint64 `json:"source_id"`
 		TargetNodeID *uint64 `json:"target_node_id"`
 	}
 	if err := json.Unmarshal(proof.Body.Bytes(), &status); err != nil {
@@ -167,16 +167,22 @@ func TestIOSPhotoBackgroundLegacyGrantIsReadOnly(t *testing.T) {
 	server.PWAOfflineInstanceID = uuid.NewString()
 	router := server.Router()
 	jwt, err := server.Auth.Issue(owner.ID, owner.SessionVersion)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	secret := "ios-photo-legacy-device-credential-0123456789"
 	device := meta.ClientDevice{
 		ID: uuid.NewString(), OwnerID: owner.ID, Name: "Old iPhone", Platform: "ios",
 		CredentialHash: deviceCredentialDigest(secret),
-		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		CreatedAt:      time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
-	if err := db.Create(&device).Error; err != nil { t.Fatal(err) }
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatal(err)
+	}
 	grantSecret, grantDigest, err := newIOSPhotoGrantSecret()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	grant := meta.IOSPhotoBackgroundGrant{
 		ID: uuid.NewString(), OwnerID: owner.ID, DeviceID: device.ID,
 		RootNodeID: root.ID, ServerInstance: server.PWAOfflineInstanceID,
@@ -184,10 +190,12 @@ func TestIOSPhotoBackgroundLegacyGrantIsReadOnly(t *testing.T) {
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 		ExpiresAt: time.Now().UTC().Add(time.Hour),
 	}
-	if err := db.Create(&grant).Error; err != nil { t.Fatal(err) }
+	if err := db.Create(&grant).Error; err != nil {
+		t.Fatal(err)
+	}
 	bound := map[string]string{
-		"X-XDrive-Device-ID": device.ID,
-		"X-XDrive-Device-Token": secret,
+		"X-XDrive-Device-ID":       device.ID,
+		"X-XDrive-Device-Token":    secret,
 		"X-XDrive-IOS-Photo-Grant": grantSecret,
 	}
 	proof := requestWithHeaders(t, router, http.MethodGet,
@@ -195,8 +203,12 @@ func TestIOSPhotoBackgroundLegacyGrantIsReadOnly(t *testing.T) {
 	var data struct {
 		Authorized bool `json:"upload_authorized"`
 	}
-	if err := json.Unmarshal(proof.Body.Bytes(), &data); err != nil { t.Fatal(err) }
-	if data.Authorized { t.Fatal("legacy Owner-root grant was advertised as write-authorized") }
+	if err := json.Unmarshal(proof.Body.Bytes(), &data); err != nil {
+		t.Fatal(err)
+	}
+	if data.Authorized {
+		t.Fatal("legacy Owner-root grant was advertised as write-authorized")
+	}
 	requestWithHeaders(t, router, http.MethodPost,
 		"/api/v1/ios/photos/background/uploads", "", nil, http.StatusForbidden, bound)
 	requestWithHeaders(t, router, http.MethodPost,
@@ -216,14 +228,18 @@ func TestIOSPhotoBackgroundScopedTransactionCannotOutliveGrant(t *testing.T) {
 	server.PWAOfflineInstanceID = uuid.NewString()
 	router := server.Router()
 	jwt, err := server.Auth.Issue(owner.ID, owner.SessionVersion)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	raw := "ios-photo-bg-tx-verified-device-credential-001"
 	device := meta.ClientDevice{
 		ID: uuid.NewString(), OwnerID: owner.ID, Name: "iPhone", Platform: "ios",
 		CredentialHash: deviceCredentialDigest(raw),
-		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		CreatedAt:      time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
-	if err := db.Create(&device).Error; err != nil { t.Fatal(err) }
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatal(err)
+	}
 	headers := map[string]string{
 		"X-XDrive-Device-ID": device.ID, "X-XDrive-Device-Token": raw,
 	}
@@ -234,15 +250,24 @@ func TestIOSPhotoBackgroundScopedTransactionCannotOutliveGrant(t *testing.T) {
 		SourceID     uint64 `json:"source_id"`
 		TargetNodeID uint64 `json:"target_node_id"`
 	}
-	if err := json.Unmarshal(creation.Body.Bytes(), &dest); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(creation.Body.Bytes(), &dest); err != nil {
+		t.Fatal(err)
+	}
 	request, _ := json.Marshal(map[string]string{"device_id": device.ID})
 	approved := requestWithHeaders(t, router, http.MethodPost,
 		"/api/v1/ios/photos/background-grants", jwt,
 		strings.NewReader(string(request)), http.StatusCreated, headers)
-	var response struct { ID string `json:"id"`; Secret string `json:"grant_secret"` }
-	if err := json.Unmarshal(approved.Body.Bytes(), &response); err != nil { t.Fatal(err) }
+	var response struct {
+		ID     string `json:"id"`
+		Secret string `json:"grant_secret"`
+	}
+	if err := json.Unmarshal(approved.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
 	var grant meta.IOSPhotoBackgroundGrant
-	if err := db.First(&grant, "id = ?", response.ID).Error; err != nil { t.Fatal(err) }
+	if err := db.First(&grant, "id = ?", response.ID).Error; err != nil {
+		t.Fatal(err)
+	}
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodPost,
 		"/api/v1/ios/photos/background-managed/uploads", nil)
@@ -271,7 +296,7 @@ func TestIOSPhotoBackgroundScopedTransactionCannotOutliveGrant(t *testing.T) {
 		ID: uuid.NewString(), OwnerID: owner.ID,
 		ParentID: &dest.TargetNodeID, Name: name, RequestedName: name,
 		ConflictPolicy: meta.UploadConflictPolicyFail,
-		TotalSize: input.Size, ChunkSize: input.ChunkSize,
+		TotalSize:      input.Size, ChunkSize: input.ChunkSize,
 		SHA256: input.SHA256, ResumeKey: input.ResumeKey,
 		Status: meta.UploadStatusActive,
 	}
@@ -283,7 +308,9 @@ func TestIOSPhotoBackgroundScopedTransactionCannotOutliveGrant(t *testing.T) {
 	// simultaneous remote revoke. The SQL mutation must reject the old
 	// Gin context, independently of transport/proof caching.
 	if err := db.Model(&meta.IOSPhotoBackgroundGrant{}).Where("id = ?", grant.ID).
-		Update("revoked_at", time.Now().UTC()).Error; err != nil { t.Fatal(err) }
+		Update("revoked_at", time.Now().UTC()).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := requireSourceRunOrLocalPushTargetTx(
 		context.Background(), db, ctx, owner.ID, dest.TargetNodeID, input,
 	); !errors.Is(err, errManagedSourceWriteDenied) {

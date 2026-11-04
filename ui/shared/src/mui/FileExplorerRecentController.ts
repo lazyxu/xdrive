@@ -176,7 +176,7 @@ export function useXDriveFileExplorerRecent<
         setItems((current) => [
           projected,
           ...current.filter((item) => item.id !== nodeID),
-        ].slice(0, 16))
+        ].slice(0, 8))
         return true
       } catch {
         return false

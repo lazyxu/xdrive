@@ -37,7 +37,14 @@ test('Gallery still fallback retains exact Owner/Node/revision and an honest low
   assert.match(viewer, /source: imageIsThumbnailOnly \? "缩略图回退"/)
   assert.match(viewer, /native-ios-photoasset-still-lowres/)
   assert.match(viewer, /native-ios-photoasset-still-reload/)
-  assert.match(viewer, /if ownerAuthorized && imageIsThumbnailOnly \{[\s\S]*?Button \{ retirePreview\(\) \}/)
+  // The full-size retry moved from a standalone navigation button to More.
+  // Preserve a useful lower-resolution still and verify the same authorized
+  // retry action remains reachable; do not weaken media identity guards.
+  const toolbar = viewer.slice(viewer.indexOf('            .toolbar {'),
+    viewer.indexOf('            .toolbar(showChrome ? .visible'))
+  assert.match(toolbar, /Menu \{/)
+  assert.match(toolbar, /if ownerAuthorized && \(player != nil \|\| imageIsThumbnailOnly\) \{[\s\S]*?if imageIsThumbnailOnly \{\s*Button\("重新加载高清照片预览"\) \{ retirePreview\(\) \}\s*\.accessibilityIdentifier\("native-ios-photoasset-still-reload"\)/)
+  assert.match(toolbar, /\.disabled\(!ownerAuthorized \|\| rangeCrossing \|\| photosRestoreBusy\)/)
   assert.match(viewer, /private func retirePreview\(\)[\s\S]*?imageIsThumbnailOnly = false/)
   assert.match(reader, /URLQueryItem\(name: "revision", value: String\(item\.node\.revision\)\)/)
   assert.match(reader, /allowedMIMEs|image\/jpeg|image\/png/)

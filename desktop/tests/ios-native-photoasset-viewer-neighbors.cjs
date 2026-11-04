@@ -40,7 +40,7 @@ test('L3 Viewer retires old media then opens only accepted neighbor with a fresh
   assert.match(viewer, /retirePreview\(\)\s*activeItem = next/)
   assert.match(viewer, /native-ios-photoasset-viewer-previous/)
   assert.match(viewer, /native-ios-photoasset-viewer-next/)
-  assert.match(viewer, /（已加载）/)
+  assert.doesNotMatch(viewer, /（已加载）/)
   assert.match(viewer, /let requestID = previewRequestID\s*let target = viewed/)
   assert.match(viewer, /let live = try await reader\.livePreview\(target\)/)
   assert.match(viewer, /reader\.thumbnail\(target\)/)
@@ -51,6 +51,42 @@ test('L3 Viewer retires old media then opens only accepted neighbor with a fresh
   assert.match(viewer, /\.onDisappear \{ retirePreview\(\) \}/)
   assert.doesNotMatch(viewer, /new XDriveIOSNativeMediaGalleryReader|UploadSession|UserDefaults|WKWebView/)
 })
+
+
+test('cloud PhotoAsset image video and Live Viewer keeps native canvas free of technical rows', () => {
+  const start = view.indexOf('struct XDriveIOSNativeServerMediaPreview: View')
+  const end = view.indexOf('/// Root and album-specific media wall', start)
+  const detail = view.slice(start, end)
+  const body = detail.slice(detail.indexOf('    var body: some View {'))
+  const bottomStart = body.indexOf('.safeAreaInset(edge: .bottom)')
+  const toolbarStart = body.indexOf('            .toolbar {', bottomStart)
+  const toolbarEnd = body.indexOf('            .toolbar(showChrome', toolbarStart)
+  assert.ok(bottomStart >= 0 && toolbarStart > bottomStart && toolbarEnd > toolbarStart)
+  const canvas = body.slice(0, bottomStart)
+  const bottom = body.slice(bottomStart, toolbarStart)
+  const toolbar = body.slice(toolbarStart, toolbarEnd)
+  assert.match(canvas, /XDriveIOSNativeCloudPairedLivePhotoView\(/)
+  assert.match(canvas, /XDriveIOSNativeZoomablePhotoView\(/)
+  assert.doesNotMatch(canvas, /Button\("播放原生实况"\)|Button\(showsStaticStill \?/)
+  assert.doesNotMatch(canvas, /已取得当前账户的 Live 双资源|原生 Live 配对不可用/)
+  assert.match(bottom, /XDriveIOSNativeCloudPhotoAssetFilmstrip\(/)
+  assert.match(bottom, /native-ios-photoasset-bottom-save-to-photos/)
+  assert.doesNotMatch(bottom, /Button\("上一项"\)|Button\("下一项"\)|（已加载）/)
+  assert.match(toolbar, /Menu \{/)
+  assert.match(toolbar, /Label\("照片操作", systemImage: "ellipsis.circle"\)/)
+  for (const id of [
+    'native-ios-photoasset-viewer-previous', 'native-ios-photoasset-viewer-next',
+    'native-ios-photoasset-live-still-toggle', 'native-ios-photoasset-live-play',
+    'native-ios-photoasset-live-pair-retry', 'native-ios-photoasset-live-motion',
+    'native-ios-photoasset-player-reload', 'native-ios-photoasset-still-reload',
+    'native-ios-photoasset-original-save-to-photos'
+  ]) assert.ok(toolbar.includes(id), 'missing native More operation: ' + id)
+  assert.match(toolbar, /!ownerAuthorized \|\| rangeCrossing \|\| photosRestoreBusy/)
+  assert.match(detail, /\.xdriveCloudLivePhotoPaging \{ navigateLoaded\(\$0\) \}/)
+  assert.match(detail, /private func navigateLoaded\(_ direction: Int\)/)
+  assert.match(detail, /cancelPhotosRestore\(\)[\s\S]*?retirePreview\(\)[\s\S]*?activeItem = next/)
+})
+
 
 test('L2 retains the original modal and restores the last accepted Node+revision only', () => {
   const start = view.indexOf('struct XDriveIOSNativeServerMediaWall: View')

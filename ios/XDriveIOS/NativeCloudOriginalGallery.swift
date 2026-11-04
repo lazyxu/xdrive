@@ -922,7 +922,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         NavigationStack {
             Group {
                 if viewed.isLiveArchive, let still {
-                    VStack(spacing: 10) {
+                    VStack(spacing: 0) {
                         if showingLiveMotion, let player {
                             XDriveIOSNativeAVPlayerStatusObserver(
                                 player: player,
@@ -968,53 +968,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                 .onChromeTap { toggleChrome() }
                                 .accessibilityLabel("云端 Live 静态原件")
                         }
-                        if showChrome {
-                        if nativeLiveReady && currentOwnerAuthorized && !showingLiveMotion {
-                            HStack(spacing: 12) {
-                                Button("播放原生实况") {
-                                    guard currentOwnerAuthorized else { return }
-                                    showsStaticStill = false
-                                    nativeLivePlaybackRequest = UUID()
-                                }
-                                .accessibilityIdentifier("native-ios-cloud-live-native-playback")
-                                Button(showsStaticStill ? "返回原生实况" : "放大静态原件") {
-                                    guard currentOwnerAuthorized else { return }
-                                    showsStaticStill.toggle()
-                                }
-                            }
-                        }
-                        if nativeLiveUnavailable && currentOwnerAuthorized &&
-                            !showingLiveMotion {
-                            Button("重试原生实况配对") {
-                                guard currentOwnerAuthorized, liveResources != nil else { return }
-                                // A valid ZIP may fail Photos' first pairing.
-                                // Reuse its verified files without redownloading.
-                                nativeLivePlaybackRequest = nil
-                                nativeLiveReady = false
-                                showsStaticStill = false
-                                nativeLiveUnavailable = false
-                            }
-                            .accessibilityIdentifier("native-ios-original-live-pair-retry")
-                        }
-                        Button(showingLiveMotion ? "返回静态原件" : "播放原始动态视频") {
-                            guard currentOwnerAuthorized, player != nil else { return }
-                            if showingLiveMotion {
-                                player?.pause()
-                                nativeLivePlaybackRequest = nil
-                            } else {
-                                // Unmount and cancel PHLivePhoto's pairing before
-                                // starting the standalone fallback AVPlayer.
-                                nativeLiveReady = false
-                            }
-                            showingLiveMotion.toggle()
-                        }
-                        .disabled(!currentOwnerAuthorized || player == nil)
-                        .accessibilityIdentifier("native-ios-cloud-live-motion-toggle")
-                        Text(nativeLiveUnavailable
-                             ? "原生实况配对不可用，仍可查看静态原件和播放原始动态视频。"
-                             : "已校验 Live ZIP 双资源；优先显示原生同步实况，保留独立视频回退。")
-                            .font(.caption).foregroundStyle(.secondary)
-                        }
+                        // Keep native Live canvas clear; extras live in More.
                         if let error {
                             Text(error).font(.caption).foregroundStyle(.secondary)
                             Button("重试") { retryPreview() }
@@ -1080,8 +1034,9 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 0) {
+                // The filmstrip is the only persistent navigation surface.
                 if showChrome && (loadedNodes.count > 1 ||
-                   canNavigate(-1) || canNavigate(1) || exporter.status != nil ||
+                   exporter.status != nil ||
                    (currentOwnerAuthorized && viewed.size > 512 * 1_048_576)) {
                     VStack(spacing: 8) {
                         if let status = exporter.status {
@@ -1103,25 +1058,6 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                 login: login,
                                 onSelect: { next in selectFilmstrip(next) }
                             )
-                        }
-                        if loadedNodes.count > 1 || canNavigate(-1) || canNavigate(1) {
-                            HStack(spacing: 12) {
-                                Button("上一项") { showNeighbor(-1) }
-                                    .disabled(!canNavigate(-1))
-                                    .frame(minHeight: 44)
-                                    .accessibilityIdentifier("native-ios-original-viewer-previous")
-                                Spacer(minLength: 4)
-                                Text(loadedPosition.map {
-                                    "\($0 + 1)/\(loadedNodes.count)（已加载）"
-                                } ?? "当前原件已变化")
-                                    .font(.caption).monospacedDigit()
-                                    .accessibilityIdentifier("native-ios-original-viewer-position")
-                                Spacer(minLength: 4)
-                                Button("下一项") { showNeighbor(1) }
-                                    .disabled(!canNavigate(1))
-                                    .frame(minHeight: 44)
-                                    .accessibilityIdentifier("native-ios-original-viewer-next")
-                            }
                         }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
@@ -1160,59 +1096,105 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     }
                     .accessibilityIdentifier("native-ios-original-viewer-back")
                 }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if let file = exporter.prepared,
-                       file.nodeID == viewed.id,
-                       file.revision == viewed.revision,
-                       currentOwnerAuthorized {
-                        ShareLink(item: file.fileURL) {
-                            Label("分享或保存原件", systemImage: "square.and.arrow.up")
-                        }
-                        .accessibilityIdentifier("native-ios-original-share")
-                    } else {
-                        Button {
-                            guard let node = exportNode else { return }
-                            exporter.prepare(node, login: login)
-                        } label: {
-                            Label(exporter.busy ? "正在下载" : "导出原件",
-                                  systemImage: "square.and.arrow.up")
-                        }
-                        .disabled(exporter.busy || exportNode == nil)
-                        .accessibilityIdentifier("native-ios-original-export")
-                    }
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if currentOwnerAuthorized, player != nil {
-                        Button {
-                            retryPreview()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .accessibilityLabel("重新加载云端原件视频")
-                        .accessibilityIdentifier("native-ios-original-player-reload")
-                    }
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if currentOwnerAuthorized && stillIsThumbnailOnly {
-                        Button { retryPreview() } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .accessibilityLabel("重新加载高清原件预览")
-                        .accessibilityIdentifier("native-ios-original-still-reload")
-                    }
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if restoringToPhotos {
                         ProgressView().accessibilityLabel("正在恢复原件到 iOS 照片")
                     } else {
-                        Button {
-                            restoreCurrentOriginalToPhotos()
+                        Menu {
+                            Button {
+                                restoreCurrentOriginalToPhotos()
+                            } label: {
+                                Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
+                            }
+                            .disabled(!(viewed.isImage || viewed.isVideo ||
+                                        viewed.isLiveArchive) || exporter.busy)
+                            .accessibilityIdentifier("native-ios-cloud-original-save-to-photos")
+                            Divider()
+                            if let file = exporter.prepared,
+                               file.nodeID == viewed.id,
+                               file.revision == viewed.revision,
+                               currentOwnerAuthorized {
+                                ShareLink(item: file.fileURL) {
+                                    Label("分享或保存原件", systemImage: "square.and.arrow.up")
+                                }
+                                .accessibilityIdentifier("native-ios-original-share")
+                            } else {
+                                Button {
+                                    guard let node = exportNode else { return }
+                                    exporter.prepare(node, login: login)
+                                } label: {
+                                    Label(exporter.busy ? "正在下载" : "导出原件",
+                                          systemImage: "square.and.arrow.up")
+                                }
+                                .disabled(exporter.busy || exportNode == nil)
+                                .accessibilityIdentifier("native-ios-original-export")
+                            }
+                            if loadedNodes.count > 1 || canNavigate(-1) || canNavigate(1) {
+                                Divider()
+                                Button("上一项") { showNeighbor(-1) }
+                                    .disabled(!canNavigate(-1))
+                                    .accessibilityIdentifier("native-ios-original-viewer-previous")
+                                Button("下一项") { showNeighbor(1) }
+                                    .disabled(!canNavigate(1))
+                                    .accessibilityIdentifier("native-ios-original-viewer-next")
+                            }
+                            if viewed.isLiveArchive && liveResources != nil {
+                                Divider()
+                                if nativeLiveReady && currentOwnerAuthorized &&
+                                   !showingLiveMotion {
+                                    Button("播放原生实况") {
+                                        guard currentOwnerAuthorized else { return }
+                                        showsStaticStill = false
+                                        nativeLivePlaybackRequest = UUID()
+                                    }
+                                    .accessibilityIdentifier("native-ios-cloud-live-native-playback")
+                                    Button(showsStaticStill ? "返回原生实况" : "放大静态原件") {
+                                        guard currentOwnerAuthorized else { return }
+                                        showsStaticStill.toggle()
+                                    }
+                                    .accessibilityIdentifier("native-ios-original-live-still-toggle")
+                                }
+                                if nativeLiveUnavailable && currentOwnerAuthorized &&
+                                    !showingLiveMotion {
+                                    Button("重试原生实况配对") {
+                                        guard currentOwnerAuthorized, liveResources != nil else { return }
+                                        // Re-pair previously verified ZIP resources locally.
+                                        nativeLivePlaybackRequest = nil
+                                        nativeLiveReady = false
+                                        showsStaticStill = false
+                                        nativeLiveUnavailable = false
+                                    }
+                                    .accessibilityIdentifier("native-ios-original-live-pair-retry")
+                                }
+                                Button(showingLiveMotion ? "返回静态原件" : "播放原始动态视频") {
+                                    guard currentOwnerAuthorized, player != nil else { return }
+                                    if showingLiveMotion {
+                                        player?.pause()
+                                        nativeLivePlaybackRequest = nil
+                                    } else {
+                                        nativeLiveReady = false
+                                    }
+                                    showingLiveMotion.toggle()
+                                }
+                                .disabled(!currentOwnerAuthorized || player == nil)
+                                .accessibilityIdentifier("native-ios-cloud-live-motion-toggle")
+                            }
+                            if currentOwnerAuthorized && (player != nil || stillIsThumbnailOnly) {
+                                Divider()
+                                if player != nil {
+                                    Button("重新加载云端原件视频") { retryPreview() }
+                                        .accessibilityIdentifier("native-ios-original-player-reload")
+                                }
+                                if stillIsThumbnailOnly {
+                                    Button("重新加载高清原件预览") { retryPreview() }
+                                        .accessibilityIdentifier("native-ios-original-still-reload")
+                                }
+                            }
                         } label: {
-                            Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
+                            Label("照片操作", systemImage: "ellipsis.circle")
                         }
-                        .disabled(!currentOwnerAuthorized ||
-                                  !(viewed.isImage || viewed.isVideo || viewed.isLiveArchive))
-                        .accessibilityIdentifier("native-ios-cloud-original-save-to-photos")
+                        .disabled(!currentOwnerAuthorized || restoringToPhotos)
+                        .accessibilityIdentifier("native-ios-original-viewer-more")
                     }
                 }
             }

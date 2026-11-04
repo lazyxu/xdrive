@@ -72,6 +72,10 @@ function fixture() {
     // registry dependency. A changed Owner must retire existing map guests.
     desktopPlacesGuests,
     desktopPlacesPending: null,
+    // The authenticated Web guest's in-memory Cookie registry is empty in
+    // this Agent-only race fixture, exactly like a cold Desktop launch.
+    desktopPlacesWebReady: null,
+    desktopPlacesWebPending: null,
     closeDesktopPlacesGuests: () => {
       guestClosures.push('closed')
       desktopPlacesGuests.clear()
