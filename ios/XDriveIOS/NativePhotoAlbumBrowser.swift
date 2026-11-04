@@ -35,6 +35,21 @@ private final class XDriveIOSNativeAlbumChangeMonitor: NSObject, ObservableObjec
 
 // Local PhotoKit collection IDs are transient, in-memory view identities.
 // Never persist them, send them to xDrive Server, or use them as backup receipts.
+/// Per-album chronological order. PhotoKit does not expose a reliable
+/// public "date added to library" key; use the actual capture date only.
+/// Every album reader (wall, Viewer and mutation recheck) shares this order.
+private enum XDriveIOSNativeAlbumSortOrder: String, CaseIterable, Identifiable {
+    case newest, oldest
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .newest: return "最新拍摄在前"
+        case .oldest: return "最早拍摄在前"
+        }
+    }
+    var ascending: Bool { self == .oldest }
+}
+
 private enum XDriveIOSAlbumReadFailure: Error {
     case unauthorized
     case changed
@@ -73,7 +88,8 @@ actor XDriveIOSNativeAlbumPageReader {
         }
     }
 
-    func open(_ album: XDriveLocalPhotoAlbumSummary) throws -> Int {
+    func open(_ album: XDriveLocalPhotoAlbumSummary,
+              sortOrder: XDriveIOSNativeAlbumSortOrder = .newest) throws -> Int {
         reset()
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard status == .authorized || status == .limited else {
@@ -96,7 +112,9 @@ actor XDriveIOSNativeAlbumPageReader {
         registered = true
         version = observer.current()
         let options = PHFetchOptions()
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        options.sortDescriptors = [
+            NSSortDescriptor(key: "creationDate", ascending: sortOrder.ascending)
+        ]
         let result = PHAsset.fetchAssets(in: collection, options: options)
         guard observer.current() == version,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == status else {
@@ -283,6 +301,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
     let expectedTotal: Int
     let generation: UUID
     let density: XDriveIOSNativePhotoWallDensity
+    let sortOrder: XDriveIOSNativeAlbumSortOrder
     let selectionMode: Bool
     let selectedIDs: Set<String>
     // The continuous album wall owns the Viewer return focus state. Pass the
@@ -340,12 +359,12 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
             }
         }
         .id("album-page:\(offset)")
-        .task(id: "\(generation)-\(album.collectionIdentifier)-\(offset)") {
+        .task(id: "\(generation)-\(album.collectionIdentifier)-\(offset)-\(sortOrder.rawValue)") {
             page = nil
             let next = XDriveIOSNativeAlbumPageReader()
             reader = next
             do {
-                let count = try await next.open(album)
+                let count = try await next.open(album, sortOrder: sortOrder)
                 let result = try await next.page(offset: offset)
                 try Task.checkCancellation()
                 guard count == expectedTotal,
@@ -383,6 +402,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @State private var page: XDrivePhotoKitScanPage?
     @State private var total: Int?
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @State private var sortOrder: XDriveIOSNativeAlbumSortOrder = .newest
     @State private var selected: XDrivePhotoKitScanCandidate?
     @State private var selectionMode = false
     @State private var selectedCandidates: [String: XDrivePhotoKitScanCandidate] = [:]
@@ -440,6 +460,18 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                                 } label: {
                                     Label(option.title, systemImage: density == option
                                         ? "checkmark.circle.fill" : "square.grid.3x3")
+                                }
+                            }
+                            Section("拍摄时间顺序") {
+                                ForEach(XDriveIOSNativeAlbumSortOrder.allCases) { option in
+                                    Button {
+                                        sortOrder = option
+                                    } label: {
+                                        Label(option.title, systemImage: sortOrder == option
+                                            ? "checkmark.circle.fill" : "arrow.up.arrow.down")
+                                    }
+                                    .disabled(loading || albumActionBusy || albumShareBusy)
+                                    .accessibilityIdentifier("native-ios-album-sort-order")
                                 }
                             }
                         } label: {
@@ -506,7 +538,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                             XDriveIOSNativeAlbumVirtualPage(
                                 album: album, offset: offset, expectedTotal: total,
                                 generation: epoch, density: density,
-                                selectionMode: selectionMode,
+                                sortOrder: sortOrder, selectionMode: selectionMode,
                                 selectedIDs: Set(selectedCandidates.keys),
                                 accessibilityFocus: $accessibilityFocusedTileID,
                                 onSelect: { item, loadedPage in
@@ -563,6 +595,17 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                 density = density.applyingPinch(scale)
             }
         )
+        .onChange(of: sortOrder) { _ in
+            // Sort order changes the numeric PhotoKit slot identity. Discard
+            // the old selection and Viewer position before reloading.
+            guard phase == .active, albumAuthorized, selected == nil,
+                  !albumActionBusy && !albumShareBusy else { return }
+            selectionMode = false
+            selectedCandidates.removeAll()
+            clearViewerTileAnchor()
+            savedOffset = 0
+            reload()
+        }
         .onChange(of: pageRenderRevision) { _ in
             restoreViewerTile(using: returnScroll)
         }
@@ -667,7 +710,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                           ) else { throw XDriveIOSAlbumReadFailure.changed }
                     let adjacentReader = XDriveIOSNativeAlbumPageReader()
                     do {
-                        let count = try await adjacentReader.open(album)
+                        let count = try await adjacentReader.open(album, sortOrder: sortOrder)
                         guard count == oldPage.totalAccessibleAssets else {
                             throw XDriveIOSAlbumReadFailure.changed
                         }
@@ -781,7 +824,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         else { throw XDriveIOSAlbumReadFailure.changed }
         let verifier = XDriveIOSNativeAlbumPageReader()
         do {
-            let count = try await verifier.open(album)
+            let count = try await verifier.open(album, sortOrder: sortOrder)
             let now = try await verifier.page(offset: expected.startOffset)
             try Task.checkCancellation()
             guard count == expected.totalAccessibleAssets,
@@ -973,7 +1016,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         loading = true
         task = Task { @MainActor in
             do {
-                let count = try await next.open(album)
+                let count = try await next.open(album, sortOrder: sortOrder)
                 try Task.checkCancellation()
                 guard epoch == ticket, phase == .active,
                       [.authorized, .limited].contains(

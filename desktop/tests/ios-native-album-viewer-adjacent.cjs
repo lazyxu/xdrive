@@ -22,7 +22,7 @@ test('native album Viewer shares the tested one-neighbor callback, not a full al
   assert.match(contents, /loadedPage: viewerPage \?\? page/)
   assert.match(contents, /onCrossPage: \{ oldPage, anchor, direction in/)
   assert.match(contents, /let adjacentReader = XDriveIOSNativeAlbumPageReader\(\)/)
-  assert.match(contents, /try await adjacentReader\.open\(album\)/)
+  assert.match(contents, /try await adjacentReader\.open\(album, sortOrder: sortOrder\)/)
   assert.match(contents, /adjacentReader\.adjacentPage\(/)
   assert.match(contents, /await adjacentReader\.reset\(\)/)
   assert.match(contents, /onCrossedPage: \{ next, verifiedPage in/)

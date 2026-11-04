@@ -45,7 +45,7 @@ test('exact collection membership and full current page are checked before each 
   assert.match(verify, /current\.startOffset == expected\.startOffset/)
   assert.match(verify, /current\.totalAccessibleAssets == expected\.totalAccessibleAssets/)
   assert.match(verify, /let verifier = XDriveIOSNativeAlbumPageReader\(\)/)
-  assert.match(verify, /let count = try await verifier\.open\(album\)/)
+  assert.match(verify, /let count = try await verifier\.open\(album, sortOrder: sortOrder\)/)
   assert.match(verify, /let now = try await verifier\.page\(offset: expected\.startOffset\)/)
   assert.match(verify, /count == expected\.totalAccessibleAssets/)
   assert.match(verify, /zip\(now\.items, expected\.items\)\.allSatisfy/)
