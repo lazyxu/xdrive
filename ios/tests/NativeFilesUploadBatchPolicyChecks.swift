@@ -63,6 +63,30 @@ struct NativeFilesUploadBatchPolicyChecks {
               "must satisfy 1 GiB native bound")
         check(P.confirmedProgressPercent(bytes: gib, totalBytes: gib) == 99,
               "1 GiB completed chunks still provisional")
+
+        typealias F = XDriveIOSNativeFilesFolderUploadPolicy
+        check(F.maximumFiles == 64 && F.maximumDirectories == 32 &&
+              F.maximumDepth == 8 && F.maximumTotalBytes == 256 * 1_048_576,
+              "bounded foreground folder upload limits")
+        check(F.validComponent("选中的文件夹") && F.validComponent("a.txt"),
+              "valid native Files provider relative names")
+        check(!F.validComponent("bad?.txt") && !F.validComponent("bad "),
+              "reject unrepresentable relative names")
+        check(F.acceptsDirectory(existing: 0, depth: 1),
+              "root directory admitted")
+        check(F.acceptsDirectory(existing: 31, depth: 8),
+              "last directory and depth boundary admitted")
+        check(!F.acceptsDirectory(existing: 32, depth: 8) &&
+              !F.acceptsDirectory(existing: 0, depth: 9),
+              "folder depth/count rejected before POST")
+        check(F.acceptsFile(existing: 63, totalBytes: F.maximumTotalBytes - 1,
+                            nextBytes: 1, depth: 8),
+              "last file and byte boundary admitted")
+        check(!F.acceptsFile(existing: 64, totalBytes: 0, nextBytes: 1, depth: 1) &&
+              !F.acceptsFile(existing: 0, totalBytes: F.maximumTotalBytes,
+                             nextBytes: 1, depth: 1) &&
+              !F.acceptsFile(existing: 0, totalBytes: 0, nextBytes: -1, depth: 1),
+              "folder file count/bytes/negative sizes rejected")
         print("native Files sequential multi-upload selection and real Server ACK progress: PASS")
     }
 }
