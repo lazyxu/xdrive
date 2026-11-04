@@ -162,3 +162,24 @@ test('native cloud Live plays an optional one-shot hint only after verified pair
   assert.match(original, /playbackRequest: nativeLivePlaybackRequest,\s*hintEnabled: nativeLiveReady && currentOwnerAuthorized/)
   assert.doesNotMatch(pair, /URLSession|Authorization|Bearer|PHAssetCreationRequest|UserDefaults|\.upload\(/)
 })
+
+
+test('shared native photo video replay seeks finished item back to start only on explicit Play', () => {
+  const video = read('ios/XDriveIOS/NativePhotoVideoSurface.swift')
+  const replay = video.slice(
+    video.indexOf('private func togglePlayback()'),
+    video.indexOf('private func beginScrub()'))
+  assert.match(replay, /guard canControl, !seeking, !replayInProgress,[\s\S]*?let item = player\.currentItem/)
+  assert.match(replay, /if player\.rate > 0 \{\s*player\.pause\(\)[\s\S]*?return/)
+  assert.match(replay, /length\.isFinite, length > 0\.1,[\s\S]*?elapsed >= max\(0, length - 0\.08\)/)
+  assert.match(replay, /player\.seek\(to: \.zero, toleranceBefore: \.zero, toleranceAfter: \.zero\)/)
+  assert.match(replay, /guard replayEpoch == token else \{ return \}/)
+  assert.match(replay, /guard completed, phase == \.active, !seeking,[\s\S]*?player\.currentItem === item/)
+  assert.match(replay, /player\.play\(\)/)
+  assert.match(video, /private func beginScrub\(\) \{[\s\S]*?retireReplay\(\)\s*scrubEpoch = UUID\(\)/)
+  assert.match(video, /\.onDisappear \{ retireReplay\(\) \}/)
+  assert.match(video, /Button \{\s*togglePlayback\(\)\s*\} label: \{/)
+  assert.match(video, /Slider\([\s\S]*?onEditingChanged:/)
+  assert.match(video, /onNavigateSwipe\(direction\)/)
+  assert.doesNotMatch(video, /URLSession|Bearer|UploadSession|Keychain|WKWebView/)
+})
