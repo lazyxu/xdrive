@@ -20,7 +20,7 @@ func TestBlockedLegacyYikePauseCASRequiresExactSourceSnapshot(t *testing.T) {
 				if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).
 					Updates(map[string]any{
 						"revision": gorm.Expr("revision + 1"),
-						"name": "newer source config",
+						"name":     "newer source config",
 					}).Error; err != nil {
 					t.Fatal(err)
 				}
