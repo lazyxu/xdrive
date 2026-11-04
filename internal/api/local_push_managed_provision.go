@@ -39,7 +39,8 @@ func managedPushDeviceFolderName(device meta.ClientDevice) (string, error) {
 func createLocalPushManagedTargetTx(
 	ctx context.Context, tx *gorm.DB, source meta.Source, device meta.ClientDevice,
 ) (meta.Node, error) {
-	if !isLocalFolderPush(source) ||
+	if !(isLocalFolderPush(source) || source.Kind == meta.SourceKindIOSPhotos &&
+		source.Direction == meta.SourceDirectionPush && device.Platform == "ios") ||
 		source.LocalCreatorDeviceID == nil || *source.LocalCreatorDeviceID != device.ID ||
 		source.OwnerID == 0 || device.OwnerID != source.OwnerID || device.RevokedAt != nil ||
 		meta.ValidateName(source.Name) != nil {
@@ -108,8 +109,8 @@ func createLocalPushManagedTargetTx(
 			Joins("JOIN xd_nodes AS n ON n.id = xd_sources.target_node_id").
 			Where("xd_sources.owner_id = ? AND n.parent_id = ? AND n.deleted_at IS NULL",
 				source.OwnerID, group.ID).
-			Where("xd_sources.kind = ? AND xd_sources.direction = ? AND xd_sources.target_managed = TRUE AND xd_sources.local_creator_device_id = ?",
-				meta.SourceKindLocalFolder, meta.SourceDirectionPush, device.ID).
+			Where("xd_sources.kind IN ? AND xd_sources.direction = ? AND xd_sources.target_managed = TRUE AND xd_sources.local_creator_device_id = ?",
+				[]string{meta.SourceKindLocalFolder, meta.SourceKindIOSPhotos}, meta.SourceDirectionPush, device.ID).
 			Count(&verified).Error; err != nil {
 			return meta.Node{}, err
 		}

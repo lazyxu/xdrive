@@ -10,6 +10,9 @@ const (
 	// SourceKindLocalFolder is a regular device-authorized local directory push,
 	// not the xDrive CfAPI/FUSE mount or the Synology NAS Photos push connector.
 	SourceKindLocalFolder = "local_folder"
+	// SourceKindIOSPhotos represents a device-authenticated, server-owned
+	// iPhone Photos backup target. Never grant it Desktop local-folder rights.
+	SourceKindIOSPhotos = "ios_photos"
 
 	SourceDirectionPush = "push"
 	SourceDirectionPull = "pull"

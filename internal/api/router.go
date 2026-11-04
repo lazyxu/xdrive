@@ -443,6 +443,10 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/devices/:id/revoke", s.revokeClientDevice)
 	// Explicit current-Owner issuance/list/revoke, never reachable by an
 	// identity-only iOS device token or an already-issued background grant.
+	// Only this dedicated Owner + registered iPhone route may provision or
+	// rename its managed photo destination. It is NOT a local_folder runner.
+	authed.GET("/ios/photos/backup-destination", s.getIOSPhotoBackupDestination)
+	authed.PUT("/ios/photos/backup-destination", s.putIOSPhotoBackupDestination)
 	authed.POST("/ios/photos/background-grants", s.createIOSPhotoBackgroundGrant)
 	authed.GET("/ios/photos/background-grants", s.listIOSPhotoBackgroundGrants)
 	authed.POST("/ios/photos/background-grants/:id/revoke", s.revokeIOSPhotoBackgroundGrant)
