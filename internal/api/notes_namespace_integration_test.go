@@ -124,7 +124,7 @@ func TestNotesNamespaceOwnerBoundAndOrdinaryFilesCannotWrite(t *testing.T) {
 		tokenA, strings.NewReader(`{"name":"oops"}`), http.StatusConflict)
 	request(t, router, http.MethodPost,
 		fmt.Sprintf("/api/v1/nodes/%d/directories", first.SystemNodeID),
-		tokenA, strings.NewReader(`{"name":"@备忘录"}`), http.StatusConflict)
+		tokenA, strings.NewReader(`{"name":"@笔记"}`), http.StatusConflict)
 	request(t, router, http.MethodPost, "/api/v1/uploads", tokenA,
 		strings.NewReader(fmt.Sprintf(`{"parent_id":%d,"name":"a.md","size":1,"chunk_size":4194304}`, first.IOSNodeID)),
 		http.StatusConflict)

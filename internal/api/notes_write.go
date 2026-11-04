@@ -36,7 +36,7 @@ func (s *Server) stageNoteMarkdown(ctx context.Context, uid uint64, markdown str
 	if err != nil {
 		return notesStagedMarkdown{}, err
 	}
-	key := storageKey(uid, "@xDrive/@备忘录", uuid.NewString())
+	key := storageKey(uid, "@xDrive/@笔记", uuid.NewString())
 	written, err := s.Store.Put(ctx, key, bytes.NewReader(data))
 	if err != nil || written != size {
 		_ = s.Store.Delete(ctx, key)

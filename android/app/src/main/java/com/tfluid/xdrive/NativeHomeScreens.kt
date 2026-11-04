@@ -160,7 +160,7 @@ private val nativeShortcuts = listOf(
     NativeShortcutCard(NativeHomeShortcut.GALLERY_MAP, "地点地图", "图库", R.drawable.xd_view_carousel),
     NativeShortcutCard(NativeHomeShortcut.CLOUD_FILES, "云端文件", "文件", R.drawable.xd_folder),
     NativeShortcutCard(NativeHomeShortcut.TRASH, "回收站", "文件", R.drawable.xd_folder),
-    NativeShortcutCard(NativeHomeShortcut.NOTES, "备忘录", "文件", R.drawable.xd_folder),
+    NativeShortcutCard(NativeHomeShortcut.NOTES, "笔记", "文件", R.drawable.xd_folder),
     NativeShortcutCard(NativeHomeShortcut.TRANSFERS, "传输中心", "工具", R.drawable.xd_refresh),
 )
 
@@ -293,7 +293,7 @@ internal fun NativeHomeDynamic(
 ) {
     if (navigation.dynamicFeature == NativeDynamicFeature.NOTES) {
         if (notesController != null) NativeNotesScreen(notesController)
-        else Text("当前 Owner 尚未接通原生备忘录")
+        else Text("当前 Owner 尚未接通原生笔记")
         return
     }
     Column(

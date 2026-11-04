@@ -69,7 +69,7 @@ export type XDriveNotesDataPort = {
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
-  return '备忘录操作失败。请检查当前服务器和账号。'
+  return '笔记操作失败。请检查当前服务器和账号。'
 }
 
 function hasRevisionConflict(error: unknown): boolean {
@@ -200,7 +200,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
 
   const openNote = useCallback(async (id: string) => {
     if (dirty || savingRef.current || busy) {
-      setMessage('请先保存当前草稿或放弃修改，再切换备忘录。')
+      setMessage('请先保存当前草稿或放弃修改，再切换笔记。')
       return
     }
     const seq = ++readSeq.current
@@ -282,13 +282,13 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
 
   const create = async () => {
     if (source !== 'mine' || busy || dirty || savingRef.current) {
-      setMessage('请先保存当前草稿，再新建备忘录。')
+      setMessage('请先保存当前草稿，再新建笔记。')
       return
     }
     setBusy(true)
     setMessage('')
     try {
-      const item = await port.createNote({ title: '未命名备忘录', markdown: '' })
+      const item = await port.createNote({ title: '未命名笔记', markdown: '' })
       if (!mounted.current) return
       setReload(i => i + 1)
       // Create already committed on the Server; open the authoritative read.
@@ -334,7 +334,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
         const name = file.name.replace(/\.(?:md|markdown)$/i, '').trim()
         if (!name || /[\u0000-\u001f\u007f]/.test(name) ||
             new TextEncoder().encode(name).length > 255) {
-          throw new Error('文件名不能作为有效的备忘录标题。')
+          throw new Error('文件名不能作为有效的笔记标题。')
         }
         const bytes = await file.arrayBuffer()
         controller.signal.throwIfAborted()
@@ -363,13 +363,13 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
           : 'Markdown 已导入为独立的只读 iOS 备份。')
       } catch {
         if (mounted.current && !controller.signal.aborted) {
-          setMessage('备忘录已提交；读取回执失败，请刷新 iOS 备份列表核对，勿重复导入。')
+          setMessage('笔记已提交；读取回执失败，请刷新 iOS 备份列表核对，勿重复导入。')
         }
       }
     } catch (error) {
       if (mounted.current && !controller.signal.aborted) {
         setMessage(created
-          ? '备忘录已提交，但后续核对失败；请在 iOS 备份中查找，勿重复导入。'
+          ? '笔记已提交，但后续核对失败；请在 iOS 备份中查找，勿重复导入。'
           : '导入失败或提交结果不确定：' + errorMessage(error) +
             '。重新导入前请先核对 iOS 备份列表。')
       }
@@ -448,7 +448,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
       setSelected(null)
       setVersions([])
       setDeleteOpen(false)
-      setMessage('已删除备忘录。')
+      setMessage('已删除笔记。')
       setReload(i => i + 1)
     } catch (error) {
       if (mounted.current) setMessage(errorMessage(error))
@@ -504,12 +504,12 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
 
   return <Box data-xdrive-notes-page sx={{ height: '100%', overflow: 'auto', minWidth: 0, pb: 3 }}>
     <Stack spacing={1} sx={{ mb: 2 }}>
-      <Typography variant="h5" fontWeight={700}>备忘录</Typography>
+      <Typography variant="h5" fontWeight={700}>笔记</Typography>
       <Typography variant="body2" color="text.secondary">
         Markdown 储存在当前 xDrive 账号的文件内置目录；iOS 备份原件只读。
       </Typography>
-      <Tabs value={source} onChange={changeSource} aria-label="备忘录分类">
-        <Tab label="我的备忘录" value="mine" />
+      <Tabs value={source} onChange={changeSource} aria-label="笔记分类">
+        <Tab label="我的笔记" value="mine" />
         <Tab label="iOS 备份" value="ios_notes" />
       </Tabs>
     </Stack>
@@ -539,7 +539,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
           </>}
         </Stack>
         {listError && <Alert severity="error">{listError}</Alert>}
-        <List dense aria-label={source === 'mine' ? '我的备忘录' : 'iOS 备忘录备份'}>
+        <List dense aria-label={source === 'mine' ? '我的笔记' : 'iOS 备份'}>
           {items.map(item => <ListItemButton key={item.id}
             selected={selected?.id === item.id}
             onClick={() => void openNote(item.id)}>
@@ -549,20 +549,20 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
               secondaryTypographyProps={{ noWrap: true }} />
           </ListItemButton>)}
         </List>
-        {listLoading && <CircularProgress size={22} aria-label="正在加载备忘录" />}
+        {listLoading && <CircularProgress size={22} aria-label="正在加载笔记" />}
         {!listLoading && items.length === 0 && !listError &&
-          <Typography sx={{ p: 2 }} color="text.secondary">暂无备忘录</Typography>}
+          <Typography sx={{ p: 2 }} color="text.secondary">暂无笔记</Typography>}
         {nextOffset > 0 && <Button disabled={listLoading}
           onClick={() => void loadMore()}>加载更多</Button>}
       </Box>
       <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 2, minWidth: 0 }}>
         {detailLoading ? <CircularProgress size={24} />
           : !selected ? <Typography color="text.secondary">
-              选择一条备忘录，或点击「新建」开始记录。
+              选择一条笔记，或点击「新建」开始记录。
             </Typography> : <>
           <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap" sx={{ mb: 2 }}>
             <Typography variant="caption" color="text.secondary">
-              {selected.source === 'ios_notes' ? 'iOS 备份 · 只读' : '我的备忘录'} · 版本 {selected.revision}
+              {selected.source === 'ios_notes' ? 'iOS 备份 · 只读' : '我的笔记'} · 版本 {selected.revision}
               {dirty ? ' · 待保存' : ''}
             </Typography>
             <Box sx={{ flexGrow: 1 }} />
@@ -602,9 +602,9 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
       </Box>
     </Box>
     <Dialog open={deleteOpen} onClose={() => !busy && setDeleteOpen(false)}>
-      <DialogTitle>删除此备忘录？</DialogTitle>
+      <DialogTitle>删除此笔记？</DialogTitle>
       <DialogContent><DialogContentText>
-        仅删除「我的备忘录」中的当前内容，不影响 iOS 备份。此操作不会自动同步删除 Apple Notes。
+        仅删除「我的笔记」中的当前内容，不影响 iOS 备份。此操作不会自动同步删除 Apple Notes。
       </DialogContentText></DialogContent>
       <DialogActions>
         <Button onClick={() => setDeleteOpen(false)} disabled={busy}>取消</Button>
@@ -612,7 +612,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
       </DialogActions>
     </Dialog>
     <Dialog open={historyOpen} fullWidth maxWidth="sm" onClose={() => setHistoryOpen(false)}>
-      <DialogTitle>备忘录版本历史</DialogTitle>
+      <DialogTitle>笔记版本历史</DialogTitle>
       <DialogContent>
         {historyError && <Alert severity="error">{historyError}</Alert>}
         {historyBusy && <CircularProgress size={22} />}
