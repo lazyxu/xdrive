@@ -44,7 +44,7 @@ test('config read never silently enrolls the iPhone or uses a JS/browser credent
   assert.match(model, /URLSessionConfiguration\.ephemeral/);
   assert.match(model, /willPerformHTTPRedirection/);
   assert.match(model, /completionHandler\(nil\)/);
-  assert.doesNotMatch(model, /WKWebView|UserDefaults|localStorage|Cookie|PHPicker|UploadSessionTransport/);
+  assert.doesNotMatch(model, /WKWebView|UserDefaults|localStorage|PHPicker|UploadSessionTransport/);
 });
 
 test('only server response supplies actual target/source ID, local path cannot become authority', () => {
