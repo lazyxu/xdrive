@@ -355,15 +355,6 @@ func VerifyWithOptions(
 			report.IgnoredTemps++
 			return nil
 		}
-		if filepath.Clean(filepath.Dir(path)) == filepath.Clean(root) &&
-			strings.HasPrefix(entry.Name(), ".xdrive-ready-") {
-			// Local storage readiness probes are created directly under the
-			// storage root and normally removed immediately. A hard process or
-			// container stop can leave the zero-byte probe behind; it is
-			// internal liveness state, not user content or an orphan blob.
-			report.IgnoredTemps++
-			return nil
-		}
 		info, err := entry.Info()
 		if err != nil {
 			return err
@@ -376,6 +367,13 @@ func VerifyWithOptions(
 			return err
 		}
 		key := filepath.ToSlash(rel)
+		if isInternalReadinessProbe(key, info.Size()) {
+			// Readiness probes may survive a crash in the fixed CAS and
+			// LocalPush lifecycle directories, not only at the storage root.
+			// Never suppress other orphaned files or invalid probe lookalikes.
+			report.IgnoredTemps++
+			return nil
+		}
 		if key == storage.TempLifecycleLockFile && info.Size() == 0 {
 			// The root-scoped file is held open by Local.Put and the
 			// administrator's temp cleanup across Server processes.
@@ -429,6 +427,31 @@ func VerifyWithOptions(
 	report.ElapsedMillis = time.Since(start).Milliseconds()
 	emit("complete")
 	return report, nil
+}
+
+// isInternalReadinessProbe mirrors storage.probeWritableRootDirectory's
+// fixed locations, 32-lowercase-hex names and 0/1-byte intermediate states.
+func isInternalReadinessProbe(key string, size int64) bool {
+	if size < 0 || size > 1 {
+		return false
+	}
+	directory := filepath.ToSlash(filepath.Dir(key))
+	switch directory {
+	case ".", storage.CASLifecycleLockDir, storage.LocalPushStageLifecycleLockDir:
+	default:
+		return false
+	}
+	const prefix = ".xdrive-ready-"
+	name := filepath.Base(key)
+	if !strings.HasPrefix(name, prefix) || len(name) != len(prefix)+32 {
+		return false
+	}
+	for _, digit := range name[len(prefix):] {
+		if !((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func addReference(

@@ -173,10 +173,13 @@ installer_url_for_source() {
     github:stable)
       printf 'https://github.com/%s/releases/latest/download/xdrive-server-install.sh\n' "$REPOSITORY"
       ;;
-    gitlab:master|gitlab:stable)
-      # GitLab's rolling snapshot commit is carried in release metadata rather
-      # than a movable repository tag. Keep the existing bootstrap URL here;
-      # the installer resolves and pins the published GitLab release itself.
+    gitlab:master)
+      # The commit-pinned Generic Package is selected below.
+      local key="${GITLAB_PROJECT#/}"
+      key="${key//\//%2F}"
+      printf '%s/api/v4/projects/%s/releases/snapshot\n' "${GITLAB_BASE_URL%/}" "$key"
+      ;;
+    gitlab:stable)
       printf '%s/%s/-/raw/master/deploy/install-server.sh\n' "${GITLAB_BASE_URL%/}" "${GITLAB_PROJECT#/}"
       ;;
     *)
@@ -369,6 +372,66 @@ verify_github_release_installer() {
   printf '[xDrive] GitHub release installer SHA-256 verified: %s\n' "$actual"
 }
 
+# Pin the published GitLab snapshot commit before reading immutable Package
+# assets; raw/master is not an authenticated or compatible upgrade source.
+download_gitlab_snapshot_installer() {
+  local destination="$1" project="${GITLAB_PROJECT#/}" project_key=""
+  local api="" metadata="" commit="" package="" manifest="" expected="" actual="" status=0
+  command -v python3 >/dev/null 2>&1 || { echo "xdrive-server: GitLab Release metadata requires Python 3." >&2; return 1; }
+  command -v sha256sum >/dev/null 2>&1 || { echo "xdrive-server: GitLab Release verification requires sha256sum." >&2; return 1; }
+  project_key="${project//\//%2F}"
+  api="${GITLAB_BASE_URL%/}/api/v4/projects/$project_key"
+  metadata="${destination}.gitlab-release.json"
+  manifest="${destination}.gitlab-SHA256SUMS.txt"
+  rm -f "$destination" "$metadata" "$manifest"
+  if download_installer_url "$api/releases/snapshot" "$metadata"; then :; else status=$?; rm -f "$metadata"; return "$status"; fi
+  if ! commit="$(python3 - "$metadata" <<'PY'
+import json, re, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        release = json.load(f)
+    if not isinstance(release, dict) or release.get("tag_name") != "snapshot":
+        raise ValueError("unexpected snapshot release")
+    description = release.get("description")
+    if not isinstance(description, str):
+        raise ValueError("missing release description")
+    markers = re.findall(r"(?<![A-Za-z0-9_])XDRIVE_RELEASE_COMMIT=([0-9a-fA-F]{40})(?![0-9a-fA-F])", description)
+    if len(markers) != 1:
+        raise ValueError("missing or ambiguous publication commit")
+    print(markers[0].lower())
+except (OSError, ValueError, TypeError) as e:
+    print(f"invalid GitLab release: {e}", file=sys.stderr)
+    sys.exit(1)
+PY
+)"; then
+    rm -f "$metadata"; echo "xdrive-server: GitLab snapshot commit verification failed." >&2; return 1
+  fi
+  rm -f "$metadata"
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || return 1
+  package="$api/packages/generic/xdrive-build-packages/sha-$commit"
+  if download_installer_url "$package/xdrive-server-install.sh" "$destination"; then :; else status=$?; rm -f "$destination"; return "$status"; fi
+  if download_installer_url "$package/SHA256SUMS.txt" "$manifest"; then :; else status=$?; rm -f "$destination" "$manifest"; return "$status"; fi
+  expected="$(awk '
+    NF != 2 || length($1) != 64 || $1 !~ /^[[:xdigit:]]+$/ { bad=1 }
+    $2 == "xdrive-server-install.sh" { matches++; hash=tolower($1) }
+    END { if (!bad && matches==1) print hash }
+  ' "$manifest")"
+  actual="$(sha256sum "$destination" | awk '{print $1}')"
+  if [[ ! "$expected" =~ ^[a-f0-9]{64}$ || "$expected" != "$actual" ]]; then
+    echo "xdrive-server: GitLab installer SHA-256 mismatch or invalid Package manifest; refusing execution." >&2
+    rm -f "$destination" "$manifest"; return 1
+  fi
+  if ! grep -Fqx 'BUILT_COMMIT="${XD_BUILT_COMMIT:-'"$commit"'}"' "$destination" ||
+     ! grep -Fqx 'BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"' "$destination" ||
+     ! grep -Fqx 'BUILT_SOURCE="${XD_BUILT_SOURCE:-gitlab}"' "$destination" ||
+     ! grep -Eq '^EMBEDDED_DEPLOY_ASSET_MANIFEST_B64="[A-Za-z0-9+/=]+"$' "$destination"; then
+    echo "xdrive-server: GitLab installer identity or embedded hashes missing; refusing execution." >&2
+    rm -f "$destination" "$manifest"; return 1
+  fi
+  rm -f "$manifest"
+  echo "[xDrive] GitLab snapshot $commit installer SHA-256 verified: $actual"
+}
+
 download_installer() {
   local source="$1" destination="$2" channel="${3:-master}" installer_url status fallback_url attempt previous_gitlab_base
   local policy="${XD_GITHUB_ATTESTATION_POLICY:-}"
@@ -394,10 +457,9 @@ download_installer() {
   fi
   installer_url="$(installer_url_for_source "$source" "$channel")"
 
-  # The official GitHub master/stable Release publishes SHA256SUMS.txt beside
-  # the installer. Retry the WHOLE pair after a snapshot rollover; never
-  # accept a checksum from a different release generation. Intentional custom
-  # URL overrides and GitLab retain their existing distribution contract.
+  # GitHub uses Release checksum/attestation pairs; GitLab master uses the
+  # pinned, commit-addressed Generic Package. Never fall back from a rejected
+  # GitLab Package to an unverified raw/master script.
   if [[ "$source" == "github" && -z "$INSTALLER_URL_OVERRIDE" ]]; then
     for attempt in 1 2 3; do
       if download_installer_url "$installer_url" "$destination"; then
@@ -414,7 +476,9 @@ download_installer() {
     return 1
   fi
 
-  if download_installer_url "$installer_url" "$destination"; then
+  if [[ "$source" == gitlab && "$channel" == master && -z "$INSTALLER_URL_OVERRIDE" ]]; then
+    if download_gitlab_snapshot_installer "$destination"; then return 0; else status=$?; fi
+  elif download_installer_url "$installer_url" "$destination"; then
     return 0
   else
     status=$?
@@ -441,7 +505,11 @@ download_installer() {
   echo "[xDrive] GitLab $previous_gitlab_base is unreachable; retrying via verified local GitLab $fallback_url..." >&2
   prepare_local_gitlab_proxy
   installer_url="$(installer_url_for_source "$source" "$channel")"
-  download_installer_url "$installer_url" "$destination"
+  if [[ "$source" == gitlab && "$channel" == master ]]; then
+    download_gitlab_snapshot_installer "$destination"
+  else
+    download_installer_url "$installer_url" "$destination"
+  fi
 }
 
 
