@@ -49,11 +49,21 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     // local to this visible screen and never authorizes an upload or BG task.
     @State private var focusedDimmed = false
     @State private var focusedWakeCounter = 0
+    @State private var focusedLastInteractionAt = Date.distantPast
     @State private var previousIdleTimerDisabled: Bool?
 
     private var focusedPresentationActive: Bool {
         controller.busy && (controller.focusedSummary?.totalWindows ?? 0) > 0 &&
             phase == .active && login.owner != nil
+    }
+
+    private func noteFocusedUserActivity() {
+        guard focusedPresentationActive, !focusedDimmed else { return }
+        let now = Date()
+        // During a long drag, throttle state writes to at most once a second.
+        guard now.timeIntervalSince(focusedLastInteractionAt) >= 1 else { return }
+        focusedLastInteractionAt = now
+        focusedWakeCounter &+= 1
     }
 
     private func updateFocusedIdleTimer(active: Bool) {
@@ -91,12 +101,22 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 .accessibilityIdentifier("native-ios-backup-portrait-form")
             }
         }
+        // An active user's taps or scrolls reset the 10-second idle window.
+        // Simultaneous gestures preserve Form scroll and Button interactions.
+        .simultaneousGesture(
+            TapGesture().onEnded { noteFocusedUserActivity() }
+        )
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 4)
+                .onChanged { _ in noteFocusedUserActivity() }
+        )
         // Synology-style focused display: dark, not locked. A tap wakes the
         // native status screen without cancelling or restarting the uploader.
         .overlay {
             if focusedPresentationActive && focusedDimmed {
                 Button {
                     focusedDimmed = false
+                    focusedLastInteractionAt = Date()
                     focusedWakeCounter &+= 1
                 } label: {
                     ZStack {
@@ -141,7 +161,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         }
         .onChange(of: focusedPresentationActive) { active in
             updateFocusedIdleTimer(active: active)
-            if !active { focusedDimmed = false }
+            if !active {
+                focusedDimmed = false
+                focusedLastInteractionAt = .distantPast
+            }
         }
         .navigationTitle("相册备份")
         .confirmationDialog("确认开始上传已授权的照片/视频/Live 原件？",

@@ -158,6 +158,10 @@ test('focused display dims after ten seconds only while foreground focused backu
   assert.match(ui, /guard !Task\.isCancelled && focusedPresentationActive else \{ return \}/);
   assert.match(ui, /if focusedPresentationActive && focusedDimmed/);
   assert.match(ui, /focusedWakeCounter &\+= 1/);
+  assert.match(ui, /TapGesture\(\)\.onEnded \{ noteFocusedUserActivity\(\) \}/);
+  assert.match(ui, /DragGesture\(minimumDistance: 4\)/);
+  assert.match(ui, /now\.timeIntervalSince\(focusedLastInteractionAt\) >= 1/);
+  assert.match(ui, /focusedLastInteractionAt = Date\(\)/);
   assert.match(ui, /native-ios-photos-focused-dim-overlay/);
   assert.match(ui, /已扫描.*completedWindows.*totalWindows.*段/);
   assert.match(ui, /本次确认新增.*confirmedNew.*个原件/);
