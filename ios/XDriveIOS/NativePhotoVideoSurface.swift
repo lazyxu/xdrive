@@ -68,6 +68,8 @@ struct XDriveIOSNativePhotoVideoSurface: View {
     @State private var finishingScrub = false
     @State private var scrubEpoch = UUID()
     @State private var lastPreviewSeekAt: TimeInterval = -.infinity
+    @State private var replayEpoch = UUID()
+    @State private var replayInProgress = false
     private let ticker = Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()
 
     private var canControl: Bool {
@@ -87,10 +89,51 @@ struct XDriveIOSNativePhotoVideoSurface: View {
     }
 
 
+    /// A finished AVPlayerItem remains at its duration. A second Play tap
+    /// must seek the SAME item to zero; plain player.play() will not rewind.
+    /// The owning Gallery/Files Viewer still handles player failures.
+    private func togglePlayback() {
+        guard canControl, !seeking, !replayInProgress,
+              let item = player.currentItem else { return }
+        if player.rate > 0 {
+            player.pause()
+            refresh()
+            return
+        }
+        let elapsed = player.currentTime().seconds
+        let length = item.duration.seconds
+        guard length.isFinite, length > 0.1,
+              elapsed.isFinite, elapsed >= max(0, length - 0.08) else {
+            player.play()
+            refresh()
+            return
+        }
+        let token = UUID()
+        replayEpoch = token
+        replayInProgress = true
+        player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) {
+            completed in
+            Task { @MainActor in
+                guard replayEpoch == token else { return }
+                replayInProgress = false
+                guard completed, phase == .active, !seeking,
+                      player.currentItem === item else { return }
+                player.play()
+                refresh()
+            }
+        }
+    }
+
+    private func retireReplay() {
+        replayEpoch = UUID()
+        replayInProgress = false
+    }
+
     /// Pause while dragging so the decoded frame follows the user's finger
     /// instead of running ahead of the seek slider.
     private func beginScrub() {
         guard canControl, duration > 0, let item = player.currentItem else { return }
+        retireReplay()
         scrubEpoch = UUID()
         scrubbedItem = item
         resumesAfterScrub = player.rate > 0
@@ -186,10 +229,7 @@ struct XDriveIOSNativePhotoVideoSurface: View {
             if showChrome {
                 HStack(spacing: 10) {
                     Button {
-                        guard canControl else { return }
-                        if player.rate > 0 { player.pause() }
-                        else { player.play() }
-                        refresh()
+                        togglePlayback()
                     } label: {
                         Image(systemName: playing ? "pause.fill" : "play.fill")
                             .frame(minWidth: 32, minHeight: 44)
@@ -246,10 +286,13 @@ struct XDriveIOSNativePhotoVideoSurface: View {
         .background(Color.black)
         .onAppear { refresh() }
         .onChange(of: phase) { next in
-            if next != .active { abortScrub() }
-            else { refresh() }
+            if next != .active {
+                abortScrub()
+                retireReplay()
+            } else { refresh() }
         }
         .onDisappear { abortScrub() }
+        .onDisappear { retireReplay() }
         .onReceive(ticker) { _ in
             if phase == .active { refresh() }
         }
