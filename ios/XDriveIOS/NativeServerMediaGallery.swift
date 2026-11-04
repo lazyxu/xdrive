@@ -587,7 +587,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
                             XDriveIOSNativeCloudPairedLivePhotoView(
                                 files: resources,
                                 placeholder: still,
-                                playbackRequest: livePlaybackRequest
+                                playbackRequest: livePlaybackRequest,
+                                hintEnabled: nativeLiveReady && ownerAuthorized
                             ) { ready in
                                 // Old Photos callbacks cannot revive a retired
                                 // Owner, scene, Viewer or temporary resource set.

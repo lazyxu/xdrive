@@ -898,7 +898,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                 XDriveIOSNativeCloudPairedLivePhotoView(
                                     files: resources,
                                     placeholder: still,
-                                    playbackRequest: nativeLivePlaybackRequest
+                                    playbackRequest: nativeLivePlaybackRequest,
+                                    hintEnabled: nativeLiveReady && currentOwnerAuthorized
                                 ) { ready in
                                     // The async Photos callback must not make a
                                     // retired Owner/scene or old ZIP visible.
