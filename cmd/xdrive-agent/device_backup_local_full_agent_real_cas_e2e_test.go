@@ -145,8 +145,18 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	var chunks, finalizes atomic.Int64
+	// This switch models a genuinely unavailable Server while the original
+	// NAS Source scheduler performs its authorized Owner-device discovery.
+	// Never replace the Agent, uploader, PostgreSQL or LocalCAS in this test.
+	var serverOffline atomic.Bool
+	var offlineRequests atomic.Int64
 	router := srv.Router()
 	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serverOffline.Load() {
+			offlineRequests.Add(1)
+			http.Error(w, "disposable Server temporarily offline", http.StatusServiceUnavailable)
+			return
+		}
 		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/chunks/") {
 			chunks.Add(1)
 		}
@@ -469,8 +479,32 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	// The due clock is injected only into the scheduler; the real Root
 	// inventory, native file bytes and Server SQL/CAS time remain untouched.
 	due := early.Add(2 * time.Minute)
+	// At the due instant the Server may be offline. The Agent must not
+	// consume its scheduled admission, create a job or fabricate a successful
+	// original receipt. Reconnect at the same due clock and recover through
+	// the existing Agent, with no GUI/CLI manual run or second CAS writer.
+	serverOffline.Store(true)
+	if err := scheduler.localPushAutoTick(context.Background(), due, attempts); err == nil {
+		t.Fatal("offline NAS scheduled discovery incorrectly succeeded")
+	}
+	serverOffline.Store(false)
+	scheduler.localCommonBatchJobMu.Lock()
+	offlineJob := scheduler.localCommonBatchJob
+	scheduler.localCommonBatchJobMu.Unlock()
+	if offlineRequests.Load() == 0 || offlineJob != nil || len(attempts) != 0 {
+		t.Fatalf("offline scheduler admitted a job without a verified Server: requests=%d job=%v attempts=%d",
+			offlineRequests.Load(), offlineJob != nil, len(attempts))
+	}
+	assertCounters()
+	if lastChunk != chunksBeforeSchedule || lastFinalize != finalizesBeforeSchedule ||
+		lastOperation != opsBeforeSchedule || lastVersion != versionsBeforeSchedule {
+		t.Fatal("offline discovery wrote CAS chunks, finalized an upload or changed SQL receipts")
+	}
+	// Existing saved policy remains due after the transient Server failure.
+	// Automatic recovery, not a second manual DSM SourceRun, must commit B
+	// and the new nested original through the ordinary operation queue.
 	if err := scheduler.localPushAutoTick(context.Background(), due, attempts); err != nil {
-		t.Fatalf("due NAS Source scheduler failed: %v", err)
+		t.Fatalf("reconnected due NAS scheduler did not resume: %v", err)
 	}
 	scheduler.localCommonBatchJobMu.Lock()
 	job := scheduler.localCommonBatchJob
