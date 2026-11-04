@@ -122,6 +122,7 @@ import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
 import PwaOfflineDirectoryBrowser from './PwaOfflineDirectoryBrowser'
 import { xDrivePwaCaptureAlbumSummaries, xDrivePwaCaptureVisitedDirectory, xDrivePwaClearOfflineMetadata, xDrivePwaOfflineScopeKey, xDrivePwaReadOfflineDirectories, xDrivePwaObserveOfflinePurge } from './pwaOfflineDirectory'
 import type { XDrivePwaOfflineOwner } from './pwaOfflineDirectory'
+import ViewerQualitySettingsSection from './ViewerQualitySettingsSection'
 import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload, xDriveObservePwaBeforeUnload } from './pwaTransferSafety'
 import { xDriveClearPwaWindowActivity, xDriveReportPwaWindowActivity } from './pwaWorkloadSafety'
 import { xDriveCanResumeBrowserUpload, xDrivePwaResumeFileError } from './pwaUploadResume'
@@ -260,6 +261,8 @@ function WebAccountMenu({
   username,
   serverBuild,
   appearance,
+  viewerQualityApi,
+  isAdmin = false,
   disabled = false,
   onAppearanceChange,
   onLogout,
@@ -269,6 +272,8 @@ function WebAccountMenu({
   username: string
   serverBuild: BuildInfo | null
   appearance: XDriveAppearance
+  viewerQualityApi?: XDriveApi
+  isAdmin?: boolean
   disabled?: boolean
   onAppearanceChange: (appearance: XDriveAppearance) => void
   onLogout: () => void
@@ -314,11 +319,14 @@ function WebAccountMenu({
       <XDriveSettingsDialog
         open={settingsOpen && !disabled}
         onClose={() => setSettingsOpen(false)}
-        subtitle="外观与服务端信息"
+        subtitle="外观、Viewer 画质与服务端信息"
         appearance={appearance}
         onAppearanceChange={onAppearanceChange}
-        buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
       >
+        {viewerQualityApi ? (
+          <ViewerQualitySettingsSection api={viewerQualityApi}
+            open={settingsOpen && !disabled} isAdmin={isAdmin} />
+        ) : null}
         {offlineOwner ? <PwaOfflineDirectorySection owner={offlineOwner} onConsentChange={onOfflineConsentChange} /> : null}
       </XDriveSettingsDialog>
       {installOpen && !disabled ? (
@@ -2516,6 +2524,8 @@ function FileManager({
   )
   const accountAction = (
     <WebAccountMenu
+      viewerQualityApi={api}
+      isAdmin={profile?.role === 'admin'}
       disabled={viewerActive}
       offlineOwner={offlineOwner}
       onOfflineConsentChange={setOfflineConsent}
@@ -2667,6 +2677,24 @@ function FileManager({
   const mobileHeaderMode = !compactWorkspace ? 'standalone'
     : viewerActive || mobileMapFocused || mobileManualFocused ? 'hidden'
     : appView === 'files' || appView === 'gallery' ? 'global' : 'shell'
+  // Immutable transport identity across unrelated TaskCenter or Gallery
+  // rerenders. Unmounting a real workspace aborts upload, not a port refresh.
+  const offlineImportPort = useMemo(() => ({
+    list: () => api.adminOfflineImportList(),
+    create: () => api.adminOfflineImportCreate(),
+    get: (id: string) => api.adminOfflineImportGet(id),
+    register: async (id: string, name: string, size: number, sha?: string) => {
+      await api.adminOfflineImportRegister(id, name, size, sha)
+    },
+    putChunk: async (id: string, name: string, index: number, blob: Blob, sha: string, signal?: AbortSignal) => {
+      await api.adminOfflineImportChunk(id, name, index, blob, sha, signal)
+    },
+    finalize: (id: string, name: string) => api.adminOfflineImportFinalize(id, name),
+    remove: async (id: string) => { await api.adminOfflineImportRemove(id) },
+    start: async (id: string, manifest: string, binary: string, backup: boolean) => {
+      await api.adminStartOfflineServerUpdate(id, manifest, binary, backup)
+    },
+  }), [api])
   const browserWorkspaceHost = useMemo(
     () => createXDriveBrowserWorkspaceHost({
       adminRoleVerified: serverAdminVerified,
@@ -2689,12 +2717,16 @@ function FileManager({
           { replace: options?.replace },
         ),
       } : undefined,
-      adminMaintenance: serverAdminVerified ? {
+      adminUpdate: serverAdminVerified ? {
         updatePort: maintenanceUpdatePort,
-        backupPort: maintenanceBackupPort,
-        onOpenStorage: () => setAppView('admin-storage'),
+        offlinePort: offlineImportPort,
+        buildInfo: [{ title: 'Server 构建信息', info: serverBuild }],
         unavailableLabel: 'Web/API',
         initialChannel: serverBuild?.channel === 'master' ? 'master' : 'stable',
+      } : undefined,
+      adminMaintenance: serverAdminVerified ? {
+        backupPort: maintenanceBackupPort,
+        onOpenStorage: () => setAppView('admin-storage'),
       } : undefined,
       adminStorage: serverAdminVerified ? {
         api,
@@ -2746,7 +2778,7 @@ function FileManager({
       mediaSelectionJobPort, filesOperationFocus, taskCenterFocus, setAppView,
       api, profile?.id, focusedAdminUserID, refreshQuota,
       adminServicesLocation, focusedAdminStorageSection, serviceDependenciesPort,
-      maintenanceUpdatePort, maintenanceBackupPort, serverBuild?.channel,
+      maintenanceUpdatePort, maintenanceBackupPort, offlineImportPort, serverBuild?.channel,
       openGlobalTaskCenter, runStorageMaintenance],
   )
 
@@ -3259,7 +3291,7 @@ function FileManager({
           // outlet; never admit Browser Files/admin/native DSM capabilities.
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : (appView === 'admin-users' || appView === 'admin-audit' ||
-          appView === 'admin-services' || appView === 'admin-maintenance' ||
+          appView === 'admin-services' || appView === 'admin-update' || appView === 'admin-maintenance' ||
           appView === 'admin-storage') && serverAdminVerified ? (
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : (

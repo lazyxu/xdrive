@@ -110,6 +110,7 @@ var desktopIPCCapabilities = []string{
 	"upload-conflict-preflight-batch",
 	"upload-conflict-policy",
 	"server-update",
+	"server-offline-import",
 	"media-gallery",
 	"media-index-status",
 	"media-selection-snapshot",
@@ -149,6 +150,7 @@ var desktopIPCCapabilities = []string{
 	"transfer-lifecycle",
 	"transfer-lifecycle-child-batch",
 	"transfer-history-scope",
+
 	"diagnostics",
 	"diagnostic-actions",
 	"open-folder",
@@ -158,6 +160,9 @@ var desktopIPCCapabilities = []string{
 
 func desktopIPCHelloCapabilities() []string {
 	capabilities := append([]string(nil), desktopIPCCapabilities...)
+	if runtime.GOOS == "windows" {
+		capabilities = append(capabilities, "sync-activity-history")
+	}
 	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
 		capabilities = append(capabilities, "local-folder-root-grants", "device-backup-local-drafts", "device-backup-local-config", "device-backup-local-target", "device-backup-local-mode", "device-backup-local-rules", "device-backup-local-schedule", "device-backup-local-preview", "device-backup-local-snapshot", "device-backup-local-first-file", "device-backup-local-first-file-status", "device-backup-local-common-batch", "device-backup-local-common-recovery-review", "device-backup-local-delta", "device-backup-local-evidence", "device-backup-local-evidence-summary", "device-backup-local-evidence-preflight", "device-backup-local-remove")
 	}
@@ -598,6 +603,14 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/local-disk-space", h.localDiskSpace)
 	mux.HandleFunc("POST /v1/cache/release", h.releaseCache)
 	mux.HandleFunc("GET /v1/cloud/root", h.cloudRoot)
+	mux.HandleFunc("POST /v1/cloud/notes/namespace", h.cloudNotesNamespace)
+	mux.HandleFunc("GET /v1/cloud/notes", h.cloudNotesList)
+	mux.HandleFunc("POST /v1/cloud/notes", h.cloudNotesCreate)
+	mux.HandleFunc("GET /v1/cloud/notes/version-content", h.cloudNotesVersionContent)
+	mux.HandleFunc("GET /v1/cloud/notes/{id}", h.cloudNotesRead)
+	mux.HandleFunc("PUT /v1/cloud/notes/{id}", h.cloudNotesUpdate)
+	mux.HandleFunc("DELETE /v1/cloud/notes/{id}", h.cloudNotesDelete)
+	mux.HandleFunc("GET /v1/cloud/notes/{id}/versions", h.cloudNotesVersions)
 	mux.HandleFunc("GET /v1/cloud/children", h.cloudChildren)
 	mux.HandleFunc("GET /v1/cloud/children/position", h.cloudChildPosition)
 	mux.HandleFunc("GET /v1/cloud/changes", h.cloudChanges)
@@ -734,6 +747,16 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
 	mux.HandleFunc("GET /v1/server-update", h.serverUpdateState)
 	mux.HandleFunc("POST /v1/server-update", h.startServerUpdate)
+	// Renderer cannot provide a Server credential or Host path; local Agent IPC
+	// forwards only fixed admin import identities and bounded bytes.
+	mux.HandleFunc("GET /v1/offline-imports", h.offlineImport)
+	mux.HandleFunc("POST /v1/offline-imports", h.offlineImport)
+	mux.HandleFunc("GET /v1/offline-imports/{id}", h.offlineImport)
+	mux.HandleFunc("DELETE /v1/offline-imports/{id}", h.offlineImport)
+	mux.HandleFunc("POST /v1/offline-imports/{id}/files/{name}", h.offlineImport)
+	mux.HandleFunc("PUT /v1/offline-imports/{id}/files/{name}/chunks/{index}", h.offlineImport)
+	mux.HandleFunc("POST /v1/offline-imports/{id}/files/{name}/finalize", h.offlineImport)
+	mux.HandleFunc("POST /v1/offline-imports/{id}/start", h.offlineImport)
 	mux.HandleFunc("GET /v1/cloud/storage-stats", h.cloudStorageStats)
 	mux.HandleFunc("POST /v1/cloud/storage-cache/cleanup", h.cloudCleanupStorageCache)
 	mux.HandleFunc("GET /v1/cloud/trash", h.cloudTrash)
@@ -889,6 +912,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
 	mux.HandleFunc("POST /v1/file-availability", h.setFileAvailability)
 	mux.HandleFunc("POST /v1/file-availability/batch", h.fileAvailabilityBatch)
+	mux.HandleFunc("GET /v1/sync/runs", h.syncActivityRuns)
+	mux.HandleFunc("GET /v1/sync/runs/{run_id}", h.syncActivityRun)
+	mux.HandleFunc("GET /v1/sync/runs/{run_id}/items", h.syncActivityItems)
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
 	mux.HandleFunc("GET /v1/transfer-events", h.transferEvents)
 	mux.HandleFunc("POST /v1/transfers/retry", h.retryTransfer)
@@ -946,6 +972,9 @@ func desktopIPCAuth(token string, next http.Handler) http.Handler {
 func (h *desktopIPCHandler) viewerDownloadCapabilities() []string {
 	capabilities := desktopIPCCapabilitiesForRuntime(h.backupOnly)
 	if !h.backupOnly {
+		if _, notes := h.ctrl.(desktopIPCNotesPort); notes {
+			capabilities = append(capabilities, "cloud-notes")
+		}
 		if _, supported := h.ctrl.(interface {
 			CloudDownloadWithClientRequestID(context.Context, uint64, string, string) error
 		}); supported {

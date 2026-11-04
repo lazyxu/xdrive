@@ -14,7 +14,11 @@ test('BG task performs a bounded real original run only after current native gra
   assert.match(task,/\.reserveDue\(owner: owner, approved: approved\)/)
   assert.match(task,/XDriveIOSForegroundPhotoBackupMVP\(/)
   assert.match(task,/approvedBackgroundGrant: approved/)
-  assert.match(task,/maximumNewOriginals: 1/)
+  const bgPolicy = read('BGOriginalWindowStore.swift')
+  assert.match(bgPolicy, /static let maximumNewOriginalsPerRun = 4/)
+  assert.match(task, /maximumNewOriginals: min\(\s*XDriveIOSBGOriginalWindowStore\.maximumNewOriginalsPerRun,\s*XDriveIOSForegroundPhotoBackupMVP\.maxNewOriginalsPerRun\s*\)/)
+  assert.equal((task.match(/XDriveIOSForegroundPhotoBackupMVP\(/g) || []).length, 1,
+    'a BGTask may upload multiple originals but must still share one serial journaled runner')
   assert.match(task,/\.record\(\s*owner: owner, approved: approved, report: progress/)
   assert.match(task,/!progress\.stoppedForReview/)
   assert.match(task,/task\.expirationHandler = \{[\s\S]*?expiration\.systemExpired = true[\s\S]*?operation\.cancel\(\)/)

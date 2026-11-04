@@ -46,6 +46,10 @@ export type XDriveNotesDataPort = {
   createNote(value: { title: string; markdown: string }): Promise<XDriveNoteSummary>
   /** Manual Apple Notes export: a fresh read-only snapshot, never title dedupe. */
   importIOSMarkdown?: (input: { title: string; markdown: string }) => Promise<XDriveNoteSummary>
+  /** One explicitly selected Apple Notes .md with its referenced local images. */
+  importIOSMarkdownBundle?: (
+    files: readonly File[], signal?: AbortSignal
+  ) => Promise<XDriveNoteSummary>
   saveNote(id: string, value: {
     title: string
     markdown: string
@@ -116,9 +120,14 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
   const savingRef = useRef(false)
   const latestDraft = useRef({ title: '', markdown: '' })
   const mounted = useRef(true)
+  const importAbortRef = useRef<AbortController | null>(null)
   useEffect(() => {
     mounted.current = true
-    return () => { mounted.current = false; readSeq.current++ }
+    return () => {
+      mounted.current = false
+      readSeq.current++
+      importAbortRef.current?.abort()
+    }
   }, [])
 
   const assetPaths = useMemo(() => {
@@ -216,8 +225,8 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
   }, [busy, dirty, port])
 
   const changeSource = (_event: SyntheticEvent, value: XDriveNoteSource) => {
-    if (dirty || savingRef.current) {
-      setMessage('当前草稿未保存，无法切换分类。')
+    if (dirty || savingRef.current || busy) {
+      setMessage('当前正在保存、导入或有未保存的草稿，无法切换分类。')
       return
     }
     readSeq.current++
@@ -299,53 +308,73 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
   }
 
   const importMarkdownSnapshot = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+    const files = Array.from(event.target.files ?? [])
     event.target.value = ''
-    if (!file || source !== 'ios_notes' || !port.importIOSMarkdown ||
+    if (!files.length || source !== 'ios_notes' ||
+        (!port.importIOSMarkdownBundle && !port.importIOSMarkdown) ||
         busy || dirty || savingRef.current) return
-    if (!/\.(?:md|markdown)$/i.test(file.name) ||
-        file.size > 1_048_576 || file.size === 0) {
-      setMessage('请选择 1 MiB 以内的 .md 或 .markdown 文件。')
+    if (!port.importIOSMarkdownBundle && files.length !== 1) {
+      setMessage('当前宿主仅支持单个 Markdown 文本文件导入。')
       return
     }
-    const title = file.name.replace(/\.(?:md|markdown)$/i, '').trim().slice(0, 255)
-    if (!title || /[\u0000-\u001f\u007f]/.test(title)) {
-      setMessage('文件名不能用作有效的备忘录标题。')
-      return
-    }
+    const controller = new AbortController()
+    importAbortRef.current = controller
     setBusy(true)
     setMessage('')
     let created: XDriveNoteSummary | null = null
     try {
-      // Reject malformed Unicode rather than replacing characters silently.
-      const bytes = await file.arrayBuffer()
-      if (!mounted.current) return
-      const markdown = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-      created = await port.importIOSMarkdown({ title, markdown })
-      if (!mounted.current) return
-      if (created.source !== 'ios_notes') throw new Error('服务器返回的备份来源无效')
+      if (port.importIOSMarkdownBundle) {
+        created = await port.importIOSMarkdownBundle(files, controller.signal)
+      } else {
+        const file = files[0]
+        if (!/\.(?:md|markdown)$/i.test(file.name) ||
+            file.size <= 0 || file.size > 1_048_576) {
+          throw new Error('请选择 1 MiB 以内的 .md 或 .markdown 文件。')
+        }
+        const name = file.name.replace(/\.(?:md|markdown)$/i, '').trim()
+        if (!name || /[\u0000-\u001f\u007f]/.test(name) ||
+            new TextEncoder().encode(name).length > 255) {
+          throw new Error('文件名不能作为有效的备忘录标题。')
+        }
+        const bytes = await file.arrayBuffer()
+        controller.signal.throwIfAborted()
+        const markdown = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+        created = await port.importIOSMarkdown!({ title: name, markdown })
+      }
+      if (!mounted.current || controller.signal.aborted) return
+      if (created.source !== 'ios_notes') {
+        throw new Error('服务器返回的备份来源无效。')
+      }
       setReload(n => n + 1)
-      // A successful POST is authoritative. A failed follow-up GET must NOT
-      // cause a second import, since absent stable Notes IDs create snapshots.
+      // A successful commit is authoritative. A missing follow-up GET must
+      // never cause an automatic second POST and duplicate Apple Notes.
       const seq = ++readSeq.current
       try {
-        const note = await port.readNote(created.id)
-        if (seq !== readSeq.current || !mounted.current) return
+        const note = await port.readNote(created.id, controller.signal)
+        if (seq !== readSeq.current || !mounted.current || controller.signal.aborted) return
         setSelected(note)
         setTitle(note.title)
         setMarkdown(note.markdown)
         setConflict(false)
         setHistoryOpen(false)
         setVersions([])
-        setMessage('Markdown 已导入为独立的只读 iOS 备份。')
+        setMessage(files.length > 1
+          ? 'Markdown 与正文引用的图片已导入为只读 iOS 备份。'
+          : 'Markdown 已导入为独立的只读 iOS 备份。')
       } catch {
-        if (mounted.current) setMessage('Markdown 已提交；读取回执失败，请刷新 iOS 备份列表核对，勿重复导入。')
+        if (mounted.current && !controller.signal.aborted) {
+          setMessage('备忘录已提交；读取回执失败，请刷新 iOS 备份列表核对，勿重复导入。')
+        }
       }
     } catch (error) {
-      if (mounted.current) setMessage(created
-        ? 'Markdown 已提交；后续核对失败，请在列表查找，勿重复导入。'
-        : '导入失败或提交结果不确定：' + errorMessage(error) + '。重复导入前请先核对列表。')
+      if (mounted.current && !controller.signal.aborted) {
+        setMessage(created
+          ? '备忘录已提交，但后续核对失败；请在 iOS 备份中查找，勿重复导入。'
+          : '导入失败或提交结果不确定：' + errorMessage(error) +
+            '。重新导入前请先核对 iOS 备份列表。')
+      }
     } finally {
+      if (importAbortRef.current === controller) importAbortRef.current = null
       if (mounted.current) setBusy(false)
     }
   }
@@ -493,12 +522,21 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
             value={query} onChange={event => setQuery(event.target.value)} />
           {source === 'mine' && <Button disabled={busy || dirty || saving}
             onClick={() => void create()} variant="contained">新建</Button>}
-          {source === 'ios_notes' && port.importIOSMarkdown && <Button
-            component="label" variant="outlined" disabled={busy || saving}>
-            导入 Markdown
-            <input hidden type="file" accept=".md,.markdown,text/markdown"
-              onChange={event => void importMarkdownSnapshot(event)} />
-          </Button>}
+          {source === 'ios_notes' && (port.importIOSMarkdownBundle || port.importIOSMarkdown) && <>
+            <Button component="label" variant="outlined" disabled={busy || saving}>
+              {port.importIOSMarkdownBundle ? '导入 Markdown + 图片' : '导入 Markdown'}
+              <input hidden type="file" multiple={Boolean(port.importIOSMarkdownBundle)}
+                accept=".md,.markdown,image/png,image/jpeg,image/gif,image/webp,image/heic"
+                onChange={event => void importMarkdownSnapshot(event)} />
+            </Button>
+            {port.importIOSMarkdownBundle && <Button component="label"
+              variant="outlined" disabled={busy || saving}>
+              导入文件夹
+              <input hidden type="file" multiple
+                {...{ webkitdirectory: '' }}
+                onChange={event => void importMarkdownSnapshot(event)} />
+            </Button>}
+          </>}
         </Stack>
         {listError && <Alert severity="error">{listError}</Alert>}
         <List dense aria-label={source === 'mine' ? '我的备忘录' : 'iOS 备忘录备份'}>

@@ -35,8 +35,10 @@ test('landscape is compact horizontal icon-and-label and target is at least 44pt
 test('dynamic long press opens recent features and has an accessible picker', () => {
   assert.match(ui, /\.contextMenu \{[\s\S]*?showRecentPicker = true[\s\S]*?ForEach\(recentDynamic\)/);
   assert.match(ui, /\.accessibilityAction\(named: Text\("最近功能"\)\)/);
-  assert.match(ui, /dynamicFeature\?\.title \?\? "最近"/);
-  assert.match(ui, /dynamicFeature\?\.symbol \?\? "clock\.arrow\.circlepath"/);
+  assert.match(ui, /dynamicFeature\?\.title \?\? \(emptyDynamicMapFallback \? "地图" : "最近"\)/);
+  assert.match(ui, /title: dynamicSlotTitle/);
+  assert.match(ui, /dynamicFeature\?\.symbol \?\? \(emptyDynamicMapFallback \? "map" : "clock\.arrow\.circlepath"\)/);
+  assert.match(ui, /symbol: dynamicSlotSymbol/);
   assert.match(ui, /feature\.implemented \? feature\.title :/);
   assert.match(ui, /showRecentPicker = true/);
 });

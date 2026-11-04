@@ -9,6 +9,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -32,7 +33,19 @@ func migrateLegacyYikeTargets(db *gorm.DB) error {
 
 	for _, source := range sources {
 		err := db.Transaction(func(tx *gorm.DB) error {
-			return migrateLegacyYikeTarget(tx, source)
+			// The Source revision and target are decision inputs, not a
+			// stale snapshot captured before opening this transaction.
+			var current meta.Source
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+				Take(&current).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			return migrateLegacyYikeTarget(tx, current)
 		})
 		if err == nil {
 			continue
@@ -46,7 +59,7 @@ func migrateLegacyYikeTargets(db *gorm.DB) error {
 			Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
 			Updates(map[string]any{
 				"status":     meta.SourceStatusPaused,
-				"last_error": "一刻相册固定目录迁移被现有同名文件或目录阻挡，请整理“同步文件夹/一刻相册”后重新配置 Cookie",
+				"last_error": "一刻相册旧目标迁移已暂停：目录内容归属未核实、其他来源重叠、同步仍在运行或新位置冲突；原文件与分享保持原位，请核对后再迁移",
 				"revision":   gorm.Expr("revision + 1"),
 				"updated_at": now,
 			}).Error; updateErr != nil {
@@ -99,6 +112,14 @@ func migrateLegacyYikeTarget(tx *gorm.DB, source meta.Source) error {
 	}
 	if legacyRoot.Name != legacyYikeTargetRootName || legacyRoot.ParentID == nil {
 		return nil
+	}
+	if err := verifyLegacyYikeTargetOwnershipTx(tx, source, legacyRoot, connector, target); err != nil {
+		if errors.Is(err, errLegacyYikeTargetMigrationBlocked) {
+			// A flat mixed root may split without changing its original
+			// direct Share authorization. Unproven trees still fail closed.
+			return splitLegacyYikeMixedTargetTx(tx, source, legacyRoot, connector, target)
+		}
+		return err
 	}
 
 	syncRoot, err := ensureMigrationDirectory(tx, source.OwnerID, *legacyRoot.ParentID, yikeTargetRootName)
@@ -186,6 +207,18 @@ func pruneLegacyMigrationParents(tx *gorm.DB, ownerID, connectorID, rootID uint6
 	if childCount != 0 {
 		return nil
 	}
+	// Direct Shares are anchored to this exact NodeID. Deleting an empty
+	// connector would silently invalidate its existing link/Token, even
+	// though the Yike managed target moved safely elsewhere.
+	var directShares int64
+	if err := tx.Model(&meta.Share{}).
+		Where("owner_id = ? AND node_id = ?", ownerID, connectorID).
+		Count(&directShares).Error; err != nil {
+		return err
+	}
+	if directShares != 0 {
+		return nil
+	}
 
 	now := time.Now().UTC()
 	if err := tx.Model(&meta.Node{}).
@@ -204,6 +237,14 @@ func pruneLegacyMigrationParents(tx *gorm.DB, ownerID, connectorID, rootID uint6
 		return err
 	}
 	if childCount != 0 {
+		return nil
+	}
+	if err := tx.Model(&meta.Share{}).
+		Where("owner_id = ? AND node_id = ?", ownerID, rootID).
+		Count(&directShares).Error; err != nil {
+		return err
+	}
+	if directShares != 0 {
 		return nil
 	}
 	return tx.Model(&meta.Node{}).

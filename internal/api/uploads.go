@@ -319,6 +319,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	}
 
 	uid := userID(c)
+	scope, scopedRun := currentSourceRunScope(c)
+	if scopedRun && guest {
+		fail(c, http.StatusForbidden, "source writer cannot use anonymous upload")
+		return
+	}
 	if guest && uid == 0 {
 		fail(c, http.StatusForbidden, "invalid share upload owner")
 		return
@@ -334,9 +339,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		shareGrant = &grant
 	}
 	if req.NodeID != nil {
-		if err := requireOrdinaryOrAdmittedLocalPushTargetTx(
-			c.Request.Context(), s.DB, uid, *req.NodeID, req,
-		); err != nil {
+		if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), s.DB, c, uid, *req.NodeID, req); err != nil {
 			if errors.Is(err, errManagedSourceWriteDenied) {
 				fail(c, http.StatusConflict, err.Error())
 			} else {
@@ -348,9 +351,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			return
 		}
 	} else if req.ParentID != nil {
-		if err := requireOrdinaryOrAdmittedLocalPushTargetTx(
-			c.Request.Context(), s.DB, uid, *req.ParentID, req,
-		); err != nil {
+		if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), s.DB, c, uid, *req.ParentID, req); err != nil {
 			if errors.Is(err, errManagedSourceWriteDenied) {
 				fail(c, http.StatusConflict, err.Error())
 			} else {
@@ -387,6 +388,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			q = q.Where("share_id = ?", guestID)
 		} else {
 			q = q.Where("share_id IS NULL")
+		}
+		if scopedRun {
+			q = q.Where("source_run_id = ?", scope.runID)
+		} else {
+			q = q.Where("COALESCE(source_run_id, '') = ''")
 		}
 		if req.NodeID != nil {
 			q = q.Where("node_id = ? AND expected_revision = ?", *req.NodeID, req.ExpectedRevision)
@@ -552,7 +558,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	// lp2_ is reserved for an authenticated, durable local Push operation.
 	// Its normal UploadSession must bind to that operation before finalize;
 	// the generic immediate CAS fast path would commit before binding.
-	if req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") {
+	if req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") && !scopedRun {
 		session, currentRevision, handled, err := s.tryInstantUploadSession(
 			c.Request.Context(), uid, req, chunkCount, shareGrant,
 		)
@@ -621,6 +627,9 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	if guest {
 		session.ShareID = &guestID
 	}
+	if scopedRun {
+		session.SourceRunID = scope.runID
+	}
 	var reusable []meta.UploadPart
 	if reuseSource != nil && len(req.ChunkSHA256) != 0 {
 		var err error
@@ -635,15 +644,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	resumed := false
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
 		if req.NodeID != nil {
-			if err := requireOrdinaryOrAdmittedLocalPushTargetTx(
-				c.Request.Context(), tx, uid, *req.NodeID, req,
-			); err != nil {
+			if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), tx, c, uid, *req.NodeID, req); err != nil {
 				return err
 			}
 		} else if req.ParentID != nil {
-			if err := requireOrdinaryOrAdmittedLocalPushTargetTx(
-				c.Request.Context(), tx, uid, *req.ParentID, req,
-			); err != nil {
+			if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), tx, c, uid, *req.ParentID, req); err != nil {
 				return err
 			}
 		}
@@ -717,6 +722,10 @@ func (s *Server) getUploadSession(c *gin.Context) {
 		fail(c, http.StatusNotFound, "upload session not found")
 		return
 	}
+	if !sourceRunUploadSessionMatches(c, session) {
+		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
+		return
+	}
 	if session.Status == meta.UploadStatusActive && time.Now().After(session.ExpiresAt) {
 		_ = s.abortUploadSessionData(c.Request.Context(), session)
 		fail(c, http.StatusGone, "upload session expired")
@@ -729,6 +738,10 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 	session, err := s.ownedUploadSession(userID(c), c.Param("id"))
 	if err != nil {
 		fail(c, http.StatusNotFound, "upload session not found")
+		return
+	}
+	if !sourceRunUploadSessionMatches(c, session) {
+		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
 		return
 	}
 	if session.Status != meta.UploadStatusActive {
@@ -904,6 +917,10 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		fail(c, http.StatusNotFound, "upload session not found")
 		return
 	}
+	if !sourceRunUploadSessionMatches(c, session) {
+		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
+		return
+	}
 	if session.Status == meta.UploadStatusFinalized {
 		s.writeUploadSession(c, session, http.StatusOK)
 		return
@@ -1064,16 +1081,21 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		if time.Now().After(currentSession.ExpiresAt) {
 			return errUploadExpired
 		}
+		// A generic pre-existing UploadSession cannot be adopted by a SourceRun,
+		// nor can an ordinary Owner session finalize a SourceRun-owned upload.
+		if !sourceRunUploadSessionMatches(c, currentSession) {
+			return errManagedSourceWriteDenied
+		}
 		// An upload admitted before Notes initialization must not write into it.
 		if currentSession.NodeID != nil {
-			if err := requireOrdinaryOrBoundLocalPushFinalizeTx(c.Request.Context(), tx, currentSession, *currentSession.NodeID); err != nil {
+			if err := requireSourceRunOrLocalPushFinalizeTx(c.Request.Context(), tx, c, currentSession, *currentSession.NodeID); err != nil {
 				return err
 			}
 			if err := notesRejectNodeWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.NodeID); err != nil {
 				return err
 			}
 		} else if currentSession.ParentID != nil {
-			if err := requireOrdinaryOrBoundLocalPushFinalizeTx(c.Request.Context(), tx, currentSession, *currentSession.ParentID); err != nil {
+			if err := requireSourceRunOrLocalPushFinalizeTx(c.Request.Context(), tx, c, currentSession, *currentSession.ParentID); err != nil {
 				return err
 			}
 			if err := notesRejectDestinationWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.ParentID, currentSession.Name); err != nil {
@@ -1283,6 +1305,12 @@ func (s *Server) abortUploadSession(c *gin.Context) {
 	session, err := s.ownedUploadSession(userID(c), c.Param("id"))
 	if err != nil {
 		fail(c, http.StatusNotFound, "upload session not found")
+		return
+	}
+	// A scoped Worker may abort only uploads admitted for its own SyncRun;
+	// ordinary Owners cannot cancel an active SourceRun writer's session.
+	if !sourceRunUploadSessionMatches(c, session) {
+		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
 		return
 	}
 	if session.Status == meta.UploadStatusFinalized || session.Status == meta.UploadStatusSkipped {

@@ -201,6 +201,14 @@ import {
   type AgentCreatedCloudShare,
   type AgentOwnerSharePage,
   type AgentOwnerShareLink,
+  type AgentNotesNamespace,
+  type AgentNotesRow,
+  type AgentNotesDetail,
+  type AgentNotesPage,
+  type AgentNotesVersions,
+  type AgentNotesWrite,
+  type AgentNotesImageReceipt,
+  type AgentNotesImageData,
   type AgentCloudSearchPage,
   type AgentCloudSearchRange,
   type AgentCloudSearchFilters,
@@ -301,6 +309,11 @@ import {
   type AgentStatus,
   type AgentTransferLifecycleInput,
   type AgentTransfers,
+  type AgentSyncRun,
+  type AgentSyncRunsPage,
+  type AgentSyncItemsPage,
+  type AgentSyncRunCursor,
+  type AgentSyncItemCursor,
 } from './agent_client.cjs'
 
 
@@ -3654,6 +3667,61 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().deviceBackupRuns(sourceID, requestedLimit, requestedOffset)
   }, false))
+
+  const validatedSyncRunID = (value: unknown) => {
+    if (typeof value !== 'string' || value.length < 1 || value.length > 128 ||
+        value.trim() !== value || value.includes('\0')) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid sync run ID.')
+    }
+    return value
+  }
+  const validatedSyncCursor = (value: unknown, kind: 'run' | 'item') => {
+    if (value === undefined) return undefined
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid sync history cursor.')
+    }
+    const object = value as Record<string, unknown>
+    const timestamp = kind === 'run' ? object.before_started_at : object.before_applied_at
+    const id = kind === 'run' ? object.before_run_id : object.before_item_id
+    if (typeof timestamp !== 'string' || !/^[0-9]{1,20}$/.test(timestamp) ||
+        typeof id !== 'string' || id.length < 1 || id.length > 128 || id.trim() !== id) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid sync history cursor.')
+    }
+    if (kind === 'run') {
+      return { before_started_at: timestamp, before_run_id: id } as AgentSyncRunCursor
+    }
+    return { before_applied_at: timestamp, before_item_id: id } as AgentSyncItemCursor
+  }
+  const validatedSyncLimit = (value: unknown, fallback: number) => {
+    const count = value === undefined ? fallback : value
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 1 || count > 50) {
+      throw new AgentIPCError('invalid_input', 0, 'Sync history page limit must be 1 to 50.')
+    }
+    return count
+  }
+  ipcMain.handle('agent:get-sync-runs', (_event, limit: unknown, cursor: unknown) =>
+    runAgentAction<AgentSyncRunsPage>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'sync-activity-history')
+      return requireAgentClient().syncActivityRuns(
+        validatedSyncLimit(limit, 20), validatedSyncCursor(cursor, 'run') as AgentSyncRunCursor | undefined,
+      )
+    }, false))
+  ipcMain.handle('agent:get-sync-run', (_event, runID: unknown) =>
+    runAgentAction<AgentSyncRun>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'sync-activity-history')
+      return requireAgentClient().syncActivityRun(validatedSyncRunID(runID))
+    }, false))
+  ipcMain.handle('agent:get-sync-run-items', (_event, runID: unknown, limit: unknown, cursor: unknown) =>
+    runAgentAction<AgentSyncItemsPage>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'sync-activity-history')
+      return requireAgentClient().syncActivityItems(
+        validatedSyncRunID(runID), validatedSyncLimit(limit, 50),
+        validatedSyncCursor(cursor, 'item') as AgentSyncItemCursor | undefined,
+      )
+    }, false))
 
   ipcMain.handle('agent:get-source-runs', (_event, sourceID: unknown, limit: unknown, offset: unknown) => runAgentAction<AgentSourceRun[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
@@ -8016,6 +8084,94 @@ function registerIPCHandlers() {
       requireAgentCapability(hello, 'cloud-files')
       return requireAgentClient().cloudQuota(signal)
     }), false))
+  // Offline packages must be sent only by the trusted Desktop main frame.
+  // Unlike general file uploads, this IPC always forwards to Server
+  // requireAdmin via authenticated Go Agent; no Server credential or host
+  // executable path is accepted from the renderer.
+  const offlineID = /^[a-f0-9]{32}$/
+  const offlineSHA = /^[a-f0-9]{64}$/
+  const offlinePackageName = /^xdrive-(app|postgres|media-worker|ai-runtime|ai-models)-[a-f0-9]{12}\.tar\.gz$/
+  const validOfflineName = (name: unknown): name is string =>
+    typeof name === 'string' && (
+      name === 'manifest.json' || name === 'xdrive-offline-linux-amd64' ||
+      name === 'delivery.json' || name === 'delivery-attestation.jsonl' ||
+      offlinePackageName.test(name)
+    )
+  const offlineImportClient = async (event: Electron.IpcMainInvokeEvent) => {
+    if (!mainWindow || mainWindow.isDestroyed() ||
+      event.sender !== mainWindow.webContents ||
+      event.senderFrame !== event.sender.mainFrame ||
+      agentState.status?.role !== 'admin') {
+      throw new AgentIPCError('offline_admin_denied', 403, 'Only the authenticated Desktop administrator can import offline updates.')
+    }
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'server-offline-import')
+    return requireAgentClient()
+  }
+  ipcMain.handle('agent:offline-import', (event, actionValue: unknown, inputValue: unknown) =>
+    runAgentAction<unknown>(async () => {
+      const client = await offlineImportClient(event)
+      const input = inputValue !== null && typeof inputValue === 'object'
+        ? inputValue as Record<string, unknown> : {}
+      const id = input.id
+      const name = input.name
+      if (actionValue !== 'list' && actionValue !== 'create' &&
+          (typeof id !== 'string' || !offlineID.test(id))) {
+        throw new AgentIPCError('invalid_offline_id', 0, 'Invalid offline import ID.')
+      }
+      switch (actionValue) {
+        case 'list': return client.offlineImports()
+        case 'create': return client.offlineImportCreate()
+        case 'get': return client.offlineImportGet(id as string)
+        case 'remove': return client.offlineImportDelete(id as string)
+        case 'register': {
+          if (!validOfflineName(name) || typeof input.size !== 'number' ||
+            !Number.isSafeInteger(input.size) || input.size <= 0 ||
+            input.size > 8 * 1024 * 1024 * 1024 ||
+            (input.sha256 !== undefined && (typeof input.sha256 !== 'string' ||
+              (input.sha256 !== '' && !offlineSHA.test(input.sha256))))) {
+            throw new AgentIPCError('invalid_offline_file', 0, 'Invalid offline file or size.')
+          }
+          return client.offlineImportRegister(id as string, name, input.size, (input.sha256 as string) || '')
+        }
+        case 'finalize':
+          if (!validOfflineName(name)) throw new AgentIPCError('invalid_offline_file', 0, 'Invalid offline filename.')
+          return client.offlineImportFinalize(id as string, name)
+        case 'start':
+          if (typeof input.manifest !== 'string' || !offlineSHA.test(input.manifest) ||
+              typeof input.go !== 'string' || !offlineSHA.test(input.go) ||
+              typeof input.backup !== 'boolean') {
+            throw new AgentIPCError('invalid_offline_trust', 0, 'Independent publisher SHA-256 is required.')
+          }
+          return client.offlineImportStart(id as string, input.manifest, input.go, input.backup)
+        default:
+          throw new AgentIPCError('invalid_offline_action', 0, 'Unsupported offline administration action.')
+      }
+    }, false))
+  ipcMain.handle('agent:offline-import-chunk', (event, idValue: unknown, nameValue: unknown,
+    indexValue: unknown, byteValue: unknown, shaValue: unknown) =>
+    runAgentAction<void>(async () => {
+      const client = await offlineImportClient(event)
+      if (typeof idValue !== 'string' || !offlineID.test(idValue) ||
+          !validOfflineName(nameValue) ||
+          typeof indexValue !== 'number' || !Number.isSafeInteger(indexValue) ||
+          indexValue < 0 || indexValue > 1 << 20 ||
+          typeof shaValue !== 'string' || !offlineSHA.test(shaValue)) {
+        throw new AgentIPCError('invalid_offline_chunk', 0, 'Invalid offline chunk identity.')
+      }
+      let data: ArrayBuffer
+      if (byteValue instanceof ArrayBuffer) {
+        data = byteValue
+      } else if (ArrayBuffer.isView(byteValue)) {
+        data = byteValue.buffer.slice(byteValue.byteOffset, byteValue.byteOffset + byteValue.byteLength) as ArrayBuffer
+      } else {
+        throw new AgentIPCError('invalid_offline_chunk', 0, 'Offline chunk data must be binary.')
+      }
+      if (data.byteLength === 0 || data.byteLength > 8 * 1024 * 1024) {
+        throw new AgentIPCError('offline_chunk_too_large', 0, 'Offline chunk exceeds 8 MiB.')
+      }
+      await client.offlineImportChunk(idValue, nameValue, indexValue, data, shaValue)
+    }, false))
   ipcMain.handle('agent:get-server-update', () => runAgentAction<AgentServerUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'server-update')
@@ -8115,6 +8271,120 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudShares(nodeID)
   }, false))
+
+  // Renderer never receives the Server bearer. Only this explicit, versioned
+  // Notes channel uses the already-authenticated, full Desktop Agent.
+  const requireNotesAgent = async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-notes')
+    return requireAgentClient()
+  }
+  const notesID = (value: unknown): string => {
+    if (typeof value !== 'string' ||
+      !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Notes ID')
+    }
+    return value
+  }
+  const notesRevision = (value: unknown): number => {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Expected Notes revision is required')
+    }
+    return value
+  }
+  const notesWrite = (raw: unknown, requireRevision: boolean): AgentNotesWrite => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new AgentIPCError('invalid_input', 0, 'A Markdown Note is required')
+    }
+    const input = raw as Record<string, unknown>
+    if (typeof input.title !== 'string' || typeof input.markdown !== 'string' ||
+      input.title.trim() === '' ||
+      new TextEncoder().encode(input.title).length > 255 ||
+      new TextEncoder().encode(input.markdown).length > 1_048_576 ||
+      /[\u0000-\u001f\u007f]/.test(input.title) || input.markdown.includes('\u0000')) {
+      throw new AgentIPCError('invalid_input', 0, 'Markdown title or body is invalid')
+    }
+    const revision = requireRevision ? notesRevision(input.expected_revision) : undefined
+    return { title: input.title, markdown: input.markdown,
+      ...(revision ? { expected_revision: revision } : {}) }
+  }
+  ipcMain.handle('agent:cloud-notes-initialize', () =>
+    runAgentAction<AgentNotesNamespace>(async () => (await requireNotesAgent()).cloudNotesInitialize(), false))
+  ipcMain.handle('agent:cloud-notes-list',
+    (_event, source: unknown, query: unknown, offset: unknown) =>
+      runAgentAction<AgentNotesPage>(async () => {
+        const agent = await requireNotesAgent()
+        if ((source !== 'mine' && source !== 'ios_notes') || typeof query !== 'string' ||
+          new TextEncoder().encode(query).length > 200 ||
+          typeof offset !== 'number' || !Number.isSafeInteger(offset) ||
+          offset < 0 || offset > 10_000_000 || offset % 50 !== 0) {
+          throw new AgentIPCError('invalid_input', 0, 'Invalid Notes search or pagination')
+        }
+        return agent.cloudNotesList(source, query, offset)
+      }, false))
+  ipcMain.handle('agent:cloud-notes-read', (_event, noteID: unknown) =>
+    runAgentAction<AgentNotesDetail>(async () =>
+      (await requireNotesAgent()).cloudNotesRead(notesID(noteID)), false))
+  ipcMain.handle('agent:cloud-notes-create', (_event, input: unknown) =>
+    runAgentAction<AgentNotesRow>(async () =>
+      (await requireNotesAgent()).cloudNotesCreate(notesWrite(input, false)), false))
+  ipcMain.handle('agent:cloud-notes-update', (_event, noteID: unknown, input: unknown) =>
+    runAgentAction<AgentNotesRow>(async () =>
+      (await requireNotesAgent()).cloudNotesUpdate(notesID(noteID), notesWrite(input, true)), false))
+  ipcMain.handle('agent:cloud-notes-delete', (_event, noteID: unknown, revision: unknown) =>
+    runAgentAction<void>(async () =>
+      (await requireNotesAgent()).cloudNotesDelete(notesID(noteID), notesRevision(revision)), false))
+  ipcMain.handle('agent:cloud-notes-versions', (_event, noteID: unknown) =>
+    runAgentAction<AgentNotesVersions>(async () =>
+      (await requireNotesAgent()).cloudNotesVersions(notesID(noteID)), false))
+  ipcMain.handle('agent:cloud-notes-version-content',
+    (_event, nodeID: unknown, versionID: unknown) =>
+      runAgentAction<{ markdown: string }>(async () => {
+        const agent = await requireNotesAgent()
+        const ownedNode = notesRevision(nodeID)
+        const ownedVersion = notesRevision(versionID)
+        return agent.cloudNotesReadVersion(ownedNode, ownedVersion)
+      }, false))
+
+  // Binary Notes are a distinct named capability; the original 8 text
+  // methods remain available with older Agents and no false image buttons.
+  const requireNotesImageAgent = async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-notes')
+    requireAgentCapability(hello, 'cloud-notes-images')
+    return requireAgentClient()
+  }
+  const notesImageID = (id: unknown) => {
+    const checked = notesID(id)
+    if (checked !== checked.toLowerCase()) {
+      throw new AgentIPCError('invalid_input', 0, 'Notes image ID must be canonical')
+    }
+    return checked
+  }
+  ipcMain.handle('agent:cloud-notes-upload-image',
+    (_event, noteID: unknown, rawBytes: unknown) =>
+      runAgentAction<AgentNotesImageReceipt>(async () => {
+        const agent = await requireNotesImageAgent()
+        const id = notesImageID(noteID)
+        if (!(rawBytes instanceof ArrayBuffer) || rawBytes.byteLength < 1 ||
+            rawBytes.byteLength > 20 * 1_048_576) {
+          throw new AgentIPCError('invalid_input', 0, 'Notes image must be at most 20 MiB')
+        }
+        return agent.cloudNotesUploadImage(id, rawBytes)
+      }, false))
+  ipcMain.handle('agent:cloud-notes-read-image',
+    (_event, noteID: unknown, relativePath: unknown) =>
+      runAgentAction<AgentNotesImageData>(async () => {
+        const agent = await requireNotesImageAgent()
+        const id = notesImageID(noteID)
+        if (typeof relativePath !== 'string' || relativePath.length > 160 ||
+            !relativePath.startsWith('_assets/' + id + '/') ||
+            !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.(?:png|jpg|gif|webp|heic)$/.test(
+              relativePath.slice(('_assets/' + id + '/').length))) {
+          throw new AgentIPCError('invalid_input', 0, 'Notes image path is not an immutable Owner asset')
+        }
+        return agent.cloudNotesReadImage(id, relativePath)
+      }, false))
 
   ipcMain.handle('agent:cloud-owner-shares', (_event, cursor: unknown, limit: unknown) => runAgentAction<AgentOwnerSharePage>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

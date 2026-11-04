@@ -10,6 +10,17 @@ import Foundation
                               needsReview: false) == 1)
     precondition(p.nextWindow(current: 1, visibleTotal: 600, scanned: 256, uploaded: 3,
                               needsReview: false) == 2)
+    // An OS-admitted background batch may confirm up to four new originals.
+    // Its partial 256-slot window MUST repeat; only a fully scanned page
+    // may advance to the next source segment.
+    precondition(p.nextWindow(current: 0, visibleTotal: 600, scanned: 4, uploaded: 4,
+                              needsReview: false) == 0)
+    precondition(p.nextWindow(current: 0, visibleTotal: 600, scanned: 256, uploaded: 4,
+                              needsReview: false) == 1)
+    precondition(p.nextWindow(current: 2, visibleTotal: 600, scanned: 88, uploaded: 4,
+                              needsReview: false) == 0)
+    precondition(p.nextWindow(current: 0, visibleTotal: 600, scanned: 4, uploaded: 4,
+                              needsReview: true) == 0)
     precondition(p.nextWindow(current: 2, visibleTotal: 600, scanned: 88, uploaded: 0,
                               needsReview: false) == 0)
     precondition(p.nextWindow(current: 1, visibleTotal: 600, scanned: 35, uploaded: 20,
@@ -66,6 +77,17 @@ import Foundation
     precondition(p.nextDueAfterCompletedWindow(at:now,intervalMinutes:1,
       currentWindow:0,followingWindow:1,visibleTotal:10000,scanned:256,
       uploaded:0,needsReview:false,libraryUnchanged:true) == nil)
-    print("iOS foreground auto backup interval/cursor/opt-in catch-up safety: PASS")
+    // A PhotoKit edit or new media wakes only a future due time. An already
+    // scheduled earlier/due check is never postponed or requeued repeatedly.
+    let soon = now.addingTimeInterval(5)
+    precondition(p.earlierDueAfterLibraryChange(
+      currentDueAt: normal, at: now) == soon)
+    precondition(p.earlierDueAfterLibraryChange(
+      currentDueAt: soon, at: now) == nil)
+    precondition(p.earlierDueAfterLibraryChange(
+      currentDueAt: now.addingTimeInterval(2), at: now) == nil)
+    precondition(p.earlierDueAfterLibraryChange(
+      currentDueAt: now.addingTimeInterval(-1), at: now) == nil)
+    print("iOS foreground auto backup interval/cursor/opt-in catch-up/library wake: PASS")
   }
 }

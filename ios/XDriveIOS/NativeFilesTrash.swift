@@ -427,31 +427,53 @@ struct XDriveIOSNativeFilesTrashScreen: View {
                 Text("回收站为空。").foregroundStyle(.secondary)
             }
             ForEach(model.items) { item in
-                VStack(alignment: .leading, spacing: 7) {
-                    Label(item.name, systemImage: item.isDirectory ? "folder" : "doc")
-                        .lineLimit(2)
-                    Text(item.isDirectory ? "已删除的文件夹（含子文件）" :
-                         ByteCountFormatter.string(
-                            fromByteCount: item.size, countStyle: .file
-                         ))
-                        .font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        Button("恢复到原位置") {
-                            run(.restore, item)
-                        }
-                        .disabled(!model.verified || mutation.busy || model.loading)
-                        .accessibilityIdentifier("native-ios-files-trash-restore-\(item.id)")
-                        Spacer()
-                        Button("彻底删除", role: .destructive) {
-                            pendingDelete = item
-                            showingDeleteConfirmation = true
-                        }
-                        .disabled(!model.verified || mutation.busy || model.loading)
-                        .accessibilityIdentifier("native-ios-files-trash-delete-\(item.id)")
+                HStack(spacing: 12) {
+                    Image(systemName: item.isDirectory ? "folder.fill" : "doc")
+                        .font(.system(size: 28))
+                        .foregroundStyle(item.isDirectory ? Color.accentColor : Color.secondary)
+                        .frame(width: 36, height: 40)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(item.name, systemImage: item.isDirectory ? "folder" : "doc")
+                            .labelStyle(.titleOnly)
+                            .lineLimit(2)
+                        Text(item.isDirectory ? "已删除的文件夹（含子文件）" :
+                             ByteCountFormatter.string(
+                                 fromByteCount: item.size, countStyle: .file
+                             ))
+                            .font(.caption).foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
+                    Spacer(minLength: 4)
                 }
-                .padding(.vertical, 5)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+                .contextMenu {
+                    Button("恢复到原位置") {
+                        run(.restore, item)
+                    }
+                    .disabled(!canActOn(item))
+                    .accessibilityIdentifier("native-ios-files-trash-restore-\(item.id)")
+                    Button("彻底删除", role: .destructive) {
+                        requestPermanentDeletion(item)
+                    }
+                    .disabled(!canActOn(item))
+                    .accessibilityIdentifier("native-ios-files-trash-delete-\(item.id)")
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button {
+                        run(.restore, item)
+                    } label: {
+                        Label("恢复", systemImage: "arrow.uturn.backward")
+                    }
+                    .tint(.blue)
+                    .disabled(!canActOn(item))
+                    Button(role: .destructive) {
+                        requestPermanentDeletion(item)
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                    .disabled(!canActOn(item))
+                }
                 .onAppear {
                     guard !mutation.busy, model.canLoadMore,
                           model.items.last?.id == item.id else { return }
@@ -479,7 +501,7 @@ struct XDriveIOSNativeFilesTrashScreen: View {
                     .accessibilityIdentifier("native-ios-files-trash-status")
             }
         }
-        .navigationTitle("回收站")
+        .navigationTitle("最近删除")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -528,6 +550,19 @@ struct XDriveIOSNativeFilesTrashScreen: View {
                 reload()
             }
         }
+    }
+
+    /// The same verified Server range guards both long-press and swipe
+    /// actions. Permanent deletion still requires the existing confirmation.
+    private func canActOn(_ item: XDriveIOSNativeFilesTrashNode) -> Bool {
+        phase == .active && model.verified && !model.loading && !mutation.busy &&
+            model.items.contains(item) && model.pageOffset(for: item) != nil
+    }
+
+    private func requestPermanentDeletion(_ item: XDriveIOSNativeFilesTrashNode) {
+        guard canActOn(item) else { return }
+        pendingDelete = item
+        showingDeleteConfirmation = true
     }
 
     private func reload() {

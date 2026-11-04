@@ -449,7 +449,7 @@ func (s *Server) createDirectory(c *gin.Context) {
 	}
 	n := meta.Node{ParentID: &parentID, Name: req.Name, Type: meta.NodeTypeDir, OwnerID: userID(c)}
 	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, userID(c), parentID); err != nil {
+		if err := requireSourceRunOrOrdinaryTargetTx(c.Request.Context(), tx, c, userID(c), parentID); err != nil {
 			return err
 		}
 		return tx.Create(&n).Error
@@ -1118,10 +1118,10 @@ func (s *Server) updateNode(c *gin.Context) {
 		if current.Revision != expected {
 			return errRevisionConflict
 		}
-		if err := requireOrdinarySourceMutationTx(c.Request.Context(), tx, userID(c), id); err != nil {
+		if err := requireSourceRunOrOrdinaryMutationTx(c.Request.Context(), tx, c, userID(c), id); err != nil {
 			return err
 		}
-		if err := requireOrdinarySourceTargetTx(c.Request.Context(), tx, userID(c), newParent); err != nil {
+		if err := requireSourceRunOrOrdinaryTargetTx(c.Request.Context(), tx, c, userID(c), newParent); err != nil {
 			return err
 		}
 		result := tx.Model(&meta.Node{}).

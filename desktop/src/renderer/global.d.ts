@@ -211,10 +211,20 @@ declare global {
   type AgentUpdateMode = 'manual' | 'check' | 'download' | 'install'
   type AgentUpdateSource = 'github' | 'gitlab'
 
+  type AgentOfflineImportStatus = {
+    id: string
+    chunk_bytes: number
+    ready_to_verify: boolean
+    files: Array<{ name: string; state: 'uploading' | 'ready'; size: number; uploaded_bytes: number; upload_sha256?: string }>
+  }
+  type AgentOfflineImportCreated = { id: string; chunk_bytes: number }
+  type AgentOfflineImportList = { items: Array<{ id: string; modified_at: string }> }
+  type AgentOfflineImportFinalize = { name: string; state: 'ready'; upload_sha256: string }
+
   type AgentServerUpdateState = {
     supported: boolean
     state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
-    source: 'github' | 'gitlab' | 'xdrive'
+    source: 'github' | 'gitlab' | 'xdrive' | 'offline'
     channel: 'stable' | 'master'
     request_id?: string
     stage?: string
@@ -279,6 +289,12 @@ declare global {
   type AgentFileSavedSearch = XDriveFileSavedSearch
   type AgentFileSavedSearchInput = XDriveFileSavedSearchInput
   type AgentTransfer = XDriveTransferTask
+  type AgentSyncRun = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncRun
+  type AgentSyncItem = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncItem
+  type AgentSyncRunCursor = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncRunCursor
+  type AgentSyncItemCursor = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncItemCursor
+  type AgentSyncRunsPage = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncActivityPage<AgentSyncRun, AgentSyncRunCursor>
+  type AgentSyncItemsPage = import('../../../ui/shared/src/mui/SyncActivityPanel').XDriveSyncActivityPage<AgentSyncItem, AgentSyncItemCursor>
 
   type AgentTransfers = {
     revision: number
@@ -404,6 +420,40 @@ declare global {
   type AgentStorageCacheCleanupKind = StorageCacheCleanupKind
   type AgentCloudVersion = FileVersion
   type AgentCloudShare = FileShare
+  type AgentNotesSource = 'mine' | 'ios_notes'
+  type AgentNotesNamespace = {
+    system_node_id: number
+    notes_node_id: number
+    ios_backup_node_id: number
+    my_notes_node_id: number
+  }
+  type AgentNotesRow = {
+    id: string
+    source: AgentNotesSource
+    title: string
+    node_id: number
+    revision: number
+    sha256: string
+    bytes: number
+    created_at: string
+    updated_at: string
+  }
+  type AgentNotesDetail = AgentNotesRow & { markdown: string }
+  type AgentNotesPage = { items: AgentNotesRow[]; next_offset: number }
+  type AgentNotesVersion = { id: number; revision: number; sha256: string; bytes: number }
+  type AgentNotesVersions = { items: AgentNotesVersion[]; node_id: number }
+  type AgentNotesWrite = { title: string; markdown: string; expected_revision?: number }
+
+  type AgentNotesImageReceipt = {
+    node_id: number
+    filename: string
+    relative_path: string
+    content_type: string
+    sha256: string
+    bytes: number
+  }
+  type AgentNotesImageData = { image: string; bytes: number; content_type: string; sha256: string }
+
   type AgentOwnerSharePage = OwnerFileSharePage
   type AgentOwnerShareLink = { url: string }
   type AgentCreatedCloudShare = {
@@ -529,6 +579,9 @@ declare global {
       agent: {
         getState: () => Promise<AgentConnectionState>
         getTransfers: () => Promise<AgentTransfers>
+        getSyncRuns: (limit?: number, cursor?: AgentSyncRunCursor) => Promise<DesktopResult<AgentSyncRunsPage>>
+        getSyncRun: (runID: string) => Promise<DesktopResult<AgentSyncRun>>
+        getSyncRunItems: (runID: string, limit?: number, cursor?: AgentSyncItemCursor) => Promise<DesktopResult<AgentSyncItemsPage>>
         getStorageTree: (requestID?: string) => Promise<DesktopResult<AgentStorageTreeNode>>
         getCache: (requestID?: string) => Promise<DesktopResult<AgentCacheStats>>
         getLocalDiskSpace: (requestID?: string) => Promise<DesktopResult<AgentLocalDiskSpace>>
@@ -1082,6 +1135,10 @@ declare global {
         cloudQuota: (requestID?: string) => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
         startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
+        offlineImport: <T>(action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'start',
+          input?: Record<string, unknown>) => Promise<DesktopResult<T>>
+        offlineImportChunk: (id: string, name: string, index: number, data: ArrayBuffer, sha256: string) =>
+          Promise<DesktopResult<void>>
         cloudStorageStats: (requestID?: string) => Promise<DesktopResult<AgentCloudStorageStats>>
         cloudCleanupStorageCache: (kind: AgentStorageCacheCleanupKind) => Promise<DesktopResult<AgentStorageCacheCleanup>>
         cloudTrash: () => Promise<DesktopResult<AgentCloudNode[]>>
@@ -1097,6 +1154,16 @@ declare global {
         cloudVersions: (nodeID: number) => Promise<DesktopResult<AgentCloudVersion[]>>
         cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudShares: (nodeID: number) => Promise<DesktopResult<AgentCloudShare[]>>
+        cloudNotesInitialize: () => Promise<DesktopResult<AgentNotesNamespace>>
+        cloudNotesList: (source: AgentNotesSource, query: string, offset: number) => Promise<DesktopResult<AgentNotesPage>>
+        cloudNotesRead: (id: string) => Promise<DesktopResult<AgentNotesDetail>>
+        cloudNotesCreate: (value: { title: string; markdown: string }) => Promise<DesktopResult<AgentNotesRow>>
+        cloudNotesUpdate: (id: string, value: { title: string; markdown: string; expected_revision: number }) => Promise<DesktopResult<AgentNotesRow>>
+        cloudNotesDelete: (id: string, revision: number) => Promise<DesktopResult<void>>
+        cloudNotesVersions: (id: string) => Promise<DesktopResult<AgentNotesVersions>>
+        cloudNotesReadVersion: (nodeID: number, versionID: number) => Promise<DesktopResult<{ markdown: string }>>
+        cloudNotesUploadImage: (id: string, data: ArrayBuffer) => Promise<DesktopResult<AgentNotesImageReceipt>>
+        cloudNotesReadImage: (id: string, relativePath: string) => Promise<DesktopResult<AgentNotesImageData>>
         cloudOwnerShares: (cursor: number, limit: number) => Promise<DesktopResult<AgentOwnerSharePage>>
         cloudOwnShareLink: (id: number) => Promise<DesktopResult<AgentOwnerShareLink>>
         cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) => Promise<DesktopResult<AgentCreatedCloudShare>>

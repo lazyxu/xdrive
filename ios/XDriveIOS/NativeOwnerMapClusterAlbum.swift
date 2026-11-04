@@ -67,14 +67,21 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             Text("\(selection.places.count) 个位置 · \(selectedPhotoCount) 张已索引照片")
                 .font(.footnote).foregroundStyle(.secondary)
                 .accessibilityIdentifier("native-ios-owner-cluster-count")
+                // The signed 48-item transport is not a user-facing page:
+                // expose its progress to VoiceOver without a visible counter.
+                .accessibilityValue(
+                    page.map {
+                        "当前位置 \(cursor.placeIndex + 1)/\(selection.places.count)，已读取 \($0.offset + $0.items.count)/\($0.total_count)"
+                    } ?? "正在读取位置照片"
+                )
             if let error {
                 Text(error).font(.footnote).foregroundStyle(.secondary)
+                Button("重试读取照片") { load(cursor, history: earlier) }
+                    .disabled(busy || !activeOwner || viewing != nil)
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("native-ios-owner-map-cluster-inline-retry")
             }
             if busy { ProgressView("核对当前 Owner 的地点照片…") }
-            if let page, cursor.placeIndex < selection.places.count {
-                Text("位置 \(cursor.placeIndex + 1)/\(selection.places.count) · 当前地点 \(page.offset + 1)–\(page.offset + page.items.count)/\(page.total_count)")
-                    .font(.caption).monospacedDigit()
-            }
             ScrollViewReader { returnScroll in
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 2) {
@@ -131,28 +138,36 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 viewerReturn = nil
             }
             }
-            HStack(spacing: 12) {
-                Button("上一批") {
-                    guard let previous = earlier.last else { return }
-                    load(previous, history: Array(earlier.dropLast()))
-                }
-                .disabled(busy || !activeOwner || earlier.isEmpty || viewing != nil)
-                Spacer(minLength: 0)
-                Button("重试") { load(cursor, history: earlier) }
-                    .disabled(busy || !activeOwner || viewing != nil)
-                Spacer(minLength: 0)
-                Button("下一批") {
-                    guard let next else { return }
-                    load(next, history: earlier + [cursor])
-                }
-                .disabled(busy || !activeOwner || next == nil || viewing != nil)
-            }
-            .buttonStyle(.bordered)
-            .padding(.horizontal, 12)
-            .frame(minHeight: 44)
         }
         .navigationTitle("位置照片")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    // Accessibility and very long clusters retain bounded
+                    // backwards/forwards navigation; the primary photo wall
+                    // has no visible 48-photo pagination controls.
+                    Button("查看上一批照片") {
+                        guard let previous = earlier.last else { return }
+                        load(previous, history: Array(earlier.dropLast()))
+                    }
+                    .disabled(busy || !activeOwner || earlier.isEmpty || viewing != nil)
+                    Button("继续浏览下一批照片") {
+                        guard let next else { return }
+                        load(next, history: earlier + [cursor])
+                    }
+                    .disabled(busy || !activeOwner || next == nil || viewing != nil)
+                    Divider()
+                    Button("重新核对当前位置照片") {
+                        load(cursor, history: earlier)
+                    }
+                    .disabled(busy || !activeOwner || viewing != nil)
+                } label: {
+                    Label("位置照片操作", systemImage: "ellipsis.circle")
+                }
+                .accessibilityIdentifier("native-ios-owner-map-cluster-more")
+            }
+        }
         .fullScreenCover(item: $viewing, onDismiss: {
             pendingViewerCross = nil
             if activeOwner {
@@ -548,6 +563,38 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken)
+                if autoAdvance {
+                    // A stable item count does not guarantee that old and
+                    // new 48-item windows belong to the same media snapshot.
+                    // Refuse to append if a reindex/replacement changed even
+                    // one existing Node or revision during scrolling.
+                    guard let departingPage,
+                          history.last == departingCursor,
+                          target != departingCursor,
+                          selection.places.indices.contains(departingCursor.placeIndex),
+                          departingPage.offset == departingCursor.offset,
+                          XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
+                              offset: departingPage.offset,
+                              count: departingPage.items.count,
+                              total: departingPage.total_count
+                          ),
+                          departingPage.total_count ==
+                            selection.places[departingCursor.placeIndex].item_count
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                    let priorFacet = selection.places[departingCursor.placeIndex]
+                    guard XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(priorFacet)
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                    let currentOldPage = try await reader.page(
+                        offset: departingCursor.offset, placeID: priorFacet.id)
+                    try Task.checkCancellation()
+                    guard generation == ticket, activeOwner,
+                          XDriveIOSNativePhotoOwnerScope.matches(
+                              login.owner, selection.owner
+                          ),
+                          page?.sameVisibleSnapshot(as: departingPage) == true,
+                          currentOldPage.sameVisibleSnapshot(as: departingPage)
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                }
                 let fetched = try await reader.page(
                     offset: target.offset, placeID: facet.id)
                 try Task.checkCancellation()

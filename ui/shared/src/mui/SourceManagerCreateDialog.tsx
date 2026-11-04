@@ -166,12 +166,12 @@ export function XDriveSourceCreateDialog({
           </XDriveStatusAlert>
         ) : option.kind === 'local_folder' ? (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            云端目标目录由服务器自动创建：同步文件夹 / 设备备份 / 当前授权设备 / {values.name.trim() || '来源名称'}。
-            不占用所选普通文件夹。随后 Desktop 原生选择器将单独授权本机 Root，未授权前保持暂停。
+            云端目标由服务器自动创建：设备备份 / 当前授权设备 / {values.name.trim() || '来源名称'}。
+            不占用已有普通目录。Desktop 仍需通过原生选择器单独授权本机 Root，授权完成前保持暂停。
           </XDriveStatusAlert>
         ) : option.direction === 'pull' ? (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            目标目录由服务器自动创建：同步文件夹 / 远程拉取 / {option.kind === 'synology_files' ? 'Synology Files' : 'Synology Photos'} / {values.name.trim() || '来源名称'}。
+            目标目录由服务器自动创建：远程拉取 / {option.kind === 'synology_files' ? 'Synology Files' : 'Synology Photos'} / {values.name.trim() || '来源名称'}。
             无需选择云端文件夹；不会占用已有的普通目录。服务器需能访问下面填写的 DSM 地址。
           </XDriveStatusAlert>
         ) : targetBrowsingEnabled ? (
@@ -222,11 +222,6 @@ export function XDriveSourceCreateDialog({
                 </MuiButton>
               ))}
             </Stack>
-            {option.direction === 'pull' ? (
-              <MuiTypography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                服务器会直接连接 DSM，请确保 xDrive Server 能访问下面填写的 DSM 地址。
-              </MuiTypography>
-            ) : null}
           </MuiBox>
         ) : (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
@@ -234,11 +229,6 @@ export function XDriveSourceCreateDialog({
             <MuiTypography variant="body2">
               当前目标：{selectedTargetLabel}{selectedTargetPath ? `（${selectedTargetPath}）` : '（我的文件根目录）'}
             </MuiTypography>
-            {option.direction === 'pull' ? (
-              <MuiTypography variant="body2" sx={{ mt: 0.5 }}>
-                服务器会直接连接 DSM，请确保 xDrive Server 能访问下面填写的 DSM 地址。
-              </MuiTypography>
-            ) : null}
           </XDriveStatusAlert>
         )}
 

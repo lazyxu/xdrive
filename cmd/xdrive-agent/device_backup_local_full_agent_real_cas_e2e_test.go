@@ -81,7 +81,7 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	}
 	defer dbSQL.Close()
 	if err := db.AutoMigrate(
-		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.Source{},
+		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.Source{}, &meta.SyncRun{},
 		&meta.SourceItem{}, &meta.ClientDevice{}, &meta.LocalSourceBinding{},
 		&meta.LocalPushQuotaHold{}, &meta.UploadSession{}, &meta.UploadPart{},
 		&meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{},
@@ -126,6 +126,9 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		Status: meta.SourceStatusPaused, Revision: 7, TargetNodeID: &target.ID,
 		LocalCreatorDeviceID: &deviceID,
 	}
+	// The manual first Source run arms the already-saved interval policy;
+	// only the owning Agent scheduler may later admit incremental work.
+	source.ScheduleType, source.ScheduleExpression = "interval", "1m"
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -142,8 +145,18 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	var chunks, finalizes atomic.Int64
+	// This switch models a genuinely unavailable Server while the original
+	// NAS Source scheduler performs its authorized Owner-device discovery.
+	// Never replace the Agent, uploader, PostgreSQL or LocalCAS in this test.
+	var serverOffline atomic.Bool
+	var offlineRequests atomic.Int64
 	router := srv.Router()
 	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serverOffline.Load() {
+			offlineRequests.Add(1)
+			http.Error(w, "disposable Server temporarily offline", http.StatusServiceUnavailable)
+			return
+		}
 		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/chunks/") {
 			chunks.Add(1)
 		}
@@ -427,5 +440,227 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 	unchangedAgain := run()
 	if unchangedAgain.ConfirmedFiles != 0 || unchangedAgain.SkippedFiles != 2 {
 		t.Fatalf("restart re-uploaded already committed originals: %+v", unchangedAgain)
+	}
+	// P0-0 scheduled incremental verification. The earlier manual CGI run
+	// persisted a verified partial checkpoint for this owning Root. A saved
+	// one-minute interval must NOT start early, and a due tick must use the
+	// SAME original Agent and immutable Server SQL/CAS writer (not a second
+	// DSM transfer queue). A fresh controller models Agent restart.
+	scheduledB := bytes.Repeat([]byte("scheduled-native-B-revision-"), 181)
+	if err := os.WriteFile(filepath.Join(originalDir, "bravo.bin"), scheduledB, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The timer (not an explicit DSM GUI/manual POST) must also discover new
+	// nested NAS folders and commit their first original in the same batch.
+	scheduledNewRoot := filepath.Join(originalDir, "auto-album", "summer")
+	if err := os.MkdirAll(scheduledNewRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	scheduledNew := bytes.Repeat([]byte("scheduled-new-nested-original-"), 181)
+	if err := os.WriteFile(filepath.Join(scheduledNewRoot, "delta.bin"), scheduledNew, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertCounters()
+	chunksBeforeSchedule, finalizesBeforeSchedule := lastChunk, lastFinalize
+	opsBeforeSchedule, versionsBeforeSchedule := lastOperation, lastVersion
+	scheduler := &agentController{ctx: context.Background()}
+	attempts := make(map[string]time.Time)
+	early := time.Now().UTC()
+	if err := scheduler.localPushAutoTick(context.Background(), early, attempts); err != nil {
+		t.Fatalf("owning scheduled Source discovery failed before due: %v", err)
+	}
+	scheduler.localCommonBatchJobMu.Lock()
+	earlyJob := scheduler.localCommonBatchJob
+	scheduler.localCommonBatchJobMu.Unlock()
+	if earlyJob != nil || chunks.Load() != chunksBeforeSchedule ||
+		finalizes.Load() != finalizesBeforeSchedule {
+		t.Fatal("not-yet-due NAS interval scheduled a physical upload")
+	}
+	// The due clock is injected only into the scheduler; the real Root
+	// inventory, native file bytes and Server SQL/CAS time remain untouched.
+	due := early.Add(2 * time.Minute)
+	// At the due instant the Server may be offline. The Agent must not
+	// consume its scheduled admission, create a job or fabricate a successful
+	// original receipt. Reconnect at the same due clock and recover through
+	// the existing Agent, with no GUI/CLI manual run or second CAS writer.
+	serverOffline.Store(true)
+	if err := scheduler.localPushAutoTick(context.Background(), due, attempts); err == nil {
+		t.Fatal("offline NAS scheduled discovery incorrectly succeeded")
+	}
+	serverOffline.Store(false)
+	scheduler.localCommonBatchJobMu.Lock()
+	offlineJob := scheduler.localCommonBatchJob
+	scheduler.localCommonBatchJobMu.Unlock()
+	if offlineRequests.Load() == 0 || offlineJob != nil || len(attempts) != 0 {
+		t.Fatalf("offline scheduler admitted a job without a verified Server: requests=%d job=%v attempts=%d",
+			offlineRequests.Load(), offlineJob != nil, len(attempts))
+	}
+	assertCounters()
+	if lastChunk != chunksBeforeSchedule || lastFinalize != finalizesBeforeSchedule ||
+		lastOperation != opsBeforeSchedule || lastVersion != versionsBeforeSchedule {
+		t.Fatal("offline discovery wrote CAS chunks, finalized an upload or changed SQL receipts")
+	}
+	// A stopped Backup-only Agent loses its in-memory discovery and attempt
+	// state. A fresh owning controller must still catch up from the same
+	// persisted Source plan and checkpoint after the Server reconnects.
+	// Automatic recovery, not a second manual DSM SourceRun, must commit B
+	// and the new nested original through the ordinary operation queue.
+	restartedScheduler := &agentController{ctx: context.Background()}
+	restartedAttempts := make(map[string]time.Time)
+	if err := restartedScheduler.localPushAutoTick(context.Background(), due, restartedAttempts); err != nil {
+		t.Fatalf("restarted due NAS scheduler did not resume: %v", err)
+	}
+	restartedScheduler.localCommonBatchJobMu.Lock()
+	job := restartedScheduler.localCommonBatchJob
+	restartedScheduler.localCommonBatchJobMu.Unlock()
+	if len(attempts) != 0 || len(restartedAttempts) != 1 {
+		t.Fatal("offline discovery consumed admission or restarted Agent did not record its due admission")
+	}
+	if job == nil {
+		t.Fatal("due native Source did not enter the original owning Agent")
+	}
+	select {
+	case <-job.done:
+	case <-time.After(75 * time.Second):
+		t.Fatal("scheduled native Agent did not finish its SQL/CAS operation")
+	}
+	scheduled := localCommonBatchObservedResult(job)
+	if job.err != nil || scheduled.SourceID != source.ID ||
+		scheduled.Revision != source.Revision || scheduled.State != "partial" ||
+		scheduled.Running || scheduled.ConfirmedFiles != 2 ||
+		scheduled.SkippedFiles != 1 || scheduled.InspectedFiles != 3 ||
+		scheduled.ConfirmedBytes != int64(len(scheduledB)+len(scheduledNew)) ||
+		scheduled.UncertainFiles != 0 || scheduled.BackupComplete ||
+		scheduled.RetirementSafe || scheduled.CurrentCASVerified {
+		t.Fatalf("scheduled run misreported original SQL receipts: %+v %v", scheduled, job.err)
+	}
+	assertOriginal("alpha.bin", updated, 2)
+	assertOriginal("bravo.bin", scheduledB, 2)
+	// Newly discovered scheduled files must have the exact nested cloud
+	// ancestry and physical CAS original, with no invented prior revision.
+	scheduledParentID := target.ID
+	for _, name := range []string{"auto-album", "summer"} {
+		var folder meta.Node
+		if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+			owner.ID, scheduledParentID, name).Take(&folder).Error; err != nil {
+			t.Fatalf("scheduled NAS directory %s missing: %v", name, err)
+		}
+		if folder.Type != meta.NodeTypeDir {
+			t.Fatalf("scheduled NAS directory %s is not a folder: %+v", name, folder)
+		}
+		scheduledParentID = folder.ID
+	}
+	var scheduledNewNode meta.Node
+	if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+		owner.ID, scheduledParentID, "delta.bin").Take(&scheduledNewNode).Error; err != nil {
+		t.Fatalf("scheduled NAS nested original missing: %v", err)
+	}
+	if scheduledNewNode.Type != meta.NodeTypeFile || scheduledNewNode.Revision != 1 {
+		t.Fatalf("scheduled NAS nested original has wrong identity: %+v", scheduledNewNode)
+	}
+	var scheduledNewRecord meta.File
+	if err := db.Where("node_id = ?", scheduledNewNode.ID).Take(&scheduledNewRecord).Error; err != nil {
+		t.Fatal(err)
+	}
+	scheduledSHA := sha256.Sum256(scheduledNew)
+	if scheduledNewRecord.Size != int64(len(scheduledNew)) ||
+		scheduledNewRecord.SHA256 != hex.EncodeToString(scheduledSHA[:]) {
+		t.Fatalf("scheduled NAS nested SQL original differs: %+v", scheduledNewRecord)
+	}
+	scheduledReader, err := localCAS.Open(context.Background(), scheduledNewRecord.StorageKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduledBytes, readErr := io.ReadAll(scheduledReader)
+	_ = scheduledReader.Close()
+	if readErr != nil || !bytes.Equal(scheduledBytes, scheduledNew) {
+		t.Fatalf("scheduled NAS nested CAS bytes differ: %v", readErr)
+	}
+	var scheduledHistoricalVersions int64
+	if err := db.Model(&meta.FileVersion{}).Where("node_id = ?", scheduledNewNode.ID).
+		Count(&scheduledHistoricalVersions).Error; err != nil || scheduledHistoricalVersions != 0 {
+		t.Fatalf("new scheduled NAS original invented historical versions: count=%d err=%v",
+			scheduledHistoricalVersions, err)
+	}
+	assertCounters()
+	if lastOperation != opsBeforeSchedule+2 ||
+		lastVersion != versionsBeforeSchedule+1 ||
+		lastChunk <= chunksBeforeSchedule ||
+		lastFinalize <= finalizesBeforeSchedule {
+		t.Fatal("scheduled update and new nested original did not commit two SQL/CAS operations")
+	}
+	// A repeated wake-up with the same attempt must respect the existing
+	// durable cooldown and never fabricate a second physical upload.
+	if err := restartedScheduler.localPushAutoTick(context.Background(), due.Add(5*time.Second), restartedAttempts); err != nil {
+		t.Fatalf("repeated owning scheduler tick failed: %v", err)
+	}
+	assertCounters()
+	if lastOperation != opsBeforeSchedule+2 ||
+		lastVersion != versionsBeforeSchedule+1 {
+		t.Fatal("repeated scheduler tick wrote duplicate original SQL operations")
+	}
+
+	// A later new nested NAS path must enter the SAME original SourceRun,
+	// preserve its directory hierarchy and create a new original, not
+	// rewrite either existing file or invent a prior FileVersion.
+	nestedRoot := filepath.Join(originalDir, "new-album", "winter")
+	if err := os.MkdirAll(nestedRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	newOriginal := bytes.Repeat([]byte("new-nested-native-file-"), 181)
+	if err := os.WriteFile(filepath.Join(nestedRoot, "charlie.bin"), newOriginal, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	beforeNewOperations, beforeNewVersions := lastOperation, lastVersion
+	beforeNewChunks, beforeNewFinalizes := lastChunk, lastFinalize
+	added := run()
+	if added.InspectedFiles != 4 || added.ConfirmedFiles != 1 ||
+		added.SkippedFiles != 3 || added.ConfirmedBytes != int64(len(newOriginal)) {
+		t.Fatalf("new nested native file did not enter incremental backup: %+v", added)
+	}
+	cloudParentID := target.ID
+	for _, name := range []string{"new-album", "winter"} {
+		var folder meta.Node
+		if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+			owner.ID, cloudParentID, name).Take(&folder).Error; err != nil {
+			t.Fatalf("native directory %s was not preserved in cloud: %v", name, err)
+		}
+		if folder.Type != meta.NodeTypeDir {
+			t.Fatalf("native directory %s has incorrect cloud type: %s", name, folder.Type)
+		}
+		cloudParentID = folder.ID
+	}
+	var nestedFile meta.Node
+	if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+		owner.ID, cloudParentID, "charlie.bin").Take(&nestedFile).Error; err != nil {
+		t.Fatalf("incremental nested file missing in cloud: %v", err)
+	}
+	if nestedFile.Type != meta.NodeTypeFile || nestedFile.Revision != 1 {
+		t.Fatalf("new nested file did not preserve its original revision: %+v", nestedFile)
+	}
+	var nestedRecord meta.File
+	if err := db.Where("node_id = ?", nestedFile.ID).Take(&nestedRecord).Error; err != nil {
+		t.Fatal(err)
+	}
+	newSHA := sha256.Sum256(newOriginal)
+	if nestedRecord.Size != int64(len(newOriginal)) ||
+		nestedRecord.SHA256 != hex.EncodeToString(newSHA[:]) {
+		t.Fatalf("nested original SQL digest or size changed: %+v", nestedRecord)
+	}
+	originalReader, err := localCAS.Open(context.Background(), nestedRecord.StorageKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	casBytes, readErr := io.ReadAll(originalReader)
+	_ = originalReader.Close()
+	if readErr != nil || !bytes.Equal(casBytes, newOriginal) {
+		t.Fatalf("new nested NAS original CAS bytes differ: %v", readErr)
+	}
+	assertOriginal("alpha.bin", updated, 2)
+	assertOriginal("bravo.bin", scheduledB, 2)
+	assertCounters()
+	if lastOperation != beforeNewOperations+1 || lastVersion != beforeNewVersions ||
+		lastChunk <= beforeNewChunks || lastFinalize <= beforeNewFinalizes {
+		t.Fatal("new nested Source item was not a single new original SQL/CAS operation")
 	}
 }

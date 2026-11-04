@@ -459,6 +459,21 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .monospacedDigit()
                     Text("视频新增 \(result.videoUploaded)，Live ZIP 新增 \(result.liveBundleUploaded)，待核对 \(result.needsReview)，不可用 \(result.unavailable)")
                         .font(.footnote)
+                    if result.issues.total > 0 {
+                        Text("本次扫描分段发现 \(result.issues.total) 项不可用或不支持；按扫描位置显示，位置会随图库变化，不是固定照片编号。")
+                            .font(.caption).foregroundStyle(.orange)
+                            .accessibilityIdentifier("native-ios-photo-window-issue-count")
+                        ForEach(result.issues.entries) { item in
+                            Label("第 \(item.position) 项 · \(item.mediaLabel)：\(item.reason.displayText)",
+                                  systemImage: "exclamationmark.triangle")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if result.issues.additionalCount > 0 {
+                            Text("另有 \(result.issues.additionalCount) 项未展开；重新扫描将重新检查，未被当作备份成功。")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("native-ios-photo-window-issue-overflow")
+                        }
+                    }
                     // This fraction counts only slots read in THIS 256-item
                     // window. It is not a remote backup coverage percentage.
                     if let window = XDriveIOSNativeBackupWindowReadProgress.current(
@@ -655,7 +670,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("可选系统后台原件备份") {
-                Text("前台自动备份与系统 BGProcessing 相互独立。后台需要单独授权当前设备及 Owner 根目录；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 1 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
+                Text("前台自动备份与系统 BGProcessing 相互独立。后台需要单独授权当前设备及 Owner 根目录；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 \(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
                     .font(.footnote).foregroundStyle(.secondary)
                 if background.checking {
                     ProgressView("正在验证本机后台授权…")

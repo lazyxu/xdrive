@@ -26,6 +26,9 @@ private struct XDriveIOSNativeOriginalFilmstripTile: View {
     let node: XDriveIOSNativeCloudOriginal
     let key: XDriveIOSNativeCloudOriginalFilmstripKey
     let selected: Bool
+    // Already decoded, validated still from the currently selected Live ZIP.
+    // No neighboring Live ZIP is fetched or unpacked for the filmstrip.
+    let selectedLiveStill: UIImage?
     let owner: XDriveNativeOwnerRoot
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
 
@@ -41,10 +44,18 @@ private struct XDriveIOSNativeOriginalFilmstripTile: View {
             XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
     }
 
+    private var visibleStill: UIImage? {
+        // A selected Live tile can reuse only its presenting Viewer's already
+        // verified still. Hide all decoded pixels when the Owner/scene retires.
+        guard authorized else { return nil }
+        if selected && node.isLiveArchive { return selectedLiveStill }
+        return image
+    }
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            if let image {
-                Image(uiImage: image).resizable().scaledToFill()
+            if let visibleStill {
+                Image(uiImage: visibleStill).resizable().scaledToFill()
             } else {
                 Rectangle().fill(Color(uiColor: .secondarySystemBackground))
                     .overlay {
@@ -113,10 +124,16 @@ struct XDriveIOSNativeCloudOriginalViewerFilmstrip: View {
     let openedOwner: XDriveNativeOwnerRoot?
     let authorized: Bool
     let busy: Bool
+    // The presenting Viewer retains ownership of this transient Live still.
+    let selectedLiveStill: UIImage?
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let onSelect: (XDriveIOSNativeCloudOriginal) -> Void
 
     @Environment(\.scenePhase) private var phase
+
+    @State private var scrubStartIndex: Int?
+    @State private var lastScrubbedKey: XDriveIOSNativeCloudOriginalFilmstripKey?
+    @State private var lastScrubDispatch: TimeInterval = 0
 
     private func key(_ item: XDriveIOSNativeCloudOriginal)
         -> XDriveIOSNativeCloudOriginalFilmstripKey {
@@ -146,6 +163,42 @@ struct XDriveIOSNativeCloudOriginalViewerFilmstrip: View {
             ) != nil
     }
 
+    /// Map each drag back to the original selected index in exactly this
+    /// bounded, verified Owner window. The parent rechecks complete Node
+    /// identity and the presenting Gallery callback on every selection.
+    private func scrubChanged(_ translation: CGSize, force: Bool = false) {
+        guard admitted, !busy else { resetScrub(); return }
+        guard let origin = scrubStartIndex ??
+            XDriveIOSNativeCloudOriginalFilmstripPolicy.loadedIndex(
+                current: key(current), in: keys, authorized: admitted
+            ) else { return }
+        if scrubStartIndex == nil { scrubStartIndex = origin }
+        guard let target = XDriveIOSNativePhotoFilmstripScrubPolicy.targetIndex(
+            startingAt: origin, loadedCount: visible.count,
+            horizontal: translation.width, vertical: translation.height,
+            authorized: admitted
+        ), visible.indices.contains(target) else { return }
+        let candidate = visible[target]
+        let candidateKey = key(candidate)
+        guard candidateKey != key(current), candidateKey != lastScrubbedKey,
+              XDriveIOSNativeCloudOriginalFilmstripPolicy.target(
+                current: key(current), requested: candidateKey,
+                in: keys, authorized: admitted
+              ) != nil else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || lastScrubDispatch == 0 ||
+              now - lastScrubDispatch >= 0.08 else { return }
+        lastScrubDispatch = now
+        lastScrubbedKey = candidateKey
+        onSelect(candidate)
+    }
+
+    private func resetScrub() {
+        scrubStartIndex = nil
+        lastScrubbedKey = nil
+        lastScrubDispatch = 0
+    }
+
     var body: some View {
         if admitted, visible.count > 1, let openedOwner {
             ScrollViewReader { scroll in
@@ -163,6 +216,7 @@ struct XDriveIOSNativeCloudOriginalViewerFilmstrip: View {
                                 XDriveIOSNativeOriginalFilmstripTile(
                                     node: node, key: key(node),
                                     selected: key(node) == key(current),
+                                    selectedLiveStill: selectedLiveStill,
                                     owner: openedOwner, login: login
                                 )
                             }
@@ -181,6 +235,17 @@ struct XDriveIOSNativeCloudOriginalViewerFilmstrip: View {
                 }
                 .frame(height: 72)
                 .background(.ultraThinMaterial)
+                // Only the thumbnail rail admits page scrubbing. Ordinary
+                // taps remain accessible Buttons; the parent owns playback
+                // cancellation and all Owner/revision admission.
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 18, coordinateSpace: .local)
+                        .onChanged { scrubChanged($0.translation) }
+                        .onEnded {
+                            scrubChanged($0.translation, force: true)
+                            resetScrub()
+                        }
+                )
                 .onAppear { scroll.scrollTo(current.id, anchor: .center) }
                 .onChange(of: current.id) { id in
                     guard admitted else { return }
@@ -190,6 +255,12 @@ struct XDriveIOSNativeCloudOriginalViewerFilmstrip: View {
                 }
             }
             .accessibilityIdentifier("native-ios-original-filmstrip")
+            .onChange(of: keys) { _ in resetScrub() }
+            .onChange(of: login.owner) { _ in resetScrub() }
+            .onChange(of: phase) { state in
+                if state != .active { resetScrub() }
+            }
+            .onDisappear { resetScrub() }
         }
     }
 }

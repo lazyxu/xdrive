@@ -41,7 +41,7 @@ PACKAGE_LIMIT = 8 * 1024**3
 PUBLISH_PHASES = frozenset({
     'github-manifest', 'local-archive', 'share-grant', 'share-root',
     'share-packages-root', 'share-channel', 'share-release-folder',
-    'share-manifest', 'share-installer', 'share-attestation', 'share-completion',
+    'share-manifest', 'share-installer', 'share-go-installer', 'share-attestation', 'share-completion',
 } | {f'github-package-{component}' for component in offline.COMPONENTS}
   | {f'share-package-{component}' for component in offline.COMPONENTS})
 
@@ -206,8 +206,11 @@ class Share(client.Share):
 
 def validate_delivery(directory, manifest):
     descriptor = read_json(directory / 'delivery.json')
-    if (not isinstance(descriptor, dict) or set(descriptor) != {
-            'schema', 'repository_id', 'channel', 'platform', 'source_commit', 'sequence', 'manifest', 'installer'} or
+    expected = {'schema', 'repository_id', 'channel', 'platform',
+                'source_commit', 'sequence', 'manifest', 'installer'}
+    if isinstance(descriptor, dict) and 'go_installer' in descriptor:
+        expected.add('go_installer')
+    if (not isinstance(descriptor, dict) or set(descriptor) != expected or
             type(descriptor.get('schema')) is not int or descriptor['schema'] != 1 or
             type(descriptor.get('repository_id')) is not int or descriptor['repository_id'] != 1382670236 or
             descriptor.get('channel') != 'master' or descriptor.get('platform') != 'linux/amd64' or
@@ -219,6 +222,14 @@ def validate_delivery(directory, manifest):
         if not isinstance(item, dict) or set(item) != {'name', 'size', 'sha256'} or item['name'] != name:
             raise MirrorError('Invalid delivery artifact binding')
         check_file(directory / name, item['size'], item['sha256'])
+    if 'go_installer' in descriptor:
+        item = descriptor['go_installer']
+        if (not isinstance(item, dict) or set(item) != {'name', 'size', 'sha256'} or
+                item['name'] != 'xdrive-offline-linux-amd64'):
+            raise MirrorError('Invalid signed Go installer binding')
+        check_file(directory / item['name'], item['size'], item['sha256'])
+    elif (directory / 'xdrive-offline-linux-amd64').exists():
+        raise MirrorError('Unsigned Go installer must not be published')
     bundle = directory / 'delivery-attestation.jsonl'
     if bundle.is_symlink() or not bundle.is_file() or not 0 < bundle.stat().st_size <= METADATA_LIMIT:
         raise MirrorError('Missing delivery attestation')
@@ -247,21 +258,37 @@ def publish(directory, share):
         channel = share.directory(root, 'master')
     with mirror_phase('share-release-folder'):
         folder = share.directory(channel, f"{descriptor['sequence']}-{manifest['source_commit']}")
-    # The authenticated completion marker must remain last even on retries.
-    for name, phase in (('manifest.json', 'share-manifest'),
-                        ('xdrive-offline.py', 'share-installer'),
-                        ('delivery-attestation.jsonl', 'share-attestation'),
-                        ('delivery.json', 'share-completion')):
+    # A signed Go ELF is additive; old Share clients continue to use the
+    # descriptor-bound Python installer. Completion remains last on retries.
+    uploads = [('manifest.json', 'share-manifest'),
+               ('xdrive-offline.py', 'share-installer')]
+    if 'go_installer' in descriptor:
+        uploads.append(('xdrive-offline-linux-amd64', 'share-go-installer'))
+    uploads += [('delivery-attestation.jsonl', 'share-attestation'),
+                ('delivery.json', 'share-completion')]
+    for name, phase in uploads:
         with mirror_phase(phase):
             path = directory / name
             share.upload(folder, name, path, client.sha256_file(path), 'server-delivery', manifest['source_commit'])
     print('Server mirror verified: sequence ' + str(descriptor['sequence']) + ', commit ' + manifest['source_commit'])
 
 
+# Previously published schema-1 releases are immutable and have exactly seven
+# assets. New releases can additionally carry one signed Go ELF; no unrelated
+# asset names are accepted in either form.
 RELEASE_FILES = ('manifest.json', 'xdrive-offline.py', 'delivery.json',
                  'delivery-attestation.jsonl', 'xdrive-offline-attestation.json',
                  'SHA256SUMS.txt', 'MANIFEST_SHA256.txt')
+GO_INSTALLER_ASSET = 'xdrive-offline-linux-amd64'
+# Place Go before signed delivery metadata so interrupted draft publication can
+# always reconstruct a descriptor from the already-uploaded immutable ELF.
+RELEASE_FILES_GO = RELEASE_FILES[:2] + (GO_INSTALLER_ASSET,) + RELEASE_FILES[2:]
 BUNDLE_FILES = ('delivery-attestation.jsonl', 'xdrive-offline-attestation.json')
+
+
+def local_release_files(directory):
+    descriptor = read_json(directory / 'delivery.json')
+    return RELEASE_FILES_GO if 'go_installer' in descriptor else RELEASE_FILES
 
 
 def installer_source(repository):
@@ -282,6 +309,11 @@ def write_checksums(directory):
     lines.extend(manifest['packages'][c]['sha256'] + '  ' + manifest['packages'][c]['filename']
                  for c in offline.COMPONENTS)
     lines.append(client.sha256_file(directory / 'xdrive-offline.py') + '  xdrive-offline.py')
+    go_binary = directory / GO_INSTALLER_ASSET
+    if go_binary.exists() or go_binary.is_symlink():
+        if go_binary.is_symlink() or not go_binary.is_file():
+            raise MirrorError('Invalid Go ELF asset')
+        lines.append(client.sha256_file(go_binary) + '  ' + GO_INSTALLER_ASSET)
     (directory / 'SHA256SUMS.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8')
     (directory / 'MANIFEST_SHA256.txt').write_text(lines[0].split()[0] + '\n', encoding='ascii')
 
@@ -336,7 +368,10 @@ class GitHub:
                  '--pattern', name, '--dir', str(directory))
 
     def verify(self, directory, bundle):
-        for name in ('manifest.json', 'xdrive-offline.py', 'delivery.json'):
+        names = ('manifest.json', 'xdrive-offline.py', 'delivery.json')
+        if (directory / GO_INSTALLER_ASSET).exists():
+            names += (GO_INSTALLER_ASSET,)
+        for name in names:
             result = json.loads(self.run('attestation', 'verify', str(directory / name),
                 '--repo', REPOSITORY, '--bundle', str(bundle), '--signer-workflow',
                 REPOSITORY + '/.github/workflows/offline-packages.yml',
@@ -482,7 +517,7 @@ def release_assets(record, commit):
     assets = {}
     for item in record['assets']:
         name = item.get('name')
-        if (name not in RELEASE_FILES or name in assets or type(item.get('id')) is not int or
+        if (name not in RELEASE_FILES_GO or name in assets or type(item.get('id')) is not int or
                 item['id'] <= 0 or type(item.get('size')) is not int or
                 not 0 < item['size'] <= METADATA_LIMIT):
             raise MirrorError('Unexpected or duplicate release asset')
@@ -523,6 +558,7 @@ def publish_github(directory, commit, github):
     if manifest['source_commit'] != commit or not re.fullmatch(r'[a-f0-9]{40}', commit):
         raise MirrorError('Wrong source manifest for publication')
     validate_delivery(directory, manifest)
+    expected_files = local_release_files(directory)
     tag = 'offline-manifest-' + commit[:12]
     record = github.get(tag)
     with tempfile.TemporaryDirectory(prefix='release-verify-', dir=directory) as temp:
@@ -539,7 +575,7 @@ def publish_github(directory, commit, github):
         if (directory / BUNDLE_FILES[0]).read_bytes() != (directory / BUNDLE_FILES[1]).read_bytes():
             raise MirrorError('Local attestation aliases conflict')
         github.verify(directory, directory / BUNDLE_FILES[0])
-        for name in RELEASE_FILES:
+        for name in expected_files:
             path = directory / name
             if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= METADATA_LIMIT:
                 raise MirrorError('Missing local release metadata')
@@ -547,8 +583,8 @@ def publish_github(directory, commit, github):
                 raise MirrorError('Immutable release asset collision; never overwrite')
         github.packages(manifest)
         if record is not None and not record['draft']:
-            if set(assets) != set(RELEASE_FILES):
-                raise MirrorError('Published release is incomplete; refusing mutation')
+            if set(assets) != set(expected_files):
+                raise MirrorError('Published release differs from this exact signed format; refusing mutation')
             return
         if record is None:
             notes = ('Source Commit: ' + commit + '\nTrusted Manifest SHA-256: ' +
@@ -558,7 +594,7 @@ def publish_github(directory, commit, github):
             record = github.get(tag)
             if not record or release_assets(record, commit) or record['draft'] is not True:
                 raise MirrorError('New release draft identity changed')
-        for name in RELEASE_FILES:  # Manifest is uploaded first; never clobber.
+        for name in expected_files:  # Manifest is uploaded first; never clobber.
             if name not in assets:
                 github.upload(tag, directory / name)
         current = github.get(tag)
@@ -567,8 +603,8 @@ def publish_github(directory, commit, github):
         with tempfile.TemporaryDirectory(prefix='release-readback-', dir=directory) as checked:
             checked = Path(checked)
             complete = download_release(checked, commit, github, current)
-            if set(complete) != set(RELEASE_FILES) or any(
-                    (checked / n).read_bytes() != (directory / n).read_bytes() for n in RELEASE_FILES):
+            if set(complete) != set(expected_files) or any(
+                    (checked / n).read_bytes() != (directory / n).read_bytes() for n in expected_files):
                 raise MirrorError('Draft assets are incomplete or changed')
         try:
             github.publish(tag)
@@ -594,8 +630,8 @@ def resume_github(directory, commit, repository, github):
     if record is None:
         return False
     assets = release_assets(record, commit)
-    if not record['draft'] and set(assets) != set(RELEASE_FILES):
-        raise MirrorError('Published release is incomplete')
+    if not record['draft'] and set(assets) not in (set(RELEASE_FILES), set(RELEASE_FILES_GO)):
+        raise MirrorError('Published release has an unrecognized asset set')
     # No authenticated seed yet: the normal CI build may supply missing assets.
     # publish_github will compare every surviving byte before adding anything.
     if 'manifest.json' not in assets or not any(n in assets for n in BUNDLE_FILES):
@@ -620,7 +656,7 @@ def resume_github(directory, commit, repository, github):
         # verified exact draft. Missing/mismatched package releases fail closed.
         publish_github(stage, commit, github)
         directory.mkdir(parents=True, exist_ok=True)
-        for name in RELEASE_FILES:
+        for name in local_release_files(stage):
             (directory / name).write_bytes((stage / name).read_bytes())
     return True
 

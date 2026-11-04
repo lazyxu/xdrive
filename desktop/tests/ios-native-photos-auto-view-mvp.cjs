@@ -318,3 +318,25 @@ test('manual original backup continues the same bounded window before visiting o
   assert.doesNotMatch(store, /manualNextWindow|manualLibraryEpoch/,
     'manual progress stays ephemeral, never silently advances the saved automatic schedule')
 });
+
+test('PhotoKit changes advance only an approved foreground Owner plan, not an original writer', () => {
+  const store = read('ios/XDriveIOS/PhotoAutoScheduleStore.swift')
+  const policy = read('ios/XDriveIOS/PhotoAutoSchedulePolicy.swift')
+  assert.match(controller, /class XDriveIOSForegroundPhotoLibraryObserver:[\s\S]*?PHPhotoLibraryChangeObserver/)
+  assert.match(controller, /func photoLibraryDidChange\(_ changeInstance: PHChange\)/)
+  assert.match(controller, /Task \{ @MainActor \[weak self\] in self\?\.onChanged\(\) \}/)
+  assert.match(controller, /PHPhotoLibrary\.shared\(\)\.register\(observer\)/)
+  assert.match(controller, /PHPhotoLibrary\.shared\(\)\.unregisterChangeObserver\(observer\)/)
+  assert.match(controller, /\[weak self, weak login\][\s\S]*?let owner = login\.owner/)
+  assert.match(controller, /\.expediteForLibraryChange\(owner: owner\)/)
+  assert.match(login, /\.onAppear \{\s*backup\.startLibraryChangeMonitoring\(login: model\)/)
+  assert.match(login, /\.onDisappear \{\s*backup\.stopLibraryChangeMonitoring\(\)/)
+  assert.match(store, /func expediteForLibraryChange\(owner: XDriveNativeOwnerRoot/)
+  assert.match(store, /state\.enabled, !state\.pausedForReview/)
+  assert.match(store, /\.earlierDueAfterLibraryChange\(currentDueAt: state\.nextDueAt, at: now\)/)
+  assert.match(store, /state\.nextDueAt = due\s*try persist\(state, owner: owner\)/)
+  assert.match(policy, /return currentDueAt > soon \? soon : nil/)
+  const observer = controller.slice(controller.indexOf('private final class XDriveIOSForegroundPhotoLibraryObserver'),
+                                    controller.indexOf('    func refresh(owner:'))
+  assert.doesNotMatch(observer, /UploadSession|URLSession|start\(login:|reserveDue\(|PhotoSyncLedger|fetchAssets/)
+})

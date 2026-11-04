@@ -61,6 +61,13 @@ struct XDriveIOSNativePhotoVideoSurface: View {
     @State private var seeking = false
     @State private var playing = false
     @State private var muted = false
+    // An AVPlayer seek is asynchronous. Remember the exact current item and
+    // retire late completion handlers when a Viewer changes media or leaves.
+    @State private var scrubbedItem: AVPlayerItem?
+    @State private var resumesAfterScrub = false
+    @State private var finishingScrub = false
+    @State private var scrubEpoch = UUID()
+    @State private var lastPreviewSeekAt: TimeInterval = -.infinity
     private let ticker = Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()
 
     private var canControl: Bool {
@@ -77,6 +84,68 @@ struct XDriveIOSNativePhotoVideoSurface: View {
         }
         playing = player.rate > 0
         muted = player.isMuted
+    }
+
+
+    /// Pause while dragging so the decoded frame follows the user's finger
+    /// instead of running ahead of the seek slider.
+    private func beginScrub() {
+        guard canControl, duration > 0, let item = player.currentItem else { return }
+        scrubEpoch = UUID()
+        scrubbedItem = item
+        resumesAfterScrub = player.rate > 0
+        finishingScrub = false
+        lastPreviewSeekAt = -.infinity
+        seeking = true
+        player.pause()
+    }
+
+    /// Coalesce intermediate seeks to bound signed cloud video Range traffic.
+    /// Final finger-up positioning remains exact and is never throttled.
+    private func previewScrub(at value: Double) -> CMTime? {
+        guard seeking, !finishingScrub, canControl,
+              player.currentItem === scrubbedItem, duration > 0,
+              value.isFinite else { return nil }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastPreviewSeekAt >= 0.14 else { return nil }
+        lastPreviewSeekAt = now
+        return CMTime(
+            seconds: min(max(0, value), duration), preferredTimescale: 600
+        )
+    }
+
+    private func finishScrub() {
+        guard seeking, !finishingScrub else { return }
+        guard canControl, duration > 0, let item = scrubbedItem,
+              player.currentItem === item else {
+            abortScrub()
+            return
+        }
+        finishingScrub = true
+        let token = scrubEpoch
+        let resume = resumesAfterScrub
+        let target = CMTime(
+            seconds: min(max(0, position), duration), preferredTimescale: 600
+        )
+        player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { completed in
+            Task { @MainActor in
+                guard scrubEpoch == token else { return }
+                abortScrub()
+                guard completed, phase == .active,
+                      player.currentItem === item else { return }
+                if resume { player.play() }
+                refresh()
+            }
+        }
+    }
+
+    private func abortScrub() {
+        scrubEpoch = UUID()
+        seeking = false
+        finishingScrub = false
+        scrubbedItem = nil
+        resumesAfterScrub = false
+        lastPreviewSeekAt = -.infinity
     }
 
     private func timestamp(_ value: Double) -> String {
@@ -127,23 +196,27 @@ struct XDriveIOSNativePhotoVideoSurface: View {
                     }
                     .accessibilityLabel(playing ? "暂停视频" : "播放视频")
                     .accessibilityIdentifier("native-ios-photo-video-play")
-                    .disabled(!canControl)
+                    .disabled(!canControl || seeking)
 
                     Slider(
                         value: $position, in: 0...max(duration, 1),
                         onEditingChanged: { editing in
-                            seeking = editing
-                            if !editing && canControl && duration > 0 {
-                                let target = CMTime(seconds: position, preferredTimescale: 600)
-                                player.seek(
-                                    to: target, toleranceBefore: .zero,
-                                    toleranceAfter: .zero
-                                )
-                            }
+                            if editing { beginScrub() }
+                            else { finishScrub() }
                         }
                     )
+                    .onChange(of: position) { value in
+                        if let target = previewScrub(at: value) {
+                            let tolerance = CMTime(seconds: 0.1, preferredTimescale: 600)
+                            player.seek(
+                                to: target, toleranceBefore: tolerance,
+                                toleranceAfter: tolerance
+                            )
+                        }
+                    }
                     .disabled(!canControl || duration <= 0)
                     .accessibilityLabel("视频进度")
+                    .accessibilityHint("拖动时预览画面；松开后定位，原本播放中的视频将继续播放")
                     .accessibilityIdentifier("native-ios-photo-video-timeline")
 
                     Text("\(timestamp(position)) / \(duration > 0 ? timestamp(duration) : "--:--")")
@@ -172,6 +245,11 @@ struct XDriveIOSNativePhotoVideoSurface: View {
         }
         .background(Color.black)
         .onAppear { refresh() }
+        .onChange(of: phase) { next in
+            if next != .active { abortScrub() }
+            else { refresh() }
+        }
+        .onDisappear { abortScrub() }
         .onReceive(ticker) { _ in
             if phase == .active { refresh() }
         }

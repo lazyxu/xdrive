@@ -61,7 +61,7 @@ jobs:
             if git cat-file -e "$PR_HEAD_SHA^{commit}" 2>/dev/null; then
               if candidate="$(python3 scripts/ci/classify_pr_scope.py "$PR_BASE_SHA" "$PR_HEAD_SHA")"; then
                 case "$candidate" in
-                  full|docs|android|pwa) scope="$candidate" ;;
+                  full|docs|android|pwa|offline-release) scope="$candidate" ;;
                   *) echo "::warning title=Unknown CI scope::Using complete CI." ;;
                 esac
               else
@@ -69,7 +69,7 @@ jobs:
               fi
             fi
           fi
-          case "$scope" in full|docs|android|pwa) ;; *) exit 1 ;; esac
+          case "$scope" in full|docs|android|pwa|offline-release) ;; *) exit 1 ;; esac
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
           echo "xDrive CI scope: $scope (unknown or risky paths require full CI)"
 
@@ -193,6 +193,58 @@ jobs:
           set -euo pipefail
           [[ "$PR_COMMITS" =~ ^[1-9][0-9]*$ ]] || exit 1
           echo "PR has $PR_COMMITS commit(s); Squash Merge may retain a linear master."
+
+  # Publisher-only PRs need the exact immutable Share delivery contracts, not
+  # Android, Desktop, Go image builds or signed release publication. On master
+  # and stable tags both jobs run as part of the complete Final Gate.
+  offline-release-tests:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'offline-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Test exact GitHub package selection and Share upload/readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/mirror-server-to-share.py scripts/ci/mirror-clients-to-share.py
+          python3 scripts/ci/test-mirror-clients-to-share.py -q
+          python3 scripts/ci/test-mirror-server-to-share.py -q
+
+  offline-security-contract:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'offline-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify five-package archive, image identity, delivery and signed release
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/offline/build-five-packages.sh
+          python3 -m unittest discover -s scripts/offline -p 'test_*.py'
+          python3 scripts/test-xdrive-share-update.py -q
+          python3 scripts/test-release-attestation-contract.py
+      # A scoped PR can edit its own regression tests. Run the already trusted
+      # master tests on the candidate publisher too, so changing tests cannot
+      # silently weaken the existing security baseline.
+      - name: Re-run trusted base Share publisher regression suite
+        if: github.event_name == 'pull_request' && needs.pr-scope.outputs.scope == 'offline-release'
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          git show "$PR_BASE_SHA:scripts/ci/test-mirror-server-to-share.py" > scripts/ci/test-mirror-server-to-share.py
+          python3 scripts/ci/test-mirror-server-to-share.py -q
 
   desktop-tests:
     needs: pr-scope
@@ -1139,6 +1191,8 @@ jobs:
           python3 scripts/test-github-release-archive-contract.py
           go test ./cmd/backuprepo -count=1
           bash -n scripts/server-backup.sh
+          bash -n scripts/test-server-backup-data-source-preflight.sh
+          bash scripts/test-server-backup-data-source-preflight.sh
           bash -n scripts/server-backup-scheduled.sh
           bash -n scripts/test-server-backup-scheduled.sh
           bash scripts/test-server-backup-scheduled.sh
@@ -1177,8 +1231,6 @@ jobs:
           python3 -m unittest discover -s scripts/ci -p 'test_backup_restore_drill_evidence.py'
           bash -n scripts/test-server-backup-restore.sh
           bash -n scripts/test-server-chunk-storage.sh
-          bash -n scripts/offline/build-five-packages.sh
-          python3 -m unittest discover -s scripts/offline -p 'test_*.py'
           bash -n scripts/test-server-installer-bootstrap.sh
           bash scripts/test-server-installer-bootstrap.sh
           bash -n scripts/test-server-installer-transaction.sh
@@ -1195,9 +1247,6 @@ jobs:
           bash -n scripts/test-xdrive-server-host.sh
           bash scripts/test-xdrive-server-host.sh
           python3 scripts/test-xdrive-share-host.py
-          python3 scripts/test-xdrive-share-update.py
-          python3 scripts/ci/test-mirror-server-to-share.py
-          python3 scripts/test-release-attestation-contract.py
           bash -n scripts/test-server-status-summary.sh
           bash scripts/test-server-status-summary.sh
           bash -n scripts/ci/test-server-rootless-e2e.sh
@@ -2532,6 +2581,8 @@ jobs:
       - go-windows
       - test-backup-cli-windows
       - server-validation
+      - offline-release-tests
+      - offline-security-contract
       - server-image
       - photo-face-image
       - media-worker-image
@@ -2637,6 +2688,7 @@ jobs:
             if $scope == "docs" then accepted(["policy-contract"])
             elif $scope == "android" then accepted(["android-native"])
             elif $scope == "pwa" then accepted(["web", "desktop-tests"])
+            elif $scope == "offline-release" then accepted(["offline-release-tests", "offline-security-contract"])
             else false end
           ' >/dev/null
           echo "Scoped $CI_SCOPE PR validation passed; master and v* remain full."

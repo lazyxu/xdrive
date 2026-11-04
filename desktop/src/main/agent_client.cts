@@ -14,6 +14,40 @@ export type AgentHello = {
   capabilities: string[]
 }
 
+export type AgentNotesSource = 'mine' | 'ios_notes'
+export type AgentNotesNamespace = {
+  system_node_id: number
+  notes_node_id: number
+  ios_backup_node_id: number
+  my_notes_node_id: number
+}
+export type AgentNotesRow = {
+  id: string
+  source: AgentNotesSource
+  title: string
+  node_id: number
+  revision: number
+  sha256: string
+  bytes: number
+  created_at: string
+  updated_at: string
+}
+export type AgentNotesDetail = AgentNotesRow & { markdown: string }
+export type AgentNotesPage = { items: AgentNotesRow[]; next_offset: number }
+export type AgentNotesVersion = { id: number; revision: number; sha256: string; bytes: number }
+export type AgentNotesVersions = { items: AgentNotesVersion[]; node_id: number }
+export type AgentNotesWrite = { title: string; markdown: string; expected_revision?: number }
+
+export type AgentNotesImageReceipt = {
+  node_id: number
+  filename: string
+  relative_path: string
+  content_type: string
+  sha256: string
+  bytes: number
+}
+export type AgentNotesImageData = { content_type: string; bytes: number; sha256: string; image: string }
+
 export type AgentBuildInfo = {
   version: string
   channel?: string
@@ -138,10 +172,21 @@ export type AgentSettings = {
 export type AgentUpdateMode = 'manual' | 'check' | 'download' | 'install'
 export type AgentUpdateSource = 'github' | 'gitlab'
 
+export type AgentOfflineImportSummary = { id: string; modified_at: string }
+export type AgentOfflineImportList = { items: AgentOfflineImportSummary[] }
+export type AgentOfflineImportCreated = { id: string; chunk_bytes: number }
+export type AgentOfflineImportStatus = {
+  id: string
+  chunk_bytes: number
+  ready_to_verify: boolean
+  files: Array<{ name: string; state: 'uploading' | 'ready'; size: number; uploaded_bytes: number; upload_sha256?: string }>
+}
+export type AgentOfflineImportFinalize = { name: string; state: 'ready'; upload_sha256: string }
+
 export type AgentServerUpdateState = {
   supported: boolean
   state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
-  source: 'github' | 'gitlab' | 'xdrive'
+  source: 'github' | 'gitlab' | 'xdrive' | 'offline'
   channel: 'stable' | 'master'
   request_id?: string
   stage?: string
@@ -257,6 +302,34 @@ export type AgentTransfer = {
   updated_at: string
   completed_at?: string
 }
+
+export type AgentSyncRunCursor = { before_started_at: string; before_run_id: string }
+export type AgentSyncItemCursor = { before_applied_at: string; before_item_id: string }
+export type AgentSyncRun = {
+  run_id: string
+  engine_kind: string
+  trigger: string
+  started_at: string
+  finished_at: string | null
+  status: string
+  outcome: string
+  detail_complete: boolean
+  details_expired: boolean
+  stats: {
+    items: number; successful: number; created: number; updated: number
+    deleted: number; moved: number; renamed: number; uploaded: number
+    downloaded: number; skipped: number; failed: number; conflicted: number
+    transferred_bytes: number | null
+  }
+}
+export type AgentSyncItem = {
+  run_id: string; item_id: string; action: string; direction: string
+  status: string; old_path: string; new_path: string
+  logical_bytes: number | null; transferred_bytes: number | null
+  error_code: string; error_message: string; applied_at: string
+}
+export type AgentSyncRunsPage = { items: AgentSyncRun[]; next_cursor: AgentSyncRunCursor | null }
+export type AgentSyncItemsPage = { items: AgentSyncItem[]; next_cursor: AgentSyncItemCursor | null }
 
 export type AgentTransfers = {
   revision: number
@@ -4677,6 +4750,44 @@ export class AgentIPCClient {
     return this.request<AgentServerUpdateState>('GET', '/v1/server-update')
   }
 
+  offlineImports() {
+    return this.request<AgentOfflineImportList>('GET', '/v1/offline-imports')
+  }
+  offlineImportCreate() {
+    return this.request<AgentOfflineImportCreated>('POST', '/v1/offline-imports', {})
+  }
+  offlineImportGet(id: string) {
+    return this.request<AgentOfflineImportStatus>('GET', '/v1/offline-imports/' + encodeURIComponent(id))
+  }
+  offlineImportRegister(id: string, name: string, size: number, sha256 = '') {
+    return this.request<{ accepted: boolean }>('POST',
+      '/v1/offline-imports/' + encodeURIComponent(id) + '/files/' + encodeURIComponent(name),
+      { name, size, sha256 })
+  }
+  offlineImportChunk(id: string, name: string, index: number, bytes: ArrayBuffer, sha256: string) {
+    return this.requestBinaryUpload(
+      '/v1/offline-imports/' + encodeURIComponent(id) + '/files/' +
+        encodeURIComponent(name) + '/chunks/' + index,
+      bytes, 180_000,
+      { 'Content-Type': 'application/octet-stream', 'X-XDrive-Chunk-SHA256': sha256 },
+    )
+  }
+  offlineImportFinalize(id: string, name: string) {
+    return this.request<AgentOfflineImportFinalize>('POST',
+      '/v1/offline-imports/' + encodeURIComponent(id) + '/files/' +
+        encodeURIComponent(name) + '/finalize', {})
+  }
+  offlineImportDelete(id: string) {
+    return this.request<void>('DELETE', '/v1/offline-imports/' + encodeURIComponent(id))
+  }
+  offlineImportStart(id: string, manifestSHA: string, goSHA: string, backup: boolean) {
+    return this.request<AgentServerUpdateState>('POST',
+      '/v1/offline-imports/' + encodeURIComponent(id) + '/start', {
+        trusted_manifest_sha256: manifestSHA, trusted_installer_sha256: goSHA,
+        backup_file_data: backup,
+      }, 45_000)
+  }
+
   startServerUpdate(source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) {
     return this.request<AgentServerUpdateState>('POST', '/v1/server-update', {
       source,
@@ -4745,6 +4856,78 @@ export class AgentIPCClient {
     return this.request<AgentCloudShare[]>('GET', `/v1/cloud/shares?${query.toString()}`)
   }
 
+  cloudNotesInitialize() {
+    return this.request<AgentNotesNamespace>('POST', '/v1/cloud/notes/namespace', {})
+  }
+
+  cloudNotesList(source: AgentNotesSource, query: string, offset: number, signal?: AbortSignal) {
+    const params = new URLSearchParams({ source, q: query, offset: String(offset) })
+    return this.request<AgentNotesPage>('GET', '/v1/cloud/notes?' + params.toString(),
+      undefined, 30_000, signal)
+  }
+
+  cloudNotesRead(id: string, signal?: AbortSignal) {
+    return this.request<AgentNotesDetail>(
+      'GET', '/v1/cloud/notes/' + encodeURIComponent(id), undefined, 30_000, signal)
+  }
+
+  cloudNotesCreate(write: AgentNotesWrite) {
+    return this.request<AgentNotesRow>('POST', '/v1/cloud/notes', {
+      title: write.title, markdown: write.markdown,
+    }, 30_000, undefined, false)
+  }
+
+  cloudNotesUpdate(id: string, write: AgentNotesWrite) {
+    return this.request<AgentNotesRow>('PUT', '/v1/cloud/notes/' + encodeURIComponent(id),
+      write, 30_000, undefined, false)
+  }
+
+  cloudNotesDelete(id: string, expectedRevision: number) {
+    const params = new URLSearchParams({ revision: String(expectedRevision) })
+    return this.request<void>('DELETE',
+      '/v1/cloud/notes/' + encodeURIComponent(id) + '?' + params.toString(),
+      undefined, 30_000, undefined, false)
+  }
+
+  cloudNotesVersions(id: string, signal?: AbortSignal) {
+    return this.request<AgentNotesVersions>(
+      'GET', '/v1/cloud/notes/' + encodeURIComponent(id) + '/versions', undefined, 30_000, signal)
+  }
+
+  cloudNotesReadVersion(nodeID: number, versionID: number, signal?: AbortSignal) {
+    const params = new URLSearchParams({ node_id: String(nodeID), version_id: String(versionID) })
+    return this.request<{ markdown: string }>(
+      'GET', '/v1/cloud/notes/version-content?' + params.toString(), undefined, 30_000, signal)
+  }
+
+  /** One selected image, one POST, no replay after an unknown commit ACK. */
+  cloudNotesUploadImage(id: string, bytes: ArrayBuffer) {
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) ||
+        !(bytes instanceof ArrayBuffer) || bytes.byteLength < 1 ||
+        bytes.byteLength > 20 * 1_048_576) {
+      throw new AgentIPCError('invalid_notes_image', 0, 'Invalid bounded Notes image request.')
+    }
+    return this.request<AgentNotesImageReceipt>('POST',
+      '/v1/cloud/notes/' + encodeURIComponent(id) + '/images', {
+        image: Buffer.from(bytes).toString('base64'),
+      }, 120_000, undefined, false)
+  }
+
+  /** Only same-note immutable local asset URLs; Agent verifies MIME/SHA. */
+  cloudNotesReadImage(id: string, path: string) {
+    const base = '_assets/' + id + '/'
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) ||
+        !path.startsWith(base) ||
+        !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.(?:png|jpg|gif|webp|heic)$/.test(
+          path.slice(base.length))) {
+      throw new AgentIPCError('invalid_notes_image', 0, 'Unsafe Notes image selector.')
+    }
+    const query = new URLSearchParams({ relative_path: path })
+    return this.request<AgentNotesImageData>('GET',
+      '/v1/cloud/notes/' + encodeURIComponent(id) + '/images?' + query.toString(),
+      undefined, 70_000)
+  }
+
   cloudOwnerShares(cursor = 0, limit = 50) {
     const query = new URLSearchParams({ cursor: String(cursor), limit: String(limit) })
     return this.request<AgentOwnerSharePage>('GET', `/v1/cloud/shares/all?${query.toString()}`)
@@ -4792,6 +4975,30 @@ export class AgentIPCClient {
 
   setFileAvailability(path: string, action: 'keep' | 'release' | 'online' | 'sync') {
     return this.request<AgentFileAvailability | { ok: boolean }>('POST', '/v1/file-availability', { path, action }, 130_000)
+  }
+
+  syncActivityRuns(limit = 20, after?: AgentSyncRunCursor) {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (after) {
+      query.set('before_started_at', after.before_started_at)
+      query.set('before_run_id', after.before_run_id)
+    }
+    return this.request<AgentSyncRunsPage>('GET', `/v1/sync/runs?${query.toString()}`)
+  }
+
+  syncActivityRun(runID: string) {
+    return this.request<AgentSyncRun>('GET', `/v1/sync/runs/${encodeURIComponent(runID)}`)
+  }
+
+  syncActivityItems(runID: string, limit = 50, after?: AgentSyncItemCursor) {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (after) {
+      query.set('before_applied_at', after.before_applied_at)
+      query.set('before_item_id', after.before_item_id)
+    }
+    return this.request<AgentSyncItemsPage>(
+      'GET', `/v1/sync/runs/${encodeURIComponent(runID)}/items?${query.toString()}`,
+    )
   }
 
   transfers() {
@@ -4912,6 +5119,7 @@ export class AgentIPCClient {
     endpoint: string,
     data: ArrayBuffer,
     timeoutMs = 10_000,
+    extraHeaders: Record<string, string> = {},
   ): Promise<void> {
     let lastError: unknown
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -4926,6 +5134,7 @@ export class AgentIPCClient {
             Authorization: `Bearer ${discovery.token}`,
             Accept: 'application/json',
             'Content-Type': 'image/jpeg',
+            ...extraHeaders,
           },
           body: data,
           cache: 'no-store',
@@ -5110,9 +5319,12 @@ export class AgentIPCClient {
     body?: unknown,
     timeoutMs = 10_000,
     externalSignal?: AbortSignal,
+    // Only explicitly marked Notes mutations disable transport replay;
+    // a lost response can follow a successfully committed POST/PUT/DELETE.
+    mayRetryUncertainResult = true,
   ): Promise<T> {
     let lastError: unknown
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < (mayRetryUncertainResult ? 2 : 1); attempt++) {
       if (externalSignal?.aborted) throw new AgentIPCError('aborted', 0, 'Desktop IPC request was cancelled.')
       const discovery = await this.loadDiscovery(attempt > 0)
       if (externalSignal?.aborted) throw new AgentIPCError('aborted', 0, 'Desktop IPC request was cancelled.')
@@ -5154,7 +5366,7 @@ export class AgentIPCClient {
             : `xdrive-agent request failed with HTTP ${response.status}.`
           const detail = typeof errorPayload.detail === 'string' ? errorPayload.detail : undefined
           const apiError = new AgentIPCError(code, response.status, message, detail)
-          if (response.status === 401 && attempt === 0) {
+          if (response.status === 401 && attempt === 0 && mayRetryUncertainResult) {
             this.invalidate()
             lastError = apiError
             continue
@@ -5169,6 +5381,10 @@ export class AgentIPCClient {
         if (error instanceof AgentIPCError) throw error
         lastError = error
         this.invalidate()
+        if (!mayRetryUncertainResult) {
+          throw new AgentIPCError('notes_commit_uncertain', 0,
+            'Notes write outcome unknown; inspect the current Owner notes before retry.')
+        }
         if (attempt === 0) continue
       } finally {
         clearTimeout(timer)

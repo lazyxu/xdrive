@@ -10,7 +10,7 @@ const sharedCard = read('ui', 'shared', 'src', 'mui', 'ServerUpdateCard.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'server-update.ts')
 const sharedController = read('ui', 'shared', 'src', 'mui', 'ServerUpdateController.ts')
 const sharedSettings = read('ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx')
-const maintenance = read('ui', 'shared', 'src', 'mui', 'SystemMaintenancePage.tsx')
+const maintenance = read('ui', 'shared', 'src', 'mui', 'SystemUpdatePage.tsx')
 const web = read('web', 'src', 'App.tsx')
 const browserHost = read('web', 'src', 'browserWorkspaceHost.ts')
 const sharedOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
@@ -63,9 +63,9 @@ test('shared server update model owns the confirmation summary', () => {
   }
   assert.ok(maintenance.includes('xDriveServerUpdateConfirmationDescription({'), 'shared administrator page must use shared formatter')
   assert.ok(web.includes("unavailableLabel: 'Web/API'") &&
-    web.includes('adminMaintenance: serverAdminVerified ? {') &&
-    browserHost.includes('adminMaintenancePage: ports.adminMaintenance') &&
-    sharedOutlet.includes('<XDriveSystemMaintenancePage {...services.adminMaintenancePage} />'),
+    web.includes('adminUpdate: serverAdminVerified ? {') &&
+    browserHost.includes('adminUpdatePage: ports.adminUpdate') &&
+    sharedOutlet.includes('<XDriveSystemUpdatePage {...services.adminUpdatePage} />'),
     'Web preserves its Web/API context only for an authenticated Admin Host')
   assert.ok(desktop.includes('unavailableLabel: "服务端与 Desktop"'), 'Desktop keeps its interruption context')
   assert.equal(web.includes("来源：${serverUpdate.source === 'gitlab'"), false, 'Web must not duplicate update confirmation formatting')
@@ -74,12 +74,12 @@ test('shared server update model owns the confirmation summary', () => {
 
 test('Web and Desktop use the same server update card', () => {
   assert.equal((maintenance.match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
-  assert.ok(web.includes('adminMaintenance: serverAdminVerified ? {') &&
-    sharedOutlet.includes('<XDriveSystemMaintenancePage {...services.adminMaintenancePage} />'),
+  assert.ok(web.includes('adminUpdate: serverAdminVerified ? {') &&
+    sharedOutlet.includes('<XDriveSystemUpdatePage {...services.adminUpdatePage} />'),
     'Web mounts the one shared Server Update page through the authenticated Host')
   assert.equal((desktop.match(/<XDriveSystemMaintenancePage\b/g) || []).length, 0)
-  assert.ok(desktop.includes('adminMaintenancePage: status?.role ===') &&
-    read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveSystemMaintenancePage'),
+  assert.ok(desktop.includes('adminUpdatePage: status?.role ===') &&
+    read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveSystemUpdatePage'),
     'Desktop route uses same administrator page through Server-scoped Host')
   assert.equal(sharedSettings.includes('XDriveServerUpdateCard'), false)
   assert.ok(webApi.includes("'/api/v1/admin/update'"), 'Web API server update endpoint missing')
@@ -113,11 +113,11 @@ test('shared Server Update controller owns polling, transport normalization and 
   }
 
   assert.ok(maintenance.includes('useXDriveServerUpdateController({'))
-  assert.ok(web.includes('adminMaintenance: serverAdminVerified ? {') &&
-    sharedOutlet.includes('<XDriveSystemMaintenancePage {...services.adminMaintenancePage} />'),
+  assert.ok(web.includes('adminUpdate: serverAdminVerified ? {') &&
+    sharedOutlet.includes('<XDriveSystemUpdatePage {...services.adminUpdatePage} />'),
     'Web uses the shared maintenance view through Browser Host')
-  assert.ok(desktop.includes('adminMaintenancePage:') &&
-    read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveSystemMaintenancePage'),
+  assert.ok(desktop.includes('adminUpdatePage:') &&
+    read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveSystemUpdatePage'),
     'Desktop uses same shared maintenance view through Host port')
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.equal(source.includes('setServerUpdateSource'), false, `${label} must not own update-source state`)
@@ -138,7 +138,7 @@ test('server update command boundary never mounts Docker socket into the API con
   assert.ok(apiRouter.includes('admin.POST("/update"'), 'admin update start route missing')
   assert.ok(apiUpdate.includes('input.Source != "github" && input.Source != "gitlab"'), 'API source whitelist missing')
   assert.ok(apiUpdate.includes('input.Channel != "stable" && input.Channel != "master"'), 'API channel whitelist missing')
-  assert.ok(apiUpdate.includes('BackupFileData bool'), 'API one-shot file-data backup option missing')
+  assert.match(apiUpdate, /BackupFileData\s+bool\s+`json:"backup_file_data"`/, 'API one-shot file-data backup option missing')
   assert.ok(compose.includes('XD_HOST_CONTROL_DIR: /host-control'), 'server host-control mount env missing')
   assert.ok(compose.includes(':/host-control'), 'server host-control bind mount missing')
   assert.equal(compose.includes('/var/run/docker.sock'), false, 'server API must never receive Docker socket access')
@@ -149,7 +149,7 @@ test('host control reuses transactional xdrive-server update and installer progr
   assert.ok(hostControl.includes('update_args=(update --source "$source" --channel "$channel")'), 'host control must reuse xdrive-server update')
   assert.ok(hostControl.includes('update_args+=(--backup-file-data)'), 'host control must forward the file-data backup option')
   assert.ok(hostControl.includes('"backup_file_data":%s'), 'host control status must preserve the file-data backup mode')
-  assert.ok(hostControl.includes('case "$source" in github|gitlab|xdrive)'), 'host runner source whitelist missing')
+  assert.ok(hostControl.includes('case "$source" in github|gitlab|xdrive|offline)'), 'host runner source whitelist missing')
   assert.ok(hostControl.includes('case "$channel" in stable|master)'), 'host runner channel whitelist missing')
   assert.ok(hostControl.includes('heartbeat'), 'host runner heartbeat missing')
   assert.ok(hostControl.includes('exec 9>&-'), 'host runner must drop inherited installer lock fd')

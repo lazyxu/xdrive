@@ -72,6 +72,8 @@ const services = {
   cloudStorage: { load() {} },
   localStorage: { load() {} },
   adminMaintenancePage: { source: {} },
+  adminUpdatePage: { updatePort: {} },
+  clientUpdatePage: { clientUpdateContent: null },
   adminUsersPage: { source: {} },
   adminAuditPage: { source: {} },
   adminStoragePage: { source: {} },
@@ -96,6 +98,8 @@ const expected = {
   'admin-storage': 'GlobalStorageStatsPage',
   'admin-services': 'XDriveServiceDependenciesPage',
   'admin-maintenance': 'XDriveSystemMaintenancePage',
+  'admin-update': 'XDriveSystemUpdatePage',
+  'client-update': 'XDriveClientUpdatePage',
 }
 const host = platform => ({
   platform, adminRoleVerified: true, services,

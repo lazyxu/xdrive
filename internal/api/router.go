@@ -73,6 +73,8 @@ type Server struct {
 	PhotoHostTrustRootSHA256       string
 	PhotoFacePreviewBaseURL        string
 	HostControlDir                 string
+	OfflineUpdateImportDir         string
+	offlineUpdateImportMu          sync.Mutex
 	FilesDataHostPath              string
 	PostgresDataHostPath           string
 	BackupRootHostPath             string
@@ -208,6 +210,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/me", s.me)
 	authed.GET("/me/quota", s.quotaUsage)
 	authed.GET("/me/storage", s.storageStats)
+	authed.GET("/me/viewer-quality", s.getViewerQualityPreference)
+	authed.PUT("/me/viewer-quality", s.putViewerQualityPreference)
 	authed.POST("/me/change-password", s.changePassword)
 	// Authenticated browser password rotation gets a new HttpOnly cookie,
 	// without exposing the new durable refresh token in JSON.
@@ -562,6 +566,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services/caddy/https/preflight", s.adminCaddyHTTPSPreflight)
 	admin.GET("/services/caddy/https/adoption-candidate", s.adminCaddyHostAdoptionCandidate)
 	admin.GET("/services/caddy/https/host-plan", s.adminCaddyHTTPSHostPlan)
+	admin.GET("/services/viewer-quality", s.adminGetViewerQuality)
+	admin.PUT("/services/viewer-quality", s.adminPutViewerQuality)
 	admin.GET("/services/media-worker", s.adminMediaWorkerConfig)
 	admin.PUT("/services/media-worker", s.adminSaveMediaWorkerConfig)
 	admin.POST("/services/media-worker/apply", s.adminApplyMediaWorker)
@@ -607,6 +613,15 @@ func (s *Server) Router() *gin.Engine {
 	admin.POST("/background-tasks/control", s.adminControlBackgroundTask)
 	admin.GET("/update", s.adminServerUpdateStatus)
 	admin.POST("/update", s.adminStartServerUpdate)
+	// Admin-only bytes transport. These endpoints do not execute Docker or
+	// authorize an installer: the separate Host verifies signed identities.
+	admin.POST("/update/offline/imports", s.adminCreateOfflineUpdateImport)
+	admin.GET("/update/offline/imports", s.adminListOfflineUpdateImports)
+	admin.GET("/update/offline/imports/:id", s.adminGetOfflineUpdateImport)
+	admin.DELETE("/update/offline/imports/:id", s.adminDeleteOfflineUpdateImport)
+	admin.POST("/update/offline/imports/:id/files/:name", s.adminRegisterOfflineUpdateFile)
+	admin.PUT("/update/offline/imports/:id/files/:name/chunks/:index", s.adminUploadOfflineUpdateChunk)
+	admin.POST("/update/offline/imports/:id/files/:name/finalize", s.adminFinalizeOfflineUpdateFile)
 	admin.GET("/backups", s.adminBackupManagement)
 	admin.GET("/backups/snapshots", s.adminBackupSnapshotPage)
 	admin.POST("/backups/actions", s.adminSubmitBackupManagement)
@@ -621,6 +636,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/storage/staging", s.adminUploadStaging)
 	admin.POST("/storage/staging/cleanup", s.adminCleanupUploadStaging)
 	admin.POST("/storage/cache/cleanup", s.adminCleanupStorageCache)
+	admin.GET("/storage/cache/viewer", s.adminViewerCacheStatus)
+	admin.POST("/storage/cache/viewer/evict", s.adminEvictViewerCache)
 	admin.GET("/storage/staging/cleanup-runs", s.adminStagingCleanupRuns)
 	admin.GET("/storage/staging/cleanup-runs/:runID/failures", s.adminStagingCleanupFailures)
 	admin.POST("/users", s.adminCreateUser)
@@ -700,10 +717,18 @@ func (s *Server) requireAuth() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
 			return
 		}
-		uid, tokenVersion, err := s.Auth.Parse(strings.TrimSpace(h[7:]))
+		claims, err := s.Auth.ParseClaims(strings.TrimSpace(h[7:]))
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid bearer token"})
 			return
+		}
+		uid, tokenVersion := claims.UserID, claims.SessionVersion
+		if claims.SourceID != 0 {
+			if !sourceRunHTTPAllowed(c.Request.Method, c.FullPath()) {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "SourceRun bearer cannot access this endpoint"})
+				return
+			}
+			c.Set("sourceRunScope", sourceRunScope{sourceID: claims.SourceID, runID: claims.SourceRunID})
 		}
 		var user meta.User
 		if err := s.DB.First(&user, uid).Error; err != nil {

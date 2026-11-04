@@ -19,7 +19,10 @@ if [[ "$1" == compose ]]; then
     exit 0
   fi
   if [[ " $* " == *" ps -aq server "* ]]; then
-    [[ "$XD_BACKUP_MOUNT_SERVER" == absent ]] || printf 'mock-server\n'
+    if [[ "$XD_BACKUP_MOUNT_SERVER" != absent ]]; then
+      read -r -a ids <<< "${XD_BACKUP_MOUNT_IDS:-mock-server}"
+      printf '%s\n' "${ids[@]}"
+    fi
     exit 0
   fi
   if [[ " $* " == *" up -d postgres "* ]]; then
@@ -29,8 +32,24 @@ if [[ "$1" == compose ]]; then
   echo "unexpected Compose call in mount fixture" >&2
   exit 87
 fi
-if [[ "$1" == inspect && "$2" == mock-server ]]; then
-  if [[ " $* " == *".Type"* ]]; then
+if [[ "$1" == inspect && "$2" == mock-* ]]; then
+  if [[ " $* " == *"com.docker.compose.oneoff"* ]]; then
+    case "$2" in
+      mock-server)         printf '/xdrive-server|xdrive|server|False|running|true\n' ;;
+      mock-stopped-server) printf '/xdrive-server|xdrive|server|False|exited|false\n' ;;
+      mock-legacy-server)  printf '/xdrive-server-1|xdrive|server|<no value>|running|true\n' ;;
+      mock-second-server)  printf '/xdrive-server-1|xdrive|server|False|exited|false\n' ;;
+      mock-oneoff-created) printf '/xdrive-server-run-1|xdrive|server|True|created|false\n' ;;
+      mock-oneoff-exited)  printf '/xdrive-server-run-2|xdrive|server|True|exited|false\n' ;;
+      mock-oneoff-running) printf '/xdrive-server-run-3|xdrive|server|True|running|true\n' ;;
+      mock-oneoff-dead)    printf '/xdrive-server-run-4|xdrive|server|True|dead|false\n' ;;
+      mock-bad-project)    printf '/xdrive-server|other|server|False|running|true\n' ;;
+      mock-bad-service)    printf '/xdrive-server|xdrive|worker|False|running|true\n' ;;
+      mock-bad-oneoff)     printf '/xdrive-server|xdrive|server|unknown|running|true\n' ;;
+      mock-unmarked-run)   printf '/xdrive-server-run-5|xdrive|server|<no value>|created|false\n' ;;
+      *) exit 88 ;;
+    esac
+  elif [[ " $* " == *".Type"* ]]; then
     printf '%s\n' "$XD_BACKUP_MOUNT_TYPE"
   elif [[ " $* " == *".Source"* || " $* " == *".Name"* ]]; then
     printf '%s\n' "$XD_BACKUP_MOUNT_SOURCE"
@@ -100,6 +119,48 @@ expect_admitted() {
     exit 1
   }
 }
+expect_preflight_ok() {
+  local label="$1"; shift
+  : > "$XD_BACKUP_MOUNT_LOG"
+  bash "$ROOT/scripts/server-backup.sh" --config-dir "$XD_CONFIG_DIR" \
+    --preflight-only "$@" > "$TMP/$label.log" 2>&1 || {
+      cat "$TMP/$label.log" >&2
+      echo "read-only source preflight unexpectedly failed: $label" >&2
+      exit 1
+    }
+  grep -Fq 'source admitted (read-only)' "$TMP/$label.log"
+  if grep -Eq ' up -d postgres| stop | start | run ' "$XD_BACKUP_MOUNT_LOG"; then
+    echo "source preflight changed Docker services: $label" >&2
+    exit 1
+  fi
+}
+# The reported Gen10 state: one managed Server and two stopped Compose run
+# containers must be accepted without inspecting a one-off's /data mount.
+XD_BACKUP_MOUNT_IDS="mock-oneoff-created mock-server mock-oneoff-exited" \
+  expect_preflight_ok leftover-run-containers
+test ! -e "$XD_CONFIG_DIR/backups"
+XD_BACKUP_MOUNT_IDS="mock-oneoff-created mock-server mock-oneoff-exited" \
+  expect_admitted valid-with-leftover-runs
+XD_BACKUP_MOUNT_IDS="mock-stopped-server mock-oneoff-created" \
+  expect_preflight_ok stopped-managed-server
+XD_BACKUP_MOUNT_IDS="mock-legacy-server mock-oneoff-exited" \
+  expect_preflight_ok legacy-managed-server
+XD_BACKUP_MOUNT_IDS="mock-server mock-second-server" \
+  expect_refused ambiguous-managed 'ambiguous managed Server container identity'
+XD_BACKUP_MOUNT_IDS="mock-oneoff-created mock-oneoff-exited" \
+  expect_refused oneoffs-only 'no managed Server container among one-off tasks'
+XD_BACKUP_MOUNT_IDS="mock-server mock-oneoff-running" \
+  expect_refused active-oneoff 'active or ambiguous Server one-off task'
+XD_BACKUP_MOUNT_IDS="mock-server mock-oneoff-dead" \
+  expect_refused unknown-oneoff-state 'active or ambiguous Server one-off task'
+XD_BACKUP_MOUNT_IDS="mock-server mock-bad-project" \
+  expect_refused invalid-project 'invalid Compose Server identity labels'
+XD_BACKUP_MOUNT_IDS="mock-server mock-bad-service" \
+  expect_refused invalid-service 'invalid Compose Server identity labels'
+XD_BACKUP_MOUNT_IDS="mock-server mock-bad-oneoff" \
+  expect_refused invalid-oneoff 'invalid Server one-off identity label'
+XD_BACKUP_MOUNT_IDS="mock-unmarked-run" \
+  expect_refused unmarked-run 'missing Server one-off identity label'
 XD_BACKUP_MOUNT_SOURCE="$TMP/does-not-exist" expect_refused missing-bind \
   'missing or unsafe /data bind source'
 ln -s "$TMP/live" "$TMP/source-link"

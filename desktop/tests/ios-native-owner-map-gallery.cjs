@@ -56,6 +56,21 @@ test('MapKit gesture revokes previous Owner camera before repaint but keeps iner
   assert.match(policy, /return authorized == current/)
 })
 
+test('settled Owner map refresh keeps old covers inert until current GPS cells arrive', () => {
+  const start = map.indexOf('private func reload() {')
+  assert.ok(start >= 0)
+  const reload = map.slice(start)
+  const pending = reload.slice(0, reload.indexOf('let result = try await reader.mapOverview('))
+  assert.match(pending, /verifiedBounds = nil[\s\S]*?requestedBounds = bounds[\s\S]*?busy = true/)
+  assert.doesNotMatch(pending, /overview\s*=\s*nil/)
+  assert.doesNotMatch(pending, /coverImages\s*=\s*\[:\]/)
+  assert.doesNotMatch(pending, /revision\s*=\s*UUID\(\)/)
+  assert.match(reload, /coverImages = \[:\][\s\S]*?overview = result[\s\S]*?verifiedBounds = bounds[\s\S]*?revision = UUID\(\)/)
+  assert.match(reload, /\} catch \{[\s\S]*?overview = nil[\s\S]*?coverImages = \[:\][\s\S]*?revision = UUID\(\)/)
+  assert.match(map, /private var mapMarkersEnabled: Bool \{[\s\S]*?!busy[\s\S]*?let verifiedBounds else \{ return false \}/)
+  assert.match(map, /func mapView\(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool\) \{[\s\S]*?markersEnabled = false/)
+})
+
 test('native map first world camera setup never invalidates before its initial Owner load', () => {
   const make = map.slice(map.indexOf('func makeUIView('), map.indexOf('func updateUIView('))
   assert.ok(make.indexOf('map.setRegion(') > 0)
@@ -164,8 +179,8 @@ test('short landscape Owner map retains verified camera, feedback, Sheet and acc
   assert.match(map, /GeometryReader \{ viewport in[\s\S]*?XDriveIOSNativePhotoMapPolicy\.compactViewport\(/);
   assert.match(map, /accessibilityText: dynamicTypeSize\.isAccessibilitySize/);
   assert.match(map, /VStack\(spacing: compactMap \? 4 : 8\)/);
-  assert.match(map, /if !compactMap \{\s*Text\("当前 Server Owner/);
-  assert.match(map, /if !compactMap \{\s*Text\("选择真实地点后/);
+  assert.match(map, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\("当前 Server Owner/);
+  assert.match(map, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\("选择真实地点后/);
   assert.match(map, /\.alert\("云端照片地图说明", isPresented: \$showingMapHelp\)/);
   assert.match(map, /\.accessibilityIdentifier\("native-ios-owner-map-layout-help"\)/);
   assert.match(map, /Button\("刷新当前视窗"\)/);

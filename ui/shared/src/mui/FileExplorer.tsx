@@ -38,7 +38,6 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import DriveFolderUploadRoundedIcon from '@mui/icons-material/DriveFolderUploadRounded'
-import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded'
@@ -83,7 +82,8 @@ import type { MediaItem, NodeLocation } from '../models'
 import type { XDriveCloudFilesPosition } from '../cloud-files'
 import { xDriveFileExplorerVerifiedChildReanchor, xDriveFileExplorerVerifiedChildReveal } from './FileExplorerReanchor'
 import { formatBytes } from '../format'
-import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../mobile-item-gesture'
+import { xDriveMobileItemMoved } from '../mobile-item-gesture'
+import { XDriveCloudRootIcon, XDRIVE_CLOUD_ROOT_LABEL } from './XDriveCloudRootIcon'
 import { XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE } from '../virtual-collection'
 import type {
   XDriveByteProgressHandler,
@@ -93,6 +93,7 @@ import type {
 import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd, xDriveFileExplorerTouchItemIntent, xDriveFileExplorerTypeSelectTargetIndex } from '../file-explorer-controller'
 import {
   XDRIVE_FILE_EXPLORER_DRAG_MIME,
+  XDRIVE_FILE_ITEM_DRAG_HOLD_MS,
   xDriveFileExplorerEncodeDragItems,
 } from '../file-explorer-drag'
 import type {
@@ -2467,13 +2468,16 @@ export function XDriveFileExplorer({
     renaming: boolean,
   ) => {
     lastPointerTypeRef.current = event.pointerType
+    // Hybrid touch screens must not start HTML5 mouse drag from this contact.
+    event.currentTarget.draggable = event.pointerType !== 'touch' &&
+      Boolean(onDropItemsToFolder || onNativeDragOutItem) && !renaming
     if (event.pointerType === 'touch' && !event.isPrimary) {
       // Multi-touch/pinch cancels a pending hold; it must never open a menu.
       cancelTouchItemPress()
       touchDrag.cancel()
       return
     }
-    if (!compactTouch || event.pointerType !== 'touch' || renaming || typeof window === 'undefined') return
+    if (event.pointerType !== 'touch' || renaming || typeof window === 'undefined') return
     cancelTouchItemPress()
     suppressTouchClickRef.current = false
     const itemKey = explorerIDKey(item.id)
@@ -2495,7 +2499,7 @@ export function XDriveFileExplorer({
       if (!selectionActionDisabledReason('move-to', source, source.length)) {
         touchDrag.begin(event, source.map((candidate) => ({ ...candidate })))
       }
-    }, XDRIVE_MOBILE_ITEM_HOLD_MS)
+    }, XDRIVE_FILE_ITEM_DRAG_HOLD_MS)
     touchPressRef.current = {
       pointerId,
       itemKey,
@@ -2520,7 +2524,7 @@ export function XDriveFileExplorer({
   const finishTouchItemPress = (event: ReactPointerEvent<HTMLElement>) => {
     const press = touchPressRef.current
     cancelTouchItemPress(event.pointerId)
-    if (!compactTouch || event.pointerType !== 'touch' || typeof window === 'undefined') return
+    if (event.pointerType !== 'touch' || typeof window === 'undefined') return
     if (press?.held && press.pointerId === event.pointerId) {
       // MUI's Context Menu is a Portal. Catch the release compatibility click
       // even when it targets a newly mounted menu action instead of the tile.
@@ -2992,7 +2996,16 @@ export function XDriveFileExplorer({
   }, [])
 
   const startItemDrag = (event: ReactDragEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
-    if (!onDropItemsToFolder || (renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id))) return
+    if (renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)) return
+    // Alt + row drag is the explicit native OS drag-out gesture, avoiding
+    // ambiguity with the default in-app move/copy drag payload.
+    if (onNativeDragOutItem && event.altKey) {
+      event.preventDefault()
+      event.stopPropagation()
+      onNativeDragOutItem(item)
+      return
+    }
+    if (!onDropItemsToFolder) { event.preventDefault(); return }
     setActiveItemID(item.id)
     const selection = selectedKeySet.has(explorerIDKey(item.id)) && selectedItems.length > 0
       ? selectedItems
@@ -3109,8 +3122,7 @@ export function XDriveFileExplorer({
       : selectionActionDisabledReason('move-to')
   // Direct item holds can start a single-file drag without entering selection.
   // The explicit selection handle is retained for accessible multi-file moves.
-  const touchDragEnabled = compactViewport &&
-    Boolean(onDropItemsToFolder || onDropItemsToCrumb) && !selectionLoad &&
+  const touchDragEnabled = Boolean(onDropItemsToFolder || onDropItemsToCrumb) && !selectionLoad &&
     renamingID === null && (selectedCount === 0 || !touchDragDisabledReason)
   // Explicit multi-selection must still cancel when its actual identity set
   // changes; a direct, non-selection hold can create its menu selection without
@@ -3179,7 +3191,7 @@ export function XDriveFileExplorer({
     : dropTargetID !== null ? logicalItemByID(dropTargetID)?.name : undefined
   const touchDragStatus = touchDrag.active
     ? touchDropName ? `松开以移动到“${touchDropName}”` : `正在拖动 ${selectedCount} 项`
-    : touchDragDisabledReason || '拖到文件夹或上方路径'
+    : touchDragDisabledReason || '长按文件拖到文件夹或上方路径'
 
   const dropExternalFilesOnBackground = async (event: ReactDragEvent<HTMLElement>) => {
     if (!(onExternalFilesDrop || onExternalFolderDrop) || !event.dataTransfer.types.includes('Files')) return
@@ -4504,59 +4516,6 @@ export function XDriveFileExplorer({
       ? { asc: '从小到大', desc: '从大到小' }
       : { asc: 'A → Z', desc: 'Z → A' }
 
-  const nativeDragOutHandle = (
-    item: XDriveFileExplorerItem,
-    placement: 'details' | 'grid',
-  ) => onNativeDragOutItem ? (
-    <Box
-      component="span"
-      data-xdrive-native-drag-out
-      title="拖到系统文件管理器"
-      draggable
-      onMouseDown={(event) => {
-        event.stopPropagation()
-      }}
-      onClick={(event) => {
-        event.preventDefault()
-        event.stopPropagation()
-      }}
-      onDragStart={(event: ReactDragEvent<HTMLElement>) => {
-        event.preventDefault()
-        event.stopPropagation()
-        onNativeDragOutItem(item)
-      }}
-      onDragEnd={(event) => {
-        event.stopPropagation()
-      }}
-      sx={{
-        position: 'absolute',
-        top: placement === 'grid' ? 4 : '50%',
-        right: 4,
-        transform: placement === 'details' ? 'translateY(-50%)' : undefined,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flex: '0 0 auto',
-        width: 20,
-        height: 20,
-        borderRadius: 0.75,
-        color: 'text.secondary',
-        bgcolor: 'background.paper',
-        boxShadow: 1,
-        cursor: 'grab',
-        opacity: 0,
-        pointerEvents: 'none',
-        zIndex: 3,
-        transition: 'opacity 120ms ease',
-        '&:hover': { opacity: 1, bgcolor: 'action.hover' },
-        '&:active': { cursor: 'grabbing' },
-      }}
-    >
-      <DragIndicatorRoundedIcon sx={{ fontSize: 16 }} />
-    </Box>
-  ) : null
-
-
   const renderDetailsLogicalItem = (
     item: XDriveFileExplorerItem | undefined,
     index: number,
@@ -4604,10 +4563,10 @@ export function XDriveFileExplorer({
         data-xdrive-file-explorer-item
         data-xdrive-file-explorer-item-id={explorerIDKey(item.id)}
         data-xdrive-file-explorer-drop-target={dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id) ? 'folder' : undefined}
-        title={fileExplorerItemHoverTitle(item, !compactViewport && Boolean(onOpenItemInNewTab))}
+        title={`${fileExplorerItemHoverTitle(item, !compactViewport && Boolean(onOpenItemInNewTab))}${onNativeDragOutItem ? ' · Alt+拖动到系统文件管理器' : ''}`}
         tabIndex={active ? 0 : -1}
         aria-selected={selected}
-        draggable={!compactTouch && Boolean(onDropItemsToFolder) && !renaming}
+        draggable={!compactTouch && Boolean(onDropItemsToFolder || onNativeDragOutItem) && !renaming}
         onDragStart={(event) => startItemDrag(event, item)}
         onDragEnd={endItemDrag}
         onDragOver={(event) => dragOverFolder(event, item)}
@@ -4640,12 +4599,7 @@ export function XDriveFileExplorer({
           setActiveLogicalIndex(index)
         }}
         onKeyDown={(event) => itemKeyDown(event, item)}
-        sx={{
-          '&:hover [data-xdrive-native-drag-out], &:focus-visible [data-xdrive-native-drag-out], &:focus-within [data-xdrive-native-drag-out]': {
-            opacity: 0.72,
-            pointerEvents: 'auto',
-          },
-        }}
+        sx={{ cursor: onDropItemsToFolder ? 'grab' : undefined }}
       >
         {visibleDetailsColumns.map((key) => (
           <XDriveFileExplorerDetailsRowCell
@@ -4666,7 +4620,6 @@ export function XDriveFileExplorer({
                     </Box>
                   ) : null}
                 />
-                {!compactTouch && !renaming ? nativeDragOutHandle(item, 'details') : null}
               </>
             ) : (
               <Typography
@@ -4738,10 +4691,10 @@ export function XDriveFileExplorer({
         data-xdrive-file-explorer-item
         data-xdrive-file-explorer-item-id={explorerIDKey(item.id)}
         data-xdrive-file-explorer-drop-target={dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id) ? 'folder' : undefined}
-        title={fileExplorerItemHoverTitle(item, !compactViewport && Boolean(onOpenItemInNewTab))}
+        title={`${fileExplorerItemHoverTitle(item, !compactViewport && Boolean(onOpenItemInNewTab))}${onNativeDragOutItem ? ' · Alt+拖动到系统文件管理器' : ''}`}
         tabIndex={active ? 0 : -1}
         aria-selected={selected}
-        draggable={!compactTouch && Boolean(onDropItemsToFolder) && !renaming}
+        draggable={!compactTouch && Boolean(onDropItemsToFolder || onNativeDragOutItem) && !renaming}
         onDragStart={(event) => startItemDrag(event, item)}
         onDragEnd={endItemDrag}
         onDragOver={(event) => dragOverFolder(event, item)}
@@ -4774,12 +4727,7 @@ export function XDriveFileExplorer({
           setActiveLogicalIndex(index)
         }}
         onKeyDown={(event) => itemKeyDown(event, item)}
-        sx={{
-          '&:hover [data-xdrive-native-drag-out], &:focus-visible [data-xdrive-native-drag-out], &:focus-within [data-xdrive-native-drag-out]': {
-            opacity: 0.72,
-            pointerEvents: 'auto',
-          },
-        }}
+        sx={{ cursor: onDropItemsToFolder ? 'grab' : undefined }}
       >
         {compactViewport && touchSelectionMode ? (
           <Box component="span" aria-hidden sx={{ position: 'absolute', top: 6, left: 6, zIndex: 4, width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: selected ? 'primary.main' : 'text.disabled', bgcolor: 'background.paper', borderRadius: '50%', boxShadow: 1 }}>
@@ -4792,7 +4740,6 @@ export function XDriveFileExplorer({
           visual={thumbnailForItem(item)}
           overlay={<>
             {availabilityIndicator(item, true)}
-            {!compactTouch && !renaming ? nativeDragOutHandle(item, 'grid') : null}
           </>}
           label={renderItemName(item, true)}
         />
@@ -5644,11 +5591,11 @@ export function XDriveFileExplorer({
                     key={crumb.id}
                     data-xdrive-file-explorer-crumb={explorerIDKey(crumb.id)}
                     data-xdrive-file-explorer-drop-target={dropTargetCrumbID !== null && explorerIDKey(dropTargetCrumbID) === explorerIDKey(crumb.id) ? 'crumb' : undefined}
-                    title={crumbs.slice(0, index + 1).map((entry) => entry.name).join('/')}
+                    title={index === 0 ? XDRIVE_CLOUD_ROOT_LABEL : crumbs.slice(0, index + 1).map((entry) => entry.name).join('/')}
                     aria-current={index === crumbs.length - 1 ? 'page' : undefined}
                     onClick={(event) => {
                       event.stopPropagation()
-                      if (index !== crumbs.length - 1) onCrumbClick?.(crumb, index)
+                      if (index === 0 || index !== crumbs.length - 1) onCrumbClick?.(crumb, index)
                     }}
                     onDragOver={(event) => dragOverCrumb(event, crumb)}
                     onDragLeave={(event) => {
@@ -5670,7 +5617,7 @@ export function XDriveFileExplorer({
                       color: index === crumbs.length - 1 ? 'text.primary' : 'text.secondary',
                       fontSize: 13,
                       justifyContent: 'flex-start',
-                      cursor: index === crumbs.length - 1 ? 'default' : 'pointer',
+                      cursor: index === 0 || index !== crumbs.length - 1 ? 'pointer' : 'default',
                       bgcolor: dropTargetCrumbID !== null && explorerIDKey(dropTargetCrumbID) === explorerIDKey(crumb.id)
                         ? 'action.hover'
                         : 'transparent',
@@ -5681,7 +5628,8 @@ export function XDriveFileExplorer({
                       outlineOffset: -2,
                     }}
                   >
-                    <Typography variant="body2" noWrap fontWeight={index === crumbs.length - 1 ? 600 : 400}>{crumb.name}</Typography>
+                    {index === 0 ? <XDriveCloudRootIcon sx={{ fontSize: 18, color: 'primary.main', mr: 0.5 }} /> : null}
+                    <Typography variant="body2" noWrap fontWeight={index === crumbs.length - 1 ? 600 : 400}>{index === 0 ? XDRIVE_CLOUD_ROOT_LABEL : crumb.name}</Typography>
                   </ButtonBase>
                 ))}
               </Breadcrumbs>
@@ -6360,45 +6308,17 @@ export function XDriveFileExplorer({
 
       <Divider />
 
-      {compactViewport && selectedCount > 0 && (onDropItemsToFolder || onDropItemsToCrumb) ? (
-        <Stack
-          direction="row"
-          alignItems="center"
-          spacing={1}
+      {compactViewport && touchDrag.active ? (
+        <Stack direction="row" alignItems="center" spacing={1}
           data-xdrive-file-explorer-touch-drag-controls
-          sx={{ minWidth: 0, flexShrink: 0, px: 1, py: 0.5 }}
-        >
-          <IconButton
-            aria-label="拖动所选项目"
-            data-xdrive-file-explorer-touch-drag-handle
-            title={touchDragDisabledReason || '按住拖到文件夹或路径，点按选择目标文件夹'}
-            disabled={!touchDragEnabled}
-            color={touchDrag.active ? 'primary' : 'default'}
-            onPointerDown={(event) => {
-              if (selectionActionDisabledReason('move-to')) return
-              touchDrag.begin(event, selectedItems.map((item) => ({ ...item })))
-            }}
-            onClick={() => runSelectionAction('move-to', onMoveItemsTo)}
-            sx={{ width: 44, height: 44, flex: '0 0 44px', touchAction: 'none', cursor: touchDrag.active ? 'grabbing' : 'grab' }}
-          >
-            <DragIndicatorRoundedIcon />
-          </IconButton>
-          <Typography
-            role="status"
-            aria-live="polite"
+          sx={{ minWidth: 0, flexShrink: 0, px: 1, py: 0.5 }}>
+          <Typography role="status" aria-live="polite"
             data-xdrive-file-explorer-touch-drag-status={touchDrag.active ? 'active' : 'idle'}
-            variant="caption"
-            title={touchDragStatus}
-            sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}
-          >
+            variant="caption" sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
             {touchDragStatus}
           </Typography>
-          <IconButton
-            aria-label="取消拖动"
-            title="取消拖动"
-            onClick={touchDrag.cancel}
-            sx={{ width: 44, height: 44, flex: '0 0 44px', visibility: touchDrag.active ? 'visible' : 'hidden' }}
-          >
+          <IconButton aria-label="取消拖动" title="取消拖动"
+            onClick={touchDrag.cancel} sx={{ width: 44, height: 44, flex: '0 0 44px' }}>
             <CloseRoundedIcon />
           </IconButton>
         </Stack>

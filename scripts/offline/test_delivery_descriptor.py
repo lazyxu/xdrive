@@ -67,6 +67,21 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual(result['installer']['size'], 10)
         self.assertEqual(result['installer']['name'], 'xdrive-offline.py')
 
+    def test_go_elf_is_cryptographically_bound_without_rewriting_legacy_descriptor(self):
+        legacy = delivery.generate(self.root, self.commit, self.git)
+        self.assertNotIn('go_installer', legacy)
+        binary = self.root / 'xdrive-offline-linux-amd64'
+        binary.write_bytes(b'\x7fELF' + b'go-offline-compiler-fixture')
+        with_go = delivery.generate(self.root, self.commit, self.git)
+        self.assertEqual(with_go['schema'], 1, 'legacy Share reader must retain schema-1 compatibility')
+        self.assertEqual(with_go['installer'], legacy['installer'])
+        self.assertEqual(with_go['go_installer']['name'], 'xdrive-offline-linux-amd64')
+        self.assertEqual(with_go['go_installer']['sha256'], fixture.sha(binary))
+        binary.unlink()
+        binary.symlink_to(self.root / 'xdrive-offline.py')
+        with self.assertRaises(ValueError):
+            delivery.generate(self.root, self.commit, self.git)
+
     def test_non_master_first_parent_commit_is_rejected(self):
         self.run_git('checkout', '-b', 'side', self.first)
         self.run_git('commit', '--allow-empty', '-m', 'side')

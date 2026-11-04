@@ -26,10 +26,12 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 35
     steps:
-      - name: Checkout exact source commit
+      - name: Checkout exact tested PR merge candidate
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # PR checks need the real base+HEAD candidate so newer master
+          # source-backed Swift contracts are present; push uses event SHA.
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Verify cold launch recovery and BG registration safety
@@ -52,6 +54,20 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-notes-import-policy"
           "$RUNNER_TEMP/xdrive-ios-notes-import-policy"
 
+      - name: Verify explicit Markdown plus local image import policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeNotesManualImportPolicy.swift \
+            ios/tests/NativeNotesManualImportPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-notes-manual-import"
+          "$RUNNER_TEMP/xdrive-ios-notes-manual-import"
+
+      - name: Verify native Notes launcher and Owner-only editor contracts
+        run: |
+          set -euo pipefail
+          node --test desktop/tests/ios-native-notes-route.cjs
+
       - name: Verify bounded iOS PhotoKit scan-window math
         run: |
           set -euo pipefail
@@ -70,6 +86,11 @@ jobs:
             ios/tests/NativeBackupWindowReadProgressChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-window-read-progress"
           "$RUNNER_TEMP/xdrive-ios-window-read-progress"
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoBackupIssueSummary.swift \
+            ios/tests/PhotoBackupIssueSummaryChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-issues"
+          "$RUNNER_TEMP/xdrive-ios-photo-issues"
           node --test desktop/tests/ios-native-photo-backup-window-progress.cjs
 
       - name: Verify V2 PhotoKit journal shard routing

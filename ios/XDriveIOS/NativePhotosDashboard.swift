@@ -22,10 +22,11 @@ private enum XDriveIOSNativeGallerySource: String, CaseIterable, Identifiable {
 }
 
 private enum XDriveIOSNativeDynamicFeature: String, CaseIterable, Identifiable {
-    case backup, transfers, sync, storage, devices, diagnostics
+    case notes, backup, transfers, sync, storage, devices, diagnostics
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .notes: return "备忘录"
         case .backup: return "相册备份"
         case .transfers: return "传输任务"
         case .sync: return "同步"
@@ -36,6 +37,7 @@ private enum XDriveIOSNativeDynamicFeature: String, CaseIterable, Identifiable {
     }
     var symbol: String {
         switch self {
+        case .notes: return "note.text"
         case .backup: return "icloud.and.arrow.up"
         case .transfers: return "arrow.up.arrow.down"
         case .sync: return "arrow.triangle.2.circlepath"
@@ -44,11 +46,11 @@ private enum XDriveIOSNativeDynamicFeature: String, CaseIterable, Identifiable {
         case .diagnostics: return "waveform.path.ecg"
         }
     }
-    var implemented: Bool { self == .backup }
+    var implemented: Bool { self == .backup || self == .notes }
 }
 
 private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
-    case local, albums, cloud, originals, map, files
+    case local, albums, cloud, originals, map, files, notes
     case backup, transfers, sync, storage, devices, diagnostics
     var id: String { rawValue }
     var title: String {
@@ -59,6 +61,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
         case .originals: return "备份原件"
         case .map: return "地图"
         case .files: return "文件"
+        case .notes: return "备忘录"
         case .backup: return "相册备份"
         case .transfers: return "传输"
         case .sync: return "同步"
@@ -75,6 +78,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
         case .originals: return "icloud"
         case .map: return "map"
         case .files: return "folder"
+        case .notes: return "note.text"
         case .backup: return "icloud.and.arrow.up"
         case .transfers: return "arrow.up.arrow.down"
         case .sync: return "arrow.triangle.2.circlepath"
@@ -85,13 +89,13 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
     }
     var available: Bool {
         switch self {
-        case .local, .albums, .cloud, .originals, .map, .files, .backup: return true
+        case .local, .albums, .cloud, .originals, .map, .files, .notes, .backup: return true
         default: return false
         }
     }
     var category: String {
         switch self {
-        case .local, .albums, .cloud, .originals, .map, .files: return "内容浏览"
+        case .local, .albums, .cloud, .originals, .map, .files, .notes: return "内容浏览"
         case .backup, .devices, .sync: return "设备与备份"
         case .transfers, .storage, .diagnostics: return "任务与工具"
         }
@@ -124,6 +128,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     // Never persist camera/GPS coordinates with the navigation snapshot.
     @State private var mapSource: XDriveIOSNativePhotoMapSource = .local
     @State private var cloudMapCamera: MKCoordinateRegion?
+    @State private var localMapJump: XDriveIOSNativeLocalMapJump?
     // A bounded navigation position; never holds a PhotoKit asset identity.
     @State private var localGalleryPageOffset = 0
     // Restore only the coarse 32-slot album directory, never album IDs.
@@ -140,6 +145,18 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var routeRestoreScopeKey: String?
     private let navigationRouteStore = XDriveIOSNativeNavigationRouteStore()
 
+    // The Dynamic slot is a map shortcut until the verified Owner has used
+    // a real dynamic feature. Never store Gallery Map as a dynamic recent.
+    private var emptyDynamicMapFallback: Bool {
+        dynamicFeature == nil && recentDynamic.isEmpty
+    }
+    private var dynamicSlotTitle: String {
+        dynamicFeature?.title ?? (emptyDynamicMapFallback ? "地图" : "最近")
+    }
+    private var dynamicSlotSymbol: String {
+        dynamicFeature?.symbol ?? (emptyDynamicMapFallback ? "map" : "clock.arrow.circlepath")
+    }
+
     private var ownerScopeKey: String {
         guard let owner = login.owner else { return "signed-out" }
         return "\(owner.origin.absoluteString)|\(owner.instanceID)|\(owner.ownerID)|\(owner.rootNodeID)"
@@ -154,7 +171,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     var body: some View {
-        TabView(selection: $tab) {
+        let expectedRouteOwnerKey = ownerScopeKey
+        return TabView(selection: $tab) {
             NavigationStack {
                 launcher
                     .navigationTitle("全部")
@@ -164,7 +182,7 @@ struct XDriveIOSNativePhotosDashboard: View {
 
             NavigationStack {
                 dynamicPage
-                    .navigationTitle(dynamicFeature?.title ?? "最近")
+                    .navigationTitle(dynamicSlotTitle)
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
                             Button {
@@ -176,8 +194,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                     }
             }
             .tabItem {
-                Label(dynamicFeature?.title ?? "最近",
-                      systemImage: dynamicFeature?.symbol ?? "clock.arrow.circlepath")
+                Label(dynamicSlotTitle,
+                      systemImage: dynamicSlotSymbol)
             }
             .tag(XDriveIOSNativeBottomTab.dynamic)
 
@@ -219,6 +237,20 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         }
         .id(ownerScopeKey)
+        .environment(\.xdriveNativeLocalMapJump, localMapJump)
+        .environment(\.xdriveOpenNativeLocalMap, { jump in
+            guard ownerScopeKey == expectedRouteOwnerKey, login.owner != nil,
+                  phase == .active,
+                  [.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                  ) else { return }
+            // Reuse the existing Gallery map; never spawn another map stack.
+            localMapJump = jump
+            localMapScope = .library
+            mapSource = .local
+            gallerySource = .map
+            tab = .gallery
+        })
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showingLocalPhotoSearch) {
             XDriveIOSNativePhotoSearchScreen()
@@ -227,8 +259,13 @@ struct XDriveIOSNativePhotosDashboard: View {
             NavigationStack {
                 List {
                     if recentDynamic.isEmpty {
-                        Text("还没有打开过其他功能。可以从「全部」启动相册备份。")
-                            .foregroundStyle(.secondary)
+                        Button {
+                            showRecentPicker = false
+                            openGallery(.map)
+                        } label: {
+                            Label("地图（默认）", systemImage: "map")
+                        }
+                        .accessibilityIdentifier("native-ios-dynamic-map-fallback")
                     }
                     ForEach(recentDynamic) { feature in
                         Button {
@@ -275,6 +312,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             guard state == .active else {
                 galleryFocusGeneration = UUID()
                 galleryFocused = false
+                localMapJump = nil
                 return
             }
             // Settings may revoke PhotoKit permission or a BGTask may pause
@@ -303,6 +341,11 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         }
         .onChange(of: tab) { _ in saveNavigationIfReady() }
+        .onChange(of: tab) { next in
+            if next == .dynamic && emptyDynamicMapFallback {
+                openGallery(.map)
+            }
+        }
         .onChange(of: gallerySource) { _ in saveNavigationIfReady() }
         .onChange(of: dynamicFeature) { _ in saveNavigationIfReady() }
         .onChange(of: recentDynamic) { _ in saveNavigationIfReady() }
@@ -330,8 +373,8 @@ struct XDriveIOSNativePhotosDashboard: View {
 
             navigationButton(
                 .dynamic,
-                title: dynamicFeature?.title ?? "最近",
-                symbol: dynamicFeature?.symbol ?? "clock.arrow.circlepath"
+                title: dynamicSlotTitle,
+                symbol: dynamicSlotSymbol
             )
             .contextMenu {
                 Button {
@@ -370,7 +413,11 @@ struct XDriveIOSNativePhotosDashboard: View {
     ) -> some View {
         let selected = tab == destination
         return Button {
-            tab = destination
+            if destination == .dynamic && emptyDynamicMapFallback {
+                openGallery(.map)
+            } else {
+                tab = destination
+            }
         } label: {
             Group {
                 if verticalSizeClass == .compact {
@@ -441,6 +488,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 HStack(spacing: 8) {
                     ForEach(XDriveIOSNativeGallerySource.allCases) { source in
                         Button {
+                            if source == .map { localMapJump = nil }
                             gallerySource = source
                         } label: {
                             Text(source.title)
@@ -665,6 +713,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     private var dynamicPage: some View {
         if let feature = dynamicFeature {
             switch feature {
+            case .notes:
+                XDriveIOSNativeNotesScreen(login: login)
             case .backup:
                 XDriveIOSNativePhotoBackupScreen(login: login, controller: backup) {
                     // Navigation only: never infer that a pending receipt is backed up.
@@ -679,12 +729,12 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         } else {
             VStack(spacing: 15) {
-                Label("最近功能", systemImage: "clock.arrow.circlepath")
+                Label("地图", systemImage: "map")
                     .font(.headline)
-                Text("从「全部」选择相册备份、设备或任务。这里会记住最近打开的非固定功能。")
+                Text("尚无最近动态功能，地图作为默认入口。")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                Button("打开相册备份") { openDynamic(.backup) }
+                Button("打开地图") { openGallery(.map) }
                     .buttonStyle(.borderedProminent)
             }
             .padding(24)
@@ -766,6 +816,8 @@ struct XDriveIOSNativePhotosDashboard: View {
             openGallery(.map)
         case .files:
             tab = .files
+        case .notes:
+            openDynamic(.notes)
         case .backup:
             openDynamic(.backup)
         case .transfers:
@@ -782,6 +834,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private func openGallery(_ source: XDriveIOSNativeGallerySource) {
+        if source == .map { localMapJump = nil }
         gallerySource = source
         tab = .gallery
         // Gallery/map/Viewer are never dynamic feature-slot destinations.
@@ -840,6 +893,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         gallerySource = .local
         localMapScope = .library
         localMapPageOffset = 0
+        localMapJump = nil
         mapSource = .local
         cloudMapCamera = nil
         localAlbumDirectoryOffset = 0

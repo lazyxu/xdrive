@@ -200,6 +200,20 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Keep independent credential fixtures outside the Yike target ancestry.
+	// Binding other Sources to the Owner root is not a valid migration
+	// fixture: it would authorize a Source to own every directory below it.
+	pushTarget := meta.Node{OwnerID: userA.ID, ParentID: &rootA.ID,
+		Name: "synology-push-credential-fixture", Type: meta.NodeTypeDir, Revision: 1}
+	if err := db.Create(&pushTarget).Error; err != nil {
+		t.Fatal(err)
+	}
+	pullTarget := meta.Node{OwnerID: userA.ID, ParentID: &rootA.ID,
+		Name: "synology-pull-credential-fixture", Type: meta.NodeTypeDir, Revision: 1}
+	if err := db.Create(&pullTarget).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	// Synology Push credentials live on the NAS source-agent. The server must
 	// reject credential persistence/read endpoints for Push sources so DSM
 	// passwords cannot be accidentally stored against the wrong execution model.
@@ -207,7 +221,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		OwnerID: userA.ID, Name: "Synology Push Credential Guard", Kind: synologySourceKind,
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusActive,
-		Revision: 1, TargetNodeID: &rootA.ID,
+		Revision: 1, TargetNodeID: &pushTarget.ID,
 	}
 	if err := db.Create(&synologyPush).Error; err != nil {
 		t.Fatal(err)
@@ -249,7 +263,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		OwnerID: userA.ID, Name: "Synology Pull Credential", Kind: synologySourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused,
-		Revision: 1, TargetNodeID: &rootA.ID,
+		Revision: 1, TargetNodeID: &pullTarget.ID,
 	}
 	if err := db.Create(&synologyPull).Error; err != nil {
 		t.Fatal(err)
@@ -572,8 +586,18 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	accountExternalID = "12345"
 	accountName = "张三"
 
+	// The legacy relocation contract requires per-Node ownership evidence.
+	// A SourceItem with no NodeID is *not* proof and must not authorize moving
+	// arbitrary ordinary content into the managed target.
+	targetID := target.ID
+	tracked := meta.Node{OwnerID: userA.ID, ParentID: &targetID,
+		Name: "test.jpg", Type: meta.NodeTypeFile, Revision: 1}
+	if err := db.Create(&tracked).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&meta.SourceItem{
 		SourceID: source.ID, ExternalID: "yike:12345:999", Kind: meta.SourceItemKindFile,
+		NodeID: &tracked.ID, NodeRevision: 1,
 		Path: "test.jpg", State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
 	}).Error; err != nil {
 		t.Fatal(err)

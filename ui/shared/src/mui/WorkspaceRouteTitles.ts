@@ -18,11 +18,13 @@ export const XDRIVE_WORKSPACE_ROUTE_TITLES = {
   'cloud-storage': '云端存储',
   conflicts: '冲突',
   diagnostics: '诊断',
+  'client-update': '客户端更新',
   'admin-users': '用户管理',
   'admin-audit': '审计日志',
   'admin-storage': '全局存储',
   'admin-services': '系统依赖',
-  'admin-maintenance': '备份与系统维护',
+  'admin-update': '系统更新',
+  'admin-maintenance': '备份与恢复',
 } as const satisfies Readonly<Record<XDriveWorkspaceAppRoute, string>>
 
 /** Browser Viewer/preview and unknown routes have no workspace title. */

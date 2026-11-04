@@ -763,6 +763,15 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         return XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
     }
 
+    /// Show a real current Live cover in the filmstrip only after the exact
+    /// Owner-scoped ZIP still and motion pair has been verified and staged.
+    /// Neighboring ZIPs remain lightweight glyphs until explicitly opened.
+    private var displayedLiveFilmstripStill: UIImage? {
+        guard currentOwnerAuthorized, viewed.isLiveArchive,
+              liveResources != nil, !stillIsThumbnailOnly else { return nil }
+        return still
+    }
+
     private var exportNode: XDriveIOSNativeFilesNode? {
         // Files export re-reads this exact Node and rejects a changed revision,
         // parent, name or size before and after the signed original download.
@@ -898,7 +907,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                 XDriveIOSNativeCloudPairedLivePhotoView(
                                     files: resources,
                                     placeholder: still,
-                                    playbackRequest: nativeLivePlaybackRequest
+                                    playbackRequest: nativeLivePlaybackRequest,
+                                    hintEnabled: nativeLiveReady && currentOwnerAuthorized
                                 ) { ready in
                                     // The async Photos callback must not make a
                                     // retired Owner/scene or old ZIP visible.
@@ -1031,6 +1041,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 viewed.isVideo ? "视频" : "照片")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
                 if showChrome && (loadedNodes.count > 1 || exporter.status != nil ||
                    (currentOwnerAuthorized && viewed.size > 512 * 1_048_576)) {
                     VStack(spacing: 8) {
@@ -1049,6 +1060,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                 openedOwner: presentingOwner,
                                 authorized: currentOwnerAuthorized,
                                 busy: exporter.busy || restoringToPhotos,
+                                selectedLiveStill: displayedLiveFilmstripStill,
                                 login: login,
                                 onSelect: { next in selectFilmstrip(next) }
                             )
@@ -1075,6 +1087,31 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.ultraThinMaterial)
+                }
+
+                if showChrome && currentOwnerAuthorized &&
+                   (viewed.isImage || viewed.isVideo || viewed.isLiveArchive) {
+                    HStack {
+                        Spacer(minLength: 8)
+                        if restoringToPhotos {
+                            ProgressView()
+                                .frame(minWidth: 44, minHeight: 44)
+                                .accessibilityLabel("正在恢复原件到 iOS 照片")
+                        } else {
+                            Button {
+                                restoreCurrentOriginalToPhotos()
+                            } label: {
+                                Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .disabled(exporter.busy)
+                            .accessibilityIdentifier("native-ios-original-bottom-save-to-photos")
+                        }
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.horizontal, 12)
+                    .background(.ultraThinMaterial)
+                }
                 }
             }
             .toolbar {

@@ -2,6 +2,8 @@ import type {
   XDriveNotesDataPort, XDriveNoteSource,
 } from '../../ui/shared/src/mui/NotesPage'
 import type { XDriveApi } from './api'
+import { xDriveNotesSelectManualExport, xDriveNotesPlanManualExport } from '../../ui/shared/src/notes-manual-import'
+import { xDriveNotesSafeRelativeAsset } from '../../ui/shared/src/notes-markdown-policy'
 
 /** Web/PWA adapter for the exact verified Server Owner. Do not accept a
  * profile guessed from a local username or an unverified browser session.
@@ -50,6 +52,81 @@ export function createXDriveWebNotesPort(
     async importIOSMarkdown(input) {
       await ready()
       return api.notesImportIOS({ ...input, external_id: '' })
+    },
+    /** One explicit exported Apple Notes file and the exact referenced
+     * local pictures. A session-scoped UUID is never a guessed Apple Note ID. */
+    async importIOSMarkdownBundle(files, signal) {
+      const { markdownFile, assets } = xDriveNotesSelectManualExport(files)
+      signal?.throwIfAborted()
+      const bytes = await markdownFile.arrayBuffer()
+      signal?.throwIfAborted()
+      let markdown: string
+      try {
+        markdown = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+      } catch {
+        throw new Error('Markdown 文件不是有效的 UTF-8 编码。')
+      }
+      const plan = xDriveNotesPlanManualExport(markdown, markdownFile, assets)
+      await ready()
+      signal?.throwIfAborted()
+      if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
+        throw new Error('当前浏览器不支持安全的导入会话标识，请使用 HTTPS。')
+      }
+      const external_id = 'manual:' + crypto.randomUUID()
+      let created: Awaited<ReturnType<XDriveApi['notesImportIOS']>> | null = null
+      try {
+        created = await api.notesImportIOS({ title: plan.title, markdown, external_id }, signal)
+        signal?.throwIfAborted()
+        if (created.source !== 'ios_notes' || created.title !== plan.title ||
+            created.revision <= 0 || created.node_id <= 0) {
+          throw new Error('服务器返回的备份来源或文件节点无效。')
+        }
+        const noteID = ownedID(created.id)
+        const assetPaths = new Map<string, string>()
+        const uploaded = new Map<File, string>()
+        for (const reference of plan.references) {
+          signal?.throwIfAborted()
+          let relative = uploaded.get(reference.asset)
+          if (!relative) {
+            const receipt = await api.notesImportIOSImage(noteID, reference.asset, signal)
+            signal?.throwIfAborted()
+            relative = receipt.relative_path
+            const uuid = '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}'
+            const trusted = new RegExp('^_assets/' + uuid + '/' + uuid +
+              '\\.(?:png|jpg|gif|webp|heic)$', 'i')
+            if (!xDriveNotesSafeRelativeAsset(relative) ||
+                !trusted.test(relative) ||
+                !relative.toLowerCase().startsWith('_assets/' + noteID.toLowerCase() + '/') ||
+                receipt.node_id <= 0 || receipt.bytes !== reference.asset.size ||
+                !/^[0-9a-f]{64}$/i.test(receipt.sha256)) {
+              throw new Error('服务器返回的图片归属、大小或 SHA-256 无效。')
+            }
+            uploaded.set(reference.asset, relative)
+          }
+          assetPaths.set(reference.source, relative)
+        }
+        if (!plan.references.length) return created
+        const revised = plan.rewrite(assetPaths)
+        if (revised === markdown) return created
+        signal?.throwIfAborted()
+        const updated = await api.notesImportIOS({
+          title: plan.title, markdown: revised, external_id,
+        }, signal)
+        signal?.throwIfAborted()
+        if (updated.source !== 'ios_notes' || updated.id !== created.id ||
+            updated.node_id !== created.node_id || updated.revision <= created.revision) {
+          throw new Error('原备忘录未完成图片引用的版本更新。')
+        }
+        return updated
+      } catch (error) {
+        if (signal?.aborted) throw error
+        if (created) {
+          throw new Error('已创建只读 iOS 备份，但图片或引用未全部完成。请在 iOS 备份中核对笔记 ' +
+            created.id + '，避免重复导入。' +
+            (error instanceof Error ? ' 原因：' + error.message : ''))
+        }
+        throw error
+      }
     },
     async saveNote(id, value) {
       await ready()

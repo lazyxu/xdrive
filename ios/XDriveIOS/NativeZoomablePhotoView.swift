@@ -108,6 +108,59 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
             photo
         }
 
+        /// VoiceOver Actions rotor supports still zoom even without pinch or
+        /// double-tap. These actions manipulate only the current UIScrollView:
+        /// no new photo requests, Owner reads or media navigation.
+        func refreshAccessibilityZoom(_ scroll: UIScrollView) {
+            let percent = Int((scroll.zoomScale * 100).rounded())
+            scroll.accessibilityValue = "缩放 \(percent)%"
+        }
+
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            refreshAccessibilityZoom(scrollView)
+        }
+
+        private func accessibilityZoom(by factor: CGFloat) -> Bool {
+            guard let scroll, photo != nil,
+                  scroll.bounds.width > 0, scroll.bounds.height > 0 else { return false }
+            let current = scroll.zoomScale
+            let target = min(scroll.maximumZoomScale,
+                             max(scroll.minimumZoomScale, current * factor))
+            guard abs(target - current) > 0.01 else { return false }
+            // UIScrollView's contentOffset is in zoomed coordinates; the
+            // requested zoom rect is in the unscaled image-view coordinates.
+            let center = CGPoint(
+                x: (scroll.contentOffset.x + scroll.bounds.midX) / current,
+                y: (scroll.contentOffset.y + scroll.bounds.midY) / current
+            )
+            let rect = CGRect(
+                x: center.x - scroll.bounds.width / target / 2,
+                y: center.y - scroll.bounds.height / target / 2,
+                width: scroll.bounds.width / target,
+                height: scroll.bounds.height / target
+            )
+            scroll.zoom(to: rect, animated: !UIAccessibility.isReduceMotionEnabled)
+            refreshAccessibilityZoom(scroll)
+            return true
+        }
+
+        @objc func accessibilityZoomIn(_ action: UIAccessibilityCustomAction) -> Bool {
+            accessibilityZoom(by: 2)
+        }
+
+        @objc func accessibilityZoomOut(_ action: UIAccessibilityCustomAction) -> Bool {
+            accessibilityZoom(by: 0.5)
+        }
+
+        @objc func accessibilityResetZoom(_ action: UIAccessibilityCustomAction) -> Bool {
+            guard let scroll,
+                  scroll.zoomScale > scroll.minimumZoomScale + 0.01 else { return false }
+            scroll.setZoomScale(scroll.minimumZoomScale,
+                                animated: !UIAccessibility.isReduceMotionEnabled)
+            refreshAccessibilityZoom(scroll)
+            return true
+        }
+
         @objc func singleTap(_ gesture: UITapGestureRecognizer) {
             if gesture.state == .ended { onTap?() }
         }
@@ -163,6 +216,25 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         context.coordinator.scroll = scroll
         context.coordinator.onSwipe = onSwipe
         context.coordinator.onTap = onTap
+        // Make the shared still image an accessible focus target. The owning
+        // SwiftUI Viewer continues providing its media-specific label.
+        scroll.isAccessibilityElement = true
+        scroll.accessibilityTraits.insert(.image)
+        scroll.accessibilityCustomActions = [
+            UIAccessibilityCustomAction(
+                name: "放大照片", target: context.coordinator,
+                selector: #selector(Coordinator.accessibilityZoomIn(_:))
+            ),
+            UIAccessibilityCustomAction(
+                name: "缩小照片", target: context.coordinator,
+                selector: #selector(Coordinator.accessibilityZoomOut(_:))
+            ),
+            UIAccessibilityCustomAction(
+                name: "恢复原始大小", target: context.coordinator,
+                selector: #selector(Coordinator.accessibilityResetZoom(_:))
+            )
+        ]
+        context.coordinator.refreshAccessibilityZoom(scroll)
         let pagingPan = UIPanGestureRecognizer(
             target: context.coordinator, action: #selector(Coordinator.pagePan(_:))
         )
@@ -197,6 +269,7 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
             context.coordinator.retirePageAnimation()
             scroll.setZoomScale(scroll.minimumZoomScale, animated: false)
             photo.image = image
+            context.coordinator.refreshAccessibilityZoom(scroll)
         }
     }
 }

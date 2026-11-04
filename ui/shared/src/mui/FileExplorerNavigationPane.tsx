@@ -11,7 +11,6 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
-import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
 import {
   Box,
   Button,
@@ -28,6 +27,7 @@ import {
 } from '@mui/material'
 import {
   XDRIVE_FILE_EXPLORER_DRAG_MIME,
+  XDRIVE_FILE_ITEM_DRAG_HOLD_MS,
   xDriveFileExplorerDecodeDragIDs,
 } from '../file-explorer-drag'
 import { XDriveAutoLoadSentinel } from './AutoLoadSentinel'
@@ -51,6 +51,7 @@ import type { XDriveFileExplorerAvailability } from '../file-explorer-availabili
 import type { XDriveFileSavedSearch, XDriveFileTag } from '../file-explorer-organization'
 import { xDriveFileExplorerSavedSearchRuleLabels } from '../file-explorer-organization'
 import { xDriveFileExplorerDragAutoScrollDelta } from '../file-explorer-controller'
+import { XDriveCloudRootIcon, XDRIVE_CLOUD_ROOT_LABEL } from './XDriveCloudRootIcon'
 import { useXDrivePointerDrag } from './usePointerDrag'
 import type { XDrivePointerDragPoint } from './usePointerDrag'
 
@@ -432,7 +433,7 @@ export function XDriveFileExplorerNavigationPane({
     if (!root) return null
     return {
       id: root.id,
-      name: root.name,
+      name: XDRIVE_CLOUD_ROOT_LABEL,
       crumbs: [{ id: root.id, name: root.name }],
     }
   }, [currentCrumbs])
@@ -856,7 +857,7 @@ export function XDriveFileExplorerNavigationPane({
 
           <ListItemButton
             aria-label={node.name}
-            title={node.crumbs.map((crumb) => crumb.name).join('/')}
+            title={depth === 0 ? XDRIVE_CLOUD_ROOT_LABEL : node.crumbs.map((crumb) => crumb.name).join('/')}
             onDragOver={(event) => dragOverNode(event, node)}
             onDragLeave={(event) => leaveDropTarget(event, node.id)}
             onDrop={(event) => { void dropOnNode(event, node) }}
@@ -876,7 +877,9 @@ export function XDriveFileExplorerNavigationPane({
               outlineOffset: -2,
             }}
           >
-            {renderItemVisual({ id: node.id, name: node.name, kind: 'dir' }, 20)}
+            {depth === 0
+              ? <XDriveCloudRootIcon sx={{ fontSize: 20, color: 'primary.main' }} />
+              : renderItemVisual({ id: node.id, name: node.name, kind: 'dir' }, 20)}
             <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
               {node.name}
             </Typography>
@@ -976,6 +979,7 @@ export function XDriveFileExplorerNavigationPane({
     scrollHostRef: navigationRootRef,
     enabled: Boolean(onReorderQuickAccess || onReorderSavedSearches),
     scopeKey: orderScopeKey,
+    touchHoldMs: XDRIVE_FILE_ITEM_DRAG_HOLD_MS,
     autoScrollDelta: xDriveFileExplorerDragAutoScrollDelta,
     onMove: (source, point) => {
       const target = orderTargetAt(source, point)
@@ -991,30 +995,6 @@ export function XDriveFileExplorerNavigationPane({
   })
   useEffect(() => { setOrderMenu(null) }, [orderScopeKey])
 
-  const renderOrderHandle = (section: NavigationOrderSection, item: { id: number; name: string }) => (
-    <Tooltip title="拖动调整顺序，或打开上移/下移菜单">
-      <IconButton
-        aria-label={`拖动或调整顺序 ${item.name}`}
-        aria-haspopup="menu"
-        aria-expanded={orderMenu?.section === section && orderMenu.sourceID === item.id}
-        aria-controls={orderMenu?.section === section && orderMenu.sourceID === item.id ? orderMenuID : undefined}
-        data-xdrive-sidebar-order-handle={item.id}
-        draggable={false}
-        onPointerDown={event => {
-          event.stopPropagation()
-          if (!orderSectionAvailable(section) || orderDisabledReason(section)) return
-          pointerDrag.begin(event, { section, sourceID: item.id, name: item.name, orderedIDs: orderEntries(section).map(entry => entry.id) })
-        }}
-        onClick={event => {
-          event.stopPropagation()
-          setOrderMenu({ anchor: event.currentTarget, section, sourceID: item.id })
-        }}
-        sx={{ width: 44, height: 44, flexShrink: 0, touchAction: 'none', borderRadius: 0.5 }}
-      >
-        <DragIndicatorRoundedIcon sx={{ fontSize: 20 }} />
-      </IconButton>
-    </Tooltip>
-  )
   const orderTargetEdge = (section: NavigationOrderSection, id: number) => pointerDrag.active && pointerOrder?.source.section === section && pointerOrder.target?.id === id
     ? pointerOrder.target.edge : undefined
   const orderTargetSx = (section: NavigationOrderSection, id: number) => {
@@ -1268,7 +1248,7 @@ export function XDriveFileExplorerNavigationPane({
                   data-xdrive-sidebar-order-target={orderTargetEdge('quickAccess', item.id)}
                   sx={{
                     display: 'grid',
-                    gridTemplateColumns: `minmax(0, 1fr) ${onReorderQuickAccess ? '44px ' : ''}${secondaryTrack}px`,
+                    gridTemplateColumns: `minmax(0, 1fr) ${secondaryTrack}px`,
                     alignItems: 'center',
                     position: 'relative',
                     ...orderTargetSx('quickAccess', item.id),
@@ -1278,7 +1258,28 @@ export function XDriveFileExplorerNavigationPane({
                     selected={!trashActive && currentID === item.id}
                     title={item.path || item.name}
                     draggable={Boolean(onReorderQuickAccess) && sidebarPreferences.quickAccessSort === 'manual'}
-                    aria-grabbed={draggedQuickAccessID === item.id}
+                    aria-grabbed={draggedQuickAccessID === item.id || (pointerDrag.active && pointerOrder?.source.section === 'quickAccess' && pointerOrder.source.sourceID === item.id)}
+                    aria-haspopup={onReorderQuickAccess ? 'menu' : undefined}
+                    onPointerDown={(event) => {
+                      // Touch uses the held gesture, not native HTML5 DnD.
+                      event.currentTarget.draggable = event.pointerType !== 'touch' &&
+                        Boolean(onReorderQuickAccess) && sidebarPreferences.quickAccessSort === 'manual'
+                      if (event.pointerType !== 'touch' || orderDisabledReason('quickAccess')) return
+                      if (!orderSectionAvailable('quickAccess')) return
+                      pointerDrag.begin(event, { section: 'quickAccess', sourceID: item.id, name: item.name, orderedIDs: orderEntries('quickAccess').map(entry => entry.id) })
+                    }}
+                    onContextMenu={(event) => {
+                      if (!onReorderQuickAccess) return
+                      event.preventDefault()
+                      if (pointerDrag.active || (event.nativeEvent as PointerEvent).pointerType === 'touch') return
+                      setOrderMenu({ anchor: event.currentTarget, section: 'quickAccess', sourceID: item.id })
+                    }}
+                    onKeyDown={(event) => {
+                      if (onReorderQuickAccess && (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
+                        event.preventDefault()
+                        setOrderMenu({ anchor: event.currentTarget, section: 'quickAccess', sourceID: item.id })
+                      }
+                    }}
                     onDragStart={(event) => {
                       if (!onReorderQuickAccess || sidebarPreferences.quickAccessSort !== 'manual') return
                       setDraggedQuickAccessID(item.id)
@@ -1307,7 +1308,6 @@ export function XDriveFileExplorerNavigationPane({
                       {item.name}
                     </Typography>
                   </ListItemButton>
-                  {onReorderQuickAccess ? renderOrderHandle('quickAccess', item) : null}
                   <Tooltip title="取消固定">
                     <span>
                       <IconButton
@@ -1380,7 +1380,7 @@ export function XDriveFileExplorerNavigationPane({
                   data-xdrive-sidebar-order-section="savedSearches"
                   data-xdrive-sidebar-order-id={search.id}
                   data-xdrive-sidebar-order-target={orderTargetEdge('savedSearches', search.id)}
-                  sx={{ display: 'grid', gridTemplateColumns: `minmax(0, 1fr) ${onReorderSavedSearches ? '44px ' : ''}${secondaryTrack}px`, alignItems: 'center', position: 'relative', ...orderTargetSx('savedSearches', search.id) }}
+                  sx={{ display: 'grid', gridTemplateColumns: `minmax(0, 1fr) ${secondaryTrack}px`, alignItems: 'center', position: 'relative', ...orderTargetSx('savedSearches', search.id) }}
                 >
                   <ListItemButton
                     selected={savedSearchMatches(search.id)}
@@ -1388,7 +1388,26 @@ export function XDriveFileExplorerNavigationPane({
                     aria-current={activeSavedSearchID === search.id ? 'page' : undefined}
                     aria-describedby={`${organizationDescriptionID}-saved-${search.id}`}
                     draggable={Boolean(onReorderSavedSearches)}
-                    aria-grabbed={draggedSavedSearchID === search.id}
+                    aria-grabbed={draggedSavedSearchID === search.id || (pointerDrag.active && pointerOrder?.source.section === 'savedSearches' && pointerOrder.source.sourceID === search.id)}
+                    aria-haspopup={onReorderSavedSearches ? 'menu' : undefined}
+                    onPointerDown={(event) => {
+                      event.currentTarget.draggable = event.pointerType !== 'touch' && Boolean(onReorderSavedSearches)
+                      if (event.pointerType !== 'touch' || orderDisabledReason('savedSearches')) return
+                      if (!orderSectionAvailable('savedSearches')) return
+                      pointerDrag.begin(event, { section: 'savedSearches', sourceID: search.id, name: search.name, orderedIDs: orderEntries('savedSearches').map(entry => entry.id) })
+                    }}
+                    onContextMenu={(event) => {
+                      if (!onReorderSavedSearches) return
+                      event.preventDefault()
+                      if (pointerDrag.active || (event.nativeEvent as PointerEvent).pointerType === 'touch') return
+                      setOrderMenu({ anchor: event.currentTarget, section: 'savedSearches', sourceID: search.id })
+                    }}
+                    onKeyDown={(event) => {
+                      if (onReorderSavedSearches && (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
+                        event.preventDefault()
+                        setOrderMenu({ anchor: event.currentTarget, section: 'savedSearches', sourceID: search.id })
+                      }
+                    }}
                     onDragStart={(event) => {
                       if (!onReorderSavedSearches) return
                       setDraggedSavedSearchID(search.id)
@@ -1433,7 +1452,6 @@ export function XDriveFileExplorerNavigationPane({
                       </Box>
                     </Box>
                   </ListItemButton>
-                  {onReorderSavedSearches ? renderOrderHandle('savedSearches', search) : null}
                   {onRenameSavedSearch || onReplaceSavedSearch || onDeleteSavedSearch ? (
                     <Tooltip title="智能文件夹选项">
                       <span>

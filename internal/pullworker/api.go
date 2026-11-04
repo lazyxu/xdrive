@@ -21,6 +21,8 @@ type OwnerSourceAPI struct {
 	auth      auth.Manager
 	owner     meta.User
 	cancelRun context.CancelFunc
+	sourceID  uint64
+	runID     string
 }
 
 func NewOwnerSourceAPI(serverURL, jwtSecret string, owner meta.User) (*OwnerSourceAPI, error) {
@@ -38,6 +40,11 @@ func NewOwnerSourceAPI(serverURL, jwtSecret string, owner meta.User) (*OwnerSour
 
 func (a *OwnerSourceAPI) SetCancelRun(cancel context.CancelFunc) {
 	a.cancelRun = cancel
+}
+
+// The run-bound token is never sent to the browser or returned by an API.
+func (a *OwnerSourceAPI) SetSourceRun(sourceID uint64, runID string) {
+	a.sourceID, a.runID = sourceID, runID
 }
 
 func (a *OwnerSourceAPI) handleRunControlError(err error) error {
@@ -60,6 +67,22 @@ func (a *OwnerSourceAPI) client() (*client.Client, error) {
 	return out, nil
 }
 
+// Only mutation-capable executor calls receive an exact SourceRun token.
+// Source control, observation, progress and Finish still use the ordinary
+// internal Owner bearer through client().
+func (a *OwnerSourceAPI) executionClient() (*client.Client, error) {
+	if a.sourceID == 0 || a.runID == "" {
+		return nil, fmt.Errorf("source run is not bound")
+	}
+	token, err := a.auth.IssueSourceRunAccess(a.owner.ID, a.owner.SessionVersion, a.sourceID, a.runID)
+	if err != nil {
+		return nil, err
+	}
+	c := client.New(a.serverURL, token)
+	c.HTTP = &http.Client{Timeout: 30 * time.Second}
+	return c, nil
+}
+
 type ExecutionAPI struct {
 	sourceAPI *OwnerSourceAPI
 }
@@ -69,7 +92,7 @@ func NewExecutionAPI(sourceAPI *OwnerSourceAPI) *ExecutionAPI {
 }
 
 func (a *ExecutionAPI) List(ctx context.Context, parentID uint64) ([]client.Node, error) {
-	c, err := a.sourceAPI.client()
+	c, err := a.sourceAPI.executionClient()
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +100,7 @@ func (a *ExecutionAPI) List(ctx context.Context, parentID uint64) ([]client.Node
 }
 
 func (a *ExecutionAPI) CreateDir(ctx context.Context, parentID uint64, name string) (client.Node, error) {
-	c, err := a.sourceAPI.client()
+	c, err := a.sourceAPI.executionClient()
 	if err != nil {
 		return client.Node{}, err
 	}
@@ -85,7 +108,7 @@ func (a *ExecutionAPI) CreateDir(ctx context.Context, parentID uint64, name stri
 }
 
 func (a *ExecutionAPI) RenameMove(ctx context.Context, id, revision uint64, name *string, parentID *uint64) (client.Node, error) {
-	c, err := a.sourceAPI.client()
+	c, err := a.sourceAPI.executionClient()
 	if err != nil {
 		return client.Node{}, err
 	}
@@ -102,7 +125,7 @@ func (a *ExecutionAPI) UploadStreamResumableDigestResult(
 	open client.UploadStreamOpen,
 	progress client.UploadProgress,
 ) (client.UploadResult, error) {
-	c, err := a.sourceAPI.client()
+	c, err := a.sourceAPI.executionClient()
 	if err != nil {
 		return client.UploadResult{}, err
 	}
@@ -118,7 +141,7 @@ func (a *ExecutionAPI) OverwriteStreamResumableDigestResult(
 	open client.UploadStreamOpen,
 	progress client.UploadProgress,
 ) (client.UploadResult, error) {
-	c, err := a.sourceAPI.client()
+	c, err := a.sourceAPI.executionClient()
 	if err != nil {
 		return client.UploadResult{}, err
 	}

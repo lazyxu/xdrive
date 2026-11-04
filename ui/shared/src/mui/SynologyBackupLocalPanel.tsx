@@ -123,6 +123,23 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
     return () => { active = false; abort.abort() }
   }, [client, expandedID, historyRevision, sameOwningClient])
 
+  // The scheduled Agent can finish a new batch without this browser starting
+  // it. Refresh only the one expanded Source's bounded 20-receipt history,
+  // never fan out to every NAS Source or poll an invisible browser tab.
+  useEffect(() => {
+    if (!sameOwningClient || expandedID === null ||
+      typeof window === 'undefined' || typeof document === 'undefined') return
+    const refreshHistoryIfVisible = () => {
+      if (document.visibilityState === 'visible') setHistoryRevision(n => n + 1)
+    }
+    const timer = window.setInterval(refreshHistoryIfVisible, 60_000)
+    document.addEventListener('visibilitychange', refreshHistoryIfVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshHistoryIfVisible)
+    }
+  }, [client, expandedID, sameOwningClient])
+
   return (
     <XDriveWorkspaceSurface
       presentation="page"
@@ -200,7 +217,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
                       ) : null}
                           <Typography variant="subtitle2">同步历史（只读）</Typography>
                           <Typography variant="caption" color="text.secondary">
-                            历史任务结果不代表当前 CAS 物理完整性证明。
+                            展开后每分钟自动更新本机记录，后台标签页暂停。历史任务结果不代表当前 CAS 物理完整性证明。
                           </Typography>
                           <XDriveDeviceBackupHistoryList
                             sourceID={item.source_id}

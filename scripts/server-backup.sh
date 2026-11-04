@@ -8,11 +8,12 @@ ALLOW_INCONSISTENT=0
 LEAVE_SERVER_STOPPED=0
 INCLUDE_FILE_DATA=1
 INCREMENTAL=0
+SOURCE_PREFLIGHT_ONLY=0
 REPOSITORY_DIR=""
 
 usage() {
   cat <<'EOF'
-Usage: server-backup.sh [--config-dir DIR] [--output-dir DIR] [--allow-inconsistent] [--leave-server-stopped] [--skip-file-data]
+Usage: server-backup.sh [--config-dir DIR] [--output-dir DIR] [--allow-inconsistent] [--leave-server-stopped] [--skip-file-data] [--preflight-only]
        server-backup.sh --incremental [--config-dir DIR] [--repository-dir DIR]
 
 --incremental stores immutable SHA-256 CAS blobs once across snapshots, with
@@ -39,11 +40,17 @@ while [[ $# -gt 0 ]]; do
     --leave-server-stopped) LEAVE_SERVER_STOPPED=1; shift ;;
     --skip-file-data) INCLUDE_FILE_DATA=0; shift ;;
     --incremental) INCREMENTAL=1; shift ;;
+    --preflight-only) SOURCE_PREFLIGHT_ONLY=1; shift ;;
     --repository-dir) REPOSITORY_DIR="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+if [[ "$SOURCE_PREFLIGHT_ONLY" == 1 && "$INCREMENTAL" == 1 ]]; then
+  echo "xDrive backup: --preflight-only does not support --incremental." >&2
+  exit 2
+fi
 
 CONFIG_DIR="$XDRIVE_HOME/config"
 COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
@@ -94,8 +101,10 @@ else
   [[ -z "$REPOSITORY_DIR" ]] || { echo "xDrive backup: --repository-dir requires --incremental." >&2; exit 2; }
   OUTPUT_ROOT="${OUTPUT_ROOT:-$XDRIVE_HOME/backups/snapshots}"
 fi
-mkdir -p "$OUTPUT_ROOT"
-OUTPUT_ROOT="$(cd "$OUTPUT_ROOT" && pwd)"
+if [[ "$SOURCE_PREFLIGHT_ONLY" != 1 ]]; then
+  mkdir -p "$OUTPUT_ROOT"
+  OUTPUT_ROOT="$(cd "$OUTPUT_ROOT" && pwd)"
+fi
 
 compose() {
   docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
@@ -253,14 +262,73 @@ restart_services() {
 # Fail closed on the actual /data mount before running Docker maintenance or
 # backing up a silently created empty directory. Existing Server metadata
 # takes precedence: a malformed mount must not fall back to another volume.
-server_id="$(compose ps -aq server)" || {
+# Compose ps -a also reports docker compose run's one-off Server tasks.
+# Stopped tasks are not the managed Server and must not block a backup, but
+# active one-offs and multiple managed containers remain unsafe. Never choose
+# the first ID, and never derive /data from a one-off container.
+server_candidates="$(compose ps -aq server)" || {
   echo "xDrive backup: cannot inspect existing Server; no services stopped." >&2
   exit 1
 }
-[[ "$server_id" != *$'\n'* ]] || {
-  echo "xDrive backup: ambiguous Server container identity; no services stopped." >&2
+server_id=""
+oneoff_seen=0
+while IFS= read -r candidate; do
+  [[ -n "$candidate" ]] || continue
+  [[ "$candidate" != -* ]] || {
+    echo "xDrive backup: invalid Server container ID; no services stopped." >&2
+    exit 1
+  }
+  identity="$(docker inspect "$candidate" --format '{{.Name}}|{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.oneoff"}}|{{.State.Status}}|{{.State.Running}}' </dev/null)" || {
+    echo "xDrive backup: cannot inspect Server container identity; no services stopped." >&2
+    exit 1
+  }
+  [[ "$identity" != *$'\n'* ]] || {
+    echo "xDrive backup: ambiguous Server container metadata; no services stopped." >&2
+    exit 1
+  }
+  IFS='|' read -r name project service oneoff status running extra <<< "$identity"
+  [[ "$name" == /* && "$project" == xdrive && "$service" == server && -z "$extra" ]] || {
+    echo "xDrive backup: invalid Compose Server identity labels; no services stopped." >&2
+    exit 1
+  }
+  case "$oneoff" in
+    True|true)
+      # A running/paused/unknown one-off may still be writing into /data.
+      [[ "$running" == false && ( "$status" == created || "$status" == exited ) ]] || {
+        echo "xDrive backup: active or ambiguous Server one-off task; no services stopped." >&2
+        exit 1
+      }
+      oneoff_seen=1
+      continue
+      ;;
+    False|false) ;;
+    ""|"<no value>"|"<nil>")
+      # Older Compose versions did not always set the oneoff label.
+      # Only their canonical managed names can use this compatibility path.
+      [[ "$name" == /xdrive-server || "$name" == /xdrive-server-1 ]] || {
+        echo "xDrive backup: missing Server one-off identity label; no services stopped." >&2
+        exit 1
+      }
+      ;;
+    *)
+      echo "xDrive backup: invalid Server one-off identity label; no services stopped." >&2
+      exit 1
+      ;;
+  esac
+  [[ "$running" == true || "$running" == false ]] || {
+    echo "xDrive backup: ambiguous managed Server state; no services stopped." >&2
+    exit 1
+  }
+  [[ -z "$server_id" ]] || {
+    echo "xDrive backup: ambiguous managed Server container identity; no services stopped." >&2
+    exit 1
+  }
+  server_id="$candidate"
+done <<< "$server_candidates"
+if [[ -z "$server_id" && "$oneoff_seen" == 1 ]]; then
+  echo "xDrive backup: no managed Server container among one-off tasks; no services stopped." >&2
   exit 1
-}
+fi
 mount_type=""
 data_source=""
 if [[ -n "$server_id" ]]; then
@@ -345,6 +413,13 @@ if [[ "$INCREMENTAL" == "1" ]]; then
   case "$source_resolved/" in
     "$backup_resolved/"*) echo "xDrive backup: live file storage must not be inside incremental repository." >&2; exit 1 ;;
   esac
+fi
+
+# The installer runs this read-only admission before stopping the ingress.
+# The full backup repeats admission in the maintenance window to catch races.
+if [[ "$SOURCE_PREFLIGHT_ONLY" == 1 ]]; then
+  echo "[xDrive] Server identity and /data source admitted (read-only)."
+  exit 0
 fi
 
 # No service is changed or restarted for rejected /data admission. The

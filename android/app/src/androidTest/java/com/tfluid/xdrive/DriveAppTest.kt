@@ -1006,11 +1006,25 @@ class DriveAppTest {
     }
 
     @Test fun dynamicTransferTabAndPickerResumeActualCenterOnOneTap() {
+        // The real map route must receive a valid Owner-scoped GPS fixture;
+        // otherwise its 501 response correctly leaves galleryMapLoaded false.
+        galleryGpsOverviewFixture = true
         startAndLogin(galleryFirstOnLogin = false)
-        // With no permitted dynamic feature, the reserved slot cannot
-        // fabricate a Transfer Center or a previously visited route.
+        // Empty dynamic history opens the actual Gallery Map in focused
+        // navigation mode, never a synthetic Transfer Center or sixth tab.
         compose.onNodeWithTag("native-tab-dynamic").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryMapOpen &&
+                controller.state.value.galleryMapLoaded
+        }
         compose.onNodeWithTag("native-transfer-center").assertDoesNotExist()
+        compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
+        // Restore L1 navigation through the real Map chrome control before
+        // changing tabs. The focused Map intentionally hides the five slots.
+        compose.onNodeWithTag("native-gallery-map-chrome-toggle")
+            .assertIsDisplayed().performClick()
+        compose.onNodeWithTag("native-five-slot-bar").assertIsDisplayed()
 
         // The real Launcher shortcut binds the dynamic slot to Transfers.
         compose.onNodeWithTag("native-tab-all").performClick()
@@ -1033,13 +1047,20 @@ class DriveAppTest {
         compose.onNodeWithTag("native-transfer-center").assertExists()
         compose.onNodeWithTag("native-transfer-close").performClick()
 
-        // The Gallery still owns its fixed destination after the transfer
-        // overlay closes. Neither path creates a sixth tab.
+        // The Gallery still owns its fixed destination after Transfers.
+        // Its previously selected real MAP child resumes in L2 focus, which
+        // deliberately hides L1 tabs; only the explicit map chrome restores
+        // the five slots. Never force a fake sixth tab or reset Gallery history.
         compose.onNodeWithTag("native-tab-gallery").performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
-            controller.state.value.screen == Screen.GALLERY && controller.state.value.galleryLoaded
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryMapOpen &&
+                controller.state.value.galleryMapLoaded
         }
-        compose.onNodeWithTag("native-five-slot-bar").assertExists()
+        compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
+        compose.onNodeWithTag("native-gallery-map-chrome-toggle")
+            .assertIsDisplayed().performClick()
+        compose.onNodeWithTag("native-five-slot-bar").assertIsDisplayed()
         compose.onNodeWithTag("native-transfer-center").assertDoesNotExist()
     }
 

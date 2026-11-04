@@ -244,8 +244,19 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 			}
 			parentChanged := currentTarget.ParentID == nil || *currentTarget.ParentID != desiredParent.ID
 			if parentChanged {
-				// Moving a legacy uid_* root is not authorized by the folder
-				// name alone. Reject if it carries unverified ordinary data.
+				// A UID-shaped name and empty content do not prove that a
+				// manually selected ordinary folder belongs to this Source.
+				// Older unmarked server roots may move only from the exact
+				// historical 来源/一刻相册 hierarchy.
+				if !source.TargetManaged {
+					proven, err := verifiedLegacyYikeTargetLocationTx(ctx, tx, *source, currentTarget)
+					if err != nil {
+						return err
+					}
+					if !proven {
+						return errYikeTargetContainsData
+					}
+				}
 				if err := verifyYikeTargetRelocationTx(ctx, tx, *source, currentTarget); err != nil {
 					return err
 				}
@@ -306,7 +317,7 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 		}
 	}
 
-	target, err := ensureYikeManagedTargetTx(ctx, tx, source.OwnerID, identity)
+	target, err := createExclusiveYikeManagedTargetTx(ctx, tx, *source, identity)
 	if err != nil {
 		return err
 	}
@@ -393,6 +404,20 @@ func pruneLegacyYikeParentsTx(ctx context.Context, tx *gorm.DB, ownerID, connect
 	if childCount != 0 {
 		return nil
 	}
+	// Older/core-only test databases can omit the Share model entirely.
+	// In a real Server deployment Shares are always migrated before Sources.
+	hasShares := tx.Migrator().HasTable(&meta.Share{})
+	var directShares int64
+	if hasShares {
+		if err := tx.WithContext(ctx).Model(&meta.Share{}).
+			Where("owner_id = ? AND node_id = ?", ownerID, connector.ID).
+			Count(&directShares).Error; err != nil {
+			return err
+		}
+		if directShares != 0 {
+			return nil
+		}
+	}
 
 	now := time.Now().UTC()
 	if err := tx.WithContext(ctx).Model(&meta.Node{}).
@@ -407,6 +432,16 @@ func pruneLegacyYikeParentsTx(ctx context.Context, tx *gorm.DB, ownerID, connect
 		return err
 	}
 	if childCount == 0 {
+		if hasShares {
+			if err := tx.WithContext(ctx).Model(&meta.Share{}).
+				Where("owner_id = ? AND node_id = ?", ownerID, legacyRoot.ID).
+				Count(&directShares).Error; err != nil {
+				return err
+			}
+			if directShares != 0 {
+				return nil
+			}
+		}
 		if err := tx.WithContext(ctx).Model(&meta.Node{}).
 			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", legacyRoot.ID, ownerID).
 			Updates(map[string]any{"deleted_at": now, "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error; err != nil {

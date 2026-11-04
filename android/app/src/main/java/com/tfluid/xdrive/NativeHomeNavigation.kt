@@ -17,6 +17,7 @@ internal enum class NativeHomeTab(val title: String) {
 
 internal enum class NativeDynamicFeature(val title: String) {
     TRANSFERS("传输"),
+    NOTES("备忘录"),
 }
 
 /** Explicit destinations: Gallery map and both photo sources never use DYNAMIC. */
@@ -28,6 +29,7 @@ internal enum class NativeHomeShortcut {
     CLOUD_FILES,
     TRASH,
     TRANSFERS,
+    NOTES,
 }
 
 internal enum class NativeGallerySource { CLOUD, LOCAL, ALBUMS, MAP }
@@ -87,9 +89,16 @@ internal data class NativeHomeNavigation(
     val favoriteShortcuts: Set<NativeHomeShortcut> = emptySet(),
     val recentShortcuts: List<NativeHomeShortcut> = emptyList(),
 ) {
+    /** An empty current-Owner dynamic history displays the real Gallery Map.
+     * Map remains a Gallery subroute and never becomes a dynamic recent. */
+    val emptyDynamicMapFallback: Boolean
+        get() = dynamicFeature == null && recentDynamic.isEmpty()
+
     val labels: List<String>
         get() = NativeHomeTab.entries.map {
-            if (it == NativeHomeTab.DYNAMIC) dynamicFeature?.title ?: it.title else it.title
+            if (it == NativeHomeTab.DYNAMIC)
+                dynamicFeature?.title ?: if (emptyDynamicMapFallback) "地图" else it.title
+            else it.title
         }
 
     fun select(tab: NativeHomeTab) = copy(selected = tab)
@@ -107,6 +116,7 @@ internal data class NativeHomeNavigation(
         NativeHomeShortcut.CLOUD_FILES, NativeHomeShortcut.TRASH ->
             copy(selected = NativeHomeTab.FILES)
         NativeHomeShortcut.TRANSFERS -> openDynamic(NativeDynamicFeature.TRANSFERS)
+        NativeHomeShortcut.NOTES -> openDynamic(NativeDynamicFeature.NOTES)
         }
         return routed.copy(
             recentShortcuts = (listOf(shortcut) + recentShortcuts.filterNot {

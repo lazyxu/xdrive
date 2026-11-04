@@ -90,11 +90,13 @@ import { desktopWindowHostAdapter } from './desktopWindowHostAdapter'
 import { readDesktopLoginDraft, saveDesktopLoginDraft } from './loginDraft'
 import { createDesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
 import { createDesktopCloudFilesHostPort } from './desktopCloudFilesHostPort'
+import { createDesktopNotesDataPort } from './desktopNotesDataPort'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { desktopOverviewPort } from './desktopOverviewAdapter'
 import { createDesktopMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { desktopShareDialogAdapter } from './fileDialogAdapters'
 import { DesktopSettingsContent } from './DesktopSettingsContent'
+import { DesktopClientUpdatePanel } from './DesktopClientUpdatePanel'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import type {
   XDriveAppearance,
@@ -376,6 +378,33 @@ export default function App({
     (matchingLoginProfile?.connection_route?.lan_ip || '') === connectionRoute.lan_ip
 
   const status = agent.status
+  // Notes uses the existing authenticated Agent and its allowlisted IPC.
+  // Never expose a Server token or invent a route when the Agent capability
+  // is missing. Epoch changes on logout/account/server or Agent replacement.
+  const notesEnabled = Boolean(agent.connected && status?.configured &&
+    !status?.must_change_password && status?.username && status?.server &&
+    status.server.startsWith('https://') &&
+    status.auth_status !== '需要重新登录' &&
+    agent.hello?.capabilities.includes('cloud-notes'))
+  const notesImagesEnabled = notesEnabled &&
+    agent.hello?.capabilities.includes('cloud-notes-images') === true
+  const notesIdentity = notesEnabled
+    ? [status?.server, status?.username, String(agent.hello?.pid ?? 0)].join('|') : ''
+  const notesEpoch = useRef({ identity: '', generation: 0 })
+  if (notesEpoch.current.identity !== notesIdentity) {
+    notesEpoch.current = {
+      identity: notesIdentity, generation: notesEpoch.current.generation + 1,
+    }
+  }
+  const notesOwnerScope = notesIdentity
+    ? notesIdentity + ':' + notesEpoch.current.generation : ''
+  const notesActiveScopeRef = useRef(notesOwnerScope)
+  notesActiveScopeRef.current = notesOwnerScope
+  const desktopNotesPort = useMemo(() => notesOwnerScope
+    ? createDesktopNotesDataPort(window.xdriveDesktop.agent,
+      notesOwnerScope, () => notesActiveScopeRef.current === notesOwnerScope,
+      notesImagesEnabled)
+    : undefined, [notesOwnerScope, notesImagesEnabled])
   const baiduDiagnosticScope = `desktop:${status?.server ?? ''}:${status?.username ?? ''}`
   // Desktop file: owns no provider SDK; only clear this process-local
   // bounded hint when identity changes or the renderer goes away.
@@ -735,6 +764,40 @@ export default function App({
     startUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
       window.xdriveDesktop.agent.startServerUpdate(source, channel, backupFileData),
   }), [])
+  const offlineImportPort = useMemo<import('../../../ui/shared/src/offline-update').XDriveOfflineImportPort>(() => {
+    async function call<T>(
+      action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'start',
+      input: Record<string, unknown> = {},
+    ): Promise<T> {
+      const result = await window.xdriveDesktop.agent.offlineImport<T>(action, input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    }
+    return {
+      list: () => call<{ items: import('../../../ui/shared/src/offline-update').XDriveOfflineImportSummary[] }>('list'),
+      create: () => call<{ id: string; chunk_bytes: number }>('create'),
+      get: (id) => call<import('../../../ui/shared/src/offline-update').XDriveOfflineImportStatus>('get', { id }),
+      register: async (id, name, size, sha) => {
+        await call<{ accepted: boolean }>('register', { id, name, size, sha256: sha || '' })
+      },
+      putChunk: async (id, name, index, blob, sha, signal) => {
+        if (signal?.aborted) throw new Error('离线包上传已暂停。')
+        const data = await blob.arrayBuffer()
+        if (signal?.aborted) throw new Error('离线包上传已暂停。')
+        const result = await window.xdriveDesktop.agent.offlineImportChunk(id, name, index, data, sha)
+        if (!result.ok) throw new Error(result.error.message)
+        // An in-flight IPC chunk may complete after the user pauses upload;
+        // the next iteration must still respect the abort before any new send.
+      },
+      finalize: (id, name) => call<{
+        name: string; state: 'ready'; upload_sha256: string
+      }>('finalize', { id, name }),
+      remove: async (id) => { await call<null>('remove', { id }) },
+      start: async (id, manifest, goBinary, backup) => {
+        await call<AgentServerUpdateState>('start', { id, manifest, go: goBinary, backup })
+      },
+    }
+  }, [])
   const maintenanceBackupPort = useMemo<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupPort>(() => ({
     read: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminBackups()
@@ -1025,6 +1088,29 @@ export default function App({
     } : undefined
   ), [agent.connected, configured, mediaSelectionJobsSupported])
 
+  const syncActivityDataSource = useMemo(() => (
+    agent.connected && configured && agent.hello?.capabilities.includes('sync-activity-history')
+      ? {
+          runs: async (limit: number, cursor?: AgentSyncRunCursor) => {
+            const result = await window.xdriveDesktop.agent.getSyncRuns(limit, cursor)
+            if (!result.ok) throw new Error(result.error.message)
+            return result.data
+          },
+          run: async (runID: string) => {
+            const result = await window.xdriveDesktop.agent.getSyncRun(runID)
+            if (!result.ok) throw new Error(result.error.message)
+            return result.data
+          },
+          items: async (runID: string, limit: number, cursor?: AgentSyncItemCursor) => {
+            const result = await window.xdriveDesktop.agent.getSyncRunItems(runID, limit, cursor)
+            if (!result.ok) throw new Error(result.error.message)
+            return result.data
+          },
+        }
+      : undefined
+  ), [agent.connected, configured, agent.hello?.capabilities,
+      status?.server, status?.username, status?.auth_status])
+
   const taskCenter = useXDriveTaskCenterController({
     transfers: transfers.transfers,
     operations: cloudFileOperations,
@@ -1242,11 +1328,11 @@ export default function App({
         return
       }
       if (target === 'settings' || target === 'settings-update') {
-        setSettingsOpen(true)
         if (target === 'settings-update') {
-          window.setTimeout(() => {
-            document.getElementById('client-update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          }, 120)
+          setSettingsOpen(false)
+          setView('client-update')
+        } else {
+          setSettingsOpen(true)
         }
         return
       }
@@ -1301,7 +1387,7 @@ export default function App({
   }, [acceptTransferSnapshot, status?.server, status?.username])
 
   useEffect(() => {
-    if ((view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-storage' || view === 'admin-services' || view === 'admin-maintenance') && status?.role !== 'admin') setView('transfers')
+    if ((view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-storage' || view === 'admin-services' || view === 'admin-update' || view === 'admin-maintenance') && status?.role !== 'admin') setView('transfers')
   }, [view, status?.role])
 
   useEffect(() => {
@@ -2284,7 +2370,9 @@ export default function App({
     adminRoleVerified: status?.role === 'admin',
     conflictCount: status?.conflict_count,
     diagnosticsAriaLabel: '桌面版辅助功能',
+    includeClientUpdate: true,
     showShareCenter: agent.connected && configured && agent.hello?.capabilities.includes('cloud-files'),
+    showNotes: Boolean(desktopNotesPort),
   })
 
   if (!agent.connected) {
@@ -2791,13 +2879,29 @@ export default function App({
   // The shared policy has no Electron IPC or DSM permission of its own.
   const filesHostCapabilities = xDriveFileExplorerHostCapabilities(agent.hello?.capabilities)
   // UI-owned JSX for migrated routes is composed by the shared XDriveAppRouteContent.
+  const desktopClientUpdateProps = {
+    busy, updateSupported, clientUpdate, updateOperationBusy, updateCancelling,
+    updateCancelSupported, updateProgress, currentVersion: status?.version,
+    onUpdateSourceChange: (source: AgentUpdateSource) => { void changeUpdateSource(source) },
+    onUpdateModeChange: (mode: AgentUpdateMode) => { void changeUpdateMode(mode) },
+    onCheckUpdate: () => { void checkClientUpdate() },
+    onDownloadUpdate: () => { void downloadClientUpdate() },
+    onInstallUpdate: () => { void installClientUpdate() },
+    onCancelUpdate: () => { void cancelClientUpdate() },
+  }
+
   // Only authenticated domain data and real Desktop operations are injected.
   const workspaceHost: XDriveWorkspaceHostAdapter = {
     platform: 'desktop',
     adminRoleVerified: status?.role === 'admin',
     services: {
+      clientUpdatePage: {
+        clientUpdateContent: <DesktopClientUpdatePanel {...desktopClientUpdateProps} />,
+        buildInfo: info,
+      },
       shareCenterPage: agent.connected && configured && agent.hello?.capabilities.includes('cloud-files')
         ? desktopShareCenterPort : undefined,
+      notesPage: desktopNotesPort,
       workspaceAlerts: {
         lastError: status?.last_error,
         paused: status?.paused,
@@ -3036,7 +3140,9 @@ export default function App({
   } : undefined,
       taskCenterPage: {
     ...taskCenter.pageProps,
-    subtitle: syncActivityFromNotification && view === 'transfers'
+    syncActivity: syncActivityDataSource,
+    syncActivitySessionKey: JSON.stringify([status?.server ?? '', status?.username ?? '']),
+    subtitle: syncActivityFromNotification && view === 'transfers' && !syncActivityDataSource
       ? '本轮 Mount 同步检查已结束。以下是已记录的任务与传输，不代表本轮完整的文件变更清单；逐项同步历史尚未接入。'
       : taskCenter.pageProps.subtitle,
     globalTasksEnabled: status?.role === 'admin',
@@ -3107,12 +3213,7 @@ export default function App({
             },
           onOpenStorage: () => setView('local-storage'),
           onOpenSettings: () => setSettingsOpen(true),
-          onOpenUpdateSettings: () => {
-              setSettingsOpen(true)
-              window.setTimeout(() => {
-                document.getElementById('client-update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-              }, 120)
-            },
+          onOpenUpdateSettings: () => { setSettingsOpen(false); setView('client-update') },
           onOpenLogs: () => {
               void run(
                 'open-logs',
@@ -3122,11 +3223,15 @@ export default function App({
             },
           onExport: () => { void exportDiagnostics() },
       },
-      adminMaintenancePage: status?.role === 'admin'
+      adminUpdatePage: status?.role === 'admin'
         ? {
         updatePort: serverUpdatePort,
-        backupPort: agent.hello?.capabilities.includes('admin-backups') ? maintenanceBackupPort : undefined,
-        onOpenStorage: () => setView('admin-storage'),
+        offlinePort: agent.hello?.capabilities.includes('server-offline-import') ? offlineImportPort : undefined,
+        clientUpdateContent: <DesktopClientUpdatePanel {...desktopClientUpdateProps} />,
+        buildInfo: [
+          { title: 'Server 构建信息', info: status?.server_build },
+          { title: 'Desktop 构建信息', info },
+        ],
         supported: serverUpdateSupported,
         unavailableLabel: "服务端与 Desktop",
         unsupportedMessage: "当前 xdrive-agent 不支持服务端更新，请先更新客户端核心组件。",
@@ -3136,6 +3241,11 @@ export default function App({
                 ? 'server-update'
                 : current === 'server-update' ? '' : current)
             },
+      } : undefined,
+      adminMaintenancePage: status?.role === 'admin'
+        ? {
+        backupPort: agent.hello?.capabilities.includes('admin-backups') ? maintenanceBackupPort : undefined,
+        onOpenStorage: () => setView('admin-storage'),
       } : undefined,
       adminUsersPage: status?.role === 'admin' && agent.hello?.capabilities.includes('admin-users')
         ? {
@@ -3321,10 +3431,8 @@ export default function App({
         <XDriveAccountMenuActions
           onClose={() => setAccountMenuAnchor(null)}
           onAbout={() => {
-            setSettingsOpen(true)
-            window.setTimeout(() => {
-              document.getElementById('desktop-build-info')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            }, 120)
+            setSettingsOpen(false)
+            setView('client-update')
           }}
           aboutSecondary={info?.version ? `Desktop ${info.version}` : undefined}
           onLogout={requestLogout}
@@ -3358,16 +3466,11 @@ export default function App({
         <XDriveSettingsDialog
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
-          subtitle="外观、客户端更新、同步生命周期与本地缓存"
+          subtitle="外观、同步生命周期与本地缓存"
           maxWidth="lg"
           appearance={appearance}
           appearanceDisabled={busy === 'appearance'}
           onAppearanceChange={(next) => void changeAppearance(next)}
-          buildInfoSectionID="desktop-build-info"
-          buildInfo={[
-            { title: 'Desktop 构建信息', info },
-            { title: 'Server 构建信息', info: status?.server_build },
-          ]}
         >
           <DesktopSettingsContent
             desktopPreferences={desktopPreferences}
@@ -3375,19 +3478,6 @@ export default function App({
             onRestartAgent={() => { void restartAgent() }}
             onStartAtLoginChange={(enabled) => { void changeStartAtLogin(enabled) }}
             onCloseToTrayChange={(enabled) => { void changeCloseToTray(enabled) }}
-            updateSupported={updateSupported}
-            clientUpdate={clientUpdate}
-            updateOperationBusy={updateOperationBusy}
-            updateCancelling={updateCancelling}
-            updateCancelSupported={updateCancelSupported}
-            updateProgress={updateProgress}
-            currentVersion={status?.version}
-            onUpdateSourceChange={(source) => { void changeUpdateSource(source) }}
-            onUpdateModeChange={(mode) => { void changeUpdateMode(mode) }}
-            onCheckUpdate={() => { void checkClientUpdate() }}
-            onDownloadUpdate={() => { void downloadClientUpdate() }}
-            onInstallUpdate={() => { void installClientUpdate() }}
-            onCancelUpdate={() => { void cancelClientUpdate() }}
             settings={settings}
             mountPath={mountPath}
             cacheLimit={cacheLimit}

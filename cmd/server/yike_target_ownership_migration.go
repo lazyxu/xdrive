@@ -1,0 +1,113 @@
+package main
+
+import (
+	"fmt"
+
+	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
+)
+
+// verifyLegacyYikeTargetOwnershipTx runs before an old uid_* root is
+// reparented. The folder name and a matching account number do not prove
+// ownership of arbitrary files already present under that folder.
+//
+// This deliberately does not try to split ambiguous trees: on uncertainty,
+// the upgrade keeps every original Node, FileVersion, Share and CAS reference
+// where it is, and the calling migration pauses the Source for a reviewed
+// migration instead of silently moving ordinary files.
+func verifyLegacyYikeTargetOwnershipTx(
+	tx *gorm.DB,
+	source meta.Source,
+	legacyRoot, connector, target meta.Node,
+) error {
+	if source.ID == 0 || source.OwnerID == 0 || source.TargetNodeID == nil ||
+		*source.TargetNodeID != target.ID || target.ID == 0 ||
+		connector.ID == 0 || legacyRoot.ID == 0 ||
+		target.OwnerID != source.OwnerID || connector.OwnerID != source.OwnerID ||
+		legacyRoot.OwnerID != source.OwnerID {
+		return fmt.Errorf("%w: inconsistent Source/Node ownership", errLegacyYikeTargetMigrationBlocked)
+	}
+
+	// Another Source bound to the old ancestor OR any of its descendants
+	// cannot be silently detached by reparenting this root. The Source
+	// itself was locked by the migration caller.
+	var overlapping bool
+	if err := tx.Raw(`
+WITH RECURSIVE subtree AS (
+	SELECT n.id FROM xd_nodes AS n
+	WHERE n.id = ? AND n.owner_id = ? AND n.deleted_at IS NULL
+	UNION
+	SELECT child.id FROM xd_nodes AS child JOIN subtree AS parent ON child.parent_id = parent.id
+	WHERE child.owner_id = ? AND child.deleted_at IS NULL
+)
+SELECT EXISTS (
+	SELECT 1 FROM xd_sources AS other
+	WHERE other.owner_id = ? AND other.id <> ?
+	AND (
+		other.target_node_id IN (?, ?)
+		OR other.target_node_id IN (SELECT id FROM subtree)
+	)
+)`, target.ID, source.OwnerID, source.OwnerID,
+		source.OwnerID, source.ID, connector.ID, legacyRoot.ID).
+		Scan(&overlapping).Error; err != nil {
+		return err
+	}
+	if overlapping {
+		return fmt.Errorf("%w: another Source overlaps the legacy target tree", errLegacyYikeTargetMigrationBlocked)
+	}
+
+	var activeRun bool
+	if err := tx.Raw(`
+SELECT EXISTS (
+	SELECT 1 FROM xd_sync_runs WHERE source_id = ? AND status = ?
+)`, source.ID, meta.SyncRunStatusRunning).Scan(&activeRun).Error; err != nil {
+		return err
+	}
+	if activeRun {
+		return fmt.Errorf("%w: an active sync run still owns this target", errLegacyYikeTargetMigrationBlocked)
+	}
+
+	// Check every active descendant, including nested directories. A file is
+	// proved to belong to this Source only when its stable NodeID, relative
+	// path, type, successful sync state and recorded Node revision all match.
+	// A name-based guess or path-only match must never be sufficient.
+	// Stop at 128 ancestors and refuse deeper paths, rather than silently
+	// treating an unvisited descendant as proven.
+	var unproven bool
+	if err := tx.Raw(`
+WITH RECURSIVE tree AS (
+	SELECT id, parent_id, name, type, revision,
+		''::text AS relative_path, 0 AS depth
+	FROM xd_nodes
+	WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+	UNION ALL
+	SELECT child.id, child.parent_id, child.name, child.type, child.revision,
+		CASE WHEN parent.depth = 0 THEN child.name
+			ELSE parent.relative_path || '/' || child.name END,
+		parent.depth + 1
+	FROM xd_nodes AS child JOIN tree AS parent ON child.parent_id = parent.id
+	WHERE child.owner_id = ? AND child.deleted_at IS NULL AND parent.depth < 128
+)
+SELECT EXISTS (
+	SELECT 1 FROM tree AS n
+	LEFT JOIN xd_source_items AS item
+		ON item.source_id = ? AND item.node_id = n.id
+		AND item.path = n.relative_path
+		AND item.kind = CASE WHEN n.type = 'dir' THEN 'directory' ELSE 'file' END
+		AND item.state = ?
+		AND item.node_revision = n.revision
+	WHERE (n.depth > 0 AND item.id IS NULL)
+		OR (n.depth = 128 AND EXISTS (
+			SELECT 1 FROM xd_nodes AS deeper
+			WHERE deeper.owner_id = ? AND deeper.parent_id = n.id AND deeper.deleted_at IS NULL
+		))
+)`, target.ID, source.OwnerID, source.OwnerID,
+		source.ID, meta.SourceItemStateSynced, source.OwnerID).
+		Scan(&unproven).Error; err != nil {
+		return err
+	}
+	if unproven {
+		return fmt.Errorf("%w: untracked, modified or mixed directory content", errLegacyYikeTargetMigrationBlocked)
+	}
+	return nil
+}

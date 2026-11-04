@@ -72,7 +72,7 @@ jobs:
             echo "::error::Configure XDRIVE_CLIENT_MIRROR_SHARE_URL as an Actions repository secret before enabling mirror uploads."
             exit 1
           fi
-      - name: Select and verify latest successful installers (five platforms)
+      - name: Select and verify client installers, Backup CLI and Source Agents
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/ci/collect-client-share-mirror.sh "$RUNNER_TEMP/xdrive-client-mirror"
@@ -85,12 +85,12 @@ jobs:
           m = json.loads((Path(os.environ['RUNNER_TEMP'])/'xdrive-client-mirror/meta/manifest.json').read_text())
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
               output.write('## xDrive Client Mirror — verified candidates\n\n')
-              output.write('| Platform | Source commit | File | MiB |\n|---|---|---|---:|\n')
+              output.write('| Platform | Source commit | Archived file | MiB |\n|---|---|---|---:|\n')
               for i in m['items']:
-                  output.write(f"| {i['platform']} | `{i['commit'][:12]}` | `{i['name']}` | {i['size']/1048576:.1f} |\n")
-              output.write('\nNo server images, source agents or backup tools are mirrored.\n')
+                  output.write(f"| {i['platform']} | `{i['commit'][:12]}` | `{i['published_name']}` | {i['size']/1048576:.1f} |\n")
+              output.write('\nOnly verified release installers, Backup CLI and Source Agents are mirrored; no Server images.\n')
           PY
-      - name: Upload immutable versioned clients into Share (opt-in)
+      - name: Upload immutable flat product archives into Share (opt-in)
         if: github.event_name == 'repository_dispatch' || github.event_name == 'schedule' || inputs.dry_run == false
         env:
           # Keep complete share capability (including #/s/token) in Secret,

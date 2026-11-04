@@ -87,6 +87,11 @@ function cleanupMediaLivePhotoProgress(url: string) {
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
   getTransfers: () => ipcRenderer.invoke('agent:get-transfers'),
+  getSyncRuns: (limit = 20, cursor?: { before_started_at: string; before_run_id: string }) =>
+    ipcRenderer.invoke('agent:get-sync-runs', limit, cursor),
+  getSyncRun: (runID: string) => ipcRenderer.invoke('agent:get-sync-run', runID),
+  getSyncRunItems: (runID: string, limit = 50, cursor?: { before_applied_at: string; before_item_id: string }) =>
+    ipcRenderer.invoke('agent:get-sync-run-items', runID, limit, cursor),
   getStorageTree: (requestID?: string) => ipcRenderer.invoke('agent:get-storage-tree', requestID),
   getCache: (requestID?: string) => ipcRenderer.invoke('agent:get-cache', requestID),
   getLocalDiskSpace: (requestID?: string) => ipcRenderer.invoke('agent:get-local-disk-space', requestID),
@@ -972,6 +977,11 @@ const agent = Object.freeze({
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
   startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
     ipcRenderer.invoke('agent:start-server-update', source, channel, backupFileData),
+  offlineImport: (action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'start',
+    input: Record<string, unknown> = {}) =>
+    ipcRenderer.invoke('agent:offline-import', action, input),
+  offlineImportChunk: (id: string, name: string, index: number, data: ArrayBuffer, sha256: string) =>
+    ipcRenderer.invoke('agent:offline-import-chunk', id, name, index, data, sha256),
   cloudStorageStats: (requestID?: string) => ipcRenderer.invoke('agent:cloud-storage-stats', requestID),
   cloudCleanupStorageCache: (kind: 'media_thumbnail' | 'analysis_preview' | 'upload_staging' | 'storage_temp' | 'all') =>
     ipcRenderer.invoke('agent:cloud-storage-cache-cleanup', kind),
@@ -989,6 +999,24 @@ const agent = Object.freeze({
   cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) =>
     ipcRenderer.invoke('agent:cloud-restore-version', nodeID, revision, versionID),
   cloudShares: (nodeID: number) => ipcRenderer.invoke('agent:cloud-shares', nodeID),
+  cloudNotesInitialize: () => ipcRenderer.invoke('agent:cloud-notes-initialize'),
+  cloudNotesList: (source: 'mine' | 'ios_notes', query = '', offset = 0) =>
+    ipcRenderer.invoke('agent:cloud-notes-list', source, query, offset),
+  cloudNotesRead: (id: string) => ipcRenderer.invoke('agent:cloud-notes-read', id),
+  cloudNotesCreate: (value: { title: string; markdown: string }) =>
+    ipcRenderer.invoke('agent:cloud-notes-create', value),
+  cloudNotesUpdate: (id: string, value: {
+    title: string; markdown: string; expected_revision: number
+  }) => ipcRenderer.invoke('agent:cloud-notes-update', id, value),
+  cloudNotesDelete: (id: string, revision: number) =>
+    ipcRenderer.invoke('agent:cloud-notes-delete', id, revision),
+  cloudNotesVersions: (id: string) => ipcRenderer.invoke('agent:cloud-notes-versions', id),
+  cloudNotesReadVersion: (nodeID: number, versionID: number) =>
+    ipcRenderer.invoke('agent:cloud-notes-version-content', nodeID, versionID),
+  cloudNotesUploadImage: (noteID: string, bytes: ArrayBuffer) =>
+    ipcRenderer.invoke('agent:cloud-notes-upload-image', noteID, bytes),
+  cloudNotesReadImage: (noteID: string, relativePath: string) =>
+    ipcRenderer.invoke('agent:cloud-notes-read-image', noteID, relativePath),
   cloudOwnerShares: (cursor: number, limit: number) => ipcRenderer.invoke('agent:cloud-owner-shares', cursor, limit),
   cloudOwnShareLink: (id: number) => ipcRenderer.invoke('agent:cloud-share-link', id),
   cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) =>

@@ -136,6 +136,7 @@ import type {
 import { xDriveCloudFilesPositionMatchesRequest } from '../../ui/shared/src/cloud-files'
 import { webTransferStore } from './transfers'
 import { xDriveAssertMediaReadActive, xDriveMediaResponseBlob } from './mediaBinaryProgress'
+import type { XDriveViewerQualityPreset } from '../../ui/shared/src/viewer-quality-policy'
 import { xDriveRegisterViewerImageSource } from '../../ui/shared/src/mui/ViewerImageSourceInfo'
 import { XDRIVE_NATIVE_SHARE_MAX_BYTES, xDriveReadBoundedNativeShareBlob } from './nativeFileShare'
 import {
@@ -529,6 +530,38 @@ type WebUploadGroupOwner = {
 }
 const webUploadGroupOwners = new Map<string, WebUploadGroupOwner>()
 
+export type XDriveViewerQualityPreferenceResponse = {
+  revision: number
+  preset: XDriveViewerQualityPreset
+  effective: XDriveViewerQualityPreset
+  admin_maximum: XDriveViewerQualityPreset
+  capped: boolean
+}
+
+export type XDriveAdminViewerQualityResponse = {
+  revision: number
+  maximum_preset: XDriveViewerQualityPreset
+  cache_budget_bytes: number
+}
+
+export type XDriveViewerCacheStatus = {
+  budget_bytes: number
+  observed_bytes: number
+  candidate_bytes: number
+  candidate_files: number
+  over_budget: boolean
+}
+
+export type XDriveViewerCacheEvictionResult = {
+  dry_run: boolean
+  result?: {
+    DeletedFiles: number
+    DeletedBytes: number
+    RemainingBytes: number
+    OverBudget: boolean
+  }
+}
+
 export class XDriveApi {
   private session: AuthSession
   private readonly onSession?: (session: AuthSession) => void
@@ -877,10 +910,33 @@ export class XDriveApi {
     })
   }
 
-  notesImportIOS(input: { title: string; markdown: string; external_id?: string }) {
+  notesImportIOS(input: { title: string; markdown: string; external_id?: string },
+                 signal?: AbortSignal) {
     return this.request<XDriveNoteSummary>('/api/v1/notes/ios/import', {
       method: 'POST', body: JSON.stringify({ ...input, external_id: input.external_id ?? '' }),
-      cache: 'no-store',
+      cache: 'no-store', signal,
+    })
+  }
+
+  /** A dedicated Owner-only import endpoint; regular Files and Notes update
+   * routes must never accept mutations to a read-only Apple Notes snapshot. */
+  notesImportIOSImage(noteID: string, image: File, signal?: AbortSignal) {
+    if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(noteID) ||
+        image.size <= 0 || image.size > 20 * 1024 * 1024 ||
+        !/\.(?:png|jpe?g|gif|webp|heic)$/i.test(image.name)) {
+      throw new Error('导入的图片或备忘录标识无效；单张图片最多 20 MiB。')
+    }
+    const form = new FormData()
+    form.append('image', image)
+    return this.request<{
+      node_id: number
+      filename: string
+      relative_path: string
+      content_type: string
+      bytes: number
+      sha256: string
+    }>('/api/v1/notes/ios/images/import/' + encodeURIComponent(noteID), {
+      method: 'POST', body: form, cache: 'no-store', signal,
     })
   }
 
@@ -1028,6 +1084,51 @@ export class XDriveApi {
     let offset = 0
     for (const piece of pieces) { bytes.set(piece, offset); offset += piece.byteLength }
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  }
+
+  /** Authenticated Owner-only Viewer defaults. Never accept an Owner ID. */
+  async viewerQualityPreference(signal?: AbortSignal): Promise<XDriveViewerQualityPreferenceResponse> {
+    return this.request('/api/v1/me/viewer-quality', { cache: 'no-store', signal })
+  }
+
+  async saveViewerQualityPreference(
+    revision: number, preset: XDriveViewerQualityPreset,
+    signal?: AbortSignal,
+  ): Promise<XDriveViewerQualityPreferenceResponse> {
+    return this.request('/api/v1/me/viewer-quality', {
+      method: 'PUT', cache: 'no-store',
+      body: JSON.stringify({ revision, preset }), signal,
+    })
+  }
+
+  /** Admin route is protected by the existing Server requireAdmin gate. */
+  async adminViewerQuality(signal?: AbortSignal): Promise<XDriveAdminViewerQualityResponse> {
+    return this.request('/api/v1/admin/services/viewer-quality', { cache: 'no-store', signal })
+  }
+
+  async saveAdminViewerQuality(
+    revision: number, maximumPreset: XDriveViewerQualityPreset,
+    cacheBudgetBytes?: number, signal?: AbortSignal,
+  ): Promise<XDriveAdminViewerQualityResponse> {
+    return this.request('/api/v1/admin/services/viewer-quality', {
+      method: 'PUT', cache: 'no-store',
+      body: JSON.stringify({
+        revision, maximum_preset: maximumPreset,
+        ...(cacheBudgetBytes !== undefined ? { cache_budget_bytes: cacheBudgetBytes } : {}),
+      }), signal,
+    })
+  }
+
+  async adminViewerCacheStatus(signal?: AbortSignal): Promise<XDriveViewerCacheStatus> {
+    return this.request('/api/v1/admin/storage/cache/viewer', { cache: 'no-store', signal })
+  }
+
+  async adminViewerCacheEvict(
+    dryRun: boolean, signal?: AbortSignal,
+  ): Promise<XDriveViewerCacheEvictionResult> {
+    return this.request('/api/v1/admin/storage/cache/viewer/evict', {
+      method: 'POST', cache: 'no-store', body: JSON.stringify({ dry_run: dryRun }), signal,
+    })
   }
 
   async serverVersion() {
@@ -1532,6 +1633,66 @@ export class XDriveApi {
 
   adminServerUpdate() {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update')
+  }
+
+  adminOfflineImportList() {
+    return this.request<{ items: import('../../ui/shared/src/offline-update').XDriveOfflineImportSummary[] }>(
+      '/api/v1/admin/update/offline/imports', { cache: 'no-store' })
+  }
+
+  adminOfflineImportCreate() {
+    return this.request<{ id: string; chunk_bytes: number }>(
+      '/api/v1/admin/update/offline/imports', { method: 'POST', body: '{}', cache: 'no-store' })
+  }
+
+  adminOfflineImportGet(id: string) {
+    return this.request<import('../../ui/shared/src/offline-update').XDriveOfflineImportStatus>(
+      '/api/v1/admin/update/offline/imports/' + encodeURIComponent(id), { cache: 'no-store' })
+  }
+
+  adminOfflineImportRegister(id: string, name: string, size: number, uploadSHA256 = '') {
+    return this.request<void>(
+      '/api/v1/admin/update/offline/imports/' + encodeURIComponent(id) +
+      '/files/' + encodeURIComponent(name), {
+        method: 'POST', body: JSON.stringify({ name, size, sha256: uploadSHA256 }),
+        cache: 'no-store',
+      })
+  }
+
+  adminOfflineImportChunk(id: string, name: string, index: number, data: Blob, sha256: string, signal?: AbortSignal) {
+    return this.request<void>(
+      '/api/v1/admin/update/offline/imports/' + encodeURIComponent(id) +
+      '/files/' + encodeURIComponent(name) + '/chunks/' + index, {
+        method: 'PUT', body: data,
+        headers: { 'Content-Type': 'application/octet-stream', 'X-XDrive-Chunk-SHA256': sha256 },
+        signal, cache: 'no-store',
+      })
+  }
+
+  adminOfflineImportFinalize(id: string, name: string) {
+    return this.request<{ name: string; state: 'ready'; upload_sha256: string }>(
+      '/api/v1/admin/update/offline/imports/' + encodeURIComponent(id) +
+      '/files/' + encodeURIComponent(name) + '/finalize', {
+        method: 'POST', body: '{}', cache: 'no-store',
+      })
+  }
+
+  adminOfflineImportRemove(id: string) {
+    return this.request<void>(
+      '/api/v1/admin/update/offline/imports/' + encodeURIComponent(id), {
+        method: 'DELETE', cache: 'no-store',
+      })
+  }
+
+  adminStartOfflineServerUpdate(id: string, manifestSHA256: string, goSHA256: string, backupFileData: boolean) {
+    return this.request<XDriveServerUpdateState>('/api/v1/admin/update', {
+      method: 'POST', cache: 'no-store',
+      body: JSON.stringify({
+        source: 'offline', channel: 'master', offline_id: id,
+        trusted_manifest_sha256: manifestSHA256, trusted_installer_sha256: goSHA256,
+        backup_file_data: backupFileData,
+      }),
+    })
   }
 
   adminStartServerUpdate(source: XDriveServerUpdateSource, channel: XDriveServerUpdateChannel, backupFileData: boolean) {
@@ -2957,7 +3118,7 @@ export class XDriveApi {
     await this.ensureFresh(signal)
     const get = async (format: 'webp' | 'jpeg') => {
       xDriveAssertMediaReadActive(signal)
-      const query = new URLSearchParams({ format })
+      const query = new URLSearchParams({ format, preset: 'account' })
       if (revision && Number.isSafeInteger(revision)) query.set('revision', String(revision))
       const path = '/api/v1/media/items/' + nodeID + '/viewer-preview?' + query.toString()
       const send = () => fetch(API_BASE + path, {
@@ -3006,9 +3167,14 @@ export class XDriveApi {
             throw new ApiError(502, '高清图片无法解码')
           }
         }
+        // Never report a fallback JPEG/WebP derivative as a higher preset.
+        const reportedQuality = Number(response.headers.get('X-XDrive-Viewer-Preview-Quality'))
+        const quality = Number.isSafeInteger(reportedQuality) &&
+          reportedQuality >= 1 && reportedQuality <= 100
+          ? reportedQuality : format === 'webp' ? 90 : 93
         xDriveRegisterViewerImageSource(url, {
           format: format === 'webp' ? 'WebP' : 'JPEG',
-          quality: format === 'webp' ? 90 : 93,
+          quality,
           byteSize: blob.size,
         })
         return url

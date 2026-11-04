@@ -16,17 +16,20 @@ delays or alters existing CI/Snapshot publication.
 | DSM ARMv7 GUI | Same verified snapshot, **only if** XZ/GUI SPK verifier succeeds | `xdrivenas-armada38x-*.spk` | 8.7 MB | Conditional |
 | Android | Latest successful **master push** Android Master APK workflow Artifact | `xdrive-android-master-*-debug.apk` | ~40 MB (ZIP Artifact total) | Yes |
 | iOS | Latest successful **master push** iOS Native Unsigned IPA workflow Artifact | `xDrive-unsigned.ipa` | ~4 MB (ZIP Artifact total) | Yes |
+| Backup CLI Linux/Windows | Verified rolling Snapshot | `xdrive-backup-linux-amd64.tar.gz`, `xdrive-backup-windows-amd64.zip` | ~8 MB each | Yes |
+| Source Agent Linux amd64/arm64 | Verified rolling Snapshot | `xdrive-source-agent-linux-*` | ~8 MB each | Yes |
 
-The measured reference set totals approximately **308 MB**, plus SHA-256 sidecars.
-Exact bytes and commits are reported by each workflow run (not hardcoded).
+Exact bytes, sizes, source commit and names are reported by each workflow run.
+Backup CLI archives and Source Agent executables are included in their own
+product-category directories; they are not Desktop installers.
 `Android` uses an ephemeral debug signer, so existing installs may not update
 in-place. `iOS` requires SideStore/other user signing. Successful CI compilation
 is not device installation validation.
 
-This client workflow does not mirror Docker/OCI image archives, Server, Caddy,
-photo/media-worker images, backup CLI archives, diagnostics/scripts, Source Agent binaries, PR
-artifacts or source tarballs. There is no macOS installer at present. Web/PWA
-is served from the xDrive HTTPS website and has no offline installer to upload.
+This workflow does not mirror Docker/OCI image archives, Server, Caddy,
+photo/media-worker images, deployment scripts, PR artifacts or source tarballs.
+There is no macOS installer at present. Web/PWA is served from the xDrive HTTPS
+website and has no offline installer to upload.
 Server packages use the separate [signed Share update publisher](server-share-update.md).
 
 ## Enable (explicit opt-in)
@@ -52,8 +55,9 @@ Server packages use the separate [signed Share update publisher](server-share-up
    schedule retries any late/failed mirror attempt; no new client build is
    started. `workflow_dispatch` with `dry_run=false` runs on demand even
    if the repository variable is not yet enabled (but requires secrets).
-5. Confirm the new Share directory `xDrive-Clients/`, with per-platform,
-   12-character-commit subfolders and `<filename>.sha256` companion files.
+5. Confirm product directories `Desktop/`, `Mobile/`, `DSM/`, `Backup-CLI/`
+   and `Source-Agent/` under the **shared root folder**, each containing flat,
+   versioned files with `<archived-filename>.sha256` companions.
 
 A Share **must be a directory**, must be reachable from GitHub-hosted Ubuntu
 runners on HTTPS with a publicly trusted certificate/hostname, and must
@@ -64,15 +68,46 @@ sample file to an unverified destination.
 
 ## Versioning, idempotency, integrity
 
-Every file is immutable and stored at:
+The folder Share itself is the user's `/xDrive Release` directory. **Plan B**
+stores every new release as an immutable file directly under its product group
+(illustrative UTC and SHA only):
 
+```text
+/xDrive Release/
+├─ Desktop/
+│  ├─ xDriveSetup-master-20261103T123456Z-8ed415f083f6-win-amd64.exe
+│  └─ xDriveDesktop-master-20261103T123456Z-8ed415f083f6-linux-amd64.deb
+├─ Mobile/
+│  ├─ xDrive-master-20261103T123456Z-8ed415f083f6-android-debug.apk
+│  └─ xDrive-master-20261103T123456Z-8ed415f083f6-ios-unsigned.ipa
+├─ DSM/
+│  └─ xdrivenas-master-20261103T123456Z-8ed415f083f6-dsm-armada38x-0.1.0-7642.spk
+├─ Backup-CLI/
+│  ├─ xdrive-backup-master-20261103T123456Z-8ed415f083f6-linux-amd64.tar.gz
+│  └─ xdrive-backup-master-20261103T123456Z-8ed415f083f6-win-amd64.zip
+├─ Source-Agent/
+│  ├─ xdrive-source-agent-master-20261103T123456Z-8ed415f083f6-linux-amd64
+│  └─ xdrive-source-agent-master-20261103T123456Z-8ed415f083f6-linux-arm64
+├─ xDrive-Clients/            # prior historical layout, retained as-is
+└─ xDrive-Server/             # signed five-component publisher, unchanged
+   ├─ packages/
+   └─ master/
 ```
-xDrive-Clients/windows/<source-sha12>/xDriveSetup-amd64.exe
-xDrive-Clients/linux/<source-sha12>/xdrive-linux-amd64.deb
-xDrive-Clients/dsm/<source-sha12>/xdrivenas-armada38x-<version>.spk
-xDrive-Clients/android/<source-sha12>/xdrive-android-master-<sha12>-debug.apk
-xDrive-Clients/ios/<source-sha12>/xDrive-unsigned.ipa
-```
+
+The timestamp is derived from the **actual source Git commit's UTC committer
+time**, not the local uploader clock or the rolling Snapshot asset upload
+timestamp. It therefore remains identical on retries and recovery. Each platform
+may use a different original commit; the full 40-character source commit and
+SHA-256 are retained in the verified job Manifest. Renaming changes only the
+Share-visible archive filename, not the signed installer bytes.
+
+Existing historical `xDrive-Clients/platform/commit12/` files are **not
+migrated, renamed, deleted or overwritten**. Re-uploading their verified
+content into the new flat paths can reuse the existing Share-visible CAS blob
+through the normal instant upload receipt; a cache miss follows ordinary bounded
+chunk upload. The server's `xDrive-Server/packages` and `master` paths remain
+unchanged because the signed Server updater depends on them. No `latest`
+directory, mutable alias or automatic cleanup is part of Plan B.
 
 The real xDrive anonymous API uses `conflict_policy=keep_both`, **not** replace;
 therefore the mirror checks the shared folder before writing. A same-name,
@@ -80,9 +115,10 @@ same-size file is skipped only after its bytes pass SHA-256 verification through
 a scoped download ticket. A size or digest conflict fails rather than silently
 producing `(1)` copies. A deterministic HMAC-based resume key
 permits retry/recovery of the same chunked upload session. Each successful
-binary receives a `.sha256` sidecar. The mirror never deletes existing files,
-rewrites a `latest` pointer or sends a full folder ZIP. To limit disk usage,
-remove old version subfolders through an authenticated Owner UI when desired.
+binary receives a `.sha256` sidecar named after its **archived** filename.
+The mirror never deletes existing files, rewrites a `latest` pointer or sends
+a full folder ZIP. To limit disk usage, retire old individual archive files
+only through authenticated Owner UI, never the anonymous upload capability.
 
 Every upload initialization includes the full SHA-256 and size. When the Server
 can reuse a current file visible inside this same Share subtree, it returns a
@@ -121,17 +157,15 @@ is **excluded**, not advertised as installable.
   configured and a real workflow has successfully completed. Physical device
   installation is **跳过（未验收）**.
 
-## Scope boundary: client mirror is not a Server update provider
+## Scope boundary: client archives are not a Server update provider
 
-This folder contains **client installers only**, not Docker images, deployment
-scripts or a full compatible Server release bundle. It **must not** be passed to
-`xdrive-server update` as if it were GitHub or GitLab. An upload Share is also
-an untrusted distribution source: a colocated `.sha256` file can be forged
-alongside its binary. A future `--source xdrive` updater requires an
-authenticated/signature-verified, rollback-protected component manifest bound
-to exact image digests and a read-only download capability. The current
-five-component offline Manifest is tracked in PR #3625; until its manifest
-and the Share reader have passed separate CI/restore acceptance, keep the
-existing `--source github|gitlab` Server updater unchanged. The public
-download link should remain read-only, with a separate **private** uploader
-capability to the same Owner-controlled storage directory.
+The flat product directories contain **client installers, Backup CLI and Source
+Agent artifacts only**, not Docker images, deployment scripts or a Server
+release bundle. They **must not** be passed to `xdrive-server update`.
+An upload Share is not a trusted release authority; a colocated `.sha256` file
+can be forged alongside its binary. The separately implemented
+`--source xdrive` Server updater verifies signed publisher identity, rollback
+floor, component manifests and exact image identities from the unchanged
+`xDrive-Server/` namespace. The public download link should remain read-only,
+with a separate **private** uploader capability to the same Owner-controlled
+storage directory.

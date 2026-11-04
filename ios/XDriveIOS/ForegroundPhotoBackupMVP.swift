@@ -19,6 +19,8 @@ struct XDriveIOSPhotoBackupProgress: Equatable {
     var liveNotSupported = 0
     var videosNotSupported = 0
     var unavailable = 0
+    // Bounded in-memory reasons for THIS window, not a persistent retry queue.
+    var issues = XDriveIOSPhotoBackupIssueSummary()
     var needsReview = 0
     var isLimited = false
     var stoppedForReview = false
@@ -109,6 +111,10 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                             kind: candidate.kind, isLive: candidate.isLive
                         ) else {
                         report.videosNotSupported += 1
+                        report.issues.append(
+                            position: startOffset + report.scanned,
+                            mediaKind: candidate.kind, reason: .unsupported
+                        )
                         report.stage = "无法识别的媒体类型，已跳过"
                         await onProgress(report)
                         continue
@@ -154,6 +160,11 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         // remain local per-item failures, never confirmed.
                         // Unknown Server ACK remains a distinct review pause.
                         report.unavailable += 1
+                        report.issues.append(
+                            position: startOffset + report.scanned,
+                            mediaKind: isLive ? "live" : candidate.kind,
+                            reason: Self.issueReason(after: error)
+                        )
                         report.stage = "有照片原件无法确认，请查看备份汇总"
                     }
                     await onProgress(report)
@@ -179,6 +190,25 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             await scanner.reset()
             throw error
         }
+    }
+
+    /// Only ITEM-LOCAL errors are summarized. Network, authorization,
+    /// device storage, sealed journal and ambiguous ACK failures already
+    /// abort/pause above and must never appear as a retryable photo issue.
+    private static func issueReason(after error: Error) -> XDriveIOSPhotoBackupIssueReason {
+        if let source = error as? XDrivePhotoKitExportFailure {
+            switch source {
+            case .assetNotVisible: return .notVisible
+            case .originalResourceMissing: return .originalMissing
+            case .incompleteLivePair: return .incompleteLivePair
+            case .resourceTooLarge: return .resourceTooLarge
+            case .notAuthorized, .storageUnavailable: return .unavailable
+            }
+        }
+        if let intent = error as? XDriveIOSPhotoIntentPreparationError {
+            if case .resourceChangedDuringHash = intent { return .sourceChanged }
+        }
+        return .unavailable
     }
 
     /// A global authorization/receipt trust loss must not be reclassified

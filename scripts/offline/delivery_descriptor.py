@@ -35,9 +35,17 @@ def generate(directory: Path, commit: str, repository: Path) -> dict:
                                    '--count', commit], capture_output=True, text=True, check=True).stdout)
     if sequence <= 0:
         raise ValueError('Invalid first-parent sequence')
-    return dict(schema=1, repository_id=REPOSITORY_ID, channel='master', platform='linux/amd64',
-                source_commit=commit, sequence=sequence, manifest=file_record(directory / 'manifest.json'),
-                installer=file_record(directory / 'xdrive-offline.py'))
+    # Retain signed schema 1 for legacy Python Share readers. New exact-commit
+    # releases can additionally bind a Go ELF without rewriting old immutable
+    # Python releases or allowing an unsigned alternate executable.
+    result = dict(schema=1, repository_id=REPOSITORY_ID, channel='master',
+                  platform='linux/amd64', source_commit=commit, sequence=sequence,
+                  manifest=file_record(directory / 'manifest.json'),
+                  installer=file_record(directory / 'xdrive-offline.py'))
+    go_binary = directory / 'xdrive-offline-linux-amd64'
+    if go_binary.exists() or go_binary.is_symlink():
+        result['go_installer'] = file_record(go_binary)
+    return result
 
 
 def main():

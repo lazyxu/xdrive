@@ -374,6 +374,14 @@ final class XDriveIOSNativeFilesFavoriteMutationModel: ObservableObject {
 
 /// Files-owned recent/favorites subroute. Entries always come from one exact
 /// Owner projection and open the same L3 native Files Viewer.
+/// Collection actions preserve the exact Owner and projected Node.
+private struct XDriveIOSNativeFilesCollectionManageIntent: Identifiable {
+    let id = UUID()
+    let owner: XDriveNativeOwnerRoot
+    let item: XDriveIOSNativeFilesCollectionItem
+    let quickAction: XDriveIOSNativeFilesQuickAction?
+}
+
 struct XDriveIOSNativeFilesCollectionScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let kind: XDriveIOSNativeFilesCollectionKind
@@ -386,8 +394,21 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var returnFile: XDriveIOSNativeFilesNode?
     @State private var locateIntent: XDriveIOSNativeFilesCollectionItem?
     @State private var locateOwner: XDriveNativeOwnerRoot?
+    @State private var managementIntent: XDriveIOSNativeFilesCollectionManageIntent?
+    @State private var filterQuery = ""
     // Match Browse's chosen presentation when switching between Files subroutes.
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
+
+    /// Recent and Favorites are bounded Owner projections, not an index of all
+    /// Server files. Filter locally; do not create a second search endpoint.
+    private var filteredItems: [XDriveIOSNativeFilesCollectionItem] {
+        let query = filterQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return model.items }
+        return model.items.filter {
+            $0.node.name.localizedStandardContains(query) ||
+                $0.path.localizedStandardContains(query)
+        }
+    }
 
     var body: some View {
         ScrollViewReader { returnScroll in
@@ -401,19 +422,21 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 } else if model.items.isEmpty {
                     Text(kind == .recent ? "暂时没有最近使用的文件。" : "尚未收藏文件。")
                         .foregroundStyle(.secondary)
+                } else if filteredItems.isEmpty {
+                    Text("当前已加载的\(kind.title)中无匹配项。")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-files-collection-no-search-matches")
                 }
                 if viewMode == "grid" {
                     LazyVGrid(
                         columns: [GridItem(.adaptive(minimum: 128, maximum: 184), spacing: 10)],
                         spacing: 10
                     ) {
-                        ForEach(model.items) { item in
+                        ForEach(filteredItems) { item in
                             gridTile(item)
                                 .id(item.id)
                                 .contextMenu {
-                                    Button { showLocation(for: item) } label: {
-                                        Label("显示所在文件夹", systemImage: "folder")
-                                    }
+                                    collectionQuickActions(for: item)
                                 }
                         }
                     }
@@ -423,14 +446,33 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     .listRowSeparator(.hidden)
                     .accessibilityIdentifier("native-ios-files-collection-grid")
                 } else {
-                    ForEach(model.items) { item in
+                    ForEach(filteredItems) { item in
                         row(item)
                             .id(item.id)
-                            .contextMenu {
-                                Button { showLocation(for: item) } label: {
-                                    Label("显示所在文件夹", systemImage: "folder")
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                if model.verified && !model.loading && !favorites.busy {
+                                    Button {
+                                        openManagement(for: item)
+                                    } label: {
+                                        Label("更多", systemImage: "ellipsis")
+                                    }
+                                    .tint(.gray)
+                                    Button {
+                                        openManagement(for: item, quickAction: .shareLink)
+                                    } label: {
+                                        Label("分享链接", systemImage: "link")
+                                    }
+                                    .tint(.blue)
+                                    Button(role: .destructive) {
+                                        openManagement(for: item, quickAction: .trash)
+                                    } label: {
+                                        Label("删除", systemImage: "trash")
+                                    }
                                 }
                             }
+                            .contextMenu {
+                                    collectionQuickActions(for: item)
+                                }
                     }
                 }
                 if favorites.busy {
@@ -441,6 +483,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
             }
             .listStyle(.plain)
+            .searchable(
+                text: $filterQuery,
+                placement: .navigationBarDrawer(displayMode: .automatic),
+                prompt: kind == .recent ? "筛选最近使用（最多 50 项）" : "筛选收藏夹（最多 256 项）"
+            )
             .navigationTitle(kind.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -450,17 +497,37 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                             Label("列表", systemImage: "list.bullet").tag("list")
                             Label("图标", systemImage: "square.grid.2x2").tag("grid")
                         }
+                        .accessibilityIdentifier("native-ios-files-collection-view-mode")
+                        Divider()
+                        Button { reload() } label: {
+                            Label("刷新", systemImage: "arrow.clockwise")
+                        }
+                        .disabled(model.loading || favorites.busy)
                     } label: {
-                        Label("显示方式", systemImage: viewMode == "grid"
-                              ? "square.grid.2x2" : "list.bullet")
+                        Label("更多", systemImage: "ellipsis.circle")
                     }
-                    .accessibilityIdentifier("native-ios-files-collection-view-mode")
+                    .accessibilityIdentifier("native-ios-files-collection-more-options")
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { reload() } label: {
-                        Label("刷新", systemImage: "arrow.clockwise")
+            }
+
+            .sheet(item: $managementIntent, onDismiss: {
+                reload()
+            }) { intent in
+                if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
+                   let parentID = intent.item.node.parent_id, parentID > 0,
+                   XDriveIOSNativeFilesCollectionsPolicy.validItem(intent.item, kind: kind) {
+                    XDriveIOSNativeFilesManagementPanel(
+                        login: login, expectedOwner: intent.owner,
+                        folderID: parentID, folderName: nil,
+                        file: intent.item.node.isDirectory ? nil : intent.item.node,
+                        directory: intent.item.node.isDirectory ? intent.item.node : nil,
+                        initialQuickAction: intent.quickAction
+                    ) {
+                        managementIntent = nil
                     }
-                    .disabled(model.loading || favorites.busy)
+                } else {
+                    Text("文件或账户已变化，请关闭后重新选择。")
+                        .foregroundStyle(.secondary)
                 }
             }
             .sheet(item: $locateIntent, onDismiss: {
@@ -496,7 +563,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                                   XDriveIOSNativePhotoOwnerScope.matches(
                                     login.owner, openedOwner
                                   ),
-                                  model.items.contains(where: { $0.node == next })
+                                  filteredItems.contains(where: { $0.node == next })
                             else { return false }
                             returnFile = next
                             return true
@@ -508,7 +575,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .onAppear { reload() }
             .onDisappear {
-                if selectedFile == nil && locateIntent == nil {
+                if selectedFile == nil && locateIntent == nil && managementIntent == nil {
                     model.invalidate()
                     favorites.invalidate()
                 }
@@ -519,6 +586,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 returnFile = nil
                 locateIntent = nil
                 locateOwner = nil
+                managementIntent = nil
+                filterQuery = ""
                 model.invalidate()
                 favorites.invalidate()
             }
@@ -532,21 +601,93 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
         }
     }
 
+    /// Recent and Favorites reuse the existing Server Node operation panel.
+    /// Every menu item is actionable, with destination/version/delete checks
+    /// delegated to the same verified writers as the main Files browser.
+    @ViewBuilder
+    private func collectionQuickActions(
+        for item: XDriveIOSNativeFilesCollectionItem
+    ) -> some View {
+        if model.verified && !model.loading && !favorites.busy {
+            if !item.node.isDirectory {
+                Button { openFile(item) } label: {
+                    Label("预览", systemImage: "eye")
+                }
+            }
+            Button { openManagement(for: item, quickAction: .copy) } label: {
+                Label("复制到…", systemImage: "doc.on.doc")
+            }
+            Button { openManagement(for: item, quickAction: .move) } label: {
+                Label("移动到…", systemImage: "folder")
+            }
+            Button { openManagement(for: item, quickAction: .rename) } label: {
+                Label("重命名", systemImage: "pencil")
+            }
+            if kind == .favorites {
+                Button {
+                    guard filteredItems.contains(item), model.items.contains(item) else {
+                        return
+                    }
+                    favorites.remove(item, login: login) { reload() }
+                } label: {
+                    Label("取消收藏", systemImage: "star.slash")
+                }
+                .accessibilityIdentifier("native-ios-files-unfavorite-\(item.id)")
+            } else {
+                Button { openManagement(for: item, quickAction: .favorite) } label: {
+                    Label("收藏", systemImage: "star")
+                }
+            }
+            Button { openManagement(for: item, quickAction: .shareLink) } label: {
+                Label("云端分享链接", systemImage: "link")
+            }
+            Button { openManagement(for: item, quickAction: .download) } label: {
+                Label(item.node.isDirectory ? "下载文件夹 ZIP" : "下载原件",
+                      systemImage: "arrow.down.to.line")
+            }
+            Button { showLocation(for: item) } label: {
+                Label("显示所在文件夹", systemImage: "folder")
+            }
+            Button(role: .destructive) {
+                openManagement(for: item, quickAction: .trash)
+            } label: {
+                Label("移入回收站", systemImage: "trash")
+            }
+        }
+    }
+
+    private func openManagement(
+        for item: XDriveIOSNativeFilesCollectionItem,
+        quickAction: XDriveIOSNativeFilesQuickAction? = nil
+    ) {
+        guard phase == .active, model.verified, !model.loading,
+              !favorites.busy, selectedFile == nil, locateIntent == nil,
+              managementIntent == nil,
+              let owner = login.owner, let parentID = item.node.parent_id,
+              parentID > 0,
+              XDriveIOSNativeFilesCollectionsPolicy.validItem(item, kind: kind),
+              filteredItems.contains(item), model.items.contains(item) else { return }
+        managementIntent = XDriveIOSNativeFilesCollectionManageIntent(
+            owner: owner, item: item, quickAction: quickAction
+        )
+    }
+
     /// Recent and Favorite server projections expose a path label but no
     /// guessed navigation target. Use the existing authoritative Node location
     /// reader, which also validates exact Owner, root, parent and revision.
     private func showLocation(for item: XDriveIOSNativeFilesCollectionItem) {
         guard phase == .active, model.verified, !model.loading,
               !favorites.busy, selectedFile == nil,
-              let owner = login.owner, model.items.contains(item),
-              item.node.parent_id != nil else { return }
+              let owner = login.owner, filteredItems.contains(item),
+              model.items.contains(item), item.node.parent_id != nil else { return }
         locateOwner = owner
         locateIntent = item
     }
 
     private func openFile(_ item: XDriveIOSNativeFilesCollectionItem) {
         guard model.verified, !model.loading, !favorites.busy,
-              let owner = login.owner, model.items.contains(item) else { return }
+              let owner = login.owner, filteredItems.contains(item),
+              model.items.contains(item) else { return }
         selectedOwner = owner
         returnFile = item.node
         selectedFile = item
@@ -554,6 +695,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
 
     /// The same verified collection items and native destination/Viewer serve
     /// both presentations; switching modes never starts an extra API read.
+    /// Recent/Favorites reuse the uncluttered native Files icon grid. Favorite
+    /// removal stays in the verified long-press menu instead of a second
+    /// permanently visible button beneath every thumbnail.
     private func gridTile(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             if item.node.isDirectory {
@@ -575,23 +719,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-collection-open-\(item.id)")
             }
-            if kind == .favorites {
-                Button {
-                    guard model.verified, !model.loading,
-                          model.items.contains(item) else { return }
-                    favorites.remove(item, login: login) { reload() }
-                } label: {
-                    Label("取消收藏", systemImage: "star.slash")
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
-                }
-                .disabled(!model.verified || model.loading || favorites.busy)
-                .accessibilityIdentifier("native-ios-files-unfavorite-\(item.id)")
-            }
         }
-        .padding(8)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(Color(uiColor: .secondarySystemGroupedBackground),
-                    in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func gridEntryLabel(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
@@ -614,6 +744,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// Tapping a file or folder remains the primary row action; long-press
+    /// exposes the same Owner-verified Favorite and management operations.
     private func row(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
         HStack(spacing: 8) {
             if item.node.isDirectory {
@@ -633,20 +765,6 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 .buttonStyle(.plain)
                 .disabled(!model.verified || model.loading || favorites.busy)
                 .accessibilityIdentifier("native-ios-files-collection-open-\(item.id)")
-            }
-            if kind == .favorites {
-                Button {
-                    guard model.verified, !model.loading, model.items.contains(item) else {
-                        return
-                    }
-                    favorites.remove(item, login: login) { reload() }
-                } label: {
-                    Image(systemName: "star.slash")
-                        .frame(minWidth: 44, minHeight: 44)
-                }
-                .disabled(!model.verified || model.loading || favorites.busy)
-                .accessibilityLabel("取消收藏 \(item.node.name)")
-                .accessibilityIdentifier("native-ios-files-unfavorite-\(item.id)")
             }
         }
         .frame(minHeight: 44)
@@ -670,10 +788,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     private func neighboringFiles(
         for selected: XDriveIOSNativeFilesCollectionItem
     ) -> [XDriveIOSNativeFilesNode] {
-        guard model.verified, model.items.contains(selected) else {
+        guard model.verified, model.items.contains(selected),
+              filteredItems.contains(selected) else {
             return [selected.node]
         }
-        let neighbors = model.items.filter {
+        let neighbors = filteredItems.filter {
             $0.node.type == "file" && $0.node.parent_id == selected.node.parent_id
         }.prefix(XDriveIOSNativeFilesViewerPolicy.maximumLoadedRows).map(\.node)
         return neighbors.contains(selected.node) ? neighbors : [selected.node]

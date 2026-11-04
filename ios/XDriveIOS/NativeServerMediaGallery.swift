@@ -587,7 +587,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
                             XDriveIOSNativeCloudPairedLivePhotoView(
                                 files: resources,
                                 placeholder: still,
-                                playbackRequest: livePlaybackRequest
+                                playbackRequest: livePlaybackRequest,
+                                hintEnabled: nativeLiveReady && ownerAuthorized
                             ) { ready in
                                 // Old Photos callbacks cannot revive a retired
                                 // Owner, scene, Viewer or temporary resource set.
@@ -753,6 +754,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 viewed.isVideo ? "视频" : "照片")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
                 if showChrome && (visibleItems.count > 1 || canCrossRange(-1) ||
                     canCrossRange(1) || rangeCrossing) {
                     VStack(spacing: 6) {
@@ -790,6 +792,30 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.ultraThinMaterial)
                     }
+                }
+
+                if showChrome && ownerAuthorized && viewed.supportsPreview {
+                    HStack {
+                        Spacer(minLength: 8)
+                        if photosRestoreBusy {
+                            ProgressView()
+                                .frame(minWidth: 44, minHeight: 44)
+                                .accessibilityLabel("正在保存到 iOS 照片")
+                        } else {
+                            Button {
+                                restorePhotoAssetOriginal()
+                            } label: {
+                                Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .disabled(rangeCrossing)
+                            .accessibilityIdentifier("native-ios-photoasset-bottom-save-to-photos")
+                        }
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.horizontal, 12)
+                    .background(.ultraThinMaterial)
+                }
                 }
             }
             .toolbar {

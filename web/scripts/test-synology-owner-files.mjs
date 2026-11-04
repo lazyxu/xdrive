@@ -166,6 +166,15 @@ const pageSource = fs.readFileSync(
 const controllerSource = fs.readFileSync(
   path.join(repo, 'ui/shared/src/mui/FileExplorerCursorDirectoryController.ts'), 'utf8')
 assert.match(pageSource, /useXDriveFileExplorerCursorDirectory\(/)
+// The same Owner Files view now supports create, upload, rename, copy,
+// move and move-to-trash: no row may falsely advertise itself as read-only.
+const ownerItemProjection = pageSource.match(/function itemForExplorer\([\s\S]*?\n\}/)?.[0]
+assert.ok(ownerItemProjection, 'DSM Owner file projection missing')
+assert.doesNotMatch(ownerItemProjection, /statusLabel:\s*['"]只读['"]/, 'editable Owner rows mislabeled read-only')
+assert.match(pageSource, /client\.ownerRenameNode\(/)
+assert.match(pageSource, /client\.ownerCopyNode\(/)
+assert.match(pageSource, /client\.ownerMoveNode\(/)
+
 assert.match(controllerSource, /verified\s*&&\s*rootCurrent\s*&&\s*verifiedScopeKey\s*===\s*currentScopeKey/)
 assert.match(pageSource, /currentScopeVerified\s*\?\s*items\.map\(itemForExplorer\)\s*:\s*\[\]/)
 assert.match(pageSource, /onScrollCapture=/)

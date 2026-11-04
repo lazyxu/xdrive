@@ -69,3 +69,24 @@ test('local staging disk failures abort the whole backup window rather than adva
   assert.match(exporter, /case resourceTooLarge/)
   assert.doesNotMatch(exporter, /UploadSession|UserDefaults|kSecAttrAccessible|WKWebView/)
 });
+
+test('zero-byte PhotoKit callback is one unavailable original, not a global disk failure', () => {
+  const runner = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const gate = exporter.slice(exporter.indexOf('private final class PhotoKitRequestGate'),
+    exporter.indexOf('enum XDrivePhotoKitOriginalExporter'))
+  const abort = runner.slice(runner.indexOf('private static func mustAbortRun('),
+    runner.indexOf('private static func isTransientConfirmedReadbackFailure('))
+
+  // A real write failure must still abort the whole scan and preserve its cursor.
+  assert.match(gate, /catch \{[\s\S]*?failure = XDrivePhotoKitExportFailure\.storageUnavailable\s*toCancel = requestID/)
+  assert.match(abort, /case \.storageUnavailable = source \{\s*return true/)
+
+  // A completed PhotoKit callback with zero bytes is instead item-local.
+  // It can neither mark a zero-byte file successful nor stop the other photos.
+  assert.match(gate, /let error = failure \?\? photoError/)
+  assert.match(gate, /else if finalCount <= 0 \{\s*(?:\/\/[^\n]*\n\s*)*continuation\.resume\(throwing: XDrivePhotoKitExportFailure\.originalResourceMissing\)/)
+  assert.match(gate, /else \{\s*continuation\.resume\(returning: finalCount\)/)
+  assert.doesNotMatch(abort, /\.originalResourceMissing/)
+  assert.match(runner, /report\.unavailable \+= 1/)
+  assert.doesNotMatch(gate, /UploadSession|\.uploadPrepared|\.confirmReceipt/)
+})

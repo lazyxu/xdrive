@@ -15,6 +15,8 @@ import { XDriveTaskCenterPage } from './TaskCenterPage'
 import { XDriveCloudStoragePage } from './CloudStoragePage'
 import { XDriveLocalStoragePage } from './LocalStoragePage'
 import { XDriveSystemMaintenancePage } from './SystemMaintenancePage'
+import { XDriveSystemUpdatePage } from './SystemUpdatePage'
+import { XDriveClientUpdatePage } from './ClientUpdatePage'
 import XDriveAdminUsersPage from './AdminUsersPage'
 import XDriveAdminAuditPage from './AdminAuditPage'
 import XDriveGlobalStorageStatsPage from './GlobalStorageStatsPage'
@@ -134,6 +136,14 @@ export function XDriveAppPageOutlet({
       case 'local-storage':
         if (services.localStorage) page = (
           <XDriveLocalStoragePage key={revision} source={services.localStorage} />
+        )
+        break
+      case 'client-update':
+        if (services.clientUpdatePage) page = <XDriveClientUpdatePage {...services.clientUpdatePage} />
+        break
+      case 'admin-update':
+        if (services.adminUpdatePage) page = (
+          <XDriveSystemUpdatePage {...services.adminUpdatePage} />
         )
         break
       case 'admin-maintenance':

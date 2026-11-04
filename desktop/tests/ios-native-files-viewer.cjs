@@ -23,13 +23,16 @@ test('one native Files modal opens from the current real page and reanchors afte
   assert.match(browser, /model\.entries\.contains\(where: \{ \$0\.node == next \}\)/);
   assert.match(browser, /lastViewedFile = next/);
   assert.match(browser, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/);
-  assert.match(browser, /if selectedFile == nil \{ model\.invalidate\(\) \}/);
+  assert.match(browser, /private func suspendVisibleRange\(\) \{\s*guard selectedFile == nil else \{ return \}/);
+  assert.match(browser, /if let saved = rememberedPosition\(\) \{\s*offset = saved\.pageOffset\s*pendingNavigationReturnNodeID = saved\.nodeID/);
+  assert.match(browser, /model\.invalidate\(\)\s*\}\s*var body: some View/);
+  assert.match(browser, /\.onDisappear \{ suspendVisibleRange\(\) \}/);
 });
 
 test('native image/video/PDF/audio/text viewers share one read-only lifecycle', () => {
   assert.match(view, /struct XDriveIOSNativeFilesViewer: View/);
   assert.match(view, /XDriveIOSNativeZoomablePhotoView\(image: image\)/);
-  assert.match(view, /VideoPlayer\(player: player\)/);
+  assert.match(view, /XDriveIOSNativePhotoVideoSurface\(/);
   assert.match(view, /XDriveIOSNativePDFDocumentSurface\(document: document\)/);
   assert.match(view, /private struct XDriveIOSNativeFileAudioSurface: View/);
   assert.match(view, /Slider\(/);
@@ -199,4 +202,57 @@ test('native Files UTF-8 preview types cover the actual Server allowlist', () =>
   assert.ok(reader.includes('/preview/text'), 'text uses native Owner-scoped Server preview');
   assert.match(reader, /return \.text\(preview\.text, preview\.truncated\)/);
   assert.ok(go.includes('func (s *Server) fileTextPreview('));
+});
+
+
+test('Files video uses Gallery native timeline and Owner-gated canvas paging without stealing seek', () => {
+  const video = read('ios/XDriveIOS/NativePhotoVideoSurface.swift');
+  const modal = view.slice(view.indexOf('struct XDriveIOSNativeFilesViewer: View'));
+  assert.match(modal, /@State private var showVideoChrome = true/);
+  assert.match(modal, /private var isNativeVideo: Bool/);
+  assert.match(modal, /if case \.video = display \{ return true \}/);
+  assert.match(modal, /private var chromeVisible: Bool/);
+  assert.match(modal, /private func toggleVideoChrome\(\) \{\s*guard authorized, isNativeVideo else \{ return \}/);
+  assert.match(modal, /case \.video:[\s\S]*?XDriveIOSNativePhotoVideoSurface\(/);
+  assert.match(modal, /player: player, showChrome: showVideoChrome,/);
+  assert.match(modal, /onChromeTap: \{ toggleVideoChrome\(\) \}/);
+  assert.match(modal, /onNavigateSwipe: \{ move\(\$0\) \}/);
+  assert.match(modal, /\.id\(viewed\.id\)/);
+  assert.match(modal, /\.onAppear \{ if authorized \{ player\.play\(\) \} \}/);
+  assert.match(modal, /\.onDisappear \{ player\.pause\(\) \}/);
+  assert.match(modal, /\.toolbar\(chromeVisible \? \.visible : \.hidden,/);
+  assert.match(modal, /\.statusBarHidden\(!chromeVisible\)/);
+  assert.match(modal, /private func retire\(\) \{[\s\S]*?showImageChrome = true\s*showVideoChrome = true/);
+  assert.match(modal, /XDriveIOSNativeFilesViewerPolicy\.neighbor\(/);
+  assert.match(modal, /guard let next = neighbor\(direction\), onNavigate\(next\) else \{ return \}/);
+  assert.match(modal, /if let item = player\.currentItem \{/);
+  assert.match(modal, /item\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
+  assert.match(modal, /case \.audio:[\s\S]*?XDriveIOSNativeFileAudioSurface/);
+  assert.match(modal, /case \.pdf\(let document\):[\s\S]*?XDriveIOSNativePDFDocumentSurface/);
+  assert.match(modal, /case \.text\(let content, let truncated\):/);
+  assert.match(video, /DragGesture\(minimumDistance: 72, coordinateSpace: \.local\)/);
+  assert.match(video, /XDriveIOSNativeViewerSwipePolicy\.direction\(/);
+  assert.match(video, /Slider\(/);
+  assert.match(video, /player\.seek\(/);
+  assert.match(video, /player\.isMuted = !player\.isMuted/);
+  assert.doesNotMatch(video, /URLSession|Bearer|UploadSession|Keychain|WKWebView/);
+});
+
+test('shared Photos video seek preview is bounded and never resumes a retired player', () => {
+  const video = read('ios/XDriveIOS/NativePhotoVideoSurface.swift');
+  assert.match(video, /@State private var scrubbedItem: AVPlayerItem\?/);
+  assert.match(video, /private func beginScrub\(\)[\s\S]*?resumesAfterScrub = player\.rate > 0[\s\S]*?player\.pause\(\)/);
+  assert.match(video, /private func previewScrub\(at value: Double\)/);
+  assert.match(video, /guard seeking, !finishingScrub, canControl,[\s\S]*?player\.currentItem === scrubbedItem/);
+  assert.match(video, /ProcessInfo\.processInfo\.systemUptime/);
+  assert.match(video, /now - lastPreviewSeekAt >= 0\.14/);
+  assert.match(video, /player\.seek\(\s*to: target, toleranceBefore: tolerance,\s*toleranceAfter: tolerance\s*\)/);
+  assert.match(video, /player\.seek\(to: target, toleranceBefore: \.zero, toleranceAfter: \.zero\) \{ completed in/);
+  assert.match(video, /guard scrubEpoch == token else \{ return \}[\s\S]*?abortScrub\(\)[\s\S]*?guard completed, phase == \.active,[\s\S]*?player\.currentItem === item/);
+  assert.match(video, /if resume \{ player\.play\(\) \}/);
+  assert.match(video, /\.onChange\(of: position\) \{ value in[\s\S]*?if let target = previewScrub\(at: value\)[\s\S]*?player\.seek\(/);
+  assert.match(video, /\.onChange\(of: phase\)[\s\S]*?abortScrub\(\)/);
+  assert.match(video, /\.onDisappear \{ abortScrub\(\) \}/);
+  assert.match(video, /\.disabled\(!canControl \|\| seeking\)/);
+  assert.doesNotMatch(video, /onEditingChanged: \{ editing in\s*seeking = editing/);
 });

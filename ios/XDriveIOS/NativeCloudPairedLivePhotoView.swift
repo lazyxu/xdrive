@@ -10,6 +10,8 @@ struct XDriveIOSNativeCloudPairedLivePhotoView: UIViewRepresentable {
     let files: XDriveIOSLivePreviewFiles
     let placeholder: UIImage
     let playbackRequest: UUID?
+    /// Enabled only after the presenting Owner verifies this exact Live pair.
+    let hintEnabled: Bool
     let onResult: (Bool) -> Void
 
     final class Coordinator {
@@ -19,6 +21,7 @@ struct XDriveIOSNativeCloudPairedLivePhotoView: UIViewRepresentable {
         var fullyLoaded = false
         var requestedPlayback: UUID?
         var lastPlayed: UUID?
+        var didHint = false
 
         func retire() {
             active = false
@@ -28,6 +31,7 @@ struct XDriveIOSNativeCloudPairedLivePhotoView: UIViewRepresentable {
             view?.livePhoto = nil
             view = nil
             fullyLoaded = false
+            didHint = false
         }
     }
 
@@ -81,8 +85,19 @@ struct XDriveIOSNativeCloudPairedLivePhotoView: UIViewRepresentable {
         coordinator.requestedPlayback = playbackRequest
         if let token = playbackRequest, coordinator.fullyLoaded,
            token != coordinator.lastPlayed {
+            // Explicit full playback always takes precedence over the hint.
             coordinator.lastPlayed = token
             view.startPlayback(with: .full)
+        } else if hintEnabled, coordinator.fullyLoaded,
+                  coordinator.lastPlayed == nil, !coordinator.didHint {
+            // The native view keeps its own hold-to-play recognizer. Animate
+            // once after verified pairing, never on a degraded callback or
+            // later SwiftUI recomputations of the same pair.
+            coordinator.didHint = true
+            if UIApplication.shared.applicationState == .active,
+               !UIAccessibility.isReduceMotionEnabled {
+                view.startPlayback(with: .hint)
+            }
         }
     }
 

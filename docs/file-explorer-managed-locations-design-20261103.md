@@ -452,8 +452,8 @@ ID 必须在当前 Owner/Server 实例下唯一且稳定；不得包含服务端
 
 1. **1A：** 所有**新建** Push/Pull Source 使用系统自动创建的、独占的规范目标目录，包含一刻相册（Yike）旧路径的规范化。
 2. **2A：** **旧目标混有普通文件**时，迁移**已验证确属该 Source** 的内容；非受管文件必须保留在旧目录。同步到同名已授权受管文件时仍按合法版本/Revision 覆盖；普通文件、未确认归属和其他 Source 的内容**不得靠名字直接覆盖**。
-3. **3A：** Share 读取永远依据当下的真实 Node 祖先链。迁出后，旧父目录的现有只读分享**不再**继承这些迁走的节点；**直接分享同步目标 Node 的链接**需要在原 NodeID 保留时继续可用。此前另一个已确认决策“旧普通父目录的分享应继承后来绑定的新 Source 内容”仍适用于**绑定时同一父子关系**，但不等于迁移后保持旧路径的虚拟继承。
-4. **4A：** 只有事实归属、无覆盖冲突和结构完整的 Source 可以自动迁移。来源目标重叠、同名目标占用、无法归属、活动写入无法安全冻结、Share 直接目标身份无法保留时，**暂停该 Source，持久化可理解的阻塞原因，不做破坏性迁移**；其他 Source 独立继续。不得调用“强行覆盖/删除以修复”。
+3. **3A：** Share 读取永远依据当下的真实 Node 祖先链，直接 Share 始终绑定原始 Share.NodeID，**绝不因为 Source.TargetNodeID 变化而自动改绑**。迁出后，旧父目录的既有只读分享不再继承迁出的 Node；原根如果保留普通内容，它的直接分享继续指向旧根（而不是新同步根），迁出的单个 Node 直接分享仍按该 NodeID 生效。只有原根整棵确属该 Source、可安全原位移动时，其直接分享才会自然跟随同一根 NodeID。此前已确认的“既有父目录分享继承后来加入的 Source 内容”，仍仅适用于当下真实祖先关系。
+4. **4A：** 只有事实归属、无覆盖冲突和结构完整的 Source 可以自动迁移。来源目标重叠、同名目标占用、无法归属、活动写入无法安全冻结、**原有 Share 的授权范围或对象身份无法无损保持**时，暂停该 Source、持久化可理解的阻塞原因，不做破坏性迁移；其他 Source 独立继续。**根 TargetNodeID 允许变化，不能将“必须保留根 NodeID”作为迁移门槛**；不得调用“强行覆盖/删除以修复”。
 5. **5B：** Source 的显示名称修改与目标文件夹重命名属于**同一业务事务**；同时使用版本锁、名称合法性及同级重名检查。若重命名不安全，整个改名拒绝，不能只改 Source.Name 造成显示与实际目录不一致。
 
 ### 18.2 文件夹层级和名称规则
@@ -499,15 +499,15 @@ Owner 云端文件根/
 
 ### 18.4 旧目录迁移：事务、分离、留在原位的普通文件
 
-**优先原位移动现有 Source 目标 Node**（更新 ParentID、Name，保留根 NodeID 和子文件 NodeID），避免重新生成 CAS 或 FileVersion。迁移前在同一 Owner 下检查并持久记录：
+**SourceID 永久稳定，根 TargetNodeID 优先保留、必要时允许变化。** 原根整棵可验证独占于一个 Source 时，优先原位移动该目标 Node（更新 ParentID/Name，保留根 NodeID 与文件 NodeID）。旧根混有普通内容时，优先保留旧根的普通目录身份及分享对象，另建新专属根，迁移可验证属于 Source 的子 Node（尽量保留其 NodeID）；不复制 CAS、FileVersion。迁移前在同一 Owner 下检查并持久记录：
 
 1. 当前 Source 与关联 Run 是否可安全冻结；来源是否被重新激活、设备被撤销或状态变化；Node/Source Revision 是否一致。
 2. 原根至真实 Owner 根的父链完整性、目标新目录的合法性、与其他 Source 的同根/子树重叠、与 Notes 受管区或已删除区相交情况。
 3. 基于真实 SourceItem/NodeID、可信 Source 内相对路径和 SourceRun 证据，确认受管内容；不能只凭文件名、大小、时间、hash 或目录前缀做“归属推断”。
-4. 对旧根下混合普通项目：要**先为普通项目重建旧路径下的普通承载目录**并将非受管 Node 留在旧位置，再原位搬迁原 Source 根 Node；全部在一个事务中验证并提交。由此直接绑定到原 Source 根 NodeID 的 Share token 仍指向迁移后的受管目标，原普通父目录 Share 根据真实树不再包含迁走的内容。
-5. 对必须拆分的嵌套混合目录，如果无法无损保持普通节点的完整相对位置、Source 受管链以及直接 Node 分享语义，**整项 Source 暂停并报告**。禁止猜测、半迁移、删除普通文件、以新同名 Node 替代有分享的根，或默默复制成两份受管文件。
+4. **旧根混有普通项目**：保留原根 NodeID、ParentID、Name 与其中普通 Node 的原有路径；在标准同步层级**新建专属根 Node**，仅将可由 SourceItem/可信 Run 归属证据确认的受管子 Node 原位移入新根，并在同一事务更新 Source.TargetNodeID 为新根 ID。原根的直接 Share.Token/Share.NodeID **不改变**，依然授权原普通目录，不得悄悄转向新同步根；已直接分享的受管子文件因保留自身 NodeID 而继续有效。原父目录 Share 不再继承迁出文件；若用户要分享新根，由 Owner 显式创建新分享。
+5. 对嵌套混合目录，必须同时检查受管 Node 的父链、普通 Node 原路径和直接/继承 Share 的授权范围；无法无损拆分时**整项 Source 暂停并报告**。允许建立新的 Source 专属根，但禁止更改旧根直接 Share 的授权对象、猜测归属、半迁移、删除普通文件、或默默复制两份受管文件。
 6. 目标目录已经存在但并非该 Source 的授权目标时绝不自动认领。先检查严格同名冲突、Node ID 重叠和共享/普通文件影响，再按 4A 暂停；**不同 Source 内容及修订不在迁移时强制合并**。
-7. 原子完成后更新已存在 Source.TargetNodeID（如方案需要）和 Source.Revision、目标 Node.ParentID/Name、迁移状态记录；**不改** SourceItem.ExternalID、FileVersion、ContentBlob、CAS 字节。必要的 SourceItem.NodeRevision 只能依据真实受管节点变化更新，不能批量伪造。
+7. 原子完成后写回当前 Source.TargetNodeID（混合根拆分时是**新根 ID**）、递增 Source.Revision，修改必要的 Node.ParentID/Name/Revision 并持久化迁移结果；**不改** SourceItem.ExternalID、FileVersion、ContentBlob、CAS 字节。SourceItem.NodeRevision 仅依据真实节点变更更新，不得伪造。直接 Share.NodeID 和 Token 不随 Source.TargetNodeID 更新。
 8. 任何事务失败后，原受管目录、原普通内容及其分享都维持迁移前一致状态。迁移可以跨 Source 幂等重试；成功源不重复迁移，阻塞源不会阻断整台 Server 启动。迁移过程应可诊断、可恢复，不把“尝试过”显示成“迁移成功”。
 
 迁移执行位置：在服务端受控的 Source 管理/数据库初始化期执行**有界、可审计的迁移协调过程**；任何 Owner GET、Files 列表或只读能力查询不应为了“顺便修复”而隐式搬迁大量文件。生产启动不能因为单个无效 Source 记录就卡死；但受阻的 Source 不能继续以旧目标执行破坏性写入。
@@ -526,7 +526,7 @@ Owner 云端文件根/
 - **受管目标整棵目录只读**：普通 Files 的新建、上传、改名、移动、删除、覆盖、匿名 Share 上传，以及含该子树的父目录移动/删除，都不能绕过服务端 Source 身份检查；允许按现有授权浏览、预览、下载、复制出站成为可编辑的普通 Node。
 - 同步引擎通过专有 SourceRun/受信 Worker/Agent 许可执行目录创建、原件覆写及 Mirror-to-trash；保留 Node ID、必要的 FileVersion 和 CAS 引用，不因“直接覆盖”绕开来源/Owner/Revision 验证。
 - **已存在父目录的只读 Share**在新 Source 目标确实位于其后代时，继续依法继承该 Source 的内容；受管文件本身的直接 read_only Share 同样可正常下载。相反 **view_upload** Share 不能借继承关系向受管子树写入，必须在上传 session 与 finalize 两处重验。
-- 迁移使目标 Node 离开旧父目录后，旧父目录 Share 根据当前祖先关系**自动不再覆盖**迁出节点；这不属于显式撤销直接绑定于源根 Node 的只读 Share token。
+- 迁移使目标 Node 离开旧父目录后，旧父目录 Share 根据当前祖先关系**自动不再覆盖**迁出节点。原根整棵移动时，原根直接 Share 跟随相同 NodeID；混合根分离时，原根直接 Share **留在旧根**，不自动修改 Share.NodeID/Token 指向新同步根。
 - 归档 Source 默认保留原文件及 Source 历史；独立清理任务只删除已验证该 Source 独占的数据到 Trash，不触碰设备原件和外部远端，也不能在 CAS 共享引用下误删物理内容。
 
 ### 18.7 新实施验收：不能凭单一正向案例宣称完成
@@ -536,12 +536,12 @@ Owner 云端文件根/
 | M01 | 新建 Push / Synology Pull / Yike Pull | 系统自动建立预期标准树，SourceID/TargetNodeID 唯一且无用户目标选择 |
 | M02 | 新建 Source 同名/设备同名/旧普通目录占位 | 不归属或覆盖无关 Node；产生可理解冲突状态 |
 | M03 | 旧 Source 单一干净目录 | 原位迁移，Source 及所有文件 NodeID、FileVersion、CAS、SourceItem 均保留 |
-| M04 | 旧目标混有普通文件 | 仅受管文件移动，普通文件实际路径保持不变，且原 Source 根 Share 身份持续有效 |
+| M04 | 旧目标混有普通文件、原根直接 Share | 创建新 Source 独占根并允许更新 TargetNodeID；普通目录/普通文件路径及旧根 Share.NodeID/Token 不变，旧 Share 不自动指向新根；已迁受管文件 NodeID 保持 |
 | M05 | 旧目标内部嵌套混合、重叠 Source、历史/身份缺损 | 暂停有问题 Source、未动任何原件、不中断其他 Source |
 | M06 | 活动 Push/ Pull Run 正在执行、上传分片即将 finalize | 不跨并发窗口改变目标，恢复/失败记录可信，旧 session 不写进迁后错误位置 |
 | M07 | Source.Name 改名成功 / 同名冲突 / NodeRevision 过期 | Source.Name 与目标 Node.Name 原子一致、修订和展示路径正确 |
 | M08 | Yike UID/名称与凭据重试 | 迁后 UID 稳定，重试不会重新创建旧路径或覆盖 Owner 名称 |
-| M09 | 旧父 Share、原目标 Node 直接 Share、匿名 view_upload | read_only 祖先继承依据真实路径；直接 Share ID 不变；不能匿名写受管子树 |
+| M09 | 旧父 Share、原根直接 Share、受管文件直接 Share、匿名 view_upload | read_only 祖先继承依据真实路径；原根 Share 不改绑；文件自身的直接 Share 继续有效；匿名不得写受管子树 |
 | M10 | Source 归档、独立清理、恢复 | 默认保留文件与历史；清理与 Trash 安全；没有删除外部源 |
 | M11 | 旧客户端 Source 创建/改名、Web/DSM/原生 Files 入口 | 不再选择任意目标；旧请求不突破服务端规则；各端显示相同目标 Node |
 | M12 | 升级失败、中断、二次启动、回滚版本 | 幂等重试，无半迁移或数据丢失；错误可见；必须有可复原的失败诊断 |

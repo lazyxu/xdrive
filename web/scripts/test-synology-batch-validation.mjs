@@ -18,6 +18,40 @@ assert.equal((compiled.diagnostics || []).filter(x => x.category === ts.Diagnost
 const exports = {}
 const ctx = vm.createContext({ exports, module: { exports } })
 vm.runInContext(compiled.outputText, ctx, { filename, timeout: 1000 })
+const pollDelay = ctx.module.exports.xDriveDSMBackupStatusPollDelay
+assert.equal(pollDelay(true, false), 10_000, 'running Source refreshes promptly')
+assert.equal(pollDelay(false, false), 30_000, 'idle Source must discover a scheduled start')
+assert.equal(pollDelay(true, true), 60_000, 'failed reads need backoff')
+assert.equal(pollDelay(false, true), 60_000, 'idle errors must not hammer NAS Agent')
+const progress = fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/SynologyBackupSourceProgress.tsx'), 'utf8')
+for (const required of [
+  'xDriveDSMBackupStatusPollDelay(batch?.running === true, readFailed)',
+  "if (loading || typeof window === 'undefined' || typeof document === 'undefined') return",
+  "document.visibilityState === 'visible'",
+  'window.setInterval(refreshIfVisible, pollDelay)',
+  "document.addEventListener('visibilitychange', refreshIfVisible)",
+  'window.clearInterval(timer)',
+  "document.removeEventListener('visibilitychange', refreshIfVisible)",
+  'return () => { active = false; abort.abort() }',
+]) assert.ok(progress.includes(required), 'DSM scheduled Source status refresh lost: ' + required)
+assert.ok(!progress.includes('if (!batch?.running'), 'idle scheduled Source was not observed')
+// Unattended scheduled runs also appear in the same Source's history while
+// expanded. Never poll every NAS Source or retain timers across Owner switches.
+const localPanel = fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/SynologyBackupLocalPanel.tsx'), 'utf8')
+for (const required of [
+  'if (!sameOwningClient || expandedID === null ||',
+  "document.visibilityState === 'visible'",
+  'window.setInterval(refreshHistoryIfVisible, 60_000)',
+  "document.addEventListener('visibilitychange', refreshHistoryIfVisible)",
+  'window.clearInterval(timer)',
+  "document.removeEventListener('visibilitychange', refreshHistoryIfVisible)",
+  '}, [client, expandedID, sameOwningClient])',
+  'client.history(id, abort.signal)',
+  'return () => { active = false; abort.abort() }',
+]) assert.ok(localPanel.includes(required), 'DSM scheduled history refresh lost: ' + required)
+
 const validate = ctx.module.exports.xDriveValidateSynologyLocalBatch
 const valid = {
   source_id: 42, revision: 1, state: 'partial', running: false,

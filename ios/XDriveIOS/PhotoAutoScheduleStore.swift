@@ -118,6 +118,23 @@ final class XDriveIOSPhotoAutoScheduleStore {
         return state
     }
 
+    /// PhotoKit notifications only wake a plan the user ALREADY approved.
+    /// No PhotoKit IDs or bytes are persisted, and a receipt-review pause is
+    /// never bypassed. The root's active-scene timer later rechecks Owner,
+    /// authorization and every pending receipt before any original write.
+    @discardableResult
+    func expediteForLibraryChange(owner: XDriveNativeOwnerRoot,
+                                  now: Date = Date()) throws -> State? {
+        guard var state = status(owner: owner),
+              state.enabled, !state.pausedForReview,
+              let due = XDriveIOSPhotoAutoSchedulePolicy
+                .earlierDueAfterLibraryChange(currentDueAt: state.nextDueAt, at: now)
+        else { return nil }
+        state.nextDueAt = due
+        try persist(state, owner: owner)
+        return state
+    }
+
     /// Emergency STOP-only operation for every local Owner scope. This
     /// does not require the Server, enumerate PhotoKit or touch any CAS bytes.
     /// Only this app's exact SHA-256 auto-schedule keys can be deleted;

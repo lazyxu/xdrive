@@ -47,16 +47,22 @@ test('search matches filenames, dates and media categories, without fake semanti
   assert.match(view, /不是人物、内容识别或云端搜索/)
 })
 
-test('results are truthful per searched segment, and continuation scans only on user request', () => {
+test('search results are one continuous grid with automatic bounded continuation', () => {
   assert.match(view, /native-ios-photo-search-input/)
   assert.match(view, /native-ios-photo-search-submit/)
-  assert.match(view, /本批扫描/)
-  assert.match(view, /page\.nextSlot - page\.startSlot/)
-  assert.match(view, /page\.hasMore/)
-  assert.match(view, /Button\("继续搜索后续照片"\)/)
-  assert.match(view, /model\.search\(acceptedQuery, from: page\.nextSlot\)/)
-  assert.match(view, /native-ios-photo-search-result/)
+  assert.match(view, /LazyVStack\(alignment: \.leading/)
+  assert.match(view, /ForEach\(model\.windows\) \{ window in/)
+  assert.match(view, /XDriveIOSNativePhotoSearchWindowView\(/)
+  assert.match(view, /model\.scanMore\(after: visibleID\)/)
+  assert.match(view, /\.onChange\(of: model\.busy\) \{ busy in/)
+  assert.match(view, /model\.scanMore\(after: visibleTailWindowID\)/)
+  assert.match(view, /model\.scannedThrough/)
+  assert.match(view, /model\.matchCount/)
+  // Result tiles now live in a lazily mounted, independently revalidated window.
+  assert.match(reader, /private struct XDriveIOSNativePhotoSearchWindowView: View/)
+  assert.match(reader, /\.accessibilityIdentifier\("native-ios-photo-search-result"\)/)
   assert.match(view, /XDriveIOSNativeLocalPhotoDetail\(/)
+  assert.doesNotMatch(view, /Button\("继续搜索后续照片"\)|native-ios-photo-search-more/)
 })
 
 test('Gallery opens a native local search in portrait and compact landscape', () => {
@@ -71,13 +77,43 @@ test('Gallery opens a native local search in portrait and compact landscape', ()
 })
 
 test('photo searches are canceled on scene/library changes; old queries cannot fill new views', () => {
-  assert.match(reader, /epoch = UUID\(\)/)
+  assert.match(reader, /generation = UUID\(\)/)
   assert.match(reader, /task\?\.cancel\(\)/)
-  assert.match(reader, /self\?\.epoch == request/)
+  assert.match(reader, /self\.generation == request/)
   assert.match(reader, /UIApplication\.shared\.applicationState == \.active/)
   assert.match(view, /\.onChange\(of: monitor\.revision\)/)
   assert.match(view, /model\.invalidate\(\)/)
   assert.match(view, /\.onChange\(of: phase\)/)
   assert.match(view, /model\.cancel\(\)/)
   assert.doesNotMatch(scanner, /UserDefaults|@AppStorage|NodeReceipt|XDrivePhotoSyncLedger/)
+})
+
+test('only numeric ranges persist while every visible search window rereads and releases PhotoKit IDs', () => {
+  const windowView = reader.slice(
+    reader.indexOf('private struct XDriveIOSNativePhotoSearchWindowView: View'),
+    reader.indexOf('private struct XDriveIOSNativePhotoSearchSelection: Identifiable')
+  )
+  const model = reader.slice(
+    reader.indexOf('@MainActor\nprivate final class XDriveIOSNativePhotoMetadataSearchModel'),
+    reader.indexOf('private final class XDriveIOSNativePhotoSearchChangeMonitor:')
+  )
+  assert.match(reader, /private struct XDriveIOSNativePhotoSearchWindow: Identifiable, Equatable/)
+  assert.match(model, /@Published private\(set\) var windows: \[XDriveIOSNativePhotoSearchWindow\]/)
+  assert.match(model, /matchCount: page\.items\.count/)
+  assert.match(model, /page\.nextSlot > offset \|\| offset == page\.totalAuthorizedSlots/)
+  assert.match(model, /expectedTotal == nil \|\| expectedTotal == page\.totalAuthorizedSlots/)
+  assert.match(model, /if !page\.hasMore \|\| !page\.items\.isEmpty \{ break \}/)
+  assert.match(model, /await Task\.yield\(\)/)
+  assert.match(model, /let request = generation/)
+  assert.match(model, /task\?\.cancel\(\)/)
+  assert.doesNotMatch(model, /@Published.*\[XDrivePhotoKitScanCandidate\]/)
+  assert.match(windowView, /\.task\(id: "\\\(generation\)-\\\(window\.startSlot\)-\\\(query\)"\)/)
+  assert.match(windowView, /\.read\(query: query, startingAt: window\.startSlot\)/)
+  assert.match(windowView, /fresh\.nextSlot == window\.nextSlot/)
+  assert.match(windowView, /fresh\.totalAuthorizedSlots == window\.totalAuthorizedSlots/)
+  assert.match(windowView, /fresh\.items\.count == window\.matchCount/)
+  assert.match(windowView, /\.onDisappear \{\s*page = nil\s*onVisibility\(window\.id, false\)/)
+  assert.match(windowView, /ForEach\(0\.\.<window\.matchCount/)
+  assert.match(view, /model\.invalidate\(\)/)
+  assert.doesNotMatch(model + windowView, /URLSession|UploadSession|requestImageData|UserDefaults/)
 })

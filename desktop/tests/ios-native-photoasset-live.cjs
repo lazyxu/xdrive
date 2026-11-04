@@ -147,3 +147,18 @@ test('both native cloud Live variants allow explicit local re-pair after Photos 
     assert.doesNotMatch(retry, /retryPreview\(|retirePreview\(|downloadOriginal|livePreview\(|URLSession/, name)
   }
 })
+
+test('native cloud Live plays an optional one-shot hint only after verified pairing', () => {
+  const original = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift')
+  const pair = paired.slice(paired.indexOf('struct XDriveIOSNativeCloudPairedLivePhotoView:'))
+  assert.match(pair, /let hintEnabled: Bool/)
+  assert.match(pair, /var didHint = false/)
+  assert.match(pair, /func retire\(\)[\s\S]*?view\?\.stopPlayback\(\)[\s\S]*?didHint = false/)
+  assert.match(pair, /if !degraded \{\s*coordinator\.fullyLoaded = true/)
+  assert.match(pair, /if let token = playbackRequest, coordinator\.fullyLoaded,[\s\S]*?view\.startPlayback\(with: \.full\)/)
+  assert.match(pair, /else if hintEnabled, coordinator\.fullyLoaded,\s*coordinator\.lastPlayed == nil, !coordinator\.didHint/)
+  assert.match(pair, /coordinator\.didHint = true[\s\S]*?UIApplication\.shared\.applicationState == \.active,[\s\S]*?!UIAccessibility\.isReduceMotionEnabled[\s\S]*?view\.startPlayback\(with: \.hint\)/)
+  assert.match(view, /playbackRequest: livePlaybackRequest,\s*hintEnabled: nativeLiveReady && ownerAuthorized/)
+  assert.match(original, /playbackRequest: nativeLivePlaybackRequest,\s*hintEnabled: nativeLiveReady && currentOwnerAuthorized/)
+  assert.doesNotMatch(pair, /URLSession|Authorization|Bearer|PHAssetCreationRequest|UserDefaults|\.upload\(/)
+})

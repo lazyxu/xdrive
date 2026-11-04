@@ -19,6 +19,7 @@ const desktopApp = [
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8'),
   localStorage,
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8'),
+  fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopClientUpdatePanel.tsx'), 'utf8'),
 ].join('\n')
 const webApp = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
 const sharedOutlet = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')

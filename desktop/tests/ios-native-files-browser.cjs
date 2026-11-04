@@ -13,7 +13,7 @@ const management = read('ios/XDriveIOS/NativeFilesManagementPanel.swift');
 test('native Files replaces its fixed-tab placeholder without returning to WebView', () => {
   assert.match(dashboard, /private var files: some View \{\s*XDriveIOSNativeFilesBrowser\(login: login\)/);
   assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.files\)/);
-  assert.match(dashboard, /case \.local, \.albums, \.cloud, \.originals, \.map, \.files, \.backup: return true/);
+  assert.match(dashboard, /case \.local, \.albums, \.cloud, \.originals, \.map, \.files, \.notes, \.backup: return true/);
   assert.doesNotMatch(view, /import WebKit|WKWebView\s*\(|document\.cookie|evaluateJavaScript\s*\(/);
   assert.match(view, /NavigationLink\(value: XDriveIOSNativeFilesFolder/);
   assert.match(view, /\.navigationDestination\(for: XDriveIOSNativeFilesFolder\.self\)/);
@@ -29,7 +29,8 @@ test('directory and full-library search use canonical counted Owner Range', () =
   assert.match(source, /searchRange\([\s\S]*?\/api\/v1\/search/);
   assert.match(view, /URLSessionConfiguration\.ephemeral/);
   assert.match(view, /completionHandler\(nil\)/);
-  assert.match(view, /\.onDisappear \{ if selectedFile == nil \{ model\.invalidate\(\) \} \}/);
+  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}/);
+  assert.match(view, /private func suspendVisibleRange\(\) \{[\s\S]*?model\.invalidate\(\)/);
   assert.match(view, /job\?\.cancel\(\)/);
   assert.match(page, /static let pageSize = 64/);
   assert.match(page, /Set\(items\.map\(\\\.id\)\)\.count/);
@@ -70,7 +71,7 @@ test('native Browse home uses a verified cloud location rather than automaticall
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
   assert.match(view, /XDriveIOSNativeFilesTrashScreen\(login: login\)/)
   assert.match(view, /List \{\s*filesHeader\s*if isHome \{\s*filesHome\s*\} else \{/)
-  assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*return\s*\}/)
+  assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*return\s*\}/)
   assert.match(view, /queryDraft = ""\s*activeQuery = ""\s*searchReturnOffset = nil/)
 });
 
@@ -81,11 +82,11 @@ test('native SwiftUI search collapses in the toolbar and restores directory on c
   assert.match(view, /\.onSubmit\(of: \.search\) \{ submitSearch\(\) \}/)
   assert.match(view, /private func submitSearch\(\)/)
   assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearch\(query\)/)
-  assert.match(view, /if activeQuery\.isEmpty \{ searchReturnOffset = offset \}/)
+  assert.match(view, /if activeQuery\.isEmpty \{\s*let saved = rememberedPosition\(\)\s*searchReturnOffset = saved\?\.pageOffset \?\? offset\s*searchReturnNodeID = saved\?\.nodeID/)
   assert.match(view, /activeQuery = query\s*reload\(resetOffset: true\)/)
   assert.match(view, /private func clearSearch\(\)/)
   assert.match(view, /let restoredOffset = searchReturnOffset \?\? 0/)
-  assert.match(view, /searchReturnOffset = nil\s*offset = restoredOffset\s*reload\(\)/)
+  assert.match(view, /searchReturnOffset = nil\s*searchReturnNodeID = nil\s*lastAppearedNodeID = nil\s*offset = restoredOffset\s*pendingNavigationReturnNodeID = restoreNodeID\s*reload\(\)/)
   assert.match(view, /if value\.trimmingCharacters\(in: \.whitespacesAndNewlines\)\.isEmpty &&/)
   assert.match(view, /native-ios-files-clear-search/)
   assert.doesNotMatch(view, /TextField\("搜索全部文件", text: \$queryDraft\)/)
@@ -102,4 +103,28 @@ test('native Files More menu keeps real sort, view and upload actions with bound
   assert.match(view, /XDriveIOSNativeFilesContinuousWindowPolicy\.mergePlan\(/)
   assert.match(view, /requestContinuousNeighbor\(for: entry\.id\)/)
   assert.doesNotMatch(view, /requestContinuationIfNeeded\(/)
+})
+
+
+test('Browse home displays only verified favorite folders as native direct navigation links', () => {
+  assert.match(view, /@StateObject private var favoriteShortcuts = XDriveIOSNativeFilesCollectionPageModel\(\)/)
+  assert.match(view, /@State private var favoriteShortcutsOwner: XDriveNativeOwnerRoot\?/)
+  assert.match(view, /private var verifiedFavoriteFolders: \[XDriveIOSNativeFilesCollectionItem\]/)
+  assert.match(view, /guard isHome, favoriteShortcuts\.verified,/)
+  assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
+  assert.match(view, /\$0\.node\.isDirectory &&\s*XDriveIOSNativeFilesCollectionsPolicy\.validItem\(\$0, kind: \.favorites\)/)
+  assert.match(view, /\.prefix\(8\)/)
+  const home = view.slice(view.indexOf('@ViewBuilder private var filesHome:'), view.indexOf('@ViewBuilder private var filesHeader:'))
+  assert.match(home, /Section\("个人收藏"\)/)
+  assert.match(home, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
+  assert.match(home, /ForEach\(verifiedFavoriteFolders\) \{ item in/)
+  assert.match(home, /XDriveIOSNativeFilesBrowser\(\s*login: login, folderID: item\.node\.id,\s*folderName: item\.node\.name/)
+  assert.match(home, /native-ios-files-favorite-folder-/)
+  assert.match(home, /if favoriteShortcuts\.loading \{/)
+  assert.match(home, /Button\("重试"\) \{ loadFavoriteShortcuts\(\) \}/)
+  assert.match(view, /favoriteShortcuts\.load\(\.favorites, login: login\)/)
+  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil/)
+  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*if isHome \{ loadFavoriteShortcuts\(\) \}/)
+  assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*return/)
+  assert.doesNotMatch(home, /XDriveIOSNativeFilesCollectionsTransport\(|URLSession|\/api\/v1\/file-favorites/)
 })

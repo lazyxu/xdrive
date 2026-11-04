@@ -3,7 +3,7 @@ import { Button, Stack, Typography } from '@mui/material'
 import type { XDriveLocalBackupCommonBatch } from '../device-backups'
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
 import { formatBytes } from '../format'
-import { xDriveValidateSynologyLocalBatch } from '../synology-task-status'
+import { xDriveDSMBackupStatusPollDelay, xDriveValidateSynologyLocalBatch } from '../synology-task-status'
 import { xDriveDeviceBackupRunLabel } from './DeviceBackupFolderSummary'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStatusBadge } from './StatusBadge'
@@ -45,17 +45,23 @@ export function XDriveSynologyBackupSourceProgress({
     return () => { active = false; abort.abort() }
   }, [client, sourceID, refreshEpoch, readRevision])
 
-  // No background Source fan-out. While THIS expanded source is running,
-  // re-read only when the browser tab is visible; unmount cancels the timer.
+  // A scheduled Agent run can start when the previous verified batch is idle.
+  // Poll just this expanded Source (never every NAS Source). Resume promptly
+  // when the tab becomes visible, back off on read errors, and do not overlap
+  // a pending read or keep background timers after unmount / Owner switch.
+  const pollDelay = xDriveDSMBackupStatusPollDelay(batch?.running === true, readFailed)
   useEffect(() => {
-    if (!batch?.running || typeof window === 'undefined') return
-    const timer = window.setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        setReadRevision(n => n + 1)
-      }
-    }, 10000)
-    return () => window.clearInterval(timer)
-  }, [batch?.running, client, sourceID])
+    if (loading || typeof window === 'undefined' || typeof document === 'undefined') return
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') setReadRevision(n => n + 1)
+    }
+    const timer = window.setInterval(refreshIfVisible, pollDelay)
+    document.addEventListener('visibilitychange', refreshIfVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshIfVisible)
+    }
+  }, [client, sourceID, loading, pollDelay])
 
   return (
     <Stack data-xdrive-dsm-source-live-progress={sourceID} spacing={0.75}>
@@ -93,6 +99,7 @@ export function XDriveSynologyBackupSourceProgress({
         </>
       ) : null}
       <Typography variant="caption" color="text.secondary">
+        展开后自动查看计划任务进度：运行时约每 10 秒、空闲时约每 30 秒；后台标签页不轮询。
         当前数据仅为本机 Agent 批次快照，不代表整份备份完成、CAS 物理校验或可删除源文件。
       </Typography>
     </Stack>

@@ -56,14 +56,20 @@ case "$url" in
 #!/usr/bin/env bash
 set -euo pipefail
 output=""
+preflight=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config-dir) shift 2 ;;
     --output-dir) output="$2"; shift 2 ;;
     --leave-server-stopped) shift ;;
+    --preflight-only) preflight=1; shift ;;
     *) shift ;;
   esac
 done
+if [[ "$preflight" == 1 ]]; then
+  echo "[xDrive] Server identity and /data source admitted (read-only)."
+  exit 0
+fi
 dir="$output/xdrive-backup-migration-test"
 mkdir -p "$dir"
 printf '%s\n' "$dir"

@@ -36,6 +36,7 @@ export const XDRIVE_WEB_APPS: Record<XDriveWebAppID, XDriveWebAppDescriptor> = {
   'admin-audit': { id: 'admin-audit', title: xDriveWorkspaceRouteTitle('admin-audit'), presentation: 'workspace', workspaceKey: 'admin-audit', sidebar: true, admin: true },
   'admin-storage': { id: 'admin-storage', title: xDriveWorkspaceRouteTitle('admin-storage'), presentation: 'workspace', workspaceKey: 'admin-storage', sidebar: true, admin: true },
   'admin-services': { id: 'admin-services', title: xDriveWorkspaceRouteTitle('admin-services'), presentation: 'workspace', workspaceKey: 'admin-services', sidebar: true, admin: true },
+  'admin-update': { id: 'admin-update', title: xDriveWorkspaceRouteTitle('admin-update'), presentation: 'workspace', workspaceKey: 'admin-update', sidebar: true, admin: true },
   'admin-maintenance': { id: 'admin-maintenance', title: xDriveWorkspaceRouteTitle('admin-maintenance'), presentation: 'workspace', workspaceKey: 'admin-maintenance', sidebar: true, admin: true },
 }
 
