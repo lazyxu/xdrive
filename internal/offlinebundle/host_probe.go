@@ -81,7 +81,7 @@ func ProbeHostRuntime(ctx context.Context, m *Manifest, selection []string, home
 		Schema: 1, ReadOnly: true, Platform: "linux/amd64",
 		DockerStatus: "unavailable", RunningServerEvidence: "unknown",
 		TemporaryRequiredMinBytes: minTempBytes, TemporarySpaceStatus: "unknown",
-		Images: make([]HostImageObservation, 0, 3),
+		Images:   make([]HostImageObservation, 0, 3),
 		Blockers: make([]string, 0),
 		RemainingHostChecks: []string{
 			"real_running_server_buildinfo",
