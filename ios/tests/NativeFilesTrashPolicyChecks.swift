@@ -22,27 +22,36 @@ struct XDriveIOSNativeFilesTrashPolicyChecks {
         let good = XDriveIOSNativeFilesTrashRange(
             items: [deleted, folder], total_count: 2,
             total_count_included: true, offset: 0, limit: P.pageSize,
-            sort: P.sort, order: P.order
+            sort: P.defaultSort, order: P.defaultOrder
         )
         verify(P.validRange(good, offset: 0), "valid bounded trash page")
         let missingCount = XDriveIOSNativeFilesTrashRange(
             items: [deleted], total_count: 2,
             total_count_included: false, offset: 0, limit: P.pageSize,
-            sort: P.sort, order: P.order
+            sort: P.defaultSort, order: P.defaultOrder
         )
         verify(!P.validRange(missingCount, offset: 0), "missing count")
         let duplicate = XDriveIOSNativeFilesTrashRange(
             items: [deleted, deleted], total_count: 2,
             total_count_included: true, offset: 0, limit: P.pageSize,
-            sort: P.sort, order: P.order
+            sort: P.defaultSort, order: P.defaultOrder
         )
         verify(!P.validRange(duplicate, offset: 0), "duplicate ids")
-        let wrongSort = XDriveIOSNativeFilesTrashRange(
+        let sortedPage = XDriveIOSNativeFilesTrashRange(
             items: [deleted], total_count: 1,
             total_count_included: true, offset: 0, limit: P.pageSize,
-            sort: "name", order: P.order
+            sort: "updated", order: "desc"
         )
-        verify(!P.validRange(wrongSort, offset: 0), "unverified order")
+        verify(P.validRange(sortedPage, offset: 0, sort: "updated", order: "desc"),
+               "accept supported Server sort and direction")
+        verify(!P.validRange(sortedPage, offset: 0),
+               "reject a response for a different requested sort")
+        verify(P.validSortOrder(sort: "name", order: "asc"), "name ascending")
+        verify(P.validSortOrder(sort: "updated", order: "desc"), "deleted date descending")
+        verify(P.validSortOrder(sort: "size", order: "asc"), "size ascending")
+        verify(P.validSortOrder(sort: "type", order: "desc"), "type descending")
+        verify(!P.validSortOrder(sort: "modified", order: "asc"), "reject unsupported sort")
+        verify(!P.validSortOrder(sort: "name", order: "sideways"), "reject unsupported order")
         let noDeleted = XDriveIOSNativeFilesTrashNode(
             id: 35, parent_id: 5, name: "report.pdf", type: "file",
             size: 123, revision: 7, deleted_at: nil
@@ -61,7 +70,7 @@ struct XDriveIOSNativeFilesTrashPolicyChecks {
         verify(!P.validRestored(wrongParent, from: deleted), "original parent")
         let emptyBeyond = XDriveIOSNativeFilesTrashRange(
             items: [], total_count: 60, total_count_included: true,
-            offset: 64, limit: P.pageSize, sort: P.sort, order: P.order
+            offset: 64, limit: P.pageSize, sort: P.defaultSort, order: P.defaultOrder
         )
         verify(P.validRange(emptyBeyond, offset: 64), "last page deleted")
         let firstChunk = (0..<64).map { index in
@@ -80,16 +89,29 @@ struct XDriveIOSNativeFilesTrashPolicyChecks {
         }
         let nextRange = XDriveIOSNativeFilesTrashRange(
             items: nextChunk, total_count: 140, total_count_included: true,
-            offset: 64, limit: P.pageSize, sort: P.sort, order: P.order
+            offset: 64, limit: P.pageSize, sort: P.defaultSort, order: P.defaultOrder
         )
         verify(P.validAppend(
             alreadyLoadedIDs: Set(firstChunk.map(\.id)),
             alreadyLoadedCount: 64, total: 140, next: nextRange
         ), "append a second verified 64-item trash range")
+        let sortedNextRange = XDriveIOSNativeFilesTrashRange(
+            items: nextChunk, total_count: 140, total_count_included: true,
+            offset: 64, limit: P.pageSize, sort: "size", order: "desc"
+        )
+        verify(P.validAppend(
+            alreadyLoadedIDs: Set(firstChunk.map(\.id)),
+            alreadyLoadedCount: 64, total: 140, next: sortedNextRange,
+            sort: "size", order: "desc"
+        ), "append range preserves selected sort and direction")
+        verify(!P.validAppend(
+            alreadyLoadedIDs: Set(firstChunk.map(\.id)),
+            alreadyLoadedCount: 64, total: 140, next: sortedNextRange
+        ), "reject append for stale default sort")
         let tailRange = XDriveIOSNativeFilesTrashRange(
             items: Array(firstChunk.prefix(12)), total_count: 140,
             total_count_included: true,
-            offset: 128, limit: P.pageSize, sort: P.sort, order: P.order
+            offset: 128, limit: P.pageSize, sort: P.defaultSort, order: P.defaultOrder
         )
         // Tail must also use globally unique Node IDs.
         let finalChunk = (0..<12).map { index in
@@ -101,7 +123,7 @@ struct XDriveIOSNativeFilesTrashPolicyChecks {
         }
         let exactTail = XDriveIOSNativeFilesTrashRange(
             items: finalChunk, total_count: 140, total_count_included: true,
-            offset: 128, limit: P.pageSize, sort: P.sort, order: P.order
+            offset: 128, limit: P.pageSize, sort: P.defaultSort, order: P.defaultOrder
         )
         let firstTwoIDs = Set((firstChunk + nextChunk).map(\.id))
         verify(P.validAppend(
@@ -114,7 +136,7 @@ struct XDriveIOSNativeFilesTrashPolicyChecks {
         ), "reject already displayed ID in terminal range")
         let changedTotal = XDriveIOSNativeFilesTrashRange(
             items: nextChunk, total_count: 141, total_count_included: true,
-            offset: 64, limit: P.pageSize, sort: P.sort, order: P.order
+            offset: 64, limit: P.pageSize, sort: P.defaultSort, order: P.defaultOrder
         )
         verify(!P.validAppend(
             alreadyLoadedIDs: Set(firstChunk.map(\.id)),
@@ -123,7 +145,7 @@ struct XDriveIOSNativeFilesTrashPolicyChecks {
         let shortMiddle = XDriveIOSNativeFilesTrashRange(
             items: Array(nextChunk.prefix(12)), total_count: 140,
             total_count_included: true,
-            offset: 64, limit: P.pageSize, sort: P.sort, order: P.order
+            offset: 64, limit: P.pageSize, sort: P.defaultSort, order: P.defaultOrder
         )
         verify(!P.validAppend(
             alreadyLoadedIDs: Set(firstChunk.map(\.id)),

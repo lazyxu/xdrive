@@ -78,7 +78,8 @@ enum XDriveIOSNativeFilesTrashPolicy {
               XDriveIOSNativeFilesPagePolicy.validOffset(alreadyLoadedCount),
               next.offset == alreadyLoadedCount,
               next.total_count == total,
-              validRange(next, offset: alreadyLoadedCount, sort: sort, order: order),              !next.items.isEmpty,
+              validRange(next, offset: alreadyLoadedCount, sort: sort, order: order),
+              !next.items.isEmpty,
               (next.items.count == pageSize ||
                alreadyLoadedCount + next.items.count == total),
               alreadyLoadedIDs.isDisjoint(with: Set(next.items.map(\.id)))
