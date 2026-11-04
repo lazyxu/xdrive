@@ -150,6 +150,7 @@ var desktopIPCCapabilities = []string{
 	"transfer-lifecycle",
 	"transfer-lifecycle-child-batch",
 	"transfer-history-scope",
+
 	"diagnostics",
 	"diagnostic-actions",
 	"open-folder",
@@ -159,6 +160,9 @@ var desktopIPCCapabilities = []string{
 
 func desktopIPCHelloCapabilities() []string {
 	capabilities := append([]string(nil), desktopIPCCapabilities...)
+	if runtime.GOOS == "windows" {
+		capabilities = append(capabilities, "sync-activity-history")
+	}
 	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
 		capabilities = append(capabilities, "local-folder-root-grants", "device-backup-local-drafts", "device-backup-local-config", "device-backup-local-target", "device-backup-local-mode", "device-backup-local-rules", "device-backup-local-schedule", "device-backup-local-preview", "device-backup-local-snapshot", "device-backup-local-first-file", "device-backup-local-first-file-status", "device-backup-local-common-batch", "device-backup-local-common-recovery-review", "device-backup-local-delta", "device-backup-local-evidence", "device-backup-local-evidence-summary", "device-backup-local-evidence-preflight", "device-backup-local-remove")
 	}
@@ -908,6 +912,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
 	mux.HandleFunc("POST /v1/file-availability", h.setFileAvailability)
 	mux.HandleFunc("POST /v1/file-availability/batch", h.fileAvailabilityBatch)
+	mux.HandleFunc("GET /v1/sync/runs", h.syncActivityRuns)
+	mux.HandleFunc("GET /v1/sync/runs/{run_id}", h.syncActivityRun)
+	mux.HandleFunc("GET /v1/sync/runs/{run_id}/items", h.syncActivityItems)
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
 	mux.HandleFunc("GET /v1/transfer-events", h.transferEvents)
 	mux.HandleFunc("POST /v1/transfers/retry", h.retryTransfer)

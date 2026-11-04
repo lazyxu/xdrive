@@ -148,6 +148,7 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 			return err
 		}
 		deletedPrefixes.add(rel)
+		p.recordActivity("delete", "none", rel, "", nil)
 	}
 	deleteBaselinePrefixes(baseline, deletedPrefixes)
 	if err := p.applyAlwaysLocal(baseline); err != nil {
@@ -198,6 +199,7 @@ func (p *winProvider) applyLocalRename(ctx context.Context, rename winRename, ba
 	if err := cfMarkPathInSync(filepath.Join(p.root, filepath.FromSlash(rename.NewPath))); err != nil {
 		return false, err
 	}
+	p.recordActivity("move", "none", rename.OldPath, rename.NewPath, nil)
 	return true, nil
 }
 
@@ -275,6 +277,7 @@ func (p *winProvider) reconcileMovedPlaceholder(
 	if err := cfMarkPathInSync(absPath); err != nil {
 		return false, baselineByNodeID, err
 	}
+	p.recordActivity("move", "none", oldRel, rel, nil)
 	return true, baselineByNodeID, nil
 }
 
@@ -465,6 +468,7 @@ func (p *winProvider) syncNewDirectoryTree(ctx context.Context, rel string, base
 				return err
 			}
 			baseline[childRel] = stateFromLocal(node, localEntry{isDir: true, modTime: info.ModTime()})
+			p.recordActivity("create", "none", "", childRel, nil)
 			return nil
 		}
 		task, progress := p.uploadTransfer(childRel, info.Size())
@@ -477,6 +481,8 @@ func (p *winProvider) syncNewDirectoryTree(ctx context.Context, rel string, base
 			return err
 		}
 		baseline[childRel] = stateFromLocal(node, localEntry{size: info.Size(), modTime: info.ModTime()})
+		size := info.Size()
+		p.recordActivity("create", "upload", "", childRel, &size)
 		return nil
 	})
 }
@@ -505,6 +511,7 @@ func (p *winProvider) ensureRemoteParent(ctx context.Context, rel string, baseli
 		return err
 	}
 	baseline[parentRel] = stateFromLocal(node, localEntry{isDir: true, modTime: info.ModTime()})
+	p.recordActivity("create", "none", "", parentRel, nil)
 	return nil
 }
 
@@ -527,6 +534,7 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 			return err
 		}
 		baseline[rel] = stateFromLocal(node, entry)
+		p.recordActivity("create", "upload", "", rel, &entry.size)
 		return nil
 	}
 	if base.node.Type != "file" {
@@ -547,6 +555,7 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 			return syncErr
 		}
 		baseline[rel] = stateFromLocal(node, entry)
+		p.recordActivity("update", "upload", "", rel, &entry.size)
 		return nil
 	}
 	if !client.IsRevisionConflict(err) || base.node.ParentID == nil {
@@ -570,13 +579,7 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 		return err
 	}
 	finishTransfer(task, nil)
-	emitEvent(Event{
-		Kind:           EventConflict,
-		Path:           conflictRel,
-		OriginalPath:   rel,
-		OriginalNodeID: base.node.ID,
-		ConflictNodeID: conflictNode.ID,
-	})
+	p.notifyConflict(conflictRel, rel, base.node.ID, conflictNode.ID)
 	if st, statErr := os.Stat(conflictAbs); statErr == nil {
 		baseline[conflictRel] = winState{node: conflictNode, localModTime: st.ModTime(), localSize: st.Size()}
 	}
@@ -818,6 +821,13 @@ func (p *winProvider) applyRemoteFileUpsertPageFast(
 				localModTime: st.ModTime(),
 				localSize:    st.Size(),
 			}
+			// Cloud Files placeholder metadata was applied locally; no
+			// original file bytes were downloaded by this reconciliation.
+			if plan.localExists {
+				p.recordActivity("update", "local", "", snapshot.rel, nil)
+			} else {
+				p.recordActivity("create", "local", "", snapshot.rel, nil)
+			}
 		}
 	}
 
@@ -938,6 +948,7 @@ func (p *winProvider) applyRemoteFileDeletePageFast(
 			return true, err
 		}
 		deleted = append(deleted, snapshot)
+		p.recordActivity("delete", "local", snapshot.rel, "", nil)
 	}
 	p.storeBaselinePathDeletes(deleted)
 	p.pruneTransientState()
@@ -1079,6 +1090,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 					return false, err
 				}
 				deleteBaselinePrefixIndexed(baseline, baselineByNodeID, oldRel)
+				p.recordActivity("delete", "local", oldRel, "", nil)
 				continue
 			}
 			if base.node.Type == "file" {
@@ -1095,6 +1107,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			if err := os.RemoveAll(abs); err != nil {
 				return false, err
 			}
+			p.recordActivity("delete", "local", oldRel, "", nil)
 			delete(baseline, oldRel)
 			delete(baselineByNodeID, base.node.ID)
 
@@ -1308,6 +1321,7 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 					base.node.Type,
 					rn.Type,
 				)
+				p.recordActivity("delete", "none", rel, "", nil)
 				continue
 			}
 		}
@@ -1339,6 +1353,7 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 			}
 			if st, err := os.Stat(abs); err == nil {
 				baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+				p.recordActivity("create", "local", "", rel, nil)
 			}
 			continue
 		}
@@ -1358,6 +1373,7 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 			}
 			if st, err := os.Stat(abs); err == nil {
 				baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+				p.recordActivity("create", "local", "", rel, nil)
 			}
 			continue
 		}
@@ -1369,6 +1385,7 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 			}
 			if st, err := os.Stat(abs); err == nil {
 				baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+				p.recordActivity("update", "local", "", rel, nil)
 			}
 		} else {
 			base.node = rn

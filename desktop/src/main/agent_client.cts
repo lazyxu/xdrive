@@ -293,6 +293,34 @@ export type AgentTransfer = {
   completed_at?: string
 }
 
+export type AgentSyncRunCursor = { before_started_at: string; before_run_id: string }
+export type AgentSyncItemCursor = { before_applied_at: string; before_item_id: string }
+export type AgentSyncRun = {
+  run_id: string
+  engine_kind: string
+  trigger: string
+  started_at: string
+  finished_at: string | null
+  status: string
+  outcome: string
+  detail_complete: boolean
+  details_expired: boolean
+  stats: {
+    items: number; successful: number; created: number; updated: number
+    deleted: number; moved: number; renamed: number; uploaded: number
+    downloaded: number; skipped: number; failed: number; conflicted: number
+    transferred_bytes: number | null
+  }
+}
+export type AgentSyncItem = {
+  run_id: string; item_id: string; action: string; direction: string
+  status: string; old_path: string; new_path: string
+  logical_bytes: number | null; transferred_bytes: number | null
+  error_code: string; error_message: string; applied_at: string
+}
+export type AgentSyncRunsPage = { items: AgentSyncRun[]; next_cursor: AgentSyncRunCursor | null }
+export type AgentSyncItemsPage = { items: AgentSyncItem[]; next_cursor: AgentSyncItemCursor | null }
+
 export type AgentTransfers = {
   revision: number
   transfers: AgentTransfer[]
@@ -4909,6 +4937,30 @@ export class AgentIPCClient {
 
   setFileAvailability(path: string, action: 'keep' | 'release' | 'online' | 'sync') {
     return this.request<AgentFileAvailability | { ok: boolean }>('POST', '/v1/file-availability', { path, action }, 130_000)
+  }
+
+  syncActivityRuns(limit = 20, after?: AgentSyncRunCursor) {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (after) {
+      query.set('before_started_at', after.before_started_at)
+      query.set('before_run_id', after.before_run_id)
+    }
+    return this.request<AgentSyncRunsPage>('GET', `/v1/sync/runs?${query.toString()}`)
+  }
+
+  syncActivityRun(runID: string) {
+    return this.request<AgentSyncRun>('GET', `/v1/sync/runs/${encodeURIComponent(runID)}`)
+  }
+
+  syncActivityItems(runID: string, limit = 50, after?: AgentSyncItemCursor) {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (after) {
+      query.set('before_applied_at', after.before_applied_at)
+      query.set('before_item_id', after.before_item_id)
+    }
+    return this.request<AgentSyncItemsPage>(
+      'GET', `/v1/sync/runs/${encodeURIComponent(runID)}/items?${query.toString()}`,
+    )
   }
 
   transfers() {
