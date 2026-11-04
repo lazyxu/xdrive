@@ -364,11 +364,14 @@ final class XDriveIOSNativePhotoReceiptReviewController: ObservableObject {
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ),
                       let current = scheduleStore.status(owner: expected),
-                      current.enabled, current.pausedForReview
+                      current.enabled, current.pausedForReview,
+                      let sourceID = current.targetSourceID,
+                      let targetNodeID = current.targetNodeID
                 else { throw XDriveIOSNativeSessionError.staleSession }
                 _ = try scheduleStore.configure(
                     owner: expected, minutes: current.intervalMinutes,
-                    allowICloud: current.allowICloudOriginals
+                    allowICloud: current.allowICloudOriginals,
+                    sourceID: sourceID, targetNodeID: targetNodeID
                 )
                 self.pending = 0
                 self.hasLedgerScope = true
