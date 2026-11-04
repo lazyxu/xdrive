@@ -342,7 +342,115 @@ let desktopPlacesPending:{
   owner:string;origin:string;scope:XDriveDesktopBaiduMapScope
   expiresAt:number;windowID:number
 }|null=null
+// The non-isolated Web map runs in an Electron HTTPS guest, never the local
+// Desktop file:// renderer. Seed its memory-only HttpOnly browser cookie from
+// a verified Desktop sign-in in Main, without exposing passwords or Agent
+// tokens to Web JavaScript or the third-party map SDK.
+type DesktopPlacesWebIdentity = { origin: string; owner: string }
+const desktopPlacesWebPartition = 'xdrive-places-web'
+let desktopPlacesWebGeneration = 0
+let desktopPlacesWebReady: DesktopPlacesWebIdentity | null = null
+let desktopPlacesWebPending: (DesktopPlacesWebIdentity & { promise: Promise<boolean> }) | null = null
+let desktopPlacesWebQueue: Promise<void> = Promise.resolve()
+const sameDesktopPlacesWebIdentity = (left: DesktopPlacesWebIdentity | null,
+  right: DesktopPlacesWebIdentity): boolean =>
+  left?.origin === right.origin && left.owner === right.owner
+
+function resetDesktopPlacesWebAuth() {
+  ++desktopPlacesWebGeneration
+  desktopPlacesWebReady = null
+  desktopPlacesWebPending = null
+  // Serialize revocation behind any in-flight cookie login so a stale
+  // Set-Cookie cannot restore a previous Owner after sign-out/account switch.
+  const clear = desktopPlacesWebQueue.then(() =>
+    session.fromPartition(desktopPlacesWebPartition).clearStorageData({
+      storages: ['cookies', 'localstorage'],
+    }))
+  desktopPlacesWebQueue = clear.catch(() => {})
+}
+
+function desktopPlacesWebOwnerStillCurrent(identity: DesktopPlacesWebIdentity) {
+  const status = agentState.status
+  return agentState.connected && status?.configured === true &&
+    status.username === identity.owner &&
+    xDriveResolveSecureBaiduMapTarget(status.server)?.origin === identity.origin &&
+    status.auth_status !== '登录已过期' && status.auth_status !== '账户已禁用'
+}
+
+function seedDesktopPlacesWebAuth(server: string, owner: string,
+  password: string): Promise<boolean> {
+  const target = xDriveResolveSecureBaiduMapTarget(server)
+  if (!target || !owner || !password) return Promise.resolve(false)
+  const identity: DesktopPlacesWebIdentity = { origin: target.origin, owner }
+  if (!desktopPlacesWebOwnerStillCurrent(identity)) return Promise.resolve(false)
+  if (sameDesktopPlacesWebIdentity(desktopPlacesWebReady, identity))
+    return Promise.resolve(true)
+  if (desktopPlacesWebPending &&
+      sameDesktopPlacesWebIdentity(desktopPlacesWebPending, identity))
+    return desktopPlacesWebPending.promise
+  if (desktopPlacesWebReady || desktopPlacesWebPending) resetDesktopPlacesWebAuth()
+  const generation = desktopPlacesWebGeneration
+  const pending = desktopPlacesWebQueue.then(async () => {
+    if (generation !== desktopPlacesWebGeneration ||
+        !desktopPlacesWebOwnerStillCurrent(identity)) return false
+    const places = session.fromPartition(desktopPlacesWebPartition)
+    // Chromium's network stack owns TLS validation and the partition Cookie
+    // jar. The password is used only for this same-origin HTTPS POST in Main.
+    const response = await places.fetch(identity.origin + '/api/v1/auth/browser/login', {
+      method: 'POST', credentials: 'include',
+      headers: {
+        'Origin': identity.origin,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username: owner, password }),
+    })
+    if (!response.ok) return false
+    const result: unknown = await response.json()
+    const auth = result as { username?: unknown; browser_session?: unknown;
+      refresh_token?: unknown } | null
+    if (!auth || auth.username !== owner || auth.browser_session !== true ||
+        auth.refresh_token !== '') return false
+    const cookies = await places.cookies.get({
+      url: identity.origin, name: '__Host-xdrive_refresh',
+    })
+    if (!cookies.some(cookie => cookie.httpOnly && cookie.secure)) return false
+    if (generation !== desktopPlacesWebGeneration ||
+        !desktopPlacesWebOwnerStillCurrent(identity)) return false
+    desktopPlacesWebReady = identity
+    return true
+  }).catch(() => false)
+  desktopPlacesWebPending = { ...identity, promise: pending }
+  // Both the next login and any auth revocation must wait for the previous
+  // request to finish before reusing this dedicated cookie jar.
+  desktopPlacesWebQueue = pending.then(() => {})
+  void pending.then(ok => {
+    if (desktopPlacesWebPending?.promise === pending)
+      desktopPlacesWebPending = null
+    if (!ok && generation === desktopPlacesWebGeneration)
+      resetDesktopPlacesWebAuth()
+  })
+  return pending
+}
+
+async function ensureDesktopPlacesWebAuth(identity: DesktopPlacesWebIdentity):
+  Promise<boolean> {
+  if (!desktopPlacesWebOwnerStillCurrent(identity)) return false
+  if (sameDesktopPlacesWebIdentity(desktopPlacesWebReady, identity)) return true
+  if (desktopPlacesWebPending &&
+      sameDesktopPlacesWebIdentity(desktopPlacesWebPending, identity))
+    return desktopPlacesWebPending.promise
+  // A retained Agent session may outlive a Desktop window. Only a password
+  // the user explicitly chose to remember may be decrypted for that case.
+  if (!securePasswordStorageAvailable()) return false
+  const profile = findLoginProfile(loginHistory, identity.origin + '/', identity.owner)
+  if (!profile?.remember_password || !profile.encrypted_password) return false
+  try {
+    return await seedDesktopPlacesWebAuth(identity.origin + '/', identity.owner,
+      decryptLoginPassword(profile.encrypted_password))
+  } catch { return false }
+}
 function closeDesktopPlacesGuests() {
+  resetDesktopPlacesWebAuth()
   desktopPlacesPending=null
   for (const id of desktopPlacesGuests.keys()) {
     const guest=electronWebContents.fromId(id)
@@ -1736,7 +1844,7 @@ function createMainWindow(showOnReady = true) {
   // HTTPS guest uses its own ephemeral session; no device-location,
   // clipboard or native permission may be requested by provider scripts.
   // The exact remote URL is separately enforced at will-attach-webview.
-  const placesSession=session.fromPartition('xdrive-places-web',{cache:false})
+  const placesSession=session.fromPartition(desktopPlacesWebPartition,{cache:false})
   placesSession.setPermissionRequestHandler((_guest,_permission,answer)=>answer(false))
   placesSession.setPermissionCheckHandler(()=>false)
   win.webContents.on('will-attach-webview',(event,preferences,params)=>{
@@ -1744,7 +1852,7 @@ function createMainWindow(showOnReady = true) {
     const pending=desktopPlacesPending
     if (!agentState.connected || !agentState.status?.username ||
         !expected || params.src!==expected ||
-        params.partition!=='xdrive-places-web' ||
+        params.partition!==desktopPlacesWebPartition ||
         params.preload || params.nodeintegration || params.disablewebsecurity ||
         !pending || pending.windowID!==win.webContents.id ||
         pending.expiresAt<=Date.now() ||
@@ -2081,7 +2189,8 @@ function notifyUpdateTransition(previous: AgentUpdateState | null, next: AgentUp
 
 function publishAgentState(next: AgentConnectionState) {
   const previous = agentState
-  if ((desktopPlacesGuests.size || desktopPlacesPending) && (
+  if ((desktopPlacesGuests.size || desktopPlacesPending ||
+       desktopPlacesWebReady || desktopPlacesWebPending) && (
       !next.connected || !next.status?.configured ||
       next.status.server!==previous.status?.server ||
       next.status.username!==previous.status?.username ||
@@ -2617,6 +2726,9 @@ async function attemptAutomaticLogin() {
       return
     }
     lastAutoLoginError = ''
+    // No password is retained after this call. A separately authenticated,
+    // ephemeral Web guest can restore its HttpOnly browser session later.
+    void seedDesktopPlacesWebAuth(profile.server, profile.username, password)
   } catch (error) {
     if (loginHistory !== attemptedLoginHistory || !attempt.current()) return
     lastAutoLoginError = formatLifecycleError(error)
@@ -2982,7 +3094,7 @@ function registerIPCHandlers() {
   })
   // Source is the verified local file Renderer, not HTTPS or a map Child.
   // Preparation is one-use per guest attach and bound to this Desktop Owner.
-  ipcMain.handle('desktop:prepare-places-embed',(event,rawScope:unknown)=>{
+  ipcMain.handle('desktop:prepare-places-embed',async (event,rawScope:unknown)=>{
     const status=agentState.status
     const target=xDriveResolveSecureBaiduMapTarget(status?.server)
     const scope=xDriveParseDesktopBaiduMapScope(rawScope)
@@ -2995,8 +3107,22 @@ function registerIPCHandlers() {
       return {ok:false,error:{code:'map_scope_denied',
         message:'当前 Desktop 地图范围或账户不受信任。'}}
     }
+    const hostID=mainWindow.webContents.id
+    // Never mount an unauthenticated Web login page inside the map canvas.
+    // The cookie stays in Electron's dedicated, nonpersistent HTTPS session;
+    // Owner identity and map filter are still checked at guest attach/claim.
+    const ready=await ensureDesktopPlacesWebAuth({
+      origin:target.origin,owner:status.username,
+    })
+    if (!ready || !mainWindow || mainWindow.isDestroyed() ||
+        mainWindow.webContents.id!==hostID ||
+        !desktopPlacesWebOwnerStillCurrent({origin:target.origin,owner:status.username})) {
+      desktopPlacesPending=null
+      return {ok:false,error:{code:'map_browser_session_unavailable',
+        message:'无法建立当前账户的 Web 地图会话；可使用 GPS 备用地图。'}}
+    }
     desktopPlacesPending={
-      windowID:mainWindow.webContents.id,
+      windowID:hostID,
       owner:status.username,origin:target.origin,scope,
       expiresAt:Date.now()+60_000,
     }
@@ -8580,6 +8706,7 @@ function registerIPCHandlers() {
         ...(hasConnectionRoute(route) ? { connection_route: route } : {}),
       })
       await persistLoginHistoryBestEffort()
+      void seedDesktopPlacesWebAuth(server, username, password)
     }
     return result
     } catch {
