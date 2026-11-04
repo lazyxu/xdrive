@@ -444,6 +444,16 @@ declare global {
   type AgentNotesVersions = { items: AgentNotesVersion[]; node_id: number }
   type AgentNotesWrite = { title: string; markdown: string; expected_revision?: number }
 
+  type AgentNotesImageReceipt = {
+    node_id: number
+    filename: string
+    relative_path: string
+    content_type: string
+    sha256: string
+    bytes: number
+  }
+  type AgentNotesImageData = { image: string; bytes: number; content_type: string; sha256: string }
+
   type AgentOwnerSharePage = OwnerFileSharePage
   type AgentOwnerShareLink = { url: string }
   type AgentCreatedCloudShare = {
@@ -1152,6 +1162,8 @@ declare global {
         cloudNotesDelete: (id: string, revision: number) => Promise<DesktopResult<void>>
         cloudNotesVersions: (id: string) => Promise<DesktopResult<AgentNotesVersions>>
         cloudNotesReadVersion: (nodeID: number, versionID: number) => Promise<DesktopResult<{ markdown: string }>>
+        cloudNotesUploadImage: (id: string, data: ArrayBuffer) => Promise<DesktopResult<AgentNotesImageReceipt>>
+        cloudNotesReadImage: (id: string, relativePath: string) => Promise<DesktopResult<AgentNotesImageData>>
         cloudOwnerShares: (cursor: number, limit: number) => Promise<DesktopResult<AgentOwnerSharePage>>
         cloudOwnShareLink: (id: number) => Promise<DesktopResult<AgentOwnerShareLink>>
         cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) => Promise<DesktopResult<AgentCreatedCloudShare>>

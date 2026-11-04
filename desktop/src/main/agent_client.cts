@@ -38,6 +38,16 @@ export type AgentNotesVersion = { id: number; revision: number; sha256: string; 
 export type AgentNotesVersions = { items: AgentNotesVersion[]; node_id: number }
 export type AgentNotesWrite = { title: string; markdown: string; expected_revision?: number }
 
+export type AgentNotesImageReceipt = {
+  node_id: number
+  filename: string
+  relative_path: string
+  content_type: string
+  sha256: string
+  bytes: number
+}
+export type AgentNotesImageData = { content_type: string; bytes: number; sha256: string; image: string }
+
 export type AgentBuildInfo = {
   version: string
   channel?: string
@@ -4888,6 +4898,34 @@ export class AgentIPCClient {
     const params = new URLSearchParams({ node_id: String(nodeID), version_id: String(versionID) })
     return this.request<{ markdown: string }>(
       'GET', '/v1/cloud/notes/version-content?' + params.toString(), undefined, 30_000, signal)
+  }
+
+  /** One selected image, one POST, no replay after an unknown commit ACK. */
+  cloudNotesUploadImage(id: string, bytes: ArrayBuffer) {
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) ||
+        !(bytes instanceof ArrayBuffer) || bytes.byteLength < 1 ||
+        bytes.byteLength > 20 * 1_048_576) {
+      throw new AgentIPCError('invalid_notes_image', 0, 'Invalid bounded Notes image request.')
+    }
+    return this.request<AgentNotesImageReceipt>('POST',
+      '/v1/cloud/notes/' + encodeURIComponent(id) + '/images', {
+        image: Buffer.from(bytes).toString('base64'),
+      }, 120_000, undefined, false)
+  }
+
+  /** Only same-note immutable local asset URLs; Agent verifies MIME/SHA. */
+  cloudNotesReadImage(id: string, path: string) {
+    const base = '_assets/' + id + '/'
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) ||
+        !path.startsWith(base) ||
+        !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.(?:png|jpg|gif|webp|heic)$/.test(
+          path.slice(base.length))) {
+      throw new AgentIPCError('invalid_notes_image', 0, 'Unsafe Notes image selector.')
+    }
+    const query = new URLSearchParams({ relative_path: path })
+    return this.request<AgentNotesImageData>('GET',
+      '/v1/cloud/notes/' + encodeURIComponent(id) + '/images?' + query.toString(),
+      undefined, 70_000)
   }
 
   cloudOwnerShares(cursor = 0, limit = 50) {

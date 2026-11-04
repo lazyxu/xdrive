@@ -1013,6 +1013,10 @@ const agent = Object.freeze({
   cloudNotesVersions: (id: string) => ipcRenderer.invoke('agent:cloud-notes-versions', id),
   cloudNotesReadVersion: (nodeID: number, versionID: number) =>
     ipcRenderer.invoke('agent:cloud-notes-version-content', nodeID, versionID),
+  cloudNotesUploadImage: (noteID: string, bytes: ArrayBuffer) =>
+    ipcRenderer.invoke('agent:cloud-notes-upload-image', noteID, bytes),
+  cloudNotesReadImage: (noteID: string, relativePath: string) =>
+    ipcRenderer.invoke('agent:cloud-notes-read-image', noteID, relativePath),
   cloudOwnerShares: (cursor: number, limit: number) => ipcRenderer.invoke('agent:cloud-owner-shares', cursor, limit),
   cloudOwnShareLink: (id: number) => ipcRenderer.invoke('agent:cloud-share-link', id),
   cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) =>
