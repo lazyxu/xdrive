@@ -58,6 +58,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
   const [scheduleID, setScheduleID] = useState<number | null>(null)
   const [notice, setNotice] = useState('')
   const [historyRevision, setHistoryRevision] = useState(0)
+  const [planRevision, setPlanRevision] = useState(0)
   const [histories, setHistories] = useState<Record<number, LocalHistory>>({})
   const visibleError = sameOwningClient ? error : ''
   const visiblePrincipalDenied = sameOwningClient && principalDenied && Boolean(error)
@@ -214,7 +215,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
                         <XDriveSynologyBackupScheduleStatus
                           key={'schedule:' + renderedHostEpoch + ':' + item.source_id}
                           client={client} sourceID={item.source_id}
-                          refreshEpoch={historyRevision} />
+                          refreshEpoch={planRevision} />
                       ) : null}
                       {expandedID === item.source_id && sameOwningClient ? (
                         <XDriveSynologyBackupSourceProgress
@@ -253,8 +254,9 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
             if (!isCurrentHost()) return
             setScheduleID(null)
             setNotice(message)
-            // Refresh the one expanded Source's saved plan and history. No
+            // Refresh the one expanded Source's saved plan and status; no
             // NAS-wide list fan-out or collapse after a normal plan edit.
+            setPlanRevision((n) => n + 1)
             setHistoryRevision((n) => n + 1)
           }}
         />
