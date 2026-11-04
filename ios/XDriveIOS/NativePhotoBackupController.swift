@@ -145,8 +145,11 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
 
     func configure(login: XDriveIOSNativeOwnerLoginModel,
                    expectedOwner: XDriveNativeOwnerRoot,
-                   minutes: Int, allowICloud: Bool) async {
-        guard !busy, XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes)
+                   minutes: Int, allowICloud: Bool,
+                   startRule: XDriveIOSPhotoAutoStartRule,
+                   enabledAt: Date) async {
+        guard !busy, enabledAt.timeIntervalSince1970.isFinite,
+              XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes)
         else { return }
         // Native consent must remain bound to the exact approved Owner.
         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) else {
@@ -223,7 +226,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 throw XDriveIOSNativeSessionError.staleSession
             }
             schedule = try store.configure(
-                owner: selected, minutes: minutes, allowICloud: allowICloud
+                owner: selected, minutes: minutes, allowICloud: allowICloud,
+                startRule: startRule, enabledAt: enabledAt
             )
             message = "已开启原生前台自动增量备份。仅 App 活跃时按计划检查，系统不保证锁屏或强制退出后定时执行。"
             configured = true
@@ -367,6 +371,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 } else {
                     let window: Int
                     let cloud: Bool
+                    let newOnlySince: Date?
                     let manualStartEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?
                     if kind == .automatic {
                         guard let due = try XDriveIOSPhotoAutoScheduleStore.shared
@@ -377,6 +382,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         automaticReservedNextDueAt = due.nextDueAt
                         window = due.windowIndex
                         cloud = due.allowICloudOriginals
+                        newOnlySince = due.backupStartRule == .onlyNew
+                            ? due.newOnlySince : nil
                         manualStartEpoch = nil
                     } else {
                         // Manual and automatic passes share the same 256-slot
@@ -395,6 +402,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         )
                         self.manualNextWindow = window
                         cloud = allowICloud
+                        newOnlySince = nil
                         manualStartEpoch = epoch
                     }
                     guard let offset = XDrivePhotoBackupScanWindow.offset(for: window)
@@ -405,6 +413,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, accessToken: verified.accessToken
                     ).run(allowICloudOriginals: cloud, startOffset: offset,
+                          newOnlySince: newOnlySince,
                           onPotentialWrite: { beganOriginalWrite = true }) { [weak self] value in
                         guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
                               self?.displayEpoch == uiEpoch,

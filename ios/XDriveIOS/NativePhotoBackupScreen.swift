@@ -20,6 +20,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var allowICloud = false
     @State private var autoAllowICloud = false
+    @State private var autoStartRule: XDriveIOSPhotoAutoStartRule = .everything
     @State private var showAutoConsent = false
     @State private var showManualConsent = false
     @State private var showFocusedConsent = false
@@ -43,6 +44,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @State private var autoConsentOwner: XDriveNativeOwnerRoot?
     @State private var autoConsentMinutes = 60
     @State private var autoConsentAllowICloud = false
+    @State private var autoConsentStartRule: XDriveIOSPhotoAutoStartRule = .everything
+    @State private var autoConsentEnabledAt = Date()
     @State private var resumeConsentOwner: XDriveNativeOwnerRoot?
     @State private var consentError: String?
     // Focused Backup is explicit foreground-only work. The display lease is
@@ -218,12 +221,14 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     await controller.configure(
                         login: login, expectedOwner: expected,
                         minutes: autoConsentMinutes,
-                        allowICloud: autoConsentAllowICloud
+                        allowICloud: autoConsentAllowICloud,
+                        startRule: autoConsentStartRule,
+                        enabledAt: autoConsentEnabledAt
                     )
                 }
             }
         } message: {
-            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证")。新开启的计划将自动处理首次积压：未扫完时仅在前台约每分钟继续一轮，扫描完成后恢复每 \(autoConsentMinutes) 分钟检查；每轮最多新增 20 个原件。不保证锁屏或强制退出后执行。")
+            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证")。\(autoConsentStartRule == .onlyNew ? "仅自动备份启用后拍摄或编辑的照片；无法判断拍摄和修改日期的项目仍标记不可用。" : "自动检查所有已授权的照片和视频。") 首次积压未扫完时仅在前台约每分钟继续一轮，完成扫描后恢复每 \(autoConsentMinutes) 分钟检查；每轮最多新增 20 个原件。不保证锁屏或强制退出后执行。")
         }
         .confirmationDialog("确认恢复当前 Owner 的前台自动备份？",
                             isPresented: $showResumeConsent, titleVisibility: .visible) {
@@ -463,6 +468,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             // Per-Owner input state never flows to a replacement account.
             allowICloud = false
             autoAllowICloud = false
+            autoStartRule = .everything
             interval = 60
             syncSavedAutomaticSettings()
             receipts.refresh(login: login)
@@ -562,6 +568,11 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .monospacedDigit()
                     Text("视频新增 \(result.videoUploaded)，Live ZIP 新增 \(result.liveBundleUploaded)，待核对 \(result.needsReview)，不可用 \(result.unavailable)")
                         .font(.footnote)
+                    if result.skippedBeforeBaseline > 0 {
+                        Text("仅备份新照片：本段排除启用前且未编辑的 \(result.skippedBeforeBaseline) 项；不代表这些原件已经备份。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("native-ios-photo-auto-older-skipped")
+                    }
                     if result.issues.total > 0 {
                         Text("本次扫描分段发现 \(result.issues.total) 项不可用或不支持；按扫描位置显示，位置会随图库变化，不是固定照片编号。")
                             .font(.caption).foregroundStyle(.orange)
@@ -618,11 +629,19 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     Text("24 小时").tag(1440)
                 }
                 .disabled(controller.busy || controller.schedule?.enabled == true)
+                Picker("前台自动备份范围", selection: $autoStartRule) {
+                    Text("扫描并备份全部照片").tag(XDriveIOSPhotoAutoStartRule.everything)
+                    Text("仅备份新照片").tag(XDriveIOSPhotoAutoStartRule.onlyNew)
+                }
+                .disabled(controller.busy || controller.schedule?.enabled == true)
+                .accessibilityIdentifier("native-ios-photo-auto-start-rule")
+                Text("“仅备份新照片”按启用时刻与 PhotoKit 拍摄／修改日期初步判断，也核验之后编辑的旧照片；历史导入、日期变更仍待变更队列完善。只影响前台自动计划，手动／集中备份和独立 BGProcessing 仍会扫描全部已授权原件。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("前台自动备份允许下载 iCloud 原件", isOn: $autoAllowICloud)
                     .disabled(controller.busy || controller.schedule?.enabled == true)
                     .accessibilityIdentifier("native-ios-photos-auto-icloud")
                 if let active = controller.schedule, active.enabled {
-                    Text("当前已保存：每 \(active.intervalMinutes) 分钟检查；iCloud 原件 \(active.allowICloudOriginals ? "允许下载" : "仅限本机已下载")。")
+                    Text("当前已保存：\(active.backupStartRule == .onlyNew ? "仅备份新照片（含启用后编辑）" : "扫描并备份全部照片")；每 \(active.intervalMinutes) 分钟检查；iCloud 原件 \(active.allowICloudOriginals ? "允许下载" : "仅限本机已下载")。")
                         .font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("native-ios-photos-auto-saved-settings")
                     if active.pausedForReview {
@@ -673,13 +692,15 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         autoConsentOwner = login.owner
                         autoConsentMinutes = interval
                         autoConsentAllowICloud = autoAllowICloud
+                        autoConsentStartRule = autoStartRule
+                        autoConsentEnabledAt = Date()
                         showAutoConsent = autoConsentOwner != nil
                     }
                         .disabled(controller.busy || background.busy || login.owner == nil ||
                                   (photoAuthorization != .authorized && photoAuthorization != .limited))
                         .accessibilityIdentifier("native-ios-photos-auto-enable")
                 }
-                Text("自动计划采用启用时确认的检查间隔、iCloud 设置和首次积压策略；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
+                Text("自动计划采用启用时确认的备份范围、检查间隔、iCloud 设置和首次积压策略；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
     }
@@ -955,6 +976,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         if let active = controller.schedule, active.enabled {
             interval = active.intervalMinutes
             autoAllowICloud = active.allowICloudOriginals
+            autoStartRule = active.backupStartRule ?? .everything
         }
     }
 }

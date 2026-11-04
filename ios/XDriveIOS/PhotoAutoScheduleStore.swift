@@ -5,6 +5,7 @@ import Photos
 enum XDriveIOSPhotoAutoScheduleError: Error {
     case unsupportedInterval
     case persistenceUnavailable
+    case invalidStartRule
 }
 
 @MainActor
@@ -33,6 +34,15 @@ final class XDriveIOSPhotoAutoScheduleStore {
         // Optional for decoding older schedules. Never accelerate unless
         // the current Owner separately and explicitly opts in.
         var catchUpWhenBehind: Bool? = nil
+        // Optional for old plans; default full-library coverage. No asset IDs.
+        var backupStartRuleRaw: String? = nil
+        var newOnlySince: Date? = nil
+
+        var backupStartRule: XDriveIOSPhotoAutoStartRule? {
+            XDriveIOSPhotoAutoSchedulePolicy.storedStartRule(
+                raw: backupStartRuleRaw, newOnlySince: newOnlySince
+            )
+        }
     }
     private func key(for owner: XDriveNativeOwnerRoot) -> String {
         let scope = owner.origin.absoluteString + "\n" + owner.instanceID +
@@ -46,7 +56,8 @@ final class XDriveIOSPhotoAutoScheduleStore {
               let state = try? JSONDecoder().decode(State.self, from: bytes),
               XDriveIOSPhotoAutoSchedulePolicy.accepts(
                 minutes: state.intervalMinutes
-              ), state.windowIndex >= 0 else { return nil }
+              ), state.windowIndex >= 0,
+              state.backupStartRule != nil else { return nil }
         return state
     }
 
@@ -55,9 +66,13 @@ final class XDriveIOSPhotoAutoScheduleStore {
     /// permission to scan PhotoKit automatically.
     @discardableResult
     func configure(owner: XDriveNativeOwnerRoot, minutes: Int,
-                   allowICloud: Bool) throws -> State {
+                   allowICloud: Bool, startRule: XDriveIOSPhotoAutoStartRule,
+                   enabledAt: Date) throws -> State {
         guard XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes) else {
             throw XDriveIOSPhotoAutoScheduleError.unsupportedInterval
+        }
+        guard enabledAt.timeIntervalSince1970.isFinite else {
+            throw XDriveIOSPhotoAutoScheduleError.invalidStartRule
         }
         let existing = status(owner: owner)
         let state = State(
@@ -71,7 +86,9 @@ final class XDriveIOSPhotoAutoScheduleStore {
             catchUpWhenBehind: XDriveIOSPhotoAutoSchedulePolicy.initialCatchUpPreference(
                 hasExistingPlan: existing != nil,
                 savedPreference: existing?.catchUpWhenBehind
-            )
+            ),
+            backupStartRuleRaw: startRule.rawValue,
+            newOnlySince: startRule == .onlyNew ? enabledAt : nil
         )
         try persist(state, owner: owner)
         return state

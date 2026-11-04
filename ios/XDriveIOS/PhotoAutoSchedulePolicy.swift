@@ -1,8 +1,50 @@
 import Foundation
 
+/// Start rule for the *foreground automatic* plan. Manual, Focused and
+/// independently approved BGProcessing tasks keep their existing scope.
+enum XDriveIOSPhotoAutoStartRule: String, Codable, CaseIterable {
+    case everything
+    case onlyNew
+}
+
 /// Pure, testable foreground-only schedule policy. An iOS system BGTask may
 /// run later but must never be misreported as an exact minute scheduler.
 enum XDriveIOSPhotoAutoSchedulePolicy {
+    enum NewOnlyCandidateDecision: Equatable {
+        case eligible
+        case olderThanStart
+        case unknownDates
+    }
+
+    /// Missing rule preserves legacy whole-library behavior. Unknown/new
+    /// schemas or lost new-only baseline must never silently upload all.
+    static func storedStartRule(
+        raw: String?, newOnlySince: Date?
+    ) -> XDriveIOSPhotoAutoStartRule? {
+        guard let raw else { return .everything }
+        guard let rule = XDriveIOSPhotoAutoStartRule(rawValue: raw) else { return nil }
+        if rule == .onlyNew {
+            guard let since = newOnlySince,
+                  since.timeIntervalSince1970.isFinite else { return nil }
+        }
+        return rule
+    }
+
+    /// Since-enable captures and edits, not a claim of full PhotoKit
+    /// change-history coverage. An undated item must remain unresolved.
+    static func newOnlyCandidate(
+        capturedAt: Date?, modifiedAt: Date?, since: Date
+    ) -> NewOnlyCandidateDecision {
+        guard since.timeIntervalSince1970.isFinite else { return .unknownDates }
+        let validDates = [capturedAt, modifiedAt].compactMap { date -> Date? in
+            guard let date, date.timeIntervalSince1970.isFinite else { return nil }
+            return date
+        }
+        guard !validDates.isEmpty else { return .unknownDates }
+        return validDates.contains(where: { $0 >= since })
+            ? .eligible : .olderThanStart
+    }
+
     static let supportedMinutes = [15, 60, 360, 1440]
     static let windowSize = 256
     static let maxNewFiles = 20
