@@ -169,7 +169,7 @@ enum XDriveIOSNativeFilesPagePolicy {
 
     static func validSearchSources(_ items: [XDriveIOSNativeFilesSearchSourceOption]) -> Bool {
         items.count <= 4096 &&
-            Set(items.map(\\.id)).count == items.count &&
+            Set(items.map(\.id)).count == items.count &&
             items.allSatisfy {
                 $0.id > 0 && !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                     $0.name.utf8.count <= 512 &&
@@ -181,7 +181,7 @@ enum XDriveIOSNativeFilesPagePolicy {
 
     static func validSearchTags(_ items: [XDriveIOSNativeFilesSearchTagOption]) -> Bool {
         items.count <= 128 &&
-            Set(items.map(\\.id)).count == items.count &&
+            Set(items.map(\.id)).count == items.count &&
             items.allSatisfy {
                 $0.id > 0 && !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                     $0.name.utf8.count <= 64 &&
