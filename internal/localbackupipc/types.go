@@ -103,7 +103,12 @@ type Schedule struct {
 	Revision           uint64 `json:"revision"`
 	ScheduleType       string `json:"schedule_type"`
 	ScheduleExpression string `json:"schedule_expression"`
-	ScheduleTimezone   string `json:"schedule_timezone"`
+	ScheduleTimezone   string     `json:"schedule_timezone"`
+	// Optional read-only observation from the original owning Agent; never
+	// supplied by the Server or used to grant an upload. No Root path, token,
+	// receipt ID or precise execution guarantee is exposed.
+	AutoReadiness       string     `json:"auto_readiness,omitempty"`
+	NextScheduledAt     *time.Time `json:"next_scheduled_at,omitempty"`
 }
 
 func ValidateSchedule(s Schedule, sourceID uint64) bool {
@@ -112,7 +117,29 @@ func ValidateSchedule(s Schedule, sourceID uint64) bool {
 	}
 	switch s.ScheduleType {
 	case "", "manual", "interval", "cron":
-		return true
+	default:
+		return false
 	}
-	return false
+	// Old Agents return just saved schedule fields. Only the new owning
+	// Agent may add a bounded readiness code, never a browser-computed due date.
+	if s.NextScheduledAt != nil &&
+		(s.AutoReadiness != "checkpoint_ready" || s.NextScheduledAt.IsZero()) {
+		return false
+	}
+	switch s.AutoReadiness {
+	case "":
+		return s.NextScheduledAt == nil
+	case "not_enabled":
+		return s.ScheduleType == "" && s.NextScheduledAt == nil
+	case "manual":
+		return s.ScheduleType == "manual" && s.NextScheduledAt == nil
+	case "ineligible_source", "checkpoint_unverified", "review_required", "unavailable":
+		return (s.ScheduleType == "interval" || s.ScheduleType == "cron") &&
+			s.NextScheduledAt == nil
+	case "checkpoint_ready":
+		return (s.ScheduleType == "interval" || s.ScheduleType == "cron") &&
+			s.NextScheduledAt != nil
+	default:
+		return false
+	}
 }
