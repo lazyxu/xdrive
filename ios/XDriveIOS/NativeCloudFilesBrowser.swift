@@ -94,9 +94,10 @@ struct XDriveIOSNativeFilesReader {
     }
 
     func search(_ query: String, offset: Int,
-                sort: String, order: String, kind: String) async throws -> XDriveIOSNativeFilesSearchRange {
+                sort: String, order: String,
+                filters: XDriveIOSNativeFilesSearchFilterState) async throws -> XDriveIOSNativeFilesSearchRange {
         guard XDriveIOSNativeFilesPagePolicy.validSearch(query),
-              XDriveIOSNativeFilesPagePolicy.validSearchKind(kind),
+              XDriveIOSNativeFilesPagePolicy.validSearchFilters(filters),
               XDriveIOSNativeFilesPagePolicy.validOffset(offset),
               XDriveIOSNativeFilesPagePolicy.validOrder(sort: sort, order: order)
         else { throw XDriveIOSNativeFilesReadError.invalidPage }
@@ -107,8 +108,20 @@ struct XDriveIOSNativeFilesReader {
             URLQueryItem(name: "sort", value: sort),
             URLQueryItem(name: "order", value: order)
         ]
-        if kind != "all" {
-            queryItems.append(URLQueryItem(name: "kind", value: kind))
+        if filters.kind != "all" {
+            queryItems.append(URLQueryItem(name: "kind", value: filters.kind))
+        }
+        if let modifiedFrom = filters.modifiedFrom {
+            queryItems.append(URLQueryItem(name: "modified_from", value: modifiedFrom))
+        }
+        if let modifiedTo = filters.modifiedTo {
+            queryItems.append(URLQueryItem(name: "modified_to", value: modifiedTo))
+        }
+        if let minSize = filters.minSize {
+            queryItems.append(URLQueryItem(name: "min_size", value: String(minSize)))
+        }
+        if let maxSize = filters.maxSize {
+            queryItems.append(URLQueryItem(name: "max_size", value: String(maxSize)))
         }
         let url = try endpoint("/api/v1/search", query: queryItems)
         let page: XDriveIOSNativeFilesSearchRange = try await get(url)
@@ -163,7 +176,9 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
-              offset: Int, query: String, kind: String, sort: String, order: String) {
+              offset: Int, query: String,
+              filters: XDriveIOSNativeFilesSearchFilterState,
+              sort: String, order: String) {
         invalidate()
         guard let expected = login.owner else {
             errorMessage = "请先验证原生服务器账户。"
@@ -198,7 +213,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                     count = page.total_count
                 } else {
                     let page = try await reader.search(
-                        query, offset: offset, sort: sort, order: order, kind: kind
+                        query, offset: offset, sort: sort, order: order, filters: filters
                     )
                     found = page.items.map {
                         XDriveIOSNativeFilesEntry(node: $0.node, path: $0.path)
@@ -243,7 +258,8 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     /// 100k-node directory into memory.
     func loadAdjacent(_ direction: XDriveIOSNativeFilesContinuousWindowPolicy.Direction,
                       login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
-                      query: String, kind: String, sort: String, order: String) {
+                      query: String, filters: XDriveIOSNativeFilesSearchFilterState,
+                      sort: String, order: String) {
         guard !loading, !loadingAdjacent, verifiedPage, adjacentError == nil,
               let expected = login.owner else { return }
         let oldEntries = entries
@@ -287,7 +303,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                     returnedOffset = page.offset
                 } else {
                     let page = try await reader.search(
-                        query, offset: requestOffset, sort: sort, order: order, kind: kind
+                        query, offset: requestOffset, sort: sort, order: order, filters: filters
                     )
                     found = page.items.map {
                         XDriveIOSNativeFilesEntry(node: $0.node, path: $0.path)
@@ -399,7 +415,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var offset = 0
     @State private var queryDraft = ""
     @State private var activeQuery = ""
-    @State private var searchKind = "all"
+    @State private var searchFilters = XDriveIOSNativeFilesSearchFilterState()
     @State private var searchReturnOffset: Int?
     @State private var searchReturnNodeID: UInt64?
     @State private var lastAppearedNodeID: UInt64?
@@ -575,7 +591,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     if !selecting {
                         Menu {
-                            Picker("搜索类型", selection: $searchKind) {
+                            Picker("搜索类型", selection: $searchFilters.kind) {
                                 Text("全部类型").tag("all")
                                 Text("文件夹").tag("folder")
                                 Text("全部文件").tag("file")
@@ -593,12 +609,54 @@ struct XDriveIOSNativeFilesBrowser: View {
                             }
                         } label: {
                             Label(
-                                "类型：\(XDriveIOSNativeFilesPagePolicy.searchKindLabel(searchKind))",
+                                "类型：\(XDriveIOSNativeFilesPagePolicy.searchKindLabel(searchFilters.kind))",
                                 systemImage: "line.3.horizontal.decrease.circle"
                             )
                             .font(.subheadline)
                         }
                         .accessibilityIdentifier("native-ios-files-search-kind-filter")
+                        Menu {
+                            Button("不限时间") {
+                                searchFilters.modifiedFrom = nil
+                                searchFilters.modifiedTo = nil
+                            }
+                            Button("今天") { setSearchModifiedFrom(searchStartOfDay(daysAgo: 0)) }
+                            Button("最近 7 天") { setSearchModifiedFrom(searchStartOfDay(daysAgo: 7)) }
+                            Button("最近 30 天") { setSearchModifiedFrom(searchStartOfDay(daysAgo: 30)) }
+                            Button("今年") { setSearchModifiedFrom(searchStartOfYear()) }
+                        } label: {
+                            Label(searchFilters.hasDateFilter ? "修改时间已筛选" : "修改时间",
+                                  systemImage: "calendar")
+                                .font(.subheadline)
+                        }
+                        .accessibilityIdentifier("native-ios-files-search-date-filter")
+                        Menu {
+                            Button("不限大小") {
+                                searchFilters.minSize = nil
+                                searchFilters.maxSize = nil
+                            }
+                            Button("小于 1 MiB") {
+                                searchFilters.minSize = 0
+                                searchFilters.maxSize = (1 << 20) - 1
+                            }
+                            Button("1–100 MiB") {
+                                searchFilters.minSize = 1 << 20
+                                searchFilters.maxSize = (100 << 20) - 1
+                            }
+                            Button("100 MiB–1 GiB") {
+                                searchFilters.minSize = 100 << 20
+                                searchFilters.maxSize = (1 << 30) - 1
+                            }
+                            Button("1 GiB 及以上") {
+                                searchFilters.minSize = 1 << 30
+                                searchFilters.maxSize = nil
+                            }
+                        } label: {
+                            Label(searchFilters.hasSizeFilter ? "文件大小已筛选" : "文件大小",
+                                  systemImage: "externaldrive")
+                                .font(.subheadline)
+                        }
+                        .accessibilityIdentifier("native-ios-files-search-size-filter")
                     }
                 }
                 if let searchError {
@@ -721,12 +779,12 @@ struct XDriveIOSNativeFilesBrowser: View {
         if index >= model.entries.count - threshold {
             model.loadAdjacent(
                 .next, login: login, folderID: parentID,
-                query: activeQuery, kind: searchKind, sort: sort, order: order
+                query: activeQuery, filters: searchFilters, sort: sort, order: order
             )
         } else if index < threshold {
             model.loadAdjacent(
                 .previous, login: login, folderID: parentID,
-                query: activeQuery, kind: searchKind, sort: sort, order: order
+                query: activeQuery, filters: searchFilters, sort: sort, order: order
             )
         }
     }
@@ -968,9 +1026,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                 clearSearch()
             }
         }
-        .onChange(of: searchKind) { _ in
-            // Re-query the entire Server index, not just loaded rows.
-            // reload cancels stale pages and preserves return anchors.
+        .onChange(of: searchFilters) { _ in
+            // Re-query the complete Server index for every structured filter;
+            // never filter only the currently loaded local window.
             if !activeQuery.isEmpty { reload(resetOffset: true) }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -1602,6 +1660,27 @@ struct XDriveIOSNativeFilesBrowser: View {
         )
     }
 
+    private func searchStartOfDay(daysAgo: Int) -> Date {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        return calendar.date(byAdding: .day, value: -daysAgo, to: today) ?? today
+    }
+
+    private func searchStartOfYear() -> Date {
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: Date())
+        return calendar.date(from: DateComponents(year: year, month: 1, day: 1))
+            ?? calendar.startOfDay(for: Date())
+    }
+
+    private func setSearchModifiedFrom(_ date: Date) {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.formatOptions = [.withInternetDateTime]
+        searchFilters.modifiedFrom = formatter.string(from: date)
+        searchFilters.modifiedTo = nil
+    }
+
     private func submitSearch() {
         let query = queryDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         if query.isEmpty {
@@ -1629,7 +1708,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         let restoreNodeID = searchReturnNodeID
         activeQuery = ""
         queryDraft = ""
-        searchKind = "all"
+        searchFilters = XDriveIOSNativeFilesSearchFilterState()
         searchError = nil
         searchReturnOffset = nil
         searchReturnNodeID = nil
@@ -1670,6 +1749,6 @@ struct XDriveIOSNativeFilesBrowser: View {
             return
         }
         model.load(login: login, folderID: parentID, offset: offset,
-                   query: activeQuery, kind: searchKind, sort: sort, order: order)
+                   query: activeQuery, filters: searchFilters, sort: sort, order: order)
     }
 }

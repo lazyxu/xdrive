@@ -79,6 +79,19 @@ struct XDriveIOSNativeFilesSearchRange: Decodable {
     let order: String
 }
 
+/// Structured filters are applied by the authoritative Server search index,
+/// never to only the currently loaded 64–256 row client window.
+struct XDriveIOSNativeFilesSearchFilterState: Equatable {
+    var kind: String = "all"
+    var modifiedFrom: String?
+    var modifiedTo: String?
+    var minSize: Int64?
+    var maxSize: Int64?
+
+    var hasDateFilter: Bool { modifiedFrom != nil || modifiedTo != nil }
+    var hasSizeFilter: Bool { minSize != nil || maxSize != nil }
+}
+
 /// Validate an actual Owner Range before it can replace the currently visible
 /// page. Holding just one 64-item page is deliberate even for 100k/115k nodes.
 enum XDriveIOSNativeFilesPagePolicy {
@@ -104,6 +117,25 @@ enum XDriveIOSNativeFilesPagePolicy {
 
     static func searchKindLabel(_ kind: String) -> String {
         searchKindLabels[kind] ?? "全部类型"
+    }
+
+    /// Match the Server's RFC3339Nano date and non-negative byte-range contract.
+    static func validSearchFilters(_ filters: XDriveIOSNativeFilesSearchFilterState) -> Bool {
+        guard validSearchKind(filters.kind) else { return false }
+        let from = filters.modifiedFrom.flatMap {
+            XDriveIOSNativeFilesDatePolicy.date(from: $0)
+        }
+        let to = filters.modifiedTo.flatMap {
+            XDriveIOSNativeFilesDatePolicy.date(from: $0)
+        }
+        if filters.modifiedFrom != nil && from == nil { return false }
+        if filters.modifiedTo != nil && to == nil { return false }
+        if let from, let to, from > to { return false }
+        if let minSize = filters.minSize, minSize < 0 { return false }
+        if let maxSize = filters.maxSize, maxSize < 0 { return false }
+        if let minSize = filters.minSize, let maxSize = filters.maxSize,
+           minSize > maxSize { return false }
+        return true
     }
 
     static func validOffset(_ offset: Int) -> Bool {
