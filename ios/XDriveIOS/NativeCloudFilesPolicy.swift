@@ -88,6 +88,24 @@ enum XDriveIOSNativeFilesPagePolicy {
     static let maximumQueryCharacters = 200
     static let maximumQueryUTF8Bytes = 256
 
+    // Shared with the Web/PWA /api/v1/search kind contract.
+    // "all" is presentation-only; omit it from the Server request.
+    private static let searchKindLabels: [String: String] = [
+        "all": "全部类型", "folder": "文件夹", "file": "全部文件",
+        "image": "图片", "video": "视频", "audio": "音频",
+        "pdf": "PDF", "document": "文档", "spreadsheet": "表格",
+        "presentation": "演示文稿", "archive": "压缩文件",
+        "code": "代码", "text": "文本", "other": "其他文件"
+    ]
+
+    static func validSearchKind(_ kind: String) -> Bool {
+        searchKindLabels[kind] != nil
+    }
+
+    static func searchKindLabel(_ kind: String) -> String {
+        searchKindLabels[kind] ?? "全部类型"
+    }
+
     static func validOffset(_ offset: Int) -> Bool {
         offset >= 0 && offset <= maximumCount &&
             offset % pageSize == 0

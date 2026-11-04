@@ -94,18 +94,23 @@ struct XDriveIOSNativeFilesReader {
     }
 
     func search(_ query: String, offset: Int,
-                sort: String, order: String) async throws -> XDriveIOSNativeFilesSearchRange {
+                sort: String, order: String, kind: String) async throws -> XDriveIOSNativeFilesSearchRange {
         guard XDriveIOSNativeFilesPagePolicy.validSearch(query),
+              XDriveIOSNativeFilesPagePolicy.validSearchKind(kind),
               XDriveIOSNativeFilesPagePolicy.validOffset(offset),
               XDriveIOSNativeFilesPagePolicy.validOrder(sort: sort, order: order)
         else { throw XDriveIOSNativeFilesReadError.invalidPage }
-        let url = try endpoint("/api/v1/search", query: [
+        var queryItems = [
             URLQueryItem(name: "q", value: query.trimmingCharacters(in: .whitespacesAndNewlines)),
             URLQueryItem(name: "offset", value: String(offset)),
             URLQueryItem(name: "limit", value: String(XDriveIOSNativeFilesPagePolicy.pageSize)),
             URLQueryItem(name: "sort", value: sort),
             URLQueryItem(name: "order", value: order)
-        ])
+        ]
+        if kind != "all" {
+            queryItems.append(URLQueryItem(name: "kind", value: kind))
+        }
+        let url = try endpoint("/api/v1/search", query: queryItems)
         let page: XDriveIOSNativeFilesSearchRange = try await get(url)
         guard XDriveIOSNativeFilesPagePolicy.validResults(
             page, offset: offset, sort: sort, order: order
@@ -158,7 +163,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
-              offset: Int, query: String, sort: String, order: String) {
+              offset: Int, query: String, kind: String, sort: String, order: String) {
         invalidate()
         guard let expected = login.owner else {
             errorMessage = "请先验证原生服务器账户。"
@@ -193,7 +198,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                     count = page.total_count
                 } else {
                     let page = try await reader.search(
-                        query, offset: offset, sort: sort, order: order
+                        query, offset: offset, sort: sort, order: order, kind: kind
                     )
                     found = page.items.map {
                         XDriveIOSNativeFilesEntry(node: $0.node, path: $0.path)
@@ -238,7 +243,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     /// 100k-node directory into memory.
     func loadAdjacent(_ direction: XDriveIOSNativeFilesContinuousWindowPolicy.Direction,
                       login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
-                      query: String, sort: String, order: String) {
+                      query: String, kind: String, sort: String, order: String) {
         guard !loading, !loadingAdjacent, verifiedPage, adjacentError == nil,
               let expected = login.owner else { return }
         let oldEntries = entries
@@ -282,7 +287,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                     returnedOffset = page.offset
                 } else {
                     let page = try await reader.search(
-                        query, offset: requestOffset, sort: sort, order: order
+                        query, offset: requestOffset, sort: sort, order: order, kind: kind
                     )
                     found = page.items.map {
                         XDriveIOSNativeFilesEntry(node: $0.node, path: $0.path)
@@ -394,6 +399,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var offset = 0
     @State private var queryDraft = ""
     @State private var activeQuery = ""
+    @State private var searchKind = "all"
     @State private var searchReturnOffset: Int?
     @State private var searchReturnNodeID: UInt64?
     @State private var lastAppearedNodeID: UInt64?
@@ -567,6 +573,33 @@ struct XDriveIOSNativeFilesBrowser: View {
                         Button("清除") { clearSearch() }
                             .accessibilityIdentifier("native-ios-files-clear-search")
                     }
+                    if !selecting {
+                        Menu {
+                            Picker("搜索类型", selection: $searchKind) {
+                                Text("全部类型").tag("all")
+                                Text("文件夹").tag("folder")
+                                Text("全部文件").tag("file")
+                                Text("图片").tag("image")
+                                Text("视频").tag("video")
+                                Text("音频").tag("audio")
+                                Text("PDF").tag("pdf")
+                                Text("文档").tag("document")
+                                Text("表格").tag("spreadsheet")
+                                Text("演示文稿").tag("presentation")
+                                Text("压缩文件").tag("archive")
+                                Text("代码").tag("code")
+                                Text("文本").tag("text")
+                                Text("其他文件").tag("other")
+                            }
+                        } label: {
+                            Label(
+                                "类型：\(XDriveIOSNativeFilesPagePolicy.searchKindLabel(searchKind))",
+                                systemImage: "line.3.horizontal.decrease.circle"
+                            )
+                            .font(.subheadline)
+                        }
+                        .accessibilityIdentifier("native-ios-files-search-kind-filter")
+                    }
                 }
                 if let searchError {
                     Text(searchError).foregroundStyle(.orange).font(.footnote)
@@ -688,12 +721,12 @@ struct XDriveIOSNativeFilesBrowser: View {
         if index >= model.entries.count - threshold {
             model.loadAdjacent(
                 .next, login: login, folderID: parentID,
-                query: activeQuery, sort: sort, order: order
+                query: activeQuery, kind: searchKind, sort: sort, order: order
             )
         } else if index < threshold {
             model.loadAdjacent(
                 .previous, login: login, folderID: parentID,
-                query: activeQuery, sort: sort, order: order
+                query: activeQuery, kind: searchKind, sort: sort, order: order
             )
         }
     }
@@ -934,6 +967,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                 !activeQuery.isEmpty {
                 clearSearch()
             }
+        }
+        .onChange(of: searchKind) { _ in
+            // Re-query the entire Server index, not just loaded rows.
+            // reload cancels stale pages and preserves return anchors.
+            if !activeQuery.isEmpty { reload(resetOffset: true) }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if selecting { filesSelectionToolbar }
@@ -1591,6 +1629,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         let restoreNodeID = searchReturnNodeID
         activeQuery = ""
         queryDraft = ""
+        searchKind = "all"
         searchError = nil
         searchReturnOffset = nil
         searchReturnNodeID = nil
@@ -1631,6 +1670,6 @@ struct XDriveIOSNativeFilesBrowser: View {
             return
         }
         model.load(login: login, folderID: parentID, offset: offset,
-                   query: activeQuery, sort: sort, order: order)
+                   query: activeQuery, kind: searchKind, sort: sort, order: order)
     }
 }

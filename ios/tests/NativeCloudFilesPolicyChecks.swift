@@ -60,6 +60,20 @@ struct XDriveIOSNativeFilesPageChecks {
         require(!XDriveIOSNativeFilesPagePolicy.validChildren(
             empty, parentID: parent, offset: 0, sort: "name", order: "asc"
         ), "reject non-progressing page")
+        for kind in [
+            "all", "folder", "file", "image", "video", "audio", "pdf",
+            "document", "spreadsheet", "presentation", "archive",
+            "code", "text", "other"
+        ] {
+            require(XDriveIOSNativeFilesPagePolicy.validSearchKind(kind),
+                    "accept shared Web search kind: \(kind)")
+        }
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchKind("dir"),
+                "reject unsupported Server kind")
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchKind("image&limit=0"),
+                "reject invalid kind parameter")
+        require(XDriveIOSNativeFilesPagePolicy.searchKindLabel("image") == "图片",
+                "localized kind label")
         require(XDriveIOSNativeFilesPagePolicy.validSearch(" hello "), "search string")
         require(!XDriveIOSNativeFilesPagePolicy.validSearch("a"), "reject single ASCII character")
         require(!XDriveIOSNativeFilesPagePolicy.validSearch("中"), "reject single Unicode scalar")
