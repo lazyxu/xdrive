@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
-	"gorm.io/gorm"
 )
 
 // A clean old Yike root must not move while an old upload or Files operation
@@ -158,5 +157,3 @@ func TestLegacyYikeCleanMigrationIgnoresExpiredUploadAndTerminalOperation(t *tes
 	}
 }
 
-// Ensure the test fixtures keep the PostgreSQL GORM adapter linked.
-var _ *gorm.DB
