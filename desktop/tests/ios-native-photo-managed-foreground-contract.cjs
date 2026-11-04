@@ -78,3 +78,28 @@ test('backup actions disable when no matching confirmed input and never silently
   assert.match(screen, /destination\.confirmedForCurrentName,/);
   assert.match(screen, /文件夹名已修改，请重新保存后再备份/);
 });
+
+test('manual PhotoKit position cannot cross Source or target Node changes', () => {
+  // The manual cursor is RAM-only, but Owner equality is not enough:
+  // a new empty destination would otherwise skip previously scanned slots.
+  assert.match(controller, /private var manualSourceID: UInt64\?/);
+  assert.match(controller, /private var manualTargetNodeID: UInt64\?/);
+  const ownerReset = controller.slice(controller.indexOf('if !unchanged {'),
+    controller.indexOf('displayOwner = owner'));
+  assert.match(ownerReset, /manualSourceID = nil/);
+  assert.match(ownerReset, /manualTargetNodeID = nil/);
+  const cursorStart = controller.indexOf('let sameTarget = XDriveIOSPhotoBackupDestinationCursorPolicy.sameManagedTarget(');
+  assert.ok(cursorStart > 0, 'missing manual Source/Node cursor binding');
+  const manual = controller.slice(cursorStart, controller.indexOf('guard let offset = ', cursorStart));
+  assert.match(manual, /savedSourceID: self\.manualSourceID/);
+  assert.match(manual, /savedTargetNodeID: self\.manualTargetNodeID/);
+  assert.match(manual, /currentSourceID: managed\.destination\.sourceID/);
+  assert.match(manual, /currentTargetNodeID: managed\.destination\.targetNodeID/);
+  assert.match(manual, /ownerRootNodeID: selected\.rootNodeID/);
+  assert.match(manual, /if !sameTarget \{\s*self\.manualNextWindow = 0\s*self\.manualLibraryEpoch = nil\s*self\.manualAuthorizationRaw = nil\s*\}/);
+  assert.ok(manual.indexOf('self.manualNextWindow = 0') <
+    manual.indexOf('XDrivePhotoCursorEpochPolicy.trustedWindow('),
+    'must reset the old scan position before PhotoKit epoch-based resume');
+  assert.match(manual, /self\.manualSourceID = managed\.destination\.sourceID/);
+  assert.match(manual, /self\.manualTargetNodeID = managed\.destination\.targetNodeID/);
+});

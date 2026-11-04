@@ -69,6 +69,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     private var displayEpoch = UUID()
     private var manualLibraryEpoch: Data?
     private var manualAuthorizationRaw: Int?
+    // RAM-only checkpoint identity. An unchanged PhotoKit epoch cannot make
+    // a position scanned for Owner-root or Source A valid for Source B.
+    private var manualSourceID: UInt64?
+    private var manualTargetNodeID: UInt64?
     private var libraryObserver: XDriveIOSForegroundPhotoLibraryObserver?
 
     /// Observe changes without enumerating PhotoKit or starting a writer.
@@ -112,6 +116,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             manualNextWindow = 0
             manualLibraryEpoch = nil
             manualAuthorizationRaw = nil
+            manualSourceID = nil
+            manualTargetNodeID = nil
             progress = nil
             message = "未启动相册备份"
             errorMessage = nil
@@ -404,8 +410,25 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     } else {
                         // Manual and automatic passes share the same 256-slot
                         // completion policy, but NOT the saved auto schedule.
-                        // An old positional index is unusable after Photos edits
-                        // or Full/Limited access changes; restart from the front.
+                        // Even with an unchanged PhotoKit epoch, an index
+                        // scanned for a previous Source/Node must not skip
+                        // originals in the new managed destination.
+                        let sameTarget = XDriveIOSPhotoBackupDestinationCursorPolicy.sameManagedTarget(
+                            savedSourceID: self.manualSourceID,
+                            savedTargetNodeID: self.manualTargetNodeID,
+                            currentSourceID: managed.destination.sourceID,
+                            currentTargetNodeID: managed.destination.targetNodeID,
+                            ownerRootNodeID: selected.rootNodeID
+                        )
+                        if !sameTarget {
+                            self.manualNextWindow = 0
+                            self.manualLibraryEpoch = nil
+                            self.manualAuthorizationRaw = nil
+                        }
+                        self.manualSourceID = managed.destination.sourceID
+                        self.manualTargetNodeID = managed.destination.targetNodeID
+                        // An old positional index is also unusable after
+                        // Photos edits or Full/Limited access changes.
                         let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
                         window = XDrivePhotoCursorEpochPolicy.trustedWindow(
                             requested: self.manualNextWindow,
