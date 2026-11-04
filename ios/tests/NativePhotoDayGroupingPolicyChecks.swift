@@ -68,6 +68,40 @@ struct NativePhotoDayGroupingPolicyChecks {
             dates: [nil], hasPreviousPage: false, calendar: calendar
         )
         precondition(!firstPage[0].continuesPreviousPage)
+        // Exercise all 1,563 separate 64-slot windows of a 100k-photo
+        // gallery without retaining 100k dates or PhotoKit IDs. Each
+        // synthetic date runs for 137 assets, crossing page boundaries.
+        let totalSlots = 100_000
+        let assetsPerDay = 137
+        let expectedDays = (totalSlots + assetsPerDay - 1) / assetsPerDay
+        let initialEpoch: TimeInterval = 1_700_000_000
+        var firstHeadingCount = 0
+        var viewedSlots = 0
+        for offset in stride(from: 0, to: totalSlots, by: 64) {
+            let count = min(64, totalSlots - offset)
+            let pageDates: [Date?] = (0..<count).map { index in
+                let dayNumber = (offset + index) / assetsPerDay
+                return Date(timeIntervalSince1970:
+                    initialEpoch - Double(dayNumber) * 86_400)
+            }
+            let previous: Date? = offset > 0 ? Date(
+                timeIntervalSince1970:
+                    initialEpoch - Double((offset - 1) / assetsPerDay) * 86_400
+            ) : nil
+            let pages = XDriveIOSNativePhotoDayGroupingPolicy.sections(
+                dates: pageDates, previousCapturedAt: previous,
+                hasPreviousPage: offset > 0, calendar: calendar
+            )
+            precondition(!pages.isEmpty && pages.count <= 2)
+            precondition(pages.map(\.count).reduce(0, +) == count)
+            let continued = offset > 0 &&
+                (offset - 1) / assetsPerDay == offset / assetsPerDay
+            precondition(pages[0].continuesPreviousPage == continued)
+            firstHeadingCount += pages.filter { !$0.continuesPreviousPage }.count
+            viewedSlots += count
+        }
+        precondition(viewedSlots == totalSlots)
+        precondition(firstHeadingCount == expectedDays)
         print("iOS native PhotoKit actual-day section policy: PASS")
     }
 }

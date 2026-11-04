@@ -94,6 +94,50 @@ struct NativePhotoTimelinePolicyChecks {
             selectedCount: 1, identifier: String(repeating: "a", count: 1025),
             alreadySelected: false
         ))
+        // Synthetic 100k-photo calendar index, backed by 730 *distinct days*
+        // rather than 100k retained PhotoKit identifiers. Day boundaries at
+        // 137 assets deliberately straddle the 64-slot virtual-page edges.
+        let syntheticCount = 100_000
+        let assetsPerDay = 137
+        let expectedDays = (syntheticCount + assetsPerDay - 1) / assetsPerDay
+        let initialEpoch: TimeInterval = 1_700_000_000
+        var largeIndex = XDriveIOSNativePhotoTimelineBuilder(calendar: calendar)
+        for slot in 0..<syntheticCount {
+            let dayNumber = slot / assetsPerDay
+            let capture = Date(
+                timeIntervalSince1970: initialEpoch - Double(dayNumber) * 86_400
+            )
+            largeIndex.append(capturedAt: capture, slot: slot)
+        }
+        let large = largeIndex.finish(totalSlots: syntheticCount)
+        precondition(large.totalSlots == syntheticCount)
+        precondition(large.indexedMediaCount == syntheticCount)
+        precondition(large.days.count == expectedDays)
+        precondition(large.years.count <= 4 && large.months.count <= 30)
+        precondition(large.days[0].firstSlot == 0)
+        precondition(large.days[0].mediaCount == assetsPerDay)
+        precondition(large.days[1].firstSlot == assetsPerDay)
+        precondition(large.days[1].firstPageOffset == 128)
+        precondition(large.days.last?.firstSlot == (expectedDays - 1) * assetsPerDay)
+        precondition(large.days.last?.mediaCount ==
+            syntheticCount - (expectedDays - 1) * assetsPerDay)
+        precondition(large.days.map(\.mediaCount).reduce(0, +) == syntheticCount)
+        precondition(large.months.map(\.mediaCount).reduce(0, +) == syntheticCount)
+        precondition(large.years.map(\.mediaCount).reduce(0, +) == syntheticCount)
+        // 100,000 records require 1,563 numeric page descriptors, not any
+        // media-ID list. The last 32-slot page and its backward edge are valid.
+        precondition(virtual.pageCount(total: syntheticCount) == 1563)
+        let lastOffset = virtual.normalizedAnchor(
+            requested: syntheticCount - 1, total: syntheticCount
+        )
+        precondition(lastOffset == 99_968)
+        precondition(syntheticCount - lastOffset == 32)
+        precondition(virtual.adjacentOffset(
+            current: lastOffset, total: syntheticCount, direction: 1
+        ) == nil)
+        precondition(virtual.adjacentOffset(
+            current: lastOffset, total: syntheticCount, direction: -1
+        ) == lastOffset - 64)
         print("iOS Photos whole-library timeline grouping and page jumps: PASS")
     }
 }
