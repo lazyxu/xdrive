@@ -86,6 +86,11 @@ jobs:
             ios/tests/NativeBackupWindowReadProgressChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-window-read-progress"
           "$RUNNER_TEMP/xdrive-ios-window-read-progress"
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoBackupIssueSummary.swift \
+            ios/tests/PhotoBackupIssueSummaryChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-issues"
+          "$RUNNER_TEMP/xdrive-ios-photo-issues"
           node --test desktop/tests/ios-native-photo-backup-window-progress.cjs
 
       - name: Verify V2 PhotoKit journal shard routing
