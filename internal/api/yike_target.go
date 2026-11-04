@@ -244,8 +244,19 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 			}
 			parentChanged := currentTarget.ParentID == nil || *currentTarget.ParentID != desiredParent.ID
 			if parentChanged {
-				// Moving a legacy uid_* root is not authorized by the folder
-				// name alone. Reject if it carries unverified ordinary data.
+				// A UID-shaped name and empty content do not prove that a
+				// manually selected ordinary folder belongs to this Source.
+				// Older unmarked server roots may move only from the exact
+				// historical 来源/一刻相册 hierarchy.
+				if !source.TargetManaged {
+					proven, err := verifiedLegacyYikeTargetLocationTx(ctx, tx, *source, currentTarget)
+					if err != nil {
+						return err
+					}
+					if !proven {
+						return errYikeTargetContainsData
+					}
+				}
 				if err := verifyYikeTargetRelocationTx(ctx, tx, *source, currentTarget); err != nil {
 					return err
 				}
@@ -306,7 +317,7 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 		}
 	}
 
-	target, err := ensureYikeManagedTargetTx(ctx, tx, source.OwnerID, identity)
+	target, err := createExclusiveYikeManagedTargetTx(ctx, tx, *source, identity)
 	if err != nil {
 		return err
 	}
