@@ -329,6 +329,8 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
     @State private var scale: XDriveIOSNativePhotoTimelineScale = .year
     @State private var selectedYearKey: String?
     @State private var selectedMonthKey: String?
+    @State private var jumpDate = Date()
+    @State private var jumpDateMessage: String?
     @State private var wallRevision: UInt64 = 0
     @State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
 
@@ -407,6 +409,22 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
                                 .accessibilityIdentifier("native-ios-local-timeline-all")
                             } footer: {
                                 Text("仅索引当前授权的\(mediaFilter.title)（\(index.indexedMediaCount) 项）。日期定位使用当前媒体筛选的完整 PhotoKit 游标。")
+                            }
+                            Section("跳转到指定日期") {
+                                HStack(spacing: 10) {
+                                    DatePicker("选择拍摄日期", selection: $jumpDate,
+                                               displayedComponents: .date)
+                                        .datePickerStyle(.compact)
+                                        .accessibilityIdentifier("native-ios-photo-timeline-date-picker")
+                                    Button("跳转") { jumpToSelectedDay() }
+                                        .buttonStyle(.borderedProminent)
+                                        .accessibilityIdentifier("native-ios-photo-timeline-date-jump")
+                                }
+                                if let jumpDateMessage {
+                                    Text(jumpDateMessage)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                             Section("\(scale.title) · \(visibleGroupCount(index)) 个日期分组") {
                                 if scale == .day {
@@ -494,15 +512,18 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
         .onChange(of: changes.revision) { _ in model.invalidate() }
         .onChange(of: mediaFilter) { _ in
             model.invalidate()
+            jumpDateMessage = nil
             showingDates = false
         }
         .onChange(of: showingDates) { visible in
             if visible {
                 selectedYearKey = nil
                 selectedMonthKey = nil
+                jumpDateMessage = nil
                 scale = .year
             }
         }
+        .onChange(of: jumpDate) { _ in jumpDateMessage = nil }
         .onChange(of: scale) { value in
             if value == .year {
                 selectedYearKey = nil
@@ -549,6 +570,35 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
         default:
             jump(to: group.firstPageOffset)
         }
+    }
+
+    /// The calendar picker deliberately admits exact, authorized capture days
+    /// only. A missing date never falls back to a guessed numeric photo slot.
+    private func jumpToSelectedDay() {
+        let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard permission == .authorized || permission == .limited,
+              phase == .active,
+              let index = model.index,
+              model.indexFilter == mediaFilter else {
+            model.invalidate()
+            jumpDateMessage = "相册授权或日期索引已变化，请重新读取。"
+            return
+        }
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day], from: jumpDate)
+        guard let year = components.year,
+              let month = components.month,
+              let day = components.day else {
+            jumpDateMessage = "请选择有效日期。"
+            return
+        }
+        let key = "\(year)-\(month)-\(day)"
+        guard let group = index.days.first(where: { $0.key == key }) else {
+            jumpDateMessage = "选定日期没有当前已授权的\(mediaFilter.title)，请选择其他日期。"
+            return
+        }
+        jumpDateMessage = nil
+        jump(to: group.firstPageOffset)
     }
 
     private func jump(to requestedOffset: Int) {
