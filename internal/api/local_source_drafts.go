@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -98,6 +99,14 @@ func (s *Server) discardLocalSourceDraft(c *gin.Context) {
 				return errLocalDraftNotEmpty
 			}
 		}
+		// A never-bound, pristine Source now owns a newly-provisioned empty
+		// cloud leaf. Only the draft-specific cancellation endpoint may
+		// remove that leaf. A normal Source delete must still preserve files.
+		if source.TargetManaged && source.TargetNodeID != nil {
+			if err := discardPristineLocalManagedTargetTx(c.Request.Context(), tx, source); err != nil {
+				return err
+			}
+		}
 		return tx.Delete(&source).Error
 	})
 	if err != nil {
@@ -119,4 +128,112 @@ func (s *Server) discardLocalSourceDraft(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "private, no-store")
 	c.Status(http.StatusNoContent)
+}
+
+// discardPristineLocalManagedTargetTx is only reachable after verifying the
+// creating device, Source revision, paused status and absence of sync history.
+// Do not detach a Source that is already visible via a Share, pin, upload, or
+// another Source. Preserve legacy manually selected targets without touching
+// their Nodes.
+func discardPristineLocalManagedTargetTx(ctx context.Context, tx *gorm.DB, source meta.Source) error {
+	if !isLocalFolderPush(source) || !source.TargetManaged || source.TargetNodeID == nil {
+		return errLocalDraftNotEmpty
+	}
+	var target meta.Node
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+			*source.TargetNodeID, source.OwnerID, meta.NodeTypeDir).
+		Take(&target).Error; err != nil {
+		return errLocalDraftNotEmpty
+	}
+	if target.Name != source.Name || target.ParentID == nil {
+		return errLocalDraftNotEmpty
+	}
+	if _, err := managedSourceTargetAncestorIDsTx(tx, source, target); err != nil {
+		return errLocalDraftNotEmpty
+	}
+	// Any direct or indirect metadata reference must make cancellation
+	// non-destructive. Tests with a minimal schema may omit optional tables.
+	type guard struct {
+		model     any
+		predicate string
+		args      []any
+	}
+	checks := []guard{
+		{&meta.Node{}, "parent_id = ?", []any{target.ID}},
+		{&meta.Source{}, "target_node_id = ? AND id <> ?", []any{target.ID, source.ID}},
+		{&meta.File{}, "node_id = ?", []any{target.ID}},
+		{&meta.FileVersion{}, "node_id = ?", []any{target.ID}},
+		{&meta.Share{}, "node_id = ?", []any{target.ID}},
+		{&meta.UploadSession{}, "parent_id = ? OR node_id = ? OR result_node_id = ?", []any{target.ID, target.ID, target.ID}},
+		{&meta.FileQuickAccess{}, "node_id = ?", []any{target.ID}},
+		{&meta.FileFavorite{}, "node_id = ?", []any{target.ID}},
+		{&meta.FileRecentAccess{}, "node_id = ?", []any{target.ID}},
+		{&meta.FileOperation{}, "parent_id = ?", []any{target.ID}},
+	}
+	for _, check := range checks {
+		if !tx.Migrator().HasTable(check.model) {
+			continue
+		}
+		var count int64
+		if err := tx.WithContext(ctx).Model(check.model).
+			Where(check.predicate, check.args...).Limit(1).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 0 {
+			return errLocalDraftNotEmpty
+		}
+	}
+	// Target is an empty, exclusively-owned directory. Hard deletion here
+	// does not remove data, CAS, SourceItems or the old user-selected folder.
+	if err := tx.Delete(&target).Error; err != nil {
+		return err
+	}
+	// A cancelled first Source should not leave an orphaned device group
+	// that then blocks creation of another Source on the same device. Only
+	// prune the group if it is empty and has no user-facing references.
+	if target.ParentID != nil {
+		var group meta.Node
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+				*target.ParentID, source.OwnerID, meta.NodeTypeDir).
+			Take(&group).Error; err != nil {
+			return err
+		}
+		var childCount int64
+		if err := tx.Model(&meta.Node{}).Where("parent_id = ?", group.ID).Count(&childCount).Error; err != nil {
+			return err
+		}
+		if childCount == 0 {
+			refs := []guard{
+				{&meta.Source{}, "target_node_id = ? AND id <> ?", []any{group.ID, source.ID}},
+				{&meta.Share{}, "node_id = ?", []any{group.ID}},
+				{&meta.UploadSession{}, "parent_id = ? OR node_id = ? OR result_node_id = ?", []any{group.ID, group.ID, group.ID}},
+				{&meta.FileQuickAccess{}, "node_id = ?", []any{group.ID}},
+				{&meta.FileFavorite{}, "node_id = ?", []any{group.ID}},
+				{&meta.FileRecentAccess{}, "node_id = ?", []any{group.ID}},
+				{&meta.FileOperation{}, "parent_id = ?", []any{group.ID}},
+			}
+			pinned := false
+			for _, ref := range refs {
+				if !tx.Migrator().HasTable(ref.model) {
+					continue
+				}
+				var count int64
+				if err := tx.Model(ref.model).Where(ref.predicate, ref.args...).Limit(1).Count(&count).Error; err != nil {
+					return err
+				}
+				if count != 0 {
+					pinned = true
+					break
+				}
+			}
+			if !pinned {
+				if err := tx.Delete(&group).Error; err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }

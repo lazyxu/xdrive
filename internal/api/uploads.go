@@ -339,14 +339,24 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		shareGrant = &grant
 	}
 	if req.NodeID != nil {
-		if !scopedRun && managedSourceWritePreflight(c, s.DB, uid, *req.NodeID, false) {
+		if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), s.DB, c, uid, *req.NodeID, req); err != nil {
+			if errors.Is(err, errManagedSourceWriteDenied) {
+				fail(c, http.StatusConflict, err.Error())
+			} else {
+				fail(c, http.StatusInternalServerError, "check managed upload target failed")
+			}
 			return
 		}
 		if notesRejectNodeMutation(c, s.DB, *req.NodeID) {
 			return
 		}
 	} else if req.ParentID != nil {
-		if !scopedRun && managedSourceWritePreflight(c, s.DB, uid, *req.ParentID, false) {
+		if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), s.DB, c, uid, *req.ParentID, req); err != nil {
+			if errors.Is(err, errManagedSourceWriteDenied) {
+				fail(c, http.StatusConflict, err.Error())
+			} else {
+				fail(c, http.StatusInternalServerError, "check managed upload target failed")
+			}
 			return
 		}
 		if notesRejectDestination(c, s.DB, *req.ParentID, req.Name) {
@@ -634,11 +644,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	resumed := false
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
 		if req.NodeID != nil {
-			if err := requireSourceRunOrOrdinaryTargetTx(c.Request.Context(), tx, c, uid, *req.NodeID); err != nil {
+			if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), tx, c, uid, *req.NodeID, req); err != nil {
 				return err
 			}
 		} else if req.ParentID != nil {
-			if err := requireSourceRunOrOrdinaryTargetTx(c.Request.Context(), tx, c, uid, *req.ParentID); err != nil {
+			if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), tx, c, uid, *req.ParentID, req); err != nil {
 				return err
 			}
 		}
@@ -1078,14 +1088,14 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		}
 		// An upload admitted before Notes initialization must not write into it.
 		if currentSession.NodeID != nil {
-			if err := requireSourceRunOrOrdinaryTargetTx(c.Request.Context(), tx, c, currentSession.OwnerID, *currentSession.NodeID); err != nil {
+			if err := requireSourceRunOrLocalPushFinalizeTx(c.Request.Context(), tx, c, currentSession, *currentSession.NodeID); err != nil {
 				return err
 			}
 			if err := notesRejectNodeWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.NodeID); err != nil {
 				return err
 			}
 		} else if currentSession.ParentID != nil {
-			if err := requireSourceRunOrOrdinaryTargetTx(c.Request.Context(), tx, c, currentSession.OwnerID, *currentSession.ParentID); err != nil {
+			if err := requireSourceRunOrLocalPushFinalizeTx(c.Request.Context(), tx, c, currentSession, *currentSession.ParentID); err != nil {
 				return err
 			}
 			if err := notesRejectDestinationWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.ParentID, currentSession.Name); err != nil {

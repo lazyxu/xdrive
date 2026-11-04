@@ -162,10 +162,16 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(localCreate.Body.Bytes(), &localCreated); err != nil {
 		t.Fatal(err)
 	}
+	deviceFolder := "Source test Desktop_" + strings.ReplaceAll(enrollment.Device.ID, "-", "")[:12]
 	if localCreated.ID == 0 || localCreated.Kind != meta.SourceKindLocalFolder ||
 		localCreated.Direction != meta.SourceDirectionPush || localCreated.Status != meta.SourceStatusPaused ||
-		localCreated.Revision != 1 || localCreated.TargetNodeID == nil || *localCreated.TargetNodeID != targetA.ID {
-		t.Fatalf("local folder must start paused and owner-bound: %+v", localCreated)
+		localCreated.Revision != 1 || localCreated.TargetNodeID == nil || *localCreated.TargetNodeID == targetA.ID ||
+		localCreated.TargetPath != "同步文件夹/设备备份/"+deviceFolder+"/Local Desktop Files" {
+		t.Fatalf("local folder must start paused in a dedicated server-managed target: %+v", localCreated)
+	}
+	var localStored meta.Source
+	if err := db.First(&localStored, localCreated.ID).Error; err != nil || !localStored.TargetManaged {
+		t.Fatalf("local Source is missing server-managed provenance: source=%+v err=%v", localStored, err)
 	}
 	localURL := fmt.Sprintf("/api/v1/sources/%d", localCreated.ID)
 	requestWithHeaders(t, router, http.MethodPatch, localURL, tokenA,

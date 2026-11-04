@@ -26,6 +26,7 @@ type Source struct {
 	ScheduleTimezone   string     `json:"schedule_timezone,omitempty"`
 	Revision           uint64     `json:"revision"`
 	TargetNodeID       *uint64    `json:"target_node_id,omitempty"`
+	TargetManaged      bool       `json:"target_managed,omitempty"`
 	TargetPath         string     `json:"target_path,omitempty"`
 	IgnoreRules        string     `json:"ignore_rules,omitempty"`
 	Checkpoint         string     `json:"checkpoint,omitempty"`

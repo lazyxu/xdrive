@@ -29,6 +29,7 @@ export interface ExternalSource {
   schedule_timezone?: string
   revision: number
   target_node_id?: number
+  target_managed?: boolean
   target_path?: string
   ignore_rules?: string
   checkpoint?: string

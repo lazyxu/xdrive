@@ -51,8 +51,11 @@ func TestLocalSourceCreateAndFirstBindRequireCreatingDevice(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	if created.ID == 0 || created.Revision != 1 || created.Status != meta.SourceStatusPaused {
-		t.Fatalf("local Source must be paused and revision one: %+v", created)
+	deviceFolder := "A_" + strings.ReplaceAll(deviceA.ID, "-", "")[:12]
+	if created.ID == 0 || created.Revision != 1 || created.Status != meta.SourceStatusPaused ||
+		created.TargetNodeID == nil || *created.TargetNodeID == target.ID ||
+		created.TargetPath != "同步文件夹/设备备份/"+deviceFolder+"/A photos" {
+		t.Fatalf("local Source must use server-managed device directory, not old target: %+v", created)
 	}
 	if strings.Contains(response.Body.String(), "creator_device") || strings.Contains(response.Body.String(), secretA) {
 		t.Fatalf("device claim or secret leaked: %s", response.Body.String())
@@ -61,8 +64,9 @@ func TestLocalSourceCreateAndFirstBindRequireCreatingDevice(t *testing.T) {
 	if err := db.Where("id = ?", created.ID).First(&saved).Error; err != nil {
 		t.Fatal(err)
 	}
-	if saved.LocalCreatorDeviceID == nil || *saved.LocalCreatorDeviceID != deviceA.ID {
-		t.Fatalf("creating device claim not stored: %+v", saved.LocalCreatorDeviceID)
+	if saved.LocalCreatorDeviceID == nil || *saved.LocalCreatorDeviceID != deviceA.ID ||
+		!saved.TargetManaged || saved.TargetNodeID == nil || *saved.TargetNodeID != *created.TargetNodeID {
+		t.Fatalf("server-owned device/target claim not stored: %+v", saved)
 	}
 	rootID := uuid.NewString()
 	fingerprint := strings.Repeat("a", 64)
