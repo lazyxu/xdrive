@@ -170,7 +170,7 @@ test('shared native photo video replay seeks finished item back to start only on
     video.indexOf('private func togglePlayback()'),
     video.indexOf('private func beginScrub()'))
   assert.match(replay, /guard canControl, !seeking, !replayInProgress,[\s\S]*?let item = player\.currentItem/)
-  assert.match(replay, /if player\.rate > 0 \{\s*player\.pause\(\)[\s\S]*?return/)
+  assert.match(replay, /if player\.timeControlStatus != \.paused \{[\s\S]*?player\.pause\(\)[\s\S]*?return/)
   assert.match(replay, /length\.isFinite, length > 0\.1,[\s\S]*?elapsed >= max\(0, length - 0\.08\)/)
   assert.match(replay, /player\.seek\(to: \.zero, toleranceBefore: \.zero, toleranceAfter: \.zero\)/)
   assert.match(replay, /guard replayEpoch == token else \{ return \}/)
@@ -182,4 +182,30 @@ test('shared native photo video replay seeks finished item back to start only on
   assert.match(video, /Slider\([\s\S]*?onEditingChanged:/)
   assert.match(video, /onNavigateSwipe\(direction\)/)
   assert.doesNotMatch(video, /URLSession|Bearer|UploadSession|Keychain|WKWebView/)
+})
+
+test('video buffering is truthful, pausable while waiting, and cancels on scene leave', () => {
+  const video = read('ios/XDriveIOS/NativePhotoVideoSurface.swift')
+  const refresh = video.slice(video.indexOf('private func refresh()'),
+    video.indexOf('/// A finished AVPlayerItem'))
+  const toggle = video.slice(video.indexOf('private func togglePlayback()'),
+    video.indexOf('private func retireReplay()'))
+  const scrub = video.slice(video.indexOf('private func beginScrub()'),
+    video.indexOf('private func previewScrub('))
+  const canvas = video.slice(video.indexOf('XDriveIOSNativePhotoVideoLayer(player: player)'),
+    video.indexOf('if showChrome {'))
+  assert.match(video, /@State private var buffering = false/)
+  assert.match(refresh, /let transport = player\.timeControlStatus/)
+  assert.match(refresh, /playing = canControl && transport != \.paused/)
+  assert.match(refresh, /buffering = canControl && !seeking && !replayInProgress &&/)
+  assert.match(refresh, /transport == \.waitingToPlayAtSpecifiedRate/)
+  assert.match(refresh, /player\.currentItem\?\.status != \.failed/)
+  assert.match(toggle, /if player\.timeControlStatus != \.paused[\s\S]*?player\.pause\(\)/)
+  assert.match(scrub, /resumesAfterScrub = player\.timeControlStatus != \.paused/)
+  assert.match(canvas, /if buffering \{[\s\S]*?ProgressView\("正在缓冲视频…"\)/)
+  assert.match(canvas, /native-ios-photo-video-buffering/)
+  assert.match(canvas, /\.allowsHitTesting\(false\)/)
+  assert.match(video, /if next != \.active \{[\s\S]*?buffering = false/)
+  assert.match(video, /\.onReceive\(ticker\) \{ _ in[\s\S]*?if phase == \.active \{ refresh\(\) \}/)
+  assert.doesNotMatch(canvas, /URLSession|URLRequest|Bearer|Content-Length/)
 })
