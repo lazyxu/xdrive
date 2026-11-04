@@ -72,9 +72,9 @@ func (m Manager) IssueSourceRunAccess(userID, sessionVersion, sourceID uint64, r
 		UserID: userID, SessionVersion: sessionVersion, TokenType: "access",
 		SourceID: sourceID, SourceRunID: runID,
 		RegisteredClaims: jwt.RegisteredClaims{
-			IssuedAt: jwt.NewNumericDate(now),
+			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.accessTTL)),
-			Subject: fmt.Sprintf("%d", userID),
+			Subject:   fmt.Sprintf("%d", userID),
 		},
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.secret)
