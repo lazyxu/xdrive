@@ -45,12 +45,12 @@ test('Desktop hierarchy IPC removes only undefined keys before its strict allowl
   assert.match(hierarchy,/xDrivePlacesHierarchyRequestFilters\(query\)/)
 })
 
-test('Desktop primary map always mounts interactive WGS84 fallback without provider SDK',()=>{
+test('Desktop map opens authenticated non-isolated Web host without an alternative GPS map',()=>{
   const map=fs.readFileSync(path.join(root,
     'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'),'utf8')
-  const branch=map.slice(map.indexOf('{desktopOnly ? ('),map.indexOf(') : !getBaiduJSAPI4Status'))
-  assert.match(branch,/<XDriveMediaGalleryOwnerGPSOverview/)
-  assert.match(branch,/listPage=\{listPlacesMapOverview\}/)
-  assert.match(branch,/onOpenPlace=\{onOpenPlace\}/)
-  assert.match(branch,/onOpenSecureDesktopMap\?\.\(mapPhotoScope\)/)
+  assert.match(map,/desktopOnly && desktopEmbeddedPlacesURL && onPrepareDesktopPlaces/)
+  assert.match(map,/data-xdrive-desktop-places-shared-web/)
+  assert.match(map,/const scope=xDriveNormalizeBaiduMapPhotoScope\(embedScopeRef.current\)/)
+  assert.match(map,/onOpenSecureDesktopMap\?\.\(mapPhotoScope\)/)
+  assert.doesNotMatch(map,/OwnerGPSOverview|GPS 备用地图|desktopFallback/)
 })

@@ -13,8 +13,9 @@ test('Desktop defaults to the shared non-isolated Baidu map, not GPS overview',(
   assert.match(renderer,/desktopEmbeddedPlacesURL:\s*xDriveDesktopEmbeddedPlacesURL\(status\?\.server\)/)
   assert.match(renderer,/onPrepareDesktopPlaces:\s*async scope =>/)
   assert.match(renderer,/desktop_places_embed=1#\/app\/gallery\?section=places/)
-  assert.match(map,/desktopOnly && desktopEmbeddedPlacesURL && !desktopFallback/)
+  assert.match(map,/desktopOnly && desktopEmbeddedPlacesURL && onPrepareDesktopPlaces/)
   assert.match(map,/component=\{'webview' as 'div'\}/)
+  assert.doesNotMatch(map,/GPS 备用地图|OwnerGPSOverview|setDesktopFallback/)
   assert.match(mode,/if \(selections\.length === 0\) return 'prototype'/)
   assert.match(map,/mapMode = desktopOnly \? 'isolated' : xDrivePlacesMapModeFromHref/)
   // The HTTPS guest is a Web host, so its default is determined from href
