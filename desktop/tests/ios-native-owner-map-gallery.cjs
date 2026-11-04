@@ -274,3 +274,21 @@ test('single exact Owner map place opens L3 after fresh Owner-scoped Range, not 
   assert.match(map, /selected = XDriveIOSOwnerMapChosenPlace\(id: facet\.id\)/)
   assert.doesNotMatch(map, /UploadSession|isNetworkAccessAllowed = true|UserDefaults\.set\(single/)
 })
+
+
+test('native map source uses one navigation menu instead of a permanently stacked picker row', () => {
+  const root = map.slice(map.indexOf('struct XDriveIOSNativePhotoMapsScreen: View'),
+                         map.indexOf('private final class XDriveIOSOwnerPlaceAnnotation:'))
+  assert.match(root, /return Group \{\s*switch source \{/)
+  assert.doesNotMatch(root, /return VStack\(spacing: 4\)|\.pickerStyle\(\.segmented\)/)
+  assert.match(root, /\.toolbar \{[\s\S]*?ToolbarItem\(placement: \.navigationBarLeading\) \{\s*Menu \{/)
+  assert.match(root, /Menu \{\s*Picker\("地图照片来源", selection: \$source\) \{/)
+  assert.match(root, /ForEach\(XDriveIOSNativePhotoMapSource\.allCases, id: \\.self\)/)
+  assert.match(root, /Label\(source\.label, systemImage: "square\.stack\.3d\.up"\)/)
+  assert.match(root, /\.accessibilityLabel\("地图照片来源：\\\(source\.label\)"\)/)
+  assert.match(root, /\.accessibilityIdentifier\("native-ios-map-source-selector"\)/)
+  assert.match(root, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\([\s\S]*?mapScope: \$localMapScope,[\s\S]*?offset: \$localMapPageOffset/)
+  assert.match(root, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\([\s\S]*?cameraReturn: cloudMapCamera/)
+  assert.match(root, /guard source == \.cloud, let expectedOwner,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\([\s\S]*?cloudMapCamera = next/)
+  assert.match(root, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/)
+})

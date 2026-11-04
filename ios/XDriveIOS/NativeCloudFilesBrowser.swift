@@ -909,6 +909,26 @@ struct XDriveIOSNativeFilesBrowser: View {
             prompt: "搜索全部文件"
         )
         .onSubmit(of: .search) { submitSearch() }
+        .task(id: queryDraft) {
+            // System Files-style progressive search, but only for a valid
+            // Server query. Task identity cancels superseded keyboard drafts
+            // before they can mutate the existing Owner-scoped search route.
+            let query = queryDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard XDriveIOSNativeFilesPagePolicy.validSearch(query),
+                  query != activeQuery else { return }
+            do {
+                try await Task.sleep(nanoseconds: 400_000_000)
+                try Task.checkCancellation()
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, phase == .active,
+                  login.owner != nil, !selecting,
+                  selectedFile == nil, managementIntent == nil,
+                  query == queryDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            else { return }
+            submitSearch()
+        }
         .onChange(of: queryDraft) { value in
             if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 !activeQuery.isEmpty {

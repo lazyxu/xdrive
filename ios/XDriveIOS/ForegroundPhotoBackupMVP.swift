@@ -292,6 +292,15 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         let binding = try await XDriveIOSForegroundBackupIdentity.shared
             .localScopeAndTag(owner: owner, localIdentifier: localIdentifier)
         try Task.checkCancellation()
+        // The approved BGProcessing writer keeps the legacy 1 GiB video
+        // bound; only an active, JWT-authorized foreground run can export
+        // and stage a video up to 4 GiB. Live remains a separate ZIP bound.
+        let videoMaxBytes: Int64
+        if case .background = authorization {
+            videoMaxBytes = XDriveIOSOriginalBackupMediaPolicy.backgroundVideoLimit
+        } else {
+            videoMaxBytes = XDriveIOSOriginalBackupMediaPolicy.videoLimit
+        }
         let staged = try await XDrivePhotoKitOriginalExporter.stage(
             localIdentifier: localIdentifier,
             allowICloudDownload: allowICloud,
@@ -299,7 +308,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             // UploadSession chunks. Disk staging is still one resource at a time.
             maximumBytesPerResource: isLive
                 ? XDriveIOSLiveOriginalArchive.maximumPartBytes
-                : isVideo ? XDriveIOSOriginalBackupMediaPolicy.videoLimit
+                : isVideo ? videoMaxBytes
                   : XDriveIOSOriginalBackupMediaPolicy.stillLimit
         )
         defer { staged.delete() }

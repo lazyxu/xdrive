@@ -7,9 +7,20 @@ enum XDriveIOSPhotoAutoSchedulePolicy {
     static let windowSize = 256
     static let maxNewFiles = 20
     static let catchUpCooldown: TimeInterval = 60
+    /// Explicitly enabling a NEW automatic plan also authorizes safe
+    /// foreground first-pass catch-up. Never upgrade a legacy saved plan's
+    /// nil preference behind the user's back, or override a saved false.
+    static func initialCatchUpPreference(
+        hasExistingPlan: Bool, savedPreference: Bool?
+    ) -> Bool {
+        hasExistingPlan ? (savedPreference ?? false) : true
+    }
     // PHChange callbacks are advisory. Give PhotoKit a short settling delay;
     // the existing 60-second active-scene timer remains the only poller.
     static let photoLibraryChangeDelay: TimeInterval = 5
+    // Only a proven pre-write transient network outage can be rescheduled
+    // sooner than the user-selected interval. No immediate retry loop.
+    static let prewriteNetworkRetryDelay: TimeInterval = 5 * 60
 
     static func accepts(minutes: Int) -> Bool {
         supportedMinutes.contains(minutes)
@@ -20,6 +31,28 @@ enum XDriveIOSPhotoAutoSchedulePolicy {
     static func earlierDueAfterLibraryChange(currentDueAt: Date,
                                               at now: Date) -> Date? {
         let soon = now.addingTimeInterval(photoLibraryChangeDelay)
+        return currentDueAt > soon ? soon : nil
+    }
+
+    /// Never retry unknown post-write outcomes, authentication/permission
+    /// errors or cancelled tasks. The caller must independently prove that
+    /// this run has NOT begun any original mutation.
+    static func retryablePrewriteNetworkFailure(_ error: URLError) -> Bool {
+        switch error.code {
+        case .notConnectedToInternet, .networkConnectionLost, .timedOut,
+             .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Keep an earlier PhotoKit-triggered due time. The existing foreground
+    /// 60-second timer is the only executor; this function never uploads.
+    static func earlierDueAfterSafePrewriteNetworkFailure(
+        currentDueAt: Date, at now: Date
+    ) -> Date? {
+        let soon = now.addingTimeInterval(prewriteNetworkRetryDelay)
         return currentDueAt > soon ? soon : nil
     }
 

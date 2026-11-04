@@ -2,6 +2,13 @@ import Foundation
 @main struct XDriveIOSPhotoAutoSchedulePolicyChecks {
   static func main() {
     let p = XDriveIOSPhotoAutoSchedulePolicy.self
+    // An explicitly confirmed NEW plan starts first-pass catch-up; legacy
+    // plans and deliberate prior opt-outs are never silently rewritten.
+    precondition(p.initialCatchUpPreference(hasExistingPlan: false, savedPreference: nil))
+    precondition(p.initialCatchUpPreference(hasExistingPlan: false, savedPreference: false))
+    precondition(!p.initialCatchUpPreference(hasExistingPlan: true, savedPreference: nil))
+    precondition(!p.initialCatchUpPreference(hasExistingPlan: true, savedPreference: false))
+    precondition(p.initialCatchUpPreference(hasExistingPlan: true, savedPreference: true))
     precondition(p.accepts(minutes: 15))
     precondition(p.accepts(minutes: 60))
     precondition(p.accepts(minutes: 1440))
@@ -88,6 +95,25 @@ import Foundation
       currentDueAt: now.addingTimeInterval(2), at: now) == nil)
     precondition(p.earlierDueAfterLibraryChange(
       currentDueAt: now.addingTimeInterval(-1), at: now) == nil)
-    print("iOS foreground auto backup interval/cursor/opt-in catch-up/library wake: PASS")
+    // A transient, confirmed pre-write network failure can bring the next
+    // check forward, but never postpone an earlier due time or hot-loop.
+    let retrySoon = now.addingTimeInterval(300)
+    precondition(p.earlierDueAfterSafePrewriteNetworkFailure(
+      currentDueAt: normal, at: now) == retrySoon)
+    precondition(p.earlierDueAfterSafePrewriteNetworkFailure(
+      currentDueAt: retrySoon, at: now) == nil)
+    precondition(p.earlierDueAfterSafePrewriteNetworkFailure(
+      currentDueAt: now.addingTimeInterval(-1), at: now) == nil)
+    precondition(p.retryablePrewriteNetworkFailure(
+      URLError(.notConnectedToInternet)))
+    precondition(p.retryablePrewriteNetworkFailure(
+      URLError(.networkConnectionLost)))
+    precondition(p.retryablePrewriteNetworkFailure(
+      URLError(.timedOut)))
+    precondition(!p.retryablePrewriteNetworkFailure(
+      URLError(.userAuthenticationRequired)))
+    precondition(!p.retryablePrewriteNetworkFailure(
+      URLError(.cancelled)))
+    print("iOS foreground auto backup interval/cursor/catch-up/library wake/safe prewrite retry: PASS")
   }
 }

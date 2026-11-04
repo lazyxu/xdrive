@@ -370,6 +370,9 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @State private var previewRequestID = UUID()
     @State private var image: UIImage?
     @State private var imageIsThumbnailOnly = false
+    @State private var highResolutionAttempted = false
+    @State private var highResolutionLoaded = false
+    @State private var highResolutionTask: Task<Void, Never>?
     @State private var player: AVPlayer?
     @State private var failure: String?
     // Paired originals belong to this single verified L3 Viewer, never the wall.
@@ -558,6 +561,54 @@ struct XDriveIOSNativeServerMediaPreview: View {
         rangeCrossingMessage = nil
     }
 
+    private func requestZoomEnhancedStill() {
+        guard ownerAuthorized, !rangeCrossing, !photosRestoreBusy,
+              !highResolutionAttempted, highResolutionTask == nil,
+              !viewed.isLive, !viewed.isVideo, viewed.supportsPreview,
+              !imageIsThumbnailOnly, let existing = image, let owner = openedOwner,
+              max(existing.cgImage?.width ?? 0, existing.cgImage?.height ?? 0) >= 4000
+        else { return }
+        let selected = viewed
+        let generation = previewRequestID
+        highResolutionAttempted = true
+        highResolutionTask = Task { @MainActor in
+            defer {
+                if previewRequestID == generation { highResolutionTask = nil }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard ownerAuthorized, previewRequestID == generation,
+                      viewed.sameVisibleRevision(as: selected),
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner)
+                else { return }
+                let enhanced = try await XDriveIOSNativeMediaGalleryReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                ).enhancedStill(selected)
+                try Task.checkCancellation()
+                guard ownerAuthorized, previewRequestID == generation,
+                      viewed.sameVisibleRevision(as: selected),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner),
+                      !imageIsThumbnailOnly, let current = image else { return }
+                let oldPixels = max(
+                    current.cgImage?.width ?? 0, current.cgImage?.height ?? 0
+                )
+                let newPixels = max(
+                    enhanced.cgImage?.width ?? 0, enhanced.cgImage?.height ?? 0
+                )
+                guard newPixels > oldPixels else { return }
+                image = enhanced
+                highResolutionLoaded = true
+            } catch is CancellationError {
+                // The Owner, Viewer or source generation was retired.
+            } catch {
+                // The current 4096px image remains usable if optional
+                // high-resolution loading fails or no further pixels exist.
+            }
+        }
+    }
+
     private func toggleChrome() {
         guard ownerAuthorized else { return }
         withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() }
@@ -703,6 +754,9 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         XDriveIOSNativeZoomablePhotoView(image: image)
                             .onNavigateSwipe { navigateLoaded($0) }
                             .onChromeTap { toggleChrome() }
+                            .onZoomHighResolution(
+                                source: "\(viewed.id):\(viewed.node.revision)"
+                            ) { requestZoomEnhancedStill() }
                         if showChrome && imageIsThumbnailOnly {
                             Text("原件适屏预览过大或无法解码，当前仅显示低清缩略图。可从顶部重试。")
                                 .font(.caption)
@@ -740,6 +794,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     XDriveIOSNativeViewerQualityPanel(
                         fileName: viewed.node.name,
                         source: imageIsThumbnailOnly ? "缩略图回退" :
+                            highResolutionLoaded ? "高清预览 · 按需解码" :
                             viewed.isLive ? "实况静态原件 · 适屏解码" :
                             "原件 · 适屏解码",
                         image: image,
@@ -1153,6 +1208,10 @@ struct XDriveIOSNativeServerMediaPreview: View {
     }
 
     private func retirePreview() {
+        highResolutionTask?.cancel()
+        highResolutionTask = nil
+        highResolutionAttempted = false
+        highResolutionLoaded = false
         // Also cancels the .task(id:) network/decoder generation.
         previewRequestID = UUID()
         player?.pause()

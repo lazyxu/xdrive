@@ -195,13 +195,26 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
               UUID(uuidString: scope.deviceID) != nil else {
             throw XDriveIOSPhotoIntentPreparationError.unverifiedOwnerOrDeviceScope
         }
+        // A forged or stale staged item cannot bypass the per-mode limit:
+        // foreground video may be 4 GiB, BG video remains 1 GiB, and still
+        // originals retain the established 1 GiB preparation ceiling.
+        let maximumOriginalBytes: Int64
+        if role == .video {
+            if case .background = authorization {
+                maximumOriginalBytes = XDriveIOSOriginalBackupMediaPolicy.backgroundVideoLimit
+            } else {
+                maximumOriginalBytes = XDriveIOSOriginalBackupMediaPolicy.videoLimit
+            }
+        } else {
+            maximumOriginalBytes = 1_073_741_824
+        }
         guard !localIdentifier.isEmpty,
               staged.kind == (role == .still ? "image" : "video"),
               staged.resources.count == 1,
               let original = staged.resources.first,
               original.role == (role == .still ? "still" : "video"),
               original.byteCount > 0,
-              original.byteCount <= 1_073_741_824,
+              original.byteCount <= maximumOriginalBytes,
               validServerFilename(original.originalFilename) else {
             // A Live still must not be independently scheduled without its
             // paired motion original and a Server atomic pair commit.

@@ -258,7 +258,7 @@ sync_progress() {
 
 process_request() {
   local dir request active source channel backup_file_data request_id requested_at started_at
-  local progress_file run_log update_pid status error_text offline_id manifest_sha binary_sha
+  local progress_file run_log update_pid status error_text offline_id offline_trust_mode manifest_sha binary_sha
   local -a update_args
   dir="$(prepare_dir)"
   request="$dir/request.json"
@@ -272,6 +272,7 @@ process_request() {
   channel="$(json_value "$active" channel)"
   backup_file_data="$(json_bool_value "$active" backup_file_data)"
   offline_id="$(json_value "$active" offline_id)"
+  offline_trust_mode="$(json_value "$active" offline_trust_mode)"
   manifest_sha="$(json_value "$active" trusted_manifest_sha256)"
   binary_sha="$(json_value "$active" trusted_installer_sha256)"
   [[ "$backup_file_data" == "true" ]] || backup_file_data=false
@@ -283,9 +284,11 @@ process_request() {
         ( "$source" == xdrive && "$channel" != master ) ||
         ( "$source" == offline && ( "$channel" != master ||
           ! "$offline_id" =~ ^[a-f0-9]{32}$ ||
-          ! "$manifest_sha" =~ ^[a-f0-9]{64}$ ||
-          ! "$binary_sha" =~ ^[a-f0-9]{64}$ ) ) ||
-        ( "$source" != offline && ( -n "$offline_id" || -n "$manifest_sha" || -n "$binary_sha" ) ) ]] ||
+          ! ( ( "$offline_trust_mode" == sigstore && -z "$manifest_sha" && -z "$binary_sha" ) ||
+              ( ( -z "$offline_trust_mode" || "$offline_trust_mode" == sha256 ) &&
+                "$manifest_sha" =~ ^[a-f0-9]{64}$ && "$binary_sha" =~ ^[a-f0-9]{64}$ ) ) ) ) ||
+        ( "$source" != offline && ( -n "$offline_id" || -n "$offline_trust_mode" ||
+                                   -n "$manifest_sha" || -n "$binary_sha" ) ) ]] ||
        ! request_time_is_fresh "$requested_at"; then
     write_status failed "${source:-github}" "${channel:-stable}" "$request_id" \
       "校验更新请求" 0 9 0 0 "更新请求无效或已过期。" "invalid or stale host-control request" "" "$(now_utc)" "$backup_file_data"
@@ -304,9 +307,13 @@ process_request() {
 
   update_args=(update --source "$source" --channel "$channel")
   if [[ "$source" == offline ]]; then
-    update_args+=(--offline-id "$offline_id"
-                  --trusted-manifest-sha256 "$manifest_sha"
-                  --trusted-installer-sha256 "$binary_sha")
+    update_args+=(--offline-id "$offline_id")
+    # Host Go performs local Sigstore verification if a trusted root exists.
+    # Without one it rejects this signed-mode request, never falling back.
+    if [[ "$offline_trust_mode" != sigstore ]]; then
+      update_args+=(--trusted-manifest-sha256 "$manifest_sha"
+                    --trusted-installer-sha256 "$binary_sha")
+    fi
   fi
   [[ "$backup_file_data" == "true" ]] && update_args+=(--backup-file-data)
   (

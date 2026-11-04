@@ -77,6 +77,9 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
     private var authorization: PHAuthorizationStatus?
     private var changeVersion: UInt64 = 0
     private var nextOffset = 0
+    // Transient backup-only mapping; at most one 256-item window is retained.
+    // The snapshot, IDs and this mapping are discarded by reset().
+    private var stableBoundaryPhysicalIndices: [Int: Int] = [:]
 
     deinit {
         if listening {
@@ -102,8 +105,9 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         let options = PHFetchOptions()
         // PhotoKit throws an Objective-C exception for a localIdentifier
         // NSSortDescriptor. Only supported date keys may enter fetch options.
-        // modificationDate reduces ties but is NOT a unique identity key:
-        // a persisted backup offset must reject an ambiguous tie boundary.
+        // modificationDate reduces ties but is NOT a unique identity key.
+        // Backup-only boundary groups are resolved in memory by stable IDs,
+        // never by an unsupported localIdentifier NSSortDescriptor.
         options.sortDescriptors = [
             NSSortDescriptor(key: "creationDate", ascending: false),
             NSSortDescriptor(key: "modificationDate", ascending: false)
@@ -115,19 +119,33 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
             throw XDrivePhotoKitScanFailure.snapshotChanged
         }
         let resumeOffset = min(requestedOffset, snapshot.count)
-        if requireStableResume && resumeOffset > 0 &&
-            resumeOffset < snapshot.count {
-            // Offset-based backup resumes must not split an equal-key group:
-            // PhotoKit may rearrange tied assets across separate fetches.
-            // Fail closed rather than skip an original at a 256-slot checkpoint.
-            let previous = snapshot.object(at: resumeOffset - 1)
-            let current = snapshot.object(at: resumeOffset)
-            guard previous.creationDate != current.creationDate ||
-                  previous.modificationDate != current.modificationDate else {
+        let windowEnd = resumeOffset + min(
+            XDrivePhotoBackupScanWindow.maxItems, snapshot.count - resumeOffset
+        )
+        // Only an authorized original-backup scan requests stable resume.
+        // An equal-date group spanning either 256-slot edge can otherwise
+        // reorder across PhotoKit fetches, skipping older originals forever.
+        // Resolve at most 4096 tied entries, sorting their IDs in RAM, then
+        // keep only the physical indices for this one 256-slot window.
+        let boundaryIndices: [Int: Int]
+        if requireStableResume {
+            do {
+                boundaryIndices = try Self.stableBackupBoundaryIndices(
+                    snapshot, from: resumeOffset, to: windowEnd
+                )
+            } catch {
                 reset()
-                throw XDrivePhotoKitScanFailure.snapshotChanged
+                throw error
             }
+        } else {
+            boundaryIndices = [:]
         }
+        guard observer.currentVersion() == beginVersion,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == status else {
+            reset()
+            throw XDrivePhotoKitScanFailure.snapshotChanged
+        }
+        stableBoundaryPhysicalIndices = boundaryIndices
         result = snapshot
         authorization = status
         changeVersion = beginVersion
@@ -152,7 +170,8 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         if end > offset {
             for index in offset..<end {
                 try Task.checkCancellation()
-                let asset = snapshot.object(at: index)
+                let physicalIndex = stableBoundaryPhysicalIndices[index] ?? index
+                let asset = snapshot.object(at: physicalIndex)
                 // Preserve one candidate per PHFetchResult slot. Dropping
                 // an unsupported kind here would advance PhotoKit's offset
                 // without advancing the runner's scanned count, allowing the
@@ -199,7 +218,10 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         placed.reserveCapacity(page.items.count)
         for (offset, candidate) in page.items.enumerated() {
             try Task.checkCancellation()
-            let asset = snapshot.object(at: page.startOffset + offset)
+            let logicalIndex = page.startOffset + offset
+            let asset = snapshot.object(
+                at: stableBoundaryPhysicalIndices[logicalIndex] ?? logicalIndex
+            )
             guard asset.localIdentifier == candidate.id else {
                 reset()
                 throw XDrivePhotoKitScanFailure.snapshotChanged
@@ -229,10 +251,68 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         authorization = nil
         nextOffset = 0
         changeVersion = 0
+        stableBoundaryPhysicalIndices.removeAll()
         if listening {
             PHPhotoLibrary.shared().unregisterChangeObserver(observer)
             listening = false
         }
+    }
+
+    private static func sameSortKeys(_ a: PHAsset, _ b: PHAsset) -> Bool {
+        a.creationDate == b.creationDate &&
+            a.modificationDate == b.modificationDate
+    }
+
+    /// The 256-slot window is still complete and disjoint across runs even
+    /// when PhotoKit reorders equal-date assets. A group larger than the
+    /// bounded cap, duplicate IDs or an interleaving library mutation fails
+    /// closed rather than guessing a persisted positional cursor.
+    private static func stableBackupBoundaryIndices(
+        _ snapshot: PHFetchResult<PHAsset>, from windowStart: Int, to windowEnd: Int
+    ) throws -> [Int: Int] {
+        var mapped: [Int: Int] = [:]
+        let maxGroup = XDrivePhotoBackupTieBoundaryPolicy.maximumGroupSize
+        for boundary in Set([windowStart, windowEnd]).sorted() {
+            guard boundary > 0, boundary < snapshot.count else { continue }
+            let before = snapshot.object(at: boundary - 1)
+            let after = snapshot.object(at: boundary)
+            guard sameSortKeys(before, after) else { continue }
+
+            var first = boundary - 1
+            while first > 0 && sameSortKeys(snapshot.object(at: first - 1), before) {
+                guard boundary - first < maxGroup else {
+                    throw XDrivePhotoKitScanFailure.snapshotChanged
+                }
+                first -= 1
+            }
+            var end = boundary + 1
+            while end < snapshot.count && sameSortKeys(snapshot.object(at: end), before) {
+                guard end - first < maxGroup else {
+                    throw XDrivePhotoKitScanFailure.snapshotChanged
+                }
+                end += 1
+            }
+            guard end - first <= maxGroup else {
+                throw XDrivePhotoKitScanFailure.snapshotChanged
+            }
+            let identifiers = (first..<end).map {
+                snapshot.object(at: $0).localIdentifier
+            }
+            guard let slots = XDrivePhotoBackupTieBoundaryPolicy.mappingForGroup(
+                identifiers: identifiers, groupStart: first,
+                windowStart: windowStart, windowEnd: windowEnd
+            ) else {
+                throw XDrivePhotoKitScanFailure.snapshotChanged
+            }
+            for slot in slots {
+                if let existing = mapped[slot.logicalIndex],
+                   existing != slot.physicalIndex {
+                    throw XDrivePhotoKitScanFailure.snapshotChanged
+                }
+                mapped[slot.logicalIndex] = slot.physicalIndex
+            }
+        }
+        return mapped
     }
 
     private func ensureCurrent(_ expected: PHAuthorizationStatus) throws {

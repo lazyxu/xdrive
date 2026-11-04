@@ -20,6 +20,29 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestInternalReadinessProbeKeyStrict(t *testing.T) {
+	const probe = ".xdrive-ready-0123456789abcdef0123456789abcdef"
+	for _, tc := range []struct {
+		key  string
+		size int64
+		want bool
+	}{
+		{probe, 0, true}, {probe, 1, true},
+		{storage.CASLifecycleLockDir + "/" + probe, 0, true},
+		{storage.LocalPushStageLifecycleLockDir + "/" + probe, 1, true},
+		{storage.CASLifecycleLockDir + "/" + probe, 2, false},
+		{storage.CASLifecycleLockDir + "/nested/" + probe, 0, false},
+		{".xdrive-blobs/" + probe, 0, false},
+		{storage.CASLifecycleLockDir + "/.xdrive-ready-invalid", 0, false},
+		{storage.CASLifecycleLockDir + "/.xdrive-ready-0123456789ABCDEF0123456789ABCDEF", 0, false},
+		{storage.CASLifecycleLockDir + "/00.lock", 0, false},
+	} {
+		if got := isInternalReadinessProbe(tc.key, tc.size); got != tc.want {
+			t.Errorf("isInternalReadinessProbe(%q, %d)=%t, want %t", tc.key, tc.size, got, tc.want)
+		}
+	}
+}
+
 func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -106,7 +129,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".xdrive-upload-temp"), []byte("temp"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".xdrive-ready-crash-leftover"), nil, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".xdrive-ready-0123456789abcdef0123456789abcdef"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, storage.TempLifecycleLockFile), nil, 0o600); err != nil {
@@ -121,6 +144,17 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(casLockDir, fmt.Sprintf("%02x.lock", shard)), nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Probe cleanup can be interrupted in both persistent lock families.
+	if err := os.WriteFile(filepath.Join(casLockDir, ".xdrive-ready-0123456789abcdef0123456789abcdef"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pushLockDir := filepath.Join(root, storage.LocalPushStageLifecycleLockDir)
+	if err := os.MkdirAll(pushLockDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pushLockDir, ".xdrive-ready-fedcba9876543210fedcba9876543210"), []byte{0}, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	uploadTemp := filepath.Join(root, ".xdrive-uploads", "session", "000000")
 	if err := os.MkdirAll(filepath.Dir(uploadTemp), 0o750); err != nil {
@@ -138,7 +172,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		t.Fatal("inconsistent storage reported OK")
 	}
 	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 ||
-		report.IgnoredTemps != 3 || report.IgnoredDerived != 0 ||
+		report.IgnoredTemps != 5 || report.IgnoredDerived != 0 ||
 		report.SkippedDerivedDirs != 1 || report.IgnoredCASLocks != 256 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}

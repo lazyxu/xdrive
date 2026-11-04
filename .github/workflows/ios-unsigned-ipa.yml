@@ -120,6 +120,15 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-epoch-check"
           "$RUNNER_TEMP/xdrive-ios-epoch-check"
 
+      - name: Verify bounded stable PhotoKit equal-date backup boundaries
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoBackupTieBoundaryPolicy.swift \
+            ios/tests/PhotoBackupTieBoundaryPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-tie-boundary-check"
+          "$RUNNER_TEMP/xdrive-ios-tie-boundary-check"
+
       - name: Verify shared foreground and background PhotoKit epoch fences
         run: node --test desktop/tests/ios-photo-cursor-epoch.cjs desktop/tests/ios-bg-cursor-epoch.cjs
 

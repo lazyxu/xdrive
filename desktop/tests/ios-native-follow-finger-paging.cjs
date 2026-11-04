@@ -17,7 +17,11 @@ test('iOS local, cloud and map-photo still viewers drag decoded images before pa
   assert.match(view, /snap\(photo, to: direction > 0 \? -width : width, turn: direction\)/)
   assert.match(view, /case \.cancelled, \.failed:[\s\S]*snap\(photo, to: 0\)/)
   assert.match(view, /scroll\.panGestureRecognizer\.require\(toFail: pagingPan\)/)
-  assert.match(view, /if photo\.image !== image \{\s*context\.coordinator\.retirePageAnimation\(\)/)
+  // Enhanced same-source pixels now compute the image identity/zoom policy
+  // before retiring the pager animation. All image changes still retire it.
+  assert.match(view, /if photo\.image !== image \{[\s\S]*?context\.coordinator\.retirePageAnimation\(\)/)
+  assert.match(view, /let isSameImageUpgrade = sameSource &&[\s\S]*?updatedPixels > previousPixels/)
+  assert.match(view, /if !isSameImageUpgrade \{\s*scroll\.setZoomScale\(scroll\.minimumZoomScale, animated: false\)/)
   assert.match(view, /UIAccessibility\.isReduceMotionEnabled/)
   assert.doesNotMatch(view, /onSwipe\?\(direction\)\s*\n\s*}/,
     'switch only after the visual page transition, not immediately on finger-up')

@@ -27,6 +27,21 @@ private final class XDriveIOSPhotoSearchSnapshotObserver: NSObject, PHPhotoLibra
     }
 }
 
+/// Search-result order is strictly capture date, not "date added".
+/// This presentation mode changes the PhotoKit fetch cursor itself.
+enum XDriveIOSNativePhotoSearchSortOrder: String, CaseIterable, Identifiable {
+    case newest, oldest
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .newest: return "最新拍摄在前"
+        case .oldest: return "最早拍摄在前"
+        }
+    }
+    var ascending: Bool { self == .oldest }
+}
+
 private enum XDriveIOSNativePhotoSearchFailure: Error {
     case invalidQuery
     case notAuthorized
@@ -40,7 +55,8 @@ private actor XDriveIOSNativePhotoMetadataSearchReader {
     static let maximumScanned = 2048
     static let maximumMatches = 64
 
-    func read(query: String, startingAt requested: Int) async throws
+    func read(query: String, startingAt requested: Int,
+              sortOrder: XDriveIOSNativePhotoSearchSortOrder = .newest) async throws
         -> XDriveIOSNativePhotoMetadataSearchPage {
         guard let term = XDriveIOSNativePhotoSearchQueryPolicy.normalized(query) else {
             throw XDriveIOSNativePhotoSearchFailure.invalidQuery
@@ -56,8 +72,8 @@ private actor XDriveIOSNativePhotoMetadataSearchReader {
 
         let options = PHFetchOptions()
         options.sortDescriptors = [
-            NSSortDescriptor(key: "creationDate", ascending: false),
-            NSSortDescriptor(key: "modificationDate", ascending: false)
+            NSSortDescriptor(key: "creationDate", ascending: sortOrder.ascending),
+            NSSortDescriptor(key: "modificationDate", ascending: sortOrder.ascending)
         ]
         let assets = PHAsset.fetchAssets(with: options)
         guard requested >= 0 && requested <= assets.count else {
@@ -128,6 +144,7 @@ private struct XDriveIOSNativePhotoSearchWindow: Identifiable, Equatable {
 private final class XDriveIOSNativePhotoMetadataSearchModel: ObservableObject {
     @Published private(set) var windows: [XDriveIOSNativePhotoSearchWindow] = []
     @Published private(set) var currentQuery: String?
+    @Published private(set) var currentSortOrder: XDriveIOSNativePhotoSearchSortOrder = .newest
     @Published private(set) var scannedThrough = 0
     @Published private(set) var totalAuthorizedSlots: Int?
     @Published private(set) var matchCount = 0
@@ -159,12 +176,14 @@ private final class XDriveIOSNativePhotoMetadataSearchModel: ObservableObject {
         message = "系统照片库或访问权限已变化，请重新搜索。"
     }
 
-    func search(_ query: String) {
+    func search(_ query: String,
+                sortOrder: XDriveIOSNativePhotoSearchSortOrder = .newest) {
         cancel()
         guard let term = XDriveIOSNativePhotoSearchQueryPolicy.normalized(query) else {
             message = "请输入文件名、年份、月份或媒体类型（照片、视频、实况、截屏）。"
             return
         }
+        currentSortOrder = sortOrder
         currentQuery = term
         scanMore()
     }
@@ -181,6 +200,7 @@ private final class XDriveIOSNativePhotoMetadataSearchModel: ObservableObject {
         if let total = totalAuthorizedSlots, scannedThrough >= total { return }
 
         let request = generation
+        let order = currentSortOrder
         var offset = scannedThrough
         var expectedTotal = totalAuthorizedSlots
         busy = true
@@ -189,10 +209,11 @@ private final class XDriveIOSNativePhotoMetadataSearchModel: ObservableObject {
             do {
                 while true {
                     let page = try await XDriveIOSNativePhotoMetadataSearchReader()
-                        .read(query: term, startingAt: offset)
+                        .read(query: term, startingAt: offset, sortOrder: order)
                     try Task.checkCancellation()
                     guard self.generation == request,
                           self.currentQuery == term,
+                          self.currentSortOrder == order,
                           UIApplication.shared.applicationState == .active else { return }
                     // An insertion/deletion or permission-scope change between
                     // bounded reads must retire all previously displayed hits.
@@ -293,6 +314,7 @@ private struct XDriveIOSNativePhotoSearchTile: View {
 private struct XDriveIOSNativePhotoSearchWindowView: View {
     let window: XDriveIOSNativePhotoSearchWindow
     let query: String
+    let sortOrder: XDriveIOSNativePhotoSearchSortOrder
     let generation: UUID
     let onSelect: (XDrivePhotoKitScanCandidate, [XDrivePhotoKitScanCandidate]) -> Void
     let onFailure: (UUID) -> Void
@@ -330,11 +352,11 @@ private struct XDriveIOSNativePhotoSearchWindowView: View {
         }
         .id("search-window:\(window.id)")
         .onAppear { onVisibility(window.id, true) }
-        .task(id: "\(generation)-\(window.startSlot)-\(query)") {
+        .task(id: "\(generation)-\(window.startSlot)-\(query)-\(sortOrder.rawValue)") {
             page = nil
             do {
                 let fresh = try await XDriveIOSNativePhotoMetadataSearchReader()
-                    .read(query: query, startingAt: window.startSlot)
+                    .read(query: query, startingAt: window.startSlot, sortOrder: sortOrder)
                 try Task.checkCancellation()
                 guard fresh.startSlot == window.startSlot,
                       fresh.nextSlot == window.nextSlot,
@@ -375,6 +397,7 @@ struct XDriveIOSNativePhotoSearchScreen: View {
     @StateObject private var monitor = XDriveIOSNativePhotoSearchChangeMonitor()
     @State private var query = ""
     @State private var acceptedQuery = ""
+    @State private var sortOrder: XDriveIOSNativePhotoSearchSortOrder = .newest
     @State private var selected: XDriveIOSNativePhotoSearchSelection?
     @State private var visibleTailWindowID: Int?
 
@@ -396,6 +419,19 @@ struct XDriveIOSNativePhotoSearchScreen: View {
                     }
                     Text("搜索当前已授权的本机照片元数据：原始文件名、拍摄日期及媒体类型。不是人物、内容识别或云端搜索。")
                         .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text("结果顺序")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Picker("按拍摄时间排序", selection: $sortOrder) {
+                            ForEach(XDriveIOSNativePhotoSearchSortOrder.allCases) { order in
+                                Text(order.title).tag(order)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .accessibilityIdentifier("native-ios-photo-search-capture-order")
+                    }
 
                     if let total = model.totalAuthorizedSlots {
                         Text("已检查 \(model.scannedThrough) / \(total) 项，当前找到 \(model.matchCount) 项")
@@ -409,7 +445,7 @@ struct XDriveIOSNativePhotoSearchScreen: View {
                         ForEach(model.windows) { window in
                             XDriveIOSNativePhotoSearchWindowView(
                                 window: window, query: currentQuery,
-                                generation: model.generation,
+                                sortOrder: sortOrder, generation: model.generation,
                                 onSelect: { candidate, neighbors in
                                     selected = XDriveIOSNativePhotoSearchSelection(
                                         candidate: candidate, loadedItems: neighbors
@@ -463,6 +499,18 @@ struct XDriveIOSNativePhotoSearchScreen: View {
             )
         }
         .onAppear { monitor.start() }
+        .onChange(of: sortOrder) { _ in
+            // A new PhotoKit sort order changes numeric slot identity.
+            // Never reuse the old windows or a previously selected Viewer item.
+            visibleTailWindowID = nil
+            guard selected == nil, phase == .active,
+                  XDriveIOSNativePhotoSearchQueryPolicy.normalized(query) ==
+                    acceptedQuery else {
+                model.cancel()
+                return
+            }
+            model.search(acceptedQuery, sortOrder: sortOrder)
+        }
         .onChange(of: query) { _ in
             if XDriveIOSNativePhotoSearchQueryPolicy.normalized(query) !=
                 acceptedQuery {
@@ -500,9 +548,9 @@ struct XDriveIOSNativePhotoSearchScreen: View {
     private func submitNew() {
         guard phase == .active,
               let normalized = XDriveIOSNativePhotoSearchQueryPolicy.normalized(query)
-        else { model.search(query); return }
+        else { model.search(query, sortOrder: sortOrder); return }
         acceptedQuery = normalized
         visibleTailWindowID = nil
-        model.search(normalized)
+        model.search(normalized, sortOrder: sortOrder)
     }
 }

@@ -343,6 +343,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 self?.busy = false
             }
             guard let self else { return }
+            // These are per-run transient witnesses only. The first possible
+            // original write permanently disables fast retry for this run.
+            var automaticReservedNextDueAt: Date?
+            var beganOriginalWrite = false
             do {
                 let verified = try await login.verifiedAuthorization()
                 try Task.checkCancellation()
@@ -404,6 +408,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                             self.refresh(owner: selected)
                             return
                         }
+                        automaticReservedNextDueAt = due.nextDueAt
                         window = due.windowIndex
                         cloud = due.allowICloudOriginals
                         manualStartEpoch = nil
@@ -450,7 +455,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         : "手动备份正在检查第 \(window + 1) 段…"
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, managedForeground: managed
-                    ).run(allowICloudOriginals: cloud, startOffset: offset) { [weak self] value in
+                    ).run(allowICloudOriginals: cloud, startOffset: offset,
+                          onPotentialWrite: { beganOriginalWrite = true }) { [weak self] value in
                         guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
                               self?.displayEpoch == uiEpoch,
                               XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
@@ -515,9 +521,32 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     self.message = "原件任务已取消。可能已经提交的原件须通过加密账本与 Server 收据确认。"
                 }
             } catch {
+                var scheduledNetworkRetry = false
+                if kind == .automatic,
+                   let reservedDue = automaticReservedNextDueAt,
+                   !beganOriginalWrite, !Task.isCancelled,
+                   let networkError = error as? URLError,
+                   XDriveIOSPhotoAutoSchedulePolicy.retryablePrewriteNetworkFailure(
+                       networkError
+                   ),
+                   self.displayEpoch == uiEpoch,
+                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                   UIApplication.shared.applicationState == .active {
+                    // A changed/disabled plan or receipt-review pause fails
+                    // the expected due-time check. No upload/ACK replay here.
+                    if let updated = try? XDriveIOSPhotoAutoScheduleStore.shared
+                        .rescheduleSafePrewriteNetworkFailure(
+                            owner: selected, expectedNextDueAt: reservedDue
+                        ) {
+                        self.schedule = updated
+                        scheduledNetworkRetry = true
+                    }
+                }
                 if self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
-                    self.errorMessage = "本轮未完成：请检查当前 Owner、iPhone 设备、受管目标目录、照片权限和加密账本；没有证据的原件不会被当作已备份。"
+                    self.errorMessage = scheduledNetworkRetry
+                        ? "尚未开始原件写入时网络中断：已保留当前扫描段，前台约 5 分钟后可再次检查；仍需重新验证 Owner 与收据。"
+                        : "本轮未完成：请检查当前 Owner、iPhone 设备、受管目标目录、照片权限和加密账本；没有证据的原件不会被当作已备份。"
                 }
             }
             // A successful original may be followed by a PhotoKit scan error,

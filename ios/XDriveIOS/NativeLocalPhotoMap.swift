@@ -817,6 +817,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var handledMapJumpID: UUID?
 
     private var refinedViewportIsCurrent: Bool {
+        // Scanned-incomplete cells must never become tappable, even before
+        // MapKit receives its first fully verified PhotoKit snapshot.
+        guard globalComplete, !busy else { return false }
         guard let scanned = globalViewport else { return true }
         guard !globalCameraMoving, let current = globalCamera else { return false }
         return XDriveIOSNativeLocalMapSpatialPolicy.containsViewport(
@@ -883,7 +886,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                              "上次细化的视窗没有可显示的 GPS 照片。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    XDriveIOSMapKitPhotoPage(
+                }
+                // Keep MapKit mounted from first authorized entry through the
+                // complete 64-cell bounded GPS scan. No provisional photo
+                // covers are published or selectable during the scan.
+                XDriveIOSMapKitPhotoPage(
                         items: [], globalCells: globalCells,
                         revision: mapRevision, cameraReturn: globalCamera,
                         canSelectCells: refinedViewportIsCurrent,
@@ -944,16 +951,19 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("native-ios-full-library-gps-map")
-                    if globalViewport != nil && !refinedViewportIsCurrent {
-                        Text("地图已移动：旧聚合仅作视觉参照，重新细化当前视窗后才能打开照片。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                            .accessibilityIdentifier("native-ios-map-stale-viewport")
-                    }
-                } else if busy {
+                if globalComplete && globalViewport != nil && !refinedViewportIsCurrent {
+                    Text("地图已移动：旧聚合仅作视觉参照，重新细化当前视窗后才能打开照片。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-map-stale-viewport")
+                }
+                if busy {
+                    // PhotoKit progress is separate from the visible native
+                    // map; do not claim a complete cluster count until done.
                     ProgressView("逐页扫描已授权图库的 GPS 元数据…")
+                        .accessibilityIdentifier("native-ios-map-full-library-scan-progress")
                     Text("已检查 \(globalScanned) / \(globalTotal) 个槽位；当前找到 \(globalLocated) 张带定位照片。")
-                        .font(.footnote).monospacedDigit()
-                } else {
+                        .font(.caption).monospacedDigit().lineLimit(1)
+                } else if !globalComplete {
                     Text("扫描完整授权范围中的位置元数据，每次最多保留 64 个地图区域和代表封面。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }

@@ -244,3 +244,18 @@ test('shared native still zoom supports VoiceOver rotor without extra media acce
   assert.match(zoom, /func gestureRecognizerShouldBegin[\s\S]*?scroll\.zoomScale <= scroll\.minimumZoomScale \+ 0\.01/)
   assert.doesNotMatch(zoom, /URLSession|PHImageManager|PHAsset|Authorization|Bearer|\.upload\(/)
 })
+
+
+test('shared zoom keeps focus only on a verified same-source high resolution upgrade', () => {
+  assert.match(zoom, /func onZoomHighResolution\(source: String, request: @escaping \(\) -> Void\) -> Self/)
+  assert.match(zoom, /scrollView\.zoomScale >= 1\.5/)
+  assert.match(zoom, /!didRequestHighResolution, onHighResolutionRequest != nil/)
+  assert.match(zoom, /self\.highResolutionSource == source/)
+  assert.match(zoom, /let sameSource = highResolutionSource != nil &&/)
+  assert.match(zoom, /context\.coordinator\.highResolutionSource == highResolutionSource/)
+  assert.match(zoom, /context\.coordinator\.didRequestHighResolution = false/)
+  assert.match(zoom, /let isSameImageUpgrade = sameSource &&[\s\S]*?updatedPixels > previousPixels/)
+  assert.match(zoom, /if !isSameImageUpgrade \{\s*scroll\.setZoomScale\(scroll\.minimumZoomScale, animated: false\)/)
+  assert.match(zoom, /scroll\.panGestureRecognizer\.require\(toFail: pagingPan\)/)
+  assert.doesNotMatch(zoom, /URLSession|accessToken|PHImageManager|UserDefaults|UploadSession/)
+});

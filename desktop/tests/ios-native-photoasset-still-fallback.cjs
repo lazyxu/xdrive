@@ -10,7 +10,10 @@ const viewer = source.slice(source.indexOf('struct XDriveIOSNativeServerMediaPre
   source.indexOf('/// Root and album-specific media wall'))
 
 test('only a validated still body limit or ImageIO decode failure offers low-res recovery', () => {
-  const body = reader.slice(reader.indexOf('func preview(_ item: XDriveIOSNativeMediaItem)'),
+  // The original/optional enhanced-preview wrapper can reject a zoom
+  // request. Check the actual signed still reader, not the wrapper preceding it.
+  const body = reader.slice(
+    reader.indexOf('private func preview(_ item: XDriveIOSNativeMediaItem, maxDecodedPixel: Int)'),
     reader.indexOf('private func validOrdinaryPhotoAssetName'))
   assert.match(reader, /enum XDriveIOSNativeMediaStillPreviewFallback: Error/)
   assert.match(body, /guard item\.supportsPreview else/)
@@ -72,3 +75,25 @@ test('both native cloud still and video tickets stay bound to the exact selected
   assert.match(galleryPreview, /if item\.isVideo \{ return \(nil, signedURL\) \}/)
   assert.match(originalPreview, /if node\.isVideo \{ return \(nil, url\) \}/)
 })
+
+
+test('cloud PhotoAsset magnification requests bounded 6144px still, never a Live or video', () => {
+  assert.match(reader, /func preview\(_ item: XDriveIOSNativeMediaItem\) async throws/)
+  assert.match(reader, /try await preview\(item, maxDecodedPixel: 4096\)/)
+  assert.match(reader, /func enhancedStill\(_ item: XDriveIOSNativeMediaItem\) async throws -> UIImage/)
+  assert.match(reader, /item\.supportsPreview, !item\.isVideo, !item\.isLive/)
+  assert.match(reader, /let high = try await preview\(item, maxDecodedPixel: 6144\)/)
+  assert.match(reader, /guard maxDecodedPixel == 4096 \|\| maxDecodedPixel == 6144/)
+  assert.match(reader, /kCGImageSourceThumbnailMaxPixelSize as String: maxDecodedPixel/)
+  assert.match(reader, /_ = try await currentOriginal\(item\)[\s\S]*?let high = try await preview\(item,[\s\S]*?_ = try await currentOriginal\(item\)/)
+  assert.match(viewer, /private func requestZoomEnhancedStill\(\)/)
+  assert.match(viewer, /!highResolutionAttempted, highResolutionTask == nil/)
+  assert.match(viewer, /max\(existing\.cgImage\?\.width \?\? 0, existing\.cgImage\?\.height \?\? 0\) >= 4000/)
+  assert.match(viewer, /previewRequestID == generation,[\s\S]*?viewed\.sameVisibleRevision\(as: selected\)/)
+  assert.match(viewer, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, owner\)/)
+  assert.match(viewer, /image = enhanced\s*highResolutionLoaded = true/)
+  assert.match(viewer, /onZoomHighResolution\([\s\S]*?source: "\\\(viewed\.id\):\\\(viewed\.node\.revision\)"[\s\S]*?\) \{ requestZoomEnhancedStill\(\) \}/)
+  assert.match(viewer, /highResolutionTask\?\.cancel\(\)[\s\S]*?previewRequestID = UUID\(\)/)
+  assert.match(viewer, /highResolutionLoaded \? "高清预览 · 按需解码"/)
+  assert.doesNotMatch(reader, /URLSession\.shared|WKWebView|UploadSession|UserDefaults/)
+});

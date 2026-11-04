@@ -36,7 +36,14 @@ test('Eight fixed Owner Notes operations stay within authenticated Agent IPC', (
       'missing allowlisted Notes endpoint: ' + method + ' ' + path)
   }
   assert.match(ipc, /capabilities = append\(capabilities, "cloud-notes"\)/)
-  assert.match(handlers, /if h\.backupOnly \{/)
+  // DSM Backup-only is allowed ONLY via an explicit method+UUID Notes fence.
+  // Do not regress to unconditional access or an arbitrary cloud proxy.
+  const runtime = load('cmd/xdrive-agent/desktop_ipc_runtime_mode.go')
+  assert.match(ipc, /restrictBackupOnlyEndpoints\(h\.backupOnly, mux\)/)
+  assert.match(runtime, /func backupOnlyAllowedNotesRequest\(method, path string\) bool/)
+  assert.match(runtime, /return validBackupOnlyNoteID\(id\)/)
+  assert.match(runtime, /func fullAgentOnlyRequest\(method, path string\) bool/)
+  assert.match(handlers, /port, ok := h\.ctrl\.\(desktopIPCNotesPort\)/)
   assert.match(handlers, /desktopIPCNotesPort/)
   assert.doesNotMatch(handlers, /http\.Proxy|ReverseProxy|proxyURL|fetch\(/)
   for (const name of [

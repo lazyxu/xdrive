@@ -46,6 +46,37 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @State private var autoConsentAllowICloud = false
     @State private var resumeConsentOwner: XDriveNativeOwnerRoot?
     @State private var consentError: String?
+    // Focused Backup is explicit foreground-only work. The display lease is
+    // local to this visible screen and never authorizes an upload or BG task.
+    @State private var focusedDimmed = false
+    @State private var focusedWakeCounter = 0
+    @State private var focusedLastInteractionAt = Date.distantPast
+    @State private var previousIdleTimerDisabled: Bool?
+
+    private var focusedPresentationActive: Bool {
+        controller.busy && (controller.focusedSummary?.totalWindows ?? 0) > 0 &&
+            phase == .active && login.owner != nil
+    }
+
+    private func noteFocusedUserActivity() {
+        guard focusedPresentationActive, !focusedDimmed else { return }
+        let now = Date()
+        // During a long drag, throttle state writes to at most once a second.
+        guard now.timeIntervalSince(focusedLastInteractionAt) >= 1 else { return }
+        focusedLastInteractionAt = now
+        focusedWakeCounter &+= 1
+    }
+
+    private func updateFocusedIdleTimer(active: Bool) {
+        if active {
+            guard previousIdleTimerDisabled == nil else { return }
+            previousIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
+            UIApplication.shared.isIdleTimerDisabled = true
+        } else if let previousIdleTimerDisabled {
+            UIApplication.shared.isIdleTimerDisabled = previousIdleTimerDisabled
+            self.previousIdleTimerDisabled = nil
+        }
+    }
 
     var body: some View {
         GeometryReader { viewport in
@@ -69,6 +100,71 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     backupStatusSections
                 }
                 .accessibilityIdentifier("native-ios-backup-portrait-form")
+            }
+        }
+        // An active user's taps or scrolls reset the 10-second idle window.
+        // Simultaneous gestures preserve Form scroll and Button interactions.
+        .simultaneousGesture(
+            TapGesture().onEnded { noteFocusedUserActivity() }
+        )
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 4)
+                .onChanged { _ in noteFocusedUserActivity() }
+        )
+        // Synology-style focused display: dark, not locked. A tap wakes the
+        // native status screen without cancelling or restarting the uploader.
+        .overlay {
+            if focusedPresentationActive && focusedDimmed {
+                Button {
+                    focusedDimmed = false
+                    focusedLastInteractionAt = Date()
+                    focusedWakeCounter &+= 1
+                } label: {
+                    ZStack {
+                        Color.black.ignoresSafeArea()
+                        VStack(spacing: 16) {
+                            Image(systemName: "moon.stars.fill")
+                                .font(.title2)
+                            Text("集中备份正在运行")
+                                .font(.headline)
+                            if let focused = controller.focusedSummary {
+                                Text("已扫描 \(focused.completedWindows)/\(focused.totalWindows) 段")
+                                Text("本次确认新增 \(focused.confirmedNew) 个原件")
+                            }
+                            Text("保持 App 在前台 · 轻点屏幕查看进度或停止")
+                                .font(.footnote)
+                                .foregroundStyle(.white.opacity(0.72))
+                        }
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white)
+                        .padding(24)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("唤醒集中备份显示")
+                .accessibilityHint("继续备份并显示详细进度和停止按钮")
+                .accessibilityIdentifier("native-ios-photos-focused-dim-overlay")
+            }
+        }
+        .task(id: "\(focusedPresentationActive)-\(focusedWakeCounter)") {
+            focusedDimmed = false
+            guard focusedPresentationActive else { return }
+            // A lifecycle-cancellable wait; no retained timer or BG writer.
+            do {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled && focusedPresentationActive else { return }
+            focusedDimmed = true
+        }
+        .onChange(of: focusedPresentationActive) { active in
+            updateFocusedIdleTimer(active: active)
+            if !active {
+                focusedDimmed = false
+                focusedLastInteractionAt = .distantPast
             }
         }
         .navigationTitle("相册备份")
@@ -131,7 +227,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
             }
         } message: {
-            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证")。仅前台运行，每 \(autoConsentMinutes) 分钟检查授权相册；每轮最多新增 20 个原件。")
+            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证")。新开启的计划将自动处理首次积压：未扫完时仅在前台约每分钟继续一轮，扫描完成后恢复每 \(autoConsentMinutes) 分钟检查；每轮最多新增 20 个原件。不保证锁屏或强制退出后执行。")
         }
         .confirmationDialog("确认恢复当前 Owner 的前台自动备份？",
                             isPresented: $showResumeConsent, titleVisibility: .visible) {
@@ -269,9 +365,13 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             destination.refresh(login: login)
             receipts.refresh(login: login)
             background.refresh(login: login)
+            updateFocusedIdleTimer(active: focusedPresentationActive)
         }
         .onDisappear {
             destination.cancel()
+            // Restore the exact prior global idle timer setting on navigation.
+            updateFocusedIdleTimer(active: false)
+            focusedDimmed = false
             originalProof.cancel()
             selectedOriginalIdentifier = nil
             selectedOriginalToVerify = nil
@@ -477,6 +577,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                           (photoAuthorization != .authorized && photoAuthorization != .limited))
                 .accessibilityIdentifier("native-ios-photos-focused-start")
                 Text("适用于首次大量备份：连续处理已授权的分段，每段最多新增 20 个原件。停止或重启后可从已完整扫描的分段继续，但必须重新验证当前账户、相册版本、授权范围和 iCloud 设置；不确定收据仍须先核对。扫描进度不代表全部云端原件已备份。")
+                Text("本页面运行集中备份时暂时阻止自动锁屏，约 10 秒后进入深色专注显示；轻点恢复，离开页面、进入后台或任务停止即恢复原有锁屏设置。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-photos-focused-display-guidance")
                     .font(.caption).foregroundStyle(.secondary)
                 if let focused = controller.focusedSummary {
                     if focused.resumedFromWindow > 0 {
@@ -625,7 +728,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .disabled(login.owner == nil)
                         .accessibilityIdentifier("native-ios-photos-catchup-enable")
                     }
-                    Text("积压加速默认关闭。手动同意后，仅 App 前台且收据正常时，每轮最多新增 20 个原件；有积压时约 60 秒后尝试下一轮。扫描完一遍后恢复所选间隔。")
+                    Text("新启用的前台自动备份默认加速首次积压；既有计划保留此前的加速选择。仅 App 前台且收据正常时，每轮最多新增 20 个原件；未扫描完时约 60 秒后继续，完成整库一遍扫描后恢复所选间隔。")
                         .font(.caption).foregroundStyle(.secondary)
                     Button("关闭当前账户自动备份", role: .destructive) {
                         controller.disable(owner: login.owner)
@@ -643,7 +746,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                                   (photoAuthorization != .authorized && photoAuthorization != .limited))
                         .accessibilityIdentifier("native-ios-photos-auto-enable")
                 }
-                Text("自动计划仅采用启用时确认的检查间隔和 iCloud 设置；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
+                Text("自动计划采用启用时确认的检查间隔、iCloud 设置和首次积压策略；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
     }

@@ -105,7 +105,11 @@ test('cloud Live pairs verified still/motion through native PHLivePhotoView with
   assert.match(native, /PHLivePhoto\.request\(/)
   assert.match(native, /withResourceFileURLs: \[files\.stillURL, files\.motionURL\]/)
   assert.match(native, /placeholderImage: placeholder/)
-  assert.match(native, /targetSize: CGSize\(width: 1800, height: 1800\)/)
+  // This stays Owner-paired and native, but target size adapts to the
+  // pre-decoded still rather than a hardcoded 1800px square.
+  assert.match(native, /targetSize: Self\.nativeTargetSize\(for: placeholder\)/)
+  assert.match(native, /let maxPixel: CGFloat = 3072/)
+  assert.match(native, /let scale = min\(1, maxPixel \/ max\(width, height\)\)/)
   assert.match(native, /PHLivePhotoInfoIsDegradedKey/)
   assert.match(native, /PHLivePhotoInfoErrorKey/)
   assert.match(native, /PHLivePhotoInfoCancelledKey/)

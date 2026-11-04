@@ -195,6 +195,13 @@ final class XDriveNativeUploadSessionTransport {
                   expectedSize <= 1_073_741_824 + 1_048_576 else {
                 throw XDriveNativeUploadError.unauthorizedOrRejected(403)
             }
+        } else {
+            // The single foreground Original writer is still size bounded;
+            // a larger file never creates a server UploadSession.
+            guard expectedSize > 0,
+                  expectedSize <= XDriveIOSOriginalBackupMediaPolicy.videoLimit else {
+                throw XDriveNativeUploadError.invalidLocalFile
+            }
         }
         return try await uploadInternally(from: stagedFileURL, name: name, parentID: parentID,
                                           resumeKey: resumeKey, expectedSize: expectedSize,

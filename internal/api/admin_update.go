@@ -46,6 +46,7 @@ type serverUpdateRequestFile struct {
 	Channel                string `json:"channel"`
 	BackupFileData         bool   `json:"backup_file_data"`
 	OfflineID              string `json:"offline_id,omitempty"`
+	OfflineTrustMode       string `json:"offline_trust_mode,omitempty"`
 	TrustedManifestSHA256  string `json:"trusted_manifest_sha256,omitempty"`
 	TrustedInstallerSHA256 string `json:"trusted_installer_sha256,omitempty"`
 	RequestedBy            string `json:"requested_by,omitempty"`
@@ -63,6 +64,7 @@ func (s *Server) adminStartServerUpdate(c *gin.Context) {
 		Channel                string `json:"channel"`
 		BackupFileData         bool   `json:"backup_file_data"`
 		OfflineID              string `json:"offline_id"`
+		OfflineTrustMode       string `json:"offline_trust_mode"`
 		TrustedManifestSHA256  string `json:"trusted_manifest_sha256"`
 		TrustedInstallerSHA256 string `json:"trusted_installer_sha256"`
 	}
@@ -85,12 +87,21 @@ func (s *Server) adminStartServerUpdate(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_offline_import"})
 			return
 		}
-		if !offlineDigest.MatchString(input.TrustedManifestSHA256) ||
+		// Explicit signed mode does not accept browser-supplied digests. The
+		// isolated Host independently checks a Host-owned Sigstore root and
+		// verified bundle. Empty/sha256 modes preserve existing CLI clients.
+		if input.OfflineTrustMode == "sigstore" {
+			if input.TrustedManifestSHA256 != "" || input.TrustedInstallerSHA256 != "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_offline_trust"})
+				return
+			}
+		} else if (input.OfflineTrustMode != "" && input.OfflineTrustMode != "sha256") ||
+			!offlineDigest.MatchString(input.TrustedManifestSHA256) ||
 			!offlineDigest.MatchString(input.TrustedInstallerSHA256) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_offline_trust"})
 			return
 		}
-	} else if input.OfflineID != "" || input.TrustedManifestSHA256 != "" ||
+	} else if input.OfflineID != "" || input.OfflineTrustMode != "" || input.TrustedManifestSHA256 != "" ||
 		input.TrustedInstallerSHA256 != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "offline_update_options_forbidden"})
 		return
@@ -128,6 +139,7 @@ func (s *Server) adminStartServerUpdate(c *gin.Context) {
 		Channel:                input.Channel,
 		BackupFileData:         input.BackupFileData,
 		OfflineID:              input.OfflineID,
+		OfflineTrustMode:       input.OfflineTrustMode,
 		TrustedManifestSHA256:  input.TrustedManifestSHA256,
 		TrustedInstallerSHA256: input.TrustedInstallerSHA256,
 		RequestedBy:            requestedBy,
@@ -206,8 +218,11 @@ func (s *Server) serverUpdateStatus() serverUpdateState {
 				(request.Source != "xdrive" || request.Channel == "master") &&
 				(request.Source != "offline" || (request.Channel == "master" &&
 					offlineImportID.MatchString(request.OfflineID) &&
-					offlineDigest.MatchString(request.TrustedManifestSHA256) &&
-					offlineDigest.MatchString(request.TrustedInstallerSHA256))) &&
+					((request.OfflineTrustMode == "sigstore" &&
+						request.TrustedManifestSHA256 == "" && request.TrustedInstallerSHA256 == "") ||
+						((request.OfflineTrustMode == "" || request.OfflineTrustMode == "sha256") &&
+							offlineDigest.MatchString(request.TrustedManifestSHA256) &&
+							offlineDigest.MatchString(request.TrustedInstallerSHA256))))) &&
 				(request.Channel == "stable" || request.Channel == "master") {
 				state.State = "queued"
 				state.Source = request.Source

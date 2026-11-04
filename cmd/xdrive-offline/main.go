@@ -33,6 +33,9 @@ func run(argv []string) error {
 	dir := fs.String("dir", "", "five-component release directory")
 	components := fs.String("components", "", "comma-separated subset; defaults to archives present")
 	trusted := fs.String("trusted-manifest-sha256", "", "SHA-256 from independent authenticated source")
+	signedDelivery := fs.Bool("signed-delivery", false, "require authenticated publisher delivery binding")
+	trustedInstaller := fs.String("trusted-installer-sha256", "", "Host-attested Go ELF SHA-256")
+	trustedDelivery := fs.String("trusted-delivery-sha256", "", "Host-attested delivery.json SHA-256")
 	workdir := fs.String("workdir", "", "private staging parent")
 	configDir := fs.String("config-dir", "", "existing xDrive home")
 	noStart := fs.Bool("no-start", false, "validate and stage without starting services")
@@ -49,6 +52,13 @@ func run(argv []string) error {
 	if verb != "install" && (*noStart || *enableMedia || *enableAI || *source != "" || *backup || *configDir != "" || *workdir != "") {
 		return fmt.Errorf("installation options require install operation")
 	}
+	if *signedDelivery {
+		if verb == "list" || *trustedInstaller == "" || *trustedDelivery == "" {
+			return fmt.Errorf("signed delivery requires verify/install and Host-attested Go ELF identity")
+		}
+	} else if *trustedInstaller != "" || *trustedDelivery != "" {
+		return fmt.Errorf("trusted installer identity requires signed delivery")
+	}
 	info, err := os.Lstat(*dir)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("offline release directory is missing or unsafe")
@@ -56,6 +66,11 @@ func run(argv []string) error {
 	manifest, err := offlinebundle.ReadManifest(*dir, *trusted, verb == "install")
 	if err != nil {
 		return err
+	}
+	if *signedDelivery {
+		if err := offlinebundle.VerifySignedDelivery(*dir, manifest, *trusted, *trustedInstaller, *trustedDelivery); err != nil {
+			return err
+		}
 	}
 	selected, err := offlinebundle.Select(*dir, manifest, *components)
 	if err != nil {

@@ -22,35 +22,42 @@ struct XDriveIOSNativePhotoMapsScreen: View {
 
     var body: some View {
         let expectedOwner = login.owner
-        return VStack(spacing: 4) {
-            Picker("地图照片来源", selection: $source) {
-                ForEach(XDriveIOSNativePhotoMapSource.allCases, id: \.self) { item in
-                    Text(item.label).tag(item)
-                }
+        return Group {
+            switch source {
+            case .local:
+                XDriveIOSNativeLocalPhotoMapScreen(
+                    mapScope: $localMapScope,
+                    offset: $localMapPageOffset,
+                    onFocusChange: onFocusChange
+                )
+            case .cloud:
+                XDriveIOSNativeOwnerPhotoMapScreen(
+                    login: login, onFocusChange: onFocusChange,
+                    cameraReturn: cloudMapCamera,
+                    onCameraChange: { next in
+                        guard source == .cloud, let expectedOwner,
+                              XDriveIOSNativePhotoOwnerScope.matches(
+                                login.owner, expectedOwner
+                              ) else { return }
+                        cloudMapCamera = next
+                    })
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 12)
-            .accessibilityIdentifier("native-ios-map-source-selector")
-            Group {
-                switch source {
-                case .local:
-                    XDriveIOSNativeLocalPhotoMapScreen(
-                        mapScope: $localMapScope,
-                        offset: $localMapPageOffset,
-                        onFocusChange: onFocusChange
-                    )
-                case .cloud:
-                    XDriveIOSNativeOwnerPhotoMapScreen(
-                        login: login, onFocusChange: onFocusChange,
-                        cameraReturn: cloudMapCamera,
-                        onCameraChange: { next in
-                            guard source == .cloud, let expectedOwner,
-                                  XDriveIOSNativePhotoOwnerScope.matches(
-                                    login.owner, expectedOwner
-                                  ) else { return }
-                            cloudMapCamera = next
-                        })
+        }
+        .toolbar {
+            // Native navigation menu replaces a permanent source picker row.
+            // A selected source remains owned by the Gallery parent.
+            ToolbarItem(placement: .navigationBarLeading) {
+                Menu {
+                    Picker("地图照片来源", selection: $source) {
+                        ForEach(XDriveIOSNativePhotoMapSource.allCases, id: \.self) { item in
+                            Text(item.label).tag(item)
+                        }
+                    }
+                } label: {
+                    Label(source.label, systemImage: "square.stack.3d.up")
                 }
+                .accessibilityLabel("地图照片来源：\(source.label)")
+                .accessibilityIdentifier("native-ios-map-source-selector")
             }
         }
         .onChange(of: source) { _ in onFocusChange?(false) }

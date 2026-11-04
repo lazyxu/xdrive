@@ -41,3 +41,27 @@ test('viewing an iCloud-only item is not an upload or a backup-success receipt',
   assert.match(viewer, /ProgressView\("正在从 iCloud 获取当前原件…"\)/)
   assert.match(viewer, /native-ios-local-viewer-retry/)
 })
+
+
+test('local native Live Photo hints only after the full PhotoKit pair is ready', () => {
+  const model = local.slice(
+    local.indexOf('final class XDriveIOSLocalPhotoDetailModel'),
+    local.indexOf('private struct XDriveIOSNativeLivePhotoView'))
+  const wrapped = local.slice(
+    local.indexOf('private struct XDriveIOSNativeLivePhotoView'),
+    local.indexOf('/// A long horizontal drag pages'))
+  assert.match(model, /@Published private\(set\) var liveIsFinal = false/)
+  assert.match(model, /if !degraded \{ self\.liveIsFinal = true \}/)
+  assert.match(model, /if !degraded \|\| !self\.liveIsFinal \{/)
+  assert.match(model, /live = nil\s*still = nil\s*liveIsFinal = false/)
+  assert.match(local, /hintReady: model\.liveIsFinal && currentPageAuthorized &&\s*!model\.downloadingFromICloud/)
+  assert.match(wrapped, /let hintReady: Bool/)
+  assert.match(wrapped, /var didHint = false/)
+  assert.match(wrapped, /context\.coordinator\.didHint = false/)
+  assert.match(wrapped, /if let request = playbackRequest,[\s\S]*?view\.startPlayback\(with: \.full\)/)
+  assert.match(wrapped, /else if hintReady, playbackRequest == nil,[\s\S]*?!context\.coordinator\.didHint/)
+  assert.match(wrapped, /UIApplication\.shared\.applicationState == \.active &&\s*!UIAccessibility\.isReduceMotionEnabled/)
+  assert.match(wrapped, /view\.startPlayback\(with: \.hint\)/)
+  assert.match(wrapped, /static func dismantleUIView[\s\S]*?view\.stopPlayback\(\)[\s\S]*?view\.livePhoto = nil/)
+  assert.doesNotMatch(wrapped, /URLSession|UploadSession|PHAssetCreationRequest|UserDefaults/)
+});

@@ -147,3 +147,38 @@ test('focused restart checkpoint is scoped, verified and never interpreted as up
   assert.match(ui, /本次确认新增/);
   assert.match(ui, /不代表全部云端原件已备份/);
 });
+
+
+test('focused display dims after ten seconds only while foreground focused backup runs', () => {
+  assert.match(ui, /private var focusedPresentationActive: Bool/);
+  assert.match(ui, /controller\.busy && \(controller\.focusedSummary\?\.totalWindows \?\? 0\) > 0/);
+  assert.match(ui, /phase == \.active && login\.owner != nil/);
+  assert.match(ui, /\.task\(id: /);
+  assert.match(ui, /Task\.sleep\(nanoseconds: 10_000_000_000\)/);
+  assert.match(ui, /guard !Task\.isCancelled && focusedPresentationActive else \{ return \}/);
+  assert.match(ui, /if focusedPresentationActive && focusedDimmed/);
+  assert.match(ui, /focusedWakeCounter &\+= 1/);
+  assert.match(ui, /TapGesture\(\)\.onEnded \{ noteFocusedUserActivity\(\) \}/);
+  assert.match(ui, /DragGesture\(minimumDistance: 4\)/);
+  assert.match(ui, /now\.timeIntervalSince\(focusedLastInteractionAt\) >= 1/);
+  assert.match(ui, /focusedLastInteractionAt = Date\(\)/);
+  assert.match(ui, /native-ios-photos-focused-dim-overlay/);
+  assert.match(ui, /已扫描.*completedWindows.*totalWindows.*段/);
+  assert.match(ui, /本次确认新增.*confirmedNew.*个原件/);
+});
+
+test('focused screen scoped keep-awake restores prior device setting on every exit', () => {
+  const lease = ui.slice(ui.indexOf('private func updateFocusedIdleTimer('),
+    ui.indexOf('    var body: some View'));
+  assert.match(lease, /previousIdleTimerDisabled = UIApplication\.shared\.isIdleTimerDisabled/);
+  assert.match(lease, /UIApplication\.shared\.isIdleTimerDisabled = true/);
+  assert.match(lease, /UIApplication\.shared\.isIdleTimerDisabled = previousIdleTimerDisabled/);
+  assert.match(lease, /self\.previousIdleTimerDisabled = nil/);
+  assert.match(ui, /\.onChange\(of: focusedPresentationActive\)/);
+  assert.match(ui, /\.onDisappear \{[\s\S]*?updateFocusedIdleTimer\(active: false\)/);
+  assert.match(ui, /\.onAppear \{[\s\S]*?updateFocusedIdleTimer\(active: focusedPresentationActive\)/);
+  assert.match(ui, /phase == \.active/);
+  const presentation = ui.slice(ui.indexOf('// Synology-style focused display:'),
+    ui.indexOf('        .navigationTitle("相册备份")'));
+  assert.doesNotMatch(presentation, /UploadSession|ledger\.prepare|reserveDue|runFocused|BGTaskScheduler/);
+});

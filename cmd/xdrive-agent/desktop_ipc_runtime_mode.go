@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -134,7 +136,39 @@ var backupOnlyAllowedIPCRoutes = map[string]struct{}{
 	"POST /v1/sources":                                          {},
 }
 
+// This is deliberately a narrow Notes-only exception. Backup-only must not
+// gain full Desktop Cloud API access just because a URI has a cloud prefix.
+// Every admitted route still requires the loopback bearer and Server Owner.
+func backupOnlyAllowedNotesRequest(method, path string) bool {
+	switch path {
+	case "/v1/cloud/notes/namespace":
+		return method == http.MethodPost
+	case "/v1/cloud/notes":
+		return method == http.MethodGet || method == http.MethodPost
+	case "/v1/cloud/notes/version-content":
+		return method == http.MethodGet
+	}
+	if !strings.HasPrefix(path, "/v1/cloud/notes/") {
+		return false
+	}
+	id := strings.TrimPrefix(path, "/v1/cloud/notes/")
+	if strings.HasSuffix(id, "/versions") {
+		id = strings.TrimSuffix(id, "/versions")
+		return validBackupOnlyNoteID(id) && method == http.MethodGet
+	}
+	return validBackupOnlyNoteID(id) &&
+		(method == http.MethodGet || method == http.MethodPut || method == http.MethodDelete)
+}
+
+func validBackupOnlyNoteID(value string) bool {
+	parsed, err := uuid.Parse(value)
+	return err == nil && parsed.String() == value
+}
+
 func fullAgentOnlyRequest(method, path string) bool {
+	if backupOnlyAllowedNotesRequest(method, path) {
+		return false
+	}
 	_, allowed := backupOnlyAllowedIPCRoutes[method+" "+path]
 	return !allowed
 }

@@ -123,6 +123,18 @@ struct XDriveIOSNativeSquarePhotoTile: View {
 
 /// Metadata-only virtual page. The existing permission/change-fenced PhotoKit
 /// scanner is the single source of truth; this screen never touches backup cursors.
+/// Only active selection-mode cells contribute ephemeral geometry to hit-test
+/// a finger moving across the visible photo grid. No offscreen photo IDs.
+private struct XDriveIOSNativePhotoDragTileFrames: PreferenceKey {
+    static var defaultValue: [String: CGRect] { [:] }
+    static func reduce(
+        value: inout [String: CGRect],
+        nextValue: () -> [String: CGRect]
+    ) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
 private struct XDriveIOSNativeVirtualPhotoPage: View {
     let offset: Int
     let expectedTotal: Int
@@ -136,6 +148,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let onSelect: (XDrivePhotoKitScanCandidate, XDrivePhotoKitScanPage) -> Void
     let onShare: (XDrivePhotoKitScanCandidate, Bool) -> Void
     let onRead: (XDrivePhotoKitScanPage) -> Void
+    let onPageHidden: (Int) -> Void
     let onFailure: () -> Void
     @State private var page: XDrivePhotoKitScanPage?
     @State private var precedingCapturedAt: Date?
@@ -198,6 +211,18 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                 }
                             }
                             .id("photo:\(candidate.id)")
+                            // Measuring is opt-in: browsing 100k photos without
+                            // selection mode never publishes per-cell frames.
+                            .background {
+                                if selectionMode {
+                                    GeometryReader { proxy in
+                                        Color.clear.preference(
+                                            key: XDriveIOSNativePhotoDragTileFrames.self,
+                                            value: [candidate.id: proxy.frame(in: .global)]
+                                        )
+                                    }
+                                }
+                            }
                             .accessibilityFocused(accessibilityFocus, equals: candidate.id)
                         } else {
                             placeholderTile.accessibilityHidden(true)
@@ -259,6 +284,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             precedingCapturedAt = nil
             if let scanner { Task { await scanner.reset() } }
             scanner = nil
+            onPageHidden(offset)
         }
     }
 }
@@ -313,6 +339,12 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var requestedOffset: Int?
     @State private var selectionMode = false
     @State private var selectedCandidates: [String: XDrivePhotoKitScanCandidate] = [:]
+    // Only mounted, permission-checked 64-slot windows are eligible for
+    // drag selection; the library-wide photo index is never materialized.
+    @State private var dragLoadedPages: [Int: XDrivePhotoKitScanPage] = [:]
+    @State private var dragTileFrames: [String: CGRect] = [:]
+    @State private var dragPreviousSlot: Int?
+    @State private var dragVisitedIDs: Set<String> = []
     @State private var showingAlbumPicker = false
     @State private var albumPickerCandidates: [XDrivePhotoKitScanCandidate] = []
     @State private var confirmingDelete = false
@@ -371,6 +403,22 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                         .accessibilityIdentifier("native-ios-local-wall-framing")
                                     }
                                 }
+                                Section("快速定位") {
+                                    Button {
+                                        jumpToEdge(newest: true, using: scroll)
+                                    } label: {
+                                        Label("最新拍摄", systemImage: "arrow.up.to.line")
+                                    }
+                                    .accessibilityIdentifier("native-ios-local-wall-jump-newest")
+                                    Button {
+                                        jumpToEdge(newest: false, using: scroll)
+                                    } label: {
+                                        Label("最早拍摄", systemImage: "arrow.down.to.line")
+                                    }
+                                    .accessibilityIdentifier("native-ios-local-wall-jump-oldest")
+                                }
+                                .disabled(total == 0 || loading || actionBusy ||
+                                          shareBusy || selected != nil)
                             } label: {
                                 Image(systemName: "square.grid.3x3")
                                     .frame(width: 44, height: 44)
@@ -380,6 +428,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             Button(selectionMode ? "取消选择" : "选择") {
                                 selectionMode.toggle()
                                 selectedCandidates.removeAll()
+                                resetDragSelection()
                                 actionMessage = nil
                             }
                             .disabled(actionBusy)
@@ -397,6 +446,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                         .padding(.horizontal, 12)
                         .accessibilityIdentifier("native-ios-local-gallery-media-filter")
                         if selectionMode {
+                            Text("按住照片并拖动，可连续选择已加载的照片。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
                             HStack(spacing: 10) {
                                 Text("已选择 \(selectedCandidates.count) 项（上限 \(XDriveIOSNativePhotoSelectionPolicy.maximumItems)）")
                                     .font(.caption).monospacedDigit()
@@ -466,6 +519,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                                      allowICloudDownload: allowICloud)
                                     },
                                     onRead: { page in
+                                        dragLoadedPages[page.startOffset] = page
                                         if let expected = returnID, returnPageOffset == page.startOffset,
                                            let candidate = page.items.first(where: {
                                                $0.id == expected && $0.capturedAt == returnDate &&
@@ -478,6 +532,9 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                                 clearReturn()
                                             }
                                         }
+                                    },
+                                    onPageHidden: { hiddenOffset in
+                                        dragLoadedPages.removeValue(forKey: hiddenOffset)
                                     },
                                     onFailure: { invalidate(with: "照片库已变化，旧页面已废弃，请重新读取。") }
                                 )
@@ -509,6 +566,29 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                           !actionBusy && !shareBusy else { return }
                     density = density.applyingPinch(value)
                 }
+            )
+            .onPreferenceChange(XDriveIOSNativePhotoDragTileFrames.self) { frames in
+                // These rectangles exist only while selecting and only while
+                // SwiftUI mounts the corresponding visible tile.
+                dragTileFrames = selectionMode ? frames : [:]
+            }
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.28, maximumDistance: 16)
+                    .sequenced(before: DragGesture(
+                        minimumDistance: 0, coordinateSpace: .global
+                    ))
+                    .onChanged { gesture in
+                        guard case .second(true, let drag?) = gesture,
+                              selectionMode else { return }
+                        if dragPreviousSlot == nil {
+                            dragSelect(at: drag.startLocation)
+                        }
+                        dragSelect(at: drag.location)
+                    }
+                    .onEnded { _ in
+                        dragPreviousSlot = nil
+                        dragVisitedIDs.removeAll()
+                    }
             )
             .onChange(of: total) { count in
                 guard count > 0, phase == .active else { return }
@@ -644,6 +724,75 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     }
 
     private var authorized: Bool { permission == .authorized || permission == .limited }
+
+    /// Position-only navigation across already enumerated numeric 64-slot
+    /// descriptors. The target page re-opens and revalidates PhotoKit on mount.
+    /// Never walk the whole photo library or create a media-identifier array.
+    private func jumpToEdge(newest: Bool, using scroll: ScrollViewProxy) {
+        guard authorized, phase == .active, selected == nil,
+              !loading, !actionBusy, !shareBusy, total > 0 else { return }
+        let requested = newest ? 0 : total - 1
+        let offset = XDriveIOSNativePhotoVirtualPagePolicy.normalizedAnchor(
+            requested: requested, total: total
+        )
+        clearReturn()
+        requestedOffset = nil
+        savedOffset = offset
+        scroll.scrollTo("page:\(offset)", anchor: .top)
+    }
+
+    private func resetDragSelection() {
+        dragPreviousSlot = nil
+        dragVisitedIDs.removeAll()
+        dragTileFrames.removeAll()
+    }
+
+    /// Paint a contiguous on-screen index range, not just the tile directly
+    /// under the pointer. Every candidate comes from a live, verified page;
+    /// missing/offscreen ranges are never fetched or selected implicitly.
+    private func dragSelect(at point: CGPoint) {
+        guard selectionMode, authorized, phase == .active, selected == nil,
+              !actionBusy, !shareBusy,
+              let hitID = dragTileFrames.first(where: { $0.value.contains(point) })?.key
+        else { return }
+
+        var hitSlot: Int?
+        for page in dragLoadedPages.values {
+            if let index = page.items.firstIndex(where: { $0.id == hitID }) {
+                hitSlot = page.startOffset + index
+                break
+            }
+        }
+        guard let endSlot = hitSlot else { return }
+        let from = dragPreviousSlot ?? endSlot
+        let lower = min(from, endSlot)
+        let upper = max(from, endSlot)
+        let rows = dragLoadedPages.values.flatMap { page in
+            page.items.enumerated().compactMap { index, candidate
+                -> (Int, XDrivePhotoKitScanCandidate)? in
+                let slot = page.startOffset + index
+                guard slot >= lower && slot <= upper,
+                      candidate.kind == "image" || candidate.kind == "video"
+                else { return nil }
+                return (slot, candidate)
+            }
+        }.sorted { $0.0 < $1.0 }
+
+        for (_, candidate) in rows {
+            guard !dragVisitedIDs.contains(candidate.id) else { continue }
+            dragVisitedIDs.insert(candidate.id)
+            guard selectedCandidates[candidate.id] == nil else { continue }
+            guard XDriveIOSNativePhotoSelectionPolicy.canAdd(
+                selectedCount: selectedCandidates.count,
+                identifier: candidate.id, alreadySelected: false
+            ) else {
+                actionMessage = "最多选择 \(XDriveIOSNativePhotoSelectionPolicy.maximumItems) 项。"
+                break
+            }
+            selectedCandidates[candidate.id] = candidate
+        }
+        dragPreviousSlot = endSlot
+    }
 
     private func toggleSelection(_ candidate: XDrivePhotoKitScanCandidate) {
         guard selectionMode, authorized, !actionBusy, phase == .active else { return }
@@ -820,6 +969,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         accessibilityFocusedTileID = nil
         cancelSharePreparation()
         selectedCandidates.removeAll()
+        dragLoadedPages.removeAll()
+        resetDragSelection()
         confirmingDelete = false
         generation = UUID()
         scanTask?.cancel()

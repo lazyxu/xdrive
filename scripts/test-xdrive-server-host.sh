@@ -74,6 +74,9 @@ if [[ "$url" == */xdrive-release-attestation.json ]]; then
   exit 0
 fi
 if [[ "$url" == */SHA256SUMS.txt ]]; then
+  if [[ "${TEST_GITLAB_BAD_CHECKSUM:-0}" == 1 && "$url" == */packages/generic/*/SHA256SUMS.txt ]]; then
+    printf '%064d  xdrive-server-install.sh\n' 0 > "$out"; exit 0
+  fi
   if [[ "${TEST_CURL_FAIL_SHA256SUMS:-0}" == "1" ]]; then
     exit 22
   fi
@@ -97,9 +100,19 @@ printf '%s\n' "$url" > "$TEST_STATE/curl-url"
 if [[ "${TEST_CURL_FAIL_GITLAB_DOMAIN:-0}" == "1" && "$url" == http://gitlab.t-fluid.com:1080/* ]]; then
   exit "${TEST_CURL_FAIL_STATUS:-28}"
 fi
+if [[ "$url" == */api/v4/projects/xuliang%2Fxdrive/releases/snapshot ]]; then
+  marker="XDRIVE_RELEASE_COMMIT=0123456789abcdef0123456789abcdef01234567"
+  [[ "${TEST_GITLAB_INVALID_MARKER:-0}" != 1 ]] || marker="invalid-commit"
+  printf '{"tag_name":"snapshot","description":"Rolling snapshot %s"}\n' "$marker" > "$out"
+  exit 0
+fi
 cat > "$out" <<'INSTALL'
 #!/usr/bin/env bash
 set -euo pipefail
+BUILT_COMMIT="${XD_BUILT_COMMIT:-0123456789abcdef0123456789abcdef01234567}"
+BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"
+BUILT_SOURCE="${XD_BUILT_SOURCE:-gitlab}"
+EMBEDDED_DEPLOY_ASSET_MANIFEST_B64="YWJj"
 printf '%s\n' "$*" > "$TEST_STATE/installer-args"
 printf '%s\n' "${XD_GITLAB_BASE_URL:-}" > "$TEST_STATE/installer-gitlab-base"
 readlink /proc/$$/fd/0 > "$TEST_STATE/installer-stdin" || true
@@ -606,9 +619,10 @@ PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab.out" 2>"$TMP/update-gitlab.err"
 
-grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-url"
+grep -q '^http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-0123456789abcdef0123456789abcdef01234567/xdrive-server-install.sh$' "$TMP/state/curl-url"
 grep -q '^--source gitlab --channel master$' "$TMP/state/installer-args"
 grep -q 'downloading master host installer from gitlab' "$TMP/update-gitlab.out"
+grep -q 'GitLab snapshot 0123456789abcdef0123456789abcdef01234567 installer SHA-256 verified' "$TMP/update-gitlab.out"
 
 
 # A matching local GitLab should win without attempting the unreachable domain.
@@ -618,7 +632,7 @@ PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" update --source gitlab --channel master \
   >"$TMP/update-gitlab-local-first.out" 2>"$TMP/update-gitlab-local-first.err"
 grep -q '^http://127.0.0.1:1080/api/v4/projects/xuliang%2Fxdrive$' "$TMP/state/curl-urls"
-grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
+grep -q '^http://127.0.0.1:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-0123456789abcdef0123456789abcdef01234567/xdrive-server-install.sh$' "$TMP/state/curl-urls"
 if grep -q '^http://gitlab.t-fluid.com:1080/' "$TMP/state/curl-urls"; then
   echo "Valid local GitLab must bypass the remote installer URL" >&2
   exit 1
@@ -632,8 +646,8 @@ TEST_LOCAL_GITLAB_PROJECT=wrong TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" update --source gitlab --channel master \
   >"$TMP/update-gitlab-wrong-project.out" 2>"$TMP/update-gitlab-wrong-project.err"
-grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
-if grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"; then
+grep -q '^http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-0123456789abcdef0123456789abcdef01234567/xdrive-server-install.sh$' "$TMP/state/curl-urls"
+if grep -q '^http://127.0.0.1:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-0123456789abcdef0123456789abcdef01234567/xdrive-server-install.sh$' "$TMP/state/curl-urls"; then
   echo "Wrong local project must not be used" >&2
   exit 1
 fi
@@ -644,7 +658,7 @@ TEST_LOCAL_GITLAB_PROJECT=valid XD_GITLAB_BASE_URL=http://gitlab.t-fluid.com:108
 TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" update --source gitlab --channel master \
   >"$TMP/update-gitlab-explicit.out" 2>"$TMP/update-gitlab-explicit.err"
-grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
+grep -q '^http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-0123456789abcdef0123456789abcdef01234567/xdrive-server-install.sh$' "$TMP/state/curl-urls"
 if grep -q '/api/v4/projects/xuliang%2Fxdrive$' "$TMP/state/curl-urls"; then
   echo "Explicit GitLab provider must not be probed or replaced" >&2
   exit 1
@@ -656,8 +670,8 @@ PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab-fallback.out" 2>"$TMP/update-gitlab-fallback.err"
 
-grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
-grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
+grep -q '^http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/releases/snapshot$' "$TMP/state/curl-urls"
+grep -q '^http://127.0.0.1:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-0123456789abcdef0123456789abcdef01234567/xdrive-server-install.sh$' "$TMP/state/curl-urls"
 grep -q '^http://127.0.0.1:1080$' "$TMP/state/installer-gitlab-base"
 grep -q 'retrying via verified local GitLab http://127.0.0.1:1080' "$TMP/update-gitlab-fallback.err"
 
@@ -672,7 +686,7 @@ bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab-http-e
 gitlab_http_status=$?
 set -e
 [[ "$gitlab_http_status" -eq 22 ]]
-if grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/' "$TMP/state/curl-urls"; then
+if grep -q '^http://127.0.0.1:1080/api/v4/projects/xuliang%2Fxdrive/packages/' "$TMP/state/curl-urls"; then
   echo "GitLab HTTP errors must not fall back to localhost installer" >&2
   exit 1
 fi
@@ -688,11 +702,26 @@ for local_case in wrong nested; do
   set -e
   [[ "$rejected_status" -eq 28 ]]
   test ! -e "$TMP/state/installer-args"
-  if grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/' "$TMP/state/curl-urls"; then
+  if grep -q '^http://127.0.0.1:1080/api/v4/projects/xuliang%2Fxdrive/packages/' "$TMP/state/curl-urls"; then
     echo "unverified local GitLab supplied code" >&2
     exit 1
   fi
   grep -q 'local fallback project identity unverified' "$TMP/rejected-$local_case.err"
+done
+
+# Invalid GitLab Release metadata/checksum must never execute raw templates.
+for bad_case in checksum missing invalid-marker; do
+  rm -f "$TMP/state/installer-args"
+  set +e
+  case "$bad_case" in
+    checksum) TEST_GITLAB_BAD_CHECKSUM=1 TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" bash "$HOST" update --source gitlab --channel master >"$TMP/gitlab-bad.out" 2>"$TMP/gitlab-bad.err" ;;
+    missing) TEST_CURL_FAIL_SHA256SUMS=1 TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" bash "$HOST" update --source gitlab --channel master >"$TMP/gitlab-bad.out" 2>"$TMP/gitlab-bad.err" ;;
+    invalid-marker) TEST_GITLAB_INVALID_MARKER=1 TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" bash "$HOST" update --source gitlab --channel master >"$TMP/gitlab-bad.out" 2>"$TMP/gitlab-bad.err" ;;
+  esac
+  rc=$?
+  set -e
+  [[ "$rc" -ne 0 ]] || { echo "Invalid GitLab $bad_case unexpectedly succeeded" >&2; exit 1; }
+  test ! -e "$TMP/state/installer-args"
 done
 
 TEST_STATE="$TMP/state" \

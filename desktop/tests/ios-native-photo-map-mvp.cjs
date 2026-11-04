@@ -25,7 +25,8 @@ test('real native Gallery map uses MapKit and existing local Viewer, no WebView'
 test('only a fresh authorized PhotoKit 64-slot scan supplies local map pins', () => {
   assert.match(scanner, /func nextLocatedPage\(\) throws -> XDrivePhotoKitLocatedPage/)
   assert.match(scanner, /let page = try nextPage\(\)/)
-  assert.match(scanner, /snapshot\.object\(at: page\.startOffset \+ offset\)/)
+  assert.match(scanner, /let logicalIndex = page\.startOffset \+ offset/)
+  assert.match(scanner, /snapshot\.object\(\s*at: stableBoundaryPhysicalIndices\[logicalIndex\] \?\? logicalIndex\s*\)/)
   assert.match(scanner, /asset\.location/)
   assert.match(scanner, /try ensureCurrent\(expected\)/)
   assert.match(map, /仅当前64条范围，不是完整云端地图/)
@@ -376,4 +377,30 @@ test('PhotoKit full-library map is photo-first after scan, with manual scan and 
   assert.match(localMap, /\.font\(\.caption\)\.monospacedDigit\(\)\.lineLimit\(1\)\s*\.accessibilityIdentifier\("native-ios-map-full-library-summary"\)/)
   assert.match(localMap, /Button\(focused \? "显示底部导航" : "专注地图"\)/)
   assert.match(localMap, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?clearReturnCamera\(\)\s*invalidate\(\)/)
+})
+
+
+test('first full-library GPS scan displays inert native MapKit while PhotoKit progress advances', () => {
+  const localMap = map.slice(map.indexOf('struct XDriveIOSNativeLocalPhotoMapScreen: View'))
+  const body = localMap.slice(localMap.indexOf('var body: some View {'),
+                               localMap.indexOf('        .navigationTitle("地图")'))
+  const library = body.slice(body.indexOf('} else if mapScope == .library {'),
+                             body.indexOf('} else if let page {'))
+  const mapIndex = library.indexOf('XDriveIOSMapKitPhotoPage(')
+  const progressIndex = library.indexOf('ProgressView("逐页扫描已授权图库的 GPS 元数据…")')
+  assert.ok(mapIndex >= 0 && progressIndex > mapIndex,
+    'MapKit must stay on-screen during initial scan, with progress beside it')
+  assert.match(library, /if globalComplete \{[\s\S]*?if globalCells\.isEmpty \{[\s\S]*?\}\s*\}\s*\/\/ Keep MapKit mounted/)
+  assert.match(library, /items: \[\], globalCells: globalCells,\s*revision: mapRevision, cameraReturn: globalCamera/)
+  assert.match(localMap, /private var refinedViewportIsCurrent: Bool \{\s*\/\/ Scanned-incomplete cells[\s\S]*?guard globalComplete, !busy else \{ return false \}/)
+  assert.match(library, /canSelectCells: refinedViewportIsCurrent/)
+  assert.match(library, /guard phase == \.active, !busy, globalComplete,\s*refinedViewportIsCurrent/)
+  assert.match(library, /if globalComplete && globalViewport != nil && !refinedViewportIsCurrent \{/)
+  assert.match(library, /if busy \{[\s\S]*?ProgressView\("逐页扫描已授权图库的 GPS 元数据…"\)/)
+  assert.match(library, /accessibilityIdentifier\("native-ios-map-full-library-scan-progress"\)/)
+  assert.match(library, /else if !globalComplete \{\s*Text\("扫描完整授权范围中的位置元数据/)
+  assert.match(library, /if !globalComplete && !busy \{\s*Button\("扫描已授权图库位置"\)/)
+  assert.match(localMap, /globalCells = index\.cells[\s\S]*?globalComplete = true[\s\S]*?mapRevision = UUID\(\)/)
+  assert.match(localMap, /if next\.page\.finished \{ break \}[\s\S]*?try Task\.checkCancellation\(\)[\s\S]*?scanned == total/)
+  assert.doesNotMatch(library, /globalCells = index\.cells|isNetworkAccessAllowed = true|URLSession\(|UploadSession/)
 })
