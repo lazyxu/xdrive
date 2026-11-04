@@ -127,7 +127,6 @@ func TestNotesOwnerImageUploadAndReadAuthAndIntegrity(t *testing.T) {
 	}
 }
 
-
 func TestNotesIOSImageImportUsesDedicatedReadOnlyArchiveRoute(t *testing.T) {
 	image := []byte("GIF89a\\x01\\x00\\x01\\x00\\x80\\x00\\x00\\x00\\x00\\x00\\xff\\xff\\xff\\x21\\xf9\\x04\\x01\\x00\\x00\\x00\\x00\\x2c\\x00\\x00\\x00\\x00\\x01\\x00\\x01\\x00\\x00\\x02\\x02\\x44\\x01\\x00\\x3b")
 	sum := sha256.Sum256(image)

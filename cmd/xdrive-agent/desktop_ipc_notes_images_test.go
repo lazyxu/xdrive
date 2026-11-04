@@ -43,10 +43,12 @@ func (f *notesImageIPCFixture) CloudNotesImportIOSImage(
 	f.imageCalls = append(f.imageCalls, "import-ios:"+id)
 	sum := sha256.Sum256(data)
 	return client.NotesImageReceipt{
-		NodeID: 124, Filename: ipcNotesImageName,
+		NodeID:       124,
+		Filename:     ipcNotesImageName,
 		RelativePath: "_assets/" + id + "/" + ipcNotesImageName,
-		ContentType: "image/gif", Bytes: int64(len(data)),
-		SHA256: hex.EncodeToString(sum[:]),
+		ContentType:  "image/gif",
+		Bytes:        int64(len(data)),
+		SHA256:       hex.EncodeToString(sum[:]),
 	}, nil
 }
 
@@ -205,7 +207,6 @@ func TestDesktopNotesImagesCapabilityIsNotImpliedByTextNotes(t *testing.T) {
 		t.Fatal("text-only Backup-only Agent falsely advertised binary image support")
 	}
 }
-
 
 func TestDesktopNotesIOSArchiveImageImportIsOwnerAndBackupOnlyBounded(t *testing.T) {
 	f := &notesImageIPCFixture{notesIPCControllerFixture: &notesIPCControllerFixture{}}

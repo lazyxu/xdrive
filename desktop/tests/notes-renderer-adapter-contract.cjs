@@ -9,6 +9,28 @@ const root = path.resolve(__dirname, '../..')
 const file = 'desktop/src/renderer/desktopNotesDataPort.ts'
 const source = fs.readFileSync(path.join(root, file), 'utf8')
 
+function loadManualImportPolicy() {
+  const helperSource = fs.readFileSync(path.join(root,
+    'ui/shared/src/notes-manual-import.ts'), 'utf8')
+  const helperCompiled = ts.transpileModule(helperSource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    reportDiagnostics: true,
+  })
+  assert.deepEqual((helperCompiled.diagnostics || []).filter(d =>
+    d.category === ts.DiagnosticCategory.Error).map(d =>
+      ts.flattenDiagnosticMessageText(d.messageText, '\\n')), [])
+  const helperModule = { exports: {} }
+  new Function('module', 'exports', helperCompiled.outputText)(
+    helperModule, helperModule.exports)
+  return helperModule.exports
+}
+
+const manualImportPolicy = loadManualImportPolicy()
+const localRequire = id => {
+  if (id === '../../../ui/shared/src/notes-manual-import') return manualImportPolicy
+  throw new Error('Unexpected Desktop Notes runtime import: ' + id)
+}
+
 function loadPort() {
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS)
   assert.deepEqual(ast.parseDiagnostics.map(d =>
@@ -20,9 +42,10 @@ function loadPort() {
   assert.deepEqual(compiled.diagnostics?.map(d =>
     ts.flattenDiagnosticMessageText(d.messageText, '\n')) || [], [])
   const module = { exports: {} }
-  // All imports are type-only: the JavaScript has no runtime access to
-  // Electron, Server tokens, global fetch or the filesystem.
-  new Function('module', 'exports', compiled.outputText)(module, module.exports)
+  // The only runtime dependency is the pure local manual-import policy.
+  // Electron, Server tokens, global fetch and filesystem access remain absent.
+  new Function('module', 'exports', 'require', compiled.outputText)(
+    module, module.exports, localRequire)
   return module.exports.createDesktopNotesDataPort
 }
 

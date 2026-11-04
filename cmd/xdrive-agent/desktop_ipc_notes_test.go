@@ -143,7 +143,6 @@ func TestDesktopNotesIPCRequiresLoopbackAndOwnerMethods(t *testing.T) {
 	}
 }
 
-
 func TestDesktopNotesManualIOSImportIsExplicitAndBackupOnlyBounded(t *testing.T) {
 	f := &notesIPCControllerFixture{}
 	h := newDesktopIPCHandler(f, "secret", nil)

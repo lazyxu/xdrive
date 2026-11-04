@@ -119,7 +119,6 @@ func (c *Client) NotesUploadMineImage(
 	return out, nil
 }
 
-
 func (c *Client) NotesImportIOSImage(
 	ctx context.Context, noteID string, image []byte,
 ) (NotesImageReceipt, error) {
