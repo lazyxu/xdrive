@@ -1,5 +1,6 @@
 import type { XDriveSynologyNASShare } from './synology-nas-share-inventory'
 import type { XDriveDiagnosticReport } from './mui/DiagnosticsPage'
+import type { XDriveNoteSummary, XDriveNoteDetail, XDriveNoteVersion, XDriveNoteSource } from './mui/NotesPage'
 import type { XDriveFileTextPreview } from './file-preview'
 import type { QuotaUsage, MediaItemRange, MediaAlbum, MediaPlacesPage, MediaPlacesViewportBounds, MediaPlacesMapOverview } from './models'
 import type { XDriveCloudStorageDataSource } from './mui/CloudStoragePage'
@@ -542,6 +543,18 @@ export type XDriveSynologyServerConnection = {
 }
 
 export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommonBatchActions, XDriveLocalBackupScheduleActions {
+  /** Same-origin, Server Owner-scoped Notes only. No generic Agent proxy. */
+  notesAvailable(signal?: AbortSignal): Promise<boolean>
+  notesNamespace(ownerScope: string): Promise<void>
+  notesList(source: XDriveNoteSource, query: string, offset: number, signal?: AbortSignal):
+    Promise<{ items: XDriveNoteSummary[]; next_offset: number }>
+  notesRead(id: string, signal?: AbortSignal): Promise<XDriveNoteDetail>
+  notesCreate(ownerScope: string, title: string, markdown: string): Promise<XDriveNoteSummary>
+  notesSave(ownerScope: string, id: string, title: string, markdown: string,
+            expectedRevision: number): Promise<XDriveNoteSummary>
+  notesDelete(ownerScope: string, id: string, revision: number): Promise<void>
+  notesVersions(id: string, signal?: AbortSignal): Promise<{ node_id: number; items: XDriveNoteVersion[] }>
+  notesHistory(nodeID: number, versionID: number, signal?: AbortSignal): Promise<string>
   list(signal?: AbortSignal): Promise<XDriveSynologyLocalSource[]>
   /** Credential-free, same-user read-only Agent login status. */
   serverConnection(signal?: AbortSignal): Promise<XDriveSynologyServerConnection>
@@ -675,6 +688,8 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-places',
        'cloud-gallery-place-items', 'cloud-gallery-map-overview',
        'cloud-live-motion', 'nas-shares',
+       'cloud-notes-capability', 'cloud-notes-namespace', 'cloud-notes-list', 'cloud-notes-read', 'cloud-notes-create',
+       'cloud-notes-save', 'cloud-notes-delete', 'cloud-notes-versions', 'cloud-notes-history',
       'nas-share-preflight', 'nas-share-create', 'nas-draft-bind', 'nas-drafts', 'server-connection', 'server-login',
       'recovery-review'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
@@ -722,7 +737,88 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
   // Same canonical device cursor constraints as the native Agent and Server.
   const canonicalDeviceID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
   const validPageLimit = (limit: number) => Number.isSafeInteger(limit) && limit >= 1 && limit <= 100
+  const notesID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/
+  const notesOwnerScope = (value: string) => {
+    if (!/^[0-9a-f]{64}$/.test(value)) throw new Error('当前 DSM Owner 身份未经验证')
+    return value
+  }
+  const notesPositiveID = (value: number) => {
+    if (!Number.isSafeInteger(value) || value <= 0) throw new Error('无效的备忘录版本 ID')
+    return value
+  }
+  const notesValidID = (value: string) => {
+    if (!notesID.test(value)) throw new Error('无效的备忘录 ID')
+    return value
+  }
+  const notesWrite = (title: string, markdown: string) => {
+    if (!title.trim() || new TextEncoder().encode(title).length > 255 ||
+        /[\u0000-\u001f\u007f]/.test(title) ||
+        new TextEncoder().encode(markdown).length > 1_048_576 || markdown.includes('\u0000')) {
+      throw new Error('备忘录标题或 Markdown 超出允许范围')
+    }
+  }
   const api: XDriveSynologyBackupLocalClient = {
+    async notesAvailable(signal) {
+      const value = await request<{ available: boolean }>(
+        '/v1/cloud-notes-capability', 'GET', undefined, signal)
+      return value.available === true
+    },
+    async notesNamespace(ownerScope) {
+      const data = await request<{ my_notes_node_id: number; ios_backup_node_id: number }>(
+        '/v1/cloud-notes-namespace', 'POST', { owner_scope: notesOwnerScope(ownerScope) })
+      notesPositiveID(data.my_notes_node_id)
+      notesPositiveID(data.ios_backup_node_id)
+    },
+    notesList(source, query, offset, signal) {
+      if (source !== 'mine' && source !== 'ios_notes') throw new Error('无效的备忘录来源')
+      if (new TextEncoder().encode(query).length > 200 ||
+          !Number.isSafeInteger(offset) || offset < 0 || offset > 10_000_000 || offset % 50 !== 0) {
+        throw new Error('备忘录搜索或分页参数无效')
+      }
+      const params = new URLSearchParams({ source, q: query, offset: String(offset) })
+      return request<{ items: XDriveNoteSummary[]; next_offset: number }>(
+        '/v1/cloud-notes-list?' + params.toString(), 'GET', undefined, signal)
+    },
+    notesRead(id, signal) {
+      return request<XDriveNoteDetail>('/v1/cloud-notes-read?id=' + encodeURIComponent(notesValidID(id)),
+        'GET', undefined, signal)
+    },
+    notesCreate(ownerScope, title, markdown) {
+      notesWrite(title, markdown)
+      return request<XDriveNoteSummary>('/v1/cloud-notes-create', 'POST',
+        { owner_scope: notesOwnerScope(ownerScope), title, markdown })
+    },
+    notesSave(ownerScope, id, title, markdown, expectedRevision) {
+      notesWrite(title, markdown)
+      notesPositiveID(expectedRevision)
+      return request<XDriveNoteSummary>('/v1/cloud-notes-save', 'POST',
+        { owner_scope: notesOwnerScope(ownerScope), id: notesValidID(id), title,
+          markdown, expected_revision: expectedRevision })
+    },
+    async notesDelete(ownerScope, id, revision) {
+      notesPositiveID(revision)
+      const response = await request<{ deleted: boolean }>('/v1/cloud-notes-delete', 'POST',
+        { owner_scope: notesOwnerScope(ownerScope), id: notesValidID(id), revision })
+      if (response.deleted !== true) throw new Error('备忘录删除回执未确认')
+    },
+    notesVersions(id, signal) {
+      return request<{ node_id: number; items: XDriveNoteVersion[] }>(
+        '/v1/cloud-notes-versions?id=' + encodeURIComponent(notesValidID(id)),
+        'GET', undefined, signal)
+    },
+    async notesHistory(nodeID, versionID, signal) {
+      const params = new URLSearchParams({
+        node_id: String(notesPositiveID(nodeID)),
+        version_id: String(notesPositiveID(versionID)),
+      })
+      const response = await request<{ markdown: string }>(
+        '/v1/cloud-notes-history?' + params.toString(), 'GET', undefined, signal)
+      if (typeof response.markdown !== 'string' ||
+          new TextEncoder().encode(response.markdown).length > 1_048_576) {
+        throw new Error('备忘录历史正文无效')
+      }
+      return response.markdown
+    },
     async nativeDrafts(signal) {
       const raw = await request<unknown>('/v1/nas-drafts', 'GET', undefined, signal)
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
