@@ -747,41 +747,24 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 if let player = model.player {
                     videoSurface(player)
                 } else if let live = model.live {
-                    VStack(spacing: 10) {
-                        if showsStaticStill, let image = model.still {
-                            XDriveIOSNativeZoomablePhotoView(image: image)
-                                .onNavigateSwipe { showNeighbor($0) }
-                                .onChromeTap { toggleChrome() }
-                                .accessibilityLabel("实况静态照片，可双指缩放")
-                        } else {
-                            XDriveIOSNativeLivePhotoView(
-                                live: live, playbackRequest: livePlaybackRequest,
-                                hintReady: model.liveIsFinal && currentPageAuthorized &&
-                                    !model.downloadingFromICloud
-                            )
-                            .xdriveNativeViewerPaging { showNeighbor($0) }
-                            .simultaneousGesture(TapGesture().onEnded { toggleChrome() })
-                            .id(viewed.id)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .accessibilityLabel("实况照片，长按播放或左右滑动切换")
-                        }
-                        if showChrome {
-                        HStack(spacing: 12) {
-                            Button("播放实况") {
-                                showsStaticStill = false
-                                livePlaybackRequest = UUID()
-                            }
-                            .accessibilityIdentifier("native-ios-local-live-play")
-                            if model.still != nil {
-                                Button(showsStaticStill ? "返回实况照片" : "放大静态照片") {
-                                    if !showsStaticStill { livePlaybackRequest = nil }
-                                    showsStaticStill.toggle()
-                                }
-                                .accessibilityIdentifier("native-ios-local-live-static-toggle")
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        }
+                    // PHLivePhotoView owns native hold-to-play. Extra commands
+                    // live in More instead of shrinking the immersive canvas.
+                    if showsStaticStill, let image = model.still {
+                        XDriveIOSNativeZoomablePhotoView(image: image)
+                            .onNavigateSwipe { showNeighbor($0) }
+                            .onChromeTap { toggleChrome() }
+                            .accessibilityLabel("实况静态照片，可双指缩放")
+                    } else {
+                        XDriveIOSNativeLivePhotoView(
+                            live: live, playbackRequest: livePlaybackRequest,
+                            hintReady: model.liveIsFinal && currentPageAuthorized &&
+                                !model.downloadingFromICloud
+                        )
+                        .xdriveNativeViewerPaging { showNeighbor($0) }
+                        .simultaneousGesture(TapGesture().onEnded { toggleChrome() })
+                        .id(viewed.id)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityLabel("实况照片，长按播放或左右滑动切换")
                     }
                 } else if let image = model.still {
                     XDriveIOSNativeZoomablePhotoView(image: image)
@@ -830,7 +813,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             .safeAreaInset(edge: .bottom) {
                 if showChrome {
                 if model.needsICloudFetch || model.downloadingFromICloud ||
-                   visibleItems.count > 1 || canCross(-1) || canCross(1) {
+                   (currentPageAuthorized && visibleItems.count > 1) {
                     VStack(spacing: 8) {
                         if model.downloadingFromICloud {
                             ProgressView("正在从 iCloud 获取当前原件…")
@@ -853,24 +836,6 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                                     model.downloadingFromICloud,
                                 onSelect: { next in selectFilmstrip(next) }
                             )
-                        }
-                        if visibleItems.count > 1 || canCross(-1) || canCross(1) {
-                            HStack(spacing: 12) {
-                                Button("上一项") { showNeighbor(-1) }
-                                    .disabled(crossing || (neighbor(-1) == nil && !canCross(-1)))
-                                    .accessibilityIdentifier("native-ios-local-viewer-previous")
-                                Spacer(minLength: 4)
-                                Text(loadedPosition.map {
-                                    "\($0 + 1)/\(visibleItems.count)（已加载）"
-                                } ?? "当前媒体已变化")
-                                    .font(.caption).monospacedDigit()
-                                    .accessibilityIdentifier("native-ios-local-viewer-position")
-                                Spacer(minLength: 4)
-                                Button("下一项") { showNeighbor(1) }
-                                    .disabled(crossing || (neighbor(1) == nil && !canCross(1)))
-                                    .accessibilityIdentifier("native-ios-local-viewer-next")
-                            }
-                            .accessibilityIdentifier("native-ios-local-viewer-neighbors")
                         }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
@@ -949,6 +914,32 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                             showingPhotoInfo = true
                         }
                         .accessibilityIdentifier("native-ios-local-viewer-location-info")
+                        // Keep xDrive-only controls accessible without a
+                        // nonnative bottom row or Live buttons on the canvas.
+                        if model.live != nil {
+                            Button("播放实况") {
+                                guard currentPageAuthorized, model.live != nil else { return }
+                                showsStaticStill = false
+                                livePlaybackRequest = UUID()
+                            }
+                            .accessibilityIdentifier("native-ios-local-live-play")
+                            if model.still != nil {
+                                Button(showsStaticStill ? "返回实况照片" : "放大静态照片") {
+                                    guard currentPageAuthorized else { return }
+                                    if !showsStaticStill { livePlaybackRequest = nil }
+                                    showsStaticStill.toggle()
+                                }
+                                .accessibilityIdentifier("native-ios-local-live-static-toggle")
+                            }
+                        }
+                        if visibleItems.count > 1 || canCross(-1) || canCross(1) {
+                            Button("上一项") { showNeighbor(-1) }
+                                .disabled(neighbor(-1) == nil && !canCross(-1))
+                                .accessibilityIdentifier("native-ios-local-viewer-previous")
+                            Button("下一项") { showNeighbor(1) }
+                                .disabled(neighbor(1) == nil && !canCross(1))
+                                .accessibilityIdentifier("native-ios-local-viewer-next")
+                        }
                         Divider()
                         // Video recovery stays accessible in compact landscape.
                         if currentPageAuthorized, model.player != nil {

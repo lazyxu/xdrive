@@ -45,7 +45,7 @@ test('iOS native local fullscreen keeps one modal and cancels old media between 
   assert.match(viewer, /model\.load\(viewed\)/)
   assert.match(viewer, /native-ios-local-viewer-previous/)
   assert.match(viewer, /native-ios-local-viewer-next/)
-  assert.match(viewer, /（已加载）/)
+  assert.doesNotMatch(viewer, /（已加载）/)
   assert.match(viewer, /\.onChange\(of: changes\.generation\)[\s\S]*?model\.cancel\(\)[\s\S]*?dismiss\(\)/)
   assert.match(viewer, /\.onDisappear \{[\s\S]*?changes\.stop\(\)[\s\S]*?model\.cancel\(\)/)
   assert.doesNotMatch(viewer, /nextPage\(|requestAuthorization|UploadSession|\.upload\(/)
@@ -96,3 +96,36 @@ test('native PhotoKit video initial failure and manual retry preserve explicit i
   assert.match(viewer, /native-ios-local-live-static-toggle/);
   assert.match(viewer, /\.onNavigateSwipe \{ showNeighbor\(\$0\) \}/);
 });
+ 
+test('local Photos fullscreen reserves its canvas for content and keeps extra actions in More', () => {
+  const begin = gallery.indexOf('struct XDriveIOSNativeLocalPhotoDetail: View')
+  const end = gallery.indexOf('/// Read-only, 64-at-a-time PhotoKit grid.', begin)
+  const viewer = gallery.slice(begin, end)
+  const liveStart = viewer.indexOf('} else if let live = model.live {')
+  const liveEnd = viewer.indexOf('} else if let image = model.still {', liveStart)
+  const canvas = viewer.slice(liveStart, liveEnd)
+  const insetStart = viewer.indexOf('.safeAreaInset(edge: .bottom)')
+  const toolbarStart = viewer.indexOf('            .toolbar {', insetStart)
+  const bottom = viewer.slice(insetStart, toolbarStart)
+  const menuStart = viewer.indexOf('                    Menu {', toolbarStart)
+  const menuEnd = viewer.indexOf('                    } label: {', menuStart)
+  const more = viewer.slice(menuStart, menuEnd)
+  assert.ok(liveStart >= 0 && liveEnd > liveStart && insetStart > liveEnd &&
+    toolbarStart > insetStart && menuStart >= toolbarStart && menuEnd > menuStart)
+  assert.match(canvas, /XDriveIOSNativeLivePhotoView\(/)
+  assert.match(canvas, /XDriveIOSNativeZoomablePhotoView\(/)
+  assert.match(canvas, /\.xdriveNativeViewerPaging \{ showNeighbor\(\$0\) \}/)
+  assert.doesNotMatch(canvas, /VStack\(spacing: 10\)|Button\("播放实况"\)/)
+  assert.match(bottom, /XDriveIOSNativeLocalViewerFilmstrip\(/)
+  for (const id of ['native-ios-local-viewer-bottom-share',
+    'native-ios-local-viewer-bottom-favorite', 'native-ios-local-viewer-bottom-delete'])
+    assert.ok(bottom.includes(id), 'missing native primary action: ' + id)
+  assert.doesNotMatch(bottom, /Button\("上一项"\)|Button\("下一项"\)|（已加载）/)
+  for (const id of ['native-ios-local-live-play',
+    'native-ios-local-live-static-toggle', 'native-ios-local-viewer-previous',
+    'native-ios-local-viewer-next'])
+    assert.ok(more.includes(id), 'missing preserved More command: ' + id)
+  assert.match(more, /guard currentPageAuthorized, model\.live != nil/)
+  assert.match(more, /neighbor\(-1\) == nil && !canCross\(-1\)/)
+  assert.match(more, /neighbor\(1\) == nil && !canCross\(1\)/)
+})
