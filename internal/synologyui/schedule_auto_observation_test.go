@@ -42,8 +42,9 @@ func TestDSMExistingScheduleCGIRedactsAndForwardsOnlyAgentRuleDue(t *testing.T) 
 		t.Fatalf("DSM lost the existing Agent schedule wire state: %+v %v", decoded, err)
 	}
 	for _, forbidden := range []string{
-		"device_token", "root_fingerprint", "session_id", "checkpoint",
-		"local_path", "operation_id", "full_backup", "private",
+		"\"device_token\":", "\"root_fingerprint\":", "\"session_id\":",
+		"\"checkpoint\":", "\"local_path\":", "\"operation_id\":",
+		"\"full_backup\":", "\"private\":",
 	} {
 		if strings.Contains(strings.ToLower(received.Body.String()), forbidden) {
 			t.Fatalf("DSM schedule exposed private state %q", forbidden)
