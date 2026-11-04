@@ -218,7 +218,7 @@ test('shared FileExplorer provides internal and external drag and drop contracts
     'event.dataTransfer.setDragImage(ghost, 18, 18)',
     "const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'",
     "event.dataTransfer.types.includes('Files')",
-    'draggable={!compactTouch && Boolean(onDropItemsToFolder) && !renaming}',
+    'draggable={!compactTouch && Boolean(onDropItemsToFolder || onNativeDragOutItem) && !renaming}',
     'updateDragAutoScroll(event.clientY)',
     'onDrop={(event) => dropOnCrumb(event, crumb)}',
     'dropTargetCrumbID',

@@ -108,6 +108,8 @@ const ui = {
   XDriveFileNameDialog: sharedNameDialog,
   XDriveStatePanel: 'state-panel',
   XDriveFileExplorerAvailabilityBadge: 'availability-badge',
+  XDriveCloudRootIcon: 'xdrive-cloud-root-icon',
+  XDRIVE_CLOUD_ROOT_LABEL: 'xDrive 云端',
   XDriveFileExplorerItemIcon: 'file-icon',
   XDriveFileExplorerThumbnail: 'file-thumbnail',
   XDriveFileExplorerThumbnailProvider: 'thumbnail-provider',

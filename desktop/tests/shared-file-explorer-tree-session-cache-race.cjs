@@ -159,6 +159,9 @@ function loadNavigationPane(runtime) {
     if (request === './FileExplorerThumbnail') {
       return { XDriveFileExplorerThumbnail: 'XDriveFileExplorerThumbnail' }
     }
+    if (request === './XDriveCloudRootIcon') {
+      return { XDriveCloudRootIcon: 'XDriveCloudRootIcon', XDRIVE_CLOUD_ROOT_LABEL: 'xDrive 云端' }
+    }
     if (request === './FileExplorer') {
       return {
         XDriveFileExplorerAvailabilityBadge: 'XDriveFileExplorerAvailabilityBadge',
@@ -243,7 +246,7 @@ test('navigation tree cache cannot cross account lifecycle when root ids are reu
   }))
 
   let tree = render()
-  const expandA = findByAriaLabel(tree, '展开 我的文件')
+  const expandA = findByAriaLabel(tree, '展开 xDrive 云端')
   assert.ok(expandA, 'root expand control must be present')
   expandA.props.onClick({ stopPropagation() {} })
   await flushAsync()
@@ -277,7 +280,7 @@ test('navigation tree cache cannot cross account lifecycle when root ids are reu
     'account B must not render children cached by account A when root ids are reused',
   )
 
-  const expandB = findByAriaLabel(tree, '展开 我的文件')
+  const expandB = findByAriaLabel(tree, '展开 xDrive 云端')
   assert.ok(expandB, 'tree should reset expansion after account lifecycle changes')
   expandB.props.onClick({ stopPropagation() {} })
   await flushAsync()
@@ -305,7 +308,7 @@ test('P102 replacing the Server/Agent loader with reused root id never paints st
     onNavigate: () => {},
   }))
   let tree = render()
-  findByAriaLabel(tree, '展开 我的文件').props.onClick({ stopPropagation() {} })
+  findByAriaLabel(tree, '展开 xDrive 云端').props.onClick({ stopPropagation() {} })
   await flushAsync()
   tree = render()
   tree = render()
@@ -329,7 +332,7 @@ test('P102 replacing the Server/Agent loader with reused root id never paints st
 
   // Only a new accepted first page may reopen the tree.
   tree = render()
-  findByAriaLabel(tree, '展开 我的文件').props.onClick({ stopPropagation() {} })
+  findByAriaLabel(tree, '展开 xDrive 云端').props.onClick({ stopPropagation() {} })
   await flushAsync()
   tree = render()
   tree = render()

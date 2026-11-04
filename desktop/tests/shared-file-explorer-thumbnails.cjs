@@ -50,7 +50,10 @@ test('Details, Grid, properties, Quick Access and Recent use the shared thumbnai
   assert.ok(explorer.includes('{thumbnailForItem(item)}'), 'Grid thumbnail is missing')
   assert.ok(explorer.includes('thumbnailForItem(propertiesDialogItem)'), 'properties thumbnail is missing')
   assert.ok(pane.includes('const renderItemVisual ='), 'navigation surfaces must share one thumbnail/type/badge visual helper')
-  assert.ok((pane.match(/\{renderItemVisual\(/g) || []).length >= 4, 'tree, Quick Access, Favorites and Recent must reuse the shared visual helper')
+  assert.ok((pane.match(/\{renderItemVisual\(/g) || []).length >= 3,
+    'ordinary tree folders, Quick Access, Favorites and Recent reuse the shared visual helper')
+  assert.ok(pane.includes('depth === 0') && pane.includes('<XDriveCloudRootIcon'),
+    'only the verified cloud root uses the new distinct external-drive glyph')
   assert.ok(pane.includes('displayedQuickAccessItems.map'))
   assert.ok(pane.includes('recentItems.slice(0, 8).map'))
   assert.ok(pane.includes("xDriveFileSupportsThumbnail(item.name, 'file')"))

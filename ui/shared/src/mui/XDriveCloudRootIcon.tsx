@@ -1,4 +1,4 @@
-import SvgIcon from '@mui/material/SvgIcon'
+import { SvgIcon } from '@mui/material'
 import type { SvgIconProps } from '@mui/material/SvgIcon'
 
 /** Visual root identity; never mutate the underlying server Node name or ID. */
