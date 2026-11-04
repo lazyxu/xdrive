@@ -68,4 +68,11 @@ test('Desktop shell actions resolve ordinary rows from the active workspace tab'
   assert.equal(adapter.includes('crumbs.slice(1)'), false, 'outer initial-route breadcrumbs must not be used')
   assert.ok(desktopExplorer.includes('await hostPort.write.openPath(relativePath, reveal)'))
   assert.ok(desktopExplorer.includes('nativePort.startNativeDragOut(relativePath)'))
+
+  const availabilityStart = desktopExplorer.indexOf('const setNodeAvailability = useCallback(')
+  const availabilityEnd = desktopExplorer.indexOf('\n\n  const openLocalNode', availabilityStart)
+  assert.ok(availabilityStart >= 0 && availabilityEnd > availabilityStart)
+  const availability = desktopExplorer.slice(availabilityStart, availabilityEnd)
+  assert.ok(availability.includes('explorerCrumbs'), 'availability actions must capture the active tab path')
+  assert.equal(availability.includes('    crumbs,'), false, 'availability actions must not retain outer route crumbs')
 })

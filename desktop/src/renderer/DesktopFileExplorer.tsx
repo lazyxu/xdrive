@@ -1399,7 +1399,7 @@ export default function DesktopFileExplorer({
     }
   }, [
     beginActionBusy,
-    crumbs,
+    explorerCrumbs,
     finishActionBusy,
     isActionBusyCurrent,
     onError,
