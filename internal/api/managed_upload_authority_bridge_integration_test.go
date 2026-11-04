@@ -26,7 +26,7 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	source := meta.Source{
 		OwnerID: owner.ID, Name: "Photos", Kind: synologySourceKind,
 		Direction: meta.SourceDirectionPull,
-		SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
+		SyncMode:  meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
 		Status: meta.SourceStatusActive, Revision: 1,
 		TargetNodeID: &target.ID, TargetManaged: true,
 	}
@@ -61,15 +61,13 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, regular, owner.ID, ordinary.ID, req); err != nil {
 		t.Fatalf("ordinary Files folder was rejected: %v", err)
 	}
-	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, regular, owner.ID, child.ID, req);
-		!errors.Is(err, errManagedSourceWriteDenied) {
+	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, regular, owner.ID, child.ID, req); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("ordinary Owner gained Pull SourceRun writes: %v", err)
 	}
 	forged := req
 	forged.ResumeKey = "lp2_" + strings.Repeat("a", 64)
 	forged.SHA256 = strings.Repeat("b", 64)
-	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, regular, owner.ID, child.ID, forged);
-		!errors.Is(err, errManagedSourceWriteDenied) {
+	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, regular, owner.ID, child.ID, forged); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("fabricated lp2_ prefix bypassed Source authorization: %v", err)
 	}
 
@@ -77,12 +75,10 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, scoped, owner.ID, child.ID, req); err != nil {
 		t.Fatalf("valid Pull worker lost managed upload capability: %v", err)
 	}
-	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, scoped, owner.ID, ordinary.ID, req);
-		!errors.Is(err, errManagedSourceWriteDenied) {
+	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, scoped, owner.ID, ordinary.ID, req); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("Pull SourceRun escaped its managed subtree: %v", err)
 	}
-	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, wrongRun, owner.ID, child.ID, req);
-		!errors.Is(err, errManagedSourceWriteDenied) {
+	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, wrongRun, owner.ID, child.ID, req); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("unrelated SourceRun gained target writes: %v", err)
 	}
 
@@ -94,8 +90,7 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, scoped, session, child.ID); err != nil {
 		t.Fatalf("valid Pull worker Finalize authorization rejected: %v", err)
 	}
-	if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, regular, session, child.ID);
-		!errors.Is(err, errManagedSourceWriteDenied) {
+	if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, regular, session, child.ID); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("ordinary Owner gained SourceRun Finalize rights: %v", err)
 	}
 	// Cancellation revokes a still-signed SourceRun writer before the JWT
@@ -105,16 +100,14 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 		Update("cancel_requested_at", &cancelled).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, scoped, session, child.ID);
-		!errors.Is(err, errManagedSourceWriteDenied) {
+	if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, scoped, session, child.ID); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("cancelled SourceRun still finalized a managed upload: %v", err)
 	}
 	if err := db.Model(&meta.SyncRun{}).Where("id = ?", runID).
 		Update("status", meta.SyncRunStatusCompleted).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, scoped, owner.ID, child.ID, req);
-		!errors.Is(err, errManagedSourceWriteDenied) {
+	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, scoped, owner.ID, child.ID, req); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("completed SourceRun continued writing: %v", err)
 	}
 }

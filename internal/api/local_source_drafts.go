@@ -130,7 +130,6 @@ func (s *Server) discardLocalSourceDraft(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-
 // discardPristineLocalManagedTargetTx is only reachable after verifying the
 // creating device, Source revision, paused status and absence of sync history.
 // Do not detach a Source that is already visible via a Share, pin, upload, or
@@ -156,9 +155,9 @@ func discardPristineLocalManagedTargetTx(ctx context.Context, tx *gorm.DB, sourc
 	// Any direct or indirect metadata reference must make cancellation
 	// non-destructive. Tests with a minimal schema may omit optional tables.
 	type guard struct {
-		model any
+		model     any
 		predicate string
-		args []any
+		args      []any
 	}
 	checks := []guard{
 		{&meta.Node{}, "parent_id = ?", []any{target.ID}},
