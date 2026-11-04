@@ -71,7 +71,7 @@ test('native Browse home uses a verified cloud location rather than automaticall
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
   assert.match(view, /XDriveIOSNativeFilesTrashScreen\(login: login\)/)
   assert.match(view, /List \{\s*filesHeader\s*if isHome \{\s*filesHome\s*\} else \{/)
-  assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*return\s*\}/)
+  assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*return\s*\}/)
   assert.match(view, /queryDraft = ""\s*activeQuery = ""\s*searchReturnOffset = nil/)
 });
 
@@ -103,4 +103,28 @@ test('native Files More menu keeps real sort, view and upload actions with bound
   assert.match(view, /XDriveIOSNativeFilesContinuousWindowPolicy\.mergePlan\(/)
   assert.match(view, /requestContinuousNeighbor\(for: entry\.id\)/)
   assert.doesNotMatch(view, /requestContinuationIfNeeded\(/)
+})
+
+
+test('Browse home displays only verified favorite folders as native direct navigation links', () => {
+  assert.match(view, /@StateObject private var favoriteShortcuts = XDriveIOSNativeFilesCollectionPageModel\(\)/)
+  assert.match(view, /@State private var favoriteShortcutsOwner: XDriveNativeOwnerRoot\?/)
+  assert.match(view, /private var verifiedFavoriteFolders: \[XDriveIOSNativeFilesCollectionItem\]/)
+  assert.match(view, /guard isHome, favoriteShortcuts\.verified,/)
+  assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
+  assert.match(view, /\$0\.node\.isDirectory &&\s*XDriveIOSNativeFilesCollectionsPolicy\.validItem\(\$0, kind: \.favorites\)/)
+  assert.match(view, /\.prefix\(8\)/)
+  const home = view.slice(view.indexOf('@ViewBuilder private var filesHome:'), view.indexOf('@ViewBuilder private var filesHeader:'))
+  assert.match(home, /Section\("个人收藏"\)/)
+  assert.match(home, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
+  assert.match(home, /ForEach\(verifiedFavoriteFolders\) \{ item in/)
+  assert.match(home, /XDriveIOSNativeFilesBrowser\(\s*login: login, folderID: item\.node\.id,\s*folderName: item\.node\.name/)
+  assert.match(home, /native-ios-files-favorite-folder-/)
+  assert.match(home, /if favoriteShortcuts\.loading \{/)
+  assert.match(home, /Button\("重试"\) \{ loadFavoriteShortcuts\(\) \}/)
+  assert.match(view, /favoriteShortcuts\.load\(\.favorites, login: login\)/)
+  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil/)
+  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*if isHome \{ loadFavoriteShortcuts\(\) \}/)
+  assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*return/)
+  assert.doesNotMatch(home, /XDriveIOSNativeFilesCollectionsTransport\(|URLSession|\/api\/v1\/file-favorites/)
 })

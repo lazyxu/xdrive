@@ -381,6 +381,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
+    @StateObject private var favoriteShortcuts = XDriveIOSNativeFilesCollectionPageModel()
+    @State private var favoriteShortcutsOwner: XDriveNativeOwnerRoot?
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
     @StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel()
     @StateObject private var batchExport = XDriveIOSNativeFilesBatchExportModel()
@@ -457,6 +459,21 @@ struct XDriveIOSNativeFilesBrowser: View {
     /// arbitrary server directory. Enter the verified cloud root explicitly.
     private var isHome: Bool { folder == nil && activeQuery.isEmpty }
 
+    /// Present only a few folders from the existing, bounded and
+    /// Owner-verified Favorites projection. Never infer navigation IDs from
+    /// a path or reuse another account's stale favorite directory.
+    private var verifiedFavoriteFolders: [XDriveIOSNativeFilesCollectionItem] {
+        guard isHome, favoriteShortcuts.verified,
+              let expected = favoriteShortcutsOwner,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
+            return []
+        }
+        return Array(favoriteShortcuts.items.filter {
+            $0.node.isDirectory &&
+                XDriveIOSNativeFilesCollectionsPolicy.validItem($0, kind: .favorites)
+        }.prefix(8))
+    }
+
     @ViewBuilder private var filesHome: some View {
         Section("位置") {
             if let owner = login.owner {
@@ -495,6 +512,38 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
             .accessibilityIdentifier("native-ios-files-open-favorites")
+            ForEach(verifiedFavoriteFolders) { item in
+                NavigationLink {
+                    XDriveIOSNativeFilesBrowser(
+                        login: login, folderID: item.node.id,
+                        folderName: item.node.name
+                    )
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "folder.fill")
+                            .foregroundStyle(Color.accentColor)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.node.name).lineLimit(1)
+                            Text(item.path)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 4)
+                    }
+                }
+                .accessibilityIdentifier("native-ios-files-favorite-folder-\(item.id)")
+            }
+            if favoriteShortcuts.loading {
+                ProgressView("正在读取收藏文件夹…")
+            } else if let error = favoriteShortcuts.error, login.owner != nil {
+                HStack {
+                    Text(error).font(.footnote).foregroundStyle(.secondary)
+                    Spacer(minLength: 4)
+                    Button("重试") { loadFavoriteShortcuts() }
+                        .accessibilityIdentifier("native-ios-files-favorite-retry")
+                }
+            }
         }
         Section("快捷访问") {
             NavigationLink {
@@ -1148,6 +1197,8 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onAppear { reload() }
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
+            favoriteShortcuts.invalidate()
+            favoriteShortcutsOwner = nil
             batchTrash.invalidate()
             batchTarget.invalidate()
             if !showingBatchShare { batchExport.invalidate() }
@@ -1181,6 +1232,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             pendingNavigationReturnNodeID = nil
             searchError = nil
             model.invalidate()
+            favoriteShortcuts.invalidate()
+            favoriteShortcutsOwner = nil
+            if isHome { loadFavoriteShortcuts() }
         }
         .onChange(of: model.verifiedPage) { now in
             if !now { selectedIDs.removeAll(); selecting = false }
@@ -1526,6 +1580,14 @@ struct XDriveIOSNativeFilesBrowser: View {
         reload()
     }
 
+    private func loadFavoriteShortcuts() {
+        favoriteShortcuts.invalidate()
+        favoriteShortcutsOwner = nil
+        guard isHome, let owner = login.owner else { return }
+        favoriteShortcutsOwner = owner
+        favoriteShortcuts.load(.favorites, login: login)
+    }
+
     private func reload(resetOffset: Bool = false) {
         selecting = false
         selectedIDs.removeAll()
@@ -1539,8 +1601,11 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         if isHome {
             model.invalidate()
+            loadFavoriteShortcuts()
             return
         }
+        favoriteShortcuts.invalidate()
+        favoriteShortcutsOwner = nil
         guard let parentID else {
             model.invalidate()
             return
