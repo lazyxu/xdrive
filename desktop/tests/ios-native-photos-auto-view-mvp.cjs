@@ -395,3 +395,21 @@ test('new-only foreground auto plan keeps explicit Owner choice and never counts
   // unification must be allowed instead of frozen out by this contract.
   assert.match(background, /XDriveIOSForegroundPhotoBackupMVP\(/)
 })
+
+test('only-new foreground consent installs its durable PhotoKit baseline and replays bounded records without claiming an ACK', () => {
+  const schedule = read('ios/XDriveIOS/NativePhotoBackupController.swift')
+  const changeQueue = read('ios/XDriveIOS/PhotoKitPersistentBackupQueue.swift')
+  const configure = schedule.slice(schedule.indexOf('func configure('), schedule.indexOf('func disable('))
+  const automatic = schedule.slice(schedule.indexOf('private func start(login:'), schedule.indexOf('private func runFocused('))
+  assert.match(configure, /if startRule == \.onlyNew[\s\S]*?installNewOnlyBaseline\(owner: selected\)/)
+  assert.ok(configure.indexOf('installNewOnlyBaseline(owner: selected)') < configure.indexOf('schedule = try store.configure('))
+  assert.match(configure, /let second = try await login\.verifiedAuthorization\(\)/)
+  assert.match(automatic, /activePlan\.backupStartRule == \.onlyNew/)
+  const replay = automatic.indexOf('changeQueue.replay(')
+  const reserve = automatic.indexOf('.reserveDue(owner: selected)')
+  assert.ok(replay >= 0 && reserve > replay, 'durable replay must precede automatic due reservation')
+  assert.match(automatic, /requiresExplicitBaseline[\s\S]*?never install a newer token automatically/)
+  assert.match(changeQueue, /guard \(1\.\.\.4\)\.contains\(maximumEvents\)/)
+  assert.match(changeQueue, /if progress\.events >= maximumEvents \{ break \}/)
+  assert.doesNotMatch(changeQueue, /\.uploadPrepared\(|\.finalize\(|\.deleteNode\(/)
+})

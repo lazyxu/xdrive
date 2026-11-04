@@ -13,6 +13,7 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         case unauthorizedOrChanged
         case requiresExplicitBaseline
         case invalidArchivedToken
+        case invalidReplayLimit
     }
 
     struct Replay: Equatable {
@@ -71,7 +72,11 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
     /// IDs are committed together. Expired/unavailable history is propagated
     /// to the caller for a conservative full-library reconciliation; NEVER
     /// replace the baseline token or report those assets as backed up.
-    func replay(owner: XDriveNativeOwnerRoot) throws -> Replay {
+    func replay(owner: XDriveNativeOwnerRoot,
+                maximumEvents: Int = 2) throws -> Replay {
+        guard (1...4).contains(maximumEvents) else {
+            throw Failure.invalidReplayLimit
+        }
         try verifyOwner(owner)
         guard let original = try store.baseline() else {
             throw Failure.requiresExplicitBaseline
@@ -111,6 +116,9 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
             progress.updated += applied.updated
             progress.deleted += applied.deleted
             progress.events += 1
+            // The saved per-record token is the next replay checkpoint.
+            // Never traverse an unbounded change history in one auto tick.
+            if progress.events >= maximumEvents { break }
         }
         try verifyAuthorization(stillMatches: epoch)
         return progress

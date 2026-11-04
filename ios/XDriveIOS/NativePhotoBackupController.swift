@@ -213,6 +213,18 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 return
             }
             try Task.checkCancellation()
+            // Only the explicitly consented "only new" plan installs a
+            // PhotoKit cursor. This records candidates, not Server receipts.
+            // Reusing an earlier baseline is safer than skipping old edits.
+            if startRule == .onlyNew {
+                let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                    owner: selected
+                )
+                _ = try await changeQueue.installNewOnlyBaseline(owner: selected)
+                try Task.checkCancellation()
+            }
+            // An Owner/permission switch while awaiting PhotoKit must not
+            // activate a now-stale consent or create a running schedule.
             let second = try await login.verifiedAuthorization()
             guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
                   XDriveIOSNativePhotoOwnerScope.matches(first.owner, selected),
@@ -374,6 +386,32 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     let newOnlySince: Date?
                     let manualStartEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?
                     if kind == .automatic {
+                        // Durably capture bounded PhotoKit changes BEFORE
+                        // reserving the old 256-slot scanner window. The
+                        // queued IDs are not yet upload candidates here:
+                        // only the existing original writer can prove an ACK.
+                        if let activePlan = XDriveIOSPhotoAutoScheduleStore.shared
+                            .status(owner: selected),
+                           activePlan.backupStartRule == .onlyNew {
+                            let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                                owner: selected
+                            )
+                            do {
+                                _ = try await changeQueue.replay(
+                                    owner: selected, maximumEvents: 2
+                                )
+                            } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                                .requiresExplicitBaseline {
+                                // Legacy new-only plans predate this queue.
+                                // Keep their existing full-window metadata scan;
+                                // never install a newer token automatically.
+                            }
+                            try Task.checkCancellation()
+                            guard self.displayEpoch == uiEpoch,
+                                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                                  UIApplication.shared.applicationState == .active
+                            else { throw XDriveIOSNativeSessionError.staleSession }
+                        }
                         guard let due = try XDriveIOSPhotoAutoScheduleStore.shared
                             .reserveDue(owner: selected) else {
                             self.refresh(owner: selected)
