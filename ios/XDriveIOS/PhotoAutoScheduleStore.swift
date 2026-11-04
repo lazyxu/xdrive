@@ -73,6 +73,9 @@ final class XDriveIOSPhotoAutoScheduleStore {
                    allowICloud: Bool, startRule: XDriveIOSPhotoAutoStartRule,
                    enabledAt: Date, sourceID: UInt64,
                    targetNodeID: UInt64) throws -> State {
+        guard sourceID > 0, targetNodeID > 0,
+              targetNodeID != owner.rootNodeID,
+              XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes) else {
             throw XDriveIOSPhotoAutoScheduleError.unsupportedInterval
         }
         guard enabledAt.timeIntervalSince1970.isFinite else {
