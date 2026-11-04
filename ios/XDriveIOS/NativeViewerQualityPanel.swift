@@ -43,41 +43,81 @@ struct XDriveIOSNativeViewerQualityPanel: View {
         return size.int64Value
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Button {
-                expanded.toggle()
-            } label: {
-                Text("画质：\(source)")
-                    .font(.caption)
-                    .lineLimit(1)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("native-ios-viewer-quality-toggle")
+    private var showsLowResolutionWarning: Bool {
+        source.contains("缩略图") || source.contains("低清")
+    }
 
-            if expanded {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("来源格式：\(resourceFormat)")
-                    Text("当前已解码：\(pixelWidth) × \(pixelHeight)")
-                    Text("\(archiveOriginal ? "归档容器" : "原件")：\(sizeLabel(originalBytes))")
-                    if let liveFiles {
-                        Text("实况静态：已加载到临时文件 · \(sizeLabel(stagedSize(liveFiles.stillURL)))")
-                        Text("实况动态：已加载到临时文件 · \(sizeLabel(stagedSize(liveFiles.motionURL)))")
-                    } else if archiveOriginal {
-                        Text("实况双资源：尚未完整加载")
-                    }
-                    Text("此处的“已加载”仅指本次会话的内存或临时文件，并非已保存到设备相册。")
-                        .foregroundStyle(.white.opacity(0.75))
-                }
-                .font(.caption2)
-                .accessibilityIdentifier("native-ios-viewer-quality-details")
+    var body: some View {
+        Button {
+            expanded = true
+        } label: {
+            // Keep the extra xDrive quality affordance compact on the
+            // native photo canvas. Metadata belongs in a separate sheet.
+            HStack(spacing: 5) {
+                Image(systemName: "info.circle")
+                Text(showsLowResolutionWarning ? "低清" : "画质")
+                    .font(.caption2.weight(.semibold))
             }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 44)
+            .background(.ultraThinMaterial, in: Capsule())
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(maxWidth: 300, alignment: .leading)
-        .background(Color.black.opacity(0.80), in: RoundedRectangle(cornerRadius: 10))
-        .padding(10)
+        .buttonStyle(.plain)
+        .accessibilityLabel(showsLowResolutionWarning ?
+            "低清预览，查看画质与文件信息" : "查看画质与文件信息")
+        .accessibilityHint("显示当前解码分辨率、原件大小及实况资源状态")
+        .accessibilityIdentifier("native-ios-viewer-quality-toggle")
+        .padding(8)
+        .sheet(isPresented: $expanded) {
+            NavigationStack {
+                List {
+                    Section("当前显示") {
+                        LabeledContent("来源", value: source)
+                        LabeledContent("解码分辨率",
+                                       value: "\(pixelWidth) × \(pixelHeight)")
+                        if showsLowResolutionWarning {
+                            Text("当前仅显示低清预览，放大不能恢复未加载的原件细节。")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Section("文件与资源") {
+                        LabeledContent("来源格式", value: resourceFormat)
+                        LabeledContent(archiveOriginal ? "归档容器大小" : "原件大小",
+                                       value: sizeLabel(originalBytes))
+                        if let liveFiles {
+                            LabeledContent("实况静态资源",
+                                value: "临时文件 · \(sizeLabel(stagedSize(liveFiles.stillURL)))")
+                            LabeledContent("实况动态资源",
+                                value: "临时文件 · \(sizeLabel(stagedSize(liveFiles.motionURL)))")
+                        } else if archiveOriginal {
+                            Text("实况双资源尚未完整加载")
+                        }
+                    }
+
+                    Section {
+                        Text("“已加载”仅指当前会话中的图像内存或临时文件，不代表原件已经保存到系统照片。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("native-ios-viewer-quality-details")
+                .navigationTitle("画质与文件信息")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { expanded = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        // Changing the viewed media must close an older item's information
+        // sheet rather than leave a stale detail surface over its successor.
+        .onChange(of: fileName) { _ in expanded = false }
+        .onChange(of: source) { _ in expanded = false }
+        .onChange(of: originalBytes) { _ in expanded = false }
+        .onChange(of: liveFiles?.folderURL) { _ in expanded = false }
     }
 }

@@ -170,3 +170,27 @@ test('cloud original video and Live-motion fallback share native photo timeline 
   assert.match(detail, /player\?\.pause\(\)[\s\S]*?liveResources\?\.discard\(\)/)
   assert.doesNotMatch(video, /URLSession|Bearer|Keychain|UserDefaults|UploadSession|PHAssetCreationRequest/)
 })
+
+
+test('native Viewer presents compact quality metadata in a dismissible iOS sheet', () => {
+  const quality = fs.readFileSync(
+    path.join(root, 'ios/XDriveIOS/NativeViewerQualityPanel.swift'), 'utf8'
+  )
+  assert.match(quality, /source\.contains\("缩略图"\) \|\| source\.contains\("低清"\)/)
+  assert.match(quality, /Image\(systemName: "info\.circle"\)/)
+  assert.match(quality, /\.frame\(minHeight: 44\)/)
+  assert.match(quality, /Text\(showsLowResolutionWarning \? "低清" : "画质"\)/)
+  assert.match(quality, /\.accessibilityIdentifier\("native-ios-viewer-quality-toggle"\)/)
+  assert.match(quality, /\.sheet\(isPresented: \$expanded\) \{/)
+  assert.match(quality, /NavigationStack \{\s*List \{/)
+  assert.match(quality, /LabeledContent\("解码分辨率"/)
+  assert.match(quality, /LabeledContent\("来源格式", value: resourceFormat\)/)
+  assert.match(quality, /LabeledContent\(archiveOriginal \? "归档容器大小" : "原件大小"/)
+  assert.match(quality, /if let liveFiles \{[\s\S]*?LabeledContent\("实况静态资源"[\s\S]*?LabeledContent\("实况动态资源"/)
+  assert.match(quality, /\.presentationDetents\(\[\.medium, \.large\]\)/)
+  assert.match(quality, /Button\("完成"\) \{ expanded = false \}/)
+  assert.match(quality, /\.onChange\(of: fileName\) \{ _ in expanded = false \}/)
+  assert.match(quality, /\.onChange\(of: source\) \{ _ in expanded = false \}/)
+  assert.match(quality, /\.onChange\(of: liveFiles\?\.folderURL\) \{ _ in expanded = false \}/)
+  assert.doesNotMatch(quality, /URLSession|UploadSession|requestAuthorization|PHAssetCreationRequest|Bearer|WKWebView/)
+});
