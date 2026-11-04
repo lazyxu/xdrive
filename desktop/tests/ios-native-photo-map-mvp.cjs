@@ -25,7 +25,8 @@ test('real native Gallery map uses MapKit and existing local Viewer, no WebView'
 test('only a fresh authorized PhotoKit 64-slot scan supplies local map pins', () => {
   assert.match(scanner, /func nextLocatedPage\(\) throws -> XDrivePhotoKitLocatedPage/)
   assert.match(scanner, /let page = try nextPage\(\)/)
-  assert.match(scanner, /snapshot\.object\(at: page\.startOffset \+ offset\)/)
+  assert.match(scanner, /let logicalIndex = page\.startOffset \+ offset/)
+  assert.match(scanner, /snapshot\.object\(\s*at: stableBoundaryPhysicalIndices\[logicalIndex\] \?\? logicalIndex\s*\)/)
   assert.match(scanner, /asset\.location/)
   assert.match(scanner, /try ensureCurrent\(expected\)/)
   assert.match(map, /仅当前64条范围，不是完整云端地图/)
