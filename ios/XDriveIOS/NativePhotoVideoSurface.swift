@@ -60,6 +60,7 @@ struct XDriveIOSNativePhotoVideoSurface: View {
     @State private var duration = 0.0
     @State private var seeking = false
     @State private var playing = false
+    @State private var buffering = false
     @State private var muted = false
     // An AVPlayer seek is asynchronous. Remember the exact current item and
     // retire late completion handlers when a Viewer changes media or leaves.
@@ -84,7 +85,13 @@ struct XDriveIOSNativePhotoVideoSurface: View {
         if !seeking, now.isFinite, now >= 0 {
             position = duration > 0 ? min(now, duration) : 0
         }
-        playing = player.rate > 0
+        // AVPlayer can be waiting for network bytes with rate == 0 after
+        // Play. Waiting is still a pending Play and must remain pausable.
+        let transport = player.timeControlStatus
+        playing = canControl && transport != .paused
+        buffering = canControl && !seeking && !replayInProgress &&
+            transport == .waitingToPlayAtSpecifiedRate &&
+            player.currentItem?.status != .failed
         muted = player.isMuted
     }
 
@@ -95,7 +102,8 @@ struct XDriveIOSNativePhotoVideoSurface: View {
     private func togglePlayback() {
         guard canControl, !seeking, !replayInProgress,
               let item = player.currentItem else { return }
-        if player.rate > 0 {
+        if player.timeControlStatus != .paused {
+            // Waiting for signed video bytes is a pending Play, not Pause.
             player.pause()
             refresh()
             return
@@ -136,7 +144,7 @@ struct XDriveIOSNativePhotoVideoSurface: View {
         retireReplay()
         scrubEpoch = UUID()
         scrubbedItem = item
-        resumesAfterScrub = player.rate > 0
+        resumesAfterScrub = player.timeControlStatus != .paused
         finishingScrub = false
         lastPreviewSeekAt = -.infinity
         seeking = true
@@ -226,6 +234,22 @@ struct XDriveIOSNativePhotoVideoSurface: View {
                 )
                 .accessibilityLabel("视频，轻点显示或隐藏控制栏")
 
+            if buffering {
+                // Actual AVPlayer waiting state; unknown bytes stay unknown.
+                // A noninteractive overlay must not steal the pause/swipe.
+                ProgressView("正在缓冲视频…")
+                    .tint(.white)
+                    .foregroundStyle(.white)
+                    .font(.footnote)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(.black.opacity(0.55),
+                                in: RoundedRectangle(cornerRadius: 12))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("native-ios-photo-video-buffering")
+            }
+
             if showChrome {
                 HStack(spacing: 10) {
                     Button {
@@ -289,6 +313,8 @@ struct XDriveIOSNativePhotoVideoSurface: View {
             if next != .active {
                 abortScrub()
                 retireReplay()
+                playing = false
+                buffering = false
             } else { refresh() }
         }
         .onDisappear { abortScrub() }
