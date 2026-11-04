@@ -877,7 +877,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Label("显示简介", systemImage: "info.circle")
                 }
                 .accessibilityIdentifier("native-ios-files-folder-more-\(entry.node.id)")
-                if !activeQuery.isEmpty {
+                if isGlobalSearch {
                     Button {
                         requestLocation(for: entry)
                     } label: {
@@ -1189,13 +1189,30 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onChange(of: queryDraft) { value in
             if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 !activeQuery.isEmpty {
-                clearSearch()
+                if searchFilters.hasActiveFilters {
+                    activeQuery = ""
+                    searchError = nil
+                    reload(resetOffset: true)
+                } else {
+                    clearSearch()
+                }
             }
         }
         .onChange(of: searchFilters) { _ in
-            // Re-query the complete Server index for every structured filter;
-            // never filter only the currently loaded local window.
-            if !activeQuery.isEmpty { reload(resetOffset: true) }
+            // Filters always execute against the complete Server index, even
+            // with an empty text query. Capture the current Browse anchor once.
+            if !activeQuery.isEmpty {
+                reload(resetOffset: true)
+            } else if searchFilters.hasActiveFilters {
+                if searchReturnOffset == nil {
+                    let saved = rememberedPosition()
+                    searchReturnOffset = saved?.pageOffset ?? offset
+                    searchReturnNodeID = saved?.nodeID
+                }
+                reload(resetOffset: true)
+            } else if searchReturnOffset != nil {
+                clearSearch()
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if selecting { filesSelectionToolbar }
@@ -1476,9 +1493,13 @@ struct XDriveIOSNativeFilesBrowser: View {
     var body: some View {
         ScrollViewReader { returnScroll in
             filesModals
-        .onAppear { reload() }
+        .onAppear {
+            reload()
+            searchOptions.load(login: login)
+        }
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
+            searchOptions.invalidate()
             favoriteShortcuts.invalidate()
             favoriteShortcutsOwner = nil
             batchTrash.invalidate()
@@ -1513,7 +1534,10 @@ struct XDriveIOSNativeFilesBrowser: View {
             lastAppearedNodeID = nil
             pendingNavigationReturnNodeID = nil
             searchError = nil
+            searchFilters = XDriveIOSNativeFilesSearchFilterState()
             model.invalidate()
+            searchOptions.invalidate()
+            if login.owner != nil { searchOptions.load(login: login) }
             favoriteShortcuts.invalidate()
             favoriteShortcutsOwner = nil
             if isHome { loadFavoriteShortcuts() }
@@ -1634,7 +1658,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 if !entry.node.isDirectory {
                     Button("版本历史") { openVersionHistory(for: entry.node) }
                 }
-                if !activeQuery.isEmpty {
+                if isGlobalSearch {
                     Button {
                         requestLocation(for: entry)
                     } label: {
@@ -1719,7 +1743,7 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func requestLocation(for entry: XDriveIOSNativeFilesEntry) {
         guard !model.loading, model.verifiedPage,
-              !activeQuery.isEmpty, !selecting,
+              isGlobalSearch, !selecting,
               let owner = login.owner,
               model.entries.contains(where: { $0.node == entry.node }) else { return }
         returnOwner = owner
@@ -1850,7 +1874,14 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func submitSearch() {
         let query = queryDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         if query.isEmpty {
-            clearSearch()
+            guard searchFilters.hasActiveFilters else {
+                clearSearch()
+                return
+            }
+            searchError = nil
+            if activeQuery.isEmpty { return }
+            activeQuery = ""
+            reload(resetOffset: true)
             return
         }
         guard XDriveIOSNativeFilesPagePolicy.validSearch(query) else {
@@ -1859,7 +1890,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         searchError = nil
         if query == activeQuery { return }
-        if activeQuery.isEmpty {
+        if searchReturnOffset == nil {
             let saved = rememberedPosition()
             searchReturnOffset = saved?.pageOffset ?? offset
             searchReturnNodeID = saved?.nodeID
@@ -1869,7 +1900,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func clearSearch() {
-        guard !activeQuery.isEmpty || !queryDraft.isEmpty else { return }
+        guard !activeQuery.isEmpty || !queryDraft.isEmpty ||
+              searchFilters.hasActiveFilters || searchReturnOffset != nil else { return }
         let restoredOffset = searchReturnOffset ?? 0
         let restoreNodeID = searchReturnNodeID
         activeQuery = ""
