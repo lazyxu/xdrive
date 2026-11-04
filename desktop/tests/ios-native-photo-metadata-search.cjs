@@ -147,7 +147,7 @@ test('capture-date order changes the same bounded PhotoKit reader and invalidate
   assert.match(view, /\.onChange\(of: sortOrder\) \{ _ in/)
   assert.match(view, /visibleTailWindowID = nil\s*guard selected == nil, phase == \.active/)
   assert.match(view, /model\.search\(acceptedQuery, sortOrder: sortOrder\)/)
-  assert.match(view, /sortOrder: sortOrder, generation: model\.generation/)
+  assert.match(view, /sortOrder: sortOrder, framing: framing,\s*generation: model\.generation/)
   assert.match(view, /model\.search\(normalized, sortOrder: sortOrder\)/)
   assert.match(model, /windows = \[\]/)
   assert.doesNotMatch(scanner, /URLSession|UploadSession|requestAVAsset|UserDefaults/)
