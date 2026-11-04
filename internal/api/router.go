@@ -620,6 +620,8 @@ func (s *Server) Router() *gin.Engine {
 	// authorize an installer: the separate Host verifies signed identities.
 	admin.POST("/update/offline/imports", s.adminCreateOfflineUpdateImport)
 	admin.GET("/update/offline/imports", s.adminListOfflineUpdateImports)
+	admin.GET("/update/offline/cleanup", s.adminCleanupOfflineUpdateImports)
+	admin.POST("/update/offline/cleanup", s.adminCleanupOfflineUpdateImports)
 	admin.GET("/update/offline/imports/:id", s.adminGetOfflineUpdateImport)
 	admin.DELETE("/update/offline/imports/:id", s.adminDeleteOfflineUpdateImport)
 	admin.POST("/update/offline/imports/:id/files/:name", s.adminRegisterOfflineUpdateFile)
