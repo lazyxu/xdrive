@@ -14,17 +14,25 @@ import (
 func requireSourceRunOrLocalPushTargetTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, ownerID, nodeID uint64, req uploadInitRequest,
 ) error {
-	if _, scoped := currentSourceRunScope(c); scoped {
-		return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, ownerID, nodeID)
-	}
+	if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
+        if _, run := currentSourceRunScope(c); run { return errManagedSourceWriteDenied }
+        return requireIOSPhotoManagedUploadTx(ctx, tx, c, ownerID, nodeID, req)
+    }
+    if _, scoped := currentSourceRunScope(c); scoped {
+        return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, ownerID, nodeID)
+    }
 	return requireOrdinaryOrAdmittedLocalPushTargetTx(ctx, tx, ownerID, nodeID, req)
 }
 
 func requireSourceRunOrLocalPushFinalizeTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, session meta.UploadSession, nodeID uint64,
 ) error {
-	if _, scoped := currentSourceRunScope(c); scoped {
-		return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, session.OwnerID, nodeID)
-	}
+	if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
+        if _, run := currentSourceRunScope(c); run { return errManagedSourceWriteDenied }
+        return requireIOSPhotoManagedFinalizeTx(ctx, tx, c, session, nodeID)
+    }
+    if _, scoped := currentSourceRunScope(c); scoped {
+        return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, session.OwnerID, nodeID)
+    }
 	return requireOrdinaryOrBoundLocalPushFinalizeTx(ctx, tx, session, nodeID)
 }

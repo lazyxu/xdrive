@@ -445,6 +445,14 @@ func (s *Server) Router() *gin.Engine {
 	// identity-only iOS device token or an already-issued background grant.
 	// Only this dedicated Owner + registered iPhone route may provision or
 	// rename its managed photo destination. It is NOT a local_folder runner.
+    // Managed Photos aliases use the existing CAS UploadSession engine but
+    // may write only after exact current Owner+iOS Device+Source+Node proof.
+    authed.POST("/ios/photos/managed/uploads", s.iosPhotoManagedCreateUpload)
+    authed.GET("/ios/photos/managed/uploads/:id", s.iosPhotoManagedGetUpload)
+    authed.PUT("/ios/photos/managed/uploads/:id/chunks/:index", s.iosPhotoManagedPutChunk)
+    authed.POST("/ios/photos/managed/uploads/:id/finalize", s.iosPhotoManagedFinalize)
+    authed.POST("/ios/photos/managed/uploads/resume-lookup", s.iosPhotoManagedResumeLookup)
+    authed.GET("/ios/photos/managed/receipts/nodes/:id", s.iosPhotoManagedReceipt)
 	authed.GET("/ios/photos/backup-destination", s.getIOSPhotoBackupDestination)
 	authed.PUT("/ios/photos/backup-destination", s.putIOSPhotoBackupDestination)
 	authed.POST("/ios/photos/background-grants", s.createIOSPhotoBackgroundGrant)
