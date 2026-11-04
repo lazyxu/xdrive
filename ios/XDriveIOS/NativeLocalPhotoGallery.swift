@@ -14,7 +14,8 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
     private var request: PHImageRequestID = PHInvalidImageRequestID
     private var epoch = UUID()
 
-    func load(_ id: String, size: CGSize) {
+    func load(_ id: String, size: CGSize,
+              contentMode: PHImageContentMode = .aspectFill) {
         cancel()
         let token = epoch
         guard [.authorized, .limited].contains(
@@ -27,7 +28,7 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
         settings.deliveryMode = .opportunistic
         settings.resizeMode = .fast
         request = PHImageManager.default().requestImage(
-            for: asset, targetSize: size, contentMode: .aspectFill,
+            for: asset, targetSize: size, contentMode: contentMode,
             options: settings
         ) { [weak self] result, _ in
             Task { @MainActor [weak self] in

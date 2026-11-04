@@ -55,3 +55,16 @@ enum XDriveIOSNativePhotoWallDensity: String, CaseIterable, Identifiable {
         return self
     }
 }
+
+ 
+/// Presentation-only: show the complete composition inside a stable square slot.
+enum XDriveIOSNativePhotoWallFraming: String, CaseIterable, Identifiable {
+    case square, complete
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .square: return "方形裁切"
+        case .complete: return "完整图片（原比例）"
+        }
+    }
+}
