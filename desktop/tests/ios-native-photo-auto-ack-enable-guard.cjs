@@ -54,7 +54,7 @@ test('runtime manual and automatic original runs consult global existing Owner p
   const preflight = identity.slice(identity.indexOf('enum XDriveIOSOriginalPendingReceiptPreflight'))
   const runner = controller.slice(controller.indexOf('    private func start('))
   const pendingRead = runner.indexOf('XDriveIOSOriginalPendingReceiptPreflight')
-  const reserve = runner.indexOf('.reserveDue(owner: selected)')
+  const reserve = runner.indexOf('.reserveDue(owner: selected,')
   const writer = runner.indexOf('XDriveIOSForegroundPhotoBackupMVP(')
   assert.match(preflight, /existingLocalScope\(owner: owner\)/)
   assert.match(preflight, /pendingReceiptSnapshot\(scope: scope, limit: 0\)\.pending/)

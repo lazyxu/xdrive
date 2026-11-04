@@ -10,6 +10,10 @@ type IOSPhotoBackgroundGrant struct {
 	OwnerID        uint64     `gorm:"not null;index"`
 	DeviceID       string     `gorm:"size:36;not null;index"`
 	RootNodeID     uint64     `gorm:"not null"`
+	// Nil is an old Owner-root-only grant. Such a legacy grant remains
+	// revocable/readable for historical receipts but cannot create new bytes.
+	SourceID       *uint64    `gorm:"index"`
+	TargetNodeID   *uint64    `gorm:"index"`
 	ServerInstance string     `gorm:"size:256;not null"`
 	CredentialHash string     `gorm:"size:64;not null;uniqueIndex"`
 	SessionVersion uint64     `gorm:"not null"`

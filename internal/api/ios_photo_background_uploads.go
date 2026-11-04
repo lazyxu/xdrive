@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -110,23 +111,10 @@ func iosBackgroundAuthorizedOwner(c *gin.Context) (meta.IOSPhotoBackgroundGrant,
 	return grant, true
 }
 
+// Legacy Owner-root backup is read-only after adopting the mandatory managed
+// destination. Historical sessions and receipts remain available for review.
 func (s *Server) iosBackgroundCreateUpload(c *gin.Context) {
-	grant, ok := iosBackgroundAuthorizedOwner(c)
-	if !ok {
-		return
-	}
-	body, ok := iosBackgroundReadJSON(c, 16_384, &uploadInitRequest{})
-	if !ok {
-		return
-	}
-	var requested uploadInitRequest
-	if err := json.Unmarshal(body, &requested); err != nil ||
-		!iosBackgroundUploadInitValid(requested, grant) {
-		fail(c, http.StatusForbidden, "not an admitted ios photo original")
-		return
-	}
-	c.Request.Body = io.NopCloser(bytes.NewReader(body))
-	s.createUploadSession(c)
+	fail(c, http.StatusForbidden, "configure the managed ios photo destination before backup")
 }
 
 func (s *Server) iosBackgroundOwnedUpload(c *gin.Context) bool {
@@ -160,34 +148,33 @@ func (s *Server) iosBackgroundOwnedUpload(c *gin.Context) bool {
 	return true
 }
 
+// The legacy GET is a strictly read-only historical ACK probe. Generic
+// getUploadSession expires active sessions by mutating storage, so do not
+// call it here while offering recovery for a previous Owner-root writer.
 func (s *Server) iosBackgroundGetUpload(c *gin.Context) {
 	if !s.iosBackgroundOwnedUpload(c) {
 		return
 	}
-	s.getUploadSession(c)
+	session, err := s.ownedUploadSession(userID(c), c.Param("id"))
+	if err != nil {
+		fail(c, http.StatusNotFound, "historical ios upload not found")
+		return
+	}
+	if session.Status == meta.UploadStatusActive && time.Now().After(session.ExpiresAt) {
+		fail(c, http.StatusGone, "historical ios upload expired")
+		return
+	}
+	s.writeUploadSession(c, session, http.StatusOK)
 }
 
 func (s *Server) iosBackgroundPutChunk(c *gin.Context) {
-	if !s.iosBackgroundOwnedUpload(c) {
-		return
-	}
-	// Existing handler enforces exact part index, SHA and current CAS capacity.
-	// Limit the actual HTTP stream to one 8-MiB chunk plus framing.
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body,
-		defaultUploadChunkSize+4096)
-	s.putUploadChunk(c)
+	fail(c, http.StatusForbidden, "legacy owner-root photo uploads are read-only")
 }
 
 func (s *Server) iosBackgroundFinalizeUpload(c *gin.Context) {
-	if !s.iosBackgroundOwnedUpload(c) {
-		return
-	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
-	s.finalizeUploadSession(c)
+	fail(c, http.StatusForbidden, "legacy owner-root photo uploads are read-only")
 }
 
-// POST body-only exact resume-key match; a 404 remains an unknown ACK and
-// NEVER authorizes a new session with a different fingerprint.
 func (s *Server) iosBackgroundResumeLookup(c *gin.Context) {
 	grant, ok := iosBackgroundAuthorizedOwner(c)
 	if !ok {

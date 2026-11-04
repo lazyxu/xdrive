@@ -25,6 +25,8 @@ private struct IOSPhotoGrantResponse: Decodable {
     let id: String
     let device_id: String
     let root_node_id: UInt64
+    let source_id: UInt64?
+    let target_node_id: UInt64?
     let grant_secret: String
     let expires_at: String
 }
@@ -34,6 +36,8 @@ private struct IOSPhotoGrantProof: Decodable {
     let owner_id: UInt64
     let device_id: String
     let root_node_id: UInt64
+    let source_id: UInt64?
+    let target_node_id: UInt64?
     let server_instance_id: String
     let expires_at: String
     let upload_authorized: Bool
@@ -44,12 +48,20 @@ private struct IOSPhotoNativeGrant: Codable {
     let serverInstance: String
     let ownerID: UInt64
     let rootNodeID: UInt64
+    // Nil is a legacy root-only grant retained for explicit revocation.
+    let sourceID: UInt64?
+    let targetNodeID: UInt64?
     let username: String
     let deviceID: String
     let grantID: String
     let rawSecret: String
     let expiresAt: Date
     var revokePending: Bool
+
+    var hasManagedDestination: Bool {
+        guard let sourceID, let targetNodeID else { return false }
+        return sourceID > 0 && targetNodeID > 0 && targetNodeID != rootNodeID
+    }
 
     func matches(_ owner: XDriveNativeOwnerRoot) -> Bool {
         origin == owner.origin.absoluteString &&
@@ -99,7 +111,7 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         return XDriveIOSPhotoBackgroundGrantStatus(
             enrolled: stored != nil,
             enabled: stored != nil && !stored!.revokePending &&
-                stored!.expiresAt > Date(),
+                stored!.hasManagedDestination && stored!.expiresAt > Date(),
             revokePending: stored?.revokePending ?? false,
             expiresAt: stored?.expiresAt
         )
@@ -165,7 +177,8 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         try await XDriveIOSApprovedPhotoBGVault.shared.install(
             owner: owner, device: proof,
             grantID: credential.grantID, grantSecret: credential.rawSecret,
-            expiresAt: credential.expiresAt
+            expiresAt: credential.expiresAt,
+            sourceID: credential.sourceID, targetNodeID: credential.targetNodeID
         )
         try XDriveIOSBackgroundPhotoTask.scheduleApprovedProbe(afterMinutes: 360)
         return try localStatus(owner: owner)
@@ -180,7 +193,8 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         guard let grant = try read(owner: owner) else {
             return try localStatus(owner: owner)
         }
-        guard !grant.revokePending, grant.expiresAt > Date(),
+        guard !grant.revokePending, grant.hasManagedDestination,
+              grant.expiresAt > Date(),
               let device = try await XDriveIOSDeviceEnrollment.shared
                 .backgroundPhotoDeviceProof(owner: owner, accessToken: accessToken),
               device.deviceID == grant.deviceID else {
@@ -200,6 +214,8 @@ actor XDriveIOSPhotoBackgroundGrantManager {
               proof.root_node_id == owner.rootNodeID,
               proof.server_instance_id == owner.instanceID,
               proof.device_id == grant.deviceID,
+              proof.source_id == grant.sourceID,
+              proof.target_node_id == grant.targetNodeID,
               proof.upload_authorized else {
             throw XDriveIOSPhotoBackgroundGrantError.invalidGrantResponse
         }
@@ -214,7 +230,8 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         owner: XDriveNativeOwnerRoot
     ) async throws -> XDriveIOSPhotoBackgroundGrantStatus {
         guard let grant = try read(owner: owner),
-              !grant.revokePending, grant.expiresAt > Date(),
+              !grant.revokePending, grant.hasManagedDestination,
+              grant.expiresAt > Date(),
               let device = try await XDriveIOSDeviceEnrollment.shared
                 .backgroundPhotoDeviceProofWithoutWeb(owner: owner),
               device.deviceID == grant.deviceID else {
@@ -234,6 +251,8 @@ actor XDriveIOSPhotoBackgroundGrantManager {
               proof.root_node_id == owner.rootNodeID,
               proof.server_instance_id == owner.instanceID,
               proof.device_id == grant.deviceID,
+              proof.source_id == grant.sourceID,
+              proof.target_node_id == grant.targetNodeID,
               proof.upload_authorized,
               let expiry = Self.parseDate(proof.expires_at),
               expiry <= grant.expiresAt else {
@@ -268,7 +287,9 @@ actor XDriveIOSPhotoBackgroundGrantManager {
               // that orphan and then falsely report BG work is available.
               let existingVault = try await XDriveIOSApprovedPhotoBGVault.shared.current(),
               existingVault.matches(owner), existingVault.grantID == old.grantID,
-              existingVault.deviceID == old.deviceID else {
+              existingVault.deviceID == old.deviceID,
+              existingVault.sourceID == old.sourceID,
+              existingVault.targetNodeID == old.targetNodeID else {
             throw XDriveIOSPhotoBackgroundGrantError.invalidOwner
         }
         let (data, status) = try await request(
@@ -308,13 +329,16 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         // background backup. The final generation fence handles a concurrent
         // explicit emergency stop.
         guard let approved = try await XDriveIOSApprovedPhotoBGVault.shared.current(),
-              approved.matches(owner), approved.grantID == old.grantID else {
+              approved.matches(owner), approved.grantID == old.grantID,
+              approved.sourceID == old.sourceID,
+              approved.targetNodeID == old.targetNodeID else {
             throw XDriveIOSPhotoBackgroundGrantError.invalidOwner
         }
         try await XDriveIOSApprovedPhotoBGVault.shared.install(
             owner: owner, device: device,
             grantID: next.grantID, grantSecret: next.rawSecret,
-            expiresAt: next.expiresAt, intervalMinutes: approved.intervalMinutes
+            expiresAt: next.expiresAt, intervalMinutes: approved.intervalMinutes,
+            sourceID: next.sourceID, targetNodeID: next.targetNodeID
         )
         let stoppedAfterInstall = await MainActor.run {
             XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration != expectedStopGeneration
@@ -367,6 +391,7 @@ actor XDriveIOSPhotoBackgroundGrantManager {
             pending = IOSPhotoNativeGrant(
                 origin: approved.origin, serverInstance: approved.instanceID,
                 ownerID: approved.ownerID, rootNodeID: approved.rootNodeID,
+                sourceID: approved.sourceID, targetNodeID: approved.targetNodeID,
                 username: approved.username, deviceID: approved.deviceID,
                 grantID: approved.grantID, rawSecret: approved.grantSecret,
                 expiresAt: approved.expiresAt, revokePending: true
@@ -445,6 +470,9 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         guard UUID(uuidString: response.id) != nil,
               response.device_id == deviceID,
               response.root_node_id == owner.rootNodeID,
+              let sourceID = response.source_id, sourceID > 0,
+              let targetNodeID = response.target_node_id,
+              targetNodeID > 0 && targetNodeID != owner.rootNodeID,
               Self.validSecret(response.grant_secret),
               let expires = Self.parseDate(response.expires_at),
               XDriveIOSPhotoBackgroundGrantPolicy.validExpiration(
@@ -456,6 +484,7 @@ actor XDriveIOSPhotoBackgroundGrantManager {
             origin: owner.origin.absoluteString,
             serverInstance: owner.instanceID,
             ownerID: owner.ownerID, rootNodeID: owner.rootNodeID,
+            sourceID: sourceID, targetNodeID: targetNodeID,
             username: owner.username, deviceID: deviceID,
             grantID: response.id, rawSecret: response.grant_secret,
             expiresAt: expires, revokePending: false

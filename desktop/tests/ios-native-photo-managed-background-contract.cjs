@@ -1,0 +1,101 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..', '..');
+const read = p => fs.readFileSync(path.join(root, p), 'utf8');
+
+const grant = read('internal/api/ios_photo_background_grants.go');
+const model = read('internal/meta/ios_photo_background_grant.go');
+const scoped = read('internal/api/ios_photo_managed_uploads.go');
+const rootLegacy = read('internal/api/ios_photo_background_uploads.go');
+const routes = read('internal/api/router.go');
+const manager = read('ios/XDriveIOS/PhotoBackgroundGrantManager.swift');
+const vault = read('ios/XDriveIOS/ApprovedBackgroundPhotoVault.swift');
+const runner = read('ios/XDriveIOS/BackgroundPhotoTask.swift');
+const auth = read('ios/XDriveIOS/OriginalOwnerAuthorization.swift');
+const transport = read('ios/XDriveIOS/NativeUploadSessionTransport.swift');
+const auto = read('ios/XDriveIOS/PhotoAutoScheduleStore.swift');
+const bgCursor = read('ios/XDriveIOS/BGOriginalWindowStore.swift');
+const focused = read('ios/XDriveIOS/PhotoFocusedResumeStore.swift');
+const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift');
+const ui = read('ios/XDriveIOS/NativePhotoBackupScreen.swift');
+
+test('new BG grant binds one exact server-owned Source and real Node, not Owner root', () => {
+  assert.match(model, /SourceID\s+\*uint64/);
+  assert.match(model, /TargetNodeID\s+\*uint64/);
+  assert.match(grant, /func iosPhotoGrantHasManagedTarget/);
+  assert.match(grant, /grant\.SourceID = &source\.ID/);
+  assert.match(grant, /grant\.TargetNodeID = &target\.ID/);
+  assert.match(grant, /iosPhotoDestinationBindingTx\(tx, device\)/);
+  assert.match(grant, /SourceID: previous\.SourceID, TargetNodeID: previous\.TargetNodeID/);
+  assert.match(grant, /"upload_authorized": authorized/);
+  assert.match(grant, /"source_id": g\.SourceID, "target_node_id": g\.TargetNodeID/);
+  assert.match(grant, /"upload_path_base": "\/api\/v1\/ios\/photos\/background-managed"/);
+  assert.match(manager, /grant\.hasManagedDestination/);
+  assert.match(manager, /proof\.source_id == grant\.sourceID/);
+  assert.match(manager, /proof\.target_node_id == grant\.targetNodeID/);
+  assert.match(vault, /item\.hasManagedDestination/);
+  assert.match(vault, /proof\.source_id == item\.sourceID/);
+  assert.match(vault, /proof\.target_node_id == item\.targetNodeID/);
+});
+
+test('new background grant never becomes generic Owner Root uploader', () => {
+  assert.match(rootLegacy, /legacy owner-root photo uploads are read-only/);
+  assert.match(rootLegacy, /configure the managed ios photo destination before backup/);
+  assert.match(routes, /iosPhotoManagedBG\.Use\(s\.requireIOSPhotoBackgroundGrant\(\)\)/);
+  assert.match(routes, /iosPhotoManagedBG\.POST\("\/uploads", s\.iosPhotoManagedCreateUpload\)/);
+  assert.match(routes, /iosPhotoManagedBG\.POST\("\/uploads\/:id\/finalize", s\.iosPhotoManagedFinalize\)/);
+  assert.match(routes, /iosPhotoManagedBG\.GET\("\/receipts\/nodes\/:id", s\.iosPhotoManagedReceipt\)/);
+  assert.match(scoped, /iosPhotoBackgroundGrantFromContext\(c\)/);
+  assert.match(scoped, /if background \{/);
+  assert.match(scoped, /c\.Set\("userID", ownerID\)/);
+  assert.match(scoped, /live\.SessionVersion != grant\.SessionVersion/);
+  assert.match(scoped, /revoked_at IS NULL AND expires_at > \?/);
+  assert.match(scoped, /currentOwner\.MustChangePassword/);
+  assert.match(scoped, /iosPhotoDestinationBindingTx\(tx, device\)/);
+  assert.match(transport, /XDriveIOSManagedPhotoBackgroundUploadRoutePolicy\.translatedPath\(path\)/);
+  assert.match(transport, /local\.sourceID == approved\.sourceID/);
+  assert.match(transport, /local\.targetNodeID == approved\.targetNodeID/);
+  assert.match(auth, /parentID == approved\.targetNodeID/);
+  assert.match(auth, /background-managed\/receipts\/nodes/);
+  assert.doesNotMatch(scoped, /clientDeviceCredentialMatches\(/);
+});
+
+test('legacy sealed root grants remain recoverable/revocable, but are not upload grants', () => {
+  assert.match(model, /Nil is an old Owner-root-only grant/);
+  assert.match(manager, /let sourceID: UInt64\?/);
+  assert.match(manager, /let targetNodeID: UInt64\?/);
+  assert.match(vault, /let sourceID: UInt64\?/);
+  assert.match(vault, /let targetNodeID: UInt64\?/);
+  assert.match(manager, /grant\.hasManagedDestination/);
+  assert.match(vault, /candidate\.hasManagedDestination/);
+  assert.match(vault, /func cancelLocally\(/);
+  assert.match(manager, /revokePending = true/);
+  assert.match(rootLegacy, /func \(s \*Server\) iosBackgroundReceipt/);
+  assert.match(rootLegacy, /func \(s \*Server\) iosBackgroundResumeLookup/);
+});
+
+test('all persisted cursors invalidate when a previously stored target differs', () => {
+  const policy = read('ios/XDriveIOS/PhotoBackupDestinationCursorPolicy.swift');
+  assert.match(policy, /currentTargetNodeID != ownerRootNodeID/);
+  assert.match(policy, /savedSourceID == currentSourceID/);
+  assert.match(policy, /savedTargetNodeID == currentTargetNodeID/);
+  assert.match(auto, /targetSourceID: UInt64\? = nil/);
+  assert.match(auto, /targetNodeID: UInt64\? = nil/);
+  assert.match(auto, /windowIndex: sameTarget \? \(existing\?\.windowIndex \?\? 0\) : 0/);
+  assert.match(auto, /state\.targetSourceID == sourceID/);
+  assert.match(auto, /state\.targetNodeID == targetNodeID/);
+  assert.match(bgCursor, /XDriveIOSPhotoBackupDestinationCursorPolicy\.sameManagedTarget/);
+  assert.match(bgCursor, /state\.windowIndex = 0/);
+  assert.match(bgCursor, /approved\.hasManagedDestination/);
+  assert.match(focused, /XDriveIOSPhotoBackupDestinationCursorPolicy\.sameManagedTarget/);
+  assert.match(focused, /sourceID: UInt64, targetNodeID: UInt64/);
+  assert.match(controller, /sourceID: managed\.destination\.sourceID/);
+  assert.match(controller, /targetNodeID: managed\.destination\.targetNodeID/);
+  assert.match(controller, /initialSourceID: managed\.destination\.sourceID/);
+  assert.match(controller, /initialTargetNodeID: managed\.destination\.targetNodeID/);
+  assert.match(ui, /!destination\.confirmedForCurrentName/);
+  assert.match(runner, /guard approved\.hasManagedDestination/);
+});

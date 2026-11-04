@@ -23,7 +23,7 @@ test('automatic schedule cannot enable or reserve a window before Owner+device+S
     controller.indexOf('private func runFocused('));
   const pending = current.indexOf('pendingCount(owner: selected)');
   const proof = current.indexOf('.readExistingForUpload(owner: selected');
-  const reserve = current.indexOf('.reserveDue(owner: selected)');
+  const reserve = current.indexOf('.reserveDue(owner: selected,');
   assert.ok(setup.indexOf('.readExistingForUpload(owner: selected') <
     setup.indexOf('store.configure('));
   assert.ok(pending > 0 && proof > pending && reserve > proof,

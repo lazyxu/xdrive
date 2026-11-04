@@ -81,6 +81,11 @@ enum XDriveIOSBackgroundPhotoTask {
                 // Root, Server instance, expiry and revocation. No Web token.
                 let approved = try await XDriveIOSApprovedPhotoBGVault.shared
                     .proveInBackground()
+                // Legacy Owner-root grants are read-only for historical
+                // receipts/revocation, never a fresh system BG upload.
+                guard approved.hasManagedDestination else {
+                    throw XDriveIOSPhotoBGVaultFailure.invalidProof
+                }
                 try Task.checkCancellation()
                 guard UIApplication.shared.isProtectedDataAvailable else {
                     // Existing encrypted ledger and exported originals remain

@@ -78,6 +78,9 @@ enum XDriveIOSOriginalOwnerAuthorization {
             guard verified.grantID == approved.grantID,
                   verified.deviceID == approved.deviceID,
                   verified.rootNodeID == owner.rootNodeID,
+                  verified.sourceID == approved.sourceID,
+                  verified.targetNodeID == approved.targetNodeID,
+                  verified.hasManagedDestination,
                   verified.ownerID == owner.ownerID,
                   verified.instanceID == owner.instanceID else {
                 throw XDrivePhotoSyncLedgerError.identityMismatch
@@ -88,8 +91,11 @@ enum XDriveIOSOriginalOwnerAuthorization {
 
     func destinationParentID(owner: XDriveNativeOwnerRoot) -> UInt64 {
         switch self {
-        case .webBearer, .background:
+        case .webBearer:
             return owner.rootNodeID
+        case .background(let approved):
+            return approved.matches(owner) && approved.hasManagedDestination
+                ? (approved.targetNodeID ?? 0) : 0
         case .managedForeground(let authority):
             return authority.matches(owner) ? authority.destination.targetNodeID : 0
         }
@@ -162,7 +168,8 @@ private struct XDriveIOSBGOriginalNodeReceiptVerifier {
 
     func verify(_ receipt: XDriveNativeUploadReceipt, parentID: UInt64,
                 expectedName: String) async throws {
-        guard approved.matches(owner), parentID == owner.rootNodeID,
+        guard approved.matches(owner), approved.hasManagedDestination,
+              parentID == approved.targetNodeID,
               receipt.nodeID > 0, receipt.revision > 0,
               receipt.bytes > 0,
               receipt.nodeName == expectedName,
@@ -178,7 +185,7 @@ private struct XDriveIOSBGOriginalNodeReceiptVerifier {
         guard clean == owner.origin,
               var parts = URLComponents(url: clean, resolvingAgainstBaseURL: false)
         else { throw XDriveIOSNodeReceiptReadbackError.invalidOwner }
-        parts.path = "/api/v1/ios/photos/background/receipts/nodes/\(receipt.nodeID)"
+        parts.path = "/api/v1/ios/photos/background-managed/receipts/nodes/\(receipt.nodeID)"
         parts.query = nil
         parts.fragment = nil
         guard let url = parts.url else {

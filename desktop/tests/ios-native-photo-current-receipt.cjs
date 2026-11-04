@@ -48,7 +48,12 @@ test('encrypted Owner ledger exact lookup never creates Keychain identity or bac
   assert.match(getter, /availableShardPrefixes\(scope: scope\)/)
   assert.match(getter, /legacyIDs\.contains\(item\.id\)/)
   assert.match(getter, /legacyFingerprints\.contains\(item\.assetFingerprint\)/)
-  assert.match(getter, /item\.destinationParentID == scope\.rootNodeID/)
+  assert.match(getter, /expectedParentID = verifiedParentID \?\? scope\.rootNodeID/)
+  assert.match(getter, /item\.destinationParentID == expectedParentID/)
+  // Old Owner-root receipts remain readable but cannot appear as confirmed
+  // backup coverage under a newly server-selected managed Node.
+  assert.match(model, /verifiedParentID: managed\.destination\.targetNodeID/)
+  assert.match(model, /latestManaged\.destination\.targetNodeID == managed\.destination\.targetNodeID/)
   assert.match(getter, /item\.sha256 == sha256/)
   assert.match(getter, /SecItemCopyMatching\(query as CFDictionary, &raw\)/)
   assert.match(getter, /if status == errSecItemNotFound \{ return nil \}/)

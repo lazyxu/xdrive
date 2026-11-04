@@ -24,6 +24,15 @@ import Foundation
         ] {
             precondition(P.translatedPath(rejected) == nil, "admitted: " + rejected)
         }
-        print("PASS: exact iOS managed UploadSession aliases")
+        typealias BG = XDriveIOSManagedPhotoBackgroundUploadRoutePolicy
+        let bgRoot = "/api/v1/ios/photos/background-managed/uploads"
+        precondition(BG.translatedPath("/api/v1/uploads") == bgRoot)
+        precondition(BG.translatedPath("/api/v1/uploads/" + id + "/finalize") ==
+                     bgRoot + "/" + id + "/finalize")
+        precondition(BG.translatedPath("/api/v1/uploads/" + id + "/chunks/1") ==
+                     bgRoot + "/" + id + "/chunks/1")
+        precondition(BG.translatedPath("/api/v1/nodes/1") == nil)
+        precondition(BG.translatedPath("/api/v1/uploads/resume-lookup") == nil)
+        print("PASS: exact foreground and background managed UploadSession aliases")
     }
 }

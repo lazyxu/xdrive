@@ -188,7 +188,8 @@ final class XDriveNativeUploadSessionTransport {
             }
         }
         if case .scopedIOSBackground(let credential) = authorization {
-            guard parentID == credential.rootNodeID,
+            guard credential.hasManagedDestination,
+                  parentID == credential.targetNodeID,
                   XDriveIOSBackgroundOriginalNamePolicy.valid(name),
                   expectedSize > 0,
                   expectedSize <= 1_073_741_824 + 1_048_576 else {
@@ -419,10 +420,13 @@ final class XDriveNativeUploadSessionTransport {
                   local.deviceID == approved.deviceID,
                   local.ownerID == approved.ownerID,
                   local.rootNodeID == approved.rootNodeID,
+                  local.sourceID == approved.sourceID,
+                  local.targetNodeID == approved.targetNodeID,
+                  local.hasManagedDestination,
                   local.instanceID == approved.instanceID,
                   local.expiresAt > Date(),
                   let translated =
-                    XDriveIOSBackgroundUploadRoutePolicy.translatedPath(path) else {
+                    XDriveIOSManagedPhotoBackgroundUploadRoutePolicy.translatedPath(path) else {
                 throw XDriveNativeUploadError.unauthorizedOrRejected(403)
             }
             targetPath = translated

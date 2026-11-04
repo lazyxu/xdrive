@@ -224,7 +224,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             }
             // A verified Owner root is NOT an authorized photo destination.
             // Fail closed before persisting any new automatic plan.
-            _ = try await XDriveIOSNativePhotoBackupDestinationModel
+            let managed = try await XDriveIOSNativePhotoBackupDestinationModel
                 .readExistingForUpload(owner: selected, accessToken: second.accessToken)
             try Task.checkCancellation()
             guard displayEpoch == uiEpoch,
@@ -234,7 +234,9 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 throw XDriveIOSNativeSessionError.staleSession
             }
             schedule = try store.configure(
-                owner: selected, minutes: minutes, allowICloud: allowICloud
+                owner: selected, minutes: minutes, allowICloud: allowICloud,
+                sourceID: managed.destination.sourceID,
+                targetNodeID: managed.destination.targetNodeID
             )
             message = "已开启原生前台自动增量备份。仅 App 活跃时按计划检查，系统不保证锁屏或强制退出后定时执行。"
             configured = true
@@ -380,7 +382,9 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 if kind == .focused {
                     try await self.runFocused(
                         login: login, owner: selected, uiEpoch: uiEpoch,
-                        allowICloud: allowICloud
+                        allowICloud: allowICloud,
+                        initialSourceID: managed.destination.sourceID,
+                        initialTargetNodeID: managed.destination.targetNodeID
                     )
                 } else {
                     let window: Int
@@ -388,7 +392,9 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     let manualStartEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?
                     if kind == .automatic {
                         guard let due = try XDriveIOSPhotoAutoScheduleStore.shared
-                            .reserveDue(owner: selected) else {
+                            .reserveDue(owner: selected,
+                                        sourceID: managed.destination.sourceID,
+                                        targetNodeID: managed.destination.targetNodeID) else {
                             self.refresh(owner: selected)
                             return
                         }
@@ -436,7 +442,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     self.progress = result
                     if kind == .automatic {
                         self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared.recordResult(
-                            owner: selected, progress: result
+                            owner: selected,
+                            sourceID: managed.destination.sourceID,
+                            targetNodeID: managed.destination.targetNodeID,
+                            progress: result
                         )
                     } else if let initial = manualStartEpoch {
                         // Never advance a manual cursor if PhotoKit changed while
@@ -522,7 +531,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     /// re-verifies the Owner to allow native refresh while the App is visible.
     private func runFocused(
         login: XDriveIOSNativeOwnerLoginModel,
-        owner: XDriveNativeOwnerRoot, uiEpoch: UUID, allowICloud: Bool
+        owner: XDriveNativeOwnerRoot, uiEpoch: UUID, allowICloud: Bool,
+        initialSourceID: UInt64, initialTargetNodeID: UInt64
     ) async throws {
         let initial = try XDriveIOSPhotoKitLibraryEpoch.capture()
         // A constant-time PhotoKit fetch count plus a SECOND epoch witness
@@ -539,7 +549,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         // A cursor never substitutes for Server-confirmed Node receipts.
         let resume = XDriveIOSPhotoFocusedResumeStore.shared.resume(
             owner: owner, epoch: initial, totalVisible: visibleNow,
-            allowICloud: allowICloud
+            allowICloud: allowICloud,
+            sourceID: initialSourceID, targetNodeID: initialTargetNodeID
         )
         var window = resume.nextWindow
         var confirmedNew = 0
@@ -593,6 +604,11 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             // later first-pass window, or allow a renamed/revoked Source.
             let managed = try await XDriveIOSNativePhotoBackupDestinationModel
                 .readExistingForUpload(owner: owner, accessToken: auth.accessToken)
+            guard managed.destination.sourceID == initialSourceID,
+                  managed.destination.targetNodeID == initialTargetNodeID else {
+                XDriveIOSPhotoFocusedResumeStore.shared.clear(owner: owner)
+                throw XDriveIOSFocusedBackupFailure.libraryChanged
+            }
             try Task.checkCancellation()
             guard displayEpoch == uiEpoch,
                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
@@ -677,7 +693,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     try XDriveIOSPhotoFocusedResumeStore.shared.saveCompletedWindow(
                         owner: owner, completedWindow: window, nextWindow: next,
                         totalVisible: result.totalVisible, epoch: after,
-                        allowICloud: allowICloud, hadUnavailable: hadUnavailable
+                        allowICloud: allowICloud, hadUnavailable: hadUnavailable,
+                        sourceID: initialSourceID, targetNodeID: initialTargetNodeID
                     )
                 }
                 state.completedWindows += 1

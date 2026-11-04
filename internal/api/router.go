@@ -168,6 +168,17 @@ func (s *Server) Router() *gin.Engine {
 	iosPhotoBackground.POST("/uploads/:id/finalize", s.iosBackgroundFinalizeUpload)
 	iosPhotoBackground.POST("/uploads/resume-lookup", s.iosBackgroundResumeLookup)
 	iosPhotoBackground.GET("/receipts/nodes/:id", s.iosBackgroundReceipt)
+	// Independently granted BGProcessingTask writes into its exact managed
+	// iPhone Source/Node, reusing the same CAS and private upload admission.
+	// This group never accepts a general Owner bearer or Desktop Agent token.
+	iosPhotoManagedBG := v1.Group("/ios/photos/background-managed")
+	iosPhotoManagedBG.Use(s.requireIOSPhotoBackgroundGrant())
+	iosPhotoManagedBG.POST("/uploads", s.iosPhotoManagedCreateUpload)
+	iosPhotoManagedBG.GET("/uploads/:id", s.iosPhotoManagedGetUpload)
+	iosPhotoManagedBG.PUT("/uploads/:id/chunks/:index", s.iosPhotoManagedPutChunk)
+	iosPhotoManagedBG.POST("/uploads/:id/finalize", s.iosPhotoManagedFinalize)
+	iosPhotoManagedBG.POST("/uploads/resume-lookup", s.iosPhotoManagedResumeLookup)
+	iosPhotoManagedBG.GET("/receipts/nodes/:id", s.iosPhotoManagedReceipt)
 	v1.GET("/public/share", s.publicShareMetadata)
 	v1.POST("/public/share/children", s.publicFolderShareChildren)
 	v1.POST("/public/share/directories", s.publicShareCreateDirectory)

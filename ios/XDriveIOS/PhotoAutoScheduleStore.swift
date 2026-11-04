@@ -26,6 +26,10 @@ final class XDriveIOSPhotoAutoScheduleStore {
         var windowIndex: Int
         var nextDueAt: Date
         var lastCompletedAt: Date?
+        // Server-proven Source/Node identity, not an editable cloud path.
+        // Older root-only plans decode as nil and cannot resume an offset.
+        var targetSourceID: UInt64? = nil
+        var targetNodeID: UInt64? = nil
         // Device-local, opaque NSSecureCoding PhotoKit generation token.
         // Optional for backward-compatible decoding of old schedules.
         var libraryChangeEpoch: Data? = nil
@@ -55,19 +59,29 @@ final class XDriveIOSPhotoAutoScheduleStore {
     /// permission to scan PhotoKit automatically.
     @discardableResult
     func configure(owner: XDriveNativeOwnerRoot, minutes: Int,
-                   allowICloud: Bool) throws -> State {
-        guard XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes) else {
+                   allowICloud: Bool, sourceID: UInt64,
+                   targetNodeID: UInt64) throws -> State {
+        guard sourceID > 0, targetNodeID > 0,
+              targetNodeID != owner.rootNodeID,
+              XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes) else {
             throw XDriveIOSPhotoAutoScheduleError.unsupportedInterval
         }
         let existing = status(owner: owner)
+        let sameTarget = XDriveIOSPhotoBackupDestinationCursorPolicy.sameManagedTarget(
+            savedSourceID: existing?.targetSourceID,
+            savedTargetNodeID: existing?.targetNodeID,
+            currentSourceID: sourceID, currentTargetNodeID: targetNodeID,
+            ownerRootNodeID: owner.rootNodeID
+        )
         let state = State(
             enabled: true, pausedForReview: false,
             intervalMinutes: minutes, allowICloudOriginals: allowICloud,
-            windowIndex: existing?.windowIndex ?? 0,
+            windowIndex: sameTarget ? (existing?.windowIndex ?? 0) : 0,
             // First scan is due on the next eligible foreground poll.
-            nextDueAt: Date(), lastCompletedAt: existing?.lastCompletedAt,
-            libraryChangeEpoch: existing?.libraryChangeEpoch,
-            libraryAuthorizationRaw: existing?.libraryAuthorizationRaw,
+            nextDueAt: Date(), lastCompletedAt: sameTarget ? existing?.lastCompletedAt : nil,
+            targetSourceID: sourceID, targetNodeID: targetNodeID,
+            libraryChangeEpoch: sameTarget ? existing?.libraryChangeEpoch : nil,
+            libraryAuthorizationRaw: sameTarget ? existing?.libraryAuthorizationRaw : nil,
             catchUpWhenBehind: existing?.catchUpWhenBehind
         )
         try persist(state, owner: owner)
@@ -160,9 +174,13 @@ final class XDriveIOSPhotoAutoScheduleStore {
     /// Persist the next due time BEFORE any possible network write. A
     /// process crash cannot spin a hot retry loop, and the encrypted
     /// original journal is still responsible for deduplication.
-    func reserveDue(owner: XDriveNativeOwnerRoot, now: Date = Date()) throws
-        -> State? {
-        guard var state = status(owner: owner),
+    func reserveDue(owner: XDriveNativeOwnerRoot,
+                    sourceID: UInt64, targetNodeID: UInt64,
+                    now: Date = Date()) throws -> State? {
+        guard sourceID > 0, targetNodeID > 0,
+              var state = status(owner: owner),
+              state.targetSourceID == sourceID,
+              state.targetNodeID == targetNodeID,
               state.enabled, !state.pausedForReview,
               state.nextDueAt <= now,
               let following = XDriveIOSPhotoAutoSchedulePolicy.nextDue(
@@ -187,9 +205,13 @@ final class XDriveIOSPhotoAutoScheduleStore {
     }
 
     func recordResult(owner: XDriveNativeOwnerRoot,
+                      sourceID: UInt64, targetNodeID: UInt64,
                       progress: XDriveIOSPhotoBackupProgress,
                       now: Date = Date()) throws -> State? {
-        guard var state = status(owner: owner), state.enabled else { return nil }
+        guard var state = status(owner: owner), state.enabled,
+              state.targetSourceID == sourceID,
+              state.targetNodeID == targetNodeID,
+              sourceID > 0, targetNodeID > 0 else { return nil }
         let pending = progress.stoppedForReview || progress.needsReview > 0
         let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
         // The photo library may have mutated AFTER reserveDue but BEFORE

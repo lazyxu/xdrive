@@ -87,3 +87,42 @@ milestone, not the complete Synology-style automatic backup MVP.
 
 Exact HEAD Go/Postgres, iOS IPA, full CI/Final Gate and real iPhone hardware
 acceptance still required, and old roots/journals must not be silently migrated.
+
+## Stage 4 — managed BG grant and destination-bound cursors (2026-11-04)
+
+The native iPhone BG grant now includes the Server-proven `source_id` and
+`target_node_id` (nullable when reading **historical** root-only grants).
+Issuing a new grant requires the current Owner and independently enrolled iOS
+Device **and** its dedicated server-owned `ios_photos` Source/Node. Rotation
+rechecks the original pair in the same SQL transaction; renaming the managed
+leaf under 5B keeps its NodeID. A removed/rebound Source cannot be renewed.
+
+The dedicated `/api/v1/ios/photos/background-managed/{uploads,receipts}`
+group accepts the independently revocable BG grant + separate Device token,
+never a generic Owner JWT, Desktop Agent or unscoped SourceRun. The Go
+UploadSession/CAS create and Finalize transactions repeat grant expiry,
+revocation, Server instance/session generation, Source/Node and device proof.
+The old `/ios/photos/background/uploads` root aliases remain **read-only**
+for historical GET / resume-lookup / Node receipt; they reject new POST,
+chunk PUT and Finalize. Legacy Keychain grants can still be revoked, but are
+not counted as valid managed upload authorization. Failed BG grant or Keychain
+proofs must never fall back to Owner root.
+
+Automatic, focused and BG PhotoKit position checkpoints now also carry exact
+SourceID + TargetNodeID. Old/unknown or changed target identities cause a
+safe restart at window **zero**, retaining all confirmed and unresolved
+encrypted original receipts. The BG cursor's explicit pending-ACK pause is
+not cleared by reconfiguring the target. A focus pass cannot skip previously
+processed Windows after a destination migration.
+
+### Still required before calling this the Synology-style MVP
+- Exact-HEAD GitHub Go + real PostgreSQL integration and iOS IPA / Final Gate
+  must pass, including mandatory Source-target receipt and restart tests.
+- Real iPhone (including revoked Photos permission, locked protected data,
+  iCloud-only media, large video, atomic Live ZIP and lost finalize ACK) is
+  **跳过（未验收）** until physical test evidence exists.
+- Time-line/coverage UI must use current managed parent in its read-only
+  confirmed-receipt queries; a legacy Owner-root receipt is not current
+  managed-target coverage.
+- Do not re-encrypt the ordinary local task history or broaden this P0 to
+  nonessential privacy enhancements.

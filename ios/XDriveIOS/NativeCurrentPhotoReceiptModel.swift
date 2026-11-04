@@ -114,6 +114,13 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                       let stamp = XDriveIOSNativePhotoProofStamp.current(localIdentifier)
                 else { throw XDriveIOSNativeCurrentPhotoReceiptError.staleSource }
 
+                // A legacy confirmed Owner-root receipt is not evidence for
+                // the user's mandatory managed backup destination.
+                let managed = try await XDriveIOSNativePhotoBackupDestinationModel
+                    .readExistingForUpload(owner: owner, accessToken: first.accessToken)
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+                else { throw XDriveIOSNativeCurrentPhotoReceiptError.staleSource }
                 guard XDriveIOSNativeCurrentPhotoReceiptPolicy.canVerifyOriginal(
                     kind: stamp.kind, isLive: stamp.isLive
                 ) else {
@@ -223,7 +230,8 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                 let receipt = try await XDrivePhotoSyncLedger.shared
                     .existingReceiptForCurrentOriginal(
                         scope: scope, role: role, name: name,
-                        size: payloadBytes, sha256: sha256
+                        size: payloadBytes, sha256: sha256,
+                        verifiedParentID: managed.destination.targetNodeID
                     )
                 try Task.checkCancellation()
                 guard self.epoch == token else { return }
@@ -258,7 +266,11 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                 )
                 try Task.checkCancellation()
                 let later = try await login.verifiedAuthorization()
-                guard self.epoch == token,
+                let latestManaged = try await XDriveIOSNativePhotoBackupDestinationModel
+                    .readExistingForUpload(owner: owner, accessToken: later.accessToken)
+                guard latestManaged.destination.sourceID == managed.destination.sourceID,
+                      latestManaged.destination.targetNodeID == managed.destination.targetNodeID,
+                      self.epoch == token,
                       XDriveIOSNativePhotoOwnerScope.matches(later.owner, owner),
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
                       UIApplication.shared.applicationState == .active,
@@ -280,7 +292,7 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                 self.currentNodeVerified = true
                 self.verifiedAt = Date()
                 self.message =
-                    "当前照片／视频／Live 双原件 ZIP 的 SHA-256 与既有收据一致，且刚从当前 Owner 云端重新验证了文件 Node。"
+                    "当前照片／视频／Live 双原件 ZIP 的 SHA-256 与受管备份目录的历史收据一致，且刚重新验证了当前 Owner 云端文件 Node。"
             } catch is CancellationError {
             } catch {
                 self.publishUnverified(

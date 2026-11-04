@@ -32,8 +32,10 @@ test('native Photos entry uses SwiftUI rather than WKWebView and supports verifi
 
 test('native auto schedule shares original CAS writer, gate and durable window cursor', () => {
   const lock = controller.indexOf('XDriveIOSOriginalRunGate.shared.acquire()')
-  const reserve = controller.indexOf('.reserveDue(owner: selected)')
-  assert.ok(lock >= 0 && reserve > lock, 'lock must precede due reservation')
+  const reserve = controller.indexOf('.reserveDue(owner: selected,')
+  const managed = controller.indexOf('.readExistingForUpload(owner: selected, accessToken: verified.accessToken)')
+  assert.ok(lock >= 0 && managed > lock && reserve > managed,
+    'shared gate and current managed Source/Node proof must precede reservation')
   assert.match(controller, /XDriveIOSOriginalRunGate.shared.release\(gate\)/)
   assert.match(controller, /XDriveIOSForegroundPhotoBackupMVP\(/)
   assert.match(controller, /XDriveIOSPhotoAutoScheduleStore.shared.recordResult/)

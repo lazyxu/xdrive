@@ -196,6 +196,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     return
                 }
                 backgroundEnableOwner = nil
+                guard destination.confirmedForCurrentName else {
+                    consentError = "请先保存并核验当前 iPhone 的受管备份目的地。"
+                    return
+                }
                 background.enable(login: login, expectedOwner: selected)
             }
         } message: {
@@ -733,7 +737,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("可选系统后台原件备份") {
-                Text("前台自动备份与系统 BGProcessing 相互独立。后台需要单独授权当前设备及 Owner 根目录；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 \(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
+                Text("前台自动备份与系统 BGProcessing 相互独立。必须先保存并核验受管备份目的地，后台再单独授权当前 iPhone、Owner 和对应 Source/Node；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 \(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
                     .font(.footnote).foregroundStyle(.secondary)
                 if background.checking {
                     ProgressView("正在验证本机后台授权…")
@@ -808,7 +812,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                             showBackgroundEnableConsent = backgroundEnableOwner != nil
                         }
                         .disabled(background.busy || background.checking || controller.busy ||
-                                  login.owner == nil)
+                                  login.owner == nil || !destination.confirmedForCurrentName)
                         .accessibilityIdentifier("native-ios-photo-background-enable")
                     }
                 } else if !background.checking {

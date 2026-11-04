@@ -8,6 +8,7 @@ import (
     "net/http"
     "strconv"
     "strings"
+    "time"
 
     "github.com/gin-gonic/gin"
     "github.com/google/uuid"
@@ -36,31 +37,60 @@ func currentIOSPhotoManagedUploadScope(c *gin.Context) (iosPhotoManagedUploadSco
 // Authenticated native iOS Owner + independently verified device. This is a
 // narrow PhotoKit-original upload alias, never a Desktop local_folder writer
 // or an elevation of the iOS identity-only credential to generic Files.
+// Foreground: current verified Owner JWT + independently registered iPhone.
+// Background: independently revocable, current Server-validated BG grant +
+// second native device secret, with the SAME exact Source/Node binding.
+// A BG grant never becomes an ordinary /nodes or local_folder bearer.
 func (s *Server) iosPhotoManagedAuthorizedScope(c *gin.Context) (iosPhotoManagedUploadScope, bool) {
-    owner, ok := currentUser(c)
-    if !ok || owner.ID == 0 || owner.DisabledAt != nil || owner.MustChangePassword {
-        fail(c, http.StatusForbidden, "current owner required for ios photo upload")
-        return iosPhotoManagedUploadScope{}, false
-    }
-    var out iosPhotoManagedUploadScope
-    err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-        device, err := iosPhotoDestinationDeviceTx(c, tx, owner.ID)
-        if err != nil { return err }
-        source, target, err := iosPhotoDestinationBindingTx(tx, device)
-        if err != nil { return err }
-        out = iosPhotoManagedUploadScope{
-            ownerID: owner.ID, deviceID: device.ID,
-            sourceID: source.ID, targetID: target.ID,
-        }
-        return nil
-    })
-    if err != nil || out.targetID == 0 {
-        fail(c, http.StatusForbidden, "verified ios photo managed destination required")
-        return iosPhotoManagedUploadScope{}, false
-    }
-    c.Set(iosPhotoManagedContextKey, out)
-    c.Header("Cache-Control", "private, no-store")
-    return out, true
+	grant, background := iosPhotoBackgroundGrantFromContext(c)
+	ownerID := uint64(0)
+	if background {
+		if !iosPhotoGrantHasManagedTarget(grant) {
+			fail(c, http.StatusForbidden, "legacy owner-root grant cannot write managed photos")
+			return iosPhotoManagedUploadScope{}, false
+		}
+		ownerID = grant.OwnerID
+	} else {
+		owner, ok := currentUser(c)
+		if !ok || owner.ID == 0 || owner.DisabledAt != nil || owner.MustChangePassword {
+			fail(c, http.StatusForbidden, "current owner required for ios photo upload")
+			return iosPhotoManagedUploadScope{}, false
+		}
+		ownerID = owner.ID
+	}
+	var out iosPhotoManagedUploadScope
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		device, err := iosPhotoDestinationDeviceTx(c, tx, ownerID)
+		if err != nil {
+			return err
+		}
+		source, target, err := iosPhotoDestinationBindingTx(tx, device)
+		if err != nil {
+			return err
+		}
+		if background && (source.ID != *grant.SourceID ||
+			target.ID != *grant.TargetNodeID ||
+			grant.DeviceID != device.ID) {
+			return errIOSPhotoDestinationDenied
+		}
+		out = iosPhotoManagedUploadScope{
+			ownerID: ownerID, deviceID: device.ID,
+			sourceID: source.ID, targetID: target.ID,
+		}
+		return nil
+	})
+	if err != nil || out.targetID == 0 {
+		fail(c, http.StatusForbidden, "verified ios photo managed destination required")
+		return iosPhotoManagedUploadScope{}, false
+	}
+	// Only a separately validated BG grant injects an Owner scope for the
+	// existing CAS engine, never a generic Auth JWT or /nodes route.
+	if background {
+		c.Set("userID", ownerID)
+	}
+	c.Set(iosPhotoManagedContextKey, out)
+	c.Header("Cache-Control", "private, no-store")
+	return out, true
 }
 
 func validIOSPhotoManagedUploadInit(req uploadInitRequest, scope iosPhotoManagedUploadScope) bool {
@@ -87,6 +117,34 @@ func requireIOSPhotoManagedUploadTx(ctx context.Context, tx *gorm.DB,
         !validIOSPhotoManagedUploadInit(req, scope) ||
         req.NodeID != nil {
         return errManagedSourceWriteDenied
+    }
+    // Recheck BG grant revocation, Owner session generation and precise
+    // Source/Target INSIDE the same transaction as CAS session creation or
+    // Finalize, not only at HTTP middleware admission.
+    if grant, background := iosPhotoBackgroundGrantFromContext(c); background {
+        if !iosPhotoGrantHasManagedTarget(grant) ||
+            grant.OwnerID != ownerID || grant.DeviceID != scope.deviceID ||
+            *grant.SourceID != scope.sourceID || *grant.TargetNodeID != targetID {
+            return errManagedSourceWriteDenied
+        }
+        var live meta.IOSPhotoBackgroundGrant
+        if err := tx.WithContext(ctx).Clauses(clause.Locking{
+            Strength: "SHARE", Options: "NOWAIT",
+        }).Where("id = ? AND owner_id = ? AND device_id = ? AND source_id = ? AND target_node_id = ? AND revoked_at IS NULL AND expires_at > ?",
+            grant.ID, ownerID, scope.deviceID, scope.sourceID,
+            targetID, time.Now().UTC()).Take(&live).Error; err != nil ||
+            live.SessionVersion != grant.SessionVersion ||
+            live.ServerInstance != grant.ServerInstance ||
+            !iosPhotoGrantHasManagedTarget(live) {
+            return errManagedSourceWriteDenied
+        }
+        var currentOwner meta.User
+        if err := tx.WithContext(ctx).Where(
+            "id = ? AND session_version = ? AND disabled_at IS NULL",
+            ownerID, grant.SessionVersion).Take(&currentOwner).Error; err != nil ||
+            currentOwner.MustChangePassword {
+            return errManagedSourceWriteDenied
+        }
     }
     var source meta.Source
     if err := tx.WithContext(ctx).Clauses(clause.Locking{
