@@ -3121,7 +3121,7 @@ function registerIPCHandlers() {
         !desktopPlacesWebOwnerStillCurrent({origin:target.origin,owner:status.username})) {
       desktopPlacesPending=null
       return {ok:false,error:{code:'map_browser_session_unavailable',
-        message:'无法建立当前账户的 Web 地图会话；可使用 GPS 备用地图。'}}
+        message:'无法建立当前账户的 Web 地图会话；请检查 HTTPS 连接或重试。'}}
     }
     desktopPlacesPending={
       windowID:hostID,
