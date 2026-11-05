@@ -458,7 +458,7 @@ test('native Photos album exposes Show Map only with Full Photo Library access',
   assert.match(albumBrowser, /Menu \{[\s\S]*?if permission == \.authorized && selected == nil && !selectionMode[\s\S]*?native-ios-local-album-show-map/)
   assert.match(albumBrowser, /Button \{\s*mapAlbumScope = album\s*albumMapJump = nil\s*showingAlbumMap = true\s*\} label: \{\s*Label\("显示地图", systemImage: "map"\)/)
   assert.match(albumBrowser, /Label\("更多", systemImage: "ellipsis.circle"\)/)
-  assert.match(albumBrowser, /fullScreenCover\(isPresented: \$showingAlbumMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\(\s*album: mapAlbumScope,[\s\S]*?mapScope: \.constant\(\.library\)[\s\S]*?cameraOnEntry: albumMapCamera[\s\S]*?onLibraryCameraChange: \{ next in albumMapCamera = next \}[\s\S]*?onClose:/)
+  assert.match(albumBrowser, /fullScreenCover\(isPresented: \$showingAlbumMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\(\s*album: mapAlbumScope,[\s\S]*?mapScope: \.constant\(\.library\)[\s\S]*?onClose:[\s\S]*?cameraOnEntry: albumMapCamera[\s\S]*?onLibraryCameraChange: \{ next in albumMapCamera = next \}/)
   assert.match(albumBrowser, /@State private var albumMapCamera: MKCoordinateRegion\?/)
   assert.match(albumBrowser, /\.environment\(\\\.xdriveNativeLocalMapJump, albumMapJump\)/)
   assert.match(albumBrowser, /\.environment\(\\\.xdriveOpenNativeLocalMap, \{ jump in\s*pendingAlbumMapJump = jump/)
@@ -487,7 +487,7 @@ test('album map scans the current PhotoKit collection snapshot, not the whole li
 test('native local Gallery opens the full-library map from its filter menu without destroying the wall', () => {
   assert.match(localWall, /Section\("地图"\)[\s\S]*?Button \{\s*showingMap = true\s*\}[\s\S]*?Label\("显示地图", systemImage: "map"\)/)
   assert.match(localWall, /permission != \.authorized[\s\S]*?native-ios-local-wall-show-map/)
-  assert.match(localWall, /\.fullScreenCover\(isPresented: \$showingMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\([\s\S]*?mapScope: \.constant\(\.library\)[\s\S]*?cameraOnEntry: mapCamera[\s\S]*?onLibraryCameraChange: \{ next in mapCamera = next \}[\s\S]*?onClose:/)
+  assert.match(localWall, /\.fullScreenCover\(isPresented: \$showingMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\([\s\S]*?mapScope: \.constant\(\.library\)[\s\S]*?onClose:[\s\S]*?cameraOnEntry: mapCamera[\s\S]*?onLibraryCameraChange: \{ next in mapCamera = next \}/)
   assert.match(localWall, /@State private var mapCamera: MKCoordinateRegion\?/)
   assert.match(localWall, /\.environment\(\\\.xdriveNativeLocalMapJump, nil\)/)
   assert.match(map, /if album != nil \|\| onClose != nil[\s\S]*?if onClose != nil \{ onClose\?\(\) \}/)
