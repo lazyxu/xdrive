@@ -55,7 +55,7 @@ func (f *dsmNotesImagesFixture) OwnerNotesImportIOSImage(
 	}
 	sum := sha256.Sum256(data)
 	return client.NotesImageReceipt{
-		NodeID:       124, Filename: dsmNotesImageFixtureName,
+		NodeID: 124, Filename: dsmNotesImageFixtureName,
 		RelativePath: "_assets/" + id + "/" + dsmNotesImageFixtureName,
 		ContentType:  "image/gif", Bytes: int64(len(data)), SHA256: hex.EncodeToString(sum[:]),
 	}, nil
@@ -73,7 +73,7 @@ func (f *dsmNotesImagesFixture) OwnerNotesReadImage(
 	sum := sha256.Sum256(data)
 	return localbackupipc.OwnerNotesImageData{
 		ContentType: "image/gif", Bytes: int64(len(data)),
-		SHA256:      hex.EncodeToString(sum[:]), Image: data,
+		SHA256: hex.EncodeToString(sum[:]), Image: data,
 	}, nil
 }
 
