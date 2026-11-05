@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="shell" x1="18" y1="12" x2="110" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#E2E8F0"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="42" y1="36" x2="88" y2="94" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60A5FA"/>
+      <stop offset=".52" stop-color="#A78BFA"/>
+      <stop offset="1" stop-color="#F472B6"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="8" width="104" height="112" rx="25" fill="url(#shell)" stroke="#CBD5E1" stroke-width="4"/>
+  <rect x="25" y="25" width="78" height="78" rx="18" fill="#FFFFFF"/>
+  <circle cx="64" cy="64" r="9" fill="#FFFFFF"/>
+  <g fill="url(#lens)">
+    <ellipse cx="64" cy="47" rx="8" ry="15"/>
+    <ellipse cx="64" cy="81" rx="8" ry="15"/>
+    <ellipse cx="47" cy="64" rx="15" ry="8"/>
+    <ellipse cx="81" cy="64" rx="15" ry="8"/>
+    <ellipse cx="52" cy="52" rx="8" ry="15" transform="rotate(-45 52 52)"/>
+    <ellipse cx="76" cy="52" rx="8" ry="15" transform="rotate(45 76 52)"/>
+    <ellipse cx="52" cy="76" rx="8" ry="15" transform="rotate(45 52 76)"/>
+    <ellipse cx="76" cy="76" rx="8" ry="15" transform="rotate(-45 76 76)"/>
+  </g>
+  <circle cx="64" cy="64" r="7" fill="#FFFFFF"/>
+  <rect x="55" y="13" width="18" height="3" rx="1.5" fill="#94A3B8"/>
+</svg>
