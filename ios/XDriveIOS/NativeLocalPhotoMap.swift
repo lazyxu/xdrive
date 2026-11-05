@@ -1271,26 +1271,6 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         Button("重新扫描已授权图库位置") { scanFullLibrary() }
                             .disabled(busy)
                             .accessibilityIdentifier("native-ios-map-scan-full-library")
-                        Button("细化当前视窗的定位照片") {
-                            guard let region = globalCamera,
-                                  let view = XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
-                                    latitude: region.center.latitude,
-                                    longitude: region.center.longitude,
-                                    latitudeSpan: region.span.latitudeDelta,
-                                    longitudeSpan: region.span.longitudeDelta
-                                  ) else {
-                                error = "当前地图视窗无效，请移动或缩放地图后重试。"
-                                return
-                            }
-                            scanFullLibrary(viewport: view)
-                        }
-                        .disabled(busy || globalCamera == nil)
-                        .accessibilityIdentifier("native-ios-map-refine-viewport")
-                        if globalViewport != nil {
-                            Button("还原已授权全库概览") { scanFullLibrary() }
-                                .disabled(busy)
-                                .accessibilityIdentifier("native-ios-map-restore-global-overview")
-                        }
                     } label: {
                         Label("地图操作", systemImage: "ellipsis.circle")
                     }
