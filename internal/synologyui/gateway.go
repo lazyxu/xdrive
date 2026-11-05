@@ -1158,7 +1158,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if _, err := agent.ReadSchedule(ctx, item.ID); err != nil {
 				continue
 			}
-			items = append(items, map[string]any{"source_id": item.ID, "name": item.Name, "sync_mode": item.SyncMode})
+			items = append(items, map[string]any{
+				"source_id": item.ID, "name": item.Name, "sync_mode": item.SyncMode,
+				"target_path": item.TargetPath,
+			})
 		}
 		sendJSON(w, map[string]any{"items": items})
 		return
