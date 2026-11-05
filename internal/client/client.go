@@ -1355,7 +1355,7 @@ func New(baseURL, token string) *Client {
 	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 0}}
 }
 
- // SetDeviceIdentity attaches this installation's protected device proof to
+// SetDeviceIdentity attaches this installation's protected device proof to
  // authenticated API requests. It does not grant a platform-specific Root,
  // PhotoKit or MediaStore capability.
 func (c *Client) SetDeviceIdentity(deviceID, deviceToken string) {
