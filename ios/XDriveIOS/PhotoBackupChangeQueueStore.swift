@@ -271,12 +271,54 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         return changed
     }
 
-    /// Explicit user retry only, after receipt review if a write may have
-    /// occurred; this routine never writes cloud data or marks success.
+    /// Bounded failed-item listing. These rows are only item-local failures
+    /// proven safe to retry by the original writer; unknown ACKs never enter
+    /// this state and remain in the separate receipt-review ledger.
+    func failed(limit: Int = 64) throws -> [Pending] {
+        guard (1...64).contains(limit) else { throw Failure.invalidInput }
+        let statement = try prepare(
+            "SELECT asset_id,revision,priority FROM entries WHERE state='failed' ORDER BY priority DESC,queue_order DESC LIMIT ?"
+        )
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_bind_int(statement, 1, Int32(limit)) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        var results: [Pending] = []
+        results.reserveCapacity(limit)
+        while true {
+            let code = sqlite3_step(statement)
+            if code == SQLITE_DONE { return results }
+            guard code == SQLITE_ROW, let raw = sqlite3_column_text(statement, 0) else {
+                throw Failure.database(code)
+            }
+            results.append(Pending(
+                localIdentifier: String(cString: raw),
+                revision: sqlite3_column_int64(statement, 1),
+                priority: Int(sqlite3_column_int(statement, 2))
+            ))
+        }
+    }
+
+    /// Explicit user retry only after a fresh PhotoKit baseline check. The
+    /// SQLite transaction prevents a stale UI action from requeueing a row
+    /// after a newer PhotoKit change has been observed.
     @discardableResult
-    func retryFailed(_ candidate: Pending) throws -> Bool {
+    func retryFailed(_ candidate: Pending,
+                     expectedBaselineToken: Data,
+                     authorization: Int) throws -> Bool {
         try validateIdentifier(candidate.localIdentifier)
-        guard candidate.revision > 0 else { throw Failure.invalidInput }
+        try validateToken(expectedBaselineToken)
+        guard candidate.revision > 0, authorization > 0 else {
+            throw Failure.invalidInput
+        }
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { try? execute("ROLLBACK") } }
+        guard let current = try baseline(),
+              current.authorization == authorization,
+              current.token == expectedBaselineToken else {
+            throw Failure.baselineChanged
+        }
         let statement = try prepare(
             "UPDATE entries SET state='pending' WHERE asset_id=? AND revision=? AND state='failed'"
         )
@@ -286,7 +328,10 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             throw Failure.database(sqlite3_errcode(database))
         }
         try stepDone(statement)
-        return sqlite3_changes(database) == 1
+        let changed = sqlite3_changes(database) == 1
+        try execute("COMMIT")
+        committed = true
+        return changed
     }
 
     /// One indexed state read for a visible PhotoKit item, not a 100k ID map.
