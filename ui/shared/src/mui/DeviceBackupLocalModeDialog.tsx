@@ -10,7 +10,7 @@ export interface XDriveLocalBackupModeActions {
   setMode(sourceID: number, revision: number, mode: 'backup' | 'mirror'): Promise<XDriveLocalBoundBackupSettings>
 }
 
-// A verified owning Desktop alone supplies this narrow Agent capability.
+// A verified owning native host (Desktop or DSM) alone supplies this narrow Agent capability.
 // No OS paths, Root credentials or background task control reaches the UI.
 export function XDriveDeviceBackupLocalModeDialog({
   sourceID, actions, onClose, onFinished,

@@ -390,6 +390,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		timeout = 60 * time.Second // Authenticated Server Notes writes are bounded.
 	} else if isDSMOwnerNotesImageRoute(r.URL.Path) {
 		timeout = 120 * time.Second // One explicit <=20 MiB image over bounded CGI/Agent IPC.
+	} else if isLocalBackupManagementPath(r.URL.Path) {
+		timeout = 45 * time.Second // Revision-fenced settings calls use the owning Agent and Server.
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
@@ -410,13 +412,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		previous := csrf(key, username, r.Header.Get("Cookie"), r.Host, interval-1)
 		if !validOrigin(r) || len(token) != len(current) ||
 			(subtle.ConstantTimeCompare([]byte(token), []byte(current)) != 1 && subtle.ConstantTimeCompare([]byte(token), []byte(previous)) != 1) ||
-			(r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" && r.URL.Path != "/v1/nas-draft-bind" && r.URL.Path != "/v1/cloud-create-folder" && r.URL.Path != "/v1/cloud-rename-node" && r.URL.Path != "/v1/cloud-delete-node" && r.URL.Path != "/v1/cloud-move-node" && r.URL.Path != "/v1/cloud-copy-node" && r.URL.Path != "/v1/cloud-upload-file" && !isDSMOwnerNotesWrite(r.URL.Path) && !isDSMOwnerNotesImageWrite(r.URL.Path) && r.ContentLength != 0) ||
+			(r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" && r.URL.Path != "/v1/nas-draft-bind" && r.URL.Path != "/v1/cloud-create-folder" && r.URL.Path != "/v1/cloud-rename-node" && r.URL.Path != "/v1/cloud-delete-node" && r.URL.Path != "/v1/cloud-move-node" && r.URL.Path != "/v1/cloud-copy-node" && r.URL.Path != "/v1/cloud-upload-file" && !isDSMOwnerNotesWrite(r.URL.Path) && !isDSMOwnerNotesImageWrite(r.URL.Path) && !isLocalBackupManagementMutation(r.URL.Path) && r.ContentLength != 0) ||
 			((r.URL.Path == "/v1/schedule" || r.URL.Path == "/v1/nas-share-preflight") && (r.ContentLength < 2 || r.ContentLength > 1024)) ||
 			(r.URL.Path == "/v1/server-login" && (r.ContentLength < 2 || r.ContentLength > 8192)) ||
 			((r.URL.Path == "/v1/nas-share-create" || r.URL.Path == "/v1/nas-draft-bind" || r.URL.Path == "/v1/cloud-create-folder" || r.URL.Path == "/v1/cloud-rename-node" || r.URL.Path == "/v1/cloud-delete-node" || r.URL.Path == "/v1/cloud-move-node" || r.URL.Path == "/v1/cloud-copy-node") && (r.ContentLength < 2 || r.ContentLength > 1024)) ||
 			(r.URL.Path == "/v1/cloud-upload-file" && (r.ContentLength < 2 || r.ContentLength > dsmOwnerSmallUploadJSONMax)) ||
 			(isDSMOwnerNotesWrite(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > dsmOwnerNotesBodyMax)) ||
-			(isDSMOwnerNotesImageWrite(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > dsmNotesImageUploadJSONMax)) {
+			(isDSMOwnerNotesImageWrite(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > dsmNotesImageUploadJSONMax)) ||
+			(isLocalBackupManagementMutation(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > localBackupManagementBodyLimit(r.URL.Path))) {
 			http.Error(w, "CSRF validation failed", http.StatusForbidden)
 			return
 		}
@@ -425,17 +428,23 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"dsm_user": username, "csrf_token": csrf(key, username, r.Header.Get("Cookie"), r.Host, interval)})
 		return
 	}
-	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/nas-volume" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-search" && r.URL.Path != "/v1/cloud-create-folder" && r.URL.Path != "/v1/cloud-rename-node" && r.URL.Path != "/v1/cloud-delete-node" && r.URL.Path != "/v1/cloud-move-node" && r.URL.Path != "/v1/cloud-copy-node" && r.URL.Path != "/v1/cloud-upload-file" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-viewer-preview" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-gallery-places" && r.URL.Path != "/v1/cloud-gallery-place-items" && r.URL.Path != "/v1/cloud-gallery-map-overview" && r.URL.Path != "/v1/cloud-live-motion" && r.URL.Path != "/v1/nas-shares" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-connection" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" && r.URL.Path != "/v1/nas-draft-bind" && r.URL.Path != "/v1/nas-drafts" && r.URL.Path != "/v1/recovery-review" && !isDSMOwnerNotesRoute(r.URL.Path) && !isDSMOwnerNotesImageRoute(r.URL.Path) {
+	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/nas-volume" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-search" && r.URL.Path != "/v1/cloud-create-folder" && r.URL.Path != "/v1/cloud-rename-node" && r.URL.Path != "/v1/cloud-delete-node" && r.URL.Path != "/v1/cloud-move-node" && r.URL.Path != "/v1/cloud-copy-node" && r.URL.Path != "/v1/cloud-upload-file" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-viewer-preview" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-gallery-places" && r.URL.Path != "/v1/cloud-gallery-place-items" && r.URL.Path != "/v1/cloud-gallery-map-overview" && r.URL.Path != "/v1/cloud-live-motion" && r.URL.Path != "/v1/nas-shares" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-connection" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" && r.URL.Path != "/v1/nas-draft-bind" && r.URL.Path != "/v1/nas-drafts" && r.URL.Path != "/v1/recovery-review" && !isDSMOwnerNotesRoute(r.URL.Path) && !isDSMOwnerNotesImageRoute(r.URL.Path) && !isLocalBackupManagementPath(r.URL.Path) {
 		http.NotFound(w, r)
 		return
 	}
-	if r.URL.Path == "/v1/run" || r.URL.Path == "/v1/control" || r.URL.Path == "/v1/nas-share-preflight" || r.URL.Path == "/v1/server-login" || r.URL.Path == "/v1/nas-share-create" || r.URL.Path == "/v1/nas-draft-bind" || r.URL.Path == "/v1/cloud-create-folder" || r.URL.Path == "/v1/cloud-rename-node" || r.URL.Path == "/v1/cloud-delete-node" || r.URL.Path == "/v1/cloud-move-node" || r.URL.Path == "/v1/cloud-copy-node" || r.URL.Path == "/v1/cloud-upload-file" || isDSMOwnerNotesWrite(r.URL.Path) || isDSMOwnerNotesImageWrite(r.URL.Path) {
+	if r.URL.Path == "/v1/run" || r.URL.Path == "/v1/control" || r.URL.Path == "/v1/nas-share-preflight" || r.URL.Path == "/v1/server-login" || r.URL.Path == "/v1/nas-share-create" || r.URL.Path == "/v1/nas-draft-bind" || r.URL.Path == "/v1/cloud-create-folder" || r.URL.Path == "/v1/cloud-rename-node" || r.URL.Path == "/v1/cloud-delete-node" || r.URL.Path == "/v1/cloud-move-node" || r.URL.Path == "/v1/cloud-copy-node" || r.URL.Path == "/v1/cloud-upload-file" || isDSMOwnerNotesWrite(r.URL.Path) || isDSMOwnerNotesImageWrite(r.URL.Path) ||
+		(isLocalBackupManagementMutation(r.URL.Path) && !(r.URL.Path == "/v1/local-rules" && r.Method == http.MethodGet)) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 	} else if r.URL.Path == "/v1/schedule" {
 		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	} else if isLocalBackupManagementPath(r.URL.Path) {
+		if !localBackupManagementMethodAllowed(r.URL.Path, r.Method) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -1142,15 +1151,20 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		items := make([]map[string]any, 0, len(all))
 		for _, item := range all {
-			if item.Kind != "local_folder" || item.Direction != "push" || item.SyncMode != "backup" || !localbackupipc.ValidSourceID(item.ID) {
+			if item.Kind != "local_folder" || item.Direction != "push" ||
+				(item.SyncMode != "backup" && item.SyncMode != "mirror") || !localbackupipc.ValidSourceID(item.ID) {
 				continue
 			}
 			if _, err := agent.ReadSchedule(ctx, item.ID); err != nil {
 				continue
 			}
-			items = append(items, map[string]any{"source_id": item.ID, "name": item.Name})
+			items = append(items, map[string]any{"source_id": item.ID, "name": item.Name, "sync_mode": item.SyncMode})
 		}
 		sendJSON(w, map[string]any{"items": items})
+		return
+	}
+	if isLocalBackupManagementPath(r.URL.Path) {
+		g.serveLocalBackupManagement(w, r, ctx, agent)
 		return
 	}
 	expectedArgs := 1
