@@ -24,7 +24,7 @@ test('local MapKit retains only a transient WGS84 camera across local/cloud sour
 test('manual overview, PhotoKit lease changes, scene background and Owner changes revoke camera', () => {
   assert.match(local, /if viewport == nil && returningCamera == nil \{\s*onLibraryCameraChange\?\(nil\)/)
   assert.match(local, /onChange\(of: mapScope\) \{ next in\s*if next == \.page \{ onLibraryCameraChange\?\(nil\) \}/)
-  assert.match(local, /onChange\(of: changes\.revision\) \{ _ in\s*let returningCamera = globalCamera\s*onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)\s*authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(local, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?let returningCamera = globalCamera[\s\S]*?onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
   assert.match(local, /guard phase == \.active, authorization == \.authorized else \{ return \}/)
   assert.match(local, /onChange\(of: phase\) \{ state in[\s\S]*?changes\.stop\(\)\s*onLibraryCameraChange\?\(nil\)/)
   assert.match(dash, /localMapJump = nil\s*localMapCamera = nil\s*return/)
