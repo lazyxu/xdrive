@@ -42,7 +42,7 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 	}
 	var source meta.Source
 	err := s.DB.WithContext(c.Request.Context()).
-		Select("id", "owner_id", "kind", "direction", "revision", "device_id", "target_node_id", "target_managed").
+		Select("id", "owner_id", "kind", "direction", "revision", "device_id", "local_creator_device_id", "target_node_id", "target_managed").
 		Where("id = ? AND owner_id = ?", id, userID(c)).
 		Take(&source).Error
 	if err != nil {
@@ -107,6 +107,11 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 	if source.Kind != meta.SourceKindLocalFolder {
 		// Pull connectors and native PhotoKit routes have their own authority.
 		return true
+	}
+	boundDeviceID, bound := meta.SourceDeviceID(source)
+	if !bound || boundDeviceID != strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")) {
+		fail(c, http.StatusForbidden, "local source is bound to a different device")
+		return false
 	}
 	if source.Direction != meta.SourceDirectionPush {
 		fail(c, http.StatusConflict, "local folder has invalid push direction")
@@ -240,7 +245,9 @@ func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID
 		}
 		return err
 	}
+	boundDeviceID, bound := meta.SourceDeviceID(source)
 	if source.Kind != meta.SourceKindLocalFolder || source.Direction != meta.SourceDirectionPush ||
+		!bound || boundDeviceID != proof.DeviceID ||
 		source.Revision != proof.SourceRevision || (requireActive && source.Status != meta.SourceStatusActive) {
 		return errLocalSourceExecutorTransactionUnauthorized
 	}

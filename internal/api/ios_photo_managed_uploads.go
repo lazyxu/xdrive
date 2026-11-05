@@ -151,7 +151,7 @@ func requireIOSPhotoManagedUploadTx(ctx context.Context, tx *gorm.DB,
 	var source meta.Source
 	if err := tx.WithContext(ctx).Clauses(clause.Locking{
 		Strength: "SHARE", Options: "NOWAIT",
-	}).Where("id = ? AND owner_id = ? AND kind = ? AND direction = ? AND local_creator_device_id = ?",
+	}).Where("id = ? AND owner_id = ? AND kind = ? AND direction = ? AND COALESCE(NULLIF(device_id, ''), local_creator_device_id) = ?",
 		scope.sourceID, ownerID, meta.SourceKindIOSPhotos,
 		meta.SourceDirectionPush, scope.deviceID).Take(&source).Error; err != nil {
 		return errManagedSourceWriteDenied

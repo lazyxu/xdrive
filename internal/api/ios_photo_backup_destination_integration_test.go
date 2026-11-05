@@ -112,8 +112,10 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 	if err := db.First(&stored, result.SourceID).Error; err != nil {
 		t.Fatal(err)
 	}
+	boundDeviceID, bound := meta.SourceDeviceID(stored)
 	if !stored.TargetManaged || !iosPhotoDestinationSource(stored) ||
-		stored.LocalCreatorDeviceID == nil || *stored.LocalCreatorDeviceID != device.ID ||
+		!bound || boundDeviceID != device.ID ||
+		stored.DeviceID == nil || *stored.DeviceID != device.ID ||
 		stored.TargetNodeID == nil || *stored.TargetNodeID != result.TargetNodeID {
 		t.Fatalf("Source must own exact managed Node: %+v", stored)
 	}

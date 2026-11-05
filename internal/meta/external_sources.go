@@ -89,6 +89,31 @@ type Source struct {
 
 func (Source) TableName() string { return "xd_sources" }
 
+// SourceDeviceID returns the canonical device bound to a Push Source.
+// LocalCreatorDeviceID is read only as a compatibility fallback for rows
+// created before DeviceID became the shared Source identity. Conflicting
+// values are rejected instead of silently choosing one authority.
+func SourceDeviceID(source Source) (string, bool) {
+	deviceID := ""
+	if source.DeviceID != nil {
+		deviceID = strings.TrimSpace(*source.DeviceID)
+	}
+	legacyID := ""
+	if source.LocalCreatorDeviceID != nil {
+		legacyID = strings.TrimSpace(*source.LocalCreatorDeviceID)
+	}
+	if deviceID != "" && legacyID != "" && deviceID != legacyID {
+		return "", false
+	}
+	if deviceID != "" {
+		return deviceID, true
+	}
+	if legacyID != "" {
+		return legacyID, true
+	}
+	return "", false
+}
+
 // SourceItem preserves the stable identity of one external item independently
 // from its path or content. NodeID is deliberately nullable: deleting an xDrive
 // node must not erase the external identity needed for a later reconciliation.

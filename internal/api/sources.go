@@ -132,10 +132,8 @@ func toSourceDTO(source meta.Source) sourceDTO {
 		LastError: source.LastError, RunRequestedAt: source.RunRequestedAt,
 		CreatedAt: source.CreatedAt, UpdatedAt: source.UpdatedAt,
 	}
-	if source.DeviceID != nil {
-		dto.DeviceID = *source.DeviceID
-	} else if source.LocalCreatorDeviceID != nil {
-		dto.DeviceID = *source.LocalCreatorDeviceID
+	if deviceID, ok := meta.SourceDeviceID(source); ok {
+		dto.DeviceID = deviceID
 	}
 	if isLocalFolderPush(source) {
 		dto.IgnoreRules = ""

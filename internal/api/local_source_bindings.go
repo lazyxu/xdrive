@@ -111,9 +111,10 @@ func (s *Server) bindLocalSource(c *gin.Context) {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		// Existing legacy bindings may be replayed above, but an unbound
-		// Source cannot be claimed by an arbitrary same-account Desktop.
-		if source.LocalCreatorDeviceID == nil || *source.LocalCreatorDeviceID != device.ID {
+		// DeviceID is the shared Push identity. The legacy creator field is
+		// consulted only for pre-migration rows and conflicts fail closed.
+		boundDeviceID, bound := meta.SourceDeviceID(source)
+		if !bound || boundDeviceID != device.ID {
 			return errLocalBindingDeviceInvalid
 		}
 		now := time.Now().UTC()
