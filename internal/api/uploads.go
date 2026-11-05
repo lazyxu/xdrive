@@ -59,22 +59,22 @@ type uploadConflictPreflightBatchResponse struct {
 }
 
 type uploadInitRequest struct {
-	ParentID         *uint64  `json:"parent_id,omitempty"`
-	NodeID           *uint64  `json:"node_id,omitempty"`
-	Name             string   `json:"name,omitempty"`
-	RequestedName    string   `json:"-"`
-	ConflictPolicy   string   `json:"conflict_policy,omitempty"`
-	Size             int64    `json:"size"`
-	ChunkSize        int64    `json:"chunk_size,omitempty"`
-	SHA256           string   `json:"sha256,omitempty"`
-	MD5              string   `json:"md5,omitempty"`
-	ChunkSHA256      []string `json:"chunk_sha256,omitempty"`
-	ResumeKey        string   `json:"resume_key,omitempty"`
-	ExpectedRevision uint64   `json:"expected_revision,omitempty"`
-	SourceID uint64 `json:"source_id,omitempty"`
-	SourceRevision uint64 `json:"source_revision,omitempty"`
-	SourceRootID string `json:"source_root_id,omitempty"`
-	SourceRootFingerprint string `json:"source_root_fingerprint,omitempty"`
+	ParentID              *uint64  `json:"parent_id,omitempty"`
+	NodeID                *uint64  `json:"node_id,omitempty"`
+	Name                  string   `json:"name,omitempty"`
+	RequestedName         string   `json:"-"`
+	ConflictPolicy        string   `json:"conflict_policy,omitempty"`
+	Size                  int64    `json:"size"`
+	ChunkSize             int64    `json:"chunk_size,omitempty"`
+	SHA256                string   `json:"sha256,omitempty"`
+	MD5                   string   `json:"md5,omitempty"`
+	ChunkSHA256           []string `json:"chunk_sha256,omitempty"`
+	ResumeKey             string   `json:"resume_key,omitempty"`
+	ExpectedRevision      uint64   `json:"expected_revision,omitempty"`
+	SourceID              uint64   `json:"source_id,omitempty"`
+	SourceRevision        uint64   `json:"source_revision,omitempty"`
+	SourceRootID          string   `json:"source_root_id,omitempty"`
+	SourceRootFingerprint string   `json:"source_root_fingerprint,omitempty"`
 }
 
 type uploadPartDTO struct {
@@ -632,27 +632,27 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	}
 
 	session := meta.UploadSession{
-		ID:               uuid.NewString(),
-		OwnerID:          uid,
-		SourceID:         req.SourceID,
-		SourceRevision:   req.SourceRevision,
-		SourceRootID:     req.SourceRootID,
-		SourceRootFingerprint: req.SourceRootFingerprint,
-		ParentID:         req.ParentID,
-		NodeID:           req.NodeID,
-		Name:             req.Name,
-		RequestedName:    req.RequestedName,
-		ConflictPolicy:   req.ConflictPolicy,
-		ExpectedRevision: req.ExpectedRevision,
-		TotalSize:        req.Size,
-		ChunkSize:        req.ChunkSize,
-		ChunkCount:       chunkCount,
-		SHA256:           req.SHA256,
-		ExpectedMD5:      req.MD5,
-		ResumeKey:        req.ResumeKey,
-		Status:           meta.UploadStatusActive,
-		ExpiresAt:        time.Now().Add(uploadSessionTTL),
-	}
+	ID:                    uuid.NewString(),
+	OwnerID:               uid,
+	SourceID:              req.SourceID,
+	SourceRevision:        req.SourceRevision,
+	SourceRootID:          req.SourceRootID,
+	SourceRootFingerprint: req.SourceRootFingerprint,
+	ParentID:              req.ParentID,
+	NodeID:                req.NodeID,
+	Name:                  req.Name,
+	RequestedName:         req.RequestedName,
+	ConflictPolicy:        req.ConflictPolicy,
+	ExpectedRevision:      req.ExpectedRevision,
+	TotalSize:             req.Size,
+	ChunkSize:             req.ChunkSize,
+	ChunkCount:            chunkCount,
+	SHA256:                req.SHA256,
+	ExpectedMD5:           req.MD5,
+	ResumeKey:             req.ResumeKey,
+	Status:                meta.UploadStatusActive,
+	ExpiresAt:             time.Now().Add(uploadSessionTTL),
+}
 	if guest {
 		session.ShareID = &guestID
 	}
