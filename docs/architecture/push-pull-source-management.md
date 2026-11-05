@@ -92,7 +92,7 @@ iOS/Android identity-only credentials must never become Desktop Agent credential
 7. Platform binds/proves that capability to the exact Source. Missing or stale permission never falls back to Owner root.
 8. Each upload admission and finalize rechecks Owner, Device, Source, TargetNodeID, provenance, platform-specific permission proof, revision and receipt constraints.
 
-The generic Source model needs a connector-neutral Push DeviceID binding. Current LocalCreatorDeviceID is the existing local Push-specific field and must be generalized without weakening Local Folder or iOS authorization. Root / Photo Library grants remain separate from Device identity.
+Source.DeviceID is the connector-neutral Push creator/executor binding. New Local Folder, iOS and DSM Sources populate it; LocalCreatorDeviceID remains as a compatibility field for existing Local Folder/iOS authorization paths. Root / Photo Library grants remain separate from Device identity. Synology credentials are identity-only and are never accepted by the generic Desktop Agent credential gate.
 
 ### One writer per device/source
 
@@ -143,7 +143,7 @@ MVP uses backup semantics only. Source-side disappearance must not delete xDrive
 |---|---|
 | Source.ID / OwnerID | unique Source and one owning account |
 | Source.Kind + Direction | connector and direction; check both |
-| Source.DeviceID | generic Push creator/executor Device binding (to generalize) |
+| Source.DeviceID | generic Push creator/executor Device binding |
 | Source.TargetNodeID | exact stable managed destination |
 | Source.TargetManaged | Server-provisioned target provenance |
 | Source.Revision / Status | stale-write fence and active/paused/archived lifecycle |
