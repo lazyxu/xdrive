@@ -76,7 +76,7 @@ test('native queue summary is Owner-fenced, bounded by local SQLite aggregation 
   assert.match(section, /counts\.failed/)
   assert.match(section, /不能当作服务器备份覆盖率/)
   assert.match(screen, /XDriveIOSPhotoQueueSummarySection\(/)
-  assert.match(section, /@ObservedObject var queueSummary/)
+  assert.match(section, /@StateObject private var queueSummary = XDriveIOSNativePhotoQueueSummaryModel\(\)/)
   assert.doesNotMatch(model, /UploadSession|uploadPrepared|finalize\(|\.deleteNode\(/)
 });
 
