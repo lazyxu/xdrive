@@ -34,6 +34,7 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 		&meta.PhotoMetadata{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.ClientDevice{},
+		&meta.LocalSourceBinding{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +59,7 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 		t.Fatal(err)
 	}
 	deviceHeaders := map[string]string{
-		"X-XDrive-Device-ID": deviceID,
+		"X-XDrive-Device-ID":    deviceID,
 		"X-XDrive-Device-Token": deviceToken,
 	}
 	createSource := `{"name":"Mirror Copies","kind":"synology_photos","direction":"push","sync_mode":"mirror","run_mode":"sync","target_node_id":0}`
@@ -72,6 +73,30 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 		!source.TargetManaged || source.DeviceID != deviceID {
 		t.Fatalf("created source is not a registered-device managed Push: %+v", source)
 	}
+	// DSM Push starts paused. Bind the root-set fingerprint on the Server
+	// and activate using the same Device/Source/Root identity before testing
+	// the unrelated Mirror reconciliation behavior.
+	rootID := uuid.NewString()
+	rootFingerprint := strings.Repeat("a", 64)
+	bindHeaders := map[string]string{
+		"X-XDrive-Device-ID":    deviceID,
+		"X-XDrive-Device-Token": deviceToken,
+		"If-Match":             fmt.Sprintf("%q", fmt.Sprint(source.Revision)),
+	}
+	requestWithHeaders(t, router, http.MethodPut,
+		fmt.Sprintf("/api/v1/sources/%d/synology-root", source.ID), token,
+		strings.NewReader(fmt.Sprintf(`{"root_id":%q,"root_fingerprint":%q}`, rootID, rootFingerprint)),
+		http.StatusCreated, bindHeaders)
+	deviceHeaders["X-XDrive-Synology-Source-ID"] = fmt.Sprint(source.ID)
+	deviceHeaders["X-XDrive-Synology-Source-Revision"] = fmt.Sprint(source.Revision + 1)
+	deviceHeaders["X-XDrive-Local-Root-ID"] = rootID
+	deviceHeaders["X-XDrive-Local-Root-Fingerprint"] = rootFingerprint
+	deviceHeaders["If-Match"] = fmt.Sprintf("%q", fmt.Sprint(source.Revision + 1))
+	requestWithHeaders(t, router, http.MethodPatch,
+		fmt.Sprintf("/api/v1/sources/%d", source.ID), token,
+		strings.NewReader(`{"status":"active"}`), http.StatusOK, deviceHeaders)
+	delete(deviceHeaders, "If-Match")
+	deviceHeaders["X-XDrive-Synology-Source-Revision"] = fmt.Sprint(source.Revision + 2)
 	var target meta.Node
 	if err := db.First(&target, *source.TargetNodeID).Error; err != nil {
 		t.Fatal(err)
