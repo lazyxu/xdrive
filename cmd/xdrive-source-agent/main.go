@@ -63,13 +63,13 @@ func usage() {
 Usage:
   xdrive-source-agent login --server https://drive.example.com --username USER [--password PASS]
   xdrive-source-agent password --current CURRENT --new NEW
-  xdrive-source-agent setup [--source-id ID] --personal /volume1/homes/USER/Photos --shared /volume1/photo [--synology-url URL --synology-username USER --synology-password PASS] [--name NAME] [--mode scan|sync] [--target Photos/Synology] [--ignore-file FILE]
+  xdrive-source-agent setup [--source-id ID] --personal /volume1/homes/USER/Photos --shared /volume1/photo [--synology-url URL --synology-username USER --synology-password PASS] [--name NAME] [--mode scan|sync] [--ignore-file FILE]
   xdrive-source-agent status
   xdrive-source-agent run [--trigger scheduled|manual|reconcile] [--due] [--interval 6h]
   xdrive-source-agent logout
   xdrive-source-agent version
 
-The setup command creates or reuses a Synology Photos push Source. The default mode is scan-only; use --mode sync to enable transfers.
+The setup command enrolls the DSM device and creates or reuses a Synology Photos Push Source with a Server-managed destination under 同步文件夹/Push. Arbitrary cloud target selection is not supported. The default mode is scan-only; use --mode sync to enable transfers.
 DSM Task Scheduler should invoke "xdrive-source-agent run --due" frequently; the Source's interval/cron schedule decides whether a scan actually starts. Source-side deletion is never propagated to xDrive.`)
 }
 
