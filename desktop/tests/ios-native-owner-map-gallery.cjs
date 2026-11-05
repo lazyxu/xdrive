@@ -302,4 +302,5 @@ test('cloud Owner map album automatically advances when its lazy-grid sentinel e
   assert.match(clusterAlbum, /coverLoading = true[\s\S]*?defer \{[\s\S]*?coverLoading = false[\s\S]*?advanceIfVisible\(\)/)
   assert.match(clusterAlbum, /load\(next, history: earlier \+ \[cursor\], autoAdvance: true\)/)
   assert.doesNotMatch(clusterAlbum, /DragGesture\(minimumDistance: 12\)/)
+  assert.doesNotMatch(clusterAlbum, /Button\("查看上一批照片"\)|Button\("继续浏览下一批照片"\)/)
 })
