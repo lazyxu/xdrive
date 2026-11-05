@@ -221,7 +221,6 @@ func TestDSMNotesMutationParserRejectsDuplicateOrOversize(t *testing.T) {
 	}
 }
 
-
 func TestDSMNotesManualIOSImportRequiresExactOwnerAndTransactionIdentity(t *testing.T) {
 	g, base := newFixture(t)
 	f := &dsmNotesFixture{fakeAgent: base, owner: "alice", enabled: true}
