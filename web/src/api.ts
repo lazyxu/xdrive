@@ -1684,6 +1684,24 @@ export class XDriveApi {
       })
   }
 
+  adminOfflineHostPlan(id: string) {
+    return this.request<import('../../ui/shared/src/offline-update').XDriveOfflineHostPlanStatus>(
+      '/api/v1/admin/update/offline/plan/' + encodeURIComponent(id), { cache: 'no-store' })
+  }
+
+  adminStartOfflineHostPlan(id: string, manifestSHA256: string, goSHA256: string, trustMode: 'sigstore' | 'sha256') {
+    return this.request<import('../../ui/shared/src/offline-update').XDriveOfflineHostPlanStatus>(
+      '/api/v1/admin/update/offline/plan', {
+        method: 'POST', cache: 'no-store',
+        body: JSON.stringify({
+          offline_id: id,
+          offline_trust_mode: trustMode,
+          trusted_manifest_sha256: trustMode === 'sigstore' ? '' : manifestSHA256,
+          trusted_installer_sha256: trustMode === 'sigstore' ? '' : goSHA256,
+        }),
+      })
+  }
+
   adminStartOfflineServerUpdate(id: string, manifestSHA256: string, goSHA256: string, backupFileData: boolean, trustMode: 'sigstore' | 'sha256') {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update', {
       method: 'POST', cache: 'no-store',
