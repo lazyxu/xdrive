@@ -496,8 +496,20 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                             incrementalQueue = changeQueue
                             do {
                                 _ = try await changeQueue.replay(
-                                    owner: selected, maximumEvents: 2
+                                    owner: selected, maximumEvents: 4
                                 )
+                                guard try await changeQueue.isCaughtUp(owner: selected) else {
+                                    // Do not let the date-filtered positional
+                                    // scan pass an old-dated import while its
+                                    // persistent PhotoKit event is still behind
+                                    // the bounded replay cursor. Keep this due
+                                    // window unreserved; the foreground timer
+                                    // will replay the next bounded batch.
+                                    self.message = "PhotoKit 增量变更仍在分批回放；本轮暂不扫描，避免漏掉拍摄日期较早的新导入照片。"
+                                    await reporter.finish(status: "cancelled")
+                                    self.refresh(owner: selected)
+                                    return
+                                }
                             } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
                                 .requiresExplicitBaseline {
                                 // A legacy plan has no trustworthy persistent
