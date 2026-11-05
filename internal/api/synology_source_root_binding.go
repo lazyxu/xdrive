@@ -15,15 +15,15 @@ import (
 )
 
 var (
-	errSynologyRootBindingDevice = errors.New("Synology root binding device unauthorized")
-	errSynologyRootBindingSource = errors.New("Synology Push Source cannot bind this root")
+	errSynologyRootBindingDevice   = errors.New("Synology root binding device unauthorized")
+	errSynologyRootBindingSource   = errors.New("Synology Push Source cannot bind this root")
 	errSynologyRootBindingConflict = errors.New("Synology Push Source is already bound to a different root")
 )
 
 type synologySourceRootBindingDTO struct {
 	SourceID uint64 `json:"source_id"`
 	Revision uint64 `json:"revision"`
-	Status string `json:"status"`
+	Status   string `json:"status"`
 }
 
 // bindSynologySourceRoot persists the source-agent's aggregate Personal/Shared
@@ -40,7 +40,7 @@ func (s *Server) bindSynologySourceRoot(c *gin.Context) {
 		return
 	}
 	var input struct {
-		RootID string `json:"root_id"`
+		RootID          string `json:"root_id"`
 		RootFingerprint string `json:"root_fingerprint"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -121,10 +121,10 @@ func (s *Server) bindSynologySourceRoot(c *gin.Context) {
 		if err := tx.Model(&meta.Source{}).
 			Where("id = ? AND owner_id = ? AND revision = ?", source.ID, source.OwnerID, source.Revision).
 			Updates(map[string]any{
-				"status": meta.SourceStatusPaused,
+				"status":           meta.SourceStatusPaused,
 				"run_requested_at": nil,
-				"revision": gorm.Expr("revision + 1"),
-				"updated_at": now,
+				"revision":         gorm.Expr("revision + 1"),
+				"updated_at":       now,
 			}).Error; err != nil {
 			return err
 		}
