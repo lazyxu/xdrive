@@ -119,7 +119,7 @@ test('backup display and delayed original progress never cross Owner changes or 
   const catchBranch = terminal.slice(
     terminal.indexOf('            } catch {\n                var scheduledNetworkRetry = false'),
     terminal.indexOf('            // A successful original may be followed'))
-  assert.ok(catchBranch.startsWith('            } catch {\n                var scheduledNetworkRetry = false'),
+  assert.ok(catchBranch.startsWith('            } catch {\n                if let reporter = sourceRunReporter { await reporter.finish(status: "failed") }\n                var scheduledNetworkRetry = false'),
     'the Owner-scoped catch path must remain present')
   assert.match(catchBranch, /if kind == \.automatic,[\s\S]*?!beganOriginalWrite, !Task\.isCancelled,[\s\S]*?self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\),\s*UIApplication\.shared\.applicationState == \.active/)
   assert.match(catchBranch, /if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\) \{\s*self\.errorMessage = scheduledNetworkRetry/)
