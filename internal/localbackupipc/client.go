@@ -327,11 +327,13 @@ func (c *Client) SaveSchedule(ctx context.Context, id uint64, oldRevision uint64
 // a foreign device's local folder. Call ReadSchedule to prove local ownership
 // before showing a candidate in xd backup list.
 type BackupSource struct {
-	ID        uint64 `json:"id"`
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	Direction string `json:"direction"`
-	SyncMode  string `json:"sync_mode"`
+	ID            uint64 `json:"id"`
+	Name          string `json:"name"`
+	Kind          string `json:"kind"`
+	Direction     string `json:"direction"`
+	SyncMode      string `json:"sync_mode"`
+	TargetManaged bool   `json:"target_managed"`
+	TargetPath    string `json:"target_path"`
 }
 
 func (c *Client) Sources(ctx context.Context) ([]BackupSource, error) {

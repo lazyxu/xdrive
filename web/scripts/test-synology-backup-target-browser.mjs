@@ -60,8 +60,9 @@ assert.match(panel, /hostEpochRef\.current\.epoch === renderedHostEpoch/,
   'returning to a previous Agent object must not restore stale callbacks')
 assert.doesNotMatch(panel, /<XDriveSynologyBackupSourceSetup client=\{client\} onCreated=\{refresh\}/,
   'never expose an unguarded Source-created refresh into the replacement Host')
-assert.match(setup, /<XDriveSynologyBackupTargetBrowser client=\{client\} onSelectTarget=\{onSelectTarget\}/)
-assert.match(setup, /selectedTarget\.id/)
+assert.doesNotMatch(setup, /XDriveSynologyBackupTargetBrowser|selectedTarget|onSelectTarget/,
+  'new NAS Push setup must not use a client-selected cloud directory')
+assert.match(setup, /Server 自动创建并独占管理/)
 assert.match(picker, /currentScopeVerified && isCurrentOwner\(\)/)
 assert.match(sharedDevice, /<XDriveSynologyBackupLocalPanel/)
 assert.match(ownerSource, /ownerFilesRoot\(signal\?: AbortSignal\)/)
