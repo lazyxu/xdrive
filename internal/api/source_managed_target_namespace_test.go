@@ -18,15 +18,15 @@ func TestManagedSourceTargetRenameAcceptsCanonicalAndExistingNamespaces(t *testi
 		namespaces[name] = createFilePropertiesDir(t, db, owner.ID, syncFolder.ID, name)
 	}
 	cases := []struct {
-		name        string
-		kind        string
-		direction   string
-		namespace   string
-		connector   string
-		leaf        string
-		nextName    string
-		wantLeaf    string
-		managed     bool
+		name      string
+		kind      string
+		direction string
+		namespace string
+		connector string
+		leaf      string
+		nextName  string
+		wantLeaf  string
+		managed   bool
 	}{
 		{name: "local Push", kind: meta.SourceKindLocalFolder, direction: meta.SourceDirectionPush,
 			namespace: "Push", connector: "device_a1b2c3d4e5f6", leaf: "Local", nextName: "LocalNew", wantLeaf: "LocalNew", managed: true},
