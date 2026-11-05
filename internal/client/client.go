@@ -25,6 +25,9 @@ type Client struct {
 	HTTP    *http.Client
 
 	sessionMu        sync.RWMutex
+	deviceMu         sync.RWMutex
+	deviceID         string
+	deviceToken      string
 	refreshMu        sync.Mutex
 	sharedRefreshMu  *sync.Mutex
 	refreshToken     string
@@ -1352,6 +1355,19 @@ func New(baseURL, token string) *Client {
 	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 0}}
 }
 
+ // SetDeviceIdentity attaches this installation's protected device proof to
+ // authenticated API requests. It does not grant a platform-specific Root,
+ // PhotoKit or MediaStore capability.
+func (c *Client) SetDeviceIdentity(deviceID, deviceToken string) {
+	if c == nil {
+		return
+	}
+	c.deviceMu.Lock()
+	c.deviceID = strings.TrimSpace(deviceID)
+	c.deviceToken = strings.TrimSpace(deviceToken)
+	c.deviceMu.Unlock()
+}
+
 func (c *Client) Login(ctx context.Context, username, password string) (AuthResponse, error) {
 	return c.authenticate(ctx, "/api/v1/auth/login", username, password)
 }
@@ -2481,6 +2497,13 @@ func (c *Client) request(ctx context.Context, method, path string, body io.Reade
 	}
 	if token := c.accessToken(); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	c.deviceMu.RLock()
+	deviceID, deviceToken := c.deviceID, c.deviceToken
+	c.deviceMu.RUnlock()
+	if deviceID != "" && deviceToken != "" {
+		req.Header.Set("X-XDrive-Device-ID", deviceID)
+		req.Header.Set("X-XDrive-Device-Token", deviceToken)
 	}
 	req.Header.Set("User-Agent", "xdrive-xd/0.1")
 	return req, nil
