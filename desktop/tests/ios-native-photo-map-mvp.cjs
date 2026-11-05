@@ -179,7 +179,7 @@ test('full-authorized PhotoKit map automatically refines live WGS84 viewport wit
   assert.match(map, /onCamera: \{ current in[\s\S]*?globalCamera = current/)
   assert.match(map, /let cameraViewport = XDriveIOSNativeLocalMapSpatialPolicy\.viewportBounds\([\s\S]*?latitude: current\.center\.latitude,[\s\S]*?longitude: current\.center\.longitude/)
   assert.match(map, /let finalViewport = XDriveIOSNativeLocalMapSpatialPolicy\.viewportBounds\([\s\S]*?latitude: finalCamera\.center\.latitude,[\s\S]*?longitude: finalCamera\.center\.longitude/)
-  assert.match(map, /scanFullLibrary\(viewport: view\)/)
+  assert.match(map, /scanFullLibrary\(viewport: padded, preserveCurrentMap: true\)/)
   assert.match(map, /let restoreCamera = viewport == nil \? nil : globalCamera[\s\S]*?invalidate\(\)[\s\S]*?globalCamera = restoreCamera/)
   assert.match(map, /globalViewport = viewport/)
   assert.match(map, /globalCamera = nil[\s\S]*?globalViewport = nil/)
