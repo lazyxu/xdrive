@@ -668,36 +668,32 @@ private struct XDriveIOSMapSpatialAlbum: View {
                               spacing: 4) {
                         ForEach(priorWindow) { item in photoTile(item) }
                         ForEach(items) { item in photoTile(item) }
-                        // The sentinel lives inside LazyVGrid. Its appearance
-                        // only arms the next read; a deliberate upward user
-                        // drag at the bottom performs the actual advancement.
+                        // The lazy-grid sentinel is the native infinite-scroll
+                        // trigger. It only advances when the last visible window
+                        // is near the viewport; busy/error guards prevent repeats.
                         if hasNext {
                             Color.clear
                                 .frame(height: 24)
                                 .id("map:\(windowNumber):\(nextOffset)")
-                                .onAppear { scrollFootVisible = true }
+                                .onAppear {
+                                    scrollFootVisible = true
+                                    advanceIfVisible()
+                                }
                                 .onDisappear { scrollFootVisible = false }
                                 .accessibilityHidden(true)
                         }
                     }
                     .padding(8)
                 }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 12).onEnded { gesture in
-                        guard gesture.translation.height <= -12,
-                              abs(gesture.translation.height) >
-                                abs(gesture.translation.width),
-                              scrollFootVisible, !busy, viewer == nil, hasNext
-                        else { return }
-                        loadNext()
-                    }
-                )
                 .onChange(of: visibleWindowRevision) { _ in
                     if let anchor = autoScrollReturnID,
                        visibleItems.contains(where: { $0.id == anchor }) {
                         returnScroll.scrollTo(anchor, anchor: .bottom)
                     }
                     autoScrollReturnID = nil
+                }
+                .onChange(of: busy) { isBusy in
+                    if !isBusy { advanceIfVisible() }
                 }
             }
             .navigationTitle("此处照片")
@@ -706,8 +702,6 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     Menu {
                         Button("重新核对当前位置照片") { loadInitial() }
                             .disabled(busy || viewer != nil || phase != .active)
-                        Button("继续浏览下一批照片") { loadNext() }
-                            .disabled(busy || !hasNext || viewer != nil || phase != .active)
                     } label: {
                         Label("位置照片操作", systemImage: "ellipsis.circle")
                     }
@@ -914,6 +908,13 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 readTask = nil
             }
         }
+    }
+
+    private func advanceIfVisible() {
+        guard scrollFootVisible, !busy, viewer == nil, hasNext, error == nil else {
+            return
+        }
+        loadNext()
     }
 
     private func loadNext() {
