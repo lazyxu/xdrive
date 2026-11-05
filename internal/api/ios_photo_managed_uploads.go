@@ -21,9 +21,10 @@ const iosPhotoManagedContextKey = "xdriveIOSPhotoManagedUploadScope"
 
 type iosPhotoManagedUploadScope struct {
 	ownerID  uint64
-	deviceID string
-	sourceID uint64
-	targetID uint64
+	deviceID       string
+	sourceID       uint64
+	sourceRevision uint64
+	targetID       uint64
 }
 
 func currentIOSPhotoManagedUploadScope(c *gin.Context) (iosPhotoManagedUploadScope, bool) {
@@ -33,7 +34,7 @@ func currentIOSPhotoManagedUploadScope(c *gin.Context) (iosPhotoManagedUploadSco
 	raw, ok := c.Get(iosPhotoManagedContextKey)
 	scope, valid := raw.(iosPhotoManagedUploadScope)
 	return scope, ok && valid && scope.ownerID != 0 &&
-		scope.sourceID != 0 && scope.targetID != 0 && scope.deviceID != ""
+		scope.sourceID != 0 && scope.sourceRevision != 0 && scope.targetID != 0 && scope.deviceID != ""
 }
 
 // Authenticated native iOS Owner + independently verified device. This is a
@@ -76,8 +77,8 @@ func (s *Server) iosPhotoManagedAuthorizedScope(c *gin.Context) (iosPhotoManaged
 			return errIOSPhotoDestinationDenied
 		}
 		out = iosPhotoManagedUploadScope{
-			ownerID: ownerID, deviceID: device.ID,
-			sourceID: source.ID, targetID: target.ID,
+			ownerID: ownerID, deviceID: device.ID, sourceID: source.ID,
+			sourceRevision: source.Revision, targetID: target.ID,
 		}
 		return nil
 	})
@@ -101,6 +102,8 @@ func validIOSPhotoManagedUploadInit(req uploadInitRequest, scope iosPhotoManaged
 		iosBackgroundOriginalNameValid(req.Name) &&
 		req.ConflictPolicy == meta.UploadConflictPolicyFail &&
 		req.ExpectedRevision == 0 && req.MD5 == "" &&
+		req.SourceID == 0 && req.SourceRevision == 0 &&
+		req.SourceRootID == "" && req.SourceRootFingerprint == "" &&
 		req.Size > 0 && req.Size <= iosBackgroundOriginalMaxBytes &&
 		req.ChunkSize == defaultUploadChunkSize &&
 		req.SHA256 == strings.ToLower(req.SHA256) &&
@@ -151,9 +154,9 @@ func requireIOSPhotoManagedUploadTx(ctx context.Context, tx *gorm.DB,
 	var source meta.Source
 	if err := tx.WithContext(ctx).Clauses(clause.Locking{
 		Strength: "SHARE", Options: "NOWAIT",
-	}).Where("id = ? AND owner_id = ? AND kind = ? AND direction = ? AND local_creator_device_id = ?",
+	}).Where("id = ? AND owner_id = ? AND kind = ? AND direction = ? AND device_id = ? AND revision = ?",
 		scope.sourceID, ownerID, meta.SourceKindIOSPhotos,
-		meta.SourceDirectionPush, scope.deviceID).Take(&source).Error; err != nil {
+		meta.SourceDirectionPush, scope.deviceID, scope.sourceRevision).Take(&source).Error; err != nil {
 		return errManagedSourceWriteDenied
 	}
 	if !iosPhotoDestinationSource(source) || !source.TargetManaged ||
@@ -182,11 +185,21 @@ func requireIOSPhotoManagedUploadTx(ctx context.Context, tx *gorm.DB,
 	return nil
 }
 
-func requireIOSPhotoManagedFinalizeTx(ctx context.Context, tx *gorm.DB,
-	c *gin.Context, session meta.UploadSession, nodeID uint64) error {
-	if session.ID == "" || session.ShareID != nil || session.SourceRunID != "" ||
+// Every native PhotoKit UploadSession is durably bound to one exact Source,
+// Device, Source revision and managed target. Validation uses the live rows
+// inside the same transaction as chunk-part, reservation or Node/CAS writes.
+func requireIOSPhotoManagedSessionTx(ctx context.Context, tx *gorm.DB,
+	c *gin.Context, session meta.UploadSession) error {
+	scope, ok := currentIOSPhotoManagedUploadScope(c)
+	if !ok || session.ID == "" || session.OwnerID != scope.ownerID ||
+		session.SourceID != scope.sourceID ||
+		session.SourceRevision != scope.sourceRevision ||
+		session.SourceDeviceID != scope.deviceID ||
+		session.SourceTargetID != scope.targetID ||
+		session.SourceRootID != "" || session.SourceRootFingerprint != "" ||
+		session.ShareID != nil || session.SourceRunID != "" ||
 		session.NodeID != nil || session.ParentID == nil ||
-		*session.ParentID != nodeID || session.Status != meta.UploadStatusActive ||
+		*session.ParentID != scope.targetID ||
 		session.Name != session.RequestedName || session.ExpectedMD5 != "" {
 		return errManagedSourceWriteDenied
 	}
@@ -196,7 +209,16 @@ func requireIOSPhotoManagedFinalizeTx(ctx context.Context, tx *gorm.DB,
 		Size: session.TotalSize, ChunkSize: session.ChunkSize,
 		SHA256: session.SHA256, ResumeKey: session.ResumeKey,
 	}
-	return requireIOSPhotoManagedUploadTx(ctx, tx, c, session.OwnerID, nodeID, req)
+	return requireIOSPhotoManagedUploadTx(ctx, tx, c, session.OwnerID, scope.targetID, req)
+}
+
+func requireIOSPhotoManagedFinalizeTx(ctx context.Context, tx *gorm.DB,
+	c *gin.Context, session meta.UploadSession, nodeID uint64) error {
+	if session.Status != meta.UploadStatusActive || session.ParentID == nil ||
+		*session.ParentID != nodeID {
+		return errManagedSourceWriteDenied
+	}
+	return requireIOSPhotoManagedSessionTx(ctx, tx, c, session)
 }
 
 func (s *Server) iosPhotoManagedCreateUpload(c *gin.Context) {
@@ -231,8 +253,9 @@ func (s *Server) iosPhotoManagedOwnedUpload(c *gin.Context) bool {
 	}
 	var session meta.UploadSession
 	if err := s.DB.WithContext(c.Request.Context()).Where(
-		"id = ? AND owner_id = ? AND parent_id = ? AND node_id IS NULL AND share_id IS NULL AND COALESCE(source_run_id, '') = ''",
-		parsed.String(), scope.ownerID, scope.targetID).Take(&session).Error; err != nil {
+		"id = ? AND owner_id = ? AND parent_id = ? AND node_id IS NULL AND share_id IS NULL AND COALESCE(source_run_id, '') = '' AND source_id = ? AND source_revision = ? AND source_device_id = ? AND source_target_id = ?",
+		parsed.String(), scope.ownerID, scope.targetID, scope.sourceID,
+		scope.sourceRevision, scope.deviceID, scope.targetID).Take(&session).Error; err != nil {
 		fail(c, http.StatusForbidden, "ios photo upload session unavailable")
 		return false
 	}
@@ -320,8 +343,9 @@ func (s *Server) iosPhotoManagedReceipt(c *gin.Context) {
 	}
 	var sessions []meta.UploadSession
 	if err := s.DB.WithContext(c.Request.Context()).
-		Where("owner_id = ? AND parent_id = ? AND node_id IS NULL AND result_node_id = ? AND status = ? AND COALESCE(source_run_id, '') = '' AND share_id IS NULL",
-			scope.ownerID, scope.targetID, node.ID, meta.UploadStatusFinalized).
+		Where("owner_id = ? AND parent_id = ? AND node_id IS NULL AND result_node_id = ? AND status = ? AND COALESCE(source_run_id, '') = '' AND share_id IS NULL AND source_id = ? AND source_revision = ? AND source_device_id = ? AND source_target_id = ?",
+			scope.ownerID, scope.targetID, node.ID, meta.UploadStatusFinalized,
+			scope.sourceID, scope.sourceRevision, scope.deviceID, scope.targetID).
 		Order("created_at DESC, id DESC").Limit(20).Find(&sessions).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "ios photo original receipt read error")
 		return
