@@ -12,7 +12,7 @@ const chrome = section('private var filesChrome:', 'private var filesModals:')
 test('Browse uses large native title; directory and search use inline title', () => {
   assert.match(browser, /\.navigationTitle\(isHome \? "浏览" : \(folder\?\.name \?\? "搜索结果"\)\)/)
   assert.match(browser, /\.navigationBarTitleDisplayMode\(isHome \? \.large : \.inline\)/)
-  assert.match(browser, /private var isHome: Bool \{ folder == nil && activeQuery\.isEmpty \}/)
+  assert.match(browser, /private var isHome: Bool \{ folder == nil && !isGlobalSearch \}/)
 })
 test('native Files list tap targets do not show permanent trailing More/Locate buttons', () => {
   assert.doesNotMatch(row, /Image\(systemName: "ellipsis\.circle"\)/)
