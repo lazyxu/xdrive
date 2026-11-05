@@ -38,22 +38,27 @@ enum XDriveIOSPhotoBackupMVPError: Error {
 struct XDriveIOSForegroundPhotoBackupMVP {
     let owner: XDriveNativeOwnerRoot
     private let authorization: XDriveIOSOriginalOwnerAuthorization
+    private let sourceProgress: @MainActor (XDriveIOSPhotoBackupProgress) async -> Void
 
     init(owner: XDriveNativeOwnerRoot, accessToken: String) {
         self.owner = owner
         self.authorization = .webBearer(accessToken)
+        self.sourceProgress = { _ in }
     }
 
     init(owner: XDriveNativeOwnerRoot,
-         managedForeground: XDriveIOSManagedOriginalAuthority) {
+         managedForeground: XDriveIOSManagedOriginalAuthority,
+         onSourceProgress: @escaping @MainActor (XDriveIOSPhotoBackupProgress) async -> Void = { _ in }) {
         self.owner = owner
         self.authorization = .managedForeground(managedForeground)
+        self.sourceProgress = onSourceProgress
     }
 
     init(owner: XDriveNativeOwnerRoot,
          approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential) {
         self.owner = owner
         self.authorization = .background(approvedBackgroundGrant)
+        self.sourceProgress = { _ in }
     }
 
     /// One deliberate foreground click; bounded work for a usable first
@@ -64,13 +69,12 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     func run(allowICloudOriginals: Bool, startOffset: Int = 0,
              maximumNewOriginals: Int = Self.maxNewOriginalsPerRun,
              newOnlySince: Date? = nil,
-             onSourceProgress: @MainActor @escaping (XDriveIOSPhotoBackupProgress) async -> Void = { _ in },
              onPotentialWrite: @MainActor @escaping () -> Void = {},
              onProgress: @MainActor @escaping (XDriveIOSPhotoBackupProgress) -> Void)
         async throws -> XDriveIOSPhotoBackupProgress {
         func publish(_ value: XDriveIOSPhotoBackupProgress) async {
             await onProgress(value)
-            await onSourceProgress(value)
+            await sourceProgress(value)
         }
         guard startOffset >= 0, maximumNewOriginals > 0,
               maximumNewOriginals <= Self.maxNewOriginalsPerRun,
