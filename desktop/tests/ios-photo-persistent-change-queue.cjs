@@ -115,3 +115,19 @@ test('explicit retry only requeues item-local failures under the current PhotoKi
   assert.match(section, /controller\.schedule\?\.pausedForReview == true/)
   assert.doesNotMatch(model, /uploadPrepared|UploadSession|finalize\(/)
 });
+
+test('safe failed PhotoKit items have an explicit Owner-scoped retry action, never an unknown-ACK retry', () => {
+  const model = read('ios/XDriveIOS/NativePhotoQueueSummaryModel.swift')
+  const section = read('ios/XDriveIOS/PhotoQueueSummarySection.swift')
+  assert.match(section, /重新排队失败项/)
+  assert.match(section, /controller\.schedule\?\.pausedForReview == true/)
+  assert.match(section, /不能通过此按钮绕过暂停/)
+  assert.match(model, /func retryFailed\(login: XDriveIOSNativeOwnerLoginModel\)/)
+  assert.match(model, /queue\.retryFailedCandidates\(\s*owner: selected, limit: 64/)
+  assert.match(model, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
+  assert.match(source, /func retryFailedCandidates\(owner: XDriveNativeOwnerRoot,/)
+  assert.match(source, /store\.failed\(limit: limit\)/)
+  assert.match(source, /store\.retryFailed\(\s*candidate, expectedBaselineToken: baseline\.token/)
+  assert.match(store, /func failed\(limit: Int = 64\)/)
+  assert.match(store, /func retryFailed\(_ candidate: Pending,[\s\S]*?expectedBaselineToken: Data/)
+});
