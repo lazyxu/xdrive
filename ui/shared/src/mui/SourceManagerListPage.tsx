@@ -138,7 +138,7 @@ export function XDriveSourceManagerListPage({
             const sourceName = externalSourceDisplayName(row.source)
             const latest = row.latestRun
             const stats = !latest
-              ? '尚无扫描统计'
+              ? (row.source.kind === 'ios_photos' ? '尚无备份统计' : '尚无扫描统计')
               : row.source.kind === 'ios_photos'
                 ? [
                     `扫描 ${latest.scanned_items.toLocaleString('zh-CN')} 项`,
