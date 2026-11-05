@@ -29,8 +29,8 @@ function offlineHostPlanBlockerLabel(value: string) {
     temporary_space_unavailable: '无法读取临时目录可用空间',
     docker_unavailable: 'Docker 不可用或无法读取 Docker Root',
     pinned_postgres_image_unavailable_or_mismatched: 'PostgreSQL 固定镜像缺失或镜像 ID 不匹配',
-    enabled_optional_image_unavailable_media-worker: '已启用的 Media Worker 镜像不可用',
-    enabled_optional_image_unavailable_photo-intelligence: '已启用的 AI 镜像不可用',
+    'enabled_optional_image_unavailable_media-worker': '已启用的 Media Worker 镜像不可用',
+    'enabled_optional_image_unavailable_photo-intelligence': '已启用的 AI 镜像不可用',
     host_environment_unavailable: '无法读取 Host 环境配置',
     host_profiles_invalid: 'Host 服务 Profile 配置无效',
   }
