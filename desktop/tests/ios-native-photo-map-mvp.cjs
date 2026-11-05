@@ -510,6 +510,7 @@ test('album-scoped place wall exposes Show Nearby Photos into the full-library s
   assert.match(map, /@State private var nearbySelection: XDriveIOSMapSpatialSelection\?/)
   assert.match(map, /fullScreenCover\(item: \$globalSelection, onDismiss: \{[\s\S]*?pendingNearbySelection[\s\S]*?nearbySelection = pending/)
   assert.match(map, /pendingNearbySelection = chosen/)
+  assert.match(map, /authorizationStatus\(for: \.readWrite\) == \.authorized[\s\S]*?onLibraryCameraChange\?\(nil\)[\s\S]*?clearReturnCamera\(\)[\s\S]*?invalidate\(\)/)
   assert.match(map, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: nil, isNearbyExpansion: true\s*\)/)
   assert.match(map, /Text\(isNearbyExpansion \?[\s\S]*?"附近照片 · 已加载/)
   assert.match(map, /onShowNearby: album == nil \? nil : \{[\s\S]*?phase == \.active[\s\S]*?authorizationStatus\(for: \.readWrite\) == \.authorized[\s\S]*?pendingNearbySelection = chosen/)
