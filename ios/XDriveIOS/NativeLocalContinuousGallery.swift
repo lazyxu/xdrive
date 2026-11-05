@@ -350,6 +350,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var dragTileFrames: [String: CGRect] = [:]
     @State private var dragPreviousSlot: Int?
     @State private var dragVisitedIDs: Set<String> = []
+    @State private var showingMap = false
     @State private var showingAlbumPicker = false
     @State private var albumPickerCandidates: [XDrivePhotoKitScanCandidate] = []
     @State private var confirmingDelete = false
@@ -440,16 +441,49 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             .accessibilityIdentifier("native-ios-photos-local-select-mode")
                         }
                         .padding(.horizontal, 12)
-                        Picker("媒体类型", selection: $mediaFilter) {
-                            ForEach(XDriveIOSNativePhotoMediaFilter.allCases) { option in
-                                Text(option.title).tag(option)
+                        Menu {
+                            Section("媒体类型") {
+                                ForEach(XDriveIOSNativePhotoMediaFilter.allCases) { option in
+                                    Button {
+                                        mediaFilter = option
+                                    } label: {
+                                        if mediaFilter == option {
+                                            Label(option.title, systemImage: "checkmark")
+                                        } else {
+                                            Text(option.title)
+                                        }
+                                    }
+                                    .accessibilityIdentifier(
+                                        "native-ios-local-gallery-filter-\(option.rawValue)"
+                                    )
+                                }
                             }
+                            Section("地图") {
+                                Button {
+                                    showingMap = true
+                                } label: {
+                                    Label("显示地图", systemImage: "map")
+                                }
+                                .disabled(
+                                    permission != .authorized || phase != .active ||
+                                    selectionMode || selected != nil || actionBusy || shareBusy
+                                )
+                                .accessibilityIdentifier("native-ios-local-wall-show-map")
+                            }
+                        } label: {
+                            Label("筛选：\(mediaFilter.title)",
+                                  systemImage: "line.3.horizontal.decrease.circle")
+                                .frame(minHeight: 44)
                         }
-                        // Six native source predicates fit cleanly in a
-                        // compact menu even on a 375pt iPhone/landscape.
-                        .pickerStyle(.menu)
                         .padding(.horizontal, 12)
                         .accessibilityIdentifier("native-ios-local-gallery-media-filter")
+                        if permission == .limited {
+                            Label("地图需要完整照片访问权限；有限访问不会生成部分地图。",
+                                  systemImage: "lock.shield")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                        }
                         if selectionMode {
                             Text("按住照片并拖动，可连续选择已加载的照片。")
                                 .font(.caption)
@@ -608,6 +642,20 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                     guard phase == .active else { return }
                     scroll.scrollTo("page:\(start)", anchor: .top)
                     requestedOffset = nil
+                }
+            }
+            // Present over the existing wall instead of replacing its Gallery
+            // route. The PhotoKit filter, loaded scroll anchor and Viewer state
+            // remain owned by this still-mounted screen when the map is closed.
+            .fullScreenCover(isPresented: $showingMap) {
+                NavigationStack {
+                    XDriveIOSNativeLocalPhotoMapScreen(
+                        mapScope: .constant(.library),
+                        offset: .constant(0),
+                        onClose: { showingMap = false }
+                    )
+                    // This is the whole-library entry, not a stale Viewer jump.
+                    .environment(\.xdriveNativeLocalMapJump, nil)
                 }
             }
         }
