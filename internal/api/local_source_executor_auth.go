@@ -204,6 +204,9 @@ func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID
 		if source.Kind == meta.SourceKindIOSPhotos {
 			return s.requireIOSPhotoSourceRunProofTx(tx, c, sourceID)
 		}
+		if source.Kind == synologySourceKind {
+			return errLocalSourceExecutorTransactionUnauthorized
+		}
 		return nil
 	}
 	proof, ok := raw.(localSourceExecutorProof)
