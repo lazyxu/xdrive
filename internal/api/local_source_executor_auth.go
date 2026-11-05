@@ -162,7 +162,7 @@ func (s *Server) requireLocalSourceExecutorTx(tx *gorm.DB, c *gin.Context, sourc
 func (s *Server) requireLocalSourceMutationTx(tx *gorm.DB, c *gin.Context, sourceID uint64) error {
 	if _, hasProof := c.Get(localSourceExecutorContextKey); !hasProof {
 		var source meta.Source
-		if err := tx.Select("kind").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
+		if err := tx.Select("kind", "direction").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
 			return err
 		}
 		if source.Kind == meta.SourceKindLocalFolder ||
