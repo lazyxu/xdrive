@@ -1742,8 +1742,9 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       if (!Number.isSafeInteger(revision) || revision < 1 ||
         typeof name !== 'string' || !name || name.trim() !== name ||
         new TextEncoder().encode(name).length > 128 ||
-        name.includes(' ') || name.includes('') || name.includes('
-')) {
+        name.includes(String.fromCharCode(0)) ||
+        name.includes(String.fromCharCode(13)) ||
+        name.includes(String.fromCharCode(10))) {
         throw new Error('Invalid DSM local backup rename')
       }
       return validateLocalBackupSettings(
@@ -1769,23 +1770,6 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       return validateLocalBackupSettings(
         await request<unknown>('/v1/local-mode', 'POST',
           { source_id: sourceID, revision, sync_mode: mode }),
-        sourceID)
-    },
-    localBackupRules: async (sourceID, signal) =>
-      validateLocalBackupRules(
-        await request<unknown>('/v1/local-rules' + sourceQuery(sourceID), 'GET', undefined, signal),
-        sourceID),
-    saveLocalBackupRules: async (sourceID, revision, rules) => {
-      if (!Number.isSafeInteger(revision) || revision < 1 ||
-        typeof rules !== 'string' || new TextEncoder().encode(rules).length > 64 * 1024 ||
-        rules.split(/
-||
-/).length > 4096) {
-        throw new Error('Invalid DSM local backup ignore rules')
-      }
-      return validateLocalBackupRules(
-        await request<unknown>('/v1/local-rules', 'POST',
-          { source_id: sourceID, revision, ignore_rules: rules }),
         sourceID)
     },
     removeLocalBackupSource: async (sourceID, revision) => {
@@ -1888,3 +1872,22 @@ export function createXDriveSynologyCloudStorageDataSource(
     }),
   }
 }
+    localBackupRules: async (sourceID, signal) =>
+      validateLocalBackupRules(
+        await request<unknown>('/v1/local-rules' + sourceQuery(sourceID), 'GET', undefined, signal),
+        sourceID),
+    saveLocalBackupRules: async (sourceID, revision, rules) => {
+      const newline = String.fromCharCode(10)
+      const carriageReturn = String.fromCharCode(13)
+      const lineCount = rules.replaceAll(carriageReturn + newline, newline)
+        .replaceAll(carriageReturn, newline).split(newline).length
+      if (!Number.isSafeInteger(revision) || revision < 1 ||
+        typeof rules !== 'string' || new TextEncoder().encode(rules).length > 64 * 1024 ||
+        lineCount > 4096) {
+        throw new Error('Invalid DSM local backup ignore rules')
+      }
+      return validateLocalBackupRules(
+        await request<unknown>('/v1/local-rules', 'POST',
+          { source_id: sourceID, revision, ignore_rules: rules }),
+        sourceID)
+    },
