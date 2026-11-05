@@ -491,6 +491,10 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     }
 
     private func openPhotoLocationInMap() {
+        guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else {
+            photoActionMessage = "本机照片地图需要完整照片访问权限，请在 iOS 设置中开启“完全访问”。"
+            return
+        }
         guard let openNativeLocalMap,
               let coordinate = verifiedLocation(),
               let jump = XDriveIOSNativeLocalMapJump(
