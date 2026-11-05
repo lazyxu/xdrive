@@ -1207,7 +1207,9 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       const unique = new Set<number>()
       for (const item of page.items) {
         if (!item || !Number.isSafeInteger(item.source_id) || item.source_id < 1 ||
-          typeof item.name !== 'string' || item.name.length > 512 || unique.has(item.source_id)) {
+          typeof item.name !== 'string' || item.name.length > 512 ||
+          (item.sync_mode !== 'backup' && item.sync_mode !== 'mirror') ||
+          unique.has(item.source_id)) {
           throw new Error('Invalid or duplicate DSM Source')
         }
         unique.add(item.source_id)
