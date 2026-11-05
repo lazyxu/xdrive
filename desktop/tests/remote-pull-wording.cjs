@@ -33,7 +33,7 @@ test('remote Pull UI labels have no redundant direction or mixed Source naming',
   assert.match(read('ui/shared/src/mui/SourceManagerDetailsDialog.tsx'), /externalSourceDisplayTargetPath\(row\.source\)/)
 })
 
-test('Web, Mobile Web and Desktop use the same Pull-only surface and preserve transport direction', () => {
+test('Web, Mobile Web and Desktop expose one unified Push/Pull Source Manager', () => {
   const manager = read('ui/shared/src/mui/SourceManager.tsx')
   const web = read('web/src/App.tsx')
   const desktop = read('desktop/src/renderer/App.tsx')
