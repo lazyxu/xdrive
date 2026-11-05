@@ -411,12 +411,11 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     throw XDriveIOSNativeSessionError.staleSession
                 }
                 if olderPending > 0 {
-                    if kind == .automatic {
-                        // Persist a durable pause, not a consumed next window.
-                        // A later explicit receipt review can safely resume.
-                        self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared
-                            .pauseForPendingReceipts(owner: selected)
-                    }
+                    // Any foreground original entry point must pause an
+                    // already-enabled automatic plan when the global receipt
+                    // gate finds an unknown write. Do not wait for a later tick.
+                    self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                        .pauseForPendingReceipts(owner: selected)
                     self.errorMessage = "当前账户已有 \(olderPending) 项不确定原件收据；请先只读核对，本轮未上传新原件。"
                     return
                 }
@@ -466,6 +465,11 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     }
                     self.progress = result
                     self.message = "单张优先备份：新增 \(result.uploaded)，已验证 \(result.verifiedAlready)，待核对 \(result.needsReview)，不可用 \(result.unavailable)。"
+                    if result.stoppedForReview || result.needsReview > 0 {
+                        self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                            .pauseForPendingReceipts(owner: selected)
+                        self.errorMessage = "单张优先备份结果不确定；当前账户的自动备份已暂停，请先核对上传收据。"
+                    }
                     await reporter.finish(status: "completed")
                 } else if kind == .focused {
                     try await self.runFocused(
@@ -642,8 +646,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         self.manualAuthorizationRaw = completed.authorization
                     }
                     self.message = "本轮确认新增 \(result.uploaded)，已验证存在 \(result.verifiedAlready)，待核对 \(result.needsReview)，不可用 \(result.unavailable)。"
-                    if result.stoppedForReview {
-                        self.errorMessage = "发现结果不确定的上传收据：本轮已暂停，不会盲目重传。"
+                    if result.stoppedForReview || result.needsReview > 0 {
+                        self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                            .pauseForPendingReceipts(owner: selected)
+                        self.errorMessage = "发现结果不确定的上传收据：当前账户的自动备份已暂停，不会盲目重传。"
                     }
                     await reporter.finish(status: "completed")
                 }
