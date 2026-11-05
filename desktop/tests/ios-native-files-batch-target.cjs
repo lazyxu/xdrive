@@ -14,7 +14,7 @@ const router = read('internal/api/router.go')
 
 test('one real Owner-verified native Files page supports bounded multi-copy and multi-move', () => {
   assert.match(page, /@StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel\(\)/)
-  assert.match(page, /private var canSelectPage: Bool \{[\s\S]*?model\.verifiedPage && activeQuery\.isEmpty/)
+  assert.match(page, /private var canSelectPage: Bool \{[\s\S]*?model\.verifiedPage && !isGlobalSearch/)
   assert.match(page, /Label\("复制", systemImage: "doc\.on\.doc"\)/)
   assert.match(page, /private var filesSelectionToolbar: some View/)
   assert.match(page, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)/)

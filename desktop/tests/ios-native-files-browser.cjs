@@ -8,6 +8,8 @@ const page = read('ios/XDriveIOS/NativeCloudFilesPolicy.swift');
 const view = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift');
 const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift');
 const source = read('web/src/api.ts');
+const web = read('web/src/WebFileExplorer.tsx');
+const server = read('internal/api/search.go');
 const management = read('ios/XDriveIOS/NativeFilesManagementPanel.swift');
 
 test('native Files replaces its fixed-tab placeholder without returning to WebView', () => {
@@ -22,6 +24,10 @@ test('native Files replaces its fixed-tab placeholder without returning to WebVi
 test('directory and full-library search use canonical counted Owner Range', () => {
   assert.match(view, /login\.verifiedAuthorization\(\)/);
   assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/);
+  assert.match(view, /func belongs\(to owner: XDriveNativeOwnerRoot\?\) -> Bool[\s\S]*?matches\(owner, loadedOwner\)/);
+  assert.match(view, /private var hasVerifiedSearchOptionsForOwner: Bool[\s\S]*?searchOptions\.matches\(login\.owner\)/);
+  assert.match(view, /if searchOptions\.loading && hasSearchOptionsStateForOwner/);
+  assert.match(view, /else if hasSearchOptionsStateForOwner, let error = searchOptions\.errorMessage/);
   assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/);
   assert.match(view, /\/api\/v1\/nodes\/\\\(parentID\)\/children/);
   assert.match(view, /\/api\/v1\/search/);
@@ -60,7 +66,7 @@ test('file mutations and downloads remain unavailable; Viewer uses one native mo
 });
 
 test('native Browse home uses a verified cloud location rather than automatically opening root children', () => {
-  assert.match(view, /private var isHome: Bool \{ folder == nil && activeQuery\.isEmpty \}/)
+  assert.match(view, /private var isHome: Bool \{ folder == nil && !isGlobalSearch \}/)
   assert.match(view, /private var filesHome: some View/)
   assert.match(view, /Section\("位置"\)/)
   assert.match(view, /folderID: owner\.rootNodeID,\s*folderName: "xDrive 云端"/)
@@ -82,7 +88,7 @@ test('native SwiftUI search collapses in the toolbar and restores directory on c
   assert.match(view, /\.onSubmit\(of: \.search\) \{ submitSearch\(\) \}/)
   assert.match(view, /private func submitSearch\(\)/)
   assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearch\(query\)/)
-  assert.match(view, /if activeQuery\.isEmpty \{\s*let saved = rememberedPosition\(\)\s*searchReturnOffset = saved\?\.pageOffset \?\? offset\s*searchReturnNodeID = saved\?\.nodeID/)
+  assert.match(view, /if searchReturnOffset == nil \{\s*let saved = rememberedPosition\(\)\s*searchReturnOffset = saved\?\.pageOffset \?\? offset\s*searchReturnNodeID = saved\?\.nodeID/)
   assert.match(view, /activeQuery = query\s*reload\(resetOffset: true\)/)
   assert.match(view, /private func clearSearch\(\)/)
   assert.match(view, /let restoredOffset = searchReturnOffset \?\? 0/)
@@ -155,7 +161,7 @@ test('native Files full-library search debounces valid keyboard drafts and cance
 test('native Files kind filter matches PWA Server semantics on all 64-item windows', () => {
   assert.match(page, /static func validSearchKind\(_ kind: String\) -> Bool/);
   assert.match(page, /"folder": "文件夹", "file": "全部文件"/);
-  assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearchFilters\(filters\)/);
+  assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearchRequest\(query: query, filters: filters\)/);
   assert.match(view, /if filters\.kind != "all" \{\s*queryItems\.append\(URLQueryItem\(name: "kind", value: filters\.kind\)\)/);
   assert.match(source, /if \(filters\.kind\) params\.set\('kind', filters\.kind\)/);
   assert.match(view, /query: activeQuery, filters: searchFilters, sort: sort, order: order/g);
@@ -181,4 +187,43 @@ test('native Files date and size filters use the complete Server search index on
   assert.match(view, /\.onChange\(of: searchFilters\)[\s\S]*?reload\(resetOffset: true\)/);
   assert.match(view, /native-ios-files-search-date-filter/);
   assert.match(view, /native-ios-files-search-size-filter/);
+});
+
+test('native Files search matches PWA source and tag filters, including filter-only queries', () => {
+  assert.match(page, /var sourceID: UInt64\?/);
+  assert.match(page, /var tagID: UInt64\?/);
+  assert.match(page, /static func validSearchRequest\(query: String,[\s\S]*?trimmed\.isEmpty \? filters\.hasActiveFilters : validSearch\(trimmed\)/);
+  assert.match(page, /static func validSearchSources\(_ items: \[XDriveIOSNativeFilesSearchSourceOption\]\)/);
+  assert.match(page, /static func validSearchTags\(_ items: \[XDriveIOSNativeFilesSearchTagOption\]\)/);
+  assert.match(view, /endpoint\("\/api\/v1\/sources", query: \[\]\)/);
+  assert.match(view, /endpoint\("\/api\/v1\/file-tags", query: \[\]\)/);
+  assert.match(view, /validSearchRequest\(query: query, filters: filters\)/);
+  assert.match(view, /URLQueryItem\(name: "source_id", value: String\(sourceID\)\)/);
+  assert.match(view, /URLQueryItem\(name: "tag_id", value: String\(tagID\)\)/);
+  assert.match(view, /if query\.isEmpty && !filters\.hasActiveFilters/);
+  assert.match(view, /private final class XDriveIOSNativeFilesSearchOptionsModel/);
+  assert.match(view, /async let sourceRead = reader\.searchSources\(\)/);
+  assert.match(view, /async let tagRead = reader\.searchTags\(\)/);
+  assert.match(view, /func belongs\(to owner: XDriveNativeOwnerRoot\?\) -> Bool[\s\S]*?matches\(owner, loadedOwner\)/);
+  assert.match(view, /private var hasVerifiedSearchOptionsForOwner: Bool[\s\S]*?searchOptions\.matches\(login\.owner\)/);
+  assert.match(view, /if searchOptions\.loading && hasSearchOptionsStateForOwner/);
+  assert.match(view, /else if hasSearchOptionsStateForOwner, let error = searchOptions\.errorMessage/);
+  assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/);
+  assert.match(view, /native-ios-files-search-source-filter/);
+  assert.match(view, /native-ios-files-search-tag-filter/);
+  assert.match(view, /Section\("全库筛选"\)/);
+  assert.match(view, /private var isGlobalSearch: Bool/);
+  assert.match(view, /private var isHome: Bool \{ folder == nil && !isGlobalSearch \}/);
+  assert.match(view, /searchOptions\.load\(login: login\)/);
+  assert.match(view, /searchOptions\.invalidate\(\)/);
+  assert.match(view, /if searchFilters\.hasActiveFilters \{[\s\S]*?reload\(resetOffset: true\)/);
+  assert.match(view, /folderID: folder\?\.id \?\? intent\.file\?\.parent_id \?\?[\s\S]*?intent\.directory\?\.parent_id/);
+  assert.match(source, /if \(filters\.sourceID\) params\.set\('source_id', String\(Math\.max\(1, Math\.trunc\(filters\.sourceID\)\)\)\)/);
+  assert.match(source, /if \(filters\.tagID\) params\.set\('tag_id', String\(Math\.max\(1, Math\.trunc\(filters\.tagID\)\)\)\)/);
+  assert.match(source, /sources\(\) \{\s*return this\.request<ExternalSource\[]>\('\/api\/v1\/sources'\)/);
+  assert.match(source, /fileTags\(\) \{\s*return this\.request<XDriveFileTag\[]>\('\/api\/v1\/file-tags'\)/);
+  assert.match(server, /filters\.SourceID = sourceID/);
+  assert.match(server, /filters\.TagID = tagID/);
+  assert.match(web, /useXDriveFileExplorerOwnerSourceOptions/);
+  assert.match(web, /tagOptions=\{organization\.tagOptions\}/);
 });

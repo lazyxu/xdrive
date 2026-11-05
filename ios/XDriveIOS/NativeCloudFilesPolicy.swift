@@ -79,6 +79,18 @@ struct XDriveIOSNativeFilesSearchRange: Decodable {
     let order: String
 }
 
+/// Minimal, non-secret projections of existing Owner-scoped Source and Tag APIs.
+struct XDriveIOSNativeFilesSearchSourceOption: Decodable, Identifiable, Hashable {
+    let id: UInt64
+    let name: String
+}
+
+struct XDriveIOSNativeFilesSearchTagOption: Decodable, Identifiable, Hashable {
+    let id: UInt64
+    let name: String
+    var color: String? = nil
+}
+
 /// Structured filters are applied by the authoritative Server search index,
 /// never to only the currently loaded 64–256 row client window.
 struct XDriveIOSNativeFilesSearchFilterState: Equatable {
@@ -87,9 +99,17 @@ struct XDriveIOSNativeFilesSearchFilterState: Equatable {
     var modifiedTo: String?
     var minSize: Int64?
     var maxSize: Int64?
+    var sourceID: UInt64?
+    var tagID: UInt64?
 
     var hasDateFilter: Bool { modifiedFrom != nil || modifiedTo != nil }
     var hasSizeFilter: Bool { minSize != nil || maxSize != nil }
+    var hasSourceFilter: Bool { sourceID != nil }
+    var hasTagFilter: Bool { tagID != nil }
+    var hasActiveFilters: Bool {
+        kind != "all" || hasDateFilter || hasSizeFilter ||
+            hasSourceFilter || hasTagFilter
+    }
 }
 
 /// Validate an actual Owner Range before it can replace the currently visible
@@ -119,9 +139,11 @@ enum XDriveIOSNativeFilesPagePolicy {
         searchKindLabels[kind] ?? "全部类型"
     }
 
-    /// Match the Server's RFC3339Nano date and non-negative byte-range contract.
+    /// Match the Server's RFC3339Nano date, byte-range and Owner option IDs.
     static func validSearchFilters(_ filters: XDriveIOSNativeFilesSearchFilterState) -> Bool {
-        guard validSearchKind(filters.kind) else { return false }
+        guard validSearchKind(filters.kind),
+              filters.sourceID.map({ $0 > 0 }) ?? true,
+              filters.tagID.map({ $0 > 0 }) ?? true else { return false }
         let from = filters.modifiedFrom.flatMap {
             XDriveIOSNativeFilesDatePolicy.date(from: $0)
         }
@@ -136,6 +158,39 @@ enum XDriveIOSNativeFilesPagePolicy {
         if let minSize = filters.minSize, let maxSize = filters.maxSize,
            minSize > maxSize { return false }
         return true
+    }
+
+    static func validSearchRequest(query: String,
+                                   filters: XDriveIOSNativeFilesSearchFilterState) -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard validSearchFilters(filters) else { return false }
+        return trimmed.isEmpty ? filters.hasActiveFilters : validSearch(trimmed)
+    }
+
+    static func validSearchSources(_ items: [XDriveIOSNativeFilesSearchSourceOption]) -> Bool {
+        items.count <= 4096 &&
+            Set(items.map(\.id)).count == items.count &&
+            items.allSatisfy {
+                $0.id > 0 && !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                    $0.name.utf8.count <= 512 &&
+                    !$0.name.unicodeScalars.contains(where: {
+                        CharacterSet.controlCharacters.contains($0)
+                    })
+            }
+    }
+
+    static func validSearchTags(_ items: [XDriveIOSNativeFilesSearchTagOption]) -> Bool {
+        items.count <= 128 &&
+            Set(items.map(\.id)).count == items.count &&
+            items.allSatisfy {
+                $0.id > 0 && !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                    $0.name.utf8.count <= 64 &&
+                    !$0.name.unicodeScalars.contains(where: {
+                        CharacterSet.controlCharacters.contains($0)
+                    }) &&
+                    ($0.color == nil || $0.color == "" ||
+                        $0.color!.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil)
+            }
     }
 
     static func validOffset(_ offset: Int) -> Bool {
