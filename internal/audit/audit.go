@@ -38,6 +38,7 @@ const (
 	ActionSourceCredentialDelete = "source.credential.delete"
 	ActionSourceCredentialReveal = "source.credential.reveal"
 	ActionSourceMirrorTrash      = "source.mirror.trash"
+	ActionUploadAuthorization    = "upload.authorization"
 )
 
 const ActionAdminPhotoIntelligenceReanalyze = "admin.photo_intelligence.reanalyze"
@@ -57,7 +58,14 @@ type Event struct {
 }
 
 func Record(db *gorm.DB, event Event) error {
-	if db == nil {
+	return RecordTx(db, event)
+}
+
+// RecordTx appends an audit event using the caller's existing transaction.
+// A successful authorization record therefore commits or rolls back with the
+// protected upload write; it cannot describe a write that did not commit.
+func RecordTx(tx *gorm.DB, event Event) error {
+	if tx == nil {
 		return fmt.Errorf("audit database is nil")
 	}
 	event.Action = limit(strings.TrimSpace(event.Action), 80)
@@ -99,7 +107,7 @@ func Record(db *gorm.DB, event Event) error {
 		Metadata:      metadata,
 		CreatedAt:     time.Now().UTC(),
 	}
-	return db.Create(&record).Error
+	return tx.Create(&record).Error
 }
 
 func limit(value string, max int) string {

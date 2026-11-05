@@ -135,6 +135,8 @@ func toSourceDTO(source meta.Source) sourceDTO {
 	if source.DeviceID != nil {
 		dto.DeviceID = *source.DeviceID
 	} else if source.LocalCreatorDeviceID != nil {
+		// Read-only fallback for pre-migration rows; authorization always uses
+		// the canonical Source.DeviceID column.
 		dto.DeviceID = *source.LocalCreatorDeviceID
 	}
 	if isLocalFolderPush(source) {

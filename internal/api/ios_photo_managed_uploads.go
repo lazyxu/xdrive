@@ -20,10 +20,11 @@ import (
 const iosPhotoManagedContextKey = "xdriveIOSPhotoManagedUploadScope"
 
 type iosPhotoManagedUploadScope struct {
-	ownerID  uint64
-	deviceID string
-	sourceID uint64
-	targetID uint64
+	ownerID        uint64
+	deviceID       string
+	sourceID       uint64
+	sourceRevision uint64
+	targetID       uint64
 }
 
 func currentIOSPhotoManagedUploadScope(c *gin.Context) (iosPhotoManagedUploadScope, bool) {
@@ -77,7 +78,7 @@ func (s *Server) iosPhotoManagedAuthorizedScope(c *gin.Context) (iosPhotoManaged
 		}
 		out = iosPhotoManagedUploadScope{
 			ownerID: ownerID, deviceID: device.ID,
-			sourceID: source.ID, targetID: target.ID,
+			sourceID: source.ID, sourceRevision: source.Revision, targetID: target.ID,
 		}
 		return nil
 	})
@@ -151,12 +152,14 @@ func requireIOSPhotoManagedUploadTx(ctx context.Context, tx *gorm.DB,
 	var source meta.Source
 	if err := tx.WithContext(ctx).Clauses(clause.Locking{
 		Strength: "SHARE", Options: "NOWAIT",
-	}).Where("id = ? AND owner_id = ? AND kind = ? AND direction = ? AND local_creator_device_id = ?",
+	}).Where("id = ? AND owner_id = ? AND kind = ? AND direction = ? AND device_id = ?",
 		scope.sourceID, ownerID, meta.SourceKindIOSPhotos,
 		meta.SourceDirectionPush, scope.deviceID).Take(&source).Error; err != nil {
 		return errManagedSourceWriteDenied
 	}
 	if !iosPhotoDestinationSource(source) || !source.TargetManaged ||
+		source.DeviceID == nil || *source.DeviceID != scope.deviceID ||
+		source.Revision != scope.sourceRevision ||
 		source.TargetNodeID == nil || *source.TargetNodeID != targetID {
 		return errManagedSourceWriteDenied
 	}
@@ -184,7 +187,12 @@ func requireIOSPhotoManagedUploadTx(ctx context.Context, tx *gorm.DB,
 
 func requireIOSPhotoManagedFinalizeTx(ctx context.Context, tx *gorm.DB,
 	c *gin.Context, session meta.UploadSession, nodeID uint64) error {
-	if session.ID == "" || session.ShareID != nil || session.SourceRunID != "" ||
+	scope, scoped := currentIOSPhotoManagedUploadScope(c)
+	if !scoped || session.ID == "" || session.ShareID != nil || session.SourceRunID != "" ||
+		(session.SourceID != 0 && session.SourceID != scope.sourceID) ||
+		(session.SourceDeviceID != "" && session.SourceDeviceID != scope.deviceID) ||
+		(session.SourceTargetID != 0 && session.SourceTargetID != scope.targetID) ||
+		(session.SourceRevision != 0 && session.SourceRevision != scope.sourceRevision) ||
 		session.NodeID != nil || session.ParentID == nil ||
 		*session.ParentID != nodeID || session.Status != meta.UploadStatusActive ||
 		session.Name != session.RequestedName || session.ExpectedMD5 != "" {
@@ -231,8 +239,8 @@ func (s *Server) iosPhotoManagedOwnedUpload(c *gin.Context) bool {
 	}
 	var session meta.UploadSession
 	if err := s.DB.WithContext(c.Request.Context()).Where(
-		"id = ? AND owner_id = ? AND parent_id = ? AND node_id IS NULL AND share_id IS NULL AND COALESCE(source_run_id, '') = ''",
-		parsed.String(), scope.ownerID, scope.targetID).Take(&session).Error; err != nil {
+		"id = ? AND owner_id = ? AND parent_id = ? AND node_id IS NULL AND share_id IS NULL AND COALESCE(source_run_id, '') = '' AND (source_id = 0 OR source_id = ?) AND (source_device_id = '' OR source_device_id = ?) AND (source_target_id = 0 OR source_target_id = ?) AND (source_revision = 0 OR source_revision = ?)",
+		parsed.String(), scope.ownerID, scope.targetID, scope.sourceID, scope.deviceID, scope.targetID, scope.sourceRevision).Take(&session).Error; err != nil {
 		fail(c, http.StatusForbidden, "ios photo upload session unavailable")
 		return false
 	}
@@ -320,8 +328,8 @@ func (s *Server) iosPhotoManagedReceipt(c *gin.Context) {
 	}
 	var sessions []meta.UploadSession
 	if err := s.DB.WithContext(c.Request.Context()).
-		Where("owner_id = ? AND parent_id = ? AND node_id IS NULL AND result_node_id = ? AND status = ? AND COALESCE(source_run_id, '') = '' AND share_id IS NULL",
-			scope.ownerID, scope.targetID, node.ID, meta.UploadStatusFinalized).
+		Where("owner_id = ? AND parent_id = ? AND node_id IS NULL AND result_node_id = ? AND status = ? AND COALESCE(source_run_id, '') = '' AND share_id IS NULL AND (source_id = 0 OR source_id = ?)",
+			scope.ownerID, scope.targetID, node.ID, meta.UploadStatusFinalized, scope.sourceID).
 		Order("created_at DESC, id DESC").Limit(20).Find(&sessions).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "ios photo original receipt read error")
 		return

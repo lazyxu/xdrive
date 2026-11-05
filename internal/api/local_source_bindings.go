@@ -97,6 +97,9 @@ func (s *Server) bindLocalSource(c *gin.Context) {
 		if source.Status != meta.SourceStatusPaused {
 			return errLocalBindingStateInvalid
 		}
+		if source.DeviceID == nil || *source.DeviceID != device.ID {
+			return errLocalBindingDeviceInvalid
+		}
 		var existing meta.LocalSourceBinding
 		err := tx.Where("source_id = ? AND owner_id = ?", id, userID(c)).
 			Take(&existing).Error
@@ -113,7 +116,7 @@ func (s *Server) bindLocalSource(c *gin.Context) {
 		}
 		// Existing legacy bindings may be replayed above, but an unbound
 		// Source cannot be claimed by an arbitrary same-account Desktop.
-		if source.LocalCreatorDeviceID == nil || *source.LocalCreatorDeviceID != device.ID {
+		if source.DeviceID == nil || *source.DeviceID != device.ID {
 			return errLocalBindingDeviceInvalid
 		}
 		now := time.Now().UTC()

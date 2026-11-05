@@ -82,6 +82,7 @@ func persistLocalPushCommonUploadFinalizedTx(
 		Take(&source).Error; err != nil ||
 		source.Kind != meta.SourceKindLocalFolder ||
 		source.Direction != meta.SourceDirectionPush ||
+		source.DeviceID == nil || *source.DeviceID != op.DeviceID ||
 		source.SyncMode != meta.SourceSyncModeBackup ||
 		source.Status != meta.SourceStatusPaused ||
 		source.TargetNodeID == nil || *source.TargetNodeID != op.SourceTargetID {

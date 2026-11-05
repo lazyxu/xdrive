@@ -77,9 +77,9 @@ type Source struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 
-	// DeviceID is the connector-neutral owning executor for Push Sources.
-	// LocalCreatorDeviceID remains for compatibility with existing local_folder
-	// enrollment and is never a substitute for platform-specific local grants.
+	// DeviceID is the canonical connector-neutral owning executor for every Push Source.
+	// LocalCreatorDeviceID is deprecated compatibility data; authorization must
+	// use DeviceID and the current Device/Source/Root binding.
 	DeviceID             *string `json:"-" gorm:"size:36;index"`
 	LocalCreatorDeviceID *string `json:"-" gorm:"size:36;index"`
 

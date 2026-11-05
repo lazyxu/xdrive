@@ -69,6 +69,7 @@ func setupFilePropertiesTestDB(t *testing.T) (*gorm.DB, *Server, meta.User, meta
 		&meta.File{},
 		&meta.Source{},
 		&meta.SourceItem{},
+		&meta.AuditEvent{},
 	); err != nil {
 		t.Fatal(err)
 	}

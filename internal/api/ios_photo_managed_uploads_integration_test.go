@@ -18,7 +18,7 @@ import (
 
 func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 	db, server, owner, _, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.UploadSession{}); err != nil {
+	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.UploadSession{}, &meta.AuditEvent{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
@@ -55,7 +55,7 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 	}
 	scope := iosPhotoManagedUploadScope{
 		ownerID: owner.ID, deviceID: device.ID,
-		sourceID: response.SourceID, targetID: response.TargetNodeID,
+		sourceID: response.SourceID, sourceRevision: 1, targetID: response.TargetNodeID,
 	}
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ios/photos/managed/uploads", nil)
@@ -112,6 +112,9 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 		ctx, db, c, session, response.TargetNodeID); err != nil {
 		t.Fatalf("valid managed iOS finalize denied: %v", err)
 	}
+	if err := authorizeUploadSessionWriteTx(ctx, db, c, session); err != nil {
+		t.Fatalf("valid managed iOS chunk write denied: %v", err)
+	}
 	if err := requireSourceRunOrLocalPushFinalizeTx(
 		ctx, db, regular, session, response.TargetNodeID); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("generic Owner gained iOS Source finalize: %v", err)
@@ -129,5 +132,8 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 	if err := requireSourceRunOrLocalPushFinalizeTx(
 		ctx, db, c, session, response.TargetNodeID); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("revoked iPhone finalized old session: %v", err)
+	}
+	if err := authorizeUploadSessionWriteTx(ctx, db, c, session); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("revoked iPhone wrote an upload chunk: %v", err)
 	}
 }

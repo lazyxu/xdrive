@@ -132,8 +132,9 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 		}
 		return false
 	}
-	if binding.RootID != rootID.String() || binding.RootFingerprint != fingerprint {
-		fail(c, http.StatusForbidden, "local source executor root mismatch")
+	if source.DeviceID == nil || *source.DeviceID != binding.DeviceID ||
+		binding.RootID != rootID.String() || binding.RootFingerprint != fingerprint {
+		fail(c, http.StatusForbidden, "local source executor root or DeviceID mismatch")
 		return false
 	}
 	var device meta.ClientDevice
@@ -241,6 +242,7 @@ func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID
 		return err
 	}
 	if source.Kind != meta.SourceKindLocalFolder || source.Direction != meta.SourceDirectionPush ||
+		source.DeviceID == nil || *source.DeviceID != proof.DeviceID ||
 		source.Revision != proof.SourceRevision || (requireActive && source.Status != meta.SourceStatusActive) {
 		return errLocalSourceExecutorTransactionUnauthorized
 	}

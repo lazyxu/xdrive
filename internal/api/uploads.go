@@ -404,7 +404,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		// A resumable DSM session belongs to one exact Source/Device/Root
 		// tuple. Ordinary sessions remain compatible with existing clients.
-		if req.SourceID != 0 {
+		if photoScope, photos := currentIOSPhotoManagedUploadScope(c); photos {
+			q = q.Where("source_id = ? AND source_revision = ? AND source_device_id = ? AND source_target_id = ?",
+				photoScope.sourceID, photoScope.sourceRevision, photoScope.deviceID, photoScope.targetID)
+		} else if req.SourceID != 0 {
 			q = q.Where("source_id = ? AND source_revision = ? AND source_root_id = ? AND source_root_fingerprint = ? AND source_device_id = ?",
 				req.SourceID, req.SourceRevision, req.SourceRootID, req.SourceRootFingerprint,
 				strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
@@ -442,7 +445,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 				existing.NodeID != nil {
 				current, lookupErr := s.ownedNode(uid, *existing.NodeID, true)
 				if lookupErr != nil || current.Revision != existing.ExpectedRevision {
-					if abortErr := s.abortUploadSessionData(c.Request.Context(), existing); abortErr != nil {
+					if abortErr := s.abortUploadSessionAuthorized(c, existing); abortErr != nil {
 						fail(c, http.StatusInternalServerError, "reset stale overwrite upload failed")
 						return
 					}
@@ -479,6 +482,9 @@ func (s *Server) createUploadSession(c *gin.Context) {
 				}
 				var quotaReservation int64
 				if err := s.DB.Transaction(func(tx *gorm.DB) error {
+					if err := authorizeUploadSessionWriteTx(c.Request.Context(), tx, c, existing); err != nil {
+						return err
+					}
 					var err error
 					quotaReservation, err = s.reserveUploadQuota(tx, uid, existing.ID, existing.TotalSize, quotaKey)
 					if err != nil {
@@ -488,7 +494,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 					if err := s.reserveUploadCapacity(c.Request.Context(), tx, existing.ID, requiredReservation); err != nil {
 						return err
 					}
-					return tx.Model(&meta.UploadSession{}).Where("id = ? AND status = ?", existing.ID, meta.UploadStatusActive).Updates(updates).Error
+					if err := tx.Model(&meta.UploadSession{}).Where("id = ? AND status = ?", existing.ID, meta.UploadStatusActive).Updates(updates).Error; err != nil {
+						return err
+					}
+					return recordUploadAuthorizationTx(tx, c, existing, "resume", uploadSessionTargetID(existing))
 				}); err != nil {
 					if writeQuotaError(c, err) {
 						return
@@ -662,6 +671,12 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	if req.SourceID != 0 {
 		session.SourceDeviceID = strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID"))
 	}
+	if photoScope, ok := currentIOSPhotoManagedUploadScope(c); ok {
+		session.SourceID = photoScope.sourceID
+		session.SourceRevision = photoScope.sourceRevision
+		session.SourceDeviceID = photoScope.deviceID
+		session.SourceTargetID = photoScope.targetID
+	}
 	var reusable []meta.UploadPart
 	if reuseSource != nil && len(req.ChunkSHA256) != 0 {
 		var err error
@@ -675,14 +690,17 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	session.ReservedBytes = requiredReservation
 	resumed := false
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
+		targetNodeID := uint64(0)
 		if req.NodeID != nil {
-			if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), tx, c, uid, *req.NodeID, req); err != nil {
-				return err
-			}
+			targetNodeID = *req.NodeID
 		} else if req.ParentID != nil {
-			if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), tx, c, uid, *req.ParentID, req); err != nil {
-				return err
-			}
+			targetNodeID = *req.ParentID
+		}
+		if targetNodeID == 0 {
+			return errManagedSourceWriteDenied
+		}
+		if err := authorizeUploadTargetTx(c.Request.Context(), tx, c, uid, targetNodeID, req, &session); err != nil {
+			return err
 		}
 		if req.SourceID != 0 {
 			var source meta.Source
@@ -724,9 +742,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			return err
 		}
 		if len(reusable) != 0 {
-			return tx.Create(&reusable).Error
+			if err := tx.Create(&reusable).Error; err != nil {
+				return err
+			}
 		}
-		return nil
+		return recordUploadAuthorizationTx(tx, c, session, "init", targetNodeID)
 	}); err != nil {
 		if errors.Is(err, errManagedSourceWriteDenied) {
 			fail(c, http.StatusConflict, err.Error())
@@ -766,11 +786,18 @@ func (s *Server) getUploadSession(c *gin.Context) {
 		return
 	}
 	if err := s.verifySynologyUploadSession(c, session); err != nil {
-		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
+		fail(c, http.StatusForbidden, "upload authority is no longer valid")
 		return
 	}
+	if session.Status == meta.UploadStatusActive {
+		if err := s.verifyUploadSessionAuthorization(c, session); err != nil {
+			recordUploadAuthorizationFailure(s.DB, c, session, "read", uploadSessionTargetID(session))
+			fail(c, http.StatusForbidden, "upload authorization is no longer valid")
+			return
+		}
+	}
 	if session.Status == meta.UploadStatusActive && time.Now().After(session.ExpiresAt) {
-		_ = s.abortUploadSessionData(c.Request.Context(), session)
+		_ = s.abortUploadSessionAuthorized(c, session)
 		fail(c, http.StatusGone, "upload session expired")
 		return
 	}
@@ -788,15 +815,22 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		return
 	}
 	if err := s.verifySynologyUploadSession(c, session); err != nil {
-		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
+		fail(c, http.StatusForbidden, "upload authority is no longer valid")
 		return
+	}
+	if session.Status == meta.UploadStatusActive {
+		if err := s.verifyUploadSessionAuthorization(c, session); err != nil {
+			recordUploadAuthorizationFailure(s.DB, c, session, "chunk", uploadSessionTargetID(session))
+			fail(c, http.StatusForbidden, "upload authorization is no longer valid")
+			return
+		}
 	}
 	if session.Status != meta.UploadStatusActive {
 		fail(c, http.StatusConflict, "upload session is finalized")
 		return
 	}
 	if time.Now().After(session.ExpiresAt) {
-		_ = s.abortUploadSessionData(c.Request.Context(), session)
+		_ = s.abortUploadSessionAuthorized(c, session)
 		fail(c, http.StatusGone, "upload session expired")
 		return
 	}
@@ -873,7 +907,7 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		if current.Status != meta.UploadStatusActive {
 			return errUploadFinalized
 		}
-		if err := requireSynologyPushUploadSessionTx(c.Request.Context(), tx, c, current); err != nil {
+		if err := authorizeUploadSessionWriteTx(c.Request.Context(), tx, c, current); err != nil {
 			return errManagedSourceWriteDenied
 		}
 		if time.Now().After(current.ExpiresAt) {
@@ -903,7 +937,10 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 				return err
 			}
 		}
-		return s.adjustUploadReservationForPart(tx, current, oldSize, size)
+		if err := s.adjustUploadReservationForPart(tx, current, oldSize, size); err != nil {
+			return err
+		}
+		return recordUploadAuthorizationTx(tx, c, current, "chunk", uploadSessionTargetID(current))
 	})
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), key)
@@ -974,8 +1011,15 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		return
 	}
 	if err := s.verifySynologyUploadSession(c, session); err != nil {
-		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
+		fail(c, http.StatusForbidden, "upload authority is no longer valid")
 		return
+	}
+	if session.Status == meta.UploadStatusActive {
+		if err := s.verifyUploadSessionAuthorization(c, session); err != nil {
+			recordUploadAuthorizationFailure(s.DB, c, session, "finalize", uploadSessionTargetID(session))
+			fail(c, http.StatusForbidden, "upload authorization is no longer valid")
+			return
+		}
 	}
 	if session.Status == meta.UploadStatusFinalized {
 		s.writeUploadSession(c, session, http.StatusOK)
@@ -991,7 +1035,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		}
 	}
 	if time.Now().After(session.ExpiresAt) {
-		_ = s.abortUploadSessionData(c.Request.Context(), session)
+		_ = s.abortUploadSessionAuthorized(c, session)
 		fail(c, http.StatusGone, "upload session expired")
 		return
 	}
@@ -1143,17 +1187,15 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			return errManagedSourceWriteDenied
 		}
 		// An upload admitted before Notes initialization must not write into it.
+		targetNodeID := uploadSessionTargetID(currentSession)
+		if err := authorizeUploadSessionWriteTx(c.Request.Context(), tx, c, currentSession); err != nil {
+			return err
+		}
 		if currentSession.NodeID != nil {
-			if err := requireSourceRunOrLocalPushFinalizeTx(c.Request.Context(), tx, c, currentSession, *currentSession.NodeID); err != nil {
-				return err
-			}
 			if err := notesRejectNodeWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.NodeID); err != nil {
 				return err
 			}
 		} else if currentSession.ParentID != nil {
-			if err := requireSourceRunOrLocalPushFinalizeTx(c.Request.Context(), tx, c, currentSession, *currentSession.ParentID); err != nil {
-				return err
-			}
 			if err := notesRejectDestinationWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.ParentID, currentSession.Name); err != nil {
 				return err
 			}
@@ -1305,7 +1347,10 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Where("session_id = ?", currentSession.ID).Delete(&meta.UploadPart{}).Error
+		if err := tx.Where("session_id = ?", currentSession.ID).Delete(&meta.UploadPart{}).Error; err != nil {
+			return err
+		}
+		return recordUploadAuthorizationTx(tx, c, currentSession, "finalize", targetNodeID)
 	})
 	if err != nil {
 		s.deleteUploadFinalizeTemp(c.Request.Context(), newKey)
@@ -1357,6 +1402,25 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 	s.writeUploadSession(c, fresh, http.StatusOK)
 }
 
+func (s *Server) abortUploadSessionAuthorized(c *gin.Context, session meta.UploadSession) error {
+	var parts []meta.UploadPart
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var current meta.UploadSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ?", session.ID, session.OwnerID).Take(&current).Error; err != nil { return err }
+		if current.Status == meta.UploadStatusFinalized || current.Status == meta.UploadStatusSkipped { return errUploadFinalized }
+		if !sourceRunUploadSessionMatches(c, current) { return errManagedSourceWriteDenied }
+		if err := authorizeUploadSessionWriteTx(c.Request.Context(), tx, c, current); err != nil { return err }
+		if err := recordUploadAuthorizationTx(tx, c, current, "abort", uploadSessionTargetID(current)); err != nil { return err }
+		if err := tx.Where("session_id = ?", current.ID).Find(&parts).Error; err != nil { return err }
+		if err := tx.Where("session_id = ?", current.ID).Delete(&meta.UploadPart{}).Error; err != nil { return err }
+		return tx.Where("id = ? AND owner_id = ?", current.ID, current.OwnerID).Delete(&meta.UploadSession{}).Error
+	})
+	if err != nil { return err }
+	for _, part := range parts { if !part.Reused { _ = s.Store.Delete(c.Request.Context(), part.StorageKey) } }
+	return nil
+}
+
 func (s *Server) abortUploadSession(c *gin.Context) {
 	session, err := s.ownedUploadSession(userID(c), c.Param("id"))
 	if err != nil {
@@ -1373,7 +1437,12 @@ func (s *Server) abortUploadSession(c *gin.Context) {
 		fail(c, http.StatusConflict, "terminal upload cannot be aborted")
 		return
 	}
-	if err := s.abortUploadSessionData(c.Request.Context(), session); err != nil {
+	if err := s.abortUploadSessionAuthorized(c, session); err != nil {
+		if errors.Is(err, errManagedSourceWriteDenied) {
+			recordUploadAuthorizationFailure(s.DB, c, session, "abort", uploadSessionTargetID(session))
+			fail(c, http.StatusForbidden, "upload authorization is no longer valid")
+			return
+		}
 		fail(c, http.StatusInternalServerError, "abort upload failed")
 		return
 	}
@@ -1470,8 +1539,18 @@ func (s *Server) createSkippedUploadSession(
 		ResultNodeID:   &resultID,
 		ExpiresAt:      time.Now().Add(uploadSessionTTL),
 	}
-	if err := s.DB.Create(&session).Error; err != nil {
-		fail(c, http.StatusInternalServerError, "record skipped upload failed")
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := authorizeUploadTargetTx(c.Request.Context(), tx, c, uid, uploadRequestTargetID(req), req, &session); err != nil { return err }
+		if err := tx.Create(&session).Error; err != nil { return err }
+		return recordUploadAuthorizationTx(tx, c, session, "init_skip", uploadRequestTargetID(req))
+	})
+	if err != nil {
+		if errors.Is(err, errManagedSourceWriteDenied) {
+			recordUploadAuthorizationFailure(s.DB, c, session, "init_skip", uploadRequestTargetID(req))
+			fail(c, http.StatusForbidden, "upload authorization is no longer valid")
+		} else {
+			fail(c, http.StatusInternalServerError, "record skipped upload failed")
+		}
 		return
 	}
 	s.writeUploadSession(c, session, http.StatusOK)

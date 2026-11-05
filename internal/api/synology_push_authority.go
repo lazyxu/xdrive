@@ -246,6 +246,7 @@ func requireSynologyPushUploadSessionTx(
 }
 
 func (s *Server) verifySynologyUploadSession(c *gin.Context, session meta.UploadSession) error {
+	if _, photos := currentIOSPhotoManagedUploadScope(c); photos { return nil }
 	if session.SourceID == 0 {
 		return nil
 	}
