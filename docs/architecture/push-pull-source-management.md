@@ -1,7 +1,7 @@
 # Unified Push/Pull Source Management Architecture
 
 **Decision:** 2026-11-05  
-**Scope:** new Push/Pull Sources and new destination directories only. Existing Sources, old destinations, old receipts, and data migration are out of scope. Do not add migration code or silently move existing data.
+**Scope:** new Push/Pull Sources and new destinations. Old directories, file contents and receipts are not migrated. S01 allows only a verified Owner/platform-matched Source.DeviceID metadata backfill; it does not move targets or rebind unrelated devices.
 
 This is the canonical cross-platform contract. Platform guides describe adapters and current as-built status; they must not define different Source lifecycles, destination namespaces, device identity rules, or Pull execution models.
 
