@@ -192,8 +192,9 @@ test('short landscape Owner map retains verified camera, feedback, Sheet and acc
 
 test('single native Gallery map entry exposes local and Owner cloud sources without dropping saved local map navigation', () => {
   assert.match(dashboard, /case \.map:\s*XDriveIOSNativePhotoMapsScreen\(\s*login: login,\s*localMapScope: \$localMapScope,\s*localMapPageOffset: \$localMapPageOffset,\s*source: \$mapSource,\s*cloudMapCamera: \$cloudMapCamera,\s*localMapCamera: \$localMapCamera,\s*onFocusChange:/)
-  assert.match(dashboard, /localMapScope = XDriveIOSNativeLocalMapScope\(rawValue: snapshot\.mapScope/)
-  assert.match(dashboard, /localMapPageOffset = snapshot\.mapPageOffset \?\? 0/)
+  assert.match(dashboard, /localMapScope = \.library/);
+  assert.match(dashboard, /localMapPageOffset = 0/);
+  assert.doesNotMatch(dashboard, /snapshot\.mapScope|snapshot\.mapPageOffset/);
   assert.match(map, /struct XDriveIOSNativePhotoMapsScreen: View \{[\s\S]*?@ObservedObject var login: XDriveIOSNativeOwnerLoginModel[\s\S]*?@Binding var localMapScope: XDriveIOSNativeLocalMapScope[\s\S]*?@Binding var localMapPageOffset: Int/)
   assert.match(map, /Picker\("地图照片来源", selection: \$source\)/)
   assert.match(map, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset/)
