@@ -744,15 +744,16 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 }
             }
             .onDisappear {
-                retire()
-                // The L3 original Viewer may cover this sheet; keep its
-                // PHChange observer live until the Viewer is dismissed.
                 if viewer == nil {
+                    retire()
                     viewerReturnID = nil
                     viewerItems = []
                     focusedTileID = nil
                     changes.stop()
                 }
+                // A full-screen Viewer covers, but does not end, this place
+                // wall. Keep its PhotoKit cursor and change observer alive so
+                // continuous scrolling can resume from the same snapshot.
             }
         }
         }
