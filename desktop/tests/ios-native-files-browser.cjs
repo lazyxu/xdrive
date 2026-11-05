@@ -66,7 +66,7 @@ test('file mutations and downloads remain unavailable; Viewer uses one native mo
 });
 
 test('native Browse home uses a verified cloud location rather than automatically opening root children', () => {
-  assert.match(view, /private var isHome: Bool \{ folder == nil && activeQuery\.isEmpty \}/)
+  assert.match(view, /private var isHome: Bool \{ folder == nil && !isGlobalSearch \}/)
   assert.match(view, /private var filesHome: some View/)
   assert.match(view, /Section\("位置"\)/)
   assert.match(view, /folderID: owner\.rootNodeID,\s*folderName: "xDrive 云端"/)
@@ -88,7 +88,7 @@ test('native SwiftUI search collapses in the toolbar and restores directory on c
   assert.match(view, /\.onSubmit\(of: \.search\) \{ submitSearch\(\) \}/)
   assert.match(view, /private func submitSearch\(\)/)
   assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearch\(query\)/)
-  assert.match(view, /if activeQuery\.isEmpty \{\s*let saved = rememberedPosition\(\)\s*searchReturnOffset = saved\?\.pageOffset \?\? offset\s*searchReturnNodeID = saved\?\.nodeID/)
+  assert.match(view, /if searchReturnOffset == nil \{\s*let saved = rememberedPosition\(\)\s*searchReturnOffset = saved\?\.pageOffset \?\? offset\s*searchReturnNodeID = saved\?\.nodeID/)
   assert.match(view, /activeQuery = query\s*reload\(resetOffset: true\)/)
   assert.match(view, /private func clearSearch\(\)/)
   assert.match(view, /let restoredOffset = searchReturnOffset \?\? 0/)
