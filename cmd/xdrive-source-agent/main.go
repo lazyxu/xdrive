@@ -230,6 +230,9 @@ func setup(args []string) error {
 	if remote.ID != 0 && (remote.Kind != sourceagent.SynologyKind || remote.Direction != meta.SourceDirectionPush) {
 		return fmt.Errorf("source %d is not a Synology Photos push source", remote.ID)
 	}
+	if err := validateSynologySourceDeviceBinding(remote, cfg.SourceID, *sourceID, cfg.DeviceID); err != nil {
+		return err
+	}
 
 	rules, err := loadIgnoreRules(*ignoreFile)
 	if err != nil {
@@ -254,9 +257,6 @@ func setup(args []string) error {
 			return fmt.Errorf("existing Synology Push Source has no target; create a new Source instead of selecting an arbitrary cloud folder")
 		}
 		targetID = *remote.TargetNodeID
-		if remote.DeviceID != "" && remote.DeviceID != cfg.DeviceID {
-			return fmt.Errorf("Synology Push Source %d belongs to another registered device; refusing to rebind it", remote.ID)
-		}
 	}
 
 	if remote.ID == 0 {
@@ -361,6 +361,22 @@ func resolveSetupSource(ctx context.Context, api setupSourceAPI, configuredID, r
 		}
 	}
 	return client.Source{}, nil
+}
+
+func validateSynologySourceDeviceBinding(remote client.Source, configuredID, requestedID uint64, deviceID string) error {
+	if remote.ID == 0 {
+		return nil
+	}
+	if remote.DeviceID == "" {
+		if configuredID == 0 && requestedID == 0 {
+			return fmt.Errorf("Source %d is a legacy unbound DSM Source; use --source-id to keep it unchanged or choose a new --name to create a device-bound Source", remote.ID)
+		}
+		return nil
+	}
+	if remote.DeviceID != deviceID {
+		return fmt.Errorf("Synology Push Source %d belongs to another registered device; refusing to rebind it", remote.ID)
+	}
+	return nil
 }
 
 func validateManagedTargetFlag(target string) error {
