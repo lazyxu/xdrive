@@ -35,7 +35,11 @@ final class XDriveIOSPhotoSourceRunReporter {
     private let runID = UUID().uuidString.lowercased()
     private var started = false
     private var finished = false
+    private var progressInFlight = false
+    private var lastProgressAt = Date.distantPast
+    private var lastBeginAttemptAt = Date.distantPast
     private(set) var counts = XDriveIOSPhotoSourceRunCounts()
+    private var progressTask: Task<Void, Never>?
 
     init(authority: XDriveIOSManagedOriginalAuthority, trigger: String) {
         self.authority = authority
@@ -43,7 +47,14 @@ final class XDriveIOSPhotoSourceRunReporter {
     }
 
     func begin() async {
+        await ensureStarted(force: true)
+    }
+
+    private func ensureStarted(force: Bool) async {
         guard !started, !finished else { return }
+        let now = Date()
+        guard force || now.timeIntervalSince(lastBeginAttemptAt) >= 30 else { return }
+        lastBeginAttemptAt = now
         let body: [String: Any] = ["run_id": runID, "trigger": trigger]
         if let status = try? await send(
             path: "/api/v1/sources/\(authority.destination.sourceID)/runs",
@@ -54,25 +65,36 @@ final class XDriveIOSPhotoSourceRunReporter {
     }
 
     /// The base carries completed earlier windows in a Focused Backup session.
-    /// Server counters are cumulative and monotonic across progress updates.
-    func update(_ progress: XDriveIOSPhotoBackupProgress,
-                base: XDriveIOSPhotoSourceRunCounts = .init()) async {
+    /// Progress reporting is coalesced and never blocks PhotoKit enumeration
+    /// or original upload. finish() sends the latest cumulative counters.
+    func enqueueUpdate(_ progress: XDriveIOSPhotoBackupProgress,
+                       base: XDriveIOSPhotoSourceRunCounts = .init()) {
         guard !finished else { return }
         var current = base
         current.add(progress)
         counts = current
-        if !started { await begin() }
-        guard started else { return }
-        let body: [String: Any] = ["summary": summary(current)]
-        _ = try? await send(
-            path: "/api/v1/sources/\(authority.destination.sourceID)/runs/\(runID)/progress",
-            method: "POST", body: body
-        )
+        let now = Date()
+        guard !progressInFlight,
+              now.timeIntervalSince(lastProgressAt) >= 2 else { return }
+        lastProgressAt = now
+        progressInFlight = true
+        progressTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.progressInFlight = false }
+            if !self.started { await self.ensureStarted(force: false) }
+            guard self.started, !self.finished else { return }
+            let body: [String: Any] = ["summary": self.summary(self.counts)]
+            _ = try? await self.send(
+                path: "/api/v1/sources/\(self.authority.destination.sourceID)/runs/\(self.runID)/progress",
+                method: "POST", body: body
+            )
+        }
     }
 
     func finish(status requestedStatus: String) async {
         guard !finished else { return }
-        if !started { await begin() }
+        await progressTask?.value
+        if !started { await ensureStarted(force: true) }
         guard started else { return }
         let status = requestedStatus == "completed" && counts.failed > 0
             ? "partial" : requestedStatus
@@ -121,7 +143,7 @@ final class XDriveIOSPhotoSourceRunReporter {
         configuration.httpCookieAcceptPolicy = .never
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.timeoutIntervalForRequest = 15
+        configuration.timeoutIntervalForRequest = 5
         let session = URLSession(
             configuration: configuration,
             delegate: XDriveIOSPhotoSourceRunDenyRedirect(),
