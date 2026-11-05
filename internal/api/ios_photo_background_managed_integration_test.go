@@ -368,8 +368,8 @@ func TestIOSPhotoBackgroundGrantCanReportSharedSourceRunHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	deviceHeaders := map[string]string{
-		"X-XDrive-Device-ID":       device.ID,
-		"X-XDrive-Device-Token":    deviceSecret,
+		"X-XDrive-Device-ID":    device.ID,
+		"X-XDrive-Device-Token": deviceSecret,
 	}
 	destination := requestWithHeaders(t, router, http.MethodPut,
 		"/api/v1/ios/photos/backup-destination", ownerToken,
