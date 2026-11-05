@@ -8,7 +8,7 @@ const read = name => fs.readFileSync(path.join(root, name), 'utf8')
 
 const loaderFile = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
 const loaderStart = loaderFile.indexOf('final class XDriveIOSPhotoImageLoader')
-const loaderEnd = loaderFile.indexOf("\\nstruct XDriveIOSLocalPhotoTile", loaderStart)
+const loaderEnd = loaderFile.indexOf("\nstruct XDriveIOSLocalPhotoTile", loaderStart)
 assert.notEqual(loaderStart, -1)
 assert.notEqual(loaderEnd, -1)
 const loader = loaderFile.slice(loaderStart, loaderEnd)
