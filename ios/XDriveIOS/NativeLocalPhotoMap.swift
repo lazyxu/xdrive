@@ -938,6 +938,10 @@ private struct XDriveIOSMapSpatialAlbum: View {
             } catch {
                 if generation == ticket {
                     self.error = "照片权限、位置或图库版本已变化，请重新核对当前位置。"
+                    priorWindow = []
+                    items = []
+                    viewerItems = []
+                    viewerReturnID = nil
                     pendingLocated = []
                     pendingIndex = 0
                     scannerFinished = true
@@ -958,12 +962,18 @@ private struct XDriveIOSMapSpatialAlbum: View {
         readTask = nil
         if let worker { Task { await worker.reset() } }
         worker = nil
+        priorWindow = []
+        items = []
+        viewerItems = []
+        viewerReturnID = nil
+        focusedTileID = nil
         pendingLocated = []
         pendingIndex = 0
         nextOffset = 0
         scannerFinished = true
         scrollFootVisible = false
         autoScrollReturnID = nil
+        error = nil
         busy = false
     }
 }
