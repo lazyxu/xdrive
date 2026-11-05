@@ -10,8 +10,8 @@ import (
 func TestSynologyClientDeviceIsIdentityOnly(t *testing.T) {
 	const token = "synology-identity-token-with-enough-entropy"
 	device := meta.ClientDevice{
-		ID: "b3e7e94e-17a4-4b0d-a02b-2e6f5c11a9f2",
-		Platform: "synology",
+		ID:             "b3e7e94e-17a4-4b0d-a02b-2e6f5c11a9f2",
+		Platform:       "synology",
 		CredentialHash: deviceCredentialDigest(token),
 	}
 	if !validClientPlatform("synology") {
