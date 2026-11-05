@@ -104,3 +104,18 @@ These are changes to **new provisioning only**. Do not move or rename old target
 5. Unified Source Manager/status/history adapters and cross-platform contract tests.
 
 Do not start parallel changes that modify the same Server provisioning or authorization files. Existing active PRs #3891 and #3898 are Source archive/restore work; preserve their tested HEADs and integrate their final behavior by normal merge/rebase rules rather than editing them as part of this audit.
+
+## 5. Source Manager / Host gaps confirmed in current master
+
+The shared TypeScript Source Manager is not yet a complete cross-platform catalogue:
+
+1. Its current create-option set covers Local Folder Push, Synology Photos Push/Pull, Synology Files Pull and Yike Photos Pull. It does not include native iOS Photos or Android Photos Sources.
+2. The current external-source kind/profile model does not expose ios_photos or android_photos as read-only rows. Their native backup pages therefore remain separate management surfaces, and a user cannot see every Push Source in one catalogue.
+3. The generic Source DTO does not expose a connector-neutral DeviceID. LocalCreatorDeviceID is intentionally redacted, so the manager cannot display the verified owning Device or distinguish a device-bound Source from an ordinary Owner-created Source.
+4. Synology Photos Push creation still exposes a user-selected cloud target_node_id. The generic Server createSource path accepts that target and does not require a Synology ClientDevice proof. This must be replaced by DSM enrollment + server-owned Push provisioning; a UI-only restriction is insufficient.
+5. Local Folder Push's create-option description still says its uploader is not enabled, although the owning-Agent incremental Push path exists. This stale copy must be corrected.
+6. Yike's Source Manager target-label helper still recognizes the old 一刻相册 path. After new Yike provisioning moves to Pull/Yike Photos, the label/help copy must display the real Server-returned target path and not reconstruct a legacy path.
+7. iOS and Android maintain platform-specific durable per-file journals and exact receipt recovery, but those states are not yet projected as generic Source SyncRun history. A shared manager must show real per-Source status/history without replacing or weakening those journals.
+8. DSM's shared XDriveApp/Host capability surface must expose the same Source Manager operations only when backed by real authenticated Server/Agent ports. The standalone DSM source-agent Task Scheduler remains an execution mechanism, not a separate Source catalogue.
+
+Minimum management acceptance: all Source kinds appear in one Owner-scoped list; Push rows display a verified Device label/ID and are read-only from foreign devices; Pull rows display connector/credential status and Server Worker status; actions are enabled only when the Host has the required capability; iOS/Android rows show native-ledger/receipt-derived status without offering remote Run Now.
