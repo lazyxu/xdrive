@@ -46,7 +46,7 @@ test('a presented cluster keeps PhotoKit change observation until dismissal', ()
   assert.match(map, /\.onDisappear \{\s*\/\/ A presented cluster sheet/)
   assert.match(map, /if selection == nil && globalSelection == nil && singleViewer == nil \{\s*changes\.stop\(\)/)
   assert.match(map, /\} else \{ suspendForSheet\(\) \}/)
-  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in\s*onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)/)
+  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?let returningCamera = globalCamera[\s\S]*?onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else \{ return \}/)
 })
 
 test('Swift catch does not shadow the map screen state error value', () => {
@@ -86,7 +86,7 @@ test('native map restores exact camera after Viewer return only for the same cur
   assert.match(map, /requestedPageOffset: max\(0, requested\)/)
   assert.match(policy, /savedPageOffset == requestedPageOffset/)
   assert.match(policy, /permissionGranted && sceneActive/)
-  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in\s*onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)/)
+  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?let returningCamera = globalCamera[\s\S]*?onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else \{ return \}/)
   assert.match(map, /changes\.stop\(\)\s*onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)/)
   assert.match(map, /private func clearReturnCamera\(\)/)
   assert.doesNotMatch(map, /UserDefaults|localStorage|URLSession|WKWebView/)
@@ -349,7 +349,7 @@ test('verified single-photo MapKit cover opens L3 native Viewer without location
   assert.match(map, /if mapScope == \.page \{[\s\S]*?refresh\(at: offset\)/)
   assert.match(map, /if selection == nil && globalSelection == nil && singleViewer == nil/)
   assert.match(map, /selection = nil\s*globalSelection = nil\s*singleViewer = nil/)
-  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in\s*onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)/)
+  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?let returningCamera = globalCamera[\s\S]*?onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else \{ return \}/)
   assert.doesNotMatch(map, /localStorage|UploadSession/)
 })
 
