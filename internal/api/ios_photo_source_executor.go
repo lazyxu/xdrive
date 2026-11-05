@@ -12,10 +12,10 @@ import (
 const iosPhotoSourceRunProofKey = "xdriveIOSPhotoSourceRunProof"
 
 type iosPhotoSourceRunProof struct {
-	ownerID uint64
-	deviceID string
-	sourceID uint64
-	targetNodeID uint64
+	ownerID        uint64
+	deviceID       string
+	sourceID       uint64
+	targetNodeID   uint64
 	sourceRevision uint64
 }
 
