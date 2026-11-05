@@ -219,6 +219,31 @@ func (s *Server) revokeClientDevice(c *gin.Context) {
 				return err
 			}
 		}
+		if device.Platform == "synology" {
+			var sourceIDs []uint64
+			if err := tx.Model(&meta.Source{}).
+				Where("owner_id = ? AND device_id = ? AND kind = ? AND direction = ? AND status <> ?",
+					device.OwnerID, device.ID, synologySourceKind, meta.SourceDirectionPush, meta.SourceStatusArchived).
+				Pluck("id", &sourceIDs).Error; err != nil {
+				return err
+			}
+			if len(sourceIDs) != 0 {
+				if err := tx.Model(&meta.Source{}).
+					Where("id IN ? AND owner_id = ?", sourceIDs, device.OwnerID).
+					Updates(map[string]any{
+						"status": meta.SourceStatusPaused, "run_requested_at": nil,
+						"revision": gorm.Expr("revision + 1"), "updated_at": now,
+					}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&meta.SyncRun{}).
+					Where("source_id IN ? AND status = ? AND cancel_requested_at IS NULL",
+						sourceIDs, meta.SyncRunStatusRunning).
+					Update("cancel_requested_at", now).Error; err != nil {
+					return err
+				}
+			}
+		}
 		return nil
 	})
 	if err != nil {
