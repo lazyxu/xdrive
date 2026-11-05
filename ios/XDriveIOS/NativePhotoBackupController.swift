@@ -464,6 +464,15 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         throw XDriveIOSNativeSessionError.staleSession
                     }
                     self.progress = result
+                    if result.stoppedForReview || result.needsReview > 0 {
+                        // An unknown ACK from a one-photo priority action must
+                        // pause the current Owner's foreground schedule now,
+                        // not wait for the next timer tick to rediscover it.
+                        if let paused = try XDriveIOSPhotoAutoScheduleStore.shared
+                            .pauseForPendingReceipts(owner: selected) {
+                            self.schedule = paused
+                        }
+                    }
                     self.message = "单张优先备份：新增 \(result.uploaded)，已验证 \(result.verifiedAlready)，待核对 \(result.needsReview)，不可用 \(result.unavailable)。"
                     if result.stoppedForReview || result.needsReview > 0 {
                         self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared
