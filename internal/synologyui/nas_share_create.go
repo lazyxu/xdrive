@@ -21,7 +21,7 @@ import (
 // xd backup init command. The DSM CGI must never create a second Runner.
 type NASShareBootstrapper interface {
 	PreflightLocalRoot(context.Context, string) error
-	CreateLocalBackupSource(context.Context, string, uint64) (localbackupipc.LocalBackupSource, error)
+	CreateLocalBackupSource(context.Context, string) (localbackupipc.LocalBackupSource, error)
 	AuthorizeLocalRoot(context.Context, uint64, string) (localbackupipc.LocalBackupRootGrant, error)
 }
 
@@ -29,13 +29,14 @@ type nasShareCreateInput struct {
 	SelectionID string
 	OwnerScope  string
 	Name        string
-	TargetID    uint64
 	Confirmed   bool
 }
 
 // The only browser authority is one already authenticated NAS selection,
-// an Owner cloud target directory ID, an innocuous display name, and explicit
-// user consent. Never accept local paths, device IDs, tokens or Root grants.
+// a pinned Server Owner scope, an innocuous display name and explicit user
+// consent. The Server provisions the cloud target from the authenticated
+// device identity; never accept a caller-selected target, local path, device
+// ID, token or Root grant.
 func parseNASShareCreate(r *http.Request) (nasShareCreateInput, error) {
 	var value nasShareCreateInput
 	if r == nil || r.URL == nil || r.URL.RawQuery != "" || r.Body == nil ||
@@ -51,7 +52,7 @@ func parseNASShareCreate(r *http.Request) (nasShareCreateInput, error) {
 	if err != nil || first != json.Delim('{') {
 		return value, errors.New("DSM backup Source request must be an object")
 	}
-	seen := make(map[string]bool, 5)
+	seen := make(map[string]bool, 4)
 	for dec.More() {
 		field, err := dec.Token()
 		key, ok := field.(string)
@@ -66,8 +67,6 @@ func parseNASShareCreate(r *http.Request) (nasShareCreateInput, error) {
 			err = dec.Decode(&value.OwnerScope)
 		case "name":
 			err = dec.Decode(&value.Name)
-		case "target_id":
-			err = dec.Decode(&value.TargetID)
 		case "confirmed":
 			err = dec.Decode(&value.Confirmed)
 		default:
@@ -78,7 +77,7 @@ func parseNASShareCreate(r *http.Request) (nasShareCreateInput, error) {
 		}
 	}
 	end, err := dec.Token()
-	if err != nil || end != json.Delim('}') || len(seen) != 5 {
+	if err != nil || end != json.Delim('}') || len(seen) != 4 {
 		return nasShareCreateInput{}, errors.New("incomplete DSM backup Source setup")
 	}
 	if _, err := dec.Token(); err != io.EOF {
@@ -86,7 +85,6 @@ func parseNASShareCreate(r *http.Request) (nasShareCreateInput, error) {
 	}
 	if !nasSelectionID.MatchString(value.SelectionID) ||
 		!nasSelectionID.MatchString(value.OwnerScope) ||
-		!localbackupipc.ValidSourceID(value.TargetID) ||
 		!value.Confirmed || !utf8.ValidString(value.Name) ||
 		len([]byte(value.Name)) < 1 || len([]byte(value.Name)) > 128 ||
 		value.Name != strings.TrimSpace(value.Name) ||
@@ -100,6 +98,15 @@ func parseNASShareCreate(r *http.Request) (nasShareCreateInput, error) {
 // identity throughout the browser's NAS directory selection and native Source
 // mutation. The HMAC is scoped to the active DSM principal/cookie/Host;
 // it does not grant any Source, local path or Root authority.
+func validManagedNASBackupSource(source localbackupipc.LocalBackupSource, name string) bool {
+	return localbackupipc.ValidSourceID(source.ID) && source.Name == name &&
+		source.Kind == "local_folder" && source.Direction == "push" &&
+		source.SyncMode == "backup" && source.Status == "paused" &&
+		source.Revision > 0 && source.TargetManaged && source.TargetNodeID != nil &&
+		localbackupipc.ValidSourceID(*source.TargetNodeID) && source.TargetPath != "" &&
+		len([]byte(source.TargetPath)) <= 2048 && !strings.ContainsAny(source.TargetPath, "\x00\r\n")
+}
+
 func dsmOwnerScope(key []byte, principal, cookie, host, server, username string) string {
 	if len(key) != 32 || principal == "" || cookie == "" || host == "" ||
 		server == "" || username == "" {
