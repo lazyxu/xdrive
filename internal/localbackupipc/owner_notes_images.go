@@ -82,6 +82,35 @@ func (c *Client) OwnerNotesUploadImage(
 // reads at most 20 MiB of decoded image bytes plus bounded Base64 framing.
 // The Agent must have verified the Server's MIME and digest first; this
 // caller validates the bytes independently before returning them to DSM.
+// OwnerNotesImportIOSImage appends one bounded image to a read-only iOS
+// archive. It is a separate fixed Agent route from editable Mine images.
+func (c *Client) OwnerNotesImportIOSImage(
+	ctx context.Context, noteID string, image []byte,
+) (client.NotesImageReceipt, error) {
+	var empty client.NotesImageReceipt
+	if err := c.requireOwnerNotesImages(ctx, noteID); err != nil {
+		return empty, err
+	}
+	if len(image) == 0 || len(image) > client.NotesMaxImageBytes {
+		return empty, errors.New("Owner iOS Notes image exceeds 20 MiB")
+	}
+	var out client.NotesImageReceipt
+	path := "/v1/cloud/notes/ios-import/" + noteID + "/images"
+	if err := c.request(ctx, http.MethodPost, path, struct {
+		Image []byte `json:"image"`
+	}{Image: image}, &out); err != nil {
+		return empty, err
+	}
+	filename, mime, ok := client.NotesImageFilename(noteID, out.RelativePath)
+	sum := sha256.Sum256(image)
+	if !ok || out.NodeID == 0 || out.Filename != filename ||
+		out.ContentType != mime || out.Bytes != int64(len(image)) ||
+		!strings.EqualFold(out.SHA256, hex.EncodeToString(sum[:])) {
+		return empty, errors.New("unverified Owner iOS Notes image import receipt")
+	}
+	return out, nil
+}
+
 func (c *Client) OwnerNotesReadImage(
 	ctx context.Context, noteID, relativePath string,
 ) (OwnerNotesImageData, error) {

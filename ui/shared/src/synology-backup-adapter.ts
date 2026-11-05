@@ -556,7 +556,9 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   notesAvailable(signal?: AbortSignal): Promise<boolean>
   notesImagesAvailable(signal?: AbortSignal): Promise<boolean>
   notesUploadImage(ownerScope: string, id: string, image: File): Promise<XDriveSynologyNotesImageReceipt>
+  notesImportIOSImage(ownerScope: string, id: string, image: File, signal?: AbortSignal): Promise<XDriveSynologyNotesImageReceipt>
   notesReadImage(id: string, relativePath: string, signal?: AbortSignal): Promise<Blob>
+  notesImportIOS(ownerScope: string, title: string, markdown: string, externalID: string, signal?: AbortSignal): Promise<XDriveNoteSummary>
   notesNamespace(ownerScope: string): Promise<void>
   notesList(source: XDriveNoteSource, query: string, offset: number, signal?: AbortSignal):
     Promise<{ items: XDriveNoteSummary[]; next_offset: number }>
@@ -701,8 +703,8 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
        'cloud-gallery-place-items', 'cloud-gallery-map-overview',
        'cloud-live-motion', 'nas-shares',
        'cloud-notes-capability', 'cloud-notes-namespace', 'cloud-notes-list', 'cloud-notes-read', 'cloud-notes-create',
-       'cloud-notes-save', 'cloud-notes-delete', 'cloud-notes-versions', 'cloud-notes-history',
-       'cloud-notes-image-capability', 'cloud-notes-image-upload', 'cloud-notes-image-read',
+       'cloud-notes-import-ios', 'cloud-notes-save', 'cloud-notes-delete', 'cloud-notes-versions', 'cloud-notes-history',
+       'cloud-notes-image-capability', 'cloud-notes-image-upload', 'cloud-notes-image-import', 'cloud-notes-image-read',
       'nas-share-preflight', 'nas-share-create', 'nas-draft-bind', 'nas-drafts', 'server-connection', 'server-login',
       'recovery-review'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
@@ -831,6 +833,30 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       }
       return result
     },
+    async notesImportIOSImage(ownerScope, id, file, signal) {
+      const noteID = notesValidID(id)
+      if (!file || file.size < 1 || file.size > notesImageMaxBytes ||
+          !/\.(png|jpe?g|gif|webp|heic)$/i.test(file.name)) {
+        throw new Error('无效或超过 20 MiB 的 iOS 备份图片')
+      }
+      const original = await file.arrayBuffer()
+      if (original.byteLength !== file.size) throw new Error('图片读取期间发生变化')
+      signal?.throwIfAborted()
+      const result = await request<XDriveSynologyNotesImageReceipt>('/v1/cloud-notes-image-import',
+        'POST', { owner_scope: notesOwnerScope(ownerScope), id: noteID,
+          image: notesBase64(new Uint8Array(original)) }, signal)
+      const relative = notesAssetPath(noteID, result.relative_path)
+      const filename = relative.slice(relative.lastIndexOf('/') + 1)
+      const extension = filename.slice(filename.lastIndexOf('.') + 1)
+      const checksum = await notesDigest(original)
+      if (result.node_id <= 0 || !Number.isSafeInteger(result.node_id) ||
+          result.filename !== filename || result.content_type !== notesMime[extension] ||
+          result.bytes !== original.byteLength || result.sha256?.toLowerCase() !== checksum) {
+        throw new Error('iOS 备份图片回执与当前 Owner 内容不一致；请核对后再重试')
+      }
+      signal?.throwIfAborted()
+      return result
+    },
     async notesReadImage(id, relativePath, signal) {
       const path = notesAssetPath(id, relativePath)
       const extension = path.slice(path.lastIndexOf('.') + 1)
@@ -886,6 +912,27 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       notesWrite(title, markdown)
       return request<XDriveNoteSummary>('/v1/cloud-notes-create', 'POST',
         { owner_scope: notesOwnerScope(ownerScope), title, markdown })
+    },
+    async notesImportIOS(ownerScope, title, markdown, externalID, signal) {
+      notesWrite(title, markdown)
+      if (typeof externalID !== 'string' ||
+          (externalID !== '' && !/^manual:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(externalID))) {
+        throw new Error('手动 iOS 备份导入标识无效')
+      }
+      const result = await request<XDriveNoteSummary>('/v1/cloud-notes-import-ios', 'POST',
+        { owner_scope: notesOwnerScope(ownerScope), title, markdown, external_id: externalID }, signal)
+      const bytes = new TextEncoder().encode(markdown)
+      const owned = new ArrayBuffer(bytes.byteLength)
+      new Uint8Array(owned).set(bytes)
+      const checksum = await notesDigest(owned)
+      if (!result || !notesValidID(result.id) || result.source !== 'ios_notes' ||
+          result.title !== title || result.node_id <= 0 || !Number.isSafeInteger(result.node_id) ||
+          result.revision < 1 || (externalID === '' && result.revision !== 1) ||
+          result.bytes !== bytes.byteLength || result.sha256?.toLowerCase() !== checksum) {
+        throw new Error('iOS 备份导入收据与当前 Owner 内容不一致')
+      }
+      signal?.throwIfAborted()
+      return result
     },
     notesSave(ownerScope, id, title, markdown, expectedRevision) {
       notesWrite(title, markdown)

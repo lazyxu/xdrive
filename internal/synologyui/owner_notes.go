@@ -24,6 +24,7 @@ type OwnerNotesAgent interface {
 	OwnerNotesList(context.Context, string, string, int) (client.NotesPage, error)
 	OwnerNotesRead(context.Context, string) (client.NotesDetail, error)
 	OwnerNotesCreate(context.Context, client.NotesWrite) (client.NotesRow, error)
+	OwnerNotesImportIOS(context.Context, client.NotesImportWrite) (client.NotesRow, error)
 	OwnerNotesUpdate(context.Context, string, client.NotesWrite) (client.NotesRow, error)
 	OwnerNotesDelete(context.Context, string, uint64) error
 	OwnerNotesVersions(context.Context, string) (client.NotesVersions, error)
@@ -33,7 +34,7 @@ type OwnerNotesAgent interface {
 func isDSMOwnerNotesRoute(path string) bool {
 	switch path {
 	case "/v1/cloud-notes-capability", "/v1/cloud-notes-namespace", "/v1/cloud-notes-list", "/v1/cloud-notes-read",
-		"/v1/cloud-notes-create", "/v1/cloud-notes-save", "/v1/cloud-notes-delete",
+		"/v1/cloud-notes-create", "/v1/cloud-notes-import-ios", "/v1/cloud-notes-save", "/v1/cloud-notes-delete",
 		"/v1/cloud-notes-versions", "/v1/cloud-notes-history":
 		return true
 	}
@@ -42,11 +43,24 @@ func isDSMOwnerNotesRoute(path string) bool {
 
 func isDSMOwnerNotesWrite(path string) bool {
 	switch path {
-	case "/v1/cloud-notes-namespace", "/v1/cloud-notes-create",
+	case "/v1/cloud-notes-namespace", "/v1/cloud-notes-create", "/v1/cloud-notes-import-ios",
 		"/v1/cloud-notes-save", "/v1/cloud-notes-delete":
 		return true
 	}
 	return false
+}
+
+func validDSMNotesImportIdentity(value string) bool {
+	if value == "" {
+		return true
+	}
+	const prefix = "manual:"
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	raw := strings.TrimPrefix(value, prefix)
+	id, err := uuid.Parse(raw)
+	return err == nil && id.String() == raw
 }
 
 func validDSMNoteID(value string) bool {
@@ -79,6 +93,7 @@ type dsmNotesMutation struct {
 	ID               string
 	Title            string
 	Markdown         string
+	ExternalID       string
 	ExpectedRevision uint64
 	Revision         uint64
 }
@@ -115,6 +130,8 @@ func parseDSMNotesMutation(r *http.Request) (dsmNotesMutation, error) {
 			err = dec.Decode(&out.Title)
 		case "markdown":
 			err = dec.Decode(&out.Markdown)
+		case "external_id":
+			err = dec.Decode(&out.ExternalID)
 		case "expected_revision":
 			err = dec.Decode(&out.ExpectedRevision)
 		case "revision":
@@ -141,15 +158,19 @@ func parseDSMNotesMutation(r *http.Request) (dsmNotesMutation, error) {
 		if len(seen) != 1 {
 			return out, errors.New("invalid Notes namespace fields")
 		}
-	case "/v1/cloud-notes-create", "/v1/cloud-notes-save":
+	case "/v1/cloud-notes-create", "/v1/cloud-notes-import-ios", "/v1/cloud-notes-save":
 		expected := 3
 		if r.URL.Path == "/v1/cloud-notes-save" {
 			expected = 5
+		} else if r.URL.Path == "/v1/cloud-notes-import-ios" {
+			expected = 4
 		}
 		if len(seen) != expected || !seen["title"] || !seen["markdown"] ||
 			(r.URL.Path == "/v1/cloud-notes-save" &&
 				(!seen["id"] || !validDSMNoteID(out.ID) ||
-					!seen["expected_revision"] || out.ExpectedRevision == 0)) {
+					!seen["expected_revision"] || out.ExpectedRevision == 0)) ||
+			(r.URL.Path == "/v1/cloud-notes-import-ios" &&
+				(!seen["external_id"] || !validDSMNotesImportIdentity(out.ExternalID))) {
 			return out, errors.New("invalid Notes write fields")
 		}
 		if strings.TrimSpace(out.Title) == "" || len([]byte(out.Title)) > 255 ||
@@ -235,6 +256,9 @@ func serveDSMOwnerNotes(w http.ResponseWriter, r *http.Request, ctx context.Cont
 	case "/v1/cloud-notes-create":
 		output, err = notes.OwnerNotesCreate(ctx,
 			client.NotesWrite{Title: input.Title, Markdown: input.Markdown})
+	case "/v1/cloud-notes-import-ios":
+		output, err = notes.OwnerNotesImportIOS(ctx,
+			client.NotesImportWrite{Title: input.Title, Markdown: input.Markdown, ExternalID: input.ExternalID})
 	case "/v1/cloud-notes-save":
 		output, err = notes.OwnerNotesUpdate(ctx, input.ID,
 			client.NotesWrite{Title: input.Title, Markdown: input.Markdown,

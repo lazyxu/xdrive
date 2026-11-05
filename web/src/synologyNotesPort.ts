@@ -2,6 +2,7 @@ import type {
   XDriveNotesDataPort, XDriveNoteDetail, XDriveNoteSummary,
 } from '../../ui/shared/src/mui/NotesPage'
 import type { XDriveSynologyBackupLocalClient } from '../../ui/shared/src/synology-backup-adapter'
+import { xDriveNotesPlanManualExport, xDriveNotesSelectManualExport } from '../../ui/shared/src/notes-manual-import'
 
 /** DSM renders the same Notes page as Desktop. Only the package's fixed,
  * authenticated HTTPS CGI may access the owning Backup-only Agent. */
@@ -51,7 +52,82 @@ export function createXDriveDSMNotesPort(
 
   return {
     ownerScopeKey: 'dsm:' + ownerScope,
+    async importIOSMarkdown(value) {
+      await ensure()
+      const row = await call(() => cgi.notesImportIOS(ownerScope,
+        value.title, value.markdown, ''))
+      if (row.source !== 'ios_notes' || row.title !== value.title || row.revision !== 1) {
+        throw new Error('iOS 备份导入收据与当前 Owner 不一致')
+      }
+      return remember(row)
+    },
     ...(imagesEnabled ? {
+      async importIOSMarkdownBundle(files: readonly File[], signal?: AbortSignal) {
+        const { markdownFile, assets } = xDriveNotesSelectManualExport(files)
+        await verify(signal)
+        const bytes = await markdownFile.arrayBuffer()
+        signal?.throwIfAborted()
+        if (bytes.byteLength !== markdownFile.size) throw new Error('Markdown 文件读取期间发生变化')
+        let markdown: string
+        try {
+          markdown = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+        } catch {
+          throw new Error('Markdown 文件不是有效的 UTF-8 编码')
+        }
+        const plan = xDriveNotesPlanManualExport(markdown, markdownFile, assets)
+        await ensure()
+        if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
+          throw new Error('当前 DSM 浏览器不支持安全的导入会话标识')
+        }
+        const externalID = 'manual:' + crypto.randomUUID()
+        let created: XDriveNoteSummary | null = null
+        try {
+          created = remember(await call(() => cgi.notesImportIOS(
+            ownerScope, plan.title, markdown, externalID, signal), signal))
+          if (created.source !== 'ios_notes' || created.title !== plan.title ||
+              created.node_id <= 0 || created.revision < 1) {
+            throw new Error('服务器返回的 iOS 备份收据无效')
+          }
+          const noteID = created.id
+          const assetPaths = new Map<string, string>()
+          const uploaded = new Map<File, string>()
+          for (const reference of plan.references) {
+            await verify(signal)
+            let relative = uploaded.get(reference.asset)
+            if (!relative) {
+              const data = await reference.asset.arrayBuffer()
+              signal?.throwIfAborted()
+              if (data.byteLength !== reference.asset.size || data.byteLength < 1 ||
+                  data.byteLength > 20 * 1_048_576) {
+                throw new Error('图片在读取期间发生变化或超过 20 MiB')
+              }
+              const receipt = await call(() => cgi.notesImportIOSImage(
+                ownerScope, noteID, reference.asset, signal), signal)
+              relative = receipt.relative_path
+              uploaded.set(reference.asset, relative)
+            }
+            assetPaths.set(reference.source, relative)
+          }
+          if (!plan.references.length) return created
+          const revised = plan.rewrite(assetPaths)
+          if (revised === markdown) return created
+          const updated = remember(await call(() => cgi.notesImportIOS(
+            ownerScope, plan.title, revised, externalID, signal), signal))
+          if (updated.source !== 'ios_notes' || updated.id !== created.id ||
+              updated.node_id !== created.node_id || updated.revision <= created.revision) {
+            throw new Error('iOS 备份未完成图片引用的版本更新')
+          }
+          return updated
+        } catch (error) {
+          if (signal?.aborted) throw error
+          if (created) {
+            throw new Error('已创建只读 iOS 备份，但图片或引用未全部完成。请在 iOS 备份中核对笔记 ' +
+              created.id + '，避免重复导入。' +
+              (error instanceof Error ? ' 原因：' + error.message : ''))
+          }
+          throw error
+        }
+      },
       async uploadImage(noteID: string, file: File) {
         await ensure()
         const result = await call(() => cgi.notesUploadImage(ownerScope, noteID, file))
