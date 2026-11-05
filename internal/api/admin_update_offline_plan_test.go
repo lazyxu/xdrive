@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,12 @@ func newOfflineHostPlanTestServer(t *testing.T) (*Server, string) {
 		t.Fatal(err)
 	}
 	s := &Server{HostControlDir: hostDir, OfflineUpdateImportDir: importDir}
+	pid := strconv.Itoa(os.Getpid()) + "\n"
+	for _, name := range []string{"runner.pid", "offline-plan-runner.pid"} {
+		if err := os.WriteFile(filepath.Join(hostDir, name), []byte(pid), 0o660); err != nil {
+			t.Fatal(err)
+		}
+	}
 	writeServerUpdateTestStatus(t, hostDir, serverUpdateState{
 		State: "idle", Source: "github", Channel: "master",
 		RunnerHeartbeatAt: time.Now().UTC().Format(time.RFC3339),
@@ -212,5 +219,21 @@ func TestAdminStartOfflineHostPlanRejectsWhileServerUpdateIsQueued(t *testing.T)
 	s.adminStartOfflineHostPlan(ctx)
 	if res.Code != http.StatusConflict || !strings.Contains(res.Body.String(), "update_or_preflight_in_progress") {
 		t.Fatalf("plan status=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestAdminStartOfflineHostPlanRequiresCapableHostRunner(t *testing.T) {
+	s, id := newOfflineHostPlanTestServer(t)
+	if err := os.Remove(filepath.Join(s.HostControlDir, "offline-plan-runner.pid")); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]any{"offline_id": id, "offline_trust_mode": "sigstore"})
+	ctx, res := offlinePlanRequestContext(string(body))
+	s.adminStartOfflineHostPlan(ctx)
+	if res.Code != http.StatusServiceUnavailable || !strings.Contains(res.Body.String(), "offline_host_plan_unsupported") {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(s.HostControlDir, "plan-request.json")); !os.IsNotExist(err) {
+		t.Fatalf("unsupported Host runner received a plan request: %v", err)
 	}
 }
