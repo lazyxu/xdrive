@@ -454,6 +454,9 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-photoasset-viewer-neighbors"
           node --test desktop/tests/ios-native-photoasset-viewer-neighbors.cjs desktop/tests/ios-native-photoasset-live.cjs desktop/tests/ios-native-photoasset-still-fallback.cjs
 
+      - name: Verify unified native iOS Gallery Viewer information
+        run: node --test desktop/tests/ios-native-viewer-unified-info.cjs
+
       - name: Verify native cloud PhotoAsset square wall and density pinch
         run: node --test desktop/tests/ios-native-photoasset-wall-density.cjs desktop/tests/ios-native-photoasset-thumbnail-state.cjs
 
