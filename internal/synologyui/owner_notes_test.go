@@ -247,7 +247,7 @@ func TestDSMNotesManualIOSImportRequiresExactOwnerAndTransactionIdentity(t *test
 	}{
 		{"badIdentity", `{"owner_scope":"`+scope+`","title":"Manual export","markdown":"# Export","external_id":"title:guess"}`, csrf, http.StatusBadRequest},
 		{"missingIdentity", `{"owner_scope":"`+scope+`","title":"Manual export","markdown":"# Export"}`, csrf, http.StatusBadRequest},
-		{"foreignOwner", `{"owner_scope":"`+strings.Repeat("0",64)+`","title":"Manual export","markdown":"# Export","external_id":""}`, csrf, http.StatusConflict},
+		{"foreignOwner", `{"owner_scope":"`+strings.Repeat("0", 64)+`","title":"Manual export","markdown":"# Export","external_id":""}`, csrf, http.StatusConflict},
 		{"noCSRF", `{"owner_scope":"`+scope+`","title":"Manual export","markdown":"# Export","external_id":""}`, "", http.StatusForbidden},
 	} {
 		out := dsmNotesRequest(h, http.MethodPost, "cloud-notes-import-ios", "", tc.body, tc.token)

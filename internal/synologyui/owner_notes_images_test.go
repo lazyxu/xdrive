@@ -55,9 +55,9 @@ func (f *dsmNotesImagesFixture) OwnerNotesImportIOSImage(
 	}
 	sum := sha256.Sum256(data)
 	return client.NotesImageReceipt{
-		NodeID: 124, Filename: dsmNotesImageFixtureName,
+		NodeID:       124, Filename: dsmNotesImageFixtureName,
 		RelativePath: "_assets/" + id + "/" + dsmNotesImageFixtureName,
-		ContentType: "image/gif", Bytes: int64(len(data)), SHA256: hex.EncodeToString(sum[:]),
+		ContentType:  "image/gif", Bytes: int64(len(data)), SHA256: hex.EncodeToString(sum[:]),
 	}, nil
 }
 
@@ -73,7 +73,7 @@ func (f *dsmNotesImagesFixture) OwnerNotesReadImage(
 	sum := sha256.Sum256(data)
 	return localbackupipc.OwnerNotesImageData{
 		ContentType: "image/gif", Bytes: int64(len(data)),
-		SHA256: hex.EncodeToString(sum[:]), Image: data,
+		SHA256:      hex.EncodeToString(sum[:]), Image: data,
 	}, nil
 }
 
@@ -178,7 +178,7 @@ func TestDSMNotesIOSArchiveImageImportUsesDedicatedOwnerScopedRoute(t *testing.T
 	g, base := newFixture(t)
 	f := &dsmNotesImagesFixture{
 		dsmNotesFixture: &dsmNotesFixture{fakeAgent: base, owner: "alice", enabled: true},
-		imageEnabled: true,
+		imageEnabled:    true,
 	}
 	g.Connect = func(context.Context) (Agent, error) { return f, nil }
 	h := CGIHandler(g)
