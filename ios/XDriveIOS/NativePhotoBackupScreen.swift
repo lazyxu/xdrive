@@ -10,7 +10,6 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @StateObject private var receipts = XDriveIOSNativePhotoReceiptReviewController()
     @StateObject private var background = XDriveIOSNativeBackgroundPhotoControls()
     @StateObject private var coverage = XDriveIOSNativePhotoCoverageModel()
-    @StateObject private var queueSummary = XDriveIOSNativePhotoQueueSummaryModel()
     @StateObject private var originalProof = XDriveIOSNativeCurrentPhotoReceiptModel()
     @StateObject private var destination = XDriveIOSNativePhotoBackupDestinationModel()
     @State private var selectedOriginalToVerify: PhotosPickerItem?
@@ -368,10 +367,6 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         .onAppear {
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             syncSavedAutomaticSettings()
-            if controller.schedule?.enabled == true &&
-               controller.schedule?.backupStartRule == .onlyNew {
-                queueSummary.refresh(login: login)
-            }
             destination.refresh(login: login)
             receipts.refresh(login: login)
             background.refresh(login: login)
@@ -386,7 +381,6 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             selectedOriginalIdentifier = nil
             selectedOriginalToVerify = nil
             coverage.cancel()
-            queueSummary.cancel()
             receipts.cancel()
             background.invalidateRead()
             showBackgroundEnableConsent = false
@@ -433,17 +427,12 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         .onChange(of: phase) { state in
             if state != .active {
                 coverage.cancel()
-                queueSummary.cancel()
                 originalProof.cancel()
             }
             if state == .active {
                 photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
                 // BGProcessing or Settings may change state while this view is mounted.
                 controller.refresh(owner: login.owner)
-                if controller.schedule?.enabled == true &&
-                   controller.schedule?.backupStartRule == .onlyNew {
-                    queueSummary.refresh(login: login)
-                }
             }
         }
         .onChange(of: selectedOriginalToVerify) { item in
@@ -465,7 +454,6 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             selectedOriginalToVerify = nil
             selectedOriginalIdentifier = nil
             coverage.cancel()
-            queueSummary.cancel()
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             // Invalidate any consent that was opened for the previous Owner.
             background.invalidateRead()
@@ -495,10 +483,6 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             autoStartRule = .everything
             interval = 60
             syncSavedAutomaticSettings()
-            if controller.schedule?.enabled == true &&
-               controller.schedule?.backupStartRule == .onlyNew {
-                queueSummary.refresh(login: login)
-            }
             receipts.refresh(login: login)
         }
     }
@@ -788,23 +772,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             }
     }
 
-    // Keep the durable queue summary in its own opaque View type. The
-    // surrounding status form is intentionally large; embedding another
-    // generic SwiftUI subtree there pushes the iOS compiler over its
-    // type-checking budget.
-    @ViewBuilder
-    private var queueSummarySection: some View {
-        XDriveIOSPhotoQueueSummarySection(
-            login: login,
-            queueSummary: queueSummary,
-            enabled: controller.schedule?.enabled == true &&
-                controller.schedule?.backupStartRule == .onlyNew
-        )
-    }
-
     @ViewBuilder
     private var backupStatusSections: some View {
-            queueSummarySection
+            XDriveIOSPhotoQueueSummarySection(login: login, controller: controller)
             Section("当前图库与历史原件收据") {
                 Button("只读统计当前图库和既有收据") {
                     coverage.refresh(login: login)
