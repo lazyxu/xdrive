@@ -4104,11 +4104,14 @@ serve_cmd() {
     fi
   fi
 
-  printf '%s\n' "$$" > "$pid_file"
+  printf '%s\n' "$" > "$pid_file"
   chmod 0660 "$pid_file"
   CONTROL_PID_FILE="$pid_file"
+  CONTROL_PLAN_CAPABILITY_FILE="$dir/offline-plan-runner.pid"
+  printf '%s\n' "$" > "$CONTROL_PLAN_CAPABILITY_FILE"
+  chmod 0660 "$CONTROL_PLAN_CAPABILITY_FILE"
   CONTROL_LOCK_DIR="$lock_dir"
-  trap 'rm -f "${CONTROL_PID_FILE:-}"; [[ -z "${CONTROL_LOCK_DIR:-}" ]] || rmdir "${CONTROL_LOCK_DIR}" 2>/dev/null || true' EXIT
+  trap 'rm -f "${CONTROL_PID_FILE:-}" "${CONTROL_PLAN_CAPABILITY_FILE:-}"; [[ -z "${CONTROL_LOCK_DIR:-}" ]] || rmdir "${CONTROL_LOCK_DIR}" 2>/dev/null || true' EXIT
   trap 'exit 0' INT TERM
   # Identify the code that THIS daemon actually loaded. A new installer
   # can then detect an older live runner without killing a running update.
