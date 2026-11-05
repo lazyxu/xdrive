@@ -17,7 +17,7 @@ test('native gallery filters are independent criteria with stable combined ident
   assert.match(filter, /var requiresLive: Bool \{ isEnabled\(\.livePhotos\) \}/)
   assert.match(filter, /var requiresScreenshot: Bool \{ isEnabled\(\.screenshots\) \}/)
   assert.match(filter, /joined\(separator: "\+"\)/)
-  assert.match(filter, /func setting\([\s\S]*?enabled: Bool\)/)
+  assert.match(filter, /func setting\([\s\S]*?enabled: Bool[\s\S]*?\) -> Self/)
   assert.match(filter, /var fetchKind: String\?/)
   assert.match(filter, /var isAll: Bool/)
   assert.match(filter, /var allItemsTitle: String/)

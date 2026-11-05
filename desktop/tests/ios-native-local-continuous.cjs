@@ -8,6 +8,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 const source = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
 const shell = read('ios/XDriveIOS/NativePhotoTimelineBrowser.swift')
 const policy = read('ios/XDriveIOS/NativePhotoTimelinePolicy.swift')
+const filterPolicy = read('ios/XDriveIOS/NativePhotoMediaFilterPolicy.swift')
 
 test('local PhotoKit Gallery always mounts continuous lazy virtual pages without a pagination switch', () => {
   assert.match(shell, /struct XDriveIOSNativeLocalPhotoTimelineContainer: View/)
@@ -138,7 +139,7 @@ test('native media selector queries the entire authorized PhotoKit snapshot', ()
 test('native Photos filter empty-state message reflects selected whole-library source', () => {
   assert.match(source, /Text\("本机已授权\\\(mediaFilter\.title\) · 按日分组"\)/)
   assert.match(source, /Text\(mediaFilter\.emptyMessage\)/)
-  assert.match(policy, /var emptyMessage: String/)
+  assert.match(filterPolicy, /var emptyMessage: String/)
 })
 
 
