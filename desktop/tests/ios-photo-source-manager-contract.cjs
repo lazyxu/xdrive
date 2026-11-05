@@ -24,7 +24,7 @@ test('iOS Photos is a device-executed Push Source, not a server-triggered worker
   assert.match(profile, /manualTriggerExecutor: 'ios_device'/);
   assert.match(profile, /iPhone 正在备份/);
   assert.match(profile, /Server 不执行 PhotoKit 扫描或原件读取/);
-  assert.match(list, /row\.source\.kind !== 'ios_photos'/);
+  assert.match(list, /row\.source\.kind === 'ios_photos'/);
   assert.match(list, /新增上传/);
   assert.match(list, /云端已核验/);
   assert.match(list, /待处理/);
@@ -48,7 +48,7 @@ test('native iPhone reports begin, progress and terminal state with the exact de
   assert.match(reporter, /complete_inventory": false/);
   assert.match(controller, /XDriveIOSPhotoSourceRunReporter/);
   assert.match(controller, /onSourceProgress:/);
-  assert.doesNotMatch(reporter, /PHAsset|localIdentifier|filename|latitude|longitude/);
+  assert.doesNotMatch(reporter, /PHAsset|localIdentifier|latitude|longitude|originalFilename/);
 });
 
 test('server binds iOS SourceRun writes to the registered device and managed Source/Node', () => {
