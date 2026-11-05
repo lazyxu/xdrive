@@ -363,7 +363,7 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
+		if source.Status != meta.SourceStatusActive {
 			return errSourcePaused
 		}
 
@@ -589,7 +589,7 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
+		if source.Status != meta.SourceStatusActive {
 			return errSourcePaused
 		}
 		var run meta.SyncRun
@@ -822,7 +822,7 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
+		if source.Status != meta.SourceStatusActive {
 			return errSourcePaused
 		}
 
