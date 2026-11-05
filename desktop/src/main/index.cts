@@ -3736,6 +3736,36 @@ function registerIPCHandlers() {
       }
       return requireAgentClient().removeLocalBoundBackup(sourceID, revision)
     }, false))
+
+  ipcMain.handle('agent:get-device-backup-local-archive-settings', (_event, sourceID: unknown) =>
+    runAgentAction<AgentLocalBoundBackupSettings>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-archive-restore')
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Local Source ID must be a positive integer.')
+      }
+      return requireAgentClient().localBoundBackupArchiveSettings(sourceID)
+    }, false))
+  ipcMain.handle('agent:archive-device-backup-local-source', (_event, sourceID: unknown, revision: unknown) =>
+    runAgentAction<AgentLocalBoundBackupSettings>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-archive-restore')
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Local Source and revision must be positive integers.')
+      }
+      return requireAgentClient().archiveLocalBoundBackup(sourceID, revision)
+    }, false))
+  ipcMain.handle('agent:restore-device-backup-local-source', (_event, sourceID: unknown, revision: unknown) =>
+    runAgentAction<AgentLocalBoundBackupSettings>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-archive-restore')
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Local Source and revision must be positive integers.')
+      }
+      return requireAgentClient().restoreLocalBoundBackup(sourceID, revision)
+    }, false))
   ipcMain.handle('agent:get-device-backups', (event, requestID: unknown = undefined) =>
     runAgentAction<AgentDeviceBackupOverview>(
       () => viewportRequests.run(event.sender, requestID, async signal => {
