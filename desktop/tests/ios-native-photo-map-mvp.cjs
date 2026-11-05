@@ -500,6 +500,6 @@ test('album-scoped place wall exposes Show Nearby Photos into the full-library s
   assert.match(map, /if album != nil, onShowNearby != nil[\s\S]*?Button\("显示附近照片"\)/)
   assert.match(map, /dismiss\(\)\s*DispatchQueue\.main\.async \{ onShowNearby\?\(\) \}/)
   assert.match(map, /@State private var nearbySelection: XDriveIOSMapSpatialSelection\?/)
-  assert.match(map, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: nil, isNearbyExpansion: true\)/)
+  assert.match(map, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: nil, isNearbyExpansion: true\s*\)/)
   assert.match(map, /Text\(isNearbyExpansion \?[\s\S]*?"附近照片 · 已加载/)
 })
