@@ -188,7 +188,7 @@ func TestYikeSourceRenameKeepsAccountIDAndIgnoresCredentialNickname(t *testing.T
 		OwnerID: owner.ID, Name: "一刻来源", Kind: yikeSourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusActive,
-		Revision: 1, TargetNodeID: &targetID,
+		Revision: 1, TargetNodeID: &targetID, TargetManaged: true,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
