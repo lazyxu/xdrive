@@ -71,6 +71,10 @@ type uploadInitRequest struct {
 	ChunkSHA256      []string `json:"chunk_sha256,omitempty"`
 	ResumeKey        string   `json:"resume_key,omitempty"`
 	ExpectedRevision uint64   `json:"expected_revision,omitempty"`
+	SourceID uint64 `json:"source_id,omitempty"`
+	SourceRevision uint64 `json:"source_revision,omitempty"`
+	SourceRootID string `json:"source_root_id,omitempty"`
+	SourceRootFingerprint string `json:"source_root_fingerprint,omitempty"`
 }
 
 type uploadPartDTO struct {
@@ -297,6 +301,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	// skip as a committed source file, or silently change the target.
 	if strings.HasPrefix(req.ResumeKey, "lp2_") && req.ConflictPolicy != meta.UploadConflictPolicyFail {
 		fail(c, http.StatusBadRequest, "invalid private upload policy")
+		return
+	}
+	if !validSynologyUploadScope(req) {
+		fail(c, http.StatusBadRequest, "invalid Synology Source upload scope")
 		return
 	}
 
@@ -561,7 +569,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	// Managed iOS Photos must pass the exact Source/Device/Node transaction
 	// admission; generic instant CAS is not scoped and cannot skip it.
 	_, managedIOSPhoto := currentIOSPhotoManagedUploadScope(c)
-	if req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") &&
+	if req.SourceID == 0 && req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") &&
 		!scopedRun && !managedIOSPhoto {
 		session, currentRevision, handled, err := s.tryInstantUploadSession(
 			c.Request.Context(), uid, req, chunkCount, shareGrant,
@@ -613,6 +621,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	session := meta.UploadSession{
 		ID:               uuid.NewString(),
 		OwnerID:          uid,
+		SourceID:         req.SourceID,
+		SourceRevision:   req.SourceRevision,
+		SourceDeviceID:   strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")),
+		SourceRootID:     req.SourceRootID,
+		SourceRootFingerprint: req.SourceRootFingerprint,
 		ParentID:         req.ParentID,
 		NodeID:           req.NodeID,
 		Name:             req.Name,
