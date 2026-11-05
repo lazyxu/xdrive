@@ -802,7 +802,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         ProgressView("读取当前账户的持久化变更队列…")
                     }
                     if let counts = queueSummary.counts {
-                        Text("待处理 \\(counts.pending) · 失败 \\(counts.failed) · 已确认处理 \\(counts.confirmed) · 本机已删除 \\(counts.missingLocal)")
+                        Text("待处理 \(counts.pending) · 失败 \(counts.failed) · 已确认处理 \(counts.confirmed) · 本机已删除 \(counts.missingLocal)")
                             .monospacedDigit()
                             .accessibilityIdentifier("native-ios-photo-change-queue-counts")
                         if counts.failed > 0 {
