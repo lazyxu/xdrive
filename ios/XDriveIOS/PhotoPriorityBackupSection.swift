@@ -78,7 +78,10 @@ struct XDriveIOSPhotoPriorityBackupSection: View {
             errorMessage = nil
         }
         .onChange(of: phase) { state in
-            if state != .active { clearSelection() }
+            // PhotosPicker may briefly make the scene inactive while its
+            // system sheet is presented; keep the selected item through that
+            // transition and clear only when the app actually backgrounds.
+            if state == .background { clearSelection() }
         }
         .onDisappear {
             clearSelection()
