@@ -798,10 +798,10 @@ export function externalSourceCardView(row: ExternalSourceRow): ExternalSourceCa
     state: getExternalSourceState(row),
     trigger: getExternalSourceTriggerState(row),
     lastActivityLabel: source.kind === 'ios_photos'
-      ? (latestRun?.status === 'running' ? '最近运行' : '上次成功')
+      ? (latestRun?.status === 'running' || !source.last_success_at ? '最近运行' : '上次成功')
       : source.run_mode === 'scan' ? '上次扫描' : '上次成功',
     lastActivityAt: source.kind === 'ios_photos'
-      ? (latestRun?.status === 'running' ? source.last_run_at : source.last_success_at || source.last_run_at)
+      ? (latestRun?.status === 'running' || !source.last_success_at ? source.last_run_at : source.last_success_at)
       : source.run_mode === 'scan' ? source.last_run_at : source.last_success_at,
     scannedItems: latestRun?.scanned_items,
     scannedBytes: latestRun?.scanned_bytes,
