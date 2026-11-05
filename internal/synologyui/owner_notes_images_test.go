@@ -174,7 +174,6 @@ func TestDSMNotesImageCGIFailsClosedOnLargeAndMalformedBody(t *testing.T) {
 	}
 }
 
-
 func TestDSMNotesIOSArchiveImageImportUsesDedicatedOwnerScopedRoute(t *testing.T) {
 	g, base := newFixture(t)
 	f := &dsmNotesImagesFixture{
