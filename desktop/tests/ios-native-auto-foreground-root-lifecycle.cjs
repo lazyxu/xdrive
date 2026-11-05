@@ -112,7 +112,7 @@ test('backup display and delayed original progress never cross Owner changes or 
     'bind visible report to the current Owner generation before the async run')
   assert.match(callback, /guard XDriveIOSNativePhotoOwnerScope\.matches\(self\?\.runningOwner, selected\),\s*self\?\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)\s*else \{ return \}/)
   assert.match(start, /guard XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\),\s*self\.displayEpoch == uiEpoch else \{\s*throw XDriveIOSNativeSessionError\.staleSession/)
-  assert.match(terminal, /catch is CancellationError \{\s*if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
+  assert.match(terminal, /catch is CancellationError \{\s*if let reporter = sourceRunReporter \{ await reporter\.finish\(status: "cancelled"\) \}\s*if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
   // The catch now first checks an eligible *pre-write* transient network
   // retry. Both that retry and the terminal error message must remain fenced
   // to the exact live UI epoch and currently signed-in Owner.
