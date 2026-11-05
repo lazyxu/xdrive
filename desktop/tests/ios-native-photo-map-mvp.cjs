@@ -494,3 +494,12 @@ test('native local Gallery opens the full-library map from its filter menu witho
   assert.match(mapGallery, /if source == \.cloud[\s\S]*?Button\("完成"\) \{ onClose\?\(\) \}/)
   assert.match(mapGallery, /ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?native-ios-map-source-selector/)
 })
+
+
+test('album-scoped place wall exposes Show Nearby Photos into the full-library slice', () => {
+  assert.match(map, /if album != nil, onShowNearby != nil[\s\S]*?Button\("显示附近照片"\)/)
+  assert.match(map, /dismiss\(\)\s*DispatchQueue\.main\.async \{ onShowNearby\?\(\) \}/)
+  assert.match(map, /@State private var nearbySelection: XDriveIOSMapSpatialSelection\?/)
+  assert.match(map, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: nil, isNearbyExpansion: true\)/)
+  assert.match(map, /Text\(isNearbyExpansion \?[\s\S]*?"附近照片 · 已加载/)
+})
