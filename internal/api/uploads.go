@@ -679,6 +679,13 @@ func (s *Server) createUploadSession(c *gin.Context) {
 				return err
 			}
 		}
+		if req.SourceID != 0 {
+			var source meta.Source
+			if err := tx.Select("target_node_id").Where("id = ? AND owner_id = ?", req.SourceID, uid).Take(&source).Error; err != nil || source.TargetNodeID == nil {
+				return errManagedSourceWriteDenied
+			}
+			session.SourceTargetID = *source.TargetNodeID
+		}
 		if guest {
 			if _, err := s.publicShareUploadAdmissionTx(
 				c.Request.Context(), tx, guestID, uid, *req.ParentID,
