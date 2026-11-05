@@ -54,7 +54,13 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 		return false
 	}
 	if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
-		if source.DeviceID == nil || *source.DeviceID == "" || !source.TargetManaged || source.TargetNodeID == nil {
+		// Existing DSM Push Sources predate device binding and retain their
+		// original target unchanged. Enforce the new identity contract only
+		// for Sources created under the new managed provisioning flow.
+		if source.DeviceID == nil || *source.DeviceID == "" {
+			return true
+		}
+		if !source.TargetManaged || source.TargetNodeID == nil {
 			fail(c, http.StatusForbidden, "Synology Push Source is not bound to a managed device target")
 			return false
 		}
@@ -162,11 +168,11 @@ func (s *Server) requireLocalSourceExecutorTx(tx *gorm.DB, c *gin.Context, sourc
 func (s *Server) requireLocalSourceMutationTx(tx *gorm.DB, c *gin.Context, sourceID uint64) error {
 	if _, hasProof := c.Get(localSourceExecutorContextKey); !hasProof {
 		var source meta.Source
-		if err := tx.Select("kind", "direction").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
+		if err := tx.Select("kind", "direction", "device_id").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
 			return err
 		}
 		if source.Kind == meta.SourceKindLocalFolder ||
-			(source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush) {
+			(source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush && source.DeviceID != nil) {
 			return errLocalSourceExecutorTransactionUnauthorized
 		}
 		return nil
