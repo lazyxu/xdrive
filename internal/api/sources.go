@@ -132,10 +132,10 @@ func toSourceDTO(source meta.Source) sourceDTO {
 		LastError: source.LastError, RunRequestedAt: source.RunRequestedAt,
 		CreatedAt: source.CreatedAt, UpdatedAt: source.UpdatedAt,
 	}
+	// Only the connector-neutral, server-verified DeviceID is published.
+	// Legacy creator metadata must not masquerade as an enrolled Push binding.
 	if source.DeviceID != nil {
 		dto.DeviceID = *source.DeviceID
-	} else if source.LocalCreatorDeviceID != nil {
-		dto.DeviceID = *source.LocalCreatorDeviceID
 	}
 	if isLocalFolderPush(source) {
 		dto.IgnoreRules = ""
