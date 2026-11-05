@@ -31,6 +31,7 @@ type sourceDTO struct {
 	Revision           uint64     `json:"revision"`
 	TargetNodeID       *uint64    `json:"target_node_id,omitempty"`
 	TargetManaged      bool       `json:"target_managed,omitempty"`
+	DeviceID           string     `json:"device_id,omitempty"`
 	TargetPath         string     `json:"target_path,omitempty"`
 	IgnoreRules        string     `json:"ignore_rules,omitempty"`
 	Checkpoint         string     `json:"checkpoint,omitempty"`
@@ -130,6 +131,11 @@ func toSourceDTO(source meta.Source) sourceDTO {
 		Checkpoint: source.Checkpoint, LastRunAt: source.LastRunAt, LastSuccessAt: source.LastSuccessAt,
 		LastError: source.LastError, RunRequestedAt: source.RunRequestedAt,
 		CreatedAt: source.CreatedAt, UpdatedAt: source.UpdatedAt,
+	}
+	if source.DeviceID != nil {
+		dto.DeviceID = *source.DeviceID
+	} else if source.LocalCreatorDeviceID != nil {
+		dto.DeviceID = *source.LocalCreatorDeviceID
 	}
 	if isLocalFolderPush(source) {
 		dto.IgnoreRules = ""
