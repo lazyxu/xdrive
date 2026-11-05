@@ -85,6 +85,111 @@ func readOfflineHostPlanFile(path string, maxBytes int64) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+func (s *Server) offlineHostPlanRunnerSupported() bool {
+	dir := strings.TrimSpace(s.HostControlDir)
+	if dir == "" {
+		return false
+	}
+	runnerRaw, err := readOfflineHostPlanFile(filepath.Join(dir, "runner.pid"), 32)
+	if err != nil {
+		return false
+	}
+	planRaw, err := readOfflineHostPlanFile(filepath.Join(dir, "offline-plan-runner.pid"), 32)
+	if err != nil {
+		return false
+	}
+	runnerPID := strings.TrimSpace(string(runnerRaw))
+	planPID := strings.TrimSpace(string(planRaw))
+	return regexp.MustCompile(`^[1-9][0-9]{0,9}package api
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+var offlineHostPlanRequestID = regexp.MustCompile(`^[a-f0-9]{24}$`)
+
+type offlineHostPlanRequestFile struct {
+	RequestID              string `json:"request_id"`
+	OfflineID              string `json:"offline_id"`
+	TrustMode              string `json:"offline_trust_mode"`
+	TrustedManifestSHA256  string `json:"trusted_manifest_sha256,omitempty"`
+	TrustedInstallerSHA256 string `json:"trusted_installer_sha256,omitempty"`
+	RequestedBy            string `json:"requested_by,omitempty"`
+	CreatedAt              string `json:"created_at"`
+}
+
+type offlineHostPlanStatus struct {
+	Supported   bool            `json:"supported"`
+	State       string          `json:"state"`
+	RequestID   string          `json:"request_id,omitempty"`
+	OfflineID   string          `json:"offline_id,omitempty"`
+	TrustMode              string          `json:"offline_trust_mode,omitempty"`
+	TrustedManifestSHA256  string          `json:"trusted_manifest_sha256,omitempty"`
+	TrustedInstallerSHA256 string          `json:"trusted_installer_sha256,omitempty"`
+	Message                string          `json:"message,omitempty"`
+	Error       string          `json:"error,omitempty"`
+	StartedAt   string          `json:"started_at,omitempty"`
+	UpdatedAt   string          `json:"updated_at,omitempty"`
+	FinishedAt  string          `json:"finished_at,omitempty"`
+	Plan        json.RawMessage `json:"plan,omitempty"`
+}
+
+func (s *Server) offlineHostPlanBusy() bool {
+	dir := strings.TrimSpace(s.HostControlDir)
+	if dir == "" {
+		return false
+	}
+	for _, name := range []string{"plan-request.json", "plan-active.json"} {
+		_, err := os.Lstat(filepath.Join(dir, name))
+		if err == nil || !errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+	}
+	raw, err := readOfflineHostPlanFile(filepath.Join(dir, "plan-status.json"), 64<<10)
+	if errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	if err != nil {
+		return true
+	}
+	var status offlineHostPlanStatus
+	if json.Unmarshal(raw, &status) != nil {
+		return true
+	}
+	switch status.State {
+	case "idle", "success", "failed":
+		return false
+	case "queued", "running":
+		return true
+	default:
+		return true
+	}
+}
+
+func readOfflineHostPlanFile(path string, maxBytes int64) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 ||
+		info.Size() < 0 || info.Size() > maxBytes {
+		return nil, errors.New("unsafe offline Host plan file")
+	}
+	return os.ReadFile(path)
+}
+
+).MatchString(runnerPID) && runnerPID == planPID
+}
+
 func (s *Server) writeOfflineHostPlanStatus(status offlineHostPlanStatus) error {
 	dir := strings.TrimSpace(s.HostControlDir)
 	if dir == "" {
@@ -219,6 +324,11 @@ func (s *Server) adminStartOfflineHostPlan(c *gin.Context) {
 		return
 	}
 
+	if !s.offlineHostPlanRunnerSupported() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "offline_host_plan_unsupported"})
+		return
+	}
+
 	root, err := s.offlineUpdateImportRoot()
 	if err != nil {
 		offlineImportError(c, err)
@@ -296,10 +406,10 @@ func (s *Server) adminOfflineHostPlanStatus(c *gin.Context) {
 		return
 	}
 	c.Header("Cache-Control", "no-store")
-	if !s.serverUpdateStatus().Supported {
+	if !s.serverUpdateStatus().Supported || !s.offlineHostPlanRunnerSupported() {
 		c.JSON(http.StatusOK, offlineHostPlanStatus{
 			Supported: false, State: "unavailable",
-			OfflineID: id, Message: "宿主机更新控制没有活动心跳。",
+			OfflineID: id, Message: "宿主机更新控制未运行支持预检协议的 Runner。",
 		})
 		return
 	}
