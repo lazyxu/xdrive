@@ -100,6 +100,23 @@ func TestCreateSynologyPushRequiresRegisteredDeviceAndProvisionsCanonicalTarget(
 	requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", ownerToken,
 		strings.NewReader(fmt.Sprintf(`{"name":"NAS Photos 3","kind":"synology_photos","direction":"push","target_node_id":%d}`, target.ID)),
 		http.StatusBadRequest, headers)
+
+	sourceURL := fmt.Sprintf("/api/v1/sources/%d", created.ID)
+	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerToken,
+		strings.NewReader(`{"status":"active"}`), http.StatusOK,
+		map[string]string{"If-Match": `"1"`, "X-XDrive-Device-ID": deviceID, "X-XDrive-Device-Token": deviceToken})
+	requestWithHeaders(t, router, http.MethodPost, fmt.Sprintf("/api/v1/devices/%s/revoke", deviceID),
+		ownerToken, nil, http.StatusNoContent, nil)
+	var revokedSource meta.Source
+	if err := db.First(&revokedSource, created.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if revokedSource.Status != meta.SourceStatusPaused || revokedSource.Revision != 3 {
+		t.Fatalf("revoking the DSM device did not pause its Source: %+v", revokedSource)
+	}
+	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerToken,
+		strings.NewReader(`{"status":"active"}`), http.StatusForbidden,
+		map[string]string{"If-Match": `"3"`, "X-XDrive-Device-ID": deviceID, "X-XDrive-Device-Token": deviceToken})
 }
 
 func TestSynologyPushManagedTargetRejectsUnclaimedDeviceGroup(t *testing.T) {
