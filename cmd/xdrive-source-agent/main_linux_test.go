@@ -240,7 +240,7 @@ func (f fakeSetupSourceAPI) Source(_ context.Context, id uint64) (client.Source,
 	return client.Source{}, &client.APIError{Status: 404, Msg: "not found"}
 }
 
-func (f fakeSetupSourceAPI) Sources(context.Context) ([]client.Source, error) {
+func (f fakeSetupSourceAPI) Sources(context.Context, ...bool) ([]client.Source, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

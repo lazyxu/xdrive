@@ -11,7 +11,7 @@ import type {
 function desktopSourceManagerPort(localFolderSupported: boolean): XDriveSourceManagerPort {
   const agent = window.xdriveDesktop.agent
   return {
-    sources: () => agent.getSources(),
+    sources: (_signal, includeArchived) => agent.getSources(includeArchived),
     sourceCredentialStatus: (sourceID) => agent.getSourceCredential(sourceID),
     createSource: (input) => agent.createSource(input),
     authorizeLocalFolder: localFolderSupported ? (sourceID) => window.xdriveDesktop.authorizeLocalFolder(sourceID) : undefined,
@@ -35,6 +35,7 @@ function desktopSourceManagerPort(localFolderSupported: boolean): XDriveSourceMa
     testStoredSourceCredential: (sourceID) => agent.testStoredSourceCredential(sourceID),
     updateSource: (sourceID, revision, input) => agent.updateSource(sourceID, revision, input),
     deleteSource: (sourceID, revision) => agent.deleteSource(sourceID, revision),
+    restoreSource: (sourceID, revision) => agent.restoreSource(sourceID, revision),
     setSourceCredential: (sourceID, payload) => agent.setSourceCredential(
       sourceID,
       payload as Record<string, string>,

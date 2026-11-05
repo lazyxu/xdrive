@@ -10,6 +10,7 @@ const server = read('internal/api/ios_photo_backup_destination.go');
 const router = read('internal/api/router.go');
 const model = read('internal/meta/external_sources.go');
 const managed = read('internal/api/local_push_managed_provision.go');
+const pullManaged = read('internal/api/source_managed_provision.go');
 const source = read('internal/api/sources.go');
 const policy = read('ios/XDriveIOS/NativePhotoBackupDestinationNamePolicy.swift');
 
@@ -37,7 +38,10 @@ test('server is sole authority for actual Node/Path and never adopts a user-supp
   assert.match(server, /"target_path":\s*path/);
   assert.match(server, /"configured":\s*false/);
   assert.match(server, /"suggested_name": suggestedIOSPhotoDestinationName\(device\.Name\)/);
-  assert.match(managed, /"设备备份"/);
+  assert.match(managed, /\[\]string\{yikeTargetRootName,\s*"Push"\}/);
+  assert.match(pullManaged, /\[\]string\{yikeTargetRootName,\s*"Pull",\s*connector\}/);
+  assert.doesNotMatch(managed, /"设备备份"/);
+  assert.doesNotMatch(pullManaged, /"远程拉取"/);
   assert.match(managed, /\[\]string\{meta\.SourceKindLocalFolder, meta\.SourceKindIOSPhotos\}/);
   assert.doesNotMatch(server, /TargetNodeID\s+uint64.*json/);
   assert.doesNotMatch(server, /createUploadSession\(|finalizeUploadSession\(/);

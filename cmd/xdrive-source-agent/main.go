@@ -327,7 +327,7 @@ func setup(args []string) error {
 
 type setupSourceAPI interface {
 	Source(context.Context, uint64) (client.Source, error)
-	Sources(context.Context) ([]client.Source, error)
+	Sources(context.Context, ...bool) ([]client.Source, error)
 }
 
 func resolveSetupSource(ctx context.Context, api setupSourceAPI, configuredID, requestedID uint64, requestedName string) (client.Source, error) {

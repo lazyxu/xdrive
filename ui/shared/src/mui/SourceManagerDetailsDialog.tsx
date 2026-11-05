@@ -162,7 +162,10 @@ export function XDriveSourceDetailsDialog({
           <>
             {detail.error ? (
               <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>
-                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>最近一次运行异常</MuiTypography>
+                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                  {row.source.kind === 'ios_photos' && row.latestRun?.status === 'partial'
+                    ? '最近一次备份有待处理项目' : '最近一次运行异常'}
+                </MuiTypography>
                 <MuiTypography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{detail.error}</MuiTypography>
               </XDriveStatusAlert>
             ) : null}
@@ -173,6 +176,12 @@ export function XDriveSourceDetailsDialog({
                 {row.source.run_mode === 'scan' ? (
                   <MuiTypography variant="body2" sx={{ mt: 0.5 }}>{externalSourceMirrorScanNotice}</MuiTypography>
                 ) : null}
+              </XDriveStatusAlert>
+            ) : null}
+
+            {row.source.kind === 'ios_photos' ? (
+              <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
+                这是由已绑定 iPhone 执行的 Push 来源。PhotoKit 扫描、原件读取和上传始终在 iPhone 端进行；此处展示统一 Source 状态与运行历史，不会从 Server 或 Desktop 代替手机扫描，也不会上传照片标识、文件名或位置。每条运行记录只代表该次有界批次，不代表整库已完成备份。
               </XDriveStatusAlert>
             ) : null}
 
@@ -217,7 +226,9 @@ export function XDriveSourceDetailsDialog({
               ) : null}
             </XDriveDescriptionGrid>
 
-            <XDriveSectionHeader level="h3" title="相册与集合" sx={{ my: 2 }} />
+            {row.source.kind !== 'ios_photos' ? (
+              <>
+<XDriveSectionHeader level="h3" title="相册与集合" sx={{ my: 2 }} />
             {collections.length === 0 && collectionsReadState !== 'ready' ? (
               <MuiBox data-xdrive-source-collections-first-read
                 aria-busy={collectionsLoading || undefined}
@@ -292,6 +303,9 @@ export function XDriveSourceDetailsDialog({
               </Stack>
             )}
 
+                          </>
+            ) : null}
+
             <XDriveSectionHeader level="h3" title="运行记录" sx={{ my: 2 }} />
             {focusedRunID && historyReadState === 'ready' &&
              !historyRuns.some((run) => run.id === focusedRunID) ? (
@@ -303,7 +317,7 @@ export function XDriveSourceDetailsDialog({
               <Stack spacing={1}>
                 {historyRuns.map((run) => {
                   const runDetail = externalSourceRunDetailView(run)
-                  const canCancel = run.status === 'running' && row.latestRun?.id === run.id
+                  const canCancel = row.source.kind !== 'ios_photos' && run.status === 'running' && row.latestRun?.id === run.id
                   const failurePage = runFailurePages[run.id]
                   const skipPage = runSkipPages[run.id]
                   return (
@@ -359,7 +373,10 @@ export function XDriveSourceDetailsDialog({
                           {run.status === 'cancelled' ? (
                             <XDriveDescriptionItem label="未扫描范围">未知（取消任务不代表完整扫描）</XDriveDescriptionItem>
                           ) : null}
-                          {runDetail.metrics.map((metric) => (
+                          {runDetail.metrics
+                            .filter((metric) => row.source.kind !== 'ios_photos' ||
+                              ['scanned', 'synced', 'new', 'unchanged', 'transferred', 'failed'].includes(metric.key))
+                            .map((metric) => (
                             <XDriveDescriptionItem key={metric.key} label={metric.label}>
                               {metric.items === undefined ? (metric.bytes === undefined ? '未知' : formatBytes(metric.bytes)) : `${metric.items.toLocaleString('zh-CN')} 项`}
                               {metric.items !== undefined && metric.bytes !== undefined ? ' · ' + formatBytes(metric.bytes) : ''}
@@ -444,7 +461,9 @@ export function XDriveSourceDetailsDialog({
                               <MuiBox data-xdrive-source-run-failures-empty
                                 sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
                                 <XDriveStatusAlert tone="warning">
-                                  该历史 Run 记录了 {runDetail.failedItems.toLocaleString('zh-CN')} 个失败项，但没有可恢复的逐文件失败快照。
+                                  {row.source.kind === 'ios_photos'
+                                    ? `iPhone 本次记录了 ${runDetail.failedItems.toLocaleString('zh-CN')} 个待处理项目；逐项原因仅在手机端显示，不上传照片标识或文件名。`
+                                    : `该历史 Run 记录了 ${runDetail.failedItems.toLocaleString('zh-CN')} 个失败项，但没有可恢复的逐文件失败快照。`}
                                 </XDriveStatusAlert>
                               </MuiBox>
                             ) : (
@@ -486,7 +505,8 @@ export function XDriveSourceDetailsDialog({
               </MuiBox>
             )}
 
-            <MuiBox data-xdrive-source-failed-items aria-busy={failedItemsLoading || undefined}>
+            {row.source.kind !== 'ios_photos' ? (
+              <MuiBox data-xdrive-source-failed-items aria-busy={failedItemsLoading || undefined}>
             {!failedItemsLoading && failedItems.length > 0 ? (
               <XDriveStatusAlert
                 tone="bad"
@@ -511,6 +531,7 @@ export function XDriveSourceDetailsDialog({
               </XDriveStatusAlert>
             ) : null}
             </MuiBox>
+            ) : null}
           </>
         ) : null}
       </XDriveDialogContent>

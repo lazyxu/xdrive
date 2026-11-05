@@ -171,6 +171,9 @@ func (s *Server) requireLocalSourceMutationTx(tx *gorm.DB, c *gin.Context, sourc
 		if err := tx.Select("kind", "direction", "device_id").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
 			return err
 		}
+		if source.Kind == meta.SourceKindIOSPhotos {
+			return s.requireIOSPhotoSourceRunProofTx(tx, c, sourceID)
+		}
 		if source.Kind == meta.SourceKindLocalFolder ||
 			(source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush && source.DeviceID != nil) {
 			return errLocalSourceExecutorTransactionUnauthorized
@@ -186,7 +189,15 @@ func (s *Server) requireLocalSourceMutationTx(tx *gorm.DB, c *gin.Context, sourc
 func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID uint64, runID string, requireActive bool) error {
 	raw, exists := c.Get(localSourceExecutorContextKey)
 	if !exists {
-		// Only local_folder Sources have this middleware-provided proof.
+		// iOS Photos uses its own Owner+registered-device proof; it is never
+		// admitted by the Desktop local-folder credential or by Owner JWT alone.
+		var source meta.Source
+		if err := tx.Select("kind").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
+			return err
+		}
+		if source.Kind == meta.SourceKindIOSPhotos {
+			return s.requireIOSPhotoSourceRunProofTx(tx, c, sourceID)
+		}
 		return nil
 	}
 	proof, ok := raw.(localSourceExecutorProof)

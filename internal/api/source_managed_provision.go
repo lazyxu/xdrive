@@ -42,7 +42,7 @@ func createSynologyPullManagedTargetTx(
 	}
 	parent := root
 	parentIDs := []uint64{root.ID}
-	for _, name := range []string{yikeTargetRootName, "远程拉取", connector} {
+	for _, name := range []string{yikeTargetRootName, "Pull", connector} {
 		child, err := ensureOwnedChildDirectoryTx(ctx, tx, source.OwnerID, parent.ID, name)
 		if err != nil {
 			if errors.Is(err, errYikeTargetPathConflict) || isDuplicate(err) {
