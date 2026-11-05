@@ -100,7 +100,7 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 	created, err := cli.CreateSource(context.Background(), client.CreateSourceInput{
 		Name: "Synology Photos", Kind: sourceagent.SynologyKind,
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
-		RunMode: meta.SourceRunModeSync, TargetNodeID: 0, IgnoreRules: "@eaDir/\\n",
+		RunMode: meta.SourceRunModeSync, TargetNodeID: 0, IgnoreRules: "@eaDir/\n",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 	}
 	scanner := sourceagent.Scanner{
 		API: cli, ExecutionAPI: cli, SourceID: created.ID,
-		Roots:         sourceagent.RootsWithIdentities("", "", shared, sharedID),
+		Roots:         roots,
 		IdentityStore: identityStore,
 	}
 
