@@ -173,8 +173,8 @@ func setup(args []string) error {
 	if *runMode != "" && !meta.ValidSourceRunMode(*runMode) {
 		return fmt.Errorf("--mode must be scan or sync")
 	}
-	if strings.TrimSpace(*targetPath) != "" {
-		return fmt.Errorf("--target is no longer supported: xDrive Server provisions new Synology Push destinations under 同步文件夹/Push")
+	if err := validateManagedTargetFlag(*targetPath); err != nil {
+		return err
 	}
 	if strings.TrimSpace(*personal) == "" && strings.TrimSpace(*shared) == "" {
 		return fmt.Errorf("at least one of --personal or --shared is required")
@@ -358,6 +358,13 @@ func resolveSetupSource(ctx context.Context, api setupSourceAPI, configuredID, r
 		}
 	}
 	return client.Source{}, nil
+}
+
+func validateManagedTargetFlag(target string) error {
+	if strings.TrimSpace(target) != "" {
+		return fmt.Errorf("--target is no longer supported: xDrive Server provisions new Synology Push destinations under 同步文件夹/Push")
+	}
+	return nil
 }
 
 func ensureSynologyDeviceIdentity(ctx context.Context, api *client.Client, cfg *sourceagentconfig.Config) error {
