@@ -108,6 +108,8 @@ test('offline Host preflight is a separate read-only admission path shared by We
   const desktopClient = read('desktop/src/main/agent_client.cts')
   assert.ok(page.includes('port.getPlan(id)'))
   assert.ok(page.includes('port.startPlan('))
+  assert.ok(page.includes('Promise.all([port.get(id), port.getPlan(id)])'), 'manual refresh must retain active preflight polling')
+  assert.ok(page.includes('await refreshImport()'), 'upload changes must invalidate a previous preflight')
   assert.ok(page.includes('只读预检'))
   assert.ok(page.includes('hostProbe?.blockers'))
   assert.ok(page.includes('trusted_manifest_sha256 === manifestSHA'))
