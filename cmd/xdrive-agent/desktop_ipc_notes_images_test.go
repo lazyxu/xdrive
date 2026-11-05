@@ -37,6 +37,21 @@ func (f *notesImageIPCFixture) CloudNotesUploadImage(
 	}, nil
 }
 
+func (f *notesImageIPCFixture) CloudNotesImportIOSImage(
+	_ context.Context, id string, data []byte,
+) (client.NotesImageReceipt, error) {
+	f.imageCalls = append(f.imageCalls, "import-ios:"+id)
+	sum := sha256.Sum256(data)
+	return client.NotesImageReceipt{
+		NodeID:       124,
+		Filename:     ipcNotesImageName,
+		RelativePath: "_assets/" + id + "/" + ipcNotesImageName,
+		ContentType:  "image/gif",
+		Bytes:        int64(len(data)),
+		SHA256:       hex.EncodeToString(sum[:]),
+	}, nil
+}
+
 func (f *notesImageIPCFixture) CloudNotesReadImage(
 	_ context.Context, id, relative string,
 ) ([]byte, error) {
@@ -190,5 +205,62 @@ func TestDesktopNotesImagesCapabilityIsNotImpliedByTextNotes(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(result.Capabilities, ","), "cloud-notes-images") {
 		t.Fatal("text-only Backup-only Agent falsely advertised binary image support")
+	}
+}
+
+func TestDesktopNotesIOSArchiveImageImportIsOwnerAndBackupOnlyBounded(t *testing.T) {
+	f := &notesImageIPCFixture{notesIPCControllerFixture: &notesIPCControllerFixture{}}
+	h := newDesktopIPCHandler(f, "secret", nil)
+	path := "/v1/cloud/notes/ios-import/" + ipcNotesTestID + "/images"
+	body, _ := json.Marshal(map[string]any{"image": []byte("GIF89a")})
+
+	if res := invokeNotesIPC(h, http.MethodPost, path, string(body), ""); res.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated iOS archive image import allowed: HTTP %d", res.Code)
+	}
+	res := invokeNotesIPC(h, http.MethodPost, path, string(body), "secret")
+	if res.Code != http.StatusCreated {
+		t.Fatalf("iOS archive image import failed: %d %s", res.Code, res.Body.String())
+	}
+	var receipt client.NotesImageReceipt
+	if err := json.Unmarshal(res.Body.Bytes(), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	want := "_assets/" + ipcNotesTestID + "/" + ipcNotesImageName
+	if receipt.NodeID != 124 || receipt.RelativePath != want || receipt.Bytes != 6 ||
+		len(f.imageCalls) != 1 || f.imageCalls[0] != "import-ios:"+ipcNotesTestID {
+		t.Fatalf("unexpected immutable iOS image receipt/calls: %+v %v", receipt, f.imageCalls)
+	}
+
+	for _, attempt := range []struct{ method, path, body string }{
+		{http.MethodGet, path, ""},
+		{http.MethodPost, path + "?other=value", string(body)},
+		{http.MethodPost, "/v1/cloud/notes/ios-import/" + strings.ToUpper(ipcNotesTestID) + "/images", string(body)},
+		{http.MethodPost, "/v1/cloud/notes/ios-import/not-a-note/images", string(body)},
+		{http.MethodPost, path, `{"image":"not-base64"}`},
+		{http.MethodPost, path, `{"image":"","unexpected":true}`},
+	} {
+		out := invokeNotesIPC(h, attempt.method, attempt.path, attempt.body, "secret")
+		if out.Code < 400 {
+			t.Fatalf("unsafe iOS archive image request admitted: %s %s HTTP %d",
+				attempt.method, attempt.path, out.Code)
+		}
+	}
+	if len(f.imageCalls) != 1 {
+		t.Fatalf("invalid image requests reached Owner controller: %v", f.imageCalls)
+	}
+
+	backup := newDesktopIPCHandler(f, "secret", nil, true)
+	if fullAgentOnlyRequest(http.MethodPost, path) ||
+		!fullAgentOnlyRequest(http.MethodGet, path) ||
+		!fullAgentOnlyRequest(http.MethodPut, path) {
+		t.Fatal("Backup-only iOS archive image route must admit POST only")
+	}
+	out := invokeNotesIPC(backup, http.MethodPost, path, string(body), "secret")
+	if out.Code != http.StatusCreated {
+		t.Fatalf("bounded Backup-only iOS archive image import unavailable: %d %s",
+			out.Code, out.Body.String())
+	}
+	if len(f.imageCalls) != 2 || f.imageCalls[1] != "import-ios:"+ipcNotesTestID {
+		t.Fatalf("unexpected Backup-only image import calls: %v", f.imageCalls)
 	}
 }

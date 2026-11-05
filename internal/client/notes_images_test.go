@@ -126,3 +126,49 @@ func TestNotesOwnerImageUploadAndReadAuthAndIntegrity(t *testing.T) {
 			requests.Load(), uploads.Load(), downloads.Load())
 	}
 }
+
+func TestNotesIOSImageImportUsesDedicatedReadOnlyArchiveRoute(t *testing.T) {
+	image := []byte("GIF89a\\x01\\x00\\x01\\x00\\x80\\x00\\x00\\x00\\x00\\x00\\xff\\xff\\xff\\x21\\xf9\\x04\\x01\\x00\\x00\\x00\\x00\\x2c\\x00\\x00\\x00\\x00\\x01\\x00\\x01\\x00\\x00\\x02\\x02\\x44\\x01\\x00\\x3b")
+	sum := sha256.Sum256(image)
+	sha := hex.EncodeToString(sum[:])
+	path := "_assets/" + notesTestID + "/" + testNotesImageName
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Method != http.MethodPost ||
+			r.URL.Path != "/api/v1/notes/ios/images/import/"+notesTestID ||
+			r.Header.Get("Authorization") != "Bearer owner-bearer" ||
+			r.Header.Get("Cookie") != "" {
+			t.Errorf("unexpected iOS archive image route/auth: %s %s", r.Method, r.URL)
+		}
+		if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data;") {
+			t.Errorf("iOS archive image import is not multipart")
+		}
+		file, _, err := r.FormFile("image")
+		if err != nil {
+			t.Errorf("iOS archive image part missing: %v", err)
+		} else {
+			data, readErr := io.ReadAll(io.LimitReader(file, NotesMaxImageBytes+1))
+			_ = file.Close()
+			if readErr != nil || !bytes.Equal(data, image) {
+				t.Errorf("iOS archive image bytes changed: %v", readErr)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(NotesImageReceipt{
+			NodeID: 94, Filename: testNotesImageName, RelativePath: path,
+			ContentType: "image/gif", Bytes: int64(len(image)), SHA256: sha,
+		})
+	}))
+	defer srv.Close()
+	cli := New(srv.URL, "owner-bearer")
+	receipt, err := cli.NotesImportIOSImage(context.Background(), notesTestID, image)
+	if err != nil || receipt.NodeID != 94 || receipt.RelativePath != path ||
+		receipt.SHA256 != sha {
+		t.Fatalf("iOS archive image import failed: %+v %v", receipt, err)
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("manual image import was unexpectedly retried: %d", requests.Load())
+	}
+}

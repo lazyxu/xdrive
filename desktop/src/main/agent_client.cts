@@ -37,6 +37,7 @@ export type AgentNotesPage = { items: AgentNotesRow[]; next_offset: number }
 export type AgentNotesVersion = { id: number; revision: number; sha256: string; bytes: number }
 export type AgentNotesVersions = { items: AgentNotesVersion[]; node_id: number }
 export type AgentNotesWrite = { title: string; markdown: string; expected_revision?: number }
+export type AgentNotesImportWrite = { title: string; markdown: string; external_id: string }
 
 export type AgentNotesImageReceipt = {
   node_id: number
@@ -4890,6 +4891,12 @@ export class AgentIPCClient {
     }, 30_000, undefined, false)
   }
 
+  /** One explicit manual Markdown import; no replay after an unknown commit ACK. */
+  cloudNotesImportIOS(write: AgentNotesImportWrite) {
+    return this.request<AgentNotesRow>('POST', '/v1/cloud/notes/import-ios', write,
+      30_000, undefined, false)
+  }
+
   cloudNotesUpdate(id: string, write: AgentNotesWrite) {
     return this.request<AgentNotesRow>('PUT', '/v1/cloud/notes/' + encodeURIComponent(id),
       write, 30_000, undefined, false)
@@ -4922,6 +4929,19 @@ export class AgentIPCClient {
     }
     return this.request<AgentNotesImageReceipt>('POST',
       '/v1/cloud/notes/' + encodeURIComponent(id) + '/images', {
+        image: Buffer.from(bytes).toString('base64'),
+      }, 120_000, undefined, false)
+  }
+
+  /** One selected image into the immutable iOS archive; never replay an uncertain ACK. */
+  cloudNotesImportIOSImage(id: string, bytes: ArrayBuffer) {
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) ||
+        !(bytes instanceof ArrayBuffer) || bytes.byteLength < 1 ||
+        bytes.byteLength > 20 * 1_048_576) {
+      throw new AgentIPCError('invalid_notes_image', 0, 'Invalid bounded iOS Notes image import.')
+    }
+    return this.request<AgentNotesImageReceipt>('POST',
+      '/v1/cloud/notes/ios-import/' + encodeURIComponent(id) + '/images', {
         image: Buffer.from(bytes).toString('base64'),
       }, 120_000, undefined, false)
   }

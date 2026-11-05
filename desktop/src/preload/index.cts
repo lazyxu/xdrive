@@ -1008,6 +1008,8 @@ const agent = Object.freeze({
   cloudNotesRead: (id: string) => ipcRenderer.invoke('agent:cloud-notes-read', id),
   cloudNotesCreate: (value: { title: string; markdown: string }) =>
     ipcRenderer.invoke('agent:cloud-notes-create', value),
+  cloudNotesImportIOS: (value: { title: string; markdown: string; external_id: string }) =>
+    ipcRenderer.invoke('agent:cloud-notes-import-ios', value),
   cloudNotesUpdate: (id: string, value: {
     title: string; markdown: string; expected_revision: number
   }) => ipcRenderer.invoke('agent:cloud-notes-update', id, value),
@@ -1018,6 +1020,8 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cloud-notes-version-content', nodeID, versionID),
   cloudNotesUploadImage: (noteID: string, bytes: ArrayBuffer) =>
     ipcRenderer.invoke('agent:cloud-notes-upload-image', noteID, bytes),
+  cloudNotesImportIOSImage: (noteID: string, bytes: ArrayBuffer) =>
+    ipcRenderer.invoke('agent:cloud-notes-import-ios-image', noteID, bytes),
   cloudNotesReadImage: (noteID: string, relativePath: string) =>
     ipcRenderer.invoke('agent:cloud-notes-read-image', noteID, relativePath),
   cloudOwnerShares: (cursor: number, limit: number) => ipcRenderer.invoke('agent:cloud-owner-shares', cursor, limit),

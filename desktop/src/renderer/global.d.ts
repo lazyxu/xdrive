@@ -443,6 +443,7 @@ declare global {
   type AgentNotesVersion = { id: number; revision: number; sha256: string; bytes: number }
   type AgentNotesVersions = { items: AgentNotesVersion[]; node_id: number }
   type AgentNotesWrite = { title: string; markdown: string; expected_revision?: number }
+  type AgentNotesImportWrite = { title: string; markdown: string; external_id: string }
 
   type AgentNotesImageReceipt = {
     node_id: number
@@ -1161,11 +1162,13 @@ declare global {
         cloudNotesList: (source: AgentNotesSource, query: string, offset: number) => Promise<DesktopResult<AgentNotesPage>>
         cloudNotesRead: (id: string) => Promise<DesktopResult<AgentNotesDetail>>
         cloudNotesCreate: (value: { title: string; markdown: string }) => Promise<DesktopResult<AgentNotesRow>>
+        cloudNotesImportIOS: (value: AgentNotesImportWrite) => Promise<DesktopResult<AgentNotesRow>>
         cloudNotesUpdate: (id: string, value: { title: string; markdown: string; expected_revision: number }) => Promise<DesktopResult<AgentNotesRow>>
         cloudNotesDelete: (id: string, revision: number) => Promise<DesktopResult<void>>
         cloudNotesVersions: (id: string) => Promise<DesktopResult<AgentNotesVersions>>
         cloudNotesReadVersion: (nodeID: number, versionID: number) => Promise<DesktopResult<{ markdown: string }>>
         cloudNotesUploadImage: (id: string, data: ArrayBuffer) => Promise<DesktopResult<AgentNotesImageReceipt>>
+        cloudNotesImportIOSImage: (id: string, data: ArrayBuffer) => Promise<DesktopResult<AgentNotesImageReceipt>>
         cloudNotesReadImage: (id: string, relativePath: string) => Promise<DesktopResult<AgentNotesImageData>>
         cloudOwnerShares: (cursor: number, limit: number) => Promise<DesktopResult<AgentOwnerSharePage>>
         cloudOwnShareLink: (id: number) => Promise<DesktopResult<AgentOwnerShareLink>>

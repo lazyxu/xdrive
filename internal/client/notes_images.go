@@ -119,6 +119,66 @@ func (c *Client) NotesUploadMineImage(
 	return out, nil
 }
 
+func (c *Client) NotesImportIOSImage(
+	ctx context.Context, noteID string, image []byte,
+) (NotesImageReceipt, error) {
+	var empty NotesImageReceipt
+	if !validNoteID(noteID) || len(image) == 0 || len(image) > NotesMaxImageBytes {
+		return empty, errors.New("invalid Owner Note or bounded image")
+	}
+	// One explicit user action, no automatic retry if the commit ACK is lost.
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("image", "notes-image")
+	if err != nil {
+		return empty, err
+	}
+	if _, err = part.Write(image); err != nil {
+		return empty, err
+	}
+	if err = writer.Close(); err != nil {
+		return empty, err
+	}
+	req, err := c.request(ctx, http.MethodPost,
+		"/api/v1/notes/ios/images/import/"+noteID, bytes.NewReader(body.Bytes()))
+	if err != nil {
+		return empty, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.do(req)
+	if err != nil {
+		return empty, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return empty, responseError(resp)
+	}
+	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") ||
+		resp.ContentLength > notesImageReplyMaxBytes {
+		return empty, errors.New("invalid Notes image receipt type or size")
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, notesImageReplyMaxBytes+1))
+	if err != nil {
+		return empty, err
+	}
+	if len(raw) > notesImageReplyMaxBytes {
+		return empty, errors.New("oversized Notes image receipt")
+	}
+	var out NotesImageReceipt
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return empty, errors.New("invalid Notes image receipt JSON")
+	}
+	filename, mime, ok := NotesImageFilename(noteID, out.RelativePath)
+	sum := sha256.Sum256(image)
+	if !ok || out.NodeID == 0 || out.Filename != filename ||
+		out.ContentType != mime || out.Bytes != int64(len(image)) ||
+		!strings.EqualFold(out.SHA256, hex.EncodeToString(sum[:])) {
+		return empty, errors.New("iOS Notes image import receipt did not match uploaded bytes")
+	}
+	return out, nil
+}
+
 // NotesReadImage only accepts the pinned, same-Note _assets/uuid/uuid.ext
 // relative path. Neither a user URL nor a signed Server URL is ever followed.
 func (c *Client) NotesReadImage(

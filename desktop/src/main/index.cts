@@ -207,6 +207,7 @@ import {
   type AgentNotesPage,
   type AgentNotesVersions,
   type AgentNotesWrite,
+  type AgentNotesImportWrite,
   type AgentNotesImageReceipt,
   type AgentNotesImageData,
   type AgentCloudSearchPage,
@@ -8464,6 +8465,21 @@ function registerIPCHandlers() {
     return { title: input.title, markdown: input.markdown,
       ...(revision ? { expected_revision: revision } : {}) }
   }
+
+  const notesImportWrite = (raw: unknown): AgentNotesImportWrite => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new AgentIPCError('invalid_input', 0, 'A manual iOS Notes export is required')
+    }
+    const input = raw as Record<string, unknown>
+    if (Object.keys(input).some(key => !['title', 'markdown', 'external_id'].includes(key)) ||
+        typeof input.external_id !== 'string' ||
+        (input.external_id !== '' &&
+          !/^manual:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(input.external_id))) {
+      throw new AgentIPCError('invalid_input', 0, 'Manual iOS Notes import identity is invalid')
+    }
+    const write = notesWrite({ title: input.title, markdown: input.markdown }, false)
+    return { ...write, external_id: input.external_id }
+  }
   ipcMain.handle('agent:cloud-notes-initialize', () =>
     runAgentAction<AgentNotesNamespace>(async () => (await requireNotesAgent()).cloudNotesInitialize(), false))
   ipcMain.handle('agent:cloud-notes-list',
@@ -8484,6 +8500,9 @@ function registerIPCHandlers() {
   ipcMain.handle('agent:cloud-notes-create', (_event, input: unknown) =>
     runAgentAction<AgentNotesRow>(async () =>
       (await requireNotesAgent()).cloudNotesCreate(notesWrite(input, false)), false))
+  ipcMain.handle('agent:cloud-notes-import-ios', (_event, input: unknown) =>
+    runAgentAction<AgentNotesRow>(async () =>
+      (await requireNotesAgent()).cloudNotesImportIOS(notesImportWrite(input)), false))
   ipcMain.handle('agent:cloud-notes-update', (_event, noteID: unknown, input: unknown) =>
     runAgentAction<AgentNotesRow>(async () =>
       (await requireNotesAgent()).cloudNotesUpdate(notesID(noteID), notesWrite(input, true)), false))
@@ -8527,6 +8546,17 @@ function registerIPCHandlers() {
           throw new AgentIPCError('invalid_input', 0, 'Notes image must be at most 20 MiB')
         }
         return agent.cloudNotesUploadImage(id, rawBytes)
+      }, false))
+  ipcMain.handle('agent:cloud-notes-import-ios-image',
+    (_event, noteID: unknown, rawBytes: unknown) =>
+      runAgentAction<AgentNotesImageReceipt>(async () => {
+        const agent = await requireNotesImageAgent()
+        const id = notesImageID(noteID)
+        if (!(rawBytes instanceof ArrayBuffer) || rawBytes.byteLength < 1 ||
+            rawBytes.byteLength > 20 * 1_048_576) {
+          throw new AgentIPCError('invalid_input', 0, 'iOS Notes image must be at most 20 MiB')
+        }
+        return agent.cloudNotesImportIOSImage(id, rawBytes)
       }, false))
   ipcMain.handle('agent:cloud-notes-read-image',
     (_event, noteID: unknown, relativePath: unknown) =>
