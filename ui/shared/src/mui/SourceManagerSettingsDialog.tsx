@@ -202,7 +202,9 @@ export function XDriveSourceSettingsDialog({
               <XDriveSourceStatusField
                 label="运行状态"
                 value={values.status}
-                onChange={(value) => onChange({ status: value })}
+                onChange={(value) => {
+                  if (value === 'active' || value === 'paused') onChange({ status: value })
+                }}
               />
                 </>
               )}
