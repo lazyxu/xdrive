@@ -54,7 +54,7 @@ func TestLocalSourceCreateAndFirstBindRequireCreatingDevice(t *testing.T) {
 	deviceFolder := "A_" + strings.ReplaceAll(deviceA.ID, "-", "")[:12]
 	if created.ID == 0 || created.Revision != 1 || created.Status != meta.SourceStatusPaused ||
 		created.TargetNodeID == nil || *created.TargetNodeID == target.ID ||
-		created.TargetPath != "同步文件夹/设备备份/"+deviceFolder+"/A photos" {
+		created.TargetPath != "同步文件夹/Push/"+deviceFolder+"/A photos" {
 		t.Fatalf("local Source must use server-managed device directory, not old target: %+v", created)
 	}
 	if strings.Contains(response.Body.String(), "creator_device") || strings.Contains(response.Body.String(), secretA) {
