@@ -66,7 +66,7 @@ jobs:
       - name: Verify native Notes launcher and Owner-only editor contracts
         run: |
           set -euo pipefail
-          node --test desktop/tests/ios-native-notes-route.cjs
+          node --test desktop/tests/ios-native-notes-route.cjs desktop/tests/ios-native-notes-history-images.cjs
 
       - name: Verify bounded iOS PhotoKit scan-window math
         run: |

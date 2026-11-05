@@ -756,9 +756,9 @@ private struct XDriveIOSNativeNoteHistorySheet: View {
                 }
                 if let oldMarkdown {
                     Section("旧版内容（只读）") {
-                        Text((try? AttributedString(markdown: oldMarkdown))
-                             ?? AttributedString(oldMarkdown))
-                            .textSelection(.enabled)
+                        XDriveIOSNativeNotesMarkdownPreview(
+                            login: login, noteID: noteID, markdown: oldMarkdown
+                        )
                     }
                 }
                 if let errorMessage {
