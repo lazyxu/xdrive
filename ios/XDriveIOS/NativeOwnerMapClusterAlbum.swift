@@ -101,7 +101,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     }
                     // The lazy-grid foot advances the verified Owner Range
                     // when it approaches the viewport, like native Photos.
-                    // It remains guarded by Owner, busy and error state.
+                    // It remains guarded by Owner, busy, cover and error state.
                     if let next {
                         Color.clear
                             .frame(height: 24)
