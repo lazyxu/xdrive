@@ -368,8 +368,8 @@ func TestIOSPhotoBackgroundGrantCanReportSharedSourceRunHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	deviceHeaders := map[string]string{
-		"X-XDrive-Device-ID":       device.ID,
-		"X-XDrive-Device-Token":    deviceSecret,
+		"X-XDrive-Device-ID":    device.ID,
+		"X-XDrive-Device-Token": deviceSecret,
 	}
 	destination := requestWithHeaders(t, router, http.MethodPut,
 		"/api/v1/ios/photos/backup-destination", ownerToken,
@@ -406,8 +406,8 @@ func TestIOSPhotoBackgroundGrantCanReportSharedSourceRunHistory(t *testing.T) {
 		t.Fatalf("background grant did not bind the managed Source/Target: %+v", grant)
 	}
 	backgroundHeaders := map[string]string{
-		"X-XDrive-Device-ID": device.ID,
-		"X-XDrive-Device-Token": deviceSecret,
+		"X-XDrive-Device-ID":       device.ID,
+		"X-XDrive-Device-Token":    deviceSecret,
 		"X-XDrive-IOS-Photo-Grant": grant.Secret,
 	}
 
@@ -436,7 +436,7 @@ func TestIOSPhotoBackgroundGrantCanReportSharedSourceRunHistory(t *testing.T) {
 		http.StatusNoContent, backgroundHeaders)
 
 	finishPath := sourcePath + "/" + runID + "/finish"
-	finishBody := `{"status":"completed","complete_inventory":false,"summary":`+summary+`}`
+	finishBody := `{"status":"completed","complete_inventory":false,"summary":` + summary + `}`
 	requestWithHeaders(t, router, http.MethodPost, finishPath, "",
 		strings.NewReader(finishBody), http.StatusOK, backgroundHeaders)
 
@@ -444,14 +444,14 @@ func TestIOSPhotoBackgroundGrantCanReportSharedSourceRunHistory(t *testing.T) {
 		"/api/v1/sources/"+strconv.FormatUint(target.SourceID, 10)+"/runs/"+runID,
 		ownerToken, nil, http.StatusOK, nil)
 	var run struct {
-		Status           string `json:"status"`
-		Trigger          string `json:"trigger"`
+		Status            string `json:"status"`
+		Trigger           string `json:"trigger"`
 		CompleteInventory bool   `json:"complete_inventory"`
-		ScannedItems     int64  `json:"scanned_items"`
-		NewItems         int64  `json:"new_items"`
-		UnchangedItems   int64  `json:"unchanged_items"`
-		SyncedFileItems  int64  `json:"synced_file_items"`
-		TransferredItems int64  `json:"transferred_items"`
+		ScannedItems      int64  `json:"scanned_items"`
+		NewItems          int64  `json:"new_items"`
+		UnchangedItems    int64  `json:"unchanged_items"`
+		SyncedFileItems   int64  `json:"synced_file_items"`
+		TransferredItems  int64  `json:"transferred_items"`
 	}
 	if err := json.Unmarshal(read.Body.Bytes(), &run); err != nil {
 		t.Fatal(err)
