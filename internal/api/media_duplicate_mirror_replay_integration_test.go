@@ -74,10 +74,6 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 	if err := db.First(&target, *source.TargetNodeID).Error; err != nil {
 		t.Fatal(err)
 	}
-	var owner meta.User
-	if err := db.Where("username = ?", "mirror-duplicate-user").First(&owner).Error; err != nil {
-		t.Fatal(err)
-	}
 	hash := strings.Repeat("a", 64)
 	type original struct {
 		node  meta.Node
@@ -129,6 +125,8 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 		}
 		return original{node: node, asset: asset}
 	}
+	root := requestNode(t, router, http.MethodGet,
+		"/api/v1/nodes/root", token, nil, http.StatusOK)
 	keeper := addOriginal(root.ID, "local-keeper.jpg", "keep annotation",
 		`["keeper"]`, false)
 	remote := addOriginal(target.ID, "remote-copy.jpg", "",
