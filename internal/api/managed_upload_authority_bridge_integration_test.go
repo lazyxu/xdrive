@@ -13,7 +13,7 @@ import (
 )
 
 func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
-	db, _, owner, _, root := setupFilePropertiesTestDB(t)
+	db, server, owner, _, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(&meta.SyncRun{}, &meta.UploadSession{}); err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +93,28 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, regular, session, child.ID); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("ordinary Owner gained SourceRun Finalize rights: %v", err)
 	}
+	// Chunk writes must use the exact same live SourceRun scope as Finalize,
+	// not a stale preflight grant or a generic Owner UploadSession.
+	if err := server.requireUploadChunkAuthorityTx(ctx, db, scoped, session); err != nil {
+		t.Fatalf("valid Pull worker UploadPart rejected: %v", err)
+	}
+	for _, noProof := range []*gin.Context{regular, wrongRun} {
+		if err := server.requireUploadChunkAuthorityTx(ctx, db, noProof, session); !errors.Is(err, errManagedSourceWriteDenied) {
+			t.Fatalf("unauthorized SourceRun reached chunk SQL transaction: %v", err)
+		}
+	}
+	ordinarySession := meta.UploadSession{
+		ID: "899de10a-62bf-4470-ae8f-a4c62d2a611a",
+		OwnerID: owner.ID, ParentID: &ordinary.ID, Name: req.Name,
+		Status: meta.UploadStatusActive, ConflictPolicy: meta.UploadConflictPolicyFail,
+	}
+	if err := server.requireUploadChunkAuthorityTx(ctx, db, regular, ordinarySession); err != nil {
+		t.Fatalf("ordinary Owner folder cannot upload chunks: %v", err)
+	}
+	if err := server.requireUploadChunkAuthorityTx(ctx, db, scoped, ordinarySession); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("signed SourceRun adopted an ordinary Owner UploadSession: %v", err)
+	}
+
 	// Cancellation revokes a still-signed SourceRun writer before the JWT
 	// expires, including Finalize on an already prepared UploadSession.
 	cancelled := time.Now().UTC()
@@ -102,6 +124,9 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	}
 	if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, scoped, session, child.ID); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("cancelled SourceRun still finalized a managed upload: %v", err)
+	}
+	if err := server.requireUploadChunkAuthorityTx(ctx, db, scoped, session); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("cancelled SourceRun committed an UploadPart: %v", err)
 	}
 	if err := db.Model(&meta.SyncRun{}).Where("id = ?", runID).
 		Update("status", meta.SyncRunStatusCompleted).Error; err != nil {
