@@ -788,14 +788,23 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             }
     }
 
+    // Keep the durable queue summary in its own opaque View type. The
+    // surrounding status form is intentionally large; embedding another
+    // generic SwiftUI subtree there pushes the iOS compiler over its
+    // type-checking budget.
+    @ViewBuilder
+    private var queueSummarySection: some View {
+        XDriveIOSPhotoQueueSummarySection(
+            login: login,
+            queueSummary: queueSummary,
+            enabled: controller.schedule?.enabled == true &&
+                controller.schedule?.backupStartRule == .onlyNew
+        )
+    }
+
     @ViewBuilder
     private var backupStatusSections: some View {
-            XDriveIOSPhotoQueueSummarySection(
-                login: login,
-                queueSummary: queueSummary,
-                enabled: controller.schedule?.enabled == true &&
-                    controller.schedule?.backupStartRule == .onlyNew
-            )
+            queueSummarySection
             Section("当前图库与历史原件收据") {
                 Button("只读统计当前图库和既有收据") {
                     coverage.refresh(login: login)
