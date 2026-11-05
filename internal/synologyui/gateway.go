@@ -601,7 +601,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			subtle.ConstantTimeCompare([]byte(dsmOwnerScope(
 				key, username, r.Header.Get("Cookie"), r.Host,
 				connection.Server, connection.Username)), []byte(input.OwnerScope)) != 1 {
-			http.Error(w, "Server Owner changed; reload and reselect backup target", http.StatusConflict)
+			http.Error(w, "Server Owner changed; reload and reselect the NAS share", http.StatusConflict)
 			return
 		}
 		path, err := resolveNASSharePreflight(ctx, root, key, username, r.Header.Get("Cookie"), r.Host, input.SelectionID)
@@ -610,8 +610,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Revalidate the native path and current authenticated Server before
-		// any persistent Source mutation. The Server validates target_id as a
-		// directory belonging to the current Owner, not merely a GUI label.
+		// any persistent Source mutation. The Server derives an exclusive cloud
+		// target from the authenticated device; the browser cannot choose one.
 		if err := bootstrapper.PreflightLocalRoot(ctx, path); err != nil {
 			http.Error(w, "native backup Root preflight unavailable", http.StatusServiceUnavailable)
 			return
@@ -620,10 +620,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "current Server Owner cannot be verified", http.StatusServiceUnavailable)
 			return
 		}
-		created, err := bootstrapper.CreateLocalBackupSource(ctx, input.Name, input.TargetID)
-		if err != nil {
-			// An uncertain Server reply may have created a paused draft. Do
-			// not retry or fabricate an ID; ask for explicit native inspection.
+		created, err := bootstrapper.CreateLocalBackupSource(ctx, input.Name)
+		if err != nil || !validManagedNASBackupSource(created, input.Name) {
+			// An uncertain Server reply or invalid managed-target acknowledgement
+			// may have created a paused draft. Never retry or fabricate an ID.
 			http.Error(w, "Source creation outcome unknown; inspect owning Agent drafts before retry", http.StatusConflict)
 			return
 		}
