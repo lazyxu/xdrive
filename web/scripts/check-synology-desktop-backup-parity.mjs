@@ -195,7 +195,8 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     !nas.includes('hostEpochRef.current = { client, epoch: hostEpochRef.current.epoch + 1 }') ||
     !nas.includes('hostEpochRef.current.client === client &&') ||
     !nas.includes('hostEpochRef.current.epoch === renderedHostEpoch') ||
-    !nas.includes('onRun={() => { if (isCurrentHost()) setActiveID(item.source_id) }}') ||
+    !nas.includes("onRun={item.sync_mode === 'backup'") ||
+    !nas.includes("() => { if (isCurrentHost()) setActiveID(item.source_id) } : undefined}") ||
     !nas.includes('onSchedule={() => { if (isCurrentHost()) setScheduleID(item.source_id) }}') ||
     !nas.includes('onCreated={() => { if (isCurrentHost()) refresh() }}') ||
     !/onFinished=\{\(message\) => \{\s*if \(!isCurrentHost\(\)\) return\s*setScheduleID\(null\)/.test(nas) ||
