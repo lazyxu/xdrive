@@ -3287,10 +3287,11 @@ export class XDriveApi {
     return this.request<ExternalSource[]>('/api/v1/sources')
   }
 
-  sourceOverview(signal?: AbortSignal) {
+  sourceOverview(signal?: AbortSignal, includeArchived = false) {
     // Only this read-only, Owner-scoped overview GET is disposable. Source
     // trigger/cancel/configuration mutations never share navigation signals.
-    return this.request<ExternalSourceOverview[]>('/api/v1/sources/overview', { signal })
+    const query = includeArchived ? '?include_archived=true' : ''
+    return this.request<ExternalSourceOverview[]>(`/api/v1/sources/overview${query}`, { signal })
   }
 
   createSource(input: CreateExternalSourceInput) {
@@ -3397,6 +3398,14 @@ export class XDriveApi {
     return this.request<void>(`/api/v1/sources/${sourceID}`, {
       method: 'DELETE',
       headers: { 'If-Match': `"${revision}"` },
+    })
+  }
+
+  restoreSource(sourceID: number, revision: number) {
+    return this.request<ExternalSource>(`/api/v1/sources/${sourceID}/restore`, {
+      method: 'POST',
+      headers: { 'If-Match': `"${revision}"` },
+      body: JSON.stringify({}),
     })
   }
 

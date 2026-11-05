@@ -2541,6 +2541,35 @@ func (c *agentController) CloudSources(ctx context.Context) ([]client.Source, er
 	return cli.Sources(ctx)
 }
 
+func (c *agentController) CloudSourcesIncludingArchived(ctx context.Context, includeArchived bool) ([]client.Source, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.Sources(ctx, includeArchived)
+}
+
+func (c *agentController) CloudRestoreSource(ctx context.Context, sourceID, revision uint64) (client.Source, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.Source{}, err
+	}
+	if sourceID == 0 || revision == 0 {
+		return client.Source{}, fmt.Errorf("Source ID and revision must be positive")
+	}
+	source, err := cli.Source(ctx, sourceID)
+	if err != nil {
+		return client.Source{}, err
+	}
+	// A local-folder Push requires the owning device and Root proof. This
+	// generic Source Manager port intentionally handles only server-managed
+	// connectors; native local Push archive/restore is a separate flow.
+	if source.Kind == meta.SourceKindLocalFolder {
+		return client.Source{}, errors.New("local Push archive/restore requires the owning-device backup flow")
+	}
+	return cli.RestoreSource(ctx, sourceID, revision)
+}
+
 func (c *agentController) CloudDeviceBackupOverview(ctx context.Context) (client.DeviceBackupOverview, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

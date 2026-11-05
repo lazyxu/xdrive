@@ -60,6 +60,7 @@ release-assets:
       - release/server-control.sh
       - release/caddy-env-config.py
       - release/caddy-admission.py
+      - release/xdrive-share-update.py
       - release/xdrive-server
       - release/docker-compose.yml
       - release/xdrive.env.example

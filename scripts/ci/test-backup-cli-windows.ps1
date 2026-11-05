@@ -76,7 +76,7 @@ try {
     # Invalid absolute-path and mixed runtime arguments must fail before
     # touching any real Server or registering any OS directory.
     $rejected = Start-Process -FilePath $xd -Wait -PassThru -NoNewWindow `
-        -ArgumentList @('backup', 'init', '--name', 'Smoke', '--path', 'relative', '--target-id', '1')
+        -ArgumentList @('backup', 'init', '--name', 'Smoke', '--path', 'relative')
     if ($rejected.ExitCode -ne 1) { throw "relative Root accepted: exit=$($rejected.ExitCode)" }
     $invalid = Start-Process -FilePath $agentBin -Wait -PassThru `
         -ArgumentList @('--backup-only', '--mount')

@@ -156,3 +156,16 @@ MVP uses backup semantics only. Source-side disappearance must not delete xDrive
 Push may retain private per-file journals for exact local identity and crash/ACK recovery. Source/SyncRun must still provide one Owner-visible status/history projection. Never expose raw local paths, tokens, PhotoKit IDs, MediaStore URIs or original bytes in generic Source DTOs.
 
 See [the platform implementation audit](./push-pull-platform-audit.md) for the current gaps and delivery order.
+
+## iOS Photos Push：统一 Source 状态与运行历史
+
+iOS Photos 使用统一的 `Source(kind=ios_photos, direction=push, sync_mode=backup)` 和服务端创建的受管 Target Node。它与 Desktop 本机目录 Push 一样属于 Push，但执行端是已注册 iPhone，而不是 Server Worker 或 Desktop Agent。
+
+- PhotoKit 枚举、原件导出、加密账本、上传与 Node 收据核验始终由 iPhone 执行。
+- iPhone 通过现有 `POST /sources/:id/runs`、`POST /sources/:id/runs/:runID/progress` 和 `POST /sources/:id/runs/:runID/finish` 写入统一 `xd_sync_runs`。
+- SourceRun 写入必须同时验证当前 Owner JWT、`X-XDrive-Device-ID`、设备 Token，以及该设备唯一绑定的 iOS Photos Source 和 Server 管理的 Target Node；每次写入事务内重新核验设备撤销状态与 Source/Node 关系。
+- iOS Photos Source 在 Server 侧保持 paused，避免通用 Server 调度器或通用 Push 入口误执行。只有上述 iPhone 设备证明可以开始、更新和结束该 Source 的运行记录。Source Manager 的状态由最新 SyncRun 和 Source 的最近运行/成功时间派生，不把 paused 错显示为用户关闭了手机备份。
+- 每条 SyncRun 表示一次有界的手动、自动或集中备份批次；`complete_inventory=false`，不得把一个扫描窗口声明为整库完成。
+- 只上传聚合计数：扫描、确认新增、云端原件已核验、待处理/不可用。PhotoKit localIdentifier、文件名、位置、原始媒体字节和逐项私有账本不进入 SourceItem 或 SyncRun。
+- Source Manager 展示统一目标目录、最近运行状态和分页运行历史；不提供 Server 端 Run Now、通用来源设置、虚构的相册集合或逐文件错误快照。继续备份、权限和自动计划仍在绑定的 iPhone 上管理。
+

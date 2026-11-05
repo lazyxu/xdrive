@@ -1,12 +1,12 @@
 import { formatBytes } from './format'
 
-export type SupportedExternalSourceKind = 'synology_photos' | 'synology_files' | 'yike_photos' | 'local_folder'
+export type SupportedExternalSourceKind = 'synology_photos' | 'synology_files' | 'yike_photos' | 'local_folder' | 'ios_photos'
 export type ExternalSourceDirection = 'push' | 'pull'
 export type ExternalSourceCreatePreset = 'synology_push' | 'synology_pull' | 'synology_files_pull' | 'yike_pull' | 'local_push'
 export type SynologyPhotoSpace = 'personal' | 'shared'
 export type ExternalSourceRunMode = 'scan' | 'sync'
 export type ExternalSourceSyncMode = 'backup' | 'mirror'
-export type ExternalSourceStatus = 'active' | 'paused'
+export type ExternalSourceStatus = 'active' | 'paused' | 'archived'
 export type ExternalSourceScheduleType = 'interval' | 'cron' | 'manual'
 export type ExternalSourceRunStatus = 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
 
@@ -254,7 +254,7 @@ export interface UpdateExternalSourceInput {
   name?: string
   sync_mode?: ExternalSourceSyncMode
   run_mode?: ExternalSourceRunMode
-  status?: ExternalSourceStatus
+  status?: 'active' | 'paused'
   schedule_type?: ExternalSourceScheduleType
   schedule_expression?: string
   schedule_timezone?: string
@@ -267,6 +267,7 @@ export type ExternalSourceStateTone = 'neutral' | 'good' | 'warning' | 'bad' | '
 export interface ExternalSourceState {
   key:
     | 'paused'
+    | 'archived'
     | 'running'
     | 'pending'
     | 'error'
@@ -437,7 +438,7 @@ export interface ExternalSourceConnectorProfile {
   label: string
   direction: ExternalSourceDirection
   credential: 'cookie' | 'synology_dsm' | null
-  manualTriggerExecutor: 'pull_worker' | 'source_agent' | 'local_agent'
+  manualTriggerExecutor: 'pull_worker' | 'source_agent' | 'local_agent' | 'ios_device'
   defaultName: string
   defaultIgnoreRules: string
 }
@@ -446,7 +447,7 @@ export interface ExternalSourceCardView {
   modeLabel: string
   state: ExternalSourceState
   trigger: ExternalSourceTriggerState
-  lastActivityLabel: '上次扫描' | '上次成功'
+  lastActivityLabel: '上次扫描' | '上次成功' | '最近运行' | '尚无运行'
   lastActivityAt?: string
   scannedItems?: number
   scannedBytes?: number
@@ -584,6 +585,17 @@ export function defaultExternalSourceTimezone() {
 }
 
 export function externalSourceConnectorProfile(kind: string, direction?: ExternalSourceDirection): ExternalSourceConnectorProfile {
+  if (kind === 'ios_photos') {
+    return {
+      kind,
+      label: 'iOS Photos',
+      direction: 'push',
+      credential: null,
+      manualTriggerExecutor: 'ios_device',
+      defaultName: 'iPhone 相册备份',
+      defaultIgnoreRules: '',
+    }
+  }
   if (kind === 'local_folder') {
     return {
       kind,
@@ -699,6 +711,14 @@ export function externalSourceRunStatusTone(status: ExternalSourceRunStatus): Ex
 export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceState {
   const { source, latestRun, credential } = row
   const connector = externalSourceConnectorProfile(source.kind, source.direction)
+  if (source.status === 'archived') return { key: 'archived', tone: 'neutral', label: '已归档' }
+  if (source.kind === 'ios_photos') {
+    if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: 'iPhone 正在备份' }
+    if (latestRun?.status === 'partial') return { key: 'partial', tone: 'warning', label: '部分项目待处理' }
+    if (latestRun?.status === 'failed' || source.last_error) return { key: 'error', tone: 'bad', label: '最近备份异常' }
+    if (source.last_success_at) return { key: 'ready', tone: 'good', label: '最近一次备份完成' }
+    return { key: 'idle', tone: 'neutral', label: '等待 iPhone 备份' }
+  }
   if (source.status === 'paused') return { key: 'paused', tone: 'neutral', label: '已暂停' }
   if (latestRun?.status === 'running' && latestRun.cancel_requested_at) {
     return { key: 'running', tone: 'busy', label: '正在取消…' }
@@ -719,6 +739,12 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
 }
 
 export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalSourceTriggerState {
+  if (row.source.status === 'archived') {
+    return { ready: false, label: '来源已归档，请先恢复' }
+  }
+  if (row.source.kind === 'ios_photos') {
+    return { ready: false, label: '请在已绑定的 iPhone「相册备份」中启动；Server 不执行 PhotoKit 扫描或原件读取' }
+  }
   if (row.source.kind === 'local_folder') {
     return { ready: false, label: '本机同步执行器尚未启用，请先完成本地目录授权' }
   }
@@ -738,6 +764,7 @@ export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalS
 }
 
 export function externalSourceTriggerActionLabel(row: ExternalSourceRow) {
+  if (row.source.kind === 'ios_photos') return 'iPhone 端操作'
   if (row.source.run_requested_at) return '已请求'
   if ((row.latestRun?.failed_items ?? 0) > 0) return '重试失败项'
   return '立即扫描'
@@ -767,11 +794,21 @@ export function externalSourceDefaults(kind: SupportedExternalSourceKind, direct
 export function externalSourceCardView(row: ExternalSourceRow): ExternalSourceCardView {
   const { source, latestRun } = row
   return {
-    modeLabel: externalSourceModeLabel(source),
+    modeLabel: source.kind === 'ios_photos' ? 'iPhone Push · 原件备份' : externalSourceModeLabel(source),
     state: getExternalSourceState(row),
     trigger: getExternalSourceTriggerState(row),
-    lastActivityLabel: source.run_mode === 'scan' ? '上次扫描' : '上次成功',
-    lastActivityAt: source.run_mode === 'scan' ? source.last_run_at : source.last_success_at,
+    lastActivityLabel: source.kind === 'ios_photos'
+      ? (latestRun?.status === 'running' || latestRun?.status === 'partial' ||
+        latestRun?.status === 'failed' || latestRun?.status === 'cancelled' ||
+        (!source.last_success_at && !!source.last_run_at)
+          ? '最近运行' : source.last_success_at ? '上次成功' : '尚无运行')
+      : source.run_mode === 'scan' ? '上次扫描' : '上次成功',
+    lastActivityAt: source.kind === 'ios_photos'
+      ? (latestRun?.status === 'running' || latestRun?.status === 'partial' ||
+        latestRun?.status === 'failed' || latestRun?.status === 'cancelled' ||
+        (!source.last_success_at && !!source.last_run_at)
+          ? source.last_run_at : source.last_success_at)
+      : source.run_mode === 'scan' ? source.last_run_at : source.last_success_at,
     scannedItems: latestRun?.scanned_items,
     scannedBytes: latestRun?.scanned_bytes,
     failedItems: latestRun?.failed_items,
@@ -785,12 +822,14 @@ export function externalSourceDetailView(row: ExternalSourceRow): ExternalSource
   return {
     connector,
     kindLabel: connector.label,
-    modeLabel: externalSourceModeLabel(row.source),
+    modeLabel: row.source.kind === 'ios_photos' ? 'iPhone Push · 原件备份' : externalSourceModeLabel(row.source),
     state: getExternalSourceState(row),
     targetNodeID: row.source.target_node_id,
     lastRunAt: row.source.last_run_at,
     lastSuccessAt: row.source.last_success_at,
-    scheduleLabel: externalSourceScheduleLabel(row.source),
+    scheduleLabel: row.source.kind === 'ios_photos'
+      ? '由 iPhone 自动备份计划控制（前台执行；系统后台按授权与 iOS 调度）'
+      : externalSourceScheduleLabel(row.source),
     credential: connector.credential
       ? { label: externalSourceCredentialLabel(connector), configured: row.credential?.configured === true }
       : undefined,

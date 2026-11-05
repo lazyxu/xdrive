@@ -51,7 +51,7 @@ fi
 grep -Fq 'no Desktop installer will be launched' "$dir/forbidden-cli-only-install.txt"
 go version -m "$dir/xdrive-backup/xd" | grep -Fq 'github.com/lazyxu/xdrive/cmd/xd'
 go version -m "$dir/xdrive-backup/xdrive-agent" | grep -Fq 'github.com/lazyxu/xdrive/cmd/xdrive-agent'
-if "$dir/xdrive-backup/xd" backup init --name Smoke --path relative --target-id 1 > "$dir/rejected-init.txt" 2>&1; then
+if "$dir/xdrive-backup/xd" backup init --name Smoke --path relative > "$dir/rejected-init.txt" 2>&1; then
   echo "relative local Root unexpectedly accepted by standalone CLI" >&2
   exit 1
 fi

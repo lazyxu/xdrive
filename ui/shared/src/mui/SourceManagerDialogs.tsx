@@ -91,11 +91,12 @@ export function XDriveSourceDeleteConfirmDialog({
       fullWidth
       slotProps={{ paper: xDriveDialogPaperProps }}
     >
-      <XDriveDialogTitle title="删除来源？" onClose={onClose} closeDisabled={busy} />
+      <XDriveDialogTitle title="移除来源？" onClose={onClose} closeDisabled={busy} />
       <XDriveDialogContent>
         <DialogContentText>
-          删除“{sourceName}”只会移除该来源的配置、运行记录、来源映射和已保存凭据。
-          已经同步到 xDrive 的文件会保留，不会删除。
+          移除“{sourceName}”后，已配置或有同步历史的来源会归档，保留来源身份、目标目录、文件、版本和运行历史；已经同步到 xDrive 的文件会保留，不会删除。
+          只有未绑定且没有历史的空白草稿才会删除配置记录。此操作不会删除 xDrive 云端文件、设备/NAS 原件或 Share。
+          已归档来源可通过“显示已归档”恢复；恢复后保持暂停。
         </DialogContentText>
       </XDriveDialogContent>
       <XDriveDialogActions>
@@ -104,10 +105,10 @@ export function XDriveSourceDeleteConfirmDialog({
           intent="danger"
           disabled={busy}
           loading={busy}
-          loadingLabel="正在删除…"
+          loadingLabel="正在移除…"
           onClick={onConfirm}
         >
-          删除来源
+          移除来源
         </XDriveActionButton>
       </XDriveDialogActions>
     </Dialog>

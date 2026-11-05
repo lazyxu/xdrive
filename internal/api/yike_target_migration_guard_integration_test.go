@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestYikeCredentialRebindLegacyTargetRequiresProvenDescendants(t *testing.T) {
+func TestYikeCredentialRebindPreservesLegacyTargetWithoutMigration(t *testing.T) {
 	for _, scenario := range []string{"clean", "mixed", "foreign-source", "running-run"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, _, owner, _, root := setupFilePropertiesTestDB(t)
@@ -80,7 +80,7 @@ func TestYikeCredentialRebindLegacyTargetRequiresProvenDescendants(t *testing.T)
 					t.Fatalf("proven Yike subtree was blocked: %v", err)
 				}
 			} else if !errors.Is(err, errYikeTargetContainsData) {
-				t.Fatalf("unproven legacy subtree was moved: %v", err)
+				t.Fatalf("unproven legacy subtree was accepted: %v", err)
 			}
 
 			var reloaded meta.Node
@@ -107,9 +107,17 @@ func TestYikeCredentialRebindLegacyTargetRequiresProvenDescendants(t *testing.T)
 				}
 				return
 			}
-			if reloaded.ParentID == nil || *reloaded.ParentID == connector.ID ||
-				reloaded.Name != target.Name || reloaded.Revision != target.Revision+1 {
-				t.Fatalf("verified Yike target did not move in place: %+v", reloaded)
+			if reloaded.ParentID == nil || *reloaded.ParentID != connector.ID ||
+				reloaded.Name != target.Name || reloaded.Revision != target.Revision {
+				t.Fatalf("credential refresh migrated the existing Yike target: %+v", reloaded)
+			}
+			var stored meta.Source
+			if err := db.First(&stored, source.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if stored.TargetNodeID == nil || *stored.TargetNodeID != target.ID ||
+				stored.Status != meta.SourceStatusActive || stored.Revision != source.Revision {
+				t.Fatalf("credential refresh did not preserve target identity and reactivate Source: %+v", stored)
 			}
 			var savedPhoto meta.Node
 			if err := db.First(&savedPhoto, photo.ID).Error; err != nil {
