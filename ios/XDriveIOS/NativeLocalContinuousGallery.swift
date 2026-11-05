@@ -460,8 +460,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 systemImage: "line.3.horizontal.decrease.circle"
                             )
                         }
-                        .accessibilityLabel("媒体筛选")
-                        .accessibilityValue(mediaFilter.title)
+                        .accessibilityLabel("媒体筛选：\(mediaFilter.title)")
                         .padding(.horizontal, 12)
                         .accessibilityIdentifier("native-ios-local-gallery-media-filter")
                         if selectionMode {

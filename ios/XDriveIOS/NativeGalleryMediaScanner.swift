@@ -54,12 +54,11 @@ actor XDriveIOSNativeGalleryMediaScanner {
         ]
         mediaFilter.applyPredicates(to: options)
         let result: PHFetchResult<PHAsset>
-        switch mediaFilter.fetchKind {
-        case "image":
+        if mediaFilter.fetchKind == "image" {
             result = PHAsset.fetchAssets(with: .image, options: options)
-        case "video":
+        } else if mediaFilter.fetchKind == "video" {
             result = PHAsset.fetchAssets(with: .video, options: options)
-        default:
+        } else {
             result = PHAsset.fetchAssets(with: options)
         }
         guard observer.current() == revision,

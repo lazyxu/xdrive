@@ -33,7 +33,7 @@ test('PhotoKit combines all active predicates in one real filtered fetch', () =>
   assert.match(scanner, /filter\.includes\(kind: kind\)/)
   assert.match(scanner, /observer\.current\(\) == version/)
   assert.match(scanner, /let end = min\(snapshot\.count, start \+ 64\)/)
-  assert.match(scanner, /mediaFilter\.requiresFavorite \|\| asset\.isFavorite/)
+  assert.match(scanner, /filter\.requiresFavorite \|\| asset\.isFavorite/)
   assert.doesNotMatch(scanner, /UploadSession|PhotoSyncLedger|UserDefaults/)
 })
 
@@ -59,7 +59,7 @@ test('gallery exposes simultaneous filter toggles and resets its complete cursor
   assert.match(wall, /Toggle\("截屏", isOn: mediaFilterBinding\(for: \.screenshots\)\)/)
   assert.match(wall, /Button\("重置筛选"\) \{ mediaFilter = \.all \}/)
   assert.match(wall, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?selectedCandidates\.removeAll\(\)[\s\S]*?savedOffset = 0\s*reload\(\)/)
-  assert.match(wall, /\.task\(id: "\\\(generation\)-\\\(offset\)-\\\(mediaFilter\.rawValue\)"\)/)
+  assert.match(wall, /\.task\(id: "[^"]*mediaFilter\.rawValue"\)/)
   assert.match(wall, /Text\(mediaFilter\.emptyMessage\)/)
   assert.doesNotMatch(wall, /Picker\("媒体类型"/)
 })

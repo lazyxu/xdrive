@@ -76,12 +76,11 @@ private actor XDriveIOSNativePhotoTimelineReader {
         ]
         mediaFilter.applyPredicates(to: options)
         let snapshot: PHFetchResult<PHAsset>
-        switch mediaFilter.fetchKind {
-        case "image":
+        if mediaFilter.fetchKind == "image" {
             snapshot = PHAsset.fetchAssets(with: .image, options: options)
-        case "video":
+        } else if mediaFilter.fetchKind == "video" {
             snapshot = PHAsset.fetchAssets(with: .video, options: options)
-        default:
+        } else {
             snapshot = PHAsset.fetchAssets(with: options)
         }
         try verify(status: status, observer: observer, revision: revision)
