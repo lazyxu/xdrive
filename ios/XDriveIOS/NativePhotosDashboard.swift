@@ -490,7 +490,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     private var gallerySourceRow: some View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(XDriveIOSNativeGallerySource.allCases) { source in
+                    ForEach(XDriveIOSNativeGallerySource.allCases.filter { $0 != .map }) { source in
                         Button {
                             if source == .map { localMapJump = nil }
                             gallerySource = source
@@ -620,7 +620,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                                 $0, from: .map, expectedOwnerKey: focusOwnerKey,
                                 expectedGeneration: focusGeneration
                             )
-                        }
+                        },
+                        onClose: { openGallery(.local) }
                     )
                 }
             }
@@ -839,7 +840,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private func openGallery(_ source: XDriveIOSNativeGallerySource) {
-        if source == .map { localMapJump = nil }
+        galleryFocusGeneration = UUID()
+        galleryFocused = false
+        if source == .map || source == .local { localMapJump = nil }
         gallerySource = source
         tab = .gallery
         // Gallery/map/Viewer are never dynamic feature-slot destinations.
