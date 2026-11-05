@@ -179,6 +179,23 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         return requeued
     }
 
+
+    /// Whether every persisted PhotoKit change event has been replayed. The
+    /// automatic runner must defer its date-filtered scan while this is false:
+    /// an older-dated imported photo may still be waiting behind the event cap.
+    func isCaughtUp(owner: XDriveNativeOwnerRoot) throws -> Bool {
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline() else { return false }
+        guard baseline.authorization == epoch.authorization else {
+            throw Failure.unauthorizedOrChanged
+        }
+        try verifyAuthorization(stillMatches: epoch)
+        return XDriveIOSPhotoKitLibraryEpoch.matches(
+            baseline.token, as: epoch.token
+        )
+    }
+
     /// Read-only local change queue counts for the exact current Owner.
     /// These are *discovery* states; even confirmed queue entries do not
     /// establish complete present-day cloud coverage.
