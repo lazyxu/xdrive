@@ -292,7 +292,11 @@ private struct XDriveIOSNativePhotoSearchTile: View {
                     } else {
                         Rectangle().fill(Color(uiColor: .secondarySystemGroupedBackground))
                             .overlay {
-                                Image(systemName: "photo").foregroundStyle(.secondary)
+                                if loader.isLoading {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "photo").foregroundStyle(.secondary)
+                                }
                             }
                     }
                 }
@@ -311,7 +315,8 @@ private struct XDriveIOSNativePhotoSearchTile: View {
         .task(id: "\(candidate.id)-\(framing.rawValue)") {
             loader.load(
                 candidate.id, size: CGSize(width: 420, height: 420),
-                contentMode: framing == .complete ? .aspectFit : .aspectFill
+                contentMode: framing == .complete ? .aspectFit : .aspectFill,
+                allowICloudThumbnail: true
             )
         }
         .onDisappear { loader.cancel() }

@@ -269,8 +269,8 @@ actor XDriveIOSNativeAlbumPageReader {
     }
 }
 
-/// Visible album-cover cells request one locally available PhotoKit image.
-/// Image requests are canceled when a cover leaves the viewport.
+/// Visible album-cover cells request one bounded PhotoKit thumbnail.
+/// iCloud thumbnail fetches are canceled when a cover leaves the viewport.
 private struct XDriveIOSNativeAlbumCover: View {
     let album: XDriveLocalPhotoAlbumSummary
     @StateObject private var loader = XDriveIOSPhotoImageLoader()
@@ -282,7 +282,13 @@ private struct XDriveIOSNativeAlbumCover: View {
                     Image(uiImage: image).resizable().scaledToFill()
                 } else {
                     Rectangle().fill(Color(uiColor: .secondarySystemGroupedBackground))
-                        .overlay { Image(systemName: "rectangle.stack").foregroundStyle(.secondary) }
+                        .overlay {
+                            if loader.isLoading {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "rectangle.stack").foregroundStyle(.secondary)
+                            }
+                        }
                 }
             }
             .aspectRatio(1, contentMode: .fit)
@@ -303,7 +309,10 @@ private struct XDriveIOSNativeAlbumCover: View {
             let options = PHFetchOptions()
             options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
             if let asset = PHAsset.fetchAssets(in: collection, options: options).firstObject {
-                loader.load(asset.localIdentifier, size: CGSize(width: 220, height: 220))
+                loader.load(
+                    asset.localIdentifier, size: CGSize(width: 220, height: 220),
+                    allowICloudThumbnail: true
+                )
             }
         }
         .onDisappear { loader.cancel() }

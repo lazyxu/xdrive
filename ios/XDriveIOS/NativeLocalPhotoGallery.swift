@@ -7,16 +7,20 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
-/// One locally authorized image resource. Neither source IDs nor pixels are
-/// persisted or uploaded by the read-only Photos viewer.
+/// One authorized PhotoKit thumbnail request. Network access is opt-in for
+/// visible tiles; Viewer/original downloads remain a separate explicit action.
 @MainActor
 final class XDriveIOSPhotoImageLoader: ObservableObject {
     @Published private(set) var image: UIImage?
+    @Published private(set) var isLoading = false
     private var request: PHImageRequestID = PHInvalidImageRequestID
     private var epoch = UUID()
 
+    /// Network access is opt-in and used only by visible thumbnail tiles.
+    /// The request remains a resized PhotoKit image, never a Viewer/original request.
     func load(_ id: String, size: CGSize,
-              contentMode: PHImageContentMode = .aspectFill) {
+              contentMode: PHImageContentMode = .aspectFill,
+              allowICloudThumbnail: Bool = false) {
         cancel()
         let token = epoch
         guard [.authorized, .limited].contains(
@@ -25,19 +29,29 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
             withLocalIdentifiers: [id], options: nil
         ).firstObject else { return }
         let settings = PHImageRequestOptions()
-        settings.isNetworkAccessAllowed = false
+        settings.isNetworkAccessAllowed = allowICloudThumbnail
         settings.deliveryMode = .opportunistic
         settings.resizeMode = .fast
+        isLoading = true
         request = PHImageManager.default().requestImage(
             for: asset, targetSize: size, contentMode: contentMode,
             options: settings
-        ) { [weak self] result, _ in
+        ) { [weak self] result, info in
+            let degraded = info?[PHImageResultIsDegradedKey] as? Bool == true
+            let cancelled = info?[PHImageCancelledKey] as? Bool == true
+            let failed = info?[PHImageErrorKey] != nil
             Task { @MainActor [weak self] in
                 guard let self, self.epoch == token,
                       [.authorized, .limited].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { return }
                 if let result { self.image = result }
+                // Keep the placeholder active while PhotoKit is still fetching
+                // an iCloud-only rendition; a degraded local image can display
+                // immediately and does not need to hold the loading indicator.
+                if result != nil || !degraded || cancelled || failed {
+                    self.isLoading = false
+                }
             }
         }
     }
@@ -49,6 +63,7 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
             request = PHInvalidImageRequestID
         }
         image = nil
+        isLoading = false
     }
 }
 

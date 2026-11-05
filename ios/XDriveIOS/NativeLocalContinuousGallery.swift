@@ -55,7 +55,11 @@ struct XDriveIOSNativeSquarePhotoTile: View {
                         Rectangle()
                             .fill(Color(uiColor: .secondarySystemGroupedBackground))
                             .overlay {
-                                Image(systemName: "photo").foregroundStyle(.secondary)
+                                if loader.isLoading {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "photo").foregroundStyle(.secondary)
+                                }
                             }
                     }
                 }
@@ -94,7 +98,8 @@ struct XDriveIOSNativeSquarePhotoTile: View {
             // Presentation change reissues only this visible thumbnail.
             loader.load(
                 candidate.id, size: CGSize(width: 420, height: 420),
-                contentMode: framing == .complete ? .aspectFit : .aspectFill
+                contentMode: framing == .complete ? .aspectFit : .aspectFill,
+                allowICloudThumbnail: true
             )
             // A video duration is PhotoKit metadata, not a media download.
             // Independently verify identity before displaying the badge.

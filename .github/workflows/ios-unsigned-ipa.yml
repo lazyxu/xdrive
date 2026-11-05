@@ -261,6 +261,9 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
           "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
 
+      - name: Verify visible PhotoKit iCloud thumbnail requests stay bounded and cancelable
+        run: node --test desktop/tests/ios-native-photo-icloud-thumbnails.cjs
+
       - name: Verify native HTTPS LAN pre-login selection without credential retries
         run: |
           set -euo pipefail
