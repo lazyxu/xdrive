@@ -1069,7 +1069,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         )
         VStack(spacing: compactMap ? 4 : 8) {
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
-                Text("显示已授权图库中具有位置数据的照片和视频。")
+                Text(album == nil ?
+                    "显示已授权图库中具有位置数据的照片和视频。" :
+                    "仅显示此相册中带有拍摄位置的照片和视频。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if authorization == .notDetermined {
@@ -1586,7 +1588,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         globalCells = []
                         globalComplete = false
                     }
-                    self.error = "授权图库在扫描过程中发生变化，请重新扫描。"
+                    self.error = album == nil ?
+                        "授权图库在扫描过程中发生变化，请重新扫描。" :
+                        "相册在扫描过程中发生变化，请重新打开地图。"
                 }
             }
             if generation == ticket { busy = false }
