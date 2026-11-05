@@ -109,7 +109,7 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 		return true
 	}
 	boundDeviceID, bound := meta.SourceDeviceID(source)
-	if !bound || boundDeviceID != strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")) {
+	if !bound || boundDeviceID != deviceID.String() {
 		fail(c, http.StatusForbidden, "local source is bound to a different device")
 		return false
 	}
