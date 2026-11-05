@@ -105,6 +105,53 @@ func TestHeadlessBootstrapUsesOriginalOwningAgentEndpoints(t *testing.T) {
 	}
 }
 
+func TestHeadlessBootstrapRequiresServerManagedTarget(t *testing.T) {
+	cases := []struct {
+		name         string
+		managed      bool
+		targetID     *uint64
+		targetPath   string
+	}{
+		{name: "unmanaged target", managed: false, targetID: func() *uint64 { v := uint64(84); return &v }(), targetPath: "同步文件夹/设备备份/Device/Photos"},
+		{name: "missing target node", managed: true, targetID: nil, targetPath: "同步文件夹/设备备份/Device/Photos"},
+		{name: "missing target path", managed: true, targetID: func() *uint64 { v := uint64(84); return &v }(), targetPath: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, _ := testEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/hello" {
+					testHello(w)
+					return
+				}
+				if r.URL.Path != "/v1/sources" || r.Method != http.MethodPost {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				var request map[string]any
+				if json.NewDecoder(r.Body).Decode(&request) != nil ||
+					request["target_node_id"] != float64(0) {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				w.WriteHeader(http.StatusCreated)
+				_ = json.NewEncoder(w).Encode(LocalBackupSource{
+					ID: 42, Name: "Photos", Revision: 1, Status: "paused",
+					Kind: "local_folder", Direction: "push", SyncMode: "backup",
+					TargetNodeID: tc.targetID, TargetManaged: tc.managed,
+					TargetPath: tc.targetPath,
+				})
+			}))
+			agent, err := Connect(context.Background(), dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := agent.CreateLocalBackupSource(context.Background(), "Photos"); err == nil {
+				t.Fatal("unverified cloud destination was accepted")
+			}
+		})
+	}
+}
+
 func TestHeadlessBootstrapRejectsUnsafeOrForeignRootWithoutRequests(t *testing.T) {
 	requests := 0
 	dir, _ := testEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
