@@ -94,8 +94,20 @@ import Foundation
             try expect(try store.status(for: "old")?.state == .failed)
             try expect(try store.counts() == .init(pending: 1, failed: 1, confirmed: 0, missingLocal: 1))
             try expect(try !store.settle(newer, result: .failed))
-            try expect(try store.retryFailed(newer))
-            try expect(try !store.retryFailed(newer))
+            let failedRows = try store.failed()
+            precondition(failedRows.count == 1 && failedRows[0] == newer)
+            do {
+                _ = try store.retryFailed(
+                    newer, expectedBaselineToken: Data([99]), authorization: 3
+                )
+                fatalError("expected stale retry baseline guard")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.baselineChanged {}
+            try expect(try store.retryFailed(
+                newer, expectedBaselineToken: Data([5]), authorization: 3
+            ))
+            try expect(try !store.retryFailed(
+                newer, expectedBaselineToken: Data([5]), authorization: 3
+            ))
             try expect(try store.counts() == .init(pending: 2, failed: 0, confirmed: 0, missingLocal: 1))
             let again = try store.pending()
             precondition(again.contains(where: { $0.localIdentifier == "old" && $0.revision == newer.revision }))
