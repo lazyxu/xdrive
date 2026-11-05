@@ -510,12 +510,12 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         ? "自动增量备份正在检查第 \(window + 1) 段…"
                         : "手动备份正在检查第 \(window + 1) 段…"
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
-                        owner: selected, managedForeground: managed
+                        owner: selected, managedForeground: managed,
+                        onSourceProgress: { value in
+                            await reporter.update(value)
+                        }
                     ).run(allowICloudOriginals: cloud, startOffset: offset,
                           newOnlySince: newOnlySince,
-                          onSourceProgress: { value in
-                              await reporter.update(value)
-                          },
                           onPotentialWrite: { beganOriginalWrite = true }) { [weak self] value in
                         guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
                               self?.displayEpoch == uiEpoch,
@@ -739,11 +739,11 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             let unavailableBefore = hadUnavailable
             let currentWindow = window
             let result = try await XDriveIOSForegroundPhotoBackupMVP(
-                owner: owner, managedForeground: managed
-            ).run(allowICloudOriginals: allowICloud, startOffset: offset,
-                  onSourceProgress: { value in
-                      await sourceRunReporter.update(value, base: sourceRunBase)
-                  }) { [weak self] value in
+                owner: owner, managedForeground: managed,
+                onSourceProgress: { value in
+                    await sourceRunReporter.update(value, base: sourceRunBase)
+                }
+            ).run(allowICloudOriginals: allowICloud, startOffset: offset) { [weak self] value in
                 guard let self,
                       self.displayEpoch == uiEpoch,
                       XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, owner),
