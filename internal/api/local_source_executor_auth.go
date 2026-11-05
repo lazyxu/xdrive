@@ -54,11 +54,12 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 		return false
 	}
 	if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
-		// Legacy Sources without a registered Device remain on their original
-		// compatibility path. New managed DSM Sources require the persisted
-		// aggregate Personal/Shared Root proof on every execution request.
+		// Every DSM Push Source must be registered to a Synology Device and
+		// bound to the aggregate Personal/Shared Root fingerprint. There is no
+		// owner-JWT or legacy unbound execution fallback.
 		if source.DeviceID == nil || *source.DeviceID == "" {
-			return true
+			fail(c, http.StatusForbidden, "Synology Push Source must be bound to a registered device")
+			return false
 		}
 		sourceID, proof, proofOK := currentSynologySourceProof(c)
 		if !proofOK || sourceID != source.ID || proof.DeviceID != *source.DeviceID ||
