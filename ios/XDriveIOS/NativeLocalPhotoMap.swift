@@ -697,7 +697,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     if !isBusy { advanceIfVisible() }
                 }
             }
-            .navigationTitle("此处照片")
+            .navigationTitle(album.map { "\($0.name) · 此处照片" } ?? "此处照片")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -1012,6 +1012,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     var onFocusChange: ((Bool) -> Void)?
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.xdriveNativeLocalMapJump) private var incomingMapJump
     @StateObject private var changes = XDriveIOSMapPhotoChanges()
     @State private var scanner: XDrivePhotoKitBoundedSnapshotScanner?
@@ -1272,6 +1273,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         .padding(.horizontal, 8)
         .navigationTitle(album.map { "\($0.name) · 地图" } ?? "地图")
         .toolbar {
+            if album != nil {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("完成") { dismiss() }
+                        .accessibilityIdentifier("native-ios-album-map-dismiss")
+                }
+            }
             if mapScope == .library && globalComplete {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
