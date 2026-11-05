@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Box, Button, Checkbox, FormControlLabel, LinearProgress, MenuItem, Select, Stack, TextField, Typography } from '@mui/material'
-import type { XDriveOfflineImportPort, XDriveOfflineImportStatus, XDriveOfflineImportSummary, XDriveOfflineTrustMode } from '../offline-update'
+import type { XDriveOfflineHostPlanStatus, XDriveOfflineImportPort, XDriveOfflineImportStatus, XDriveOfflineImportSummary, XDriveOfflineTrustMode } from '../offline-update'
 import { XDRIVE_OFFLINE_CHUNK_BYTES, xDriveValidOfflineDigest, xDriveValidOfflineFilename, xDriveValidOfflineImportID } from '../offline-update'
 import { formatBytes } from '../format'
 import { XDriveConfirmDialog } from './ConfirmDialog'
@@ -10,6 +10,53 @@ async function hashChunk(chunk: Blob): Promise<string> {
   // WebCrypto sees only one bounded 8 MiB chunk, never the entire huge file.
   const value = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', await chunk.arrayBuffer()))
   return Array.from(value, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+function offlineHostPlanStateLabel(state: XDriveOfflineHostPlanStatus['state']) {
+  switch (state) {
+    case 'queued': return '等待宿主机预检'
+    case 'running': return '正在只读预检'
+    case 'success': return '预检完成'
+    case 'failed': return '预检失败'
+    case 'unavailable': return '宿主机预检不可用'
+    default: return '尚未预检'
+  }
+}
+
+function offlineHostPlanBlockerLabel(value: string) {
+  const labels: Record<string, string> = {
+    insufficient_private_temporary_space: '临时目录可用空间不足',
+    temporary_space_unavailable: '无法读取临时目录可用空间',
+    docker_unavailable: 'Docker 不可用或无法读取 Docker Root',
+    pinned_postgres_image_unavailable_or_mismatched: 'PostgreSQL 固定镜像缺失或镜像 ID 不匹配',
+    enabled_optional_image_unavailable_media-worker: '已启用的 Media Worker 镜像不可用',
+    enabled_optional_image_unavailable_photo-intelligence: '已启用的 AI 镜像不可用',
+    host_environment_unavailable: '无法读取 Host 环境配置',
+    host_profiles_invalid: 'Host 服务 Profile 配置无效',
+  }
+  return labels[value] || value
+}
+
+function offlineHostCheckLabel(value: string) {
+  const labels: Record<string, string> = {
+    real_running_server_buildinfo: '仍需核对实际运行中的 Server BuildInfo',
+    publisher_trust_and_candidate_bytes_at_install_time: '正式安装时重新验证发布者身份及候选文件',
+    full_docker_image_layer_and_backup_capacity: '仍需核对 Docker 镜像层及备份所需完整磁盘容量',
+    backup_maintenance_health_and_rollback: '正式安装时执行备份、维护、健康检查及回滚验证',
+    pinned_cached_postgres_image: '仍需确认固定 PostgreSQL 镜像',
+  }
+  return labels[value] || value
+}
+
+function offlineHostImageStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    verified_cached_identity: '镜像 ID 匹配',
+    identity_mismatch: '镜像 ID 不匹配',
+    unavailable: '镜像不可用',
+    missing_configured_reference: '未配置镜像引用',
+    present_identity_not_established: '镜像存在，但兼容性尚未确认',
+  }
+  return labels[value] || value
 }
 
 /** The same presentation accepts a Web API or Desktop Agent port. Upload
@@ -22,6 +69,8 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
   const [items, setItems] = useState<XDriveOfflineImportSummary[]>([])
   const [id, setID] = useState('')
   const [status, setStatus] = useState<XDriveOfflineImportStatus | null>(null)
+  const [planState, setPlanState] = useState<XDriveOfflineHostPlanStatus | null>(null)
+  const [planning, setPlanning] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -55,10 +104,39 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
     return () => { mounted = false }
   }, [id, port])
 
+  useEffect(() => {
+    let mounted = true
+    if (!xDriveValidOfflineImportID(id)) { setPlanState(null); return }
+    setPlanState(null)
+    void port.getPlan(id).then((value) => {
+      if (mounted) setPlanState(value)
+    }).catch((e: unknown) => { if (mounted) setError(e instanceof Error ? e.message : '无法读取宿主机预检状态。') })
+    return () => { mounted = false }
+  }, [id, port])
+
+  const planInFlight = planState?.state === 'queued' || planState?.state === 'running'
+  useEffect(() => {
+    if (!id || !planInFlight) return
+    let active = true
+    const poll = async () => {
+      try {
+        const value = await port.getPlan(id)
+        if (active) setPlanState(value)
+      } catch (e) {
+        if (active) setError(e instanceof Error ? e.message : '宿主机预检状态刷新失败。')
+      }
+    }
+    const timer = globalThis.setInterval(() => { void poll() }, 1_500)
+    return () => { active = false; globalThis.clearInterval(timer) }
+  }, [id, planInFlight, port])
+
   const refresh = async () => {
     if (!id) return
-    try { setStatus(await port.get(id)); setError('') }
-    catch (e) { setError(e instanceof Error ? e.message : '导入状态获取失败。') }
+    try {
+      setStatus(await port.get(id))
+      setPlanState(null)
+      setError('')
+    } catch (e) { setError(e instanceof Error ? e.message : '导入状态获取失败。') }
   }
   const create = async () => {
     if (disabled || busy) return
@@ -70,6 +148,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
       }
       setID(result.id)
       setStatus({ id: result.id, files: [], chunk_bytes: result.chunk_bytes, ready_to_verify: false })
+      setPlanState(null)
       setItems((previous) => [{ id: result.id, modified_at: new Date().toISOString() }, ...previous])
       setMessage('已创建专用目录；可以上传文件，也可通过 SSH/SFTP 将离线包放入对应目录。')
     } catch (e) { setError(e instanceof Error ? e.message : '创建导入目录失败。') }
@@ -110,7 +189,8 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
         await refresh()
       }
       setFiles([])
-      setMessage('传输已完成，但不代表身份可信。可使用 Host 自动 Sigstore 验签，或明确切换为独立双 SHA 校验。')
+      setPlanState(null)
+      setMessage('传输已完成，但不代表身份可信。请先运行 Host 只读预检，再提交更新。')
     } catch (e) { setError(e instanceof Error ? e.message : '上传失败，已完成的分块可重试。') }
     finally { abortRef.current = null; setBusy(false); setUploading(false); setFileName('') }
   }
@@ -130,8 +210,30 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
   const signedFilesReady = ['manifest.json', 'delivery.json', 'delivery-attestation.jsonl', 'xdrive-offline-linux-amd64']
     .every((name) => status?.files.some((file) => file.name === name && file.state === 'ready') === true)
   const manualSHAReady = xDriveValidOfflineDigest(manifestSHA) && xDriveValidOfflineDigest(goSHA)
-  const canStart = !disabled && !busy && status?.id === id && status?.ready_to_verify &&
-    (trustMode === 'sigstore' ? signedFilesReady : manualSHAReady)
+  const trustInputsReady = trustMode === 'sigstore' ? signedFilesReady : manualSHAReady
+  const visiblePlanState = planState?.offline_id === id &&
+    (!planState.offline_trust_mode || planState.offline_trust_mode === trustMode)
+    ? planState : null
+  const hostProbe = visiblePlanState?.plan?.host_probe
+  const hostBlockers = hostProbe?.blockers || []
+  const canPlan = !disabled && !busy && !planning && !planInFlight &&
+    status?.id === id && status?.ready_to_verify && trustInputsReady
+  const canStart = !disabled && !busy && !planning && !planInFlight &&
+    status?.id === id && status?.ready_to_verify && trustInputsReady &&
+    visiblePlanState?.state === 'success' && hostProbe?.read_only === true && hostBlockers.length === 0
+
+  const runPlan = async () => {
+    if (!canPlan) return
+    setPlanning(true); setError(''); setMessage('')
+    try {
+      const value = await port.startPlan(id, trustMode === 'sigstore' ? '' : manifestSHA,
+        trustMode === 'sigstore' ? '' : goSHA, trustMode)
+      setPlanState(value)
+      setMessage('只读预检请求已提交。该操作不会启动维护、备份、安装或改变 Docker 状态。')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '提交宿主机只读预检失败。')
+    } finally { setPlanning(false) }
+  }
   const activate = async () => {
     setConfirmOpen(false)
     if (!canStart) return
@@ -187,7 +289,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
         </Stack> : null}
         <Typography variant="body2" fontWeight={600}>发布者身份验证方式</Typography>
         <Select size="small" value={trustMode} disabled={disabled || busy}
-          onChange={(event) => setTrustMode(event.target.value as XDriveOfflineTrustMode)}
+          onChange={(event) => { setTrustMode(event.target.value as XDriveOfflineTrustMode); setPlanState(null) }}
           aria-label="离线发布信任方式">
           <MenuItem value="sigstore">Host 自动验证 Sigstore 签名（优先）</MenuItem>
           <MenuItem value="sha256">手动输入独立双 SHA-256（兼容）</MenuItem>
@@ -202,24 +304,90 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
           <>
             <Alert severity="warning">手工模式必须使用两项独立可信来源的发布摘要，禁止将网页上传回执作为信任依据。</Alert>
             <TextField label="可信 Manifest SHA-256" size="small" value={manifestSHA}
-              onChange={(e) => setManifestSHA(e.target.value.trim().toLowerCase())}
+              onChange={(e) => { setManifestSHA(e.target.value.trim().toLowerCase()); setPlanState(null) }}
               error={Boolean(manifestSHA) && !xDriveValidOfflineDigest(manifestSHA)}
               inputProps={{ maxLength: 64, autoComplete: 'off' }} />
             <TextField label="可信 Go ELF SHA-256" size="small" value={goSHA}
-              onChange={(e) => setGoSHA(e.target.value.trim().toLowerCase())}
+              onChange={(e) => { setGoSHA(e.target.value.trim().toLowerCase()); setPlanState(null) }}
               error={Boolean(goSHA) && !xDriveValidOfflineDigest(goSHA)}
               inputProps={{ maxLength: 64, autoComplete: 'off' }} />
           </>
         )}
+        <Button variant="outlined" disabled={!canPlan} onClick={() => { void runPlan() }}>
+          {planning || planInFlight ? '正在预检…' : visiblePlanState?.state === 'success' ? '重新预检' : '只读预检'}
+        </Button>
+        {visiblePlanState ? (
+          <Stack spacing={1} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+            <Typography variant="body2" fontWeight={700}>宿主机预检：{offlineHostPlanStateLabel(visiblePlanState.state)}</Typography>
+            {visiblePlanState.message ? <Typography variant="body2" color="text.secondary">{visiblePlanState.message}</Typography> : null}
+            {visiblePlanState.error ? <Alert severity="error">{visiblePlanState.error}</Alert> : null}
+            {visiblePlanState.plan && hostProbe ? (
+              <>
+                <Alert severity={hostBlockers.length ? 'warning' : 'success'}>
+                  {hostBlockers.length
+                    ? '发现 ' + hostBlockers.length + ' 项阻塞条件，修复后重新预检才能提交安装。'
+                    : '未发现当前预检范围内的阻塞条件。正式安装仍会重新验证所有信任、镜像、备份及回滚条件。'}
+                </Alert>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  <Typography variant="caption">Docker：{hostProbe.docker_status}</Typography>
+                  <Typography variant="caption">临时空间：{hostProbe.temporary_space_status}</Typography>
+                  <Typography variant="caption">最低临时空间：{formatBytes(visiblePlanState.plan.minimum_temporary_bytes)}</Typography>
+                </Stack>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  <Typography variant="caption">临时目录可用：{hostProbe.temporary_free_bytes == null ? '未知' : formatBytes(hostProbe.temporary_free_bytes)}</Typography>
+                  <Typography variant="caption">Docker Root 可用：{hostProbe.docker_storage_free_bytes == null ? '未知' : formatBytes(hostProbe.docker_storage_free_bytes)}</Typography>
+                  <Typography variant="caption">完整磁盘需求：{visiblePlanState.plan.estimated_full_disk_bytes == null ? '无法可靠估算' : formatBytes(visiblePlanState.plan.estimated_full_disk_bytes)}</Typography>
+                </Stack>
+                {hostProbe.running_server_image_id ? (
+                  <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>
+                    当前 Server 镜像：{hostProbe.running_server_image_ref || '未知'} · {hostProbe.running_server_image_id}
+                  </Typography>
+                ) : null}
+                {hostBlockers.length ? (
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" fontWeight={700}>阻塞条件</Typography>
+                    {hostBlockers.map((item) => <Typography variant="caption" color="error" key={item}>• {offlineHostPlanBlockerLabel(item)}</Typography>)}
+                  </Stack>
+                ) : null}
+                {hostProbe.images.length ? (
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" fontWeight={700}>镜像观察</Typography>
+                    {hostProbe.images.map((item) => (
+                      <Typography variant="caption" key={item.name} sx={{ overflowWrap: 'anywhere' }}>
+                        {item.name}：{offlineHostImageStatusLabel(item.status)}{item.reference ? ' · ' + item.reference : ''}{item.observed_id ? ' · ' + item.observed_id : ''}
+                      </Typography>
+                    ))}
+                  </Stack>
+                ) : null}
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" fontWeight={700}>组件计划</Typography>
+                  {visiblePlanState.plan.components.map((item) => (
+                    <Typography variant="caption" key={item.name}>
+                      {item.name}：{item.action === 'verify_and_install' ? '验证并安装' : item.action === 'not_selected' ? '未选择' : '未提供'}
+                      {item.archive_present ? ' · 文件已存在' : ' · 文件缺失'}
+                      {item.archive_bytes > 0 ? ' · ' + formatBytes(item.archive_bytes) : ''}
+                    </Typography>
+                  ))}
+                </Stack>
+                {hostProbe.remaining_host_checks.length ? (
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" fontWeight={700}>正式安装仍需执行的检查</Typography>
+                    {hostProbe.remaining_host_checks.map((item) => <Typography variant="caption" key={item}>• {offlineHostCheckLabel(item)}</Typography>)}
+                  </Stack>
+                ) : null}
+              </>
+            ) : null}
+          </Stack>
+        ) : null}
         <FormControlLabel label="额外备份文件数据（数据库和一致性备份始终保留）"
-          control={<Checkbox checked={backupFiles} disabled={disabled || busy}
+          control={<Checkbox checked={backupFiles} disabled={disabled || busy || planInFlight}
             onChange={(_, checked) => setBackupFiles(checked)} />} />
         <Button variant="contained" disabled={!canStart} onClick={() => setConfirmOpen(true)}>提交离线更新</Button>
         {message ? <Alert severity="info">{message}</Alert> : null}
         {error ? <Alert severity="error">{error}</Alert> : null}
       </Stack>
       <XDriveConfirmDialog open={confirmOpen} title="确认执行离线系统更新？"
-        description={'导入 ID：' + id + '；信任方式：' + (trustMode === 'sigstore' ? 'Host Sigstore 签名验证（失败即拒绝）' : '独立双 SHA-256') + '。Host 将再次校验组件与镜像身份，并执行原有备份/回滚；文件数据额外备份：' + (backupFiles ? '开启' : '关闭') + '。服务可能短暂中断。'}
+        description={'导入 ID：' + id + '；信任方式：' + (trustMode === 'sigstore' ? 'Host Sigstore 签名验证（失败即拒绝）' : '独立双 SHA-256') + '。已通过只读 Host 预检且未发现阻塞条件；正式安装仍会重新验证组件、镜像身份、备份与回滚。文件数据额外备份：' + (backupFiles ? '开启' : '关闭') + '。服务可能短暂中断。'}
         confirmLabel="提交宿主机" confirmIntent="warning" loading={busy}
         onCancel={() => setConfirmOpen(false)} onConfirm={() => { void activate() }} />
     </Box>
