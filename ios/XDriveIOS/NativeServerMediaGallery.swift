@@ -429,6 +429,9 @@ struct XDriveIOSNativeServerMediaPreview: View {
             originalBytes: viewed.node.size,
             format: format,
             source: "云端 PhotoAsset",
+            previewStatus: imageIsThumbnailOnly ? "缩略图回退" :
+                highResolutionLoaded ? "高清预览 · 按需解码" :
+                viewed.isLive ? "实况静态原件 · 适屏解码" : "原件 · 适屏解码",
             pixelWidth: width,
             pixelHeight: height,
             duration: validDuration,
