@@ -343,13 +343,13 @@ process_request() {
 }
 
 write_plan_status() {
-  local state="$1" request_id="$2" offline_id="$3" trust_mode="$4"
-  local message="$5" error="$6" started_at="$7" finished_at="$8"
+  local state="$1" request_id="$2" offline_id="$3" trust_mode="$4" manifest_sha="$5" binary_sha="$6"
+  local message="$7" error="$8" started_at="$9" finished_at="${10}"
   local dir tmp now
   dir="$(prepare_dir)"
   now="$(now_utc)"
   tmp="$(mktemp "$dir/.plan-status.XXXXXX")"
-  printf '{"supported":true,"state":"%s","request_id":"%s","offline_id":"%s","offline_trust_mode":"%s","message":"%s","error":"%s","started_at":"%s","updated_at":"%s","finished_at":"%s"}\n' "$(json_escape "$state")" "$(json_escape "$request_id")" "$(json_escape "$offline_id")" "$(json_escape "$trust_mode")" "$(json_escape "$message")" "$(json_escape "$error")" "$(json_escape "$started_at")" "$now" "$(json_escape "$finished_at")" > "$tmp"
+  printf '{"supported":true,"state":"%s","request_id":"%s","offline_id":"%s","offline_trust_mode":"%s","trusted_manifest_sha256":"%s","trusted_installer_sha256":"%s","message":"%s","error":"%s","started_at":"%s","updated_at":"%s","finished_at":"%s"}\n' "$(json_escape "$state")" "$(json_escape "$request_id")" "$(json_escape "$offline_id")" "$(json_escape "$trust_mode")" "$(json_escape "$manifest_sha")" "$(json_escape "$binary_sha")" "$(json_escape "$message")" "$(json_escape "$error")" "$(json_escape "$started_at")" "$now" "$(json_escape "$finished_at")" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/plan-status.json"
 }
@@ -372,14 +372,14 @@ process_plan_request() {
   requested_at="$(json_value "$active" created_at)"
 
   if [[ ! "$request_id" =~ ^[a-f0-9]{24}$ || ! "$offline_id" =~ ^[a-f0-9]{32}$ || ! ( ( "$trust_mode" == sigstore && -z "$manifest_sha" && -z "$binary_sha" ) || ( "$trust_mode" == sha256 && "$manifest_sha" =~ ^[a-f0-9]{64}$ && "$binary_sha" =~ ^[a-f0-9]{64}$ ) ) ]] || ! request_time_is_fresh "$requested_at"; then
-    write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "宿主机预检请求无效或已过期。" "invalid or stale Host preflight request" "" "$(now_utc)"
+    write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "宿主机预检请求无效或已过期。" "invalid or stale Host preflight request" "" "$(now_utc)"
     rm -f "$active" "$dir/plan-result.json"
     return 0
   fi
 
   # A queued update wins over a stale preflight. Do not inspect a release against a Host entering maintenance.
   if [[ -e "$dir/request.json" || -e "$dir/active.json" ]]; then
-    write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "已有服务端更新请求，已拒绝本次预检。" "server update is queued or running" "" "$(now_utc)"
+    write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "已有服务端更新请求，已拒绝本次预检。" "server update is queued or running" "" "$(now_utc)"
     rm -f "$active" "$dir/plan-result.json"
     return 0
   fi
@@ -389,7 +389,7 @@ process_plan_request() {
   run_log="$LOG_DIR/host-control-plan.log"
   : > "$run_log"
   chmod 0600 "$run_log"
-  write_plan_status running "$request_id" "$offline_id" "$trust_mode" "正在进行只读宿主机预检…" "" "$started_at" ""
+  write_plan_status running "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "正在进行只读宿主机预检…" "" "$started_at" ""
 
   plan_args=(update --source offline --channel master --offline-id "$offline_id" --plan-only)
   if [[ "$trust_mode" == sha256 ]]; then plan_args+=(--trusted-manifest-sha256 "$manifest_sha" --trusted-installer-sha256 "$binary_sha"); fi
@@ -405,16 +405,15 @@ process_plan_request() {
     if [[ "$result_bytes" =~ ^[0-9]+$ && "$result_bytes" -gt 0 && "$result_bytes" -le 262144 ]] && grep -Eq '"read_only"[[:space:]]*:[[:space:]]*true' "$result_tmp" && grep -Eq '"host_probe"[[:space:]]*:' "$result_tmp"; then
       chmod 0660 "$result_tmp"
       mv -f "$result_tmp" "$dir/plan-result.json"
-      write_plan_status success "$request_id" "$offline_id" "$trust_mode" "只读宿主机预检完成；结果不构成安装授权。" "" "$started_at" "$(now_utc)"
+      write_plan_status success "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "只读宿主机预检完成；结果不构成安装授权。" "" "$started_at" "$(now_utc)"
     else
       rm -f "$result_tmp" "$dir/plan-result.json"
-      write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "宿主机预检未返回有效的只读结果。" "invalid or oversized Host preflight result" "$started_at" "$(now_utc)"
+      write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "宿主机预检未返回有效的只读结果。" "invalid or oversized Host preflight result" "$started_at" "$(now_utc)"
     fi
   else
-    error_text="$(tail -n 8 "$run_log" 2>/dev/null | tr '\\n' ' ' | sed 's/[[:space:]][[:space:]]*/ /g' || true)"
-    [[ -n "$error_text" ]] || error_text="xdrive-server offline plan exited with status $status"
+    error_text="Host preflight command failed with status $status"
     rm -f "$result_tmp" "$dir/plan-result.json"
-    write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "宿主机预检失败；未执行安装或维护操作。" "$error_text" "$started_at" "$(now_utc)"
+    write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "宿主机预检失败；未执行安装或维护操作。" "$error_text" "$started_at" "$(now_utc)"
   fi
   rm -f "$active"
 }
@@ -4081,7 +4080,7 @@ backup_admin_recover_interrupted() {
 
 serve_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
-  local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data interrupted_plan_id interrupted_offline_id interrupted_trust_mode
+  local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data interrupted_plan_id interrupted_offline_id interrupted_trust_mode interrupted_plan_manifest_sha interrupted_plan_binary_sha
   local storage_inventory_interval last_storage_inventory_at last_backup_admin_at last_caddy_observation_at now
   dir="$(prepare_dir)"
   pid_file="$dir/runner.pid"
@@ -4159,7 +4158,9 @@ serve_cmd() {
     interrupted_plan_id="$(json_value "$dir/plan-active.json" request_id)"
     interrupted_offline_id="$(json_value "$dir/plan-active.json" offline_id)"
     interrupted_trust_mode="$(json_value "$dir/plan-active.json" offline_trust_mode)"
-    write_plan_status failed "$interrupted_plan_id" "$interrupted_offline_id" "$interrupted_trust_mode" "宿主机预检被宿主机重启或 Runner 中断。" "host preflight interrupted before completion" "" "$(now_utc)"
+    interrupted_plan_manifest_sha="$(json_value "$dir/plan-active.json" trusted_manifest_sha256)"
+    interrupted_plan_binary_sha="$(json_value "$dir/plan-active.json" trusted_installer_sha256)"
+    write_plan_status failed "$interrupted_plan_id" "$interrupted_offline_id" "$interrupted_trust_mode" "$interrupted_plan_manifest_sha" "$interrupted_plan_binary_sha" "宿主机预检被宿主机重启或 Runner 中断。" "host preflight interrupted before completion" "" "$(now_utc)"
     rm -f "$dir/plan-active.json" "$dir/plan-result.json"
   fi
   # Incomplete privileged operations are not silently retried on restart.
