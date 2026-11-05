@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
 )
 
 func TestCreateSynologyPushRequiresRegisteredDeviceAndProvisionsCanonicalTarget(t *testing.T) {
