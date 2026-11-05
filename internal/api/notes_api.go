@@ -150,13 +150,51 @@ func (s *Server) listNotes(c *gin.Context) {
 		notes = notes[:notesListPageSize]
 	}
 	items := make([]notesDTO, 0, len(notes))
-	for _, note := range notes {
-		_, node, err := s.loadOwnedNote(uid, note.ID)
-		if err != nil {
+	if len(notes) > 0 {
+		// Validate the Owner-bound namespace once and load all backing Nodes
+		// in one bounded query. Calling loadOwnedNote for every row performed
+		// three additional SQL reads per item and made every 50-row page scale
+		// with N+1 round trips.
+		ns, exists, err := notesExistingNamespaceTx(c.Request.Context(), s.DB, uid)
+		if err != nil || !exists {
 			fail(c, http.StatusConflict, "notes index is inconsistent")
 			return
 		}
-		items = append(items, noteSummary(note, node))
+		parentID := ns.MineNodeID
+		if source == meta.NoteSourceIOS {
+			parentID = ns.IOSNodeID
+		}
+		nodeIDs := make([]uint64, 0, len(notes))
+		for _, note := range notes {
+			if note.NodeID == 0 {
+				fail(c, http.StatusConflict, "notes index is inconsistent")
+				return
+			}
+			nodeIDs = append(nodeIDs, note.NodeID)
+		}
+		var nodes []meta.Node
+		if err := s.DB.WithContext(c.Request.Context()).
+			Preload("File").
+			Where("owner_id = ? AND id IN ? AND deleted_at IS NULL", uid, nodeIDs).
+			Find(&nodes).Error; err != nil {
+			fail(c, http.StatusConflict, "notes index is inconsistent")
+			return
+		}
+		nodesByID := make(map[uint64]meta.Node, len(nodes))
+		for _, node := range nodes {
+			nodesByID[node.ID] = node
+		}
+		for _, note := range notes {
+			node, ok := nodesByID[note.NodeID]
+			if !ok || node.Type != meta.NodeTypeFile || node.File == nil ||
+				node.File.Size < 0 || node.File.Size > notesMaximumMarkdownBytes ||
+				node.ParentID == nil || *node.ParentID != parentID ||
+				node.Name != note.ID+".md" {
+				fail(c, http.StatusConflict, "notes index is inconsistent")
+				return
+			}
+			items = append(items, noteSummary(note, node))
+		}
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, gin.H{"items": items, "next_offset": func() int {
