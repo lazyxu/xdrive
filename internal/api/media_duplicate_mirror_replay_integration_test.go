@@ -57,11 +57,13 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 	if err := db.Create(&device).Error; err != nil {
 		t.Fatal(err)
 	}
+	deviceHeaders := map[string]string{
+		"X-XDrive-Device-ID": deviceID,
+		"X-XDrive-Device-Token": deviceToken,
+	}
 	createSource := `{"name":"Mirror Copies","kind":"synology_photos","direction":"push","sync_mode":"mirror","run_mode":"sync","target_node_id":0}`
 	sourceRes := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources",
-		token, strings.NewReader(createSource), http.StatusCreated, map[string]string{
-			"X-XDrive-Device-ID": deviceID, "X-XDrive-Device-Token": deviceToken,
-		})
+		token, strings.NewReader(createSource), http.StatusCreated, deviceHeaders)
 	var source sourceDTO
 	if err := json.Unmarshal(sourceRes.Body.Bytes(), &source); err != nil {
 		t.Fatal(err)
@@ -223,13 +225,13 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 	finishEmptyInventory := func() {
 		t.Helper()
 		runID := uuid.NewString()
-		request(t, router, http.MethodPost,
+		requestWithHeaders(t, router, http.MethodPost,
 			fmt.Sprintf("/api/v1/sources/%d/runs", source.ID), token,
 			strings.NewReader(fmt.Sprintf(`{"run_id":%q,"trigger":"scheduled"}`, runID)),
-			http.StatusCreated)
-		request(t, router, http.MethodPost,
+			http.StatusCreated, deviceHeaders)
+		requestWithHeaders(t, router, http.MethodPost,
 			fmt.Sprintf("/api/v1/sources/%d/runs/%s/finish", source.ID, runID),
-			token, strings.NewReader(finishComplete), http.StatusOK)
+			token, strings.NewReader(finishComplete), http.StatusOK, deviceHeaders)
 	}
 	finishEmptyInventory()
 	var afterFirst meta.SourceItem
