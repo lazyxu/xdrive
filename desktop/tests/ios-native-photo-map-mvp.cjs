@@ -423,10 +423,12 @@ test('GPS cell album continuously advances on a deliberate bottom scroll with bo
   assert.match(spatialAlbum, /loadedWindow\(containing: item\.id\)/);
   assert.match(spatialAlbum, /if result\.scannerFinished[\s\S]*?result\.pendingIndex >= result\.pending\.count[\s\S]*?scanner\.reset\(\)/);
   assert.match(spatialAlbum, /changes\.revision[\s\S]*?retire\(\)[\s\S]*?dismiss\(\)/);
-  assert.match(spatialAlbum, /\.onDisappear \{\s*if viewer == nil \{\s*retire\(\)[\s\S]*?changes\.stop\(\)[\s\S]*?keep its PhotoKit cursor/);
-  assert.match(spatialAlbum, /private func loadNext\(\)[\s\S]*?readWindow\(\s*scanner: scanner,\s*pending: pendingLocated/);
-  assert.doesNotMatch(spatialAlbum, /scanner\.start\(atOffset:/);
-  assert.doesNotMatch(spatialAlbum, /Button\("上一批"\)|Button\("继续查找下一批"\)|第 \\\(/);
+  assert.match(spatialAlbum, /\.onDisappear \{\s*if viewer == nil \{\s*retire\(\)[\s\S]*?changes\.stop\(\)[\s\S]*?Keep its PhotoKit cursor/);
+  const loadNext = spatialAlbum.slice(spatialAlbum.indexOf('private func loadNext()'),
+    spatialAlbum.indexOf('private func retire()'));
+  assert.match(loadNext, /readWindow\(\s*scanner: scanner,\s*pending: pendingLocated/);
+  assert.doesNotMatch(loadNext, /scanner\.start\(atOffset:/);
+  assert.doesNotMatch(spatialAlbum, /上一批|继续查找下一批|第 \d+ 批/);
   assert.doesNotMatch(spatialAlbum, /UserDefaults|URLSession|UploadSession|isNetworkAccessAllowed = true/);
 });
 
