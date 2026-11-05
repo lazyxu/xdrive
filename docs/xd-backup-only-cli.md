@@ -15,13 +15,13 @@ export XD_PASSWORD
 xd login --server https://drive.example.com --username USER
 unset XD_PASSWORD
 
-# Read-only existing xDrive folder IDs, including the root and nested folders.
+# Optional read-only cloud directory inspection (not needed for local Backup setup).
 xd backup targets
 xd backup targets --parent 123
 
-# Single Agent-driven setup: read-only native preflight, device enrollment,
-# paused Source creation, native Root binding, optional schedule.
-xd backup init --name Photos --path /data/photos --target-id 123 --every 6h --run-now
+# Single Agent-driven setup: native preflight, device enrollment,
+# Server-managed exclusive cloud destination, paused Source and native Root binding.
+xd backup init --name Photos --path /data/photos --every 6h --run-now
 
 # The explicit --run-now uses the same Agent runner and arms the schedule
 # after a verified first file-level run. Use 'once' separately if you omit it.
@@ -34,12 +34,16 @@ xd backup drafts
 xd backup bind --source 42 --path /data/photos
 ~~~
 
-`--target-id` is an **existing cloud directory Node ID**, not a local path.
-`--path` is a canonical absolute directory on the current machine and is
-validated by the owning Agent. No remote Web request can authorize the Root,
-and no CLI argument can select a foreign Device. An ambiguous Source creation
-is not blindly repeated: inspect the list of same-device paused drafts first.
-A failed Root bind leaves its Source paused for an explicit `bind` command.
+The Server automatically creates an exclusive cloud destination under the
+current Owner's device-backup hierarchy, derived from the authenticated
+creating-device identity and Source name. `xd backup init` does not accept a
+cloud target ID; `xd backup targets` remains a read-only directory inspection
+command only. `--path` is a canonical absolute directory on the current
+machine and is validated by the owning Agent. No remote Web request can
+authorize the Root, and no CLI argument can select a foreign Device. An
+ambiguous Source creation is not blindly repeated: inspect same-device paused
+drafts first. A failed Root bind leaves its Source paused for an explicit
+`bind` command.
 
 By default, `init` **does not silently start** an upload. Pass explicit
 `--run-now` to start one run using the existing owning Agent immediately after
