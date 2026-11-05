@@ -488,6 +488,8 @@ test('native local Gallery opens the full-library map from its filter menu witho
   assert.match(map, /else if onClose != nil[\s\S]*?Button\("完成"\) \{ onClose\?\(\) \}/)
   assert.match(map, /if album == nil && onClose == nil/)
   assert.match(localWall, /mediaFilter = option/)
+  assert.match(localWall, /\.environment\(\\\.xdriveOpenNativeLocalMap, \{ jump in\s*pendingViewerMapJump = jump/)
+  assert.match(localWall, /private func restoreAfterViewer\(\)[\s\S]*?pendingViewerMapJump[\s\S]*?mapJump = jump[\s\S]*?showingMap = true/)
   assert.match(dashboard, /ForEach\(XDriveIOSNativeGallerySource\.allCases\.filter \{ \$0 != \.map \}/)
   assert.match(dashboard, /onClose: \{ openGallery\(\.local\) \}/)
   assert.match(mapGallery, /var onClose: \(\(\) -> Void\)\? = nil/)
