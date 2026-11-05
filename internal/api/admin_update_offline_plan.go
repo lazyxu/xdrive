@@ -324,8 +324,14 @@ func (s *Server) adminOfflineHostPlanStatus(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "offline_host_plan_unavailable"})
 		return
 	}
+	if (status.State != "idle" && status.State != "queued" && status.State != "running" &&
+		status.State != "success" && status.State != "failed") {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "offline_host_plan_unavailable"})
+		return
+	}
 	if (status.RequestID != "" && !offlineHostPlanRequestID.MatchString(status.RequestID)) ||
-		(status.OfflineID != "" && !offlineImportID.MatchString(status.OfflineID)) {
+		(status.OfflineID != "" && !offlineImportID.MatchString(status.OfflineID)) ||
+		(status.TrustMode != "" && status.TrustMode != "sigstore" && status.TrustMode != "sha256") {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "offline_host_plan_unavailable"})
 		return
 	}
