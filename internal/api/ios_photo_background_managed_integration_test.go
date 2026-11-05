@@ -187,7 +187,7 @@ func TestIOSPhotoBackgroundLegacyGrantIsReadOnly(t *testing.T) {
 		ID: uuid.NewString(), OwnerID: owner.ID, DeviceID: device.ID,
 		RootNodeID: root.ID, ServerInstance: server.PWAOfflineInstanceID,
 		SessionVersion: owner.SessionVersion, CredentialHash: grantDigest,
-		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		CreatedAt:      time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 		ExpiresAt: time.Now().UTC().Add(time.Hour),
 	}
 	if err := db.Create(&grant).Error; err != nil {
@@ -241,7 +241,7 @@ func TestIOSPhotoBackgroundScopedTransactionCannotOutliveGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 	headers := map[string]string{
-		"X-XDrive-Device-ID": device.ID, "X-XDrive-Device-Token": raw,
+		"X-XDrive-Device-ID":    device.ID, "X-XDrive-Device-Token": raw,
 	}
 	creation := requestWithHeaders(t, router, http.MethodPut,
 		"/api/v1/ios/photos/backup-destination", jwt,
@@ -368,8 +368,8 @@ func TestIOSPhotoBackgroundGrantCanReportSharedSourceRunHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	deviceHeaders := map[string]string{
-		"X-XDrive-Device-ID": device.ID,
-		"X-XDrive-Device-Token": deviceSecret,
+		"X-XDrive-Device-ID":       device.ID,
+		"X-XDrive-Device-Token":    deviceSecret,
 	}
 	destination := requestWithHeaders(t, router, http.MethodPut,
 		"/api/v1/ios/photos/backup-destination", ownerToken,
@@ -481,7 +481,7 @@ func TestIOSPhotoBackgroundGrantCanReportSharedSourceRunHistory(t *testing.T) {
 	// SourceRun transaction must still fence the write.
 	racedProgressPath := "/__test/ios-photo-source-run/" +
 		strconv.FormatUint(target.SourceID, 10) + "/" + runID + "/progress"
-	requestWithHeaders(t, router, http.MethodPost, tracedProgressPath, "",
+	requestWithHeaders(t, router, http.MethodPost, racedProgressPath, "",
 		strings.NewReader(`{"summary":`+summary+`}`),
 		http.StatusForbidden, backgroundHeaders)
 	// A subsequent request is rejected at the grant middleware itself.

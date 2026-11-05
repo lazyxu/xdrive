@@ -150,7 +150,7 @@ final class XDriveIOSPhotoSourceRunReporter {
             body["error"] = "PhotoKit scan ended before the bounded pass completed"
         }
         if let result = try? await send(
-            path: "\(basePath)/\(runID)/finish",
+            path: "\(basePath)/\(self.runID)/finish",
             method: "POST", body: body
         ), result == 200 {
             finished = true
