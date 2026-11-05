@@ -372,12 +372,17 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A completed run is durable history. Generic DELETE must not cascade
-	// away its provenance while an explicit Source archive flow is pending.
+	// A completed run is durable history. DELETE archives the Source and
+	// retains its identity rather than cascading away its provenance.
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenA,
-		nil, http.StatusConflict, map[string]string{"If-Match": `"2"`})
-	if err := db.First(&meta.Source{}, created.ID).Error; err != nil {
-		t.Fatalf("source history guard removed its Source: %v", err)
+		nil, http.StatusNoContent, map[string]string{"If-Match": `"2"`})
+	var archived meta.Source
+	if err := db.First(&archived, created.ID).Error; err != nil {
+		t.Fatalf("source archive removed its Source: %v", err)
+	}
+	if archived.Status != meta.SourceStatusArchived || archived.Revision != 3 ||
+		archived.TargetNodeID == nil || *archived.TargetNodeID != targetA.ID {
+		t.Fatalf("source DELETE did not archive while preserving target: %+v", archived)
 	}
 	if err := db.First(&meta.Node{}, targetA.ID).Error; err != nil {
 		t.Fatalf("source history guard removed its target node: %v", err)
