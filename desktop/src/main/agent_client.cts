@@ -523,7 +523,7 @@ export type AgentLocalBoundBackupSettings = {
   source_id: number
   name: string
   revision: number
-  status: 'active' | 'paused' | 'archived'
+  status?: 'active' | 'paused' | 'archived'
   sync_mode: 'backup' | 'mirror'
   target_node_id?: number
   target_path?: string
