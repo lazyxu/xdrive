@@ -402,6 +402,12 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		} else {
 			q = q.Where("COALESCE(source_run_id, '') = ''")
 		}
+		// A resumable session belongs to one exact DSM Source/Device/Root
+		// tuple. An ordinary upload cannot adopt it, and another Source cannot
+		// replay its result even for the same destination and content hash.
+		q = q.Where("source_id = ? AND source_revision = ? AND source_root_id = ? AND source_root_fingerprint = ? AND source_device_id = ?",
+			req.SourceID, req.SourceRevision, req.SourceRootID, req.SourceRootFingerprint,
+			strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
 		if req.NodeID != nil {
 			q = q.Where("node_id = ? AND expected_revision = ?", *req.NodeID, req.ExpectedRevision)
 		} else if policyProvided {
@@ -420,6 +426,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			q = q.Where("expected_md5 = ? OR expected_md5 = ''", req.MD5)
 		}
 		if err := q.Order("created_at DESC").First(&existing).Error; err == nil {
+			if err := s.verifySynologyUploadSession(c, existing); err != nil {
+				fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
+				return
+			}
 			if existing.Status == meta.UploadStatusFinalized || existing.Status == meta.UploadStatusSkipped {
 				s.writeUploadSession(c, existing, http.StatusOK)
 				return
