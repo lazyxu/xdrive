@@ -52,6 +52,7 @@ func TestBackupCLIOptionScopeRejectsExplicitDefaultValuedFlags(t *testing.T) {
 		{"cancel", "--every=", false},
 		{"init", "--run-now=false", true},
 		{"init", "--source=0", false},
+		{"init", "--target-id=12", false},
 		{"bind", "--source=42", true},
 		{"bind", "--target-id=0", false},
 		{"drafts", "--name=", false},
