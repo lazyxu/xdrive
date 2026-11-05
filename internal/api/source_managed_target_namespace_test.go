@@ -9,6 +9,14 @@ import (
 
 func TestManagedSourceTargetRenameAcceptsCanonicalAndExistingNamespaces(t *testing.T) {
 	db, _, owner, _, root := setupFilePropertiesTestDB(t)
+	if err := db.AutoMigrate(&meta.SyncRun{}); err != nil {
+		t.Fatal(err)
+	}
+	syncFolder := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
+	namespaces := map[string]meta.Node{}
+	for _, name := range []string{"Push", "设备备份", "Pull", "远程拉取"} {
+		namespaces[name] = createFilePropertiesDir(t, db, owner.ID, syncFolder.ID, name)
+	}
 	cases := []struct {
 		name        string
 		kind        string
@@ -45,10 +53,9 @@ func TestManagedSourceTargetRenameAcceptsCanonicalAndExistingNamespaces(t *testi
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			syncFolder := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
 			namespace := syncFolder
 			if tc.namespace != yikeTargetRootName {
-				namespace = createFilePropertiesDir(t, db, owner.ID, syncFolder.ID, tc.namespace)
+				namespace = namespaces[tc.namespace]
 			}
 			parent := namespace
 			if tc.connector != "" {
@@ -57,7 +64,7 @@ func TestManagedSourceTargetRenameAcceptsCanonicalAndExistingNamespaces(t *testi
 			target := createFilePropertiesDir(t, db, owner.ID, parent.ID, tc.leaf)
 			targetID := target.ID
 			source := meta.Source{
-				OwnerID: owner.ID, Name: "Original", Kind: tc.kind,
+				OwnerID: owner.ID, Name: "Source " + tc.name, Kind: tc.kind,
 				Direction: tc.direction, SyncMode: meta.SourceSyncModeBackup,
 				RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused,
 				Revision: 1, TargetNodeID: &targetID, TargetManaged: tc.managed,
