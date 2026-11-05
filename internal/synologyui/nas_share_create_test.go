@@ -45,19 +45,21 @@ func (f *fakeNASSourceCreator) PreflightLocalRoot(_ context.Context, path string
 }
 
 func (f *fakeNASSourceCreator) CreateLocalBackupSource(
-	_ context.Context, name string, target uint64,
+	_ context.Context, name string,
 ) (localbackupipc.LocalBackupSource, error) {
 	f.creates++
 	if f.failCreate {
 		return localbackupipc.LocalBackupSource{}, errors.New("ambiguous native reply")
 	}
-	if name != "NAS Photos" || target != 17 {
-		return localbackupipc.LocalBackupSource{}, errors.New("invalid Owner target")
+	if name != "NAS Photos" {
+		return localbackupipc.LocalBackupSource{}, errors.New("invalid Source name")
 	}
+	target := uint64(84)
 	return localbackupipc.LocalBackupSource{
 		ID: 57, Name: name, Kind: "local_folder",
 		Direction: "push", SyncMode: "backup", Status: "paused",
-		Revision: 1, TargetNodeID: &target,
+		Revision: 1, TargetNodeID: &target, TargetManaged: true,
+		TargetPath: "同步文件夹/设备备份/NAS_123456789012/NAS Photos",
 	}, nil
 }
 
@@ -114,7 +116,7 @@ func newDSMSourceCreateFixture(t *testing.T) (*Gateway, *fakeNASSourceCreator, s
 func sourceCreateBody(selection, scope string, confirmed bool) string {
 	payload := map[string]any{
 		"selection_id": selection, "owner_scope": scope,
-		"target_id": 17, "name": "NAS Photos", "confirmed": confirmed,
+		"name": "NAS Photos", "confirmed": confirmed,
 	}
 	data, _ := json.Marshal(payload)
 	return string(data)
@@ -162,7 +164,7 @@ func TestDSMSourceCreateRejectsUnverifiedOrForgedIntentBeforeMutation(t *testing
 		{"foreign pathname", "POST", strings.TrimSuffix(body, "}") + `,"path":"/etc"}`, "https://nas.example:5001", csrfToken, p},
 		{"foreign device", "POST", strings.TrimSuffix(body, "}") + `,"device_id":"untrusted"}`, "https://nas.example:5001", csrfToken, p},
 		{"duplicate name", "POST", strings.TrimSuffix(body, "}") + `,"name":"another"}`, "https://nas.example:5001", csrfToken, p},
-		{"bad cloud target", "POST", strings.Replace(body, `"target_id":17`, `"target_id":0`, 1), "https://nas.example:5001", csrfToken, p},
+		{"caller-selected cloud target", "POST", strings.TrimSuffix(body, "}") + `,"target_id":17}`, "https://nas.example:5001", csrfToken, p},
 		{"extra CGI query", "POST", body, "https://nas.example:5001", csrfToken, p + "&path=/etc"},
 		{"wrong origin", "POST", body, "https://foreign.example:5001", csrfToken, p},
 		{"no CSRF", "POST", body, "https://nas.example:5001", "", p},
@@ -180,7 +182,7 @@ func TestDSMSourceCreateRejectsUnverifiedOrForgedIntentBeforeMutation(t *testing
 	agent.ownerName = "different-owner"
 	r := requestServerLogin(g, "POST", body, "https://nas.example:5001", csrfToken, p)
 	if r.Code != http.StatusConflict || agent.creates != 0 {
-		t.Fatal("Owner switch while selecting a cloud target must fail before Source mutation")
+		t.Fatal("Owner switch while selecting a NAS share must fail before Source mutation")
 	}
 	if dsmOwnerScope(make([]byte, 32), "dsmadmin", "other-cookie",
 		"nas.example:5001", "https://drive.example.com", "owner") == scope {
