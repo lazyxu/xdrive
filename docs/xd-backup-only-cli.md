@@ -34,11 +34,14 @@ xd backup drafts
 xd backup bind --source 42 --path /data/photos
 ~~~
 
-The cloud destination is created transactionally by the Server under the
-managed Push namespace and returned as the Source's exact TargetNodeID/path.
+The cloud destination is created transactionally by the Server under its
+managed Push target policy and returned as the Source's exact TargetNodeID/path.
 The CLI never submits a cloud parent or target ID for a new Push Source;
-`xd backup targets` remains a read-only browser only. `--path` is a canonical
-absolute directory on the current machine and is validated by the owning Agent.
+`xd backup targets` remains a read-only browser only. The canonical
+`同步文件夹/Push` namespace is handled by the Server-side provisioning change
+tracked separately in PR #3902; this CLI does not create or migrate directories.
+`--path` is a canonical absolute directory on the current machine and is
+validated by the owning Agent.
 No remote Web request can authorize the Root, and no CLI argument can select a
 foreign Device. An ambiguous Source creation is not blindly repeated: inspect
 the list of same-device paused drafts first. A failed Root bind leaves its
