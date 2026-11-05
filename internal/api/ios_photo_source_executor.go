@@ -33,7 +33,7 @@ func (s *Server) requireSourceRunExecutor() gin.HandlerFunc {
 		}
 		var source meta.Source
 		if err := s.DB.WithContext(c.Request.Context()).
-			Select("id", "owner_id", "kind").
+			Select("id", "owner_id", "kind", "direction").
 			Where("id = ? AND owner_id = ?", id, userID(c)).Take(&source).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				fail(c, http.StatusNotFound, "source not found")
@@ -43,7 +43,8 @@ func (s *Server) requireSourceRunExecutor() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if source.Kind == meta.SourceKindLocalFolder {
+		if source.Kind == meta.SourceKindLocalFolder ||
+			(source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush) {
 			if !s.checkLocalSourceExecutor(c) {
 				c.Abort()
 				return
