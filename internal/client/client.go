@@ -1356,8 +1356,8 @@ func New(baseURL, token string) *Client {
 }
 
 // SetDeviceIdentity attaches this installation's protected device proof to
- // authenticated API requests. It does not grant a platform-specific Root,
- // PhotoKit or MediaStore capability.
+// authenticated API requests. It does not grant a platform-specific Root,
+// PhotoKit or MediaStore capability.
 func (c *Client) SetDeviceIdentity(deviceID, deviceToken string) {
 	if c == nil {
 		return
