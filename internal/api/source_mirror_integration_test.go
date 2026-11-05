@@ -308,10 +308,6 @@ func TestMirrorPartialFailedCancelledAndChangedSourceDoNotAdvanceDeletionEvidenc
 	}
 	source := toSourceDTO(record)
 
-	var owner meta.User
-	if err := db.Where("username = ?", "source-mirror-gate-user").First(&owner).Error; err != nil {
-		t.Fatal(err)
-	}
 	node := meta.Node{
 		ParentID: &target.ID,
 		Name:     "guarded.jpg",
