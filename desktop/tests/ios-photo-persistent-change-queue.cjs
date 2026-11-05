@@ -79,3 +79,24 @@ test('native queue summary is Owner-fenced, bounded by local SQLite aggregation 
   assert.match(section, /@ObservedObject var queueSummary/)
   assert.doesNotMatch(model, /UploadSession|uploadPrepared|finalize\(|\.deleteNode\(/)
 });
+
+test('only-new automatic backup consumes bounded queue candidates through the shared CAS writer', () => {
+  const runner = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift')
+  const reporter = read('ios/XDriveIOS/PhotoSourceRunReporter.swift')
+  assert.match(source, /func pendingCandidates\(owner: XDriveNativeOwnerRoot, limit: Int = 64\)/)
+  assert.match(source, /baseline\.token, as: epoch\.token/)
+  assert.match(source, /PHAsset\.fetchAssets\(\s*withLocalIdentifiers: identifiers/)
+  assert.match(source, /func settle\(_ candidate: XDriveIOSPhotoBackupChangeQueueStore\.Pending/)
+  assert.match(source, /store\.settle\(\s*candidate, result: result,\s*expectedBaselineToken: baseline\.token/)
+  assert.match(runner, /changeQueue\.pendingCandidates\(\s*owner: owner, limit: 64/)
+  assert.match(runner, /uploadOrVerifyOriginal\(\s*candidate\.pending\.localIdentifier/)
+  assert.match(runner, /changeQueue\.settle\(\s*candidate\.pending, result: \.confirmed/)
+  assert.match(runner, /changeQueue\.settle\(\s*candidate\.pending, result: \.failed/)
+  assert.match(runner, /queuedIdentifiers\.contains\(candidate\.id\)/)
+  assert.match(runner, /var changeQueueProcessed = 0/)
+  assert.match(controller, /incrementalQueue = changeQueue/)
+  assert.match(controller, /changeQueue: incrementalQueue/)
+  assert.match(reporter, /scanned \+= progress\.scanned \+ progress\.changeQueueProcessed/)
+  assert.doesNotMatch(runner, /XDriveNativeUploadSessionTransport|URLSession\(/)
+});
