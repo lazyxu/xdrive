@@ -388,10 +388,7 @@ func validateSynologySourceDeviceBinding(remote client.Source, configuredID, req
 		return nil
 	}
 	if remote.DeviceID == "" {
-		if configuredID == 0 && requestedID == 0 {
-			return fmt.Errorf("Source %d is a legacy unbound DSM Source; use --source-id to keep it unchanged or choose a new --name to create a device-bound Source", remote.ID)
-		}
-		return nil
+		return fmt.Errorf("Source %d is a legacy unbound DSM Source and cannot be executed; create a new device-bound Source instead", remote.ID)
 	}
 	if remote.DeviceID != deviceID {
 		return fmt.Errorf("Synology Push Source %d belongs to another registered device; refusing to rebind it", remote.ID)
