@@ -447,7 +447,7 @@ export interface ExternalSourceCardView {
   modeLabel: string
   state: ExternalSourceState
   trigger: ExternalSourceTriggerState
-  lastActivityLabel: '上次扫描' | '上次成功' | '最近运行'
+  lastActivityLabel: '上次扫描' | '上次成功' | '最近运行' | '尚无运行'
   lastActivityAt?: string
   scannedItems?: number
   scannedBytes?: number
@@ -798,10 +798,16 @@ export function externalSourceCardView(row: ExternalSourceRow): ExternalSourceCa
     state: getExternalSourceState(row),
     trigger: getExternalSourceTriggerState(row),
     lastActivityLabel: source.kind === 'ios_photos'
-      ? (latestRun?.status === 'running' || !source.last_success_at ? '最近运行' : '上次成功')
+      ? (latestRun?.status === 'running' || latestRun?.status === 'partial' ||
+        latestRun?.status === 'failed' || latestRun?.status === 'cancelled' ||
+        (!source.last_success_at && !!source.last_run_at)
+          ? '最近运行' : source.last_success_at ? '上次成功' : '尚无运行')
       : source.run_mode === 'scan' ? '上次扫描' : '上次成功',
     lastActivityAt: source.kind === 'ios_photos'
-      ? (latestRun?.status === 'running' || !source.last_success_at ? source.last_run_at : source.last_success_at)
+      ? (latestRun?.status === 'running' || latestRun?.status === 'partial' ||
+        latestRun?.status === 'failed' || latestRun?.status === 'cancelled' ||
+        (!source.last_success_at && !!source.last_run_at)
+          ? source.last_run_at : source.last_success_at)
       : source.run_mode === 'scan' ? source.last_run_at : source.last_success_at,
     scannedItems: latestRun?.scanned_items,
     scannedBytes: latestRun?.scanned_bytes,
