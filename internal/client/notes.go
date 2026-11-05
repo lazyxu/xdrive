@@ -174,24 +174,34 @@ type NotesImportWrite struct {
 	ExternalID string `json:"external_id"`
 }
 
-// NotesImportIOS creates one read-only snapshot from an explicit manual export.
-// A manual UUID is only a transaction identity for the image-follow-up update;
-// it is never presented as an Apple Notes native identity.
-func (c *Client) NotesImportIOS(ctx context.Context, write NotesImportWrite) (NotesRow, error) {
+// ValidateNotesImportWrite validates the complete manual iOS archive payload.
+// Keep this check reusable at both the Agent IPC boundary and the Owner client:
+// test fixtures or alternate controllers must not be able to bypass it.
+func ValidateNotesImportWrite(write NotesImportWrite) error {
 	content := NotesWrite{Title: write.Title, Markdown: write.Markdown}
 	if err := validateNotesWrite(content); err != nil {
-		return NotesRow{}, err
+		return err
 	}
 	if write.ExternalID != "" {
 		const prefix = "manual:"
 		if !strings.HasPrefix(write.ExternalID, prefix) {
-			return NotesRow{}, errors.New("invalid manual Notes import identity")
+			return errors.New("invalid manual Notes import identity")
 		}
 		rawID := strings.TrimPrefix(write.ExternalID, prefix)
 		parsed, err := uuid.Parse(rawID)
 		if err != nil || parsed.String() != strings.ToLower(rawID) {
-			return NotesRow{}, errors.New("invalid manual Notes import identity")
+			return errors.New("invalid manual Notes import identity")
 		}
+	}
+	return nil
+}
+
+// NotesImportIOS creates one read-only snapshot from an explicit manual export.
+// A manual UUID is only a transaction identity for the image-follow-up update;
+// it is never presented as an Apple Notes native identity.
+func (c *Client) NotesImportIOS(ctx context.Context, write NotesImportWrite) (NotesRow, error) {
+	if err := ValidateNotesImportWrite(write); err != nil {
+		return NotesRow{}, err
 	}
 	var out NotesRow
 	if err := c.json(ctx, http.MethodPost, "/api/v1/notes/ios/import", write, &out); err != nil {
