@@ -137,10 +137,19 @@ func TestSourceArchiveRetainsHistorySharesCASAndRestoresPaused(t *testing.T) {
 		t.Fatalf("restore activated Source or changed target: %+v", restored)
 	}
 	request(t, router, http.MethodPost, url+"/trigger", token, nil, http.StatusConflict)
-	// Restoring makes the Source visible and paused; it does not make retained
-	// provider identity/history eligible for destructive hard deletion.
+	// DELETE after restore re-archives the retained Source; it never discards
+	// provider identity or synchronization history.
 	requestWithHeaders(t, router, http.MethodDelete, url, token, nil,
-		http.StatusConflict, map[string]string{"If-Match": `"3"`})
+		http.StatusNoContent, map[string]string{"If-Match": `"3"`})
+	var archivedAgain meta.Source
+	if err := db.First(&archivedAgain, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if archivedAgain.Status != meta.SourceStatusArchived || archivedAgain.Revision != 4 ||
+		archivedAgain.TargetNodeID == nil || *archivedAgain.TargetNodeID != target.ID ||
+		archivedAgain.RunRequestedAt != nil {
+		t.Fatalf("DELETE did not re-archive the restored Source: %+v", archivedAgain)
+	}
 
 	var savedSource meta.Source
 	var savedItem meta.SourceItem
@@ -162,7 +171,7 @@ func TestSourceArchiveRetainsHistorySharesCASAndRestoresPaused(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if savedSource.ID != source.ID || savedSource.Status != meta.SourceStatusPaused ||
+	if savedSource.ID != source.ID || savedSource.Status != meta.SourceStatusArchived || savedSource.Revision != 4 ||
 		savedItem.NodeID == nil || *savedItem.NodeID != photo.ID ||
 		savedItem.Path != "photo.jpg" || savedRun.ID != run.ID ||
 		savedRun.Status != meta.SyncRunStatusCompleted ||
