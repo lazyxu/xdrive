@@ -705,6 +705,7 @@ export type AgentLocalBackupPreview = {
 
 export type AgentLocalBoundBackupRemoval = {
   source_id: number
+  status?: 'removed' | 'archived'
   local_grant_removed: boolean
 }
 
