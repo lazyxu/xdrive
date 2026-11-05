@@ -28,7 +28,7 @@ const (
 
 func backupUsage(w io.Writer) {
 	fmt.Fprintln(w, "Backup-only (same owning xdrive-agent; Desktop is optional):")
-	fmt.Fprintln(w, "  xd backup init --name NAME --path ABS_DIR --target-id CLOUD_DIR_ID [--every 6h] [--run-now]")
+	fmt.Fprintln(w, "  xd backup init --name NAME --path ABS_DIR [--every 6h] [--run-now]")
 	fmt.Fprintln(w, "  xd backup bind --source ID --path ABS_DIR")
 	fmt.Fprintln(w, "  xd backup drafts")
 	fmt.Fprintln(w, "  xd backup targets [--parent CLOUD_DIR_ID]")
@@ -63,7 +63,7 @@ func validateBackupCLIFlags(fs *flag.FlagSet, action string) error {
 	case "status", "history", "pause", "cancel":
 		allowed = []string{"source"}
 	case "init":
-		allowed = []string{"name", "path", "target-id", "every", "cron", "timezone", "run-now"}
+		allowed = []string{"name", "path", "every", "cron", "timezone", "run-now"}
 	case "bind":
 		allowed = []string{"source", "path"}
 	default:
