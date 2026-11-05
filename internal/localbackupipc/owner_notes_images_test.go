@@ -161,3 +161,42 @@ func TestOwnerNotesImageIPCRejectsCorruptedImageReceipt(t *testing.T) {
 		}
 	}
 }
+
+
+func TestOwnerNotesIOSArchiveImageImportUsesDedicatedOwnerRouteOnce(t *testing.T) {
+	image := []byte("GIF89a")
+	sum := sha256.Sum256(image)
+	relative := "_assets/" + notesImageIPCNote + "/" + notesImageIPCAsset
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Method != http.MethodPost ||
+			r.URL.Path != "/v1/cloud/notes/ios-import/"+notesImageIPCNote+"/images" ||
+			r.Header.Get("Authorization") != "Bearer secret" || r.Header.Get("Cookie") != "" {
+			t.Errorf("unexpected iOS archive image route/auth: %s %s", r.Method, r.URL)
+		}
+		var input struct { Image []byte `json:"image"` }
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil || !bytes.Equal(input.Image, image) {
+			t.Errorf("iOS archive image bytes changed: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(client.NotesImageReceipt{
+			NodeID: 123, Filename: notesImageIPCAsset, RelativePath: relative,
+			ContentType: "image/gif", Bytes: int64(len(image)), SHA256: hex.EncodeToString(sum[:]),
+		})
+	}))
+	defer srv.Close()
+	c := &Client{baseURL: srv.URL, token: "secret",
+		capabilities: []string{"cloud-notes", "cloud-notes-images"}, http: srv.Client()}
+	receipt, err := c.OwnerNotesImportIOSImage(context.Background(), notesImageIPCNote, image)
+	if err != nil || receipt.RelativePath != relative || receipt.Bytes != int64(len(image)) ||
+		calls.Load() != 1 {
+		t.Fatalf("iOS archive image import: %+v %v calls=%d", receipt, err, calls.Load())
+	}
+	c.capabilities = []string{"cloud-notes"}
+	if _, err := c.OwnerNotesImportIOSImage(context.Background(), notesImageIPCNote, image); err == nil ||
+		calls.Load() != 1 {
+		t.Fatalf("Agent without image capability was permitted: err=%v calls=%d", err, calls.Load())
+	}
+}

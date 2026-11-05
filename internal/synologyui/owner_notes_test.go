@@ -22,6 +22,8 @@ type dsmNotesFixture struct {
 	owner         string
 	enabled       bool
 	writes, reads int
+	imports       int
+	lastImport    client.NotesImportWrite
 }
 
 func (f *dsmNotesFixture) OwnerNotesAvailable() bool {
@@ -62,6 +64,21 @@ func (f *dsmNotesFixture) OwnerNotesList(_ context.Context, source, q string, of
 func (f *dsmNotesFixture) OwnerNotesRead(_ context.Context, id string) (client.NotesDetail, error) {
 	f.reads++
 	return client.NotesDetail{NotesRow: f.notesRow("text", 1), Markdown: "text"}, nil
+}
+func (f *dsmNotesFixture) OwnerNotesImportIOS(
+	_ context.Context, write client.NotesImportWrite,
+) (client.NotesRow, error) {
+	f.writes++
+	f.imports++
+	f.lastImport = write
+	revision := uint64(1)
+	if write.ExternalID != "" {
+		revision = 2
+	}
+	row := f.notesRow(write.Markdown, revision)
+	row.Source = "ios_notes"
+	row.Title = write.Title
+	return row, nil
 }
 func (f *dsmNotesFixture) OwnerNotesCreate(_ context.Context, write client.NotesWrite) (client.NotesRow, error) {
 	f.writes++
@@ -201,5 +218,53 @@ func TestDSMNotesMutationParserRejectsDuplicateOrOversize(t *testing.T) {
 	id := dsmNotesFixtureID
 	if !validDSMNoteID(id) || validDSMNoteID(strings.ToUpper(id)) {
 		t.Fatal("canonical Note UUID validation regressed")
+	}
+}
+
+
+func TestDSMNotesManualIOSImportRequiresExactOwnerAndTransactionIdentity(t *testing.T) {
+	g, base := newFixture(t)
+	f := &dsmNotesFixture{fakeAgent: base, owner: "alice", enabled: true}
+	g.Connect = func(context.Context) (Agent, error) { return f, nil }
+	h := CGIHandler(g)
+	_, key, err := loadAuthority(g.ConfigDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := dsmOwnerScope(key, "dsmadmin", "id=dsm-session",
+		"nas.example:5001", "https://server.example", "alice")
+	csrf := getCSRF(t, g)
+	body := `{"owner_scope":"` + scope + `","title":"Manual export","markdown":"# Export","external_id":"manual:12345678-1234-1234-1234-123456789abc"}`
+	res := dsmNotesRequest(h, http.MethodPost, "cloud-notes-import-ios", "", body, csrf)
+	if res.Code != http.StatusOK || f.imports != 1 ||
+		f.lastImport.ExternalID != "manual:12345678-1234-1234-1234-123456789abc" ||
+		f.lastImport.Markdown != "# Export" {
+		t.Fatalf("manual iOS import failed: %d %s imports=%d body=%+v",
+			res.Code, res.Body.String(), f.imports, f.lastImport)
+	}
+	for _, tc := range []struct {
+		name, body, token string
+		want              int
+	}{
+		{"badIdentity", `{"owner_scope":"`+scope+`","title":"Manual export","markdown":"# Export","external_id":"title:guess"}`, csrf, http.StatusBadRequest},
+		{"missingIdentity", `{"owner_scope":"`+scope+`","title":"Manual export","markdown":"# Export"}`, csrf, http.StatusBadRequest},
+		{"foreignOwner", `{"owner_scope":"`+strings.Repeat("0",64)+`","title":"Manual export","markdown":"# Export","external_id":""}`, csrf, http.StatusConflict},
+		{"noCSRF", `{"owner_scope":"`+scope+`","title":"Manual export","markdown":"# Export","external_id":""}`, "", http.StatusForbidden},
+	} {
+		out := dsmNotesRequest(h, http.MethodPost, "cloud-notes-import-ios", "", tc.body, tc.token)
+		if out.Code != tc.want {
+			t.Errorf("%s: HTTP %d want %d: %s", tc.name, out.Code, tc.want, out.Body.String())
+		}
+	}
+	if out := dsmNotesRequest(h, http.MethodGet, "cloud-notes-import-ios", "", "", ""); out.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("manual iOS import admitted a non-POST method: %d", out.Code)
+	}
+	if f.imports != 1 {
+		t.Fatalf("invalid DSM import requests reached Agent: %d", f.imports)
+	}
+	f.owner = "bob"
+	out := dsmNotesRequest(h, http.MethodPost, "cloud-notes-import-ios", "", body, csrf)
+	if out.Code != http.StatusConflict || f.imports != 1 {
+		t.Fatalf("old Owner import scope was reused: HTTP %d imports=%d", out.Code, f.imports)
 	}
 }
