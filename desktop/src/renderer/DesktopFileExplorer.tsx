@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
+import { xDriveDesktopFileExplorerRelativePath } from './desktopFileExplorerPath'
 import { xDriveDesktopDecodeViewerPreviewURL, xDriveDesktopRegisterLegacyJPEGViewerPreviewURL } from './desktopViewerPreviewDecode'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
@@ -1197,11 +1198,13 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const relativePathForNode = (node: AgentCloudNode) => {
-    const searchResult = searchByID.get(node.id)
-    if (searchResult?.path) return searchResult.path
-    return [...crumbs.slice(1).map((crumb) => crumb.name), node.name].join('/')
-  }
+  const relativePathForNode = (node: AgentCloudNode) => (
+    xDriveDesktopFileExplorerRelativePath(
+      node,
+      searchByID.get(node.id)?.path,
+      explorerCrumbs,
+    )
+  )
 
   const nativeDragOutSupported =
     keyboardProfile === 'windows' || keyboardProfile === 'macos'
@@ -1396,7 +1399,7 @@ export default function DesktopFileExplorer({
     }
   }, [
     beginActionBusy,
-    crumbs,
+    explorerCrumbs,
     finishActionBusy,
     isActionBusyCurrent,
     onError,
