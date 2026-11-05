@@ -27,7 +27,7 @@ test('one native information sheet displays only source-backed media metadata', 
     'pixelWidth', 'pixelHeight', 'duration', 'location', 'locationStatus',
     'resources', 'liveFiles'
   ]) assert.ok(component.includes(field), 'missing shared media detail: ' + field)
-  assert.match(component, /LabeledContent\("拍摄时间"/)
+  assert.match(component, /LabeledContent\(\s*"拍摄时间"/)
   assert.match(component, /LabeledContent\("原件大小"/)
   assert.match(component, /LabeledContent\("当前解码分辨率"/)
   assert.match(component, /XDriveIOSNativeViewerInfoMapPreview/)
