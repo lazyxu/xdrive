@@ -234,6 +234,43 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         return sqlite3_changes(database) == 1
     }
 
+    /// Settle only if the PhotoKit change baseline is still the exact
+    /// checkpoint whose candidate revision was consumed. This prevents a
+    /// delayed uploader callback from confirming an asset while newer
+    /// persistent changes are waiting to be replayed.
+    @discardableResult
+    func settle(_ candidate: Pending, result: Settled,
+                expectedBaselineToken: Data,
+                authorization: Int) throws -> Bool {
+        try validateIdentifier(candidate.localIdentifier)
+        try validateToken(expectedBaselineToken)
+        guard candidate.revision > 0, authorization > 0 else {
+            throw Failure.invalidInput
+        }
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { try? execute("ROLLBACK") } }
+        guard let current = try baseline(),
+              current.authorization == authorization,
+              current.token == expectedBaselineToken else {
+            throw Failure.baselineChanged
+        }
+        let statement = try prepare(
+            "UPDATE entries SET state=? WHERE asset_id=? AND revision=? AND state='pending'"
+        )
+        defer { sqlite3_finalize(statement) }
+        try bind(result.rawValue, into: statement, position: 1)
+        try bind(candidate.localIdentifier, into: statement, position: 2)
+        guard sqlite3_bind_int64(statement, 3, candidate.revision) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        try stepDone(statement)
+        let changed = sqlite3_changes(database) == 1
+        try execute("COMMIT")
+        committed = true
+        return changed
+    }
+
     /// Explicit user retry only, after receipt review if a write may have
     /// occurred; this routine never writes cloud data or marks success.
     @discardableResult
