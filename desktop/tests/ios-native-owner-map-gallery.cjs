@@ -5,6 +5,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const read = p => fs.readFileSync(path.resolve(__dirname, '../..', p), 'utf8')
 const map = read('ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift')
+const localMap = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
 const policy = read('ios/XDriveIOS/NativeOwnerMapSelectionPolicy.swift')
 const reader = read('ios/XDriveIOS/NativeServerMediaGalleryTransport.swift')
 const wall = read('ios/XDriveIOS/NativeServerMediaGallery.swift')
@@ -292,4 +293,26 @@ test('native map source uses one navigation menu instead of a permanently stacke
   assert.match(root, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\([\s\S]*?cameraReturn: cloudMapCamera/)
   assert.match(root, /guard source == \.cloud, let expectedOwner,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\([\s\S]*?cloudMapCamera = next/)
   assert.match(root, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/)
+})
+
+
+test('local map exposes the native Limited Photos picker only for local Limited access', () => {
+  assert.match(map, /import Photos/)
+  assert.match(map, /@StateObject private var photoChanges = XDriveIOSNativePhotoMapAuthorizationChanges\(\)/)
+  assert.match(map, /if source == \.local && photoAuthorization == \.limited/)
+  assert.match(map, /Label\("管理已授权照片", systemImage: "photo\.on\.rectangle\.angled"\)/)
+  assert.match(map, /native-ios-map-manage-limited-photos/)
+  assert.match(map, /presentLimitedLibraryPicker\(from: controller\)/)
+  assert.match(map, /\.onChange\(of: photoChanges\.revision\) \{ _ in\s*photoAuthorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(map, /photoChanges\.start\(\)[\s\S]*?photoChanges\.stop\(\)/)
+  assert.doesNotMatch(map, /showingLimitedPicker.*UserDefaults|UserDefaults.*showingLimitedPicker/)
+})
+
+
+test('local map rebuilds a fresh authorized PhotoKit snapshot after library changes', () => {
+  assert.match(localMap, /onChange\(of: changes\.revision\)[\s\S]*?let cameraToRestore = globalCamera/)
+  assert.match(localMap, /authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(localMap, /if phase == \.active, mapScope == \.library,[\s\S]*?\[\.authorized, \.limited\]\.contains\(authorization\)/)
+  assert.match(localMap, /scanFullLibrary\(returningCamera: cameraToRestore\)/)
+  assert.match(localMap, /error = "照片库权限已变化；请重新授权后扫描地图。"/)
 })
