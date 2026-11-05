@@ -19,7 +19,7 @@ const filesHostPort = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'ren
 const workspaceController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts'), 'utf8')
 
 test('Desktop Explorer opens files with the OS default app while folders stay in xDrive', () => {
-  assert.ok(app.includes('const relativePathForNode = (node: AgentCloudNode) => {'), 'Desktop Explorer relative-path resolver is missing')
+  assert.ok(app.includes('const relativePathForNode = (node: AgentCloudNode) => (') && app.includes('xDriveDesktopFileExplorerRelativePath('), 'Desktop Explorer relative-path resolver is missing')
   assert.ok(app.includes('await hostPort.write.openPath(relativePath, reveal)'), 'Desktop Explorer is not wired to managed-path shell actions')
   assert.ok(filesHostPort.includes('openPath: agent.openPath') && filesHostPort.includes('openPath: files.openPath'), 'native opening must be bound to the owning Desktop Host')
   assert.ok(workspaceController.includes('xDriveFileExplorerDispatchOpenItem({'), 'double-clicking should dispatch through the shared workspace controller')
