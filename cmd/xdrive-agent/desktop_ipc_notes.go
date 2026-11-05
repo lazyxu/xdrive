@@ -117,6 +117,13 @@ func (h *desktopIPCHandler) cloudNotesImportIOS(w http.ResponseWriter, r *http.R
 	if !decodeDesktopIPCJSONLimit(w, r, &input, 6*client.NotesMaxMarkdownBytes+8192) {
 		return
 	}
+	// Validate before invoking an optional controller implementation. The
+	// IPC boundary must reject native Apple IDs and malformed manual transaction
+	// keys even when a test fixture or alternate port does not use client.Client.
+	if err := client.ValidateNotesImportWrite(input); err != nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_notes_import", "invalid iOS Notes import")
+		return
+	}
 	value, err := port.CloudNotesImportIOS(r.Context(), input)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
