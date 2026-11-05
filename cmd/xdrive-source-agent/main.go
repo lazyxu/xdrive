@@ -427,6 +427,11 @@ func status() error {
 		return err
 	}
 	fmt.Printf("server: %s\nuser: %s\ncredential store: %s\n", cfg.Server, cfg.Username, sourceagentconfig.CredentialBackend(cfg))
+	if cfg.DeviceID != "" {
+		fmt.Printf("Synology device: %s (%s)\n", cfg.DeviceID, sourceagentconfig.DeviceCredentialBackend(cfg))
+	} else {
+		fmt.Println("Synology device: not enrolled (legacy configuration)")
+	}
 	if cfg.SourceID == 0 {
 		fmt.Println("source: not configured")
 		return nil
