@@ -38,6 +38,9 @@ func requireSourceRunOrLocalPushFinalizeTx(
 		}
 		return requireIOSPhotoManagedFinalizeTx(ctx, tx, c, session, nodeID)
 	}
+	if session.SourceID != 0 {
+		return requireSynologyPushUploadSessionTx(ctx, tx, c, session)
+	}
 	if _, scoped := currentSourceRunScope(c); scoped {
 		return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, session.OwnerID, nodeID)
 	}
