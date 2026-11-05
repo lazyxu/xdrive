@@ -131,3 +131,14 @@ test('safe failed PhotoKit items have an explicit Owner-scoped retry action, nev
   assert.match(store, /func failed\(limit: Int = 64\)/)
   assert.match(store, /func retryFailed\(_ candidate: Pending,[\s\S]*?expectedBaselineToken: Data/)
 });
+
+test('only-new automatic scanning waits for the PhotoKit persistent history cursor to catch up', () => {
+  const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift')
+  assert.match(source, /func isCaughtUp\(owner: XDriveNativeOwnerRoot\)/)
+  assert.match(source, /baseline\.token, as: epoch\.token/)
+  assert.match(controller, /changeQueue\.replay\([\s\S]*?maximumEvents: 4\)/)
+  assert.match(controller, /guard try await changeQueue\.isCaughtUp\(owner: selected\) else \{[\s\S]*?本轮暂不扫描[\s\S]*?return/)
+  assert.ok(controller.indexOf('changeQueue.isCaughtUp(owner: selected)') <
+            controller.indexOf('.reserveDue(owner: selected,'),
+    'do not reserve or date-filter a scan until persistent history catches up')
+});
