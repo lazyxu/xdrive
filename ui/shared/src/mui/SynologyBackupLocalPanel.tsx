@@ -1,8 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import type { XDriveLocalBackupCommonBatchHistoryItem } from '../device-backups'
-import type { XDriveSynologyBackupLocalClient, XDriveSynologyLocalSource } from '../synology-backup-adapter'
+import type {
+  XDriveLocalBackupCommonBatchHistoryItem,
+} from '../device-backups'
+import type {
+  XDriveSynologyBackupLocalClient, XDriveSynologyLocalSource,
+} from '../synology-backup-adapter'
+import { XDriveDeviceBackupLocalRenameDialog } from './DeviceBackupLocalRenameDialog'
+import { XDriveDeviceBackupLocalTargetDialog } from './DeviceBackupLocalTargetDialog'
+import { XDriveDeviceBackupLocalModeDialog } from './DeviceBackupLocalModeDialog'
+import { XDriveDeviceBackupLocalRulesDialog } from './DeviceBackupLocalRulesDialog'
+import { XDriveDeviceBackupLocalRemoveDialog } from './DeviceBackupLocalRemoveDialog'
+import type { XDriveLocalBackupSettingsActions } from './DeviceBackupLocalRenameDialog'
+import type { XDriveLocalBackupTargetActions } from './DeviceBackupLocalTargetDialog'
+import type { XDriveLocalBackupModeActions } from './DeviceBackupLocalModeDialog'
+import type { XDriveLocalBackupRulesActions } from './DeviceBackupLocalRulesDialog'
+import type { XDriveLocalBackupRemoveActions } from './DeviceBackupLocalRemoveDialog'
+import type { XDriveSourceTargetBrowser } from './SourceManager'
 import { XDriveDeviceBackupFolderAccordion } from './DeviceBackupFolderAccordion'
 import { XDriveDeviceBackupLocalPrimaryActions } from './DeviceBackupLocalPrimaryActions'
 import { XDriveDeviceBackupDeviceCard } from './DeviceBackupDeviceCard'
@@ -56,6 +71,11 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
   const [expandedID, setExpandedID] = useState<number | null>(null)
   const [activeID, setActiveID] = useState<number | null>(null)
   const [scheduleID, setScheduleID] = useState<number | null>(null)
+  const [renameID, setRenameID] = useState<number | null>(null)
+  const [targetID, setTargetID] = useState<number | null>(null)
+  const [modeID, setModeID] = useState<number | null>(null)
+  const [rulesID, setRulesID] = useState<number | null>(null)
+  const [removeID, setRemoveID] = useState<number | null>(null)
   const [notice, setNotice] = useState('')
   const [historyRevision, setHistoryRevision] = useState(0)
   const [planRevision, setPlanRevision] = useState(0)
@@ -64,6 +84,45 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
   const visiblePrincipalDenied = sameOwningClient && principalDenied && Boolean(error)
   const visibleNotice = sameOwningClient ? notice : ''
   const refresh = useCallback(() => { setRefreshID((n) => n + 1) }, [])
+  const localSettingsActions = useMemo<XDriveLocalBackupSettingsActions>(() => ({
+    load: sourceID => client.localBackupSettings(sourceID),
+    rename: (sourceID, revision, name) =>
+      client.renameLocalBackupSource(sourceID, revision, name),
+  }), [client])
+  const localTargetActions = useMemo<XDriveLocalBackupTargetActions>(() => ({
+    load: sourceID => client.localBackupSettings(sourceID),
+    retarget: (sourceID, revision, targetNodeID) =>
+      client.retargetLocalBackupSource(sourceID, revision, targetNodeID),
+  }), [client])
+  const localModeActions = useMemo<XDriveLocalBackupModeActions>(() => ({
+    load: sourceID => client.localBackupSettings(sourceID),
+    setMode: (sourceID, revision, mode) =>
+      client.setLocalBackupMode(sourceID, revision, mode),
+  }), [client])
+  const localRulesActions = useMemo<XDriveLocalBackupRulesActions>(() => ({
+    load: sourceID => client.localBackupRules(sourceID),
+    update: (sourceID, revision, rules) =>
+      client.saveLocalBackupRules(sourceID, revision, rules),
+  }), [client])
+  const localRemoveActions = useMemo<XDriveLocalBackupRemoveActions>(() => ({
+    load: sourceID => client.localBackupSettings(sourceID),
+    remove: (sourceID, revision) =>
+      client.removeLocalBackupSource(sourceID, revision),
+  }), [client])
+  const targetBrowser = useMemo<XDriveSourceTargetBrowser>(() => ({
+    root: async () => {
+      const root = await client.ownerFilesRoot()
+      return { id: root.id, name: root.name }
+    },
+    children: async parentID => {
+      const page = await client.ownerFilesPage(parentID, 200, 'name', 'asc', '')
+      if (page.has_more) {
+        throw new Error('当前目录条目超过 200 个，请先进入更具体的子目录后再选择备份目标')
+      }
+      return page.items.filter(item => item.type === 'dir')
+        .map(item => ({ id: item.id, name: item.name }))
+    },
+  }), [client])
 
   useEffect(() => {
     let active = true
@@ -81,6 +140,11 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
     setExpandedID(null)
     setActiveID(null)
     setScheduleID(null)
+    setRenameID(null)
+    setTargetID(null)
+    setModeID(null)
+    setRulesID(null)
+    setRemoveID(null)
     setHistories({})
     void client.list(abort.signal).then((items) => {
       if (active) setSources(items)
@@ -199,7 +263,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
                   return (
                     <XDriveDeviceBackupFolderAccordion
                       key={item.source_id}
-                      folder={{ name: item.name, sync_mode: 'backup' }}
+                      folder={{ name: item.name, sync_mode: item.sync_mode }}
                       targetUnavailableLabel="当前 DSM 页面未提供"
                       historyUnavailableLabel="展开查看本机运行历史"
                       expanded={expandedID === item.source_id}
@@ -208,9 +272,32 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
                       }}
                     >
                       <XDriveDeviceBackupLocalPrimaryActions
-                        onRun={() => { if (isCurrentHost()) setActiveID(item.source_id) }}
+                        onRun={item.sync_mode === 'backup'
+                          ? () => { if (isCurrentHost()) setActiveID(item.source_id) } : undefined}
                         onSchedule={() => { if (isCurrentHost()) setScheduleID(item.source_id) }}
                       />
+                      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                        <Button size="small" variant="outlined"
+                          onClick={() => { if (isCurrentHost()) setRenameID(item.source_id) }}>
+                          重命名
+                        </Button>
+                        <Button size="small" variant="outlined"
+                          onClick={() => { if (isCurrentHost()) setTargetID(item.source_id) }}>
+                          云端目标
+                        </Button>
+                        <Button size="small" variant="outlined"
+                          onClick={() => { if (isCurrentHost()) setModeID(item.source_id) }}>
+                          备份策略
+                        </Button>
+                        <Button size="small" variant="outlined"
+                          onClick={() => { if (isCurrentHost()) setRulesID(item.source_id) }}>
+                          忽略规则
+                        </Button>
+                        <Button size="small" variant="outlined" color="error"
+                          onClick={() => { if (isCurrentHost()) setRemoveID(item.source_id) }}>
+                          移除配置
+                        </Button>
+                      </Stack>
                       {expandedID === item.source_id && sameOwningClient ? (
                         <XDriveSynologyBackupScheduleStatus
                           key={'schedule:' + renderedHostEpoch + ':' + item.source_id}
@@ -272,6 +359,78 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
           }}
         />
       )}
+      {sameOwningClient && renameID !== null && visibleSources.some(item => item.source_id === renameID) ? (
+        <XDriveDeviceBackupLocalRenameDialog
+          key={'rename:' + renderedHostEpoch + ':' + renameID}
+          sourceID={renameID}
+          actions={localSettingsActions}
+          onClose={() => { if (isCurrentHost()) setRenameID(null) }}
+          onFinished={message => {
+            if (!isCurrentHost()) return
+            setRenameID(null)
+            setNotice(message)
+            refresh()
+          }}
+        />
+      ) : null}
+      {sameOwningClient && targetID !== null && visibleSources.some(item => item.source_id === targetID) ? (
+        <XDriveDeviceBackupLocalTargetDialog
+          key={'target:' + renderedHostEpoch + ':' + targetID}
+          sourceID={targetID}
+          actions={localTargetActions}
+          targetBrowser={targetBrowser}
+          onClose={() => { if (isCurrentHost()) setTargetID(null) }}
+          onFinished={message => {
+            if (!isCurrentHost()) return
+            setTargetID(null)
+            setNotice(message)
+            refresh()
+          }}
+        />
+      ) : null}
+      {sameOwningClient && modeID !== null && visibleSources.some(item => item.source_id === modeID) ? (
+        <XDriveDeviceBackupLocalModeDialog
+          key={'mode:' + renderedHostEpoch + ':' + modeID}
+          sourceID={modeID}
+          actions={localModeActions}
+          onClose={() => { if (isCurrentHost()) setModeID(null) }}
+          onFinished={message => {
+            if (!isCurrentHost()) return
+            setModeID(null)
+            setNotice(message)
+            refresh()
+          }}
+        />
+      ) : null}
+      {sameOwningClient && rulesID !== null && visibleSources.some(item => item.source_id === rulesID) ? (
+        <XDriveDeviceBackupLocalRulesDialog
+          key={'rules:' + renderedHostEpoch + ':' + rulesID}
+          sourceID={rulesID}
+          actions={localRulesActions}
+          onClose={() => { if (isCurrentHost()) setRulesID(null) }}
+          onFinished={message => {
+            if (!isCurrentHost()) return
+            setRulesID(null)
+            setNotice(message)
+            setHistoryRevision(n => n + 1)
+            refresh()
+          }}
+        />
+      ) : null}
+      {sameOwningClient && removeID !== null && visibleSources.some(item => item.source_id === removeID) ? (
+        <XDriveDeviceBackupLocalRemoveDialog
+          key={'remove:' + renderedHostEpoch + ':' + removeID}
+          sourceID={removeID}
+          actions={localRemoveActions}
+          onClose={() => { if (isCurrentHost()) setRemoveID(null) }}
+          onFinished={message => {
+            if (!isCurrentHost()) return
+            setRemoveID(null)
+            setNotice(message)
+            refresh()
+          }}
+        />
+      ) : null}
     </XDriveWorkspaceSurface>
   )
 }
