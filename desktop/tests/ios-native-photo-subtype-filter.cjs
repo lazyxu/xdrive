@@ -51,9 +51,12 @@ test('date jump uses identical live/screenshot predicate and exact filtered slot
 })
 
 test('Gallery category selection is compact, invalidates offsets, and never rewrites backup', () => {
-  assert.match(wall, /Picker\("媒体类型", selection: \$mediaFilter\)/)
+  assert.match(wall, /Menu \{[\s\S]*?Section\("媒体类型"\)/)
   assert.match(wall, /ForEach\(XDriveIOSNativePhotoMediaFilter\.allCases\)/)
-  assert.match(wall, /\.pickerStyle\(\.menu\)/)
+  assert.match(wall, /mediaFilter = option/)
+  assert.match(wall, /Section\("地图"\)[\s\S]*?Label\("显示地图", systemImage: "map"\)/)
+  assert.match(wall, /permission != \.authorized/)
+  assert.doesNotMatch(wall, /Picker\("媒体类型"/)
   assert.match(wall, /mediaFilter == \.livePhotos \? "当前已授权图库中没有实况照片。"/)
   assert.match(wall, /mediaFilter == \.screenshots \? "当前已授权图库中没有截屏。"/)
   assert.match(wall, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?selectedCandidates\.removeAll\(\)[\s\S]*?savedOffset = 0\s*reload\(\)/)
