@@ -427,6 +427,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     let newOnlySince: Date?
                     let manualStartEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?
                     var incrementalQueue: XDriveIOSPhotoKitPersistentBackupQueue?
+                    var canUseOnlyNewDateFilter = true
                     if kind == .automatic {
                         // Durably replay a bounded PhotoKit change batch before
                         // reserving the positional scan window. The same queue
@@ -444,9 +445,22 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                                 )
                             } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
                                 .requiresExplicitBaseline {
-                                // Legacy new-only plans predate this queue.
-                                // Keep their existing full-window metadata scan;
-                                // never install a newer token automatically.
+                                // A legacy plan has no trustworthy persistent
+                                // change baseline. Do not apply capture-date
+                                // filtering: scan the authorized library by
+                                // bounded windows and let the original receipt
+                                // verifier deduplicate it. Keep doing this on
+                                // later ticks until an explicit, safe baseline
+                                // migration exists; never silently skip old-dated
+                                // imports or invent a new baseline.
+                                incrementalQueue = nil
+                                canUseOnlyNewDateFilter = false
+                            } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                                .invalidArchivedToken {
+                                // An unreadable token has the same conservative
+                                // fallback as a missing legacy baseline.
+                                incrementalQueue = nil
+                                canUseOnlyNewDateFilter = false
                             }
                             try Task.checkCancellation()
                             guard self.displayEpoch == uiEpoch,
@@ -465,8 +479,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         automaticReservedNextDueAt = due.nextDueAt
                         window = due.windowIndex
                         cloud = due.allowICloudOriginals
-                        newOnlySince = due.backupStartRule == .onlyNew
-                            ? due.newOnlySince : nil
+                        newOnlySince = due.backupStartRule == .onlyNew &&
+                            canUseOnlyNewDateFilter ? due.newOnlySince : nil
                         manualStartEpoch = nil
                     } else {
                         // Manual and automatic passes share the same 256-slot
