@@ -902,7 +902,7 @@ export function XDriveSourceManager({
       name: externalSourceDisplayName(row.source),
       sync_mode: row.source.sync_mode,
       run_mode: row.source.run_mode,
-      status: row.source.status,
+      status: row.source.status === 'active' ? 'active' : 'paused',
       schedule_type: row.source.schedule_type ?? 'interval',
       schedule_expression: row.source.schedule_expression || '6h',
       schedule_timezone: row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind, row.source.direction).scheduleTimezone,
