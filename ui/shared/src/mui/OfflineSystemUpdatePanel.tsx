@@ -269,7 +269,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
         <Typography variant="subtitle1" fontWeight={700}>离线包更新 · Linux AMD64</Typography>
         <Alert severity="warning">上传完成仅表示传输完整，不等于签名受信。默认由宿主机验证独立配置的可信根和 GitHub Sigstore 证明；失败时绝不自动退回未签名安装。</Alert>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-          <Button variant="outlined" disabled={disabled || busy} onClick={() => { void create() }}>创建导入</Button>
+          <Button variant="outlined" disabled={disabled || busy || planning || planInFlight} onClick={() => { void create() }}>创建导入</Button>
           <Select size="small" displayEmpty value={id} disabled={disabled || busy || planning || planInFlight || items.length === 0}
             onChange={(event) => { setID(event.target.value); setError('') }} sx={{ flex: 1 }}>
             {items.length === 0 ? <MenuItem value="">暂无导入</MenuItem> : null}
@@ -305,7 +305,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
           </Typography>)}
         </Stack> : null}
         <Typography variant="body2" fontWeight={600}>发布者身份验证方式</Typography>
-        <Select size="small" value={trustMode} disabled={disabled || busy}
+        <Select size="small" value={trustMode} disabled={disabled || busy || planning || planInFlight}
           onChange={(event) => { setTrustMode(event.target.value as XDriveOfflineTrustMode); setPlanState(null) }}
           aria-label="离线发布信任方式">
           <MenuItem value="sigstore">Host 自动验证 Sigstore 签名（优先）</MenuItem>
@@ -320,11 +320,11 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
         ) : (
           <>
             <Alert severity="warning">手工模式必须使用两项独立可信来源的发布摘要，禁止将网页上传回执作为信任依据。</Alert>
-            <TextField label="可信 Manifest SHA-256" size="small" value={manifestSHA}
+            <TextField label="可信 Manifest SHA-256" size="small" value={manifestSHA} disabled={disabled || busy || planning || planInFlight}
               onChange={(e) => { setManifestSHA(e.target.value.trim().toLowerCase()); setPlanState(null) }}
               error={Boolean(manifestSHA) && !xDriveValidOfflineDigest(manifestSHA)}
               inputProps={{ maxLength: 64, autoComplete: 'off' }} />
-            <TextField label="可信 Go ELF SHA-256" size="small" value={goSHA}
+            <TextField label="可信 Go ELF SHA-256" size="small" value={goSHA} disabled={disabled || busy || planning || planInFlight}
               onChange={(e) => { setGoSHA(e.target.value.trim().toLowerCase()); setPlanState(null) }}
               error={Boolean(goSHA) && !xDriveValidOfflineDigest(goSHA)}
               inputProps={{ maxLength: 64, autoComplete: 'off' }} />
@@ -397,7 +397,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
           </Stack>
         ) : null}
         <FormControlLabel label="额外备份文件数据（数据库和一致性备份始终保留）"
-          control={<Checkbox checked={backupFiles} disabled={disabled || busy || planInFlight}
+          control={<Checkbox checked={backupFiles} disabled={disabled || busy || planning || planInFlight}
             onChange={(_, checked) => setBackupFiles(checked)} />} />
         <Button variant="contained" disabled={!canStart} onClick={() => setConfirmOpen(true)}>提交离线更新</Button>
         {message ? <Alert severity="info">{message}</Alert> : null}
