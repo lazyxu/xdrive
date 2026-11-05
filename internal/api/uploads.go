@@ -404,7 +404,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		// A resumable DSM session belongs to one exact Source/Device/Root
 		// tuple. Ordinary sessions remain compatible with existing clients.
-		if req.SourceID != 0 {
+		if native, ok := currentIOSPhotoManagedUploadScope(c); ok {
+			q = q.Where("source_id = ? AND source_revision = ? AND source_device_id = ? AND source_target_id = ? AND source_root_id = '' AND source_root_fingerprint = ''",
+				native.sourceID, native.sourceRevision, native.deviceID, native.targetID)
+		} else if req.SourceID != 0 {
 			q = q.Where("source_id = ? AND source_revision = ? AND source_root_id = ? AND source_root_fingerprint = ? AND source_device_id = ?",
 				req.SourceID, req.SourceRevision, req.SourceRootID, req.SourceRootFingerprint,
 				strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
@@ -429,7 +432,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			q = q.Where("expected_md5 = ? OR expected_md5 = ''", req.MD5)
 		}
 		if err := q.Order("created_at DESC").First(&existing).Error; err == nil {
-			if err := s.verifySynologyUploadSession(c, existing); err != nil {
+			if err := s.verifyPushUploadSession(c, existing); err != nil {
 				fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
 				return
 			}
@@ -479,6 +482,15 @@ func (s *Server) createUploadSession(c *gin.Context) {
 				}
 				var quotaReservation int64
 				if err := s.DB.Transaction(func(tx *gorm.DB) error {
+					var current meta.UploadSession
+					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+						Where("id = ? AND owner_id = ? AND status = ?", existing.ID, uid, meta.UploadStatusActive).
+						Take(&current).Error; err != nil {
+						return err
+					}
+					if err := s.requireUploadChunkAuthorityTx(c.Request.Context(), tx, c, current); err != nil {
+						return err
+					}
 					var err error
 					quotaReservation, err = s.reserveUploadQuota(tx, uid, existing.ID, existing.TotalSize, quotaKey)
 					if err != nil {
@@ -490,6 +502,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 					}
 					return tx.Model(&meta.UploadSession{}).Where("id = ? AND status = ?", existing.ID, meta.UploadStatusActive).Updates(updates).Error
 				}); err != nil {
+					if errors.Is(err, errManagedSourceWriteDenied) || errors.Is(err, errShareUploadDenied) {
+						fail(c, http.StatusForbidden, "upload authority revoked before resume")
+						return
+					}
 					if writeQuotaError(c, err) {
 						return
 					}
@@ -661,6 +677,14 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	}
 	if req.SourceID != 0 {
 		session.SourceDeviceID = strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID"))
+	}
+	if native, ok := currentIOSPhotoManagedUploadScope(c); ok {
+		// The iPhone client cannot choose a Source or target; Server stamps
+		// the verified tuple on its canonical CAS session before persistence.
+		session.SourceID = native.sourceID
+		session.SourceRevision = native.sourceRevision
+		session.SourceDeviceID = native.deviceID
+		session.SourceTargetID = native.targetID
 	}
 	var reusable []meta.UploadPart
 	if reuseSource != nil && len(req.ChunkSHA256) != 0 {
@@ -873,8 +897,8 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		if current.Status != meta.UploadStatusActive {
 			return errUploadFinalized
 		}
-		if err := requireSynologyPushUploadSessionTx(c.Request.Context(), tx, c, current); err != nil {
-			return errManagedSourceWriteDenied
+		if err := s.requireUploadChunkAuthorityTx(c.Request.Context(), tx, c, current); err != nil {
+			return err
 		}
 		if time.Now().After(current.ExpiresAt) {
 			return errUploadExpired
