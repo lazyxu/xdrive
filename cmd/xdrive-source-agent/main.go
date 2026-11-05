@@ -273,15 +273,27 @@ func setup(args []string) error {
 			return fmt.Errorf("Server did not return the expected device-bound managed Synology Push target")
 		}
 		targetID = *remote.TargetNodeID
-	} else {
-		mode := effectiveMode
-		active := meta.SourceStatusActive
-		remote, err = cli.UpdateSource(ctx, remote.ID, remote.Revision, client.UpdateSourceInput{
-			Name: &sourceName, RunMode: &mode, Status: &active, IgnoreRules: &rules,
-		})
-		if err != nil {
-			return err
+	}
+
+	roots := sourceagent.RootsWithIdentityState(
+		strings.TrimSpace(*personal), personalID, personalFingerprint,
+		strings.TrimSpace(*shared), sharedID, sharedFingerprint,
+	)
+	if remote.DeviceID != "" {
+		if remote.DeviceID != cfg.DeviceID || !remote.TargetManaged || remote.TargetNodeID == nil {
+			return fmt.Errorf("Synology Source is not bound to this registered device and managed target")
 		}
+		rootID, rootFingerprint, proofErr := sourceagent.RootSetIdentity(roots)
+		if proofErr != nil {
+			return fmt.Errorf("compute Synology root-set identity: %w", proofErr)
+		}
+		binding, bindErr := cli.BindSynologySourceRoot(ctx, remote.ID, remote.Revision, rootID, rootFingerprint)
+		if bindErr != nil {
+			return fmt.Errorf("persist Synology root fingerprint on Server: %w", bindErr)
+		}
+		remote.Revision = binding.Revision
+		remote.Status = binding.Status
+		cli.SetSynologySourceRootProof(remote.ID, remote.Revision, rootID, rootFingerprint)
 	}
 
 	cfg.SourceID = remote.ID
@@ -299,12 +311,20 @@ func setup(args []string) error {
 	if err := sourceagentconfig.Save(cfg); err != nil {
 		return err
 	}
-	if remote.Status != meta.SourceStatusActive {
-		active := meta.SourceStatusActive
-		remote, err = cli.UpdateSource(ctx, remote.ID, remote.Revision, client.UpdateSourceInput{Status: &active})
-		if err != nil {
-			return fmt.Errorf("local roots were saved but Source activation failed; rerun setup to resume safely: %w", err)
+	mode := effectiveMode
+	active := meta.SourceStatusActive
+	remote, err = cli.UpdateSource(ctx, remote.ID, remote.Revision, client.UpdateSourceInput{
+		Name: &sourceName, RunMode: &mode, Status: &active, IgnoreRules: &rules,
+	})
+	if err != nil {
+		return fmt.Errorf("local roots were saved but Source activation failed; rerun setup to resume safely: %w", err)
+	}
+	if remote.DeviceID != "" {
+		rootID, rootFingerprint, proofErr := sourceagent.RootSetIdentity(roots)
+		if proofErr != nil {
+			return proofErr
 		}
+		cli.SetSynologySourceRootProof(remote.ID, remote.Revision, rootID, rootFingerprint)
 	}
 	fmt.Printf("source: %s (%d)\nmode: %s\ntarget node: %d\ndevice: %s\n", remote.Name, remote.ID, remote.RunMode, targetID, cfg.DeviceID)
 	if remote.DeviceID == "" {
