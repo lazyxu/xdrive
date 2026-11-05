@@ -19,7 +19,7 @@ import (
 
 func TestCreateSynologyPushRequiresRegisteredDeviceAndProvisionsCanonicalTarget(t *testing.T) {
 	db, server, owner, _, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.SyncRun{}); err != nil {
+	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
@@ -41,7 +41,7 @@ func TestCreateSynologyPushRequiresRegisteredDeviceAndProvisionsCanonicalTarget(
 	}
 	body := strings.NewReader(`{"name":"NAS Photos","kind":"synology_photos","direction":"push","sync_mode":"backup","run_mode":"scan","target_node_id":0}`)
 	headers := map[string]string{
-		"X-XDrive-Device-ID": deviceID,
+		"X-XDrive-Device-ID":    deviceID,
 		"X-XDrive-Device-Token": deviceToken,
 	}
 	response := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", ownerToken, body,
