@@ -1035,7 +1035,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 if currentPageAuthorized, let details = photoInfoDetails {
                     XDriveIOSNativeViewerInfoSheet(
                         details: details,
-                        onOpenLocation: openNativeLocalMap == nil
+                        onOpenLocation: openNativeLocalMap == nil ||
+                            PHPhotoLibrary.authorizationStatus(for: .readWrite) != .authorized
                             ? nil : { openPhotoLocationInMap() }
                     )
                 }
