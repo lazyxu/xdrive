@@ -36,6 +36,10 @@ const deskDiag = read('desktop/src/renderer/DesktopDiagnosticsPage.tsx')
 const nasDiag = read('ui/shared/src/mui/SynologyDiagnosticsPanel.tsx')
 const hostDiag = read('ui/shared/src/mui/DiagnosticsHostController.tsx')
 const nasAdapter = read('ui/shared/src/synology-backup-adapter.ts')
+const nasSetup = read('ui/shared/src/mui/SynologyBackupSourceSetup.tsx')
+const nasCreate = read('internal/synologyui/nas_share_create.go')
+const managedBootstrap = read('internal/localbackupipc/bootstrap.go')
+const cliBootstrap = read('cmd/xd/backup_init.go')
 const browserStorage = read('ui/shared/src/synology-browser-storage.ts')
 const ownerQuotaIPC = read('internal/localbackupipc/owner_quota.go')
 const ownerFileIPC = read('internal/localbackupipc/owner_files.go')
@@ -201,6 +205,23 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     !nas.includes('onCreated={() => { if (isCurrentHost()) refresh() }}') ||
     !/onFinished=\{\(message\) => \{\s*if \(!isCurrentHost\(\)\) return\s*setScheduleID\(null\)/.test(nas) ||
     !common.includes('targetUnavailableLabel') ||
+    // Local Push destinations are Server-provisioned from the enrolled
+    // device identity. DSM must not ask users to pick ordinary cloud folders.
+    !nasSetup.includes('client.createNASBackupSource(') ||
+    !nasSetup.includes('Server 自动创建并独占管理') ||
+    nasSetup.includes('XDriveSynologyBackupTargetBrowser') ||
+    !nasAdapter.includes('async createNASBackupSource(selectionID, ownerScope, name, signal)') ||
+    nasAdapter.includes('target_id: targetID') ||
+    !nasAdapter.includes('target_path?: string') ||
+    !nas.includes('target_path: item.target_path') ||
+    !cgi.includes('"target_path": item.TargetPath') ||
+    !nasCreate.includes('validManagedNASBackupSource') ||
+    nasCreate.includes('TargetID') ||
+    !managedBootstrap.includes('TargetNodeID: 0') ||
+    !managedBootstrap.includes('source.TargetManaged') ||
+    !managedBootstrap.includes('source.TargetPath') ||
+    !cliBootstrap.includes('CreateLocalBackupSource(ctx, name)') ||
+    cliBootstrap.includes('--target-id') ||
     !nas.includes('Synology DSM') ||
     !cgi.includes('AuthenticateDSM') ||
     /window\.xdriveDesktop|ipcRenderer|localStorage|sessionStorage/.test(nas)) {
