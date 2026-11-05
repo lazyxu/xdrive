@@ -126,3 +126,7 @@ processed Windows after a destination migration.
   managed-target coverage.
 - Do not re-encrypt the ordinary local task history or broaden this P0 to
   nonessential privacy enhancements.
+
+## Unified Push destination namespace (2026-11-05)
+
+The iOS PhotoKit Device identity, restricted managed-upload routes, BG grant and destination-bound cursor remain the platform-specific authorization adapter. For **new** Sources, the common destination namespace is `同步文件夹/Push/<device>/<source>` (the current `同步文件夹/设备备份` prefix is an as-built gap). iOS identity-only credentials must remain unable to use generic Desktop Agent or Root APIs. No old target, receipt or ledger migration is part of this decision. See [the canonical Push/Pull architecture](../../docs/architecture/push-pull-source-management.md) and [platform audit](../../docs/architecture/push-pull-platform-audit.md).

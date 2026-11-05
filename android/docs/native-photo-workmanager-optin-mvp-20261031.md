@@ -76,3 +76,7 @@ manual/worker batch mutex admission, cancellation and failure release.
 
 No new encrypted local backup task ledger, independent Go writer, Server API,
 Desktop Source/Agent role, external analytics or cloud Photo metadata.
+
+## Unified Android Push Source contract (2026-11-05)
+
+The existing MediaStore inventory, encrypted intent ledger, WorkManager scheduling and Go UploadSession writer are platform foundations, but they are not yet an Android Push Source. New Android backup must provision an `android_photos` Source bound to the registered identity-only Android Device and a Server-created target under `同步文件夹/Push/<device>/<source>`. Upload creation, finalize, exact ACK lookup and cursors must be scoped to that Source.TargetNodeID; Owner-root writes are not the target contract. Preserve the identity-only privilege fence. No old target or receipt migration is requested. See [the canonical architecture](../../docs/architecture/push-pull-source-management.md) and [platform audit](../../docs/architecture/push-pull-platform-audit.md).

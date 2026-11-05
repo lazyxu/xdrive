@@ -244,3 +244,7 @@ Shared/...
 When Photos identity enrichment is configured, a file whose exact Photos folder graph + filename resolves into the configured filesystem root and whose reported size matches is observed with the Photos item ID plus its stable filesystem ID as an alias. Existing filesystem-canonical SourceItems are promoted in place; new indexed files start directly with the Photos ID. If Photos is unavailable, inconsistent, incomplete, or the item is not indexed, the scanner falls back to the filesystem identity. A previously promoted item still resolves through its stored filesystem alias and is never downgraded.
 
 Photos API data is used only for file identity/path mapping. Original bytes are always read locally from the DSM filesystem. EXIF, GPS, Live Photo, people/tags and other media semantics remain xDrive-local after the original bytes are committed.
+
+## Unified Push/Pull contract (2026-11-05)
+
+For new DSM Photos Push Sources, follow [the canonical Push/Pull architecture](./architecture/push-pull-source-management.md) and [platform audit](./architecture/push-pull-platform-audit.md). The current CLI setup described above is the as-built state: it still accepts a caller-selected target and does not enroll a Synology ClientDevice. This is a known MVP gap, not the target design. New setup must enroll a DSM Device, provision the paused Source and exclusive target on the Server under `同步文件夹/Push/<device>/<source>`, and bind each run/upload to that Device, Source and Target. Do not migrate old targets.
