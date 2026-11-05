@@ -224,10 +224,23 @@ test('refined PhotoKit map revokes old region cluster actions during and after p
   assert.doesNotMatch(map, /native-ios-map-stale-viewport|上次细化的视窗没有可显示的 GPS 照片/)
 })
 
-test('local library permission grant starts the already authorized local GPS scan', () => {
+test('local map requires Full Photo Library access and never scans a Limited subset', () => {
   assert.match(map, /PHPhotoLibrary\.requestAuthorization\(for: \.readWrite\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
-  assert.match(map, /if mapScope == \.page \{ refresh\(at: 0\) \}[\s\S]*?else if authorization == \.authorized \|\| authorization == \.limited \{[\s\S]*?scanFullLibrary\(\)[\s\S]*?else \{ invalidate\(\) \}/)
+  assert.match(map, /if authorization == \.authorized \{[\s\S]*?scanFullLibrary\(\)[\s\S]*?else \{[\s\S]*?invalidate\(\)/)
+  assert.match(map, /else if authorization == \.limited \{[\s\S]*?本机照片地图需要完整照片访问权限[\s\S]*?openPhotoSettings\(\)/)
+  assert.match(map, /native-ios-map-open-photo-settings/)
+  assert.doesNotMatch(map, /\[\.authorized, \.limited\]\.contains|authorization == \.authorized \|\| authorization == \.limited|permission == \.authorized \|\| permission == \.limited/)
+  assert.match(map, /guard sceneActive, permission == \.authorized,/)
+  assert.match(map, /guard mapScope == \.library, phase == \.active,[\s\S]*?authorization == \.authorized else/)
+  assert.match(map, /onChange\(of: phase\)[\s\S]*?guard authorization == \.authorized else/)
+  assert.match(map, /onChange\(of: changes\.revision\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else/)
+  assert.match(map, /if mapScope == \.library \{\s*scanFullLibrary\(returningCamera: returningCamera\)/)
+  assert.match(map, /private func loadInitial\(\)[\s\S]*?guard phase == \.active,[\s\S]*?\[\.authorized\]\.contains/)
+  assert.match(map, /private func loadNext\(\)[\s\S]*?guard phase == \.active/)
   assert.match(map, /trusted\.representative\.id == cell\.representative\.id/)
+  assert.match(viewer, /private func openPhotoLocationInMap\(\) \{\s*guard PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized else/)
+  assert.match(viewer, /onOpenLocation: openNativeLocalMap == nil \|\|[\s\S]*?authorizationStatus\(for: \.readWrite\) != \.authorized[\s\S]*?\? nil : \{ openPhotoLocationInMap\(\) \}/)
+  assert.match(viewer, /本机照片地图需要完整照片访问权限/)
 })
 
 
@@ -312,10 +325,10 @@ test('iOS Places defaults to the full authorized PhotoKit map without exposing a
   assert.doesNotMatch(map, /Picker\("本机地图扫描范围"/)
   assert.match(map, /case page, library/)
   assert.match(map, /authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)\s+changes\.start\(\)/)
-  assert.match(map, /else if mapScope == \.library && !globalComplete && !busy &&\s*phase == \.active && \(authorization == \.authorized \|\| authorization == \.limited\) \{[\s\S]*?scanFullLibrary\(\)/)
+  assert.match(map, /else if mapScope == \.library && !globalComplete && !busy &&\s*phase == \.active \{[\s\S]*?scanFullLibrary\(\)/)
   assert.match(map, /if next == \.library && phase == \.active \{ scanFullLibrary\(\) \}/)
   assert.match(map, /if mapScope == \.page \{ refresh\(at: offset\) \}\s*else \{ scanFullLibrary\(\) \}/)
-  assert.match(map, /guard mapScope == \.library, phase == \.active,\s*authorization == \.authorized \|\| authorization == \.limited else \{ return \}/)
+  assert.match(map, /guard mapScope == \.library, phase == \.active,\s*authorization == \.authorized else \{/ )
   assert.match(map, /while scanned < total \{/)
   assert.match(spatial, /static let maximumCells = 64/)
   assert.match(map, /pages % 16 == 0 \|\| next\.page\.finished/)
