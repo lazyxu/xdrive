@@ -1005,11 +1005,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     // Parent-owned route hints; all PhotoKit GPS/thumbnail data stays transient.
     // When present, the same map surface is scoped to this verified PhotoKit album.
     var album: XDriveLocalPhotoAlbumSummary? = nil
+    @Binding var mapScope: XDriveIOSNativeLocalMapScope
+    @Binding var offset: Int
     /// Optional dismissal action for a full-screen map opened from the Gallery.
     /// The presenting Gallery remains mounted underneath and keeps its scroll/filter state.
     var onClose: (() -> Void)? = nil
-    @Binding var mapScope: XDriveIOSNativeLocalMapScope
-    @Binding var offset: Int
     var cameraOnEntry: MKCoordinateRegion? = nil
     var onLibraryCameraChange: ((MKCoordinateRegion?) -> Void)? = nil
     var onFocusChange: ((Bool) -> Void)?
