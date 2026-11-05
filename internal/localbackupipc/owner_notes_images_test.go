@@ -162,7 +162,6 @@ func TestOwnerNotesImageIPCRejectsCorruptedImageReceipt(t *testing.T) {
 	}
 }
 
-
 func TestOwnerNotesIOSArchiveImageImportUsesDedicatedOwnerRouteOnce(t *testing.T) {
 	image := []byte("GIF89a")
 	sum := sha256.Sum256(image)
@@ -175,7 +174,9 @@ func TestOwnerNotesIOSArchiveImageImportUsesDedicatedOwnerRouteOnce(t *testing.T
 			r.Header.Get("Authorization") != "Bearer secret" || r.Header.Get("Cookie") != "" {
 			t.Errorf("unexpected iOS archive image route/auth: %s %s", r.Method, r.URL)
 		}
-		var input struct { Image []byte `json:"image"` }
+		var input struct {
+			Image []byte `json:"image"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil || !bytes.Equal(input.Image, image) {
 			t.Errorf("iOS archive image bytes changed: %v", err)
 		}
