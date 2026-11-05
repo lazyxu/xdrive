@@ -94,7 +94,7 @@ export function XDriveSourceDeleteConfirmDialog({
       <XDriveDialogTitle title="移除来源？" onClose={onClose} closeDisabled={busy} />
       <XDriveDialogContent>
         <DialogContentText>
-          移除“{sourceName}”后，已配置或有同步历史的来源会归档，保留来源身份、目标目录、文件、版本和运行历史；
+          移除“{sourceName}”后，已配置或有同步历史的来源会归档，保留来源身份、目标目录、文件、版本和运行历史；已经同步到 xDrive 的文件会保留，不会删除。
           只有未绑定且没有历史的空白草稿才会删除配置记录。此操作不会删除 xDrive 云端文件、设备/NAS 原件或 Share。
           已归档来源可通过“显示已归档”恢复；恢复后保持暂停。
         </DialogContentText>
