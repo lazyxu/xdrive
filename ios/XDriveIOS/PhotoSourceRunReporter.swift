@@ -76,11 +76,14 @@ final class XDriveIOSPhotoSourceRunReporter {
         guard started else { return }
         let status = requestedStatus == "completed" && counts.failed > 0
             ? "partial" : requestedStatus
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "status": status,
             "complete_inventory": false,
             "summary": summary(counts),
         ]
+        if status == "partial" && counts.failed == 0 {
+            body["error"] = "PhotoKit scan ended before the bounded pass completed"
+        }
         if let result = try? await send(
             path: "/api/v1/sources/\(authority.destination.sourceID)/runs/\(runID)/finish",
             method: "POST", body: body
