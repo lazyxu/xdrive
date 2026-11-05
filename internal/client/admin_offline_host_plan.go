@@ -14,8 +14,10 @@ type OfflineHostPlanStatus struct {
 	State      string          `json:"state"`
 	RequestID  string          `json:"request_id,omitempty"`
 	OfflineID  string          `json:"offline_id,omitempty"`
-	TrustMode  string          `json:"offline_trust_mode,omitempty"`
-	Message    string          `json:"message,omitempty"`
+	TrustMode              string          `json:"offline_trust_mode,omitempty"`
+	TrustedManifestSHA256  string          `json:"trusted_manifest_sha256,omitempty"`
+	TrustedInstallerSHA256 string          `json:"trusted_installer_sha256,omitempty"`
+	Message                string          `json:"message,omitempty"`
 	Error      string          `json:"error,omitempty"`
 	StartedAt  string          `json:"started_at,omitempty"`
 	UpdatedAt  string          `json:"updated_at,omitempty"`
