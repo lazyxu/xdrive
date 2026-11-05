@@ -234,6 +234,7 @@ test('local map requires Full Photo Library access and never scans a Limited sub
   assert.match(map, /guard mapScope == \.library, phase == \.active,[\s\S]*?authorization == \.authorized else/)
   assert.match(map, /onChange\(of: phase\)[\s\S]*?guard authorization == \.authorized else/)
   assert.match(map, /onChange\(of: changes\.revision\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else/)
+  assert.match(map, /if mapScope == \.library \{\s*scanFullLibrary\(returningCamera: returningCamera\)/)
   assert.match(map, /private func loadInitial\(\)[\s\S]*?guard phase == \.active,[\s\S]*?\[\.authorized\]\.contains/)
   assert.match(map, /private func loadNext\(\)[\s\S]*?guard phase == \.active/)
   assert.match(map, /trusted\.representative\.id == cell\.representative\.id/)
