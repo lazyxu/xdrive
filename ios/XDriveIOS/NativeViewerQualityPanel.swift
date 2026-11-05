@@ -72,7 +72,8 @@ struct XDriveIOSNativeViewerInfoSheet: View {
     }
 
     private func durationLabel(_ seconds: TimeInterval?) -> String {
-        guard let seconds, seconds.isFinite, seconds >= 0 else { return "未提供" }
+        guard let seconds, seconds.isFinite, seconds >= 0,
+              seconds < Double(Int.max) else { return "未提供" }
         let total = Int(seconds.rounded(.down))
         if total >= 3600 {
             return String(format: "%d:%02d:%02d",
@@ -190,6 +191,10 @@ private struct XDriveIOSNativeViewerInfoMapPreview: UIViewRepresentable {
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
+        map.removeAnnotations(map.annotations)
+        let pin = MKPointAnnotation()
+        pin.coordinate = coordinate
+        map.addAnnotation(pin)
         map.setRegion(
             MKCoordinateRegion(
                 center: coordinate,
