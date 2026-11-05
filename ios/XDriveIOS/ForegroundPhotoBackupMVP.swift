@@ -132,7 +132,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                     queuedIdentifiers.insert(candidate.pending.localIdentifier)
                     if report.uploaded >= maximumNewOriginals { break }
                     report.changeQueueProcessed += 1
-                    report.stage = "优先处理新增/修改的原件（队列 \\(report.changeQueueProcessed)）…"
+                    report.stage = "优先处理新增/修改的原件（队列 \(report.changeQueueProcessed)）…"
                     await publish(report)
 
                     guard candidate.kind == "image" || candidate.kind == "video",
