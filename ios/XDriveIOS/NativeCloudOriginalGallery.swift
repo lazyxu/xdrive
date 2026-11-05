@@ -1362,8 +1362,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             previewRequestID = UUID()
         }
         .onChange(of: login.owner) { _ in
-            showingMediaInfo = false
             cancelPhotoRestore()
+            showingMediaInfo = false
             // Retire the former Owner's signed media URL immediately.
             exporter.invalidate()
             player?.pause()
@@ -1381,8 +1381,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             dismiss()
         }
         .onDisappear {
-            showingMediaInfo = false
             cancelPhotoRestore()
+            showingMediaInfo = false
             exporter.invalidate()
             player?.pause()
             player = nil
