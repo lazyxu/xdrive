@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	yikeSourceKind           = "yike_photos"
+	yikeSourceKind              = "yike_photos"
 	yikeTargetRootName          = "同步文件夹"
 	yikePullTargetRootName      = "Pull"
 	yikePullTargetConnectorName = "Yike Photos"
