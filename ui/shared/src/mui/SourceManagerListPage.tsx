@@ -24,7 +24,7 @@ import { formatBytes } from '../format'
 import type { ExternalSourceRow } from '../external-sources'
 
 export function XDriveSourceManagerListPage({
-  title = '来源',
+  title = '来源管理',
   subtitle = '管理来源连接、凭据、计划和运行状态。',
   rows,
   directionFilter,
