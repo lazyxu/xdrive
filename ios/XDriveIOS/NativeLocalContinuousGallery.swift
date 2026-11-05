@@ -656,12 +656,12 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                     XDriveIOSNativeLocalPhotoMapScreen(
                         mapScope: .constant(.library),
                         offset: .constant(0),
-                        cameraOnEntry: mapCamera,
-                        onLibraryCameraChange: { next in mapCamera = next },
                         onClose: {
                             showingMap = false
                             mapJump = nil
-                        }
+                        },
+                        cameraOnEntry: mapCamera,
+                        onLibraryCameraChange: { next in mapCamera = next }
                     )
                     .environment(\.xdriveNativeLocalMapJump, mapJump)
                 }
