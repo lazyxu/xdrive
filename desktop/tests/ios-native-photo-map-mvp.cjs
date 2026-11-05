@@ -220,7 +220,6 @@ test('refined PhotoKit map revokes old region cluster actions during and after p
   assert.match(map, /globalCameraMoving = true/)
   assert.match(map, /globalCameraMoving = false/)
   assert.doesNotMatch(map, /native-ios-map-stale-viewport|上次细化的视窗没有可显示的 GPS 照片/)
-  assert.match(map, /上次细化的视窗没有可显示的 GPS 照片/)
 })
 
 test('local library permission grant starts the already authorized local GPS scan', () => {
