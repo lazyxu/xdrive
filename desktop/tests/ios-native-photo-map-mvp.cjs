@@ -486,7 +486,8 @@ test('album map scans the current PhotoKit collection snapshot, not the whole li
 test('native local Gallery opens the full-library map from its filter menu without destroying the wall', () => {
   assert.match(localWall, /Section\("地图"\)[\s\S]*?Button \{\s*showingMap = true\s*\}[\s\S]*?Label\("显示地图", systemImage: "map"\)/)
   assert.match(localWall, /permission != \.authorized[\s\S]*?native-ios-local-wall-show-map/)
-  assert.match(localWall, /\.fullScreenCover\(isPresented: \$showingMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\([\s\S]*?mapScope: \.constant\(\.library\)[\s\S]*?onClose: \{ showingMap = false \}/)
+  assert.match(localWall, /\.fullScreenCover\(isPresented: \$showingMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\([\s\S]*?mapScope: \.constant\(\.library\)[\s\S]*?cameraOnEntry: mapCamera[\s\S]*?onLibraryCameraChange: \{ next in mapCamera = next \}[\s\S]*?onClose:/)
+  assert.match(localWall, /@State private var mapCamera: MKCoordinateRegion\?/)
   assert.match(localWall, /\.environment\(\\\.xdriveNativeLocalMapJump, nil\)/)
   assert.match(map, /if album != nil \|\| onClose != nil[\s\S]*?if onClose != nil \{ onClose\?\(\) \}/)
   assert.match(map, /if album == nil && onFocusChange != nil/)
