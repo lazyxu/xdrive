@@ -172,7 +172,7 @@ test('Viewer steps across the correct filtered 64-slot PhotoKit page and returns
   assert.match(detail, /crossingTask = Task \{ @MainActor in/)
   assert.match(detail, /if let next = neighbor\(direction\)/)
   assert.match(detail, /show\(next, from: adjacent\)/)
-  assert.match(detail, /\.onChange\(of: changes\.generation\) \{ _ in\s*showingPhotoInfo = false\s*photoLocation = nil\s*cancelCrossing\(\)/)
+  assert.match(detail, /\.onChange\(of: changes\.generation\) \{ _ in\s*showingPhotoInfo = false\s*photoInfoDetails = nil\s*cancelCrossing\(\)/)
   assert.match(detail, /\.onDisappear \{\s*cancelCrossing\(\)/)
   assert.match(scanner, /func adjacentPage\(/)
   assert.match(scanner, /asset\.localIdentifier == expected\.id/)
@@ -221,7 +221,7 @@ test('native local Viewer offers single-photo original share, favorites and syst
   assert.match(detail, /XDriveIOSNativeLocalPhotoSelectionActions\.setFavorite\(\s*\[captured\], to: favorite/)
   assert.match(detail, /XDriveIOSNativeLocalPhotoSelectionActions\.delete\(\[captured\]\)/)
   assert.match(detail, /photoActionTask\?\.cancel\(\)/)
-  assert.match(detail, /\.onChange\(of: changes\.generation\) \{ _ in\s*showingPhotoInfo = false\s*photoLocation = nil\s*cancelCrossing\(\)\s*cancelPhotoAction\(\)/)
+  assert.match(detail, /\.onChange\(of: changes\.generation\) \{ _ in\s*showingPhotoInfo = false\s*photoInfoDetails = nil\s*cancelCrossing\(\)\s*cancelPhotoAction\(\)/)
   assert.match(action, /PHAssetChangeRequest\.deleteAssets\(assets as NSArray\)/)
   assert.match(share, /XDrivePhotoKitOriginalExporter\.stage\(/)
 });
