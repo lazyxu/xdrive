@@ -38,7 +38,7 @@ enum XDriveIOSPhotoBackupMVPError: Error {
 struct XDriveIOSForegroundPhotoBackupMVP {
     let owner: XDriveNativeOwnerRoot
     private let authorization: XDriveIOSOriginalOwnerAuthorization
-    private let sourceProgress: @MainActor (XDriveIOSPhotoBackupProgress) async -> Void
+    private let sourceProgress: @MainActor (XDriveIOSPhotoBackupProgress) -> Void
 
     init(owner: XDriveNativeOwnerRoot, accessToken: String) {
         self.owner = owner
@@ -48,7 +48,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
 
     init(owner: XDriveNativeOwnerRoot,
          managedForeground: XDriveIOSManagedOriginalAuthority,
-         onSourceProgress: @escaping @MainActor (XDriveIOSPhotoBackupProgress) async -> Void = { _ in }) {
+         onSourceProgress: @escaping @MainActor (XDriveIOSPhotoBackupProgress) -> Void = { _ in }) {
         self.owner = owner
         self.authorization = .managedForeground(managedForeground)
         self.sourceProgress = onSourceProgress
@@ -74,7 +74,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         async throws -> XDriveIOSPhotoBackupProgress {
         func publish(_ value: XDriveIOSPhotoBackupProgress) async {
             await onProgress(value)
-            await sourceProgress(value)
+            sourceProgress(value)
         }
         guard startOffset >= 0, maximumNewOriginals > 0,
               maximumNewOriginals <= Self.maxNewOriginalsPerRun,
