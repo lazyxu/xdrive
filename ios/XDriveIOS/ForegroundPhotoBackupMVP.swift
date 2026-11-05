@@ -74,7 +74,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         async throws -> XDriveIOSPhotoBackupProgress {
         func publish(_ value: XDriveIOSPhotoBackupProgress) async {
             await onProgress(value)
-            sourceProgress(value)
+            await sourceProgress(value)
         }
         guard startOffset >= 0, maximumNewOriginals > 0,
               maximumNewOriginals <= Self.maxNewOriginalsPerRun,
