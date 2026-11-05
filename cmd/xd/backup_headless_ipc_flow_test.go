@@ -69,18 +69,21 @@ func TestHeadlessCLIInitAndIncrementalsShareOneAuthenticatedAgent(t *testing.T) 
 			var input map[string]any
 			if json.NewDecoder(r.Body).Decode(&input) != nil ||
 				input["name"] != "Photos" || input["kind"] != "local_folder" ||
-				input["direction"] != "push" || input["sync_mode"] != "backup" ||
-				input["target_node_id"] != float64(0) {
+				input["direction"] != "push" || input["sync_mode"] != "backup" {
 				fail()
 				return
 			}
-			target := uint64(84)
+			if _, supplied := input["target_node_id"]; supplied {
+				fail()
+				return
+			}
+			target := uint64(77)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(localbackupipc.LocalBackupSource{
 				ID: 42, Name: "Photos", Kind: "local_folder", Direction: "push",
 				SyncMode: "backup", Status: "paused", Revision: 1,
 				TargetNodeID: &target, TargetManaged: true,
-				TargetPath: "同步文件夹/设备备份/TEST_123456789012/Photos",
+				TargetPath: "同步文件夹/Push/device_123456789abc/Photos",
 			})
 		case "POST /v1/local-folder/authorize":
 			var input map[string]any

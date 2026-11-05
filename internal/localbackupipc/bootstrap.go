@@ -23,7 +23,7 @@ type LocalBackupSource struct {
 	SyncMode      string  `json:"sync_mode"`
 	Status        string  `json:"status"`
 	Revision      uint64  `json:"revision"`
-	TargetNodeID  *uint64 `json:"target_node_id"`
+	TargetNodeID  *uint64 `json:"target_node_id,omitempty"`
 	TargetManaged bool    `json:"target_managed"`
 	TargetPath    string  `json:"target_path"`
 }
@@ -81,19 +81,17 @@ func (c *Client) PreflightLocalRoot(ctx context.Context, path string) error {
 	return nil
 }
 
-// CreateLocalBackupSource uses the EXISTING Agent Source-creation API. The
-// Server derives an exclusive cloud destination from the authenticated device;
-// callers must not select or supply an ordinary cloud directory. No device
-// token enters this client or response.
+// CreateLocalBackupSource uses the EXISTING Agent Source-creation API, which
+// registers/reuses its private device and constrains local Sources to paused
+// owner-authorized Backup-only. No device token enters this client or response.
 func (c *Client) CreateLocalBackupSource(ctx context.Context, name string) (LocalBackupSource, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || len([]byte(name)) > 128 || strings.ContainsAny(name, "\x00\r\n") {
-		return LocalBackupSource{}, errors.New("valid local backup Source name required")
+	if name == "" || len([]byte(name)) > 128 {
+		return LocalBackupSource{}, errors.New("valid local Push Source name required")
 	}
 	request := client.CreateSourceInput{
 		Name: name, Kind: "local_folder", Direction: "push",
 		SyncMode: "backup", RunMode: "sync", ScheduleType: "manual",
-		TargetNodeID: 0,
 	}
 	var source LocalBackupSource
 	if err := c.request(ctx, http.MethodPost, "/v1/sources", request, &source); err != nil {
@@ -102,10 +100,10 @@ func (c *Client) CreateLocalBackupSource(ctx context.Context, name string) (Loca
 	if !ValidSourceID(source.ID) || source.Revision == 0 ||
 		source.Name != name || source.Kind != "local_folder" ||
 		source.Direction != "push" || source.SyncMode != "backup" ||
-		source.Status != "paused" || !source.TargetManaged || source.TargetNodeID == nil ||
-		!ValidSourceID(*source.TargetNodeID) || source.TargetPath == "" ||
-		len([]byte(source.TargetPath)) > 2048 || strings.ContainsAny(source.TargetPath, "\x00\r\n") {
-		return LocalBackupSource{}, errors.New("owning Agent did not provision a valid Server-managed local backup target")
+		source.Status != "paused" || source.TargetNodeID == nil ||
+		!ValidSourceID(*source.TargetNodeID) || !source.TargetManaged ||
+		strings.TrimSpace(source.TargetPath) == "" || len([]byte(source.TargetPath)) > 4096 {
+		return LocalBackupSource{}, errors.New("owning Agent did not return a verified Server-managed local Push target")
 	}
 	return source, nil
 }

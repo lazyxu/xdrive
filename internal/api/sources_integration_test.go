@@ -103,7 +103,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	}
 	if fileSource.Status != meta.SourceStatusPaused || fileSource.Revision != 1 ||
 		fileSource.TargetNodeID == nil || *fileSource.TargetNodeID == targetA.ID ||
-		fileSource.TargetPath != "同步文件夹/远程拉取/Synology Files/Synology Files" {
+		fileSource.TargetPath != "同步文件夹/Pull/Synology Files/Synology Files" {
 		t.Fatalf("File Station source should start paused with an exclusive managed target: %+v", fileSource)
 	}
 	filePath := fmt.Sprintf("/api/v1/sources/%d", fileSource.ID)
@@ -165,7 +165,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if localCreated.ID == 0 || localCreated.Kind != meta.SourceKindLocalFolder ||
 		localCreated.Direction != meta.SourceDirectionPush || localCreated.Status != meta.SourceStatusPaused ||
 		localCreated.Revision != 1 || localCreated.TargetNodeID == nil || *localCreated.TargetNodeID == targetA.ID ||
-		localCreated.TargetPath != "同步文件夹/设备备份/"+deviceFolder+"/Local Desktop Files" {
+		localCreated.TargetPath != "同步文件夹/Push/"+deviceFolder+"/Local Desktop Files" {
 		t.Fatalf("local folder must start paused in a dedicated server-managed target: %+v", localCreated)
 	}
 	var localStored meta.Source
@@ -372,12 +372,17 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A completed run is durable history. Generic DELETE must not cascade
-	// away its provenance while an explicit Source archive flow is pending.
+	// A completed run is durable history. DELETE archives the Source and
+	// retains its identity rather than cascading away its provenance.
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenA,
-		nil, http.StatusConflict, map[string]string{"If-Match": `"2"`})
-	if err := db.First(&meta.Source{}, created.ID).Error; err != nil {
-		t.Fatalf("source history guard removed its Source: %v", err)
+		nil, http.StatusNoContent, map[string]string{"If-Match": `"2"`})
+	var archived meta.Source
+	if err := db.First(&archived, created.ID).Error; err != nil {
+		t.Fatalf("source archive removed its Source: %v", err)
+	}
+	if archived.Status != meta.SourceStatusArchived || archived.Revision != 3 ||
+		archived.TargetNodeID == nil || *archived.TargetNodeID != targetA.ID {
+		t.Fatalf("source DELETE did not archive while preserving target: %+v", archived)
 	}
 	if err := db.First(&meta.Node{}, targetA.ID).Error; err != nil {
 		t.Fatalf("source history guard removed its target node: %v", err)

@@ -15,12 +15,12 @@ export XD_PASSWORD
 xd login --server https://drive.example.com --username USER
 unset XD_PASSWORD
 
-# Optional read-only cloud directory inspection (not needed for local Backup setup).
+# Optional read-only browser for existing cloud folders; not used to create Push targets.
 xd backup targets
 xd backup targets --parent 123
 
 # Single Agent-driven setup: native preflight, device enrollment,
-# Server-managed exclusive cloud destination, paused Source and native Root binding.
+# Server-created paused Push target, native Root binding, optional schedule.
 xd backup init --name Photos --path /data/photos --every 6h --run-now
 
 # The explicit --run-now uses the same Agent runner and arms the schedule
@@ -34,16 +34,18 @@ xd backup drafts
 xd backup bind --source 42 --path /data/photos
 ~~~
 
-The Server automatically creates an exclusive cloud destination under the
-current Owner's device-backup hierarchy, derived from the authenticated
-creating-device identity and Source name. `xd backup init` does not accept a
-cloud target ID; `xd backup targets` remains a read-only directory inspection
-command only. `--path` is a canonical absolute directory on the current
-machine and is validated by the owning Agent. No remote Web request can
-authorize the Root, and no CLI argument can select a foreign Device. An
-ambiguous Source creation is not blindly repeated: inspect same-device paused
-drafts first. A failed Root bind leaves its Source paused for an explicit
-`bind` command.
+The cloud destination is created transactionally by the Server under its
+managed Push target policy and returned as the Source's exact TargetNodeID/path.
+The CLI never submits a cloud parent or target ID for a new Push Source;
+`xd backup targets` remains a read-only browser only. The canonical
+`同步文件夹/Push` namespace is handled by the Server-side provisioning change
+tracked separately in PR #3902; this CLI does not create or migrate directories.
+`--path` is a canonical absolute directory on the current machine and is
+validated by the owning Agent.
+No remote Web request can authorize the Root, and no CLI argument can select a
+foreign Device. An ambiguous Source creation is not blindly repeated: inspect
+the list of same-device paused drafts first. A failed Root bind leaves its
+Source paused for an explicit `bind` command.
 
 By default, `init` **does not silently start** an upload. Pass explicit
 `--run-now` to start one run using the existing owning Agent immediately after

@@ -261,3 +261,7 @@ Continue affected security/Owner tests and exact-HEAD required CI for implementa
 PRs. Inaccessible physical production tests can be **跳过（未验收）** by user
 decision; source-level authorization, compilation, transport integrity and
 platform permission checks cannot be marked passed by a skip.
+
+## Unified Push/Pull Source contract (2026-11-05)
+
+The canonical cross-platform Source, Device, Target, Worker and management contract is now [Unified Push/Pull Source Management](./push-pull-source-management.md), with the [platform implementation audit](./push-pull-platform-audit.md). It supersedes any older per-platform destination-root or execution-model assumptions for **new** Sources only. New targets must be provisioned below `同步文件夹/Push` or `同步文件夹/Pull`; Push requires Owner-bound Device identity plus platform-specific local capability; Pull always executes in an isolated per-Source Server Worker. Existing destinations and data are not migrated.

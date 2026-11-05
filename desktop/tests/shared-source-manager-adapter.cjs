@@ -48,7 +48,8 @@ test('Desktop keeps only Agent transport mapping and target browsing local', () 
   for (const token of [
     'createXDriveSourceManagerAdapter',
     'resolveXDriveSourceManagerTransport',
-    'sources: () => agent.getSources()',
+    'sources: (_signal, includeArchived) => agent.getSources(includeArchived)',
+    'restoreSource: (sourceID, revision) => agent.restoreSource(sourceID, revision)',
     'sourceCredentialStatus: (sourceID) => agent.getSourceCredential(sourceID)',
     'sourceRuns: (sourceID, limit, offset) => agent.getSourceRuns(sourceID, limit, offset)',
     'agent.getSourceRunSkips(sourceID, runID, limit, offset)',

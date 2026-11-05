@@ -458,12 +458,17 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 		Update("status", meta.SourceStatusActive).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, blocked := range []meta.Source{historyRunSource, historyItemSource, activeSource} {
-		url := fmt.Sprintf("/api/v1/sources/%d", blocked.ID)
-		requestWithHeaders(t, router, http.MethodDelete, url, ownerJWT, nil, http.StatusConflict, own)
+	for _, archived := range []meta.Source{historyRunSource, historyItemSource, activeSource} {
+		url := fmt.Sprintf("/api/v1/sources/%d", archived.ID)
+		requestWithHeaders(t, router, http.MethodDelete, url, ownerJWT, nil, http.StatusNoContent, own)
 		var retainedSource meta.Source
-		if err := db.Where("id = ?", blocked.ID).Take(&retainedSource).Error; err != nil {
-			t.Fatalf("history guard deleted Source %d: %v", blocked.ID, err)
+		if err := db.Where("id = ?", archived.ID).Take(&retainedSource).Error; err != nil {
+			t.Fatalf("DELETE removed archived Source %d: %v", archived.ID, err)
+		}
+		if retainedSource.Status != meta.SourceStatusArchived || retainedSource.Revision != archived.Revision+1 ||
+			(retainedSource.TargetNodeID == nil) != (archived.TargetNodeID == nil) ||
+			(retainedSource.TargetNodeID != nil && *retainedSource.TargetNodeID != *archived.TargetNodeID) {
+			t.Fatalf("DELETE did not archive Source %d without changing its target: before=%+v after=%+v", archived.ID, archived, retainedSource)
 		}
 	}
 	var preservedRuns, preservedItems int64

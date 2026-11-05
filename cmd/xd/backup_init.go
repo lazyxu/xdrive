@@ -54,7 +54,7 @@ func runBackupInit(ctx context.Context, agent backupBootstrapAgent, name, path s
 	if ctx == nil || ctx.Err() != nil || agent == nil || out == nil ||
 		name == "" || len([]byte(name)) > 128 ||
 		!localbackupipc.ValidLocalBackupPath(path) {
-		return 0, errors.New("name and explicit authorized local path are required")
+		return 0, errors.New("name and authorized local path are required")
 	}
 	if spec.Type != "" && spec.Type != sourceschedule.TypeManual {
 		normalized, err := sourceschedule.Normalize(spec.Type, spec.Expression, spec.Timezone)
@@ -70,6 +70,12 @@ func runBackupInit(ctx context.Context, agent backupBootstrapAgent, name, path s
 		return 0, fmt.Errorf("Source creation result is unknown; inspect 'xd backup drafts' before trying again: %w", err)
 	}
 	id := created.ID
+	if !localbackupipc.ValidSourceID(id) || created.TargetNodeID == nil ||
+		!localbackupipc.ValidSourceID(*created.TargetNodeID) || !created.TargetManaged ||
+		strings.TrimSpace(created.TargetPath) == "" {
+		return id, fmt.Errorf("Source creation did not return a verified Server-managed cloud target; inspect 'xd backup drafts' before retrying")
+	}
+	fmt.Fprintf(out, "Server target: %s (Node %d)\n", created.TargetPath, *created.TargetNodeID)
 	grant, err := agent.AuthorizeLocalRoot(ctx, id, path)
 	if err != nil {
 		return id, fmt.Errorf("Source %d remains a paused draft; use 'xd backup bind --source %d --path ABS_DIR' to retry: %w", id, id, err)
@@ -140,8 +146,9 @@ func backupBootstrapCmd(args []string) error {
 	}
 	switch action {
 	case "init":
-		// The Server provisions an exclusive destination from the enrolled device;
-		// init never accepts a caller-selected cloud directory.
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("init requires --name and --path")
+		}
 	case "bind":
 		if !localbackupipc.ValidSourceID(*source) {
 			return errors.New("bind requires --source and --path only")

@@ -29,6 +29,7 @@ const (
 func backupUsage(w io.Writer) {
 	fmt.Fprintln(w, "Backup-only (same owning xdrive-agent; Desktop is optional):")
 	fmt.Fprintln(w, "  xd backup init --name NAME --path ABS_DIR [--every 6h] [--run-now]")
+	fmt.Fprintln(w, "The Server creates and returns the managed cloud target for each new Push Source.")
 	fmt.Fprintln(w, "  xd backup bind --source ID --path ABS_DIR")
 	fmt.Fprintln(w, "  xd backup drafts")
 	fmt.Fprintln(w, "  xd backup targets [--parent CLOUD_DIR_ID]")

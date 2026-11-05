@@ -851,7 +851,7 @@ declare global {
         releaseMediaLivePhotoMotion: (
           url: string,
         ) => Promise<DesktopResult<{ released: boolean }>>
-        getSources: () => Promise<DesktopResult<AgentSource[]>>
+        getSources: (includeArchived?: boolean) => Promise<DesktopResult<AgentSource[]>>
         getDeviceBackups: (requestID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupsPage: (limit?: number, afterDeviceID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupFoldersPage: (deviceID: string, limit?: number, afterSourceID?: number) => Promise<DesktopResult<XDriveDeviceBackupFolderPage>>
@@ -910,6 +910,7 @@ declare global {
         createSource: (input: AgentCreateSourceInput) => Promise<DesktopResult<AgentSource>>
         updateSource: (sourceID: number, revision: number, input: AgentUpdateSourceInput) => Promise<DesktopResult<AgentSource>>
         deleteSource: (sourceID: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
+        restoreSource: (sourceID: number, revision: number) => Promise<DesktopResult<AgentSource>>
         triggerSource: (sourceID: number) => Promise<DesktopResult<AgentSource>>
         cloudRoot: (requestID?: string) => Promise<DesktopResult<AgentCloudNode>>
         cloudChildren: (parentID: number) => Promise<DesktopResult<AgentCloudNode[]>>

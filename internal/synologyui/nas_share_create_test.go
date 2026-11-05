@@ -60,7 +60,7 @@ func (f *fakeNASSourceCreator) CreateLocalBackupSource(
 		ID: 57, Name: name, Kind: "local_folder",
 		Direction: "push", SyncMode: "backup", Status: "paused",
 		Revision: 1, TargetNodeID: &target, TargetManaged: !f.unmanagedTarget,
-		TargetPath: "同步文件夹/设备备份/NAS_123456789012/NAS Photos",
+		TargetPath: "同步文件夹/Push/NAS_123456789012/NAS Photos",
 	}, nil
 }
 

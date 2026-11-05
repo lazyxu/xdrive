@@ -44,18 +44,20 @@ func TestHeadlessBootstrapUsesOriginalOwningAgentEndpoints(t *testing.T) {
 			if json.NewDecoder(r.Body).Decode(&request) != nil ||
 				request["kind"] != "local_folder" ||
 				request["direction"] != "push" ||
-				request["sync_mode"] != "backup" ||
-				request["target_node_id"] != float64(0) {
+				request["sync_mode"] != "backup" {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			target := uint64(84)
+			if _, supplied := request["target_node_id"]; supplied {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(LocalBackupSource{
 				ID: 42, Name: "Photos", Revision: 1, Status: "paused",
 				Kind: "local_folder", Direction: "push", SyncMode: "backup",
-				TargetNodeID: &target, TargetManaged: true,
-				TargetPath: "同步文件夹/设备备份/NAS_123456789012/Photos",
+				TargetNodeID:  func() *uint64 { v := uint64(77); return &v }(),
+				TargetManaged: true, TargetPath: "同步文件夹/Push/device_123456789abc/Photos",
 			})
 		case "/v1/local-folder/authorize":
 			var req localBackupRootRequest
@@ -105,50 +107,31 @@ func TestHeadlessBootstrapUsesOriginalOwningAgentEndpoints(t *testing.T) {
 	}
 }
 
-func TestHeadlessBootstrapRequiresServerManagedTarget(t *testing.T) {
-	cases := []struct {
-		name       string
-		managed    bool
-		targetID   *uint64
-		targetPath string
-	}{
-		{name: "unmanaged target", managed: false, targetID: func() *uint64 { v := uint64(84); return &v }(), targetPath: "同步文件夹/设备备份/Device/Photos"},
-		{name: "missing target node", managed: true, targetID: nil, targetPath: "同步文件夹/设备备份/Device/Photos"},
-		{name: "missing target path", managed: true, targetID: func() *uint64 { v := uint64(84); return &v }(), targetPath: ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			dir, _ := testEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/v1/hello" {
-					testHello(w)
-					return
-				}
-				if r.URL.Path != "/v1/sources" || r.Method != http.MethodPost {
-					w.WriteHeader(http.StatusNotFound)
-					return
-				}
-				var request map[string]any
-				if json.NewDecoder(r.Body).Decode(&request) != nil ||
-					request["target_node_id"] != float64(0) {
-					w.WriteHeader(http.StatusBadRequest)
-					return
-				}
-				w.WriteHeader(http.StatusCreated)
-				_ = json.NewEncoder(w).Encode(LocalBackupSource{
-					ID: 42, Name: "Photos", Revision: 1, Status: "paused",
-					Kind: "local_folder", Direction: "push", SyncMode: "backup",
-					TargetNodeID: tc.targetID, TargetManaged: tc.managed,
-					TargetPath: tc.targetPath,
-				})
-			}))
-			agent, err := Connect(context.Background(), dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := agent.CreateLocalBackupSource(context.Background(), "Photos"); err == nil {
-				t.Fatal("unverified cloud destination was accepted")
-			}
+func TestHeadlessBootstrapRejectsUnmanagedServerTarget(t *testing.T) {
+	dir, _ := testEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/hello" {
+			testHello(w)
+			return
+		}
+		if r.URL.Path != "/v1/sources" || r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		targetID := uint64(77)
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(LocalBackupSource{
+			ID: 42, Name: "Photos", Revision: 1, Status: "paused",
+			Kind: "local_folder", Direction: "push", SyncMode: "backup",
+			TargetNodeID: &targetID, TargetManaged: false,
+			TargetPath: "同步文件夹/Push/device_123456789abc/Photos",
 		})
+	}))
+	agent, err := Connect(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agent.CreateLocalBackupSource(context.Background(), "Photos"); err == nil {
+		t.Fatal("unmanaged target response was accepted as a Server-provisioned Push target")
 	}
 }
 

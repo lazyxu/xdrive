@@ -59,7 +59,7 @@ func createLocalPushManagedTargetTx(
 
 	parent := root
 	ancestorIDs := []uint64{root.ID}
-	for _, segment := range []string{yikeTargetRootName, "设备备份"} {
+	for _, segment := range []string{yikeTargetRootName, "Push"} {
 		parent, err = ensureOwnedChildDirectoryTx(ctx, tx, source.OwnerID, parent.ID, segment)
 		if err != nil {
 			if errors.Is(err, errYikeTargetPathConflict) || isDuplicate(err) {

@@ -32,12 +32,12 @@ func (f *fakeBootstrapAgent) CreateLocalBackupSource(_ context.Context, name str
 	if f.createErr != nil {
 		return localbackupipc.LocalBackupSource{}, f.createErr
 	}
-	target := uint64(84)
+	target := uint64(77) // assigned by the Server, never supplied by xd
 	return localbackupipc.LocalBackupSource{
 		ID: 42, Name: name, Revision: 1, Kind: "local_folder",
 		Direction: "push", SyncMode: "backup", Status: "paused",
 		TargetNodeID: &target, TargetManaged: true,
-		TargetPath: "同步文件夹/设备备份/TEST_123456789012/" + name,
+		TargetPath: "同步文件夹/Push/device_123456789abc/" + name,
 	}, nil
 }
 func (f *fakeBootstrapAgent) AuthorizeLocalRoot(_ context.Context, sourceID uint64, path string) (localbackupipc.LocalBackupRootGrant, error) {
@@ -147,16 +147,14 @@ func TestHeadlessInitFailClosedBeforeSourceOrWithRecoverableDraft(t *testing.T) 
 	root := filepath.Join(t.TempDir(), "files")
 	t.Run("invalid_local_root", func(t *testing.T) {
 		agent := &fakeBootstrapAgent{preflightErr: errors.New("unsafe symlink")}
-		id, err := runBackupInit(context.Background(), agent, "Photos", root,
-			sourceschedule.Spec{}, &bytes.Buffer{})
+		id, err := runBackupInit(context.Background(), agent, "Photos", root, sourceschedule.Spec{}, &bytes.Buffer{})
 		if err == nil || id != 0 || agent.created != 0 || agent.bound != 0 {
 			t.Fatalf("preflight created an unauthorized Source: id=%d err=%v agent=%+v", id, err, agent)
 		}
 	})
 	t.Run("unconfirmed_creation", func(t *testing.T) {
 		agent := &fakeBootstrapAgent{createErr: errors.New("lost HTTP ack")}
-		id, err := runBackupInit(context.Background(), agent, "Photos", root,
-			sourceschedule.Spec{}, &bytes.Buffer{})
+		id, err := runBackupInit(context.Background(), agent, "Photos", root, sourceschedule.Spec{}, &bytes.Buffer{})
 		if err == nil || id != 0 || agent.bound != 0 ||
 			!strings.Contains(err.Error(), "xd backup drafts") {
 			t.Fatalf("unconfirmed creation retried or claimed success: id=%d err=%v", id, err)
@@ -164,8 +162,7 @@ func TestHeadlessInitFailClosedBeforeSourceOrWithRecoverableDraft(t *testing.T) 
 	})
 	t.Run("failed_root_bind", func(t *testing.T) {
 		agent := &fakeBootstrapAgent{bindErr: errors.New("permission denied")}
-		id, err := runBackupInit(context.Background(), agent, "Photos", root,
-			sourceschedule.Spec{}, &bytes.Buffer{})
+		id, err := runBackupInit(context.Background(), agent, "Photos", root, sourceschedule.Spec{}, &bytes.Buffer{})
 		if err == nil || id != 42 || agent.saved != 0 ||
 			!strings.Contains(err.Error(), "xd backup bind --source 42") {
 			t.Fatalf("failed Root binding was not preserved as a draft: id=%d err=%v", id, err)
@@ -173,8 +170,7 @@ func TestHeadlessInitFailClosedBeforeSourceOrWithRecoverableDraft(t *testing.T) 
 	})
 	t.Run("failed_schedule", func(t *testing.T) {
 		agent := &fakeBootstrapAgent{scheduleErr: errors.New("changed Source revision")}
-		id, err := runBackupInit(context.Background(), agent, "Photos", root,
-			sourceschedule.Spec{Type: "interval", Expression: "6h"}, &bytes.Buffer{})
+		id, err := runBackupInit(context.Background(), agent, "Photos", root, sourceschedule.Spec{Type: "interval", Expression: "6h"}, &bytes.Buffer{})
 		if err == nil || id != 42 || agent.bound != 1 ||
 			!strings.Contains(err.Error(), "Source 42") {
 			t.Fatalf("ambiguous schedule reported success: id=%d err=%v", id, err)
@@ -182,14 +178,14 @@ func TestHeadlessInitFailClosedBeforeSourceOrWithRecoverableDraft(t *testing.T) 
 	})
 }
 
-func TestHeadlessInitRequiresExplicitAbsoluteRoot(t *testing.T) {
+func TestHeadlessInitRequiresExplicitAbsoluteRootAndValidName(t *testing.T) {
 	if _, err := normalizedExplicitBackupPath("relative/photos"); err == nil {
 		t.Fatal("relative backup path accepted")
 	}
 	agent := &fakeBootstrapAgent{}
-	_, err := runBackupInit(context.Background(), agent, "Photos",
-		"relative/photos", sourceschedule.Spec{}, &bytes.Buffer{})
+	_, err := runBackupInit(context.Background(), agent, "",
+		filepath.Join(t.TempDir(), "photos"), sourceschedule.Spec{}, &bytes.Buffer{})
 	if err == nil || agent.preflighted != 0 || agent.created != 0 {
-		t.Fatal("invalid local path created Source")
+		t.Fatal("invalid Source name reached native preflight or Server creation")
 	}
 }

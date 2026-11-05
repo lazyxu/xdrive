@@ -197,7 +197,7 @@ function XDriveSynologyBackupSourceSetupForHost({
             <Typography variant="body2">已通过本机预检：{selectedShare.label}</Typography>
           ) : <Typography variant="body2" color="text.secondary">尚未选择并通过本地 NAS 目录预检。</Typography>}
           <Typography variant="body2" color="text.secondary">
-            云端目标：Server 自动创建并独占管理（同步文件夹 / 设备备份 / 本设备 / 来源名称）
+            云端目标：Server 自动创建并独占管理（同步文件夹 / Push / 本设备 / 来源名称）
           </Typography>
           <TextField size="small" label="备份来源名称" value={name}
             disabled={status !== 'idle'} inputProps={{ maxLength: 128 }}

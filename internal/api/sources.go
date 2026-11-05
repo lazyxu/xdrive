@@ -809,11 +809,73 @@ func (s *Server) triggerSource(c *gin.Context) {
 var errLocalSourceRemovalWouldDropHistory = errors.New("local backup Source has history or is not paused")
 var errSourceHistoryRequiresArchive = errors.New("source sync history must be archived before deletion")
 
-// A Source's Items/Runs are durable sync identities, not disposable
-// configuration rows. Deleting a Source with history would cascade-delete
-// those records even though its Node/CAS files remain. Until an explicit
-// archival/cleanup flow exists, fail closed rather than destroy provenance.
-// The caller holds the Source row FOR UPDATE, serializing normal sync writers.
+// sourceDeleteRequiresArchiveTx keeps a Source whenever deleting its row would
+// discard a cloud binding, provider identity, synchronization history, or
+// execution state. DELETE is therefore an archive operation for configured or
+// previously-used Sources; only a pristine, unbound draft can be hard-deleted.
+// The caller holds the Source row FOR UPDATE.
+func sourceDeleteRequiresArchiveTx(tx *gorm.DB, source meta.Source) (bool, error) {
+	if source.TargetNodeID != nil || source.TargetManaged ||
+		source.RunRequestedAt != nil || source.Checkpoint != "" ||
+		source.LastRunAt != nil || source.LastSuccessAt != nil ||
+		source.LastError != "" || source.RetryAttempt != 0 ||
+		source.RetryAt != nil || source.RetryClass != "" ||
+		(isLocalFolderPush(source) && source.Status != meta.SourceStatusPaused) {
+		return true, nil
+	}
+	for _, model := range []any{
+		&meta.SourceItem{},
+		&meta.SyncRun{},
+		&meta.SourceRunFailure{},
+		&meta.SourceRunSkip{},
+		&meta.SourceItemAlias{},
+		&meta.SourceItemMetadata{},
+		&meta.SourceCollection{},
+		&meta.SourceCredential{},
+		&meta.SourceConnectorConfig{},
+	} {
+		if !tx.Migrator().HasTable(model) {
+			continue
+		}
+		var count int64
+		if err := tx.Model(model).Where("source_id = ?", source.ID).
+			Limit(1).Count(&count).Error; err != nil {
+			return false, err
+		}
+		if count != 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// archiveSourceForDeleteTx is called only after the Source row has been locked
+// and the active-run check has passed. It preserves TargetNodeID, SourceItems,
+// Runs, credentials, Shares, Nodes and CAS references; it only disables future
+// scheduling and advances the revision.
+func archiveSourceForDeleteTx(tx *gorm.DB, source meta.Source) error {
+	now := time.Now().UTC()
+	changed := tx.Model(&meta.Source{}).
+		Where("id = ? AND owner_id = ? AND revision = ? AND status <> ?",
+			source.ID, source.OwnerID, source.Revision, meta.SourceStatusArchived).
+		Updates(map[string]any{
+			"status":           meta.SourceStatusArchived,
+			"revision":         gorm.Expr("revision + 1"),
+			"run_requested_at": nil,
+			"retry_at":         nil,
+			"retry_attempt":    0,
+			"retry_class":      "",
+			"updated_at":       now,
+		})
+	if changed.Error != nil {
+		return changed.Error
+	}
+	if changed.RowsAffected != 1 {
+		return errRevisionConflict
+	}
+	return nil
+}
+
 func requireNoSourceHistoryForHardDeleteTx(tx *gorm.DB, source meta.Source) error {
 	for _, model := range []any{&meta.SourceItem{}, &meta.SyncRun{}} {
 		var count int64
@@ -914,10 +976,23 @@ func (s *Server) deleteSource(c *gin.Context) {
 		if activeRuns != 0 {
 			return errSourceRunActive
 		}
+		archive, err := sourceDeleteRequiresArchiveTx(tx, source)
+		if err != nil {
+			return err
+		}
+		if archive {
+			return archiveSourceForDeleteTx(tx, source)
+		}
 		if err := requireEmptyBoundLocalSourceRemovalTx(tx, source); err != nil {
+			if errors.Is(err, errLocalSourceRemovalWouldDropHistory) {
+				return archiveSourceForDeleteTx(tx, source)
+			}
 			return err
 		}
 		if err := requireNoSourceHistoryForHardDeleteTx(tx, source); err != nil {
+			if errors.Is(err, errSourceHistoryRequiresArchive) {
+				return archiveSourceForDeleteTx(tx, source)
+			}
 			return err
 		}
 		return tx.Delete(&source).Error
@@ -931,9 +1006,9 @@ func (s *Server) deleteSource(c *gin.Context) {
 		case errors.Is(err, errSourceArchived):
 			fail(c, http.StatusConflict, "archived source must be restored before removal")
 		case errors.Is(err, errLocalSourceRemovalWouldDropHistory):
-			fail(c, http.StatusConflict, "local backup with history cannot be removed; archival support pending")
+			fail(c, http.StatusConflict, "local backup must be archived before hard deletion")
 		case errors.Is(err, errSourceHistoryRequiresArchive):
-			fail(c, http.StatusConflict, "source has retained sync history; archive it before removal (archival support pending)")
+			fail(c, http.StatusConflict, "source has retained sync history; archive it before hard deletion")
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
 		case errors.Is(err, gorm.ErrRecordNotFound):

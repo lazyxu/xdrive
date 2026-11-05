@@ -23,3 +23,4 @@ refactor/files-readonly-device-presentation-20261029	1c3e82d5bcd8a7e4f89d0686646
 refactor/files-owner-download-admission-20261029	f07a4eaa7c2b8b48bc9680edfb8c14f9591b66f8	exact unchanged source ancestor of accepted combined PR #3213; verified Git compare behind_by=0, no active PR head/base on 2026-10-30
 refactor/files-owner-readonly-lifecycle-combined-20261029	144612b82a718b131e55d861299d8826e4ea2982	exact unchanged source ancestor of accepted combined PR #3213; verified Git compare behind_by=0, no active PR head/base on 2026-10-30
 fix/files-web-outlet-exact-ci-failures-20261030	539466d85edbf9d463e79917ddac971563a10482	exact unchanged source ancestor of accepted combined PR #3213; verified Git compare behind_by=0, no active PR head/base on 2026-10-30
+fix/ios-files-search-filter-test-fixture-20261105	a23a826248efb9203d8af1a9bcdf9fe3d4aaf9ea	duplicate ref of merged PR #3885 exact head SHA; no open PR head/base; implementation retained by merged PR
