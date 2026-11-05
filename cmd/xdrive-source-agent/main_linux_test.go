@@ -340,3 +340,23 @@ func TestSourceScheduleText(t *testing.T) {
 		t.Fatalf("legacy schedule text=%q", got)
 	}
 }
+
+func TestSynologySetupDoesNotSilentlyReuseLegacyUnboundSource(t *testing.T) {
+	legacy := client.Source{ID: 42, Kind: sourceagent.SynologyKind, Direction: meta.SourceDirectionPush}
+	if err := validateSynologySourceDeviceBinding(legacy, 0, 0, "new-device"); err == nil {
+		t.Fatal("legacy unbound Source was silently reused by name")
+	}
+	if err := validateSynologySourceDeviceBinding(legacy, 42, 0, "new-device"); err != nil {
+		t.Fatalf("explicit configured legacy Source should remain usable without migration: %v", err)
+	}
+	if err := validateSynologySourceDeviceBinding(legacy, 0, 42, "new-device"); err != nil {
+		t.Fatalf("explicit legacy Source ID should remain usable without migration: %v", err)
+	}
+	bound := client.Source{ID: 43, Kind: sourceagent.SynologyKind, Direction: meta.SourceDirectionPush, DeviceID: "device-a"}
+	if err := validateSynologySourceDeviceBinding(bound, 43, 0, "device-a"); err != nil {
+		t.Fatalf("matching device binding was rejected: %v", err)
+	}
+	if err := validateSynologySourceDeviceBinding(bound, 43, 0, "device-b"); err == nil {
+		t.Fatal("Source bound to another DSM device was accepted")
+	}
+}
