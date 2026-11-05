@@ -1104,11 +1104,10 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       }
       return { source_id: sourceID, state: response.state }
     },
-    async createNASBackupSource(selectionID, ownerScope, targetID, name, signal) {
+    async createNASBackupSource(selectionID, ownerScope, name, signal) {
       if (!/^[0-9a-f]{64}$/.test(selectionID) ||
         !/^[0-9a-f]{64}$/.test(ownerScope) ||
-        !Number.isSafeInteger(targetID) || targetID < 1 ||
-        name.trim() !== name || name.length < 1 ||
+        typeof name !== 'string' || name.trim() !== name || name.length < 1 ||
         new TextEncoder().encode(name).length > 128 ||
         /[\r\n\0]/.test(name)) {
         throw new Error('Invalid DSM local Source setup selection')
@@ -1212,7 +1211,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
           (item.sync_mode !== 'backup' && item.sync_mode !== 'mirror') ||
           (item.target_path !== undefined &&
             (typeof item.target_path !== 'string' || item.target_path.length > 2048 ||
-              /[\\u0000\\r\\n]/.test(item.target_path))) ||
+              /[\u0000\r\n]/.test(item.target_path))) ||
           unique.has(item.source_id)) {
           throw new Error('Invalid or duplicate DSM Source')
         }
