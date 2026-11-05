@@ -59,7 +59,8 @@ test('Push backup presenter has only B-scope read models, no cross-device mutati
 test('B-scope display is independent of Pull SourceManager routing', () => {
   assert.ok(web.includes("appView === 'device-backup'"))
   assert.ok(web.includes("appView === 'remote-pull'"))
-  assert.ok(browserHost.includes("remotePullPage: { ...ports.remotePull, directionFilter: 'pull' as const }"))
+  assert.ok(browserHost.includes("remotePullPage: { ...ports.remotePull }"))
+  assert.doesNotMatch(browserHost, /directionFilter:\s*'pull'/)
   assert.ok(sharedOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />'))
   assert.equal(view.includes('XDriveSourceManager'), false)
 })
