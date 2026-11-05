@@ -6,6 +6,28 @@ const crypto = require('node:crypto')
 const ts = require('typescript')
 
 const root = path.resolve(__dirname, '../..')
+
+function loadManualImportPolicy() {
+  const helperSource = fs.readFileSync(path.join(root,
+    'ui/shared/src/notes-manual-import.ts'), 'utf8')
+  const helperCompiled = ts.transpileModule(helperSource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    reportDiagnostics: true,
+  })
+  assert.deepEqual((helperCompiled.diagnostics || []).filter(d =>
+    d.category === ts.DiagnosticCategory.Error).map(d =>
+      ts.flattenDiagnosticMessageText(d.messageText, '\\n')), [])
+  const helperModule = { exports: {} }
+  new Function('module', 'exports', helperCompiled.outputText)(
+    helperModule, helperModule.exports)
+  return helperModule.exports
+}
+
+const manualImportPolicy = loadManualImportPolicy()
+const localRequire = id => {
+  if (id === '../../../ui/shared/src/notes-manual-import') return manualImportPolicy
+  throw new Error('Unexpected Desktop Notes runtime import: ' + id)
+}
 const file = path.join(root, 'desktop/src/renderer/desktopNotesDataPort.ts')
 const source = fs.readFileSync(file, 'utf8')
 const transpiled = ts.transpileModule(source, {
@@ -16,7 +38,7 @@ assert.deepEqual((transpiled.diagnostics || []).filter(d =>
   d.category === ts.DiagnosticCategory.Error).map(d =>
     ts.flattenDiagnosticMessageText(d.messageText, '\n')), [])
 const moduleObject = { exports: {} }
-new Function('module', 'exports', transpiled.outputText)(moduleObject, moduleObject.exports)
+new Function('module', 'exports', 'require', transpiled.outputText)(moduleObject, moduleObject.exports, localRequire)
 const createPort = moduleObject.exports.createDesktopNotesDataPort
 
 const noteID = '12345678-1234-1234-1234-123456789abc'

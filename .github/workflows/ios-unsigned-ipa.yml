@@ -438,11 +438,12 @@ jobs:
       - name: Verify native PhotoKit full-library media filtering
         run: |
           set -euo pipefail
-          swiftc -swift-version 5 \
+          swiftc -swift-version 5 -framework Photos \
             ios/XDriveIOS/NativePhotoMediaFilterPolicy.swift \
             ios/tests/NativePhotoMediaFilterChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-media-filter"
           "$RUNNER_TEMP/xdrive-ios-media-filter"
+          node --test desktop/tests/ios-native-photo-subtype-filter.cjs
 
       - name: Verify native PhotoAsset Viewer bounded neighbors
         run: |

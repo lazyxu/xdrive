@@ -141,12 +141,17 @@ var backupOnlyAllowedIPCRoutes = map[string]struct{}{
 // Every admitted route still requires the loopback bearer and Server Owner.
 func backupOnlyAllowedNotesRequest(method, path string) bool {
 	switch path {
-	case "/v1/cloud/notes/namespace":
+	case "/v1/cloud/notes/namespace", "/v1/cloud/notes/import-ios":
 		return method == http.MethodPost
 	case "/v1/cloud/notes":
 		return method == http.MethodGet || method == http.MethodPost
 	case "/v1/cloud/notes/version-content":
 		return method == http.MethodGet
+	}
+	const importImagePrefix = "/v1/cloud/notes/ios-import/"
+	if strings.HasPrefix(path, importImagePrefix) && strings.HasSuffix(path, "/images") {
+		id := strings.TrimSuffix(strings.TrimPrefix(path, importImagePrefix), "/images")
+		return validBackupOnlyNoteID(id) && method == http.MethodPost
 	}
 	if !strings.HasPrefix(path, "/v1/cloud/notes/") {
 		return false

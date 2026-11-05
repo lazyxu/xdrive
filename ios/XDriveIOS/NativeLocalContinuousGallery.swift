@@ -436,14 +436,32 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             .accessibilityIdentifier("native-ios-photos-local-select-mode")
                         }
                         .padding(.horizontal, 12)
-                        Picker("媒体类型", selection: $mediaFilter) {
-                            ForEach(XDriveIOSNativePhotoMediaFilter.allCases) { option in
-                                Text(option.title).tag(option)
+                        Menu {
+                            Section("媒体类型") {
+                                Toggle("照片", isOn: mediaFilterBinding(for: .photos))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-photos")
+                                Toggle("视频", isOn: mediaFilterBinding(for: .videos))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-videos")
                             }
+                            Section("内容") {
+                                Toggle("收藏", isOn: mediaFilterBinding(for: .favorites))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-favorites")
+                                Toggle("实况", isOn: mediaFilterBinding(for: .livePhotos))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-live")
+                                Toggle("截屏", isOn: mediaFilterBinding(for: .screenshots))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-screenshots")
+                            }
+                            Divider()
+                            Button("重置筛选") { mediaFilter = .all }
+                                .disabled(mediaFilter.isAll)
+                        } label: {
+                            Label(
+                                mediaFilter.isAll ? "筛选" : "筛选 · \(mediaFilter.title)",
+                                systemImage: "line.3.horizontal.decrease.circle"
+                            )
                         }
-                        // Six native source predicates fit cleanly in a
-                        // compact menu even on a 375pt iPhone/landscape.
-                        .pickerStyle(.menu)
+                        .accessibilityLabel("媒体筛选")
+                        .accessibilityValue(mediaFilter.title)
                         .padding(.horizontal, 12)
                         .accessibilityIdentifier("native-ios-local-gallery-media-filter")
                         if selectionMode {
@@ -549,12 +567,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             ProgressView("正在读取已授权图库…")
                                 .frame(maxWidth: .infinity).padding()
                         } else if failure == nil {
-                            Text(mediaFilter == .videos ? "当前已授权图库中没有视频。" :
-                                 mediaFilter == .photos ? "当前已授权图库中没有照片。" :
-                                 mediaFilter == .favorites ? "当前已授权图库中没有收藏照片。" :
-                                 mediaFilter == .livePhotos ? "当前已授权图库中没有实况照片。" :
-                                 mediaFilter == .screenshots ? "当前已授权图库中没有截屏。" :
-                                 "当前已授权图库中没有可浏览的照片或视频。")
+                            Text(mediaFilter.emptyMessage)
                                 .foregroundStyle(.secondary).padding(12)
                         }
                         if let failure {
@@ -728,6 +741,15 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             monitor?.stop()
             monitor = nil
         }
+    }
+
+    private func mediaFilterBinding(
+        for criterion: XDriveIOSNativePhotoMediaFilterCriterion
+    ) -> Binding<Bool> {
+        Binding(
+            get: { mediaFilter.isEnabled(criterion) },
+            set: { mediaFilter = mediaFilter.setting(criterion, enabled: $0) }
+        )
     }
 
     private var authorized: Bool { permission == .authorized || permission == .limited }

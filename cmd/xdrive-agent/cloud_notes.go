@@ -41,6 +41,26 @@ func (c *agentController) CloudNotesCreate(ctx context.Context, write client.Not
 	return cli.NotesCreate(ctx, write)
 }
 
+func (c *agentController) CloudNotesImportIOS(
+	ctx context.Context, write client.NotesImportWrite,
+) (client.NotesRow, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.NotesRow{}, err
+	}
+	return cli.NotesImportIOS(ctx, write)
+}
+
+func (c *agentController) CloudNotesImportIOSImage(
+	ctx context.Context, id string, image []byte,
+) (client.NotesImageReceipt, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.NotesImageReceipt{}, err
+	}
+	return cli.NotesImportIOSImage(ctx, id, image)
+}
+
 func (c *agentController) CloudNotesUpdate(ctx context.Context, id string, write client.NotesWrite) (client.NotesRow, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

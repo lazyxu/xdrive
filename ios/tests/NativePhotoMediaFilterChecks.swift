@@ -5,38 +5,84 @@ struct NativePhotoMediaFilterChecks {
     static func main() {
         let filters = XDriveIOSNativePhotoMediaFilter.allCases
         precondition(filters.map(\.rawValue) == [
-            "all", "photos", "videos", "favorites", "livePhotos", "screenshots"
+            "all", "photos", "videos",
+            "photos+videos+favorites", "photos+livePhotos", "photos+screenshots"
         ])
         precondition(filters.map(\.title) == [
-            "全部", "照片", "视频", "收藏", "实况", "截屏"
+            "照片和视频", "照片", "视频", "照片和视频 · 收藏",
+            "照片 · 实况", "照片 · 截屏"
         ])
         precondition(filters.map(\.expectedKind) == [
             nil, "image", "video", nil, "image", "image"
         ])
         precondition(Set(filters.map(\.id)).count == 6)
         precondition(XDriveIOSNativePhotoMediaFilter(rawValue: "unknown") == nil)
-        precondition(XDriveIOSNativePhotoMediaFilter.all.includes(kind: "image"))
-        precondition(XDriveIOSNativePhotoMediaFilter.all.includes(kind: "video"))
-        precondition(!XDriveIOSNativePhotoMediaFilter.all.includes(kind: "unsupported"))
-        precondition(XDriveIOSNativePhotoMediaFilter.photos.includes(kind: "image"))
-        precondition(!XDriveIOSNativePhotoMediaFilter.photos.includes(kind: "video"))
-        precondition(XDriveIOSNativePhotoMediaFilter.videos.includes(kind: "video"))
-        precondition(!XDriveIOSNativePhotoMediaFilter.videos.includes(kind: "image"))
-        precondition(XDriveIOSNativePhotoMediaFilter.favorites.requiresFavorite)
-        precondition(!XDriveIOSNativePhotoMediaFilter.photos.requiresFavorite)
-        precondition(XDriveIOSNativePhotoMediaFilter.favorites.includes(kind: "video"))
-        precondition(XDriveIOSNativePhotoMediaFilter.favorites.includes(kind: "image"))
-        precondition(!XDriveIOSNativePhotoMediaFilter.favorites.includes(kind: "unsupported"))
-        precondition(XDriveIOSNativePhotoMediaFilter.livePhotos.requiresLive)
-        precondition(!XDriveIOSNativePhotoMediaFilter.livePhotos.requiresFavorite)
-        precondition(!XDriveIOSNativePhotoMediaFilter.livePhotos.requiresScreenshot)
-        precondition(XDriveIOSNativePhotoMediaFilter.livePhotos.includes(kind: "image"))
-        precondition(!XDriveIOSNativePhotoMediaFilter.livePhotos.includes(kind: "video"))
-        precondition(XDriveIOSNativePhotoMediaFilter.screenshots.requiresScreenshot)
-        precondition(!XDriveIOSNativePhotoMediaFilter.screenshots.requiresLive)
-        precondition(!XDriveIOSNativePhotoMediaFilter.screenshots.requiresFavorite)
-        precondition(XDriveIOSNativePhotoMediaFilter.screenshots.includes(kind: "image"))
-        precondition(!XDriveIOSNativePhotoMediaFilter.screenshots.includes(kind: "video"))
-        print("iOS PhotoKit all/photos/videos/favorites/live/screenshots policy: PASS")
+        precondition(XDriveIOSNativePhotoMediaFilter(rawValue: "photos+unknown") == nil)
+
+        let all = XDriveIOSNativePhotoMediaFilter.all
+        precondition(all.isAll)
+        precondition(all.includes(kind: "image"))
+        precondition(all.includes(kind: "video"))
+        precondition(!all.includes(kind: "unsupported"))
+
+        let photos = XDriveIOSNativePhotoMediaFilter.photos
+        precondition(photos.includes(kind: "image"))
+        precondition(!photos.includes(kind: "video"))
+        precondition(photos.fetchKind == "image")
+
+        let videos = XDriveIOSNativePhotoMediaFilter.videos
+        precondition(videos.includes(kind: "video"))
+        precondition(!videos.includes(kind: "image"))
+        precondition(videos.fetchKind == "video")
+
+        let favorites = XDriveIOSNativePhotoMediaFilter.favorites
+        precondition(favorites.requiresFavorite)
+        precondition(favorites.includes(kind: "video"))
+        precondition(favorites.includes(kind: "image"))
+        precondition(favorites.fetchKind == nil)
+
+        let live = XDriveIOSNativePhotoMediaFilter.livePhotos
+        precondition(live.requiresLive)
+        precondition(!live.requiresFavorite)
+        precondition(!live.requiresScreenshot)
+        precondition(live.includes(kind: "image"))
+        precondition(!live.includes(kind: "video"))
+        precondition(live.fetchKind == "image")
+
+        let screenshots = XDriveIOSNativePhotoMediaFilter.screenshots
+        precondition(screenshots.requiresScreenshot)
+        precondition(!screenshots.requiresLive)
+        precondition(!screenshots.requiresFavorite)
+        precondition(screenshots.includes(kind: "image"))
+        precondition(!screenshots.includes(kind: "video"))
+        precondition(screenshots.fetchKind == "image")
+
+        let favoriteLive = all
+            .setting(.favorites, enabled: true)
+            .setting(.livePhotos, enabled: true)
+        precondition(favoriteLive.requiresFavorite && favoriteLive.requiresLive)
+        precondition(favoriteLive.includes(kind: "image"))
+        precondition(!favoriteLive.includes(kind: "video"))
+        precondition(favoriteLive.fetchKind == "image")
+        precondition(favoriteLive.rawValue == "photos+videos+favorites+livePhotos")
+        precondition(XDriveIOSNativePhotoMediaFilter(rawValue: favoriteLive.rawValue) == favoriteLive)
+
+        let photoOnly = all.setting(.videos, enabled: false)
+        precondition(photoOnly == .photos)
+        let videoOnly = all.setting(.photos, enabled: false)
+        precondition(videoOnly == .videos)
+        precondition(!videoOnly.requiresLive && !videoOnly.requiresScreenshot)
+
+        let neverEmpty = XDriveIOSNativePhotoMediaFilter.videos
+            .setting(.videos, enabled: false)
+        precondition(neverEmpty == .photos)
+
+        let liveAndScreenshot = all
+            .setting(.livePhotos, enabled: true)
+            .setting(.screenshots, enabled: true)
+        precondition(liveAndScreenshot.requiresLive && liveAndScreenshot.requiresScreenshot)
+        precondition(liveAndScreenshot.fetchKind == "image")
+
+        print("iOS PhotoKit combined media filter policy: PASS")
     }
 }

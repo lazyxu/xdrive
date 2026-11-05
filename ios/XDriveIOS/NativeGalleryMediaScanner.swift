@@ -52,31 +52,15 @@ actor XDriveIOSNativeGalleryMediaScanner {
             // Filtered, bounded pages retain the existing authorization epoch fences.
             NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
-        if mediaFilter.requiresFavorite {
-            options.predicate = NSPredicate(format: "favorite == YES")
-        } else if mediaFilter.requiresLive {
-            options.predicate = NSPredicate(
-                format: "(mediaSubtypes & %d) != 0",
-                PHAssetMediaSubtype.photoLive.rawValue
-            )
-        } else if mediaFilter.requiresScreenshot {
-            options.predicate = NSPredicate(
-                format: "(mediaSubtypes & %d) != 0",
-                PHAssetMediaSubtype.photoScreenshot.rawValue
-            )
-        }
+        mediaFilter.applyPredicates(to: options)
         let result: PHFetchResult<PHAsset>
-        switch mediaFilter {
-        case .all:
-            result = PHAsset.fetchAssets(with: options)
-        case .photos:
+        switch mediaFilter.fetchKind {
+        case "image":
             result = PHAsset.fetchAssets(with: .image, options: options)
-        case .videos:
+        case "video":
             result = PHAsset.fetchAssets(with: .video, options: options)
-        case .favorites:
+        default:
             result = PHAsset.fetchAssets(with: options)
-        case .livePhotos, .screenshots:
-            result = PHAsset.fetchAssets(with: .image, options: options)
         }
         guard observer.current() == revision,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == current else {
@@ -116,6 +100,10 @@ actor XDriveIOSNativeGalleryMediaScanner {
                     throw XDrivePhotoKitScanFailure.snapshotChanged
                 }
                 if let expected = filter.expectedKind, expected != kind {
+                    reset()
+                    throw XDrivePhotoKitScanFailure.snapshotChanged
+                }
+                if kind != "unsupported" && !filter.includes(kind: kind) {
                     reset()
                     throw XDrivePhotoKitScanFailure.snapshotChanged
                 }
@@ -209,6 +197,8 @@ actor XDriveIOSNativeGalleryMediaScanner {
                   type == expected.kind,
                   expected.isLive == (type == "image" &&
                       asset.mediaSubtypes.contains(.photoLive)),
+                  (type == "unsupported" || filter.includes(kind: type)),
+                  (!filter.requiresFavorite || asset.isFavorite),
                   (!filter.requiresLive ||
                       asset.mediaSubtypes.contains(.photoLive)),
                   (!filter.requiresScreenshot ||
