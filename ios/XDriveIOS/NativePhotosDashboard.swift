@@ -133,6 +133,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var localMapJump: XDriveIOSNativeLocalMapJump?
     // A bounded navigation position; never holds a PhotoKit asset identity.
     @State private var localGalleryPageOffset = 0
+    // Keep the active local Photos filter when a Viewer opens the map route.
+    @State private var localGalleryMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     // Restore only the coarse 32-slot album directory, never album IDs.
     @State private var localAlbumDirectoryOffset = 0
     @State private var dynamicFeature: XDriveIOSNativeDynamicFeature?
@@ -586,7 +588,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                 switch gallerySource {
                 case .local:
                     XDriveIOSNativeLocalPhotoTimelineContainer(
-                        savedOffset: $localGalleryPageOffset
+                        savedOffset: $localGalleryPageOffset,
+                        mediaFilter: $localGalleryMediaFilter
                     )
                 case .albums:
                     XDriveIOSNativePhotoAlbumsScreen(
