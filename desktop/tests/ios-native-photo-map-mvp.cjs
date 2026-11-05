@@ -457,6 +457,7 @@ test('native Photos album exposes Show Map only with Full Photo Library access',
   assert.match(albumBrowser, /Button \{ showingAlbumMap = true \} label: \{\s*Label\("显示地图", systemImage: "map"\)/)
   assert.match(albumBrowser, /fullScreenCover\(isPresented: \$showingAlbumMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\(\s*album: album,\s*mapScope: \.constant\(\.library\)/)
   assert.match(map, /var album: XDriveLocalPhotoAlbumSummary\? = nil/)
+  assert.match(map, /if album == nil \{\s*ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?native-ios-map-focus-toggle/)
   assert.match(map, /worker\.start\(atOffset: 0, album: album\)/)
   assert.match(map, /XDriveIOSMapSpatialAlbum\(selection: chosen, album: album\)/)
   assert.match(map, /scanner\.start\(atOffset: 0, album: album\)/)
