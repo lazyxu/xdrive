@@ -411,8 +411,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     trigger: kind == .automatic ? "scheduled" : "manual"
                 )
                 sourceRunReporter = reporter
-                await reporter.begin()
                 if kind == .focused {
+                    await reporter.begin()
                     try await self.runFocused(
                         login: login, owner: selected, uiEpoch: uiEpoch,
                         allowICloud: allowICloud,
@@ -457,7 +457,6 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                             .reserveDue(owner: selected,
                                         sourceID: managed.destination.sourceID,
                                         targetNodeID: managed.destination.targetNodeID) else {
-                            await reporter.finish(status: "cancelled")
                             self.refresh(owner: selected)
                             return
                         }
@@ -509,6 +508,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     self.message = kind == .automatic
                         ? "自动增量备份正在检查第 \(window + 1) 段…"
                         : "手动备份正在检查第 \(window + 1) 段…"
+                    await reporter.begin()
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, managedForeground: managed,
                         onSourceProgress: { value in
