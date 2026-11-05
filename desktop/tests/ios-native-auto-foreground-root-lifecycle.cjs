@@ -117,7 +117,7 @@ test('backup display and delayed original progress never cross Owner changes or 
   // retry. Both that retry and the terminal error message must remain fenced
   // to the exact live UI epoch and currently signed-in Owner.
   const catchBranch = terminal.slice(
-    terminal.indexOf('            } catch {\n                var scheduledNetworkRetry = false'),
+    terminal.indexOf('            } catch {\n                if let reporter = sourceRunReporter { await reporter.finish(status: "failed") }\n                var scheduledNetworkRetry = false'),
     terminal.indexOf('            // A successful original may be followed'))
   assert.ok(catchBranch.startsWith('            } catch {\n                if let reporter = sourceRunReporter { await reporter.finish(status: "failed") }\n                var scheduledNetworkRetry = false'),
     'the Owner-scoped catch path must remain present')
