@@ -98,34 +98,23 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                             photoTile(item, from: page)
                         }
                     }
-                    // This foot is inside LazyVGrid, not an eagerly built
-                    // ScrollView sibling. Programmatic appearance alone never
-                    // starts another PhotoAsset Range request.
+                    // The lazy-grid foot advances the verified Owner Range
+                    // when it approaches the viewport, like native Photos.
+                    // It remains guarded by Owner, busy and error state.
                     if let next {
                         Color.clear
                             .frame(height: 24)
                             .id("\(next.placeIndex):\(next.offset)")
-                            .onAppear { scrollFootVisible = true }
+                            .onAppear {
+                                scrollFootVisible = true
+                                advanceIfVisible()
+                            }
                             .onDisappear { scrollFootVisible = false }
                             .accessibilityHidden(true)
                     }
                 }
                 .padding(.horizontal, 4)
             }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 12).onEnded { gesture in
-                    // The user must swipe upward to scroll toward newer tiles.
-                    // Pulling back or swiping horizontally cannot advance.
-                    guard gesture.translation.height <= -12,
-                          abs(gesture.translation.height) >
-                            abs(gesture.translation.width),
-                          scrollFootVisible, activeOwner, !busy,
-                          viewing == nil, page != nil, let next else { return }
-                    scrollFootVisible = false
-                    load(next, history: earlier + [cursor],
-                         autoAdvance: true)
-                }
-            )
             .onChange(of: visiblePageRevision) { _ in
                 // Auto paging replaces the previous pair of 48-photo windows.
                 // Re-anchor only to a Node+revision still present in the exact
@@ -151,6 +140,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 }
                 returnScroll.scrollTo(anchor.id, anchor: .center)
                 viewerReturn = nil
+            }
+            .onChange(of: busy) { isBusy in
+                if !isBusy { advanceIfVisible() }
             }
             }
         }
@@ -514,6 +506,13 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         else { return nil }
         return XDriveIOSOwnerClusterCursor(
             placeIndex: nextIndex, offset: nextOffset)
+    }
+
+    private func advanceIfVisible() {
+        guard scrollFootVisible, activeOwner, !busy, viewing == nil,
+              page != nil, error == nil, let next else { return }
+        scrollFootVisible = false
+        load(next, history: earlier + [cursor], autoAdvance: true)
     }
 
     private func invalidate() {
