@@ -293,3 +293,12 @@ test('native map source uses one navigation menu instead of a permanently stacke
   assert.match(root, /guard source == \.cloud, let expectedOwner,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\([\s\S]*?cloudMapCamera = next/)
   assert.match(root, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/)
 })
+
+
+test('cloud Owner map album automatically advances when its lazy-grid sentinel enters the viewport', () => {
+  assert.match(clusterAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)
+  assert.match(clusterAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/)
+  assert.match(clusterAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, activeOwner, !busy, viewing == nil,[\s\S]*?page != nil, error == nil, let next/)
+  assert.match(clusterAlbum, /load\(next, history: earlier \+ \[cursor\], autoAdvance: true\)/)
+  assert.doesNotMatch(clusterAlbum, /DragGesture\(minimumDistance: 12\)/)
+})
