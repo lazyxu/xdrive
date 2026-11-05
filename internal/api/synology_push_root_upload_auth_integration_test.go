@@ -40,7 +40,7 @@ func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	deviceHeaders := map[string]string{
-		"X-XDrive-Device-ID": deviceID,
+		"X-XDrive-Device-ID":    deviceID,
 		"X-XDrive-Device-Token": deviceToken,
 	}
 	createdResponse := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", ownerToken,
@@ -61,9 +61,9 @@ func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 	body := fmt.Sprintf(`{"root_id":%q,"root_fingerprint":%q}`, rootID, rootFingerprint)
 	request(t, router, http.MethodPut, bindingPath, ownerToken, strings.NewReader(body), http.StatusForbidden)
 	bindHeaders := map[string]string{
-		"X-XDrive-Device-ID": deviceID,
+		"X-XDrive-Device-ID":    deviceID,
 		"X-XDrive-Device-Token": deviceToken,
-		"If-Match": `"1"`,
+		"If-Match":              `"1"`,
 	}
 	boundResponse := requestWithHeaders(t, router, http.MethodPut, bindingPath, ownerToken,
 		strings.NewReader(body), http.StatusCreated, bindHeaders)
@@ -93,16 +93,16 @@ func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 	// Same binding is idempotent; a different Root cannot silently take over.
 	requestWithHeaders(t, router, http.MethodPut, bindingPath, ownerToken,
 		strings.NewReader(body), http.StatusOK, map[string]string{
-			"X-XDrive-Device-ID": deviceID,
+			"X-XDrive-Device-ID":    deviceID,
 			"X-XDrive-Device-Token": deviceToken,
-			"If-Match": `"2"`,
+			"If-Match":              `"2"`,
 		})
 	changedBody := fmt.Sprintf(`{"root_id":%q,"root_fingerprint":%q}`, rootID, strings.Repeat("b", 64))
 	requestWithHeaders(t, router, http.MethodPut, bindingPath, ownerToken,
 		strings.NewReader(changedBody), http.StatusConflict, map[string]string{
-			"X-XDrive-Device-ID": deviceID,
+			"X-XDrive-Device-ID":    deviceID,
 			"X-XDrive-Device-Token": deviceToken,
-			"If-Match": `"2"`,
+			"If-Match":              `"2"`,
 		})
 
 	// An Owner JWT or Device-only credential cannot execute the Source.
@@ -111,12 +111,12 @@ func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 	requestWithHeaders(t, router, http.MethodGet, sourcePath, ownerToken, nil, http.StatusForbidden, deviceHeaders)
 
 	proofHeaders := map[string]string{
-		"X-XDrive-Device-ID": deviceID,
-		"X-XDrive-Device-Token": deviceToken,
-		"X-XDrive-Synology-Source-ID": fmt.Sprint(source.ID),
+		"X-XDrive-Device-ID":                deviceID,
+		"X-XDrive-Device-Token":             deviceToken,
+		"X-XDrive-Synology-Source-ID":       fmt.Sprint(source.ID),
 		"X-XDrive-Synology-Source-Revision": "2",
-		"X-XDrive-Local-Root-ID": rootID,
-		"X-XDrive-Local-Root-Fingerprint": rootFingerprint,
+		"X-XDrive-Local-Root-ID":            rootID,
+		"X-XDrive-Local-Root-Fingerprint":   rootFingerprint,
 	}
 	requestWithHeaders(t, router, http.MethodGet, sourcePath, ownerToken, nil, http.StatusOK, proofHeaders)
 
