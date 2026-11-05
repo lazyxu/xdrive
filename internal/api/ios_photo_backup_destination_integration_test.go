@@ -173,7 +173,6 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 	}
 }
 
-
 func TestIOSPhotoSourceRunUsesSharedHistoryAndRequiresBoundDevice(t *testing.T) {
 	db, server, owner, _, _ := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(
@@ -237,26 +236,26 @@ func TestIOSPhotoSourceRunUsesSharedHistoryAndRequiresBoundDevice(t *testing.T) 
 		http.StatusNoContent, headers)
 
 	readRun := func() struct {
-		Status string `json:"status"`
-		ScannedItems int64 `json:"scanned_items"`
-		NewItems int64 `json:"new_items"`
-		UnchangedItems int64 `json:"unchanged_items"`
-		SyncedFileItems int64 `json:"synced_file_items"`
-		TransferredItems int64 `json:"transferred_items"`
-		FailedItems int64 `json:"failed_items"`
+		Status           string `json:"status"`
+		ScannedItems     int64  `json:"scanned_items"`
+		NewItems         int64  `json:"new_items"`
+		UnchangedItems   int64  `json:"unchanged_items"`
+		SyncedFileItems  int64  `json:"synced_file_items"`
+		TransferredItems int64  `json:"transferred_items"`
+		FailedItems      int64  `json:"failed_items"`
 	} {
 		t.Helper()
 		got := requestWithHeaders(t, router, http.MethodGet,
 			runPath+"/"+runID, token, strings.NewReader(""),
 			http.StatusOK, nil)
 		var decoded struct {
-			Status string `json:"status"`
-			ScannedItems int64 `json:"scanned_items"`
-			NewItems int64 `json:"new_items"`
-			UnchangedItems int64 `json:"unchanged_items"`
-			SyncedFileItems int64 `json:"synced_file_items"`
-			TransferredItems int64 `json:"transferred_items"`
-			FailedItems int64 `json:"failed_items"`
+			Status           string `json:"status"`
+			ScannedItems     int64  `json:"scanned_items"`
+			NewItems         int64  `json:"new_items"`
+			UnchangedItems   int64  `json:"unchanged_items"`
+			SyncedFileItems  int64  `json:"synced_file_items"`
+			TransferredItems int64  `json:"transferred_items"`
+			FailedItems      int64  `json:"failed_items"`
 		}
 		if err := json.Unmarshal(got.Body.Bytes(), &decoded); err != nil {
 			t.Fatal(err)
