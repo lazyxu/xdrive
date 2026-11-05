@@ -165,7 +165,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if localCreated.ID == 0 || localCreated.Kind != meta.SourceKindLocalFolder ||
 		localCreated.Direction != meta.SourceDirectionPush || localCreated.Status != meta.SourceStatusPaused ||
 		localCreated.Revision != 1 || localCreated.TargetNodeID == nil || *localCreated.TargetNodeID == targetA.ID ||
-		localCreated.TargetPath != "同步文件夹/设备备份/"+deviceFolder+"/Local Desktop Files" {
+		localCreated.TargetPath != "同步文件夹/Push/"+deviceFolder+"/Local Desktop Files" {
 		t.Fatalf("local folder must start paused in a dedicated server-managed target: %+v", localCreated)
 	}
 	var localStored meta.Source
