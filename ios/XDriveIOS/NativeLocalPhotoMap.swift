@@ -553,6 +553,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
     typealias Policy = XDriveIOSNativeLocalMapSpatialPolicy
     let selection: XDriveIOSMapSpatialSelection
     var album: XDriveLocalPhotoAlbumSummary? = nil
+    var onShowNearby: (() -> Void)? = nil
+    var isNearbyExpansion = false
     @Environment(\.scenePhase) private var phase
     @Environment(\.dismiss) private var dismiss
     @StateObject private var changes = XDriveIOSMapPhotoChanges()
@@ -644,7 +646,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             VStack(spacing: 8) {
-                Text("此处照片 · \(selectedPhotoCount) 张")
+                Text(isNearbyExpansion ?
+                     "附近照片 · 已加载 \(visibleItems.count) 张" :
+                     "此处照片 · \(selectedPhotoCount) 张")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityValue(
                         busy ? "正在读取位置照片" :
@@ -697,10 +701,18 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     if !isBusy { advanceIfVisible() }
                 }
             }
-            .navigationTitle(album.map { "\($0.name) · 此处照片" } ?? "此处照片")
+            .navigationTitle(isNearbyExpansion ? "附近照片" :
+                (album.map { "\($0.name) · 此处照片" } ?? "此处照片"))
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        if album != nil, onShowNearby != nil {
+                            Button("显示附近照片") {
+                                dismiss()
+                                DispatchQueue.main.async { onShowNearby?() }
+                            }
+                            .disabled(busy || viewer != nil || phase != .active)
+                        }
                         Button("重新核对当前位置照片") { loadInitial() }
                             .disabled(busy || viewer != nil || phase != .active)
                     } label: {
@@ -1040,6 +1052,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var globalTotal = 0
     @State private var globalLocated = 0
     @State private var globalSelection: XDriveIOSMapSpatialSelection?
+    @State private var nearbySelection: XDriveIOSMapSpatialSelection?
     @State private var globalCamera: MKCoordinateRegion?
     @State private var globalViewport: XDriveIOSNativeLocalMapViewport?
     @State private var globalCameraMoving = false
@@ -1318,7 +1331,20 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             else { invalidate() }
         }) { chosen in XDriveIOSMapPhotoAlbum(items: chosen.items) }
         .fullScreenCover(item: $globalSelection) { chosen in
-            XDriveIOSMapSpatialAlbum(selection: chosen, album: album)
+            XDriveIOSMapSpatialAlbum(
+                selection: chosen, album: album,
+                onShowNearby: album == nil ? nil : {
+                    guard phase == .active,
+                          PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                    else { return }
+                    nearbySelection = chosen
+                }
+            )
+        }
+        .fullScreenCover(item: $nearbySelection) { chosen in
+            XDriveIOSMapSpatialAlbum(
+                selection: chosen, album: nil, isNearbyExpansion: true
+            )
         }
         .fullScreenCover(item: $singleViewer, onDismiss: {
             guard phase == .active else { invalidate(); return }
@@ -1407,7 +1433,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             // A presented cluster sheet may hide its map presenter. Keep
             // PhotoKit change observation active until the sheet is dismissed,
             // so permission/library changes revoke its transient member IDs.
-            if selection == nil && globalSelection == nil && singleViewer == nil {
+            if selection == nil && globalSelection == nil && nearbySelection == nil && singleViewer == nil {
                 changes.stop()
                 clearReturnCamera()
                 focused = false
@@ -1688,6 +1714,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         page = nil
         selection = nil
         globalSelection = nil
+        nearbySelection = nil
         singleViewer = nil
         globalCells = []
         globalComplete = false
