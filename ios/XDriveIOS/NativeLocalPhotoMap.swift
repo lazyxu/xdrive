@@ -1270,7 +1270,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         }
         }
         .padding(.horizontal, 8)
-        .navigationTitle(album?.name.map { "\($0) · 地图" } ?? "地图")
+        .navigationTitle(album.map { "\($0.name) · 地图" } ?? "地图")
         .toolbar {
             if mapScope == .library && globalComplete {
                 ToolbarItem(placement: .navigationBarTrailing) {
