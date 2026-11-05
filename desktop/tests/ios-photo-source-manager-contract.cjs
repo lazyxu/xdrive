@@ -32,11 +32,11 @@ test('iOS Photos is a device-executed Push Source, not a server-triggered worker
   assert.match(list, /row\.source\.kind === 'ios_photos'/);
   assert.match(list, /尚无备份统计/);
   assert.ok(sourceIcon.includes('ios-photos.svg'));
-  assert.match(browserHost, /remotePullPage: \\{ \\.\\.\\.ports\\.remotePull \\}/);
-  assert.doesNotMatch(browserHost, /directionFilter:\\s*'pull'/);
-  assert.match(desktopHost, /remotePullPage: \\{/);
-  assert.doesNotMatch(desktopHost, /directionFilter:\\s*"pull"/);
-  assert.doesNotMatch(desktopHost, /remotePullPage:\\s*agent\\.hello\\?\\.capabilities/);
+  assert.match(browserHost, /remotePullPage: \{ \.\.\.ports\.remotePull \}/);
+  assert.doesNotMatch(browserHost, /directionFilter:\s*'pull'/);
+  assert.match(desktopHost, /remotePullPage: \{/);
+  assert.doesNotMatch(desktopHost, /directionFilter:\s*"pull"/);
+  assert.doesNotMatch(desktopHost, /remotePullPage:\s*agent\.hello\?\.capabilities/);
   assert.match(list, /新增上传/);
   assert.match(list, /云端已核验/);
   assert.match(list, /待处理/);
@@ -57,9 +57,9 @@ test('shared Source Manager reads run history without inventing PhotoKit collect
 });
 
 test('native iPhone reports begin, progress and terminal state with the exact device proof', () => {
-  assert.ok(reporter.includes('path: "/api/v1/sources/\\(authority.destination.sourceID)/runs"'));
-  assert.ok(reporter.includes('runs/\\(self.runID)/progress'));
-  assert.ok(reporter.includes('runs/\\(runID)/finish'));
+  assert.ok(reporter.includes('path: "/api/v1/sources/\(authority.destination.sourceID)/runs"'));
+  assert.ok(reporter.includes('runs/\(self.runID)/progress'));
+  assert.ok(reporter.includes('runs/\(runID)/finish'));
   assert.match(reporter, /X-XDrive-Device-ID/);
   assert.match(reporter, /X-XDrive-Device-Token/);
   assert.match(reporter, /complete_inventory": false/);
