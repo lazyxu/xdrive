@@ -36,8 +36,22 @@ struct XDriveIOSPhotoQueueSummarySection: View {
                         .monospacedDigit()
                         .accessibilityIdentifier("native-ios-photo-change-queue-counts")
                     if counts.failed > 0 {
-                        Text("失败候选仍需核对当前账户的真实收据，不能直接认定可安全重新上传。")
+                        Text("失败候选仅包含已证明没有不确定服务器写入的项目；未知 ACK 不在此队列。")
                             .font(.footnote).foregroundStyle(.orange)
+                        Button("重新排队失败项（最多 64 项）") {
+                            queueSummary.retryFailed(login: login)
+                        }
+                        .disabled(queueSummary.busy ||
+                                  controller.schedule?.pausedForReview == true)
+                        .accessibilityIdentifier("native-ios-photo-change-queue-retry")
+                        if controller.schedule?.pausedForReview == true {
+                            Text("自动备份因上传收据待核对而暂停；先完成收据核对，不能通过此按钮绕过暂停。")
+                                .font(.footnote).foregroundStyle(.orange)
+                        }
+                    }
+                    if let notice = queueSummary.notice {
+                        Text(notice).font(.footnote).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("native-ios-photo-change-queue-notice")
                     }
                 } else if !queueSummary.busy && queueSummary.errorMessage == nil {
                     Text("尚无可读取的变更队列基准；这不代表没有待备份照片。")
