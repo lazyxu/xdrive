@@ -18,7 +18,7 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 		t.Fatal(err)
 	}
 	umbrella := createFilePropertiesDir(t, db, owner.ID, root.ID, "同步文件夹")
-	pull := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, "远程拉取")
+	pull := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, "Pull")
 	connector := createFilePropertiesDir(t, db, owner.ID, pull.ID, "Synology Photos")
 	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "Photos")
 	child := createFilePropertiesDir(t, db, owner.ID, target.ID, "Albums")
