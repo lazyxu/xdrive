@@ -88,6 +88,8 @@ export interface XDriveOfflineHostPlanStatus {
   request_id?: string
   offline_id?: string
   offline_trust_mode?: XDriveOfflineTrustMode
+  trusted_manifest_sha256?: string
+  trusted_installer_sha256?: string
   message?: string
   error?: string
   started_at?: string
