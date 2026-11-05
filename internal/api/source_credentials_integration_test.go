@@ -756,12 +756,19 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if legacyConnector.ParentID == nil {
 		t.Fatal("managed Yike connector has no parent")
 	}
+	var pullRoot meta.Node
+	if err := db.First(&pullRoot, *legacyConnector.ParentID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pullRoot.Name != "Pull" || pullRoot.ParentID == nil {
+		t.Fatalf("managed Yike Pull root before ancestor rename=%+v", pullRoot)
+	}
 	var legacyRoot meta.Node
-	if err := db.First(&legacyRoot, *legacyConnector.ParentID).Error; err != nil {
+	if err := db.First(&legacyRoot, *pullRoot.ParentID).Error; err != nil {
 		t.Fatal(err)
 	}
 	if legacyRoot.Name != "同步文件夹" {
-		t.Fatalf("managed Yike root before migration=%q", legacyRoot.Name)
+		t.Fatalf("managed Yike umbrella before ancestor rename=%q", legacyRoot.Name)
 	}
 	if err := db.Model(&legacyRoot).Updates(map[string]any{"name": "来源", "revision": gorm.Expr("revision + 1")}).Error; err != nil {
 		t.Fatal(err)
