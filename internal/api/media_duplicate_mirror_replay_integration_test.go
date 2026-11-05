@@ -58,7 +58,7 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 		t.Fatal(err)
 	}
 	deviceHeaders := map[string]string{
-		"X-XDrive-Device-ID": deviceID,
+		"X-XDrive-Device-ID":    deviceID,
 		"X-XDrive-Device-Token": deviceToken,
 	}
 	createSource := `{"name":"Mirror Copies","kind":"synology_photos","direction":"push","sync_mode":"mirror","run_mode":"sync","target_node_id":0}`
@@ -72,6 +72,17 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 		!source.TargetManaged || source.DeviceID != deviceID {
 		t.Fatalf("created source is not a registered-device managed Push: %+v", source)
 	}
+	// A newly enrolled DSM Push Source is paused until the owning device
+	// explicitly activates it; the Mirror test exercises running Source writes.
+	activeHeaders := map[string]string{
+		"If-Match": `"1"`,
+		"X-XDrive-Device-ID":    deviceID,
+		"X-XDrive-Device-Token": deviceToken,
+	}
+	requestWithHeaders(t, router, http.MethodPatch,
+		fmt.Sprintf("/api/v1/sources/%d", source.ID), token,
+		strings.NewReader(`{"status":"active"}`), http.StatusOK, activeHeaders)
+
 	var target meta.Node
 	if err := db.First(&target, *source.TargetNodeID).Error; err != nil {
 		t.Fatal(err)
