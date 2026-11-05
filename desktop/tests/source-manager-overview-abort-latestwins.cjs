@@ -41,10 +41,10 @@ function fixture(adapter, { directionFilter, mounted = true } = {}) {
   const overviewVisibleReadRef = { current: false }
   const overviewReadRef = { current: null }
   const overviewRequestRef = { current: 0 }
-  const overviewOwnerRef = { current: { adapter, directionFilter } }
+  const overviewOwnerRef = { current: { adapter, directionFilter, showArchived: false } }
   let selected = null
   const env = {
-    useCallback: callback => callback, adapter, directionFilter,
+    useCallback: callback => callback, adapter, directionFilter, showArchived: false,
     overviewMountedRef, overviewVisibleReadRef, overviewReadRef, overviewRequestRef, overviewOwnerRef,
     setLoading: next => loading.push(next),
     setLoadError: value => failures.push(value),
@@ -76,7 +76,7 @@ test('SourceManager new Owner and same-kind route supersede old GET without show
   const old = fixture(a), newPage = fixture(b)
   const pendingA = old.load()
   assert.equal(signals[0][1].aborted, false)
-  old.overviewOwnerRef.current = { adapter: b, directionFilter: undefined }
+  old.overviewOwnerRef.current = { adapter: b, directionFilter: undefined, showArchived: false }
   old.close()
   assert.equal(signals[0][1].aborted, true)
   const pendingB = newPage.load()
@@ -149,10 +149,10 @@ test('SourceManager closed page cannot launch a new read after an old mutation f
 
 test('Host normalizer passes optional SourceOverview signal but fences legacy synthetic aggregate', () => {
   const factory = read('ui/shared/src/mui/SourceManagerAdapter.ts')
-  assert.match(factory, /sourceOverview: \(signal\) => port\.sourceOverview/)
-  assert.match(factory, /port\.sourceOverview\(signal\)/)
-  assert.match(factory, /synthesizedSourceOverview\(port, signal\)/)
-  assert.match(factory, /port\.sources\(signal\)/)
+  assert.match(factory, /sourceOverview: \(signal, includeArchived\) => port\.sourceOverview/)
+  assert.match(factory, /port\.sourceOverview\(signal, includeArchived\)/)
+  assert.match(factory, /synthesizedSourceOverview\(port, signal, includeArchived\)/)
+  assert.match(factory, /port\.sources\(signal, includeArchived\)/)
   assert.match(factory, /signal\?\.throwIfAborted\(\)/)
   assert.match(source, /overviewReadRef\.current\?\.abort\(\)/)
   assert.match(source, /overviewMountedRef\.current = false/)
