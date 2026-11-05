@@ -334,7 +334,8 @@ process_request() {
     write_status success "$source" "$channel" "$request_id" \
       "更新完成" 9 9 0 0 "服务端更新完成并通过健康检查。" "" "$started_at" "$(now_utc)" "$backup_file_data"
   else
-    error_text="Host preflight command failed with status $status"
+    error_text="$(tail -n 8 "$run_log" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]][[:space:]]*/ /g' || true)"
+    [[ -n "$error_text" ]] || error_text="xdrive-server update exited with status $status"
     write_status failed "$source" "$channel" "$request_id" \
       "更新失败" 0 9 0 0 "服务端更新失败；若升级事务已启动，安装器会按原有规则执行回滚。" \
       "$error_text" "$started_at" "$(now_utc)" "$backup_file_data"
@@ -4108,6 +4109,8 @@ serve_cmd() {
   chmod 0660 "$pid_file"
   CONTROL_PID_FILE="$pid_file"
   CONTROL_PLAN_CAPABILITY_FILE="$dir/offline-plan-runner.pid"
+  # The API uses this matching PID pair to detect a runner that understands
+  # the read-only preflight protocol; never publish a placeholder value.
   printf '%s\n' "$" > "$CONTROL_PLAN_CAPABILITY_FILE"
   chmod 0660 "$CONTROL_PLAN_CAPABILITY_FILE"
   CONTROL_LOCK_DIR="$lock_dir"
