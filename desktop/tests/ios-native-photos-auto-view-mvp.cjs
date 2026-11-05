@@ -441,6 +441,13 @@ test('one-photo priority backup is explicit, Owner-bound, and uses the shared CA
   assert.match(controller, /func startSingle\(/)
   assert.match(controller, /kind: \.single[\s\S]*?singleLocalIdentifier: localIdentifier/)
   assert.match(controller, /if kind == \.single[\s\S]*?\.runSingle\(/)
+  const singleController = controller.slice(
+    controller.indexOf('if kind == .single'),
+    controller.indexOf('else if kind == .focused')
+  )
+  assert.match(singleController, /result\.stoppedForReview \|\| result\.needsReview > 0[\s\S]*?pauseForPendingReceipts\(owner: selected\)/)
+  const foregroundStart = controller.slice(controller.indexOf('private func start('))
+  assert.match(foregroundStart, /if olderPending > 0 \{[\s\S]*?pauseForPendingReceipts\(owner: selected\)/)
   assert.match(single, /authorization\.verify\(owner: owner\)/)
   assert.match(single, /PHAsset\.fetchAssets\(\s*withLocalIdentifiers:/)
   assert.match(single, /uploadOrVerifyOriginal\(/)
