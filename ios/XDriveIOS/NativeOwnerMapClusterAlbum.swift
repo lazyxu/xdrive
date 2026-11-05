@@ -24,6 +24,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     @State private var generation = UUID()
     @State private var loadTask: Task<Void, Never>?
     @State private var coverTask: Task<Void, Never>?
+    @State private var coverLoading = false
     @State private var busy = false
     @State private var error: String?
     @State private var cursor = XDriveIOSOwnerClusterCursor(placeIndex: 0, offset: 0)
@@ -509,8 +510,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     }
 
     private func advanceIfVisible() {
-        guard scrollFootVisible, activeOwner, !busy, viewing == nil,
-              page != nil, error == nil, let next else { return }
+        guard scrollFootVisible, activeOwner, !busy, !coverLoading,
+              viewing == nil, page != nil, error == nil, let next else { return }
         scrollFootVisible = false
         load(next, history: earlier + [cursor], autoAdvance: true)
     }
@@ -521,6 +522,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         coverTask?.cancel()
         loadTask = nil
         coverTask = nil
+        coverLoading = false
         page = nil
         viewerReturn = nil
         autoScrollReturn = nil
@@ -555,6 +557,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         scrollFootVisible = false
         loadTask?.cancel()
         coverTask?.cancel()
+        coverTask = nil
+        coverLoading = false
         if !autoAdvance {
             priorWindow = nil
             priorWindowCursor = nil
@@ -672,8 +676,17 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 next = following
                 page = fetched
                 visiblePageRevision = UUID()
+                coverLoading = true
                 coverTask = Task { @MainActor in
+                    defer {
+                        if generation == ticket {
+                            coverLoading = false
+                            coverTask = nil
+                            advanceIfVisible()
+                        }
+                    }
                     // At most 48 sequential thumbnails; no original download.
+                    // Finish this bounded window before rotating it out.
                     for item in fetched.items where item.metadata.has_thumbnail {
                         guard !Task.isCancelled, generation == ticket,
                               activeOwner, cursor == target else { return }
