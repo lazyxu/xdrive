@@ -301,5 +301,6 @@ export interface XDriveLocalBackupEvidencePreflight {
 // Owning-Agent only. Never expose local Root identity or path.
 export interface XDriveLocalBoundBackupRemoval {
   source_id: number
+  status?: 'removed' | 'archived'
   local_grant_removed: boolean
 }
