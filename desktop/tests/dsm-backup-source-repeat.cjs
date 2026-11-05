@@ -583,7 +583,7 @@ test('DSM Source setup isolates confirmed Root, draft selection and consent on a
     button(tree, '确认创建并绑定本地目录').props.onClick()
     await Promise.resolve()
   })
-  assert.deepEqual(newWrites, [[SELECTION, OTHER_SCOPE, 17, 'NAS Photos B']])
+  assert.deepEqual(newWrites, [[SELECTION, OTHER_SCOPE, 'NAS Photos B']])
   assert.equal(refreshes, 2)
   await act(async () => tree.unmount())
 })
@@ -632,7 +632,7 @@ test('DSM previous Host in-flight Source ACK cannot contaminate next Host or blo
       button(tree, '确认创建并绑定本地目录').props.onClick()
       await Promise.resolve()
     })
-    assert.deepEqual(callsB, [[SELECTION, SCOPE, 17, 'NAS Fresh B']],
+    assert.deepEqual(callsB, [[SELECTION, SCOPE, 'NAS Fresh B']],
       'replacement Host accepts only its own freshly verified Source transaction')
     assert.equal(refreshed, 1)
     await act(async () => tree.unmount())
