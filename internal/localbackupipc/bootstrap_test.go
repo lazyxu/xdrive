@@ -107,6 +107,34 @@ func TestHeadlessBootstrapUsesOriginalOwningAgentEndpoints(t *testing.T) {
 	}
 }
 
+func TestHeadlessBootstrapRejectsUnmanagedServerTarget(t *testing.T) {
+	dir, _ := testEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/hello" {
+			testHello(w)
+			return
+		}
+		if r.URL.Path != "/v1/sources" || r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		targetID := uint64(77)
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(LocalBackupSource{
+			ID: 42, Name: "Photos", Revision: 1, Status: "paused",
+			Kind: "local_folder", Direction: "push", SyncMode: "backup",
+			TargetNodeID: &targetID, TargetManaged: false,
+			TargetPath: "同步文件夹/Push/device_123456789abc/Photos",
+		})
+	}))
+	agent, err := Connect(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agent.CreateLocalBackupSource(context.Background(), "Photos"); err == nil {
+		t.Fatal("unmanaged target response was accepted as a Server-provisioned Push target")
+	}
+}
+
 func TestHeadlessBootstrapRejectsUnsafeOrForeignRootWithoutRequests(t *testing.T) {
 	requests := 0
 	dir, _ := testEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
