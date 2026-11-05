@@ -152,20 +152,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    // Accessibility and very long clusters retain bounded
-                    // backwards/forwards navigation; the primary photo wall
-                    // has no visible 48-photo pagination controls.
-                    Button("查看上一批照片") {
-                        guard let previous = earlier.last else { return }
-                        load(previous, history: Array(earlier.dropLast()))
-                    }
-                    .disabled(busy || !activeOwner || earlier.isEmpty || viewing != nil)
-                    Button("继续浏览下一批照片") {
-                        guard let next else { return }
-                        load(next, history: earlier + [cursor])
-                    }
-                    .disabled(busy || !activeOwner || next == nil || viewing != nil)
-                    Divider()
+                    // Paging is driven by the visible grid sentinels; expose
+                    // only an explicit refresh, not transport-page controls.
                     Button("重新核对当前位置照片") {
                         load(cursor, history: earlier)
                     }
