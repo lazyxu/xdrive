@@ -41,7 +41,7 @@ test('rotation changes only presentation, not source identity, L2, or L3 Viewer'
   assert.doesNotMatch(shell, /\.onChange\(of: verticalSizeClass\)/);
   assert.match(shell, /case local, albums, cloud, originals, map/);
   assert.match(shell, /case \.originals:\s*openGallery\(\.originals\)/);
-  assert.match(shell, /private func openGallery\(_ source: XDriveIOSNativeGallerySource\) \{\s*if source == \.map \{ localMapJump = nil \}\s*gallerySource = source\s*tab = \.gallery/);
+  assert.match(shell, /private func openGallery\(_ source: XDriveIOSNativeGallerySource\) \{\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false\s*if source == \.map \|\| source == \.local \{ localMapJump = nil \}\s*gallerySource = source\s*tab = \.gallery/);
   assert.match(shell, /case \.files:\s*tab = \.files/);
   assert.match(shell, /private var files: some View \{\s*XDriveIOSNativeFilesBrowser\(login: login\)/);
 });
