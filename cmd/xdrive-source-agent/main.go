@@ -570,9 +570,20 @@ func run(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	roots := sourceagent.RootsWithIdentityState(
+		cfg.PersonalRoot, cfg.PersonalRootID, cfg.PersonalRootFingerprint,
+		cfg.SharedRoot, cfg.SharedRootID, cfg.SharedRootFingerprint,
+	)
 	remoteSource, err := cli.Source(ctx, cfg.SourceID)
 	if err != nil {
 		return err
+	}
+	if remoteSource.DeviceID != "" {
+		rootID, rootFingerprint, proofErr := sourceagent.RootSetIdentity(roots)
+		if proofErr != nil {
+			return fmt.Errorf("compute Synology root-set identity: %w", proofErr)
+		}
+		cli.SetSynologySourceRootProof(remoteSource.ID, remoteSource.Revision, rootID, rootFingerprint)
 	}
 	effectiveTrigger, shouldRun, err := resolveRunTrigger(
 		remoteSource, strings.TrimSpace(*trigger), *dueOnly, *interval, time.Now().UTC(),
@@ -606,10 +617,7 @@ func run(args []string) error {
 
 	scanner := sourceagent.Scanner{
 		API: cli, ExecutionAPI: cli, SourceID: cfg.SourceID, Photos: photos,
-		Roots: sourceagent.RootsWithIdentityState(
-			cfg.PersonalRoot, cfg.PersonalRootID, cfg.PersonalRootFingerprint,
-			cfg.SharedRoot, cfg.SharedRootID, cfg.SharedRootFingerprint,
-		),
+		Roots: roots,
 		IdentityStore: identityStore,
 	}
 	result, err := scanner.Run(ctx, effectiveTrigger)
