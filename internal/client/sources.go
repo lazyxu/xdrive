@@ -27,6 +27,7 @@ type Source struct {
 	Revision           uint64     `json:"revision"`
 	TargetNodeID       *uint64    `json:"target_node_id,omitempty"`
 	TargetManaged      bool       `json:"target_managed,omitempty"`
+	DeviceID           string     `json:"device_id,omitempty"`
 	TargetPath         string     `json:"target_path,omitempty"`
 	IgnoreRules        string     `json:"ignore_rules,omitempty"`
 	Checkpoint         string     `json:"checkpoint,omitempty"`
