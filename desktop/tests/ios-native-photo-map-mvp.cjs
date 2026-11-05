@@ -114,7 +114,7 @@ test('native GPS find-next skips only a bounded PhotoKit snapshot, not 100k asse
 
 
 test('full-library GPS map opts in to a transient bounded PhotoKit snapshot', () => {
-  assert.match(map, /Picker\("本机地图扫描范围", selection: \$mapScope\)/)
+  assert.doesNotMatch(map, /Picker\("本机地图扫描范围"/)
   assert.match(map, /case page, library/)
   assert.match(map, /if !globalComplete && !busy \{[\s\S]*?Button\("扫描已授权图库位置"\) \{ scanFullLibrary\(\) \}/)
   assert.match(map, /private func scanFullLibrary\([\s\S]*?viewport: XDriveIOSNativeLocalMapViewport\? = nil[\s\S]*?worker\.start\(atOffset: 0\)/)
@@ -244,10 +244,9 @@ test('short landscape local map preserves controls and PhotoKit authority while 
   assert.match(map, /GeometryReader \{ viewport in[\s\S]*?XDriveIOSNativePhotoMapPolicy\.compactViewport\(/);
   assert.match(map, /accessibilityText: dynamicTypeSize\.isAccessibilitySize/);
   assert.match(map, /VStack\(spacing: compactMap \? 4 : 8\)/);
-  assert.match(map, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\(mapScope == \.page/);
-  assert.match(map, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\("地图只使用本机授权照片/);
-  assert.match(map, /\.alert\("本机照片地图说明", isPresented: \$showingMapHelp\)/);
-  assert.match(map, /\.accessibilityIdentifier\("native-ios-map-layout-help"\)/);
+  assert.doesNotMatch(map, /Text\(mapScope == \.page/);
+  assert.doesNotMatch(map, /地图稳定后按需细化|最多保留64个区域|点击位置后按 48 张逐批查找/);
+  assert.doesNotMatch(map, /showingMapHelp|native-ios-map-layout-help/);
   assert.match(map, /Button\("查找下一批有定位照片"\)/);
   assert.match(map, /Button\("刷新当前页"\)/);
   assert.match(map, /Button\(focused \? "显示底部导航" : "专注地图"\)/);
@@ -284,7 +283,7 @@ test('both local MapKit album sheets browse a frozen authorized slice and restor
   assert.doesNotMatch(admission, /isNetworkAccessAllowed|URLSession|UserDefaults|UploadSession/);
   for (const [name, screen] of [['bounded map pins', bounded], ['48-row GPS cell', spatialAlbum]]) {
     assert.match(screen, /ScrollViewReader \{ returnScroll in/, name);
-    assert.match(screen, /XDriveIOSNativeLocalPhotoDetail\(\s*candidate: initial, loadedItems: previewItems,/,
+    assert.match(screen, /XDriveIOSNativeLocalPhotoDetail\(\s*candidate: initial, loadedItems: (previewItems|viewerItems),/,
       name + ' must provide neighbors to the native Viewer');
     assert.match(screen, /onViewed: \{ next in[\s\S]*?viewerReturnID = next\.id/,
       name + ' must track the actual last viewed member');
@@ -298,17 +297,18 @@ test('both local MapKit album sheets browse a frozen authorized slice and restor
     assert.match(screen, /defer \{ viewerReturnID = nil \}/, name);
   }
   assert.match(bounded, /items\.prefix\(XDriveIOSNativePhotoMapPolicy\.pageSize\)/);
-  assert.match(spatialAlbum, /items\.prefix\(48\)/);
+  assert.match(spatialAlbum, /private var loadedWindow\(containing id: String\)/);
+  assert.match(spatialAlbum, /loadedItems: viewerItems/);
   assert.match(spatialAlbum, /guard !busy,[\s\S]*?XDriveIOSNativeMapViewerAdmission\.allows\(/);
-  assert.match(spatialAlbum, /viewerReturnID = nil\s*focusedTileID = nil\s*viewer = nil\s*items = \[\]\s*dismiss\(\)/);
+  assert.match(spatialAlbum, /viewerReturnID = nil[\s\S]*?viewer = nil[\s\S]*?priorWindow = \[\][\s\S]*?items = \[\][\s\S]*?dismiss\(\)/);
 });
 
 
-test('iOS Places defaults to all authorized PhotoKit GPS while retaining explicit current-page mode',()=>{
+test('iOS Places defaults to the full authorized PhotoKit map without exposing a page mode',()=>{
   assert.match(dashboard, /@State private var localMapScope: XDriveIOSNativeLocalMapScope = \.library/)
-  assert.match(dashboard, /localMapScope = XDriveIOSNativeLocalMapScope\(rawValue: snapshot\.mapScope \?\? "library"\) \?\? \.library/)
+  assert.match(dashboard, /localMapScope = \.library/)
   assert.match(dashboard, /localMapScope = \.library\s+localMapPageOffset = 0/)
-  assert.match(map, /Picker\("本机地图扫描范围", selection: \$mapScope\)/)
+  assert.doesNotMatch(map, /Picker\("本机地图扫描范围"/)
   assert.match(map, /case page, library/)
   assert.match(map, /authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)\s+changes\.start\(\)/)
   assert.match(map, /else if mapScope == \.library && !globalComplete && !busy &&\s*phase == \.active && \(authorization == \.authorized \|\| authorization == \.limited\) \{[\s\S]*?scanFullLibrary\(\)/)
@@ -373,8 +373,8 @@ test('PhotoKit full-library map is photo-first after scan, with manual scan and 
   assert.match(localMap, /Button\("还原已授权全库概览"\) \{ scanFullLibrary\(\) \}/)
   assert.match(localMap, /Label\("地图操作", systemImage: "ellipsis.circle"\)/)
   assert.match(localMap, /accessibilityIdentifier\("native-ios-local-map-actions"\)/)
-  assert.match(localMap, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\(mapScope == \.page/)
-  assert.match(localMap, /\.font\(\.caption\)\.monospacedDigit\(\)\.lineLimit\(1\)\s*\.accessibilityIdentifier\("native-ios-map-full-library-summary"\)/)
+  assert.doesNotMatch(localMap, /Text\(mapScope == \.page/)
+  assert.doesNotMatch(localMap, /native-ios-map-full-library-summary|native-ios-map-stale-viewport/)
   assert.match(localMap, /Button\(focused \? "显示底部导航" : "专注地图"\)/)
   assert.match(localMap, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?clearReturnCamera\(\)\s*invalidate\(\)/)
 })
@@ -387,20 +387,43 @@ test('first full-library GPS scan displays inert native MapKit while PhotoKit pr
   const library = body.slice(body.indexOf('} else if mapScope == .library {'),
                              body.indexOf('} else if let page {'))
   const mapIndex = library.indexOf('XDriveIOSMapKitPhotoPage(')
-  const progressIndex = library.indexOf('ProgressView("逐页扫描已授权图库的 GPS 元数据…")')
+  const progressIndex = library.indexOf('ProgressView("正在读取照片位置…")')
   assert.ok(mapIndex >= 0 && progressIndex > mapIndex,
     'MapKit must stay on-screen during initial scan, with progress beside it')
-  assert.match(library, /if globalComplete \{[\s\S]*?if globalCells\.isEmpty \{[\s\S]*?\}\s*\}\s*\/\/ Keep MapKit mounted/)
+  assert.match(library, /if globalComplete && globalCells\.isEmpty \{[\s\S]*?\}\s*\/\/ Keep MapKit mounted/)
   assert.match(library, /items: \[\], globalCells: globalCells,\s*revision: mapRevision, cameraReturn: globalCamera/)
   assert.match(localMap, /private var refinedViewportIsCurrent: Bool \{\s*\/\/ Scanned-incomplete cells[\s\S]*?guard globalComplete, !busy else \{ return false \}/)
   assert.match(library, /canSelectCells: refinedViewportIsCurrent/)
   assert.match(library, /guard phase == \.active, !busy, globalComplete,\s*refinedViewportIsCurrent/)
-  assert.match(library, /if globalComplete && globalViewport != nil && !refinedViewportIsCurrent \{/)
-  assert.match(library, /if busy \{[\s\S]*?ProgressView\("逐页扫描已授权图库的 GPS 元数据…"\)/)
+  assert.doesNotMatch(library, /native-ios-map-stale-viewport|上次细化的视窗/)
+  assert.match(library, /if busy \{[\s\S]*?ProgressView\("正在读取照片位置…"\)/)
   assert.match(library, /accessibilityIdentifier\("native-ios-map-full-library-scan-progress"\)/)
-  assert.match(library, /else if !globalComplete \{\s*Text\("扫描完整授权范围中的位置元数据/)
+  assert.doesNotMatch(library, /扫描完整授权范围中的位置元数据|已检查 .*个槽位/)
   assert.match(library, /if !globalComplete && !busy \{\s*Button\("扫描已授权图库位置"\)/)
   assert.match(localMap, /globalCells = index\.cells[\s\S]*?globalComplete = true[\s\S]*?mapRevision = UUID\(\)/)
   assert.match(localMap, /if next\.page\.finished \{ break \}[\s\S]*?try Task\.checkCancellation\(\)[\s\S]*?scanned == total/)
   assert.doesNotMatch(library, /globalCells = index\.cells|isNetworkAccessAllowed = true|URLSession\(|UploadSession/)
 })
+
+test('GPS cell album continuously advances on a deliberate bottom scroll with bounded two-window retention', () => {
+  const spatialAlbum = map.slice(map.indexOf('private struct XDriveIOSMapSpatialAlbum: View'),
+    map.indexOf('/// One native map route'));
+  assert.match(spatialAlbum, /@State private var priorWindow: \[XDrivePhotoKitScanCandidate\] = \[\]/);
+  assert.match(spatialAlbum, /@State private var pendingLocated: \[XDrivePhotoKitLocatedCandidate\] = \[\]/);
+  assert.match(spatialAlbum, /private var visibleItems: \[XDrivePhotoKitScanCandidate\] \{\s*priorWindow \+ items\s*\}/);
+  assert.match(spatialAlbum, /private func readWindow\(/);
+  assert.match(spatialAlbum, /while rows\.count < 48/);
+  assert.match(spatialAlbum, /scanner\.nextLocatedPage\(\)/);
+  assert.match(spatialAlbum, /pending\[cursor\]\.candidate/);
+  assert.match(spatialAlbum, /LazyVGrid[\s\S]*?ForEach\(priorWindow\)[\s\S]*?ForEach\(items\)[\s\S]*?if hasNext \{\s*Color\.clear/);
+  assert.match(spatialAlbum, /DragGesture\(minimumDistance: 12\)\.onEnded[\s\S]*?scrollFootVisible[\s\S]*?loadNext\(\)/);
+  assert.match(spatialAlbum, /priorWindow = departingItems\s*autoScrollReturnID = departingItems\.last\?\.id\s*items = result\.items/);
+  assert.match(spatialAlbum, /returnScroll\.scrollTo\(anchor, anchor: \.bottom\)/);
+  assert.match(spatialAlbum, /loadedItems: viewerItems/);
+  assert.match(spatialAlbum, /loadedWindow\(containing: item\.id\)/);
+  assert.match(spatialAlbum, /if result\.scannerFinished[\s\S]*?result\.pendingIndex >= result\.pending\.count[\s\S]*?scanner\.reset\(\)/);
+  assert.match(spatialAlbum, /changes\.revision[\s\S]*?retire\(\)[\s\S]*?dismiss\(\)/);
+  assert.doesNotMatch(spatialAlbum, /Button\("上一批"\)|Button\("继续查找下一批"\)|第 \\\(/);
+  assert.doesNotMatch(spatialAlbum, /UserDefaults|URLSession|UploadSession|isNetworkAccessAllowed = true/);
+});
+
