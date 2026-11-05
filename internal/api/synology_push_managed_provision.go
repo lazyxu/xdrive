@@ -122,7 +122,6 @@ func createSynologyPushManagedTargetTx(
 	return target, nil
 }
 
-
 // ensureManagedSourceDirectoryTx creates a reserved Source namespace directory
 // only when absent. An existing same-name folder is reusable only if it
 // already contains at least one server-provisioned TargetManaged Source;
