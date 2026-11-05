@@ -88,6 +88,10 @@ func (s *Server) bindLocalSource(c *gin.Context) {
 			return err
 		}
 		currentRevision = source.Revision
+		// The common Push DeviceID is authoritative even during legacy binding replay.
+		if source.DeviceID == nil || *source.DeviceID != device.ID {
+			return errLocalBindingDeviceInvalid
+		}
 		if source.Revision != expected {
 			return errRevisionConflict
 		}
@@ -113,7 +117,7 @@ func (s *Server) bindLocalSource(c *gin.Context) {
 		}
 		// Existing legacy bindings may be replayed above, but an unbound
 		// Source cannot be claimed by an arbitrary same-account Desktop.
-		if source.LocalCreatorDeviceID == nil || *source.LocalCreatorDeviceID != device.ID {
+		if source.DeviceID == nil || *source.DeviceID != device.ID {
 			return errLocalBindingDeviceInvalid
 		}
 		now := time.Now().UTC()
