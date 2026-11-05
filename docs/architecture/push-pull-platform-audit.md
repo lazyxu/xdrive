@@ -119,3 +119,17 @@ The shared TypeScript Source Manager is not yet a complete cross-platform catalo
 8. DSM's shared XDriveApp/Host capability surface must expose the same Source Manager operations only when backed by real authenticated Server/Agent ports. The standalone DSM source-agent Task Scheduler remains an execution mechanism, not a separate Source catalogue.
 
 Minimum management acceptance: all Source kinds appear in one Owner-scoped list; Push rows display a verified Device label/ID and are read-only from foreign devices; Pull rows display connector/credential status and Server Worker status; actions are enabled only when the Host has the required capability; iOS/Android rows show native-ledger/receipt-derived status without offering remote Run Now.
+
+## 6. DSM Push device-binding implementation slice
+
+The DSM implementation PR now adds the first server-enforced Synology Push device-binding path:
+
+- Register `synology` as an identity-only ClientDevice platform. Its credential is explicitly excluded from the generic Desktop Agent credential gate.
+- Store the Synology device token in the source-agent OS secret store; config.json contains only DeviceID and the opaque credential reference.
+- New Synology Photos Push creation requires the registered DSM Device proof, rejects a caller-selected target Node, and creates `同步文件夹/Push/<device>/<source>` transactionally.
+- Source stores the generic `DeviceID`, exact `TargetNodeID`, and `TargetManaged` provenance.
+- Authenticated Source mutation and execution paths recheck Owner, Device platform, Device token/revocation, Source revision and exact managed Target.
+- Device revocation pauses newly bound Synology Push Sources and requests cancellation of active runs.
+- Existing Sources with no DeviceID remain on their exact old target and are not migrated or silently rebound.
+
+**Remaining DSM P0 gap:** Personal/Shared root fingerprints are still verified by the source-agent locally. A follow-up must persist the exact root capability binding on the Server and recheck it on run/upload admission; Device identity alone is not a filesystem Root grant. Real DSM package and NAS acceptance are still required.
