@@ -14,9 +14,9 @@ import (
 	"github.com/lazyxu/xdrive/internal/userconfig"
 )
 
-// backupTargetsCmd reuses the ordinary authenticated, owner-scoped cloud
-// directory pagination API. This is read-only; there is no remote local-Root
-// grant, second cloud crawler or independent backup configuration store.
+// backupTargetsCmd is a read-only Owner cloud-directory browser for inspection.
+// Local Backup destinations are provisioned automatically by the Server and
+// do not accept a caller-selected --target-id.
 func backupTargetsCmd(args []string) error {
 	fs := flag.NewFlagSet("backup targets", flag.ContinueOnError)
 	parent := fs.Uint64("parent", 0, "existing cloud directory ID (omitted: cloud root)")
@@ -55,7 +55,7 @@ func backupTargetsCmd(args []string) error {
 			return errors.New("requested cloud target parent is not a directory")
 		}
 	}
-	fmt.Fprintf(os.Stdout, "Cloud directory %d; choose a directory ID for --target-id\n", id)
+	fmt.Fprintf(os.Stdout, "Cloud directory %d (read-only listing; local Backup destinations are provisioned automatically)\n", id)
 	return visitBackupTargetDirectories(ctx, cli, id, func(n client.Node) {
 		fmt.Fprintf(os.Stdout, "%d  %s\n", n.ID, n.Name)
 	})
