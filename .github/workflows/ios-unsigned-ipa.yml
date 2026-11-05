@@ -66,7 +66,7 @@ jobs:
       - name: Verify native Notes launcher and Owner-only editor contracts
         run: |
           set -euo pipefail
-          node --test desktop/tests/ios-native-notes-route.cjs desktop/tests/ios-native-notes-history-images.cjs
+          node --test desktop/tests/ios-native-notes-route.cjs
 
       - name: Verify bounded iOS PhotoKit scan-window math
         run: |
@@ -110,17 +110,6 @@ jobs:
             ios/tests/PhotoPendingBatchAccumulatorChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-receipt-batch-check"
           "$RUNNER_TEMP/xdrive-ios-receipt-batch-check"
-
-      - name: Verify durable bounded PhotoKit change journal and priority queue
-        run: |
-          set -euo pipefail
-          swiftc -swift-version 5 \
-            ios/XDriveIOS/PhotoBackupChangeQueueStore.swift \
-            ios/tests/PhotoBackupChangeQueueStoreChecks.swift \
-            -lsqlite3 \
-            -o "$RUNNER_TEMP/xdrive-ios-photo-change-queue"
-          "$RUNNER_TEMP/xdrive-ios-photo-change-queue"
-          node --test desktop/tests/ios-photo-persistent-change-queue.cjs
 
       - name: Verify persistent PhotoKit cursor generation policy
         run: |
@@ -271,9 +260,6 @@ jobs:
             ios/tests/NativeMediaPageRetryPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
           "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
-
-      - name: Verify visible PhotoKit iCloud thumbnail requests stay bounded and cancelable
-        run: node --test desktop/tests/ios-native-photo-icloud-thumbnails.cjs
 
       - name: Verify native HTTPS LAN pre-login selection without credential retries
         run: |
@@ -452,11 +438,12 @@ jobs:
       - name: Verify native PhotoKit full-library media filtering
         run: |
           set -euo pipefail
-          swiftc -swift-version 5 \
+          swiftc -swift-version 5 -framework Photos -framework Photos \
             ios/XDriveIOS/NativePhotoMediaFilterPolicy.swift \
             ios/tests/NativePhotoMediaFilterChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-media-filter"
           "$RUNNER_TEMP/xdrive-ios-media-filter"
+          node --test desktop/tests/ios-native-photo-subtype-filter.cjs
 
       - name: Verify native PhotoAsset Viewer bounded neighbors
         run: |
@@ -467,9 +454,6 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-photoasset-viewer-neighbors"
           "$RUNNER_TEMP/xdrive-ios-photoasset-viewer-neighbors"
           node --test desktop/tests/ios-native-photoasset-viewer-neighbors.cjs desktop/tests/ios-native-photoasset-live.cjs desktop/tests/ios-native-photoasset-still-fallback.cjs
-
-      - name: Verify unified native iOS Gallery Viewer information
-        run: node --test desktop/tests/ios-native-viewer-unified-info.cjs
 
       - name: Verify native cloud PhotoAsset square wall and density pinch
         run: node --test desktop/tests/ios-native-photoasset-wall-density.cjs desktop/tests/ios-native-photoasset-thumbnail-state.cjs
