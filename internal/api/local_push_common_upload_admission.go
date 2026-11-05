@@ -132,6 +132,10 @@ func (s *Server) admitBoundLocalPushCommonUpload(
 				return deny
 			}
 			selected = existing
+			identity := uploadAuthorizationIdentityTx(tx, c, "", meta.UploadSession{}, uploadInitRequest{ResumeKey: req.ResumeKey})
+			if err := recordUploadAuthorizationTx(tx, c, "local_push.operation.admit", "", identity, true, ""); err != nil {
+				return err
+			}
 			return c.Request.Context().Err()
 		}
 		if !errors.Is(read, gorm.ErrRecordNotFound) {
@@ -169,9 +173,14 @@ func (s *Server) admitBoundLocalPushCommonUpload(
 			return deny
 		}
 		selected = row
+		identity := uploadAuthorizationIdentityTx(tx, c, "", meta.UploadSession{}, uploadInitRequest{ResumeKey: req.ResumeKey})
+		if err := recordUploadAuthorizationTx(tx, c, "local_push.operation.admit", "", identity, true, ""); err != nil {
+			return err
+		}
 		return c.Request.Context().Err()
 	})
 	if err != nil {
+		s.recordUploadAuthorizationFailure(c, "local_push.operation.admit", "", meta.UploadSession{}, uploadInitRequest{ResumeKey: req.ResumeKey}, err)
 		return zero, deny
 	}
 	return selected, nil
@@ -257,6 +266,10 @@ func (s *Server) bindBoundLocalPushCommonUpload(
 			}
 			if *op.UploadSessionID == session.ID {
 				bound = op
+				identity := uploadAuthorizationIdentityTx(tx, c, session.ID, session, uploadRequestFromSession(session))
+				if err := recordUploadAuthorizationTx(tx, c, "local_push.upload_session.bind", session.ID, identity, true, ""); err != nil {
+					return err
+				}
 				return c.Request.Context().Err()
 			}
 			// The ordinary /uploads Session expires independently of the
@@ -314,6 +327,10 @@ func (s *Server) bindBoundLocalPushCommonUpload(
 			}
 			op.UploadSessionID = &session.ID
 			bound = op
+			identity := uploadAuthorizationIdentityTx(tx, c, session.ID, session, uploadRequestFromSession(session))
+			if err := recordUploadAuthorizationTx(tx, c, "local_push.upload_session.rebind", session.ID, identity, true, ""); err != nil {
+				return err
+			}
 			return c.Request.Context().Err()
 		}
 		if op.UploadSessionID != nil {
@@ -347,9 +364,14 @@ func (s *Server) bindBoundLocalPushCommonUpload(
 		op.State = meta.LocalPushCommonUploadBound
 		op.UploadSessionID = &session.ID
 		bound = op
+		identity := uploadAuthorizationIdentityTx(tx, c, session.ID, session, uploadRequestFromSession(session))
+		if err := recordUploadAuthorizationTx(tx, c, "local_push.upload_session.bind", session.ID, identity, true, ""); err != nil {
+			return err
+		}
 		return c.Request.Context().Err()
 	})
 	if err != nil {
+		s.recordUploadAuthorizationFailure(c, "local_push.upload_session.bind", req.UploadSessionID, meta.UploadSession{}, uploadInitRequest{ResumeKey: req.ResumeKey}, err)
 		return zero, deny
 	}
 	return bound, nil

@@ -123,6 +123,10 @@ func (s *Server) readBoundLocalPushCommonUploadOriginal(
 		default:
 			return deny
 		}
+		identity := uploadAuthorizationIdentityTx(tx, c, "", meta.UploadSession{}, uploadInitRequest{ResumeKey: op.ResumeKey})
+		if err := recordUploadAuthorizationTx(tx, c, "local_push.receipt.read", "", identity, true, ""); err != nil {
+			return err
+		}
 		return c.Request.Context().Err()
 	})
 	if err != nil {
