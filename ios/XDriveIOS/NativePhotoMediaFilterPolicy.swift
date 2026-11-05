@@ -35,6 +35,11 @@ struct XDriveIOSNativePhotoMediaFilter: Hashable, CaseIterable, Identifiable, Ra
 
     private init(bits: UInt8) { self.bits = bits }
 
+    // RawRepresentable's default equality compares rawValue. Our rawValue
+    // consults isAll, so compare the canonical bitset directly to avoid recursion.
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.bits == rhs.bits }
+    func hash(into hasher: inout Hasher) { hasher.combine(bits) }
+
     static let all = Self(bits: (1 << 0) | (1 << 1))
     static let photos = Self(bits: 1 << 0)
     static let videos = Self(bits: 1 << 1)
@@ -91,7 +96,7 @@ struct XDriveIOSNativePhotoMediaFilter: Hashable, CaseIterable, Identifiable, Ra
         return parts.joined(separator: " · ")
     }
 
-    var isAll: Bool { self == .all }
+    var isAll: Bool { bits == Self.all.bits }
 
     var allItemsTitle: String {
         isAll ? "所有媒体（查看全部）" : "所有\(title)（查看全部）"
