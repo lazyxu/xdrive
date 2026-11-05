@@ -399,19 +399,32 @@ struct XDriveIOSNativeServerMediaPreview: View {
 
     private var viewed: XDriveIOSNativeMediaItem { activeItem ?? item }
 
-    private var mediaInfoDetails: XDriveIOSNativeViewerMediaDetails {
-        let extensionName = URL(fileURLWithPath: viewed.node.name).pathExtension
-            .uppercased()
-        let resourceDetails = (viewed.resources ?? []).map { resource in
-            XDriveIOSNativeViewerResourceDetail(
-                id: "\(resource.role)-\(resource.node_id)",
-                title: resource.role == "still" ? "实况静态照片" :
-                    resource.role == "motion" ? "实况动态视频" : resource.role,
+    private var mediaInfoResources: [XDriveIOSNativeViewerResourceDetail] {
+        var details: [XDriveIOSNativeViewerResourceDetail] = []
+        guard let resources = viewed.resources else { return details }
+        for resource in resources {
+            let title: String
+            switch resource.role {
+            case "still": title = "实况静态照片"
+            case "motion": title = "实况动态视频"
+            default: title = resource.role
+            }
+            let identifier = "\(resource.role)-\(resource.node_id)"
+            let detail = XDriveIOSNativeViewerResourceDetail(
+                id: identifier,
+                title: title,
                 name: resource.name,
                 mimeType: resource.mime_type,
                 size: resource.size
             )
+            details.append(detail)
         }
+        return details
+    }
+
+    private var mediaInfoDetails: XDriveIOSNativeViewerMediaDetails {
+        let extensionName = URL(fileURLWithPath: viewed.node.name).pathExtension
+            .uppercased()
         let duration = player?.currentItem?.duration.seconds
         let validDuration = duration.flatMap {
             $0.isFinite && $0 >= 0 ? $0 : nil
@@ -436,7 +449,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
             pixelHeight: height,
             duration: validDuration,
             locationStatus: "云端 PhotoAsset 当前未提供拍摄位置元数据。",
-            resources: resourceDetails,
+            resources: mediaInfoResources,
             liveFiles: liveResources
         )
     }
