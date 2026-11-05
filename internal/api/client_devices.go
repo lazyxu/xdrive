@@ -54,8 +54,8 @@ func validDeviceDisplayName(name string) bool {
 	return true
 }
 
-// iOS and Android installed Apps are identity-only device platforms.
-// Neither is a local_folder Agent or an executor for Desktop Source/Root.
+// iOS/Android installed Apps and the DSM source-agent are identity-only
+// device platforms. None is a generic Desktop local_folder Agent or Root grant.
 func validClientPlatform(platform string) bool {
 	return platform == "windows" || platform == "linux" || platform == "darwin" ||
 		platform == "ios" || platform == "android" || platform == "synology"
@@ -78,8 +78,8 @@ func clientDeviceIdentityCredentialMatches(device meta.ClientDevice, raw string)
 }
 
 // Existing Source/Root/Agent code uses this strictly stronger gate.
-// iOS/Android identity credentials must NEVER become Desktop Agent credentials,
-// including Source creation, local root binding and worker execution.
+// iOS/Android/Synology identity credentials must NEVER become Desktop Agent
+// credentials, including Source creation, local root binding and execution.
 // Keep this separate from identity-only /devices/self and heartbeat.
 func clientDeviceCredentialMatches(device meta.ClientDevice, raw string) bool {
 	return device.Platform != "ios" && device.Platform != "android" && device.Platform != "synology" &&
