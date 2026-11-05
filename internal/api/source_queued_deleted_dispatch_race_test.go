@@ -23,9 +23,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// R-SYNC-011: a Pull Source deleted after it is queued, but before its
+// R-SYNC-011: a Pull Source archived after it is queued, but before its
 // background network worker dispatches, must never enter its stale handler.
-func TestDeletedQueuedPullSourceCannotDispatchFromStaleSnapshot(t *testing.T) {
+func TestArchivedQueuedPullSourceCannotDispatchFromStaleSnapshot(t *testing.T) {
 	dsn := strings.TrimSpace(os.Getenv("XD_TEST_DATABASE_URL"))
 	if dsn == "" {
 		t.Skip("XD_TEST_DATABASE_URL is not configured")
@@ -168,16 +168,18 @@ waitQueued:
 		}
 	}
 
-	// Authenticated DELETE wins before queued Source 2's handler dispatch.
+	// Authenticated DELETE archives Source 2 before its queued handler dispatch.
 	requestWithHeaders(t, router, http.MethodDelete,
 		fmt.Sprintf("/api/v1/sources/%d", second.ID), token, nil,
 		http.StatusNoContent, map[string]string{"If-Match": "\"1\""})
-	var remaining int64
-	if err := db.Model(&meta.Source{}).Where("id = ?", second.ID).Count(&remaining).Error; err != nil {
-		t.Fatal(err)
+	var retained meta.Source
+	if err := db.Where("id = ? AND owner_id = ?", second.ID, owner.ID).Take(&retained).Error; err != nil {
+		t.Fatalf("archive must retain the queued Source identity: %v", err)
 	}
-	if remaining != 0 {
-		t.Fatal("authenticated deletion did not commit before queue release")
+	if retained.Status != meta.SourceStatusArchived || retained.Revision != second.Revision+1 ||
+		retained.TargetNodeID == nil || *retained.TargetNodeID != target.ID ||
+		retained.RunRequestedAt != nil || retained.RetryAt != nil {
+		t.Fatalf("authenticated DELETE must archive before queue release: %+v", retained)
 	}
 	unblock()
 	var result outcome
