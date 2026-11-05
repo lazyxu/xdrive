@@ -183,6 +183,7 @@ export type AgentOfflineImportStatus = {
   files: Array<{ name: string; state: 'uploading' | 'ready'; size: number; uploaded_bytes: number; upload_sha256?: string }>
 }
 export type AgentOfflineImportFinalize = { name: string; state: 'ready'; upload_sha256: string }
+export type AgentOfflineHostPlanStatus = import('../../../ui/shared/src/offline-update').XDriveOfflineHostPlanStatus
 
 export type AgentServerUpdateState = {
   supported: boolean
@@ -4772,6 +4773,17 @@ export class AgentIPCClient {
   }
   offlineImportGet(id: string) {
     return this.request<AgentOfflineImportStatus>('GET', '/v1/offline-imports/' + encodeURIComponent(id))
+  }
+  offlineImportPlan(id: string) {
+    return this.request<AgentOfflineHostPlanStatus>('GET',
+      '/v1/offline-imports/' + encodeURIComponent(id) + '/plan')
+  }
+  offlineImportPlanStart(id: string, manifestSHA: string, goSHA: string, trustMode: 'sigstore' | 'sha256') {
+    return this.request<AgentOfflineHostPlanStatus>('POST',
+      '/v1/offline-imports/' + encodeURIComponent(id) + '/plan', {
+        trusted_manifest_sha256: manifestSHA, trusted_installer_sha256: goSHA,
+        offline_trust_mode: trustMode,
+      }, 45_000)
   }
   offlineImportRegister(id: string, name: string, size: number, sha256 = '') {
     return this.request<{ accepted: boolean }>('POST',
