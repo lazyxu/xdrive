@@ -20,7 +20,7 @@ import (
 
 type backupBootstrapAgent interface {
 	PreflightLocalRoot(context.Context, string) error
-	CreateLocalBackupSource(context.Context, string, uint64) (localbackupipc.LocalBackupSource, error)
+	CreateLocalBackupSource(context.Context, string) (localbackupipc.LocalBackupSource, error)
 	AuthorizeLocalRoot(context.Context, uint64, string) (localbackupipc.LocalBackupRootGrant, error)
 	ReadSchedule(context.Context, uint64) (localbackupipc.Schedule, error)
 	SaveSchedule(context.Context, uint64, uint64, localbackupipc.Schedule) (localbackupipc.Schedule, error)
@@ -48,14 +48,13 @@ func normalizedExplicitBackupPath(path string) (string, error) {
 // operations, not a separate Runner. No repeat-on-timeout or silent adoption
 // of orphan/foreign drafts is permitted.
 func runBackupInit(ctx context.Context, agent backupBootstrapAgent, name, path string,
-	targetID uint64, spec sourceschedule.Spec, out io.Writer,
+	spec sourceschedule.Spec, out io.Writer,
 ) (uint64, error) {
 	name = strings.TrimSpace(name)
 	if ctx == nil || ctx.Err() != nil || agent == nil || out == nil ||
 		name == "" || len([]byte(name)) > 128 ||
-		!localbackupipc.ValidSourceID(targetID) ||
 		!localbackupipc.ValidLocalBackupPath(path) {
-		return 0, errors.New("name, authorized local path and existing cloud target ID are required")
+		return 0, errors.New("name and authorized local path are required")
 	}
 	if spec.Type != "" && spec.Type != sourceschedule.TypeManual {
 		normalized, err := sourceschedule.Normalize(spec.Type, spec.Expression, spec.Timezone)
@@ -66,11 +65,17 @@ func runBackupInit(ctx context.Context, agent backupBootstrapAgent, name, path s
 	if err := agent.PreflightLocalRoot(ctx, path); err != nil {
 		return 0, fmt.Errorf("local directory preflight failed before creating Source: %w", err)
 	}
-	created, err := agent.CreateLocalBackupSource(ctx, name, targetID)
+	created, err := agent.CreateLocalBackupSource(ctx, name)
 	if err != nil {
 		return 0, fmt.Errorf("Source creation result is unknown; inspect 'xd backup drafts' before trying again: %w", err)
 	}
 	id := created.ID
+	if !localbackupipc.ValidSourceID(id) || created.TargetNodeID == nil ||
+		!localbackupipc.ValidSourceID(*created.TargetNodeID) || !created.TargetManaged ||
+		strings.TrimSpace(created.TargetPath) == "" {
+		return id, fmt.Errorf("Source creation did not return a verified Server-managed cloud target; inspect 'xd backup drafts' before retrying")
+	}
+	fmt.Fprintf(out, "Server target: %s (Node %d)\n", created.TargetPath, *created.TargetNodeID)
 	grant, err := agent.AuthorizeLocalRoot(ctx, id, path)
 	if err != nil {
 		return id, fmt.Errorf("Source %d remains a paused draft; use 'xd backup bind --source %d --path ABS_DIR' to retry: %w", id, id, err)
@@ -103,10 +108,10 @@ func runBackupInit(ctx context.Context, agent backupBootstrapAgent, name, path s
 // --run-now the existing Agent Start/Status produces the ordinary per-file
 // result; on failure the authorized Source remains available for inspection.
 func runBackupInitAndMaybeOnce(ctx context.Context, agent backupBootstrapOnceAgent,
-	name, path string, targetID uint64, spec sourceschedule.Spec,
+	name, path string, spec sourceschedule.Spec,
 	runNow bool, out io.Writer,
 ) (uint64, error) {
-	id, err := runBackupInit(ctx, agent, name, path, targetID, spec, out)
+	id, err := runBackupInit(ctx, agent, name, path, spec, out)
 	if err != nil || !runNow {
 		return id, err
 	}
@@ -125,7 +130,6 @@ func backupBootstrapCmd(args []string) error {
 	fs := flag.NewFlagSet("backup "+action, flag.ContinueOnError)
 	name := fs.String("name", "", "init: name of the new local Backup-only Source")
 	localPath := fs.String("path", "", "explicit absolute local directory on this device")
-	target := fs.Uint64("target-id", 0, "init: existing owner-authorized cloud directory Node ID")
 	source := fs.Uint64("source", 0, "bind: existing paused Source created by this owning device")
 	every := fs.String("every", "", "init: optional interval such as 6h")
 	cron := fs.String("cron", "", "init: optional five-field cron schedule")
@@ -142,8 +146,8 @@ func backupBootstrapCmd(args []string) error {
 	}
 	switch action {
 	case "init":
-		if !localbackupipc.ValidSourceID(*target) {
-			return errors.New("init requires --target-id and does not accept --source")
+		if strings.TrimSpace(*name) == "" {
+			return errors.New("init requires --name and --path")
 		}
 	case "bind":
 		if !localbackupipc.ValidSourceID(*source) {
@@ -175,7 +179,7 @@ func backupBootstrapCmd(args []string) error {
 	}
 	switch action {
 	case "init":
-		_, err = runBackupInitAndMaybeOnce(ctx, agent, *name, path, *target, spec, *runNow, os.Stdout)
+		_, err = runBackupInitAndMaybeOnce(ctx, agent, *name, path, spec, *runNow, os.Stdout)
 		return err
 	case "bind":
 		scoped, done := context.WithTimeout(ctx, 2*time.Minute)

@@ -16,14 +16,16 @@ import (
 )
 
 type LocalBackupSource struct {
-	ID           uint64  `json:"id"`
-	Name         string  `json:"name"`
-	Kind         string  `json:"kind"`
-	Direction    string  `json:"direction"`
-	SyncMode     string  `json:"sync_mode"`
-	Status       string  `json:"status"`
-	Revision     uint64  `json:"revision"`
-	TargetNodeID *uint64 `json:"target_node_id"`
+	ID            uint64  `json:"id"`
+	Name          string  `json:"name"`
+	Kind          string  `json:"kind"`
+	Direction     string  `json:"direction"`
+	SyncMode      string  `json:"sync_mode"`
+	Status        string  `json:"status"`
+	Revision      uint64  `json:"revision"`
+	TargetNodeID  *uint64 `json:"target_node_id,omitempty"`
+	TargetManaged bool    `json:"target_managed"`
+	TargetPath    string  `json:"target_path"`
 }
 
 type LocalBackupRootGrant struct {
@@ -82,15 +84,14 @@ func (c *Client) PreflightLocalRoot(ctx context.Context, path string) error {
 // CreateLocalBackupSource uses the EXISTING Agent Source-creation API, which
 // registers/reuses its private device and constrains local Sources to paused
 // owner-authorized Backup-only. No device token enters this client or response.
-func (c *Client) CreateLocalBackupSource(ctx context.Context, name string, targetID uint64) (LocalBackupSource, error) {
+func (c *Client) CreateLocalBackupSource(ctx context.Context, name string) (LocalBackupSource, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || len([]byte(name)) > 128 || !ValidSourceID(targetID) {
-		return LocalBackupSource{}, errors.New("valid name and cloud target directory ID required")
+	if name == "" || len([]byte(name)) > 128 {
+		return LocalBackupSource{}, errors.New("valid local Push Source name required")
 	}
 	request := client.CreateSourceInput{
 		Name: name, Kind: "local_folder", Direction: "push",
 		SyncMode: "backup", RunMode: "sync", ScheduleType: "manual",
-		TargetNodeID: targetID,
 	}
 	var source LocalBackupSource
 	if err := c.request(ctx, http.MethodPost, "/v1/sources", request, &source); err != nil {
@@ -100,8 +101,9 @@ func (c *Client) CreateLocalBackupSource(ctx context.Context, name string, targe
 		source.Name != name || source.Kind != "local_folder" ||
 		source.Direction != "push" || source.SyncMode != "backup" ||
 		source.Status != "paused" || source.TargetNodeID == nil ||
-		*source.TargetNodeID != targetID {
-		return LocalBackupSource{}, errors.New("owning Agent returned an invalid local Backup-only Source")
+		!ValidSourceID(*source.TargetNodeID) || !source.TargetManaged ||
+		strings.TrimSpace(source.TargetPath) == "" || len([]byte(source.TargetPath)) > 4096 {
+		return LocalBackupSource{}, errors.New("owning Agent did not return a verified Server-managed local Push target")
 	}
 	return source, nil
 }
