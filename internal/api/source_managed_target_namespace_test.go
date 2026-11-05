@@ -39,7 +39,7 @@ func TestManagedSourceTargetRenameAcceptsCanonicalAndExistingNamespaces(t *testi
 		{name: "Android Push", kind: "android_photos", direction: meta.SourceDirectionPush,
 			namespace: "Push", connector: "Pixel_a1b2c3d4e5f6", leaf: "Android Photos", nextName: "Android Photos New", wantLeaf: "Android Photos New", managed: true},
 		{name: "Yike Pull", kind: yikeSourceKind, direction: meta.SourceDirectionPull,
-			namespace: "Pull", connector: yikePullTargetConnectorName, leaf: "uid_12345_old", nextName: "Yike New", wantLeaf: "uid_12345_Yike New", managed: true},
+			namespace: "Pull", connector: "Yike Photos", leaf: "uid_12345_old", nextName: "Yike New", wantLeaf: "uid_12345_Yike New", managed: true},
 		{name: "legacy Yike Pull", kind: yikeSourceKind, direction: meta.SourceDirectionPull,
 			namespace: yikeTargetRootName, connector: yikeTargetConnectorName, leaf: "uid_12345_old", nextName: "Yike Legacy New", wantLeaf: "uid_12345_Yike Legacy New", managed: false},
 		{name: "Synology Photos Pull", kind: synologySourceKind, direction: meta.SourceDirectionPull,
