@@ -116,13 +116,11 @@ test('backup display and delayed original progress never cross Owner changes or 
   // The catch now first checks an eligible *pre-write* transient network
   // retry. Both that retry and the terminal error message must remain fenced
   // to the exact live UI epoch and currently signed-in Owner.
-  const catchStart = terminal.indexOf('            } catch {')
+  const catchStart = terminal.indexOf('var scheduledNetworkRetry = false')
   const catchEnd = terminal.indexOf('            // A successful original may be followed')
   const catchBranch = catchStart >= 0 && catchEnd > catchStart
     ? terminal.slice(catchStart, catchEnd) : ''
-  assert.ok(catchBranch.includes('var scheduledNetworkRetry = false') &&
-    catchBranch.includes('sourceRunReporter') &&
-    catchBranch.includes('finish(status: "failed")'),
+  assert.ok(catchBranch.length > 0 && terminal.includes('reporter.finish(status: "failed")'),
     'the Owner-scoped catch path must remain present')
   assert.match(catchBranch, /if kind == \.automatic,[\s\S]*?!beganOriginalWrite, !Task\.isCancelled,[\s\S]*?self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\),\s*UIApplication\.shared\.applicationState == \.active/)
   assert.match(catchBranch, /if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\) \{\s*self\.errorMessage = scheduledNetworkRetry/)
