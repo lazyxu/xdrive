@@ -29,7 +29,7 @@ test('PhotoKit combines all active predicates in one real filtered fetch', () =>
   assert.match(filter, /PHAssetMediaSubtype\.photoLive\.rawValue/)
   assert.match(filter, /PHAssetMediaSubtype\.photoScreenshot\.rawValue/)
   assert.match(scanner, /mediaFilter\.applyPredicates\(to: options\)/)
-  assert.match(scanner, /switch mediaFilter\.fetchKind/)
+  assert.match(scanner, /if mediaFilter\.fetchKind == "image"[\s\S]*else if mediaFilter\.fetchKind == "video"/)
   assert.match(scanner, /filter\.includes\(kind: kind\)/)
   assert.match(scanner, /observer\.current\(\) == version/)
   assert.match(scanner, /let end = min\(snapshot\.count, start \+ 64\)/)
@@ -39,7 +39,7 @@ test('PhotoKit combines all active predicates in one real filtered fetch', () =>
 
 test('date index uses the identical combined PhotoKit predicate and cursor identity', () => {
   assert.match(timeline, /mediaFilter\.applyPredicates\(to: options\)/)
-  assert.match(timeline, /switch mediaFilter\.fetchKind/)
+  assert.match(timeline, /if mediaFilter\.fetchKind == "image"[\s\S]*else if mediaFilter\.fetchKind == "video"/)
   assert.match(timeline, /mediaFilter\.includes\(kind: kind\)/)
   assert.match(timeline, /mediaFilter\.requiresFavorite/)
   assert.match(timeline, /mediaFilter\.requiresLive/)
