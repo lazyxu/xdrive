@@ -426,17 +426,18 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     let cloud: Bool
                     let newOnlySince: Date?
                     let manualStartEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?
+                    var incrementalQueue: XDriveIOSPhotoKitPersistentBackupQueue?
                     if kind == .automatic {
-                        // Durably capture bounded PhotoKit changes BEFORE
-                        // reserving the old 256-slot scanner window. The
-                        // queued IDs are not yet upload candidates here:
-                        // only the existing original writer can prove an ACK.
+                        // Durably replay a bounded PhotoKit change batch before
+                        // reserving the positional scan window. The same queue
+                        // is then consumed by the existing CAS original writer.
                         if let activePlan = XDriveIOSPhotoAutoScheduleStore.shared
                             .status(owner: selected),
                            activePlan.backupStartRule == .onlyNew {
                             let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
                                 owner: selected
                             )
+                            incrementalQueue = changeQueue
                             do {
                                 _ = try await changeQueue.replay(
                                     owner: selected, maximumEvents: 2
@@ -516,6 +517,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         }
                     ).run(allowICloudOriginals: cloud, startOffset: offset,
                           newOnlySince: newOnlySince,
+                          changeQueue: incrementalQueue,
                           onPotentialWrite: { beganOriginalWrite = true }) { [weak self] value in
                         guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
                               self?.displayEpoch == uiEpoch,
