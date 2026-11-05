@@ -763,6 +763,10 @@ func (s *Server) getUploadSession(c *gin.Context) {
 		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
 		return
 	}
+	if err := s.verifySynologyUploadSession(c, session); err != nil {
+		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
+		return
+	}
 	if session.Status == meta.UploadStatusActive && time.Now().After(session.ExpiresAt) {
 		_ = s.abortUploadSessionData(c.Request.Context(), session)
 		fail(c, http.StatusGone, "upload session expired")
@@ -779,6 +783,10 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 	}
 	if !sourceRunUploadSessionMatches(c, session) {
 		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
+		return
+	}
+	if err := s.verifySynologyUploadSession(c, session); err != nil {
+		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
 		return
 	}
 	if session.Status != meta.UploadStatusActive {
@@ -956,6 +964,10 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 	}
 	if !sourceRunUploadSessionMatches(c, session) {
 		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
+		return
+	}
+	if err := s.verifySynologyUploadSession(c, session); err != nil {
+		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
 		return
 	}
 	if session.Status == meta.UploadStatusFinalized {
