@@ -65,7 +65,18 @@ import Foundation
             guard let old = initial.first(where: { $0.localIdentifier == "old" }) else {
                 fatalError("expected original pending old revision")
             }
-            try expect(try store.settle(old, result: .confirmed))
+            do {
+                _ = try store.settle(
+                    old, result: .confirmed,
+                    expectedBaselineToken: Data([99]), authorization: 3
+                )
+                fatalError("expected stale baseline guard")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.baselineChanged {}
+            try expect(try store.status(for: "old")?.state == .pending)
+            try expect(try store.settle(
+                old, result: .confirmed,
+                expectedBaselineToken: later, authorization: 3
+            ))
             try expect(try store.status(for: "old")?.state == .confirmed)
             try expect(try store.counts() == .init(pending: 1, failed: 0, confirmed: 1, missingLocal: 1))
             try expect(try !store.settle(old, result: .confirmed))
