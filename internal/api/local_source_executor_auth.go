@@ -253,7 +253,6 @@ func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID
 	return nil
 }
 
-
 // requireSynologySourceProofTx keeps DSM Push on the identity-only device
 // credential path. It never grants Desktop Agent or generic local Root rights.
 func (s *Server) requireSynologySourceProofTx(
