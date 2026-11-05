@@ -211,8 +211,14 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
     .every((name) => status?.files.some((file) => file.name === name && file.state === 'ready') === true)
   const manualSHAReady = xDriveValidOfflineDigest(manifestSHA) && xDriveValidOfflineDigest(goSHA)
   const trustInputsReady = trustMode === 'sigstore' ? signedFilesReady : manualSHAReady
+  const planTrustMatches = trustMode === 'sigstore'
+    ? planState?.offline_trust_mode === 'sigstore' &&
+      !planState.trusted_manifest_sha256 && !planState.trusted_installer_sha256
+    : planState?.offline_trust_mode === 'sha256' &&
+      planState.trusted_manifest_sha256 === manifestSHA &&
+      planState.trusted_installer_sha256 === goSHA
   const visiblePlanState = planState?.offline_id === id &&
-    (!planState.offline_trust_mode || planState.offline_trust_mode === trustMode)
+    (planState.state === 'idle' || planState.state === 'unavailable' || planTrustMatches)
     ? planState : null
   const hostProbe = visiblePlanState?.plan?.host_probe
   const hostBlockers = hostProbe?.blockers || []
