@@ -14,10 +14,12 @@ import (
 )
 
 const (
-	yikeSourceKind           = "yike_photos"
-	yikeTargetRootName       = "同步文件夹"
-	yikeLegacyTargetRootName = "来源"
-	yikeTargetConnectorName  = "一刻相册"
+	yikeSourceKind              = "yike_photos"
+	yikeTargetRootName          = "同步文件夹"
+	yikePullTargetRootName      = "Pull"
+	yikePullTargetConnectorName = "Yike Photos"
+	yikeLegacyTargetRootName    = "来源"
+	yikeTargetConnectorName     = "一刻相册"
 )
 
 func yikeManagedTargetInSubtreeDB(ctx context.Context, db *gorm.DB, ownerID, nodeID uint64) (bool, error) {
@@ -148,7 +150,7 @@ func ensureYikeManagedParentTx(ctx context.Context, tx *gorm.DB, ownerID uint64)
 
 	parent := root
 	var err error
-	for _, segment := range []string{yikeTargetRootName, yikeTargetConnectorName} {
+	for _, segment := range []string{yikeTargetRootName, yikePullTargetRootName, yikePullTargetConnectorName} {
 		parent, err = ensureOwnedChildDirectoryTx(ctx, tx, ownerID, parent.ID, segment)
 		if err != nil {
 			return meta.Node{}, err
@@ -240,66 +242,26 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 			if currentAccountID != accountID {
 				return errYikeAccountMismatch
 			}
-			// Credential refresh must never overwrite the Owner-controlled
-			// Source/target name with a changed remote account nickname.
-			desiredLeaf := currentTarget.Name
-			desiredParent, err := ensureYikeManagedParentTx(ctx, tx, source.OwnerID)
-			if err != nil {
-				return err
-			}
-			parentChanged := currentTarget.ParentID == nil || *currentTarget.ParentID != desiredParent.ID
-			if parentChanged {
-				// A UID-shaped name and empty content do not prove that a
-				// manually selected ordinary folder belongs to this Source.
-				// Older unmarked server roots may move only from the exact
-				// historical 来源/一刻相册 hierarchy.
-				if !source.TargetManaged {
-					proven, err := verifiedLegacyYikeTargetLocationTx(ctx, tx, *source, currentTarget)
-					if err != nil {
-						return err
-					}
-					if !proven {
-						return errYikeTargetContainsData
-					}
+			// Credential refresh is not a destination migration. Preserve the
+			// exact existing Node ID and path for every already-bound Source.
+			// Unmarked historical targets are accepted only at the exact
+			// previously server-owned hierarchy and after the existing subtree
+			// ownership/run checks pass.
+			if !source.TargetManaged {
+				proven, err := verifiedLegacyYikeTargetLocationTx(ctx, tx, *source, currentTarget)
+				if err != nil {
+					return err
+				}
+				if !proven {
+					return errYikeTargetContainsData
 				}
 				if err := verifyYikeTargetRelocationTx(ctx, tx, *source, currentTarget); err != nil {
 					return err
 				}
 			}
-			if parentChanged || currentTarget.Name != desiredLeaf {
-				var conflict meta.Node
-				err := tx.WithContext(ctx).
-					Where("owner_id = ? AND parent_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL",
-						source.OwnerID, desiredParent.ID, desiredLeaf).
-					First(&conflict).Error
-				if err == nil && conflict.ID != currentTarget.ID {
-					return errYikeAccountAlreadyConfigured
-				}
-				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-					return err
-				}
-
-				oldParentID := currentTarget.ParentID
-				now := time.Now().UTC()
-				if err := tx.WithContext(ctx).Model(&meta.Node{}).
-					Where("id = ? AND owner_id = ? AND deleted_at IS NULL", currentTarget.ID, source.OwnerID).
-					Updates(map[string]any{
-						"parent_id":  desiredParent.ID,
-						"name":       desiredLeaf,
-						"revision":   gorm.Expr("revision + 1"),
-						"updated_at": now,
-					}).Error; err != nil {
-					return err
-				}
-				if oldParentID != nil && *oldParentID != desiredParent.ID {
-					if err := pruneLegacyYikeParentsTx(ctx, tx, source.OwnerID, *oldParentID); err != nil {
-						return err
-					}
-				}
-			}
 		} else if itemCount > 0 {
-			// Never detach a populated legacy target without a verified
-			// ownership-aware migration.
+			// Never detach a populated, unverified target. Old targets are not
+			// silently migrated or replaced during credential updates.
 			return errYikeTargetContainsData
 		}
 		if boundManaged {
@@ -348,6 +310,7 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 	}
 	updates := map[string]any{
 		"target_node_id": target.ID,
+		"target_managed": true,
 		"updated_at":     time.Now().UTC(),
 	}
 	if source.Status != meta.SourceStatusActive {
@@ -364,6 +327,7 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 	}
 	targetID := target.ID
 	source.TargetNodeID = &targetID
+	source.TargetManaged = true
 	if _, ok := updates["status"]; ok {
 		source.Status = meta.SourceStatusActive
 	}

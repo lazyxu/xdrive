@@ -54,7 +54,7 @@ type CreateSourceInput struct {
 	ScheduleType       string `json:"schedule_type,omitempty"`
 	ScheduleExpression string `json:"schedule_expression,omitempty"`
 	ScheduleTimezone   string `json:"schedule_timezone,omitempty"`
-	TargetNodeID       uint64 `json:"target_node_id"`
+	TargetNodeID       uint64 `json:"target_node_id,omitempty"`
 	IgnoreRules        string `json:"ignore_rules,omitempty"`
 }
 

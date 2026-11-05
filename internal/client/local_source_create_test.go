@@ -23,19 +23,24 @@ func TestCreateLocalSourceSendsAgentCredentials(t *testing.T) {
 			r.Header.Get("X-XDrive-Device-Token") != secret {
 			t.Errorf("missing native credential or authenticated account")
 		}
-		var payload CreateSourceInput
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.Kind != "local_folder" || payload.Direction != "push" {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil ||
+			payload["kind"] != "local_folder" || payload["direction"] != "push" {
 			t.Errorf("invalid payload: %+v: %v", payload, err)
 		}
+		if _, supplied := payload["target_node_id"]; supplied {
+			t.Errorf("local Push creation must leave target selection to the Server: %+v", payload)
+		}
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"id":42,"name":"backup","kind":"local_folder","direction":"push","status":"paused","revision":1}`))
+		_, _ = w.Write([]byte(`{"id":42,"name":"backup","kind":"local_folder","direction":"push","status":"paused","revision":1,"target_node_id":77,"target_managed":true,"target_path":"同步文件夹/Push/device_123456789abc/backup"}`))
 	}))
 	defer server.Close()
 	client := New(server.URL, "account-token")
 	out, err := client.CreateLocalSource(context.Background(), CreateSourceInput{
-		Name: "backup", Kind: "local_folder", Direction: "push", TargetNodeID: 1,
+		Name: "backup", Kind: "local_folder", Direction: "push",
 	}, "device-A", secret)
-	if err != nil || out.ID != 42 || requests != 1 {
+	if err != nil || out.ID != 42 || out.TargetNodeID == nil || *out.TargetNodeID != 77 ||
+		!out.TargetManaged || out.TargetPath == "" || requests != 1 {
 		t.Fatalf("local source create: %+v, %v, requests %d", out, err, requests)
 	}
 }

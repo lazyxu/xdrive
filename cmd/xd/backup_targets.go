@@ -55,7 +55,7 @@ func backupTargetsCmd(args []string) error {
 			return errors.New("requested cloud target parent is not a directory")
 		}
 	}
-	fmt.Fprintf(os.Stdout, "Cloud directory %d; choose a directory ID for --target-id\n", id)
+	fmt.Fprintf(os.Stdout, "Cloud directory %d; listing existing folders (new Push targets are Server-managed)\n", id)
 	return visitBackupTargetDirectories(ctx, cli, id, func(n client.Node) {
 		fmt.Fprintf(os.Stdout, "%d  %s\n", n.ID, n.Name)
 	})
