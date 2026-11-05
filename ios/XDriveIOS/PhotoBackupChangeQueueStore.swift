@@ -49,6 +49,15 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         let state: ItemState
     }
 
+    /// Counts only locally captured PhotoKit *changes*, not all visible media
+    /// and never verified remote coverage. No asset IDs leave this database.
+    struct Counts: Equatable {
+        var pending = 0
+        var failed = 0
+        var confirmed = 0
+        var missingLocal = 0
+    }
+
     private var database: OpaquePointer?
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -154,6 +163,32 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         try execute("COMMIT")
         committed = true
         return Applied(inserted: added, updated: changed, deleted: missing)
+    }
+
+    /// Aggregate locally captured change states in SQLite rather than
+    /// materializing an unbounded list of private PhotoKit identifiers.
+    /// An absent baseline must be checked by the Owner-scoped caller.
+    func counts() throws -> Counts {
+        let statement = try prepare("SELECT state,COUNT(*) FROM entries GROUP BY state")
+        defer { sqlite3_finalize(statement) }
+        var totals = Counts()
+        while true {
+            let code = sqlite3_step(statement)
+            if code == SQLITE_DONE { return totals }
+            guard code == SQLITE_ROW,
+                  let raw = sqlite3_column_text(statement, 0),
+                  let state = ItemState(rawValue: String(cString: raw)) else {
+                throw Failure.database(code == SQLITE_ROW ? SQLITE_MISMATCH : code)
+            }
+            let count = Int(sqlite3_column_int64(statement, 1))
+            guard count >= 0 else { throw Failure.invalidInput }
+            switch state {
+            case .pending: totals.pending = count
+            case .failed: totals.failed = count
+            case .confirmed: totals.confirmed = count
+            case .missingLocal: totals.missingLocal = count
+            }
+        }
     }
 
     /// Read at most 64 pending records; never create a 100k-asset Swift array.
