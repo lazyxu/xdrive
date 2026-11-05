@@ -402,12 +402,15 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		} else {
 			q = q.Where("COALESCE(source_run_id, '') = ''")
 		}
-		// A resumable session belongs to one exact DSM Source/Device/Root
-		// tuple. An ordinary upload cannot adopt it, and another Source cannot
-		// replay its result even for the same destination and content hash.
-		q = q.Where("source_id = ? AND source_revision = ? AND source_root_id = ? AND source_root_fingerprint = ? AND source_device_id = ?",
-			req.SourceID, req.SourceRevision, req.SourceRootID, req.SourceRootFingerprint,
-			strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
+		// A resumable DSM session belongs to one exact Source/Device/Root
+		// tuple. Ordinary sessions remain compatible with existing clients.
+		if req.SourceID != 0 {
+			q = q.Where("source_id = ? AND source_revision = ? AND source_root_id = ? AND source_root_fingerprint = ? AND source_device_id = ?",
+				req.SourceID, req.SourceRevision, req.SourceRootID, req.SourceRootFingerprint,
+				strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
+		} else {
+			q = q.Where("COALESCE(source_id, 0) = 0")
+		}
 		if req.NodeID != nil {
 			q = q.Where("node_id = ? AND expected_revision = ?", *req.NodeID, req.ExpectedRevision)
 		} else if policyProvided {
