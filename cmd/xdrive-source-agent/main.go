@@ -307,6 +307,9 @@ func setup(args []string) error {
 		}
 	}
 	fmt.Printf("source: %s (%d)\nmode: %s\ntarget node: %d\ndevice: %s\n", remote.Name, remote.ID, remote.RunMode, targetID, cfg.DeviceID)
+	if remote.DeviceID == "" {
+		fmt.Println("warning: this is a legacy Source without server-side device binding; its existing target was preserved and no migration was performed")
+	}
 	if cfg.PersonalRoot != "" {
 		fmt.Printf("personal: %s\n", cfg.PersonalRoot)
 	}
