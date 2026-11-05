@@ -32,18 +32,12 @@ func createSynologyPushManagedTargetTx(
 			source.OwnerID, meta.NodeTypeDir).Take(&root).Error; err != nil {
 		return meta.Node{}, fmt.Errorf("load Owner root: %w", err)
 	}
-	syncRoot, err := ensureOwnedChildDirectoryTx(ctx, tx, source.OwnerID, root.ID, yikeTargetRootName)
+	syncRoot, err := ensureManagedSourceDirectoryTx(ctx, tx, source.OwnerID, root.ID, yikeTargetRootName)
 	if err != nil {
-		if errors.Is(err, errYikeTargetPathConflict) || isDuplicate(err) {
-			return meta.Node{}, errSourceManagedDirectoryOccupied
-		}
 		return meta.Node{}, err
 	}
-	pushRoot, err := ensureOwnedChildDirectoryTx(ctx, tx, source.OwnerID, syncRoot.ID, "Push")
+	pushRoot, err := ensureManagedSourceDirectoryTx(ctx, tx, source.OwnerID, syncRoot.ID, "Push")
 	if err != nil {
-		if errors.Is(err, errYikeTargetPathConflict) || isDuplicate(err) {
-			return meta.Node{}, errSourceManagedDirectoryOccupied
-		}
 		return meta.Node{}, err
 	}
 
@@ -126,4 +120,58 @@ func createSynologyPushManagedTargetTx(
 		return meta.Node{}, err
 	}
 	return target, nil
+}
+
+
+// ensureManagedSourceDirectoryTx creates a reserved Source namespace directory
+// only when absent. An existing same-name folder is reusable only if it
+// already contains at least one server-provisioned TargetManaged Source;
+// ordinary user folders are never adopted by name alone.
+func ensureManagedSourceDirectoryTx(
+	ctx context.Context, tx *gorm.DB, ownerID, parentID uint64, name string,
+) (meta.Node, error) {
+	var existing meta.Node
+	err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("owner_id = ? AND parent_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL",
+			ownerID, parentID, name).
+		First(&existing).Error
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		parent := parentID
+		created := meta.Node{
+			OwnerID: ownerID, ParentID: &parent, Name: name,
+			Type: meta.NodeTypeDir, Revision: 1,
+		}
+		if err := tx.WithContext(ctx).Create(&created).Error; err != nil {
+			if isDuplicate(err) {
+				return meta.Node{}, errSourceManagedDirectoryOccupied
+			}
+			return meta.Node{}, err
+		}
+		return created, nil
+	case err != nil:
+		return meta.Node{}, err
+	}
+	if existing.Type != meta.NodeTypeDir {
+		return meta.Node{}, errSourceManagedDirectoryOccupied
+	}
+	var managedCount int64
+	if err := tx.WithContext(ctx).Raw(`
+WITH RECURSIVE descendants AS (
+	SELECT id FROM xd_nodes WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+	UNION ALL
+	SELECT child.id FROM xd_nodes AS child
+	JOIN descendants AS parent ON child.parent_id = parent.id
+	WHERE child.owner_id = ? AND child.deleted_at IS NULL
+)
+SELECT COUNT(*) FROM xd_sources AS source
+JOIN descendants AS node ON node.id = source.target_node_id
+WHERE source.owner_id = ? AND source.target_managed = TRUE`,
+		existing.ID, ownerID, ownerID, ownerID).Scan(&managedCount).Error; err != nil {
+		return meta.Node{}, err
+	}
+	if managedCount == 0 {
+		return meta.Node{}, errSourceManagedDirectoryOccupied
+	}
+	return existing, nil
 }
