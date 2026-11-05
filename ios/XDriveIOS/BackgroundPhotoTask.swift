@@ -68,6 +68,7 @@ enum XDriveIOSBackgroundPhotoTask {
             // may have committed remotely. Never auto-reschedule that case.
             var beganOriginalWrite = false
             var attemptedOwner: XDriveNativeOwnerRoot?
+            var sourceRunReporter: XDriveIOSPhotoSourceRunReporter?
             defer {
                 active = nil
                 activeRunID = nil
@@ -137,13 +138,26 @@ enum XDriveIOSBackgroundPhotoTask {
                     return
                 }
                 try Task.checkCancellation()
+                // This task has reserved a real bounded window. Record it in
+                // the shared SourceRun history using the same device and
+                // separately revocable Background Grant; no Web bearer exists
+                // in this OS task.
+                let reporter = XDriveIOSPhotoSourceRunReporter(
+                    approvedBackgroundGrant: approved, trigger: "scheduled"
+                )
+                sourceRunReporter = reporter
+                await reporter.begin()
+
                 // A small bounded number of serially journaled originals per
                 // BGTask, even if an original is a video or paired Live ZIP.
                 // The OS expiration handler may stop the batch at any point;
                 // no parallel writer, retry or second authentication path.
                 attemptedOwner = owner
                 let progress = try await XDriveIOSForegroundPhotoBackupMVP(
-                    owner: owner, approvedBackgroundGrant: approved
+                    owner: owner, approvedBackgroundGrant: approved,
+                    onSourceProgress: { value in
+                        reporter.enqueueUpdate(value)
+                    }
                 ).run(
                     allowICloudOriginals: false,
                     startOffset: offset,
@@ -159,6 +173,7 @@ enum XDriveIOSBackgroundPhotoTask {
                 try XDriveIOSBGOriginalWindowStore.shared.record(
                     owner: owner, approved: approved, report: progress
                 )
+                await reporter.finish(status: progress.stoppedForReview ? "partial" : "completed")
                 successful = !progress.stoppedForReview &&
                     progress.needsReview == 0
                 if successful {
@@ -167,6 +182,9 @@ enum XDriveIOSBackgroundPhotoTask {
                     )
                 }
             } catch is CancellationError {
+                if let reporter = sourceRunReporter {
+                    await reporter.finishAfterCancellation(status: "cancelled")
+                }
                 if beganOriginalWrite, let attemptedOwner {
                     // A cancelled writer might have committed remotely.
                     // Only a trusted receipt review can clear this pause.
@@ -185,6 +203,9 @@ enum XDriveIOSBackgroundPhotoTask {
                     )
                 }
             } catch {
+                if let reporter = sourceRunReporter {
+                    await reporter.finish(status: "failed")
+                }
                 if beganOriginalWrite, let attemptedOwner {
                     // Fail closed after any potentially ambiguous UploadSession
                     // stage; only a trusted zero-pending receipt review may

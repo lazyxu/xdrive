@@ -162,10 +162,11 @@ See [the platform implementation audit](./push-pull-platform-audit.md) for the c
 iOS Photos 使用统一的 `Source(kind=ios_photos, direction=push, sync_mode=backup)` 和服务端创建的受管 Target Node。它与 Desktop 本机目录 Push 一样属于 Push，但执行端是已注册 iPhone，而不是 Server Worker 或 Desktop Agent。
 
 - PhotoKit 枚举、原件导出、加密账本、上传与 Node 收据核验始终由 iPhone 执行。
-- iPhone 通过现有 `POST /sources/:id/runs`、`POST /sources/:id/runs/:runID/progress` 和 `POST /sources/:id/runs/:runID/finish` 写入统一 `xd_sync_runs`。
-- SourceRun 写入必须同时验证当前 Owner JWT、`X-XDrive-Device-ID`、设备 Token，以及该设备唯一绑定的 iOS Photos Source 和 Server 管理的 Target Node；每次写入事务内重新核验设备撤销状态与 Source/Node 关系。
+- 前台手动、前台计划和集中备份通过现有 `POST /sources/:id/runs`、`POST /sources/:id/runs/:runID/progress` 和 `POST /sources/:id/runs/:runID/finish` 写入统一 `xd_sync_runs`；Owner JWT 与设备 Token 必须同时有效。
+- iOS `BGProcessingTask` 不持有 Web bearer，使用独立的 `/ios/photos/background-managed/sources/:id/runs` 路由，通过已批准的 Photo Background Grant、注册设备 Token 和同一 Source/Target 绑定写入同一运行历史。每次事务重新检查 Grant 撤销、有效期、Owner Session、Server 实例、设备和目标目录；Grant 撤销后立即拒绝后续进度写入。
+- 前台与后台接口都在每次写入事务内重新校验设备、Source revision 和受管 Target Node；后台路径额外重新核验 Grant 撤销状态、有效期、Owner Session 与 Server 实例，避免只依赖请求进入时的中间件检查。
 - iOS Photos Source 在 Server 侧保持 paused，避免通用 Server 调度器或通用 Push 入口误执行。只有上述 iPhone 设备证明可以开始、更新和结束该 Source 的运行记录。Source Manager 的状态由最新 SyncRun 和 Source 的最近运行/成功时间派生，不把 paused 错显示为用户关闭了手机备份。
-- 每条 SyncRun 表示一次有界的手动、自动或集中备份批次；`complete_inventory=false`，不得把一个扫描窗口声明为整库完成。
+- 每条 SyncRun 表示一次有界的手动、前台自动、集中备份或系统 BGProcessing 批次；`complete_inventory=false`，不得把一个扫描窗口声明为整库完成。
 - 只上传聚合计数：扫描、确认新增、云端原件已核验、待处理/不可用。PhotoKit localIdentifier、文件名、位置、原始媒体字节和逐项私有账本不进入 SourceItem 或 SyncRun。
 - Source Manager 展示统一目标目录、最近运行状态和分页运行历史；不提供 Server 端 Run Now、通用来源设置、虚构的相册集合或逐文件错误快照。继续备份、权限和自动计划仍在绑定的 iPhone 上管理。
 

@@ -579,7 +579,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     self.errorMessage = "集中备份返回的扫描进度无法校验，已停止以避免漏备或重复写入。"
                 }
             } catch is CancellationError {
-                if let reporter = sourceRunReporter { await reporter.finish(status: "cancelled") }
+                if let reporter = sourceRunReporter { await reporter.finishAfterCancellation(status: "cancelled") }
                 if self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                     self.message = "原件任务已取消。可能已经提交的原件须通过加密账本与 Server 收据确认。"

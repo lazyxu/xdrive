@@ -18,6 +18,7 @@ const localAuth = read('internal/api/local_source_executor_auth.go');
 const runs = read('internal/api/source_runs.go');
 const reporter = read('ios/XDriveIOS/PhotoSourceRunReporter.swift');
 const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift');
+const background = read('ios/XDriveIOS/BackgroundPhotoTask.swift');
 
 test('iOS Photos is a device-executed Push Source, not a server-triggered worker', () => {
   assert.match(profile, /kind === 'ios_photos'/);
@@ -36,24 +37,35 @@ test('shared Source Manager reads run history without inventing PhotoKit collect
   assert.match(details, /row\.source\.kind !== 'ios_photos'/);
   assert.match(manager, /aggregate SyncRun history/);
   assert.match(manager, /row\.source\.kind === 'ios_photos'/);
+  assert.match(manager, /isIOSPhotoSource/);
+  assert.match(details, /本次待处理项目/);
   assert.match(details, /逐项原因仅在手机端显示/);
 });
 
 test('native iPhone reports begin, progress and terminal state with the exact device proof', () => {
-  assert.ok(reporter.includes('path: "/api/v1/sources/\\(authority.destination.sourceID)/runs"'));
-  assert.ok(reporter.includes('runs/\\(self.runID)/progress'));
-  assert.ok(reporter.includes('runs/\\(runID)/finish'));
+  assert.ok(reporter.includes('return "/api/v1/sources/\\(authority.destination.sourceID)/runs"'));
+  assert.ok(reporter.includes('path: "\\(basePath)/\\(self.runID)/progress"'));
+  assert.ok(reporter.includes('path: "\\(basePath)/\\(self.runID)/finish"'));
+  assert.ok(reporter.includes('/ios/photos/background-managed/sources/'));
   assert.match(reporter, /X-XDrive-Device-ID/);
   assert.match(reporter, /X-XDrive-Device-Token/);
+  assert.match(reporter, /X-XDrive-IOS-Photo-Grant/);
   assert.match(reporter, /complete_inventory": false/);
   assert.match(controller, /XDriveIOSPhotoSourceRunReporter/);
   assert.match(controller, /onSourceProgress:/);
+  assert.match(background, /XDriveIOSPhotoSourceRunReporter/);
+  assert.match(background, /approvedBackgroundGrant: approved, trigger: "scheduled"/);
+  assert.match(background, /onSourceProgress:/);
   assert.doesNotMatch(reporter, /PHAsset|localIdentifier|latitude|longitude|originalFilename/);
 });
 
 test('server binds iOS SourceRun writes to the registered device and managed Source/Node', () => {
   assert.ok(router.includes('authed.POST("/sources/:id/runs", s.requireSourceRunExecutor(), s.beginSourceRun)'));
   assert.ok(router.includes('authed.POST("/sources/:id/runs/:runID/progress", s.requireSourceRunExecutor(), s.progressSourceRun)'));
+  assert.ok(router.includes('iosPhotoManagedBG.POST("/sources/:id/runs", s.requireIOSPhotoBackgroundSourceRunExecutor(), s.beginSourceRun)'));
+  assert.match(executor, /requireIOSPhotoBackgroundSourceRunExecutor/);
+  assert.match(executor, /iosPhotoBackgroundGrantFromContext/);
+  assert.match(executor, /iosPhotoGrantValid/);
   assert.match(executor, /iosPhotoDestinationDeviceTx/);
   assert.match(executor, /iosPhotoDestinationBindingTx/);
   assert.match(executor, /requireIOSPhotoSourceRunProofTx/);

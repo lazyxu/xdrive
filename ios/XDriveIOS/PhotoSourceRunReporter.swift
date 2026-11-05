@@ -18,6 +18,41 @@ struct XDriveIOSPhotoSourceRunCounts {
     }
 }
 
+private enum XDriveIOSPhotoSourceRunReporterCredential {
+    case foreground(XDriveIOSManagedOriginalAuthority)
+    case background(XDriveIOSApprovedPhotoBGCredential)
+
+    var sourceRunPath: String? {
+        switch self {
+        case .foreground(let authority):
+            return "/api/v1/sources/\(authority.destination.sourceID)/runs"
+        case .background(let approved):
+            guard approved.hasManagedDestination,
+                  let sourceID = approved.sourceID, sourceID > 0 else { return nil }
+            return "/api/v1/ios/photos/background-managed/sources/\(sourceID)/runs"
+        }
+    }
+
+    var owner: XDriveNativeOwnerRoot? {
+        switch self {
+        case .foreground(let authority):
+            return authority.owner
+        case .background(let approved):
+            return try? approved.ownerScope()
+        }
+    }
+
+    var isValid: Bool {
+        switch self {
+        case .foreground(let authority):
+            return authority.matches(authority.owner)
+        case .background(let approved):
+            guard let owner = try? approved.ownerScope() else { return false }
+            return approved.hasManagedDestination && approved.matches(owner)
+        }
+    }
+}
+
 private final class XDriveIOSPhotoSourceRunDenyRedirect:
     NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask,
@@ -30,7 +65,7 @@ private final class XDriveIOSPhotoSourceRunDenyRedirect:
 
 @MainActor
 final class XDriveIOSPhotoSourceRunReporter {
-    private let authority: XDriveIOSManagedOriginalAuthority
+    private let credential: XDriveIOSPhotoSourceRunReporterCredential
     private let trigger: String
     private let runID = UUID().uuidString.lowercased()
     private var started = false
@@ -42,7 +77,15 @@ final class XDriveIOSPhotoSourceRunReporter {
     private var progressTask: Task<Void, Never>?
 
     init(authority: XDriveIOSManagedOriginalAuthority, trigger: String) {
-        self.authority = authority
+        self.credential = .foreground(authority)
+        self.trigger = trigger
+    }
+
+    /// BGProcessingTask has no Web bearer. Its dedicated route accepts only
+    /// the currently valid, separately revocable Owner/Device Photo Grant.
+    init(approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential,
+         trigger: String) {
+        self.credential = .background(approvedBackgroundGrant)
         self.trigger = trigger
     }
 
@@ -51,14 +94,14 @@ final class XDriveIOSPhotoSourceRunReporter {
     }
 
     private func ensureStarted(force: Bool) async {
-        guard !started, !finished else { return }
+        guard !started, !finished,
+              let basePath = credential.sourceRunPath else { return }
         let now = Date()
         guard force || now.timeIntervalSince(lastBeginAttemptAt) >= 30 else { return }
         lastBeginAttemptAt = now
         let body: [String: Any] = ["run_id": runID, "trigger": trigger]
         if let status = try? await send(
-            path: "/api/v1/sources/\(authority.destination.sourceID)/runs",
-            method: "POST", body: body
+            path: basePath, method: "POST", body: body
         ), status == 200 || status == 201 {
             started = true
         }
@@ -69,7 +112,7 @@ final class XDriveIOSPhotoSourceRunReporter {
     /// or original upload. finish() sends the latest cumulative counters.
     func enqueueUpdate(_ progress: XDriveIOSPhotoBackupProgress,
                        base: XDriveIOSPhotoSourceRunCounts = .init()) {
-        guard !finished else { return }
+        guard !finished, let basePath = credential.sourceRunPath else { return }
         var current = base
         current.add(progress)
         counts = current
@@ -85,14 +128,14 @@ final class XDriveIOSPhotoSourceRunReporter {
             guard self.started, !self.finished else { return }
             let body: [String: Any] = ["summary": self.summary(self.counts)]
             _ = try? await self.send(
-                path: "/api/v1/sources/\(self.authority.destination.sourceID)/runs/\(self.runID)/progress",
+                path: "\(basePath)/\(self.runID)/progress",
                 method: "POST", body: body
             )
         }
     }
 
     func finish(status requestedStatus: String) async {
-        guard !finished else { return }
+        guard !finished, let basePath = credential.sourceRunPath else { return }
         await progressTask?.value
         if !started { await ensureStarted(force: true) }
         guard started else { return }
@@ -107,11 +150,21 @@ final class XDriveIOSPhotoSourceRunReporter {
             body["error"] = "PhotoKit scan ended before the bounded pass completed"
         }
         if let result = try? await send(
-            path: "/api/v1/sources/\(authority.destination.sourceID)/runs/\(runID)/finish",
+            path: "\(basePath)/\(runID)/finish",
             method: "POST", body: body
         ), result == 200 {
             finished = true
         }
+    }
+
+    /// A cancellation handler may run inside a cancelled task. Use an
+    /// unstructured MainActor task so the best-effort terminal report is not
+    /// immediately cancelled with the PhotoKit operation itself.
+    func finishAfterCancellation(status: String) async {
+        let settlement = Task { @MainActor in
+            await self.finish(status: status)
+        }
+        await settlement.value
     }
 
     private func summary(_ value: XDriveIOSPhotoSourceRunCounts) -> [String: Any] {
@@ -128,9 +181,9 @@ final class XDriveIOSPhotoSourceRunReporter {
 
     private func send(path: String, method: String,
                       body: [String: Any]) async throws -> Int {
-        guard authority.matches(authority.owner),
-              let canonical = try? ServerAddress.parse(authority.owner.origin.absoluteString),
-              canonical == authority.owner.origin,
+        guard credential.isValid, let owner = credential.owner,
+              let canonical = try? ServerAddress.parse(owner.origin.absoluteString),
+              canonical == owner.origin,
               var parts = URLComponents(url: canonical, resolvingAgainstBaseURL: false)
         else { throw URLError(.badURL) }
         parts.path = path
@@ -154,9 +207,22 @@ final class XDriveIOSPhotoSourceRunReporter {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpShouldHandleCookies = false
-        request.setValue("Bearer " + authority.accessToken, forHTTPHeaderField: "Authorization")
-        request.setValue(authority.device.deviceID, forHTTPHeaderField: "X-XDrive-Device-ID")
-        request.setValue(authority.device.secret, forHTTPHeaderField: "X-XDrive-Device-Token")
+        switch credential {
+        case .foreground(let authority):
+            request.setValue("Bearer " + authority.accessToken,
+                             forHTTPHeaderField: "Authorization")
+            request.setValue(authority.device.deviceID,
+                             forHTTPHeaderField: "X-XDrive-Device-ID")
+            request.setValue(authority.device.secret,
+                             forHTTPHeaderField: "X-XDrive-Device-Token")
+        case .background(let approved):
+            request.setValue(approved.deviceID,
+                             forHTTPHeaderField: "X-XDrive-Device-ID")
+            request.setValue(approved.deviceToken,
+                             forHTTPHeaderField: "X-XDrive-Device-Token")
+            request.setValue(approved.grantSecret,
+                             forHTTPHeaderField: "X-XDrive-IOS-Photo-Grant")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
