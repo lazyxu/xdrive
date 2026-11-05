@@ -103,7 +103,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	}
 	if fileSource.Status != meta.SourceStatusPaused || fileSource.Revision != 1 ||
 		fileSource.TargetNodeID == nil || *fileSource.TargetNodeID == targetA.ID ||
-		fileSource.TargetPath != "同步文件夹/远程拉取/Synology Files/Synology Files" {
+		fileSource.TargetPath != "同步文件夹/Pull/Synology Files/Synology Files" {
 		t.Fatalf("File Station source should start paused with an exclusive managed target: %+v", fileSource)
 	}
 	filePath := fmt.Sprintf("/api/v1/sources/%d", fileSource.ID)
