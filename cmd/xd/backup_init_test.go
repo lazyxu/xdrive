@@ -27,15 +27,17 @@ func (f *fakeBootstrapAgent) PreflightLocalRoot(context.Context, string) error {
 	f.preflighted++
 	return f.preflightErr
 }
-func (f *fakeBootstrapAgent) CreateLocalBackupSource(_ context.Context, name string, target uint64) (localbackupipc.LocalBackupSource, error) {
+func (f *fakeBootstrapAgent) CreateLocalBackupSource(_ context.Context, name string) (localbackupipc.LocalBackupSource, error) {
 	f.created++
 	if f.createErr != nil {
 		return localbackupipc.LocalBackupSource{}, f.createErr
 	}
+	target := uint64(84)
 	return localbackupipc.LocalBackupSource{
 		ID: 42, Name: name, Revision: 1, Kind: "local_folder",
 		Direction: "push", SyncMode: "backup", Status: "paused",
-		TargetNodeID: &target,
+		TargetNodeID: &target, TargetManaged: true,
+		TargetPath: "同步文件夹/设备备份/TEST_123456789012/" + name,
 	}, nil
 }
 func (f *fakeBootstrapAgent) AuthorizeLocalRoot(_ context.Context, sourceID uint64, path string) (localbackupipc.LocalBackupRootGrant, error) {
@@ -95,7 +97,7 @@ func TestHeadlessInitRunNowUsesSameAgentOnlyAfterVerifiedBootstrap(t *testing.T)
 		agent := makeAgent()
 		var out bytes.Buffer
 		id, err := runBackupInitAndMaybeOnce(context.Background(), agent,
-			"Photos", root, 12, spec, true, &out)
+			"Photos", root, spec, true, &out)
 		if err != nil || id != 42 || agent.starts != 1 || agent.saved != 1 ||
 			agent.bound != 1 || !strings.Contains(out.String(), "uploaded=1") {
 			t.Fatalf("run-now did not reuse verified owning Agent: id=%d err=%v agent=%+v output=%q",
@@ -105,7 +107,7 @@ func TestHeadlessInitRunNowUsesSameAgentOnlyAfterVerifiedBootstrap(t *testing.T)
 	t.Run("default_no_implicit_upload", func(t *testing.T) {
 		agent := makeAgent()
 		id, err := runBackupInitAndMaybeOnce(context.Background(), agent,
-			"Photos", root, 12, spec, false, &bytes.Buffer{})
+			"Photos", root, spec, false, &bytes.Buffer{})
 		if err != nil || id != 42 || agent.starts != 0 || agent.saved != 1 {
 			t.Fatalf("default init unexpectedly started an upload: id=%d err=%v agent=%+v",
 				id, err, agent)
@@ -115,7 +117,7 @@ func TestHeadlessInitRunNowUsesSameAgentOnlyAfterVerifiedBootstrap(t *testing.T)
 		agent := makeAgent()
 		agent.scheduleErr = errors.New("unconfirmed schedule revision")
 		id, err := runBackupInitAndMaybeOnce(context.Background(), agent,
-			"Photos", root, 12, spec, true, &bytes.Buffer{})
+			"Photos", root, spec, true, &bytes.Buffer{})
 		if err == nil || id != 42 || agent.starts != 0 {
 			t.Fatalf("schedule failure started unsafe upload: id=%d err=%v agent=%+v",
 				id, err, agent)
@@ -128,7 +130,7 @@ func TestHeadlessInitReusesOwningAgentAndArmsOnlyAfterOnce(t *testing.T) {
 	agent := &fakeBootstrapAgent{}
 	spec := sourceschedule.Spec{Type: "interval", Expression: "6h"}
 	var out bytes.Buffer
-	id, err := runBackupInit(context.Background(), agent, "Photos", root, 12, spec, &out)
+	id, err := runBackupInit(context.Background(), agent, "Photos", root, spec, &out)
 	if err != nil || id != 42 {
 		t.Fatalf("init failed: source=%d err=%v", id, err)
 	}
@@ -146,7 +148,7 @@ func TestHeadlessInitFailClosedBeforeSourceOrWithRecoverableDraft(t *testing.T) 
 	t.Run("invalid_local_root", func(t *testing.T) {
 		agent := &fakeBootstrapAgent{preflightErr: errors.New("unsafe symlink")}
 		id, err := runBackupInit(context.Background(), agent, "Photos", root,
-			12, sourceschedule.Spec{}, &bytes.Buffer{})
+			sourceschedule.Spec{}, &bytes.Buffer{})
 		if err == nil || id != 0 || agent.created != 0 || agent.bound != 0 {
 			t.Fatalf("preflight created an unauthorized Source: id=%d err=%v agent=%+v", id, err, agent)
 		}
@@ -154,7 +156,7 @@ func TestHeadlessInitFailClosedBeforeSourceOrWithRecoverableDraft(t *testing.T) 
 	t.Run("unconfirmed_creation", func(t *testing.T) {
 		agent := &fakeBootstrapAgent{createErr: errors.New("lost HTTP ack")}
 		id, err := runBackupInit(context.Background(), agent, "Photos", root,
-			12, sourceschedule.Spec{}, &bytes.Buffer{})
+			sourceschedule.Spec{}, &bytes.Buffer{})
 		if err == nil || id != 0 || agent.bound != 0 ||
 			!strings.Contains(err.Error(), "xd backup drafts") {
 			t.Fatalf("unconfirmed creation retried or claimed success: id=%d err=%v", id, err)
@@ -163,7 +165,7 @@ func TestHeadlessInitFailClosedBeforeSourceOrWithRecoverableDraft(t *testing.T) 
 	t.Run("failed_root_bind", func(t *testing.T) {
 		agent := &fakeBootstrapAgent{bindErr: errors.New("permission denied")}
 		id, err := runBackupInit(context.Background(), agent, "Photos", root,
-			12, sourceschedule.Spec{}, &bytes.Buffer{})
+			sourceschedule.Spec{}, &bytes.Buffer{})
 		if err == nil || id != 42 || agent.saved != 0 ||
 			!strings.Contains(err.Error(), "xd backup bind --source 42") {
 			t.Fatalf("failed Root binding was not preserved as a draft: id=%d err=%v", id, err)
@@ -172,7 +174,7 @@ func TestHeadlessInitFailClosedBeforeSourceOrWithRecoverableDraft(t *testing.T) 
 	t.Run("failed_schedule", func(t *testing.T) {
 		agent := &fakeBootstrapAgent{scheduleErr: errors.New("changed Source revision")}
 		id, err := runBackupInit(context.Background(), agent, "Photos", root,
-			12, sourceschedule.Spec{Type: "interval", Expression: "6h"}, &bytes.Buffer{})
+			sourceschedule.Spec{Type: "interval", Expression: "6h"}, &bytes.Buffer{})
 		if err == nil || id != 42 || agent.bound != 1 ||
 			!strings.Contains(err.Error(), "Source 42") {
 			t.Fatalf("ambiguous schedule reported success: id=%d err=%v", id, err)
@@ -180,14 +182,14 @@ func TestHeadlessInitFailClosedBeforeSourceOrWithRecoverableDraft(t *testing.T) 
 	})
 }
 
-func TestHeadlessInitRequiresExplicitAbsoluteRootAndValidTarget(t *testing.T) {
+func TestHeadlessInitRequiresExplicitAbsoluteRoot(t *testing.T) {
 	if _, err := normalizedExplicitBackupPath("relative/photos"); err == nil {
 		t.Fatal("relative backup path accepted")
 	}
 	agent := &fakeBootstrapAgent{}
 	_, err := runBackupInit(context.Background(), agent, "Photos",
-		filepath.Join(t.TempDir(), "photos"), 0, sourceschedule.Spec{}, &bytes.Buffer{})
-	if err == nil || agent.preflighted != 0 {
-		t.Fatal("invalid target created Source")
+		"relative/photos", sourceschedule.Spec{}, &bytes.Buffer{})
+	if err == nil || agent.preflighted != 0 || agent.created != 0 {
+		t.Fatal("invalid local path created Source")
 	}
 }
