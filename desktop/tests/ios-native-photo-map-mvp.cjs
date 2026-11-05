@@ -488,7 +488,7 @@ test('native local Gallery opens the full-library map from its filter menu witho
   assert.match(localWall, /permission != \.authorized[\s\S]*?native-ios-local-wall-show-map/)
   assert.match(localWall, /\.fullScreenCover\(isPresented: \$showingMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\([\s\S]*?mapScope: \.constant\(\.library\)[\s\S]*?onClose: \{ showingMap = false \}/)
   assert.match(localWall, /\.environment\(\\\.xdriveNativeLocalMapJump, nil\)/)
-  assert.match(map, /else if onClose != nil[\s\S]*?Button\("完成"\) \{ onClose\?\(\) \}/)
+  assert.match(map, /if album != nil \|\| onClose != nil[\s\S]*?if onClose != nil \{ onClose\?\(\) \}/)
   assert.match(map, /if album == nil && onClose == nil/)
   assert.match(localWall, /mediaFilter = option/)
   assert.match(localWall, /\.environment\(\\\.xdriveOpenNativeLocalMap, \{ jump in\s*pendingViewerMapJump = jump/)
