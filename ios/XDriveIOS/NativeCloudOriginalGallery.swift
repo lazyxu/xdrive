@@ -775,6 +775,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             originalBytes: viewed.size,
             format: format,
             source: "云端 Originals",
+            previewStatus: stillIsThumbnailOnly ? "缩略图回退" :
+                viewed.isLiveArchive ? "实况静态原件 · 适屏解码" : "原件 · 适屏解码",
             pixelWidth: width,
             pixelHeight: height,
             duration: validDuration,
@@ -1382,8 +1384,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         }
         .onDisappear {
             cancelPhotoRestore()
-            showingMediaInfo = false
             exporter.invalidate()
+            showingMediaInfo = false
             player?.pause()
             player = nil
             still = nil
