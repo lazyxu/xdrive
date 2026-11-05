@@ -91,3 +91,7 @@ credentials, HAR or operator attestation: **按用户决定跳过（未验收）
 Do **not** expand this project to Mirror, NAS Push, automatic uncertain
 Operation recovery, legacy Stage retirement, new CAS writers, or complete
 100k/>4GiB performance certification.
+
+## Unified Push Source contract (2026-11-05)
+
+Desktop and `xd backup` are two control surfaces for the same owning Agent, Device identity, local_folder Source, Root grant, durable Operation journal and CAS writer. For **new** Sources, the Agent must ask for a local path and Source name only; the Server provisions `同步文件夹/Push/<device>/<source>`. The current `--target-id` existing-folder bootstrap documented above is an as-built interface and must be replaced for new Source creation. Do not migrate old targets. See [the canonical architecture](./push-pull-source-management.md) and [platform audit](./push-pull-platform-audit.md).
