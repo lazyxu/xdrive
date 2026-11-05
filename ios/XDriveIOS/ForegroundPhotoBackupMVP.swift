@@ -140,7 +140,6 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                           !candidate.isLive || candidate.kind == "image" else {
                         report.changeQueueFailed += 1
                         report.videosNotSupported += 1
-                        report.unavailable += 1
                         report.stage = "变更队列中存在不支持的媒体类型"
                         _ = try await changeQueue.settle(
                             candidate.pending, result: .failed, owner: owner
