@@ -116,6 +116,8 @@ test('offline Host preflight is a separate read-only admission path shared by We
   assert.ok(page.includes('正式安装仍会重新验证'))
   assert.ok(hostPlanAPI.includes('adminStartOfflineHostPlan'))
   assert.ok(hostPlanAPI.includes('writeOfflineHostPlanRequest'))
+  assert.ok(hostPlanAPI.includes('offlineHostPlanRunnerSupported'))
+  assert.ok(hostControl.includes('offline-plan-runner.pid'))
   assert.ok(hostPlanAPI.includes('json.RawMessage'))
   assert.ok(apiRouter.includes('admin.POST("/update/offline/plan"'))
   assert.ok(apiRouter.includes('admin.GET("/update/offline/plan/:id"'))
