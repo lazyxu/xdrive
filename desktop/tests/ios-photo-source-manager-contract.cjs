@@ -19,6 +19,8 @@ const runs = read('internal/api/source_runs.go');
 const reporter = read('ios/XDriveIOS/PhotoSourceRunReporter.swift');
 const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift');
 const sourceIcon = read('ui/shared/src/mui/SourceKindIcon.tsx');
+const browserHost = read('web/src/browserWorkspaceHost.ts');
+const desktopHost = read('desktop/src/renderer/App.tsx');
 
 test('iOS Photos is a device-executed Push Source, not a server-triggered worker', () => {
   assert.match(profile, /kind === 'ios_photos'/);
@@ -29,7 +31,12 @@ test('iOS Photos is a device-executed Push Source, not a server-triggered worker
   assert.match(profile, /最近一次备份已取消/);
   assert.match(list, /row\.source\.kind === 'ios_photos'/);
   assert.match(list, /尚无备份统计/);
-  assert.match(sourceIcon, /ios-photos\.svg/);
+  assert.ok(sourceIcon.includes('ios-photos.svg'));
+  assert.match(browserHost, /remotePullPage: \\{ \\.\\.\\.ports\\.remotePull \\}/);
+  assert.doesNotMatch(browserHost, /directionFilter:\\s*'pull'/);
+  assert.match(desktopHost, /remotePullPage: \\{/);
+  assert.doesNotMatch(desktopHost, /directionFilter:\\s*"pull"/);
+  assert.doesNotMatch(desktopHost, /remotePullPage:\\s*agent\\.hello\\?\\.capabilities/);
   assert.match(list, /新增上传/);
   assert.match(list, /云端已核验/);
   assert.match(list, /待处理/);
