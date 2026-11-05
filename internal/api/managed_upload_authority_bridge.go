@@ -20,6 +20,9 @@ func requireSourceRunOrLocalPushTargetTx(
 		}
 		return requireIOSPhotoManagedUploadTx(ctx, tx, c, ownerID, nodeID, req)
 	}
+	if req.SourceID != 0 {
+		return requireSynologyPushUploadTargetTx(ctx, tx, c, ownerID, nodeID, req)
+	}
 	if _, scoped := currentSourceRunScope(c); scoped {
 		return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, ownerID, nodeID)
 	}
