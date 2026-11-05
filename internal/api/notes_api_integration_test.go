@@ -320,7 +320,7 @@ func TestMarkdownNotesMineVersionedAndIOSReadOnly(t *testing.T) {
 		files[i] = meta.File{
 			NodeID: nodes[i].ID, Size: int64(len(markdown)),
 			StorageKey: "notes-pagination-fixture/" + nodes[i].Name,
-			SHA256: digest, CreatedAt: now, UpdatedAt: now,
+			SHA256:     digest, CreatedAt: now, UpdatedAt: now,
 		}
 		notes[i].NodeID = nodes[i].ID
 	}
