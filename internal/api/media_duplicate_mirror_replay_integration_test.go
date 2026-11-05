@@ -81,7 +81,7 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 	bindHeaders := map[string]string{
 		"X-XDrive-Device-ID":    deviceID,
 		"X-XDrive-Device-Token": deviceToken,
-		"If-Match":             fmt.Sprintf("%q", fmt.Sprint(source.Revision)),
+		"If-Match":              fmt.Sprintf("%q", fmt.Sprint(source.Revision)),
 	}
 	requestWithHeaders(t, router, http.MethodPut,
 		fmt.Sprintf("/api/v1/sources/%d/synology-root", source.ID), token,
@@ -91,7 +91,7 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 	deviceHeaders["X-XDrive-Synology-Source-Revision"] = fmt.Sprint(source.Revision + 1)
 	deviceHeaders["X-XDrive-Local-Root-ID"] = rootID
 	deviceHeaders["X-XDrive-Local-Root-Fingerprint"] = rootFingerprint
-	deviceHeaders["If-Match"] = fmt.Sprintf("%q", fmt.Sprint(source.Revision + 1))
+	deviceHeaders["If-Match"] = fmt.Sprintf("%q", fmt.Sprint(source.Revision+1))
 	requestWithHeaders(t, router, http.MethodPatch,
 		fmt.Sprintf("/api/v1/sources/%d", source.ID), token,
 		strings.NewReader(`{"status":"active"}`), http.StatusOK, deviceHeaders)
