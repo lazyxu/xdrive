@@ -92,7 +92,7 @@ iOS/Android identity-only credentials must never become Desktop Agent credential
 7. Platform binds/proves that capability to the exact Source. Missing or stale permission never falls back to Owner root.
 8. Each upload admission and finalize rechecks Owner, Device, Source, TargetNodeID, provenance, platform-specific permission proof, revision and receipt constraints.
 
-Source.DeviceID is the connector-neutral Push creator/executor binding. New Local Folder, iOS and DSM Sources populate it; LocalCreatorDeviceID remains as a compatibility field for existing Local Folder/iOS authorization paths. Root / Photo Library grants remain separate from Device identity. Synology credentials are identity-only and are never accepted by the generic Desktop Agent credential gate.
+`Source.DeviceID` is the canonical Push ownership authority. New Local Folder, iOS and DSM Sources populate it; `LocalCreatorDeviceID` is historical metadata, not a write-authorization fallback. A narrowly scoped startup backfill resolves only existing same-Owner, platform-matched device registrations; unverified claims remain unbound. No file or target is moved. Root and Photo Library permissions remain separate from device identity, and iOS/Android/Synology credentials never grant Desktop Agent access.
 
 ### One writer per device/source
 
