@@ -8289,6 +8289,20 @@ function registerIPCHandlers() {
         case 'finalize':
           if (!validOfflineName(name)) throw new AgentIPCError('invalid_offline_file', 0, 'Invalid offline filename.')
           return client.offlineImportFinalize(id as string, name)
+        case 'plan-status':
+          return client.offlineImportPlan(id as string)
+        case 'plan': {
+          const signed = input.mode === 'sigstore' && input.manifest === '' && input.go === ''
+          const manual = input.mode === 'sha256' &&
+            typeof input.manifest === 'string' && offlineSHA.test(input.manifest) &&
+            typeof input.go === 'string' && offlineSHA.test(input.go)
+          if (!signed && !manual) {
+            throw new AgentIPCError('invalid_offline_trust', 0,
+              'A pinned Host signature or two independent publisher digests are required.')
+          }
+          return client.offlineImportPlanStart(id as string,
+            input.manifest as string, input.go as string, input.mode as 'sigstore' | 'sha256')
+        }
         case 'start': {
           const signed = input.mode === 'sigstore' && input.manifest === '' && input.go === ''
           const manual = input.mode === 'sha256' &&
