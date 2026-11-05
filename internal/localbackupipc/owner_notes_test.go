@@ -160,7 +160,6 @@ func TestOwnerNotesClientRejectsForeignOrCorruptedResponse(t *testing.T) {
 	}
 }
 
-
 func TestOwnerNotesImportIOSIsExplicitOwnerBoundAndOneShot(t *testing.T) {
 	markdown := "# Imported snapshot"
 	externalID := "manual:12345678-1234-1234-1234-123456789abc"
