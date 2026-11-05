@@ -863,7 +863,8 @@ struct XDriveIOSNativePhotosDashboard: View {
         // Only known, implemented routes are restored. Child PhotoKit pages
         // re-query their own permission and Owner-signed Server data.
         gallerySource = XDriveIOSNativeGallerySource(rawValue: snapshot.gallerySource) ?? .local
-        localMapScope = XDriveIOSNativeLocalMapScope(rawValue: snapshot.mapScope ?? "library") ?? .library
+        // Migrate legacy page-only map routes to the full authorized Photos map.
+        localMapScope = .library
         localMapPageOffset = snapshot.mapPageOffset ?? 0
         localGalleryPageOffset = snapshot.localGalleryPageOffset ?? 0
         localAlbumDirectoryOffset = snapshot.localAlbumDirectoryOffset ?? 0
