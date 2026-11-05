@@ -910,6 +910,8 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 			fail(c, http.StatusConflict, "upload session is finalized")
 		case errors.Is(err, errUploadExpired):
 			fail(c, http.StatusGone, "upload session expired")
+		case errors.Is(err, errManagedSourceWriteDenied):
+			fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
 		default:
 			fail(c, http.StatusInternalServerError, "record chunk failed")
 		}
