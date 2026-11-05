@@ -148,6 +148,37 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         )
     }
 
+    /// Explicitly requeue at most 64 item-local failures. The original
+    /// writer only stores .failed when it proved that no ambiguous Server
+    /// mutation occurred; unknown ACKs remain blocked by receipt review.
+    func retryFailedCandidates(owner: XDriveNativeOwnerRoot,
+                               limit: Int = 64) throws -> Int {
+        guard (1...64).contains(limit) else { throw Failure.invalidReplayLimit }
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline() else {
+            throw Failure.requiresExplicitBaseline
+        }
+        guard baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(
+                baseline.token, as: epoch.token
+              ) else { throw Failure.unauthorizedOrChanged }
+        let failed = try store.failed(limit: limit)
+        var requeued = 0
+        for candidate in failed {
+            try Task.checkCancellation()
+            try verifyAuthorization(stillMatches: epoch)
+            if try store.retryFailed(
+                candidate, expectedBaselineToken: baseline.token,
+                authorization: epoch.authorization
+            ) {
+                requeued += 1
+            }
+        }
+        try verifyAuthorization(stillMatches: epoch)
+        return requeued
+    }
+
     /// Read-only local change queue counts for the exact current Owner.
     /// These are *discovery* states; even confirmed queue entries do not
     /// establish complete present-day cloud coverage.
