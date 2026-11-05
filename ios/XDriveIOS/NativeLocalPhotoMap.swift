@@ -1340,7 +1340,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             pendingNearbySelection = nil
             guard phase == .active,
                   PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
-            else { return }
+            else {
+                onLibraryCameraChange?(nil)
+                clearReturnCamera()
+                invalidate()
+                return
+            }
             nearbySelection = pending
         }) { chosen in
             XDriveIOSMapSpatialAlbum(
@@ -1348,7 +1353,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 onShowNearby: album == nil ? nil : {
                     guard phase == .active,
                           PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
-                    else { return }
+                    else {
+                        onLibraryCameraChange?(nil)
+                        clearReturnCamera()
+                        invalidate()
+                        return
+                    }
                     pendingNearbySelection = chosen
                 }
             )
