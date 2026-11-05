@@ -708,8 +708,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     Menu {
                         if album != nil, onShowNearby != nil {
                             Button("显示附近照片") {
+                                onShowNearby?()
                                 dismiss()
-                                DispatchQueue.main.async { onShowNearby?() }
                             }
                             .disabled(busy || viewer != nil || phase != .active)
                         }
