@@ -122,6 +122,11 @@ struct XDriveIOSNativeFilesPageChecks {
                 "reject zero tag ID")
         structured.sourceID = nil
         structured.tagID = nil
+        structured.modifiedFrom = nil
+        structured.modifiedTo = nil
+        structured.minSize = nil
+        structured.maxSize = nil
+        structured.kind = "all"
         require(!XDriveIOSNativeFilesPagePolicy.validSearchRequest(query: "", filters: structured),
                 "reject empty query without active filters")
 
