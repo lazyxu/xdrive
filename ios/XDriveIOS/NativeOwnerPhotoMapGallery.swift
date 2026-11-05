@@ -1,5 +1,6 @@
 import Combine
 import MapKit
+import Photos
 import SwiftUI
 import UIKit
 
@@ -12,6 +13,7 @@ enum XDriveIOSNativePhotoMapSource: String, CaseIterable {
 /// native tab or a second Owner authentication/backup writer.
 struct XDriveIOSNativePhotoMapsScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    @Environment(\.scenePhase) private var phase
     // The Gallery parent retains only bounded local PhotoKit navigation hints.
     // Source switches never reset the parent's map scope or page cursor.
     @Binding var localMapScope: XDriveIOSNativeLocalMapScope
@@ -20,6 +22,9 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     @Binding var cloudMapCamera: MKCoordinateRegion?
     @Binding var localMapCamera: MKCoordinateRegion?
     var onFocusChange: ((Bool) -> Void)?
+    @StateObject private var photoChanges = XDriveIOSNativePhotoMapAuthorizationChanges()
+    @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    @State private var showingLimitedPicker = false
 
     var body: some View {
         let expectedOwner = login.owner
@@ -68,8 +73,110 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                 .accessibilityLabel("地图照片来源：\(source.label)")
                 .accessibilityIdentifier("native-ios-map-source-selector")
             }
+            if source == .local && photoAuthorization == .limited {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingLimitedPicker = true
+                    } label: {
+                        Label("管理已授权照片", systemImage: "photo.on.rectangle.angled")
+                    }
+                    .accessibilityIdentifier("native-ios-map-manage-limited-photos")
+                }
+            }
         }
-        .onChange(of: source) { _ in onFocusChange?(false) }
+        .background {
+            XDriveIOSNativeLimitedPhotoLibraryPickerPresenter(
+                isPresented: $showingLimitedPicker
+            )
+            .frame(width: 0, height: 0)
+        }
+        .onAppear {
+            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            photoChanges.start()
+        }
+        .onChange(of: source) { _ in
+            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            onFocusChange?(false)
+        }
+        .onChange(of: photoChanges.revision) { _ in
+            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        }
+        .onChange(of: phase) { state in
+            if state == .active {
+                photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                photoChanges.start()
+            } else {
+                photoChanges.stop()
+            }
+        }
+        .onDisappear { photoChanges.stop() }
+    }
+}
+
+
+/// Keeps the Limited Photos action in sync when iOS changes the authorized set.
+private final class XDriveIOSNativePhotoMapAuthorizationChanges: NSObject,
+    ObservableObject, PHPhotoLibraryChangeObserver {
+    @Published private(set) var revision = 0
+    private var observing = false
+
+    func start() {
+        guard !observing else { return }
+        PHPhotoLibrary.shared().register(self)
+        observing = true
+    }
+
+    func stop() {
+        guard observing else { return }
+        PHPhotoLibrary.shared().unregisterChangeObserver(self)
+        observing = false
+    }
+
+    func photoLibraryDidChange(_ changeInstance: PHChange) {
+        DispatchQueue.main.async { [weak self] in self?.revision &+= 1 }
+    }
+
+    deinit { stop() }
+}
+
+/// Presents Apple's Limited Photos picker from a controller attached to the
+/// active SwiftUI scene. The request is a one-shot UI event, never persisted.
+private struct XDriveIOSNativeLimitedPhotoLibraryPickerPresenter:
+    UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        let controller = UIViewController()
+        controller.view.backgroundColor = .clear
+        return controller
+    }
+
+    func updateUIViewController(
+        _ controller: UIViewController, context: Context
+    ) {
+        guard isPresented else {
+            context.coordinator.isPresenting = false
+            return
+        }
+        guard !context.coordinator.isPresenting else { return }
+        context.coordinator.isPresenting = true
+        DispatchQueue.main.async {
+            guard self.isPresented else {
+                context.coordinator.isPresenting = false
+                return
+            }
+            if #available(iOS 14.0, *) {
+                PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: controller)
+            }
+            self.isPresented = false
+            context.coordinator.isPresenting = false
+        }
+    }
+
+    final class Coordinator {
+        var isPresenting = false
     }
 }
 
