@@ -143,19 +143,25 @@ func TestDeletedInflightPullPreflightCannotCountAsFailedSource(t *testing.T) {
 	case <-time.After(8 * time.Second):
 		t.Fatal("Pull did not enter the real Handler after Scheduler dispatch")
 	}
-	// With no durable SyncRun yet, authenticated owner deletion is accepted.
+	// With no durable SyncRun yet, authenticated owner archive is accepted.
 	requestWithHeaders(t, router, http.MethodDelete,
 		fmt.Sprintf("/api/v1/sources/%d", source.ID), token, nil,
 		http.StatusNoContent, map[string]string{"If-Match": "\"1\""})
-	var remaining, runs int64
-	if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).Count(&remaining).Error; err != nil {
-		t.Fatal(err)
+	var retained meta.Source
+	if err := db.Where("id = ? AND owner_id = ?", source.ID, owner.ID).Take(&retained).Error; err != nil {
+		t.Fatalf("archive must retain the Source identity: %v", err)
 	}
+	if retained.Status != meta.SourceStatusArchived || retained.Revision != source.Revision+1 ||
+		retained.TargetNodeID == nil || *retained.TargetNodeID != target.ID ||
+		retained.RunRequestedAt != nil || retained.RetryAt != nil {
+		t.Fatalf("DELETE must archive the Source without changing its target or pending work: %+v", retained)
+	}
+	var runs int64
 	if err := db.Model(&meta.SyncRun{}).Where("source_id = ?", source.ID).Count(&runs).Error; err != nil {
 		t.Fatal(err)
 	}
-	if remaining != 0 || runs != 0 {
-		t.Fatalf("preflight deletion fixture must have absent Source and no durable run: sources=%d runs=%d", remaining, runs)
+	if runs != 0 {
+		t.Fatalf("preflight archive must not invent a durable run: runs=%d", runs)
 	}
 	unblock()
 	var got outcome
