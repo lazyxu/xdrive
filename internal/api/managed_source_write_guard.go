@@ -270,6 +270,9 @@ func requireSourceRunOrOrdinaryTargetTx(ctx context.Context, tx *gorm.DB, c *gin
 	if _, scoped := currentSourceRunScope(c); scoped {
 		return trustedSourceRunTargetTx(ctx, tx, c, uid, parentID, true)
 	}
+	if sourceID, proof, ok := currentSynologySourceProof(c); ok {
+		return requireSynologySourceTargetTx(ctx, tx, c, uid, sourceID, proof, parentID)
+	}
 	return requireOrdinarySourceTargetTx(ctx, tx, uid, parentID)
 }
 
