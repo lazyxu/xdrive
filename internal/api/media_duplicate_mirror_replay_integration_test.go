@@ -33,7 +33,7 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 		&meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoResource{},
 		&meta.PhotoMetadata{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
-		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
+		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.ClientDevice{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -44,20 +44,35 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 		AllowedOrigin: "http://localhost",
 	}).Router()
 	token := createTestUser(t, db, router, "mirror-duplicate-user", "password-a")
-	root := requestNode(t, router, http.MethodGet,
-		"/api/v1/nodes/root", token, nil, http.StatusOK)
-	target := requestNode(t, router, http.MethodPost,
-		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
-		strings.NewReader(`{"name":"Mirror Originals"}`), http.StatusCreated)
-	createSource := fmt.Sprintf(`{"name":"Mirror Copies","kind":"synology_photos","direction":"push","sync_mode":"mirror","run_mode":"sync","target_node_id":%d}`, target.ID)
-	sourceRes := request(t, router, http.MethodPost, "/api/v1/sources",
-		token, strings.NewReader(createSource), http.StatusCreated)
+	var owner meta.User
+	if err := db.Where("username = ?", "mirror-duplicate-user").First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	deviceID := uuid.NewString()
+	deviceToken := strings.Repeat("synology-device-token-", 3)
+	device := meta.ClientDevice{
+		ID: deviceID, OwnerID: owner.ID, Name: "DSM Mirror Test", Platform: "synology",
+		CredentialHash: deviceCredentialDigest(deviceToken),
+	}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatal(err)
+	}
+	createSource := `{"name":"Mirror Copies","kind":"synology_photos","direction":"push","sync_mode":"mirror","run_mode":"sync","target_node_id":0}`
+	sourceRes := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources",
+		token, strings.NewReader(createSource), http.StatusCreated, map[string]string{
+			"X-XDrive-Device-ID": deviceID, "X-XDrive-Device-Token": deviceToken,
+		})
 	var source sourceDTO
 	if err := json.Unmarshal(sourceRes.Body.Bytes(), &source); err != nil {
 		t.Fatal(err)
 	}
-	if source.SyncMode != meta.SourceSyncModeMirror {
-		t.Fatalf("created source mode=%q want mirror", source.SyncMode)
+	if source.SyncMode != meta.SourceSyncModeMirror || source.TargetNodeID == nil ||
+		!source.TargetManaged || source.DeviceID != deviceID {
+		t.Fatalf("created source is not a registered-device managed Push: %+v", source)
+	}
+	var target meta.Node
+	if err := db.First(&target, *source.TargetNodeID).Error; err != nil {
+		t.Fatal(err)
 	}
 	var owner meta.User
 	if err := db.Where("username = ?", "mirror-duplicate-user").First(&owner).Error; err != nil {
