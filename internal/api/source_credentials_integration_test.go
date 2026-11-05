@@ -429,11 +429,11 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if logicalTarget != "同步文件夹/一刻相册/uid_12345_张三" {
+	if logicalTarget != "同步文件夹/Pull/Yike Photos/uid_12345_张三" {
 		t.Fatalf("managed Yike target=%q", logicalTarget)
 	}
 	sourceGet := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d", source.ID), tokenA, nil, http.StatusOK)
-	if !strings.Contains(sourceGet.Body.String(), `"target_path":"同步文件夹/一刻相册/uid_12345_张三"`) {
+	if !strings.Contains(sourceGet.Body.String(), `"target_path":"同步文件夹/Pull/Yike Photos/uid_12345_张三"`) {
 		t.Fatalf("Yike source API did not expose the persisted target path: %s", sourceGet.Body.String())
 	}
 	revealRes := request(t, router, http.MethodPost, revealPath, tokenA, nil, http.StatusOK)
@@ -785,7 +785,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if migratedPath != "同步文件夹/一刻相册/uid_12345_张三" {
+	if migratedPath != "同步文件夹/Pull/Yike Photos/uid_12345_张三" {
 		t.Fatalf("migrated Yike target=%q", migratedPath)
 	}
 	var legacyRootCount int64
