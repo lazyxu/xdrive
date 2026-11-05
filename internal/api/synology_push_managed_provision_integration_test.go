@@ -102,21 +102,48 @@ func TestCreateSynologyPushRequiresRegisteredDeviceAndProvisionsCanonicalTarget(
 		http.StatusBadRequest, headers)
 
 	sourceURL := fmt.Sprintf("/api/v1/sources/%d", created.ID)
+	rootID := uuid.NewString()
+	rootFingerprint := strings.Repeat("a", 64)
+	rootHeaders := map[string]string{
+		"X-XDrive-Device-ID":          deviceID,
+		"X-XDrive-Device-Token":       deviceToken,
+		"If-Match":                    `"1"`,
+	}
+	requestWithHeaders(t, router, http.MethodPut,
+		fmt.Sprintf("/api/v1/sources/%d/synology-root", created.ID), ownerToken,
+		strings.NewReader(fmt.Sprintf(`{"root_id":%q,"root_fingerprint":%q}`, rootID, rootFingerprint)),
+		http.StatusCreated, rootHeaders)
+	activationHeaders := map[string]string{
+		"X-XDrive-Device-ID":                deviceID,
+		"X-XDrive-Device-Token":             deviceToken,
+		"X-XDrive-Synology-Source-ID":       fmt.Sprint(created.ID),
+		"X-XDrive-Synology-Source-Revision": "2",
+		"X-XDrive-Local-Root-ID":            rootID,
+		"X-XDrive-Local-Root-Fingerprint":   rootFingerprint,
+		"If-Match":                          `"2"`,
+	}
 	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerToken,
-		strings.NewReader(`{"status":"active"}`), http.StatusOK,
-		map[string]string{"If-Match": `"1"`, "X-XDrive-Device-ID": deviceID, "X-XDrive-Device-Token": deviceToken})
+		strings.NewReader(`{"status":"active"}`), http.StatusOK, activationHeaders)
 	requestWithHeaders(t, router, http.MethodPost, fmt.Sprintf("/api/v1/devices/%s/revoke", deviceID),
 		ownerToken, nil, http.StatusNoContent, nil)
 	var revokedSource meta.Source
 	if err := db.First(&revokedSource, created.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if revokedSource.Status != meta.SourceStatusPaused || revokedSource.Revision != 3 {
+	if revokedSource.Status != meta.SourceStatusPaused || revokedSource.Revision != 4 {
 		t.Fatalf("revoking the DSM device did not pause its Source: %+v", revokedSource)
 	}
+	revokedHeaders := map[string]string{
+		"X-XDrive-Device-ID":                deviceID,
+		"X-XDrive-Device-Token":             deviceToken,
+		"X-XDrive-Synology-Source-ID":       fmt.Sprint(created.ID),
+		"X-XDrive-Synology-Source-Revision": "4",
+		"X-XDrive-Local-Root-ID":            rootID,
+		"X-XDrive-Local-Root-Fingerprint":   rootFingerprint,
+		"If-Match":                          `"4"`,
+	}
 	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerToken,
-		strings.NewReader(`{"status":"active"}`), http.StatusForbidden,
-		map[string]string{"If-Match": `"3"`, "X-XDrive-Device-ID": deviceID, "X-XDrive-Device-Token": deviceToken})
+		strings.NewReader(`{"status":"active"}`), http.StatusForbidden, revokedHeaders)
 }
 
 func TestSynologyPushManagedTargetRejectsUnclaimedDeviceGroup(t *testing.T) {
