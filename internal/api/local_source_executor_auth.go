@@ -54,24 +54,22 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 		return false
 	}
 	if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
-		// Existing DSM Push Sources predate device binding and retain their
-		// original target unchanged. Enforce the new identity contract only
-		// for Sources created under the new managed provisioning flow.
+		// Every DSM Push Source must be registered to a Synology Device and
+		// bound to the aggregate Personal/Shared Root fingerprint. There is no
+		// owner-JWT or legacy unbound execution fallback.
 		if source.DeviceID == nil || *source.DeviceID == "" {
-			return true
-		}
-		if !source.TargetManaged || source.TargetNodeID == nil {
-			fail(c, http.StatusForbidden, "Synology Push Source is not bound to a managed device target")
+			fail(c, http.StatusForbidden, "Synology Push Source must be bound to a registered device")
 			return false
 		}
-		deviceID, err := uuid.Parse(strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
-		if err != nil || deviceID.String() != *source.DeviceID {
-			fail(c, http.StatusForbidden, "owning Synology device identity required")
+		sourceID, proof, proofOK := currentSynologySourceProof(c)
+		if !proofOK || sourceID != source.ID || proof.DeviceID != *source.DeviceID ||
+			proof.SourceRevision != source.Revision || !source.TargetManaged || source.TargetNodeID == nil {
+			fail(c, http.StatusForbidden, "Synology Source root proof required or stale")
 			return false
 		}
 		var device meta.ClientDevice
 		if err := s.DB.WithContext(c.Request.Context()).
-			Where("id = ? AND owner_id = ?", deviceID.String(), source.OwnerID).
+			Where("id = ? AND owner_id = ? AND platform = ?", proof.DeviceID, source.OwnerID, "synology").
 			Take(&device).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				fail(c, http.StatusForbidden, "Synology source device not found")
@@ -80,9 +78,17 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 			}
 			return false
 		}
-		if device.Platform != "synology" ||
-			!clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+		if !clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
 			fail(c, http.StatusForbidden, "Synology source device credential invalid or revoked")
+			return false
+		}
+		var binding meta.LocalSourceBinding
+		if err := s.DB.WithContext(c.Request.Context()).
+			Where("source_id = ? AND owner_id = ? AND device_id = ?", source.ID, source.OwnerID, proof.DeviceID).
+			Take(&binding).Error; err != nil ||
+			binding.RootID != proof.RootID ||
+			binding.RootFingerprint != strings.ToLower(strings.TrimSpace(c.GetHeader("X-XDrive-Local-Root-Fingerprint"))) {
+			fail(c, http.StatusForbidden, "Synology Source root fingerprint is not bound")
 			return false
 		}
 		var target meta.Node
@@ -94,7 +100,7 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 			return false
 		}
 		c.Set(localSourceExecutorContextKey, localSourceExecutorProof{
-			DeviceID: device.ID, Platform: "synology", SourceRevision: source.Revision,
+			DeviceID: device.ID, RootID: binding.RootID, Platform: "synology", SourceRevision: source.Revision,
 		})
 		return true
 	}
@@ -175,7 +181,7 @@ func (s *Server) requireLocalSourceMutationTx(tx *gorm.DB, c *gin.Context, sourc
 			return s.requireIOSPhotoSourceRunProofTx(tx, c, sourceID)
 		}
 		if source.Kind == meta.SourceKindLocalFolder ||
-			(source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush && source.DeviceID != nil) {
+			(source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush) {
 			return errLocalSourceExecutorTransactionUnauthorized
 		}
 		return nil
@@ -270,55 +276,6 @@ func (s *Server) requireSynologySourceProofTx(
 	tx *gorm.DB, c *gin.Context, sourceID uint64, runID string,
 	proof localSourceExecutorProof, requireActive bool,
 ) error {
-	var device meta.ClientDevice
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ? AND owner_id = ? AND platform = ?", proof.DeviceID, userID(c), "synology").
-		First(&device).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errLocalSourceExecutorTransactionUnauthorized
-		}
-		return err
-	}
-	if !clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
-		return errLocalSourceExecutorTransactionUnauthorized
-	}
-	var source meta.Source
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ? AND owner_id = ?", sourceID, userID(c)).
-		First(&source).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errLocalSourceExecutorTransactionUnauthorized
-		}
-		return err
-	}
-	if source.Kind != synologySourceKind || source.Direction != meta.SourceDirectionPush ||
-		source.DeviceID == nil || *source.DeviceID != proof.DeviceID ||
-		source.Revision != proof.SourceRevision || !source.TargetManaged || source.TargetNodeID == nil ||
-		(requireActive && source.Status != meta.SourceStatusActive) {
-		return errLocalSourceExecutorTransactionUnauthorized
-	}
-	var target meta.Node
-	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
-		Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-			*source.TargetNodeID, source.OwnerID, meta.NodeTypeDir).
-		First(&target).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errLocalSourceExecutorTransactionUnauthorized
-		}
-		return err
-	}
-	if runID != "" {
-		var run meta.SyncRun
-		if err := tx.Select("id", "source_id", "source_revision").
-			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errLocalSourceExecutorTransactionUnauthorized
-			}
-			return err
-		}
-		if run.SourceRevision != proof.SourceRevision {
-			return errLocalSourceExecutorTransactionUnauthorized
-		}
-	}
-	return nil
+	_, err := requireSynologySourceProofTx(tx, c, sourceID, runID, proof, requireActive)
+	return err
 }
