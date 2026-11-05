@@ -15,7 +15,7 @@ export interface XDriveLocalBackupTargetActions {
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
 
-// This chooser is only mounted for a credential-verified owning Desktop row.
+// This chooser is only mounted for a credential-verified owning native host row (Desktop or DSM).
 // The Server validates target Node ownership/directory type and the Agent
 // validates Root/device proof on every save. No cloud bytes are moved here.
 export function XDriveDeviceBackupLocalTargetDialog({
