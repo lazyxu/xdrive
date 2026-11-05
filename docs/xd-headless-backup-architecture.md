@@ -29,11 +29,12 @@ Web/other Desktop clients stay read-only for foreign device backups.
 3. `xd backup init --name NAME --path ABS_LOCAL_DIR`
    requires only the local Source name and an explicit local OS path. The
    owning Agent registers/reuses **its own** device and asks the Server to
-   create the paused Source plus its exclusive managed target atomically under
-   `同步文件夹/Push/<device>/<source>`. The Server returns the exact
-   TargetNodeID/path; the Agent then locally verifies/binds the Root with the
-   current device credential and returns the Source ID. A first-run error must
-   not silently adopt a foreign or legacy Source.
+   create the paused Source plus its exclusive managed target atomically. The
+   Server returns the exact TargetNodeID/path; the Agent then locally
+   verifies/binds the Root with the current device credential and returns the
+   Source ID. The canonical `同步文件夹/Push` prefix is a separate
+   Server-side provisioning change tracked in PR #3902. A first-run error
+   must not silently adopt a foreign or legacy Source.
 4. `xd backup once --source ID` uses the existing exact worker. Saving
    a new `interval` / `cron` schedule changes Source revision; one verified
    run on that revision is needed to arm scheduled admissions. The optional
