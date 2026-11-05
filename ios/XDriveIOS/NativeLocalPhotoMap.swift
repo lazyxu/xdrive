@@ -1319,7 +1319,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     .accessibilityIdentifier("native-ios-local-map-actions")
                 }
             }
-            if album == nil && onClose == nil {
+            if album == nil && onFocusChange != nil {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(focused ? "显示底部导航" : "专注地图") {
                         focused.toggle()
