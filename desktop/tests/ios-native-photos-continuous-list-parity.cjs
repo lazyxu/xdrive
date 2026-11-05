@@ -16,7 +16,7 @@ const local = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
 
 test('all reachable iOS Photos lists are continuous and legacy date entry reuses canonical wall', () => {
   assert.match(dashboard, /case \.local:\s*XDriveIOSNativeLocalPhotoTimelineContainer\(/)
-  assert.match(legacy, /XDriveIOSNativeLocalPhotoTimelineContainer\(savedOffset: \$savedOffset\)/)
+  assert.match(legacy, /XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$savedOffset,\s*mediaFilter: \$mediaFilter/)
   assert.doesNotMatch(legacy, /上一页|下一页|XDriveIOSNativeTimelineReader|当前范围/)
   assert.match(timeline, /XDriveIOSNativeLocalContinuousGalleryScreen\(/)
   assert.match(albums, /continueDirectoryIfReady\(\)/)

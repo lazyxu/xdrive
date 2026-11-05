@@ -24,6 +24,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     @State private var generation = UUID()
     @State private var loadTask: Task<Void, Never>?
     @State private var coverTask: Task<Void, Never>?
+    @State private var coverLoading = false
     @State private var busy = false
     @State private var error: String?
     @State private var cursor = XDriveIOSOwnerClusterCursor(placeIndex: 0, offset: 0)
@@ -98,34 +99,23 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                             photoTile(item, from: page)
                         }
                     }
-                    // This foot is inside LazyVGrid, not an eagerly built
-                    // ScrollView sibling. Programmatic appearance alone never
-                    // starts another PhotoAsset Range request.
+                    // The lazy-grid foot advances the verified Owner Range
+                    // when it approaches the viewport, like native Photos.
+                    // It remains guarded by Owner, busy, cover and error state.
                     if let next {
                         Color.clear
                             .frame(height: 24)
                             .id("\(next.placeIndex):\(next.offset)")
-                            .onAppear { scrollFootVisible = true }
+                            .onAppear {
+                                scrollFootVisible = true
+                                advanceIfVisible()
+                            }
                             .onDisappear { scrollFootVisible = false }
                             .accessibilityHidden(true)
                     }
                 }
                 .padding(.horizontal, 4)
             }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 12).onEnded { gesture in
-                    // The user must swipe upward to scroll toward newer tiles.
-                    // Pulling back or swiping horizontally cannot advance.
-                    guard gesture.translation.height <= -12,
-                          abs(gesture.translation.height) >
-                            abs(gesture.translation.width),
-                          scrollFootVisible, activeOwner, !busy,
-                          viewing == nil, page != nil, let next else { return }
-                    scrollFootVisible = false
-                    load(next, history: earlier + [cursor],
-                         autoAdvance: true)
-                }
-            )
             .onChange(of: visiblePageRevision) { _ in
                 // Auto paging replaces the previous pair of 48-photo windows.
                 // Re-anchor only to a Node+revision still present in the exact
@@ -152,6 +142,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 returnScroll.scrollTo(anchor.id, anchor: .center)
                 viewerReturn = nil
             }
+            .onChange(of: busy) { isBusy in
+                if !isBusy { advanceIfVisible() }
+            }
             }
         }
         .navigationTitle("位置照片")
@@ -159,20 +152,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    // Accessibility and very long clusters retain bounded
-                    // backwards/forwards navigation; the primary photo wall
-                    // has no visible 48-photo pagination controls.
-                    Button("查看上一批照片") {
-                        guard let previous = earlier.last else { return }
-                        load(previous, history: Array(earlier.dropLast()))
-                    }
-                    .disabled(busy || !activeOwner || earlier.isEmpty || viewing != nil)
-                    Button("继续浏览下一批照片") {
-                        guard let next else { return }
-                        load(next, history: earlier + [cursor])
-                    }
-                    .disabled(busy || !activeOwner || next == nil || viewing != nil)
-                    Divider()
+                    // Paging is driven by the visible grid sentinels; expose
+                    // only an explicit refresh, not transport-page controls.
                     Button("重新核对当前位置照片") {
                         load(cursor, history: earlier)
                     }
@@ -516,12 +497,20 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             placeIndex: nextIndex, offset: nextOffset)
     }
 
+    private func advanceIfVisible() {
+        guard scrollFootVisible, activeOwner, !busy, !coverLoading,
+              viewing == nil, page != nil, error == nil, let next else { return }
+        scrollFootVisible = false
+        load(next, history: earlier + [cursor], autoAdvance: true)
+    }
+
     private func invalidate() {
         generation = UUID()
         loadTask?.cancel()
         coverTask?.cancel()
         loadTask = nil
         coverTask = nil
+        coverLoading = false
         page = nil
         viewerReturn = nil
         autoScrollReturn = nil
@@ -556,6 +545,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         scrollFootVisible = false
         loadTask?.cancel()
         coverTask?.cancel()
+        coverTask = nil
+        coverLoading = false
         if !autoAdvance {
             priorWindow = nil
             priorWindowCursor = nil
@@ -673,8 +664,17 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 next = following
                 page = fetched
                 visiblePageRevision = UUID()
+                coverLoading = true
                 coverTask = Task { @MainActor in
+                    defer {
+                        if generation == ticket {
+                            coverLoading = false
+                            coverTask = nil
+                            advanceIfVisible()
+                        }
+                    }
                     // At most 48 sequential thumbnails; no original download.
+                    // Finish this bounded window before rotating it out.
                     for item in fetched.items where item.metadata.has_thumbnail {
                         guard !Task.isCancelled, generation == ticket,
                               activeOwner, cursor == target else { return }

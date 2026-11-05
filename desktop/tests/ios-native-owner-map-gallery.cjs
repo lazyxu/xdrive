@@ -282,7 +282,8 @@ test('native map source uses one navigation menu instead of a permanently stacke
                          map.indexOf('private final class XDriveIOSOwnerPlaceAnnotation:'))
   assert.match(root, /return Group \{\s*switch source \{/)
   assert.doesNotMatch(root, /return VStack\(spacing: 4\)|\.pickerStyle\(\.segmented\)/)
-  assert.match(root, /\.toolbar \{[\s\S]*?ToolbarItem\(placement: \.navigationBarLeading\) \{\s*Menu \{/)
+  assert.match(root, /\.toolbar \{[\s\S]*?if source == \.cloud \{\s*ToolbarItem\(placement: \.navigationBarLeading\) \{\s*Button\("完成"\)/)
+  assert.match(root, /ToolbarItem\(placement: \.navigationBarTrailing\) \{\s*Menu \{/)
   assert.match(root, /Menu \{\s*Picker\("地图照片来源", selection: \$source\) \{/)
   assert.match(root, /ForEach\(XDriveIOSNativePhotoMapSource\.allCases, id: \\.self\)/)
   assert.match(root, /Label\(source\.label, systemImage: "square\.stack\.3d\.up"\)/)
@@ -292,4 +293,15 @@ test('native map source uses one navigation menu instead of a permanently stacke
   assert.match(root, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\([\s\S]*?cameraReturn: cloudMapCamera/)
   assert.match(root, /guard source == \.cloud, let expectedOwner,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\([\s\S]*?cloudMapCamera = next/)
   assert.match(root, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/)
+})
+
+
+test('cloud Owner map album automatically advances when its lazy-grid sentinel enters the viewport', () => {
+  assert.match(clusterAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)
+  assert.match(clusterAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/)
+  assert.match(clusterAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, activeOwner, !busy, !coverLoading,[\s\S]*?viewing == nil, page != nil, error == nil, let next/)
+  assert.match(clusterAlbum, /coverLoading = true[\s\S]*?defer \{[\s\S]*?coverLoading = false[\s\S]*?advanceIfVisible\(\)/)
+  assert.match(clusterAlbum, /load\(next, history: earlier \+ \[cursor\], autoAdvance: true\)/)
+  assert.doesNotMatch(clusterAlbum, /DragGesture\(minimumDistance: 12\)/)
+  assert.doesNotMatch(clusterAlbum, /Button\("查看上一批照片"\)|Button\("继续浏览下一批照片"\)/)
 })

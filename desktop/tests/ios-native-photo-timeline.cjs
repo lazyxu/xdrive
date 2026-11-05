@@ -37,7 +37,9 @@ test('calendar counts use original PhotoKit slots and invalidate on any library/
 })
 test('date jump reuses the real PhotoKit media filter instead of all-photo offsets', () => {
   const wall = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
-  assert.match(browser, /@State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = \.all/)
+  assert.match(browser, /@Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter/)
+  assert.match(dashboard, /@State private var localGalleryMediaFilter: XDriveIOSNativePhotoMediaFilter = \.all/)
+  assert.match(dashboard, /XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset,\s*mediaFilter: \$localGalleryMediaFilter/)
   assert.match(browser, /XDriveIOSNativeLocalContinuousGalleryScreen\(\s*savedOffset: \$savedOffset, mediaFilter: \$mediaFilter/)
   assert.match(wall, /@Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter/)
   assert.doesNotMatch(wall, /@State private var mediaFilter/)

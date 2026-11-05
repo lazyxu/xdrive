@@ -1,4 +1,5 @@
 import Foundation
+import MapKit
 import Photos
 import SwiftUI
 import UIKit
@@ -453,6 +454,11 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingAlbumHelp = false
+    @State private var showingAlbumMap = false
+    @State private var albumMapCamera: MKCoordinateRegion?
+    @State private var mapAlbumScope: XDriveLocalPhotoAlbumSummary?
+    @State private var albumMapJump: XDriveIOSNativeLocalMapJump?
+    @State private var pendingAlbumMapJump: XDriveIOSNativeLocalMapJump?
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
@@ -681,10 +687,26 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showingAlbumHelp = true } label: {
-                    Label("相册说明", systemImage: "info.circle")
+                Menu {
+                    if permission == .authorized && selected == nil && !selectionMode {
+                        Button {
+                            mapAlbumScope = album
+                            albumMapJump = nil
+                            showingAlbumMap = true
+                        } label: {
+                            Label("显示地图", systemImage: "map")
+                        }
+                        .disabled(loading || albumActionBusy || albumShareBusy)
+                        .accessibilityIdentifier("native-ios-local-album-show-map")
+                    }
+                    Button { showingAlbumHelp = true } label: {
+                        Label("相册说明", systemImage: "info.circle")
+                    }
+                    .accessibilityIdentifier("native-ios-local-album-layout-help")
+                } label: {
+                    Label("更多", systemImage: "ellipsis.circle")
                 }
-                .accessibilityIdentifier("native-ios-local-album-layout-help")
+                .accessibilityIdentifier("native-ios-local-album-more")
             }
         }
         .alert("相册说明", isPresented: $showingAlbumHelp) {
@@ -732,6 +754,23 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             retainedAlbumShare = nil
         }) { session in
             XDriveIOSNativeLocalPhotoActivitySheet(fileURLs: session.fileURLs)
+        }
+        .fullScreenCover(isPresented: $showingAlbumMap) {
+            NavigationStack {
+                XDriveIOSNativeLocalPhotoMapScreen(
+                    album: mapAlbumScope,
+                    mapScope: .constant(.library),
+                    offset: .constant(0),
+                    onClose: {
+                        showingAlbumMap = false
+                        mapAlbumScope = nil
+                        albumMapJump = nil
+                    },
+                    cameraOnEntry: albumMapCamera,
+                    onLibraryCameraChange: { next in albumMapCamera = next }
+                )
+                .environment(\.xdriveNativeLocalMapJump, albumMapJump)
+            }
         }
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) { initial in
             XDriveIOSNativeLocalPhotoDetail(
@@ -792,12 +831,17 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     accessibilityFocusedTileID = nil
                 }
             )
+            .environment(\.xdriveOpenNativeLocalMap, { jump in
+                pendingAlbumMapJump = jump
+            })
         }
         .onAppear {
+            permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             libraryMonitor.start()
             if selected == nil && total == nil && !loading { reload() }
         }
         .onChange(of: libraryMonitor.revision) { _ in
+            permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             clearViewerTileAnchor()
             invalidate()
             error = "系统相册发生变化，请重新读取当前页面。"
@@ -1025,8 +1069,18 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         viewerPage = nil
         shouldRestoreViewerTile = viewerReturnID != nil && phase == .active
         // Open the same album/page only after fresh PhotoKit authorization.
-        if phase == .active { reload() }
-        else {
+        if phase == .active {
+            reload()
+            if let jump = pendingAlbumMapJump {
+                pendingAlbumMapJump = nil
+                mapAlbumScope = nil
+                albumMapJump = jump
+                showingAlbumMap = true
+            }
+        } else {
+            pendingAlbumMapJump = nil
+            albumMapJump = nil
+            mapAlbumScope = nil
             clearViewerTileAnchor()
             invalidate()
         }

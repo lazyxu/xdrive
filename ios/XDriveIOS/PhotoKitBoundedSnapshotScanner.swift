@@ -90,13 +90,14 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
     /// Explicit user-triggered initial scan; no permission prompt. If iOS
     /// Limited access is granted, the result is only the authorized subset.
     func start(atOffset requestedOffset: Int = 0,
-               requireStableResume: Bool = false) throws -> Int {
+               requireStableResume: Bool = false,
+               album: XDriveLocalPhotoAlbumSummary? = nil) throws -> Int {
         reset()
         guard requestedOffset >= 0 else {
             throw XDrivePhotoKitScanFailure.invalidOffset
         }
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard status == .authorized || status == .limited else {
+        guard status == .authorized || (album == nil && status == .limited) else {
             throw XDrivePhotoKitScanFailure.notAuthorized
         }
         PHPhotoLibrary.shared().register(observer)
@@ -112,7 +113,28 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
             NSSortDescriptor(key: "creationDate", ascending: false),
             NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
-        let snapshot = PHAsset.fetchAssets(with: options)
+        let snapshot: PHFetchResult<PHAsset>
+        if let album {
+            guard let collection = PHAssetCollection.fetchAssetCollections(
+                withLocalIdentifiers: [album.collectionIdentifier], options: nil
+            ).firstObject else {
+                reset()
+                throw XDrivePhotoKitScanFailure.snapshotChanged
+            }
+            let rawName = collection.localizedTitle?.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let currentName = rawName?.isEmpty == false ? rawName! : "未命名相册"
+            let currentKind = collection.assetCollectionType == .album ? "用户相册" :
+                collection.assetCollectionType == .smartAlbum ? "系统智能相册" : ""
+            guard currentName == album.name, currentKind == album.kind else {
+                reset()
+                throw XDrivePhotoKitScanFailure.snapshotChanged
+            }
+            snapshot = PHAsset.fetchAssets(in: collection, options: options)
+        } else {
+            snapshot = PHAsset.fetchAssets(with: options)
+        }
         guard observer.currentVersion() == beginVersion,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == status else {
             reset()
