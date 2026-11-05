@@ -632,27 +632,27 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	}
 
 	session := meta.UploadSession{
-	ID:                    uuid.NewString(),
-	OwnerID:               uid,
-	SourceID:              req.SourceID,
-	SourceRevision:        req.SourceRevision,
-	SourceRootID:          req.SourceRootID,
-	SourceRootFingerprint: req.SourceRootFingerprint,
-	ParentID:              req.ParentID,
-	NodeID:                req.NodeID,
-	Name:                  req.Name,
-	RequestedName:         req.RequestedName,
-	ConflictPolicy:        req.ConflictPolicy,
-	ExpectedRevision:      req.ExpectedRevision,
-	TotalSize:             req.Size,
-	ChunkSize:             req.ChunkSize,
-	ChunkCount:            chunkCount,
-	SHA256:                req.SHA256,
-	ExpectedMD5:           req.MD5,
-	ResumeKey:             req.ResumeKey,
-	Status:                meta.UploadStatusActive,
-	ExpiresAt:             time.Now().Add(uploadSessionTTL),
-}
+		ID:                    uuid.NewString(),
+		OwnerID:               uid,
+		SourceID:              req.SourceID,
+		SourceRevision:        req.SourceRevision,
+		SourceRootID:          req.SourceRootID,
+		SourceRootFingerprint: req.SourceRootFingerprint,
+		ParentID:              req.ParentID,
+		NodeID:                req.NodeID,
+		Name:                  req.Name,
+		RequestedName:         req.RequestedName,
+		ConflictPolicy:        req.ConflictPolicy,
+		ExpectedRevision:      req.ExpectedRevision,
+		TotalSize:             req.Size,
+		ChunkSize:             req.ChunkSize,
+		ChunkCount:            chunkCount,
+		SHA256:                req.SHA256,
+		ExpectedMD5:           req.MD5,
+		ResumeKey:             req.ResumeKey,
+		Status:                meta.UploadStatusActive,
+		ExpiresAt:             time.Now().Add(uploadSessionTTL),
+	}
 	if guest {
 		session.ShareID = &guestID
 	}
