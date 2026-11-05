@@ -8,6 +8,7 @@ const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 const map = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
 const viewer = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
 const viewerInfo = read('ios/XDriveIOS/NativeViewerQualityPanel.swift')
+const albumBrowser = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
 const scanner = read('ios/XDriveIOS/PhotoKitBoundedSnapshotScanner.swift')
 const focus = read('ios/XDriveIOS/NativeFocusVisibilityPolicy.swift')
 const policy = read('ios/XDriveIOS/NativePhotoMapPolicy.swift')
@@ -449,3 +450,27 @@ test('GPS cell album automatically advances as its lazy-grid sentinel enters the
   assert.doesNotMatch(spatialAlbum, /UserDefaults|URLSession|UploadSession/);
 });
 
+
+
+test('native Photos album exposes Show Map only with Full Photo Library access', () => {
+  assert.match(albumBrowser, /if permission == \.authorized && selected == nil && !selectionMode[\s\S]*?native-ios-local-album-show-map/)
+  assert.match(albumBrowser, /Button \{ showingAlbumMap = true \} label: \{\s*Label\("显示地图", systemImage: "map"\)/)
+  assert.match(albumBrowser, /fullScreenCover\(isPresented: \$showingAlbumMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\(\s*album: album,\s*mapScope: \.constant\(\.library\)/)
+  assert.match(map, /var album: XDriveLocalPhotoAlbumSummary\? = nil/)
+  assert.match(map, /worker\.start\(atOffset: 0, album: album\)/)
+  assert.match(map, /XDriveIOSMapSpatialAlbum\(selection: chosen, album: album\)/)
+  assert.match(map, /scanner\.start\(atOffset: 0, album: album\)/)
+  assert.match(map, /album == nil \? "此授权图库没有可显示位置的照片或视频。" :\s*"此相册没有可显示位置的照片或视频。"/)
+})
+
+test('album map scans the current PhotoKit collection snapshot, not the whole library or Server', () => {
+  assert.match(scanner, /func start\(atOffset requestedOffset: Int = 0,[\s\S]*?album: XDriveLocalPhotoAlbumSummary\? = nil\)/)
+  assert.match(scanner, /status == \.authorized \|\| \(album == nil && status == \.limited\)/)
+  assert.match(scanner, /PHAssetCollection\.fetchAssetCollections\(\s*withLocalIdentifiers: \[album\.collectionIdentifier\]/)
+  assert.match(scanner, /currentName == album\.name, currentKind == album\.kind/)
+  assert.match(scanner, /PHAsset\.fetchAssets\(in: collection, options: options\)/)
+  assert.match(scanner, /PHAsset\.fetchAssets\(with: options\)/)
+  assert.doesNotMatch(scanner, /UserDefaults|URLSession|UploadSession|localStorage/)
+  assert.match(map, /guard mapScope == \.library, phase == \.active,[\s\S]*?authorization == \.authorized else/)
+  assert.match(map, /guard album == nil, mapScope == \.library, phase == \.active/)
+})
