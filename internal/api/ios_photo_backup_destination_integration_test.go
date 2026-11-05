@@ -113,7 +113,7 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !stored.TargetManaged || !iosPhotoDestinationSource(stored) ||
-		stored.LocalCreatorDeviceID == nil || *stored.LocalCreatorDeviceID != device.ID ||
+		stored.DeviceID == nil || *stored.DeviceID != device.ID ||
 		stored.TargetNodeID == nil || *stored.TargetNodeID != result.TargetNodeID {
 		t.Fatalf("Source must own exact managed Node: %+v", stored)
 	}
