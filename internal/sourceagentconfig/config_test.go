@@ -183,3 +183,52 @@ func mustConfigPath(t *testing.T) string {
 	}
 	return path
 }
+
+func TestSynologyDeviceCredentialStoredOutsideConfig(t *testing.T) {
+	t.Setenv(configDirEnv, t.TempDir())
+	t.Setenv("XD_DISABLE_SECRET_SERVICE", "1")
+	cfg := Config{
+		Server: "https://drive.example.com", SessionID: "session-1",
+		Username: "alice",
+	}
+	deviceID := "a6c9f5f2-8b3d-4b72-9b2a-8a6a4a2f8c11"
+	deviceToken := "synology-device-token-secret-should-not-be-in-config"
+	if err := SaveDeviceCredential(&cfg, deviceID, deviceToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(mustConfigPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), deviceToken) {
+		t.Fatal("device token leaked into config.json")
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw["device_id"] != deviceID || raw["device_credential_id"] != cfg.DeviceCredentialID {
+		t.Fatalf("device metadata=%v", raw)
+	}
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadDeviceCredential(loaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != deviceToken {
+		t.Fatalf("device token=%q want configured token", got)
+	}
+	wantBackend := "file-0600"
+	if runtime.GOOS == "windows" {
+		wantBackend = "windows-dpapi"
+	}
+	if backend := DeviceCredentialBackend(loaded); backend != wantBackend {
+		t.Fatalf("device credential backend=%q want=%q", backend, wantBackend)
+	}
+}
