@@ -24,22 +24,22 @@ type Client struct {
 	Token   string
 	HTTP    *http.Client
 
-	sessionMu        sync.RWMutex
-	deviceMu         sync.RWMutex
-	deviceID         string
-	deviceToken      string
-	synologySourceMu sync.RWMutex
-	synologySourceID uint64
-	synologySourceRevision uint64
-	synologyRootID string
+	sessionMu               sync.RWMutex
+	deviceMu                sync.RWMutex
+	deviceID                string
+	deviceToken             string
+	synologySourceMu        sync.RWMutex
+	synologySourceID        uint64
+	synologySourceRevision  uint64
+	synologyRootID          string
 	synologyRootFingerprint string
-	refreshMu        sync.Mutex
-	sharedRefreshMu  *sync.Mutex
-	refreshToken     string
-	accessExpiresAt  time.Time
-	refreshExpiresAt time.Time
-	onTokens         func(SessionTokens) error
-	loadTokens       func() (SessionTokens, error)
+	refreshMu               sync.Mutex
+	sharedRefreshMu         *sync.Mutex
+	refreshToken            string
+	accessExpiresAt         time.Time
+	refreshExpiresAt        time.Time
+	onTokens                func(SessionTokens) error
+	loadTokens              func() (SessionTokens, error)
 }
 
 type Node struct {
@@ -1376,7 +1376,9 @@ func (c *Client) SetDeviceIdentity(deviceID, deviceToken string) {
 // SetSynologySourceRootProof binds this client to one server-persisted DSM
 // Source root-set fingerprint. It is sent on Source, Node and Upload requests.
 func (c *Client) SetSynologySourceRootProof(sourceID, sourceRevision uint64, rootID, fingerprint string) {
-	if c == nil { return }
+	if c == nil {
+		return
+	}
 	c.synologySourceMu.Lock()
 	c.synologySourceID = sourceID
 	c.synologySourceRevision = sourceRevision
