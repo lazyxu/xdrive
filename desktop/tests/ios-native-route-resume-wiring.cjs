@@ -47,23 +47,22 @@ test('native Gallery MapKit route restores only under its verified Owner-scoped 
   assert.doesNotMatch(routes, /PhotoKit\.fetch|PHAsset|GPS|Authorization:|accessToken|refreshToken/);
 });
 
-test('Owner-scoped native Gallery map resumes mode/page without storing media identity', () => {
+test('Owner-scoped native Gallery map migrates legacy page routes without storing media identity', () => {
   assert.match(ui, /@State private var localMapScope: XDriveIOSNativeLocalMapScope = \.library/);
   assert.match(ui, /@State private var localMapPageOffset = 0/);
   assert.match(ui, /XDriveIOSNativePhotoMapsScreen\(\s*login: login,\s*localMapScope: \$localMapScope,\s*localMapPageOffset: \$localMapPageOffset/);
   assert.match(ui, /\.onChange\(of: localMapScope\) \{ _ in saveNavigationIfReady\(\) \}/);
   assert.match(ui, /\.onChange\(of: localMapPageOffset\) \{ _ in saveNavigationIfReady\(\) \}/);
-  assert.match(ui, /snapshot\.mapScope \?\? "library"/);
-  assert.match(ui, /snapshot\.mapPageOffset \?\? 0/);
+  assert.doesNotMatch(ui, /snapshot\.mapScope \?\? "library"/);
+  assert.doesNotMatch(ui, /snapshot\.mapPageOffset \?\? 0/);
   assert.match(ui, /mapScope: localMapScope\.rawValue,\s*mapPageOffset: localMapPageOffset/);
   assert.match(ui, /gallerySource = \.local\s*localMapScope = \.library\s*localMapPageOffset = 0/);
   assert.match(routes, /let mapScope: String\?/);
   assert.match(routes, /let mapPageOffset: Int\?/);
-  // Keep the route store legacy validation for a missing v1 mode; the new
-  // Dashboard defaults absent modes to library. An explicit saved "page"
-  // remains accepted and is restored without any private PhotoKit identity.
+  // Keep the route store legacy decoder compatible, while the Dashboard
+  // deliberately migrates every old page-only route to the full library map.
   assert.match(routes, /Self\.validMapScope\(saved\.mapScope \?\? "page"\)/);
-  assert.match(ui, /XDriveIOSNativeLocalMapScope\(rawValue: snapshot\.mapScope \?\? "library"\) \?\? \.library/);
+  assert.match(ui, /localMapScope = \.library\s+localMapPageOffset = 0/);
   assert.match(routes, /Self\.validMapPageOffset\(saved\.mapPageOffset \?\? 0\)/);
   assert.match(routes, /value >= 0 && value <= 1_000_000 && value % 64 == 0/);
   assert.doesNotMatch(routes, /assetID|latitude|longitude|photoID|previewTicket|location/);

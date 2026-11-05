@@ -513,6 +513,8 @@ private struct XDriveIOSMapPhotoAlbum: View {
     }
 }
 
+/// The legacy `.page` value remains decodable for older navigation snapshots.
+/// Gallery map entry migrates it to `.library`; no page-only mode is presented.
 enum XDriveIOSNativeLocalMapScope: String, CaseIterable {
     case page, library
     var label: String {
@@ -537,8 +539,13 @@ private struct XDriveIOSMapSpatialAlbum: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.dismiss) private var dismiss
     @StateObject private var changes = XDriveIOSMapPhotoChanges()
+    // Keep at most the previous and current 48-photo windows in the wall.
+    // Viewer admission receives only the one exact 48-item window containing
+    // the selected tile, preserving the existing bounded filmstrip contract.
+    @State private var priorWindow: [XDrivePhotoKitScanCandidate] = []
     @State private var items: [XDrivePhotoKitScanCandidate] = []
     @State private var viewer: XDrivePhotoKitScanCandidate?
+    @State private var viewerItems: [XDrivePhotoKitScanCandidate] = []
     @State private var viewerReturnID: String?
     @AccessibilityFocusState private var focusedTileID: String?
     @State private var worker: XDrivePhotoKitBoundedSnapshotScanner?
@@ -546,89 +553,151 @@ private struct XDriveIOSMapSpatialAlbum: View {
     @State private var generation = UUID()
     @State private var busy = false
     @State private var started = false
-    @State private var pageNumber = 0
-    @State private var starts = [0]
+    // A 64-slot PhotoKit page may contain more than 48 matching GPS assets.
+    // Keep its unused matches transiently rather than skipping those slots.
+    @State private var pendingLocated: [XDrivePhotoKitLocatedCandidate] = []
+    @State private var pendingIndex = 0
     @State private var nextOffset = 0
-    @State private var hasNext = false
+    @State private var scannerFinished = false
+    @State private var scrollFootVisible = false
+    @State private var autoScrollReturnID: String?
+    @State private var visibleWindowRevision = UUID()
+    @State private var windowNumber = 0
     @State private var error: String?
 
-    private var previewItems: [XDrivePhotoKitScanCandidate] {
-        items.prefix(48).filter {
-            XDriveIOSNativeMapViewerAdmission.supported($0)
-        }
+    private struct WindowRead {
+        let items: [XDrivePhotoKitScanCandidate]
+        let pending: [XDrivePhotoKitLocatedCandidate]
+        let pendingIndex: Int
+        let nextOffset: Int
+        let scannerFinished: Bool
+    }
+
+    private var visibleItems: [XDrivePhotoKitScanCandidate] {
+        priorWindow + items
+    }
+
+    private var hasNext: Bool {
+        pendingIndex < pendingLocated.count || !scannerFinished
     }
 
     private var selectedPhotoCount: Int {
         selection.cells.reduce(0) { $0 + $1.count }
     }
 
+    private func loadedWindow(containing id: String) -> [XDrivePhotoKitScanCandidate] {
+        let source = priorWindow.contains(where: { $0.id == id }) ? priorWindow : items
+        return source.filter { XDriveIOSNativeMapViewerAdmission.supported($0) }
+    }
+
     private func restoreViewerTile(using scroll: ScrollViewProxy) {
         defer { viewerReturnID = nil }
         guard let id = viewerReturnID,
-              let target = previewItems.first(where: { $0.id == id }),
-              XDriveIOSNativeMapViewerAdmission.allows(
-                  target, in: previewItems, sceneActive: phase == .active
-              ) else { return }
+              let target = visibleItems.first(where: { $0.id == id }) else { return }
+        let loaded = loadedWindow(containing: id)
+        guard XDriveIOSNativeMapViewerAdmission.allows(
+            target, in: loaded, sceneActive: phase == .active
+        ) else { return }
         scroll.scrollTo(id, anchor: .center)
         focusedTileID = id
+        viewerItems = []
+    }
+
+    private func photoTile(_ item: XDrivePhotoKitScanCandidate) -> some View {
+        let loaded = loadedWindow(containing: item.id)
+        return Button {
+            guard !busy,
+                  XDriveIOSNativeMapViewerAdmission.allows(
+                    item, in: loaded, sceneActive: phase == .active
+                  ) else { return }
+            viewerReturnID = item.id
+            viewerItems = loaded
+            focusedTileID = nil
+            viewer = item
+        } label: {
+            XDriveIOSLocalPhotoTile(candidate: item)
+        }
+        .buttonStyle(.plain)
+        .disabled(busy || !XDriveIOSNativeMapViewerAdmission.supported(item))
+        .id(item.id)
+        .accessibilityFocused($focusedTileID, equals: item.id)
     }
 
     var body: some View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             VStack(spacing: 8) {
-                Text("本机已授权图库中的 \(selection.cells.count) 个 GPS 位置区域；全库扫描统计有 \(selectedPhotoCount) 张。")
+                Text("此处照片 · \(selectedPhotoCount) 张")
                     .font(.footnote).foregroundStyle(.secondary)
-                if busy { ProgressView("按区域筛选已授权照片…") }
-                if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
+                    .accessibilityValue(
+                        busy ? "正在读取位置照片" :
+                        (hasNext ? "可继续向下滚动浏览" : "已显示全部可访问照片")
+                    )
+                if busy { ProgressView("正在读取位置照片…") }
+                if let error {
+                    Text(error).font(.footnote).foregroundStyle(.secondary)
+                    Button("重试读取照片") {
+                        if worker != nil { loadNext() } else { loadInitial() }
+                    }
+                    .disabled(busy || phase != .active)
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("native-ios-map-cluster-inline-retry")
+                }
+                if !busy && items.isEmpty && priorWindow.isEmpty && error == nil {
+                    Text("此位置没有可访问的照片或视频。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 4)],
                               spacing: 4) {
-                        ForEach(items) { item in
-                            Button {
-                                guard !busy,
-                                      XDriveIOSNativeMapViewerAdmission.allows(
-                                          item, in: previewItems,
-                                          sceneActive: phase == .active
-                                      ) else { return }
-                                viewerReturnID = item.id
-                                focusedTileID = nil
-                                viewer = item
-                            } label: {
-                                XDriveIOSLocalPhotoTile(candidate: item)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(busy ||
-                                      !XDriveIOSNativeMapViewerAdmission.supported(item))
-                            .id(item.id)
-                            .accessibilityFocused($focusedTileID, equals: item.id)
+                        ForEach(priorWindow) { item in photoTile(item) }
+                        ForEach(items) { item in photoTile(item) }
+                        // The sentinel lives inside LazyVGrid. Its appearance
+                        // only arms the next read; a deliberate upward user
+                        // drag at the bottom performs the actual advancement.
+                        if hasNext {
+                            Color.clear
+                                .frame(height: 24)
+                                .id("map:\(windowNumber):\(nextOffset)")
+                                .onAppear { scrollFootVisible = true }
+                                .onDisappear { scrollFootVisible = false }
+                                .accessibilityHidden(true)
                         }
-                    }.padding(8)
+                    }
+                    .padding(8)
                 }
-                HStack {
-                    Button("上一批") {
-                        guard pageNumber > 0 else { return }
-                        pageNumber -= 1
-                        load(at: starts[pageNumber])
-                    }.disabled(busy || pageNumber == 0)
-                    Spacer()
-                    Text("第 \(pageNumber + 1) 批 · \(items.count) 张")
-                        .font(.caption).monospacedDigit()
-                    Spacer()
-                    Button("继续查找下一批") {
-                        guard hasNext else { return }
-                        pageNumber += 1
-                        if pageNumber == starts.count { starts.append(nextOffset) }
-                        load(at: starts[pageNumber])
-                    }.disabled(busy || !hasNext)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 12).onEnded { gesture in
+                        guard gesture.translation.height <= -12,
+                              abs(gesture.translation.height) >
+                                abs(gesture.translation.width),
+                              scrollFootVisible, !busy, viewer == nil, hasNext
+                        else { return }
+                        loadNext()
+                    }
+                )
+                .onChange(of: visibleWindowRevision) { _ in
+                    if let anchor = autoScrollReturnID,
+                       visibleItems.contains(where: { $0.id == anchor }) {
+                        returnScroll.scrollTo(anchor, anchor: .bottom)
+                    }
+                    autoScrollReturnID = nil
                 }
-                .buttonStyle(.bordered)
-                Text("每批最多 48 张；按同一 GPS 网格重新读取 PhotoKit，不留存全部照片 ID。")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             .navigationTitle("此处照片")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button("重新核对当前位置照片") { loadInitial() }
+                            .disabled(busy || viewer != nil || phase != .active)
+                        Button("继续浏览下一批照片") { loadNext() }
+                            .disabled(busy || !hasNext || viewer != nil || phase != .active)
+                    } label: {
+                        Label("位置照片操作", systemImage: "ellipsis.circle")
+                    }
+                    .accessibilityIdentifier("native-ios-map-cluster-more")
+                }
+                ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
                 }
             }
@@ -636,11 +705,11 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 restoreViewerTile(using: returnScroll)
             }) { initial in
                 XDriveIOSNativeLocalPhotoDetail(
-                    candidate: initial, loadedItems: previewItems,
+                    candidate: initial, loadedItems: viewerItems,
                     onViewed: { next in
                         guard viewer?.id == initial.id,
                               XDriveIOSNativeMapViewerAdmission.allows(
-                                  next, in: previewItems, sceneActive: phase == .active
+                                  next, in: viewerItems, sceneActive: phase == .active
                               ) else { return }
                         viewerReturnID = next.id
                         focusedTileID = nil
@@ -649,13 +718,18 @@ private struct XDriveIOSMapSpatialAlbum: View {
             }
             .onAppear {
                 changes.start()
-                if !started { started = true; load(at: 0) }
+                if !started {
+                    started = true
+                    loadInitial()
+                }
             }
             .onChange(of: changes.revision) { _ in
                 retire()
                 viewerReturnID = nil
+                viewerItems = []
                 focusedTileID = nil
                 viewer = nil
+                priorWindow = []
                 items = []
                 dismiss()
             }
@@ -663,47 +737,98 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 if state != .active {
                     retire()
                     viewerReturnID = nil
+                    viewerItems = []
                     focusedTileID = nil
                     viewer = nil
+                    priorWindow = []
                     items = []
                     dismiss()
                 }
             }
             .onDisappear {
-                retire()
-                // The L3 original Viewer may cover this sheet; keep its
-                // PHChange observer live until the viewer is dismissed.
                 if viewer == nil {
+                    retire()
                     viewerReturnID = nil
+                    viewerItems = []
                     focusedTileID = nil
                     changes.stop()
                 }
+                // A full-screen Viewer covers, but does not end, this place
+                // wall. Keep its PhotoKit cursor and change observer alive so
+                // continuous scrolling can resume from the same snapshot.
             }
         }
         }
     }
 
-    private func retire() {
-        generation = UUID()
-        readTask?.cancel()
-        readTask = nil
-        if let worker { Task { await worker.reset() } }
-        worker = nil
-        busy = false
+    /// Read the next 48 matching photos from one unchanged PhotoKit snapshot.
+    /// Any unused GPS hits from the last 64-slot page stay in a bounded queue.
+    private func readWindow(
+        scanner: XDrivePhotoKitBoundedSnapshotScanner,
+        pending initialPending: [XDrivePhotoKitLocatedCandidate],
+        pendingIndex initialPendingIndex: Int,
+        nextOffset initialNextOffset: Int,
+        scannerFinished initialScannerFinished: Bool
+    ) async throws -> WindowRead {
+        guard let level = selection.cells.first?.key.level else {
+            throw XDrivePhotoKitScanFailure.snapshotChanged
+        }
+        let selectedKeys = Set(selection.cells.map(\.key))
+        var pending = initialPending
+        var cursor = initialPendingIndex
+        var offset = initialNextOffset
+        var finished = initialScannerFinished
+        var rows: [XDrivePhotoKitScanCandidate] = []
+        rows.reserveCapacity(48)
+
+        while rows.count < 48 {
+            try Task.checkCancellation()
+            if cursor < pending.count {
+                rows.append(pending[cursor].candidate)
+                cursor += 1
+                continue
+            }
+            guard !finished else { break }
+            let next = try await scanner.nextLocatedPage()
+            guard XDriveIOSNativePhotoMapPolicy.validPage(
+                total: next.page.totalAccessibleAssets,
+                start: next.page.startOffset,
+                next: next.page.nextOffset,
+                rows: next.page.items.count,
+                pins: next.items.count
+            ), next.page.startOffset == offset else {
+                throw XDrivePhotoKitScanFailure.snapshotChanged
+            }
+            pending = next.items.filter { asset in
+                guard Policy.includes(
+                    selection.viewport,
+                    latitude: asset.latitude, longitude: asset.longitude
+                ), let key = Policy.key(
+                    latitude: asset.latitude, longitude: asset.longitude,
+                    level: level
+                ), selectedKeys.contains(key) else { return false }
+                return true
+            }
+            cursor = 0
+            offset = next.page.nextOffset
+            finished = next.page.finished
+            await Task.yield()
+        }
+        return WindowRead(
+            items: rows, pending: pending, pendingIndex: cursor,
+            nextOffset: offset, scannerFinished: finished
+        )
     }
 
-    private func load(at requested: Int) {
+    private func loadInitial() {
         retire()
         guard phase == .active,
               [.authorized, .limited].contains(
                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
-              ), requested >= 0 else {
+              ) else {
             error = "照片库权限已变化，请返回地图重新扫描。"
             return
         }
-        // A selected MapKit cluster is a union of bounded, currently scanned
-        // cell keys. Re-scan PhotoKit only when the user opens its album; never
-        // trust annotation counts as a PhotoKit authorization credential.
         guard let level = selection.cells.first?.key.level,
               Policy.acceptsCellSelection(
                 selectedIDs: selection.cells.map(\.id),
@@ -713,65 +838,145 @@ private struct XDriveIOSMapSpatialAlbum: View {
             error = "位置聚合已失效，请返回地图重新扫描。"
             return
         }
-        let selectedKeys = Set(selection.cells.map(\.key))
         let scanner = XDrivePhotoKitBoundedSnapshotScanner()
         worker = scanner
         let ticket = generation
         busy = true
         error = nil
+        started = true
+        priorWindow = []
+        items = []
+        viewerItems = []
+        pendingLocated = []
+        pendingIndex = 0
+        nextOffset = 0
+        scannerFinished = false
+        scrollFootVisible = false
+        autoScrollReturnID = nil
+        windowNumber = 0
         readTask = Task { @MainActor in
             do {
-                let total = try await scanner.start(atOffset: requested)
-                var rows: [XDrivePhotoKitScanCandidate] = []
-                var cursor = min(requested, total)
-                while cursor < total && rows.count < 48 {
-                    try Task.checkCancellation()
-                    let next = try await scanner.nextLocatedPage()
-                    for asset in next.items {
-                        guard Policy.includes(
-                            selection.viewport,
-                            latitude: asset.latitude, longitude: asset.longitude
-                        ), let key = Policy.key(
-                            latitude: asset.latitude, longitude: asset.longitude,
-                            level: level
-                        ), selectedKeys.contains(key) else { continue }
-                        rows.append(asset.candidate)
-                        if rows.count == 48 {
-                            // The last member may be in the middle of a
-                            // 64-slot page: start next time at the NEXT slot.
-                            cursor = asset.slotOffset + 1
-                            break
-                        }
-                    }
-                    if rows.count < 48 { cursor = next.page.nextOffset }
-                    if rows.count < 48 && next.page.finished { break }
-                    await Task.yield()
-                }
+                let total = try await scanner.start(atOffset: 0)
+                let result = try await readWindow(
+                    scanner: scanner, pending: [], pendingIndex: 0,
+                    nextOffset: 0, scannerFinished: total == 0
+                )
                 try Task.checkCancellation()
                 guard generation == ticket, phase == .active,
                       [.authorized, .limited].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { return }
-                items = rows
-                nextOffset = cursor
-                hasNext = cursor < total
-                if rows.isEmpty && requested > 0 {
-                    error = "此范围已没有后续照片；可以返回上一批。"
+                pendingLocated = result.pending
+                pendingIndex = result.pendingIndex
+                nextOffset = result.nextOffset
+                scannerFinished = result.scannerFinished
+                items = result.items
+                visibleWindowRevision = UUID()
+                if result.items.isEmpty && result.scannerFinished &&
+                    result.pendingIndex >= result.pending.count {
+                    error = "此位置没有可访问的照片或视频。"
+                }
+                if result.scannerFinished &&
+                    result.pendingIndex >= result.pending.count {
+                    await scanner.reset()
+                    if generation == ticket { worker = nil }
                 }
             } catch is CancellationError {
             } catch {
                 if generation == ticket {
                     self.error = "照片权限、位置或图库版本已变化，请返回地图重新扫描。"
                     items = []
-                    hasNext = false
+                    pendingLocated = []
+                    pendingIndex = 0
+                    scannerFinished = true
+                    await scanner.reset()
+                    worker = nil
                 }
             }
             if generation == ticket {
                 busy = false
-                await scanner.reset()
-                worker = nil
+                readTask = nil
             }
         }
+    }
+
+    private func loadNext() {
+        guard phase == .active, !busy, viewer == nil, hasNext,
+              let scanner = worker, !items.isEmpty else { return }
+        let ticket = generation
+        let departingItems = items
+        busy = true
+        scrollFootVisible = false
+        error = nil
+        readTask = Task { @MainActor in
+            do {
+                let result = try await readWindow(
+                    scanner: scanner, pending: pendingLocated,
+                    pendingIndex: pendingIndex, nextOffset: nextOffset,
+                    scannerFinished: scannerFinished
+                )
+                try Task.checkCancellation()
+                guard generation == ticket, phase == .active,
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) else { return }
+                pendingLocated = result.pending
+                pendingIndex = result.pendingIndex
+                nextOffset = result.nextOffset
+                scannerFinished = result.scannerFinished
+                if !result.items.isEmpty {
+                    priorWindow = departingItems
+                    autoScrollReturnID = departingItems.last?.id
+                    items = result.items
+                    windowNumber += 1
+                    visibleWindowRevision = UUID()
+                }
+                if result.scannerFinished &&
+                    result.pendingIndex >= result.pending.count {
+                    await scanner.reset()
+                    if generation == ticket { worker = nil }
+                }
+            } catch is CancellationError {
+            } catch {
+                if generation == ticket {
+                    self.error = "照片权限、位置或图库版本已变化，请重新核对当前位置。"
+                    priorWindow = []
+                    items = []
+                    viewerItems = []
+                    viewerReturnID = nil
+                    pendingLocated = []
+                    pendingIndex = 0
+                    scannerFinished = true
+                    await scanner.reset()
+                    worker = nil
+                }
+            }
+            if generation == ticket {
+                busy = false
+                readTask = nil
+            }
+        }
+    }
+
+    private func retire() {
+        generation = UUID()
+        readTask?.cancel()
+        readTask = nil
+        if let worker { Task { await worker.reset() } }
+        worker = nil
+        priorWindow = []
+        items = []
+        viewerItems = []
+        viewerReturnID = nil
+        focusedTileID = nil
+        pendingLocated = []
+        pendingIndex = 0
+        nextOffset = 0
+        scannerFinished = true
+        scrollFootVisible = false
+        autoScrollReturnID = nil
+        error = nil
+        busy = false
     }
 }
 
@@ -815,7 +1020,6 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var globalViewport: XDriveIOSNativeLocalMapViewport?
     @State private var globalCameraMoving = false
     @State private var autoRefineTask: Task<Void, Never>?
-    @State private var showingMapHelp = false
     @State private var handledMapJumpID: UUID?
 
     private var refinedViewportIsCurrent: Bool {
@@ -843,17 +1047,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             accessibilityText: dynamicTypeSize.isAccessibilitySize
         )
         VStack(spacing: compactMap ? 4 : 8) {
-            Picker("本机地图扫描范围", selection: $mapScope) {
-                ForEach(XDriveIOSNativeLocalMapScope.allCases, id: \.self) { item in
-                    Text(item.label).tag(item)
-                }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("native-ios-map-library-scope")
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
-                Text(mapScope == .page ?
-                     "本机照片地图：仅当前64条范围，不是完整云端地图" :
-                     "本机完整已授权图库的只读 GPS 聚合；位置和照片 ID 不上传、不持久化。")
+                Text("显示已授权图库中具有位置数据的照片和视频。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if authorization == .notDetermined {
@@ -874,20 +1069,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 Text("相册权限不可用；请到 iOS 设置中授权。")
                     .foregroundStyle(.secondary)
             } else if mapScope == .library {
-                if globalComplete {
-                    Text(globalViewport == nil ?
-                         "已扫描 \(globalScanned) / \(globalTotal) 个授权照片槽位，找到 \(globalLocated) 张有效 GPS，合并为 \(globalCells.count) 个位置区域。" :
-                         (refinedViewportIsCurrent ?
-                          "已扫描 \(globalScanned) / \(globalTotal) 个授权照片槽位，当前视窗有 \(globalLocated) 张有效 GPS，合并为 \(globalCells.count) 个位置区域。" :
-                          "上次扫描视窗有 \(globalLocated) 张有效 GPS；地图已移动，请重新细化当前视窗。"))
-                        .font(.caption).monospacedDigit().lineLimit(1)
-                        .accessibilityIdentifier("native-ios-map-full-library-summary")
-                    if globalCells.isEmpty {
-                        Text(globalViewport == nil ?
-                             "此授权图库没有可显示的 GPS 照片。" :
-                             "上次细化的视窗没有可显示的 GPS 照片。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
+                if globalComplete && globalCells.isEmpty {
+                    Text("此授权图库没有可显示位置的照片或视频。")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 // Keep MapKit mounted from first authorized entry through the
                 // complete 64-cell bounded GPS scan. No provisional photo
@@ -954,21 +1138,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("native-ios-full-library-gps-map")
-                if globalComplete && globalViewport != nil && !refinedViewportIsCurrent {
-                    Text("地图已移动：旧聚合仅作视觉参照，重新细化当前视窗后才能打开照片。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("native-ios-map-stale-viewport")
-                }
                 if busy {
-                    // PhotoKit progress is separate from the visible native
-                    // map; do not claim a complete cluster count until done.
-                    ProgressView("逐页扫描已授权图库的 GPS 元数据…")
+                    ProgressView("正在读取照片位置…")
                         .accessibilityIdentifier("native-ios-map-full-library-scan-progress")
-                    Text("已检查 \(globalScanned) / \(globalTotal) 个槽位；当前找到 \(globalLocated) 张带定位照片。")
-                        .font(.caption).monospacedDigit().lineLimit(1)
-                } else if !globalComplete {
-                    Text("扫描完整授权范围中的位置元数据，每次最多保留 64 个地图区域和代表封面。")
-                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 // The authorized full-library scan starts on entry. Retain
                 // an explicit retry before any map exists, then give its
@@ -978,12 +1150,6 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         .frame(minHeight: 44)
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("native-ios-map-scan-full-library")
-                }
-                if !compactMap && dynamicTypeSize.isAccessibilitySize {
-                    Text("地图稳定后按需细化：在已扫描范围内平移无需重复读取，超出范围或明显放大时才重新扫描；最多保留64个区域。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    Text("扫描过程中可离开页面取消；100k 张照片只生成有界聚合，不缓存全部照片 ID。点击位置后按 48 张逐批查找。")
-                        .font(.footnote).foregroundStyle(.secondary)
                 }
             } else if let page {
                 Text("已检查 \(page.page.startOffset)–\(page.page.nextOffset) / \(page.page.totalAccessibleAssets)，当前页有 \(page.items.count) 张带位置照片")
@@ -1061,11 +1227,6 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         }
         .padding(.horizontal, 8)
         .navigationTitle("地图")
-        .alert("本机照片地图说明", isPresented: $showingMapHelp) {
-            Button("完成", role: .cancel) {}
-        } message: {
-            Text("当前页最多展示 64 条授权照片。全库地图只保留最多 64 个位置区域；缩放到较小区域后可自动按需细化，也可手动扫描重试；不会在每次拖动时重新扫描整个图库。区域照片按 48 张分页重新验证。查找下一批 GPS 最多 16 页。照片 ID 与位置不上传服务器，缩略图不下载 iCloud 原件。")
-        }
         .toolbar {
             if mapScope == .library && globalComplete {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -1105,14 +1266,6 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     onFocusChange?(focused)
                 }
                 .accessibilityIdentifier("native-ios-map-focus-toggle")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingMapHelp = true
-                } label: {
-                    Label("地图说明", systemImage: "info.circle")
-                }
-                .accessibilityIdentifier("native-ios-map-layout-help")
             }
         }
         .sheet(item: $selection, onDismiss: {
