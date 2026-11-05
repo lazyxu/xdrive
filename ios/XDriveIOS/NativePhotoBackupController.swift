@@ -512,7 +512,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, managedForeground: managed,
                         onSourceProgress: { value in
-                            await reporter.update(value)
+                            reporter.enqueueUpdate(value)
                         }
                     ).run(allowICloudOriginals: cloud, startOffset: offset,
                           newOnlySince: newOnlySince,
@@ -741,7 +741,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             let result = try await XDriveIOSForegroundPhotoBackupMVP(
                 owner: owner, managedForeground: managed,
                 onSourceProgress: { value in
-                    await sourceRunReporter.update(value, base: sourceRunBase)
+                    sourceRunReporter.enqueueUpdate(value, base: sourceRunBase)
                 }
             ).run(allowICloudOriginals: allowICloud, startOffset: offset) { [weak self] value in
                 guard let self,
