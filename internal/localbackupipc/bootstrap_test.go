@@ -56,7 +56,7 @@ func TestHeadlessBootstrapUsesOriginalOwningAgentEndpoints(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(LocalBackupSource{
 				ID: 42, Name: "Photos", Revision: 1, Status: "paused",
 				Kind: "local_folder", Direction: "push", SyncMode: "backup",
-				TargetNodeID: func() *uint64 { v := uint64(77); return &v }(),
+				TargetNodeID:  func() *uint64 { v := uint64(77); return &v }(),
 				TargetManaged: true, TargetPath: "同步文件夹/Push/device_123456789abc/Photos",
 			})
 		case "/v1/local-folder/authorize":
