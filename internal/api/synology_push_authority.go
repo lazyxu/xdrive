@@ -245,11 +245,20 @@ func requireSynologyPushUploadSessionTx(
 	return nil
 }
 
-func (s *Server) verifySynologyUploadSession(c *gin.Context, session meta.UploadSession) error {
+// verifyPushUploadSession rechecks the platform-specific owning Device and
+// Source/Target binding before readback, chunk staging and Finalize. Durable
+// mutations additionally repeat these checks in their actual SQL transaction.
+func (s *Server) verifyPushUploadSession(c *gin.Context, session meta.UploadSession) error {
 	if session.SourceID == 0 {
+		if _, native := currentIOSPhotoManagedUploadScope(c); native {
+			return errManagedSourceWriteDenied
+		}
 		return nil
 	}
 	return s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if _, native := currentIOSPhotoManagedUploadScope(c); native {
+			return requireIOSPhotoManagedSessionTx(c.Request.Context(), tx, c, session)
+		}
 		return requireSynologyPushUploadSessionTx(c.Request.Context(), tx, c, session)
 	})
 }
