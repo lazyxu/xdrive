@@ -57,7 +57,15 @@ test('native viewer pages PhotoKit without exporting data, provides still video 
   assert.match(local, /requestAVAsset/)
   assert.match(local, /requestLivePhoto/)
   assert.match(local, /PHLivePhotoView/)
-  const thumbnailLoader = local.slice(local.indexOf('final class XDriveIOSPhotoImageLoader'),\n    local.indexOf('struct XDriveIOSLocalPhotoTile'))\n  const detailModel = local.slice(local.indexOf('final class XDriveIOSLocalPhotoDetailModel'),\n    local.indexOf('private struct XDriveIOSNativeLivePhotoView'))\n  assert.match(thumbnailLoader, /settings\\.isNetworkAccessAllowed = true/)\n  assert.match(thumbnailLoader, /PHImageManager\\.default\\(\\)\\.requestImage/)\n  assert.match(detailModel, /func load\\(_ candidate: XDrivePhotoKitScanCandidate, allowICloud: Bool = false\\)/)\n  assert.match(detailModel, /options\\.isNetworkAccessAllowed = allowICloud/)\n  assert.match(detailModel, /liveOptions\\.isNetworkAccessAllowed = allowICloud/)
+  const thumbnailLoader = local.slice(local.indexOf('final class XDriveIOSPhotoImageLoader'),
+    local.indexOf('struct XDriveIOSLocalPhotoTile'))
+  const detailModel = local.slice(local.indexOf('final class XDriveIOSLocalPhotoDetailModel'),
+    local.indexOf('private struct XDriveIOSNativeLivePhotoView'))
+  assert.match(thumbnailLoader, /settings\.isNetworkAccessAllowed = true/)
+  assert.match(thumbnailLoader, /PHImageManager\.default\(\)\.requestImage/)
+  assert.match(detailModel, /func load\(_ candidate: XDrivePhotoKitScanCandidate, allowICloud: Bool = false\)/)
+  assert.match(detailModel, /options\.isNetworkAccessAllowed = allowICloud/)
+  assert.match(detailModel, /liveOptions\.isNetworkAccessAllowed = allowICloud/)
   assert.ok(local.includes('if selected != nil { suspendForViewer() }'))
   assert.ok(local.includes('else { invalidate() }'))
   assert.doesNotMatch(local, /URLSession|UploadSession|document\.cookie|window\.webkit/)
