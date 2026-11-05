@@ -100,3 +100,19 @@ test('only-new automatic backup consumes bounded queue candidates through the sh
   assert.match(reporter, /scanned \+= progress\.scanned \+ progress\.changeQueueProcessed/)
   assert.doesNotMatch(runner, /XDriveNativeUploadSessionTransport|URLSession\(/)
 });
+
+test('explicit retry only requeues item-local failures under the current PhotoKit baseline', () => {
+  const model = read('ios/XDriveIOS/NativePhotoQueueSummaryModel.swift')
+  const section = read('ios/XDriveIOS/PhotoQueueSummarySection.swift')
+  assert.match(store, /func failed\(limit: Int = 64\)/)
+  assert.match(store, /WHERE state='failed' ORDER BY priority DESC,queue_order DESC LIMIT \?/)
+  assert.match(store, /func retryFailed\(_ candidate: Pending,\s*expectedBaselineToken: Data,\s*authorization: Int\)/)
+  assert.match(store, /current\.token == expectedBaselineToken/)
+  assert.match(source, /func retryFailedCandidates\(owner: XDriveNativeOwnerRoot,\s*limit: Int = 64\)/)
+  assert.match(source, /store\.retryFailed\(\s*candidate, expectedBaselineToken: baseline\.token/)
+  assert.match(model, /queue\.retryFailedCandidates\(\s*owner: selected, limit: 64/)
+  assert.match(model, /expediteForLibraryChange\(owner: selected\)/)
+  assert.match(section, /queueSummary\.retryFailed\(login: login\)/)
+  assert.match(section, /controller\.schedule\?\.pausedForReview == true/)
+  assert.doesNotMatch(model, /uploadPrepared|UploadSession|finalize\(/)
+});
