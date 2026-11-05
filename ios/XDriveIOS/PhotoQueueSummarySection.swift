@@ -1,11 +1,23 @@
 import SwiftUI
 
-/// Extracted from the already large native backup form so SwiftUI can
-/// type-check the queue-status body independently on the iOS release build.
+/// Owner-scoped local PhotoKit queue status. Lifecycle and refresh ownership
+/// live here so the large backup settings form does not inherit extra state
+/// and modifiers. Counts are discovery telemetry, never cloud coverage.
 struct XDriveIOSPhotoQueueSummarySection: View {
-    let login: XDriveIOSNativeOwnerLoginModel
-    @ObservedObject var queueSummary: XDriveIOSNativePhotoQueueSummaryModel
-    let enabled: Bool
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    @ObservedObject var controller: XDriveIOSNativePhotoBackupController
+    @StateObject private var queueSummary = XDriveIOSNativePhotoQueueSummaryModel()
+    @Environment(\.scenePhase) private var phase
+
+    private var enabled: Bool {
+        controller.schedule?.enabled == true &&
+            controller.schedule?.backupStartRule == .onlyNew
+    }
+
+    private func refreshIfEnabled() {
+        guard enabled, phase == .active else { return }
+        queueSummary.refresh(login: login)
+    }
 
     @ViewBuilder
     var body: some View {
@@ -37,6 +49,23 @@ struct XDriveIOSPhotoQueueSummarySection: View {
                 }
                 Text("这些只是启用“仅备份新照片”后本机已捕获的 PhotoKit 变更状态，不包含此前的全部库存，也不能当作服务器备份覆盖率。实际上传成功必须核验当前受管目录的原件收据。")
                     .font(.footnote).foregroundStyle(.secondary)
+            }
+            .onAppear { refreshIfEnabled() }
+            .onDisappear { queueSummary.cancel() }
+            .onChange(of: login.owner) { _ in
+                queueSummary.cancel()
+                refreshIfEnabled()
+            }
+            .onChange(of: phase) { state in
+                if state == .active { refreshIfEnabled() }
+                else { queueSummary.cancel() }
+            }
+            .onChange(of: controller.busy) { busy in
+                if !busy { refreshIfEnabled() }
+            }
+            .onChange(of: enabled) { active in
+                if active { refreshIfEnabled() }
+                else { queueSummary.cancel() }
             }
         }
     }
