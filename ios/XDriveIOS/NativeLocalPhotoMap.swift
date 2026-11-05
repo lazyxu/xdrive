@@ -1291,15 +1291,15 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         .padding(.horizontal, 8)
         .navigationTitle(album.map { "\($0.name) · 地图" } ?? "地图")
         .toolbar {
-            if album != nil {
+            if album != nil || onClose != nil {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("完成") { dismiss() }
-                        .accessibilityIdentifier("native-ios-album-map-dismiss")
-                }
-            } else if onClose != nil {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("完成") { onClose?() }
-                        .accessibilityIdentifier("native-ios-map-dismiss")
+                    Button("完成") {
+                        if onClose != nil { onClose?() }
+                        else { dismiss() }
+                    }
+                    .accessibilityIdentifier(
+                        album != nil ? "native-ios-album-map-dismiss" : "native-ios-map-dismiss"
+                    )
                 }
             }
             if mapScope == .library && globalComplete {
