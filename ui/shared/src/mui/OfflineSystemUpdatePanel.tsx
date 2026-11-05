@@ -84,6 +84,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const abortRef = useRef<AbortController | null>(null)
+  const planInFlight = planState?.state === 'queued' || planState?.state === 'running'
 
   useEffect(() => {
     let mounted = true
@@ -114,7 +115,6 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
     return () => { mounted = false }
   }, [id, port])
 
-  const planInFlight = planState?.state === 'queued' || planState?.state === 'running'
   useEffect(() => {
     if (!id || !planInFlight) return
     let active = true
@@ -130,16 +130,26 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
     return () => { active = false; globalThis.clearInterval(timer) }
   }, [id, planInFlight, port])
 
-  const refresh = async () => {
+  const refreshImport = async () => {
     if (!id) return
     try {
       setStatus(await port.get(id))
+      // Any import inventory change invalidates the previous plan.
       setPlanState(null)
       setError('')
     } catch (e) { setError(e instanceof Error ? e.message : '导入状态获取失败。') }
   }
+  const refresh = async () => {
+    if (!id) return
+    try {
+      const [nextStatus, nextPlan] = await Promise.all([port.get(id), port.getPlan(id)])
+      setStatus(nextStatus)
+      setPlanState(nextPlan)
+      setError('')
+    } catch (e) { setError(e instanceof Error ? e.message : '导入及预检状态获取失败。') }
+  }
   const create = async () => {
-    if (disabled || busy) return
+    if (disabled || busy || planning || planInFlight) return
     setBusy(true); setError('')
     try {
       const result = await port.create()
@@ -155,7 +165,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
     finally { setBusy(false) }
   }
   const upload = async () => {
-    if (disabled || busy || !xDriveValidOfflineImportID(id) || files.length === 0) return
+    if (disabled || busy || planning || planInFlight || !xDriveValidOfflineImportID(id) || files.length === 0) return
     if (files.some((file) => !xDriveValidOfflineFilename(file.name) || file.size === 0)) {
       setError('仅允许 Manifest、Go 安装器和五组件内容寻址包，且文件不得为空。')
       return
@@ -186,7 +196,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
         const receipt = await port.finalize(id, file.name)
         if (receipt.state !== 'ready') throw new Error('暂存文件未完成。')
         done += file.size
-        await refresh()
+        await refreshImport()
       }
       setFiles([])
       setPlanState(null)
@@ -195,7 +205,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
     finally { abortRef.current = null; setBusy(false); setUploading(false); setFileName('') }
   }
   const remove = async () => {
-    if (disabled || busy || !id) return
+    if (disabled || busy || planning || planInFlight || !id) return
     setBusy(true); setError('')
     try {
       await port.remove(id)
@@ -260,13 +270,13 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
         <Alert severity="warning">上传完成仅表示传输完整，不等于签名受信。默认由宿主机验证独立配置的可信根和 GitHub Sigstore 证明；失败时绝不自动退回未签名安装。</Alert>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
           <Button variant="outlined" disabled={disabled || busy} onClick={() => { void create() }}>创建导入</Button>
-          <Select size="small" displayEmpty value={id} disabled={disabled || busy || items.length === 0}
+          <Select size="small" displayEmpty value={id} disabled={disabled || busy || planning || planInFlight || items.length === 0}
             onChange={(event) => { setID(event.target.value); setError('') }} sx={{ flex: 1 }}>
             {items.length === 0 ? <MenuItem value="">暂无导入</MenuItem> : null}
             {items.map((item) => <MenuItem value={item.id} key={item.id}>{item.id}</MenuItem>)}
           </Select>
-          <Button disabled={disabled || busy || !id} onClick={() => { void refresh() }}>刷新</Button>
-          <Button color="error" disabled={disabled || busy || !id} onClick={() => { void remove() }}>清理</Button>
+          <Button disabled={disabled || busy || planning || planInFlight || !id} onClick={() => { void refresh() }}>刷新</Button>
+          <Button color="error" disabled={disabled || busy || planning || planInFlight || !id} onClick={() => { void remove() }}>清理</Button>
         </Stack>
         {id ? (
           <Typography variant="body2" color="text.secondary">
@@ -276,11 +286,11 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
         ) : null}
         <Stack spacing={1}>
           <Typography variant="body2" fontWeight={600}>浏览器分块上传 / 续传</Typography>
-          <input type="file" multiple aria-label="选择离线发布文件" disabled={disabled || busy || !id}
+          <input type="file" multiple aria-label="选择离线发布文件" disabled={disabled || busy || planning || planInFlight || !id}
             onChange={(event) => setFiles(Array.from(event.target.files || []))} />
           {files.length > 0 ? <Typography variant="caption">待传输：{files.length} 个文件，{formatBytes(files.reduce((sum, f) => sum + f.size, 0))}</Typography> : null}
           <Stack direction="row" spacing={1}>
-            <Button variant="outlined" disabled={disabled || busy || !id || files.length === 0} onClick={() => { void upload() }}>上传所选文件</Button>
+            <Button variant="outlined" disabled={disabled || busy || planning || planInFlight || !id || files.length === 0} onClick={() => { void upload() }}>上传所选文件</Button>
             {uploading ? <Button color="warning" onClick={() => abortRef.current?.abort()}>暂停</Button> : null}
           </Stack>
           {uploading ? <>
