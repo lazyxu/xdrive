@@ -1182,10 +1182,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         onOpen: { _, _ in }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityIdentifier("native-ios-full-library-gps-map")
+                    .accessibilityIdentifier(album == nil ? "native-ios-full-library-gps-map" : "native-ios-album-gps-map")
                 if busy {
                     ProgressView(album == nil ? "正在读取照片位置…" : "正在读取相册位置…")
-                        .accessibilityIdentifier("native-ios-map-full-library-scan-progress")
+                        .accessibilityIdentifier(album == nil ? "native-ios-map-full-library-scan-progress" : "native-ios-map-album-scan-progress")
                 }
                 // The authorized full-library scan starts on entry. Retain
                 // an explicit retry before any map exists, then give its
@@ -1196,7 +1196,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     }
                         .frame(minHeight: 44)
                         .buttonStyle(.bordered)
-                        .accessibilityIdentifier("native-ios-map-scan-full-library")
+                        .accessibilityIdentifier(album == nil ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
                 }
             } else if let page {
                 Text("已检查 \(page.page.startOffset)–\(page.page.nextOffset) / \(page.page.totalAccessibleAssets)，当前页有 \(page.items.count) 张带位置照片")
@@ -1288,7 +1288,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                             scanFullLibrary()
                         }
                             .disabled(busy)
-                            .accessibilityIdentifier("native-ios-map-scan-full-library")
+                            .accessibilityIdentifier(album == nil ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
                     } label: {
                         Label("地图操作", systemImage: "ellipsis.circle")
                     }
