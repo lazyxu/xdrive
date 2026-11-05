@@ -305,23 +305,12 @@ func TestResolveSetupSourceConfiguredMissingIDFallsBackByName(t *testing.T) {
 	}
 }
 
-func TestSetupTargetPreservesExistingTargetUnlessOverridden(t *testing.T) {
-	target := uint64(42)
-	remote := client.Source{ID: 7, TargetNodeID: &target}
-
-	id, path := setupTarget(remote, "")
-	if id != 42 || path != "" {
-		t.Fatalf("preserved target id=%d path=%q want=42/empty", id, path)
+func TestSetupRejectsUserSelectedCloudTarget(t *testing.T) {
+	if err := validateManagedTargetFlag("Photos/Manual"); err == nil {
+		t.Fatal("user-selected cloud target was accepted")
 	}
-
-	id, path = setupTarget(remote, "Photos/Manual")
-	if id != 0 || path != "Photos/Manual" {
-		t.Fatalf("explicit target id=%d path=%q want=0/Photos/Manual", id, path)
-	}
-
-	id, path = setupTarget(client.Source{}, "")
-	if id != 0 || path != "Photos/Synology" {
-		t.Fatalf("new-source default id=%d path=%q want=0/Photos/Synology", id, path)
+	if err := validateManagedTargetFlag(""); err != nil {
+		t.Fatalf("empty target should use Server-managed provisioning: %v", err)
 	}
 }
 
