@@ -223,6 +223,7 @@ export function XDriveOfflineSystemUpdatePanel({ port, disabled = false, onSubmi
   const hostProbe = visiblePlanState?.plan?.host_probe
   const hostBlockers = hostProbe?.blockers || []
   const canPlan = !disabled && !busy && !planning && !planInFlight &&
+    planState !== null && visiblePlanState?.supported !== false &&
     status?.id === id && status?.ready_to_verify && trustInputsReady
   const canStart = !disabled && !busy && !planning && !planInFlight &&
     status?.id === id && status?.ready_to_verify && trustInputsReady &&
