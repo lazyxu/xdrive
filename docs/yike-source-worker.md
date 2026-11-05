@@ -291,3 +291,7 @@ Pure `move` plans rename/move the existing xDrive Node without downloading conte
 Shared media uses the read-only direct album download endpoint. If that direct link is unavailable, only that item remains pending and the run becomes `partial`; other media continue. xDrive never calls Yike `copyfile`, `addfile`, delete, or other mutation endpoints to make a shared item downloadable.
 
 Actual `TransferredBytes` counts only chunks newly accepted by xDrive. A verified-MD5 CAS instant attach reports zero transferred bytes. Scan mode reports planned transfer bytes only.
+
+## Unified Pull target contract (2026-11-05)
+
+Yike remains a connector adapter in the shared Server Pull Worker; it must not gain a separate scheduler or upload pipeline. For **new** Yike Sources, the destination must be provisioned under `同步文件夹/Pull/Yike Photos/<SourceName>` and managed by the Source's exact TargetNodeID. The current Yike-specific target path documented above is an as-built gap; no existing target or Source migration is requested. See [the canonical architecture](./architecture/push-pull-source-management.md) and [platform audit](./architecture/push-pull-platform-audit.md).

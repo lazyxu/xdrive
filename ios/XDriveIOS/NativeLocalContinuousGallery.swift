@@ -55,7 +55,11 @@ struct XDriveIOSNativeSquarePhotoTile: View {
                         Rectangle()
                             .fill(Color(uiColor: .secondarySystemGroupedBackground))
                             .overlay {
-                                Image(systemName: "photo").foregroundStyle(.secondary)
+                                if loader.isLoading {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "photo").foregroundStyle(.secondary)
+                                }
                             }
                     }
                 }

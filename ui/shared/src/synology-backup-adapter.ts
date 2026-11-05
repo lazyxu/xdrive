@@ -7,12 +7,18 @@ import type { XDriveCloudStorageDataSource } from './mui/CloudStoragePage'
 import type {
   XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage,
   XDriveDeviceBackupFolderPage, XDriveDeviceBackupDataSource,
+  XDriveLocalBoundBackupSettings, XDriveLocalBoundBackupRules,
+  XDriveLocalBoundBackupRemoval,
 } from './device-backups'
 import type { XDriveLocalBackupCommonBatchActions } from './mui/DeviceBackupLocalCommonBatchDialog'
 import type { XDriveLocalBackupScheduleActions } from './mui/DeviceBackupLocalScheduleDialog'
 import type { XDriveLocalBackupCommonBatch, XDriveLocalBackupCommonBatchHistoryPage, XDriveLocalBoundBackupSchedule } from './device-backups'
 
-export type XDriveSynologyLocalSource = { source_id: number; name: string }
+export type XDriveSynologyLocalSource = {
+  source_id: number
+  name: string
+  sync_mode: 'backup' | 'mirror'
+}
 export type XDriveSynologyNASVolumeSpace = {
   capacity_bytes: number
   available_bytes: number
@@ -556,7 +562,9 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   notesAvailable(signal?: AbortSignal): Promise<boolean>
   notesImagesAvailable(signal?: AbortSignal): Promise<boolean>
   notesUploadImage(ownerScope: string, id: string, image: File): Promise<XDriveSynologyNotesImageReceipt>
+  notesImportIOSImage(ownerScope: string, id: string, image: File, signal?: AbortSignal): Promise<XDriveSynologyNotesImageReceipt>
   notesReadImage(id: string, relativePath: string, signal?: AbortSignal): Promise<Blob>
+  notesImportIOS(ownerScope: string, title: string, markdown: string, externalID: string, signal?: AbortSignal): Promise<XDriveNoteSummary>
   notesNamespace(ownerScope: string): Promise<void>
   notesList(source: XDriveNoteSource, query: string, offset: number, signal?: AbortSignal):
     Promise<{ items: XDriveNoteSummary[]; next_offset: number }>
@@ -591,6 +599,14 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   nasVolumeSpace(signal?: AbortSignal): Promise<XDriveSynologyNASVolumeSpace>
   inspect(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBackupCommonBatch>
   history(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBackupCommonBatchHistoryPage>
+  /** Owning-Agent-only settings and policy mutations; never generic Source CRUD. */
+  localBackupSettings(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBoundBackupSettings>
+  renameLocalBackupSource(sourceID: number, revision: number, name: string): Promise<XDriveLocalBoundBackupSettings>
+  retargetLocalBackupSource(sourceID: number, revision: number, targetNodeID: number): Promise<XDriveLocalBoundBackupSettings>
+  setLocalBackupMode(sourceID: number, revision: number, mode: 'backup' | 'mirror'): Promise<XDriveLocalBoundBackupSettings>
+  localBackupRules(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBoundBackupRules>
+  saveLocalBackupRules(sourceID: number, revision: number, rules: string): Promise<XDriveLocalBoundBackupRules>
+  removeLocalBackupSource(sourceID: number, revision: number): Promise<XDriveLocalBoundBackupRemoval>
   /** Other devices: Server-authenticated Owner B-scope, strictly read-only. */
   ownerDevices(): Promise<XDriveDeviceBackupOverview>
   ownerDevicesPage(limit: number, afterDeviceID: string): Promise<XDriveDeviceBackupOverview>
@@ -668,6 +684,64 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   ): Promise<XDriveSynologyOwnerFilePageResponse>
 }
 
+
+function validateLocalBackupSettings(raw: unknown, sourceID: number): XDriveLocalBoundBackupSettings {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Invalid DSM local backup settings')
+  }
+  const value = raw as XDriveLocalBoundBackupSettings
+  const allowed = new Set([
+    'source_id', 'name', 'revision', 'sync_mode',
+    'target_node_id', 'target_managed', 'target_path',
+  ])
+  if (Object.keys(raw).some(key => !allowed.has(key)) ||
+    value.source_id !== sourceID ||
+    !Number.isSafeInteger(value.revision) || value.revision < 1 ||
+    typeof value.name !== 'string' || !value.name || value.name.trim() !== value.name ||
+    new TextEncoder().encode(value.name).length > 128 ||
+    value.name.includes('\0') || value.name.includes('\r') || value.name.includes('\n') ||
+    (value.sync_mode !== 'backup' && value.sync_mode !== 'mirror') ||
+    (value.target_node_id !== undefined &&
+      (!Number.isSafeInteger(value.target_node_id) || value.target_node_id < 1)) ||
+    (value.target_managed !== undefined && typeof value.target_managed !== 'boolean') ||
+    (value.target_path !== undefined &&
+      (typeof value.target_path !== 'string' || value.target_path.length > 2048 ||
+        value.target_path.includes('\0') || value.target_path.includes('\r') ||
+        value.target_path.includes('\n')))) {
+    throw new Error('Untrusted DSM local backup settings identity or fields')
+  }
+  return value
+}
+
+function validateLocalBackupRules(raw: unknown, sourceID: number): XDriveLocalBoundBackupRules {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Invalid DSM local backup rules')
+  }
+  const value = raw as XDriveLocalBoundBackupRules
+  if (Object.keys(raw).some(key => !['source_id', 'revision', 'ignore_rules'].includes(key)) ||
+    value.source_id !== sourceID ||
+    !Number.isSafeInteger(value.revision) || value.revision < 1 ||
+    typeof value.ignore_rules !== 'string' ||
+    new TextEncoder().encode(value.ignore_rules).length > 64 * 1024 ||
+    value.ignore_rules.split(/\r\n|\r|\n/).length > 4096) {
+    throw new Error('Untrusted DSM local backup rules identity or fields')
+  }
+  return value
+}
+
+function validateLocalBackupRemoval(raw: unknown, sourceID: number): XDriveLocalBoundBackupRemoval {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Invalid DSM local backup removal acknowledgement')
+  }
+  const value = raw as XDriveLocalBoundBackupRemoval
+  if (Object.keys(raw).length !== 2 ||
+    Object.keys(raw).some(key => !['source_id', 'local_grant_removed'].includes(key)) ||
+    value.source_id !== sourceID || typeof value.local_grant_removed !== 'boolean') {
+    throw new Error('Untrusted DSM local backup removal acknowledgement')
+  }
+  return value
+}
+
 /** Only an authenticated CGI rejection with explicit pre-commit proof. */
 export class XDriveDSMLoginNoCommitError extends Error {
   constructor() { super('DSM Server credentials rejected without Owner commit') }
@@ -700,9 +774,10 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-places',
        'cloud-gallery-place-items', 'cloud-gallery-map-overview',
        'cloud-live-motion', 'nas-shares',
+       'local-source', 'local-source-rename', 'local-target', 'local-mode', 'local-rules', 'local-bound-remove',
        'cloud-notes-capability', 'cloud-notes-namespace', 'cloud-notes-list', 'cloud-notes-read', 'cloud-notes-create',
-       'cloud-notes-save', 'cloud-notes-delete', 'cloud-notes-versions', 'cloud-notes-history',
-       'cloud-notes-image-capability', 'cloud-notes-image-upload', 'cloud-notes-image-read',
+       'cloud-notes-import-ios', 'cloud-notes-save', 'cloud-notes-delete', 'cloud-notes-versions', 'cloud-notes-history',
+       'cloud-notes-image-capability', 'cloud-notes-image-upload', 'cloud-notes-image-import', 'cloud-notes-image-read',
       'nas-share-preflight', 'nas-share-create', 'nas-draft-bind', 'nas-drafts', 'server-connection', 'server-login',
       'recovery-review'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
@@ -831,6 +906,30 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       }
       return result
     },
+    async notesImportIOSImage(ownerScope, id, file, signal) {
+      const noteID = notesValidID(id)
+      if (!file || file.size < 1 || file.size > notesImageMaxBytes ||
+          !/\.(png|jpe?g|gif|webp|heic)$/i.test(file.name)) {
+        throw new Error('无效或超过 20 MiB 的 iOS 备份图片')
+      }
+      const original = await file.arrayBuffer()
+      if (original.byteLength !== file.size) throw new Error('图片读取期间发生变化')
+      signal?.throwIfAborted()
+      const result = await request<XDriveSynologyNotesImageReceipt>('/v1/cloud-notes-image-import',
+        'POST', { owner_scope: notesOwnerScope(ownerScope), id: noteID,
+          image: notesBase64(new Uint8Array(original)) }, signal)
+      const relative = notesAssetPath(noteID, result.relative_path)
+      const filename = relative.slice(relative.lastIndexOf('/') + 1)
+      const extension = filename.slice(filename.lastIndexOf('.') + 1)
+      const checksum = await notesDigest(original)
+      if (result.node_id <= 0 || !Number.isSafeInteger(result.node_id) ||
+          result.filename !== filename || result.content_type !== notesMime[extension] ||
+          result.bytes !== original.byteLength || result.sha256?.toLowerCase() !== checksum) {
+        throw new Error('iOS 备份图片回执与当前 Owner 内容不一致；请核对后再重试')
+      }
+      signal?.throwIfAborted()
+      return result
+    },
     async notesReadImage(id, relativePath, signal) {
       const path = notesAssetPath(id, relativePath)
       const extension = path.slice(path.lastIndexOf('.') + 1)
@@ -886,6 +985,27 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       notesWrite(title, markdown)
       return request<XDriveNoteSummary>('/v1/cloud-notes-create', 'POST',
         { owner_scope: notesOwnerScope(ownerScope), title, markdown })
+    },
+    async notesImportIOS(ownerScope, title, markdown, externalID, signal) {
+      notesWrite(title, markdown)
+      if (typeof externalID !== 'string' ||
+          (externalID !== '' && !/^manual:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(externalID))) {
+        throw new Error('手动 iOS 备份导入标识无效')
+      }
+      const result = await request<XDriveNoteSummary>('/v1/cloud-notes-import-ios', 'POST',
+        { owner_scope: notesOwnerScope(ownerScope), title, markdown, external_id: externalID }, signal)
+      const bytes = new TextEncoder().encode(markdown)
+      const owned = new ArrayBuffer(bytes.byteLength)
+      new Uint8Array(owned).set(bytes)
+      const checksum = await notesDigest(owned)
+      if (!result || !notesValidID(result.id) || result.source !== 'ios_notes' ||
+          result.title !== title || result.node_id <= 0 || !Number.isSafeInteger(result.node_id) ||
+          result.revision < 1 || (externalID === '' && result.revision !== 1) ||
+          result.bytes !== bytes.byteLength || result.sha256?.toLowerCase() !== checksum) {
+        throw new Error('iOS 备份导入收据与当前 Owner 内容不一致')
+      }
+      signal?.throwIfAborted()
+      return result
     },
     notesSave(ownerScope, id, title, markdown, expectedRevision) {
       notesWrite(title, markdown)
@@ -1087,7 +1207,9 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       const unique = new Set<number>()
       for (const item of page.items) {
         if (!item || !Number.isSafeInteger(item.source_id) || item.source_id < 1 ||
-          typeof item.name !== 'string' || item.name.length > 512 || unique.has(item.source_id)) {
+          typeof item.name !== 'string' || item.name.length > 512 ||
+          (item.sync_mode !== 'backup' && item.sync_mode !== 'mirror') ||
+          unique.has(item.source_id)) {
           throw new Error('Invalid or duplicate DSM Source')
         }
         unique.add(item.source_id)
@@ -1612,6 +1734,72 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       '/v1/status' + sourceQuery(sourceID), 'GET', undefined, signal),
     history: (sourceID, signal) => request<XDriveLocalBackupCommonBatchHistoryPage>(
       '/v1/history' + sourceQuery(sourceID), 'GET', undefined, signal),
+    localBackupSettings: async (sourceID, signal) =>
+      validateLocalBackupSettings(
+        await request<unknown>('/v1/local-source' + sourceQuery(sourceID), 'GET', undefined, signal),
+        sourceID),
+    renameLocalBackupSource: async (sourceID, revision, name) => {
+      if (!Number.isSafeInteger(revision) || revision < 1 ||
+        typeof name !== 'string' || !name || name.trim() !== name ||
+        new TextEncoder().encode(name).length > 128 ||
+        name.includes(String.fromCharCode(0)) ||
+        name.includes(String.fromCharCode(13)) ||
+        name.includes(String.fromCharCode(10))) {
+        throw new Error('Invalid DSM local backup rename')
+      }
+      return validateLocalBackupSettings(
+        await request<unknown>('/v1/local-source-rename', 'POST',
+          { source_id: sourceID, revision, name }),
+        sourceID)
+    },
+    retargetLocalBackupSource: async (sourceID, revision, targetNodeID) => {
+      if (!Number.isSafeInteger(revision) || revision < 1 ||
+        !Number.isSafeInteger(targetNodeID) || targetNodeID < 1) {
+        throw new Error('Invalid DSM local backup target')
+      }
+      return validateLocalBackupSettings(
+        await request<unknown>('/v1/local-target', 'POST',
+          { source_id: sourceID, revision, target_node_id: targetNodeID }),
+        sourceID)
+    },
+    setLocalBackupMode: async (sourceID, revision, mode) => {
+      if (!Number.isSafeInteger(revision) || revision < 1 ||
+        (mode !== 'backup' && mode !== 'mirror')) {
+        throw new Error('Invalid DSM local backup mode')
+      }
+      return validateLocalBackupSettings(
+        await request<unknown>('/v1/local-mode', 'POST',
+          { source_id: sourceID, revision, sync_mode: mode }),
+        sourceID)
+    },
+    localBackupRules: async (sourceID, signal) =>
+      validateLocalBackupRules(
+        await request<unknown>('/v1/local-rules' + sourceQuery(sourceID), 'GET', undefined, signal),
+        sourceID),
+    saveLocalBackupRules: async (sourceID, revision, rules) => {
+      const newline = String.fromCharCode(10)
+      const carriageReturn = String.fromCharCode(13)
+      const lineCount = rules.replaceAll(carriageReturn + newline, newline)
+        .replaceAll(carriageReturn, newline).split(newline).length
+      if (!Number.isSafeInteger(revision) || revision < 1 ||
+        typeof rules !== 'string' || new TextEncoder().encode(rules).length > 64 * 1024 ||
+        lineCount > 4096) {
+        throw new Error('Invalid DSM local backup ignore rules')
+      }
+      return validateLocalBackupRules(
+        await request<unknown>('/v1/local-rules', 'POST',
+          { source_id: sourceID, revision, ignore_rules: rules }),
+        sourceID)
+    },
+    removeLocalBackupSource: async (sourceID, revision) => {
+      if (!Number.isSafeInteger(revision) || revision < 1) {
+        throw new Error('Invalid DSM local backup removal revision')
+      }
+      return validateLocalBackupRemoval(
+        await request<unknown>('/v1/local-bound-remove', 'POST',
+          { source_id: sourceID, revision }),
+        sourceID)
+    },
     // Read-only historical SQL receipt diagnosis already implemented by the
     // original Agent and the shared Device Backup dialog. Never restart a
     // writer, expose local paths or claim current CAS physical integrity.

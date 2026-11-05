@@ -26,12 +26,15 @@ Web/other Desktop clients stay read-only for foreign device backups.
 1. Install CLI-only `xd` and matching `xdrive-agent` under the same
    user. No desktop runtime or system-wide privileged service is required.
 2. `xd login` authenticates without asking for or creating a mount.
-3. `xd backup init --name NAME --path ABS_LOCAL_DIR --target-id EXISTING_CLOUD_DIR_ID`
-   requires an explicit local OS path and an owner-authorized existing cloud
-   directory. The owning Agent must register/reuse **its own** device, create
-   a new paused Backup-only local Source, locally verify/bind the Root with
-   the current device credential, and return its Source ID. A first-run
-   error must not silently adopt a foreign or legacy Source.
+3. `xd backup init --name NAME --path ABS_LOCAL_DIR`
+   requires only the local Source name and an explicit local OS path. The
+   owning Agent registers/reuses **its own** device and asks the Server to
+   create the paused Source plus its exclusive managed target atomically. The
+   Server returns the exact TargetNodeID/path; the Agent then locally
+   verifies/binds the Root with the current device credential and returns the
+   Source ID. The canonical `同步文件夹/Push` prefix is a separate
+   Server-side provisioning change tracked in PR #3902. A first-run error
+   must not silently adopt a foreign or legacy Source.
 4. `xd backup once --source ID` uses the existing exact worker. Saving
    a new `interval` / `cron` schedule changes Source revision; one verified
    run on that revision is needed to arm scheduled admissions. The optional
@@ -45,10 +48,10 @@ Web/other Desktop clients stay read-only for foreign device backups.
    Desktop, with all required binaries, version identity and system service
    guidance. Source files are shared; never ship a separate CAS writer.
 
-The target ID in the initial command is deliberately an **existing** cloud
-directory, not a new unvalidated destination. Friendly cloud path browsing/
-creation is an incremental usability improvement, not a reason to grant
-arbitrary remote writes or to block the first safe implementation.
+New Push creation does not accept a client-selected target ID or parent
+directory. The Server is the sole authority for creating and binding the
+managed cloud destination; `xd backup targets` is optional read-only browsing
+and is not part of the creation flow.
 
 ## Invariants and failure rules
 
@@ -91,3 +94,7 @@ credentials, HAR or operator attestation: **按用户决定跳过（未验收）
 Do **not** expand this project to Mirror, NAS Push, automatic uncertain
 Operation recovery, legacy Stage retirement, new CAS writers, or complete
 100k/>4GiB performance certification.
+
+## Unified Push Source contract (2026-11-05)
+
+Desktop and `xd backup` are two control surfaces for the same owning Agent, Device identity, local_folder Source, Root grant, durable Operation journal and CAS writer. New `xd backup init` accepts only the local Source name and absolute local path; it no longer accepts `--target-id`. The owning Agent sends no cloud target selection, and the Server creates the managed Push destination atomically with the paused Source, returning the exact TargetNodeID and display path before local Root binding continues. The optional `xd backup targets` command remains read-only and is not part of creation. Existing Sources and target directories are unchanged; no migration is performed. See [the canonical architecture](./architecture/push-pull-source-management.md) and [platform audit](./architecture/push-pull-platform-audit.md).

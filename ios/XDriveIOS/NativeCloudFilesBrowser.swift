@@ -74,6 +74,24 @@ struct XDriveIOSNativeFilesReader {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    func searchSources() async throws -> [XDriveIOSNativeFilesSearchSourceOption] {
+        let url = try endpoint("/api/v1/sources", query: [])
+        let items: [XDriveIOSNativeFilesSearchSourceOption] = try await get(url)
+        guard XDriveIOSNativeFilesPagePolicy.validSearchSources(items) else {
+            throw XDriveIOSNativeFilesReadError.malformed
+        }
+        return items
+    }
+
+    func searchTags() async throws -> [XDriveIOSNativeFilesSearchTagOption] {
+        let url = try endpoint("/api/v1/file-tags", query: [])
+        let items: [XDriveIOSNativeFilesSearchTagOption] = try await get(url)
+        guard XDriveIOSNativeFilesPagePolicy.validSearchTags(items) else {
+            throw XDriveIOSNativeFilesReadError.malformed
+        }
+        return items
+    }
+
     func children(parentID: UInt64, offset: Int,
                   sort: String, order: String) async throws -> XDriveIOSNativeFilesRange {
         guard parentID > 0,
@@ -96,18 +114,20 @@ struct XDriveIOSNativeFilesReader {
     func search(_ query: String, offset: Int,
                 sort: String, order: String,
                 filters: XDriveIOSNativeFilesSearchFilterState) async throws -> XDriveIOSNativeFilesSearchRange {
-        guard XDriveIOSNativeFilesPagePolicy.validSearch(query),
-              XDriveIOSNativeFilesPagePolicy.validSearchFilters(filters),
+        guard XDriveIOSNativeFilesPagePolicy.validSearchRequest(query: query, filters: filters),
               XDriveIOSNativeFilesPagePolicy.validOffset(offset),
               XDriveIOSNativeFilesPagePolicy.validOrder(sort: sort, order: order)
         else { throw XDriveIOSNativeFilesReadError.invalidPage }
         var queryItems = [
-            URLQueryItem(name: "q", value: query.trimmingCharacters(in: .whitespacesAndNewlines)),
             URLQueryItem(name: "offset", value: String(offset)),
             URLQueryItem(name: "limit", value: String(XDriveIOSNativeFilesPagePolicy.pageSize)),
             URLQueryItem(name: "sort", value: sort),
             URLQueryItem(name: "order", value: order)
         ]
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedQuery.isEmpty {
+            queryItems.append(URLQueryItem(name: "q", value: trimmedQuery))
+        }
         if filters.kind != "all" {
             queryItems.append(URLQueryItem(name: "kind", value: filters.kind))
         }
@@ -122,6 +142,12 @@ struct XDriveIOSNativeFilesReader {
         }
         if let maxSize = filters.maxSize {
             queryItems.append(URLQueryItem(name: "max_size", value: String(maxSize)))
+        }
+        if let sourceID = filters.sourceID {
+            queryItems.append(URLQueryItem(name: "source_id", value: String(sourceID)))
+        }
+        if let tagID = filters.tagID {
+            queryItems.append(URLQueryItem(name: "tag_id", value: String(tagID)))
         }
         let url = try endpoint("/api/v1/search", query: queryItems)
         let page: XDriveIOSNativeFilesSearchRange = try await get(url)
@@ -205,7 +231,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 )
                 let found: [XDriveIOSNativeFilesEntry]
                 let count: Int
-                if query.isEmpty {
+                if query.isEmpty && !filters.hasActiveFilters {
                     let page = try await reader.children(
                         parentID: folderID, offset: offset, sort: sort, order: order
                     )
@@ -294,7 +320,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 let found: [XDriveIOSNativeFilesEntry]
                 let returnedTotal: Int
                 let returnedOffset: Int
-                if query.isEmpty {
+                if query.isEmpty && !filters.hasActiveFilters {
                     let page = try await reader.children(
                         parentID: folderID, offset: requestOffset, sort: sort, order: order
                     )
@@ -362,6 +388,98 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     }
 }
 
+@MainActor
+private final class XDriveIOSNativeFilesSearchOptionsModel: ObservableObject {
+    @Published private(set) var sources: [XDriveIOSNativeFilesSearchSourceOption] = []
+    @Published private(set) var tags: [XDriveIOSNativeFilesSearchTagOption] = []
+    @Published private(set) var loading = false
+    @Published private(set) var verified = false
+    @Published private(set) var errorMessage: String?
+
+    private var epoch = UUID()
+    private var job: Task<Void, Never>?
+    private var loadedOwner: XDriveNativeOwnerRoot?
+
+    func invalidate() {
+        epoch = UUID()
+        job?.cancel()
+        job = nil
+        loadedOwner = nil
+        sources = []
+        tags = []
+        loading = false
+        verified = false
+        errorMessage = nil
+    }
+
+    func belongs(to owner: XDriveNativeOwnerRoot?) -> Bool {
+        guard let owner, let loadedOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(owner, loadedOwner)
+    }
+
+    func matches(_ owner: XDriveNativeOwnerRoot?) -> Bool {
+        verified && belongs(to: owner)
+    }
+
+    func load(login: XDriveIOSNativeOwnerLoginModel) {
+        guard let expected = login.owner else {
+            invalidate()
+            return
+        }
+        if verified, let loadedOwner,
+           XDriveIOSNativePhotoOwnerScope.matches(loadedOwner, expected) {
+            return
+        }
+        if loading, let loadedOwner,
+           XDriveIOSNativePhotoOwnerScope.matches(loadedOwner, expected) {
+            return
+        }
+
+        invalidate()
+        loadedOwner = expected
+        let ticket = epoch
+        loading = true
+        job = Task { @MainActor [weak self] in
+            defer {
+                if self?.epoch == ticket {
+                    self?.loading = false
+                    self?.job = nil
+                }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected) else {
+                    throw XDriveIOSNativeFilesReadError.invalidScope
+                }
+                let reader = XDriveIOSNativeFilesReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                )
+                async let sourceRead = reader.searchSources()
+                async let tagRead = reader.searchTags()
+                let (loadedSources, loadedTags) = try await (sourceRead, tagRead)
+                try Task.checkCancellation()
+                guard let self, self.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
+                else { return }
+                self.sources = loadedSources
+                self.tags = loadedTags
+                self.verified = true
+                self.errorMessage = nil
+            } catch is CancellationError {
+                // An owner switch or screen teardown invalidates both reads.
+            } catch {
+                guard let self, self.epoch == ticket else { return }
+                self.sources = []
+                self.tags = []
+                self.verified = false
+                self.errorMessage = "无法读取同步文件夹和标签筛选项，请检查网络后重试。"
+            }
+        }
+    }
+}
+
 private struct XDriveIOSNativeFilesBatchDestinationIntent: Identifiable {
     let id = UUID()
     let owner: XDriveNativeOwnerRoot
@@ -403,6 +521,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
     @StateObject private var favoriteShortcuts = XDriveIOSNativeFilesCollectionPageModel()
+    @StateObject private var searchOptions = XDriveIOSNativeFilesSearchOptionsModel()
     @State private var favoriteShortcutsOwner: XDriveNativeOwnerRoot?
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
     @StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel()
@@ -466,8 +585,30 @@ struct XDriveIOSNativeFilesBrowser: View {
         return folder?.id ?? owner.rootNodeID
     }
 
+    private var isGlobalSearch: Bool {
+        !activeQuery.isEmpty || searchFilters.hasActiveFilters
+    }
+
+    private var hasVerifiedSearchOptionsForOwner: Bool {
+        searchOptions.matches(login.owner)
+    }
+
+    private var hasSearchOptionsStateForOwner: Bool {
+        searchOptions.belongs(to: login.owner)
+    }
+
+    private var searchSourceFilterTitle: String {
+        guard let id = searchFilters.sourceID else { return "同步文件夹" }
+        return searchOptions.sources.first(where: { $0.id == id })?.name ?? "同步文件夹已筛选"
+    }
+
+    private var searchTagFilterTitle: String {
+        guard let id = searchFilters.tagID else { return "标签" }
+        return searchOptions.tags.first(where: { $0.id == id })?.name ?? "标签已筛选"
+    }
+
     private var canSelectPage: Bool {
-        !model.loading && model.verifiedPage && activeQuery.isEmpty &&
+        !model.loading && model.verifiedPage && !isGlobalSearch &&
             login.owner != nil && !model.entries.isEmpty &&
             !batchTrash.busy && !batchTarget.busy &&
             !batchExport.busy && batchExport.prepared.isEmpty
@@ -479,7 +620,7 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     /// Native Files Browse starts at locations and shortcuts, not inside an
     /// arbitrary server directory. Enter the verified cloud root explicitly.
-    private var isHome: Bool { folder == nil && activeQuery.isEmpty }
+    private var isHome: Bool { folder == nil && !isGlobalSearch }
 
     /// Present only a few folders from the existing, bounded and
     /// Owner-verified Favorites projection. Never infer navigation IDs from
@@ -578,18 +719,20 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
-    @ViewBuilder private var filesHeader: some View {
-        if !activeQuery.isEmpty || searchError != nil || locatedFileNotice != nil {
-            Section {
-                if !activeQuery.isEmpty {
-                    HStack {
-                        Text("全库搜索：\(activeQuery)")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Spacer(minLength: 8)
-                        Button("清除") { clearSearch() }
-                            .accessibilityIdentifier("native-ios-files-clear-search")
-                    }
-                    if !selecting {
+        @ViewBuilder private var filesHeader: some View {
+        Section("全库筛选") {
+            if isGlobalSearch {
+                HStack {
+                    Text(activeQuery.isEmpty ? "全库筛选结果" : "全库搜索：\(activeQuery)")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Button("清除") { clearSearch() }
+                        .accessibilityIdentifier("native-ios-files-clear-search")
+                }
+            }
+            if !selecting {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 18) {
                         Menu {
                             Picker("搜索类型", selection: $searchFilters.kind) {
                                 Text("全部类型").tag("all")
@@ -657,14 +800,76 @@ struct XDriveIOSNativeFilesBrowser: View {
                                 .font(.subheadline)
                         }
                         .accessibilityIdentifier("native-ios-files-search-size-filter")
+                        if (hasVerifiedSearchOptionsForOwner && !searchOptions.sources.isEmpty) ||
+                            searchFilters.hasSourceFilter {
+                            Menu {
+                                Button("全部同步文件夹") { searchFilters.sourceID = nil }
+                                if hasVerifiedSearchOptionsForOwner {
+                                    ForEach(searchOptions.sources) { source in
+                                        Button {
+                                            searchFilters.sourceID = source.id
+                                        } label: {
+                                            if searchFilters.sourceID == source.id {
+                                                Label(source.name, systemImage: "checkmark")
+                                            } else {
+                                                Text(source.name)
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Label(searchSourceFilterTitle, systemImage: "folder")
+                                    .font(.subheadline)
+                            }
+                            .accessibilityIdentifier("native-ios-files-search-source-filter")
+                        }
+                        if (hasVerifiedSearchOptionsForOwner && !searchOptions.tags.isEmpty) ||
+                            searchFilters.hasTagFilter {
+                            Menu {
+                                Button("全部标签") { searchFilters.tagID = nil }
+                                if hasVerifiedSearchOptionsForOwner {
+                                    ForEach(searchOptions.tags) { tag in
+                                        Button {
+                                            searchFilters.tagID = tag.id
+                                        } label: {
+                                            if searchFilters.tagID == tag.id {
+                                                Label(tag.name, systemImage: "checkmark")
+                                            } else {
+                                                Text(tag.name)
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Label(searchTagFilterTitle, systemImage: "tag")
+                                    .font(.subheadline)
+                            }
+                            .accessibilityIdentifier("native-ios-files-search-tag-filter")
+                        }
                     }
+                    .padding(.vertical, 4)
                 }
-                if let searchError {
-                    Text(searchError).foregroundStyle(.orange).font(.footnote)
+                .disabled(login.owner == nil)
+            }
+            if searchOptions.loading && hasSearchOptionsStateForOwner {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("正在读取同步文件夹和标签…")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
-                if let locatedFileNotice {
-                    Text(locatedFileNotice).foregroundStyle(.orange).font(.footnote)
+            } else if hasSearchOptionsStateForOwner, let error = searchOptions.errorMessage {
+                HStack {
+                    Text(error).font(.footnote).foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Button("重试") { searchOptions.load(login: login) }
+                        .accessibilityIdentifier("native-ios-files-search-options-retry")
                 }
+            }
+            if let searchError {
+                Text(searchError).foregroundStyle(.orange).font(.footnote)
+            }
+            if let locatedFileNotice {
+                Text(locatedFileNotice).foregroundStyle(.orange).font(.footnote)
             }
         }
     }
@@ -711,7 +916,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Label("显示简介", systemImage: "info.circle")
                 }
                 .accessibilityIdentifier("native-ios-files-folder-more-\(entry.node.id)")
-                if !activeQuery.isEmpty {
+                if isGlobalSearch {
                     Button {
                         requestLocation(for: entry)
                     } label: {
@@ -1023,13 +1228,30 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onChange(of: queryDraft) { value in
             if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 !activeQuery.isEmpty {
-                clearSearch()
+                if searchFilters.hasActiveFilters {
+                    activeQuery = ""
+                    searchError = nil
+                    reload(resetOffset: true)
+                } else {
+                    clearSearch()
+                }
             }
         }
         .onChange(of: searchFilters) { _ in
-            // Re-query the complete Server index for every structured filter;
-            // never filter only the currently loaded local window.
-            if !activeQuery.isEmpty { reload(resetOffset: true) }
+            // Filters always execute against the complete Server index, even
+            // with an empty text query. Capture the current Browse anchor once.
+            if !activeQuery.isEmpty {
+                reload(resetOffset: true)
+            } else if searchFilters.hasActiveFilters {
+                if searchReturnOffset == nil {
+                    let saved = rememberedPosition()
+                    searchReturnOffset = saved?.pageOffset ?? offset
+                    searchReturnNodeID = saved?.nodeID
+                }
+                reload(resetOffset: true)
+            } else if searchReturnOffset != nil {
+                clearSearch()
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if selecting { filesSelectionToolbar }
@@ -1218,7 +1440,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
                 XDriveIOSNativeFilesManagementPanel(
                     login: login, expectedOwner: intent.owner,
-                    folderID: folder?.id ?? intent.owner.rootNodeID,
+                    folderID: folder?.id ?? intent.file?.parent_id ??
+                        intent.directory?.parent_id ?? intent.owner.rootNodeID,
                     folderName: folder?.name,
                     file: intent.file,
                     directory: intent.directory,
@@ -1310,9 +1533,13 @@ struct XDriveIOSNativeFilesBrowser: View {
     var body: some View {
         ScrollViewReader { returnScroll in
             filesModals
-        .onAppear { reload() }
+        .onAppear {
+            reload()
+            searchOptions.load(login: login)
+        }
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
+            searchOptions.invalidate()
             favoriteShortcuts.invalidate()
             favoriteShortcutsOwner = nil
             batchTrash.invalidate()
@@ -1347,7 +1574,10 @@ struct XDriveIOSNativeFilesBrowser: View {
             lastAppearedNodeID = nil
             pendingNavigationReturnNodeID = nil
             searchError = nil
+            searchFilters = XDriveIOSNativeFilesSearchFilterState()
             model.invalidate()
+            searchOptions.invalidate()
+            if login.owner != nil { searchOptions.load(login: login) }
             favoriteShortcuts.invalidate()
             favoriteShortcutsOwner = nil
             if isHome { loadFavoriteShortcuts() }
@@ -1468,7 +1698,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 if !entry.node.isDirectory {
                     Button("版本历史") { openVersionHistory(for: entry.node) }
                 }
-                if !activeQuery.isEmpty {
+                if isGlobalSearch {
                     Button {
                         requestLocation(for: entry)
                     } label: {
@@ -1553,7 +1783,7 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func requestLocation(for entry: XDriveIOSNativeFilesEntry) {
         guard !model.loading, model.verifiedPage,
-              !activeQuery.isEmpty, !selecting,
+              isGlobalSearch, !selecting,
               let owner = login.owner,
               model.entries.contains(where: { $0.node == entry.node }) else { return }
         returnOwner = owner
@@ -1684,7 +1914,14 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func submitSearch() {
         let query = queryDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         if query.isEmpty {
-            clearSearch()
+            guard searchFilters.hasActiveFilters else {
+                clearSearch()
+                return
+            }
+            searchError = nil
+            if activeQuery.isEmpty { return }
+            activeQuery = ""
+            reload(resetOffset: true)
             return
         }
         guard XDriveIOSNativeFilesPagePolicy.validSearch(query) else {
@@ -1693,7 +1930,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         searchError = nil
         if query == activeQuery { return }
-        if activeQuery.isEmpty {
+        if searchReturnOffset == nil {
             let saved = rememberedPosition()
             searchReturnOffset = saved?.pageOffset ?? offset
             searchReturnNodeID = saved?.nodeID
@@ -1703,7 +1940,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func clearSearch() {
-        guard !activeQuery.isEmpty || !queryDraft.isEmpty else { return }
+        guard !activeQuery.isEmpty || !queryDraft.isEmpty ||
+              searchFilters.hasActiveFilters || searchReturnOffset != nil else { return }
         let restoredOffset = searchReturnOffset ?? 0
         let restoreNodeID = searchReturnNodeID
         activeQuery = ""

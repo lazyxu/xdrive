@@ -12,7 +12,8 @@ const routes = read('internal/api/router.go')
 
 test('real native multi-select accepts up to 200 verified loaded Owner Nodes', () => {
   assert.match(page, /@State private var selectedIDs = Set<UInt64>\(\)/)
-  assert.match(page, /private var canSelectPage: Bool \{[\s\S]*?model\.verifiedPage && activeQuery\.isEmpty/)
+  assert.match(page, /private var canSelectPage: Bool \{[\s\S]*?model\.verifiedPage && !isGlobalSearch/)
+  assert.match(page, /private var isGlobalSearch: Bool \{\s*!activeQuery\.isEmpty \|\| searchFilters\.hasActiveFilters\s*\}/)
   assert.match(page, /if selecting \{[\s\S]*?native-ios-files-select-/)
   assert.match(page, /selectedIDs\.formUnion\(model\.entries\.filter/)
   assert.match(page, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)

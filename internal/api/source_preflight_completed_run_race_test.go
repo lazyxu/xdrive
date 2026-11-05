@@ -144,8 +144,9 @@ func TestOldSourcePreflightFailureCannotRegressNewerCompletedRun(t *testing.T) {
 	unblock()
 	select {
 	case result := <-done:
-		if result.report.Failed != 1 || result.report.Completed != 0 || result.err == nil {
-			t.Fatalf("old preflight did not return its original failure: report=%+v err=%v", result.report, result.err)
+		if result.report.Skipped != 1 || result.report.Failed != 0 ||
+			result.report.Completed != 0 || result.err != nil {
+			t.Fatalf("old preflight was not skipped after a newer successful run: report=%+v err=%v", result.report, result.err)
 		}
 	case <-time.After(12 * time.Second):
 		t.Fatal("old preflight never completed after release")

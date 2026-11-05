@@ -220,6 +220,7 @@ declare global {
   type AgentOfflineImportCreated = { id: string; chunk_bytes: number }
   type AgentOfflineImportList = { items: Array<{ id: string; modified_at: string }> }
   type AgentOfflineImportFinalize = { name: string; state: 'ready'; upload_sha256: string }
+  type AgentOfflineHostPlanStatus = import('../../../ui/shared/src/offline-update').XDriveOfflineHostPlanStatus
 
   type AgentServerUpdateState = {
     supported: boolean
@@ -850,7 +851,7 @@ declare global {
         releaseMediaLivePhotoMotion: (
           url: string,
         ) => Promise<DesktopResult<{ released: boolean }>>
-        getSources: () => Promise<DesktopResult<AgentSource[]>>
+        getSources: (includeArchived?: boolean) => Promise<DesktopResult<AgentSource[]>>
         getDeviceBackups: (requestID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupsPage: (limit?: number, afterDeviceID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupFoldersPage: (deviceID: string, limit?: number, afterSourceID?: number) => Promise<DesktopResult<XDriveDeviceBackupFolderPage>>
@@ -909,6 +910,7 @@ declare global {
         createSource: (input: AgentCreateSourceInput) => Promise<DesktopResult<AgentSource>>
         updateSource: (sourceID: number, revision: number, input: AgentUpdateSourceInput) => Promise<DesktopResult<AgentSource>>
         deleteSource: (sourceID: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
+        restoreSource: (sourceID: number, revision: number) => Promise<DesktopResult<AgentSource>>
         triggerSource: (sourceID: number) => Promise<DesktopResult<AgentSource>>
         cloudRoot: (requestID?: string) => Promise<DesktopResult<AgentCloudNode>>
         cloudChildren: (parentID: number) => Promise<DesktopResult<AgentCloudNode[]>>
@@ -1139,7 +1141,7 @@ declare global {
         cloudQuota: (requestID?: string) => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
         startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
-        offlineImport: <T>(action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'start',
+        offlineImport: <T>(action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'plan-status' | 'plan' | 'start',
           input?: Record<string, unknown>) => Promise<DesktopResult<T>>
         offlineImportChunk: (id: string, name: string, index: number, data: ArrayBuffer, sha256: string) =>
           Promise<DesktopResult<void>>

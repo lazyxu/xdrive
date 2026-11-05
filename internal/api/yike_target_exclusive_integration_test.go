@@ -126,3 +126,59 @@ func TestYikeLegacyRelocationRefusesUnverifiedEmptyUIDRoot(t *testing.T) {
 		t.Fatalf("unverified folder was moved or rebound: node=%+v source=%+v", original, current)
 	}
 }
+
+func TestYikeFirstBindingUsesCanonicalPullTargetNamespace(t *testing.T) {
+	db, _, owner, _, root := setupFilePropertiesTestDB(t)
+	source := meta.Source{
+		OwnerID: owner.ID, Name: "Yike Photos", Kind: yikeSourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused, Revision: 1,
+	}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatal(err)
+	}
+	identity := sourceCredentialTestDTO{AccountExternalID: "98765", AccountName: "new account"}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return bindYikeManagedTargetTx(context.Background(), tx, &source, identity)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if source.TargetNodeID == nil || !source.TargetManaged {
+		t.Fatalf("Yike Source did not bind its server-managed target: %+v", source)
+	}
+	var target meta.Node
+	if err := db.First(&target, *source.TargetNodeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if target.ParentID == nil {
+		t.Fatalf("Yike target has no managed parent: %+v", target)
+	}
+	var connector meta.Node
+	if err := db.First(&connector, *target.ParentID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if connector.Name != yikePullTargetConnectorName || connector.ParentID == nil {
+		t.Fatalf("Yike target connector path mismatch: %+v", connector)
+	}
+	var pullRoot meta.Node
+	if err := db.First(&pullRoot, *connector.ParentID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pullRoot.Name != yikePullTargetRootName || pullRoot.ParentID == nil {
+		t.Fatalf("Yike Pull namespace missing: %+v", pullRoot)
+	}
+	var syncRoot meta.Node
+	if err := db.First(&syncRoot, *pullRoot.ParentID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if syncRoot.Name != yikeTargetRootName || syncRoot.ParentID == nil || *syncRoot.ParentID != root.ID {
+		t.Fatalf("Yike target is outside the canonical sync root: %+v", syncRoot)
+	}
+	var stored meta.Source
+	if err := db.First(&stored, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !stored.TargetManaged || stored.TargetNodeID == nil || *stored.TargetNodeID != target.ID {
+		t.Fatalf("Yike managed provenance was not persisted: %+v", stored)
+	}
+}

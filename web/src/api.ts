@@ -1684,6 +1684,24 @@ export class XDriveApi {
       })
   }
 
+  adminOfflineHostPlan(id: string) {
+    return this.request<import('../../ui/shared/src/offline-update').XDriveOfflineHostPlanStatus>(
+      '/api/v1/admin/update/offline/plan/' + encodeURIComponent(id), { cache: 'no-store' })
+  }
+
+  adminStartOfflineHostPlan(id: string, manifestSHA256: string, goSHA256: string, trustMode: 'sigstore' | 'sha256') {
+    return this.request<import('../../ui/shared/src/offline-update').XDriveOfflineHostPlanStatus>(
+      '/api/v1/admin/update/offline/plan', {
+        method: 'POST', cache: 'no-store',
+        body: JSON.stringify({
+          offline_id: id,
+          offline_trust_mode: trustMode,
+          trusted_manifest_sha256: trustMode === 'sigstore' ? '' : manifestSHA256,
+          trusted_installer_sha256: trustMode === 'sigstore' ? '' : goSHA256,
+        }),
+      })
+  }
+
   adminStartOfflineServerUpdate(id: string, manifestSHA256: string, goSHA256: string, backupFileData: boolean, trustMode: 'sigstore' | 'sha256') {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update', {
       method: 'POST', cache: 'no-store',
@@ -3269,10 +3287,11 @@ export class XDriveApi {
     return this.request<ExternalSource[]>('/api/v1/sources')
   }
 
-  sourceOverview(signal?: AbortSignal) {
+  sourceOverview(signal?: AbortSignal, includeArchived = false) {
     // Only this read-only, Owner-scoped overview GET is disposable. Source
     // trigger/cancel/configuration mutations never share navigation signals.
-    return this.request<ExternalSourceOverview[]>('/api/v1/sources/overview', { signal })
+    const query = includeArchived ? '?include_archived=true' : ''
+    return this.request<ExternalSourceOverview[]>(`/api/v1/sources/overview${query}`, { signal })
   }
 
   createSource(input: CreateExternalSourceInput) {
@@ -3379,6 +3398,14 @@ export class XDriveApi {
     return this.request<void>(`/api/v1/sources/${sourceID}`, {
       method: 'DELETE',
       headers: { 'If-Match': `"${revision}"` },
+    })
+  }
+
+  restoreSource(sourceID: number, revision: number) {
+    return this.request<ExternalSource>(`/api/v1/sources/${sourceID}/restore`, {
+      method: 'POST',
+      headers: { 'If-Match': `"${revision}"` },
+      body: JSON.stringify({}),
     })
   }
 

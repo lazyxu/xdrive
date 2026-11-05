@@ -2751,6 +2751,9 @@ function FileManager({
     },
     finalize: (id: string, name: string) => api.adminOfflineImportFinalize(id, name),
     remove: async (id: string) => { await api.adminOfflineImportRemove(id) },
+    getPlan: (id: string) => api.adminOfflineHostPlan(id),
+    startPlan: (id: string, manifest: string, binary: string, trustMode: 'sigstore' | 'sha256') =>
+      api.adminStartOfflineHostPlan(id, manifest, binary, trustMode),
     start: async (id: string, manifest: string, binary: string, backup: boolean, trustMode: 'sigstore' | 'sha256') => {
       await api.adminStartOfflineServerUpdate(id, manifest, binary, backup, trustMode)
     },

@@ -5,7 +5,7 @@ import {
 } from '@mui/material'
 import type { XDriveLocalBoundBackupSettings } from '../device-backups'
 
-// Provided only by a credential-verified owning Desktop; no Root or token.
+// Provided only by a credential-verified owning native host (Desktop or DSM); no Root or token.
 export interface XDriveLocalBackupSettingsActions {
   load(sourceID: number): Promise<XDriveLocalBoundBackupSettings>
   rename(sourceID: number, revision: number, name: string): Promise<XDriveLocalBoundBackupSettings>

@@ -51,6 +51,7 @@ func TestBackupCLIOptionScopeRejectsExplicitDefaultValuedFlags(t *testing.T) {
 		{"history", "--cron=", false},
 		{"cancel", "--every=", false},
 		{"init", "--run-now=false", true},
+		{"init", "--target-id=12", false},
 		{"init", "--source=0", false},
 		{"bind", "--source=42", true},
 		{"bind", "--target-id=0", false},

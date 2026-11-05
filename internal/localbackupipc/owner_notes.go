@@ -137,6 +137,49 @@ func (c *Client) OwnerNotesRead(ctx context.Context, id string) (client.NotesDet
 	return out, nil
 }
 
+func validOwnerNoteImportIdentity(value string) bool {
+	if value == "" {
+		return true
+	}
+	const prefix = "manual:"
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	raw := strings.TrimPrefix(value, prefix)
+	id, err := uuid.Parse(raw)
+	return err == nil && id.String() == raw
+}
+
+// OwnerNotesImportIOS appends one explicit read-only Markdown snapshot. The
+// optional manual UUID is only a same-import transaction key for the image
+// follow-up update; it is never an Apple Notes native identifier.
+func (c *Client) OwnerNotesImportIOS(
+	ctx context.Context, write client.NotesImportWrite,
+) (client.NotesRow, error) {
+	var out client.NotesRow
+	if err := c.requireOwnerNotes(); err != nil {
+		return out, err
+	}
+	if !validOwnerNoteWrite(client.NotesWrite{Title: write.Title, Markdown: write.Markdown}) ||
+		!validOwnerNoteImportIdentity(write.ExternalID) {
+		return out, errors.New("invalid Owner iOS Notes import body or identity")
+	}
+	if err := c.request(ctx, http.MethodPost, "/v1/cloud/notes/import-ios", write, &out); err != nil {
+		return client.NotesRow{}, err
+	}
+	if !validOwnerNoteRow(out, "ios_notes") ||
+		out.Title != strings.TrimSpace(write.Title) ||
+		out.Bytes != int64(len([]byte(write.Markdown))) ||
+		(write.ExternalID == "" && out.Revision != 1) {
+		return client.NotesRow{}, errors.New("unverified Owner iOS Notes import receipt")
+	}
+	sum := sha256.Sum256([]byte(write.Markdown))
+	if !strings.EqualFold(out.SHA256, hex.EncodeToString(sum[:])) {
+		return client.NotesRow{}, errors.New("Owner iOS Notes import SHA mismatch")
+	}
+	return out, nil
+}
+
 func (c *Client) OwnerNotesCreate(ctx context.Context, write client.NotesWrite) (client.NotesRow, error) {
 	var out client.NotesRow
 	if err := c.requireOwnerNotes(); err != nil {

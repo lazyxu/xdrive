@@ -139,8 +139,9 @@ func TestOldSourcePreflightFailureCannotEraseNewManualTrigger(t *testing.T) {
 	unblock()
 	select {
 	case result := <-done:
-		if result.report.Failed != 1 || result.report.Completed != 0 || result.err == nil {
-			t.Fatalf("old preflight did not finish as a failure: report=%+v err=%v", result.report, result.err)
+		if result.report.Skipped != 1 || result.report.Failed != 0 ||
+			result.report.Completed != 0 || result.err != nil {
+			t.Fatalf("old preflight was not skipped while a newer manual trigger was pending: report=%+v err=%v", result.report, result.err)
 		}
 	case <-time.After(12 * time.Second):
 		t.Fatal("old preflight did not finish after release")

@@ -5,6 +5,7 @@ import {
   Button as MuiButton,
   Stack,
   Tooltip,
+  Typography as MuiTypography,
 } from '@mui/material'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveSourceKindIcon } from './SourceKindIcon'
@@ -27,6 +28,11 @@ export function XDriveSourceManagerListPage({
   subtitle = '管理来源连接、凭据、计划和运行状态。',
   rows,
   directionFilter,
+  showArchived,
+  onToggleArchived,
+  restoringSourceID,
+  canRestoreSource,
+  onRestoreSource,
   loading,
   hasLoaded,
   loadError,
@@ -46,6 +52,11 @@ export function XDriveSourceManagerListPage({
   subtitle?: string
   rows: ExternalSourceRow[]
   directionFilter?: 'pull'
+  showArchived: boolean
+  onToggleArchived: () => void
+  restoringSourceID: number | null
+  canRestoreSource: (row: ExternalSourceRow) => boolean
+  onRestoreSource: (row: ExternalSourceRow) => void
   loading: boolean
   hasLoaded: boolean
   loadError: boolean
@@ -75,6 +86,9 @@ export function XDriveSourceManagerListPage({
             onClick={() => void onRefresh()}
           >
             刷新
+          </XDriveActionButton>
+          <XDriveActionButton compact onClick={onToggleArchived}>
+            {showArchived ? '隐藏已归档' : '显示已归档'}
           </XDriveActionButton>
           <XDriveActionButton
             intent="primary"
@@ -125,18 +139,26 @@ export function XDriveSourceManagerListPage({
             const latest = row.latestRun
             const stats = !latest
               ? '尚无扫描统计'
-              : [
-                  `扫描 ${latest.scanned_items.toLocaleString('zh-CN')} 项 · ${formatBytes(latest.scanned_bytes)}`,
-                  `已同步 ${latest.synced_file_items === undefined || latest.synced_directory_items === undefined
-                    ? '—' : (latest.synced_file_items + latest.synced_directory_items).toLocaleString('zh-CN')}`,
-                  `未变化 ${latest.unchanged_items.toLocaleString('zh-CN')}`,
-                  `忽略 ${latest.ignored_items.toLocaleString('zh-CN')}`,
-                  `失败 ${latest.failed_items.toLocaleString('zh-CN')}`,
-                  ...(latest.status === 'cancelled'
-                    ? [`已发现未处理 ${latest.unprocessed_items === undefined ? '未知' : latest.unprocessed_items.toLocaleString('zh-CN')}`]
-                    : []),
-                ].join(' · ')
+              : row.source.kind === 'ios_photos'
+                ? [
+                    `扫描 ${latest.scanned_items.toLocaleString('zh-CN')} 项`,
+                    `新增上传 ${latest.new_items.toLocaleString('zh-CN')}`,
+                    `云端已核验 ${latest.unchanged_items.toLocaleString('zh-CN')}`,
+                    `待处理 ${latest.failed_items.toLocaleString('zh-CN')}`,
+                  ].join(' · ')
+                : [
+                    `扫描 ${latest.scanned_items.toLocaleString('zh-CN')} 项 · ${formatBytes(latest.scanned_bytes)}`,
+                    `已同步 ${latest.synced_file_items === undefined || latest.synced_directory_items === undefined
+                      ? '—' : (latest.synced_file_items + latest.synced_directory_items).toLocaleString('zh-CN')}`,
+                    `未变化 ${latest.unchanged_items.toLocaleString('zh-CN')}`,
+                    `忽略 ${latest.ignored_items.toLocaleString('zh-CN')}`,
+                    `失败 ${latest.failed_items.toLocaleString('zh-CN')}`,
+                    ...(latest.status === 'cancelled'
+                      ? [`已发现未处理 ${latest.unprocessed_items === undefined ? '未知' : latest.unprocessed_items.toLocaleString('zh-CN')}`]
+                      : []),
+                  ].join(' · ')
 
+            const archived = row.source.status === 'archived'
             return (
               <XDriveSourceSummaryCard
                 key={row.source.id}
@@ -147,7 +169,7 @@ export function XDriveSourceManagerListPage({
                 statusLabel={card.state.label}
                 activity={`${card.lastActivityLabel}：${formatExternalSourceTime(card.lastActivityAt)}`}
                 stats={stats}
-                metaAction={row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running' ? (
+                metaAction={row.source.kind !== 'ios_photos' && row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running' ? (
                   <MuiButton
                     size="small"
                     color="error"
@@ -159,7 +181,29 @@ export function XDriveSourceManagerListPage({
                   </MuiButton>
                 ) : undefined}
                 actions={(
-                  <>
+                  archived ? (
+                    <>
+                      <XDriveActionButton compact disabled={failedItemsLoading}
+                        onClick={() => void onOpenDetails(row)}>
+                        查看历史
+                      </XDriveActionButton>
+                      {canRestoreSource(row) ? (
+                        <XDriveActionButton compact intent="primary"
+                          loading={restoringSourceID === row.source.id}
+                          loadingLabel="正在恢复…"
+                          disabled={restoringSourceID !== null && restoringSourceID !== row.source.id}
+                          onClick={() => onRestoreSource(row)}>
+                          恢复（保持暂停）
+                        </XDriveActionButton>
+                      ) : (
+                        <MuiTypography variant="caption" color="text.secondary">
+                          本机 Push 恢复暂未开放
+                        </MuiTypography>
+                      )}
+                    </>
+                  ) : (
+                    <>
+
                     <XDriveActionButton
                       compact
                       disabled={failedItemsLoading}
@@ -172,35 +216,45 @@ export function XDriveSourceManagerListPage({
                         DSM 配置
                       </XDriveActionButton>
                     ) : null}
-                    <Tooltip title={card.trigger.label}>
-                      <span>
-                        <XDriveActionButton
-                          compact
-                          disabled={!card.trigger.ready}
-                          loading={triggeringSourceID === row.source.id}
-                          loadingLabel="正在请求…"
-                          onClick={() => void onTriggerNow(row)}
-                        >
-                          {externalSourceTriggerActionLabel(row)}
+                    {row.source.kind === 'ios_photos' ? (
+                      <MuiTypography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
+                        请在已绑定 iPhone 的相册备份页启动
+                      </MuiTypography>
+                    ) : (
+                      <>
+                        <Tooltip title={card.trigger.label}>
+                          <span>
+                            <XDriveActionButton
+                              compact
+                              disabled={!card.trigger.ready}
+                              loading={triggeringSourceID === row.source.id}
+                              loadingLabel="正在请求…"
+                              onClick={() => void onTriggerNow(row)}
+                            >
+                              {externalSourceTriggerActionLabel(row)}
+                            </XDriveActionButton>
+                          </span>
+                        </Tooltip>
+                        {row.latestRun?.status === 'running' ? (
+                          <XDriveActionButton
+                            compact
+                            intent="warning"
+                            disabled={Boolean(row.latestRun.cancel_requested_at)}
+                            loading={cancellingRunID === row.latestRun.id || Boolean(row.latestRun.cancel_requested_at)}
+                            loadingLabel="正在取消…"
+                            onClick={() => void onCancelRun(row)}
+                          >
+                            停止
+                          </XDriveActionButton>
+                        ) : null}
+                        <XDriveActionButton compact onClick={() => onOpenSettings(row)}>
+                          设置
                         </XDriveActionButton>
-                      </span>
-                    </Tooltip>
-                    {row.latestRun?.status === 'running' ? (
-                      <XDriveActionButton
-                        compact
-                        intent="warning"
-                        disabled={Boolean(row.latestRun.cancel_requested_at)}
-                        loading={cancellingRunID === row.latestRun.id || Boolean(row.latestRun.cancel_requested_at)}
-                        loadingLabel="正在取消…"
-                        onClick={() => void onCancelRun(row)}
-                      >
-                        停止
-                      </XDriveActionButton>
-                    ) : null}
-                    <XDriveActionButton compact onClick={() => onOpenSettings(row)}>
-                      设置
-                    </XDriveActionButton>
-                  </>
+                      </>
+                    )}
+
+                    </>
+                  )
                 )}
               />
             )

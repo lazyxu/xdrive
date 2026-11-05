@@ -742,6 +742,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     @State private var nativeLiveUnavailable = false
     @State private var showsStaticStill = false
     @State private var showChrome = true
+    @State private var showingMediaInfo = false
     @State private var nativeLivePlaybackRequest: UUID?
     @State private var error: String?
     @State private var photoRestoreEpoch = UUID()
@@ -752,6 +753,37 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     @State private var showsPhotoRestoreNotice = false
 
     private var viewed: XDriveIOSNativeCloudOriginal { activeNode ?? node }
+
+    private var mediaInfoDetails: XDriveIOSNativeViewerMediaDetails {
+        let extensionName = URL(fileURLWithPath: viewed.name).pathExtension.uppercased()
+        let duration = player?.currentItem?.duration.seconds
+        let validDuration = duration.flatMap {
+            $0.isFinite && $0 >= 0 ? $0 : nil
+        }
+        let width = still?.cgImage?.width ??
+            still.map { Int($0.size.width * $0.scale) }
+        let height = still?.cgImage?.height ??
+            still.map { Int($0.size.height * $0.scale) }
+        let format = liveResources.map {
+            "\($0.stillURL.pathExtension.uppercased()) + \($0.motionURL.pathExtension.uppercased())"
+        } ?? (viewed.isLiveArchive ? "ZIP（Live Photo 容器）" :
+            extensionName.isEmpty ? nil : extensionName)
+        return XDriveIOSNativeViewerMediaDetails(
+            fileName: viewed.name,
+            mediaKind: viewed.isLiveArchive ? "实况照片" :
+                viewed.isVideo ? "视频" : "照片",
+            originalBytes: viewed.size,
+            format: format,
+            source: "云端 Originals",
+            previewStatus: stillIsThumbnailOnly ? "缩略图回退" :
+                viewed.isLiveArchive ? "实况静态原件 · 适屏解码" : "原件 · 适屏解码",
+            pixelWidth: width,
+            pixelHeight: height,
+            duration: validDuration,
+            locationStatus: "云端 Originals 当前未提供拍摄位置元数据。",
+            liveFiles: liveResources
+        )
+    }
 
     private func key(_ item: XDriveIOSNativeCloudOriginal)
         -> XDriveIOSNativePhotoAssetViewerNeighborKey {
@@ -1014,20 +1046,6 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     ProgressView("正在安全读取云端预览…")
                 }
             }
-            .overlay(alignment: .topLeading) {
-                if showChrome, let still {
-                    XDriveIOSNativeViewerQualityPanel(
-                        fileName: viewed.name,
-                        source: viewed.isLiveArchive
-                            ? "实况静态原件 · 适屏解码" :
-                            stillIsThumbnailOnly ? "缩略图回退" : "原件 · 适屏解码",
-                        image: still,
-                        originalBytes: viewed.size,
-                        archiveOriginal: viewed.isLiveArchive,
-                        liveFiles: liveResources
-                    )
-                }
-            }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle(viewed.isLiveArchive ? "实况照片" :
                 viewed.isVideo ? "视频" : "照片")
@@ -1101,6 +1119,9 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         ProgressView().accessibilityLabel("正在恢复原件到 iOS 照片")
                     } else {
                         Menu {
+                            Button("照片信息") { showingMediaInfo = true }
+                                .accessibilityIdentifier("native-ios-original-viewer-info")
+                            Divider()
                             Button {
                                 restoreCurrentOriginalToPhotos()
                             } label: {
@@ -1199,6 +1220,11 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 }
             }
             .toolbar(showChrome ? .visible : .hidden, for: .navigationBar)
+            .sheet(isPresented: $showingMediaInfo) {
+                if currentOwnerAuthorized {
+                    XDriveIOSNativeViewerInfoSheet(details: mediaInfoDetails)
+                }
+            }
             .alert("保存到 iOS 照片", isPresented: $showsPhotoRestoreNotice) {
                 Button("完成", role: .cancel) {}
             } message: {
@@ -1207,7 +1233,10 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         }
         .preferredColorScheme(.dark)
         .statusBarHidden(!showChrome)
-        .onChange(of: viewed.id) { _ in showChrome = true }
+        .onChange(of: viewed.id) { _ in
+            showChrome = true
+            showingMediaInfo = false
+        }
         .onChange(of: error) { message in
             if message != nil { showChrome = true }
         }
@@ -1308,6 +1337,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         .onChange(of: phase) { state in
             if state != .active {
                 showChrome = true
+                showingMediaInfo = false
                 // The native Photos permission sheet may temporarily mark
                 // the scene inactive. There is no network transfer yet: let
                 // authorization return, but still cancel on real background.
@@ -1335,6 +1365,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         }
         .onChange(of: login.owner) { _ in
             cancelPhotoRestore()
+            showingMediaInfo = false
             // Retire the former Owner's signed media URL immediately.
             exporter.invalidate()
             player?.pause()
@@ -1354,6 +1385,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         .onDisappear {
             cancelPhotoRestore()
             exporter.invalidate()
+            showingMediaInfo = false
             player?.pause()
             player = nil
             still = nil

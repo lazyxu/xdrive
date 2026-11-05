@@ -438,7 +438,7 @@ jobs:
       - name: Verify native PhotoKit full-library media filtering
         run: |
           set -euo pipefail
-          swiftc -swift-version 5 -framework Photos \
+          swiftc -swift-version 5 -framework Photos -framework Photos \
             ios/XDriveIOS/NativePhotoMediaFilterPolicy.swift \
             ios/tests/NativePhotoMediaFilterChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-media-filter"

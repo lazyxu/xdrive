@@ -104,6 +104,64 @@ struct XDriveIOSNativeFilesPageChecks {
         structured.kind = "unknown"
         require(!XDriveIOSNativeFilesPagePolicy.validSearchFilters(structured),
                 "reject unsupported kind with structured filters")
+        structured.kind = "all"
+        structured.sourceID = 41
+        structured.tagID = 9
+        require(XDriveIOSNativeFilesPagePolicy.validSearchFilters(structured),
+                "valid Owner source and tag filters")
+        require(XDriveIOSNativeFilesPagePolicy.validSearchRequest(query: "", filters: structured),
+                "allow filter-only full-library search")
+        require(XDriveIOSNativeFilesPagePolicy.validSearchRequest(query: "invoice", filters: structured),
+                "allow text and structured filters together")
+        structured.sourceID = 0
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchFilters(structured),
+                "reject zero source ID")
+        structured.sourceID = 41
+        structured.tagID = 0
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchFilters(structured),
+                "reject zero tag ID")
+        structured.sourceID = nil
+        structured.tagID = nil
+        structured.modifiedFrom = nil
+        structured.modifiedTo = nil
+        structured.minSize = nil
+        structured.maxSize = nil
+        structured.kind = "all"
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchRequest(query: "", filters: structured),
+                "reject empty query without active filters")
+
+        let sourceOptions = [
+            XDriveIOSNativeFilesSearchSourceOption(id: 2, name: "Photos"),
+            XDriveIOSNativeFilesSearchSourceOption(id: 3, name: "Documents")
+        ]
+        require(XDriveIOSNativeFilesPagePolicy.validSearchSources(sourceOptions),
+                "accept verified Owner search sources")
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchSources([
+            sourceOptions[0], sourceOptions[0]
+        ]), "reject duplicate source IDs")
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchSources([
+            XDriveIOSNativeFilesSearchSourceOption(id: 0, name: "Invalid")
+        ]), "reject zero source ID in options")
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchSources([
+            XDriveIOSNativeFilesSearchSourceOption(id: 4, name: "  ")
+        ]), "reject empty source label")
+
+        let tagOptions = [
+            XDriveIOSNativeFilesSearchTagOption(id: 5, name: "Work", color: "#12ABEF"),
+            XDriveIOSNativeFilesSearchTagOption(id: 6, name: "Archive")
+        ]
+        require(XDriveIOSNativeFilesPagePolicy.validSearchTags(tagOptions),
+                "accept verified Owner tags")
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchTags([
+            tagOptions[0], tagOptions[0]
+        ]), "reject duplicate tag IDs")
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchTags([
+            XDriveIOSNativeFilesSearchTagOption(id: 7, name: "Invalid", color: "red")
+        ]), "reject malformed tag color")
+        require(!XDriveIOSNativeFilesPagePolicy.validSearchTags([
+            XDriveIOSNativeFilesSearchTagOption(id: 0, name: "Invalid")
+        ]), "reject zero tag ID in options")
+
         require(XDriveIOSNativeFilesPagePolicy.validSearch(" hello "), "search string")
         require(!XDriveIOSNativeFilesPagePolicy.validSearch("a"), "reject single ASCII character")
         require(!XDriveIOSNativeFilesPagePolicy.validSearch("中"), "reject single Unicode scalar")

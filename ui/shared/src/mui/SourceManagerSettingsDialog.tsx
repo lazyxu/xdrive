@@ -83,6 +83,7 @@ export function XDriveSourceSettingsDialog({
   connectorConfigError,
   clearingCredential,
   browseDirectories,
+  allowDelete = true,
   onRequestClose,
   onCancel,
   onRetryConnectorConfig,
@@ -115,6 +116,7 @@ export function XDriveSourceSettingsDialog({
   connectorConfigError: string
   clearingCredential: boolean
   browseDirectories?: ExternalSourceDirectoryBrowser
+  allowDelete?: boolean
   onRequestClose: () => void
   onCancel: () => void
   onRetryConnectorConfig: () => void
@@ -157,6 +159,11 @@ export function XDriveSourceSettingsDialog({
         {setting ? (
           <MuiBox id="external-source-settings-form" component="form" onSubmit={onSubmit}>
             <Stack spacing={2}>
+              {!allowDelete && setting.source.kind === 'local_folder' ? (
+                <XDriveStatusAlert tone="neutral">
+                  本机 Push 的归档与恢复需要拥有设备身份；当前不通过通用来源管理入口执行，以免绕过设备授权。
+                </XDriveStatusAlert>
+              ) : null}
               <XDriveSourceNameField
                 autoFocus={!compactTouch}
                 value={values.name}
@@ -195,7 +202,9 @@ export function XDriveSourceSettingsDialog({
               <XDriveSourceStatusField
                 label="运行状态"
                 value={values.status}
-                onChange={(value) => onChange({ status: value })}
+                onChange={(value) => {
+                  if (value === 'active' || value === 'paused') onChange({ status: value })
+                }}
               />
                 </>
               )}
@@ -366,13 +375,15 @@ export function XDriveSourceSettingsDialog({
 
       {setting ? (
         <XDriveDialogActions>
-          <XDriveActionButton
-            intent="danger"
-            disabled={saving || setting.latestRun?.status === 'running'}
-            onClick={onDelete}
-          >
-            删除{sourceNoun}
-          </XDriveActionButton>
+          {allowDelete ? (
+            <XDriveActionButton
+              intent="danger"
+              disabled={saving || setting.latestRun?.status === 'running'}
+              onClick={onDelete}
+            >
+              移除{sourceNoun}
+            </XDriveActionButton>
+          ) : null}
           <XDriveDialogActionSpacer />
           <XDriveActionButton disabled={saving} onClick={onCancel}>取消</XDriveActionButton>
           <XDriveActionButton

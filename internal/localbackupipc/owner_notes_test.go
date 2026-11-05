@@ -159,3 +159,45 @@ func TestOwnerNotesClientRejectsForeignOrCorruptedResponse(t *testing.T) {
 		corrupt = true
 	}
 }
+
+func TestOwnerNotesImportIOSIsExplicitOwnerBoundAndOneShot(t *testing.T) {
+	markdown := "# Imported snapshot"
+	externalID := "manual:12345678-1234-1234-1234-123456789abc"
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/cloud/notes/import-ios" ||
+			r.Header.Get("Authorization") != "Bearer owner-test-secret" || r.Header.Get("Cookie") != "" {
+			t.Errorf("unexpected Owner Notes import request: %s %s", r.Method, r.URL)
+		}
+		var input client.NotesImportWrite
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			t.Error(err)
+		}
+		if input.Title != "Imported" || input.Markdown != markdown || input.ExternalID != externalID {
+			t.Errorf("manual import body changed: %+v", input)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ownerNotesFixtureRow("Imported", markdown, "ios_notes", 2))
+	}))
+	defer srv.Close()
+	c := &Client{baseURL: srv.URL, token: "owner-test-secret",
+		capabilities: []string{"cloud-notes"}, http: srv.Client()}
+	row, err := c.OwnerNotesImportIOS(context.Background(), client.NotesImportWrite{
+		Title: "Imported", Markdown: markdown, ExternalID: externalID,
+	})
+	if err != nil || row.Source != "ios_notes" || row.Revision != 2 || calls != 1 {
+		t.Fatalf("manual iOS import: %+v %v calls=%d", row, err, calls)
+	}
+	if _, err := c.OwnerNotesImportIOS(context.Background(), client.NotesImportWrite{
+		Title: "Imported", Markdown: markdown, ExternalID: "title:guess",
+	}); err == nil || calls != 1 {
+		t.Fatalf("invalid manual identity reached Agent: err=%v calls=%d", err, calls)
+	}
+	withoutCapability := &Client{baseURL: srv.URL, token: "owner-test-secret", http: srv.Client()}
+	if _, err := withoutCapability.OwnerNotesImportIOS(context.Background(), client.NotesImportWrite{
+		Title: "Imported", Markdown: markdown,
+	}); err == nil || calls != 1 {
+		t.Fatalf("Agent without Notes capability was permitted: err=%v calls=%d", err, calls)
+	}
+}

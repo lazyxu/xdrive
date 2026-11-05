@@ -36,6 +36,11 @@ const imports = {
   './DeviceBackupHistoryList': { XDriveDeviceBackupHistoryList: stub('history-list') },
   './DeviceBackupLocalCommonBatchDialog': { XDriveDeviceBackupLocalCommonBatchDialog: stub('batch-dialog') },
   './DeviceBackupLocalScheduleDialog': { XDriveDeviceBackupLocalScheduleDialog: stub('schedule-dialog') },
+  './DeviceBackupLocalRenameDialog': { XDriveDeviceBackupLocalRenameDialog: stub('rename-dialog') },
+  './DeviceBackupLocalTargetDialog': { XDriveDeviceBackupLocalTargetDialog: stub('target-dialog') },
+  './DeviceBackupLocalModeDialog': { XDriveDeviceBackupLocalModeDialog: stub('mode-dialog') },
+  './DeviceBackupLocalRulesDialog': { XDriveDeviceBackupLocalRulesDialog: stub('rules-dialog') },
+  './DeviceBackupLocalRemoveDialog': { XDriveDeviceBackupLocalRemoveDialog: stub('remove-dialog') },
   './WorkspaceSurface': { XDriveWorkspaceSurface: stub('workspace') },
   './StatePanel': { XDriveStatePanel: stub('state-panel') },
   './SynologyBackupSourceSetup': { XDriveSynologyBackupSourceSetup: stub('source-setup') },
@@ -74,7 +79,7 @@ const originalRun = {
   unsupported_files: 0, uncertain_files: 0, confirmed_bytes: 42,
   finished_at: '2026-10-31T00:00:00Z',
 }
-const folder = (id, name) => ({ source_id: id, name })
+const folder = (id, name) => ({ source_id: id, name, sync_mode: 'backup' })
 const emptyHistory = sourceID => ({ source_id: sourceID, items: [] })
 function clearRenderTrace() {
   renders.folders.length = 0

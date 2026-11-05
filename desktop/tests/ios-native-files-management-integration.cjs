@@ -16,7 +16,7 @@ test('Files retains the same independent native L3 Viewer and file-specific acti
   assert.match(files, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/)
   assert.match(files, /\.sheet\(item: \$managementIntent, onDismiss:/)
   assert.match(files, /XDriveIOSNativeFilesManagementPanel\(/)
-  assert.match(files, /folderID: folder\?\.id \?\? intent\.owner\.rootNodeID/)
+  assert.match(files, /folderID: folder\?\.id \?\? intent\.file\?\.parent_id \?\?\s*intent\.directory\?\.parent_id \?\? intent\.owner\.rootNodeID/)
   assert.match(files, /guard model\.entries\.contains\(where: \{ \$0\.node == node \}\)/)
   // Owner switch retires management, the new version-history sheet and
   // locate before the Viewer. Preserve the ordering and check every intent.

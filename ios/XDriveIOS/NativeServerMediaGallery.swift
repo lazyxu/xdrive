@@ -386,6 +386,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
     // at full zoom without starting the motion or a new network transfer.
     @State private var showsStaticStill = false
     @State private var showChrome = true
+    @State private var showingMediaInfo = false
 
     // Explicit native Photos restore belongs to this one L3 Viewer and its
     // presenting Owner. It never runs from Gallery thumbnails or background.
@@ -397,6 +398,61 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @State private var photosRestoreNoticePresented = false
 
     private var viewed: XDriveIOSNativeMediaItem { activeItem ?? item }
+
+    private var mediaInfoResources: [XDriveIOSNativeViewerResourceDetail] {
+        var details: [XDriveIOSNativeViewerResourceDetail] = []
+        guard let resources = viewed.resources else { return details }
+        for resource in resources {
+            let title: String
+            switch resource.role {
+            case "still": title = "实况静态照片"
+            case "motion": title = "实况动态视频"
+            default: title = resource.role
+            }
+            let identifier = "\(resource.role)-\(resource.node_id)"
+            let detail = XDriveIOSNativeViewerResourceDetail(
+                id: identifier,
+                title: title,
+                name: resource.name,
+                mimeType: resource.mime_type,
+                size: resource.size
+            )
+            details.append(detail)
+        }
+        return details
+    }
+
+    private var mediaInfoDetails: XDriveIOSNativeViewerMediaDetails {
+        let extensionName = URL(fileURLWithPath: viewed.node.name).pathExtension
+            .uppercased()
+        let duration = player?.currentItem?.duration.seconds
+        let validDuration = duration.flatMap {
+            $0.isFinite && $0 >= 0 ? $0 : nil
+        }
+        let width = image?.cgImage?.width ??
+            image.map { Int($0.size.width * $0.scale) }
+        let height = image?.cgImage?.height ??
+            image.map { Int($0.size.height * $0.scale) }
+        let format = liveResources.map {
+            "\($0.stillURL.pathExtension.uppercased()) + \($0.motionURL.pathExtension.uppercased())"
+        } ?? (extensionName.isEmpty ? nil : extensionName)
+        return XDriveIOSNativeViewerMediaDetails(
+            fileName: viewed.node.name,
+            mediaKind: viewed.isLive ? "实况照片" : viewed.isVideo ? "视频" : "照片",
+            originalBytes: viewed.node.size,
+            format: format,
+            source: "云端 PhotoAsset",
+            previewStatus: imageIsThumbnailOnly ? "缩略图回退" :
+                highResolutionLoaded ? "高清预览 · 按需解码" :
+                viewed.isLive ? "实况静态原件 · 适屏解码" : "原件 · 适屏解码",
+            pixelWidth: width,
+            pixelHeight: height,
+            duration: validDuration,
+            locationStatus: "云端 PhotoAsset 当前未提供拍摄位置元数据。",
+            resources: mediaInfoResources,
+            liveFiles: liveResources
+        )
+    }
 
     private var ownerAuthorized: Bool {
         phase == .active && openedOwner.map {
@@ -728,21 +784,6 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         .accessibilityIdentifier("native-ios-photoasset-viewer-range-error")
                 }
             }
-            .overlay(alignment: .topLeading) {
-                if showChrome, let image {
-                    XDriveIOSNativeViewerQualityPanel(
-                        fileName: viewed.node.name,
-                        source: imageIsThumbnailOnly ? "缩略图回退" :
-                            highResolutionLoaded ? "高清预览 · 按需解码" :
-                            viewed.isLive ? "实况静态原件 · 适屏解码" :
-                            "原件 · 适屏解码",
-                        image: image,
-                        originalBytes: viewed.node.size,
-                        archiveOriginal: viewed.node.name.lowercased().hasSuffix(".livp"),
-                        liveFiles: liveResources
-                    )
-                }
-            }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle(viewed.isLive ? "实况照片" :
                 viewed.isVideo ? "视频" : "照片")
@@ -800,6 +841,9 @@ struct XDriveIOSNativeServerMediaPreview: View {
                             .accessibilityLabel("正在保存云端原件到 iOS 照片")
                     } else {
                         Menu {
+                            Button("照片信息") { showingMediaInfo = true }
+                                .accessibilityIdentifier("native-ios-photoasset-viewer-info")
+                            Divider()
                             // Keep a secondary save command for short landscape
                             // layouts without duplicating a top-level toolbar button.
                             if viewed.supportsPreview {
@@ -898,6 +942,11 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 }
             }
             .toolbar(showChrome ? .visible : .hidden, for: .navigationBar)
+            .sheet(isPresented: $showingMediaInfo) {
+                if ownerAuthorized {
+                    XDriveIOSNativeViewerInfoSheet(details: mediaInfoDetails)
+                }
+            }
             .alert("保存到 iOS 照片", isPresented: $photosRestoreNoticePresented) {
                 Button("完成", role: .cancel) {}
             } message: {
@@ -906,7 +955,10 @@ struct XDriveIOSNativeServerMediaPreview: View {
         }
         .preferredColorScheme(.dark)
         .statusBarHidden(!showChrome)
-        .onChange(of: viewed.id) { _ in showChrome = true }
+        .onChange(of: viewed.id) { _ in
+            showChrome = true
+            showingMediaInfo = false
+        }
         .onChange(of: failure) { message in
             if message != nil { showChrome = true }
         }
@@ -1037,6 +1089,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
         .onChange(of: phase) { _ in
             if phase != .active {
                 showChrome = true
+                showingMediaInfo = false
                 cancelRangeCrossing()
             }
             // The iOS Photos permission dialog can briefly make the scene
@@ -1051,6 +1104,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
             retirePreview()
         }
         .onChange(of: login.owner) { _ in
+            showingMediaInfo = false
             cancelRangeCrossing()
             cancelPhotosRestore()
             retirePreview()

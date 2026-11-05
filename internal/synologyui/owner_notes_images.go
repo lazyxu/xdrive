@@ -20,19 +20,20 @@ const dsmNotesImageUploadJSONMax = (client.NotesMaxImageBytes+2)/3*4 + 8192
 type OwnerNotesImagesAgent interface {
 	OwnerNotesImagesAvailable() bool
 	OwnerNotesUploadImage(context.Context, string, []byte) (client.NotesImageReceipt, error)
+	OwnerNotesImportIOSImage(context.Context, string, []byte) (client.NotesImageReceipt, error)
 	OwnerNotesReadImage(context.Context, string, string) (localbackupipc.OwnerNotesImageData, error)
 }
 
 func isDSMOwnerNotesImageRoute(path string) bool {
 	switch path {
-	case "/v1/cloud-notes-image-capability", "/v1/cloud-notes-image-upload", "/v1/cloud-notes-image-read":
+	case "/v1/cloud-notes-image-capability", "/v1/cloud-notes-image-upload", "/v1/cloud-notes-image-import", "/v1/cloud-notes-image-read":
 		return true
 	}
 	return false
 }
 
 func isDSMOwnerNotesImageWrite(path string) bool {
-	return path == "/v1/cloud-notes-image-upload"
+	return path == "/v1/cloud-notes-image-upload" || path == "/v1/cloud-notes-image-import"
 }
 
 type dsmNotesImageMutation struct {
@@ -43,7 +44,7 @@ type dsmNotesImageMutation struct {
 
 func parseDSMNotesImageMutation(r *http.Request) (dsmNotesImageMutation, error) {
 	var out dsmNotesImageMutation
-	if r == nil || r.URL == nil || r.URL.Path != "/v1/cloud-notes-image-upload" ||
+	if r == nil || r.URL == nil || (r.URL.Path != "/v1/cloud-notes-image-upload" && r.URL.Path != "/v1/cloud-notes-image-import") ||
 		r.URL.RawQuery != "" || r.Body == nil ||
 		r.ContentLength < 2 || r.ContentLength > dsmNotesImageUploadJSONMax {
 		return out, errors.New("invalid DSM Notes image upload size")
@@ -144,6 +145,35 @@ func serveDSMOwnerNotesImage(w http.ResponseWriter, r *http.Request, ctx context
 			return
 		}
 		output, err = images.OwnerNotesUploadImage(ctx, input.ID, input.Image)
+	case "/v1/cloud-notes-image-import":
+		input, parseErr := parseDSMNotesImageMutation(r)
+		if parseErr != nil {
+			http.Error(w, "invalid iOS Notes image import request", http.StatusBadRequest)
+			return
+		}
+		wantScope := dsmOwnerScope(key, principal, r.Header.Get("Cookie"), r.Host,
+			before.Server, before.Username)
+		if wantScope == "" || subtle.ConstantTimeCompare([]byte(wantScope), []byte(input.OwnerScope)) != 1 {
+			http.Error(w, "Notes Owner changed; reload before image import", http.StatusConflict)
+			return
+		}
+		quota, quotaOK := agent.(OwnerQuotaReader)
+		if !quotaOK {
+			http.Error(w, "Notes Owner quota check unavailable", http.StatusNotImplemented)
+			return
+		}
+		q, qerr := quota.OwnerQuota(ctx)
+		if qerr != nil || !localbackupipc.ValidateOwnerQuota(q) {
+			http.Error(w, "Notes image Owner quota unverified", http.StatusServiceUnavailable)
+			return
+		}
+		check, checkErr := login.ServerConnection(ctx)
+		if checkErr != nil || !check.Configured || check.MustChangePassword ||
+			check.Server != before.Server || check.Username != before.Username {
+			http.Error(w, "Notes image Owner changed before import", http.StatusConflict)
+			return
+		}
+		output, err = images.OwnerNotesImportIOSImage(ctx, input.ID, input.Image)
 	case "/v1/cloud-notes-image-read":
 		params, good := notesQuery(r, "id", "relative_path")
 		if !good || !validDSMNoteID(params.Get("id")) {

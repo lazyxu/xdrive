@@ -1,123 +1,212 @@
+import Foundation
+import MapKit
 import SwiftUI
 import UIKit
-import Foundation
 
-/// The selected native Viewer alone owns this presentation. It reports actual
-/// decoded dimensions; the original byte size is metadata, not an assertion
-/// that those exact bytes are stored offline or rendered at full resolution.
-struct XDriveIOSNativeViewerQualityPanel: View {
+/// Metadata that the presenting source can actually prove for the selected
+/// media. Missing cloud metadata stays missing; the Viewer never guesses EXIF.
+struct XDriveIOSNativeViewerMediaDetails {
     let fileName: String
-    let source: String
-    let image: UIImage
-    var originalBytes: Int64? = nil
-    var archiveOriginal: Bool = false
-    var liveFiles: XDriveIOSLivePreviewFiles? = nil
+    let mediaKind: String
+    let capturedAt: Date?
+    let originalBytes: Int64?
+    let format: String?
+    let source: String?
+    let previewStatus: String?
+    let pixelWidth: Int?
+    let pixelHeight: Int?
+    let duration: TimeInterval?
+    let location: CLLocationCoordinate2D?
+    let locationStatus: String?
+    let resources: [XDriveIOSNativeViewerResourceDetail]
+    let liveFiles: XDriveIOSLivePreviewFiles?
 
-    @State private var expanded = false
+    init(
+        fileName: String,
+        mediaKind: String,
+        capturedAt: Date? = nil,
+        originalBytes: Int64? = nil,
+        format: String? = nil,
+        source: String? = nil,
+        previewStatus: String? = nil,
+        pixelWidth: Int? = nil,
+        pixelHeight: Int? = nil,
+        duration: TimeInterval? = nil,
+        location: CLLocationCoordinate2D? = nil,
+        locationStatus: String? = nil,
+        resources: [XDriveIOSNativeViewerResourceDetail] = [],
+        liveFiles: XDriveIOSLivePreviewFiles? = nil
+    ) {
+        self.fileName = fileName
+        self.mediaKind = mediaKind
+        self.capturedAt = capturedAt
+        self.originalBytes = originalBytes
+        self.format = format
+        self.source = source
+        self.previewStatus = previewStatus
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.duration = duration
+        self.location = location
+        self.locationStatus = locationStatus
+        self.resources = resources
+        self.liveFiles = liveFiles
+    }
+}
 
-    // Display the known file/resource suffix, not an invented decoder MIME.
-    // A Live container's outer LIVP/ZIP extension is not its still-image format.
-    private var resourceFormat: String {
-        if let liveFiles {
-            let ext = liveFiles.stillURL.pathExtension.uppercased()
-            return ext.isEmpty ? "实况静态资源（格式未知）" : ext + "（实况静态资源）"
+struct XDriveIOSNativeViewerResourceDetail: Identifiable {
+    let id: String
+    let title: String
+    let name: String?
+    let mimeType: String?
+    let size: Int64?
+}
+
+/// One information sheet is shared by local PhotoKit, cloud PhotoAsset and
+/// backed-up Originals. It presents only metadata supplied by that source.
+struct XDriveIOSNativeViewerInfoSheet: View {
+    let details: XDriveIOSNativeViewerMediaDetails
+    var onOpenLocation: (() -> Void)? = nil
+    @Environment(\.dismiss) private var dismiss
+
+    private func sizeLabel(_ bytes: Int64?) -> String {
+        guard let bytes, bytes >= 0 else { return "未提供" }
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    private func durationLabel(_ seconds: TimeInterval?) -> String {
+        guard let seconds, seconds.isFinite, seconds >= 0,
+              seconds < Double(Int.max) else { return "未提供" }
+        let total = Int(seconds.rounded(.down))
+        if total >= 3600 {
+            return String(format: "%d:%02d:%02d",
+                          total / 3600, (total / 60) % 60, total % 60)
         }
-        let ext = URL(fileURLWithPath: fileName).pathExtension.uppercased()
-        return ext.isEmpty ? "本机 PhotoKit（原始格式未确认）" :
-            (archiveOriginal ? ext + "（实况容器）" : ext + "（文件扩展名）")
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 
-    private var pixelWidth: Int {
-        image.cgImage?.width ?? Int(image.size.width * image.scale)
-    }
-    private var pixelHeight: Int {
-        image.cgImage?.height ?? Int(image.size.height * image.scale)
-    }
-    private func sizeLabel(_ count: Int64?) -> String {
-        guard let count, count > 0 else { return "大小未知" }
-        return ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
-    }
     private func stagedSize(_ url: URL) -> Int64? {
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let size = attrs[.size] as? NSNumber else { return nil }
-        return size.int64Value
-    }
-
-    private var showsLowResolutionWarning: Bool {
-        source.contains("缩略图") || source.contains("低清")
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let value = attributes[.size] as? NSNumber else { return nil }
+        return value.int64Value
     }
 
     var body: some View {
-        Button {
-            expanded = true
-        } label: {
-            // Keep the extra xDrive quality affordance compact on the
-            // native photo canvas. Metadata belongs in a separate sheet.
-            HStack(spacing: 5) {
-                Image(systemName: "info.circle")
-                Text(showsLowResolutionWarning ? "低清" : "画质")
-                    .font(.caption2.weight(.semibold))
-            }
-            .padding(.horizontal, 10)
-            .frame(minHeight: 44)
-            .background(.ultraThinMaterial, in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(showsLowResolutionWarning ?
-            "低清预览，查看画质与文件信息" : "查看画质与文件信息")
-        .accessibilityHint("显示当前解码分辨率、原件大小及实况资源状态")
-        .accessibilityIdentifier("native-ios-viewer-quality-toggle")
-        .padding(8)
-        .sheet(isPresented: $expanded) {
-            NavigationStack {
-                List {
-                    Section("当前显示") {
+        NavigationStack {
+            List {
+                Section("媒体信息") {
+                    LabeledContent("名称", value: details.fileName)
+                    LabeledContent("类型", value: details.mediaKind)
+                    LabeledContent(
+                        "拍摄时间",
+                        value: details.capturedAt?.formatted(
+                            date: .long, time: .shortened
+                        ) ?? "未提供"
+                    )
+                    if let duration = details.duration {
+                        LabeledContent("时长", value: durationLabel(duration))
+                    }
+                    LabeledContent("原件大小", value: sizeLabel(details.originalBytes))
+                    if let format = details.format, !format.isEmpty {
+                        LabeledContent("格式", value: format)
+                    }
+                    if let source = details.source, !source.isEmpty {
                         LabeledContent("来源", value: source)
-                        LabeledContent("解码分辨率",
-                                       value: "\(pixelWidth) × \(pixelHeight)")
-                        if showsLowResolutionWarning {
-                            Text("当前仅显示低清预览，放大不能恢复未加载的原件细节。")
-                                .foregroundStyle(.secondary)
-                        }
                     }
-
-                    Section("文件与资源") {
-                        LabeledContent("来源格式", value: resourceFormat)
-                        LabeledContent(archiveOriginal ? "归档容器大小" : "原件大小",
-                                       value: sizeLabel(originalBytes))
-                        if let liveFiles {
-                            LabeledContent("实况静态资源",
-                                value: "临时文件 · \(sizeLabel(stagedSize(liveFiles.stillURL)))")
-                            LabeledContent("实况动态资源",
-                                value: "临时文件 · \(sizeLabel(stagedSize(liveFiles.motionURL)))")
-                        } else if archiveOriginal {
-                            Text("实况双资源尚未完整加载")
-                        }
+                    if let previewStatus = details.previewStatus, !previewStatus.isEmpty {
+                        LabeledContent("预览状态", value: previewStatus)
                     }
-
-                    Section {
-                        Text("“已加载”仅指当前会话中的图像内存或临时文件，不代表原件已经保存到系统照片。")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                    if let width = details.pixelWidth,
+                       let height = details.pixelHeight, width > 0, height > 0 {
+                        LabeledContent("当前解码分辨率", value: "\(width) × \(height)")
                     }
                 }
-                .accessibilityIdentifier("native-ios-viewer-quality-details")
-                .navigationTitle("画质与文件信息")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("完成") { expanded = false }
+
+                if !details.resources.isEmpty || details.liveFiles != nil {
+                    Section("原始资源") {
+                        ForEach(details.resources) { resource in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(resource.title)
+                                if let name = resource.name, !name.isEmpty {
+                                    Text(name).font(.caption).foregroundStyle(.secondary)
+                                }
+                                if let mime = resource.mimeType, !mime.isEmpty {
+                                    Text(mime).font(.caption).foregroundStyle(.secondary)
+                                }
+                                if let size = resource.size {
+                                    Text(sizeLabel(size)).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        if let liveFiles = details.liveFiles {
+                            LabeledContent(
+                                "实况静态资源",
+                                value: "\(liveFiles.stillURL.lastPathComponent) · \(sizeLabel(stagedSize(liveFiles.stillURL)))"
+                            )
+                            LabeledContent(
+                                "实况动态资源",
+                                value: "\(liveFiles.motionURL.lastPathComponent) · \(sizeLabel(stagedSize(liveFiles.motionURL)))"
+                            )
+                        }
+                    }
+                }
+
+                if let coordinate = details.location {
+                    Section("拍摄位置") {
+                        XDriveIOSNativeViewerInfoMapPreview(coordinate: coordinate)
+                            .frame(height: 190)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .accessibilityLabel("拍摄位置地图预览")
+                        if let onOpenLocation {
+                            Button {
+                                onOpenLocation()
+                            } label: {
+                                Label("在地图中显示附近照片", systemImage: "map")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                        }
+                    }
+                } else if let status = details.locationStatus {
+                    Section("拍摄位置") {
+                        Text(status).foregroundStyle(.secondary)
                     }
                 }
             }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            .navigationTitle("照片信息")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
         }
-        // Changing the viewed media must close an older item's information
-        // sheet rather than leave a stale detail surface over its successor.
-        .onChange(of: fileName) { _ in expanded = false }
-        .onChange(of: source) { _ in expanded = false }
-        .onChange(of: originalBytes) { _ in expanded = false }
-        .onChange(of: liveFiles?.folderURL) { _ in expanded = false }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+}
+
+private struct XDriveIOSNativeViewerInfoMapPreview: UIViewRepresentable {
+    let coordinate: CLLocationCoordinate2D
+
+    func makeUIView(context: Context) -> MKMapView {
+        let map = MKMapView()
+        map.showsUserLocation = false
+        map.isUserInteractionEnabled = false
+        map.pointOfInterestFilter = .excludingAll
+        return map
+    }
+
+    func updateUIView(_ map: MKMapView, context: Context) {
+        map.removeAnnotations(map.annotations)
+        let pin = MKPointAnnotation()
+        pin.coordinate = coordinate
+        map.addAnnotation(pin)
+        map.setRegion(
+            MKCoordinateRegion(
+                center: coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
+            ),
+            animated: false
+        )
     }
 }

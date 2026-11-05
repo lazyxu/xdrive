@@ -42,7 +42,7 @@ test('list and grid share verified-page selection, folder navigation, Viewer and
 })
 
 test('switching layout does not introduce another owner request, mutation or transfer path', () => {
-  assert.match(browser, /private var canSelectPage: Bool \{[\s\S]*?model\.verifiedPage && activeQuery\.isEmpty/)
+  assert.match(browser, /private var canSelectPage: Bool \{[\s\S]*?model\.verifiedPage && !isGlobalSearch/)
   assert.match(browser, /private func reload\(resetOffset: Bool = false\) \{\s*selecting = false\s*selectedIDs\.removeAll\(\)/)
   assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?selectedIDs\.removeAll\(\)/)
   assert.match(browser, /batchTarget\.invalidate\(\)/)

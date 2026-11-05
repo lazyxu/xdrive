@@ -436,6 +436,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/admin/services/baidu-jsapi/verify-loader", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/update", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/update", suite: "admin"},
+		{method: "POST", path: "/api/v1/admin/update/offline/plan", suite: "admin"},
+		{method: "GET", path: "/api/v1/admin/update/offline/plan/:id", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/update/offline/imports", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/update/offline/imports", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/update/offline/cleanup", suite: "admin"},

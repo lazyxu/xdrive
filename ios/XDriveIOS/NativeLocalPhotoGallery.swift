@@ -7,14 +7,17 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
-/// One locally authorized image resource. Neither source IDs nor pixels are
-/// persisted or uploaded by the read-only Photos viewer.
+/// One authorized PhotoKit thumbnail request. Visible list tiles may fetch a
+/// resized iCloud rendition; Viewer/original downloads remain explicit actions.
 @MainActor
 final class XDriveIOSPhotoImageLoader: ObservableObject {
     @Published private(set) var image: UIImage?
+    @Published private(set) var isLoading = false
     private var request: PHImageRequestID = PHInvalidImageRequestID
     private var epoch = UUID()
 
+    /// Visible list thumbnails may fetch their resized iCloud rendition by default.
+    /// This remains a bounded requestImage call, never a Viewer/original request.
     func load(_ id: String, size: CGSize,
               contentMode: PHImageContentMode = .aspectFill) {
         cancel()
@@ -25,19 +28,29 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
             withLocalIdentifiers: [id], options: nil
         ).firstObject else { return }
         let settings = PHImageRequestOptions()
-        settings.isNetworkAccessAllowed = false
+        settings.isNetworkAccessAllowed = true
         settings.deliveryMode = .opportunistic
         settings.resizeMode = .fast
+        isLoading = true
         request = PHImageManager.default().requestImage(
             for: asset, targetSize: size, contentMode: contentMode,
             options: settings
-        ) { [weak self] result, _ in
+        ) { [weak self] result, info in
+            let degraded = info?[PHImageResultIsDegradedKey] as? Bool == true
+            let cancelled = info?[PHImageCancelledKey] as? Bool == true
+            let failed = info?[PHImageErrorKey] != nil
             Task { @MainActor [weak self] in
                 guard let self, self.epoch == token,
                       [.authorized, .limited].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { return }
                 if let result { self.image = result }
+                // Keep the placeholder active while PhotoKit is still fetching
+                // an iCloud-only rendition; a degraded local image can display
+                // immediately and does not need to hold the loading indicator.
+                if result != nil || !degraded || cancelled || failed {
+                    self.isLoading = false
+                }
             }
         }
     }
@@ -49,6 +62,7 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
             request = PHInvalidImageRequestID
         }
         image = nil
+        isLoading = false
     }
 }
 
@@ -64,7 +78,13 @@ struct XDriveIOSLocalPhotoTile: View {
                     .frame(maxWidth: .infinity).frame(height: 108).clipped()
             } else {
                 Rectangle().fill(Color(uiColor: .secondarySystemGroupedBackground))
-                    .overlay { Image(systemName: "photo").foregroundStyle(.secondary) }
+                    .overlay {
+                        if loader.isLoading {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "photo").foregroundStyle(.secondary)
+                        }
+                    }
                     .frame(height: 108)
             }
             if candidate.kind == "video" || candidate.isLive {
@@ -348,30 +368,6 @@ private final class XDriveIOSNativePhotoDetailChangeMonitor: NSObject,
     deinit { stop() }
 }
 
-/// Static MapKit preview in the photo info sheet, not another Gallery route.
-private struct XDriveIOSNativePhotoInfoMapPreview: UIViewRepresentable {
-    let coordinate: CLLocationCoordinate2D
-
-    func makeUIView(context: Context) -> MKMapView {
-        let map = MKMapView()
-        map.showsUserLocation = false
-        map.isUserInteractionEnabled = false
-        map.pointOfInterestFilter = .excludingAll
-        return map
-    }
-
-    func updateUIView(_ map: MKMapView, context: Context) {
-        map.removeAnnotations(map.annotations)
-        let pin = MKPointAnnotation()
-        pin.coordinate = coordinate
-        map.addAnnotation(pin)
-        map.setRegion(MKCoordinateRegion(
-            center: coordinate,
-            span: MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
-        ), animated: false)
-    }
-}
-
 struct XDriveIOSNativeLocalPhotoDetail: View {
     let candidate: XDrivePhotoKitScanCandidate
     /// A bounded copy of the currently authorized PhotoKit page, never full-library.
@@ -403,7 +399,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     @State private var livePlaybackRequest: UUID?
     @State private var requestedICloudForCurrentItem = false
     @State private var showingPhotoInfo = false
-    @State private var photoLocation: CLLocationCoordinate2D?
+    @State private var photoInfoDetails: XDriveIOSNativeViewerMediaDetails?
     @Environment(\.xdriveOpenNativeLocalMap) private var openNativeLocalMap
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
@@ -425,6 +421,75 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         return coordinate
     }
 
+    private func verifiedPhotoInfo() -> XDriveIOSNativeViewerMediaDetails? {
+        guard verified(viewed),
+              let asset = PHAsset.fetchAssets(
+                withLocalIdentifiers: [viewed.id], options: nil
+              ).firstObject else { return nil }
+
+        // PhotoKit exposes the exact local metadata without downloading the
+        // original. Resource names are evidence, not proof of local byte size.
+        let evidence = XDrivePhotoKitResourceInspector.inspect(
+            localIdentifier: viewed.id
+        )
+        let resourceName = viewed.kind == "video"
+            ? evidence?.videoFilename
+            : (evidence?.stillFilename ?? evidence?.motionFilename)
+        let displayName = resourceName ??
+            (viewed.kind == "video" ? "视频" : viewed.isLive ? "实况照片" : "照片")
+        let format = URL(fileURLWithPath: displayName).pathExtension.uppercased()
+
+        var resources: [XDriveIOSNativeViewerResourceDetail] = []
+        if let name = evidence?.stillFilename {
+            resources.append(XDriveIOSNativeViewerResourceDetail(
+                id: "still", title: "静态照片原件", name: name,
+                mimeType: nil, size: nil
+            ))
+        }
+        if let name = evidence?.motionFilename {
+            resources.append(XDriveIOSNativeViewerResourceDetail(
+                id: "motion", title: "实况动态视频", name: name,
+                mimeType: nil, size: nil
+            ))
+        }
+        if let name = evidence?.videoFilename {
+            resources.append(XDriveIOSNativeViewerResourceDetail(
+                id: "video", title: "视频原件", name: name,
+                mimeType: nil, size: nil
+            ))
+        }
+
+        let coordinate = asset.location?.coordinate
+        let validLocation = coordinate.flatMap {
+            XDriveIOSNativePhotoMapPolicy.validCoordinate(
+                latitude: $0.latitude, longitude: $0.longitude
+            ) ? $0 : nil
+        }
+        return XDriveIOSNativeViewerMediaDetails(
+            fileName: displayName,
+            mediaKind: viewed.kind == "video" ? "视频" :
+                viewed.isLive ? "实况照片" : "照片",
+            capturedAt: asset.creationDate,
+            format: format.isEmpty ? nil : format,
+            source: "iPhone 照片图库",
+            pixelWidth: asset.pixelWidth,
+            pixelHeight: asset.pixelHeight,
+            duration: asset.mediaType == .video ? asset.duration : nil,
+            location: validLocation,
+            locationStatus: validLocation == nil ? "这张照片没有可用的拍摄位置。" : nil,
+            resources: resources
+        )
+    }
+
+    private func showPhotoInfo() {
+        guard currentPageAuthorized, let details = verifiedPhotoInfo() else {
+            photoActionMessage = "无法读取当前照片信息；照片或访问权限可能已变化。"
+            return
+        }
+        photoInfoDetails = details
+        showingPhotoInfo = true
+    }
+
     private func openPhotoLocationInMap() {
         guard let openNativeLocalMap,
               let coordinate = verifiedLocation(),
@@ -435,7 +500,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             return
         }
         showingPhotoInfo = false
-        photoLocation = nil
+        photoInfoDetails = nil
         dismiss()
         openNativeLocalMap(jump)
     }
@@ -796,15 +861,6 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     ProgressView("正在读取已授权的本机媒体…")
                 }
             }
-            .overlay(alignment: .topLeading) {
-                if showChrome, let still = model.still, viewed.kind == "image" {
-                    XDriveIOSNativeViewerQualityPanel(
-                        fileName: viewed.id,
-                        source: "PhotoKit 本机适屏图",
-                        image: still
-                    )
-                }
-            }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle(viewed.capturedAt.map {
                 $0.formatted(date: .abbreviated, time: .omitted)
@@ -909,10 +965,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Button("照片信息与位置") {
-                            photoLocation = verifiedLocation()
-                            showingPhotoInfo = true
-                        }
+                        Button("照片信息") { showPhotoInfo() }
+                            .accessibilityIdentifier("native-ios-local-viewer-info")
                         .accessibilityIdentifier("native-ios-local-viewer-location-info")
                         // Keep xDrive-only controls accessible without a
                         // nonnative bottom row or Live buttons on the canvas.
@@ -974,44 +1028,13 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 XDriveIOSNativeLocalPhotoActivitySheet(fileURLs: current.fileURLs)
             }
             .sheet(isPresented: $showingPhotoInfo) {
-                NavigationStack {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 12) {
-                            if let date = viewed.capturedAt {
-                                Label {
-                                    Text(date, format: .dateTime.year().month().day().hour().minute())
-                                } icon: { Image(systemName: "calendar") }
-                            }
-                            if let coordinate = photoLocation {
-                                XDriveIOSNativePhotoInfoMapPreview(coordinate: coordinate)
-                                    .frame(height: 220)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .accessibilityLabel("拍摄位置地图预览")
-                                Button {
-                                    openPhotoLocationInMap()
-                                } label: {
-                                    Label("在地图中显示附近照片", systemImage: "map")
-                                        .frame(maxWidth: .infinity, minHeight: 44)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(openNativeLocalMap == nil)
-                                .accessibilityIdentifier("native-ios-local-viewer-open-nearby-map")
-                            } else {
-                                Text("这张照片没有当前可访问的拍摄位置。")
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(16)
-                    }
-                    .navigationTitle("照片信息")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("完成") { showingPhotoInfo = false }
-                        }
-                    }
+                if currentPageAuthorized, let details = photoInfoDetails {
+                    XDriveIOSNativeViewerInfoSheet(
+                        details: details,
+                        onOpenLocation: openNativeLocalMap == nil
+                            ? nil : { openPhotoLocationInMap() }
+                    )
                 }
-                .presentationDetents([.medium, .large])
             }
             .confirmationDialog(
                 "确认删除当前系统照片？",
@@ -1030,7 +1053,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         .onChange(of: viewed.id) { _ in
             showChrome = true
             showingPhotoInfo = false
-            photoLocation = nil
+            photoInfoDetails = nil
         }
         .onChange(of: model.message) { message in
             if message != nil { showChrome = true }
@@ -1040,11 +1063,11 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             // Never materialize PhotoKit pixels while the App is inactive.
             if phase == .active { model.load(viewed) }
             if phase == .active { refreshFavoriteStatus() }
-            photoLocation = phase == .active ? verifiedLocation() : nil
+            // The information sheet revalidates PhotoKit only when explicitly opened.
         }
         .onChange(of: changes.generation) { _ in
             showingPhotoInfo = false
-            photoLocation = nil
+            photoInfoDetails = nil
             cancelCrossing()
             cancelPhotoAction()
             // Library mutation may revoke the selected media even when
@@ -1055,7 +1078,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         .onChange(of: phase) { state in
             if state != .active {
                 showingPhotoInfo = false
-                photoLocation = nil
+                photoInfoDetails = nil
                 // A covered Viewer must never return to an un-dismissible spinner.
                 showChrome = true
                 favoriteStatus = nil
@@ -1228,7 +1251,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 if busy { ProgressView("读取本机相册…") }
                 if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
                 if !compactGallery {
-                    Text("只读取当前授权子集，缩略图不自动下载 iCloud 原件。权限、相册或 App 状态变化时旧页立即废弃。")
+                    Text("只读取当前授权子集；缩略图可按需从 iCloud 获取，不会自动下载完整原件。权限、相册或 App 状态变化时旧页立即废弃。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Button("刷新") { refresh() }.disabled(busy)
@@ -1251,7 +1274,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
         .alert("本机相册说明", isPresented: $showingGalleryHelp) {
             Button("完成", role: .cancel) {}
         } message: {
-            Text("仅展示 iOS 当前授权的照片、视频与 Live Photo；缩略图不自动下载 iCloud 原件，权限、相册或 App 状态变化时旧页立即废弃。每次最多读取 64 项。")
+            Text("仅展示 iOS 当前授权的照片、视频与 Live Photo；缩略图可按需从 iCloud 获取，不会自动下载完整原件。权限、相册或 App 状态变化时旧页立即废弃。每次最多读取 64 项。")
         }
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) { initial in
             XDriveIOSNativeLocalPhotoDetail(

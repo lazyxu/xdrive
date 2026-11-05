@@ -151,8 +151,11 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
 
     func configure(login: XDriveIOSNativeOwnerLoginModel,
                    expectedOwner: XDriveNativeOwnerRoot,
-                   minutes: Int, allowICloud: Bool) async {
-        guard !busy, XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes)
+                   minutes: Int, allowICloud: Bool,
+                   startRule: XDriveIOSPhotoAutoStartRule,
+                   enabledAt: Date) async {
+        guard !busy, enabledAt.timeIntervalSince1970.isFinite,
+              XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes)
         else { return }
         // Native consent must remain bound to the exact approved Owner.
         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) else {
@@ -216,6 +219,18 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 return
             }
             try Task.checkCancellation()
+            // Only the explicitly consented "only new" plan installs a
+            // PhotoKit cursor. This records candidates, not Server receipts.
+            // Reusing an earlier baseline is safer than skipping old edits.
+            if startRule == .onlyNew {
+                let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                    owner: selected
+                )
+                _ = try await changeQueue.installNewOnlyBaseline(owner: selected)
+                try Task.checkCancellation()
+            }
+            // An Owner/permission switch while awaiting PhotoKit must not
+            // activate a now-stale consent or create a running schedule.
             let second = try await login.verifiedAuthorization()
             guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
                   XDriveIOSNativePhotoOwnerScope.matches(first.owner, selected),
@@ -241,6 +256,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             }
             schedule = try store.configure(
                 owner: selected, minutes: minutes, allowICloud: allowICloud,
+                startRule: startRule, enabledAt: enabledAt,
                 sourceID: managed.destination.sourceID,
                 targetNodeID: managed.destination.targetNodeID
             )
@@ -347,6 +363,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             // original write permanently disables fast retry for this run.
             var automaticReservedNextDueAt: Date?
             var beganOriginalWrite = false
+            var sourceRunReporter: XDriveIOSPhotoSourceRunReporter?
             do {
                 let verified = try await login.verifiedAuthorization()
                 try Task.checkCancellation()
@@ -389,28 +406,66 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                       UIApplication.shared.applicationState == .active else {
                     throw XDriveIOSNativeSessionError.staleSession
                 }
+                let reporter = XDriveIOSPhotoSourceRunReporter(
+                    authority: managed,
+                    trigger: kind == .automatic ? "scheduled" : "manual"
+                )
+                sourceRunReporter = reporter
+                await reporter.begin()
                 if kind == .focused {
                     try await self.runFocused(
                         login: login, owner: selected, uiEpoch: uiEpoch,
                         allowICloud: allowICloud,
                         initialSourceID: managed.destination.sourceID,
-                        initialTargetNodeID: managed.destination.targetNodeID
+                        initialTargetNodeID: managed.destination.targetNodeID,
+                        sourceRunReporter: reporter
                     )
+                    await reporter.finish(status: "completed")
                 } else {
                     let window: Int
                     let cloud: Bool
+                    let newOnlySince: Date?
                     let manualStartEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?
                     if kind == .automatic {
+                        // Durably capture bounded PhotoKit changes BEFORE
+                        // reserving the old 256-slot scanner window. The
+                        // queued IDs are not yet upload candidates here:
+                        // only the existing original writer can prove an ACK.
+                        if let activePlan = XDriveIOSPhotoAutoScheduleStore.shared
+                            .status(owner: selected),
+                           activePlan.backupStartRule == .onlyNew {
+                            let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                                owner: selected
+                            )
+                            do {
+                                _ = try await changeQueue.replay(
+                                    owner: selected, maximumEvents: 2
+                                )
+                            } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                                .requiresExplicitBaseline {
+                                // Legacy new-only plans predate this queue.
+                                // Keep their existing full-window metadata scan;
+                                // never install a newer token automatically.
+                            }
+                            try Task.checkCancellation()
+                            guard self.displayEpoch == uiEpoch,
+                                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                                  UIApplication.shared.applicationState == .active
+                            else { throw XDriveIOSNativeSessionError.staleSession }
+                        }
                         guard let due = try XDriveIOSPhotoAutoScheduleStore.shared
                             .reserveDue(owner: selected,
                                         sourceID: managed.destination.sourceID,
                                         targetNodeID: managed.destination.targetNodeID) else {
+                            await reporter.finish(status: "cancelled")
                             self.refresh(owner: selected)
                             return
                         }
                         automaticReservedNextDueAt = due.nextDueAt
                         window = due.windowIndex
                         cloud = due.allowICloudOriginals
+                        newOnlySince = due.backupStartRule == .onlyNew
+                            ? due.newOnlySince : nil
                         manualStartEpoch = nil
                     } else {
                         // Manual and automatic passes share the same 256-slot
@@ -446,6 +501,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         )
                         self.manualNextWindow = window
                         cloud = allowICloud
+                        newOnlySince = nil
                         manualStartEpoch = epoch
                     }
                     guard let offset = XDrivePhotoBackupScanWindow.offset(for: window)
@@ -454,8 +510,12 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         ? "自动增量备份正在检查第 \(window + 1) 段…"
                         : "手动备份正在检查第 \(window + 1) 段…"
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
-                        owner: selected, managedForeground: managed
+                        owner: selected, managedForeground: managed,
+                        onSourceProgress: { value in
+                            reporter.enqueueUpdate(value)
+                        }
                     ).run(allowICloudOriginals: cloud, startOffset: offset,
+                          newOnlySince: newOnlySince,
                           onPotentialWrite: { beganOriginalWrite = true }) { [weak self] value in
                         guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
                               self?.displayEpoch == uiEpoch,
@@ -502,25 +562,30 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     if result.stoppedForReview {
                         self.errorMessage = "发现结果不确定的上传收据：本轮已暂停，不会盲目重传。"
                     }
+                    await reporter.finish(status: "completed")
                 }
             } catch XDriveIOSFocusedBackupFailure.libraryChanged {
+                if let reporter = sourceRunReporter { await reporter.finish(status: "partial") }
                 XDriveIOSPhotoFocusedResumeStore.shared.clear(owner: selected)
                 if self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                     self.errorMessage = "集中备份时系统相册或授权范围发生变化，已安全停止；请重新开始整库扫描，不会按旧位置跳过照片。"
                 }
             } catch XDriveIOSFocusedBackupFailure.invalidWindow {
+                if let reporter = sourceRunReporter { await reporter.finish(status: "failed") }
                 XDriveIOSPhotoFocusedResumeStore.shared.clear(owner: selected)
                 if self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                     self.errorMessage = "集中备份返回的扫描进度无法校验，已停止以避免漏备或重复写入。"
                 }
             } catch is CancellationError {
+                if let reporter = sourceRunReporter { await reporter.finish(status: "cancelled") }
                 if self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                     self.message = "原件任务已取消。可能已经提交的原件须通过加密账本与 Server 收据确认。"
                 }
             } catch {
+                if let reporter = sourceRunReporter { await reporter.finish(status: "failed") }
                 var scheduledNetworkRetry = false
                 if kind == .automatic,
                    let reservedDue = automaticReservedNextDueAt,
@@ -584,7 +649,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     private func runFocused(
         login: XDriveIOSNativeOwnerLoginModel,
         owner: XDriveNativeOwnerRoot, uiEpoch: UUID, allowICloud: Bool,
-        initialSourceID: UInt64, initialTargetNodeID: UInt64
+        initialSourceID: UInt64, initialTargetNodeID: UInt64,
+        sourceRunReporter: XDriveIOSPhotoSourceRunReporter
     ) async throws {
         let initial = try XDriveIOSPhotoKitLibraryEpoch.capture()
         // A constant-time PhotoKit fetch count plus a SECOND epoch witness
@@ -605,6 +671,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             sourceID: initialSourceID, targetNodeID: initialTargetNodeID
         )
         var window = resume.nextWindow
+        var sourceRunBase = XDriveIOSPhotoSourceRunCounts()
         var confirmedNew = 0
         var hadUnavailable = resume.hadUnavailable
         var expectedTotal: Int? = visibleNow
@@ -672,7 +739,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             let unavailableBefore = hadUnavailable
             let currentWindow = window
             let result = try await XDriveIOSForegroundPhotoBackupMVP(
-                owner: owner, managedForeground: managed
+                owner: owner, managedForeground: managed,
+                onSourceProgress: { value in
+                    sourceRunReporter.enqueueUpdate(value, base: sourceRunBase)
+                }
             ).run(allowICloudOriginals: allowICloud, startOffset: offset) { [weak self] value in
                 guard let self,
                       self.displayEpoch == uiEpoch,
@@ -711,6 +781,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 throw XDriveIOSFocusedBackupFailure.libraryChanged
             }
             expectedTotal = result.totalVisible
+            sourceRunBase.add(result)
             confirmedNew += result.uploaded
             hadUnavailable = hadUnavailable || result.unavailable > 0 ||
                 result.videosNotSupported > 0 || result.liveNotSupported > 0

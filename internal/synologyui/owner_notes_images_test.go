@@ -23,6 +23,7 @@ type dsmNotesImagesFixture struct {
 	*dsmNotesFixture
 	imageEnabled bool
 	uploads      int
+	imports      int
 	reads        int
 }
 
@@ -42,6 +43,21 @@ func (f *dsmNotesImagesFixture) OwnerNotesUploadImage(
 		ContentType:  "image/gif",
 		Bytes:        int64(len(data)),
 		SHA256:       hex.EncodeToString(sum[:]),
+	}, nil
+}
+
+func (f *dsmNotesImagesFixture) OwnerNotesImportIOSImage(
+	_ context.Context, id string, data []byte,
+) (client.NotesImageReceipt, error) {
+	f.imports++
+	if id != dsmNotesFixtureID || !bytes.Equal(data, []byte("GIF89a")) {
+		return client.NotesImageReceipt{}, errors.New("invalid imported iOS archive image")
+	}
+	sum := sha256.Sum256(data)
+	return client.NotesImageReceipt{
+		NodeID: 124, Filename: dsmNotesImageFixtureName,
+		RelativePath: "_assets/" + id + "/" + dsmNotesImageFixtureName,
+		ContentType:  "image/gif", Bytes: int64(len(data)), SHA256: hex.EncodeToString(sum[:]),
 	}, nil
 }
 
@@ -155,5 +171,67 @@ func TestDSMNotesImageCGIFailsClosedOnLargeAndMalformedBody(t *testing.T) {
 		if _, err := parseDSMNotesImageMutation(req); err == nil {
 			t.Fatalf("invalid Notes image JSON unexpectedly admitted")
 		}
+	}
+}
+
+func TestDSMNotesIOSArchiveImageImportUsesDedicatedOwnerScopedRoute(t *testing.T) {
+	g, base := newFixture(t)
+	f := &dsmNotesImagesFixture{
+		dsmNotesFixture: &dsmNotesFixture{fakeAgent: base, owner: "alice", enabled: true},
+		imageEnabled:    true,
+	}
+	g.Connect = func(context.Context) (Agent, error) { return f, nil }
+	h := CGIHandler(g)
+	_, key, err := loadAuthority(g.ConfigDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := dsmOwnerScope(key, "dsmadmin", "id=dsm-session",
+		"nas.example:5001", "https://server.example", "alice")
+	csrf := getCSRF(t, g)
+	body, err := json.Marshal(map[string]any{
+		"owner_scope": scope, "id": dsmNotesFixtureID, "image": []byte("GIF89a"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := dsmNotesRequest(h, http.MethodPost, "cloud-notes-image-import", "", string(body), csrf)
+	if res.Code != http.StatusOK || f.imports != 1 || f.uploads != 0 {
+		t.Fatalf("iOS archive image import failed: %d %s imports=%d uploads=%d",
+			res.Code, res.Body.String(), f.imports, f.uploads)
+	}
+	var receipt client.NotesImageReceipt
+	if err := json.Unmarshal(res.Body.Bytes(), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	want := "_assets/" + dsmNotesFixtureID + "/" + dsmNotesImageFixtureName
+	if receipt.NodeID != 124 || receipt.RelativePath != want || receipt.Bytes != 6 ||
+		receipt.ContentType != "image/gif" {
+		t.Fatalf("invalid immutable iOS image receipt: %+v", receipt)
+	}
+	noCSRF := dsmNotesRequest(h, http.MethodPost, "cloud-notes-image-import", "", string(body), "")
+	if noCSRF.Code != http.StatusForbidden {
+		t.Fatalf("iOS archive image import without CSRF was accepted: %d", noCSRF.Code)
+	}
+	if out := dsmNotesRequest(h, http.MethodGet, "cloud-notes-image-import", "", "", ""); out.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("iOS archive image import admitted non-POST method: %d", out.Code)
+	}
+	foreign, _ := json.Marshal(map[string]any{
+		"owner_scope": strings.Repeat("0", 64), "id": dsmNotesFixtureID, "image": []byte("GIF89a"),
+	})
+	out := dsmNotesRequest(h, http.MethodPost, "cloud-notes-image-import", "", string(foreign), csrf)
+	if out.Code != http.StatusConflict || f.imports != 1 {
+		t.Fatalf("foreign Owner image import reached Agent: HTTP %d imports=%d", out.Code, f.imports)
+	}
+	f.owner = "bob"
+	out = dsmNotesRequest(h, http.MethodPost, "cloud-notes-image-import", "", string(body), csrf)
+	if out.Code != http.StatusConflict || f.imports != 1 {
+		t.Fatalf("old Owner image import scope reused: HTTP %d imports=%d", out.Code, f.imports)
+	}
+	f.owner = "alice"
+	f.imageEnabled = false
+	out = dsmNotesRequest(h, http.MethodPost, "cloud-notes-image-import", "", string(body), csrf)
+	if out.Code != http.StatusNotImplemented || f.imports != 1 {
+		t.Fatalf("Agent without image capability imported archive image: HTTP %d imports=%d", out.Code, f.imports)
 	}
 }

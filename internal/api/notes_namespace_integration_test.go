@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,7 +52,7 @@ func TestNotesNamespaceOwnerBoundAndOrdinaryFilesCannotWrite(t *testing.T) {
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{},
 		&meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{},
 		&meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{},
-		&meta.AuditEvent{}, &meta.FileOperation{}, &meta.NotesNamespace{},
+		&meta.AuditEvent{}, &meta.FileOperation{}, &meta.NotesNamespace{}, &meta.Note{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -153,5 +155,105 @@ func TestNotesNamespaceOwnerBoundAndOrdinaryFilesCannotWrite(t *testing.T) {
 	// Normal root file directory functions continue to work.
 	requestNode(t, router, http.MethodPost,
 		fmt.Sprintf("/api/v1/nodes/%d/directories", rootA.ID),
-		tokenA, strings.NewReader(`{"name":"Other Files"}`), http.StatusCreated)
+		tokenA, strings.NewReader("{\"name\":\"Other Files\"}"), http.StatusCreated)
+
+	// Files reads stay available to the owning account, while every ordinary
+	// Files mutation route remains blocked for a managed Notes Markdown Node.
+	const originalMarkdown = "# protected Notes bytes"
+	created := request(t, router, http.MethodPost, "/api/v1/notes", tokenA,
+		strings.NewReader("{\"title\":\"Protected file\",\"markdown\":\"# protected Notes bytes\"}"),
+		http.StatusCreated)
+	var note notesDTO
+	if err := json.Unmarshal(created.Body.Bytes(), &note); err != nil {
+		t.Fatal(err)
+	}
+	if note.NodeID == 0 || note.Revision != 1 {
+		t.Fatalf("invalid managed Note receipt: %+v", note)
+	}
+	ownedNode := requestNode(t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d", note.NodeID), tokenA, nil, http.StatusOK)
+	if ownedNode.ID != note.NodeID {
+		t.Fatalf("Owner could not read managed Notes Node: %+v", ownedNode)
+	}
+	content := request(t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/files/%d/content", note.NodeID), tokenA, nil, http.StatusOK)
+	if content.Body.String() != originalMarkdown {
+		t.Fatalf("Owner Files read changed Notes bytes: %q", content.Body.String())
+	}
+	request(t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d", note.NodeID), tokenB, nil, http.StatusNotFound)
+	request(t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/files/%d/content", note.NodeID), tokenB, nil, http.StatusNotFound)
+
+	updatedResponse := request(t, router, http.MethodPut, "/api/v1/notes/"+note.ID, tokenA,
+		strings.NewReader("{\"title\":\"Protected file\",\"markdown\":\"# version two\",\"expected_revision\":1}"),
+		http.StatusOK)
+	var updated notesDTO
+	if err := json.Unmarshal(updatedResponse.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Revision != 2 {
+		t.Fatalf("Notes API did not create a versioned update: %+v", updated)
+	}
+	var oldVersion meta.FileVersion
+	if err := db.Where("node_id = ? AND revision = ?", note.NodeID, 1).First(&oldVersion).Error; err != nil {
+		t.Fatal(err)
+	}
+	managedPath := fmt.Sprintf("/api/v1/nodes/%d", note.NodeID)
+	requestWithIfMatch(t, router, http.MethodPatch, managedPath, tokenA,
+		"{\"name\":\"renamed.md\"}", updated.Revision, http.StatusConflict)
+	requestWithIfMatch(t, router, http.MethodPatch, managedPath, tokenA,
+		fmt.Sprintf("{\"parent_id\":%d}", rootA.ID), updated.Revision, http.StatusConflict)
+	requestWithIfMatch(t, router, http.MethodDelete, managedPath, tokenA,
+		"", updated.Revision, http.StatusConflict)
+	request(t, router, http.MethodPost, managedPath+"/copy", tokenA,
+		strings.NewReader(fmt.Sprintf("{\"parent_id\":%d}", rootA.ID)), http.StatusConflict)
+
+	batchBody := func() string {
+		return fmt.Sprintf("{\"items\":[{\"id\":%d,\"revision\":%d}],\"parent_id\":%d}",
+			note.NodeID, updated.Revision, rootA.ID)
+	}
+	request(t, router, http.MethodPost, "/api/v1/nodes/batch/copy", tokenA,
+		strings.NewReader(batchBody()), http.StatusConflict)
+	request(t, router, http.MethodPost, "/api/v1/nodes/batch/move", tokenA,
+		strings.NewReader(batchBody()), http.StatusConflict)
+	request(t, router, http.MethodPost, "/api/v1/nodes/batch/delete", tokenA,
+		strings.NewReader(fmt.Sprintf("{\"items\":[{\"id\":%d,\"revision\":%d}]}",
+			note.NodeID, updated.Revision)), http.StatusConflict)
+	request(t, router, http.MethodPost, "/api/v1/file-operations", tokenA,
+		strings.NewReader(fmt.Sprintf("{\"type\":\"copy\",\"items\":[{\"id\":%d,\"revision\":%d}],\"parent_id\":%d}",
+			note.NodeID, updated.Revision, rootA.ID)), http.StatusConflict)
+	request(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/nodes/%d/shares", note.NodeID), tokenA,
+		strings.NewReader("{\"access\":\"view\"}"), http.StatusConflict)
+	requestWithIfMatch(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/files/%d/versions/%d/restore", note.NodeID, oldVersion.ID),
+		tokenA, "", updated.Revision, http.StatusConflict)
+
+	// The Notes-specific editor remains the only supported write path.
+	finalRead := request(t, router, http.MethodGet, "/api/v1/notes/"+note.ID,
+		tokenA, nil, http.StatusOK)
+	var finalNote notesDTO
+	if err := json.Unmarshal(finalRead.Body.Bytes(), &finalNote); err != nil {
+		t.Fatal(err)
+	}
+	if finalNote.Revision != 2 || finalNote.Markdown == nil || *finalNote.Markdown != "# version two" {
+		t.Fatalf("blocked Files mutations changed the authoritative Note: %+v", finalNote)
+	}
+}
+
+func requestWithIfMatch(
+	t *testing.T, router http.Handler, method, path, token, body string,
+	revision uint64, expected int,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("If-Match", strconv.FormatUint(revision, 10))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, req)
+	if response.Code != expected {
+		t.Fatalf("%s %s: HTTP %d want %d: %s", method, path, response.Code, expected, response.Body.String())
+	}
+	return response
 }

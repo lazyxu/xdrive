@@ -6,7 +6,8 @@ import {
 import type { XDriveLocalBoundBackupRules } from '../device-backups'
 
 // This private capability exists ONLY for the credential-verified owning
-// Desktop. Web/Mobile and other desktops never receive raw ignore rules.
+// native host (Desktop or DSM). Web/Mobile and remote-device projections never
+// receive raw ignore rules.
 export interface XDriveLocalBackupRulesActions {
   load(sourceID: number): Promise<XDriveLocalBoundBackupRules>
   update(sourceID: number, revision: number, rules: string): Promise<XDriveLocalBoundBackupRules>

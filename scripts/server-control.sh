@@ -343,6 +343,82 @@ process_request() {
   rm -f "$active" "$progress_file"
 }
 
+write_plan_status() {
+  local state="$1" request_id="$2" offline_id="$3" trust_mode="$4" manifest_sha="$5" binary_sha="$6"
+  local message="$7" error="$8" started_at="$9" finished_at="${10}"
+  local dir tmp now
+  dir="$(prepare_dir)"
+  now="$(now_utc)"
+  tmp="$(mktemp "$dir/.plan-status.XXXXXX")"
+  printf '{"supported":true,"state":"%s","request_id":"%s","offline_id":"%s","offline_trust_mode":"%s","trusted_manifest_sha256":"%s","trusted_installer_sha256":"%s","message":"%s","error":"%s","started_at":"%s","updated_at":"%s","finished_at":"%s"}\n' "$(json_escape "$state")" "$(json_escape "$request_id")" "$(json_escape "$offline_id")" "$(json_escape "$trust_mode")" "$(json_escape "$manifest_sha")" "$(json_escape "$binary_sha")" "$(json_escape "$message")" "$(json_escape "$error")" "$(json_escape "$started_at")" "$now" "$(json_escape "$finished_at")" > "$tmp"
+  chmod 0660 "$tmp"
+  mv -f "$tmp" "$dir/plan-status.json"
+}
+
+process_plan_request() {
+  local dir request active request_id offline_id trust_mode manifest_sha binary_sha requested_at started_at
+  local result_tmp result_bytes run_log plan_pid status error_text
+  local -a plan_args
+  dir="$(prepare_dir)"
+  request="$dir/plan-request.json"
+  active="$dir/plan-active.json"
+  [[ -f "$request" ]] || return 0
+  if ! mv "$request" "$active" 2>/dev/null; then return 0; fi
+
+  request_id="$(json_value "$active" request_id)"
+  offline_id="$(json_value "$active" offline_id)"
+  trust_mode="$(json_value "$active" offline_trust_mode)"
+  manifest_sha="$(json_value "$active" trusted_manifest_sha256)"
+  binary_sha="$(json_value "$active" trusted_installer_sha256)"
+  requested_at="$(json_value "$active" created_at)"
+
+  if [[ ! "$request_id" =~ ^[a-f0-9]{24}$ || ! "$offline_id" =~ ^[a-f0-9]{32}$ || ! ( ( "$trust_mode" == sigstore && -z "$manifest_sha" && -z "$binary_sha" ) || ( "$trust_mode" == sha256 && "$manifest_sha" =~ ^[a-f0-9]{64}$ && "$binary_sha" =~ ^[a-f0-9]{64}$ ) ) ]] || ! request_time_is_fresh "$requested_at"; then
+    write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "宿主机预检请求无效或已过期。" "invalid or stale Host preflight request" "" "$(now_utc)"
+    rm -f "$active" "$dir/plan-result.json"
+    return 0
+  fi
+
+  # A queued update wins over a stale preflight. Do not inspect a release against a Host entering maintenance.
+  if [[ -e "$dir/request.json" || -e "$dir/active.json" ]]; then
+    write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "已有服务端更新请求，已拒绝本次预检。" "server update is queued or running" "" "$(now_utc)"
+    rm -f "$active" "$dir/plan-result.json"
+    return 0
+  fi
+
+  started_at="$(now_utc)"
+  result_tmp="$(mktemp "$dir/.plan-result.XXXXXX")"
+  run_log="$LOG_DIR/host-control-plan.log"
+  : > "$run_log"
+  chmod 0600 "$run_log"
+  write_plan_status running "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "正在进行只读宿主机预检…" "" "$started_at" ""
+
+  plan_args=(update --source offline --channel master --offline-id "$offline_id" --plan-only)
+  if [[ "$trust_mode" == sha256 ]]; then plan_args+=(--trusted-manifest-sha256 "$manifest_sha" --trusted-installer-sha256 "$binary_sha"); fi
+
+  # Keep the runner heartbeat alive during bounded Docker inspect calls.
+  "$MANAGER" "${plan_args[@]}" >"$result_tmp" 2>"$run_log" &
+  plan_pid=$!
+  while kill -0 "$plan_pid" 2>/dev/null; do touch_heartbeat; sleep 1; done
+  if wait "$plan_pid"; then status=0; else status=$?; fi
+
+  if [[ "$status" -eq 0 ]]; then
+    result_bytes="$(wc -c < "$result_tmp" | tr -d '[:space:]')"
+    if [[ "$result_bytes" =~ ^[0-9]+$ && "$result_bytes" -gt 0 && "$result_bytes" -le 262144 ]] && grep -Eq '"read_only"[[:space:]]*:[[:space:]]*true' "$result_tmp" && grep -Eq '"host_probe"[[:space:]]*:' "$result_tmp"; then
+      chmod 0660 "$result_tmp"
+      mv -f "$result_tmp" "$dir/plan-result.json"
+      write_plan_status success "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "只读宿主机预检完成；结果不构成安装授权。" "" "$started_at" "$(now_utc)"
+    else
+      rm -f "$result_tmp" "$dir/plan-result.json"
+      write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "宿主机预检未返回有效的只读结果。" "invalid or oversized Host preflight result" "$started_at" "$(now_utc)"
+    fi
+  else
+    error_text="Host preflight command failed with status $status"
+    rm -f "$result_tmp" "$dir/plan-result.json"
+    write_plan_status failed "$request_id" "$offline_id" "$trust_mode" "$manifest_sha" "$binary_sha" "宿主机预检失败；未执行安装或维护操作。" "$error_text" "$started_at" "$(now_utc)"
+  fi
+  rm -f "$active"
+}
+
 
 # Restricted Media Worker bridge accepts only fixed media-worker activation,
 # bounded memory and CPU quotas. No generic Docker commands or core restarts.
@@ -4005,7 +4081,7 @@ backup_admin_recover_interrupted() {
 
 serve_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
-  local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data
+  local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data interrupted_plan_id interrupted_offline_id interrupted_trust_mode interrupted_plan_manifest_sha interrupted_plan_binary_sha
   local storage_inventory_interval last_storage_inventory_at last_backup_admin_at last_caddy_observation_at now
   dir="$(prepare_dir)"
   pid_file="$dir/runner.pid"
@@ -4032,8 +4108,13 @@ serve_cmd() {
   printf '%s\n' "$$" > "$pid_file"
   chmod 0660 "$pid_file"
   CONTROL_PID_FILE="$pid_file"
+  CONTROL_PLAN_CAPABILITY_FILE="$dir/offline-plan-runner.pid"
+  # The API uses this matching PID pair to detect a runner that understands
+  # the read-only preflight protocol; never publish a placeholder value.
+  printf '%s\n' "$$" > "$CONTROL_PLAN_CAPABILITY_FILE"
+  chmod 0660 "$CONTROL_PLAN_CAPABILITY_FILE"
   CONTROL_LOCK_DIR="$lock_dir"
-  trap 'rm -f "${CONTROL_PID_FILE:-}"; [[ -z "${CONTROL_LOCK_DIR:-}" ]] || rmdir "${CONTROL_LOCK_DIR}" 2>/dev/null || true' EXIT
+  trap 'rm -f "${CONTROL_PID_FILE:-}" "${CONTROL_PLAN_CAPABILITY_FILE:-}"; [[ -z "${CONTROL_LOCK_DIR:-}" ]] || rmdir "${CONTROL_LOCK_DIR}" 2>/dev/null || true' EXIT
   trap 'exit 0' INT TERM
   # Identify the code that THIS daemon actually loaded. A new installer
   # can then detect an older live runner without killing a running update.
@@ -4078,6 +4159,16 @@ serve_cmd() {
   # prevents API/UI consumers from observing a ready-looking status while the
   # host-control heartbeat is still absent during startup.
   touch_heartbeat
+  # A Host restart never turns an interrupted read-only plan into success.
+  if [[ -f "$dir/plan-active.json" ]]; then
+    interrupted_plan_id="$(json_value "$dir/plan-active.json" request_id)"
+    interrupted_offline_id="$(json_value "$dir/plan-active.json" offline_id)"
+    interrupted_trust_mode="$(json_value "$dir/plan-active.json" offline_trust_mode)"
+    interrupted_plan_manifest_sha="$(json_value "$dir/plan-active.json" trusted_manifest_sha256)"
+    interrupted_plan_binary_sha="$(json_value "$dir/plan-active.json" trusted_installer_sha256)"
+    write_plan_status failed "$interrupted_plan_id" "$interrupted_offline_id" "$interrupted_trust_mode" "$interrupted_plan_manifest_sha" "$interrupted_plan_binary_sha" "宿主机预检被宿主机重启或 Runner 中断。" "host preflight interrupted before completion" "" "$(now_utc)"
+    rm -f "$dir/plan-active.json" "$dir/plan-result.json"
+  fi
   # Incomplete privileged operations are not silently retried on restart.
   backup_admin_recover_interrupted "$dir"
   backup_admin_inventory "$dir" || true
@@ -4122,6 +4213,7 @@ serve_cmd() {
   while true; do
     touch_heartbeat
     [[ -f "$dir/backup-admin-request.json" ]] && backup_admin_process_request "$dir"
+    [[ -f "$dir/plan-request.json" ]] && process_plan_request
     [[ -f "$dir/request.json" ]] && process_request
     [[ -f "$dir/caddy-env-request.json" ]] && caddy_env_process
     [[ -f "$dir/media-worker-control-request.json" ]] && media_worker_control_process

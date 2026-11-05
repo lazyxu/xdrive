@@ -222,8 +222,14 @@ test('confirmed original Owner, ledger and BG grant failures abort the scan with
   assert.match(abort, /error is XDriveIOSPhotoBGVaultFailure/)
   assert.match(abort, /case \.notAuthorized = source/)
   assert.match(outer, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
-  assert.ok(outer.indexOf('if Self.isTransientConfirmedReadbackFailure(error) ||') <
-    outer.indexOf('report.unavailable += 1'))
+  // Only the per-original upload catch block is subject to this order:
+  // a separate new-only metadata admission may mark an unclassifiable item
+  // unavailable before reaching uploadOrVerifyOriginal at all.
+  const uploadCatch = outer.slice(outer.indexOf('let outcome = try await uploadOrVerifyOriginal('))
+  assert.ok(uploadCatch.indexOf('if Self.isTransientConfirmedReadbackFailure(error) ||') >= 0 &&
+    uploadCatch.indexOf('if Self.isTransientConfirmedReadbackFailure(error) ||') <
+    uploadCatch.indexOf('report.unavailable += 1'),
+    'global Owner, ledger and grant failures must still escape before per-upload unavailable counting')
   assert.match(outer, /await scanner\.reset\(\)\s*throw error/)
   // Missing/mismatched current Owner Node remains uncertain; no new Server
   // mutation, blind replay, or ledger record is introduced by this branch.

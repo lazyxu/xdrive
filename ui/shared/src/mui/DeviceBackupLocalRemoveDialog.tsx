@@ -10,7 +10,7 @@ export interface XDriveLocalBackupRemoveActions {
   remove(sourceID: number, revision: number): Promise<XDriveLocalBoundBackupRemoval>
 }
 
-// The caller supplies this port only for the credential-verified owning Desktop.
+// The caller supplies this port only for the credential-verified owning native host (Desktop or DSM).
 // Server-side device/Root/revision permission remains authoritative.
 export function XDriveDeviceBackupLocalRemoveDialog({
   sourceID, actions, onClose, onFinished,

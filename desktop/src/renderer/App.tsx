@@ -766,7 +766,7 @@ export default function App({
   }), [])
   const offlineImportPort = useMemo<import('../../../ui/shared/src/offline-update').XDriveOfflineImportPort>(() => {
     async function call<T>(
-      action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'start',
+      action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'plan-status' | 'plan' | 'start',
       input: Record<string, unknown> = {},
     ): Promise<T> {
       const result = await window.xdriveDesktop.agent.offlineImport<T>(action, input)
@@ -793,6 +793,9 @@ export default function App({
         name: string; state: 'ready'; upload_sha256: string
       }>('finalize', { id, name }),
       remove: async (id) => { await call<null>('remove', { id }) },
+      getPlan: (id) => call<AgentOfflineHostPlanStatus>('plan-status', { id }),
+      startPlan: (id, manifest, goBinary, trustMode) =>
+        call<AgentOfflineHostPlanStatus>('plan', { id, manifest, go: goBinary, mode: trustMode }),
       start: async (id, manifest, goBinary, backup, trustMode) => {
         await call<AgentServerUpdateState>('start', { id, manifest, go: goBinary, backup, mode: trustMode })
       },
