@@ -107,10 +107,10 @@ func TestHeadlessBootstrapUsesOriginalOwningAgentEndpoints(t *testing.T) {
 
 func TestHeadlessBootstrapRequiresServerManagedTarget(t *testing.T) {
 	cases := []struct {
-		name         string
-		managed      bool
-		targetID     *uint64
-		targetPath   string
+		name       string
+		managed    bool
+		targetID   *uint64
+		targetPath string
 	}{
 		{name: "unmanaged target", managed: false, targetID: func() *uint64 { v := uint64(84); return &v }(), targetPath: "同步文件夹/设备备份/Device/Photos"},
 		{name: "missing target node", managed: true, targetID: nil, targetPath: "同步文件夹/设备备份/Device/Photos"},
