@@ -608,7 +608,7 @@ func run(args []string) error {
 
 	scanner := sourceagent.Scanner{
 		API: cli, ExecutionAPI: cli, SourceID: cfg.SourceID, Photos: photos,
-		Roots: roots,
+		Roots:         roots,
 		IdentityStore: identityStore,
 	}
 	result, err := scanner.Run(ctx, effectiveTrigger)
