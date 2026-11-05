@@ -28,6 +28,11 @@ type Client struct {
 	deviceMu         sync.RWMutex
 	deviceID         string
 	deviceToken      string
+	synologySourceMu sync.RWMutex
+	synologySourceID uint64
+	synologySourceRevision uint64
+	synologyRootID string
+	synologyRootFingerprint string
 	refreshMu        sync.Mutex
 	sharedRefreshMu  *sync.Mutex
 	refreshToken     string
@@ -1368,6 +1373,18 @@ func (c *Client) SetDeviceIdentity(deviceID, deviceToken string) {
 	c.deviceMu.Unlock()
 }
 
+// SetSynologySourceRootProof binds this client to one server-persisted DSM
+// Source root-set fingerprint. It is sent on Source, Node and Upload requests.
+func (c *Client) SetSynologySourceRootProof(sourceID, sourceRevision uint64, rootID, fingerprint string) {
+	if c == nil { return }
+	c.synologySourceMu.Lock()
+	c.synologySourceID = sourceID
+	c.synologySourceRevision = sourceRevision
+	c.synologyRootID = strings.TrimSpace(rootID)
+	c.synologyRootFingerprint = strings.ToLower(strings.TrimSpace(fingerprint))
+	c.synologySourceMu.Unlock()
+}
+
 func (c *Client) Login(ctx context.Context, username, password string) (AuthResponse, error) {
 	return c.authenticate(ctx, "/api/v1/auth/login", username, password)
 }
@@ -2504,6 +2521,16 @@ func (c *Client) request(ctx context.Context, method, path string, body io.Reade
 	if deviceID != "" && deviceToken != "" {
 		req.Header.Set("X-XDrive-Device-ID", deviceID)
 		req.Header.Set("X-XDrive-Device-Token", deviceToken)
+	}
+	c.synologySourceMu.RLock()
+	sourceID, sourceRevision := c.synologySourceID, c.synologySourceRevision
+	rootID, rootFingerprint := c.synologyRootID, c.synologyRootFingerprint
+	c.synologySourceMu.RUnlock()
+	if sourceID != 0 && sourceRevision != 0 && rootID != "" && rootFingerprint != "" {
+		req.Header.Set("X-XDrive-Synology-Source-ID", strconv.FormatUint(sourceID, 10))
+		req.Header.Set("X-XDrive-Synology-Source-Revision", strconv.FormatUint(sourceRevision, 10))
+		req.Header.Set("X-XDrive-Local-Root-ID", rootID)
+		req.Header.Set("X-XDrive-Local-Root-Fingerprint", rootFingerprint)
 	}
 	req.Header.Set("User-Agent", "xdrive-xd/0.1")
 	return req, nil
