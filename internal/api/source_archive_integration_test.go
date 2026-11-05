@@ -137,6 +137,21 @@ func TestSourceArchiveRetainsHistorySharesCASAndRestoresPaused(t *testing.T) {
 		t.Fatalf("restore activated Source or changed target: %+v", restored)
 	}
 	request(t, router, http.MethodPost, url+"/trigger", token, nil, http.StatusConflict)
+	// A restored Source is visible to the default list, but never scheduled
+	// automatically before the Owner explicitly reactivates it.
+	res = request(t, router, http.MethodGet, "/api/v1/sources", token, nil, http.StatusOK)
+	if err := json.Unmarshal(res.Body.Bytes(), &visible); err != nil {
+		t.Fatal(err)
+	}
+	found = false
+	for _, row := range visible {
+		if row.ID == source.ID && row.Status == meta.SourceStatusPaused {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("restored Source not visible as paused")
+	}
 	// DELETE after restore re-archives the retained Source; it never discards
 	// provider identity or synchronization history.
 	requestWithHeaders(t, router, http.MethodDelete, url, token, nil,
@@ -181,21 +196,7 @@ func TestSourceArchiveRetainsHistorySharesCASAndRestoresPaused(t *testing.T) {
 		savedCollection.ExternalID != collection.ExternalID {
 		t.Fatal("archiving/restore erased sync history or changed Node/Share/CAS identity")
 	}
-	// A restored Source is visible to the default list, but never scheduled
-	// automatically before the Owner explicitly reactivates it.
-	res = request(t, router, http.MethodGet, "/api/v1/sources", token, nil, http.StatusOK)
-	if err := json.Unmarshal(res.Body.Bytes(), &visible); err != nil {
-		t.Fatal(err)
-	}
-	found = false
-	for _, row := range visible {
-		if row.ID == source.ID && row.Status == meta.SourceStatusPaused {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("restored Source not visible as paused")
-	}
+
 }
 
 func TestSourceArchiveRejectsActiveSyncWithoutMutatingSource(t *testing.T) {
