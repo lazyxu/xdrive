@@ -10,7 +10,7 @@ const policy = read('ios/XDriveIOS/NativePhotoTimelinePolicy.swift')
 const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 
 test('local Gallery mounts a full-authorized-library date navigator without replacing its native wall', () => {
-  assert.match(dashboard, /case \.local:\s*XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset\s*\)/)
+  assert.match(dashboard, /case \.local:\s*XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset,\s*mediaFilter: \$localGalleryMediaFilter\s*\)/)
   assert.doesNotMatch(dashboard, /XDriveIOSNativeLocalGalleryScreen\(/)
   assert.match(browser, /Label\("按年／月／日定位", systemImage: "calendar"\)/)
   assert.match(browser, /ForEach\(XDriveIOSNativePhotoTimelineScale\.allCases\)/)

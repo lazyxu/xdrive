@@ -594,12 +594,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             ProgressView("正在读取已授权图库…")
                                 .frame(maxWidth: .infinity).padding()
                         } else if failure == nil {
-                            Text(mediaFilter == .videos ? "当前已授权图库中没有视频。" :
-                                 mediaFilter == .photos ? "当前已授权图库中没有照片。" :
-                                 mediaFilter == .favorites ? "当前已授权图库中没有收藏照片。" :
-                                 mediaFilter == .livePhotos ? "当前已授权图库中没有实况照片。" :
-                                 mediaFilter == .screenshots ? "当前已授权图库中没有截屏。" :
-                                 "当前已授权图库中没有可浏览的照片或视频。")
+                            Text(mediaFilter.emptyMessage)
                                 .foregroundStyle(.secondary).padding(12)
                         }
                         if let failure {
