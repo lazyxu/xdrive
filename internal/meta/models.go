@@ -314,6 +314,12 @@ func NormalizeUploadConflictPolicy(value string) (string, bool) {
 
 type UploadSession struct {
 	SourceRunID        string  `gorm:"size:36;index"` // internal Pull executor only; must match on finalize
+	SourceID           uint64  `gorm:"index"`
+	SourceRevision     uint64
+	SourceDeviceID     string  `gorm:"size:36;index"`
+	SourceRootID       string  `gorm:"size:36"`
+	SourceRootFingerprint string `gorm:"size:64"`
+	SourceTargetID     uint64  `gorm:"index"`
 	ShareID            *uint64 `gorm:"index"`         // non-nil only for scoped anonymous Share uploads
 	ID                 string  `gorm:"size:36;primaryKey"`
 	OwnerID            uint64  `gorm:"not null;index"`
