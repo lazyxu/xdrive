@@ -574,7 +574,7 @@ type SourceCommit struct {
 type SynologySourceRootBinding struct {
 	SourceID uint64 `json:"source_id"`
 	Revision uint64 `json:"revision"`
-	Status string `json:"status"`
+	Status   string `json:"status"`
 }
 
 // BindSynologySourceRoot persists the Agent's aggregate Personal/Shared root
@@ -582,13 +582,19 @@ type SynologySourceRootBinding struct {
 func (c *Client) BindSynologySourceRoot(ctx context.Context, sourceID, revision uint64, rootID, fingerprint string) (SynologySourceRootBinding, error) {
 	var out SynologySourceRootBinding
 	body, err := json.Marshal(map[string]string{"root_id": rootID, "root_fingerprint": fingerprint})
-	if err != nil { return out, err }
+	if err != nil {
+		return out, err
+	}
 	req, err := c.request(ctx, http.MethodPut, fmt.Sprintf("/api/v1/sources/%d/synology-root", sourceID), bytes.NewReader(body))
-	if err != nil { return out, err }
+	if err != nil {
+		return out, err
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("If-Match", strconv.Quote(strconv.FormatUint(revision, 10)))
 	resp, err := c.do(req)
-	if err != nil { return out, err }
+	if err != nil {
+		return out, err
+	}
 	defer resp.Body.Close()
 	err = decodeResponse(resp, &out)
 	return out, err
