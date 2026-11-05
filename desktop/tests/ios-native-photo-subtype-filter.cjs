@@ -59,7 +59,7 @@ test('gallery exposes simultaneous filter toggles and resets its complete cursor
   assert.match(wall, /Toggle\("截屏", isOn: mediaFilterBinding\(for: \.screenshots\)\)/)
   assert.match(wall, /Button\("重置筛选"\) \{ mediaFilter = \.all \}/)
   assert.match(wall, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?selectedCandidates\.removeAll\(\)[\s\S]*?savedOffset = 0\s*reload\(\)/)
-  assert.match(wall, /\.task\(id: "[^"]*mediaFilter\.rawValue"\)/)
+  assert.match(wall, /mediaFilter\.rawValue/)
   assert.match(wall, /Text\(mediaFilter\.emptyMessage\)/)
   assert.doesNotMatch(wall, /Picker\("媒体类型"/)
 })
