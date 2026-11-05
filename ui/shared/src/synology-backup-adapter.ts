@@ -1206,7 +1206,9 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       if (!Array.isArray(page?.items) || page.items.length > 512) throw new Error('Invalid DSM Source list')
       const unique = new Set<number>()
       for (const item of page.items) {
-        if (!item || !Number.isSafeInteger(item.source_id) || item.source_id < 1 ||
+        if (!item || Object.keys(item).some(key =>
+          !['source_id', 'name', 'sync_mode', 'target_path'].includes(key)) ||
+          !Number.isSafeInteger(item.source_id) || item.source_id < 1 ||
           typeof item.name !== 'string' || item.name.length > 512 ||
           (item.sync_mode !== 'backup' && item.sync_mode !== 'mirror') ||
           (item.target_path !== undefined &&
