@@ -34,7 +34,7 @@ test('Gallery still fallback retains exact Owner/Node/revision and an honest low
   assert.match(viewer, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
   assert.match(viewer, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/)
   assert.match(viewer, /image = thumbnail\s*imageIsThumbnailOnly = true\s*failure = nil/)
-  assert.match(viewer, /source: imageIsThumbnailOnly \? "缩略图回退"/)
+  assert.match(viewer, /previewStatus: imageIsThumbnailOnly \? "缩略图回退"/)
   assert.match(viewer, /native-ios-photoasset-still-lowres/)
   assert.match(viewer, /native-ios-photoasset-still-reload/)
   // The full-size retry moved from a standalone navigation button to More.
