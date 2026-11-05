@@ -329,6 +329,101 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         }
     }
 
+
+    /// Explicit one-photo priority upload. It bypasses the date/window filter,
+    /// but uses the exact same Owner/Device/CAS/receipt writer as batch backup.
+    /// A picker selection is never treated as an upload receipt.
+    func runSingle(localIdentifier: String,
+                   allowICloudOriginals: Bool,
+                   onPotentialWrite: @MainActor @escaping () -> Void = {},
+                   onProgress: @MainActor @escaping (XDriveIOSPhotoBackupProgress) -> Void)
+        async throws -> XDriveIOSPhotoBackupProgress {
+        guard !localIdentifier.isEmpty, localIdentifier.utf8.count <= 1024,
+              !localIdentifier.contains("\u{0}"),
+              owner.ownerID > 0, owner.rootNodeID > 0,
+              !owner.instanceID.isEmpty else {
+            throw XDriveIOSPhotoBackupMVPError.identityNotVerified
+        }
+        try await authorization.verify(owner: owner)
+        try Task.checkCancellation()
+        var report = XDriveIOSPhotoBackupProgress()
+        report.totalVisible = 1
+        report.scanned = 1
+        report.stage = "正在核验所选原件…"
+        report.isLimited = await currentLimitedAuthorization()
+        func publish(_ value: XDriveIOSPhotoBackupProgress) async {
+            await onProgress(value)
+            await sourceProgress(value)
+        }
+        await publish(report)
+
+        let assets = PHAsset.fetchAssets(
+            withLocalIdentifiers: [localIdentifier], options: nil
+        )
+        guard let asset = assets.firstObject else {
+            report.unavailable = 1
+            report.issues.append(position: 1, mediaKind: "image", reason: .notVisible)
+            report.stage = "所选照片不在当前授权范围内，未上传"
+            await publish(report)
+            return report
+        }
+        let kind: String
+        switch asset.mediaType {
+        case .image: kind = "image"
+        case .video: kind = "video"
+        default: kind = "unsupported"
+        }
+        guard kind == "image" || kind == "video" else {
+            report.unavailable = 1
+            report.videosNotSupported = 1
+            report.issues.append(position: 1, mediaKind: kind, reason: .unsupported)
+            report.stage = "所选媒体类型暂不支持，未上传"
+            await publish(report)
+            return report
+        }
+        let isLive = kind == "image" &&
+            asset.mediaSubtypes.contains(.photoLive)
+        report.stage = "正在优先备份所选\(isLive ? "Live Photo" : kind == "video" ? "视频" : "照片")原件…"
+        await publish(report)
+        do {
+            let outcome = try await uploadOrVerifyOriginal(
+                localIdentifier, isVideo: kind == "video", isLive: isLive,
+                allowICloud: allowICloudOriginals,
+                onPotentialWrite: onPotentialWrite
+            )
+            switch outcome {
+            case .uploaded:
+                report.uploaded = 1
+                if kind == "video" { report.videoUploaded = 1 }
+                if isLive { report.liveBundleUploaded = 1 }
+                report.stage = "所选原件已上传并核验服务器收据"
+            case .alreadyConfirmed:
+                report.verifiedAlready = 1
+                if kind == "video" { report.videoVerifiedAlready = 1 }
+                if isLive { report.liveBundleVerifiedAlready = 1 }
+                report.stage = "所选原件已存在，服务器收据重新核验通过"
+            case .requiresReview:
+                report.needsReview = 1
+                report.stoppedForReview = true
+                report.stage = "所选原件上传结果不确定；请先核对收据，不能盲目重传"
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            if Self.isTransientConfirmedReadbackFailure(error) ||
+               Self.mustAbortRun(after: error) { throw error }
+            report.unavailable = 1
+            report.issues.append(
+                position: 1, mediaKind: isLive ? "live" : kind,
+                reason: Self.issueReason(after: error)
+            )
+            report.stage = "所选原件暂不可用或不支持，未将其计作备份成功"
+        }
+        try Task.checkCancellation()
+        await publish(report)
+        return report
+    }
+
     /// Only ITEM-LOCAL errors are summarized. Network, authorization,
     /// device storage, sealed journal and ambiguous ACK failures already
     /// abort/pause above and must never appear as a retryable photo issue.
