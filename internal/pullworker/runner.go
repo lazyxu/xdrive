@@ -452,18 +452,31 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 			err := result.err
 			if result.run.ID == "" && r.DB != nil &&
 				!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				// The owner can delete a Source after its Handler starts but before
-				// a durable SyncRun exists. A late preflight error no longer belongs
-				// to a Source and must not count as a failed scheduled pull.
-				var remaining int64
-				checkErr := r.DB.WithContext(ctx).Model(&meta.Source{}).
-					Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
-					Count(&remaining).Error
+				// The owner can delete, archive, pause, or revise a Source after its
+				// Handler starts but before a durable SyncRun exists. A late
+				// preflight error belongs only to the exact active snapshot that was
+				// dispatched; never publish it against a superseded Source.
+				query := r.DB.WithContext(ctx).Model(&meta.Source{}).
+					Where("id = ? AND owner_id = ? AND revision = ? AND direction = ? AND kind = ? AND status = ? AND sync_mode = ?",
+						source.ID, source.OwnerID, source.Revision,
+						meta.SourceDirectionPull, source.Kind, meta.SourceStatusActive, meta.SourceSyncModeBackup)
+				if source.RunRequestedAt == nil {
+					query = query.Where("run_requested_at IS NULL")
+				} else {
+					query = query.Where("run_requested_at = ?", *source.RunRequestedAt)
+				}
+				if source.LastRunAt == nil {
+					query = query.Where("last_run_at IS NULL")
+				} else {
+					query = query.Where("last_run_at = ?", *source.LastRunAt)
+				}
+				var current int64
+				checkErr := query.Count(&current).Error
 				if checkErr != nil {
 					err = errors.Join(err, fmt.Errorf("verify Source after preflight: %w", checkErr))
-				} else if remaining == 0 {
+				} else if current != 1 {
 					report.Skipped++
-					r.logger().Info("pull_source_skipped_deleted_inflight_preflight",
+					r.logger().Info("pull_source_skipped_obsolete_inflight_preflight",
 						"source_id", source.ID, "source_name", source.Name, "source_kind", source.Kind)
 					continue
 				}
