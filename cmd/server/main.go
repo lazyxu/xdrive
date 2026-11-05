@@ -353,6 +353,25 @@ func migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(&meta.User{}, &meta.ViewerQualityPreference{}, &meta.AdminViewerQualitySetting{}, &meta.BaiduJSAPIMapEpoch{}, &meta.BaiduJSAPIChildTicket{}, &meta.BaiduMapScopeHandoff{}, &meta.BaiduJSAPIQuotaBucket{}, &meta.BaiduGeoconvQuotaBucket{}, &meta.BaiduServerAKProbe{}, &meta.BaiduGeoconvFlight{}, &meta.BaiduJSAPILoaderFlight{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushCommonUploadOperation{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.BackgroundOwnerCancellation{}, &meta.BackgroundRuntimePresence{}, &meta.PhotoHostReplicaPresence{}, &meta.SourceWorkerPresence{}, &meta.GeoNamesReplicaPresence{}, &meta.AdminGeoNamesDatasetSnapshot{}, &meta.AdminSourceWorkerSetting{}, &meta.AdminSourceWorkerRevision{}, &meta.AdminPostgresPoolSetting{}, &meta.AdminPostgresPoolRevision{}, &meta.AdminMediaWorkerSetting{}, &meta.AdminMediaWorkerRevision{}, &meta.AdminCaddyHTTPSSetting{}, &meta.AdminCaddyHTTPSRevision{}, &meta.AdminCaddyHostApplyReservation{}, &meta.AdminCaddyAppliedNonce{}, &meta.PostgresPoolReplicaPresence{}, &meta.ArchivePrepareRun{}, &meta.DownloadProgress{}, &meta.SystemMaintenanceRun{}, &meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{}, &meta.Source{}, &meta.ClientDevice{}, &meta.IOSPhotoBackgroundGrant{}, &meta.LocalSourceBinding{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.LocalSourceItemEvidence{}, &meta.LocalSourceCommitIntent{}, &meta.LocalPushStaging{}, &meta.LocalPushFirstDirectoryChallenge{}, &meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{}, &meta.LocalPushOperationStageBinding{}, &meta.LocalPushFirstLeafOperationCommit{}, &meta.LocalPushFileTerminal{}, &meta.LocalPushNativeTerminalChallenge{}, &meta.LocalPushCASPrepareIntent{}, &meta.LocalPushQuotaHold{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{}, &meta.SourceCredential{}, &meta.AdminServiceSecret{}, &meta.InternalServiceKeyAnchor{}, &meta.AdminGeoNamesSetting{}, &meta.AdminGeoNamesRevision{}, &meta.AdminPhotoAutoSetting{}, &meta.AdminPhotoAutoRevision{}, &meta.AdminPhotoHostSetting{}, &meta.AdminPhotoHostRevision{}, &meta.AdminPhotoHostApply{}, &meta.PhotoHostAdmissionGate{}, &meta.SourceConnectorConfig{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{}, &meta.BaiduPhotoMapIndexIntent{}, &meta.PhotoEditRecipe{}, &meta.PhotoCreativeGeneration{}, &meta.PhotoAlbumFolder{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{}, &meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{}, &meta.PhotoPersonClusterState{}, &meta.PhotoIntelligenceReanalyzeIntent{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoPersonSuggestionReview{}, &meta.PhotoPlaceLabel{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{}, &meta.PhotoSemanticEmbedding{}, &meta.FileOperation{}, &meta.MediaSelectionJob{}, &meta.MediaSelectionJobItem{}, &meta.FileQuickAccess{}, &meta.FileFavorite{}, &meta.FileRecentAccess{}, &meta.FileRecentFolderAccess{}, &meta.FileTag{}, &meta.FileNodeTag{}, &meta.FileSavedSearch{}, &meta.NotesNamespace{}, &meta.Note{}, &meta.PWAOfflineInstance{}); err != nil {
 		return err
 	}
+	// S01: preserve verified historic local/iPhone Push ownership when the
+	// connector-neutral device_id column is introduced. The legacy creator
+	// column is migration input only, never authorization or an Owner fallback.
+	// Require the registered Device to have the same Owner and native platform;
+	// inconsistent or absent claims remain unbound (fail closed).
+	if err := db.Exec(`
+UPDATE xd_sources AS s
+SET device_id = d.id
+FROM xd_client_devices AS d
+WHERE s.device_id IS NULL
+  AND s.local_creator_device_id = d.id
+  AND s.owner_id = d.owner_id
+  AND s.direction = 'push'
+  AND (
+    (s.kind = 'local_folder' AND d.platform IN ('windows', 'linux', 'darwin'))
+    OR (s.kind = 'ios_photos' AND d.platform = 'ios')
+  )`).Error; err != nil {
+		return fmt.Errorf("backfill verified Push Source DeviceID: %w", err)
+	}
 	if err := installNodeParentOwnershipFence(db); err != nil {
 		return err
 	}
