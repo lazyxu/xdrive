@@ -4105,13 +4105,13 @@ serve_cmd() {
     fi
   fi
 
-  printf '%s\n' "$" > "$pid_file"
+  printf '%s\n' "$$" > "$pid_file"
   chmod 0660 "$pid_file"
   CONTROL_PID_FILE="$pid_file"
   CONTROL_PLAN_CAPABILITY_FILE="$dir/offline-plan-runner.pid"
   # The API uses this matching PID pair to detect a runner that understands
   # the read-only preflight protocol; never publish a placeholder value.
-  printf '%s\n' "$" > "$CONTROL_PLAN_CAPABILITY_FILE"
+  printf '%s\n' "$$" > "$CONTROL_PLAN_CAPABILITY_FILE"
   chmod 0660 "$CONTROL_PLAN_CAPABILITY_FILE"
   CONTROL_LOCK_DIR="$lock_dir"
   trap 'rm -f "${CONTROL_PID_FILE:-}" "${CONTROL_PLAN_CAPABILITY_FILE:-}"; [[ -z "${CONTROL_LOCK_DIR:-}" ]] || rmdir "${CONTROL_LOCK_DIR}" 2>/dev/null || true' EXIT

@@ -1070,7 +1070,13 @@ for _ in $(seq 1 50); do
 done
 grep -q '"state":"idle"' "$TMP/home/state/control/status.json"
 [[ -f "$TMP/home/state/control/heartbeat" ]]
-grep -Eq '^[0-9]+
+grep -Eq '^[0-9]+$' "$TMP/home/state/control/runner.pid"
+runner_pid="$(cat "$TMP/home/state/control/runner.pid")"
+plan_runner_pid="$(cat "$TMP/home/state/control/offline-plan-runner.pid")"
+[[ "$runner_pid" == "$CONTROL_TEST_PID" ]]
+[[ "$plan_runner_pid" == "$runner_pid" ]]
+
+[[ -f "$TMP/home/state/control/storage-host-inventory.env" ]]
 grep -Eq '^generated_at=[0-9]{4}-[0-9]{2}-[0-9]{2}T' "$TMP/home/state/control/storage-host-inventory.env"
 grep -Eq '^database_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
 grep -Eq '^backup_root_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
@@ -1169,132 +1175,6 @@ grep -Fq 'update --source offline --channel master --offline-id 1111111111111111
 [[ ! -f "$TMP/home/state/control/plan-active.json" ]]
 cp "$HOST" "$TMP/home/bin/xdrive-server"
 
-TEST_STATE="$TMP/state" \
-PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/home" \
-bash "$TMP/home/bin/server-control.sh" stop
-wait "$CONTROL_TEST_PID" || true
-CONTROL_TEST_PID=""
-
-TEST_STATE="$TMP/state" \
-PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/home" \
-bash "$HOST" control status >"$TMP/control-status.out"
-grep -q '"state":"success"' "$TMP/control-status.out"
-
-# Restart recovery: an orphaned active request must become failed, never stay running forever.
-cat > "$TMP/home/state/control/active.json" <<EOF
-{"request_id":"interrupted-1","source":"gitlab","channel":"stable","requested_by":"admin","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-EOF
-XD_CONFIG_DIR="$TMP/home" XD_CONTROL_ONCE=1 \
-  bash "$TMP/home/bin/server-control.sh" serve >"$TMP/control-recovery.out" 2>"$TMP/control-recovery.err"
-grep -q '"state":"failed"' "$TMP/home/state/control/status.json"
-grep -q '"request_id":"interrupted-1"' "$TMP/home/state/control/status.json"
-grep -q 'host update interrupted before completion' "$TMP/home/state/control/status.json"
-[[ ! -f "$TMP/home/state/control/active.json" ]]
-
-# Stale queued requests are rejected by the host even if someone writes the bridge directly.
-cat > "$TMP/home/state/control/request.json" <<'EOF'
-{"request_id":"stale-1","source":"github","channel":"master","requested_by":"admin","created_at":"2020-01-01T00:00:00Z"}
-EOF
-XD_CONFIG_DIR="$TMP/home" XD_CONTROL_ONCE=1 \
-  bash "$TMP/home/bin/server-control.sh" serve >"$TMP/control-stale.out" 2>"$TMP/control-stale.err"
-grep -q '"state":"failed"' "$TMP/home/state/control/status.json"
-grep -q '"request_id":"stale-1"' "$TMP/home/state/control/status.json"
-grep -q 'invalid or stale host-control request' "$TMP/home/state/control/status.json"
-[[ ! -f "$TMP/home/state/control/request.json" ]]
-
-# The server bridge preserves the Share provider and file-backup option.
-# A fresh stable request is rejected before the provider is invoked.
-cat > "$TMP/home/bin/xdrive-share-update.py" <<'PY'
-import json, os, pathlib, sys
-pathlib.Path(os.environ["TEST_STATE"], "share-provider-args").write_text(json.dumps(sys.argv[1:]))
-PY
-for channel in master stable; do
-  rm -f "$TMP/state/share-provider-args"
-  cat > "$TMP/home/state/control/request.json" <<EOF
-{"request_id":"share-$channel","source":"xdrive","channel":"$channel","backup_file_data":true,"created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-EOF
-  TEST_STATE="$TMP/state" XD_CONFIG_DIR="$TMP/home" XD_CONTROL_ONCE=1 \
-    bash "$TMP/home/bin/server-control.sh" serve >"$TMP/control-share-$channel.out" 2>"$TMP/control-share-$channel.err"
-  grep -q '"source":"xdrive"' "$TMP/home/state/control/status.json"
-  if [[ "$channel" == master ]]; then
-    grep -q '"state":"success"' "$TMP/home/state/control/status.json"
-    grep -q -- '"--backup-file-data"' "$TMP/state/share-provider-args"
-  else
-    grep -q '"state":"failed"' "$TMP/home/state/control/status.json"
-    grep -q 'invalid or stale host-control request' "$TMP/home/state/control/status.json"
-    [[ ! -f "$TMP/state/share-provider-args" ]]
-  fi
-done
-
-echo "host xdrive-server manager tests passed"
- "$TMP/home/state/control/runner.pid"
-runner_pid="$(cat "$TMP/home/state/control/runner.pid")"
-plan_runner_pid="$(cat "$TMP/home/state/control/offline-plan-runner.pid")"
-[[ "$runner_pid" == "$CONTROL_TEST_PID" ]]
-[[ "$plan_runner_pid" == "$runner_pid" ]]
-
-[[ -f "$TMP/home/state/control/storage-host-inventory.env" ]]
-grep -Eq '^generated_at=[0-9]{4}-[0-9]{2}-[0-9]{2}T' "$TMP/home/state/control/storage-host-inventory.env"
-grep -Eq '^database_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
-grep -Eq '^backup_root_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
-grep -Eq '^config_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
-grep -Eq '^logs_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
-grep -Eq '^state_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
-
-request_tmp="$TMP/home/state/control/.request-test.tmp"
-cat > "$request_tmp" <<EOF
-{"request_id":"test-request-1","source":"github","channel":"master","backup_file_data":false,"requested_by":"admin","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-EOF
-chmod 660 "$request_tmp"
-ln "$request_tmp" "$TMP/home/state/control/request.json"
-rm -f "$request_tmp"
-[[ "$(stat -c '%a' "$TMP/home/state/control")" == "2770" ]]
-
-for _ in $(seq 1 100); do
-  if grep -q '"state":"success"' "$TMP/home/state/control/status.json" 2>/dev/null &&
-     grep -q '"request_id":"test-request-1"' "$TMP/home/state/control/status.json" 2>/dev/null &&
-     [[ ! -f "$TMP/home/state/control/request.json" && ! -f "$TMP/home/state/control/active.json" ]]; then
-    break
-  fi
-  kill -0 "$CONTROL_TEST_PID" 2>/dev/null || {
-    echo "host control runner exited before completing update" >&2
-    exit 1
-  }
-  sleep 0.1
-done
-grep -q '"state":"success"' "$TMP/home/state/control/status.json"
-grep -q '"request_id":"test-request-1"' "$TMP/home/state/control/status.json"
-grep -q '"backup_file_data":false' "$TMP/home/state/control/status.json"
-grep -q '^--source github --channel master$' "$TMP/state/installer-args"
-[[ ! -f "$TMP/home/state/control/request.json" ]]
-[[ ! -f "$TMP/home/state/control/active.json" ]]
-
-cat > "$TMP/home/state/control/request.json" <<EOF
-{"request_id":"test-request-backup-files","source":"github","channel":"master","backup_file_data":true,"requested_by":"admin","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-EOF
-# Verify a second complete update, not an arbitrary 10-second latency SLA.
-# Slow, loaded CI hosts may take longer to syntax-check the same installer.
-# Keep a finite wait; detect early runner death and assert terminal success.
-for _ in $(seq 1 300); do
-  if grep -q '"state":"success"' "$TMP/home/state/control/status.json" 2>/dev/null &&
-     grep -q '"request_id":"test-request-backup-files"' "$TMP/home/state/control/status.json" 2>/dev/null &&
-     [[ ! -f "$TMP/home/state/control/request.json" && ! -f "$TMP/home/state/control/active.json" ]]; then
-    break
-  fi
-  kill -0 "$CONTROL_TEST_PID" 2>/dev/null || {
-    echo "host control runner exited before completing second update" >&2
-    exit 1
-  }
-  sleep 0.1
-done
-grep -q '"state":"success"' "$TMP/home/state/control/status.json"
-grep -q '"request_id":"test-request-backup-files"' "$TMP/home/state/control/status.json"
-grep -q '^--source github --channel master --backup-file-data$' "$TMP/state/installer-args"
-grep -q '"backup_file_data":true' "$TMP/home/state/control/status.json"
-[[ ! -f "$TMP/home/state/control/request.json" ]]
-[[ ! -f "$TMP/home/state/control/active.json" ]]
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
