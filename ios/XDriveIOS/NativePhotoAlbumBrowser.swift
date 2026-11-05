@@ -761,13 +761,13 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     album: mapAlbumScope,
                     mapScope: .constant(.library),
                     offset: .constant(0),
-                    cameraOnEntry: albumMapCamera,
-                    onLibraryCameraChange: { next in albumMapCamera = next },
                     onClose: {
                         showingAlbumMap = false
                         mapAlbumScope = nil
                         albumMapJump = nil
-                    }
+                    },
+                    cameraOnEntry: albumMapCamera,
+                    onLibraryCameraChange: { next in albumMapCamera = next }
                 )
                 .environment(\.xdriveNativeLocalMapJump, albumMapJump)
             }
