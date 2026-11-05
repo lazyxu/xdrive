@@ -553,6 +553,12 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 Text("此开关只用于手动备份；前台自动备份的 iCloud 选项在下方独立保存。关闭时只备份本机可读取的原件，不降低原件质量。")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            XDriveIOSPhotoPriorityBackupSection(
+                login: login,
+                controller: controller,
+                destination: destination,
+                allowICloud: allowICloud
+            )
             Section("手动备份") {
                 Text("下一次手动扫描：第 \(controller.manualNextWindow + 1) 段。每段最多 256 项；达到 20 项新增上限会重复当前段，完成后才进入下一段。重启 App、切换账户或相册变化会重新从头检查。")
                     .font(.caption).foregroundStyle(.secondary)
