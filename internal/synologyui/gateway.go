@@ -392,7 +392,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		timeout = 120 * time.Second // One explicit <=20 MiB image over bounded CGI/Agent IPC.
 	} else if isLocalBackupManagementPath(r.URL.Path) {
 		timeout = 45 * time.Second // Revision-fenced settings calls use the owning Agent and Server.
-	]
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	username, err := g.Authenticate(ctx)
