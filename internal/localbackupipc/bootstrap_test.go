@@ -45,15 +45,17 @@ func TestHeadlessBootstrapUsesOriginalOwningAgentEndpoints(t *testing.T) {
 				request["kind"] != "local_folder" ||
 				request["direction"] != "push" ||
 				request["sync_mode"] != "backup" ||
-				request["target_node_id"] != float64(12) {
+				request["target_node_id"] != float64(0) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
+			target := uint64(84)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(LocalBackupSource{
 				ID: 42, Name: "Photos", Revision: 1, Status: "paused",
 				Kind: "local_folder", Direction: "push", SyncMode: "backup",
-				TargetNodeID: func() *uint64 { v := uint64(12); return &v }(),
+				TargetNodeID: &target, TargetManaged: true,
+				TargetPath: "同步文件夹/设备备份/NAS_123456789012/Photos",
 			})
 		case "/v1/local-folder/authorize":
 			var req localBackupRootRequest
@@ -80,7 +82,7 @@ func TestHeadlessBootstrapUsesOriginalOwningAgentEndpoints(t *testing.T) {
 	if err := agent.PreflightLocalRoot(ctx, localPath); err != nil {
 		t.Fatal(err)
 	}
-	source, err := agent.CreateLocalBackupSource(ctx, "Photos", 12)
+	source, err := agent.CreateLocalBackupSource(ctx, "Photos")
 	if err != nil || source.ID != 42 {
 		t.Fatalf("existing owning Agent Source endpoint rejected: %+v, %v", source, err)
 	}
@@ -120,8 +122,8 @@ func TestHeadlessBootstrapRejectsUnsafeOrForeignRootWithoutRequests(t *testing.T
 	if err := agent.PreflightLocalRoot(context.Background(), "relative"); err == nil {
 		t.Fatal("relative local directory accepted")
 	}
-	if _, err := agent.CreateLocalBackupSource(context.Background(), "Photos", 0); err == nil {
-		t.Fatal("cloud target with invalid ID accepted")
+	if _, err := agent.CreateLocalBackupSource(context.Background(), ""); err == nil {
+		t.Fatal("empty Source name accepted")
 	}
 	if _, err := agent.AuthorizeLocalRoot(context.Background(), 0, "/tmp/photos"); err == nil {
 		t.Fatal("missing Source ownership accepted")
