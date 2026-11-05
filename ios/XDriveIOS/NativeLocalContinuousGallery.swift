@@ -98,8 +98,7 @@ struct XDriveIOSNativeSquarePhotoTile: View {
             // Presentation change reissues only this visible thumbnail.
             loader.load(
                 candidate.id, size: CGSize(width: 420, height: 420),
-                contentMode: framing == .complete ? .aspectFit : .aspectFill,
-                allowICloudThumbnail: true
+                contentMode: framing == .complete ? .aspectFit : .aspectFill
             )
             // A video duration is PhotoKit metadata, not a media download.
             // Independently verify identity before displaying the badge.

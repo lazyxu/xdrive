@@ -310,8 +310,7 @@ private struct XDriveIOSNativeAlbumCover: View {
             options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
             if let asset = PHAsset.fetchAssets(in: collection, options: options).firstObject {
                 loader.load(
-                    asset.localIdentifier, size: CGSize(width: 220, height: 220),
-                    allowICloudThumbnail: true
+                    asset.localIdentifier, size: CGSize(width: 220, height: 220)
                 )
             }
         }

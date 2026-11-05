@@ -16,19 +16,19 @@ const wall = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
 const albums = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
 const search = read('ios/XDriveIOS/NativePhotoMetadataSearch.swift')
 
-test('PhotoKit iCloud access is opt-in on a resized thumbnail request only', () => {
-  assert.ok(loader.includes('allowICloudThumbnail: Bool = false'))
-  assert.ok(loader.includes('settings.isNetworkAccessAllowed = allowICloudThumbnail'))
+test('PhotoKit iCloud thumbnail access is enabled by default without caller configuration', () => {
+  assert.ok(loader.includes('settings.isNetworkAccessAllowed = true'))
   assert.ok(loader.includes('PHImageManager.default().requestImage('))
   assert.ok(loader.includes('targetSize: size'))
   assert.ok(loader.includes('settings.resizeMode = .fast'))
   assert.ok(loader.includes('settings.deliveryMode = .opportunistic'))
-  assert.doesNotMatch(loader, /requestAVAsset|requestLivePhoto|requestImageDataAndOrientation|PHAssetResourceManager/)
+  assert.doesNotMatch(loader, /allowICloudThumbnail|requestAVAsset|requestLivePhoto|requestImageDataAndOrientation|PHAssetResourceManager/)
 })
 
-test('continuous wall, album covers and local search explicitly opt into visible thumbnails', () => {
+test('continuous wall, album covers and local search use default visible-thumbnail loading', () => {
   for (const source of [wall, albums, search]) {
-    assert.ok(source.includes('allowICloudThumbnail: true'))
+    assert.ok(source.includes('loader.load('))
+    assert.ok(!source.includes('allowICloudThumbnail'))
     assert.ok(source.includes('loader.cancel()'))
     assert.ok(source.includes('loader.isLoading'))
     assert.ok(source.includes('.task(id:'))

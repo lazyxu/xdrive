@@ -315,8 +315,7 @@ private struct XDriveIOSNativePhotoSearchTile: View {
         .task(id: "\(candidate.id)-\(framing.rawValue)") {
             loader.load(
                 candidate.id, size: CGSize(width: 420, height: 420),
-                contentMode: framing == .complete ? .aspectFit : .aspectFill,
-                allowICloudThumbnail: true
+                contentMode: framing == .complete ? .aspectFit : .aspectFill
             )
         }
         .onDisappear { loader.cancel() }
