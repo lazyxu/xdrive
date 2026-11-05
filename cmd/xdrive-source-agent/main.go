@@ -273,16 +273,27 @@ func setup(args []string) error {
 			return fmt.Errorf("Server did not return the expected device-bound managed Synology Push target")
 		}
 		targetID = *remote.TargetNodeID
-	} else {
-		mode := effectiveMode
-		active := meta.SourceStatusActive
-		remote, err = cli.UpdateSource(ctx, remote.ID, remote.Revision, client.UpdateSourceInput{
-			Name: &sourceName, RunMode: &mode, Status: &active, IgnoreRules: &rules,
-		})
-		if err != nil {
-			return err
-		}
 	}
+
+	roots := sourceagent.RootsWithIdentityState(
+		strings.TrimSpace(*personal), personalID, personalFingerprint,
+		strings.TrimSpace(*shared), sharedID, sharedFingerprint,
+	)
+	if remote.DeviceID == "" || remote.DeviceID != cfg.DeviceID ||
+		!remote.TargetManaged || remote.TargetNodeID == nil {
+		return fmt.Errorf("Synology Push Source must belong to this registered device and have a managed target; create a new Source if this is a legacy unbound Source")
+	}
+	rootID, rootFingerprint, proofErr := sourceagent.RootSetIdentity(roots)
+	if proofErr != nil {
+		return fmt.Errorf("compute Synology root-set identity: %w", proofErr)
+	}
+	binding, bindErr := cli.BindSynologySourceRoot(ctx, remote.ID, remote.Revision, rootID, rootFingerprint)
+	if bindErr != nil {
+		return fmt.Errorf("persist Synology root fingerprint on Server: %w", bindErr)
+	}
+	remote.Revision = binding.Revision
+	remote.Status = binding.Status
+	cli.SetSynologySourceRootProof(remote.ID, remote.Revision, rootID, rootFingerprint)
 
 	cfg.SourceID = remote.ID
 	cfg.PersonalRoot = strings.TrimSpace(*personal)
@@ -299,13 +310,15 @@ func setup(args []string) error {
 	if err := sourceagentconfig.Save(cfg); err != nil {
 		return err
 	}
-	if remote.Status != meta.SourceStatusActive {
-		active := meta.SourceStatusActive
-		remote, err = cli.UpdateSource(ctx, remote.ID, remote.Revision, client.UpdateSourceInput{Status: &active})
-		if err != nil {
-			return fmt.Errorf("local roots were saved but Source activation failed; rerun setup to resume safely: %w", err)
-		}
+	mode := effectiveMode
+	active := meta.SourceStatusActive
+	remote, err = cli.UpdateSource(ctx, remote.ID, remote.Revision, client.UpdateSourceInput{
+		Name: &sourceName, RunMode: &mode, Status: &active, IgnoreRules: &rules,
+	})
+	if err != nil {
+		return fmt.Errorf("local roots were saved but Source activation failed; rerun setup to resume safely: %w", err)
 	}
+	cli.SetSynologySourceRootProof(remote.ID, remote.Revision, rootID, rootFingerprint)
 	fmt.Printf("source: %s (%d)\nmode: %s\ntarget node: %d\ndevice: %s\n", remote.Name, remote.ID, remote.RunMode, targetID, cfg.DeviceID)
 	if remote.DeviceID == "" {
 		fmt.Println("warning: this is a legacy Source without server-side device binding; its existing target was preserved and no migration was performed")
@@ -368,10 +381,7 @@ func validateSynologySourceDeviceBinding(remote client.Source, configuredID, req
 		return nil
 	}
 	if remote.DeviceID == "" {
-		if configuredID == 0 && requestedID == 0 {
-			return fmt.Errorf("Source %d is a legacy unbound DSM Source; use --source-id to keep it unchanged or choose a new --name to create a device-bound Source", remote.ID)
-		}
-		return nil
+		return fmt.Errorf("Source %d is a legacy unbound DSM Source and cannot be executed; create a new device-bound Source instead", remote.ID)
 	}
 	if remote.DeviceID != deviceID {
 		return fmt.Errorf("Synology Push Source %d belongs to another registered device; refusing to rebind it", remote.ID)
@@ -550,10 +560,22 @@ func run(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	roots := sourceagent.RootsWithIdentityState(
+		cfg.PersonalRoot, cfg.PersonalRootID, cfg.PersonalRootFingerprint,
+		cfg.SharedRoot, cfg.SharedRootID, cfg.SharedRootFingerprint,
+	)
 	remoteSource, err := cli.Source(ctx, cfg.SourceID)
 	if err != nil {
 		return err
 	}
+	if remoteSource.DeviceID == "" || remoteSource.DeviceID != cfg.DeviceID {
+		return fmt.Errorf("Synology Push Source is not bound to this registered device; run setup with a new device-bound Source")
+	}
+	rootID, rootFingerprint, proofErr := sourceagent.RootSetIdentity(roots)
+	if proofErr != nil {
+		return fmt.Errorf("compute Synology root-set identity: %w", proofErr)
+	}
+	cli.SetSynologySourceRootProof(remoteSource.ID, remoteSource.Revision, rootID, rootFingerprint)
 	effectiveTrigger, shouldRun, err := resolveRunTrigger(
 		remoteSource, strings.TrimSpace(*trigger), *dueOnly, *interval, time.Now().UTC(),
 	)
@@ -586,10 +608,7 @@ func run(args []string) error {
 
 	scanner := sourceagent.Scanner{
 		API: cli, ExecutionAPI: cli, SourceID: cfg.SourceID, Photos: photos,
-		Roots: sourceagent.RootsWithIdentityState(
-			cfg.PersonalRoot, cfg.PersonalRootID, cfg.PersonalRootFingerprint,
-			cfg.SharedRoot, cfg.SharedRootID, cfg.SharedRootFingerprint,
-		),
+		Roots: roots,
 		IdentityStore: identityStore,
 	}
 	result, err := scanner.Run(ctx, effectiveTrigger)
