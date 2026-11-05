@@ -453,8 +453,9 @@ test('GPS cell album automatically advances as its lazy-grid sentinel enters the
 
 
 test('native Photos album exposes Show Map only with Full Photo Library access', () => {
-  assert.match(albumBrowser, /if permission == \.authorized && selected == nil && !selectionMode[\s\S]*?native-ios-local-album-show-map/)
-  assert.match(albumBrowser, /Button \{ showingAlbumMap = true \} label: \{\s*Label\("显示地图", systemImage: "map"\)/)
+  assert.match(albumBrowser, /Menu \{[\s\S]*?if permission == \.authorized && selected == nil && !selectionMode[\s\S]*?native-ios-local-album-show-map/)
+  assert.match(albumBrowser, /Button \{\s*showingAlbumMap = true\s*\} label: \{\s*Label\("显示地图", systemImage: "map"\)/)
+  assert.match(albumBrowser, /Label\("更多", systemImage: "ellipsis.circle"\)/)
   assert.match(albumBrowser, /fullScreenCover\(isPresented: \$showingAlbumMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\(\s*album: album,\s*mapScope: \.constant\(\.library\)/)
   assert.match(map, /var album: XDriveLocalPhotoAlbumSummary\? = nil/)
   assert.match(map, /if album == nil \{\s*ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?native-ios-map-focus-toggle/)
