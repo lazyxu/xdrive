@@ -30,8 +30,6 @@ const mui = Object.fromEntries(
 )
 const shareInventory = ({ onVerifiedShare }) =>
   React.createElement('share-inventory', { onVerifiedShare })
-const cloudTarget = ({ onSelectTarget }) =>
-  React.createElement('cloud-target', { onSelectTarget })
 const draftPlaceholder = () => React.createElement('draft-placeholder')
 
 function load(name, extra = {}) {
@@ -52,7 +50,6 @@ function load(name, extra = {}) {
     react: React, 'react/jsx-runtime': require('react/jsx-runtime'),
     '@mui/material': mui,
     './SynologyNASShareInventory': { XDriveSynologyNASShareInventory: shareInventory },
-    './SynologyBackupTargetBrowser': { XDriveSynologyBackupTargetBrowser: cloudTarget },
     './SynologyNativeDraftReview': { XDriveSynologyNativeDraftReview: draftPlaceholder },
     ...extra,
   }
@@ -93,10 +90,6 @@ async function selectNewSource(tree, name) {
     tree.root.findByType('share-inventory').props.onVerifiedShare({
       label: '/volume1/Photos', selection_id: SELECTION,
     })
-    button(tree, '选择云端备份目标').props.onClick()
-  })
-  await act(async () => {
-    tree.root.findByType('cloud-target').props.onSelectTarget({ id: 17, name: 'Backup Target' })
     tree.root.findByType('TextField').props.onChange({ target: { value: name } })
     checkbox(tree, '我确认在当前 NAS').props.onChange({ target: { checked: true } })
   })
@@ -148,7 +141,7 @@ test('DSM Source create is synchronously one-shot; only confirmed bind unlocks a
     submit.props.onClick()
   })
   assert.equal(calls.length, 1, 'a double click must not create duplicate Sources')
-  assert.deepEqual(calls[0].slice(0, 4), [SELECTION, SCOPE, 17, 'NAS Photos'])
+  assert.deepEqual(calls[0].slice(0, 3), [SELECTION, SCOPE, 'NAS Photos'])
   await act(async () => {
     pending[0].resolve({ source_id: 57, state: 'authorized' })
     await Promise.resolve()
@@ -162,7 +155,7 @@ test('DSM Source create is synchronously one-shot; only confirmed bind unlocks a
   await selectNewSource(tree, 'NAS Documents')
   await act(async () => { button(tree, '确认创建并绑定本地目录').props.onClick() })
   assert.equal(calls.length, 2)
-  assert.deepEqual(calls[1].slice(0, 4), [SELECTION, SCOPE, 17, 'NAS Documents'])
+  assert.deepEqual(calls[1].slice(0, 3), [SELECTION, SCOPE, 'NAS Documents'])
   await act(async () => {
     pending[1].resolve({ source_id: 58, state: 'authorized' })
     await Promise.resolve()
@@ -333,10 +326,6 @@ test('previous share preflight callback cannot authorize a new Source generation
     oldVerifier({ label: '/volume1/Photos', selection_id: SELECTION })
   })
   await act(async () => {
-    button(tree, '选择云端备份目标').props.onClick()
-  })
-  await act(async () => {
-    tree.root.findByType('cloud-target').props.onSelectTarget({ id: 17, name: 'Backup Target' })
     tree.root.findByType('TextField').props.onChange({ target: { value: 'NAS Documents' } })
     checkbox(tree, '我确认在当前 NAS').props.onChange({ target: { checked: true } })
   })
