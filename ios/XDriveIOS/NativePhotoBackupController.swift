@@ -59,7 +59,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     @Published private(set) var message = "未启动相册备份"
     @Published private(set) var errorMessage: String?
 
-    private enum RunKind { case manual, automatic, focused }
+    private enum RunKind { case manual, automatic, focused, single }
     private var running: Task<Void, Never>?
     private var runningOwner: XDriveNativeOwnerRoot?
     // The native login model and backup controller survive tab switches.
@@ -303,6 +303,31 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         start(login: login, kind: .manual, allowICloud: allowICloud)
     }
 
+
+    /// Upload one explicitly selected PhotoKit original ahead of the batch
+    /// cursor. The selected Owner is captured by the native confirmation UI;
+    /// the shared run gate and existing CAS receipt writer still apply.
+    func startSingle(login: XDriveIOSNativeOwnerLoginModel,
+                     expectedOwner: XDriveNativeOwnerRoot,
+                     localIdentifier: String, allowICloud: Bool) {
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+              !localIdentifier.isEmpty, localIdentifier.utf8.count <= 1024,
+              !localIdentifier.contains("\u{0}") else {
+            errorMessage = "服务器、账户或所选照片已变化；未启动优先备份。"
+            return
+        }
+        guard [.authorized, .limited].contains(
+            PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        ) else {
+            errorMessage = "照片访问权限已变化，无法优先备份所选原件。"
+            return
+        }
+        start(
+            login: login, kind: .single, allowICloud: allowICloud,
+            singleLocalIdentifier: localIdentifier
+        )
+    }
+
     /// A Synology-style concentrated first pass, deliberately foreground
     /// only. An explicit Owner-bound consent is mandatory; it reuses the
     /// exact same CAS/ledger writer as manual and scheduled backup.
@@ -330,7 +355,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     }
 
     private func start(login: XDriveIOSNativeOwnerLoginModel,
-                       kind: RunKind, allowICloud: Bool) {
+                       kind: RunKind, allowICloud: Bool,
+                       singleLocalIdentifier: String? = nil) {
         guard !busy, running == nil, let selected = login.owner,
               UIApplication.shared.applicationState == .active,
               [.authorized, .limited].contains(
@@ -412,7 +438,36 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 )
                 sourceRunReporter = reporter
                 await reporter.begin()
-                if kind == .focused {
+
+                if kind == .single {
+                    guard let localIdentifier = singleLocalIdentifier else {
+                        throw XDriveIOSPhotoBackupMVPError.identityNotVerified
+                    }
+                    let result = try await XDriveIOSForegroundPhotoBackupMVP(
+                        owner: selected, managedForeground: managed,
+                        onSourceProgress: { value in
+                            reporter.enqueueUpdate(value)
+                        }
+                    ).runSingle(
+                        localIdentifier: localIdentifier,
+                        allowICloudOriginals: allowICloud,
+                        onPotentialWrite: { beganOriginalWrite = true }
+                    ) { [weak self] value in
+                        guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
+                              self?.displayEpoch == uiEpoch,
+                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
+                        else { return }
+                        self?.progress = value
+                    }
+                    try Task.checkCancellation()
+                    guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                          self.displayEpoch == uiEpoch else {
+                        throw XDriveIOSNativeSessionError.staleSession
+                    }
+                    self.progress = result
+                    self.message = "单张优先备份：新增 \(result.uploaded)，已验证 \(result.verifiedAlready)，待核对 \(result.needsReview)，不可用 \(result.unavailable)。"
+                    await reporter.finish(status: "completed")
+                } else if kind == .focused {
                     try await self.runFocused(
                         login: login, owner: selected, uiEpoch: uiEpoch,
                         allowICloud: allowICloud,
