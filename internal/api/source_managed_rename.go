@@ -226,8 +226,8 @@ func managedSourceTargetAncestorNamesTx(tx *gorm.DB, source meta.Source, target 
 	case meta.SourceDirectionPull:
 		switch source.Kind {
 		case yikeSourceKind:
-			if leafParent.Name == yikePullTargetConnectorName && namespace.Name == yikePullTargetRootName {
-				return []string{yikePullTargetConnectorName, yikePullTargetRootName, yikeTargetRootName}, nil
+			if leafParent.Name == "Yike Photos" && namespace.Name == "Pull" {
+				return []string{"Yike Photos", "Pull", yikeTargetRootName}, nil
 			}
 			if leafParent.Name == yikeTargetConnectorName && namespace.Name == yikeTargetRootName {
 				return []string{yikeTargetConnectorName, yikeTargetRootName}, nil
