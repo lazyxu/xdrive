@@ -514,7 +514,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
 }
 
 /// The legacy `.page` value remains decodable for older navigation snapshots.
-/// Gallery map entry migrates it to `.library`; the page-mode control is retired.
+/// Gallery map entry migrates it to `.library`; no page-only mode is presented.
 enum XDriveIOSNativeLocalMapScope: String, CaseIterable {
     case page, library
     var label: String {
