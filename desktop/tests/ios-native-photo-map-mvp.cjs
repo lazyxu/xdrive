@@ -170,17 +170,15 @@ test('full-library clustered covers open all verified cells with bounded PhotoKi
   assert.doesNotMatch(map, /if let cluster = view\.annotation as\? MKClusterAnnotation \{\s*mapView\.showAnnotations/)
 })
 
-test('full-authorized PhotoKit map explicitly refines live WGS84 viewport without automatic 100k rescans', () => {
+test('full-authorized PhotoKit map automatically refines live WGS84 viewport without repeated 100k rescans', () => {
   assert.match(map, /var onCamera: \(\(MKCoordinateRegion\) -> Void\)\? = nil/)
   assert.match(map, /func mapView\(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool\) \{[\s\S]*?onCamera\?\(mapView\.region\)/)
   assert.match(map, /@State private var globalCamera: MKCoordinateRegion\?/)
   assert.match(map, /@State private var globalViewport: XDriveIOSNativeLocalMapViewport\?/)
   assert.match(map, /cameraReturn: globalCamera/)
   assert.match(map, /onCamera: \{ current in[\s\S]*?globalCamera = current/)
-  assert.match(map, /Button\("细化当前视窗的定位照片"\)/)
   assert.match(map, /XDriveIOSNativeLocalMapSpatialPolicy\.viewportBounds\([\s\S]*?latitude: region\.center\.latitude,[\s\S]*?longitude: region\.center\.longitude/)
   assert.match(map, /scanFullLibrary\(viewport: view\)/)
-  assert.match(map, /Button\("还原已授权全库概览"\) \{ scanFullLibrary\(\) \}/)
   assert.match(map, /let restoreCamera = viewport == nil \? nil : globalCamera[\s\S]*?invalidate\(\)[\s\S]*?globalCamera = restoreCamera/)
   assert.match(map, /globalViewport = viewport/)
   assert.match(map, /globalCamera = nil[\s\S]*?globalViewport = nil/)
@@ -375,7 +373,7 @@ test('verified native Viewer GPS opens the existing Gallery local map and nearby
 })
 
 
-test('PhotoKit full-library map is photo-first after scan, with manual scan and refine in the toolbar', () => {
+test('PhotoKit full-library map is photo-first after scan, with only recovery rescan in the toolbar', () => {
   const localMap = map.slice(map.indexOf('struct XDriveIOSNativeLocalPhotoMapScreen: View'))
   const onScreen = localMap.slice(localMap.indexOf('var body: some View {'),
                                  localMap.indexOf('.toolbar {'))
@@ -386,8 +384,7 @@ test('PhotoKit full-library map is photo-first after scan, with manual scan and 
   assert.doesNotMatch(fullLibrary, /Button\("重新扫描已授权图库位置"\)|Button\("细化当前视窗的定位照片"\)|Button\("还原已授权全库概览"\)/)
   assert.match(localMap, /\.toolbar \{\s*if mapScope == \.library && globalComplete \{\s*ToolbarItem\(placement: \.navigationBarTrailing\) \{\s*Menu \{/)
   assert.match(localMap, /Button\("重新扫描已授权图库位置"\) \{ scanFullLibrary\(\) \}[\s\S]*?\.disabled\(busy\)/)
-  assert.match(localMap, /Button\("细化当前视窗的定位照片"\) \{[\s\S]*?XDriveIOSNativeLocalMapSpatialPolicy\.viewportBounds\([\s\S]*?scanFullLibrary\(viewport: view\)/)
-  assert.match(localMap, /Button\("还原已授权全库概览"\) \{ scanFullLibrary\(\) \}/)
+  assert.doesNotMatch(localMap, /细化当前视窗的定位照片|还原已授权全库概览/)
   assert.match(localMap, /Label\("地图操作", systemImage: "ellipsis.circle"\)/)
   assert.match(localMap, /accessibilityIdentifier\("native-ios-local-map-actions"\)/)
   assert.doesNotMatch(localMap, /Text\(mapScope == \.page/)
