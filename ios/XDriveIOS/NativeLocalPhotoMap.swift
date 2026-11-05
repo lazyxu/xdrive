@@ -81,6 +81,8 @@ private final class XDriveIOSMapPhotoPin: NSObject, MKAnnotation {
 /// All image requests belong to a reused visible MapKit view, never a 100k cache.
 private final class XDriveIOSMapPhotoCover: MKAnnotationView {
     private let photo = UIImageView()
+    private let placeholder = UIImageView(image: UIImage(systemName: "photo"))
+    private let loading = UIActivityIndicatorView(style: .medium)
     private let badge = UILabel()
     private var request = PHInvalidImageRequestID
     private var epoch = UUID()
@@ -109,6 +111,13 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         photo.layer.borderColor = UIColor.white.cgColor
         photo.backgroundColor = .secondarySystemGroupedBackground
         addSubview(photo)
+        placeholder.frame = CGRect(x: 20, y: 20, width: 28, height: 28)
+        placeholder.contentMode = .scaleAspectFit
+        placeholder.tintColor = .secondaryLabel
+        addSubview(placeholder)
+        loading.frame = CGRect(x: 20, y: 20, width: 28, height: 28)
+        loading.hidesWhenStopped = true
+        addSubview(loading)
         badge.frame = CGRect(x: 43, y: -7, width: 28, height: 28)
         badge.textAlignment = .center
         badge.font = .boldSystemFont(ofSize: 12)
@@ -138,9 +147,13 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         ).firstObject else { return }
         let snapshot = epoch
         let options = PHImageRequestOptions()
-        options.isNetworkAccessAllowed = false
+        // Map covers are visible, bounded 128px renditions. Allow PhotoKit to
+        // fetch an iCloud-only thumbnail; this is not an original export/read.
+        options.isNetworkAccessAllowed = true
         options.deliveryMode = .fastFormat
         options.resizeMode = .fast
+        placeholder.isHidden = true
+        loading.startAnimating()
         request = PHImageManager.default().requestImage(
             for: asset, targetSize: CGSize(width: 128, height: 128),
             contentMode: .aspectFill, options: options
@@ -150,7 +163,9 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
                       [.authorized, .limited].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { return }
+                self.loading.stopAnimating()
                 self.photo.image = value
+                self.placeholder.isHidden = value != nil
             }
         }
     }
@@ -162,6 +177,8 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
             request = PHInvalidImageRequestID
         }
         photo.image = nil
+        loading.stopAnimating()
+        placeholder.isHidden = false
     }
 
     override func prepareForReuse() {
@@ -176,7 +193,6 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         if superview == nil { cancel() }
     }
 }
-
 private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     typealias Cell = XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>
     let items: [XDrivePhotoKitLocatedCandidate]
