@@ -279,6 +279,124 @@ func TestMarkdownNotesMineVersionedAndIOSReadOnly(t *testing.T) {
 	request(t, router, http.MethodGet, path, a, nil, http.StatusNotFound)
 	request(t, router, http.MethodGet, "/api/v1/notes/"+newIOS.ID, a,
 		nil, http.StatusOK)
+
+	// Exercise the real paged endpoint over a large Owner corpus. Seed actual
+	// Notes metadata and backing Node/File rows in batches so the test measures
+	// pagination and bounded Node validation rather than 10k upload sessions.
+	var ownerID uint64
+	if err := db.Model(&meta.Note{}).Select("owner_id").
+		Where("id = ?", imported.ID).Scan(&ownerID).Error; err != nil || ownerID == 0 {
+		t.Fatalf("load pagination Owner: id=%d err=%v", ownerID, err)
+	}
+	var namespace meta.NotesNamespace
+	if err := db.Where("owner_id = ?", ownerID).First(&namespace).Error; err != nil {
+		t.Fatal(err)
+	}
+	const bulkCount = 10000
+	const marker = "notes-pagination-marker-2026"
+	const markdown = "# large pagination fixture"
+	const digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	now := time.Now().UTC()
+	parentID := namespace.MineNodeID
+	nodes := make([]meta.Node, bulkCount)
+	files := make([]meta.File, bulkCount)
+	notes := make([]meta.Note, bulkCount)
+	for i := 0; i < bulkCount; i++ {
+		id := uuid.NewString()
+		nodes[i] = meta.Node{
+			OwnerID: ownerID, ParentID: &parentID, Name: id + ".md",
+			Type: meta.NodeTypeFile, Revision: 1, CreatedAt: now, UpdatedAt: now,
+		}
+		notes[i] = meta.Note{
+			ID: id, OwnerID: ownerID, Source: meta.NoteSourceMine,
+			Title: fmt.Sprintf("Bulk note %05d", i), SearchText: marker,
+			CreatedAt: now, UpdatedAt: now,
+		}
+	}
+	if err := db.CreateInBatches(&nodes, 500).Error; err != nil {
+		t.Fatalf("seed pagination Nodes: %v", err)
+	}
+	for i := range nodes {
+		files[i] = meta.File{
+			NodeID: nodes[i].ID, Size: int64(len(markdown)),
+			StorageKey: "notes-pagination-fixture/" + nodes[i].Name,
+			SHA256: digest, CreatedAt: now, UpdatedAt: now,
+		}
+		notes[i].NodeID = nodes[i].ID
+	}
+	if err := db.CreateInBatches(&files, 500).Error; err != nil {
+		t.Fatalf("seed pagination Files: %v", err)
+	}
+	if err := db.CreateInBatches(&notes, 500).Error; err != nil {
+		t.Fatalf("seed pagination Notes: %v", err)
+	}
+
+	seen := make(map[string]struct{}, bulkCount)
+	var retryIDs []string
+	for offset := 0; ; {
+		path := fmt.Sprintf("/api/v1/notes?source=mine&q=%s&offset=%d", marker, offset)
+		pageResponse := request(t, router, http.MethodGet, path, a, nil, http.StatusOK)
+		var page struct {
+			Items      []notesDTO `json:"items"`
+			NextOffset int        `json:"next_offset"`
+		}
+		if err := json.Unmarshal(pageResponse.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Items) > notesListPageSize {
+			t.Fatalf("page %d exceeded %d rows: %d", offset, notesListPageSize, len(page.Items))
+		}
+		if offset == 0 && page.NextOffset > 0 {
+			retryPath := fmt.Sprintf("/api/v1/notes?source=mine&q=%s&offset=%d", marker, page.NextOffset)
+			retryResponse := request(t, router, http.MethodGet, retryPath, a, nil, http.StatusOK)
+			var retryPage struct {
+				Items []notesDTO `json:"items"`
+			}
+			if err := json.Unmarshal(retryResponse.Body.Bytes(), &retryPage); err != nil {
+				t.Fatal(err)
+			}
+			for _, item := range retryPage.Items {
+				retryIDs = append(retryIDs, item.ID)
+			}
+		}
+		if offset == notesListPageSize && len(retryIDs) > 0 {
+			if len(retryIDs) != len(page.Items) {
+				t.Fatalf("retry page size changed: %d vs %d", len(retryIDs), len(page.Items))
+			}
+			for i := range page.Items {
+				if retryIDs[i] != page.Items[i].ID {
+					t.Fatalf("retry of offset %d changed item %d", offset, i)
+				}
+			}
+		}
+		for _, item := range page.Items {
+			if _, exists := seen[item.ID]; exists {
+				t.Fatalf("pagination returned duplicate Note %s", item.ID)
+			}
+			seen[item.ID] = struct{}{}
+		}
+		if page.NextOffset == 0 {
+			break
+		}
+		if page.NextOffset != offset+notesListPageSize {
+			t.Fatalf("unexpected next_offset at %d: %d", offset, page.NextOffset)
+		}
+		offset = page.NextOffset
+	}
+	if len(seen) != bulkCount {
+		t.Fatalf("large pagination lost Notes: got %d want %d", len(seen), bulkCount)
+	}
+	otherOwnerPage := request(t, router, http.MethodGet,
+		"/api/v1/notes?source=mine&q="+marker+"&offset=0", b, nil, http.StatusOK)
+	var isolated struct {
+		Items []notesDTO `json:"items"`
+	}
+	if err := json.Unmarshal(otherOwnerPage.Body.Bytes(), &isolated); err != nil {
+		t.Fatal(err)
+	}
+	if len(isolated.Items) != 0 {
+		t.Fatalf("large Notes page crossed Owner boundary: %d rows", len(isolated.Items))
+	}
 }
 
 func submitNoteImage(
