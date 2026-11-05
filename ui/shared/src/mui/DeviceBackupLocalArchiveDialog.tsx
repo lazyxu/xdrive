@@ -101,7 +101,11 @@ export function XDriveDeviceBackupLocalArchiveDialog({
             <Stack spacing={0.5}>
               <Typography variant="subtitle2">{settings.name}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-                云端目标：{settings.target_path || '未设置'} · 当前状态：{settings.status} · 版本 {settings.revision}
+                云端目标：{settings.target_path || '未设置'} · 当前状态：{
+                  settings.status === 'archived' ? '已归档' :
+                    settings.status === 'active' ? '启用' :
+                      settings.status === 'paused' ? '已暂停' : '未知'
+                } · 版本 {settings.revision}
               </Typography>
             </Stack>
           ) : null}
