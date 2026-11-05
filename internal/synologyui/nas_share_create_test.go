@@ -22,6 +22,7 @@ type fakeNASSourceCreator struct {
 	failCreate        bool
 	changeOwnerOnBind bool
 	weakIdentity      bool
+	unmanagedTarget   bool
 	ownerName         string
 	wantPath          string
 }
@@ -58,7 +59,7 @@ func (f *fakeNASSourceCreator) CreateLocalBackupSource(
 	return localbackupipc.LocalBackupSource{
 		ID: 57, Name: name, Kind: "local_folder",
 		Direction: "push", SyncMode: "backup", Status: "paused",
-		Revision: 1, TargetNodeID: &target, TargetManaged: true,
+		Revision: 1, TargetNodeID: &target, TargetManaged: !f.unmanagedTarget,
 		TargetPath: "同步文件夹/设备备份/NAS_123456789012/NAS Photos",
 	}, nil
 }
@@ -187,6 +188,18 @@ func TestDSMSourceCreateRejectsUnverifiedOrForgedIntentBeforeMutation(t *testing
 	if dsmOwnerScope(make([]byte, 32), "dsmadmin", "other-cookie",
 		"nas.example:5001", "https://drive.example.com", "owner") == scope {
 		t.Fatal("Owner proof must be bound to the DSM cookie")
+	}
+}
+
+func TestDSMSourceCreateRejectsUnmanagedCloudTargetBeforeRootBinding(t *testing.T) {
+	g, agent, selection, scope := newDSMSourceCreateFixture(t)
+	agent.unmanagedTarget = true
+	r := requestServerLogin(g, "POST", sourceCreateBody(selection, scope, true),
+		"https://nas.example:5001", getCSRF(t, g),
+		DSMCGIPath+"?op=nas-share-create")
+	if r.Code != http.StatusConflict || agent.creates != 1 || agent.binds != 0 ||
+		strings.Contains(r.Body.String(), `"state":"authorized"`) {
+		t.Fatalf("unmanaged target must not receive a native Root grant: HTTP %d %s", r.Code, r.Body.String())
 	}
 }
 
