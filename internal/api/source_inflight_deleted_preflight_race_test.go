@@ -23,11 +23,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// R-SYNC-001-B differs from the already-covered queued-before-dispatch DELETE:
+// R-SYNC-001-B differs from the already-covered queued-before-dispatch archive:
 // the real Scheduler has already entered the Source Handler, but that handler
-// has not yet begun any durable SyncRun. A subsequently deleted Source must not
-// be reported as a *failed* scheduled source when the obsolete preflight ends.
-func TestDeletedInflightPullPreflightCannotCountAsFailedSource(t *testing.T) {
+// has not yet begun any durable SyncRun. An archived Source must not be reported
+// as a *failed* scheduled source when the obsolete preflight ends.
+func TestArchivedInflightPullPreflightCannotCountAsFailedSource(t *testing.T) {
 	dsn := strings.TrimSpace(os.Getenv("XD_TEST_DATABASE_URL"))
 	if dsn == "" {
 		t.Skip("XD_TEST_DATABASE_URL is not configured")
