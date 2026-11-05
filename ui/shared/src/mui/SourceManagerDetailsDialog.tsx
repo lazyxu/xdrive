@@ -162,7 +162,10 @@ export function XDriveSourceDetailsDialog({
           <>
             {detail.error ? (
               <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>
-                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>最近一次运行异常</MuiTypography>
+                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                  {row.source.kind === 'ios_photos' && row.latestRun?.status === 'partial'
+                    ? '最近一次备份有待处理项目' : '最近一次运行异常'}
+                </MuiTypography>
                 <MuiTypography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{detail.error}</MuiTypography>
               </XDriveStatusAlert>
             ) : null}
