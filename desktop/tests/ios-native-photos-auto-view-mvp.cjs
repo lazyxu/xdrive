@@ -39,7 +39,7 @@ test('native auto schedule shares original CAS writer, gate and durable window c
   assert.match(controller, /XDriveIOSOriginalRunGate.shared.release\(gate\)/)
   assert.match(controller, /XDriveIOSForegroundPhotoBackupMVP\(/)
   assert.match(controller, /XDriveIOSPhotoAutoScheduleStore.shared.recordResult/)
-  assert.match(controller, /\.run\(allowICloudOriginals: cloud, startOffset: offset,\s*newOnlySince: newOnlySince,\s*onPotentialWrite: \{ beganOriginalWrite = true \}\)/)
+  assert.match(controller, /\.run\(allowICloudOriginals: cloud, startOffset: offset,\s*newOnlySince: newOnlySince,\s*changeQueue: incrementalQueue,\s*onPotentialWrite: \{ beganOriginalWrite = true \}\)/)
   assert.match(controller, /XDriveIOSPhotoAutoSchedulePolicy.accepts\(minutes: minutes\)/)
   assert.match(controller, /XDriveIOSNativePhotoOwnerScope.matches\(login.owner, selected\)/)
   assert.doesNotMatch(controller, /UploadSessionTransport\(|URLSession\(|WKWebView\(|SecItemAdd\(/)
