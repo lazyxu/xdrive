@@ -169,7 +169,7 @@ export function XDriveSourceManagerListPage({
                 statusLabel={card.state.label}
                 activity={`${card.lastActivityLabel}：${formatExternalSourceTime(card.lastActivityAt)}`}
                 stats={stats}
-                metaAction={row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running' ? (
+                metaAction={row.source.kind !== 'ios_photos' && row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running' ? (
                   <MuiButton
                     size="small"
                     color="error"
