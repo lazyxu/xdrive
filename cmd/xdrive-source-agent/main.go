@@ -158,7 +158,7 @@ func setup(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	sourceID := fs.Uint64("source-id", 0, "bind to an existing xDrive Source id")
 	name := fs.String("name", "", "source display name (existing source name is preserved when omitted)")
-	targetPath := fs.String("target", "", "xDrive target directory path (existing source target is preserved when omitted)")
+	targetPath := fs.String("target", "", "deprecated: new Synology Push targets are server-managed; do not set")
 	personal := fs.String("personal", "", "Synology Photos Personal Space filesystem root")
 	shared := fs.String("shared", "", "Synology Photos Shared Space filesystem root")
 	ignoreFile := fs.String("ignore-file", "", "gitignore-style source ignore rules file")
@@ -172,6 +172,9 @@ func setup(args []string) error {
 	*runMode = strings.TrimSpace(*runMode)
 	if *runMode != "" && !meta.ValidSourceRunMode(*runMode) {
 		return fmt.Errorf("--mode must be scan or sync")
+	}
+	if strings.TrimSpace(*targetPath) != "" {
+		return fmt.Errorf("--target is no longer supported: xDrive Server provisions new Synology Push destinations under 同步文件夹/Push")
 	}
 	if strings.TrimSpace(*personal) == "" && strings.TrimSpace(*shared) == "" {
 		return fmt.Errorf("at least one of --personal or --shared is required")
@@ -198,6 +201,9 @@ func setup(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	if err := ensureSynologyDeviceIdentity(ctx, cli, &cfg); err != nil {
+		return err
+	}
 
 	var photosCredential *synology.Credential
 	if strings.TrimSpace(*synologyURL) != "" || strings.TrimSpace(*synologyUsername) != "" || strings.TrimSpace(*synologyPassword) != "" {
@@ -242,30 +248,36 @@ func setup(args []string) error {
 	}
 
 	sourceName := setupSourceName(remote, *name)
-	targetID, targetValue := setupTarget(remote, *targetPath)
-	if targetID == 0 {
-		target, targetErr := ensureRemoteDir(ctx, cli, targetValue)
-		if targetErr != nil {
-			return targetErr
+	var targetID uint64
+	if remote.ID != 0 {
+		if remote.TargetNodeID == nil || *remote.TargetNodeID == 0 {
+			return fmt.Errorf("existing Synology Push Source has no target; create a new Source instead of selecting an arbitrary cloud folder")
 		}
-		targetID = target.ID
+		targetID = *remote.TargetNodeID
+		if remote.DeviceID != "" && remote.DeviceID != cfg.DeviceID {
+			return fmt.Errorf("Synology Push Source %d belongs to another registered device; refusing to rebind it", remote.ID)
+		}
 	}
 
 	if remote.ID == 0 {
 		remote, err = cli.CreateSource(ctx, client.CreateSourceInput{
 			Name: sourceName, Kind: sourceagent.SynologyKind,
 			Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
-			RunMode: effectiveMode, TargetNodeID: targetID, IgnoreRules: rules,
+			RunMode: effectiveMode, TargetNodeID: 0, IgnoreRules: rules,
 		})
 		if err != nil {
 			return err
 		}
+		if remote.TargetNodeID == nil || *remote.TargetNodeID == 0 ||
+			remote.DeviceID != cfg.DeviceID || !remote.TargetManaged {
+			return fmt.Errorf("Server did not return the expected device-bound managed Synology Push target")
+		}
+		targetID = *remote.TargetNodeID
 	} else {
 		mode := effectiveMode
 		active := meta.SourceStatusActive
 		remote, err = cli.UpdateSource(ctx, remote.ID, remote.Revision, client.UpdateSourceInput{
-			Name: &sourceName, RunMode: &mode, Status: &active,
-			TargetNodeID: &targetID, IgnoreRules: &rules,
+			Name: &sourceName, RunMode: &mode, Status: &active, IgnoreRules: &rules,
 		})
 		if err != nil {
 			return err
@@ -287,7 +299,14 @@ func setup(args []string) error {
 	if err := sourceagentconfig.Save(cfg); err != nil {
 		return err
 	}
-	fmt.Printf("source: %s (%d)\nmode: %s\ntarget node: %d\n", remote.Name, remote.ID, remote.RunMode, targetID)
+	if remote.Status != meta.SourceStatusActive {
+		active := meta.SourceStatusActive
+		remote, err = cli.UpdateSource(ctx, remote.ID, remote.Revision, client.UpdateSourceInput{Status: &active})
+		if err != nil {
+			return fmt.Errorf("local roots were saved but Source activation failed; rerun setup to resume safely: %w", err)
+		}
+	}
+	fmt.Printf("source: %s (%d)\nmode: %s\ntarget node: %d\ndevice: %s\n", remote.Name, remote.ID, remote.RunMode, targetID, cfg.DeviceID)
 	if cfg.PersonalRoot != "" {
 		fmt.Printf("personal: %s\n", cfg.PersonalRoot)
 	}
@@ -341,6 +360,46 @@ func resolveSetupSource(ctx context.Context, api setupSourceAPI, configuredID, r
 	return client.Source{}, nil
 }
 
+func ensureSynologyDeviceIdentity(ctx context.Context, api *client.Client, cfg *sourceagentconfig.Config) error {
+	if cfg == nil {
+		return fmt.Errorf("source-agent config is required")
+	}
+	if cfg.DeviceID != "" && cfg.DeviceCredentialID != "" {
+		token, err := sourceagentconfig.LoadDeviceCredential(*cfg)
+		if err != nil {
+			return fmt.Errorf("load registered Synology device credential: %w", err)
+		}
+		verified, err := api.VerifyLocalDevice(ctx, cfg.DeviceID, token)
+		if err != nil {
+			return fmt.Errorf("verify registered Synology device: %w; revoke or re-enroll this device explicitly", err)
+		}
+		if verified.DeviceID != cfg.DeviceID {
+			return fmt.Errorf("Synology device identity response does not match the configured device")
+		}
+		api.SetDeviceIdentity(cfg.DeviceID, token)
+		return nil
+	}
+	if cfg.DeviceID != "" || cfg.DeviceCredentialID != "" {
+		return fmt.Errorf("incomplete Synology device identity; remove the stale config and run setup again")
+	}
+	name, err := os.Hostname()
+	if err != nil || strings.TrimSpace(name) == "" {
+		name = "Synology NAS"
+	}
+	registered, err := api.RegisterClientDevice(ctx, name, "synology", version.String())
+	if err != nil {
+		return fmt.Errorf("register Synology Push device: %w", err)
+	}
+	if err := sourceagentconfig.SaveDeviceCredential(cfg, registered.Device.ID, registered.DeviceToken); err != nil {
+		return fmt.Errorf("save Synology device credential: %w", err)
+	}
+	if err := sourceagentconfig.Save(*cfg); err != nil {
+		return err
+	}
+	api.SetDeviceIdentity(cfg.DeviceID, registered.DeviceToken)
+	return nil
+}
+
 func setupSourceName(remote client.Source, requestedName string) string {
 	if value := strings.TrimSpace(requestedName); value != "" {
 		return value
@@ -349,16 +408,6 @@ func setupSourceName(remote client.Source, requestedName string) string {
 		return strings.TrimSpace(remote.Name)
 	}
 	return "Synology Photos"
-}
-
-func setupTarget(remote client.Source, requestedTarget string) (uint64, string) {
-	if value := strings.TrimSpace(requestedTarget); value != "" {
-		return 0, value
-	}
-	if remote.ID != 0 && remote.TargetNodeID != nil && *remote.TargetNodeID != 0 {
-		return *remote.TargetNodeID, ""
-	}
-	return 0, "Photos/Synology"
 }
 
 func status() error {
