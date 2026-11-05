@@ -681,20 +681,25 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if permission == .authorized && selected == nil && !selectionMode {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showingAlbumMap = true } label: {
-                        Label("显示地图", systemImage: "map")
-                    }
-                    .disabled(loading || albumActionBusy || albumShareBusy)
-                    .accessibilityIdentifier("native-ios-local-album-show-map")
-                }
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showingAlbumHelp = true } label: {
-                    Label("相册说明", systemImage: "info.circle")
+                Menu {
+                    if permission == .authorized && selected == nil && !selectionMode {
+                        Button {
+                            showingAlbumMap = true
+                        } label: {
+                            Label("显示地图", systemImage: "map")
+                        }
+                        .disabled(loading || albumActionBusy || albumShareBusy)
+                        .accessibilityIdentifier("native-ios-local-album-show-map")
+                    }
+                    Button { showingAlbumHelp = true } label: {
+                        Label("相册说明", systemImage: "info.circle")
+                    }
+                    .accessibilityIdentifier("native-ios-local-album-layout-help")
+                } label: {
+                    Label("更多", systemImage: "ellipsis.circle")
                 }
-                .accessibilityIdentifier("native-ios-local-album-layout-help")
+                .accessibilityIdentifier("native-ios-local-album-more")
             }
         }
         .alert("相册说明", isPresented: $showingAlbumHelp) {
