@@ -946,6 +946,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button("照片信息") { showPhotoInfo() }
+                            .accessibilityIdentifier("native-ios-local-viewer-info")
                         .accessibilityIdentifier("native-ios-local-viewer-location-info")
                         // Keep xDrive-only controls accessible without a
                         // nonnative bottom row or Live buttons on the canvas.
@@ -1042,7 +1043,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             // Never materialize PhotoKit pixels while the App is inactive.
             if phase == .active { model.load(viewed) }
             if phase == .active { refreshFavoriteStatus() }
-            photoLocation = phase == .active ? verifiedLocation() : nil
+            // The information sheet revalidates PhotoKit only when explicitly opened.
         }
         .onChange(of: changes.generation) { _ in
             showingPhotoInfo = false
