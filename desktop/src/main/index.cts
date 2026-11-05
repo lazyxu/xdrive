@@ -3282,10 +3282,13 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'cache-management')
     return requireAgentClient().releaseCache()
   }, false))
-  ipcMain.handle('agent:get-sources', () => runAgentAction<AgentSource[]>(async () => {
+  ipcMain.handle('agent:get-sources', (_event, includeArchived: unknown = false) => runAgentAction<AgentSource[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'external-sources')
-    return requireAgentClient().sources()
+    if (typeof includeArchived !== 'boolean') {
+      throw new AgentIPCError('invalid_input', 0, 'includeArchived must be a boolean.')
+    }
+    return requireAgentClient().sources(includeArchived)
   }, false))
   // Read-only, owner-scoped B projection. Never feed another device through
   // generic Source, RunFailure or SourceItem IPC.
@@ -6244,6 +6247,17 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Source id and revision are required.')
     }
     return requireAgentClient().deleteSource(sourceID, revision)
+  }, false))
+  ipcMain.handle('agent:restore-source', (_event, sourceID: unknown, revision: unknown) => runAgentAction<AgentSource>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (
+      typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id and revision are required.')
+    }
+    return requireAgentClient().restoreSource(sourceID, revision)
   }, false))
   ipcMain.handle('agent:trigger-source', (_event, sourceID: unknown) => runAgentAction<AgentSource>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

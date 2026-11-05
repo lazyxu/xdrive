@@ -3743,8 +3743,11 @@ export class AgentIPCClient {
     )
   }
 
-  sources() {
-    return this.request<AgentSource[]>('GET', '/v1/sources')
+  sources(includeArchived = false) {
+    const query = new URLSearchParams()
+    if (includeArchived) query.set('include_archived', 'true')
+    const suffix = query.toString()
+    return this.request<AgentSource[]>('GET', suffix ? `/v1/sources?${suffix}` : '/v1/sources')
   }
 
   deviceBackups(signal?: AbortSignal) {
@@ -4076,6 +4079,10 @@ export class AgentIPCClient {
 
   deleteSource(sourceID: number, revision: number) {
     return this.request<{ ok: boolean }>('DELETE', '/v1/sources', { source_id: sourceID, revision })
+  }
+
+  restoreSource(sourceID: number, revision: number) {
+    return this.request<AgentSource>('POST', '/v1/sources/restore', { source_id: sourceID, revision })
   }
 
   triggerSource(sourceID: number) {

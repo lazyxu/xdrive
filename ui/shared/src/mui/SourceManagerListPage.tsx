@@ -5,6 +5,7 @@ import {
   Button as MuiButton,
   Stack,
   Tooltip,
+  Typography as MuiTypography,
 } from '@mui/material'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveSourceKindIcon } from './SourceKindIcon'
@@ -27,6 +28,11 @@ export function XDriveSourceManagerListPage({
   subtitle = '管理来源连接、凭据、计划和运行状态。',
   rows,
   directionFilter,
+  showArchived,
+  onToggleArchived,
+  restoringSourceID,
+  canRestoreSource,
+  onRestoreSource,
   loading,
   hasLoaded,
   loadError,
@@ -46,6 +52,11 @@ export function XDriveSourceManagerListPage({
   subtitle?: string
   rows: ExternalSourceRow[]
   directionFilter?: 'pull'
+  showArchived: boolean
+  onToggleArchived: () => void
+  restoringSourceID: number | null
+  canRestoreSource: (row: ExternalSourceRow) => boolean
+  onRestoreSource: (row: ExternalSourceRow) => void
   loading: boolean
   hasLoaded: boolean
   loadError: boolean
@@ -75,6 +86,9 @@ export function XDriveSourceManagerListPage({
             onClick={() => void onRefresh()}
           >
             刷新
+          </XDriveActionButton>
+          <XDriveActionButton compact onClick={onToggleArchived}>
+            {showArchived ? '隐藏已归档' : '显示已归档'}
           </XDriveActionButton>
           <XDriveActionButton
             intent="primary"
@@ -137,6 +151,7 @@ export function XDriveSourceManagerListPage({
                     : []),
                 ].join(' · ')
 
+            const archived = row.source.status === 'archived'
             return (
               <XDriveSourceSummaryCard
                 key={row.source.id}
@@ -159,7 +174,29 @@ export function XDriveSourceManagerListPage({
                   </MuiButton>
                 ) : undefined}
                 actions={(
-                  <>
+                  archived ? (
+                    <>
+                      <XDriveActionButton compact disabled={failedItemsLoading}
+                        onClick={() => void onOpenDetails(row)}>
+                        查看历史
+                      </XDriveActionButton>
+                      {canRestoreSource(row) ? (
+                        <XDriveActionButton compact intent="primary"
+                          loading={restoringSourceID === row.source.id}
+                          loadingLabel="正在恢复…"
+                          disabled={restoringSourceID !== null && restoringSourceID !== row.source.id}
+                          onClick={() => onRestoreSource(row)}>
+                          恢复（保持暂停）
+                        </XDriveActionButton>
+                      ) : (
+                        <MuiTypography variant="caption" color="text.secondary">
+                          本机 Push 恢复暂未开放
+                        </MuiTypography>
+                      )}
+                    </>
+                  ) : (
+                    <>
+
                     <XDriveActionButton
                       compact
                       disabled={failedItemsLoading}
@@ -200,7 +237,9 @@ export function XDriveSourceManagerListPage({
                     <XDriveActionButton compact onClick={() => onOpenSettings(row)}>
                       设置
                     </XDriveActionButton>
-                  </>
+
+                    </>
+                  )
                 )}
               />
             )
