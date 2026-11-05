@@ -57,7 +57,7 @@ test('shared Source Manager reads run history without inventing PhotoKit collect
 });
 
 test('native iPhone reports begin, progress and terminal state with the exact device proof', () => {
-  assert.ok(reporter.includes('path: "/api/v1/sources/\(authority.destination.sourceID)/runs"'));
+  assert.ok(reporter.includes('path: "/api/v1/sources/\\(authority.destination.sourceID)/runs"'));
   assert.ok(reporter.includes('runs/\\(self.runID)/progress'));
   assert.ok(reporter.includes('runs/\\(runID)/finish'));
   assert.match(reporter, /X-XDrive-Device-ID/);
