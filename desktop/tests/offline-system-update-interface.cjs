@@ -110,6 +110,8 @@ test('offline Host preflight is a separate read-only admission path shared by We
   assert.ok(page.includes('port.startPlan('))
   assert.ok(page.includes('只读预检'))
   assert.ok(page.includes('hostProbe?.blockers'))
+  assert.ok(page.includes('trusted_manifest_sha256 === manifestSHA'))
+  assert.ok(page.includes('trusted_installer_sha256 === goSHA'))
   assert.ok(page.includes("visiblePlanState?.state === 'success'"))
   assert.ok(page.includes('正式安装仍会重新验证'))
   assert.ok(hostPlanAPI.includes('adminStartOfflineHostPlan'))
