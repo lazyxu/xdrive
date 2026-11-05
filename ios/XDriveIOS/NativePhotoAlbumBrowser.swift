@@ -454,6 +454,9 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingAlbumHelp = false
     @State private var showingAlbumMap = false
+    @State private var mapAlbumScope: XDriveLocalPhotoAlbumSummary?
+    @State private var albumMapJump: XDriveIOSNativeLocalMapJump?
+    @State private var pendingAlbumMapJump: XDriveIOSNativeLocalMapJump?
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
@@ -685,6 +688,8 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                 Menu {
                     if permission == .authorized && selected == nil && !selectionMode {
                         Button {
+                            mapAlbumScope = album
+                            albumMapJump = nil
                             showingAlbumMap = true
                         } label: {
                             Label("显示地图", systemImage: "map")
@@ -751,10 +756,16 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .fullScreenCover(isPresented: $showingAlbumMap) {
             NavigationStack {
                 XDriveIOSNativeLocalPhotoMapScreen(
-                    album: album,
+                    album: mapAlbumScope,
                     mapScope: .constant(.library),
-                    offset: .constant(0)
+                    offset: .constant(0),
+                    onClose: {
+                        showingAlbumMap = false
+                        mapAlbumScope = nil
+                        albumMapJump = nil
+                    }
                 )
+                .environment(\.xdriveNativeLocalMapJump, albumMapJump)
             }
         }
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) { initial in
@@ -816,6 +827,9 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     accessibilityFocusedTileID = nil
                 }
             )
+            .environment(\.xdriveOpenNativeLocalMap, { jump in
+                pendingAlbumMapJump = jump
+            })
         }
         .onAppear {
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -1051,8 +1065,18 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         viewerPage = nil
         shouldRestoreViewerTile = viewerReturnID != nil && phase == .active
         // Open the same album/page only after fresh PhotoKit authorization.
-        if phase == .active { reload() }
-        else {
+        if phase == .active {
+            reload()
+            if let jump = pendingAlbumMapJump {
+                pendingAlbumMapJump = nil
+                mapAlbumScope = nil
+                albumMapJump = jump
+                showingAlbumMap = true
+            }
+        } else {
+            pendingAlbumMapJump = nil
+            albumMapJump = nil
+            mapAlbumScope = nil
             clearViewerTileAnchor()
             invalidate()
         }
