@@ -76,7 +76,7 @@ func TestLocalPushAutoManagedTargetAndDraftCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := "同步文件夹/设备备份/" + groupNameA + "/本机照片"
+	expected := "同步文件夹/Push/" + groupNameA + "/本机照片"
 	if sourceA.TargetNodeID == nil || *sourceA.TargetNodeID == oldFolder.ID ||
 		sourceA.TargetPath != expected || sourceA.Status != meta.SourceStatusPaused ||
 		sourceA.Revision != 1 {
@@ -203,7 +203,7 @@ func TestLocalPushAutoTargetRejectsUnownedDeviceGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	umbrella := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
-	push := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, "设备备份")
+	push := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, "Push")
 	occupied := createFilePropertiesDir(t, db, owner.ID, push.ID, groupName)
 	body := `{"name":"Not claimed","kind":"local_folder","direction":"push","schedule_type":"manual"}`
 	headers := map[string]string{
