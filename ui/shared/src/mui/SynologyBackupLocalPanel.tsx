@@ -265,7 +265,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
                     <XDriveDeviceBackupFolderAccordion
                       key={item.source_id}
                       folder={{ name: item.name, sync_mode: item.sync_mode, target_path: item.target_path }}
-                      targetUnavailableLabel="展开后可查看和修改"
+                      targetUnavailableLabel="尚未配置"
                       historyUnavailableLabel="展开查看本机运行历史"
                       expanded={expandedID === item.source_id}
                       onExpandedChange={(isOpen) => {
