@@ -1309,10 +1309,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             if phase == .active { refresh(at: offset) }
             else { invalidate() }
         }) { chosen in XDriveIOSMapPhotoAlbum(items: chosen.items) }
-        .sheet(item: $globalSelection) { chosen in
+        .fullScreenCover(item: $globalSelection) { chosen in
             XDriveIOSMapSpatialAlbum(selection: chosen, album: album)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
         }
         .fullScreenCover(item: $singleViewer, onDismiss: {
             guard phase == .active else { invalidate(); return }
