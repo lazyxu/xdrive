@@ -198,13 +198,13 @@ func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID
 		// iOS Photos uses its own Owner+registered-device proof; it is never
 		// admitted by the Desktop local-folder credential or by Owner JWT alone.
 		var source meta.Source
-		if err := tx.Select("kind").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
+		if err := tx.Select("kind", "direction").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
 			return err
 		}
 		if source.Kind == meta.SourceKindIOSPhotos {
 			return s.requireIOSPhotoSourceRunProofTx(tx, c, sourceID)
 		}
-		if source.Kind == synologySourceKind {
+		if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
 			return errLocalSourceExecutorTransactionUnauthorized
 		}
 		return nil
