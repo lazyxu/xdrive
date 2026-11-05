@@ -422,7 +422,7 @@ test('first full-library GPS scan displays inert native MapKit while PhotoKit pr
   assert.doesNotMatch(library, /globalCells = index\.cells|URLSession\(|UploadSession/)
 })
 
-test('GPS cell album continuously advances on a deliberate bottom scroll with bounded two-window retention', () => {
+test('GPS cell album automatically advances as its lazy-grid sentinel enters the viewport', () => {
   const spatialAlbum = map.slice(map.indexOf('private struct XDriveIOSMapSpatialAlbum: View'),
     map.indexOf('/// One native map route'));
   assert.match(spatialAlbum, /@State private var priorWindow: \[XDrivePhotoKitScanCandidate\] = \[\]/);
@@ -433,7 +433,10 @@ test('GPS cell album continuously advances on a deliberate bottom scroll with bo
   assert.match(spatialAlbum, /scanner\.nextLocatedPage\(\)/);
   assert.match(spatialAlbum, /pending\[cursor\]\.candidate/);
   assert.match(spatialAlbum, /LazyVGrid[\s\S]*?ForEach\(priorWindow\)[\s\S]*?ForEach\(items\)[\s\S]*?if hasNext \{\s*Color\.clear/);
-  assert.match(spatialAlbum, /DragGesture\(minimumDistance: 12\)\.onEnded[\s\S]*?scrollFootVisible[\s\S]*?loadNext\(\)/);
+  assert.match(spatialAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/);
+  assert.match(spatialAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/);
+  assert.match(spatialAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, !busy, viewer == nil, hasNext, error == nil/);
+  assert.doesNotMatch(spatialAlbum, /DragGesture\(minimumDistance: 12\)|Button\("继续浏览下一批照片"\)/);
   assert.match(spatialAlbum, /priorWindow = departingItems\s*autoScrollReturnID = departingItems\.last\?\.id\s*items = result\.items/);
   assert.match(spatialAlbum, /returnScroll\.scrollTo\(anchor, anchor: \.bottom\)/);
   assert.match(spatialAlbum, /loadedItems: viewerItems/);
