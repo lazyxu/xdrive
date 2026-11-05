@@ -29,7 +29,7 @@ test('only a fresh authorized PhotoKit 64-slot scan supplies local map pins', ()
   assert.match(scanner, /snapshot\.object\(\s*at: stableBoundaryPhysicalIndices\[logicalIndex\] \?\? logicalIndex\s*\)/)
   assert.match(scanner, /asset\.location/)
   assert.match(scanner, /try ensureCurrent\(expected\)/)
-  assert.match(map, /仅当前64条范围，不是完整云端地图/)
+  assert.match(map, /显示已授权图库中具有位置数据的照片和视频/)
   assert.match(map, /items\.prefix\(XDriveIOSNativePhotoMapPolicy\.pageSize\)/)
   assert.match(map, /isNetworkAccessAllowed = false/)
   assert.match(map, /cancelImageRequest\(request\)/)
@@ -141,9 +141,9 @@ test('global map aggregates 100k GPS with only 64 representatives and on-demand 
   assert.match(map, /let trusted = globalCells\.first\(where: \{[\s\S]*?\$0\.id == cell\.id/)
   assert.match(map, /trusted\.count == cell\.count/)
   assert.match(map, /XDriveIOSMapSpatialAlbum\(selection: chosen\)/)
-  assert.match(map, /while cursor < total && rows\.count < 48/)
+  assert.match(map, /while rows\.count < 48/)
   assert.match(map, /Policy\.key\([\s\S]*?level: level[\s\S]*?selectedKeys\.contains\(key\)/)
-  assert.match(map, /cursor = asset\.slotOffset \+ 1/)
+  assert.match(map, /pending\[cursor\]\.candidate/)
   assert.match(scanner, /slotOffset: page\.startOffset \+ offset/)
   assert.match(map, /changes\.revision\) \{ _ in[\s\S]*?retire\(\)[\s\S]*?dismiss\(\)/)
   assert.match(map, /if state != \.active \{[\s\S]*?retire\(\)/)
@@ -198,7 +198,7 @@ test('map filtered overview and 48-photo cell wall share exact short-lived viewp
   assert.match(map, /globalSelection = XDriveIOSMapSpatialSelection\([\s\S]*?cells: cells, viewport: globalViewport/)
   assert.match(map, /let viewport: XDriveIOSNativeLocalMapViewport\?/)
   assert.match(map, /guard Policy\.includes\([\s\S]*?selection\.viewport,[\s\S]*?latitude: asset\.latitude, longitude: asset\.longitude[\s\S]*?Policy\.key\(/)
-  assert.match(map, /cursor = asset\.slotOffset \+ 1/)
+  assert.match(map, /pending = next\.items\.filter \{ asset in/)
   assert.match(map, /guard generation == ticket, mapScope == \.library, phase == \.active/)
   assert.match(map, /globalCells = index\.cells/)
   assert.doesNotMatch(map, /isNetworkAccessAllowed = true|CoreData|localStorage|GPSUpload/)
@@ -219,7 +219,7 @@ test('refined PhotoKit map revokes old region cluster actions during and after p
   assert.match(map, /func mapView\(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool\)/)
   assert.match(map, /globalCameraMoving = true/)
   assert.match(map, /globalCameraMoving = false/)
-  assert.match(map, /native-ios-map-stale-viewport/)
+  assert.doesNotMatch(map, /native-ios-map-stale-viewport|上次细化的视窗没有可显示的 GPS 照片/)
   assert.match(map, /上次细化的视窗没有可显示的 GPS 照片/)
 })
 
@@ -297,7 +297,7 @@ test('both local MapKit album sheets browse a frozen authorized slice and restor
     assert.match(screen, /defer \{ viewerReturnID = nil \}/, name);
   }
   assert.match(bounded, /items\.prefix\(XDriveIOSNativePhotoMapPolicy\.pageSize\)/);
-  assert.match(spatialAlbum, /private var loadedWindow\(containing id: String\)/);
+  assert.match(spatialAlbum, /private func loadedWindow\(containing id: String\)/);
   assert.match(spatialAlbum, /loadedItems: viewerItems/);
   assert.match(spatialAlbum, /guard !busy,[\s\S]*?XDriveIOSNativeMapViewerAdmission\.allows\(/);
   assert.match(spatialAlbum, /viewerReturnID = nil[\s\S]*?viewer = nil[\s\S]*?priorWindow = \[\][\s\S]*?items = \[\][\s\S]*?dismiss\(\)/);
