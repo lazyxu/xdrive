@@ -429,11 +429,11 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if logicalTarget != "同步文件夹/一刻相册/uid_12345_张三" {
+	if logicalTarget != "同步文件夹/Pull/Yike Photos/uid_12345_张三" {
 		t.Fatalf("managed Yike target=%q", logicalTarget)
 	}
 	sourceGet := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d", source.ID), tokenA, nil, http.StatusOK)
-	if !strings.Contains(sourceGet.Body.String(), `"target_path":"同步文件夹/一刻相册/uid_12345_张三"`) {
+	if !strings.Contains(sourceGet.Body.String(), `"target_path":"同步文件夹/Pull/Yike Photos/uid_12345_张三"`) {
 		t.Fatalf("Yike source API did not expose the persisted target path: %s", sourceGet.Body.String())
 	}
 	revealRes := request(t, router, http.MethodPost, revealPath, tokenA, nil, http.StatusOK)
@@ -746,9 +746,9 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
 		map[string]string{"If-Match": `"3"`})
 
-	// Simulate an installation created by the previous layout. Reconfiguring the
-	// same populated account must move the existing target node in-place from
-	// 来源/一刻相册 to 同步文件夹/一刻相册 rather than importing a second copy.
+	// Simulate a Source whose existing managed target now sits below a renamed
+	// ancestor. Credential refresh is not a migration operation: preserve the
+	// exact TargetNodeID and its current path rather than moving any old data.
 	var legacyConnector meta.Node
 	if err := db.First(&legacyConnector, *target.ParentID).Error; err != nil {
 		t.Fatal(err)
@@ -785,8 +785,8 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if migratedPath != "同步文件夹/一刻相册/uid_12345_张三" {
-		t.Fatalf("migrated Yike target=%q", migratedPath)
+	if migratedPath != "来源/Pull/Yike Photos/uid_12345_张三" {
+		t.Fatalf("credential refresh changed the existing Yike target path: %q", migratedPath)
 	}
 	var legacyRootCount int64
 	if err := db.Model(&meta.Node{}).
@@ -794,8 +794,8 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		Count(&legacyRootCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if legacyRootCount != 0 {
-		t.Fatalf("legacy Yike root remained active: %d", legacyRootCount)
+	if legacyRootCount != 1 {
+		t.Fatalf("credential refresh must preserve the existing ancestor; active root count=%d", legacyRootCount)
 	}
 	request(t, router, http.MethodDelete, statusPath, tokenA, nil, http.StatusNoContent)
 	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", source.ID).Count(&count).Error; err != nil {
