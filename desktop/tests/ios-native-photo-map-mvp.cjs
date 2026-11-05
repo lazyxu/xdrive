@@ -456,9 +456,12 @@ test('GPS cell album automatically advances as its lazy-grid sentinel enters the
 
 test('native Photos album exposes Show Map only with Full Photo Library access', () => {
   assert.match(albumBrowser, /Menu \{[\s\S]*?if permission == \.authorized && selected == nil && !selectionMode[\s\S]*?native-ios-local-album-show-map/)
-  assert.match(albumBrowser, /Button \{\s*showingAlbumMap = true\s*\} label: \{\s*Label\("显示地图", systemImage: "map"\)/)
+  assert.match(albumBrowser, /Button \{\s*mapAlbumScope = album\s*albumMapJump = nil\s*showingAlbumMap = true\s*\} label: \{\s*Label\("显示地图", systemImage: "map"\)/)
   assert.match(albumBrowser, /Label\("更多", systemImage: "ellipsis.circle"\)/)
-  assert.match(albumBrowser, /fullScreenCover\(isPresented: \$showingAlbumMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\(\s*album: album,\s*mapScope: \.constant\(\.library\)/)
+  assert.match(albumBrowser, /fullScreenCover\(isPresented: \$showingAlbumMap\)[\s\S]*?XDriveIOSNativeLocalPhotoMapScreen\(\s*album: mapAlbumScope,[\s\S]*?mapScope: \.constant\(\.library\)[\s\S]*?onClose:/)
+  assert.match(albumBrowser, /\.environment\(\\\.xdriveNativeLocalMapJump, albumMapJump\)/)
+  assert.match(albumBrowser, /\.environment\(\\\.xdriveOpenNativeLocalMap, \{ jump in\s*pendingAlbumMapJump = jump/)
+  assert.match(albumBrowser, /private func restoreAfterViewer\(\)[\s\S]*?pendingAlbumMapJump[\s\S]*?mapAlbumScope = nil[\s\S]*?albumMapJump = jump[\s\S]*?showingAlbumMap = true/)
   assert.match(map, /var album: XDriveLocalPhotoAlbumSummary\? = nil/)
   assert.match(map, /if album == nil && onClose == nil \{\s*ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?native-ios-map-focus-toggle/)
   assert.match(map, /worker\.start\(atOffset: 0, album: album\)/)
