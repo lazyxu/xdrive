@@ -257,4 +257,3 @@ func requestWithIfMatch(
 	}
 	return response
 }
-
