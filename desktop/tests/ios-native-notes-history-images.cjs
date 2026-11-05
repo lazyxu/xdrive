@@ -28,7 +28,7 @@ assert.match(client, /func importIOSNoteImage\(noteID: String, bytes: Data\) asy
 
 assert.match(preview, /login\.verifiedAuthorization\(\)/,
   'historical images must use the current verified Owner session')
-assert.match(preview, /client\.readNoteImage\(\s*noteID: noteID, relativePath: path\s*\)/,
+assert.match(preview, /client\.readNoteImage\(\s*noteID: noteID, relativePath: relativePath\s*\)/,
   'image reads must remain bound to the same Note')
 assert.match(preview, /UIImage\(data: bytes\)/)
 
