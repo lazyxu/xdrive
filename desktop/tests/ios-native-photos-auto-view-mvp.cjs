@@ -418,7 +418,7 @@ test('only-new foreground consent installs its durable PhotoKit baseline and rep
   const replay = automatic.indexOf('changeQueue.replay(')
   const reserve = automatic.indexOf('.reserveDue(owner: selected,')
   assert.ok(replay >= 0 && reserve > replay, 'durable replay must precede automatic due reservation')
-  assert.match(automatic, /requiresExplicitBaseline[\s\S]*?never install a newer token automatically/)
+  assert.match(automatic, /requiresExplicitBaseline[\s\S]*?never silently skip old-dated[\s\S]*?invent a new baseline/)
   assert.match(changeQueue, /guard \(1\.\.\.4\)\.contains\(maximumEvents\)/)
   assert.match(changeQueue, /if progress\.events >= maximumEvents \{ break \}/)
   assert.doesNotMatch(changeQueue, /\.uploadPrepared\(|\.finalize\(|\.deleteNode\(/)
