@@ -66,7 +66,7 @@ func (s *Server) lookupIOSUploadResumeKey(c *gin.Context) {
 	// length must agree. No cross-owner, overwrite, skipped, Source/Root
 	// or renamed-session recovery is allowed from this endpoint.
 	var rows []meta.UploadSession
-	err := s.DB.WithContext(c.Request.Context()).
+	q := s.DB.WithContext(c.Request.Context()).
 		Where(
 			"owner_id = ? AND resume_key = ? AND parent_id = ? AND node_id IS NULL AND "+
 				"name = ? AND requested_name = ? AND total_size = ? AND chunk_size = ? AND sha256 = ? "+
@@ -75,8 +75,16 @@ func (s *Server) lookupIOSUploadResumeKey(c *gin.Context) {
 			userID(c), req.ResumeKey, req.ParentID, req.Name, req.Name, req.Size,
 			req.ChunkSize, req.SHA256, meta.UploadConflictPolicyFail,
 			[]string{meta.UploadStatusActive, meta.UploadStatusFinalized},
-		).
-		Order("created_at DESC, id DESC").Limit(2).Find(&rows).Error
+		)
+	// A native iPhone receipt is scoped to its currently verified Source and
+	// owning Device, not merely a same-Owner resumable HMAC key.
+	if native, ok := currentIOSPhotoManagedUploadScope(c); ok {
+		q = q.Where("source_id = ? AND source_revision = ? AND source_device_id = ? AND source_target_id = ?",
+			native.sourceID, native.sourceRevision, native.deviceID, native.targetID)
+	} else {
+		q = q.Where("COALESCE(source_id, 0) = 0")
+	}
+	err := q.Order("created_at DESC, id DESC").Limit(2).Find(&rows).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		fail(c, http.StatusInternalServerError, "upload reconciliation lookup failed")
 		return
