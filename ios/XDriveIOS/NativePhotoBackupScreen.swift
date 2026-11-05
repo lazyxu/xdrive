@@ -430,6 +430,12 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             coverage.cancel()
             originalProof.cancel()
         }
+        .onChange(of: controller.busy) { busy in
+            guard !busy,
+                  controller.schedule?.enabled == true,
+                  controller.schedule?.backupStartRule == .onlyNew else { return }
+            queueSummary.refresh(login: login)
+        }
         .onChange(of: phase) { state in
             if state != .active {
                 coverage.cancel()
@@ -648,6 +654,11 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .accessibilityIdentifier("native-ios-photos-manual-coverage")
                     Text("当前段已扫描 \(result.scanned) · 新增 \(result.uploaded) · 已验证 \(result.verifiedAlready)")
                         .monospacedDigit()
+                    if result.changeQueueProcessed > 0 {
+                        Text("优先增量队列：处理 \(result.changeQueueProcessed) · 新增 \(result.changeQueueUploaded) · 已验证 \(result.changeQueueVerified) · 失败 \(result.changeQueueFailed)")
+                            .font(.footnote).monospacedDigit()
+                            .accessibilityIdentifier("native-ios-photo-change-queue-progress")
+                    }
                     Text("视频新增 \(result.videoUploaded)，Live ZIP 新增 \(result.liveBundleUploaded)，待核对 \(result.needsReview)，不可用 \(result.unavailable)")
                         .font(.footnote)
                     if result.skippedBeforeBaseline > 0 {
