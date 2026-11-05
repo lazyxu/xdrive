@@ -642,6 +642,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.POST("/background-tasks/control", s.adminControlBackgroundTask)
 	admin.GET("/update", s.adminServerUpdateStatus)
 	admin.POST("/update", s.adminStartServerUpdate)
+	admin.POST("/update/offline/plan", s.adminStartOfflineHostPlan)
+	admin.GET("/update/offline/plan/:id", s.adminOfflineHostPlanStatus)
 	// Admin-only bytes transport. These endpoints do not execute Docker or
 	// authorize an installer: the separate Host verifies signed identities.
 	admin.POST("/update/offline/imports", s.adminCreateOfflineUpdateImport)

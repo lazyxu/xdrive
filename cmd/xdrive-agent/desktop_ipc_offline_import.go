@@ -30,6 +30,8 @@ type desktopOfflineImportController interface {
 	CloudOfflineImportFinalize(context.Context, string, string) (client.OfflineImportFinalizeReceipt, error)
 	CloudOfflineImportDelete(context.Context, string) error
 	CloudOfflineImportStart(context.Context, string, string, string, bool, string) (client.ServerUpdateState, error)
+	CloudOfflineImportPlan(context.Context, string, string, string, string) (client.OfflineHostPlanStatus, error)
+	CloudOfflineImportPlanStatus(context.Context, string) (client.OfflineHostPlanStatus, error)
 }
 
 func validDesktopOfflineName(name string) bool {
@@ -74,6 +76,36 @@ func (h *desktopIPCHandler) offlineImport(w http.ResponseWriter, r *http.Request
 			return
 		}
 		writeDesktopIPCJSON(w, http.StatusCreated, out)
+	case r.Method == "GET" && id != "" && name == "" && strings.HasSuffix(r.URL.Path, "/plan"):
+		out, err := provider.CloudOfflineImportPlanStatus(ctx, id)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, out)
+	case r.Method == "POST" && id != "" && name == "" && strings.HasSuffix(r.URL.Path, "/plan"):
+		var input struct {
+			TrustedManifest string `json:"trusted_manifest_sha256"`
+			TrustedGo       string `json:"trusted_installer_sha256"`
+			TrustMode       string `json:"offline_trust_mode"`
+		}
+		if !decodeDesktopIPCJSON(w, r, &input) {
+			return
+		}
+		signed := input.TrustMode == "sigstore" && input.TrustedManifest == "" && input.TrustedGo == ""
+		manual := input.TrustMode == "sha256" &&
+			desktopOfflineDigestPattern.MatchString(input.TrustedManifest) &&
+			desktopOfflineDigestPattern.MatchString(input.TrustedGo)
+		if !signed && !manual {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_offline_trust", "invalid offline preflight trust mode or proof")
+			return
+		}
+		out, err := provider.CloudOfflineImportPlan(ctx, id, input.TrustedManifest, input.TrustedGo, input.TrustMode)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusAccepted, out)
 	case r.Method == "GET" && id != "" && name == "":
 		out, err := provider.CloudOfflineImportGet(ctx, id)
 		if err != nil {

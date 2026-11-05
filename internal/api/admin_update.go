@@ -111,6 +111,14 @@ func (s *Server) adminStartServerUpdate(c *gin.Context) {
 		return
 	}
 
+	// Serialize online/offline update admission with read-only offline preflight.
+	s.offlineUpdateImportMu.Lock()
+	defer s.offlineUpdateImportMu.Unlock()
+	if s.offlineHostPlanBusy() {
+		c.JSON(http.StatusConflict, gin.H{"error": "offline_host_preflight_in_progress"})
+		return
+	}
+
 	state := s.serverUpdateStatus()
 	if !state.Supported {
 		c.JSON(http.StatusServiceUnavailable, gin.H{

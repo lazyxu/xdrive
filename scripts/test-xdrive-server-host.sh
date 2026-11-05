@@ -22,7 +22,7 @@ cleanup() {
       state/curl-url state/installer-args state/installer-stdin state/doctor-args state/docker-args \
       state/admin-list-stdin state/admin-reset-stdin state/admin-enable-stdin state/admin-disable-stdin \
       state/audit-calls state/restore-args state/verify-args \
-      control-run.out control-run.err home/state/control/status.json home/logs/host-control-update.log; do
+      control-run.out control-run.err home/state/control/status.json home/state/control/plan-status.json home/state/control/plan-result.json home/logs/host-control-update.log; do
       if [[ -f "$TMP/$file" ]]; then
         echo "===== $file =====" >&2
         cat "$TMP/$file" >&2 || true
@@ -1071,6 +1071,10 @@ done
 grep -q '"state":"idle"' "$TMP/home/state/control/status.json"
 [[ -f "$TMP/home/state/control/heartbeat" ]]
 grep -Eq '^[0-9]+$' "$TMP/home/state/control/runner.pid"
+runner_pid="$(cat "$TMP/home/state/control/runner.pid")"
+plan_runner_pid="$(cat "$TMP/home/state/control/offline-plan-runner.pid")"
+[[ "$runner_pid" == "$CONTROL_TEST_PID" ]]
+[[ "$plan_runner_pid" == "$runner_pid" ]]
 
 [[ -f "$TMP/home/state/control/storage-host-inventory.env" ]]
 grep -Eq '^generated_at=[0-9]{4}-[0-9]{2}-[0-9]{2}T' "$TMP/home/state/control/storage-host-inventory.env"
@@ -1132,6 +1136,45 @@ grep -q '^--source github --channel master --backup-file-data$' "$TMP/state/inst
 grep -q '"backup_file_data":true' "$TMP/home/state/control/status.json"
 [[ ! -f "$TMP/home/state/control/request.json" ]]
 [[ ! -f "$TMP/home/state/control/active.json" ]]
+
+# Exercise the real Host Control preflight consumer with a bounded fake manager.
+# This verifies request consumption, fixed argv, result validation and status
+# publication without Docker, backup, maintenance or installer execution.
+cat > "$TMP/home/bin/xdrive-server" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == update && "$2" == --source && "$3" == offline ]]
+printf '%s\n' "$*" > "$TEST_STATE/offline-plan-args"
+cat <<'JSON'
+{"schema":1,"read_only":true,"host_probe":{"schema":1,"read_only":true,"blockers":[]}}
+JSON
+SH
+chmod 700 "$TMP/home/bin/xdrive-server"
+cat > "$TMP/home/state/control/plan-request.json" <<EOF
+{"request_id":"222222222222222222222222","offline_id":"11111111111111111111111111111111","offline_trust_mode":"sha256","trusted_manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","trusted_installer_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+EOF
+chmod 660 "$TMP/home/state/control/plan-request.json"
+for _ in $(seq 1 100); do
+  if grep -q '"state":"success"' "$TMP/home/state/control/plan-status.json" 2>/dev/null &&
+     grep -q '"request_id":"222222222222222222222222"' "$TMP/home/state/control/plan-status.json" 2>/dev/null &&
+     [[ ! -f "$TMP/home/state/control/plan-request.json" && ! -f "$TMP/home/state/control/plan-active.json" ]]; then
+    break
+  fi
+  kill -0 "$CONTROL_TEST_PID" 2>/dev/null || {
+    echo "host control runner exited before completing offline preflight" >&2
+    exit 1
+  }
+  sleep 0.1
+done
+grep -q '"state":"success"' "$TMP/home/state/control/plan-status.json"
+grep -q '"offline_trust_mode":"sha256"' "$TMP/home/state/control/plan-status.json"
+grep -q '"read_only":true' "$TMP/home/state/control/plan-result.json"
+grep -q '"host_probe"' "$TMP/home/state/control/plan-result.json"
+grep -Fq 'update --source offline --channel master --offline-id 11111111111111111111111111111111 --plan-only --trusted-manifest-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --trusted-installer-sha256 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' "$TMP/state/offline-plan-args"
+[[ ! -f "$TMP/home/state/control/plan-request.json" ]]
+[[ ! -f "$TMP/home/state/control/plan-active.json" ]]
+cp "$HOST" "$TMP/home/bin/xdrive-server"
+
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \

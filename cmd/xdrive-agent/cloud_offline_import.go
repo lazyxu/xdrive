@@ -65,3 +65,19 @@ func (c *agentController) CloudOfflineImportStart(ctx context.Context, id, manif
 	}
 	return cli.AdminOfflineImportStart(ctx, id, manifestSHA, goSHA, backup, trustMode)
 }
+
+func (c *agentController) CloudOfflineImportPlan(ctx context.Context, id, manifestSHA, goSHA, trustMode string) (client.OfflineHostPlanStatus, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.OfflineHostPlanStatus{}, err
+	}
+	return cli.AdminStartOfflineHostPlan(ctx, id, manifestSHA, goSHA, trustMode)
+}
+
+func (c *agentController) CloudOfflineImportPlanStatus(ctx context.Context, id string) (client.OfflineHostPlanStatus, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.OfflineHostPlanStatus{}, err
+	}
+	return cli.AdminOfflineHostPlan(ctx, id)
+}

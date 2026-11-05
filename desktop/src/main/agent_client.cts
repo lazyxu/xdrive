@@ -183,6 +183,75 @@ export type AgentOfflineImportStatus = {
   files: Array<{ name: string; state: 'uploading' | 'ready'; size: number; uploaded_bytes: number; upload_sha256?: string }>
 }
 export type AgentOfflineImportFinalize = { name: string; state: 'ready'; upload_sha256: string }
+// Keep the Agent's CommonJS main-process types self-contained. Importing the
+// renderer's ESM shared source here crosses tsconfig.main.json's rootDir and
+// forces Node16 resolution-mode rules into this .cts module.
+export type AgentOfflineHostPlanStatus = {
+  supported: boolean
+  state: 'idle' | 'queued' | 'running' | 'success' | 'failed' | 'unavailable'
+  request_id?: string
+  offline_id?: string
+  offline_trust_mode?: 'sigstore' | 'sha256'
+  trusted_manifest_sha256?: string
+  trusted_installer_sha256?: string
+  message?: string
+  error?: string
+  started_at?: string
+  updated_at?: string
+  finished_at?: string
+  plan?: {
+    schema: number
+    read_only: boolean
+    trust_basis: string
+    source: string
+    channel: string
+    platform: string
+    target_source_commit: string
+    recorded_source_commit?: string
+    current_version_evidence: string
+    components: Array<{
+      name: string
+      filename: string
+      target_sha256: string
+      target_fingerprint?: string
+      target_build_commit?: string
+      action: 'verify_and_install' | 'not_selected' | 'not_supplied'
+      archive_present: boolean
+      recorded_sha256?: string
+      recorded_fingerprint?: string
+      recorded_match: boolean
+      archive_bytes: number
+      expanded_bytes: number
+    }>
+    selected_archive_bytes: number
+    selected_expanded_bytes: number
+    minimum_temporary_bytes: number
+    estimated_full_disk_bytes: number | null
+    host_probe?: {
+      schema: number
+      read_only: boolean
+      platform: string
+      docker_status: string
+      running_server_image_ref?: string
+      running_server_image_id?: string
+      running_server_evidence: string
+      temporary_free_bytes: number | null
+      temporary_required_min_bytes: number
+      temporary_space_status: string
+      docker_storage_free_bytes: number | null
+      images: Array<{
+        name: string
+        reference: string
+        expected_id?: string
+        observed_id?: string
+        status: string
+      }>
+      blockers: string[]
+      remaining_host_checks: string[]
+    }
+    requires_host_verification: string[]
+  }
+}
 
 export type AgentServerUpdateState = {
   supported: boolean
@@ -4772,6 +4841,17 @@ export class AgentIPCClient {
   }
   offlineImportGet(id: string) {
     return this.request<AgentOfflineImportStatus>('GET', '/v1/offline-imports/' + encodeURIComponent(id))
+  }
+  offlineImportPlan(id: string) {
+    return this.request<AgentOfflineHostPlanStatus>('GET',
+      '/v1/offline-imports/' + encodeURIComponent(id) + '/plan')
+  }
+  offlineImportPlanStart(id: string, manifestSHA: string, goSHA: string, trustMode: 'sigstore' | 'sha256') {
+    return this.request<AgentOfflineHostPlanStatus>('POST',
+      '/v1/offline-imports/' + encodeURIComponent(id) + '/plan', {
+        trusted_manifest_sha256: manifestSHA, trusted_installer_sha256: goSHA,
+        offline_trust_mode: trustMode,
+      }, 45_000)
   }
   offlineImportRegister(id: string, name: string, size: number, sha256 = '') {
     return this.request<{ accepted: boolean }>('POST',

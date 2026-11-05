@@ -980,7 +980,7 @@ const agent = Object.freeze({
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
   startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
     ipcRenderer.invoke('agent:start-server-update', source, channel, backupFileData),
-  offlineImport: (action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'start',
+  offlineImport: (action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'plan-status' | 'plan' | 'start',
     input: Record<string, unknown> = {}) =>
     ipcRenderer.invoke('agent:offline-import', action, input),
   offlineImportChunk: (id: string, name: string, index: number, data: ArrayBuffer, sha256: string) =>

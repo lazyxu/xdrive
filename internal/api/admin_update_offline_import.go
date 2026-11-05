@@ -123,7 +123,7 @@ func openOfflineImport(root *os.Root, id string) (*os.Root, error) {
 
 func offlineImportBusy(s *Server) bool {
 	state := s.serverUpdateStatus()
-	return state.State == "queued" || state.State == "running"
+	return state.State == "queued" || state.State == "running" || s.offlineHostPlanBusy()
 }
 
 func offlineImportError(c *gin.Context, err error) {

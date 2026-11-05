@@ -765,6 +765,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/offline-imports", h.offlineImport)
 	mux.HandleFunc("POST /v1/offline-imports", h.offlineImport)
 	mux.HandleFunc("GET /v1/offline-imports/{id}", h.offlineImport)
+	mux.HandleFunc("GET /v1/offline-imports/{id}/plan", h.offlineImport)
+	mux.HandleFunc("POST /v1/offline-imports/{id}/plan", h.offlineImport)
 	mux.HandleFunc("DELETE /v1/offline-imports/{id}", h.offlineImport)
 	mux.HandleFunc("POST /v1/offline-imports/{id}/files/{name}", h.offlineImport)
 	mux.HandleFunc("PUT /v1/offline-imports/{id}/files/{name}/chunks/{index}", h.offlineImport)
