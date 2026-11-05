@@ -54,8 +54,8 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 		t.Fatalf("invalid managed Photo Source/Node: %+v", response)
 	}
 	scope := iosPhotoManagedUploadScope{
-		ownerID: owner.ID, deviceID: device.ID,
-		sourceID: response.SourceID, targetID: response.TargetNodeID,
+		ownerID: owner.ID, deviceID: device.ID, sourceID: response.SourceID,
+		sourceRevision: 1, targetID: response.TargetNodeID,
 	}
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ios/photos/managed/uploads", nil)
@@ -103,6 +103,8 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 	}
 	session := meta.UploadSession{
 		ID: uuid.NewString(), OwnerID: owner.ID,
+		SourceID: response.SourceID, SourceRevision: scope.sourceRevision,
+		SourceDeviceID: device.ID, SourceTargetID: response.TargetNodeID,
 		ParentID: &response.TargetNodeID, Name: name, RequestedName: name,
 		ConflictPolicy: meta.UploadConflictPolicyFail, TotalSize: req.Size,
 		ChunkSize: req.ChunkSize, SHA256: digest, ResumeKey: key,
@@ -111,6 +113,27 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 	if err := requireSourceRunOrLocalPushFinalizeTx(
 		ctx, db, c, session, response.TargetNodeID); err != nil {
 		t.Fatalf("valid managed iOS finalize denied: %v", err)
+	}
+	if err := server.requireUploadChunkAuthorityTx(ctx, db, c, session); err != nil {
+		t.Fatalf("valid iOS UploadPart transaction denied: %v", err)
+	}
+	for _, scenario := range []struct {
+		name string
+		alter func(*meta.UploadSession)
+	}{
+		{"wrong device", func(row *meta.UploadSession) { row.SourceDeviceID = uuid.NewString() }},
+		{"stale Source revision", func(row *meta.UploadSession) { row.SourceRevision++ }},
+		{"wrong target", func(row *meta.UploadSession) { row.SourceTargetID = root.ID }},
+		{"legacy unbound session", func(row *meta.UploadSession) { row.SourceID = 0 }},
+	} {
+		bad := session
+		scenario.alter(&bad)
+		if err := server.requireUploadChunkAuthorityTx(ctx, db, c, bad); !errors.Is(err, errManagedSourceWriteDenied) {
+			t.Fatalf("%s reached UploadPart write transaction: %v", scenario.name, err)
+		}
+	}
+	if err := server.requireUploadChunkAuthorityTx(ctx, db, regular, session); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("plain Owner adopted iOS Source session: %v", err)
 	}
 	if err := requireSourceRunOrLocalPushFinalizeTx(
 		ctx, db, regular, session, response.TargetNodeID); !errors.Is(err, errManagedSourceWriteDenied) {
@@ -129,5 +152,8 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 	if err := requireSourceRunOrLocalPushFinalizeTx(
 		ctx, db, c, session, response.TargetNodeID); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("revoked iPhone finalized old session: %v", err)
+	}
+	if err := server.requireUploadChunkAuthorityTx(ctx, db, c, session); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("revoked iPhone committed UploadPart: %v", err)
 	}
 }
