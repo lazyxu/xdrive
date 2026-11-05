@@ -1295,12 +1295,14 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     .accessibilityIdentifier("native-ios-local-map-actions")
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(focused ? "显示底部导航" : "专注地图") {
-                    focused.toggle()
-                    onFocusChange?(focused)
+            if album == nil {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(focused ? "显示底部导航" : "专注地图") {
+                        focused.toggle()
+                        onFocusChange?(focused)
+                    }
+                    .accessibilityIdentifier("native-ios-map-focus-toggle")
                 }
-                .accessibilityIdentifier("native-ios-map-focus-toggle")
             }
         }
         .sheet(item: $selection, onDismiss: {
