@@ -98,5 +98,11 @@ func (s *Server) lookupIOSUploadResumeKey(c *gin.Context) {
 		fail(c, http.StatusGone, "matching upload session expired")
 		return
 	}
+	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		return authorizeUploadSessionReadTx(c.Request.Context(), tx, c, snapshot, "ios.photo.resume_lookup")
+	}); err != nil {
+		fail(c, http.StatusInternalServerError, "upload authorization audit unavailable")
+		return
+	}
 	s.writeUploadSession(c, snapshot, http.StatusOK)
 }

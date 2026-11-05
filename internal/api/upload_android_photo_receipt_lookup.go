@@ -77,5 +77,12 @@ func (s *Server) lookupAndroidPhotoUploadReceipt(c *gin.Context) {
 		fail(c, http.StatusGone, "Android photo upload receipt expired")
 		return
 	}
+	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		return recordUploadAuthorizationTx(tx, c, "android.photo.receipt.read", snapshot.ID,
+			uploadAuthorizationIdentity{Platform: "android"}, true, "")
+	}); err != nil {
+		fail(c, http.StatusInternalServerError, "upload authorization audit unavailable")
+		return
+	}
 	s.writeUploadSession(c, snapshot, http.StatusOK)
 }
