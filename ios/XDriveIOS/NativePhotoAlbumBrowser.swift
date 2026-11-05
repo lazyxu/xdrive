@@ -453,6 +453,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingAlbumHelp = false
+    @State private var showingAlbumMap = false
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
@@ -680,6 +681,15 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if permission == .authorized && selected == nil && !selectionMode {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showingAlbumMap = true } label: {
+                        Label("显示地图", systemImage: "map")
+                    }
+                    .disabled(loading || albumActionBusy || albumShareBusy)
+                    .accessibilityIdentifier("native-ios-local-album-show-map")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showingAlbumHelp = true } label: {
                     Label("相册说明", systemImage: "info.circle")
@@ -732,6 +742,15 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             retainedAlbumShare = nil
         }) { session in
             XDriveIOSNativeLocalPhotoActivitySheet(fileURLs: session.fileURLs)
+        }
+        .fullScreenCover(isPresented: $showingAlbumMap) {
+            NavigationStack {
+                XDriveIOSNativeLocalPhotoMapScreen(
+                    album: album,
+                    mapScope: .constant(.library),
+                    offset: .constant(0)
+                )
+            }
         }
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) { initial in
             XDriveIOSNativeLocalPhotoDetail(
@@ -794,10 +813,12 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             )
         }
         .onAppear {
+            permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             libraryMonitor.start()
             if selected == nil && total == nil && !loading { reload() }
         }
         .onChange(of: libraryMonitor.revision) { _ in
+            permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             clearViewerTileAnchor()
             invalidate()
             error = "系统相册发生变化，请重新读取当前页面。"
