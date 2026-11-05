@@ -30,8 +30,10 @@ type offlineHostPlanStatus struct {
 	State       string          `json:"state"`
 	RequestID   string          `json:"request_id,omitempty"`
 	OfflineID   string          `json:"offline_id,omitempty"`
-	TrustMode   string          `json:"offline_trust_mode,omitempty"`
-	Message     string          `json:"message,omitempty"`
+	TrustMode              string          `json:"offline_trust_mode,omitempty"`
+	TrustedManifestSHA256  string          `json:"trusted_manifest_sha256,omitempty"`
+	TrustedInstallerSHA256 string          `json:"trusted_installer_sha256,omitempty"`
+	Message                string          `json:"message,omitempty"`
 	Error       string          `json:"error,omitempty"`
 	StartedAt   string          `json:"started_at,omitempty"`
 	UpdatedAt   string          `json:"updated_at,omitempty"`
@@ -262,6 +264,8 @@ func (s *Server) adminStartOfflineHostPlan(c *gin.Context) {
 	queued := offlineHostPlanStatus{
 		Supported: true, State: "queued", RequestID: requestID,
 		OfflineID: input.OfflineID, TrustMode: input.TrustMode,
+		TrustedManifestSHA256: input.TrustedManifestSHA256,
+		TrustedInstallerSHA256: input.TrustedInstallerSHA256,
 		Message: "只读宿主机预检已排队；不会启动维护或安装。",
 		UpdatedAt: createdAt,
 	}
@@ -331,7 +335,10 @@ func (s *Server) adminOfflineHostPlanStatus(c *gin.Context) {
 	}
 	if (status.RequestID != "" && !offlineHostPlanRequestID.MatchString(status.RequestID)) ||
 		(status.OfflineID != "" && !offlineImportID.MatchString(status.OfflineID)) ||
-		(status.TrustMode != "" && status.TrustMode != "sigstore" && status.TrustMode != "sha256") {
+		(status.TrustMode != "" && status.TrustMode != "sigstore" && status.TrustMode != "sha256") ||
+		(status.TrustMode == "sigstore" && (status.TrustedManifestSHA256 != "" || status.TrustedInstallerSHA256 != "")) ||
+		(status.TrustMode == "sha256" && (!offlineDigest.MatchString(status.TrustedManifestSHA256) ||
+			!offlineDigest.MatchString(status.TrustedInstallerSHA256))) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "offline_host_plan_unavailable"})
 		return
 	}
