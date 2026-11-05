@@ -87,7 +87,7 @@ func (c *Client) PreflightLocalRoot(ctx context.Context, path string) error {
 // token enters this client or response.
 func (c *Client) CreateLocalBackupSource(ctx context.Context, name string) (LocalBackupSource, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || len([]byte(name)) > 128 || strings.ContainsAny(name, "\\x00\\r\\n") {
+	if name == "" || len([]byte(name)) > 128 || strings.ContainsAny(name, "\x00\r\n") {
 		return LocalBackupSource{}, errors.New("valid local backup Source name required")
 	}
 	request := client.CreateSourceInput{
@@ -104,7 +104,7 @@ func (c *Client) CreateLocalBackupSource(ctx context.Context, name string) (Loca
 		source.Direction != "push" || source.SyncMode != "backup" ||
 		source.Status != "paused" || !source.TargetManaged || source.TargetNodeID == nil ||
 		!ValidSourceID(*source.TargetNodeID) || source.TargetPath == "" ||
-		len([]byte(source.TargetPath)) > 2048 || strings.ContainsAny(source.TargetPath, "\\x00\\r\\n") {
+		len([]byte(source.TargetPath)) > 2048 || strings.ContainsAny(source.TargetPath, "\x00\r\n") {
 		return LocalBackupSource{}, errors.New("owning Agent did not provision a valid Server-managed local backup target")
 	}
 	return source, nil
