@@ -18,7 +18,11 @@ assert.doesNotMatch(screen, /AttributedString\(markdown:\s*oldMarkdown\)/,
   'history must not silently downgrade image-bearing Markdown to text-only rendering')
 
 assert.match(client, /func versions\(id: String\) async throws -> \[XDriveIOSNativeNoteVersion\]/)
-assert.match(client, /func previousMarkdown\(nodeID: UInt64, versionID: UInt64\) async throws -> String/)
+assert.match(client, /func previousMarkdown\(nodeID: UInt64, version: XDriveIOSNativeNoteVersion\) async throws -> String/)
+assert.match(client, /Int64\(data\.count\) == version\.bytes/)
+assert.match(client, /digest == version\.sha256\.lowercased\(\)/)
+assert.match(client, /response\.value\(forHTTPHeaderField: "ETag"\)/)
+assert.match(client, /etag\?\.lowercased\(\) == digest/)
 assert.match(client, /func readNoteImage\(noteID: String, relativePath: String\) async throws -> Data/)
 assert.match(client, /func importIOSNoteImage\(noteID: String, bytes: Data\) async throws -> String/)
 
@@ -32,7 +36,9 @@ assert.match(intent, /var sourceIdentifier: String\?/)
 assert.match(intent, /sourceIdentifier: sourceIdentifier/)
 assert.match(policy, /externalID: id/,
   'the caller-provided stable key must be preserved; no title/date-derived identity')
-assert.match(policy, /externalID\.isEmpty/,
+const policyTests = read('ios/tests/NativeAppleNotesImportPolicyChecks.swift')
+assert.match(policy, /let id = \(externalID \?\? ""\)/)
+assert.match(policyTests, /noIdentifier\.externalID\.isEmpty/,
   'missing stable identity must remain an independent snapshot')
 
 console.log('iOS Notes history image readback and explicit Shortcut source identity: PASS')
