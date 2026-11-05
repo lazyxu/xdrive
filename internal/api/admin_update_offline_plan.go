@@ -51,14 +51,24 @@ func (s *Server) offlineHostPlanBusy() bool {
 		}
 	}
 	raw, err := readOfflineHostPlanFile(filepath.Join(dir, "plan-status.json"), 64<<10)
-	if err == nil {
-		var status offlineHostPlanStatus
-		if json.Unmarshal(raw, &status) == nil &&
-			(status.State == "queued" || status.State == "running") {
-			return true
-		}
+	if errors.Is(err, os.ErrNotExist) {
+		return false
 	}
-	return false
+	if err != nil {
+		return true
+	}
+	var status offlineHostPlanStatus
+	if json.Unmarshal(raw, &status) != nil {
+		return true
+	}
+	switch status.State {
+	case "idle", "success", "failed":
+		return false
+	case "queued", "running":
+		return true
+	default:
+		return true
+	}
 }
 
 func readOfflineHostPlanFile(path string, maxBytes int64) ([]byte, error) {
