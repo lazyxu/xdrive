@@ -36,19 +36,25 @@ func (f *fakeLocalBackupManagementAgent) Sources(ctx context.Context) ([]localba
 
 func (f *fakeLocalBackupManagementAgent) LocalBackupSettings(_ context.Context, id uint64) (client.LocalBoundBackupSettings, error) {
 	f.calls = append(f.calls, "settings")
-	if id != f.settings.SourceID { return client.LocalBoundBackupSettings{}, errors.New("foreign") }
+	if id != f.settings.SourceID {
+		return client.LocalBoundBackupSettings{}, errors.New("foreign")
+	}
 	return f.settings, nil
 }
 func (f *fakeLocalBackupManagementAgent) RenameLocalBackupSource(_ context.Context, id, revision uint64, name string) (client.LocalBoundBackupSettings, error) {
 	f.calls = append(f.calls, "rename")
-	if id != f.settings.SourceID || revision != f.settings.Revision { return client.LocalBoundBackupSettings{}, errors.New("stale") }
+	if id != f.settings.SourceID || revision != f.settings.Revision {
+		return client.LocalBoundBackupSettings{}, errors.New("stale")
+	}
 	f.settings.Revision++
 	f.settings.Name = name
 	return f.settings, nil
 }
 func (f *fakeLocalBackupManagementAgent) RetargetLocalBackupSource(_ context.Context, id, revision, target uint64) (client.LocalBoundBackupSettings, error) {
 	f.calls = append(f.calls, "target")
-	if id != f.settings.SourceID || revision != f.settings.Revision { return client.LocalBoundBackupSettings{}, errors.New("stale") }
+	if id != f.settings.SourceID || revision != f.settings.Revision {
+		return client.LocalBoundBackupSettings{}, errors.New("stale")
+	}
 	f.settings.Revision++
 	f.settings.TargetNodeID = &target
 	f.settings.TargetPath = "/Backup/Retargeted"
@@ -56,26 +62,34 @@ func (f *fakeLocalBackupManagementAgent) RetargetLocalBackupSource(_ context.Con
 }
 func (f *fakeLocalBackupManagementAgent) SetLocalBackupMode(_ context.Context, id, revision uint64, mode string) (client.LocalBoundBackupSettings, error) {
 	f.calls = append(f.calls, "mode")
-	if id != f.settings.SourceID || revision != f.settings.Revision { return client.LocalBoundBackupSettings{}, errors.New("stale") }
+	if id != f.settings.SourceID || revision != f.settings.Revision {
+		return client.LocalBoundBackupSettings{}, errors.New("stale")
+	}
 	f.settings.Revision++
 	f.settings.SyncMode = mode
 	return f.settings, nil
 }
 func (f *fakeLocalBackupManagementAgent) LocalBackupRules(_ context.Context, id uint64) (client.LocalBoundIgnoreRules, error) {
 	f.calls = append(f.calls, "rules")
-	if id != f.rules.SourceID { return client.LocalBoundIgnoreRules{}, errors.New("foreign") }
+	if id != f.rules.SourceID {
+		return client.LocalBoundIgnoreRules{}, errors.New("foreign")
+	}
 	return f.rules, nil
 }
 func (f *fakeLocalBackupManagementAgent) SaveLocalBackupRules(_ context.Context, id, revision uint64, rules string) (client.LocalBoundIgnoreRules, error) {
 	f.calls = append(f.calls, "save-rules")
-	if id != f.rules.SourceID || revision != f.rules.Revision { return client.LocalBoundIgnoreRules{}, errors.New("stale") }
+	if id != f.rules.SourceID || revision != f.rules.Revision {
+		return client.LocalBoundIgnoreRules{}, errors.New("stale")
+	}
 	f.rules.Revision++
 	f.rules.IgnoreRules = rules
 	return f.rules, nil
 }
 func (f *fakeLocalBackupManagementAgent) RemoveLocalBackupSource(_ context.Context, id, revision uint64) (client.LocalBoundBackupRemoval, error) {
 	f.calls = append(f.calls, "remove")
-	if id != f.settings.SourceID || revision != f.settings.Revision { return client.LocalBoundBackupRemoval{}, errors.New("stale") }
+	if id != f.settings.SourceID || revision != f.settings.Revision {
+		return client.LocalBoundBackupRemoval{}, errors.New("stale")
+	}
 	f.removed = true
 	return client.LocalBoundBackupRemoval{SourceID: id, LocalGrantRemoved: true}, nil
 }
@@ -83,8 +97,12 @@ func (f *fakeLocalBackupManagementAgent) RemoveLocalBackupSource(_ context.Conte
 func requestLocalBackupMutation(g *Gateway, path, payload, origin, csrfToken string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(http.MethodPost, "https://nas.example:5001"+path, strings.NewReader(payload))
 	r.Header.Set("Cookie", "id=dsm-session")
-	if origin != "" { r.Header.Set("Origin", origin) }
-	if csrfToken != "" { r.Header.Set("X-CSRF-Token", csrfToken) }
+	if origin != "" {
+		r.Header.Set("Origin", origin)
+	}
+	if csrfToken != "" {
+		r.Header.Set("X-CSRF-Token", csrfToken)
+	}
 	w := httptest.NewRecorder()
 	g.ServeHTTP(w, r)
 	return w
