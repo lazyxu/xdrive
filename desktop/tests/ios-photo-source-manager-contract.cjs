@@ -29,7 +29,7 @@ test('iOS Photos is a device-executed Push Source, not a server-triggered worker
   assert.match(profile, /最近一次备份已取消/);
   assert.match(list, /row\.source\.kind === 'ios_photos'/);
   assert.match(list, /尚无备份统计/);
-  assert.match(sourceIcon, /PhotoLibraryRoundedIcon/);
+  assert.match(sourceIcon, /ios-photos\.svg/);
   assert.match(list, /新增上传/);
   assert.match(list, /云端已核验/);
   assert.match(list, /待处理/);
