@@ -13,7 +13,38 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var offlineHostPlanRequestID = regexp.MustCompile(`^[a-f0-9]{24}$`)
+var offlineHostPlanRequestID = regexp.MustCompile(`^[a-f0-9]{24}package api
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+)
+var offlineHostPlanRunnerPID = regexp.MustCompile(`^[1-9][0-9]{0,9}package api
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+)
 
 type offlineHostPlanRequestFile struct {
 	RequestID              string `json:"request_id"`
