@@ -20,6 +20,7 @@ on:
 permissions:
   contents: write
   actions: read
+  checks: read
   id-token: write
   attestations: write
 
@@ -49,12 +50,20 @@ jobs:
           # downstream publisher/mirror failed, rerun the original CI's failed
           # jobs so its completed prerequisites and exact Final Gate are reused.
           record="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TARGET_RUN_ID")"
-          jq -e '.name == "CI" and .event == "push" and .head_branch == "master" and
-                 (.status == "in_progress" or (.status == "completed" and .conclusion == "success"))' <<< "$record" >/dev/null
+          if ! jq -e '.name == "CI" and .event == "push" and .head_branch == "master" and
+                       (.status == "in_progress" or (.status == "completed" and .conclusion == "success"))' <<< "$record" >/dev/null; then
+            echo "::error title=Invalid CI source::Expected an in-progress or successful master push CI run."
+            jq '{name,event,head_branch,status,conclusion,head_sha}' <<< "$record"
+            exit 1
+          fi
           sha="$(jq -r '.head_sha' <<< "$record")"
           [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || exit 1
           checks="$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?per_page=100")"
-          jq -e '[.check_runs[] | select(.name == "final-gate" and .conclusion == "success")] | length > 0' <<< "$checks" >/dev/null
+          if ! jq -e '[.check_runs[]? | select(.name == "final-gate" and .status == "completed" and .conclusion == "success")] | length > 0' <<< "$checks" >/dev/null; then
+            echo "::error title=Final Gate authorization failed::No completed successful final-gate check is visible for source commit $sha."
+            jq -r '.check_runs[]? | select(.name == "final-gate") | [.name,.status,(.conclusion // "null")] | @tsv' <<< "$checks" || true
+            exit 1
+          fi
           echo "commit=$sha" >> "$GITHUB_OUTPUT"
           echo "short=${sha:0:12}" >> "$GITHUB_OUTPUT"
 

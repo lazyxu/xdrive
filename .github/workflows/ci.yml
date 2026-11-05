@@ -2729,6 +2729,7 @@ jobs:
     permissions:
       contents: write
       actions: read
+      checks: read
       id-token: write
       attestations: write
     uses: ./.github/workflows/offline-packages.yml
