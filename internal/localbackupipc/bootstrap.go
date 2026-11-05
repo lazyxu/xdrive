@@ -16,16 +16,16 @@ import (
 )
 
 type LocalBackupSource struct {
-	ID           uint64  `json:"id"`
-	Name         string  `json:"name"`
-	Kind         string  `json:"kind"`
-	Direction    string  `json:"direction"`
-	SyncMode     string  `json:"sync_mode"`
-	Status       string  `json:"status"`
-	Revision     uint64  `json:"revision"`
-	TargetNodeID *uint64 `json:"target_node_id"`
-	TargetManaged bool   `json:"target_managed"`
-	TargetPath    string `json:"target_path"`
+	ID            uint64  `json:"id"`
+	Name          string  `json:"name"`
+	Kind          string  `json:"kind"`
+	Direction     string  `json:"direction"`
+	SyncMode      string  `json:"sync_mode"`
+	Status        string  `json:"status"`
+	Revision      uint64  `json:"revision"`
+	TargetNodeID  *uint64 `json:"target_node_id"`
+	TargetManaged bool    `json:"target_managed"`
+	TargetPath    string  `json:"target_path"`
 }
 
 type LocalBackupRootGrant struct {
