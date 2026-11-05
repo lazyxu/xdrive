@@ -871,6 +871,9 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		if current.Status != meta.UploadStatusActive {
 			return errUploadFinalized
 		}
+		if err := requireSynologyPushUploadSessionTx(c.Request.Context(), tx, c, current); err != nil {
+			return errManagedSourceWriteDenied
+		}
 		if time.Now().After(current.ExpiresAt) {
 			return errUploadExpired
 		}
