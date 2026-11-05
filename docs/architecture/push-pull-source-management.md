@@ -75,7 +75,7 @@ Every Push executor has an Owner-scoped ClientDevice:
 |---|---|---|
 | Windows / Linux / macOS Desktop | registered Device + protected Agent token | owning Agent + verified local Root |
 | xd CLI | reuses Desktop's Device and Agent | no separate credential or Runner |
-| Synology DSM | registered Synology Device + protected source-agent token (missing) | source-agent + verified Personal/Shared roots |
+| Synology DSM | registered Synology Device + protected source-agent token | source-agent + verified Personal/Shared roots |
 | iOS | registered identity-only Device | dedicated PhotoKit managed-upload / BG grant routes only |
 | Android | registered identity-only Device | dedicated MediaStore managed-upload / BG routes only |
 

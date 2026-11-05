@@ -13,7 +13,7 @@ This is a source-code audit, not a deployment or physical-device acceptance repo
 | Local Folder Push | #3757 provisions a device-bound paused local_folder Source and managed target. Owning Agent has Root binding, durable Operations, shared CAS uploader and automatic scheduling. | New target prefix must be Push/; generalize Source Device binding name; expose the same Source lifecycle/history in the unified manager. |
 | Desktop Push | Desktop owns the local Agent and native Root UI. | All create/configure/run actions must operate on the same Source ID; remove any parallel Desktop-only source state. |
 | xd Push | CLI is a thin client of the same owning Agent; CLI-only package and bootstrap exist (#2585). This change removes `--target-id` from new setup and validates the Server-returned managed target before local Root binding. | Keep Desktop and xd on one Agent/Device/Source and Runner; no separate CLI target picker or cloud directory creator. |
-| DSM Photos Push | xdrive-source-agent scans Personal/Shared roots, optionally enriches Synology Photos IDs, supports scan/sync, Source runs, cancellation and resumable uploads. PR #3914 adds Synology identity-only ClientDevice enrollment, generic Source.DeviceID binding, canonical Push target provisioning, device proof on Source mutations/execution, revocation pause/cancel, and rejects arbitrary target selection for new Sources. | Server-persisted Personal/Shared root fingerprint binding and real DSM NAS acceptance remain missing. |
+| DSM Photos Push | xdrive-source-agent scans Personal/Shared roots, optionally enriches Synology Photos IDs, supports scan/sync, Source runs, cancellation and resumable uploads. PR #3923 completes S02–S04: identity-only Synology ClientDevice/token, generic Source.DeviceID, server-owned Push target, persisted Personal/Shared Root-set fingerprint, and Device/Source/Root/Target checks on run, upload chunks and Finalize. | Real DSM NAS acceptance remains outstanding; source-agent is distributed separately for Linux amd64/arm64, not inside the legacy ARMv7 SPK. |
 | iOS Photos Push | #3830 provides ios_photos Source, registered identity, managed target, foreground/BG managed UploadSession routes, destination-bound cursors and encrypted original receipts. | New target prefix must be Push/; unify Source status/history projection and management entry; real iPhone validation remains outstanding. |
 | Android Photos Push | MediaStore staging, encrypted intent/receipt ledger, identity-only enrollment, WorkManager opt-in, bounded upload and exact read-only ACK lookup exist. | No android_photos Source/managed target; upload and receipt lookup remain Owner-root scoped; add Device-bound Source, exact Target upload/finalize/receipt, Source-bound cursor and unified history. |
 | Yike Photos Pull | Server Worker, encrypted Cookie, scan/sync, incremental planner, SourceItems/collections, streaming resumable upload and per-account limits. | Target uses a Yike-specific path, not Pull/Yike Photos/SourceName; provision new targets under Pull/ and show in the same manager. |
@@ -28,7 +28,7 @@ This is a source-code audit, not a deployment or physical-device acceptance repo
 - Desktop Local Folder Push already has a registered ClientDevice, device-bound Source creation, Root binding and a server-managed target.
 - iOS has a separate identity-only Device credential and dedicated managed destination/upload/background routes. It must remain unable to use generic Desktop Agent or Root APIs.
 - Android can register an identity-only Device, but the existing native backup writer still verifies and writes under Owner Root. There is no Android Source binding or managed target yet.
-- DSM source-agent has its own protected login/config and stable local filesystem identity state, but does not register a ClientDevice or present a device token for Source creation. Its setup still accepts a user-selected cloud target path.
+- DSM source-agent now enrolls an identity-only Synology ClientDevice, stores its independent token in the secret store, and creates a server-managed Push Source. The Server persists the aggregate Personal/Shared Root ID and fingerprint and rechecks Device, Source revision, Root binding and Target on execution and upload/finalize. Real DSM NAS acceptance remains unverified.
 - Desktop and xd already share one owning Agent. Do not add a second xd device registration or runner.
 
 ### Pull worker foundation is already shared
@@ -44,7 +44,7 @@ The work is therefore **not** to create three new worker services. The remaining
 | Local Folder / iOS Push | 同步文件夹/设备备份/<device>/<source> | 同步文件夹/Push/<device>/<source> |
 | Synology Pull | 同步文件夹/远程拉取/<connector>/<source> | 同步文件夹/Pull/<connector>/<source> |
 | Yike Pull | 同步文件夹/一刻相册/<account identity> | 同步文件夹/Pull/Yike Photos/<source> |
-| DSM Photos Push | user-supplied target such as Photos/Synology | 同步文件夹/Push/<DSM device>/<source> |
+| DSM Photos Push | 同步文件夹/Push/<DSM device>/<source> | 同步文件夹/Push/<DSM device>/<source> |
 | Android Photos Push | Owner root | 同步文件夹/Push/<Android device>/<source> |
 
 These are changes to **new provisioning only**. Do not move or rename old targets, old Nodes, old receipts or old Source records in this project.
@@ -58,13 +58,9 @@ These are changes to **new provisioning only**. Do not move or rename old target
 3. Keep platform capability separate from Device identity. A valid Device token alone must not grant local Root, PhotoKit, MediaStore or arbitrary Files access.
 4. Ensure managed-subtree write guards apply equally to every new Push/Pull target and every upload route.
 
-### P0 — DSM Photos Push
+### P0 — DSM Photos Push (S02–S04 implemented in PR #3923)
 
-1. Add a distinct synology ClientDevice platform and protected device token to source-agent config.
-2. Make setup enroll/reuse the DSM Device and create a paused Source through server-managed Push provisioning; remove arbitrary target path/target Node selection for new Sources.
-3. Bind Source creator Device, exact TargetNodeID and verified Personal/Shared root fingerprints.
-4. Require current Device proof and exact Source/Target binding for run admission, observations, progress, commit and file upload/finalize.
-5. Preserve DSM's filesystem identity store and Photos item-ID enrichment. They identify source files; they do not replace xDrive Device identity.
+Device enrollment/token storage/revocation, server-managed Push target provisioning, persisted Personal/Shared Root-set fingerprint binding, and per-run/per-upload Device–Source–Root–Target authorization are implemented and covered by PostgreSQL integration tests. The remaining acceptance item is a real DSM NAS run; it must remain **跳过（未验收）** until physically exercised.
 
 ### P0 — Android Photos Push
 
@@ -98,7 +94,7 @@ These are changes to **new provisioning only**. Do not move or rename old target
 ## 4. Recommended implementation sequence
 
 1. Shared Server provisioner + canonical Push/Pull target prefixes, with PostgreSQL integration tests.
-2. DSM ClientDevice enrollment and exact Source/Target binding.
+2. ~~DSM ClientDevice enrollment and exact Source/Target binding~~ — completed with S02–S04 in PR #3923.
 3. Android managed Source/Target and Source-scoped upload/receipt path.
 4. New-target path alignment for existing Local Folder, iOS, Yike and Synology Pull.
 5. Unified Source Manager/status/history adapters and cross-platform contract tests.
@@ -120,16 +116,17 @@ The shared TypeScript Source Manager is not yet a complete cross-platform catalo
 
 Minimum management acceptance: all Source kinds appear in one Owner-scoped list; Push rows display a verified Device label/ID and are read-only from foreign devices; Pull rows display connector/credential status and Server Worker status; actions are enabled only when the Host has the required capability; iOS/Android rows show native-ledger/receipt-derived status without offering remote Run Now.
 
-## 6. DSM Push device-binding implementation slice
+## 6. DSM Push S02–S04 implementation
 
-The DSM implementation PR now adds the first server-enforced Synology Push device-binding path:
+PR #3923 completes the DSM Device, Root and upload authorization closure:
 
 - Register `synology` as an identity-only ClientDevice platform. Its credential is explicitly excluded from the generic Desktop Agent credential gate.
-- Store the Synology device token in the source-agent OS secret store; config.json contains only DeviceID and the opaque credential reference.
-- New Synology Photos Push creation requires the registered DSM Device proof, rejects a caller-selected target Node, and creates `同步文件夹/Push/<device>/<source>` transactionally.
-- Source stores the generic `DeviceID`, exact `TargetNodeID`, and `TargetManaged` provenance.
-- Authenticated Source mutation and execution paths recheck Owner, Device platform, Device token/revocation, Source revision and exact managed Target.
-- Device revocation pauses newly bound Synology Push Sources and requests cancellation of active runs.
+- Store the independent DSM Device token in the source-agent secret store; config.json contains only DeviceID and the opaque credential reference.
+- New Synology Photos Push creation requires registered Device proof, rejects caller-selected target Nodes, and creates `同步文件夹/Push/<device>/<source>` transactionally.
+- Source stores the generic `DeviceID`, exact managed `TargetNodeID`, and `TargetManaged` provenance.
+- The server persists the aggregate Personal/Shared Root-set ID and fingerprint in the Source binding. The source-agent independently verifies the local filesystem roots before scanning.
+- Every Source mutation/run and every upload admission, chunk write and Finalize rechecks Owner, Device platform/token/revocation, Source ID/revision, Root ID/fingerprint and the exact managed Target/descendant.
+- Device revocation pauses bound Synology Push Sources and requests cancellation of active runs.
 - Existing Sources with no DeviceID remain on their exact old target and are not migrated or silently rebound.
 
-**Remaining DSM P0 gap:** Personal/Shared root fingerprints are still verified by the source-agent locally. A follow-up must persist the exact root capability binding on the Server and recheck it on run/upload admission; Device identity alone is not a filesystem Root grant. Real DSM package and NAS acceptance are still required.
+**Remaining DSM acceptance:** a real DSM NAS run has not been performed and must be reported as **跳过（未验收）**. The standalone source-agent CI currently builds Linux amd64 and arm64 binaries. The legacy ARMv7 SPK remains the separate `xd` / `xdrive-agent` package and does not include `xdrive-source-agent`; ARMv7 source-agent distribution is not yet provided.
