@@ -58,7 +58,7 @@ func validDeviceDisplayName(name string) bool {
 // Neither is a local_folder Agent or an executor for Desktop Source/Root.
 func validClientPlatform(platform string) bool {
 	return platform == "windows" || platform == "linux" || platform == "darwin" ||
-		platform == "ios" || platform == "android"
+		platform == "ios" || platform == "android" || platform == "synology"
 }
 
 func deviceCredentialDigest(raw string) string {
@@ -82,7 +82,7 @@ func clientDeviceIdentityCredentialMatches(device meta.ClientDevice, raw string)
 // including Source creation, local root binding and worker execution.
 // Keep this separate from identity-only /devices/self and heartbeat.
 func clientDeviceCredentialMatches(device meta.ClientDevice, raw string) bool {
-	return device.Platform != "ios" && device.Platform != "android" &&
+	return device.Platform != "ios" && device.Platform != "android" && device.Platform != "synology" &&
 		clientDeviceIdentityCredentialMatches(device, raw)
 }
 
