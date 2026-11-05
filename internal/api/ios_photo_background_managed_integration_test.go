@@ -322,3 +322,170 @@ func TestIOSPhotoBackgroundScopedTransactionCannotOutliveGrant(t *testing.T) {
 		t.Fatalf("revoked grant finalized a previously admitted session: %v", err)
 	}
 }
+
+func TestIOSPhotoBackgroundGrantCanReportSharedSourceRunHistory(t *testing.T) {
+	db, server, owner, _, root := setupFilePropertiesTestDB(t)
+	if err := db.AutoMigrate(
+		&meta.ClientDevice{}, &meta.IOSPhotoBackgroundGrant{}, &meta.SyncRun{},
+		&meta.SourceItem{}, &meta.SourceCollection{}, &meta.SourceRunFailure{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	gin.SetMode(gin.TestMode)
+	server.Auth = auth.New("ios-photo-bg-source-run-history", time.Hour)
+	server.PWAOfflineInstanceID = uuid.NewString()
+	router := server.Router()
+	// Revoke the grant after middleware admission but before the SourceRun
+	// write transaction. The transaction-bound proof must still reject it.
+	router.POST("/__test/ios-photo-source-run/:id/:runID/progress",
+		server.requireIOSPhotoBackgroundGrant(),
+		server.requireIOSPhotoBackgroundSourceRunExecutor(),
+		func(c *gin.Context) {
+			grant, ok := iosPhotoBackgroundGrantFromContext(c)
+			if !ok {
+				fail(c, http.StatusForbidden, "background grant missing from context")
+				return
+			}
+			if err := db.Model(&meta.IOSPhotoBackgroundGrant{}).
+				Where("id = ?", grant.ID).
+				Update("revoked_at", time.Now().UTC()).Error; err != nil {
+				fail(c, http.StatusInternalServerError, "revoke test grant failed")
+				return
+			}
+			server.progressSourceRun(c)
+		})
+	ownerToken, err := server.Auth.Issue(owner.ID, owner.SessionVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deviceSecret := "ios-photo-bg-source-run-device-credential-0123456789"
+	device := meta.ClientDevice{
+		ID: uuid.NewString(), OwnerID: owner.ID, Name: "iPhone 17", Platform: "ios",
+		CredentialHash: deviceCredentialDigest(deviceSecret),
+		CreatedAt:      time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatal(err)
+	}
+	deviceHeaders := map[string]string{
+		"X-XDrive-Device-ID":    device.ID,
+		"X-XDrive-Device-Token": deviceSecret,
+	}
+	destination := requestWithHeaders(t, router, http.MethodPut,
+		"/api/v1/ios/photos/backup-destination", ownerToken,
+		strings.NewReader(`{"name":"iPhone 后台相册备份"}`),
+		http.StatusCreated, deviceHeaders)
+	var target struct {
+		SourceID     uint64 `json:"source_id"`
+		TargetNodeID uint64 `json:"target_node_id"`
+	}
+	if err := json.Unmarshal(destination.Body.Bytes(), &target); err != nil {
+		t.Fatal(err)
+	}
+	if target.SourceID == 0 || target.TargetNodeID == 0 || target.TargetNodeID == root.ID {
+		t.Fatalf("server did not provision managed iPhone destination: %+v", target)
+	}
+
+	grantPath := "/api/v1/ios/photos/background-grants"
+	grantBody := `{"device_id":"` + device.ID + `"}`
+	grantResponse := requestWithHeaders(t, router, http.MethodPost,
+		grantPath, ownerToken, strings.NewReader(grantBody),
+		http.StatusCreated, deviceHeaders)
+	var grant struct {
+		ID           string  `json:"id"`
+		Secret       string  `json:"grant_secret"`
+		SourceID     *uint64 `json:"source_id"`
+		TargetNodeID *uint64 `json:"target_node_id"`
+	}
+	if err := json.Unmarshal(grantResponse.Body.Bytes(), &grant); err != nil {
+		t.Fatal(err)
+	}
+	if grant.ID == "" || !validIOSPhotoGrantSecret(grant.Secret) ||
+		grant.SourceID == nil || *grant.SourceID != target.SourceID ||
+		grant.TargetNodeID == nil || *grant.TargetNodeID != target.TargetNodeID {
+		t.Fatalf("background grant did not bind the managed Source/Target: %+v", grant)
+	}
+	backgroundHeaders := map[string]string{
+		"X-XDrive-Device-ID":       device.ID,
+		"X-XDrive-Device-Token":    deviceSecret,
+		"X-XDrive-IOS-Photo-Grant": grant.Secret,
+	}
+
+	runID := uuid.NewString()
+	sourcePath := "/api/v1/ios/photos/background-managed/sources/" +
+		strconv.FormatUint(target.SourceID, 10) + "/runs"
+	beginBody := `{"run_id":"` + runID + `","trigger":"scheduled"}`
+	// Neither an Owner bearer nor a registered Device alone can impersonate
+	// the OS task. Only the separately revocable BG grant may create this run.
+	requestWithHeaders(t, router, http.MethodPost, sourcePath, ownerToken,
+		strings.NewReader(beginBody), http.StatusUnauthorized, nil)
+	requestWithHeaders(t, router, http.MethodPost, sourcePath, "",
+		strings.NewReader(beginBody), http.StatusUnauthorized, deviceHeaders)
+	requestWithHeaders(t, router, http.MethodPost, sourcePath, "",
+		strings.NewReader(beginBody), http.StatusCreated, backgroundHeaders)
+
+	summary := `{
+		"scanned_items":3,"scanned_bytes":0,
+		"new_items":1,"new_bytes":0,
+		"unchanged_items":2,"unchanged_bytes":0,
+		"failed_items":0
+	}`
+	progressPath := sourcePath + "/" + runID + "/progress"
+	requestWithHeaders(t, router, http.MethodPost, progressPath, "",
+		strings.NewReader(`{"summary":`+summary+`}`),
+		http.StatusNoContent, backgroundHeaders)
+
+	finishPath := sourcePath + "/" + runID + "/finish"
+	finishBody := `{"status":"completed","complete_inventory":false,"summary":` + summary + `}`
+	requestWithHeaders(t, router, http.MethodPost, finishPath, "",
+		strings.NewReader(finishBody), http.StatusOK, backgroundHeaders)
+
+	read := requestWithHeaders(t, router, http.MethodGet,
+		"/api/v1/sources/"+strconv.FormatUint(target.SourceID, 10)+"/runs/"+runID,
+		ownerToken, nil, http.StatusOK, nil)
+	var run struct {
+		Status            string `json:"status"`
+		Trigger           string `json:"trigger"`
+		CompleteInventory bool   `json:"complete_inventory"`
+		ScannedItems      int64  `json:"scanned_items"`
+		NewItems          int64  `json:"new_items"`
+		UnchangedItems    int64  `json:"unchanged_items"`
+		SyncedFileItems   int64  `json:"synced_file_items"`
+		TransferredItems  int64  `json:"transferred_items"`
+	}
+	if err := json.Unmarshal(read.Body.Bytes(), &run); err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != meta.SyncRunStatusCompleted ||
+		run.Trigger != meta.SyncRunTriggerScheduled || run.CompleteInventory ||
+		run.ScannedItems != 3 || run.NewItems != 1 || run.UnchangedItems != 2 ||
+		run.SyncedFileItems != 3 || run.TransferredItems != 1 {
+		t.Fatalf("background SourceRun history mismatch: %+v", run)
+	}
+	var source meta.Source
+	if err := db.First(&source, target.SourceID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if source.Status != meta.SourceStatusPaused || source.LastSuccessAt == nil {
+		t.Fatalf("background run must update success history without activating Server scheduling: %+v", source)
+	}
+	var items int64
+	if err := db.Model(&meta.SourceItem{}).Where("source_id = ?", target.SourceID).Count(&items).Error; err != nil {
+		t.Fatal(err)
+	}
+	if items != 0 {
+		t.Fatalf("background PhotoKit IDs must not become shared SourceItems: %d", items)
+	}
+
+	// The middleware admitted a valid grant, but revocation before the
+	// SourceRun transaction must still fence the write.
+	racedProgressPath := "/__test/ios-photo-source-run/" +
+		strconv.FormatUint(target.SourceID, 10) + "/" + runID + "/progress"
+	requestWithHeaders(t, router, http.MethodPost, racedProgressPath, "",
+		strings.NewReader(`{"summary":`+summary+`}`),
+		http.StatusForbidden, backgroundHeaders)
+	// A subsequent request is rejected at the grant middleware itself.
+	requestWithHeaders(t, router, http.MethodPost, progressPath, "",
+		strings.NewReader(`{"summary":`+summary+`}`),
+		http.StatusUnauthorized, backgroundHeaders)
+}
