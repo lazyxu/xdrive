@@ -70,7 +70,7 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
                 if requeued > 0 {
                     _ = try? XDriveIOSPhotoAutoScheduleStore.shared
                         .expediteForLibraryChange(owner: selected)
-                    self.notice = "已重新排队 \\(requeued) 项安全失败的原件；下次前台自动检查会优先处理。"
+                    self.notice = "已重新排队 \(requeued) 项安全失败的原件；下次前台自动检查会优先处理。"
                 } else {
                     self.notice = "当前没有可安全重试的失败项。"
                 }
