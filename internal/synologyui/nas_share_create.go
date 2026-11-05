@@ -94,10 +94,10 @@ func parseNASShareCreate(r *http.Request) (nasShareCreateInput, error) {
 	return value, nil
 }
 
-// A selected cloud target must remain under the same verified Server/Owner
-// identity throughout the browser's NAS directory selection and native Source
-// mutation. The HMAC is scoped to the active DSM principal/cookie/Host;
-// it does not grant any Source, local path or Root authority.
+// The current Server Owner must remain unchanged throughout the browser's
+// NAS share selection and native Source mutation. The HMAC is scoped to the
+// active DSM principal/cookie/Host; it grants no Source, local path or Root
+// authority and cannot choose the managed cloud destination.
 func validManagedNASBackupSource(source localbackupipc.LocalBackupSource, name string) bool {
 	return localbackupipc.ValidSourceID(source.ID) && source.Name == name &&
 		source.Kind == "local_folder" && source.Direction == "push" &&
