@@ -669,8 +669,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         ForEach(priorWindow) { item in photoTile(item) }
                         ForEach(items) { item in photoTile(item) }
                         // The lazy-grid sentinel is the native infinite-scroll
-                        // trigger. It only advances when the last visible window
-                        // is near the viewport; busy/error guards prevent repeats.
+                        // trigger. It advances only as the last visible window
+                        // approaches the viewport; busy/error guards prevent repeats.
                         if hasNext {
                             Color.clear
                                 .frame(height: 24)
