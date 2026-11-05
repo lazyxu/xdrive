@@ -67,6 +67,23 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         return try store.pending(limit: limit)
     }
 
+    /// Read-only local change queue counts for the exact current Owner.
+    /// These are *discovery* states; even confirmed queue entries do not
+    /// establish complete present-day cloud coverage.
+    func summary(owner: XDriveNativeOwnerRoot)
+        throws -> XDriveIOSPhotoBackupChangeQueueStore.Counts? {
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline() else { return nil }
+        guard baseline.authorization == epoch.authorization else {
+            throw Failure.unauthorizedOrChanged
+        }
+        try verifyAuthorization(stillMatches: epoch)
+        let totals = try store.counts()
+        try verifyAuthorization(stillMatches: epoch)
+        return totals
+    }
+
     /// Durable capture from PhotoKit's persistent change history. Every
     /// PHPersistentChange changeToken and its inserted/updated/deleted asset
     /// IDs are committed together. Expired/unavailable history is propagated
