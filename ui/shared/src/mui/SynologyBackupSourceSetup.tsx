@@ -3,15 +3,14 @@ import { Box, Button, Checkbox, FormControlLabel, Stack, TextField, Typography }
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
 import type { XDriveSynologyNASShare } from '../synology-nas-share-inventory'
 import { XDriveSynologyNASShareInventory } from './SynologyNASShareInventory'
-import { XDriveSynologyBackupTargetBrowser } from './SynologyBackupTargetBrowser'
 import { XDriveSynologyNativeDraftReview } from './SynologyNativeDraftReview'
 
 type CreateStatus = 'idle' | 'creating' | 'authorized' | 'needs_inspection' | 'uncertain'
-type Target = { id: number; name: string }
 
 // One opt-in section in the original shared Device Backup page. DSM never
 // owns another backup Runner, Source store or native file browser. The form
-// sends only verified opaque share/Owner identities and a cloud directory ID.
+// sends only verified opaque share/Owner identities and a display name; the
+// Server provisions the exclusive cloud destination from the enrolled device.
 // The Source creation form is an Owner/Host-local transaction, not reusable
 // form state. A different owning Agent must get a fresh React subtree *during*
 // reconciliation, before passive effects or a prior Source ACK can render.
@@ -46,8 +45,6 @@ function XDriveSynologyBackupSourceSetupForHost({
   const [scopeRevision, setScopeRevision] = useState(0)
   const [shareRevision, setShareRevision] = useState(0)
   const [selectedShare, setSelectedShare] = useState<XDriveSynologyNASShare | null>(null)
-  const [selectedTarget, setSelectedTarget] = useState<Target | null>(null)
-  const [targetOpen, setTargetOpen] = useState(false)
   const [name, setName] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [status, setStatus] = useState<CreateStatus>('idle')
@@ -70,7 +67,6 @@ function XDriveSynologyBackupSourceSetupForHost({
     const controller = new AbortController()
     setOwnerScope('')
     setScopeStatus('checking')
-    setSelectedTarget(null)
     setSelectedShare(null)
     setConfirmed(false)
     setShowDrafts(false)
@@ -103,11 +99,6 @@ function XDriveSynologyBackupSourceSetupForHost({
     setSelectedShare(share)
     setConfirmed(false)
   }, [shareRevision])
-  const onSelectTarget = useCallback((target: Target | null) => {
-    if (createAttemptedRef.current) return
-    setSelectedTarget(target)
-    setConfirmed(false)
-  }, [])
   const onNativeDraftBound = (sourceID: number) => {
     // A draft binding is a distinct native Root mutation, even if the
     // selected directory label is unchanged. Force a new Agent preflight
@@ -124,7 +115,7 @@ function XDriveSynologyBackupSourceSetupForHost({
   const create = () => {
     if (status !== 'idle' || createAttemptedRef.current ||
       scopeStatus !== 'ready' || !/^[0-9a-f]{64}$/.test(ownerScope) ||
-      !selectedShare || !selectedTarget || !confirmed ||
+      !selectedShare || !confirmed ||
       name.trim() !== name || name.length < 1 ||
       new TextEncoder().encode(name).length > 128) return
     // A single deliberate click submits once, synchronously locked. Any lost
@@ -135,7 +126,7 @@ function XDriveSynologyBackupSourceSetupForHost({
     setStatus('creating')
     setCreatedID(null)
     void client.createNASBackupSource(
-      selectedShare.selection_id, ownerScope, selectedTarget.id, name,
+      selectedShare.selection_id, ownerScope, name,
     ).then(result => {
       if (!mountedRef.current) return
       if (latestScopeRef.current.client !== pinnedClient ||
@@ -156,16 +147,14 @@ function XDriveSynologyBackupSourceSetupForHost({
   }
 
   // Only a *confirmed* successful native Root grant permits a separate new
-  // Source. Fresh Owner verification, share preflight, target and explicit
-  // consent are required again. Uncertain/create-in-flight is never reset.
+  // Source. Fresh Owner verification, share preflight and explicit consent
+  // are required again. Uncertain/create-in-flight is never reset.
   const configureAnother = () => {
     if (status !== 'authorized' || !createAttemptedRef.current) return
     createAttemptedRef.current = false
     setStatus('idle')
     setCreatedID(null)
     resetShareAuthorization()
-    setSelectedTarget(null)
-    setTargetOpen(false)
     setName('')
     setShowDrafts(false)
     setScopeRevision(value => value + 1)
@@ -179,19 +168,10 @@ function XDriveSynologyBackupSourceSetupForHost({
         <Stack spacing={1.5}>
           <Typography variant="subtitle2" fontWeight={700}>创建 NAS 本机备份来源</Typography>
           <Typography variant="body2" color="text.secondary">
-            必须先由本机 Agent 验证 NAS 共享目录，再选择当前 Server Owner 的云端文件夹。
-            创建时将登记暂停的 Source 并请求 Agent 原生 Root 授权，不会自动上传或启动备份。
+            先由本机 Agent 验证 NAS 共享目录。云端目标由 Server 根据已绑定设备和来源名称自动创建专属目录，
+            不需要选择普通云端文件夹。创建时会登记暂停的 Source 并请求 Agent 原生 Root 授权，不会自动上传。
           </Typography>
           <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-            <Button variant="outlined" size="small"
-              disabled={status === 'creating'}
-              onClick={() => {
-                if (status !== 'idle') return
-                setSelectedTarget(null)
-                setTargetOpen(v => !v)
-              }}>
-              {targetOpen ? '收起云端目标' : '选择云端备份目标'}
-            </Button>
             <Button variant="text" size="small"
               disabled={scopeStatus === 'checking' || status !== 'idle'}
               onClick={() => {
@@ -213,15 +193,12 @@ function XDriveSynologyBackupSourceSetupForHost({
               当前 Server Owner 身份未验证，请先在共享设置里登录。无法创建新的 NAS Source。
             </Typography>
           ) : null}
-          {targetOpen ? (
-            <XDriveSynologyBackupTargetBrowser client={client} onSelectTarget={onSelectTarget} />
-          ) : null}
           {selectedShare ? (
             <Typography variant="body2">已通过本机预检：{selectedShare.label}</Typography>
           ) : <Typography variant="body2" color="text.secondary">尚未选择并通过本地 NAS 目录预检。</Typography>}
-          {selectedTarget ? (
-            <Typography variant="body2">已选择云端目录：{selectedTarget.name}（ID {selectedTarget.id}）</Typography>
-          ) : <Typography variant="body2" color="text.secondary">尚未确认云端目标目录。</Typography>}
+          <Typography variant="body2" color="text.secondary">
+            云端目标：Server 自动创建并独占管理（同步文件夹 / 设备备份 / 本设备 / 来源名称）
+          </Typography>
           <TextField size="small" label="备份来源名称" value={name}
             disabled={status !== 'idle'} inputProps={{ maxLength: 128 }}
             onChange={event => {
@@ -235,7 +212,7 @@ function XDriveSynologyBackupSourceSetupForHost({
             label="我确认在当前 NAS 上将所选目录授权给当前 xDrive Server Owner 作为备份来源" />
           <Box>
             <Button variant="contained" disabled={status !== 'idle' ||
-              scopeStatus !== 'ready' || !selectedShare || !selectedTarget ||
+              scopeStatus !== 'ready' || !selectedShare ||
               !confirmed || !name.trim() || name.trim() !== name}
               onClick={create}>
               {status === 'creating' ? '正在创建来源…' : '确认创建并绑定本地目录'}
