@@ -891,7 +891,7 @@ export function XDriveSourceManager({
   }
 
   const openSettings = (row: ExternalSourceRow) => {
-    if (savingSettings) return
+    if (savingSettings || row.source.status === 'archived') return
     ++settingsSessionRef.current
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     setSetting(row)
