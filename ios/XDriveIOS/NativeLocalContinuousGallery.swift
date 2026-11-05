@@ -351,6 +351,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var dragPreviousSlot: Int?
     @State private var dragVisitedIDs: Set<String> = []
     @State private var showingMap = false
+    @State private var mapJump: XDriveIOSNativeLocalMapJump?
+    @State private var pendingViewerMapJump: XDriveIOSNativeLocalMapJump?
     @State private var showingAlbumPicker = false
     @State private var albumPickerCandidates: [XDrivePhotoKitScanCandidate] = []
     @State private var confirmingDelete = false
@@ -652,10 +654,12 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                     XDriveIOSNativeLocalPhotoMapScreen(
                         mapScope: .constant(.library),
                         offset: .constant(0),
-                        onClose: { showingMap = false }
+                        onClose: {
+                            showingMap = false
+                            mapJump = nil
+                        }
                     )
-                    // This is the whole-library entry, not a stale Viewer jump.
-                    .environment(\.xdriveNativeLocalMapJump, nil)
+                    .environment(\.xdriveNativeLocalMapJump, mapJump)
                 }
             }
         }
@@ -733,6 +737,11 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                     returnModified = next.modifiedAt
                 }
             )
+            // The local Viewer uses this wall's cover instead of replacing the
+            // Gallery route, so its exact return tile/filter survive map browsing.
+            .environment(\.xdriveOpenNativeLocalMap, { jump in
+                pendingViewerMapJump = jump
+            })
         }
         .onAppear {
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -1023,8 +1032,19 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     }
 
     private func restoreAfterViewer() {
-        if phase == .active && authorized { reload() }
-        else { clearReturn(); invalidate(with: nil) }
+        guard phase == .active && authorized else {
+            pendingViewerMapJump = nil
+            mapJump = nil
+            clearReturn()
+            invalidate(with: nil)
+            return
+        }
+        reload()
+        if let jump = pendingViewerMapJump {
+            pendingViewerMapJump = nil
+            mapJump = jump
+            showingMap = true
+        }
     }
 
     private func clearReturn() {
