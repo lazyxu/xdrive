@@ -1,4 +1,5 @@
 import Foundation
+import MapKit
 import Photos
 import SwiftUI
 import UIKit
@@ -454,6 +455,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingAlbumHelp = false
     @State private var showingAlbumMap = false
+    @State private var albumMapCamera: MKCoordinateRegion?
     @State private var mapAlbumScope: XDriveLocalPhotoAlbumSummary?
     @State private var albumMapJump: XDriveIOSNativeLocalMapJump?
     @State private var pendingAlbumMapJump: XDriveIOSNativeLocalMapJump?
@@ -759,6 +761,8 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     album: mapAlbumScope,
                     mapScope: .constant(.library),
                     offset: .constant(0),
+                    cameraOnEntry: albumMapCamera,
+                    onLibraryCameraChange: { next in albumMapCamera = next },
                     onClose: {
                         showingAlbumMap = false
                         mapAlbumScope = nil
