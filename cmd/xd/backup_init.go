@@ -124,7 +124,7 @@ func backupBootstrapCmd(args []string) error {
 	fs := flag.NewFlagSet("backup "+action, flag.ContinueOnError)
 	name := fs.String("name", "", "init: name of the new local Backup-only Source")
 	localPath := fs.String("path", "", "explicit absolute local directory on this device")
-		source := fs.Uint64("source", 0, "bind: existing paused Source created by this owning device")
+	source := fs.Uint64("source", 0, "bind: existing paused Source created by this owning device")
 	every := fs.String("every", "", "init: optional interval such as 6h")
 	cron := fs.String("cron", "", "init: optional five-field cron schedule")
 	zone := fs.String("timezone", "", "init: optional IANA timezone for --cron")
