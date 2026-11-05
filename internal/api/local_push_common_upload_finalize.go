@@ -87,6 +87,10 @@ func persistLocalPushCommonUploadFinalizedTx(
 		source.TargetNodeID == nil || *source.TargetNodeID != op.SourceTargetID {
 		return deny
 	}
+	boundDeviceID, bound := meta.SourceDeviceID(source)
+	if !bound || boundDeviceID != op.DeviceID {
+		return deny
+	}
 	var binding meta.LocalSourceBinding
 	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
 		Where("source_id = ? AND owner_id = ? AND device_id = ?",

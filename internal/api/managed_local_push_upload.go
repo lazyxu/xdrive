@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -17,27 +16,22 @@ import (
 func requireOrdinaryOrAdmittedLocalPushTargetTx(
 	ctx context.Context, tx *gorm.DB, uid, targetID uint64, req uploadInitRequest,
 ) error {
-	err := requireOrdinarySourceTargetTx(ctx, tx, uid, targetID)
-	if err == nil || !errors.Is(err, errManagedSourceWriteDenied) {
-		return err
+	if strings.HasPrefix(req.ResumeKey, "lp2_") {
+		if _, err := admittedManagedLocalPushOperationTx(ctx, tx, uid, targetID, req); err != nil {
+			return errManagedSourceWriteDenied
+		}
+		return nil
 	}
-	_, err = admittedManagedLocalPushOperationTx(ctx, tx, uid, targetID, req)
-	if err != nil {
-		return errManagedSourceWriteDenied
-	}
-	return nil
+	return requireOrdinarySourceTargetTx(ctx, tx, uid, targetID)
 }
 
 func requireOrdinaryOrBoundLocalPushFinalizeTx(
 	ctx context.Context, tx *gorm.DB, session meta.UploadSession, targetID uint64,
 ) error {
-	err := requireOrdinarySourceTargetTx(ctx, tx, session.OwnerID, targetID)
-	if err == nil || !errors.Is(err, errManagedSourceWriteDenied) {
-		return err
-	}
 	if session.ShareID != nil || session.ID == "" ||
-		session.Status != meta.UploadStatusActive {
-		return errManagedSourceWriteDenied
+		session.Status != meta.UploadStatusActive ||
+		!strings.HasPrefix(session.ResumeKey, "lp2_") {
+		return requireOrdinarySourceTargetTx(ctx, tx, session.OwnerID, targetID)
 	}
 	req := uploadInitRequest{
 		ParentID: session.ParentID, NodeID: session.NodeID,
@@ -116,7 +110,9 @@ func admittedManagedLocalPushOperationTx(
 		op.SourceID, uid, op.SourceRevision).Take(&source).Error; err != nil {
 		return op, deny
 	}
-	if source.Kind != meta.SourceKindLocalFolder ||
+	boundDeviceID, bound := meta.SourceDeviceID(source)
+	if !bound || boundDeviceID != op.DeviceID ||
+		source.Kind != meta.SourceKindLocalFolder ||
 		source.Direction != meta.SourceDirectionPush ||
 		source.SyncMode != meta.SourceSyncModeBackup ||
 		source.Status != meta.SourceStatusPaused || !source.TargetManaged ||
