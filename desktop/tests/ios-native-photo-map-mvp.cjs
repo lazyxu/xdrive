@@ -233,8 +233,12 @@ test('local map requires Full Photo Library access and never scans a Limited sub
   assert.match(map, /guard sceneActive, permission == \.authorized,/)
   assert.match(map, /guard mapScope == \.library, phase == \.active,[\s\S]*?authorization == \.authorized else/)
   assert.match(map, /onChange\(of: phase\)[\s\S]*?guard authorization == \.authorized else/)
+  assert.match(map, /onChange\(of: changes\.revision\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else/)
+  assert.match(map, /private func loadInitial\(\)[\s\S]*?guard phase == \.active,[\s\S]*?\[\.authorized\]\.contains/)
+  assert.match(map, /private func loadNext\(\)[\s\S]*?guard phase == \.active/)
   assert.match(map, /trusted\.representative\.id == cell\.representative\.id/)
   assert.match(viewer, /private func openPhotoLocationInMap\(\) \{\s*guard PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized else/)
+  assert.match(viewer, /onOpenLocation: openNativeLocalMap == nil \|\|[\s\S]*?authorizationStatus\(for: \.readWrite\) != \.authorized[\s\S]*?\? nil : \{ openPhotoLocationInMap\(\) \}/)
   assert.match(viewer, /本机照片地图需要完整照片访问权限/)
 })
 
