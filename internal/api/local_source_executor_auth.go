@@ -264,55 +264,6 @@ func (s *Server) requireSynologySourceProofTx(
 	tx *gorm.DB, c *gin.Context, sourceID uint64, runID string,
 	proof localSourceExecutorProof, requireActive bool,
 ) error {
-	var device meta.ClientDevice
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ? AND owner_id = ? AND platform = ?", proof.DeviceID, userID(c), "synology").
-		First(&device).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errLocalSourceExecutorTransactionUnauthorized
-		}
-		return err
-	}
-	if !clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
-		return errLocalSourceExecutorTransactionUnauthorized
-	}
-	var source meta.Source
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ? AND owner_id = ?", sourceID, userID(c)).
-		First(&source).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errLocalSourceExecutorTransactionUnauthorized
-		}
-		return err
-	}
-	if source.Kind != synologySourceKind || source.Direction != meta.SourceDirectionPush ||
-		source.DeviceID == nil || *source.DeviceID != proof.DeviceID ||
-		source.Revision != proof.SourceRevision || !source.TargetManaged || source.TargetNodeID == nil ||
-		(requireActive && source.Status != meta.SourceStatusActive) {
-		return errLocalSourceExecutorTransactionUnauthorized
-	}
-	var target meta.Node
-	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
-		Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-			*source.TargetNodeID, source.OwnerID, meta.NodeTypeDir).
-		First(&target).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errLocalSourceExecutorTransactionUnauthorized
-		}
-		return err
-	}
-	if runID != "" {
-		var run meta.SyncRun
-		if err := tx.Select("id", "source_id", "source_revision").
-			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errLocalSourceExecutorTransactionUnauthorized
-			}
-			return err
-		}
-		if run.SourceRevision != proof.SourceRevision {
-			return errLocalSourceExecutorTransactionUnauthorized
-		}
-	}
-	return nil
+	_, err := requireSynologySourceProofTx(tx, c, sourceID, runID, proof, requireActive)
+	return err
 }
