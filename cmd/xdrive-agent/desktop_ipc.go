@@ -875,6 +875,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/live-photo-still-ticket", h.mediaLivePhotoStillTicket)
 	mux.HandleFunc("GET /v1/media/live-photo-motion-ticket", h.mediaLivePhotoMotionTicket)
 	mux.HandleFunc("GET /v1/sources", h.sources)
+	mux.HandleFunc("POST /v1/sources/restore", h.restoreSource)
 	mux.HandleFunc("GET /v1/device-backups", h.deviceBackups)
 	mux.HandleFunc("GET /v1/device-backups/folders", h.deviceBackupFolders)
 	mux.HandleFunc("GET /v1/device-backups/local-device", h.deviceBackupLocalDevice)
@@ -6822,12 +6823,61 @@ func (h *desktopIPCHandler) deviceBackupRuns(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *desktopIPCHandler) sources(w http.ResponseWriter, r *http.Request) {
-	items, err := h.ctrl.CloudSources(r.Context())
+	includeArchived := false
+	if raw := strings.TrimSpace(r.URL.Query().Get("include_archived")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_include_archived", "include_archived must be true or false")
+			return
+		}
+		includeArchived = value
+	}
+	var items []client.Source
+	var err error
+	if includeArchived {
+		reader, ok := h.ctrl.(interface {
+			CloudSourcesIncludingArchived(context.Context, bool) ([]client.Source, error)
+		})
+		if !ok {
+			writeDesktopIPCError(w, http.StatusNotImplemented, "archived_sources_unavailable", "archived Source listing is unavailable")
+			return
+		}
+		items, err = reader.CloudSourcesIncludingArchived(r.Context(), true)
+	} else {
+		items, err = h.ctrl.CloudSources(r.Context())
+	}
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) restoreSource(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		SourceID uint64 `json:"source_id"`
+		Revision uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.SourceID == 0 || input.Revision == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_revision", "source_id and revision are required")
+		return
+	}
+	restorer, ok := h.ctrl.(interface {
+		CloudRestoreSource(context.Context, uint64, uint64) (client.Source, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "source_restore_unavailable", "Source restore is unavailable")
+		return
+	}
+	restored, err := restorer.CloudRestoreSource(r.Context(), input.SourceID, input.Revision)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, restored)
 }
 
 func (h *desktopIPCHandler) createSource(w http.ResponseWriter, r *http.Request) {

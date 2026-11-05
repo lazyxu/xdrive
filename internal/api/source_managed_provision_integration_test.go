@@ -49,7 +49,7 @@ func TestCreateSynologyPullManagedTargetWithoutClaimingLegacyFolder(t *testing.T
 	if created.ID == 0 || created.TargetNodeID == nil ||
 		*created.TargetNodeID == ordinary.ID || created.Status != meta.SourceStatusPaused ||
 		created.Revision != 1 ||
-		created.TargetPath != "同步文件夹/远程拉取/Synology Files/我的文档" {
+		created.TargetPath != "同步文件夹/Pull/Synology Files/我的文档" {
 		t.Fatalf("Server did not create the canonical exclusive managed Pull target: %+v", created)
 	}
 	var savedSource meta.Source
@@ -95,7 +95,7 @@ func TestCreateSynologyPullManagedTargetWithoutClaimingLegacyFolder(t *testing.T
 	}
 	if renamed.TargetNodeID == nil || *renamed.TargetNodeID != *created.TargetNodeID ||
 		renamed.Revision != 2 ||
-		renamed.TargetPath != "同步文件夹/远程拉取/Synology Files/我的文档新名字" {
+		renamed.TargetPath != "同步文件夹/Pull/Synology Files/我的文档新名字" {
 		t.Fatalf("5B rename after managed provisioning=%+v", renamed)
 	}
 	if err := db.First(&actualTarget, *created.TargetNodeID).Error; err != nil {
@@ -114,7 +114,7 @@ func TestCreateSynologyPullManagedTargetWithoutClaimingLegacyFolder(t *testing.T
 	if err := json.Unmarshal(photosRes.Body.Bytes(), &photos); err != nil {
 		t.Fatal(err)
 	}
-	if photos.TargetNodeID == nil || photos.TargetPath != "同步文件夹/远程拉取/Synology Photos/照片备份" ||
+	if photos.TargetNodeID == nil || photos.TargetPath != "同步文件夹/Pull/Synology Photos/照片备份" ||
 		photos.Status != meta.SourceStatusPaused {
 		t.Fatalf("Photos Pull not server-provisioned: %+v", photos)
 	}

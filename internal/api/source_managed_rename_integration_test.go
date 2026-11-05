@@ -180,14 +180,15 @@ func TestYikeSourceRenameKeepsAccountIDAndIgnoresCredentialNickname(t *testing.T
 		t.Fatal(err)
 	}
 	umbrella := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
-	connector := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, yikeTargetConnectorName)
+	pull := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, yikePullTargetRootName)
+	connector := createFilePropertiesDir(t, db, owner.ID, pull.ID, yikePullTargetConnectorName)
 	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "uid_12345_旧昵称")
 	targetID := target.ID
 	source := meta.Source{
 		OwnerID: owner.ID, Name: "一刻来源", Kind: yikeSourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusActive,
-		Revision: 1, TargetNodeID: &targetID,
+		Revision: 1, TargetNodeID: &targetID, TargetManaged: true,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)

@@ -89,7 +89,7 @@ while read -r digest source_path; do
     echo "Staged deployment asset differs from embedded digest: $source_path" >&2; exit 1
   }
 done < "$fixture/embedded.sha256"
-for name in server-control.sh caddy-env-config.py caddy-admission.py; do
+for name in server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
   grep -Fq -- "- release/$name" "$ROOT/infra/ci/gitlab-release.yml" || {
     echo "Deployment asset missing from GitLab artifact handoff: $name" >&2; exit 1
   }

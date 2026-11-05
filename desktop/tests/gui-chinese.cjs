@@ -322,10 +322,10 @@ test('desktop gates CfAPI-only storage controls by platform', () => {
   assert.ok(desktopVirtualSettings.includes("storagePoliciesSupported ? '管理本地存储' : '查看本地存储'"), 'missing platform-aware local-storage action in the shared settings child')
 })
 
-test('desktop external sources expose safe source deletion', () => {
-  assert.ok(renderer.includes('删除来源'), 'missing source delete action')
-  assert.ok(renderer.includes('已经同步到 xDrive'), 'missing non-destructive delete confirmation prefix')
-  assert.ok(renderer.includes('文件会保留，不会删除'), 'missing non-destructive delete confirmation result')
+test('desktop external sources expose safe archive-first removal', () => {
+  assert.ok(renderer.includes('移除来源'), 'missing source removal action')
+  assert.ok(renderer.includes('已配置或有同步历史的来源会归档'), 'missing archive-first confirmation explanation')
+  assert.ok(renderer.includes('不会删除 xDrive 云端文件、设备/NAS 原件或 Share'), 'missing non-destructive archive confirmation')
   assert.ok(desktopSourceAdapter.includes('agent.deleteSource(sourceID, revision)'), 'missing Desktop SourceManager delete transport mapping')
 })
 
@@ -510,7 +510,7 @@ test('shared SourceManager owns create, settings and connector forms', () => {
   assert.equal((sharedSourceManager.match(/<XDriveSensitiveField\b/g) || []).length, 1, 'stored credential reveal fields must stay shared')
   assert.ok(sharedSourceManager.includes('loadingLabel="正在测试…"'), 'credential test action lost shared loading feedback')
   assert.ok(sharedSourceManager.includes('loadingLabel="正在保存…"'), 'Source settings save action lost shared loading feedback')
-  assert.ok(sharedSourceManager.includes('loadingLabel="正在删除…"'), 'Source delete action lost shared loading feedback')
+  assert.ok(sharedSourceManager.includes('loadingLabel="正在移除…"'), 'Source delete action lost shared loading feedback')
 })
 
 test('shared SourceManager owns source cards, states, collections and failure recovery', () => {
@@ -533,7 +533,8 @@ test('shared SourceManager owns source cards, states, collections and failure re
 
 test('Desktop Source adapter is the only IPC boundary for the shared manager', () => {
   for (const token of [
-    'getSources()',
+    'getSources(includeArchived)',
+    'restoreSource: (sourceID, revision) => agent.restoreSource(sourceID, revision)',
     'getSourceRuns(',
     'getSourceRunFailures(',
     'cancelSourceRun(',

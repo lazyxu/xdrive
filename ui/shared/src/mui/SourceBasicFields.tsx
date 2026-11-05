@@ -147,8 +147,8 @@ export function XDriveSourceStatusField({
   onChange,
   label = '状态',
 }: {
-  value: ExternalSourceStatus
-  onChange: (value: ExternalSourceStatus) => void
+  value: 'active' | 'paused'
+  onChange: (value: 'active' | 'paused') => void
   label?: ReactNode
 }) {
   return (
@@ -158,7 +158,7 @@ export function XDriveSourceStatusField({
       size="small"
       label={label}
       value={value}
-      onChange={(event) => onChange(event.target.value as ExternalSourceStatus)}
+      onChange={(event) => onChange(event.target.value as 'active' | 'paused')}
       sx={{ minWidth: 0 }}
     >
       <MenuItem value="active">启用</MenuItem>

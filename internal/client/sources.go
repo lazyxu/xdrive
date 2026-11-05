@@ -53,7 +53,7 @@ type CreateSourceInput struct {
 	ScheduleType       string `json:"schedule_type,omitempty"`
 	ScheduleExpression string `json:"schedule_expression,omitempty"`
 	ScheduleTimezone   string `json:"schedule_timezone,omitempty"`
-	TargetNodeID       uint64 `json:"target_node_id"`
+	TargetNodeID       uint64 `json:"target_node_id,omitempty"`
 	IgnoreRules        string `json:"ignore_rules,omitempty"`
 }
 
@@ -149,9 +149,13 @@ type SyncRun struct {
 	FinishedAt             *time.Time `json:"finished_at,omitempty"`
 }
 
-func (c *Client) Sources(ctx context.Context) ([]Source, error) {
+func (c *Client) Sources(ctx context.Context, includeArchived ...bool) ([]Source, error) {
 	var out []Source
-	err := c.json(ctx, http.MethodGet, "/api/v1/sources", nil, &out)
+	path := "/api/v1/sources"
+	if len(includeArchived) > 0 && includeArchived[0] {
+		path += "?include_archived=true"
+	}
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }
 
@@ -225,6 +229,12 @@ func (c *Client) DiscardLocalSourceDraft(ctx context.Context, id, revision uint6
 
 func (c *Client) DeleteSource(ctx context.Context, id, revision uint64) error {
 	return c.jsonRevision(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", id), revision, nil, nil)
+}
+
+func (c *Client) RestoreSource(ctx context.Context, id, revision uint64) (Source, error) {
+	var out Source
+	err := c.jsonRevision(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/restore", id), revision, map[string]any{}, &out)
+	return out, err
 }
 
 func (c *Client) TriggerSource(ctx context.Context, id uint64) (Source, error) {

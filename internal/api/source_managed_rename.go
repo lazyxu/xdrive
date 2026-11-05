@@ -138,18 +138,9 @@ WHERE s.owner_id = ? AND s.id <> ?`,
 // Return all ancestor Node IDs after verifying the exact canonical hierarchy.
 // A Source-created marker alone cannot authorize a rename outside that tree.
 func managedSourceTargetAncestorIDsTx(tx *gorm.DB, source meta.Source, target meta.Node) ([]uint64, error) {
-	var names []string // parent -> ... -> managed umbrella
-	switch {
-	case source.Kind == yikeSourceKind && source.Direction == meta.SourceDirectionPull:
-		names = []string{yikeTargetConnectorName, yikeTargetRootName}
-	case source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPull:
-		names = []string{"Synology Photos", "远程拉取", yikeTargetRootName}
-	case source.Kind == synologyFilesSourceKind && source.Direction == meta.SourceDirectionPull:
-		names = []string{"Synology Files", "远程拉取", yikeTargetRootName}
-	case source.Direction == meta.SourceDirectionPush:
-		names = []string{"", "设备备份", yikeTargetRootName} // owning device directory
-	default:
-		return nil, errSourceTargetMigrationRequired
+	names, err := managedSourceTargetAncestorNamesTx(tx, source, target)
+	if err != nil {
+		return nil, err
 	}
 	if target.ParentID == nil {
 		return nil, errSourceTargetMigrationRequired
@@ -187,4 +178,69 @@ func managedSourceTargetAncestorIDsTx(tx *gorm.DB, source meta.Source, target me
 		return nil, err
 	}
 	return append(ancestors, ownerRoot.ID), nil
+}
+
+// Select the exact accepted hierarchy from the real Node ancestors. The new
+// Push/Pull namespaces are canonical; old prefixes remain readable for
+// already-existing Sources, but no code moves those targets.
+func managedSourceTargetAncestorNamesTx(tx *gorm.DB, source meta.Source, target meta.Node) ([]string, error) {
+	if target.ParentID == nil {
+		return nil, errSourceTargetMigrationRequired
+	}
+	var leafParent meta.Node
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+			*target.ParentID, source.OwnerID, meta.NodeTypeDir).
+		Take(&leafParent).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errSourceTargetMigrationRequired
+		}
+		return nil, err
+	}
+	if leafParent.ParentID == nil {
+		return nil, errSourceTargetMigrationRequired
+	}
+	var namespace meta.Node
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+			*leafParent.ParentID, source.OwnerID, meta.NodeTypeDir).
+		Take(&namespace).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errSourceTargetMigrationRequired
+		}
+		return nil, err
+	}
+
+	switch source.Direction {
+	case meta.SourceDirectionPush:
+		switch source.Kind {
+		case meta.SourceKindLocalFolder, meta.SourceKindIOSPhotos, synologySourceKind, "android_photos":
+		default:
+			return nil, errSourceTargetMigrationRequired
+		}
+		if namespace.Name != "Push" && namespace.Name != "设备备份" {
+			return nil, errSourceTargetMigrationRequired
+		}
+		return []string{"", namespace.Name, yikeTargetRootName}, nil
+
+	case meta.SourceDirectionPull:
+		switch source.Kind {
+		case yikeSourceKind:
+			if leafParent.Name == "Yike Photos" && namespace.Name == "Pull" {
+				return []string{"Yike Photos", "Pull", yikeTargetRootName}, nil
+			}
+			if leafParent.Name == yikeTargetConnectorName && namespace.Name == yikeTargetRootName {
+				return []string{yikeTargetConnectorName, yikeTargetRootName}, nil
+			}
+		case synologySourceKind:
+			if leafParent.Name == "Synology Photos" && (namespace.Name == "Pull" || namespace.Name == "远程拉取") {
+				return []string{leafParent.Name, namespace.Name, yikeTargetRootName}, nil
+			}
+		case synologyFilesSourceKind:
+			if leafParent.Name == "Synology Files" && (namespace.Name == "Pull" || namespace.Name == "远程拉取") {
+				return []string{leafParent.Name, namespace.Name, yikeTargetRootName}, nil
+			}
+		}
+	}
+	return nil, errSourceTargetMigrationRequired
 }
