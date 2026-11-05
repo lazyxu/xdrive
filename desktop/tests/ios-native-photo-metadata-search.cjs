@@ -165,6 +165,10 @@ test('search thumbnails offer uncropped full composition without invalidating re
   )
   const density = read('ios/XDriveIOS/NativePhotoWallDensityPolicy.swift')
   const photoLoader = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
+  const thumbnailLoader = photoLoader.slice(
+    photoLoader.indexOf('final class XDriveIOSPhotoImageLoader'),
+    photoLoader.indexOf('struct XDriveIOSLocalPhotoTile')
+  )
   assert.match(density, /enum XDriveIOSNativePhotoWallFraming: String, CaseIterable, Identifiable/)
   assert.match(density, /case square, complete/)
   assert.match(view, /@State private var framing: XDriveIOSNativePhotoWallFraming = \.square/)
@@ -181,7 +185,9 @@ test('search thumbnails offer uncropped full composition without invalidating re
   assert.match(tile, /\.task\(id: "\\\(candidate\.id\)-\\\(framing\.rawValue\)"\)/)
   assert.match(tile, /\.frame\(width: geometry\.size\.width, height: geometry\.size\.height\)/)
   assert.match(tile, /\.aspectRatio\(1, contentMode: \.fit\)/)
-  assert.match(photoLoader, /settings\.isNetworkAccessAllowed = false/)
+  assert.match(thumbnailLoader, /settings\.isNetworkAccessAllowed = true/)
+  assert.match(thumbnailLoader, /PHImageManager\.default\(\)\.requestImage/)
+  assert.doesNotMatch(thumbnailLoader, /allowICloudThumbnail/)
   assert.match(photoLoader, /contentMode: PHImageContentMode = \.aspectFill/)
   // Changing the presentation mode reissues only the visible derivative.
   assert.match(windows, /\.task\(id: "\\\(generation\)-\\\(window\.startSlot\)-\\\(query\)-\\\(sortOrder\.rawValue\)"\)/)

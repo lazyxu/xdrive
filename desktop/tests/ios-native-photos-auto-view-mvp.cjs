@@ -57,7 +57,15 @@ test('native viewer pages PhotoKit without exporting data, provides still video 
   assert.match(local, /requestAVAsset/)
   assert.match(local, /requestLivePhoto/)
   assert.match(local, /PHLivePhotoView/)
-  assert.match(local, /isNetworkAccessAllowed = false/)
+  const thumbnailLoader = local.slice(local.indexOf('final class XDriveIOSPhotoImageLoader'),
+    local.indexOf('struct XDriveIOSLocalPhotoTile'))
+  const detailModel = local.slice(local.indexOf('final class XDriveIOSLocalPhotoDetailModel'),
+    local.indexOf('private struct XDriveIOSNativeLivePhotoView'))
+  assert.match(thumbnailLoader, /settings\.isNetworkAccessAllowed = true/)
+  assert.match(thumbnailLoader, /PHImageManager\.default\(\)\.requestImage/)
+  assert.match(detailModel, /func load\(_ candidate: XDrivePhotoKitScanCandidate, allowICloud: Bool = false\)/)
+  assert.match(detailModel, /options\.isNetworkAccessAllowed = allowICloud/)
+  assert.match(detailModel, /liveOptions\.isNetworkAccessAllowed = allowICloud/)
   assert.ok(local.includes('if selected != nil { suspendForViewer() }'))
   assert.ok(local.includes('else { invalidate() }'))
   assert.doesNotMatch(local, /URLSession|UploadSession|document\.cookie|window\.webkit/)

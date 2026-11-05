@@ -8,9 +8,15 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 const local = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
 const albums = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
 
-test('local PhotoKit thumbnails never request iCloud originals implicitly', () => {
-  assert.match(local, /settings\.isNetworkAccessAllowed = false/)
+test('local PhotoKit lists fetch bounded iCloud thumbnails but never original media implicitly', () => {
+  const loader = local.slice(local.indexOf('final class XDriveIOSPhotoImageLoader'),
+    local.indexOf('struct XDriveIOSLocalPhotoTile'))
+  assert.match(loader, /settings\.isNetworkAccessAllowed = true/)
+  assert.match(loader, /PHImageManager\.default\(\)\.requestImage/)
+  assert.match(loader, /targetSize: size/)
+  assert.match(loader, /settings\.resizeMode = \.fast/)
   assert.match(local, /func load\(_ candidate: XDrivePhotoKitScanCandidate, allowICloud: Bool = false\)/)
+  assert.doesNotMatch(loader, /requestAVAsset|requestLivePhoto|requestImageDataAndOrientation|PHAssetResourceManager/)
   assert.doesNotMatch(local, /(?:options|liveOptions)\.isNetworkAccessAllowed = true/)
 })
 

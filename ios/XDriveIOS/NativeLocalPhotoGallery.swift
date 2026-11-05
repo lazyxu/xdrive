@@ -7,14 +7,17 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
-/// One locally authorized image resource. Neither source IDs nor pixels are
-/// persisted or uploaded by the read-only Photos viewer.
+/// One authorized PhotoKit thumbnail request. Visible list tiles may fetch a
+/// resized iCloud rendition; Viewer/original downloads remain explicit actions.
 @MainActor
 final class XDriveIOSPhotoImageLoader: ObservableObject {
     @Published private(set) var image: UIImage?
+    @Published private(set) var isLoading = false
     private var request: PHImageRequestID = PHInvalidImageRequestID
     private var epoch = UUID()
 
+    /// Visible list thumbnails may fetch their resized iCloud rendition by default.
+    /// This remains a bounded requestImage call, never a Viewer/original request.
     func load(_ id: String, size: CGSize,
               contentMode: PHImageContentMode = .aspectFill) {
         cancel()
@@ -25,19 +28,29 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
             withLocalIdentifiers: [id], options: nil
         ).firstObject else { return }
         let settings = PHImageRequestOptions()
-        settings.isNetworkAccessAllowed = false
+        settings.isNetworkAccessAllowed = true
         settings.deliveryMode = .opportunistic
         settings.resizeMode = .fast
+        isLoading = true
         request = PHImageManager.default().requestImage(
             for: asset, targetSize: size, contentMode: contentMode,
             options: settings
-        ) { [weak self] result, _ in
+        ) { [weak self] result, info in
+            let degraded = info?[PHImageResultIsDegradedKey] as? Bool == true
+            let cancelled = info?[PHImageCancelledKey] as? Bool == true
+            let failed = info?[PHImageErrorKey] != nil
             Task { @MainActor [weak self] in
                 guard let self, self.epoch == token,
                       [.authorized, .limited].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { return }
                 if let result { self.image = result }
+                // Keep the placeholder active while PhotoKit is still fetching
+                // an iCloud-only rendition; a degraded local image can display
+                // immediately and does not need to hold the loading indicator.
+                if result != nil || !degraded || cancelled || failed {
+                    self.isLoading = false
+                }
             }
         }
     }
@@ -49,6 +62,7 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
             request = PHInvalidImageRequestID
         }
         image = nil
+        isLoading = false
     }
 }
 
@@ -64,7 +78,13 @@ struct XDriveIOSLocalPhotoTile: View {
                     .frame(maxWidth: .infinity).frame(height: 108).clipped()
             } else {
                 Rectangle().fill(Color(uiColor: .secondarySystemGroupedBackground))
-                    .overlay { Image(systemName: "photo").foregroundStyle(.secondary) }
+                    .overlay {
+                        if loader.isLoading {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "photo").foregroundStyle(.secondary)
+                        }
+                    }
                     .frame(height: 108)
             }
             if candidate.kind == "video" || candidate.isLive {
@@ -1228,7 +1248,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 if busy { ProgressView("读取本机相册…") }
                 if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
                 if !compactGallery {
-                    Text("只读取当前授权子集，缩略图不自动下载 iCloud 原件。权限、相册或 App 状态变化时旧页立即废弃。")
+                    Text("只读取当前授权子集；缩略图可按需从 iCloud 获取，不会自动下载完整原件。权限、相册或 App 状态变化时旧页立即废弃。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Button("刷新") { refresh() }.disabled(busy)
@@ -1251,7 +1271,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
         .alert("本机相册说明", isPresented: $showingGalleryHelp) {
             Button("完成", role: .cancel) {}
         } message: {
-            Text("仅展示 iOS 当前授权的照片、视频与 Live Photo；缩略图不自动下载 iCloud 原件，权限、相册或 App 状态变化时旧页立即废弃。每次最多读取 64 项。")
+            Text("仅展示 iOS 当前授权的照片、视频与 Live Photo；缩略图可按需从 iCloud 获取，不会自动下载完整原件。权限、相册或 App 状态变化时旧页立即废弃。每次最多读取 64 项。")
         }
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) { initial in
             XDriveIOSNativeLocalPhotoDetail(
