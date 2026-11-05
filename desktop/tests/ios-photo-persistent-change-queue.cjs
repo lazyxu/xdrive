@@ -136,7 +136,7 @@ test('only-new automatic scanning waits for the PhotoKit persistent history curs
   const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift')
   assert.match(source, /func isCaughtUp\(owner: XDriveNativeOwnerRoot\)/)
   assert.match(source, /baseline\.token, as: epoch\.token/)
-  assert.match(controller, /changeQueue\.replay\([\s\S]*?maximumEvents: 4\)/)
+  assert.match(controller, /changeQueue\.replay\([\s\S]*?maximumEvents: 4\s*\)/)
   assert.match(controller, /guard try await changeQueue\.isCaughtUp\(owner: selected\) else \{[\s\S]*?本轮暂不扫描[\s\S]*?return/)
   assert.ok(controller.indexOf('changeQueue.isCaughtUp(owner: selected)') <
             controller.indexOf('.reserveDue(owner: selected,'),
