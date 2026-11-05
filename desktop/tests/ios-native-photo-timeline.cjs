@@ -37,6 +37,7 @@ test('calendar counts use original PhotoKit slots and invalidate on any library/
 })
 test('date jump reuses the real PhotoKit media filter instead of all-photo offsets', () => {
   const wall = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
+  const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
   assert.match(browser, /@Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter/)
   assert.match(dashboard, /@State private var localGalleryMediaFilter: XDriveIOSNativePhotoMediaFilter = \.all/)
   assert.match(dashboard, /XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset,\s*mediaFilter: \$localGalleryMediaFilter/)
@@ -44,9 +45,9 @@ test('date jump reuses the real PhotoKit media filter instead of all-photo offse
   assert.match(wall, /@Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter/)
   assert.doesNotMatch(wall, /@State private var mediaFilter/)
   assert.match(browser, /func read\(mediaFilter: XDriveIOSNativePhotoMediaFilter\)/)
-  assert.match(browser, /case \.all:\s*snapshot = PHAsset\.fetchAssets\(with: options\)/)
-  assert.match(browser, /case \.photos:\s*snapshot = PHAsset\.fetchAssets\(with: \.image, options: options\)/)
-  assert.match(browser, /case \.videos:\s*snapshot = PHAsset\.fetchAssets\(with: \.video, options: options\)/)
+  assert.match(browser, /mediaFilter\.applyPredicates\(to: options\)/)
+  assert.match(browser, /if mediaFilter\.fetchKind == "image"[\s\S]*else if mediaFilter\.fetchKind == "video"/)
+  assert.match(browser, /mediaFilter\.isAll/)
   assert.match(browser, /mediaFilter\.includes\(kind: kind\)/)
   assert.match(browser, /result\.indexedMediaCount == result\.totalSlots/)
   assert.match(browser, /\.read\(mediaFilter: mediaFilter\)/)
@@ -62,11 +63,11 @@ test('date jump reuses the real PhotoKit media filter instead of all-photo offse
 test('favorite day jump uses the same scoped PhotoKit predicate as favorite wall', () => {
   const wall = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
   const filter = read('ios/XDriveIOS/NativePhotoMediaFilterPolicy.swift')
-  assert.match(browser, /case \.favorites:\s*snapshot = PHAsset\.fetchAssets\(with: options\)/)
-  assert.match(browser, /options\.predicate = NSPredicate\(format: "favorite == YES"\)/)
+  assert.match(browser, /mediaFilter\.applyPredicates\(to: options\)/)
+  assert.match(filter, /predicates\.append\(NSPredicate\(format: "favorite == YES"\)\)/)
+  assert.match(filter, /NSCompoundPredicate\(andPredicateWithSubpredicates: predicates\)/)
   assert.match(browser, /model\.indexFilter == mediaFilter/)
-  assert.match(wall, /Picker\("媒体类型", selection: \$mediaFilter\)/)
-  assert.match(filter, /case all, photos, videos, favorites/)
+  assert.match(wall, /Toggle\("收藏", isOn: mediaFilterBinding\(for: \.favorites\)\)/)
 })
 
 test('year/month navigator shows verified PhotoKit covers and drills to the continuous wall', () => {

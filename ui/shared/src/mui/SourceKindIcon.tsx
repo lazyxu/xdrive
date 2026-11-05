@@ -7,6 +7,7 @@ const sourceKindImages: Record<string, string> = {
   synology_photos: new URL('../../assets/source-icons/synology-photos.png', import.meta.url).href,
   synology_files: new URL('../../assets/source-icons/synology-file-station.png', import.meta.url).href,
   yike_photos: new URL('../../assets/source-icons/yike-photos.png', import.meta.url).href,
+  ios_photos: new URL('../../assets/source-icons/ios-photos.svg', import.meta.url).href,
 }
 
 export interface XDriveSourceKindIconProps {

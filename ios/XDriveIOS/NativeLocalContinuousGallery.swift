@@ -447,21 +447,22 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                         .padding(.horizontal, 12)
                         Menu {
                             Section("媒体类型") {
-                                ForEach(XDriveIOSNativePhotoMediaFilter.allCases) { option in
-                                    Button {
-                                        mediaFilter = option
-                                    } label: {
-                                        if mediaFilter == option {
-                                            Label(option.title, systemImage: "checkmark")
-                                        } else {
-                                            Text(option.title)
-                                        }
-                                    }
-                                    .accessibilityIdentifier(
-                                        "native-ios-local-gallery-filter-\(option.rawValue)"
-                                    )
-                                }
+                                Toggle("照片", isOn: mediaFilterBinding(for: .photos))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-photos")
+                                Toggle("视频", isOn: mediaFilterBinding(for: .videos))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-videos")
                             }
+                            Section("内容") {
+                                Toggle("收藏", isOn: mediaFilterBinding(for: .favorites))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-favorites")
+                                Toggle("实况", isOn: mediaFilterBinding(for: .livePhotos))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-live")
+                                Toggle("截屏", isOn: mediaFilterBinding(for: .screenshots))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-screenshots")
+                            }
+                            Divider()
+                            Button("重置筛选") { mediaFilter = .all }
+                                .disabled(mediaFilter.isAll)
                             Section("地图") {
                                 Button {
                                     showingMap = true
@@ -475,10 +476,12 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 .accessibilityIdentifier("native-ios-local-wall-show-map")
                             }
                         } label: {
-                            Label("筛选：\(mediaFilter.title)",
-                                  systemImage: "line.3.horizontal.decrease.circle")
-                                .frame(minHeight: 44)
+                            Label(
+                                mediaFilter.isAll ? "筛选" : "筛选 · \(mediaFilter.title)",
+                                systemImage: "line.3.horizontal.decrease.circle"
+                            )
                         }
+                        .accessibilityLabel("媒体筛选：\(mediaFilter.title)")
                         .padding(.horizontal, 12)
                         .accessibilityIdentifier("native-ios-local-gallery-media-filter")
                         if permission == .limited {
@@ -793,6 +796,15 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             monitor?.stop()
             monitor = nil
         }
+    }
+
+    private func mediaFilterBinding(
+        for criterion: XDriveIOSNativePhotoMediaFilterCriterion
+    ) -> Binding<Bool> {
+        Binding(
+            get: { mediaFilter.isEnabled(criterion) },
+            set: { mediaFilter = mediaFilter.setting(criterion, enabled: $0) }
+        )
     }
 
     private var authorized: Bool { permission == .authorized || permission == .limited }

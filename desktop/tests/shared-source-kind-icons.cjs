@@ -16,7 +16,7 @@ const sourceSummaryCard = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src',
 const sourceBasicFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceBasicFields.tsx'), 'utf8')
 
 test('source kind icons use vendored service artwork', () => {
-  for (const filename of ['synology-photos.png', 'synology-file-station.png', 'yike-photos.png']) {
+  for (const filename of ['synology-photos.png', 'synology-file-station.png', 'yike-photos.png', 'ios-photos.svg']) {
     assert.ok(sharedIcon.includes(filename), `missing source icon reference: ${filename}`)
     assert.equal(
       fs.existsSync(path.join(repo, 'ui', 'shared', 'assets', 'source-icons', filename)),
