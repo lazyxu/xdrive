@@ -333,7 +333,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
     @State private var jumpDateMessage: String?
     @State private var exactDateTarget: XDriveIOSNativePhotoExactDateTarget?
     @State private var wallRevision: UInt64 = 0
-    @State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
+    @Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter
 
     var body: some View {
         VStack(spacing: 0) {
