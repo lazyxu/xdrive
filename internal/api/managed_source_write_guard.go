@@ -131,6 +131,16 @@ func requireOrdinarySourceMutationTx(ctx context.Context, tx *gorm.DB, ownerID, 
 }
 
 func managedSourceWritePreflight(c *gin.Context, db *gorm.DB, ownerID, nodeID uint64, structural bool) bool {
+	if sourceID, proof, ok := currentSynologySourceProof(c); ok {
+		err := db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+			return requireSynologySourceNodeMutationTx(c.Request.Context(), tx, c, ownerID, sourceID, proof, nodeID, structural)
+		})
+		if err != nil {
+			fail(c, http.StatusConflict, errManagedSourceWriteDenied.Error())
+			return true
+		}
+		return false
+	}
 	if _, scoped := currentSourceRunScope(c); scoped {
 		// Execution JWT is only a candidate proof; validate Source/Run and
 		// Node ancestry here, then repeat in the actual write transaction.
