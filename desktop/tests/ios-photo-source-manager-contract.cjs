@@ -18,13 +18,18 @@ const localAuth = read('internal/api/local_source_executor_auth.go');
 const runs = read('internal/api/source_runs.go');
 const reporter = read('ios/XDriveIOS/PhotoSourceRunReporter.swift');
 const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift');
+const sourceIcon = read('ui/shared/src/mui/SourceKindIcon.tsx');
 
 test('iOS Photos is a device-executed Push Source, not a server-triggered worker', () => {
   assert.match(profile, /kind === 'ios_photos'/);
   assert.match(profile, /manualTriggerExecutor: 'ios_device'/);
   assert.match(profile, /iPhone 正在备份/);
   assert.match(profile, /Server 不执行 PhotoKit 扫描或原件读取/);
+  assert.match(profile, /latestRun\?\.status === 'cancelled'/);
+  assert.match(profile, /最近一次备份已取消/);
   assert.match(list, /row\.source\.kind === 'ios_photos'/);
+  assert.match(list, /尚无备份统计/);
+  assert.match(sourceIcon, /PhotoLibraryRoundedIcon/);
   assert.match(list, /新增上传/);
   assert.match(list, /云端已核验/);
   assert.match(list, /待处理/);
@@ -37,6 +42,11 @@ test('shared Source Manager reads run history without inventing PhotoKit collect
   assert.match(manager, /aggregate SyncRun history/);
   assert.match(manager, /row\.source\.kind === 'ios_photos'/);
   assert.match(details, /逐项原因仅在手机端显示/);
+  assert.match(details, /externalSourceRunDetailView\(run, row\.source\.kind\)/);
+  assert.match(details, /row\.source\.kind !== 'ios_photos' && run\.failed_items/);
+  assert.match(details, /\['scanned', 'new', 'unchanged', 'failed'\]/);
+  assert.match(profile, /iPhone 自动计划/);
+  assert.match(profile, /本批次已完成/);
 });
 
 test('native iPhone reports begin, progress and terminal state with the exact device proof', () => {
@@ -48,6 +58,9 @@ test('native iPhone reports begin, progress and terminal state with the exact de
   assert.match(reporter, /complete_inventory": false/);
   assert.match(controller, /XDriveIOSPhotoSourceRunReporter/);
   assert.match(controller, /onSourceProgress:/);
+  assert.match(reporter, /beginRequested/);
+  assert.match(reporter, /guard !finished, beginRequested else/);
+  assert.match(controller, /reserveDue[\s\S]*?await reporter\.begin\(\)[\s\S]*?ForegroundPhotoBackupMVP/);
   assert.doesNotMatch(reporter, /PHAsset|localIdentifier|latitude|longitude|originalFilename/);
 });
 
