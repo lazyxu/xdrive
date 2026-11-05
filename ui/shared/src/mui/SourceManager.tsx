@@ -57,7 +57,10 @@ import type {
 export interface XDriveSourceManagerAdapter {
   authorizeLocalFolder?(sourceID: number): Promise<{ cancelled: boolean; grant?: { root_id: string; path: string; status: string } }>
   me?(): Promise<{ username: string }>
-  sourceOverview(signal?: AbortSignal): Promise<ExternalSourceOverview[]>
+  sourceOverview(signal?: AbortSignal, includeArchived?: boolean): Promise<ExternalSourceOverview[]>
+  restoreSource?(sourceID: number, revision: number): Promise<ExternalSource>
+  canRestoreSource?(row: ExternalSourceRow): boolean
+  canDeleteSource?(row: ExternalSourceRow): boolean
   createSource(input: CreateExternalSourceInput): Promise<ExternalSource>
   triggerSource(sourceID: number): Promise<ExternalSource>
   sourceRuns(sourceID: number, limit?: number, offset?: number): Promise<ExternalSourceRun[]>
@@ -196,6 +199,8 @@ export function XDriveSourceManager({
 }: XDriveSourceManagerProps) {
   const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
+  const [showArchived, setShowArchived] = useState(false)
+  const [restoringSourceID, setRestoringSourceID] = useState<number | null>(null)
   const initialSourceOpenedRef = useRef<number | null>(null)
   const focusedRequestOpenedRef = useRef<number | null>(null)
   const focusedRunDetailsFetchedRef = useRef('')
@@ -289,8 +294,8 @@ export function XDriveSourceManager({
   const overviewRequestRef = useRef(0)
   const overviewMountedRef = useRef(false)
   const overviewVisibleReadRef = useRef(false)
-  const overviewOwnerRef = useRef({ adapter, directionFilter })
-  overviewOwnerRef.current = { adapter, directionFilter }
+  const overviewOwnerRef = useRef({ adapter, directionFilter, showArchived })
+  overviewOwnerRef.current = { adapter, directionFilter, showArchived }
 
   const load = useCallback(async (silent = false) => {
     if (!overviewMountedRef.current) return
@@ -307,13 +312,14 @@ export function XDriveSourceManager({
       !controller.signal.aborted &&
       overviewRequestRef.current === request &&
       overviewOwnerRef.current.adapter === adapter &&
-      overviewOwnerRef.current.directionFilter === directionFilter
+      overviewOwnerRef.current.directionFilter === directionFilter &&
+      overviewOwnerRef.current.showArchived === showArchived
     )
     if (!silent) {
       setLoading(true)
     }
     try {
-      const overview = await adapter.sourceOverview(controller.signal)
+      const overview = await adapter.sourceOverview(controller.signal, showArchived)
       if (!valid()) return
       const next: ExternalSourceRow[] = overview
         .filter((item) => directionFilter !== 'pull' || item.source.direction === 'pull')
@@ -341,7 +347,7 @@ export function XDriveSourceManager({
         setLoading(false)
       }
     }
-  }, [adapter, directionFilter, onError])
+  }, [adapter, directionFilter, onError, showArchived])
 
   const loadRunFailures = useCallback(async (sourceID: number, runID: string, page = 1) => {
     const nextPage = Math.max(1, Math.trunc(page))
@@ -885,7 +891,7 @@ export function XDriveSourceManager({
   }
 
   const openSettings = (row: ExternalSourceRow) => {
-    if (savingSettings) return
+    if (savingSettings || row.source.status === 'archived') return
     ++settingsSessionRef.current
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     setSetting(row)
@@ -896,7 +902,7 @@ export function XDriveSourceManager({
       name: externalSourceDisplayName(row.source),
       sync_mode: row.source.sync_mode,
       run_mode: row.source.run_mode,
-      status: row.source.status,
+      status: row.source.status === 'active' ? 'active' : 'paused',
       schedule_type: row.source.schedule_type ?? 'interval',
       schedule_expression: row.source.schedule_expression || '6h',
       schedule_timezone: row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind, row.source.direction).scheduleTimezone,
@@ -1196,7 +1202,7 @@ export function XDriveSourceManager({
     setDeletingSourceID(row.source.id)
     try {
       await adapter.deleteSource(row.source.id, row.source.revision)
-      setFeedback(`${sourceNoun}已删除；已保存到 xDrive 的文件已保留`)
+      setFeedback(`${sourceNoun}已移除；已配置或有历史的来源会归档保留，云端文件和同步历史不会删除`)
       if (selected?.source.id === row.source.id) setSelected(null)
       if (setting?.source.id === row.source.id) {
         ++settingsSessionRef.current
@@ -1216,6 +1222,22 @@ export function XDriveSourceManager({
       await load()
     } finally {
       setDeletingSourceID(null)
+    }
+  }
+
+  const restoreSource = async (row: ExternalSourceRow) => {
+    const allowed = adapter.canRestoreSource?.(row) ?? row.source.kind !== 'local_folder'
+    if (!adapter.restoreSource || !allowed) return
+    setRestoringSourceID(row.source.id)
+    try {
+      await adapter.restoreSource(row.source.id, row.source.revision)
+      setFeedback(`${externalSourceDisplayName(row.source)}已恢复为暂停状态；请检查凭据后手动恢复运行`)
+      await load()
+    } catch (error) {
+      showActionError(`恢复${sourceNoun}失败`, error, `${sourceNoun}未恢复，请稍后重试。`)
+      await load()
+    } finally {
+      setRestoringSourceID(null)
     }
   }
 
@@ -1398,6 +1420,11 @@ export function XDriveSourceManager({
         subtitle={directionFilter === 'pull' ? '由 xDrive Server 管理远程连接、扫描和下载。' : undefined}
         rows={rows}
         directionFilter={directionFilter}
+        showArchived={showArchived}
+        onToggleArchived={() => setShowArchived((current) => !current)}
+        restoringSourceID={restoringSourceID}
+        canRestoreSource={(row) => adapter.canRestoreSource?.(row) ?? Boolean(adapter.restoreSource && row.source.kind !== 'local_folder')}
+        onRestoreSource={(row) => { void restoreSource(row) }}
         loading={loading}
         hasLoaded={hasLoaded}
         loadError={loadError}
@@ -1530,6 +1557,7 @@ export function XDriveSourceManager({
         connectorConfigError={settingsConnectorError}
         clearingCredential={clearingCookie}
         browseDirectories={settingsBrowseDirectories}
+        allowDelete={setting ? (adapter.canDeleteSource?.(setting) ?? setting.source.kind !== 'local_folder') : false}
         onRequestClose={closeSettings}
         onCancel={closeSettings}
         onRetryConnectorConfig={() => {
@@ -1558,7 +1586,9 @@ export function XDriveSourceManager({
         }}
         onRequestClearCredential={() => setClearCookieConfirmOpen(true)}
         onDelete={() => {
-          if (setting) setDeleteTarget(setting)
+          if (setting && (adapter.canDeleteSource?.(setting) ?? setting.source.kind !== 'local_folder')) {
+            setDeleteTarget(setting)
+          }
         }}
       />
 

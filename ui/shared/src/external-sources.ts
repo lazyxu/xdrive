@@ -6,7 +6,7 @@ export type ExternalSourceCreatePreset = 'synology_push' | 'synology_pull' | 'sy
 export type SynologyPhotoSpace = 'personal' | 'shared'
 export type ExternalSourceRunMode = 'scan' | 'sync'
 export type ExternalSourceSyncMode = 'backup' | 'mirror'
-export type ExternalSourceStatus = 'active' | 'paused'
+export type ExternalSourceStatus = 'active' | 'paused' | 'archived'
 export type ExternalSourceScheduleType = 'interval' | 'cron' | 'manual'
 export type ExternalSourceRunStatus = 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
 
@@ -254,7 +254,7 @@ export interface UpdateExternalSourceInput {
   name?: string
   sync_mode?: ExternalSourceSyncMode
   run_mode?: ExternalSourceRunMode
-  status?: ExternalSourceStatus
+  status?: 'active' | 'paused'
   schedule_type?: ExternalSourceScheduleType
   schedule_expression?: string
   schedule_timezone?: string
@@ -267,6 +267,7 @@ export type ExternalSourceStateTone = 'neutral' | 'good' | 'warning' | 'bad' | '
 export interface ExternalSourceState {
   key:
     | 'paused'
+    | 'archived'
     | 'running'
     | 'pending'
     | 'error'
@@ -699,6 +700,7 @@ export function externalSourceRunStatusTone(status: ExternalSourceRunStatus): Ex
 export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceState {
   const { source, latestRun, credential } = row
   const connector = externalSourceConnectorProfile(source.kind, source.direction)
+  if (source.status === 'archived') return { key: 'archived', tone: 'neutral', label: '已归档' }
   if (source.status === 'paused') return { key: 'paused', tone: 'neutral', label: '已暂停' }
   if (latestRun?.status === 'running' && latestRun.cancel_requested_at) {
     return { key: 'running', tone: 'busy', label: '正在取消…' }
@@ -719,6 +721,9 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
 }
 
 export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalSourceTriggerState {
+  if (row.source.status === 'archived') {
+    return { ready: false, label: '来源已归档，请先恢复' }
+  }
   if (row.source.kind === 'local_folder') {
     return { ready: false, label: '本机同步执行器尚未启用，请先完成本地目录授权' }
   }

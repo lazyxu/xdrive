@@ -604,7 +604,7 @@ const agent = Object.freeze({
     cleanupMediaLivePhotoProgress(url)
     return ipcRenderer.invoke('agent:release-media-live-photo-motion', url)
   },
-  getSources: () => ipcRenderer.invoke('agent:get-sources'),
+  getSources: (includeArchived = false) => ipcRenderer.invoke('agent:get-sources', includeArchived),
   getDeviceBackups: (requestID?: string) => ipcRenderer.invoke('agent:get-device-backups', requestID),
   getDeviceBackupsPage: (limit = 100, afterDeviceID = '') =>
     ipcRenderer.invoke('agent:get-device-backups-page', limit, afterDeviceID),
@@ -714,6 +714,7 @@ const agent = Object.freeze({
     ignore_rules?: string
   }) => ipcRenderer.invoke('agent:update-source', sourceID, revision, input),
   deleteSource: (sourceID: number, revision: number) => ipcRenderer.invoke('agent:delete-source', sourceID, revision),
+  restoreSource: (sourceID: number, revision: number) => ipcRenderer.invoke('agent:restore-source', sourceID, revision),
   triggerSource: (sourceID: number) => ipcRenderer.invoke('agent:trigger-source', sourceID),
   cloudRoot: (requestID?: string) => ipcRenderer.invoke('agent:cloud-root', requestID),
   cloudChildren: (parentID: number) => ipcRenderer.invoke('agent:cloud-children', parentID),

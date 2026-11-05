@@ -214,7 +214,7 @@ test('long Source dialogs reuse the shared compact-touch full-screen contract', 
   assert.ok(sourceDialogs.includes('fullScreen={compactTouch}'), 'failed-items Source dialog must become full-screen on compact touch')
   assert.ok(sourceDialogs.includes('slotProps={{ paper: dialogPaper }}'))
 
-  assert.ok(sourceDialogs.includes('title="删除来源？"'))
+  assert.ok(sourceDialogs.includes('title="移除来源？"'))
   assert.ok(sourceDialogs.includes('title={`清除已保存的${credentialLabel}？`}'))
   assert.equal(
     (sourceDialogs.match(/fullScreen=\{compactTouch\}/g) || []).length,
