@@ -2,11 +2,10 @@ import CryptoKit
 import Foundation
 import Photos
 
-/// PhotoKit iOS 16+ incremental *discovery* source. This actor only records
-/// candidate IDs, never exports originals, changes upload receipts, invokes
-/// UploadSession or promises that the queued asset has reached the Server.
-/// Its exact Owner/root is fixed for the actor lifetime; the caller must also
-/// reverify the current native Owner before consuming candidates.
+/// PhotoKit iOS 16+ incremental change queue. It discovers candidates and
+/// exposes bounded metadata to the existing original backup runner; it never
+/// uploads, changes Server receipts or grants a second write path. The runner
+/// must reverify the current native Owner and use the shared CAS/receipt writer.
 actor XDriveIOSPhotoKitPersistentBackupQueue {
     enum Failure: Error {
         case invalidOwner
@@ -21,6 +20,12 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         var updated = 0
         var deleted = 0
         var events = 0
+    }
+
+    struct Candidate: Equatable {
+        let pending: XDriveIOSPhotoBackupChangeQueueStore.Pending
+        let kind: String
+        let isLive: Bool
     }
 
     private let scope: String
@@ -65,6 +70,82 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         -> [XDriveIOSPhotoBackupChangeQueueStore.Pending] {
         try verifyOwner(owner)
         return try store.pending(limit: limit)
+    }
+
+    /// Return only bounded candidates after PhotoKit's current change token
+    /// has been fully replayed into SQLite. If history is still behind, the
+    /// caller must leave the queue untouched and try on a later tick.
+    func pendingCandidates(owner: XDriveNativeOwnerRoot, limit: Int = 64)
+        throws -> [Candidate] {
+        guard (1...64).contains(limit) else { throw Failure.invalidReplayLimit }
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline() else { return [] }
+        guard baseline.authorization == epoch.authorization else {
+            throw Failure.unauthorizedOrChanged
+        }
+        guard XDriveIOSPhotoKitLibraryEpoch.matches(
+            baseline.token, as: epoch.token
+        ) else {
+            // More persistent changes remain than the bounded replay pass
+            // consumed. Never upload stale candidate revisions.
+            return []
+        }
+        let pending = try store.pending(limit: limit)
+        guard !pending.isEmpty else { return [] }
+        let identifiers = pending.map(\.localIdentifier)
+        let fetched = PHAsset.fetchAssets(
+            withLocalIdentifiers: identifiers, options: nil
+        )
+        var assets: [String: PHAsset] = [:]
+        assets.reserveCapacity(fetched.count)
+        fetched.enumerateObjects { asset, _, _ in
+            assets[asset.localIdentifier] = asset
+        }
+        try verifyAuthorization(stillMatches: epoch)
+        return pending.compactMap { row in
+            guard let asset = assets[row.localIdentifier] else {
+                // Missing from the currently authorized fetch is not proof of
+                // deletion under Limited access. Persistent delete events
+                // alone move the row to missingLocal.
+                return nil
+            }
+            let kind: String
+            switch asset.mediaType {
+            case .image: kind = "image"
+            case .video: kind = "video"
+            default: kind = "unsupported"
+            }
+            return Candidate(
+                pending: row, kind: kind,
+                isLive: kind == "image" &&
+                    asset.mediaSubtypes.contains(.photoLive)
+            )
+        }
+    }
+
+    /// Settle one exact queued revision only after the caller's shared
+    /// original writer has verified the current Server Node receipt. A newer
+    /// PhotoKit edit or an unreplayed change invalidates the settlement.
+    @discardableResult
+    func settle(_ candidate: XDriveIOSPhotoBackupChangeQueueStore.Pending,
+                result: XDriveIOSPhotoBackupChangeQueueStore.Settled,
+                owner: XDriveNativeOwnerRoot) throws -> Bool {
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline() else {
+            throw Failure.requiresExplicitBaseline
+        }
+        guard baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(
+                baseline.token, as: epoch.token
+              ) else { throw Failure.unauthorizedOrChanged }
+        try verifyAuthorization(stillMatches: epoch)
+        return try store.settle(
+            candidate, result: result,
+            expectedBaselineToken: baseline.token,
+            authorization: epoch.authorization
+        )
     }
 
     /// Read-only local change queue counts for the exact current Owner.
