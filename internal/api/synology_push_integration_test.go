@@ -272,7 +272,7 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 		t.Fatalf("source deletion changed remote node: got=%d want=%d", fileNode.ID, firstNodeID)
 	}
 	var item meta.SourceItem
-	if err := db.Where("source_id = ? AND path = ?", source.ID, "Shared/renamed.jpg").First(&item).Error; err != nil {
+	if err := db.Where("source_id = ? AND path = ?", created.ID, "Shared/renamed.jpg").First(&item).Error; err != nil {
 		t.Fatal(err)
 	}
 	if item.State != meta.SourceItemStateMissing || item.NodeID == nil || *item.NodeID != firstNodeID {
