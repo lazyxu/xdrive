@@ -1052,6 +1052,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var globalTotal = 0
     @State private var globalLocated = 0
     @State private var globalSelection: XDriveIOSMapSpatialSelection?
+    // Queue the nearby expansion until the album-scoped full-screen cover has
+    // fully dismissed; two fullScreenCover modifiers must never race to present.
+    @State private var pendingNearbySelection: XDriveIOSMapSpatialSelection?
     @State private var nearbySelection: XDriveIOSMapSpatialSelection?
     @State private var globalCamera: MKCoordinateRegion?
     @State private var globalViewport: XDriveIOSNativeLocalMapViewport?
@@ -1330,14 +1333,23 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             if phase == .active { refresh(at: offset) }
             else { invalidate() }
         }) { chosen in XDriveIOSMapPhotoAlbum(items: chosen.items) }
-        .fullScreenCover(item: $globalSelection) { chosen in
+        .fullScreenCover(item: $globalSelection, onDismiss: {
+            // Present the broader-library result only after the album place
+            // wall has completed its dismissal transition.
+            guard let pending = pendingNearbySelection else { return }
+            pendingNearbySelection = nil
+            guard phase == .active,
+                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+            else { return }
+            nearbySelection = pending
+        }) { chosen in
             XDriveIOSMapSpatialAlbum(
                 selection: chosen, album: album,
                 onShowNearby: album == nil ? nil : {
                     guard phase == .active,
                           PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
                     else { return }
-                    nearbySelection = chosen
+                    pendingNearbySelection = chosen
                 }
             )
         }
@@ -1714,6 +1726,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         page = nil
         selection = nil
         globalSelection = nil
+        pendingNearbySelection = nil
         nearbySelection = nil
         singleViewer = nil
         globalCells = []
