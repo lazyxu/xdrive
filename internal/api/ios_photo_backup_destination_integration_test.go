@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -170,4 +171,140 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("repeated/denied requests produced %d Sources", count)
 	}
+}
+
+
+func TestIOSPhotoSourceRunUsesSharedHistoryAndRequiresBoundDevice(t *testing.T) {
+	db, server, owner, _, _ := setupFilePropertiesTestDB(t)
+	if err := db.AutoMigrate(
+		&meta.ClientDevice{}, &meta.Share{}, &meta.SyncRun{},
+		&meta.SourceItem{}, &meta.SourceCollection{}, &meta.SourceRunFailure{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	gin.SetMode(gin.TestMode)
+	server.Auth = auth.New("ios-photo-source-run-history", time.Hour)
+	router := server.Router()
+	token, err := server.Auth.Issue(owner.ID, owner.SessionVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	secret := "ios-photo-source-run-device-credential-0001"
+	device := meta.ClientDevice{
+		ID: uuid.NewString(), OwnerID: owner.ID, Name: "我的 iPhone",
+		Platform: "ios", CredentialHash: deviceCredentialDigest(secret),
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatal(err)
+	}
+	headers := map[string]string{
+		"X-XDrive-Device-ID": device.ID, "X-XDrive-Device-Token": secret,
+	}
+	destination := requestWithHeaders(t, router, http.MethodPut,
+		"/api/v1/ios/photos/backup-destination", token,
+		strings.NewReader(`{"name":"iPhone 原件备份"}`),
+		http.StatusCreated, headers)
+	var target struct {
+		SourceID uint64 `json:"source_id"`
+	}
+	if err := json.Unmarshal(destination.Body.Bytes(), &target); err != nil {
+		t.Fatal(err)
+	}
+	if target.SourceID == 0 {
+		t.Fatal("server did not provision an iOS Photo Source")
+	}
+
+	runID := uuid.NewString()
+	runPath := fmt.Sprintf("/api/v1/sources/%d/runs", target.SourceID)
+	beginBody := fmt.Sprintf(`{"run_id":%q,"trigger":"manual"}`, runID)
+	// An Owner JWT alone cannot impersonate the iPhone Source executor.
+	requestWithHeaders(t, router, http.MethodPost, runPath, token,
+		strings.NewReader(beginBody), http.StatusForbidden, nil)
+	requestWithHeaders(t, router, http.MethodPost, runPath, token,
+		strings.NewReader(beginBody), http.StatusCreated, headers)
+
+	summary := `{
+		"scanned_items":4,"scanned_bytes":0,
+		"new_items":2,"new_bytes":0,
+		"unchanged_items":2,"unchanged_bytes":0,
+		"failed_items":0
+	}`
+	progressPath := runPath + "/" + runID + "/progress"
+	requestWithHeaders(t, router, http.MethodPost, progressPath, token,
+		strings.NewReader(`{"summary":`+summary+`}`),
+		http.StatusNoContent, headers)
+
+	readRun := func() struct {
+		Status string `json:"status"`
+		ScannedItems int64 `json:"scanned_items"`
+		NewItems int64 `json:"new_items"`
+		UnchangedItems int64 `json:"unchanged_items"`
+		SyncedFileItems int64 `json:"synced_file_items"`
+		TransferredItems int64 `json:"transferred_items"`
+		FailedItems int64 `json:"failed_items"`
+	} {
+		t.Helper()
+		got := requestWithHeaders(t, router, http.MethodGet,
+			runPath+"/"+runID, token, strings.NewReader(""),
+			http.StatusOK, nil)
+		var decoded struct {
+			Status string `json:"status"`
+			ScannedItems int64 `json:"scanned_items"`
+			NewItems int64 `json:"new_items"`
+			UnchangedItems int64 `json:"unchanged_items"`
+			SyncedFileItems int64 `json:"synced_file_items"`
+			TransferredItems int64 `json:"transferred_items"`
+			FailedItems int64 `json:"failed_items"`
+		}
+		if err := json.Unmarshal(got.Body.Bytes(), &decoded); err != nil {
+			t.Fatal(err)
+		}
+		return decoded
+	}
+	inProgress := readRun()
+	if inProgress.Status != meta.SyncRunStatusRunning ||
+		inProgress.ScannedItems != 4 || inProgress.NewItems != 2 ||
+		inProgress.UnchangedItems != 2 || inProgress.SyncedFileItems != 4 ||
+		inProgress.TransferredItems != 2 {
+		t.Fatalf("shared SourceRun progress was not persisted: %+v", inProgress)
+	}
+
+	finishPath := runPath + "/" + runID + "/finish"
+	finishBody := fmt.Sprintf(`{"status":"completed","complete_inventory":false,"summary":%s}`, summary)
+	requestWithHeaders(t, router, http.MethodPost, finishPath, token,
+		strings.NewReader(finishBody), http.StatusOK, headers)
+	finished := readRun()
+	if finished.Status != meta.SyncRunStatusCompleted ||
+		finished.ScannedItems != 4 || finished.NewItems != 2 ||
+		finished.UnchangedItems != 2 || finished.SyncedFileItems != 4 ||
+		finished.TransferredItems != 2 || finished.FailedItems != 0 {
+		t.Fatalf("shared SourceRun terminal history mismatch: %+v", finished)
+	}
+
+	var source meta.Source
+	if err := db.First(&source, target.SourceID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if source.Status != meta.SourceStatusPaused || source.LastRunAt == nil ||
+		source.LastSuccessAt == nil || source.LastError != "" {
+		t.Fatalf("iOS Source must retain device-owned paused state and publish its run result: %+v", source)
+	}
+	var items int64
+	if err := db.Model(&meta.SourceItem{}).Where("source_id = ?", target.SourceID).Count(&items).Error; err != nil {
+		t.Fatal(err)
+	}
+	if items != 0 {
+		t.Fatalf("PhotoKit identifiers must not be materialized as shared SourceItems: %d", items)
+	}
+
+	// Revocation fences later progress even when the Owner session is still valid.
+	if err := db.Model(&meta.ClientDevice{}).Where("id = ?", device.ID).
+		Update("revoked_at", now).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodPost, progressPath, token,
+		strings.NewReader(`{"summary":`+summary+`}`),
+		http.StatusForbidden, headers)
 }

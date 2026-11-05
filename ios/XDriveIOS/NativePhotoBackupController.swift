@@ -363,6 +363,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             // original write permanently disables fast retry for this run.
             var automaticReservedNextDueAt: Date?
             var beganOriginalWrite = false
+            var sourceRunReporter: XDriveIOSPhotoSourceRunReporter?
             do {
                 let verified = try await login.verifiedAuthorization()
                 try Task.checkCancellation()
@@ -405,13 +406,21 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                       UIApplication.shared.applicationState == .active else {
                     throw XDriveIOSNativeSessionError.staleSession
                 }
+                let reporter = XDriveIOSPhotoSourceRunReporter(
+                    authority: managed,
+                    trigger: kind == .automatic ? "scheduled" : "manual"
+                )
+                sourceRunReporter = reporter
+                await reporter.begin()
                 if kind == .focused {
                     try await self.runFocused(
                         login: login, owner: selected, uiEpoch: uiEpoch,
                         allowICloud: allowICloud,
                         initialSourceID: managed.destination.sourceID,
-                        initialTargetNodeID: managed.destination.targetNodeID
+                        initialTargetNodeID: managed.destination.targetNodeID,
+                        sourceRunReporter: reporter
                     )
+                    await reporter.finish(status: "completed")
                 } else {
                     let window: Int
                     let cloud: Bool
@@ -448,6 +457,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                             .reserveDue(owner: selected,
                                         sourceID: managed.destination.sourceID,
                                         targetNodeID: managed.destination.targetNodeID) else {
+                            await reporter.finish(status: "cancelled")
                             self.refresh(owner: selected)
                             return
                         }
@@ -503,6 +513,9 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         owner: selected, managedForeground: managed
                     ).run(allowICloudOriginals: cloud, startOffset: offset,
                           newOnlySince: newOnlySince,
+                          onSourceProgress: { value in
+                              await reporter.update(value)
+                          },
                           onPotentialWrite: { beganOriginalWrite = true }) { [weak self] value in
                         guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
                               self?.displayEpoch == uiEpoch,
@@ -549,25 +562,30 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     if result.stoppedForReview {
                         self.errorMessage = "发现结果不确定的上传收据：本轮已暂停，不会盲目重传。"
                     }
+                    await reporter.finish(status: "completed")
                 }
             } catch XDriveIOSFocusedBackupFailure.libraryChanged {
+                if let reporter = sourceRunReporter { await reporter.finish(status: "partial") }
                 XDriveIOSPhotoFocusedResumeStore.shared.clear(owner: selected)
                 if self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                     self.errorMessage = "集中备份时系统相册或授权范围发生变化，已安全停止；请重新开始整库扫描，不会按旧位置跳过照片。"
                 }
             } catch XDriveIOSFocusedBackupFailure.invalidWindow {
+                if let reporter = sourceRunReporter { await reporter.finish(status: "failed") }
                 XDriveIOSPhotoFocusedResumeStore.shared.clear(owner: selected)
                 if self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                     self.errorMessage = "集中备份返回的扫描进度无法校验，已停止以避免漏备或重复写入。"
                 }
             } catch is CancellationError {
+                if let reporter = sourceRunReporter { await reporter.finish(status: "cancelled") }
                 if self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                     self.message = "原件任务已取消。可能已经提交的原件须通过加密账本与 Server 收据确认。"
                 }
             } catch {
+                if let reporter = sourceRunReporter { await reporter.finish(status: "failed") }
                 var scheduledNetworkRetry = false
                 if kind == .automatic,
                    let reservedDue = automaticReservedNextDueAt,
@@ -631,7 +649,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     private func runFocused(
         login: XDriveIOSNativeOwnerLoginModel,
         owner: XDriveNativeOwnerRoot, uiEpoch: UUID, allowICloud: Bool,
-        initialSourceID: UInt64, initialTargetNodeID: UInt64
+        initialSourceID: UInt64, initialTargetNodeID: UInt64,
+        sourceRunReporter: XDriveIOSPhotoSourceRunReporter
     ) async throws {
         let initial = try XDriveIOSPhotoKitLibraryEpoch.capture()
         // A constant-time PhotoKit fetch count plus a SECOND epoch witness
@@ -652,6 +671,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             sourceID: initialSourceID, targetNodeID: initialTargetNodeID
         )
         var window = resume.nextWindow
+        var sourceRunBase = XDriveIOSPhotoSourceRunCounts()
         var confirmedNew = 0
         var hadUnavailable = resume.hadUnavailable
         var expectedTotal: Int? = visibleNow
@@ -720,7 +740,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             let currentWindow = window
             let result = try await XDriveIOSForegroundPhotoBackupMVP(
                 owner: owner, managedForeground: managed
-            ).run(allowICloudOriginals: allowICloud, startOffset: offset) { [weak self] value in
+            ).run(allowICloudOriginals: allowICloud, startOffset: offset,
+                  onSourceProgress: { value in
+                      await sourceRunReporter.update(value, base: sourceRunBase)
+                  }) { [weak self] value in
                 guard let self,
                       self.displayEpoch == uiEpoch,
                       XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, owner),
@@ -758,6 +781,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 throw XDriveIOSFocusedBackupFailure.libraryChanged
             }
             expectedTotal = result.totalVisible
+            sourceRunBase.add(result)
             confirmedNew += result.uploaded
             hadUnavailable = hadUnavailable || result.unavailable > 0 ||
                 result.videosNotSupported > 0 || result.liveNotSupported > 0

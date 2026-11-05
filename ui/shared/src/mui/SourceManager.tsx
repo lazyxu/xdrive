@@ -1328,8 +1328,16 @@ export function XDriveSourceManager({
     setRunSkipPages({})
     setCollections([])
     setCollectionItemPages({})
-    setFailedItemsLoading(true)
     void loadRunHistory(row.source.id, 1)
+    if (row.source.kind === 'ios_photos') {
+      // iPhone PhotoKit IDs and per-asset failures remain device-local. The
+      // shared Source Manager reads only the aggregate SyncRun history.
+      setCollectionsReadState('ready')
+      setCollectionsLoading(false)
+      setFailedItemsLoading(false)
+      return
+    }
+    setFailedItemsLoading(true)
     void loadCollections(row.source.id)
     try {
       const items = await adapter.sourceItems(row.source.id, 'error', 1000, 0)

@@ -64,9 +64,14 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     func run(allowICloudOriginals: Bool, startOffset: Int = 0,
              maximumNewOriginals: Int = Self.maxNewOriginalsPerRun,
              newOnlySince: Date? = nil,
+             onSourceProgress: @MainActor @escaping (XDriveIOSPhotoBackupProgress) async -> Void = { _ in },
              onPotentialWrite: @MainActor @escaping () -> Void = {},
              onProgress: @MainActor @escaping (XDriveIOSPhotoBackupProgress) -> Void)
         async throws -> XDriveIOSPhotoBackupProgress {
+        func publish(_ value: XDriveIOSPhotoBackupProgress) async {
+            await onProgress(value)
+            await onSourceProgress(value)
+        }
         guard startOffset >= 0, maximumNewOriginals > 0,
               maximumNewOriginals <= Self.maxNewOriginalsPerRun,
               owner.ownerID > 0, owner.rootNodeID > 0,
@@ -90,7 +95,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         var report = XDriveIOSPhotoBackupProgress()
         report.startOffset = startOffset
         report.stage = "检查当前授权相册…"
-        await onProgress(report)
+        await publish(report)
 
         do {
             report.totalVisible = try await scanner.start(
@@ -100,7 +105,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             let windowCapacity = XDrivePhotoBackupScanWindow.capacity(
                 visibleTotal: report.totalVisible, offset: startOffset
             )
-            await onProgress(report)
+            await publish(report)
 
             scanning: while report.scanned < windowCapacity &&
                     !report.stoppedForReview &&
@@ -125,7 +130,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         case .olderThanStart:
                             report.skippedBeforeBaseline += 1
                             report.stage = "旧照片未在启用后修改，按仅备份新照片规则跳过"
-                            await onProgress(report)
+                            await publish(report)
                             continue
                         case .unknownDates:
                             report.unavailable += 1
@@ -134,7 +139,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                                 mediaKind: candidate.kind, reason: .unavailable
                             )
                             report.stage = "照片日期不可判定；未当作新照片或已备份"
-                            await onProgress(report)
+                            await publish(report)
                             continue
                         }
                     }
@@ -150,13 +155,13 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                             mediaKind: candidate.kind, reason: .unsupported
                         )
                         report.stage = "无法识别的媒体类型，已跳过"
-                        await onProgress(report)
+                        await publish(report)
                         continue
                     }
                     let isVideo = candidate.kind == "video"
                     let isLive = candidate.isLive
                     report.stage = "正在核对并备份已授权的照片/视频/Live 原件（\(report.scanned)/\(windowCapacity)）…"
-                    await onProgress(report)
+                    await publish(report)
                     do {
                         let outcome = try await uploadOrVerifyOriginal(
                             candidate.id, isVideo: isVideo, isLive: isLive,
@@ -201,7 +206,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         )
                         report.stage = "有照片原件无法确认，请查看备份汇总"
                     }
-                    await onProgress(report)
+                    await publish(report)
                     if report.stoppedForReview { break scanning }
                 }
                 if page.finished { break }
@@ -218,7 +223,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                 }
             }
             await scanner.reset()
-            await onProgress(report)
+            await publish(report)
             return report
         } catch {
             await scanner.reset()

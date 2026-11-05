@@ -228,7 +228,7 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 			return err
 		}
 
-		if source.Status != meta.SourceStatusActive {
+		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
 			return errSourcePaused
 		}
 		if !meta.ValidSourceSyncMode(source.SyncMode) || !meta.ValidSourceRunMode(source.RunMode) {
@@ -363,7 +363,7 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Status != meta.SourceStatusActive {
+		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
 			return errSourcePaused
 		}
 
@@ -589,7 +589,7 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Status != meta.SourceStatusActive {
+		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
 			return errSourcePaused
 		}
 		var run meta.SyncRun
@@ -822,7 +822,7 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Status != meta.SourceStatusActive {
+		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
 			return errSourcePaused
 		}
 
@@ -940,7 +940,7 @@ func (s *Server) progressSourceRun(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Status != meta.SourceStatusActive {
+		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
 			return errSourcePaused
 		}
 		var run meta.SyncRun
@@ -955,6 +955,15 @@ func (s *Server) progressSourceRun(c *gin.Context) {
 		if req.Summary != nil {
 			for key, value := range sourceRunSummaryUpdates(*req.Summary) {
 				updates[key] = value
+			}
+			if source.Kind == meta.SourceKindIOSPhotos {
+				synced := req.Summary.NewItems + req.Summary.UnchangedItems
+				updates["synced_file_items"] = gorm.Expr("GREATEST(synced_file_items, ?)", synced)
+				updates["transferred_items"] = gorm.Expr("GREATEST(transferred_items, ?)", req.Summary.NewItems)
+				updates["processed_transfer_items"] = gorm.Expr("GREATEST(processed_transfer_items, ?)", req.Summary.NewItems)
+				updates["created_items"] = gorm.Expr("GREATEST(created_items, ?)", req.Summary.NewItems)
+				// Existing server-verified originals are reported as unchanged, not as skipped.
+				updates["skipped_items"] = int64(0)
 			}
 		}
 		if req.ActiveBytes != nil {
@@ -1054,6 +1063,10 @@ func (s *Server) cancelSourceRun(c *gin.Context) {
 		guard = func(tx *gorm.DB) error {
 			return s.requireLocalSourceExecutorTx(tx, c, sourceID, runID)
 		}
+	} else if _, hasIOSProof := c.Get(iosPhotoSourceRunProofKey); hasIOSProof {
+		guard = func(tx *gorm.DB) error {
+			return s.requireIOSPhotoSourceRunProofTx(tx, c, sourceID)
+		}
 	}
 	out, accepted, err := s.requestSourceRunCancelWithGuard(
 		c.Request.Context(), userID(c), sourceID, runID, guard,
@@ -1092,7 +1105,7 @@ func (s *Server) heartbeatSourceRun(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Status != meta.SourceStatusActive {
+		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
 			return errSourcePaused
 		}
 		var run meta.SyncRun
@@ -1166,7 +1179,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		}
 		// A SyncRun owns its original Source revision, not a later target or
 		// policy revision committed while its long-running worker was active.
-		sourceOwnsRun := source.Revision == run.SourceRevision && source.Status == meta.SourceStatusActive
+		sourceOwnsRun := source.Revision == run.SourceRevision && (source.Status == meta.SourceStatusActive || source.Kind == meta.SourceKindIOSPhotos && source.Status == meta.SourceStatusPaused)
 
 		status := req.Status
 		if run.CancelRequestedAt != nil {
@@ -1288,6 +1301,15 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 			run.UnprocessedItems = &pending
 		}
 		summary.ApplyToSyncRun(&run)
+		if source.Kind == meta.SourceKindIOSPhotos {
+			// PhotoKit does not publish persistent SourceItems: these counts are
+			// backed by per-original Server Node receipt readback on the iPhone.
+			run.SyncedFileItems = summary.NewItems + summary.UnchangedItems
+			run.TransferredItems = summary.NewItems
+			run.ProcessedTransferItems = summary.NewItems
+			run.CreatedItems = summary.NewItems
+			run.SkippedItems = 0
+		}
 		run.DeletedItems = deletedItems
 		finished := now
 		run.Status = status
@@ -1310,7 +1332,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		}
 
 		sourceUpdates := map[string]any{"last_run_at": now, "updated_at": now}
-		if status == meta.SyncRunStatusCompleted && inventoryComplete {
+		if status == meta.SyncRunStatusCompleted && (inventoryComplete || source.Kind == meta.SourceKindIOSPhotos) {
 			sourceUpdates["last_success_at"] = now
 			sourceUpdates["last_error"] = ""
 			if req.Checkpoint != "" {
@@ -1323,10 +1345,12 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		}
 		// A stale SyncRun may keep its terminal history but cannot publish its
 		// old target's checkpoint or completion state into a revised Source.
-		if err := tx.Model(&meta.Source{}).
-			Where("id = ? AND revision = ? AND status = ?", source.ID, run.SourceRevision, meta.SourceStatusActive).
-			Updates(sourceUpdates).Error; err != nil {
-			return err
+		if sourceOwnsRun {
+			if err := tx.Model(&meta.Source{}).
+				Where("id = ? AND revision = ?", source.ID, run.SourceRevision).
+				Updates(sourceUpdates).Error; err != nil {
+				return err
+			}
 		}
 		out = run
 		return nil
@@ -1500,8 +1524,9 @@ func writeSourceRunError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		fail(c, http.StatusNotFound, "source or source run not found")
-	case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
-		fail(c, http.StatusForbidden, "local source executor binding was revoked or changed")
+	case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized),
+		errors.Is(err, errIOSPhotoSourceRunUnauthorized):
+		fail(c, http.StatusForbidden, "source executor device binding was revoked or changed")
 	case errors.Is(err, errLocalFolderNotReady):
 		fail(c, http.StatusConflict, "local folder has no authorized device-bound executor")
 	case errors.Is(err, errSourcePaused):
