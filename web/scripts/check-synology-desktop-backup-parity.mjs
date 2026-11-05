@@ -217,7 +217,7 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     !cgi.includes('"target_path": item.TargetPath') ||
     !nasCreate.includes('validManagedNASBackupSource') ||
     nasCreate.includes('TargetID') ||
-    !managedBootstrap.includes('TargetNodeID: 0') ||
+    managedBootstrap.includes('TargetNodeID: 0') ||
     !managedBootstrap.includes('source.TargetManaged') ||
     !managedBootstrap.includes('source.TargetPath') ||
     !cliBootstrap.includes('CreateLocalBackupSource(ctx, name)') ||
