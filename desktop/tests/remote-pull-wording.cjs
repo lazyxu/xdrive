@@ -6,7 +6,7 @@ const path = require('node:path')
 const repo = path.join(__dirname, '..', '..')
 const read = (name) => fs.readFileSync(path.join(repo, name), 'utf8')
 
-test('remote Pull UI labels have no redundant direction or mixed Source naming', () => {
+test('Source Manager connector labels do not duplicate direction or mix Source naming', () => {
   const manager = read('ui/shared/src/mui/SourceManager.tsx')
   for (const filename of [
     'ui/shared/src/mui/SourceManager.tsx',
