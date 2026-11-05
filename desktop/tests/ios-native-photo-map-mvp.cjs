@@ -32,7 +32,8 @@ test('only a fresh authorized PhotoKit 64-slot scan supplies local map pins', ()
   assert.match(scanner, /try ensureCurrent\(expected\)/)
   assert.match(map, /显示已授权图库中具有位置数据的照片和视频/)
   assert.match(map, /items\.prefix\(XDriveIOSNativePhotoMapPolicy\.pageSize\)/)
-  assert.match(map, /isNetworkAccessAllowed = false/)
+  assert.match(map, /options\.isNetworkAccessAllowed = true/)
+  assert.match(map, /targetSize: CGSize\(width: 128, height: 128\)/)
   assert.match(map, /cancelImageRequest\(request\)/)
   assert.match(map, /onChange\(of: changes\.revision\)/)
   assert.match(map, /if state == \.active \{[\s\S]*?changes\.start\(\)[\s\S]*?if mapScope == \.page \{ refresh\(at: offset\) \}/)
@@ -45,7 +46,7 @@ test('a presented cluster keeps PhotoKit change observation until dismissal', ()
   assert.match(map, /\.onDisappear \{\s*\/\/ A presented cluster sheet/)
   assert.match(map, /if selection == nil && globalSelection == nil && singleViewer == nil \{\s*changes\.stop\(\)/)
   assert.match(map, /\} else \{ suspendForSheet\(\) \}/)
-  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in\s*onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)/)
+  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?let returningCamera = globalCamera[\s\S]*?onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else \{ return \}/)
 })
 
 test('Swift catch does not shadow the map screen state error value', () => {
@@ -85,7 +86,7 @@ test('native map restores exact camera after Viewer return only for the same cur
   assert.match(map, /requestedPageOffset: max\(0, requested\)/)
   assert.match(policy, /savedPageOffset == requestedPageOffset/)
   assert.match(policy, /permissionGranted && sceneActive/)
-  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in\s*onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)/)
+  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?let returningCamera = globalCamera[\s\S]*?onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else \{ return \}/)
   assert.match(map, /changes\.stop\(\)\s*onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)/)
   assert.match(map, /private func clearReturnCamera\(\)/)
   assert.doesNotMatch(map, /UserDefaults|localStorage|URLSession|WKWebView/)
@@ -110,7 +111,7 @@ test('native GPS find-next skips only a bounded PhotoKit snapshot, not 100k asse
   // Existing PhotoKit thumbnail fetch by localIdentifier remains necessary;
   // find-next itself cannot introduce iCloud original download or upload.
   assert.match(map, /PHAsset\.fetchAssets\(/)
-  assert.doesNotMatch(map, /isNetworkAccessAllowed = true|UserDefaults|POST|UploadSession/)
+  assert.doesNotMatch(map, /UserDefaults|POST|UploadSession/)
 })
 
 
@@ -127,7 +128,7 @@ test('full-library GPS map opts in to a transient bounded PhotoKit snapshot', ()
   assert.match(map, /await worker\.reset\(\)/)
   assert.match(map, /if selection == nil && globalSelection == nil && singleViewer == nil \{\s*changes\.stop\(\)/)
   assert.match(map, /globalCells = \[\][\s\S]*?globalComplete = false/)
-  assert.doesNotMatch(map, /UserDefaults|CoreData|URLSession|UploadSession|isNetworkAccessAllowed = true/)
+  assert.doesNotMatch(map, /UserDefaults|CoreData|URLSession|UploadSession/)
 })
 
 test('global map aggregates 100k GPS with only 64 representatives and on-demand cell albums', () => {
@@ -148,7 +149,7 @@ test('global map aggregates 100k GPS with only 64 representatives and on-demand 
   assert.match(scanner, /slotOffset: page\.startOffset \+ offset/)
   assert.match(map, /changes\.revision\) \{ _ in[\s\S]*?retire\(\)[\s\S]*?dismiss\(\)/)
   assert.match(map, /if state != \.active \{[\s\S]*?retire\(\)/)
-  assert.doesNotMatch(map, /PHImageRequestOptions\(\)[\s\S]*?isNetworkAccessAllowed = true/)
+  assert.match(map, /placeholder\.isHidden = true[\s\S]*?loading\.startAnimating\(\)[\s\S]*?loading\.stopAnimating\(\)/)
 })
 
 
@@ -202,7 +203,7 @@ test('map filtered overview and 48-photo cell wall share exact short-lived viewp
   assert.match(map, /pending = next\.items\.filter \{ asset in/)
   assert.match(map, /guard generation == ticket, mapScope == \.library, phase == \.active/)
   assert.match(map, /globalCells = index\.cells/)
-  assert.doesNotMatch(map, /isNetworkAccessAllowed = true|CoreData|localStorage|GPSUpload/)
+  assert.doesNotMatch(map, /CoreData|localStorage|GPSUpload/)
 })
 
 
@@ -223,10 +224,23 @@ test('refined PhotoKit map revokes old region cluster actions during and after p
   assert.doesNotMatch(map, /native-ios-map-stale-viewport|上次细化的视窗没有可显示的 GPS 照片/)
 })
 
-test('local library permission grant starts the already authorized local GPS scan', () => {
+test('local map requires Full Photo Library access and never scans a Limited subset', () => {
   assert.match(map, /PHPhotoLibrary\.requestAuthorization\(for: \.readWrite\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
-  assert.match(map, /if mapScope == \.page \{ refresh\(at: 0\) \}[\s\S]*?else if authorization == \.authorized \|\| authorization == \.limited \{[\s\S]*?scanFullLibrary\(\)[\s\S]*?else \{ invalidate\(\) \}/)
+  assert.match(map, /if authorization == \.authorized \{[\s\S]*?scanFullLibrary\(\)[\s\S]*?else \{[\s\S]*?invalidate\(\)/)
+  assert.match(map, /else if authorization == \.limited \{[\s\S]*?本机照片地图需要完整照片访问权限[\s\S]*?openPhotoSettings\(\)/)
+  assert.match(map, /native-ios-map-open-photo-settings/)
+  assert.doesNotMatch(map, /\[\.authorized, \.limited\]\.contains|authorization == \.authorized \|\| authorization == \.limited|permission == \.authorized \|\| permission == \.limited/)
+  assert.match(map, /guard sceneActive, permission == \.authorized,/)
+  assert.match(map, /guard mapScope == \.library, phase == \.active,[\s\S]*?authorization == \.authorized else/)
+  assert.match(map, /onChange\(of: phase\)[\s\S]*?guard authorization == \.authorized else/)
+  assert.match(map, /onChange\(of: changes\.revision\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else/)
+  assert.match(map, /if mapScope == \.library \{\s*scanFullLibrary\(returningCamera: returningCamera\)/)
+  assert.match(map, /private func loadInitial\(\)[\s\S]*?guard phase == \.active,[\s\S]*?\[\.authorized\]\.contains/)
+  assert.match(map, /private func loadNext\(\)[\s\S]*?guard phase == \.active/)
   assert.match(map, /trusted\.representative\.id == cell\.representative\.id/)
+  assert.match(viewer, /private func openPhotoLocationInMap\(\) \{\s*guard PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized else/)
+  assert.match(viewer, /onOpenLocation: openNativeLocalMap == nil \|\|[\s\S]*?authorizationStatus\(for: \.readWrite\) != \.authorized[\s\S]*?\? nil : \{ openPhotoLocationInMap\(\) \}/)
+  assert.match(viewer, /本机照片地图需要完整照片访问权限/)
 })
 
 
@@ -311,15 +325,15 @@ test('iOS Places defaults to the full authorized PhotoKit map without exposing a
   assert.doesNotMatch(map, /Picker\("本机地图扫描范围"/)
   assert.match(map, /case page, library/)
   assert.match(map, /authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)\s+changes\.start\(\)/)
-  assert.match(map, /else if mapScope == \.library && !globalComplete && !busy &&\s*phase == \.active && \(authorization == \.authorized \|\| authorization == \.limited\) \{[\s\S]*?scanFullLibrary\(\)/)
+  assert.match(map, /else if mapScope == \.library && !globalComplete && !busy &&\s*phase == \.active \{[\s\S]*?scanFullLibrary\(\)/)
   assert.match(map, /if next == \.library && phase == \.active \{ scanFullLibrary\(\) \}/)
   assert.match(map, /if mapScope == \.page \{ refresh\(at: offset\) \}\s*else \{ scanFullLibrary\(\) \}/)
-  assert.match(map, /guard mapScope == \.library, phase == \.active,\s*authorization == \.authorized \|\| authorization == \.limited else \{ return \}/)
+  assert.match(map, /guard mapScope == \.library, phase == \.active,\s*authorization == \.authorized else \{/ )
   assert.match(map, /while scanned < total \{/)
   assert.match(spatial, /static let maximumCells = 64/)
   assert.match(map, /pages % 16 == 0 \|\| next\.page\.finished/)
   assert.match(map, /\.onDisappear \{[\s\S]*?if selection == nil && globalSelection == nil && singleViewer == nil \{[\s\S]*?invalidate\(\)/)
-  assert.doesNotMatch(map, /isNetworkAccessAllowed = true|URLSession\(|UploadSession|UserDefaults/)
+  assert.doesNotMatch(map, /URLSession\(|UploadSession|UserDefaults/)
 })
 
 
@@ -335,8 +349,8 @@ test('verified single-photo MapKit cover opens L3 native Viewer without location
   assert.match(map, /if mapScope == \.page \{[\s\S]*?refresh\(at: offset\)/)
   assert.match(map, /if selection == nil && globalSelection == nil && singleViewer == nil/)
   assert.match(map, /selection = nil\s*globalSelection = nil\s*singleViewer = nil/)
-  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in\s*onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)/)
-  assert.doesNotMatch(map, /localStorage|UploadSession|isNetworkAccessAllowed = true/)
+  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?let returningCamera = globalCamera[\s\S]*?onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else \{ return \}/)
+  assert.doesNotMatch(map, /localStorage|UploadSession/)
 })
 
 
@@ -405,7 +419,7 @@ test('first full-library GPS scan displays inert native MapKit while PhotoKit pr
   assert.match(library, /if !globalComplete && !busy \{\s*Button\("扫描已授权图库位置"\)/)
   assert.match(localMap, /globalCells = index\.cells[\s\S]*?globalComplete = true[\s\S]*?mapRevision = UUID\(\)/)
   assert.match(localMap, /if next\.page\.finished \{ break \}[\s\S]*?try Task\.checkCancellation\(\)[\s\S]*?scanned == total/)
-  assert.doesNotMatch(library, /globalCells = index\.cells|isNetworkAccessAllowed = true|URLSession\(|UploadSession/)
+  assert.doesNotMatch(library, /globalCells = index\.cells|URLSession\(|UploadSession/)
 })
 
 test('GPS cell album continuously advances on a deliberate bottom scroll with bounded two-window retention', () => {
@@ -432,6 +446,6 @@ test('GPS cell album continuously advances on a deliberate bottom scroll with bo
   assert.match(loadNext, /readWindow\(\s*scanner: scanner,\s*pending: pendingLocated/);
   assert.doesNotMatch(loadNext, /scanner\.start\(atOffset:/);
   assert.doesNotMatch(spatialAlbum, /上一批|继续查找下一批|第 \d+ 批/);
-  assert.doesNotMatch(spatialAlbum, /UserDefaults|URLSession|UploadSession|isNetworkAccessAllowed = true/);
+  assert.doesNotMatch(spatialAlbum, /UserDefaults|URLSession|UploadSession/);
 });
 

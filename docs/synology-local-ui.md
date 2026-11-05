@@ -51,24 +51,34 @@ Server or Owner. The CGI checks current Owner quota **after** login; the UI
 reloads after both successful and uncertain login outcomes so cached prior
 Owner content cannot be shown as newly authorized.
 
-The consolidated DSM integration PR also composes the original shared Device Backup
-page's verified NAS share inventory/preflight and verified Owner cursor-based
-cloud directory browser into an explicit **create local backup Source** form.
-The DSM browser sends only `selection_id`, a verified HMAC `owner_scope`,
-a Server Owner directory `target_id`, a Source display name, and
-`confirmed: true`. The CGI checks the DSM session, CSRF/Origin, exact
-bounded JSON, current Agent Server/Owner scope and fresh native NAS share
-identity. It reuses `localbackupipc.Client.PreflightLocalRoot`,
-`CreateLocalBackupSource` (paused), and `AuthorizeLocalRoot` (same
-restricted Agent) from `xd backup init`. No browser-selected absolute
-path, private Root/device token or general Agent API is exposed.
+The DSM integration composes the original shared Device Backup page's
+verified NAS share inventory/preflight into an explicit **create local backup
+Source** form. The DSM browser sends only `selection_id`, a verified HMAC
+`owner_scope`, a Source display name and `confirmed: true`. It does not
+select an ordinary cloud directory. The Server automatically provisions the
+exclusive destination from the authenticated creating-device identity and
+Source name. The CGI checks the DSM session, CSRF/Origin, exact bounded JSON,
+current Agent Server/Owner scope and fresh native NAS share identity. It
+reuses `localbackupipc.Client.PreflightLocalRoot`,
+`CreateLocalBackupSource` (with `target_node_id=0`, requiring a verified
+`TargetManaged` result and destination path), and `AuthorizeLocalRoot`
+through the same restricted Agent as `xd backup init`. No browser-selected
+absolute path, private Root/device token or general Agent API is exposed.
 
 The GUI acknowledges `authorized` **only** on a verified Agent
-`awaiting_executor` Root grant; no initial file, backup run or CAS receipt
-is implied. If Source creation or Root binding has an uncertain outcome,
-the GUI **does not retry** and instructs native draft/binding inspection
-before further action. Source creation is explicitly local and does not
-grant access to another Server Owner.
+`awaiting_executor` Root grant and a Server-managed destination; no initial
+file, backup run or CAS receipt is implied. If Source creation or Root binding
+has an uncertain outcome, the GUI **does not retry** and instructs native
+draft/binding inspection before further action. Source creation is explicitly
+local and does not grant access to another Server Owner.
+
+The DSM local Source list now exposes the verified cloud destination path.
+The shared Desktop rename, target, Backup/Mirror mode, ignore-rule and safe
+remove dialogs are available through narrow authenticated CGI routes. Target
+changes remain disabled for Server-managed Sources (renaming the Source also
+renames its managed directory); only legacy unmanaged targets can be manually
+retargeted. Mirror configuration does not imply that a Mirror executor or
+deletion path is enabled.
 
 **Still required before full DSM MVP:** coordinated cross-Server/Owner
 migration while existing Source/Runner work exists; actual first/incremental
@@ -253,7 +263,7 @@ The initial common-UI checkpoint under #2712 covered the shared application fram
 - `web/synology.html`, `web/src/synology.tsx`, `web/vite.synology.config.ts` and `npm run build:synology` produce an **isolated, relative-path static React/MUI bundle** verified by `web/scripts/verify-synology-ui.mjs`. `packaging/synology/ui/config` registers the DSM `com.xdrive.NASBackup` application with the same-origin absolute `/webman/3rdparty/xdrivenas/synology.html` URL (not `/3rdparty/...`, which produces a Synology 404). The only CGI executable is the unprivileged `ui/backup.cgi` shell wrapper, which validates the real package `target`, sets the Agent's matching home/config environment and delegates to the original `xd`.
 - `ui/shared/src/mui/SynologyBackupLocalPanel.tsx` composes the existing `XDriveDeviceBackupLocalCommonBatchDialog`. `ui/shared/src/synology-backup-adapter.ts` maps authenticated same-origin API calls to its existing run / inspect / history / pause / cancel actions. There is no second progress/history implementation.
 - The browser receives scoped, redacted Source/device/Owner-file/quota projections and bounded verified preview bytes. It never receives native paths, credentials, device proofs, private per-file operations or Agent discovery metadata. No remote Web/cross-device Root writes.
-- Create/bind local Root still requires the **local** same-user `xd backup` CLI. Authenticated schedule read/update uses the existing shared dialog and Agent; a DSM web request cannot select a native directory or grant a Root.
+- Create/bind local Root is available from DSM only through the verified NAS-share selection flow, which resolves the opaque share selection on the NAS and delegates to the same owning Agent. The local same-user `xd backup init/bind` CLI remains available as a recovery path. The browser cannot submit an absolute native path, device credential or Root grant. Authenticated schedule and settings changes use the shared dialogs and revision-fenced Agent methods.
 
 ## Authentication and owner boundary
 

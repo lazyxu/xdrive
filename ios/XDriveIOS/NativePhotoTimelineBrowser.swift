@@ -74,31 +74,14 @@ private actor XDriveIOSNativePhotoTimelineReader {
             NSSortDescriptor(key: "creationDate", ascending: false),
             NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
-        if mediaFilter.requiresFavorite {
-            options.predicate = NSPredicate(format: "favorite == YES")
-        } else if mediaFilter.requiresLive {
-            options.predicate = NSPredicate(
-                format: "(mediaSubtypes & %d) != 0",
-                PHAssetMediaSubtype.photoLive.rawValue
-            )
-        } else if mediaFilter.requiresScreenshot {
-            options.predicate = NSPredicate(
-                format: "(mediaSubtypes & %d) != 0",
-                PHAssetMediaSubtype.photoScreenshot.rawValue
-            )
-        }
+        mediaFilter.applyPredicates(to: options)
         let snapshot: PHFetchResult<PHAsset>
-        switch mediaFilter {
-        case .all:
-            snapshot = PHAsset.fetchAssets(with: options)
-        case .photos:
+        if mediaFilter.fetchKind == "image" {
             snapshot = PHAsset.fetchAssets(with: .image, options: options)
-        case .videos:
+        } else if mediaFilter.fetchKind == "video" {
             snapshot = PHAsset.fetchAssets(with: .video, options: options)
-        case .favorites:
+        } else {
             snapshot = PHAsset.fetchAssets(with: options)
-        case .livePhotos, .screenshots:
-            snapshot = PHAsset.fetchAssets(with: .image, options: options)
         }
         try verify(status: status, observer: observer, revision: revision)
         var index = XDriveIOSNativePhotoTimelineBuilder(calendar: .current)
@@ -120,13 +103,13 @@ private actor XDriveIOSNativePhotoTimelineReader {
                     throw XDriveIOSNativePhotoTimelineError.libraryChanged
                 }
                 index.append(capturedAt: asset.creationDate, slot: slot)
-            } else if mediaFilter != .all {
+            } else if !mediaFilter.isAll {
                 throw XDriveIOSNativePhotoTimelineError.libraryChanged
             }
         }
         try verify(status: status, observer: observer, revision: revision)
         let result = index.finish(totalSlots: snapshot.count)
-        guard mediaFilter == .all || result.indexedMediaCount == result.totalSlots else {
+        guard mediaFilter.isAll || result.indexedMediaCount == result.totalSlots else {
             throw XDriveIOSNativePhotoTimelineError.libraryChanged
         }
         return result
@@ -400,12 +383,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
                               model.indexFilter == mediaFilter {
                         List {
                             Section {
-                                Button(mediaFilter == .videos ? "所有视频（查看全部）" :
-                                       mediaFilter == .photos ? "所有照片（查看全部）" :
-                                       mediaFilter == .favorites ? "所有收藏（查看全部）" :
-                                       mediaFilter == .livePhotos ? "所有实况（查看全部）" :
-                                       mediaFilter == .screenshots ? "所有截屏（查看全部）" :
-                                       "所有媒体（查看全部）") {
+                                Button(mediaFilter.allItemsTitle) {
                                     exactDateTarget = nil
                                     jump(to: 0)
                                 }

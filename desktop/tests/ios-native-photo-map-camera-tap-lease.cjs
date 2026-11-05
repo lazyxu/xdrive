@@ -43,5 +43,9 @@ test('settled currently-scanned region restores valid covers; normal page and wo
   assert.match(map, /singleViewer = only/)
   assert.match(map, /currentPage\.items\.map\(\\\.candidate\)/)
   assert.match(cloud, /markersEnabled = false\s*refreshVisibleCovers\(mapView\)/)
-  assert.doesNotMatch(map, /isNetworkAccessAllowed = true|UploadSession|UserDefaults\.set\(/)
+  // The map may fetch only a bounded PhotoKit thumbnail rendition from
+  // iCloud; this must never become an original-resource export or upload.
+  assert.match(map, /options\.isNetworkAccessAllowed = true/)
+  assert.match(map, /targetSize: CGSize\(width: 128, height: 128\)/)
+  assert.doesNotMatch(map, /UploadSession|UserDefaults\.set\(|PHAssetResourceManager|requestData\(/)
 })

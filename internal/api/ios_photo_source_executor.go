@@ -3,10 +3,12 @@ package api
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const iosPhotoSourceRunProofKey = "xdriveIOSPhotoSourceRunProof"
@@ -54,6 +56,45 @@ func (s *Server) requireSourceRunExecutor() gin.HandlerFunc {
 				c.Abort()
 				return
 			}
+		}
+		c.Next()
+	}
+}
+
+// Background PhotoKit work has no Web bearer by design. Admit SourceRun
+// writes only through the separately revocable background grant and its exact
+// registered iPhone/Source/Target binding. This middleware injects Owner scope
+// only for the four SourceRun handlers on this dedicated route group.
+func (s *Server) requireIOSPhotoBackgroundSourceRunExecutor() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sourceID, ok := parseID(c.Param("id"))
+		if !ok {
+			fail(c, http.StatusBadRequest, "invalid source id")
+			c.Abort()
+			return
+		}
+		grant, ok := iosPhotoBackgroundGrantFromContext(c)
+		if !ok || grant.OwnerID == 0 || grant.ServerInstance != s.PWAOfflineInstanceID ||
+			!iosPhotoGrantHasManagedTarget(grant) || grant.SourceID == nil ||
+			grant.TargetNodeID == nil || *grant.SourceID != sourceID {
+			fail(c, http.StatusForbidden, "managed iPhone background grant required for this Source")
+			c.Abort()
+			return
+		}
+		// Only this dedicated grant-protected group receives Owner scope.
+		c.Set("userID", grant.OwnerID)
+		if !s.checkIOSPhotoSourceRunExecutor(c, sourceID) {
+			c.Abort()
+			return
+		}
+		raw, exists := c.Get(iosPhotoSourceRunProofKey)
+		proof, valid := raw.(iosPhotoSourceRunProof)
+		if !exists || !valid || proof.ownerID != grant.OwnerID ||
+			proof.deviceID != grant.DeviceID || proof.sourceID != *grant.SourceID ||
+			proof.targetNodeID != *grant.TargetNodeID {
+			fail(c, http.StatusForbidden, "background grant does not own this iPhone Source")
+			c.Abort()
+			return
 		}
 		c.Next()
 	}
@@ -117,6 +158,44 @@ func (s *Server) requireIOSPhotoSourceRunProofTx(tx *gorm.DB, c *gin.Context, so
 		source.TargetNodeID == nil || *source.TargetNodeID != target.ID ||
 		!source.TargetManaged {
 		return errIOSPhotoSourceRunUnauthorized
+	}
+
+	// A background task is admitted without an Owner bearer, so its grant must
+	// be re-read under the same transaction as every SourceRun write. Lock
+	// order remains Device -> Grant -> Owner/Root, matching grant rotation.
+	if grant, hasGrant := iosPhotoBackgroundGrantFromContext(c); hasGrant {
+		if grant.OwnerID != proof.ownerID || grant.DeviceID != proof.deviceID ||
+			grant.ServerInstance != s.PWAOfflineInstanceID ||
+			!iosPhotoGrantHasManagedTarget(grant) || grant.SourceID == nil ||
+			grant.TargetNodeID == nil || *grant.SourceID != proof.sourceID ||
+			*grant.TargetNodeID != proof.targetNodeID {
+			return errIOSPhotoSourceRunUnauthorized
+		}
+		var liveGrant meta.IOSPhotoBackgroundGrant
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).
+			Where("id = ? AND owner_id = ? AND device_id = ?", grant.ID, proof.ownerID, proof.deviceID).
+			Take(&liveGrant).Error; err != nil {
+			return errIOSPhotoSourceRunUnauthorized
+		}
+		var owner meta.User
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).
+			Where("id = ?", proof.ownerID).Take(&owner).Error; err != nil {
+			return errIOSPhotoSourceRunUnauthorized
+		}
+		var root meta.Node
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).
+			Where("id = ? AND owner_id = ? AND parent_id IS NULL", grant.RootNodeID, proof.ownerID).
+			Take(&root).Error; err != nil {
+			return errIOSPhotoSourceRunUnauthorized
+		}
+		if liveGrant.CredentialHash != grant.CredentialHash ||
+			liveGrant.RootNodeID != grant.RootNodeID ||
+			liveGrant.SourceID == nil || *liveGrant.SourceID != proof.sourceID ||
+			liveGrant.TargetNodeID == nil || *liveGrant.TargetNodeID != proof.targetNodeID ||
+			!iosPhotoGrantValid(liveGrant, device, owner, root,
+				s.PWAOfflineInstanceID, time.Now().UTC()) {
+			return errIOSPhotoSourceRunUnauthorized
+		}
 	}
 	return nil
 }
