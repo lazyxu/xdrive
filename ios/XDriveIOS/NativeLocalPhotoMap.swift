@@ -1339,10 +1339,22 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             if next == .library && phase == .active { scanFullLibrary() }
         }
         .onChange(of: changes.revision) { _ in
+            // PhotoKit's authorized set or media snapshot changed. Keep the
+            // current camera, discard every old cell identity, and rebuild
+            // from a fresh permission-fenced snapshot instead of requiring a
+            // manual refresh after Limited Photos selection changes.
+            let cameraToRestore = globalCamera
             onLibraryCameraChange?(nil)
             clearReturnCamera()
             invalidate()
-            error = "照片库已改变，旧地图已经清除；请刷新。"
+            authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            if phase == .active, mapScope == .library,
+               [.authorized, .limited].contains(authorization) {
+                scanFullLibrary(returningCamera: cameraToRestore)
+                onLibraryCameraChange?(cameraToRestore)
+            } else {
+                error = "照片库权限已变化；请重新授权后扫描地图。"
+            }
         }
         .onChange(of: phase) { state in
             if state == .active {
