@@ -32,7 +32,7 @@ test('one native information sheet displays only source-backed media metadata', 
   assert.match(component, /LabeledContent\("当前解码分辨率"/)
   assert.match(component, /XDriveIOSNativeViewerInfoMapPreview/)
   assert.match(component, /在地图中显示附近照片/)
-  assert.match(component, /当前会话中的图像内存|已加载/)
+  assert.match(component, /stagedSize\(liveFiles\.stillURL\)/)
   assert.doesNotMatch(component, /struct XDriveIOSNativeViewerQualityPanel/)
 })
 
