@@ -668,36 +668,32 @@ private struct XDriveIOSMapSpatialAlbum: View {
                               spacing: 4) {
                         ForEach(priorWindow) { item in photoTile(item) }
                         ForEach(items) { item in photoTile(item) }
-                        // The sentinel lives inside LazyVGrid. Its appearance
-                        // only arms the next read; a deliberate upward user
-                        // drag at the bottom performs the actual advancement.
+                        // The lazy-grid sentinel is the native infinite-scroll
+                        // trigger. It advances only as the last visible window
+                        // approaches the viewport; busy/error guards prevent repeats.
                         if hasNext {
                             Color.clear
                                 .frame(height: 24)
                                 .id("map:\(windowNumber):\(nextOffset)")
-                                .onAppear { scrollFootVisible = true }
+                                .onAppear {
+                                    scrollFootVisible = true
+                                    advanceIfVisible()
+                                }
                                 .onDisappear { scrollFootVisible = false }
                                 .accessibilityHidden(true)
                         }
                     }
                     .padding(8)
                 }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 12).onEnded { gesture in
-                        guard gesture.translation.height <= -12,
-                              abs(gesture.translation.height) >
-                                abs(gesture.translation.width),
-                              scrollFootVisible, !busy, viewer == nil, hasNext
-                        else { return }
-                        loadNext()
-                    }
-                )
                 .onChange(of: visibleWindowRevision) { _ in
                     if let anchor = autoScrollReturnID,
                        visibleItems.contains(where: { $0.id == anchor }) {
                         returnScroll.scrollTo(anchor, anchor: .bottom)
                     }
                     autoScrollReturnID = nil
+                }
+                .onChange(of: busy) { isBusy in
+                    if !isBusy { advanceIfVisible() }
                 }
             }
             .navigationTitle("此处照片")
@@ -706,8 +702,6 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     Menu {
                         Button("重新核对当前位置照片") { loadInitial() }
                             .disabled(busy || viewer != nil || phase != .active)
-                        Button("继续浏览下一批照片") { loadNext() }
-                            .disabled(busy || !hasNext || viewer != nil || phase != .active)
                     } label: {
                         Label("位置照片操作", systemImage: "ellipsis.circle")
                     }
@@ -914,6 +908,13 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 readTask = nil
             }
         }
+    }
+
+    private func advanceIfVisible() {
+        guard scrollFootVisible, !busy, viewer == nil, hasNext, error == nil else {
+            return
+        }
+        loadNext()
     }
 
     private func loadNext() {
@@ -1270,26 +1271,6 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         Button("重新扫描已授权图库位置") { scanFullLibrary() }
                             .disabled(busy)
                             .accessibilityIdentifier("native-ios-map-scan-full-library")
-                        Button("细化当前视窗的定位照片") {
-                            guard let region = globalCamera,
-                                  let view = XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
-                                    latitude: region.center.latitude,
-                                    longitude: region.center.longitude,
-                                    latitudeSpan: region.span.latitudeDelta,
-                                    longitudeSpan: region.span.longitudeDelta
-                                  ) else {
-                                error = "当前地图视窗无效，请移动或缩放地图后重试。"
-                                return
-                            }
-                            scanFullLibrary(viewport: view)
-                        }
-                        .disabled(busy || globalCamera == nil)
-                        .accessibilityIdentifier("native-ios-map-refine-viewport")
-                        if globalViewport != nil {
-                            Button("还原已授权全库概览") { scanFullLibrary() }
-                                .disabled(busy)
-                                .accessibilityIdentifier("native-ios-map-restore-global-overview")
-                        }
                     } label: {
                         Label("地图操作", systemImage: "ellipsis.circle")
                     }
