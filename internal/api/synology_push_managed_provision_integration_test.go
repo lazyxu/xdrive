@@ -105,9 +105,9 @@ func TestCreateSynologyPushRequiresRegisteredDeviceAndProvisionsCanonicalTarget(
 	rootID := uuid.NewString()
 	rootFingerprint := strings.Repeat("a", 64)
 	rootHeaders := map[string]string{
-		"X-XDrive-Device-ID":          deviceID,
-		"X-XDrive-Device-Token":       deviceToken,
-		"If-Match":                    `"1"`,
+		"X-XDrive-Device-ID":    deviceID,
+		"X-XDrive-Device-Token": deviceToken,
+		"If-Match":              `"1"`,
 	}
 	requestWithHeaders(t, router, http.MethodPut,
 		fmt.Sprintf("/api/v1/sources/%d/synology-root", created.ID), ownerToken,
