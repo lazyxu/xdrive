@@ -40,9 +40,9 @@ test('shared Source Manager reads run history without inventing PhotoKit collect
 });
 
 test('native iPhone reports begin, progress and terminal state with the exact device proof', () => {
-  assert.match(reporter, /\/api\/v1\/sources\\/\\(authority\.destination\.sourceID\)\/runs/);
-  assert.match(reporter, /\/progress/);
-  assert.match(reporter, /\/finish/);
+  assert.ok(reporter.includes('path: "/api/v1/sources/\(authority.destination.sourceID)/runs"'));
+  assert.ok(reporter.includes('runs/\(runID)/progress'));
+  assert.ok(reporter.includes('runs/\(runID)/finish'));
   assert.match(reporter, /X-XDrive-Device-ID/);
   assert.match(reporter, /X-XDrive-Device-Token/);
   assert.match(reporter, /complete_inventory": false/);
@@ -52,8 +52,8 @@ test('native iPhone reports begin, progress and terminal state with the exact de
 });
 
 test('server binds iOS SourceRun writes to the registered device and managed Source/Node', () => {
-  assert.match(router, /POST\("\\/sources\\/:id\\/runs", s\.requireSourceRunExecutor\(\)/);
-  assert.match(router, /POST\("\\/sources\\/:id\\/runs\\/:runID\\/progress", s\.requireSourceRunExecutor\(\)/);
+  assert.ok(router.includes('authed.POST("/sources/:id/runs", s.requireSourceRunExecutor(), s.beginSourceRun)'));
+  assert.ok(router.includes('authed.POST("/sources/:id/runs/:runID/progress", s.requireSourceRunExecutor(), s.progressSourceRun)'));
   assert.match(executor, /iosPhotoDestinationDeviceTx/);
   assert.match(executor, /iosPhotoDestinationBindingTx/);
   assert.match(executor, /requireIOSPhotoSourceRunProofTx/);
