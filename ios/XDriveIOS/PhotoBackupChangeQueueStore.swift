@@ -49,6 +49,15 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         let state: ItemState
     }
 
+    /// Counts only locally captured PhotoKit *changes*, not all visible media
+    /// and never verified remote coverage. No asset IDs leave this database.
+    struct Counts: Equatable {
+        var pending = 0
+        var failed = 0
+        var confirmed = 0
+        var missingLocal = 0
+    }
+
     private var database: OpaquePointer?
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -156,6 +165,32 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         return Applied(inserted: added, updated: changed, deleted: missing)
     }
 
+    /// Aggregate locally captured change states in SQLite rather than
+    /// materializing an unbounded list of private PhotoKit identifiers.
+    /// An absent baseline must be checked by the Owner-scoped caller.
+    func counts() throws -> Counts {
+        let statement = try prepare("SELECT state,COUNT(*) FROM entries GROUP BY state")
+        defer { sqlite3_finalize(statement) }
+        var totals = Counts()
+        while true {
+            let code = sqlite3_step(statement)
+            if code == SQLITE_DONE { return totals }
+            guard code == SQLITE_ROW,
+                  let raw = sqlite3_column_text(statement, 0),
+                  let state = ItemState(rawValue: String(cString: raw)) else {
+                throw Failure.database(code == SQLITE_ROW ? SQLITE_MISMATCH : code)
+            }
+            let count = Int(sqlite3_column_int64(statement, 1))
+            guard count >= 0 else { throw Failure.invalidInput }
+            switch state {
+            case .pending: totals.pending = count
+            case .failed: totals.failed = count
+            case .confirmed: totals.confirmed = count
+            case .missingLocal: totals.missingLocal = count
+            }
+        }
+    }
+
     /// Read at most 64 pending records; never create a 100k-asset Swift array.
     /// New additions outrank edited items. Later change events outrank older.
     func pending(limit: Int = 64) throws -> [Pending] {
@@ -199,12 +234,91 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         return sqlite3_changes(database) == 1
     }
 
-    /// Explicit user retry only, after receipt review if a write may have
-    /// occurred; this routine never writes cloud data or marks success.
+    /// Settle only if the PhotoKit change baseline is still the exact
+    /// checkpoint whose candidate revision was consumed. This prevents a
+    /// delayed uploader callback from confirming an asset while newer
+    /// persistent changes are waiting to be replayed.
     @discardableResult
-    func retryFailed(_ candidate: Pending) throws -> Bool {
+    func settle(_ candidate: Pending, result: Settled,
+                expectedBaselineToken: Data,
+                authorization: Int) throws -> Bool {
         try validateIdentifier(candidate.localIdentifier)
-        guard candidate.revision > 0 else { throw Failure.invalidInput }
+        try validateToken(expectedBaselineToken)
+        guard candidate.revision > 0, authorization > 0 else {
+            throw Failure.invalidInput
+        }
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { try? execute("ROLLBACK") } }
+        guard let current = try baseline(),
+              current.authorization == authorization,
+              current.token == expectedBaselineToken else {
+            throw Failure.baselineChanged
+        }
+        let statement = try prepare(
+            "UPDATE entries SET state=? WHERE asset_id=? AND revision=? AND state='pending'"
+        )
+        defer { sqlite3_finalize(statement) }
+        try bind(result.rawValue, into: statement, position: 1)
+        try bind(candidate.localIdentifier, into: statement, position: 2)
+        guard sqlite3_bind_int64(statement, 3, candidate.revision) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        try stepDone(statement)
+        let changed = sqlite3_changes(database) == 1
+        try execute("COMMIT")
+        committed = true
+        return changed
+    }
+
+    /// Bounded failed-item listing. These rows are only item-local failures
+    /// proven safe to retry by the original writer; unknown ACKs never enter
+    /// this state and remain in the separate receipt-review ledger.
+    func failed(limit: Int = 64) throws -> [Pending] {
+        guard (1...64).contains(limit) else { throw Failure.invalidInput }
+        let statement = try prepare(
+            "SELECT asset_id,revision,priority FROM entries WHERE state='failed' ORDER BY priority DESC,queue_order DESC LIMIT ?"
+        )
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_bind_int(statement, 1, Int32(limit)) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        var results: [Pending] = []
+        results.reserveCapacity(limit)
+        while true {
+            let code = sqlite3_step(statement)
+            if code == SQLITE_DONE { return results }
+            guard code == SQLITE_ROW, let raw = sqlite3_column_text(statement, 0) else {
+                throw Failure.database(code)
+            }
+            results.append(Pending(
+                localIdentifier: String(cString: raw),
+                revision: sqlite3_column_int64(statement, 1),
+                priority: Int(sqlite3_column_int(statement, 2))
+            ))
+        }
+    }
+
+    /// Explicit user retry only after a fresh PhotoKit baseline check. The
+    /// SQLite transaction prevents a stale UI action from requeueing a row
+    /// after a newer PhotoKit change has been observed.
+    @discardableResult
+    func retryFailed(_ candidate: Pending,
+                     expectedBaselineToken: Data,
+                     authorization: Int) throws -> Bool {
+        try validateIdentifier(candidate.localIdentifier)
+        try validateToken(expectedBaselineToken)
+        guard candidate.revision > 0, authorization > 0 else {
+            throw Failure.invalidInput
+        }
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { try? execute("ROLLBACK") } }
+        guard let current = try baseline(),
+              current.authorization == authorization,
+              current.token == expectedBaselineToken else {
+            throw Failure.baselineChanged
+        }
         let statement = try prepare(
             "UPDATE entries SET state='pending' WHERE asset_id=? AND revision=? AND state='failed'"
         )
@@ -214,7 +328,10 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             throw Failure.database(sqlite3_errcode(database))
         }
         try stepDone(statement)
-        return sqlite3_changes(database) == 1
+        let changed = sqlite3_changes(database) == 1
+        try execute("COMMIT")
+        committed = true
+        return changed
     }
 
     /// One indexed state read for a visible PhotoKit item, not a 100k ID map.

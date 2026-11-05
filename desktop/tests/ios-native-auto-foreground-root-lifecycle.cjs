@@ -90,8 +90,9 @@ test('backup display and delayed original progress never cross Owner changes or 
   const refresh = ctrl.slice(ctrl.indexOf('    func refresh(owner:'),
     ctrl.indexOf('    /// A receipt review', ctrl.indexOf('    func refresh(owner:')))
   const start = ctrl.slice(ctrl.indexOf('    private func start('))
-  const callback = start.slice(start.indexOf('.run(allowICloudOriginals: cloud'),
-    start.indexOf('                self.progress = result'))
+  const batchRun = start.indexOf('.run(allowICloudOriginals: cloud')
+  const callback = start.slice(batchRun,
+    start.indexOf('self.progress = result', batchRun))
   const terminal = start.slice(start.indexOf('            } catch is CancellationError {'))
   const ownerChanged = login.slice(login.indexOf('.onChange(of: model.owner)'),
     login.indexOf('    private var loginForm'))

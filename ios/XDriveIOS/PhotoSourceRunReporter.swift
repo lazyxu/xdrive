@@ -10,7 +10,7 @@ struct XDriveIOSPhotoSourceRunCounts {
     var failed = 0
 
     mutating func add(_ progress: XDriveIOSPhotoBackupProgress) {
-        scanned += progress.scanned
+        scanned += progress.scanned + progress.changeQueueProcessed
         uploaded += progress.uploaded
         verified += progress.verifiedAlready
         failed += progress.unavailable + progress.videosNotSupported +

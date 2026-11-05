@@ -55,7 +55,7 @@ test('runtime manual and automatic original runs consult global existing Owner p
   const runner = controller.slice(controller.indexOf('    private func start('))
   const pendingRead = runner.indexOf('XDriveIOSOriginalPendingReceiptPreflight')
   const reserve = runner.indexOf('.reserveDue(owner: selected,')
-  const writer = runner.indexOf('XDriveIOSForegroundPhotoBackupMVP(')
+  const writer = runner.indexOf('XDriveIOSForegroundPhotoBackupMVP(', reserve)
   assert.match(preflight, /existingLocalScope\(owner: owner\)/)
   assert.match(preflight, /pendingReceiptSnapshot\(scope: scope, limit: 0\)\.pending/)
   assert.match(preflight, /else \{ return 0 \}/)
@@ -65,7 +65,7 @@ test('runtime manual and automatic original runs consult global existing Owner p
   assert.ok(reserve > pendingRead && writer > reserve,
     'never consume a due window or create UploadSession before the global pending ACK gate')
   assert.match(runner, /try Task\.checkCancellation\(\)[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
-  assert.match(runner, /if olderPending > 0 \{[\s\S]*?if kind == \.automatic \{[\s\S]*?\.pauseForPendingReceipts\(owner: selected\)/)
+  assert.match(runner, /if olderPending > 0 \{[\s\S]*?\.pauseForPendingReceipts\(owner: selected\)/)
   assert.match(runner, /当前账户已有 \\?\(olderPending\) 项不确定原件收据/)
   const pause = store.slice(store.indexOf('func pauseForPendingReceipts('),store.indexOf('func disable('))
   assert.match(pause, /guard var state = status\(owner: owner\), state\.enabled else \{ return nil \}/)

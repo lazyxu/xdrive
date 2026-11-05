@@ -553,6 +553,12 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 Text("此开关只用于手动备份；前台自动备份的 iCloud 选项在下方独立保存。关闭时只备份本机可读取的原件，不降低原件质量。")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            XDriveIOSPhotoPriorityBackupSection(
+                login: login,
+                controller: controller,
+                destination: destination,
+                allowICloud: allowICloud
+            )
             Section("手动备份") {
                 Text("下一次手动扫描：第 \(controller.manualNextWindow + 1) 段。每段最多 256 项；达到 20 项新增上限会重复当前段，完成后才进入下一段。重启 App、切换账户或相册变化会重新从头检查。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -632,6 +638,11 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .accessibilityIdentifier("native-ios-photos-manual-coverage")
                     Text("当前段已扫描 \(result.scanned) · 新增 \(result.uploaded) · 已验证 \(result.verifiedAlready)")
                         .monospacedDigit()
+                    if result.changeQueueProcessed > 0 {
+                        Text("优先增量队列：处理 \(result.changeQueueProcessed) · 新增 \(result.changeQueueUploaded) · 已验证 \(result.changeQueueVerified) · 失败 \(result.changeQueueFailed)")
+                            .font(.footnote).monospacedDigit()
+                            .accessibilityIdentifier("native-ios-photo-change-queue-progress")
+                    }
                     Text("视频新增 \(result.videoUploaded)，Live ZIP 新增 \(result.liveBundleUploaded)，待核对 \(result.needsReview)，不可用 \(result.unavailable)")
                         .font(.footnote)
                     if result.skippedBeforeBaseline > 0 {
@@ -774,6 +785,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
 
     @ViewBuilder
     private var backupStatusSections: some View {
+            XDriveIOSPhotoQueueSummarySection(login: login, controller: controller)
             Section("当前图库与历史原件收据") {
                 Button("只读统计当前图库和既有收据") {
                     coverage.refresh(login: login)
