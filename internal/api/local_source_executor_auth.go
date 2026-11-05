@@ -178,7 +178,7 @@ func (s *Server) requireLocalSourceMutationTx(tx *gorm.DB, c *gin.Context, sourc
 			return err
 		}
 		if source.Kind == meta.SourceKindLocalFolder ||
-			(source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush && source.DeviceID != nil) {
+			(source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush) {
 			return errLocalSourceExecutorTransactionUnauthorized
 		}
 		return nil
