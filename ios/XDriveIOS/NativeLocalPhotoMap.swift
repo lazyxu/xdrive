@@ -553,6 +553,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
     typealias Policy = XDriveIOSNativeLocalMapSpatialPolicy
     let selection: XDriveIOSMapSpatialSelection
     var album: XDriveLocalPhotoAlbumSummary? = nil
+    /// Optional dismissal action for a full-screen map opened from the Gallery.
+    /// The presenting Gallery remains mounted underneath and keeps its scroll/filter state.
+    var onClose: (() -> Void)? = nil
     @Environment(\.scenePhase) private var phase
     @Environment(\.dismiss) private var dismiss
     @StateObject private var changes = XDriveIOSMapPhotoChanges()
@@ -1281,6 +1284,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         .accessibilityIdentifier("native-ios-album-map-dismiss")
                 }
             }
+            else if onClose != nil {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("完成") { onClose?() }
+                        .accessibilityIdentifier("native-ios-map-dismiss")
+                }
+            }
             if mapScope == .library && globalComplete {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -1295,7 +1304,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     .accessibilityIdentifier("native-ios-local-map-actions")
                 }
             }
-            if album == nil {
+            if album == nil && onClose == nil {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(focused ? "显示底部导航" : "专注地图") {
                         focused.toggle()
