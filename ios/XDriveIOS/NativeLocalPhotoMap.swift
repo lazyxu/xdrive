@@ -1445,7 +1445,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             // A presented cluster sheet may hide its map presenter. Keep
             // PhotoKit change observation active until the sheet is dismissed,
             // so permission/library changes revoke its transient member IDs.
-            if selection == nil && globalSelection == nil && nearbySelection == nil && singleViewer == nil {
+            if selection == nil && globalSelection == nil &&
+                pendingNearbySelection == nil && nearbySelection == nil && singleViewer == nil {
                 changes.stop()
                 clearReturnCamera()
                 focused = false
