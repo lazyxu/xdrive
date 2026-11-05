@@ -12,6 +12,7 @@ struct XDriveIOSNativeViewerMediaDetails {
     let originalBytes: Int64?
     let format: String?
     let source: String?
+    let previewStatus: String?
     let pixelWidth: Int?
     let pixelHeight: Int?
     let duration: TimeInterval?
@@ -27,6 +28,7 @@ struct XDriveIOSNativeViewerMediaDetails {
         originalBytes: Int64? = nil,
         format: String? = nil,
         source: String? = nil,
+        previewStatus: String? = nil,
         pixelWidth: Int? = nil,
         pixelHeight: Int? = nil,
         duration: TimeInterval? = nil,
@@ -41,6 +43,7 @@ struct XDriveIOSNativeViewerMediaDetails {
         self.originalBytes = originalBytes
         self.format = format
         self.source = source
+        self.previewStatus = previewStatus
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
         self.duration = duration
@@ -109,6 +112,9 @@ struct XDriveIOSNativeViewerInfoSheet: View {
                     }
                     if let source = details.source, !source.isEmpty {
                         LabeledContent("来源", value: source)
+                    }
+                    if let previewStatus = details.previewStatus, !previewStatus.isEmpty {
+                        LabeledContent("预览状态", value: previewStatus)
                     }
                     if let width = details.pixelWidth,
                        let height = details.pixelHeight, width > 0, height > 0 {
