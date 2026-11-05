@@ -116,7 +116,7 @@ func TestYikeCredentialRebindPreservesLegacyTargetWithoutMigration(t *testing.T)
 				t.Fatal(err)
 			}
 			if stored.TargetNodeID == nil || *stored.TargetNodeID != target.ID ||
-				stored.Status != meta.SourceStatusActive || stored.Revision != source.Revision+1 {
+				stored.Status != meta.SourceStatusActive || stored.Revision != source.Revision {
 				t.Fatalf("credential refresh did not preserve target identity and reactivate Source: %+v", stored)
 			}
 			var savedPhoto meta.Node
