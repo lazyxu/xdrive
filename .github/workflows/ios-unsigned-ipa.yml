@@ -111,6 +111,17 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-receipt-batch-check"
           "$RUNNER_TEMP/xdrive-ios-receipt-batch-check"
 
+      - name: Verify durable bounded PhotoKit change journal and priority queue
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoBackupChangeQueueStore.swift \
+            ios/tests/PhotoBackupChangeQueueStoreChecks.swift \
+            -lsqlite3 \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-change-queue"
+          "$RUNNER_TEMP/xdrive-ios-photo-change-queue"
+          node --test desktop/tests/ios-photo-persistent-change-queue.cjs
+
       - name: Verify persistent PhotoKit cursor generation policy
         run: |
           set -euo pipefail
