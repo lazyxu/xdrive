@@ -38,8 +38,9 @@ type LocalHistory = {
 }
 
 // Reuse the same MUI page shell and folder presentation as Desktop. The DSM
-// adapter exposes only owning Source IDs and redacted history; no fake device
-// identity, private Root, second Runner, or Electron IPC is sent to a browser.
+// adapter exposes only authenticated owning Source IDs, bounded history and
+// narrowly scoped management projections; no private local Root, Root path,
+// device credential, second Runner or Electron IPC reaches the browser.
 export function XDriveSynologyBackupLocalPanel({ client }: {
   client: XDriveSynologyBackupLocalClient
 }) {
