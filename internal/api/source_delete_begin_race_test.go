@@ -21,8 +21,8 @@ import (
 )
 
 // R-SYNC-001-A: a new authenticated durable begin and an owner delete compete
-// for the same Source. Either begin commits and delete is refused, or delete
-// commits and begin is rejected. Never leave an orphan running SyncRun.
+// for the same Source. Either begin commits and delete is refused, or DELETE
+// archives the Source and begin is rejected. Never leave an orphan running SyncRun.
 func TestConcurrentSourceDeleteAndDurableBeginCannotOrphanRun(t *testing.T) {
 	dsn := strings.TrimSpace(os.Getenv("XD_TEST_DATABASE_URL"))
 	if dsn == "" {
@@ -181,9 +181,17 @@ func TestConcurrentSourceDeleteAndDurableBeginCannotOrphanRun(t *testing.T) {
 		}
 		requestWithHeaders(t, router, http.MethodDelete, sourcePath, token, nil,
 			http.StatusConflict, map[string]string{"If-Match": "\"1\""})
-	case begin.code == http.StatusNotFound && deleted.code == http.StatusNoContent:
-		if sourceCount != 0 || runCount != 0 {
-			t.Fatalf("delete won but left Source or orphan durable SyncRun: source=%d runs=%d", sourceCount, runCount)
+	case begin.code == http.StatusConflict && deleted.code == http.StatusNoContent:
+		if sourceCount != 1 || runCount != 0 {
+			t.Fatalf("delete won but failed to archive Source or left an orphan durable SyncRun: source=%d runs=%d", sourceCount, runCount)
+		}
+		var archived meta.Source
+		if err := db.Where("id = ? AND owner_id = ?", source.ID, owner.ID).First(&archived).Error; err != nil {
+			t.Fatalf("DELETE removed configured Source instead of archiving it: %v", err)
+		}
+		if archived.Status != meta.SourceStatusArchived || archived.Revision != source.Revision+1 ||
+			archived.TargetNodeID == nil || *archived.TargetNodeID != target.ID {
+			t.Fatalf("delete won without preserving archived Source identity: %+v", archived)
 		}
 	default:
 		t.Fatalf("concurrent Source begin/delete violated exclusive outcome: begin=%d %q, delete=%d %q, source=%d runs=%d",
