@@ -865,7 +865,8 @@ struct XDriveIOSNativePhotosDashboard: View {
         gallerySource = XDriveIOSNativeGallerySource(rawValue: snapshot.gallerySource) ?? .local
         // Migrate legacy page-only map routes to the full authorized Photos map.
         localMapScope = .library
-        localMapPageOffset = snapshot.mapPageOffset ?? 0
+        // Legacy page offsets are no longer a user-visible map destination.
+        localMapPageOffset = 0
         localGalleryPageOffset = snapshot.localGalleryPageOffset ?? 0
         localAlbumDirectoryOffset = snapshot.localAlbumDirectoryOffset ?? 0
         dynamicFeature = snapshot.activeDynamic.flatMap {
