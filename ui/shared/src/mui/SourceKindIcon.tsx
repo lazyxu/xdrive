@@ -1,5 +1,4 @@
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
-import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import { XDriveFolderIcon } from './FolderIcon'
 import { Box, Tooltip } from '@mui/material'
 import { externalSourceKindLabel } from '../external-sources'
@@ -8,6 +7,7 @@ const sourceKindImages: Record<string, string> = {
   synology_photos: new URL('../../assets/source-icons/synology-photos.png', import.meta.url).href,
   synology_files: new URL('../../assets/source-icons/synology-file-station.png', import.meta.url).href,
   yike_photos: new URL('../../assets/source-icons/yike-photos.png', import.meta.url).href,
+  ios_photos: new URL('../../assets/source-icons/ios-photos.svg', import.meta.url).href,
 }
 
 export interface XDriveSourceKindIconProps {
@@ -57,8 +57,6 @@ export function XDriveSourceKindIcon({
               objectFit: 'contain',
             }}
           />
-        ) : kind === 'ios_photos' ? (
-          <PhotoLibraryRoundedIcon sx={{ fontSize: size === 'small' ? 22 : 30, color: 'text.secondary' }} />
         ) : kind === 'local_folder' ? (
           <XDriveFolderIcon sx={{ fontSize: size === 'small' ? 22 : 30 }} />
         ) : (
