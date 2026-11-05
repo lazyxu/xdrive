@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import MapKit
 import Photos
 import SwiftUI
 import UIKit
@@ -351,6 +352,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var dragPreviousSlot: Int?
     @State private var dragVisitedIDs: Set<String> = []
     @State private var showingMap = false
+    @State private var mapCamera: MKCoordinateRegion?
     @State private var mapJump: XDriveIOSNativeLocalMapJump?
     @State private var pendingViewerMapJump: XDriveIOSNativeLocalMapJump?
     @State private var showingAlbumPicker = false
@@ -654,6 +656,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                     XDriveIOSNativeLocalPhotoMapScreen(
                         mapScope: .constant(.library),
                         offset: .constant(0),
+                        cameraOnEntry: mapCamera,
+                        onLibraryCameraChange: { next in mapCamera = next },
                         onClose: {
                             showingMap = false
                             mapJump = nil
