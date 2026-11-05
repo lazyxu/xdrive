@@ -1316,7 +1316,11 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		run.CheckpointAfter = req.Checkpoint
 		runError := strings.TrimSpace(req.Error)
 		if runError == "" && status == meta.SyncRunStatusPartial {
-			runError = fmt.Sprintf("%d source items failed", summary.FailedItems)
+			if source.Kind == meta.SourceKindIOSPhotos {
+				runError = fmt.Sprintf("%d photo items need review or were unavailable", summary.FailedItems)
+			} else {
+				runError = fmt.Sprintf("%d source items failed", summary.FailedItems)
+			}
 		}
 		if runError == "" && status == meta.SyncRunStatusFailed {
 			runError = "source run " + status
