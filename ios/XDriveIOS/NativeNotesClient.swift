@@ -403,9 +403,14 @@ struct XDriveIOSNativeNotesClient {
         )
         let type = response.value(forHTTPHeaderField: "Content-Type")?
             .split(separator: ";").first.map(String.init)?.lowercased() ?? ""
+        let etag = response.value(forHTTPHeaderField: "ETag")?
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        let digest = SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }.joined()
         guard data.count > 0,
               ["image/png", "image/jpeg", "image/gif", "image/webp",
-               "image/heic"].contains(type) else {
+               "image/heic"].contains(type),
+              etag?.lowercased() == digest else {
             throw XDriveIOSNativeNotesError.invalidResponse
         }
         return data
@@ -465,15 +470,20 @@ struct XDriveIOSNativeNotesClient {
         return result.relative_path
     }
 
-    func previousMarkdown(nodeID: UInt64, versionID: UInt64) async throws -> String {
-        guard nodeID > 0, versionID > 0 else {
+    func previousMarkdown(nodeID: UInt64, version: XDriveIOSNativeNoteVersion) async throws -> String {
+        guard nodeID > 0, version.id > 0, version.bytes >= 0,
+              version.bytes <= 1_048_576,
+              version.sha256.range(of: "^[0-9a-fA-F]{64}$", options: .regularExpression) != nil else {
             throw XDriveIOSNativeNotesError.malformedIdentity
         }
         let (data, _) = try await request(
             method: "GET",
-            path: "/api/v1/files/\(nodeID)/versions/\(versionID)/content"
+            path: "/api/v1/files/\(nodeID)/versions/\(version.id)/content"
         )
-        guard data.count <= 1_048_576,
+        let digest = SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }.joined()
+        guard Int64(data.count) == version.bytes,
+              digest == version.sha256.lowercased(),
               let result = String(data: data, encoding: .utf8) else {
             throw XDriveIOSNativeNotesError.invalidResponse
         }
