@@ -22,7 +22,10 @@ test('map auth denial offers trusted Desktop reauthentication, never embedded We
   assert.match(desktop,/const requestLogout = \(\) => \{\s*requestConfirmation\(/)
   assert.match(desktop,/await run\('logout', \(\) => window\.xdriveDesktop\.agent\.logout\(\)\)/)
   assert.match(desktop,/if \(!configured\) \{[\s\S]*?<XDriveAuthShell>/)
-  assert.doesNotMatch(guest,/password|desktop-map\/issue|native_refresh_token|agent:login/)
+  // Comments document the absence of saved passwords; examine executable
+  // preload operations rather than rejecting that explanatory prose.
+  const guestOperations=guest.replace(/^\s*\/\/.*$/gm,'')
+  assert.doesNotMatch(guestOperations,/password|desktop-map\/issue|native_refresh_token|agent:login/)
 })
 
 test('Desktop account action passes only a callback through the shared Gallery',()=>{
