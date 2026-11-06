@@ -5,11 +5,11 @@ import "time"
 // ClipboardVault has only a random Owner-specific KDF salt. The Server never
 // receives or stores the passphrase, derived key, or plaintext.
 type ClipboardVault struct {
-	OwnerID   uint64    `gorm:"primaryKey"`
-	Salt      string    `gorm:"size:24;not null"`
-	CheckNonce string `gorm:"size:24"`
+	OwnerID         uint64 `gorm:"primaryKey"`
+	Salt            string `gorm:"size:24;not null"`
+	CheckNonce      string `gorm:"size:24"`
 	CheckCiphertext string `gorm:"size:256"`
-	CreatedAt time.Time
+	CreatedAt       time.Time
 }
 
 func (ClipboardVault) TableName() string { return "xd_clipboard_vaults" }
