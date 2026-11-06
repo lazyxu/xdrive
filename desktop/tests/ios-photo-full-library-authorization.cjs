@@ -59,4 +59,7 @@ test('native Photo Backup UI blocks uploads under Limited while leaving read-onl
   assert.match(readOnly, /snapshot\.limitedAuthorization/)
   assert.match(readOnly, /当前为 iOS 部分照片授权/)
   assert.match(screen, /photoAuthorization != \.authorized\)\s*\.accessibilityIdentifier\("native-ios-photo-background-enable"\)/)
+  const gallery = read('ios/XDriveIOS/NativePhotosDashboard.swift')
+  assert.match(gallery, /自动备份已暂停：需要“所有照片”权限/)
+  assert.doesNotMatch(gallery, /前台自动备份：仅处理已授权照片/)
 })
