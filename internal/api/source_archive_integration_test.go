@@ -35,7 +35,7 @@ func TestSourceArchiveRetainsHistorySharesCASAndRestoresPaused(t *testing.T) {
 	targetID := target.ID
 	requestedAt := time.Now().UTC()
 	source := meta.Source{
-		OwnerID: owner.ID, Name: "Archived Pull", Kind: "synology_files",
+		OwnerID: owner.ID, Name: "Archived Pull", Kind: "yike_photos",
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusActive,
 		Revision: 1, TargetNodeID: &targetID, RunRequestedAt: &requestedAt,
@@ -213,7 +213,7 @@ func TestSourceArchiveRejectsActiveSyncWithoutMutatingSource(t *testing.T) {
 	}
 	target := createFilePropertiesDir(t, db, owner.ID, root.ID, "active source")
 	source := meta.Source{OwnerID: owner.ID, Name: "Active",
-		Kind: "synology_files", Direction: meta.SourceDirectionPull,
+		Kind: "yike_photos", Direction: meta.SourceDirectionPull,
 		SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeScan,
 		Status: meta.SourceStatusActive, Revision: 1, TargetNodeID: &target.ID}
 	if err := db.Create(&source).Error; err != nil {
