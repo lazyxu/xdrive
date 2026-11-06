@@ -55,7 +55,7 @@ func TestLocalSourceDraftDiscardRequiresCreatorAndEmptyHistory(t *testing.T) {
 			OwnerID: owner.ID, Name: name, Kind: meta.SourceKindLocalFolder,
 			Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
 			RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused,
-			Revision: 1, TargetNodeID: &target.ID, LocalCreatorDeviceID: claim,
+			Revision: 1, TargetNodeID: &target.ID, DeviceID: claim, LocalCreatorDeviceID: claim,
 		}
 		if err := db.Create(&source).Error; err != nil {
 			t.Fatal(err)
@@ -101,6 +101,18 @@ func TestLocalSourceDraftDiscardRequiresCreatorAndEmptyHistory(t *testing.T) {
 
 	legacy := newDraft("Legacy unclaimed", nil)
 	requestWithHeaders(t, router, http.MethodDelete, urlFor(legacy), ownerJWT, nil, http.StatusForbidden, valid)
+	// A legacy alias alone is not a Device binding. Only a verified migration
+	// may populate DeviceID; this endpoint never falls back to creator metadata.
+	aliasOnly := meta.Source{
+		OwnerID: owner.ID, Name: "Alias only", Kind: meta.SourceKindLocalFolder,
+		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused,
+		Revision: 1, TargetNodeID: &target.ID, LocalCreatorDeviceID: &creator,
+	}
+	if err := db.Create(&aliasOnly).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodDelete, urlFor(aliasOnly), ownerJWT, nil, http.StatusForbidden, valid)
 
 	bound := newDraft("Bound root", &creator)
 	if err := db.Create(&meta.LocalSourceBinding{
