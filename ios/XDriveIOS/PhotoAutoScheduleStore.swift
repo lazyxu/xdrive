@@ -41,6 +41,16 @@ final class XDriveIOSPhotoAutoScheduleStore {
         // Optional for old plans; default full-library coverage. No asset IDs.
         var backupStartRuleRaw: String? = nil
         var newOnlySince: Date? = nil
+        // A lost/expired PhotoKit persistent-history token requires a full
+        // authorized-library pass before a fresh token may be installed.
+        // Optional fields preserve decoding of existing saved plans.
+        var historyRecoveryRequired: Bool? = nil
+        var historyRecoveryPassClean: Bool? = nil
+        var historyRecoveryReadyToCommit: Bool? = nil
+
+        var requiresFullLibraryReconciliation: Bool {
+            historyRecoveryRequired == true
+        }
 
         var backupStartRule: XDriveIOSPhotoAutoStartRule? {
             XDriveIOSPhotoAutoSchedulePolicy.storedStartRule(
@@ -234,13 +244,27 @@ final class XDriveIOSPhotoAutoScheduleStore {
         // trust a positional window from a different library generation or
         // Limited/Full access scope; re-scan the front instead.
         let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
-        state.windowIndex = XDrivePhotoCursorEpochPolicy.trustedWindow(
-            requested: state.windowIndex,
+        let canResumeWindow = XDrivePhotoCursorEpochPolicy.canResume(
             hasPriorToken: state.libraryChangeEpoch != nil,
-            tokenUnchanged: XDriveIOSPhotoKitLibraryEpoch.matches(state.libraryChangeEpoch, as: epoch.token),
+            tokenUnchanged: XDriveIOSPhotoKitLibraryEpoch.matches(
+                state.libraryChangeEpoch, as: epoch.token
+            ),
             previousAuthorization: state.libraryAuthorizationRaw,
             currentAuthorization: epoch.authorization
         )
+        state.windowIndex = XDrivePhotoCursorEpochPolicy.trustedWindow(
+            requested: state.windowIndex,
+            hasPriorToken: state.libraryChangeEpoch != nil,
+            tokenUnchanged: canResumeWindow,
+            previousAuthorization: state.libraryAuthorizationRaw,
+            currentAuthorization: epoch.authorization
+        )
+        if state.historyRecoveryRequired == true && !canResumeWindow {
+            // Any library/authorization generation change invalidates every
+            // previously visited positional window in the recovery pass.
+            state.historyRecoveryPassClean = true
+            state.historyRecoveryReadyToCommit = false
+        }
         state.libraryChangeEpoch = epoch.serialized
         state.libraryAuthorizationRaw = epoch.authorization
         state.nextDueAt = following
@@ -268,12 +292,56 @@ final class XDriveIOSPhotoAutoScheduleStore {
             currentAuthorization: epoch.authorization
         )
         let completedWindow = state.windowIndex
-        state.windowIndex = unchanged
+        let followingWindow = unchanged
             ? XDriveIOSPhotoAutoSchedulePolicy.nextWindow(
                 current: state.windowIndex, visibleTotal: progress.totalVisible,
                 scanned: progress.scanned, uploaded: progress.uploaded,
                 needsReview: pending
               ) : 0
+        state.windowIndex = followingWindow
+        if state.historyRecoveryRequired == true {
+            state.historyRecoveryReadyToCommit = false
+            if !unchanged {
+                // A changed PhotoKit generation invalidates the whole pass.
+                state.historyRecoveryPassClean = true
+            } else {
+                let windowComplete =
+                    XDriveIOSPhotoAutoSchedulePolicy.fullReconciliationWindowComplete(
+                        currentWindow: completedWindow,
+                        visibleTotal: progress.totalVisible,
+                        scanned: progress.scanned
+                    )
+                if windowComplete {
+                    let windowVerified =
+                        XDriveIOSPhotoAutoSchedulePolicy.fullReconciliationWindowVerified(
+                            scanned: progress.scanned,
+                            verified: progress.verifiedTotal,
+                            unsupported: progress.videosNotSupported + progress.liveNotSupported,
+                            unavailable: progress.unavailable,
+                            needsReview: progress.needsReview,
+                            skippedBeforeBaseline: progress.skippedBeforeBaseline,
+                            queued: progress.changeQueueProcessed,
+                            stoppedForReview: progress.stoppedForReview
+                        )
+                    if !windowVerified {
+                        state.historyRecoveryPassClean = false
+                    }
+                    let passClean = state.historyRecoveryPassClean ?? true
+                    if XDriveIOSPhotoAutoSchedulePolicy.shouldCommitFullReconciliation(
+                        windowComplete: true, followingWindow: followingWindow,
+                        passClean: passClean
+                    ) {
+                        // Keep the recovery flag until the SQLite baseline and
+                        // stale queue rows are atomically replaced below.
+                        state.historyRecoveryReadyToCommit = true
+                    } else if followingWindow == 0 {
+                        // At least one window failed this pass. Start another
+                        // complete pass; only a clean pass can rebase history.
+                        state.historyRecoveryPassClean = true
+                    }
+                }
+            }
+        }
         // The regular interval and all existing Owner plans remain unchanged
         // unless this specific Owner has actively opted into catch-up.
         if state.catchUpWhenBehind == true {
@@ -290,6 +358,52 @@ final class XDriveIOSPhotoAutoScheduleStore {
         state.libraryAuthorizationRaw = epoch.authorization
         state.pausedForReview = pending
         state.lastCompletedAt = now
+        try persist(state, owner: owner)
+        return state
+    }
+
+    /// Enter a durable conservative recovery mode after PhotoKit history
+    /// expires, becomes unavailable or cannot be decoded. The next run scans
+    /// every currently authorized Photo/Video/Live slot without the only-new
+    /// date filter. It never advances the token here.
+    @discardableResult
+    func requireFullLibraryReconciliation(
+        owner: XDriveNativeOwnerRoot,
+        now: Date = Date()
+    ) throws -> State? {
+        guard var state = status(owner: owner), state.enabled,
+              state.backupStartRule == .onlyNew else { return nil }
+        state.historyRecoveryRequired = true
+        state.historyRecoveryPassClean = true
+        state.historyRecoveryReadyToCommit = false
+        state.windowIndex = 0
+        state.libraryChangeEpoch = nil
+        state.libraryAuthorizationRaw = nil
+        state.nextDueAt = min(state.nextDueAt, now)
+        try persist(state, owner: owner)
+        return state
+    }
+
+    /// Clear recovery only after the queue store has committed the exact
+    /// full-scan token and removed stale queue rows in one SQLite transaction.
+    /// A stale Owner/plan/window cannot clear a newer recovery request.
+    @discardableResult
+    func finishFullLibraryReconciliation(
+        owner: XDriveNativeOwnerRoot,
+        expectedToken: Data,
+        expectedAuthorization: Int
+    ) throws -> State? {
+        guard var state = status(owner: owner), state.enabled,
+              state.historyRecoveryRequired == true,
+              state.historyRecoveryReadyToCommit == true,
+              state.windowIndex == 0,
+              state.libraryChangeEpoch == expectedToken,
+              state.libraryAuthorizationRaw == expectedAuthorization else {
+            return nil
+        }
+        state.historyRecoveryRequired = false
+        state.historyRecoveryPassClean = true
+        state.historyRecoveryReadyToCommit = false
         try persist(state, owner: owner)
         return state
     }
