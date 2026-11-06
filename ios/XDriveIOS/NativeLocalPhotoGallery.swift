@@ -19,7 +19,8 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
     /// Visible list thumbnails may fetch their resized iCloud rendition by default.
     /// This remains a bounded requestImage call, never a Viewer/original request.
     func load(_ id: String, size: CGSize,
-              contentMode: PHImageContentMode = .aspectFill) {
+              contentMode: PHImageContentMode = .aspectFill,
+              allowICloud: Bool = true) {
         cancel()
         let token = epoch
         guard [.authorized, .limited].contains(
@@ -28,7 +29,7 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
             withLocalIdentifiers: [id], options: nil
         ).firstObject else { return }
         let settings = PHImageRequestOptions()
-        settings.isNetworkAccessAllowed = true
+        settings.isNetworkAccessAllowed = allowICloud
         settings.deliveryMode = .opportunistic
         settings.resizeMode = .fast
         isLoading = true

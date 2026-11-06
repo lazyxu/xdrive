@@ -63,6 +63,7 @@ type mediaMetadataDTO struct {
 	ThumbnailMIME            string         `json:"thumbnail_mime_type,omitempty"`
 	ThumbnailWidth           int            `json:"thumbnail_width,omitempty"`
 	ThumbnailHeight          int            `json:"thumbnail_height,omitempty"`
+	ThumbnailVersion         string         `json:"thumbnail_version,omitempty"`
 }
 
 type mediaEditRecipeDTO struct {
@@ -106,6 +107,7 @@ type mediaResourceDTO struct {
 type mediaItemDTO struct {
 	Node             nodeDTO                   `json:"node"`
 	Metadata         mediaMetadataDTO          `json:"metadata"`
+	AssetID          uint64                    `json:"asset_id,omitempty"`
 	AssetKind        string                    `json:"asset_kind,omitempty"`
 	Favorite         bool                      `json:"favorite"`
 	Tags             []string                  `json:"tags,omitempty"`
@@ -183,6 +185,9 @@ func toMediaMetadataDTO(row meta.MediaMetadata) mediaMetadataDTO {
 		ThumbnailMIME:            row.ThumbnailMIMEType,
 		ThumbnailWidth:           row.ThumbnailWidth,
 		ThumbnailHeight:          row.ThumbnailHeight,
+	}
+	if out.HasThumbnail && !row.UpdatedAt.IsZero() {
+		out.ThumbnailVersion = strconv.FormatInt(row.UpdatedAt.UnixNano(), 10)
 	}
 	if strings.TrimSpace(row.EXIFJSON) != "" {
 		_ = json.Unmarshal([]byte(row.EXIFJSON), &out.EXIF)
@@ -311,6 +316,7 @@ func (s *Server) getMediaItem(c *gin.Context) {
 	c.JSON(http.StatusOK, mediaItemDTO{
 		Node:             toNodeDTO(node),
 		Metadata:         toMediaMetadataDTO(metadata),
+		AssetID:          presentation.ID,
 		AssetKind:        presentation.Kind,
 		Favorite:         presentation.Favorite,
 		Tags:             presentation.Tags,
@@ -707,6 +713,7 @@ func (s *Server) materializeMediaItems(
 				FoldMemberIDs: memberIDs,
 				Node:          toNodeDTO(node),
 				Metadata:      toMediaMetadataDTO(row),
+				AssetID:       presentation.ID,
 				AssetKind:     presentation.Kind,
 				Favorite:      presentation.Favorite,
 				Tags:          presentation.Tags,

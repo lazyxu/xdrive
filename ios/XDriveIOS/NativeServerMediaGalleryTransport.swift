@@ -18,6 +18,8 @@ struct XDriveIOSNativeMediaItem: Decodable, Identifiable {
         let media_kind: String
         let has_thumbnail: Bool
         let container_kind: String?
+        let captured_at: String?
+        let thumbnail_version: String?
     }
     struct Resource: Decodable, Equatable {
         let kind: String
@@ -29,6 +31,7 @@ struct XDriveIOSNativeMediaItem: Decodable, Identifiable {
     }
     let node: Node
     let metadata: Metadata
+    let asset_id: UInt64?
     let asset_kind: String?
     let live_photo: Bool?
     let resources: [Resource]?
@@ -73,6 +76,8 @@ extension XDriveIOSNativeMediaItem {
         metadata.media_kind == rhs.metadata.media_kind &&
         metadata.has_thumbnail == rhs.metadata.has_thumbnail &&
         metadata.container_kind == rhs.metadata.container_kind &&
+        asset_id == rhs.asset_id &&
+        metadata.thumbnail_version == rhs.metadata.thumbnail_version &&
         asset_kind == rhs.asset_kind &&
         live_photo == rhs.live_photo &&
         resources == rhs.resources
@@ -165,7 +170,7 @@ struct XDriveIOSNativeMediaGalleryReader {
     }
 
     private func read(_ url: URL, method: String = "GET",
-                      bearer: Bool = true, maximum: Int) async throws -> Data {
+                      bearer: Bool = true, maximum: Int, body: Data? = nil) async throws -> Data {
         let client = session()
         defer { client.invalidateAndCancel() }
         var request = URLRequest(url: url)
@@ -173,6 +178,10 @@ struct XDriveIOSNativeMediaGalleryReader {
         request.httpShouldHandleCookies = false
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         if bearer {
             request.setValue("Bearer " + accessToken, forHTTPHeaderField: "Authorization")
         }
@@ -304,6 +313,51 @@ struct XDriveIOSNativeMediaGalleryReader {
             throw XDriveIOSNativeMediaReadFailure.invalidPage
         }
         return albums
+    }
+
+    func exactMatches(_ probes: [XDriveIOSNativeExactPhotoProbe]) async throws -> [XDriveIOSNativeExactPhotoMatch] {
+        guard !probes.isEmpty, probes.count <= 8 else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        let url = try endpoint("/api/v1/media/exact-match")
+        let request = try JSONEncoder().encode(["probes": probes])
+        let bytes = try await read(url, method: "POST", maximum: 8192, body: request)
+        let reply = try JSONDecoder().decode(XDriveIOSNativeExactPhotoReply.self, from: bytes)
+        guard reply.matches.count == probes.count, reply.matches.allSatisfy(\.isValid) else {
+            throw XDriveIOSNativeMediaReadFailure.invalidPage
+        }
+        return reply.matches
+    }
+
+    func matchedMedia(_ match: XDriveIOSNativeExactPhotoMatch) async throws -> XDriveIOSNativeMediaItem {
+        guard match.state == .matched, let id = match.node_id else {
+            throw XDriveIOSNativeMediaReadFailure.invalidPage
+        }
+        let bytes = try await read(try endpoint("/api/v1/media/items/\(id)"), maximum: 262_144)
+        let item = try JSONDecoder().decode(XDriveIOSNativeMediaItem.self, from: bytes)
+        guard item.id == id, item.asset_id == match.asset_id, item.node.revision == match.revision,
+              item.supportsPreview else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        return item
+    }
+
+    func cachedGalleryThumbnail(_ item: XDriveIOSNativeMediaItem) async throws -> UIImage {
+        guard let version = item.metadata.thumbnail_version, version.utf8.count <= 32,
+              !version.isEmpty else { return try await thumbnail(item) }
+        let cache = XDriveIOSNativePhotoThumbnailCache.shared
+        let scope = XDriveIOSNativePhotoThumbnailCache.scope(for: owner)
+        let key = XDriveIOSNativePhotoThumbnailCache.key(
+            nodeID: item.id, revision: item.node.revision, thumbnailVersion: version
+        )
+        let ticket = await cache.writeRevision()
+        if let bytes = try? await cache.load(scope: scope, key: key),
+           let image = UIImage(data: bytes) {
+            try Task.checkCancellation()
+            return image
+        }
+        let image = try await thumbnail(item)
+        try Task.checkCancellation()
+        if let jpeg = image.jpegData(compressionQuality: 0.78) {
+            try? await cache.save(jpeg, scope: scope, key: key, expectedRevision: ticket)
+        }
+        return image
     }
 
     func thumbnail(_ item: XDriveIOSNativeMediaItem) async throws -> UIImage {

@@ -8,10 +8,11 @@ private enum XDriveIOSNativeBottomTab: String {
 }
 
 private enum XDriveIOSNativeGallerySource: String, CaseIterable, Identifiable {
-    case local, albums, cloud, originals, map
+    case unified, local, albums, cloud, originals, map
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .unified: return "全部照片"
         case .local: return "本机照片"
         case .albums: return "相册"
         case .cloud: return "云端图库"
@@ -120,7 +121,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     @Environment(\.scenePhase) private var phase
     @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
-    @State private var gallerySource: XDriveIOSNativeGallerySource = .local
+    @State private var gallerySource: XDriveIOSNativeGallerySource = .unified
     // Opening a Photos map should include every currently authorized GPS photo,
     // not just the current 64-slot Timeline page; the user can still select
     // the bounded Current Page mode explicitly.
@@ -497,7 +498,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     private var gallerySourceRow: some View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(XDriveIOSNativeGallerySource.allCases.filter { $0 != .map }) { source in
+                    ForEach(XDriveIOSNativeGallerySource.allCases.filter {
+                        $0 != .map && (($0 != .local && $0 != .cloud) || $0 == gallerySource)
+                    }) { source in
                         Button {
                             if source == .map { localMapJump = nil }
                             gallerySource = source
@@ -591,6 +594,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
             Group {
                 switch gallerySource {
+                case .unified:
+                    XDriveIOSNativeUnifiedPhotoGallery(login: login) { openDynamic(.backup) }
                 case .local:
                     XDriveIOSNativeLocalPhotoTimelineContainer(
                         savedOffset: $localGalleryPageOffset,
@@ -781,6 +786,10 @@ struct XDriveIOSNativePhotosDashboard: View {
 
     private var mine: some View {
         Form {
+            Section("本机存储") {
+                NavigationLink("缩略图缓存") { XDriveIOSNativePhotoThumbnailCacheScreen(login: login) }
+                    .disabled(login.owner == nil)
+            }
             Section("当前服务器和账户") {
                 if let owner = login.owner {
                     LabeledContent("服务器", value: owner.origin.host ?? owner.origin.absoluteString)
@@ -810,7 +819,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 Text(granted == .authorized ? "完整照片权限" :
                     granted == .limited ? "部分照片权限" : "照片权限尚未授予或不可用")
                 Button("相册与照片墙") {
-                    gallerySource = .local
+                    gallerySource = .unified
                     tab = .gallery
                 }
             }
@@ -893,7 +902,8 @@ struct XDriveIOSNativePhotosDashboard: View {
 
         // Only known, implemented routes are restored. Child PhotoKit pages
         // re-query their own permission and Owner-signed Server data.
-        gallerySource = XDriveIOSNativeGallerySource(rawValue: snapshot.gallerySource) ?? .local
+        let savedGallery = XDriveIOSNativeGallerySource(rawValue: snapshot.gallerySource)
+        gallerySource = savedGallery == .local || savedGallery == .cloud ? .unified : (savedGallery ?? .unified)
         // Migrate legacy page-only map routes to the full authorized Photos map.
         localMapScope = .library
         // Legacy page offsets are no longer a user-visible map destination.
@@ -928,7 +938,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     private func resetNavigation() {
         galleryFocusGeneration = UUID()
         galleryFocused = false
-        gallerySource = .local
+        gallerySource = .unified
         localMapScope = .library
         localMapPageOffset = 0
         localMapJump = nil

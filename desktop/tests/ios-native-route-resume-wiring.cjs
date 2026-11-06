@@ -43,7 +43,7 @@ test('native Gallery MapKit route restores only under its verified Owner-scoped 
   assert.match(galleryAllowlist, /\["local", "albums", "cloud", "originals", "map"\]\.contains\(source\)/);
   assert.match(routes, /saved\.scopeHash == scopeHash/);
   assert.match(routes, /Self\.validGallery\(saved\.gallerySource\)/);
-  assert.match(routes, /gallerySource: Self\.validGallery\(gallerySource\) \? gallerySource : "local"/);
+  assert.match(routes, /gallerySource: Self\.validGallery\(gallerySource\) \? gallerySource : "unified"/);
   assert.doesNotMatch(routes, /PhotoKit\.fetch|PHAsset|GPS|Authorization:|accessToken|refreshToken/);
 });
 
@@ -56,7 +56,7 @@ test('Owner-scoped native Gallery map migrates legacy page routes without storin
   assert.doesNotMatch(ui, /snapshot\.mapScope \?\? "library"/);
   assert.doesNotMatch(ui, /snapshot\.mapPageOffset \?\? 0/);
   assert.match(ui, /mapScope: localMapScope\.rawValue,\s*mapPageOffset: localMapPageOffset/);
-  assert.match(ui, /gallerySource = \.local\s*localMapScope = \.library\s*localMapPageOffset = 0/);
+  assert.match(ui, /gallerySource = \.unified\s*localMapScope = \.library\s*localMapPageOffset = 0/);
   assert.match(routes, /let mapScope: String\?/);
   assert.match(routes, /let mapPageOffset: Int\?/);
   // Keep the route store legacy decoder compatible, while the Dashboard

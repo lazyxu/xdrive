@@ -185,7 +185,7 @@ test('search thumbnails offer uncropped full composition without invalidating re
   assert.match(tile, /\.task\(id: "\\\(candidate\.id\)-\\\(framing\.rawValue\)"\)/)
   assert.match(tile, /\.frame\(width: geometry\.size\.width, height: geometry\.size\.height\)/)
   assert.match(tile, /\.aspectRatio\(1, contentMode: \.fit\)/)
-  assert.match(thumbnailLoader, /settings\.isNetworkAccessAllowed = true/)
+  assert.match(thumbnailLoader, /settings\.isNetworkAccessAllowed = allowICloud/)
   assert.match(thumbnailLoader, /PHImageManager\.default\(\)\.requestImage/)
   assert.doesNotMatch(thumbnailLoader, /allowICloudThumbnail/)
   assert.match(photoLoader, /contentMode: PHImageContentMode = \.aspectFill/)
