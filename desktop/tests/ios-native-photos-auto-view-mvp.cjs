@@ -439,10 +439,15 @@ test('only-new foreground consent installs its durable PhotoKit baseline and rep
   const replay = automatic.indexOf('changeQueue.replay(')
   const reserve = automatic.indexOf('.reserveDue(owner: selected,')
   assert.ok(replay >= 0 && reserve > replay, 'durable replay must precede automatic due reservation')
-  const recoveryFailure = automatic.slice(
-    automatic.indexOf('} catch XDriveIOSPhotoKitPersistentBackupQueue.Failure'),
-    automatic.indexOf('try Task.checkCancellation()', automatic.indexOf('} catch XDriveIOSPhotoKitPersistentBackupQueue.Failure'))
-  )
+  // A single-photo revision lookup now has an earlier, distinct
+  // unauthorizedOrChanged catch. Scope this assertion to the automatic
+  // PhotoKit *replay* block rather than the first catch in the entire run.
+  const replayBlock = automatic.slice(replay, reserve)
+  const catchAt = replayBlock.indexOf('} catch XDriveIOSPhotoKitPersistentBackupQueue.Failure')
+  const recoveryEnd = replayBlock.indexOf('try Task.checkCancellation()', catchAt)
+  assert.ok(catchAt >= 0 && recoveryEnd > catchAt,
+    'automatic lost-history recovery must be caught before reserveDue')
+  const recoveryFailure = replayBlock.slice(catchAt, recoveryEnd)
   assert.match(recoveryFailure, /requiresExplicitBaseline/)
   assert.match(recoveryFailure, /invalidArchivedToken/)
   assert.match(recoveryFailure, /historyUnavailable/)
