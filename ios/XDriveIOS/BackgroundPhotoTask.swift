@@ -162,6 +162,34 @@ enum XDriveIOSBackgroundPhotoTask {
                         incrementalQueue = queue
                         newOnlySince = plan.newOnlySince
                     } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                        .unauthorizedOrChanged {
+                        // A PhotoKit edit can advance the library generation
+                        // while its durable change records are being replayed.
+                        // SQLite already committed each completed record and
+                        // its token atomically. A later OS-approved pass may
+                        // safely replay the remaining changes; never reserve
+                        // a due window or fall back to a date-filtered scan.
+                        try Task.checkCancellation()
+                        guard approved.matches(owner) else {
+                            throw XDriveIOSPhotoBGVaultFailure.invalidProof
+                        }
+                        guard PHPhotoLibrary.authorizationStatus(
+                            for: .readWrite
+                        ) == .authorized else {
+                            // Authorization may have changed during the
+                            // replay: do not retry with a narrower library.
+                            guard let recovery =
+                                try XDriveIOSPhotoAutoScheduleStore.shared
+                                    .requireFullLibraryReconciliation(owner: owner),
+                                recovery.requiresFullLibraryReconciliation else {
+                                throw XDriveIOSPhotoBGVaultFailure.invalidProof
+                            }
+                            await resubmitRecoveryOnlyIfStillRequired(owner: owner)
+                            return
+                        }
+                        await resubmitOnlyIfStillApproved()
+                        return
+                    } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
                         .requiresExplicitBaseline,
                         XDriveIOSPhotoKitPersistentBackupQueue.Failure
                         .invalidArchivedToken,
