@@ -13,6 +13,9 @@ const (
 	// SourceKindIOSPhotos represents a device-authenticated, server-owned
 	// iPhone Photos backup target. Never grant it Desktop local-folder rights.
 	SourceKindIOSPhotos = "ios_photos"
+	// Android Photos must be created only by its native Device-bound endpoint.
+	// The generic Owner Source API must not claim an arbitrary Owner folder.
+	SourceKindAndroidPhotos = "android_photos"
 
 	SourceDirectionPush = "push"
 	SourceDirectionPull = "pull"
