@@ -14,6 +14,9 @@ import (
 var errLocalFolderNotReady = errors.New("local folder device binding and executor unavailable")
 
 func requireSourceReadyForActivation(tx *gorm.DB, source meta.Source) error {
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		return errSynologyPullDisabled
+	}
 	if source.Kind == meta.SourceKindLocalFolder {
 		return errLocalFolderNotReady
 	}
