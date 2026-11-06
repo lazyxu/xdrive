@@ -152,7 +152,7 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 		strings.NewReader(check), http.StatusOK)
 	var checkDTO struct {
 		CheckCiphertext string `json:"check_ciphertext"`
-		AADScope string `json:"aad_scope"`
+		AADScope        string `json:"aad_scope"`
 	}
 	if json.Unmarshal(accepted.Body.Bytes(), &checkDTO) != nil ||
 		checkDTO.CheckCiphertext != ciphertext || checkDTO.AADScope != scopeA {
@@ -185,7 +185,9 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	// origin, but their schema had no AADScope. A locally verified legacy
 	// client may pin it without changing the old encrypted canary.
 	if err := db.Model(&meta.ClipboardVault{}).Where("owner_id = ?", ownerA.ID).
-		Update("aad_scope", "").Error; err != nil { t.Fatal(err) }
+		Update("aad_scope", "").Error; err != nil {
+		t.Fatal(err)
+	}
 	legacy := request(t, router, http.MethodGet, "/api/v1/clipboard/vault", a, nil, http.StatusOK)
 	if json.Unmarshal(legacy.Body.Bytes(), &checkDTO) != nil || checkDTO.AADScope != "" {
 		t.Fatal("legacy vault state not reproduced")
@@ -285,7 +287,9 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	}
 	var retained int64
 	if err := db.Model(&meta.ClipboardItem{}).Where("owner_id = ?", ownerA.ID).
-		Count(&retained).Error; err != nil { t.Fatal(err) }
+		Count(&retained).Error; err != nil {
+		t.Fatal(err)
+	}
 	if retained != clipboardPageSize {
 		t.Fatalf("concurrent same-Owner sends retained %d rows, wanted %d", retained, clipboardPageSize)
 	}
