@@ -205,12 +205,12 @@ enum XDriveIOSBackgroundPhotoTask {
                 ).run(
                     allowICloudOriginals: false,
                     startOffset: offset,
-                    newOnlySince: newOnlySince,
-                    changeQueue: incrementalQueue,
                     maximumNewOriginals: min(
                         XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun,
                         XDriveIOSForegroundPhotoBackupMVP.maxNewOriginalsPerRun
                     ),
+                    newOnlySince: newOnlySince,
+                    changeQueue: incrementalQueue,
                     onPotentialWrite: { beganOriginalWrite = true }
                 ) { _ in
                     // No inactive WebView progress or long-lived credentials.
