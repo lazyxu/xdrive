@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/lazyxu/xdrive/internal/client"
 )
@@ -30,7 +31,9 @@ func (h *desktopIPCHandler) issueDesktopMapGuestGrant(w http.ResponseWriter, r *
 		writeDesktopIPCControllerError(w, err)
 		return
 	}
-	if len(grant.Ticket) != 64 || grant.Username == "" ||
+	if len(grant.Ticket) != 64 ||
+		strings.Trim(grant.Ticket, "0123456789abcdef") != "" ||
+		grant.Username == "" || len(grant.Username) > 128 ||
 		grant.ExpiresIn <= 0 || grant.ExpiresIn > 30 {
 		writeDesktopIPCError(w, http.StatusBadGateway, "invalid_desktop_map_grant", "invalid Server map grant")
 		return
