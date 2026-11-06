@@ -70,11 +70,51 @@ release_endpoint="$project_api/releases/snapshot"
 release_name="xDrive snapshot $short_sha"
 release_notes="Rolling development snapshot from master at $CI_COMMIT_SHA. XDRIVE_RELEASE_COMMIT=$CI_COMMIT_SHA"
 
-old_release_exists=0
+# A 5xx/403/timeout is NOT the same as an absent Release (HTTP 404).
+# Probe using glab's CI_JOB_TOKEN identity and fail closed on API trouble.
+# GET is safe to retry; POST/PUT mutations are never blindly replayed.
+read_snapshot() {
+  snapshot_exists=0
+  snapshot_json=""
+  snapshot_error="$(mktemp)"
+  for attempt in 1 2 3; do
+    if snapshot_json="$(glab api "$release_endpoint" 2>"$snapshot_error")"; then
+      if ! printf '%s\n' "$snapshot_json" | jq -e '
+        type == "object" and .tag_name == "snapshot" and (.description | type == "string")
+      ' >/dev/null; then
+        rm -f "$snapshot_error"
+        echo "[xDrive] GitLab snapshot API returned unexpected JSON; refusing promotion" >&2
+        return 1
+      fi
+      snapshot_exists=1
+      rm -f "$snapshot_error"
+      return 0
+    fi
+    if grep -Eq 'HTTP 404|404 Not Found' "$snapshot_error"; then
+      rm -f "$snapshot_error"
+      return 0
+    fi
+    if ! grep -Eq 'HTTP (429|500|502|503|504)' "$snapshot_error"; then
+      cat "$snapshot_error" >&2
+      rm -f "$snapshot_error"
+      echo "[xDrive] GitLab snapshot GET failed (not an authoritative 404)" >&2
+      return 1
+    fi
+    echo "[xDrive] GitLab snapshot GET transient HTTP failure (attempt $attempt/3)" >&2
+    if [ "$attempt" -ne 3 ]; then sleep "$attempt"; fi
+  done
+  cat "$snapshot_error" >&2
+  rm -f "$snapshot_error"
+  echo "[xDrive] GitLab snapshot GET remained unavailable; Release state unknown, no mutation attempted" >&2
+  return 1
+}
+
+echo "[xDrive] release phase=probe-existing-snapshot"
+read_snapshot || exit 1
+old_release_exists="$snapshot_exists"
 old_description=""
-if glab api "$release_endpoint" >/dev/null 2>&1; then
-  old_release_exists=1
-  old_description="$(glab_api_jq '.description' "$release_endpoint")"
+if [ "$old_release_exists" = 1 ]; then
+  old_description="$(printf '%s\n' "$snapshot_json" | jq -r '.description')"
   old_commit="$(printf '%s' "$old_description" | grep -oE 'XDRIVE_RELEASE_COMMIT=[0-9a-fA-F]{40}' | head -n1 | cut -d= -f2 || true)"
   if [ -n "$old_commit" ]; then
     # GitLab's snapshot tag may be immovable with CI_JOB_TOKEN; the verified
@@ -151,11 +191,56 @@ echo "[xDrive] all $# GitLab package files SHA-256 verified"
 # Create the initial floating Release only after complete package verification.
 # Subsequent runs keep the old Release and update each existing asset link.
 if [ "$old_release_exists" = 0 ]; then
-  glab release create snapshot --ref "$CI_COMMIT_SHA" \
-    --name "$release_name (publishing)" --notes 'Publication pending: no verified snapshot commit yet.'
-  old_description="$(glab_api_jq '.description' "$release_endpoint")"
+  echo "[xDrive] release phase=create-initial-snapshot"
+  # Use the Releases REST endpoint directly: glab release create may perform
+  # additional implicit tag/release calls that cannot be distinguished from a
+  # transient 500. The minimal, asset-free POST is read back before use.
+  read_snapshot || exit 1
+  if [ "$snapshot_exists" = 1 ]; then
+    echo "[xDrive] GitLab snapshot appeared during package staging; refusing concurrent creation" >&2
+    exit 1
+  fi
+  pending_note='Publication pending: no verified snapshot commit yet.'
+  created=0
+  create_error="$(mktemp)"
+  for attempt in 1 2 3; do
+    if glab api --method POST "$project_api/releases" \
+        -f 'tag_name=snapshot' -f "ref=$CI_COMMIT_SHA" \
+        -f "name=$release_name (publishing)" -f "description=$pending_note" \
+        >/dev/null 2>"$create_error"; then
+      : # Even HTTP success requires authoritative read-back.
+    elif ! grep -Eq 'HTTP (409|429|500|502|503|504)' "$create_error"; then
+      cat "$create_error" >&2
+      rm -f "$create_error"
+      echo "[xDrive] GitLab snapshot create rejected; no Release links changed" >&2
+      exit 1
+    else
+      echo "[xDrive] GitLab snapshot create returned an uncertain HTTP status; checking server state" >&2
+    fi
+    # A 500 after commit is possible: observe state BEFORE another POST.
+    read_snapshot || exit 1
+    if [ "$snapshot_exists" = 1 ]; then
+      note="$(printf '%s\n' "$snapshot_json" | jq -r '.description')"
+      if [ "$note" != "$pending_note" ]; then
+        echo "[xDrive] GitLab snapshot changed during bootstrap; refusing to adopt unknown Release" >&2
+        rm -f "$create_error"
+        exit 1
+      fi
+      created=1
+      break
+    fi
+    if [ "$attempt" -ne 3 ]; then sleep "$attempt"; fi
+  done
+  rm -f "$create_error"
+  if [ "$created" != 1 ]; then
+    echo "[xDrive] GitLab snapshot create not confirmed after 3 attempts; package remains reusable" >&2
+    exit 1
+  fi
+  old_description="$pending_note"
 fi
-current_description="$(glab_api_jq '.description' "$release_endpoint")"
+read_snapshot || exit 1
+[ "$snapshot_exists" = 1 ] || { echo "[xDrive] GitLab snapshot disappeared during staging" >&2; exit 1; }
+current_description="$(printf '%s\n' "$snapshot_json" | jq -r '.description')"
 if [ "$current_description" != "$old_description" ]; then
   echo "GitLab snapshot changed during staging; refusing stale promotion" >&2
   exit 1
@@ -189,6 +274,7 @@ trap on_exit 0
 # Links are paginated (20 by default). Read every page both before mutation
 # and before promotion; a failed later page must abort, never yield a partial
 # inventory that creates duplicate names or falsely reports missing assets.
+echo "[xDrive] release phase=stage-verified-links"
 existing_links="$(glab_api_jq '.[] | "\(.name)\t\(.id)\t\(.url)"' --paginate "$release_endpoint/assets/links")"
 for name in "$@"; do
   url="${CI_API_V4_URL%/}/$package_endpoint/$name"
@@ -221,15 +307,20 @@ for name in "$@"; do
   count="$(printf '%s\n' "$active_links" | awk -F '\t' -v n="$name" -v u="$expected_url" '$1==n && $3==u {c++} END {print c+0}')"
   [ "$count" = 1 ] || { echo "GitLab Release link verification failed: $name" >&2; exit 1; }
 done
-current_description="$(glab_api_jq '.description' "$release_endpoint")"
+read_snapshot || exit 1
+[ "$snapshot_exists" = 1 ] || { echo "[xDrive] snapshot disappeared while updating links" >&2; exit 1; }
+current_description="$(printf '%s\n' "$snapshot_json" | jq -r '.description')"
 if [ "$current_description" != "$old_description" ]; then
   echo "GitLab Release changed during link update; refusing promotion" >&2
   exit 1
 fi
 # Publish the verified commit marker LAST, after all Package SHA-256s and URLs.
+echo "[xDrive] release phase=commit-verified-marker"
 glab api --method PUT "$release_endpoint" -f "name=$release_name" -f "description=$release_notes" >/dev/null
 committed=1
-current_description="$(glab_api_jq '.description' "$release_endpoint")"
+read_snapshot || exit 1
+[ "$snapshot_exists" = 1 ] || { echo "[xDrive] snapshot disappeared while updating links" >&2; exit 1; }
+current_description="$(printf '%s\n' "$snapshot_json" | jq -r '.description')"
 [ "$current_description" = "$release_notes" ] || {
   echo "GitLab Release commit-marker read-back disagrees; inspect publication" >&2
   exit 1

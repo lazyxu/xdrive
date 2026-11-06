@@ -21,6 +21,8 @@ var ciReservedGitLabKeys = map[string]struct{}{
 	"workflow":  {},
 }
 
+// GitHub owns complete CI and Final Gate. GitLab keeps the source-exact
+// build/package/publish path, not a second copy of test or validation jobs.
 func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	root := repositoryRoot(t)
 	githubRaw := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
@@ -33,148 +35,89 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(gitlabRaw), &gitlab); err != nil {
 		t.Fatalf("parse GitLab CI: %v", err)
 	}
-
 	githubJobs := nestedMapKeys(t, github, "jobs")
 	gitlabJobs := gitlabJobKeys(gitlab)
-	githubProviderSpecificJobs := map[string]struct{}{
-		// PR-only change classification and policy checks run on trusted GitHub
-		// pull_request refs. They are scheduling controls, not build products
-		// or source tests that must be duplicated in GitLab's core pipeline.
-		// Keep the actual cross-platform build/test/publish jobs in parity.
-		"pr-scope":        {},
-		"policy-contract": {},
-		// Android v1 uses GitHub-hosted KVM; GitLab Android deployment is outside this slice.
-		"android-native":      {},
-		"server-rootless-e2e": {},
-		// GitHub-hosted post-build real-model acceptance; GitLab is package-first.
-		"photo-ocr-master-smoke": {},
-		"publish-master":         {},
-		"publish-stable":         {},
-		// Content-addressed offline packages are a GitHub release publisher;
-		// GitLab retains the fast Snapshot and its independent acceptance path.
-		"publish-content-addressed-offline": {},
+	requiredGitLabJobs := []string{
+		"build-client-core", "build-source-agent", "build-synology-ui",
+		"caddy-image", "desktop-linux", "desktop-windows",
+		"media-worker-image", "package-linux-client", "package-windows-client",
+		"photo-face-image", "server-image", "web",
 	}
-	var githubCoreJobs []string
-	for _, name := range githubJobs {
-		if _, providerSpecific := githubProviderSpecificJobs[name]; providerSpecific {
-			continue
-		}
-		githubCoreJobs = append(githubCoreJobs, name)
+	sort.Strings(requiredGitLabJobs)
+	if !reflect.DeepEqual(gitlabJobs, requiredGitLabJobs) {
+		t.Fatalf("GitLab must build/package only, got jobs=%v want=%v", gitlabJobs, requiredGitLabJobs)
 	}
-	// GitLab's 12 explicit master-only replicas run after the Snapshot is
-	// published; each must inherit its exact GitHub-parity test job. Keep them
-	// out of name parity only after validating their full scheduling contract.
-	masterDiagnostics := assertGitLabMasterSnapshotDiagnostics(t, gitlab)
-	// GitHub produces the isolated DSM MUI within build-client-core, whereas
-	// GitLab has a dedicated Node runner that hands its verified static assets
-	// to build-client-core as an explicit artifact dependency. Preserve the
-	// shared *core* job parity without requiring a redundant GitHub job.
-	// Only this one DSM-specific split is excluded from the name comparison;
-	// assert the matching build steps and dependency below.
-	var gitlabCoreJobs []string
-	for _, name := range gitlabJobs {
-		_, isMasterDiagnostic := masterDiagnostics[name]
-		if name != "build-synology-ui" && !isMasterDiagnostic {
-			gitlabCoreJobs = append(gitlabCoreJobs, name)
+	for _, name := range []string{
+		"single-commit", "desktop-tests", "go-linux", "go-linux-api", "go-windows",
+		"server-validation", "server-backup", "offline-release-tests",
+		"offline-security-contract", "test-backup-cli-windows",
+		"test-linux-artifact", "test-source-agent-artifact",
+		"test-windows-rollback-artifact", "test-windows-upgrade-artifact",
+		"test-windows-smoke-artifact", "final-gate", "policy-contract",
+		"publish-master", "publish-stable",
+	} {
+		if !strings.Contains("|"+strings.Join(githubJobs, "|")+"|", "|"+name+"|") {
+			t.Errorf("GitHub must retain full test/publish gate %s", name)
 		}
 	}
-	if !reflect.DeepEqual(githubCoreJobs, gitlabCoreJobs) {
-		t.Fatalf("CI core job drift: GitHub=%v GitLab=%v", githubCoreJobs, gitlabCoreJobs)
-	}
-	assertGitLabJobNeeds(t, gitlab, "build-client-core", []string{"build-synology-ui"})
-	// Offline release checks are mandatory for GitLab MR/stable Final Gate,
-	// not exceptions to the cross-provider test job contract.
-	if gate, ok := gitlab["final-gate"].(map[string]any); ok {
-		gateNeeds := collectYAMLStrings(gate["needs"])
-		for _, name := range []string{"offline-release-tests", "offline-security-contract"} {
-			if !strings.Contains(gateNeeds, name) {
-				t.Errorf("GitLab final-gate must depend on %s", name)
-			}
-		}
-	} else {
-		t.Fatal("GitLab final-gate is missing")
-	}
-	assertGitLabJobTextContains(t, gitlab, "offline-release-tests",
-		"python3 scripts/ci/test-mirror-server-to-share.py -q")
-	assertGitLabJobTextContains(t, gitlab, "offline-security-contract",
-		"python3 scripts/test-release-attestation-contract.py")
-	requireRaw(t, "GitHub DSM source-exact build in client-core", githubRaw,
-		"name: Build source-exact DSM shared-MUI bundle",
-		"npm run build:synology --prefix web",
-		"node web/scripts/verify-synology-ui.mjs",
+	requireRaw(t, "GitHub-owned full CI and Final Gate", githubRaw,
+		"merge_group:", "pr-scope:", "final-gate:",
+		"needs: [final-gate, photo-ocr-master-smoke]",
+		"Require every applicable CI gate to succeed",
 	)
-	requireRaw(t, "GitLab DSM source-exact artifact build", gitlabRaw,
+	requireRaw(t, "GitLab release-only workflow", gitlabRaw,
+		"- local: /infra/ci/images.yml",
+		"- local: /infra/ci/gitlab-release.yml",
+		"XDRIVE_GITLAB_PACKAGE_ONLY: \"1\"",
+		"on_new_commit: interruptible",
+		"pre_get_sources_script:",
+		"desktop-runtime-linux-amd64.tar.gz",
+		"desktop/release/win-unpacked/",
+		"release/core/",
+		"release/xdrive-linux-amd64.deb",
+		"release/xDriveSetup-amd64.exe",
 		"build-synology-ui:",
 		"npm run build:synology --prefix web",
 		"node web/scripts/verify-synology-ui.mjs",
-		"web/dist-synology/",
-		"- job: build-synology-ui",
 	)
-
-	expectedPlatforms := map[string]string{
-		"single-commit":                  "linux",
-		"desktop-tests":                  "linux",
-		"desktop-linux":                  "linux",
-		"desktop-windows":                "windows",
-		"build-client-core":              "linux",
-		"go-linux":                       "linux",
-		"go-linux-api":                   "linux",
-		"go-windows":                     "windows",
-		"test-backup-cli-windows":        "windows",
-		"build-source-agent":             "linux",
-		"package-linux-client":           "linux",
-		"package-windows-client":         "windows",
-		"server-validation":              "linux",
-		"offline-release-tests":          "linux",
-		"offline-security-contract":      "linux",
-		"server-image":                   "linux",
-		"photo-face-image":               "linux",
-		"media-worker-image":             "linux",
-		"caddy-image":                    "linux",
-		"server-backup":                  "linux",
-		"test-linux-artifact":            "linux",
-		"test-source-agent-artifact":     "linux",
-		"test-windows-rollback-artifact": "windows",
-		"test-windows-upgrade-artifact":  "windows",
-		"test-windows-smoke-artifact":    "windows",
-		"web":                            "linux",
-		"final-gate":                     "linux",
+	for _, forbidden := range []string{
+		"merge_request_event", "single-commit:", "desktop-tests:",
+		"go-linux:", "go-linux-api:", "go-windows:", "server-backup:",
+		"server-validation:", "offline-release-tests:", "offline-security-contract:",
+		"test-backup-cli-windows:", "test-linux-artifact:", "test-source-agent-artifact:",
+		"test-windows-rollback-artifact:", "test-windows-upgrade-artifact:",
+		"test-windows-smoke-artifact:", "final-gate:", "post-release-test:",
+		"master-desktop-tests:", "npm run lint",
+	} {
+		if strings.Contains(gitlabRaw, forbidden) {
+			t.Errorf("GitLab release-only pipeline still contains test input %q", forbidden)
+		}
 	}
-	assertRunnerParity(t, github, gitlab, expectedPlatforms)
-	assertGitLabJobImages(t, gitlab, map[string]string{
-		"single-commit":                  "$XDRIVE_CI_GO_IMAGE",
-		"desktop-tests":                  "$XDRIVE_CI_NODE_IMAGE",
-		"desktop-linux":                  "$XDRIVE_CI_NODE_IMAGE",
-		"desktop-windows":                "",
-		"build-client-core":              "$XDRIVE_CI_GO_IMAGE",
-		"build-synology-ui":              "$XDRIVE_CI_NODE_IMAGE",
-		"go-linux":                       "$XDRIVE_CI_GO_IMAGE",
-		"go-linux-api":                   "$XDRIVE_CI_GO_IMAGE",
-		"go-windows":                     "",
-		"test-backup-cli-windows":        "",
-		"build-source-agent":             "$XDRIVE_CI_GO_IMAGE",
-		"package-linux-client":           "$XDRIVE_CI_GO_IMAGE",
-		"package-windows-client":         "",
-		"server-validation":              "$XDRIVE_CI_GO_IMAGE",
-		"offline-release-tests":          "python:3.12-bookworm",
-		"offline-security-contract":      "python:3.12-bookworm",
-		"server-image":                   "$XDRIVE_CI_GO_IMAGE",
-		"photo-face-image":               "$XDRIVE_CI_GO_IMAGE",
-		"media-worker-image":             "$XDRIVE_CI_GO_IMAGE",
-		"caddy-image":                    "$XDRIVE_CI_GO_IMAGE",
-		"server-backup":                  "$XDRIVE_CI_GO_IMAGE",
-		"test-linux-artifact":            "$XDRIVE_CI_GO_IMAGE",
-		"test-source-agent-artifact":     "$XDRIVE_CI_GO_IMAGE",
-		"test-windows-rollback-artifact": "",
-		"test-windows-upgrade-artifact":  "",
-		"test-windows-smoke-artifact":    "",
-		"web":                            "$XDRIVE_CI_NODE_IMAGE",
-		"final-gate":                     "$XDRIVE_CI_GO_IMAGE",
+	assertGitLabJobNeeds(t, gitlab, "build-client-core", []string{"build-synology-ui"})
+	assertGitLabJobNeeds(t, gitlab, "package-linux-client", []string{"desktop-linux", "build-client-core"})
+	assertGitLabJobNeeds(t, gitlab, "package-windows-client", []string{"desktop-windows", "build-client-core"})
+	assertGitLabJobNeeds(t, gitlab, "caddy-image", []string{"web"})
+	// Keep platform/toolchain and artifact parity for all shared build jobs.
+	assertRunnerParity(t, github, gitlab, map[string]string{
+		"desktop-linux": "linux", "desktop-windows": "windows",
+		"build-client-core": "linux", "build-source-agent": "linux",
+		"package-linux-client": "linux", "package-windows-client": "windows",
+		"server-image": "linux", "photo-face-image": "linux",
+		"media-worker-image": "linux", "caddy-image": "linux", "web": "linux",
 	})
-	assertGitLabCache(t, gitlab, "go-windows",
-		"xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH",
-		[]string{".cache/go-mod/cache/download/"},
-	)
+	assertGitLabJobImages(t, gitlab, map[string]string{
+		"desktop-linux": "$XDRIVE_CI_NODE_IMAGE", "desktop-windows": "",
+		"build-client-core":      "$XDRIVE_CI_GO_IMAGE",
+		"build-source-agent":     "$XDRIVE_CI_GO_IMAGE",
+		"build-synology-ui":      "$XDRIVE_CI_NODE_IMAGE",
+		"package-linux-client":   "$XDRIVE_CI_GO_IMAGE",
+		"package-windows-client": "",
+		"server-image":           "$XDRIVE_CI_GO_IMAGE",
+		"photo-face-image":       "$XDRIVE_CI_GO_IMAGE",
+		"media-worker-image":     "$XDRIVE_CI_GO_IMAGE",
+		"caddy-image":            "$XDRIVE_CI_GO_IMAGE",
+		"web":                    "$XDRIVE_CI_NODE_IMAGE",
+	})
 	assertGitLabCache(t, gitlab, "desktop-windows",
 		"xdrive-desktop-windows-$CI_RUNNER_EXECUTABLE_ARCH",
 		[]string{".cache/npm/", ".cache/electron/", ".cache/electron-builder/"},
@@ -191,7 +134,17 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		t.Errorf("GitLab Photo Face job timeout=%v, want 2h", got)
 	}
 	requireRaw(t, "GitLab model prefetch soft timeout", gitlabRaw,
-		"timeout --signal=TERM --kill-after=30s 105m bash scripts/ci/test-photo-face-image.sh dist/photo-face-image",
+		"timeout --signal=TERM --kill-after=30s 105m env XDRIVE_GITLAB_PACKAGE_ONLY=1 bash scripts/ci/test-photo-face-image.sh dist/photo-face-image",
+	)
+	requireRaw(t, "GitHub DSM source-exact build in client-core", githubRaw,
+		"name: Build source-exact DSM shared-MUI bundle",
+		"npm run build:synology --prefix web",
+		"node web/scripts/verify-synology-ui.mjs",
+	)
+	requireRaw(t, "GitLab DSM source-exact artifact build", gitlabRaw,
+		"build-synology-ui:", "npm run build:synology --prefix web",
+		"node web/scripts/verify-synology-ui.mjs",
+		"web/dist-synology/", "- job: build-synology-ui",
 	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
@@ -348,9 +301,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		if !strings.Contains(githubText, command) {
 			t.Errorf("GitHub CI is missing parity command %q", command)
 		}
-		if !strings.Contains(gitlabContractText, command) {
-			t.Errorf("GitLab CI contract is missing parity command %q", command)
-		}
 	}
 
 	// Race-instrumented API tests use sequential Go processes to release per-test
@@ -376,9 +326,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		if !strings.Contains(githubRaw, token) {
 			t.Errorf("GitHub CI is missing toolchain token %q", token)
 		}
-		if !strings.Contains(gitlabRaw+"\n"+gitlabContractText, token) {
-			t.Errorf("GitLab CI contract is missing toolchain token %q", token)
-		}
 	}
 
 	requireRaw(t, "GitHub CI", githubRaw,
@@ -400,91 +347,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	if strings.Contains(githubRaw, "\n  cancel-in-progress: true\n") {
 		t.Fatal("global cancellation could starve the master snapshot publisher")
 	}
-	requireRaw(t, "GitLab CI", gitlabRaw,
-		"- local: /infra/ci/images.yml",
-		"- local: /infra/ci/gitlab-release.yml",
-		"- gate",
-		"- build",
-		"- package",
-		"- test",
-		"- verify",
-		"- release-build",
-		"- promote",
-		"- release",
-		"$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_TAG =~ /^v.+/",
-		".electron-linux-cache:",
-		"XDG_CACHE_HOME: \"$CI_PROJECT_DIR/.cache\"",
-		"ELECTRON_BUILDER_CACHE: \"$CI_PROJECT_DIR/.cache/electron-builder\"",
-		"extends: .electron-linux-cache",
-		"desktop-tests:",
-		"desktop-linux:",
-		"desktop-windows:",
-		"build-client-core:",
-		"build-source-agent:",
-		"package-linux-client:",
-		"package-windows-client:",
-		"test-linux-artifact:",
-		"test-source-agent-artifact:",
-		"test-windows-rollback-artifact:",
-		"test-windows-upgrade-artifact:",
-		"test-windows-smoke-artifact:",
-		"final-gate:",
-		"bash scripts/ci/gitlab-desktop-windows.sh",
-		"bash scripts/ci/gitlab-go-linux.sh",
-		"bash scripts/ci/gitlab-package-linux-client.sh",
-		"bash scripts/ci/gitlab-source-agent.sh",
-		"bash scripts/ci/gitlab-server-validation.sh",
-		"bash scripts/ci/gitlab-server-image.sh",
-		"bash scripts/ci/gitlab-caddy-image.sh",
-		"bash scripts/ci/gitlab-server-backup.sh",
-		"bash scripts/ci/gitlab-go-windows.sh",
-		"bash scripts/ci/gitlab-package-windows-client.sh",
-		"bash scripts/ci/gitlab-test-linux-artifact.sh",
-		"bash scripts/ci/gitlab-test-source-agent-artifact.sh",
-		"bash scripts/ci/gitlab-test-windows-artifact.sh",
-		"bash scripts/ci/gitlab-test-windows-smoke-artifact.sh",
-		"desktop-runtime-linux-amd64.tar.gz",
-		"desktop/release/win-unpacked/",
-		"release/core/",
-		"release/xdrive-linux-amd64.deb",
-		"release/source-agent/xdrive-source-agent-linux-amd64",
-		"release/source-agent/xdrive-source-agent-linux-arm64",
-		"release/xDriveSetup-amd64.exe",
-		"xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH",
-		"xdrive-desktop-windows-$CI_RUNNER_EXECUTABLE_ARCH",
-		".cache/go-mod/cache/download/",
-		"$CI_PIPELINE_SOURCE == \"merge_request_event\"",
-		"$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"master\"",
-		"$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_BRANCH == \"master\"",
-		"$CI_PIPELINE_SOURCE == \"web\"",
-		"on_new_commit: interruptible",
-		"interruptible: true",
-		"pre_get_sources_script:",
-		"command -v powershell.exe",
-		"GOFLAGS= go clean -modcache",
-		"Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop",
-		"GOMODCACHE: \"$CI_PROJECT_DIR/.cache/go-mod\"",
-		"NPM_CONFIG_CACHE: \"$CI_PROJECT_DIR/.cache/npm\"",
-		"postgresql-client",
-		"alias: postgres",
-		"XD_TEST_DATABASE_URL: \"postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable\"",
-		".cache/ci-tools/",
-		"when: always",
-	)
-	assertGitLabJobTextContains(t, gitlab, "server-validation",
-		"bash scripts/ci/install-linux-fetch-tools.sh",
-	)
-	for _, jobName := range []string{"go-linux", "go-linux-api"} {
-		assertGitLabJobTextContains(t, gitlab, jobName,
-			"bash scripts/ci/install-linux-fetch-tools.sh postgresql-client",
-		)
-	}
 	assertGitLabJobTextContains(t, gitlab, "build-client-core",
 		"bash scripts/ci/install-linux-fetch-tools.sh python3",
 	)
-	for _, jobName := range []string{"test-backup-cli-windows", "test-windows-rollback-artifact", "test-windows-upgrade-artifact", "test-windows-smoke-artifact"} {
-		assertGitLabJobTextContains(t, gitlab, jobName, "xdrive-test-windows-client-artifact")
-	}
 	fetchTools := readFile(t, filepath.Join(root, "scripts", "ci", "install-linux-fetch-tools.sh"))
 	requireRaw(t, "GitLab signed APT fetch tools", fetchTools,
 		"ca-certificates curl jq xz-utils",
@@ -492,23 +357,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"Acquire::Retries=2", "Acquire::https::Timeout=20", "APT::Update::Error-Mode=any",
 		"mirror failed; retrying original signed APT repositories",
 	)
-	apiJob := gitlab["go-linux-api"].(map[string]any)
-	if apiJob["parallel"] != 5 {
-		t.Fatal("GitLab API Race must run all five isolated PostgreSQL jobs")
-	}
-	requireRaw(t, "GitLab isolated API shards", gitlabGoLinux,
-		"${CI_NODE_INDEX:?missing parallel job index}",
-		"${CI_NODE_TOTAL:?missing parallel job total}",
-		"test-results/api-race.log", "exit \"$status\"",
-	)
-	assertGitLabJobTextContains(t, gitlab, "server-validation",
-		"bash scripts/ci/install-docker-cli.sh",
-	)
-	for _, jobName := range []string{"server-image", "caddy-image", "server-backup"} {
-		assertGitLabJobTextContains(t, gitlab, jobName,
-			"bash scripts/ci/install-docker-cli.sh --docker-only",
-		)
-	}
 	requireRaw(t, "GitLab CI wrappers", gitlabContractText,
 		"bash scripts/ci/check-go-min-version.sh 1.25",
 		"pg_isready",
@@ -554,19 +402,11 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"publish-stable:",
 		"needs: [final-gate, photo-ocr-master-smoke]",
 	)
-	requireRaw(t, "GitLab build-once contract", gitlabRaw,
-		"package-linux-client:",
-		"package-windows-client:",
-		"build-source-agent:",
-		"test-linux-artifact:",
-		"test-windows-rollback-artifact:",
-		"test-windows-upgrade-artifact:",
-		"test-windows-smoke-artifact:",
-		"test-source-agent-artifact:",
-		"final-gate:",
-		"stage: verify",
+	requireRaw(t, "GitLab build-once release packaging", gitlabRaw,
+		"package-linux-client:", "package-windows-client:",
+		"build-source-agent:", "server-image:", "caddy-image:",
+		"photo-face-image:", "media-worker-image:",
 	)
-
 	requireRaw(t, "GitHub installer packaging contract", githubRaw,
 		"package-linux-client:",
 		"package-windows-client:",
@@ -574,15 +414,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"name: xdrive-windows-amd64",
 	)
 	assertYAMLStringList(t, gitlab, "stages", []string{
-		"gate",
-		"build",
-		"package",
-		"test",
-		"verify",
-		"release-build",
-		"promote",
-		"release",
-		"post-release-test",
+		"build", "package", "release-build", "promote", "release",
 	})
 	requireRaw(t, "GitLab installer packaging contract", gitlabRaw,
 		"package-linux-client:",
@@ -590,45 +422,27 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"stage: package",
 	)
 	for _, job := range []string{
-		"desktop-tests",
-		"go-linux",
-		"go-linux-api",
-		"go-windows",
-		"server-validation",
-		"server-image",
-		"web",
+		"desktop-tests", "go-linux", "go-linux-api", "go-windows",
+		"server-validation", "server-image", "web",
 	} {
-		// GitHub PR jobs depend on a trusted-base scope classifier, but the
-		// same source/build jobs on GitLab have no such scheduler. Verify the
-		// actual original dependencies rather than treating this safe gate as drift.
 		assertGitHubJobNeeds(t, github, job, []string{"pr-scope"})
-		assertGitLabJobNeeds(t, gitlab, job, nil)
 	}
+	assertGitLabJobNeeds(t, gitlab, "server-image", nil)
+	assertGitLabJobNeeds(t, gitlab, "web", nil)
 	assertGitHubJobNeeds(t, github, "caddy-image", []string{"pr-scope", "web"})
 	assertGitLabJobNeeds(t, gitlab, "caddy-image", []string{"web"})
 	assertGitHubJobNeeds(t, github, "server-backup", []string{"server-image"})
 	// Post-build real OCR model smoke must consume the exact Photo Host image,
 	// not compile or fetch a second unpinned model.
 	assertGitHubJobNeeds(t, github, "photo-ocr-master-smoke", []string{"photo-face-image"})
-	assertGitLabJobNeeds(t, gitlab, "server-backup", []string{"server-image"})
 	assertGitHubJobNeeds(t, github, "server-rootless-e2e", []string{"server-image", "caddy-image"})
 	assertGitHubJobNeeds(t, github, "test-linux-artifact", []string{"package-linux-client"})
 	assertGitHubJobNeeds(t, github, "test-source-agent-artifact", []string{"build-source-agent"})
 	assertGitHubJobNeeds(t, github, "test-windows-rollback-artifact", []string{"package-windows-client"})
 	assertGitHubJobNeeds(t, github, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
 	assertGitHubJobNeeds(t, github, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
-	assertGitLabJobNeeds(t, gitlab, "test-linux-artifact", []string{"package-linux-client"})
-	assertGitLabJobNeeds(t, gitlab, "test-source-agent-artifact", []string{"build-source-agent"})
-	assertGitLabJobNeeds(t, gitlab, "test-windows-rollback-artifact", []string{"package-windows-client"})
-	assertGitLabJobNeeds(t, gitlab, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
-	assertGitLabJobNeeds(t, gitlab, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
 	assertGitHubJobNeeds(t, github, "publish-master", []string{"final-gate", "build-client-core", "build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
 	assertGitHubJobNeeds(t, github, "publish-stable", []string{"final-gate", "photo-ocr-master-smoke"})
-	assertGitLabSharedResourceGroup(t, gitlab, []string{
-		"test-windows-rollback-artifact",
-		"test-windows-upgrade-artifact",
-		"test-windows-smoke-artifact",
-	})
 	requireRaw(t, "GitHub split critical test contract", githubRaw,
 		"go-linux-api:",
 		"Race test internal/api",
@@ -637,15 +451,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"-Scenario rollback",
 		"-Scenario upgrade",
 	)
-	requireRaw(t, "GitLab split critical test contract", gitlabRaw,
-		"go-linux-api:",
-		"XDRIVE_GO_TEST_SCOPE: \"api\"",
-		"XDRIVE_GO_TEST_SCOPE: \"rest\"",
-		"test-windows-rollback-artifact:",
-		"XDRIVE_WINDOWS_TRANSACTION_SCENARIO: \"rollback\"",
-		"XDRIVE_WINDOWS_TRANSACTION_SCENARIO: \"upgrade\"",
-	)
-
 	requireRaw(t, "GitHub parallel server validation contract", githubRaw,
 		"server-validation:",
 		"server-image:",
@@ -653,11 +458,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"caddy-image:",
 		"server-backup:",
 	)
-	requireRaw(t, "GitLab parallel server validation contract", gitlabRaw,
-		"server-validation:",
-		"server-image:",
-		"caddy-image:",
-		"server-backup:",
+	requireRaw(t, "GitLab parallel server image packaging", gitlabRaw,
+		"server-image:", "caddy-image:", "photo-face-image:", "media-worker-image:",
 	)
 
 	requireRaw(t, "GitHub exact server image artifact contract", githubRaw,
@@ -686,7 +488,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/ci/test-server-rootless-e2e.sh dist/server-image dist/caddy-image",
 		"- server-rootless-e2e",
 	)
-	requireRaw(t, "GitLab exact server image artifact contract", gitlabRaw,
+	requireRaw(t, "GitLab exact server image artifact contract",
+		gitlabRaw+"\n"+readFile(t, filepath.Join(root, "infra", "ci", "gitlab-release.yml")),
 		"dist/server-image/",
 		"web/dist/",
 		"dist/caddy-image/",
@@ -1211,9 +1014,9 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	assertGitLabJobTextContains(t, gitlabReleaseYAML, "publish-release",
 		"sh scripts/ci/install-gitlab-release-tools.sh",
 	)
-	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"build-source-agent", "final-gate"})
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"build-source-agent"})
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"build-source-agent"})
-	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"final-gate", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"server-image", "caddy-image", "photo-face-image", "media-worker-image"})
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"server-image", "caddy-image", "photo-face-image", "media-worker-image"})
 
 	requireRaw(t, "GitLab release pipeline", gitlabRelease,
@@ -1241,6 +1044,9 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		}
 	}
 
+	requireRaw(t, "GitLab stable release approval source", gitlabReleaseScripts,
+		"go run scripts/ci/verify-github-stable-final-gate.go",
+	)
 	requireRaw(t, "GitLab release scripts", gitlabReleaseScripts,
 		"XDRIVE_RELEASE_TAG=\"snapshot\"",
 		"0.0.0-snapshot.$short_sha",

@@ -28,6 +28,18 @@ func TestInternalReadinessProbeKeyStrict(t *testing.T) {
 		want bool
 	}{
 		{probe, 0, true}, {probe, 1, true},
+		{".xdrive-ready-2918308328", 0, true},
+		{".xdrive-ready-2918308328", 1, true},
+		{".xdrive-ready-0", 0, true},
+		{".xdrive-ready-4294967295", 0, true},
+		{".xdrive-ready-2918308328", 2, false},
+		{".xdrive-ready-02918308328", 0, false},
+		{".xdrive-ready-4294967296", 0, false},
+		{".xdrive-ready-2918308328.tmp", 0, false},
+		{storage.CASLifecycleLockDir + "/.xdrive-ready-2918308328", 0, false},
+		{storage.LocalPushStageLifecycleLockDir + "/.xdrive-ready-2918308328", 0, false},
+		{".xdrive-blobs/.xdrive-ready-2918308328", 0, false},
+		{"nested/.xdrive-ready-2918308328", 0, false},
 		{storage.CASLifecycleLockDir + "/" + probe, 0, true},
 		{storage.LocalPushStageLifecycleLockDir + "/" + probe, 1, true},
 		{storage.CASLifecycleLockDir + "/" + probe, 2, false},
@@ -132,6 +144,11 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".xdrive-ready-0123456789abcdef0123456789abcdef"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// A crashed storage-root writability probe uses Go's decimal CreateTemp
+	// suffix, not the 32-hex lifecycle-directory form.
+	if err := os.WriteFile(filepath.Join(root, ".xdrive-ready-2918308328"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, storage.TempLifecycleLockFile), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +189,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		t.Fatal("inconsistent storage reported OK")
 	}
 	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 ||
-		report.IgnoredTemps != 5 || report.IgnoredDerived != 0 ||
+		report.IgnoredTemps != 6 || report.IgnoredDerived != 0 ||
 		report.SkippedDerivedDirs != 1 || report.IgnoredCASLocks != 256 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}

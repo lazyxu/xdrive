@@ -5,6 +5,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 source scripts/ci/gitlab-release-version.sh
 
+# A stable v* Docker image tag is public as soon as docker push completes.
+# Run the exact GitHub tag Final Gate preflight BEFORE the first upload, not
+# only before promoting the mutable latest tag. Fail closed on pending CI.
+if [[ -n "${CI_COMMIT_TAG:-}" ]]; then
+  go run scripts/ci/verify-github-stable-final-gate.go
+fi
+
 : "${CI_REGISTRY:?GitLab Container Registry must be enabled}"
 : "${CI_REGISTRY_IMAGE:?CI_REGISTRY_IMAGE is required}"
 : "${CI_REGISTRY_USER:?CI_REGISTRY_USER is required}"
