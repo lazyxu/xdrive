@@ -29,7 +29,7 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
     /// PhotoKit baseline and each exact row revision before changing state.
     func retryFailed(login: XDriveIOSNativeOwnerLoginModel) {
         guard !busy, let selected = login.owner else { return }
-        guard [.authorized, .limited].contains(
+        guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "恢复失败项需要当前账户的照片访问权限。"
@@ -89,7 +89,7 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
     func refresh(login: XDriveIOSNativeOwnerLoginModel) {
         cancel()
         guard let selected = login.owner else { return }
-        guard [.authorized, .limited].contains(
+        guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "读取照片变更队列需要当前账户的照片访问权限。"

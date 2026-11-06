@@ -268,7 +268,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                               XDriveIOSNativePhotoOwnerScope.matches(proof.owner, selected),
                               XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion,
                               phase == .active,
-                              [.authorized, .limited].contains(
+                              [.authorized].contains(
                                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
                               ) else {
                             throw XDriveIOSNativeSessionError.staleSession
@@ -563,8 +563,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 Text("下一次手动扫描：第 \(controller.manualNextWindow + 1) 段。每段最多 256 项；达到 20 项新增上限会重复当前段，完成后才进入下一段。重启 App、切换账户或相册变化会重新从头检查。")
                     .font(.caption).foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-photos-manual-window")
-                if photoAuthorization != .authorized && photoAuthorization != .limited {
-                    Text("照片访问权限不可用，无法启动手动原件备份。请先在本机相册授权，或在 iOS 设置中恢复照片访问。")
+                if photoAuthorization != .authorized {
+                    Text("需要 iOS“所有照片”访问权限才能备份原件。仅部分照片授权暂不支持，请在系统设置中授予完整访问。")
                         .font(.footnote).foregroundStyle(.orange)
                         .accessibilityIdentifier("native-ios-photos-manual-permission-blocked")
                 }
@@ -576,7 +576,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
                     .disabled(controller.busy || background.busy || login.owner == nil ||
                               !destination.confirmedForCurrentName ||
-                              (photoAuthorization != .authorized && photoAuthorization != .limited))
+                              (photoAuthorization != .authorized))
                     .accessibilityIdentifier("native-ios-photos-manual-start")
                 Button("集中备份授权照片（仅前台连续）") {
                     consentError = nil
@@ -586,7 +586,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
                 .disabled(controller.busy || background.busy || login.owner == nil ||
                           !destination.confirmedForCurrentName ||
-                          (photoAuthorization != .authorized && photoAuthorization != .limited))
+                          (photoAuthorization != .authorized))
                 .accessibilityIdentifier("native-ios-photos-focused-start")
                 Text("适用于首次大量备份：连续处理已授权的分段，每段最多新增 20 个原件。停止或重启后可从已完整扫描的分段继续，但必须重新验证当前账户、相册版本、授权范围和 iCloud 设置；不确定收据仍须先核对。扫描进度不代表全部云端原件已备份。")
                 Text("本页面运行集中备份时暂时阻止自动锁屏，约 10 秒后进入深色专注显示；轻点恢复，离开页面、进入后台或任务停止即恢复原有锁屏设置。")
@@ -694,7 +694,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .font(.footnote).foregroundStyle(.orange)
                         .accessibilityIdentifier("native-ios-photos-auto-permission-blocked")
                 } else if photoAuthorization == .limited {
-                    Label("当前仅授权部分照片：自动增量只处理系统允许读取的项目，不代表整机照片已备份。",
+                    Label("当前仅授权部分照片：备份需要“所有照片”权限，自动备份已暂停。请在 iOS 设置中授予完整访问。",
                           systemImage: "info.circle")
                         .font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("native-ios-photos-auto-permission-limited")
@@ -745,7 +745,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                                                   XDriveIOSNativePhotoOwnerScope.matches(proof.owner, selected),
                                                   XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion,
                                                   phase == .active,
-                                                  [.authorized, .limited].contains(
+                                                  [.authorized].contains(
                                                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
                                                   ) else {
                                                 throw XDriveIOSNativeSessionError.staleSession
@@ -762,7 +762,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                                     }
                                 }
                                 .disabled(controller.busy || background.busy || login.owner == nil ||
-                                          (photoAuthorization != .authorized && photoAuthorization != .limited))
+                                          (photoAuthorization != .authorized))
                                 .accessibilityIdentifier("native-ios-photo-history-recovery-confirm")
                             } else {
                                 Text("请先完成上传收据核对，再确认全库恢复。")
@@ -784,7 +784,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     } else if photoAuthorization != .authorized && photoAuthorization != .limited {
                         Label("备份计划已保存：照片权限不可用", systemImage: "exclamationmark.triangle")
                     } else if photoAuthorization == .limited {
-                        Label("前台自动备份：仅处理已授权照片", systemImage: "info.circle")
+                        Label("自动备份已暂停：需要“所有照片”权限", systemImage: "exclamationmark.triangle")
                     } else {
                         Label("前台自动备份已开启", systemImage: "checkmark.circle")
                     }
@@ -833,7 +833,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     }
                         .disabled(controller.busy || background.busy || login.owner == nil ||
                                   !destination.confirmedForCurrentName ||
-                                  (photoAuthorization != .authorized && photoAuthorization != .limited))
+                                  (photoAuthorization != .authorized))
                         .accessibilityIdentifier("native-ios-photos-auto-enable")
                 }
                 Text("自动计划采用启用时确认的备份范围、检查间隔、iCloud 设置和首次积压策略；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
@@ -1006,7 +1006,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                             showBackgroundEnableConsent = backgroundEnableOwner != nil
                         }
                         .disabled(background.busy || background.checking || controller.busy ||
-                                  login.owner == nil || !destination.confirmedForCurrentName)
+                                  login.owner == nil || !destination.confirmedForCurrentName ||
+                                  photoAuthorization != .authorized)
                         .accessibilityIdentifier("native-ios-photo-background-enable")
                     }
                 } else if !background.checking {
