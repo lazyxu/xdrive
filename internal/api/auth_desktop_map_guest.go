@@ -37,7 +37,7 @@ func desktopMapGuestField(body []byte, key string) (string, bool) {
 		return "", false
 	}
 	value, err := baiduHandoffJSONString(fields[key])
-	return value, err == nil
+	return value, err == nil && value != ""
 }
 
 func desktopMapGuestTicketHash(ticket string) (string, bool) {
