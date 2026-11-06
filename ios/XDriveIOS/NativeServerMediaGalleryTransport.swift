@@ -351,9 +351,9 @@ struct XDriveIOSNativeMediaGalleryReader {
         return item
     }
 
-    func cachedGalleryThumbnail(_ item: XDriveIOSNativeMediaItem) async throws -> UIImage {
+    func thumbnail(_ item: XDriveIOSNativeMediaItem) async throws -> UIImage {
         guard let version = item.metadata.thumbnail_version, version.utf8.count <= 32,
-              !version.isEmpty else { return try await thumbnail(item) }
+              !version.isEmpty else { return try await downloadThumbnail(item) }
         let cache = XDriveIOSNativePhotoThumbnailCache.shared
         let scope = XDriveIOSNativePhotoThumbnailCache.scope(for: owner)
         let key = XDriveIOSNativePhotoThumbnailCache.key(
@@ -365,7 +365,7 @@ struct XDriveIOSNativeMediaGalleryReader {
             try Task.checkCancellation()
             return image
         }
-        let image = try await thumbnail(item)
+        let image = try await downloadThumbnail(item)
         try Task.checkCancellation()
         if let jpeg = image.jpegData(compressionQuality: 0.78) {
             try? await cache.save(jpeg, scope: scope, key: key, expectedRevision: ticket)
@@ -373,7 +373,7 @@ struct XDriveIOSNativeMediaGalleryReader {
         return image
     }
 
-    func thumbnail(_ item: XDriveIOSNativeMediaItem) async throws -> UIImage {
+    private func downloadThumbnail(_ item: XDriveIOSNativeMediaItem) async throws -> UIImage {
         guard item.id > 0, item.node.revision > 0, item.supportsPreview else {
             throw XDriveIOSNativeMediaReadFailure.unsupported
         }

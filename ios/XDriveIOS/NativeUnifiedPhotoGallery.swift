@@ -111,14 +111,15 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             NavigationStack {
                 switch selection {
                 case .local(let asset, let row, let owner):
+                    let viewedRow = visibleRows.first { $0.id == viewerReturnAnchor } ?? row
                     XDriveIOSNativeLocalPhotoDetail(
                         candidate: asset, loadedItems: visibleRows.compactMap(\.local),
                         onViewed: { viewerReturnAnchor = "local:" + $0.id }
                     )
                         .toolbar {
-                            if row.match != nil {
+                            if viewedRow.match != nil {
                                 ToolbarItem(placement: .navigationBarTrailing) {
-                                    Button { openCloud(row, expected: owner) } label: {
+                                    Button { openCloud(viewedRow, expected: owner) } label: {
                                         Label("云端副本", systemImage: "icloud")
                                     }
                                 }
@@ -245,7 +246,10 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             if let local = row.local { selected = .local(local, row, owner) }
             else { openCloud(row, expected: owner) }
         } label: {
-            XDriveIOSUnifiedPhotoTile(row: row, login: login, presentingOwner: owner)
+            XDriveIOSUnifiedPhotoTile(
+                row: row, login: login, presentingOwner: owner,
+                displayActive: selected == nil && phase == .active
+            )
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(row.isLive ? "实况照片" : row.isVideo ? "视频" : "照片")，\(row.presence.title)")
@@ -345,6 +349,7 @@ private struct XDriveIOSUnifiedPhotoTile: View {
     let row: XDriveIOSNativeUnifiedPhoto
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let presentingOwner: XDriveNativeOwnerRoot
+    let displayActive: Bool
     @StateObject private var local = XDriveIOSPhotoImageLoader()
     @State private var remote: UIImage?
     @State private var fallback: Task<Void, Never>?
@@ -369,8 +374,11 @@ private struct XDriveIOSUnifiedPhotoTile: View {
                     .background(.black.opacity(0.72), in: Capsule())
                     .padding(4)
             }
-            .task(id: "\(row.id):\(row.match?.node_id ?? 0):\(row.cloud?.node.revision ?? 0):\(row.cloud?.metadata.thumbnail_version ?? "")") {
+            .task(id: "\(displayActive):\(row.id):\(row.match?.node_id ?? 0):\(row.cloud?.node.revision ?? 0):\(row.cloud?.metadata.thumbnail_version ?? "")") {
+                local.cancel()
+                fallback?.cancel()
                 remote = nil
+                guard displayActive else { return }
                 if let asset = row.local {
                     local.load(asset.id, size: CGSize(width: 280, height: 280), allowICloud: false)
                 } else if let item = row.cloud {
@@ -378,7 +386,7 @@ private struct XDriveIOSUnifiedPhotoTile: View {
                 }
             }
             .onChange(of: local.isLoading) { loading in
-                if !loading, local.image == nil, row.cloud != nil || row.match != nil {
+                if displayActive, !loading, local.image == nil, row.cloud != nil || row.match != nil {
                     fallback?.cancel()
                     fallback = Task { await loadCloud(row.cloud, match: row.match) }
                 }
@@ -392,16 +400,16 @@ private struct XDriveIOSUnifiedPhotoTile: View {
 
     private func loadCloud(_ item: XDriveIOSNativeMediaItem?, match: XDriveIOSNativeExactPhotoMatch?) async {
         let owner = presentingOwner
-        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+        guard displayActive, XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
               let auth = try? await login.verifiedAuthorization(),
               XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner),
               XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
         let reader = XDriveIOSNativeMediaGalleryReader(owner: owner, accessToken: auth.accessToken)
         let image = try? await XDriveIOSNativeFilesThumbnailSlots.shared.perform {
-            if let item { return try await reader.cachedGalleryThumbnail(item) }
+            if let item { return try await reader.thumbnail(item) }
             guard let match else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
             let matched = try await reader.matchedMedia(match)
-            return try await reader.cachedGalleryThumbnail(matched)
+            return try await reader.thumbnail(matched)
         }
         guard let image,
               !Task.isCancelled,

@@ -20,6 +20,8 @@ test('unified gallery defaults to all sources and keeps unknown evidence distinc
   assert.match(timeline, /cloudAnchorRevision[\s\S]*?slice\.items\.first\?\.node\.revision == cursor\.cloudAnchorRevision/)
   assert.match(ui, /if let local = row\.local \{ selected = \.local\(local, row, owner\) \}/)
   assert.match(ui, /local\.load\(asset\.id,[^\n]*allowICloud: false\)/)
+  assert.match(ui, /displayActive: selected == nil && phase == \.active/)
+  assert.match(ui, /local\.cancel\(\)[\s\S]*?fallback\?\.cancel\(\)[\s\S]*?guard displayActive else \{ return \}/)
   assert.doesNotMatch(ui, /UploadSession|WKWebView|requestImageDataAndOrientation/)
 })
 
@@ -65,7 +67,7 @@ test('thumbnail cache isolates Owner and revision and fences in-flight writes af
   assert.match(cache, /\.cachesDirectory/)
   assert.match(cache, /maximumBytes = 512 \* 1_048_576/)
   assert.match(cache, /\.completeFileProtection/)
-  assert.match(transport, /metadata\.thumbnail_version[\s\S]*?cachedGalleryThumbnail|cachedGalleryThumbnail[\s\S]*?metadata\.thumbnail_version/)
+  assert.match(transport, /func thumbnail[\s\S]*?metadata\.thumbnail_version[\s\S]*?cache\.load[\s\S]*?downloadThumbnail/)
   assert.match(ui, /let expected = clearOwner/)
   assert.match(ui, /guard XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\) else \{ return \}/)
   assert.doesNotMatch(ui + cache, /URLSession|PHPhotoLibrary\.shared\(\)\.performChanges|deleteOriginal/)
