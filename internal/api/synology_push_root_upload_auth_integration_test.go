@@ -19,7 +19,8 @@ import (
 
 func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 	db, server, owner, _, _ := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{}); err != nil {
+	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{},
+		&meta.FileVersion{}, &meta.UploadSession{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
