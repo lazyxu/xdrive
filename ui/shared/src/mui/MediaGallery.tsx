@@ -701,7 +701,8 @@ export interface XDriveMediaGalleryPageProps {
   onShowInFolder?: (location: NodeLocation) => void
   onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
   desktopEmbeddedPlacesURL?: string
-  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope)=>Promise<boolean>
+  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope)=>Promise<string|false>
+  onOpenDesktopReauthentication?: () => void
   onOpenBaiduMapDiagnostics?: () => void
   onError?: (error: unknown) => void
 }
@@ -732,6 +733,7 @@ export function XDriveMediaGalleryPage({
   onOpenSecureDesktopMap,
   desktopEmbeddedPlacesURL,
   onPrepareDesktopPlaces,
+  onOpenDesktopReauthentication,
   onOpenBaiduMapDiagnostics,
   onError,
 }: XDriveMediaGalleryPageProps) {
@@ -4419,6 +4421,7 @@ export function XDriveMediaGalleryPage({
         onOpenSecureDesktopMap={onOpenSecureDesktopMap}
         desktopEmbeddedPlacesURL={desktopEmbeddedPlacesURL}
         onPrepareDesktopPlaces={onPrepareDesktopPlaces}
+        onOpenDesktopReauthentication={onOpenDesktopReauthentication}
         onOpenBaiduMapDiagnostics={onOpenBaiduMapDiagnostics}
         baiduNativeCameraSnapshot={baiduNativeCameraSnapshot}
         onBaiduNativeCameraChange={rememberBaiduNativeCamera}
@@ -4944,7 +4947,8 @@ export interface XDriveMediaGalleryProps {
   onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
   desktopEmbeddedPlacesURL?: string
-  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope)=>Promise<boolean>
+  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope)=>Promise<string|false>
+  onOpenDesktopReauthentication?: () => void
   onOpenBaiduMapDiagnostics?: () => void
   focusPlaceID?: string
   getBaiduMapConsent?: MediaGalleryDataSource['getBaiduMapConsent']
@@ -6665,6 +6669,7 @@ export function XDriveMediaGallery({
   onOpenSecureDesktopMap,
   desktopEmbeddedPlacesURL,
   onPrepareDesktopPlaces,
+  onOpenDesktopReauthentication,
   onOpenBaiduMapDiagnostics,
   baiduNativeCameraSnapshot,
   onBaiduNativeCameraChange,
@@ -9026,6 +9031,7 @@ export function XDriveMediaGallery({
             onOpenSecureDesktopMap={onOpenSecureDesktopMap}
         desktopEmbeddedPlacesURL={desktopEmbeddedPlacesURL}
         onPrepareDesktopPlaces={onPrepareDesktopPlaces}
+        onOpenDesktopReauthentication={onOpenDesktopReauthentication}
             diagnosticScope={preferenceScope}
             onOpenDiagnostics={onOpenBaiduMapDiagnostics}
             initialNativeCamera={baiduNativeCameraSnapshot}

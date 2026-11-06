@@ -23,7 +23,11 @@ test('Desktop previews use only the exact previously trusted IP:port CA, not glo
   assert.match(helper, /Readable\.toWeb\(incoming\)/)
   assert.match(helper, /requestHeaders\.has\('range'\)/)
   assert.match(helper, /init\.signal\?\.addEventListener\('abort', abort/)
-  for (const file of [main, helper]) assert.doesNotMatch(file, /setCertificateVerifyProc|ignoreCertificateErrors/)
+  // Only the isolated Places guest may install a narrowly validated CA
+  // callback. The preview transport remains strict CA+IP-SAN Node TLS.
+  assert.doesNotMatch(helper, /setCertificateVerifyProc|ignoreCertificateErrors/)
+  assert.doesNotMatch(main, /ignoreCertificateErrors|ignore-certificate-errors/)
+  assert.match(main, /placesSession\.setCertificateVerifyProc/)
 })
 
 test('Pinned media transport rejects foreign origins and credential-bearing headers before network', {

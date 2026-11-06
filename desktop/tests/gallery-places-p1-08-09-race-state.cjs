@@ -194,6 +194,9 @@ test('P1-08: actual Desktop Main handler refuses stale concurrent Owner/scope pr
   const env={
     ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},
     mainWindow,agentState:state,
+    // Trusted Main hands this one-use partition to the Renderer only after
+    // verifying Owner+scope; a boolean cannot authorize guest Cookie reuse.
+    desktopPlacesWebPartition:'xdrive-places-web-22222222-2222-4222-8222-222222222222',
     xDriveResolveSecureBaiduMapTarget:server=>server&&
       {origin:new URL(server).origin},
     xDriveParseDesktopBaiduMapScope:scope=>scope?.albumKey!==undefined ? scope:null,
@@ -216,6 +219,8 @@ test('P1-08: actual Desktop Main handler refuses stale concurrent Owner/scope pr
   requests[1](true)
   const current=await second
   assert.equal(current.ok,true)
+  assert.equal(current.data.partition,env.desktopPlacesWebPartition)
+  assert.equal(runtime.pending().partition,env.desktopPlacesWebPartition)
   assert.equal(runtime.pending().scope.albumKey,'manual:new')
   requests[0](true)
   const stale=await first

@@ -31,7 +31,7 @@ export function XDriveMediaGalleryPlacesMap({
   places, totalCount, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
   listBaiduNativeCells, listBaiduNativeCellItems, loadPhotoCoverThumbnail, loadPhotoCoverPreviewURL, savePhotoCoverVideoPoster, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
   getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeCellPhoto, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
-  onOpenSecureDesktopMap, desktopEmbeddedPlacesURL, onPrepareDesktopPlaces, diagnosticScope, onOpenDiagnostics, onCloseMap,
+  onOpenSecureDesktopMap, desktopEmbeddedPlacesURL, onPrepareDesktopPlaces, onOpenDesktopReauthentication, diagnosticScope, onOpenDiagnostics, onCloseMap,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
   mapPhotoScope = xDriveEmptyBaiduMapPhotoScope, onMapPhotoScopeChange, onMapModeHandoff, mapAlbums = [],
 }: {
@@ -63,7 +63,9 @@ export function XDriveMediaGalleryPlacesMap({
   /** Trusted Agent HTTPS Web Gallery in an Electron guest with no Desktop API. */
   desktopEmbeddedPlacesURL?: string
   /** Prepare this exact Owner/filter scope in Desktop Main before guest attach. */
-  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope) => Promise<boolean>
+  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope) => Promise<string|false>
+  /** Trusted Desktop confirmation -> Agent logout -> native login; never a Web guest challenge. */
+  onOpenDesktopReauthentication?: () => void
   diagnosticScope?: string
   onOpenDiagnostics?: () => void
   /** Close Places using existing authenticated Gallery navigation (Parent only). */
@@ -86,7 +88,7 @@ export function XDriveMediaGalleryPlacesMap({
   const [desktopEmbedError,setDesktopEmbedError] = useState('')
   const embeddedWebviewRef=useRef<HTMLDivElement|null>(null)
   const [embedGuestReady,setEmbedGuestReady] = useState<{key:string}|null>(null)
-  const [embedPrepared,setEmbedPrepared] = useState<{key:string;state:'ready'|'denied'}|null>(null)
+  const [embedPrepared,setEmbedPrepared] = useState<{key:string;state:'ready'|'denied';partition?:string}|null>(null)
   const embedPrepareRef=useRef(onPrepareDesktopPlaces)
   embedPrepareRef.current=onPrepareDesktopPlaces
   const embedScopeRef=useRef(mapPhotoScope)
@@ -200,7 +202,10 @@ export function XDriveMediaGalleryPlacesMap({
       ()=>{timedOut=true;controller.abort()},
     ).then(ok=>{
       if(!active || controller.signal.aborted)return
-      if(ok)setEmbedPrepared({key:embedIdentity,state:'ready'})
+      // Main alone mints the verified Owner-bound ephemeral Cookie partition.
+      // Never promote a boolean or a late handoff to guest authority.
+      if(typeof ok==='string' && /^xdrive-places-web-[0-9a-f-]{36}$/.test(ok))
+        setEmbedPrepared({key:embedIdentity,state:'ready',partition:ok})
       else deny('当前账户的 HTTPS Web 地图会话验证失败。')
     }).catch(()=>{
       if(active)deny(timedOut
@@ -552,13 +557,24 @@ export function XDriveMediaGalleryPlacesMap({
         <Stack direction="row" alignItems="center" justifyContent="space-between"
           sx={{px:1.25,py:0.75,gap:1,flexWrap:'wrap'}}>
           <Typography variant="subtitle2">地点 · Web 共用地图</Typography>
-          {denied ? <Button variant="outlined" size="small"
-            onClick={() => setEmbedRetry(n=>n+1)}>重试 Web 地图</Button> : null}
+          {denied ? <Stack direction="row" spacing={1} sx={{flexWrap:'wrap',gap:1}}>
+            <Button variant="outlined" size="small" onClick={() => setEmbedRetry(n=>n+1)}>
+              重试 Web 地图
+            </Button>
+            {onOpenDesktopReauthentication ? (
+              <Button variant="outlined" size="small" color="warning"
+                data-xdrive-desktop-places-native-reauth
+                onClick={onOpenDesktopReauthentication}>
+                从 Desktop 重新登录
+              </Button>
+            ) : null}
+          </Stack> : null}
         </Stack>
         {ready ? (
           <Box sx={{position:'relative'}}>
-            <Box component={'webview' as 'div'} ref={embeddedWebviewRef}
-              {...{partition:'xdrive-places-web',src:desktopEmbeddedPlacesURL}}
+            <Box component={'webview' as 'div'} key={embedPrepared?.partition}
+              ref={embeddedWebviewRef}
+              {...{partition:embedPrepared?.partition,src:desktopEmbeddedPlacesURL}}
               data-xdrive-desktop-embedded-places
               sx={{display:'flex',width:'100%',
                 height:'max(640px, calc(100dvh - 170px))',
@@ -582,6 +598,12 @@ export function XDriveMediaGalleryPlacesMap({
                 ? desktopEmbedError || '当前账户无法验证地图会话。'
                 : '正在按当前 Desktop 账户验证 HTTPS Web 地图会话…'}
             </Typography>
+            {denied && onOpenDesktopReauthentication ? (
+              <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1}}>
+                如果当前 Server 或 Agent 不支持地图会话自动恢复，可通过可信 Desktop
+                账户登录流程重新验证。确认退出后会中断正在进行的同步或传输；不会在地图中输入密码。
+              </Typography>
+            ) : null}
           </Box>
         )}
         <Typography variant="caption" color="text.secondary"
