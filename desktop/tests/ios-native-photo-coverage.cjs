@@ -15,7 +15,9 @@ test('read-only Owner receipt summary never declares entire iPhone library backe
   assert.match(policy, /case "creating", "uploading", "finalizing", "needsReconciliation":/)
   assert.match(model, /login\.verifiedAuthorization\(\)/)
   assert.match(model, /\.existingLocalScope\(owner: expectedOwner\)/)
-  assert.match(model, /\.historicalReceiptTally\(scope: existingScope\)/)
+  assert.match(model, /XDriveIOSNativePhotoBackupDestinationModel[\s\S]*?readExistingForUpload\(/)
+  assert.match(model, /\.historicalReceiptTally\([\s\S]*?scope: existingScope,[\s\S]*?verifiedParentID: managed\.destination\.targetNodeID/)
+  assert.match(model, /managedTargetNodeID = managed\.destination\.targetNodeID/)
   assert.match(model, /PHAsset\.fetchAssets\(with: \.image, options: nil\)\.count/)
   assert.match(model, /PHAsset\.fetchAssets\(with: \.video, options: nil\)\.count/)
   assert.doesNotMatch(model, /localScopeAndTag|uploadPrepared|prepare\(|resumeDue|performChanges/)
@@ -27,6 +29,9 @@ test('read-only Owner receipt summary never declares entire iPhone library backe
 
 test('counts authenticated V1 and V2 receipt records without treating an unknown ACK as confirmed', () => {
   assert.match(ledger, /func historicalReceiptTally\(scope: XDrivePhotoSyncScope\)/)
+  assert.match(ledger, /verifiedParentID: UInt64\?/)
+  assert.match(ledger, /entry\.destinationParentID != parentID \{ return \}/)
+  assert.match(screen, /旧 Owner 根目录及其他 Source 目标的收据不计入当前目录/)
   assert.match(ledger, /for prefix in try availableShardPrefixes\(scope: scope\)/)
   assert.match(ledger, /try readShard\(scope: scope, key: key, prefix: prefix\)/)
   assert.match(ledger, /legacyIDs\.contains\(entry\.id\)/)

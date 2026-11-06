@@ -24,14 +24,22 @@ type Client struct {
 	Token   string
 	HTTP    *http.Client
 
-	sessionMu        sync.RWMutex
-	refreshMu        sync.Mutex
-	sharedRefreshMu  *sync.Mutex
-	refreshToken     string
-	accessExpiresAt  time.Time
-	refreshExpiresAt time.Time
-	onTokens         func(SessionTokens) error
-	loadTokens       func() (SessionTokens, error)
+	sessionMu               sync.RWMutex
+	deviceMu                sync.RWMutex
+	deviceID                string
+	deviceToken             string
+	synologySourceMu        sync.RWMutex
+	synologySourceID        uint64
+	synologySourceRevision  uint64
+	synologyRootID          string
+	synologyRootFingerprint string
+	refreshMu               sync.Mutex
+	sharedRefreshMu         *sync.Mutex
+	refreshToken            string
+	accessExpiresAt         time.Time
+	refreshExpiresAt        time.Time
+	onTokens                func(SessionTokens) error
+	loadTokens              func() (SessionTokens, error)
 }
 
 type Node struct {
@@ -1352,6 +1360,33 @@ func New(baseURL, token string) *Client {
 	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 0}}
 }
 
+// SetDeviceIdentity attaches this installation's protected device proof to
+// authenticated API requests. It does not grant a platform-specific Root,
+// PhotoKit or MediaStore capability.
+func (c *Client) SetDeviceIdentity(deviceID, deviceToken string) {
+	if c == nil {
+		return
+	}
+	c.deviceMu.Lock()
+	c.deviceID = strings.TrimSpace(deviceID)
+	c.deviceToken = strings.TrimSpace(deviceToken)
+	c.deviceMu.Unlock()
+}
+
+// SetSynologySourceRootProof binds this client to one server-persisted DSM
+// Source root-set fingerprint. It is sent on Source, Node and Upload requests.
+func (c *Client) SetSynologySourceRootProof(sourceID, sourceRevision uint64, rootID, fingerprint string) {
+	if c == nil {
+		return
+	}
+	c.synologySourceMu.Lock()
+	c.synologySourceID = sourceID
+	c.synologySourceRevision = sourceRevision
+	c.synologyRootID = strings.TrimSpace(rootID)
+	c.synologyRootFingerprint = strings.ToLower(strings.TrimSpace(fingerprint))
+	c.synologySourceMu.Unlock()
+}
+
 func (c *Client) Login(ctx context.Context, username, password string) (AuthResponse, error) {
 	return c.authenticate(ctx, "/api/v1/auth/login", username, password)
 }
@@ -2481,6 +2516,23 @@ func (c *Client) request(ctx context.Context, method, path string, body io.Reade
 	}
 	if token := c.accessToken(); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	c.deviceMu.RLock()
+	deviceID, deviceToken := c.deviceID, c.deviceToken
+	c.deviceMu.RUnlock()
+	if deviceID != "" && deviceToken != "" {
+		req.Header.Set("X-XDrive-Device-ID", deviceID)
+		req.Header.Set("X-XDrive-Device-Token", deviceToken)
+	}
+	c.synologySourceMu.RLock()
+	sourceID, sourceRevision := c.synologySourceID, c.synologySourceRevision
+	rootID, rootFingerprint := c.synologyRootID, c.synologyRootFingerprint
+	c.synologySourceMu.RUnlock()
+	if sourceID != 0 && sourceRevision != 0 && rootID != "" && rootFingerprint != "" {
+		req.Header.Set("X-XDrive-Synology-Source-ID", strconv.FormatUint(sourceID, 10))
+		req.Header.Set("X-XDrive-Synology-Source-Revision", strconv.FormatUint(sourceRevision, 10))
+		req.Header.Set("X-XDrive-Local-Root-ID", rootID)
+		req.Header.Set("X-XDrive-Local-Root-Fingerprint", rootFingerprint)
 	}
 	req.Header.Set("User-Agent", "xdrive-xd/0.1")
 	return req, nil

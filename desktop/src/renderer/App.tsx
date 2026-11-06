@@ -3123,9 +3123,7 @@ export default function App({
     localEvidencePreflight: localBackupEvidencePreflight,
     localRemove: localBackupRemove,
   },
-      remotePullPage: agent.hello?.capabilities.includes('external-sources')
-        ? {
-    directionFilter: "pull",
+      remotePullPage: {
     focusedRun: sourceRunFocus &&
       sourceRunFocus.server === status?.server &&
       sourceRunFocus.username === status?.username
@@ -3140,7 +3138,7 @@ export default function App({
     onError: (sourceError) => setError(
                 sourceError instanceof Error ? sourceError.message : String(sourceError),
               ),
-  } : undefined,
+  },
       taskCenterPage: {
     ...taskCenter.pageProps,
     syncActivity: syncActivityDataSource,
@@ -3282,7 +3280,7 @@ export default function App({
       } : undefined,
     },
     unavailableMessage: (destination) => {
-      if (destination === 'remote-pull') return '当前 xdrive-agent 不支持远程拉取，请更新客户端核心组件。'
+      if (destination === 'remote-pull') return '来源管理服务当前不可用，请检查 xDrive Server 连接。'
       if (destination === 'admin-users') return '当前 xdrive-agent 不支持用户管理，请更新客户端核心组件。'
       if (destination === 'admin-audit') return '当前 xdrive-agent 不支持审计日志，请更新客户端核心组件。'
       if (destination === 'admin-storage') return '当前 xdrive-agent 不支持全局存储，请更新客户端核心组件。'

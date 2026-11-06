@@ -106,9 +106,12 @@ test('Web workspaces share page presentation while Files avoids a duplicate inte
   assert.ok(webApp.includes('<XDriveMediaGalleryPage'), 'Gallery should mount the shared page directly')
   assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库" showPageHeader={false}>'), 'shared Gallery page must own workspace page chrome without duplicating its title')
   assert.ok(webApp.includes('remotePull: {') &&
-    browserHost.includes("directionFilter: 'pull' as const") &&
+    browserHost.includes("remotePullPage: { ...ports.remotePull }") &&
+    browserHost.includes("platform: 'web'") &&
     sharedHostOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />'),
-    'Remote Pull must use the authorized Browser Host and shared manager')
+    'Unified Push/Pull Source Manager must use the authorized Browser Host')
+  assert.equal(browserHost.includes("directionFilter: 'pull' as const"), false,
+    'Source Manager must not hide authenticated Owner Push sources')
   assert.ok(webApp.includes('localStorage: localStorageSource') &&
     sharedHostOutlet.includes('<XDriveLocalStoragePage'),
     'Local Storage must render through the shared Host outlet')

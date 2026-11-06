@@ -20,6 +20,15 @@ const transpiledMode = ts.transpileModule(fs.readFileSync(modeFile, 'utf8'), {
 const modeModule={exports:{}}
 new Function('module','exports',transpiledMode)(modeModule,modeModule.exports)
 const realMapMode=modeModule.exports
+const admissionFile = path.join(root, 'ui/shared/src/desktop-places-embed-admission.ts')
+const compiledAdmission = ts.transpileModule(fs.readFileSync(admissionFile, 'utf8'), {
+  fileName: admissionFile,
+  compilerOptions: {module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+}).outputText
+const admissionModule = {exports:{}}
+new Function('module','exports',compiledAdmission)(
+  admissionModule,admissionModule.exports)
+const realDesktopPlacesAdmission = admissionModule.exports
 
 function loadSharedMap() {
   const output = ts.transpileModule(original, { compilerOptions: {
@@ -65,6 +74,9 @@ function loadSharedMap() {
     // A stub that omits new production exports silently turns successful
     // ticket issuance into a caught TypeError and masks real mode regressions.
     '../media-gallery-places-map-mode': realMapMode,
+    // Keep the real sandboxed guest admission state classifier available when
+    // compiling the shared map component in this React test harness.
+    '../desktop-places-embed-admission': realDesktopPlacesAdmission,
     './MediaGalleryBaiduPrototypeMap': {
       XDriveMediaGalleryBaiduPrototypeMap: props =>
         React.createElement('old-prototype', props),

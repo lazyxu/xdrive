@@ -132,3 +132,31 @@ Root authorization and must not expose the private Agent IPC listener.
 - P2: add other Synology CPU architectures and optionally integrate the
   existing `xdrive-source-agent` Photos metadata path, without duplicate
   backup uploads or Source/Runners.
+
+
+## ARMv7 DSM 7 old-kernel filesystem compatibility
+
+The current armada38x target (DS218j) may run a 3.10-series Linux kernel.
+Kernel-atomic `openat2` and birth-time `statx` are not available on that
+kernel. The DSM **folder** Backup-only Agent now uses two explicit Linux
+compatibility paths while keeping the same authorized Source/Device/Root
+admission and original UploadSession/Finalize writer:
+
+- Strong native identity: on ext4 only, read the inode generation via
+  `FS_IOC_GETVERSION` from a read-only, `O_NOFOLLOW` descriptor whose
+  device/inode/type matches the observed file. A nonzero generation plus
+  device+inode acts as the stable object key in the absence of `statx`.
+  A filesystem with no reliable generation returns a *weak* identity;
+  such an identity is **not** admitted for normal DSM auto backup.
+- Original file bytes: prefer `openat2` when it exists. Only on `ENOSYS`
+  traverse the relative path from the already-open authorized Root with
+  `openat(O_NOFOLLOW)` for **each component**. Reject `..`, symlinks,
+  mount boundaries, stale filenames, non-regular final files and changed
+  ancestor identities before reading. Existing per-file pre/post native
+  identity, Root and SHA-256 checks remain mandatory.
+
+The compatibility fallback is deliberately **not** equivalent to claiming
+old-kernel hardware acceptance. The exact DSM kernel patches, filesystem
+ioctl availability, Package Center lifecycle, and 24-hour scheduled
+incremental backup on a physical DS218j remain **跳过（未验收）**. Do not
+weaken safety checks on failures or switch to pathname-only backup.

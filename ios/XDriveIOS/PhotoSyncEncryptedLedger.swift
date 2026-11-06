@@ -281,6 +281,18 @@ actor XDrivePhotoSyncLedger {
     /// previous point in time; no current cloud Node was read here.
     func historicalReceiptTally(scope: XDrivePhotoSyncScope)
         throws -> XDriveIOSNativePhotoReceiptTally {
+        try historicalReceiptTally(scope: scope, verifiedParentID: nil)
+    }
+
+    /// Read-only history for the exact Server-proven managed Target Node.
+    /// Old Owner-root and other Source entries are excluded, but a saved
+    /// receipt is not a fresh Server Node verification or library coverage.
+    func historicalReceiptTally(scope: XDrivePhotoSyncScope,
+                                verifiedParentID: UInt64?)
+        throws -> XDriveIOSNativePhotoReceiptTally {
+        if let verifiedParentID, verifiedParentID == 0 {
+            throw XDrivePhotoSyncLedgerError.identityMismatch
+        }
         try Task.checkCancellation()
         guard let key = try existingEncryptionKeyForReadOnly() else {
             throw XDrivePhotoSyncLedgerError.corruptOrInaccessible
@@ -291,6 +303,8 @@ actor XDrivePhotoSyncLedger {
         var counts = XDriveIOSNativePhotoReceiptTally()
 
         func add(_ entry: XDrivePhotoSyncOperation) {
+            if let parentID = verifiedParentID,
+               entry.destinationParentID != parentID { return }
             let hasReceipt = entry.verifiedNodeID != nil &&
                 entry.verifiedNodeRevision != nil &&
                 entry.sessionID != nil &&

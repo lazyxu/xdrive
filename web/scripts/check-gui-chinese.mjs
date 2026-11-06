@@ -78,15 +78,14 @@ requireText(files.workspaceSidebar, ['label="我的云端存储"'], '共享侧�
 requireText(files.descriptionGrid, ['XDriveDescriptionGrid', 'XDriveDescriptionItem', "columns === 4", "columns === 3", "columns?: 2 | 3 | 4", "fullColumnsAt", "bgcolor: 'action.hover'", 'fullWidth', "gridColumn: fullWidth ? '1 / -1' : undefined"], '共享描述网格')
 requireText(files.sectionHeader, ['XDriveSectionHeader', "level === 'h3'", 'eyebrow', 'subtitle', 'actions', 'component={level}'], '共享分区标题')
 requireText(files.tableSurface, ['XDriveTableSurface', 'TableContainer', 'border: 1', "borderColor: 'divider'", 'borderRadius: 1.5', "overflowX: 'auto'"], '共享表格表面')
-// Remote Pull uses the authenticated Browser Host -> shared page outlet ->
-// shared SourceManager. The earlier direct JSX assertion became obsolete
-// when the canonical Host-neutral route was introduced.
+// The legacy remote-pull route now opens the unified Push/Pull
+// Source Manager through the authenticated Browser Host and shared outlet.
 requireText(files.app, ['createXDriveSourceManagerAdapter(api)',
   'remotePull: {', 'adapter: sourceManagerAdapter',
   '<XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />'],
   'Web 远程拉取 Host 入口')
-requireText(files.browserHost, ["remotePullPage: { ...ports.remotePull, directionFilter: 'pull' as const }"],
-  'Web 远程拉取 Host 数据边界')
+requireText(files.browserHost, ["remotePullPage: { ...ports.remotePull }"],
+  'Web 来源管理 Host 数据边界')
 requireText(files.pageOutlet, ["case 'remote-pull':",
   '<XDriveSourceManager {...services.remotePullPage} />'],
   'Web 远程拉取共享页面')

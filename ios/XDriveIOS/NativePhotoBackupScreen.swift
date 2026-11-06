@@ -865,14 +865,17 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         Text("当前为 iOS 部分照片授权；此数量不是手机全部照片。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    if let tally = snapshot.historicLedger {
-                        Text("当前账户既有账本：历史已确认 \(tally.historicallyConfirmed) 项 · 待核对 \(tally.uncertain) 项")
+                    if let tally = snapshot.historicLedger,
+                       let targetNodeID = snapshot.managedTargetNodeID {
+                        Text("当前受管目标 Node \(targetNodeID) 的历史收据：已确认 \(tally.historicallyConfirmed) 项 · 待核对 \(tally.uncertain) 项")
                             .monospacedDigit()
                             .accessibilityIdentifier("native-ios-photo-coverage-receipts")
-                        Text("尚未上传 \(tally.preparedOnly) 项 · 收据不完整 \(tally.incompleteReceipt) 项 · 合计记录 \(tally.totalOperations) 项")
+                        Text("尚未上传 \(tally.preparedOnly) 项 · 收据不完整 \(tally.incompleteReceipt) 项 · 当前目录合计历史记录 \(tally.totalOperations) 项")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Text("旧 Owner 根目录及其他 Source 目标的收据不计入当前目录。以上仅为本地历史记录，未逐个重新核验云端 Node。")
                             .font(.footnote).foregroundStyle(.secondary)
                     } else {
-                        Text("此设备当前账户尚无既有备份账本身份；历史收据数未知，不代表从未备份。")
+                        Text("此设备当前账户没有可读取的受管目标历史账本；历史收据数未知，不代表从未备份。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     Text("统计时间：\(snapshot.checkedAt.formatted(date: .abbreviated, time: .shortened))")

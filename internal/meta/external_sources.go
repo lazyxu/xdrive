@@ -77,8 +77,10 @@ type Source struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 
-	// The enrolled creating device may first bind this paused local Source.
-	// Nil is an unclaimed legacy record, not a remotely transferrable grant.
+	// DeviceID is the connector-neutral owning executor for Push Sources.
+	// LocalCreatorDeviceID remains for compatibility with existing local_folder
+	// enrollment and is never a substitute for platform-specific local grants.
+	DeviceID             *string `json:"-" gorm:"size:36;index"`
 	LocalCreatorDeviceID *string `json:"-" gorm:"size:36;index"`
 
 	Owner      User  `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`

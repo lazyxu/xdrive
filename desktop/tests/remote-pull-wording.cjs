@@ -6,7 +6,7 @@ const path = require('node:path')
 const repo = path.join(__dirname, '..', '..')
 const read = (name) => fs.readFileSync(path.join(repo, name), 'utf8')
 
-test('remote Pull UI labels have no redundant direction or mixed Source naming', () => {
+test('Source Manager connector labels do not duplicate direction or mix Source naming', () => {
   const manager = read('ui/shared/src/mui/SourceManager.tsx')
   for (const filename of [
     'ui/shared/src/mui/SourceManager.tsx',
@@ -33,16 +33,19 @@ test('remote Pull UI labels have no redundant direction or mixed Source naming',
   assert.match(read('ui/shared/src/mui/SourceManagerDetailsDialog.tsx'), /externalSourceDisplayTargetPath\(row\.source\)/)
 })
 
-test('Web, Mobile Web and Desktop use the same Pull-only surface and preserve transport direction', () => {
+test('Web, Mobile Web and Desktop expose one unified Push/Pull Source Manager', () => {
   const manager = read('ui/shared/src/mui/SourceManager.tsx')
   const web = read('web/src/App.tsx')
   const desktop = read('desktop/src/renderer/App.tsx')
   const browserHost = read('web/src/browserWorkspaceHost.ts')
   assert.match(web, /remotePull: \{/)
   assert.match(web, /adapter: sourceManagerAdapter/)
-  assert.match(browserHost, /remotePullPage: \{ \.\.\.ports\.remotePull, directionFilter: 'pull' as const \}/)
+  assert.match(browserHost, /remotePullPage: \{ \.\.\.ports\.remotePull \}/)
   assert.match(desktop, /remotePullPage:/)
-  assert.match(desktop, /directionFilter:\s*"pull"/)
+  assert.doesNotMatch(browserHost, /directionFilter:\s*'pull'/)
+  assert.doesNotMatch(desktop, /remotePullPage:\s*agent\.hello\?\.capabilities/)
+  assert.match(read('ui/shared/src/mui/WorkspaceRouteTitles.ts'), /'remote-pull': '来源管理'/)
+  assert.doesNotMatch(desktop, /directionFilter:\s*"pull"/)
   assert.match(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx'), /<XDriveSourceManager \{\.\.\.services\.remotePullPage\} \/>/)
   assert.match(manager, /directionFilter !== 'pull' \|\| item\.source\.direction === 'pull'/)
   assert.match(manager, /direction: option\.direction/)

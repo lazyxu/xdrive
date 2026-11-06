@@ -172,7 +172,6 @@ func TestNonLocalSourceRunCancellationKeepsOwnerJWTBehavior(t *testing.T) {
 	now := time.Now().UTC()
 	for i, row := range []struct{ kind, direction string }{
 		{"yike_photos", meta.SourceDirectionPull},
-		{"synology_photos", meta.SourceDirectionPush}, // legacy NAS compatibility
 	} {
 		targetID := root.ID
 		src := meta.Source{
@@ -202,5 +201,35 @@ func TestNonLocalSourceRunCancellationKeepsOwnerJWTBehavior(t *testing.T) {
 		if saved.CancelRequestedAt == nil {
 			t.Fatalf("nonlocal kind=%s direction=%s cancellation regressed", row.kind, row.direction)
 		}
+	}
+	// DSM Photos Push is no longer a generic Owner-JWT Source. An unbound
+	// legacy row must fail closed rather than inherit Pull cancellation rights.
+	targetID := root.ID
+	dsm := meta.Source{
+		OwnerID: owner.ID, Name: "Unbound DSM Push",
+		Kind: "synology_photos", Direction: meta.SourceDirectionPush,
+		SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
+		Status: meta.SourceStatusPaused, Revision: 1, TargetNodeID: &targetID,
+	}
+	if err := db.Create(&dsm).Error; err != nil {
+		t.Fatal(err)
+	}
+	dsmRun := meta.SyncRun{
+		ID: uuid.NewString(), SourceID: dsm.ID, RunNumber: 1,
+		SourceRevision: 1, SyncMode: meta.SourceSyncModeBackup,
+		Mode: meta.SourceRunModeSync, Trigger: meta.SyncRunTriggerManual,
+		Status: meta.SyncRunStatusRunning, StartedAt: now,
+	}
+	if err := db.Create(&dsmRun).Error; err != nil {
+		t.Fatal(err)
+	}
+	dsmURL := fmt.Sprintf("/api/v1/sources/%d/runs/%s/cancel", dsm.ID, dsmRun.ID)
+	request(t, router, http.MethodPost, dsmURL, token, nil, http.StatusForbidden)
+	var savedDSM meta.SyncRun
+	if err := db.Where("id = ?", dsmRun.ID).First(&savedDSM).Error; err != nil {
+		t.Fatal(err)
+	}
+	if savedDSM.CancelRequestedAt != nil {
+		t.Fatal("Owner JWT cancelled an unbound DSM Push run")
 	}
 }

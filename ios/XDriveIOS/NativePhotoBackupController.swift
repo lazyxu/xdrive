@@ -436,12 +436,12 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     trigger: kind == .automatic ? "scheduled" : "manual"
                 )
                 sourceRunReporter = reporter
-                await reporter.begin()
 
                 if kind == .single {
                     guard let localIdentifier = singleLocalIdentifier else {
                         throw XDriveIOSPhotoBackupMVPError.identityNotVerified
                     }
+                    await reporter.begin()
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, managedForeground: managed,
                         onSourceProgress: { value in
@@ -481,6 +481,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     }
                     await reporter.finish(status: "completed")
                 } else if kind == .focused {
+                    await reporter.begin()
                     try await self.runFocused(
                         login: login, owner: selected, uiEpoch: uiEpoch,
                         allowICloud: allowICloud,
@@ -662,6 +663,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     self.message = kind == .automatic
                         ? "自动增量备份正在检查第 \(window + 1) 段…"
                         : "手动备份正在检查第 \(window + 1) 段…"
+                    await reporter.begin()
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, managedForeground: managed,
                         onSourceProgress: { value in

@@ -305,23 +305,12 @@ func TestResolveSetupSourceConfiguredMissingIDFallsBackByName(t *testing.T) {
 	}
 }
 
-func TestSetupTargetPreservesExistingTargetUnlessOverridden(t *testing.T) {
-	target := uint64(42)
-	remote := client.Source{ID: 7, TargetNodeID: &target}
-
-	id, path := setupTarget(remote, "")
-	if id != 42 || path != "" {
-		t.Fatalf("preserved target id=%d path=%q want=42/empty", id, path)
+func TestSetupRejectsUserSelectedCloudTarget(t *testing.T) {
+	if err := validateManagedTargetFlag("Photos/Manual"); err == nil {
+		t.Fatal("user-selected cloud target was accepted")
 	}
-
-	id, path = setupTarget(remote, "Photos/Manual")
-	if id != 0 || path != "Photos/Manual" {
-		t.Fatalf("explicit target id=%d path=%q want=0/Photos/Manual", id, path)
-	}
-
-	id, path = setupTarget(client.Source{}, "")
-	if id != 0 || path != "Photos/Synology" {
-		t.Fatalf("new-source default id=%d path=%q want=0/Photos/Synology", id, path)
+	if err := validateManagedTargetFlag(""); err != nil {
+		t.Fatalf("empty target should use Server-managed provisioning: %v", err)
 	}
 }
 
@@ -349,5 +338,25 @@ func TestSourceScheduleText(t *testing.T) {
 	}
 	if got := sourceScheduleText(client.Source{}); got != "legacy fallback" {
 		t.Fatalf("legacy schedule text=%q", got)
+	}
+}
+
+func TestSynologySetupDoesNotSilentlyReuseLegacyUnboundSource(t *testing.T) {
+	legacy := client.Source{ID: 42, Kind: sourceagent.SynologyKind, Direction: meta.SourceDirectionPush}
+	if err := validateSynologySourceDeviceBinding(legacy, 0, 0, "new-device"); err == nil {
+		t.Fatal("legacy unbound Source was silently reused by name")
+	}
+	if err := validateSynologySourceDeviceBinding(legacy, 42, 0, "new-device"); err == nil {
+		t.Fatal("explicit configured legacy Source bypassed mandatory Device binding")
+	}
+	if err := validateSynologySourceDeviceBinding(legacy, 0, 42, "new-device"); err == nil {
+		t.Fatal("explicit requested legacy Source bypassed mandatory Device binding")
+	}
+	bound := client.Source{ID: 43, Kind: sourceagent.SynologyKind, Direction: meta.SourceDirectionPush, DeviceID: "device-a"}
+	if err := validateSynologySourceDeviceBinding(bound, 43, 0, "device-a"); err != nil {
+		t.Fatalf("matching device binding was rejected: %v", err)
+	}
+	if err := validateSynologySourceDeviceBinding(bound, 43, 0, "device-b"); err == nil {
+		t.Fatal("Source bound to another DSM device was accepted")
 	}
 }
