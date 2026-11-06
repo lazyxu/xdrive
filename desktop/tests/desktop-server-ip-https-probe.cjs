@@ -167,6 +167,11 @@ test('LAN CA trust is scoped: automatic via authenticated domain or user-approve
   assert.match(main, /pin\.source === 'user-approved-lan'/)
   assert.match(preload, /desktop:trust-lan-server', server/)
   for (const file of [main, agent]) {
-    assert.doesNotMatch(file, /rejectUnauthorized:\s*false|ignoreCertificateErrors|setCertificateVerifyProc|certutil/)
+    assert.doesNotMatch(file, /rejectUnauthorized:\s*false|ignoreCertificateErrors|ignore-certificate-errors|certutil/)
   }
+  // This new exception is solely for the sandboxed Places guest; neither
+  // Agent credentials nor the login probe may disable TLS verification.
+  assert.doesNotMatch(agent, /setCertificateVerifyProc/)
+  assert.match(main, /placesSession\.setCertificateVerifyProc/)
+  assert.match(main, /verifyDesktopPlacesLANCertificate\(request,pin,target\.origin,stillCurrent\)/)
 })

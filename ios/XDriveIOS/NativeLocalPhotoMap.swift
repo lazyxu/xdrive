@@ -1287,7 +1287,13 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                     }) else { return false }
                                     return trusted.count == cell.count &&
                                         trusted.representative.id == cell.representative.id &&
-                                        trusted.key == cell.key
+                                        trusted.key == cell.key &&
+                                        // ID/count alone cannot reauthorize an
+                                        // old MapKit pin after a new GPS scan.
+                                        XDriveIOSNativeLocalMapSpatialPolicy.matchesCurrentCell(
+                                            cell, current: trusted,
+                                            representativeID: { $0.id }
+                                        )
                                   })
                             else { return }
                             if cells.count == 1, let only = cells.first,

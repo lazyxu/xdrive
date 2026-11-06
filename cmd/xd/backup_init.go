@@ -84,16 +84,11 @@ func runBackupInit(ctx context.Context, agent backupBootstrapAgent, name, path s
 		return id, fmt.Errorf("Source %d local Root binding was not authenticated", id)
 	}
 	if spec.Type != "" && spec.Type != sourceschedule.TypeManual {
-		schedule, err := agent.ReadSchedule(ctx, id)
-		if err != nil {
-			return id, fmt.Errorf("Source %d is bound but schedule read failed; configure 'xd backup auto' separately: %w", id, err)
-		}
-		_, err = agent.SaveSchedule(ctx, id, schedule.Revision, localbackupipc.Schedule{
-			SourceID: id, ScheduleType: spec.Type,
-			ScheduleExpression: spec.Expression, ScheduleTimezone: spec.Timezone,
-		})
-		if err != nil {
-			return id, fmt.Errorf("Source %d is bound but schedule save is unconfirmed; inspect schedule before retrying: %w", id, err)
+		// Share xd backup auto's exact Source/revision/ACK validation and
+		// preserve the existing checkpoint when the plan is already saved.
+		// An unknown result never authorizes --run-now or a blind retry.
+		if _, _, err := saveBackupScheduleIfChanged(ctx, agent, id, spec); err != nil {
+			return id, fmt.Errorf("Source %d is bound but schedule read/save is unconfirmed; inspect its plan before retrying: %w", id, err)
 		}
 	}
 	fmt.Fprintf(out, "Source %d: locally authorized Backup-only folder (no Desktop required)\n", id)

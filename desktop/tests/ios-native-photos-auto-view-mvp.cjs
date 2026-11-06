@@ -114,7 +114,7 @@ test('native manual, auto and receipt-resume consent is pinned to the exact veri
   assert.match(ui, /autoConsentMinutes = interval/)
   assert.match(ui, /autoConsentAllowICloud = autoAllowICloud/)
   assert.match(ui, /controller\.startManual\(\s*login: login, expectedOwner: expected/)
-  assert.match(ui, /login: login, expectedOwner: expected,\s*minutes: autoConsentMinutes/)
+  assert.match(ui, /login: login, expectedOwner: expected,\s*expectedDestination: approvedDestination,\s*minutes: autoConsentMinutes/)
   assert.match(ui, /receipts\.resumePausedAuto\(login: login, expectedOwner: expected\)/)
   assert.match(ui, /showManualConsent = false[\s\S]*showAutoConsent = false[\s\S]*showResumeConsent = false/)
   assert.match(ui, /native-ios-photos-consent-error/)
@@ -177,8 +177,8 @@ test('foreground auto iCloud and interval settings show the stored current Owner
   assert.match(setup, /native-ios-photos-auto-saved-settings/)
   assert.match(setup, /active\.intervalMinutes/)
   assert.match(setup, /active\.allowICloudOriginals/)
-  assert.match(setup, /\.disabled\(controller\.busy \|\| controller\.schedule\?\.enabled == true\)/)
-  assert.match(setup, /autoConsentAllowICloud = autoAllowICloud/)
+  assert.match(setup, /\.disabled\(controller\.busy \|\| enablingAutomaticBackup \|\| controller\.schedule\?\.enabled == true\)/)
+  assert.match(ui, /private var enableAutomaticBackupButton:[\s\S]*?autoConsentAllowICloud = autoAllowICloud/)
   assert.match(setup, /manualConsentAllowICloud = allowICloud/)
   assert.match(ui, /\.onAppear \{\s*photoAuthorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)\s*syncSavedAutomaticSettings\(\)/)
   assert.match(ui, /allowICloud = false\s*autoAllowICloud = false\s*autoStartRule = \.everything\s*interval = 60\s*syncSavedAutomaticSettings\(\)/)
@@ -232,6 +232,24 @@ test('backup portrait stays one ordered form and short landscape splits status f
   assert.match(ui, /\.confirmationDialog\("开启自动原件备份？"/);
   assert.doesNotMatch(ui, /\.onChange\(of: viewport\)|\.id\(viewport\)/);
 });
+
+test('backup setup advances from verified device and folder to explicit scoped consent', () => {
+  const setup = ui.slice(ui.indexOf('private var backupSetup:'), ui.indexOf('private func openDetails('))
+  const steps = ['registerDeviceButton', 'saveDestinationButton',
+    'PHPhotoLibrary.requestAuthorization', 'backupScopePicker', 'enableAutomaticBackupButton']
+  let previous = -1
+  for (const step of steps) {
+    const next = setup.indexOf(step)
+    assert.ok(next > previous, step + ' must follow the preceding prerequisite')
+    previous = next
+  }
+  assert.match(setup, /else if let error = destination\.errorMessage[\s\S]*?refreshDestinationButton/)
+  assert.doesNotMatch(setup, /controller\.configure\(|UploadSession|\.enroll\(/)
+  assert.match(ui, /case \.overview: backupOverview\s*case \.setup: backupSetup\s*case \.details: backupDetails/)
+  assert.match(ui, /"去核对收据"\) \{ openDetails\(\.receipts\) \}/)
+  assert.match(ui, /\.confirmationDialog\("开启自动原件备份？"[\s\S]*?approvedDestination == destination\.confirmed,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)[\s\S]*?expectedDestination: approvedDestination/)
+  assert.match(controller, /readExistingForUpload\([\s\S]*?managed\.destination == expectedDestination,[\s\S]*?schedule = try store\.configure\(/)
+})
 
 
 test('native local and album photo walls free short landscape grid space while retaining Viewer return', () => {
@@ -364,7 +382,8 @@ test('foreground auto retries only an owned pre-write transient network failure'
   assert.match(start, /onPotentialWrite: \{ beganOriginalWrite = true \}/)
   assert.match(fail, /if kind == \.automatic,[\s\S]*?let reservedDue = automaticReservedNextDueAt,[\s\S]*?!beganOriginalWrite, !Task\.isCancelled/)
   assert.match(fail, /let networkError = error as\? URLError/)
-  assert.match(fail, /retryablePrewriteNetworkFailure\(\s*networkError/)
+  assert.match(fail, /let retryableNetwork = error is XDriveIOSPhotoBackupNetworkError \|\|\s*networkError\.map\(XDriveIOSPhotoAutoSchedulePolicy\.retryablePrewriteNetworkFailure\) == true/)
+  assert.match(fail, /!beganOriginalWrite, !Task\.isCancelled,\s*retryableNetwork,/)
   assert.match(fail, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
   assert.match(fail, /UIApplication\.shared\.applicationState == \.active/)
   assert.match(fail, /\.rescheduleSafePrewriteNetworkFailure\(\s*owner: selected, expectedNextDueAt: reservedDue/)
@@ -382,7 +401,7 @@ test('new-only foreground auto plan keeps explicit Owner choice and never counts
   const policy = read('ios/XDriveIOS/PhotoAutoSchedulePolicy.swift')
   const runner = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
   const background = read('ios/XDriveIOS/BackgroundPhotoTask.swift')
-  assert.match(ui, /Picker\("前台自动备份范围", selection: \$autoStartRule\)/)
+  assert.match(ui, /Picker\("备份范围", selection: \$autoStartRule\)/)
   assert.match(ui, /autoConsentStartRule = autoStartRule/)
   assert.match(ui, /autoConsentEnabledAt = Date\(\)/)
   assert.match(ui, /startRule: autoConsentStartRule,[\s\S]*?enabledAt: autoConsentEnabledAt/)

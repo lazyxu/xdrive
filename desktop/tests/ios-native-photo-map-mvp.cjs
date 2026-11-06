@@ -521,3 +521,17 @@ test('album-scoped place wall exposes Show Nearby Photos into the full-library s
   assert.match(map, /globalSelection = nil\s*pendingNearbySelection = nil\s*nearbySelection = nil\s*singleViewer = nil/)
   assert.match(map, /selection == nil && globalSelection == nil &&\s*pendingNearbySelection == nil && nearbySelection == nil && singleViewer == nil/)
 })
+
+
+test('PhotoKit map pages always advance until the real terminal cursor and reject blank page identities', () => {
+  const mapPolicy = policy
+  assert.match(mapPolicy, /\(start == total \|\| next > start\)/)
+  assert.match(mapPolicy, /next - start <= pageSize && rows == next - start/)
+  assert.match(mapPolicy, /pins >= 0 && pins <= rows/)
+  assert.match(mapPolicy, /!selectedSet\.contains\(""\) && !pageSet\.contains\(""\)/)
+  assert.match(mapPolicy, /selectedSet\.isSubset\(of: pageSet\)/)
+  // The native map must still verify its snapshot scan before publishing GPS.
+  assert.match(map, /while scanned < total \{[\s\S]*?XDriveIOSNativePhotoMapPolicy\.validPage\(/)
+  assert.match(map, /scanned = next\.page\.nextOffset/)
+  assert.match(map, /guard PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
+})

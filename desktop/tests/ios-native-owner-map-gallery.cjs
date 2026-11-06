@@ -296,10 +296,10 @@ test('native map source uses one navigation menu instead of a permanently stacke
 })
 
 
-test('cloud Owner map album automatically advances when its lazy-grid sentinel enters the viewport', () => {
+test('cloud Owner map album advances on visible sentinel without waiting for every cover', () => {
   assert.match(clusterAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)
   assert.match(clusterAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/)
-  assert.match(clusterAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, activeOwner, !busy, !coverLoading,[\s\S]*?viewing == nil, page != nil, error == nil, let next/)
+  assert.match(clusterAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, activeOwner, !busy,[\s\S]*?viewing == nil, page != nil, error == nil, let next/)
   assert.match(clusterAlbum, /coverLoading = true[\s\S]*?defer \{[\s\S]*?coverLoading = false[\s\S]*?advanceIfVisible\(\)/)
   assert.match(clusterAlbum, /load\(next, history: earlier \+ \[cursor\], autoAdvance: true\)/)
   assert.doesNotMatch(clusterAlbum, /DragGesture\(minimumDistance: 12\)/)
@@ -319,4 +319,19 @@ test('Owner MapKit single-pin tap admits only the current signed facet, not an o
   for (const field of ['item_count', 'coordinate_kind', 'latitude', 'longitude', 'sample_latitude', 'sample_longitude']) {
     assert.match(policy, new RegExp('chosen\\.' + field + ' == signed\\.' + field))
   }
+})
+
+
+test('Owner map photo covers require unchanged signed place count before thumbnail', () => {
+  const start = map.indexOf('private func loadCurrentOwnerCovers(')
+  const end = map.indexOf('private func revokeCameraAuthorization()', start)
+  assert.ok(start >= 0 && end > start)
+  const covers = map.slice(start, end)
+  assert.match(covers, /reader\.page\(offset: 0, placeID: facet\.id\)/)
+  assert.match(covers, /guard XDriveIOSNativeOwnerMapSelectionPolicy\.acceptsCoverPage\(\s*facet, rangeTotal: page\.total_count, offset: page\.offset\s*\), let first = page\.items\.first\(where: \{ \$0\.supportsPreview \}\)/)
+  assert.ok(covers.indexOf('acceptsCoverPage(') < covers.indexOf('reader.thumbnail(first)'))
+  assert.match(covers, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
+  assert.match(covers, /XDriveIOSNativeOwnerMapSelectionPolicy\.isSameViewport\(/)
+  assert.match(policy, /static func acceptsCoverPage\(/)
+  assert.match(policy, /canOpenPhotoRange\(facet\)[\s\S]*?offset == 0[\s\S]*?rangeTotal == facet\.item_count/)
 })

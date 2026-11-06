@@ -4,6 +4,7 @@ const assert=require('node:assert/strict')
 const fs=require('node:fs')
 const path=require('node:path')
 const vm=require('node:vm')
+const {randomUUID}=require('node:crypto')
 const ts=require('typescript')
 
 const root=path.resolve(__dirname,'../..')
@@ -24,6 +25,11 @@ function loadRealMainAuthFlow({probeOK=true,grantOK=true,onProbe}={}) {
   }}
   const jar={
     clearStorageData:async()=>{stats.clears++},
+    closeAllConnections:async()=>{},
+    setPermissionRequestHandler:()=>{},
+    setPermissionCheckHandler:()=>{},
+    setCertificateVerifyProc:()=>{},
+    webRequest:{onBeforeRequest:()=>{}},
     cookies:{get:async()=>[{httpOnly:true,secure:true}]},
     fetch:async(url,opts)=>{
       assert.equal(opts.credentials,'include')
@@ -47,9 +53,13 @@ function loadRealMainAuthFlow({probeOK=true,grantOK=true,onProbe}={}) {
   const sandbox={
     // TypeScript's CommonJS transpiler emits __esModule on exports.
     exports:{},module:{exports:{}},
-    Promise,AbortSignal,
+    Promise,AbortSignal,randomUUID,
+    privateLANOrigin:()=>null,
     agentState:connection,
-    session:{fromPartition:name=>{assert.equal(name,'xdrive-places-web');return jar}},
+    session:{fromPartition:name=>{
+      assert.match(name,/^xdrive-places-web-[0-9a-f-]{36}$/)
+      return jar
+    }},
     xDriveResolveSecureBaiduMapTarget:server=>({origin:new URL(server).origin}),
     requireAgentClient:()=>({desktopMapGuestGrant:async()=>{
       stats.grants++

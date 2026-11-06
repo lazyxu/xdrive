@@ -101,19 +101,19 @@ enum XDriveIOSOriginalOwnerAuthorization {
         }
     }
 
-    func transport(origin: URL) throws -> XDriveNativeUploadSessionTransport {
+    func transport(origin: URL, allowsCellularAccess: Bool) throws -> XDriveNativeUploadSessionTransport {
         switch self {
         case .webBearer(let token):
             return try XDriveNativeUploadSessionTransport(
-                origin: origin, accessToken: token
+                origin: origin, accessToken: token, allowsCellularAccess: allowsCellularAccess
             )
         case .managedForeground(let authority):
             return try XDriveNativeUploadSessionTransport(
-                origin: origin, managedForeground: authority
+                origin: origin, managedForeground: authority, allowsCellularAccess: allowsCellularAccess
             )
         case .background(let credential):
             return try XDriveNativeUploadSessionTransport(
-                origin: origin, approvedBackgroundGrant: credential
+                origin: origin, approvedBackgroundGrant: credential, allowsCellularAccess: allowsCellularAccess
             )
         }
     }

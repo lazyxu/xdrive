@@ -10,7 +10,7 @@ test('native Owner map cluster advances from a visible LazyVGrid sentinel withou
   assert.match(album, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)
   assert.match(album, /\.onDisappear \{ scrollFootVisible = false \}/)
   assert.match(album, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/)
-  assert.match(album, /private func advanceIfVisible\(\) \{[\s\S]*?guard scrollFootVisible, activeOwner, !busy, !coverLoading,[\s\S]*?viewing == nil, page != nil, error == nil, let next else \{ return \}/)
+  assert.match(album, /private func advanceIfVisible\(\) \{[\s\S]*?guard scrollFootVisible, activeOwner, !busy,[\s\S]*?viewing == nil, page != nil, error == nil, let next else \{ return \}/)
   assert.match(album, /load\(next, history: earlier \+ \[cursor\], autoAdvance: true\)/)
   assert.match(album, /private func load\(_ target: XDriveIOSOwnerClusterCursor,[\s\S]*?autoAdvance: Bool = false/)
   assert.doesNotMatch(album, /DragGesture\(minimumDistance: 12\)|Timer\.scheduledTimer|URLSession\(|cacheAllPhotos/)
@@ -53,7 +53,7 @@ test('automatic paging uses the exact Owner and per-place validation of the manu
   assert.match(album, /if after < fetched\.total_count/)
   assert.match(album, /else if target\.placeIndex \+ 1 < selection\.places\.count/)
   assert.match(album, /for item in fetched\.items where item\.metadata\.has_thumbnail/)
-  assert.match(album, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, activeOwner, !busy, !coverLoading,[\s\S]*?page != nil, error == nil, let next/)
+  assert.match(album, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, activeOwner, !busy,[\s\S]*?page != nil, error == nil, let next/)
   assert.match(album, /load\(next, history: earlier \+ \[cursor\], autoAdvance: true\)/)
   assert.match(album, /Button\("重新核对当前位置照片"\) \{[\s\S]*?load\(cursor, history: earlier\)/)
   assert.doesNotMatch(album, /Button\("查看上一批照片"\)|Button\("继续浏览下一批照片"\)/)
@@ -96,8 +96,8 @@ test('Owner map rejects sparse, unaligned or duplicate exact place Ranges before
   assert.match(album, /let after = fetched\.offset \+ fetched\.items\.count[\s\S]*?cursor = target[\s\S]*?page = fetched/)
 })
 
-test('Owner map scroll foot advances only when visible with a live Owner and idle cover loader', () => {
-  assert.match(album, /private func advanceIfVisible\(\)[\s\S]*?scrollFootVisible, activeOwner, !busy, !coverLoading/)
+test('Owner map scroll foot advances with live Owner even while covers are pending', () => {
+  assert.match(album, /private func advanceIfVisible\(\)[\s\S]*?scrollFootVisible, activeOwner, !busy/)
   assert.match(album, /viewing == nil, page != nil, error == nil, let next else \{ return \}/)
   assert.match(album, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)
   assert.match(album, /\.onDisappear \{ scrollFootVisible = false \}/)
@@ -119,7 +119,7 @@ test('cluster photo wall hides transport pagination and retains verified sentine
   assert.match(body, /accessibilityID: "native-ios-owner-map-cluster-inline-retry"/)
   assert.match(body, /Menu \{[\s\S]*?Button\("重新核对当前位置照片"\) \{[\s\S]*?load\(cursor, history: earlier\)/)
   assert.match(body, /accessibilityIdentifier\("native-ios-owner-map-cluster-more"\)/)
-  assert.match(album, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, activeOwner, !busy, !coverLoading/)
+  assert.match(album, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, activeOwner, !busy/)
 })
 
 test('verified cloud map auto-paging restores the retained last tile when the two-window grid rotates', () => {
@@ -136,4 +136,27 @@ test('verified cloud map auto-paging restores the retained last tile when the tw
   assert.match(album, /currentOldPage\.sameVisibleSnapshot\(as: departingPage\)/)
   assert.match(album, /fetched\.total_count == facet\.item_count/)
   assert.doesNotMatch(album, /UserDefaults\.set\(autoScrollReturn|Timer\.scheduledTimer|cacheAllPhotos|UploadSession/)
+})
+
+test('slow decorative thumbnails cannot block verified Owner Range paging', () => {
+  const begin = album.indexOf('private func advanceIfVisible() {')
+  const end = album.indexOf('private func invalidate()', begin)
+  assert.ok(begin > 0 && end > begin)
+  const advance = album.slice(begin, end)
+  assert.match(advance, /guard scrollFootVisible, activeOwner, !busy,/)
+  assert.match(advance, /viewing == nil, page != nil, error == nil, let next else \{ return \}/)
+  assert.doesNotMatch(advance, /coverLoading|thumbnail\(/)
+  assert.match(advance, /scrollFootVisible = false\s*load\(next, history: earlier \+ \[cursor\], autoAdvance: true\)/)
+
+  const load = album.slice(album.indexOf('private func load(_ target:'), album.length)
+  assert.match(load, /generation = UUID\(\)[\s\S]*?coverTask\?\.cancel\(\)/)
+  assert.match(load, /coverTask\?\.cancel\(\)\s*coverTask = nil/)
+  assert.match(load, /if autoAdvance \{[\s\S]*?currentOldPage\.sameVisibleSnapshot\(as: departingPage\)/)
+  assert.match(load, /fetched\.total_count == facet\.item_count/)
+  assert.match(load, /Set\(fetched\.items\.map\(\\\.id\)\)\.count == fetched\.items\.count/)
+  assert.match(load, /priorWindow = departingPage\s*priorWindowCursor = departingCursor/)
+  assert.match(load, /coverImages = coverImages\.filter \{/)
+  assert.match(load, /guard !Task\.isCancelled, generation == ticket,[\s\S]*?reader\.thumbnail\(item\)/)
+  assert.match(album, /if generation == ticket \{\s*coverLoading = false[\s\S]*?advanceIfVisible\(\)/)
+  assert.doesNotMatch(album, /URLSession\(|UploadSession|PHAssetResourceManager/)
 })
