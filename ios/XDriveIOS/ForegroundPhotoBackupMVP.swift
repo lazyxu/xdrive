@@ -153,7 +153,9 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         report.videosNotSupported += 1
                         report.stage = "变更队列中存在不支持的媒体类型"
                         _ = try await changeQueue.settle(
-                            candidate.pending, result: .failed, owner: owner
+                            candidate.pending, result: .failed,
+                            reasonCode: XDriveIOSPhotoBackupIssueReason.unsupported.rawValue,
+                            owner: owner
                         )
                         await publish(report)
                         continue
@@ -217,7 +219,10 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         let result: XDriveIOSPhotoBackupChangeQueueStore.Settled =
                             waitingForICloud ? .waitingICloud : .failed
                         _ = try await changeQueue.settle(
-                            candidate.pending, result: result, owner: owner
+                            candidate.pending, result: result,
+                            reasonCode: waitingForICloud
+                                ? nil : Self.issueReason(after: error).rawValue,
+                            owner: owner
                         )
                     }
                     await publish(report)

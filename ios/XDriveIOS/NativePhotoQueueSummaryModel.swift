@@ -8,6 +8,16 @@ import Photos
 @MainActor
 final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
     @Published private(set) var counts: XDriveIOSPhotoBackupChangeQueueStore.Counts?
+    @Published private(set) var failedReasonCounts: [String: Int] = [:]
+
+    var failedReasonDescription: String? {
+        let details = failedReasonCounts.keys.sorted().compactMap { key -> String? in
+            guard let reason = XDriveIOSPhotoBackupIssueReason(rawValue: key),
+                  let number = failedReasonCounts[key], number > 0 else { return nil }
+            return "\(reason.displayText) \(number)"
+        }
+        return details.isEmpty ? nil : details.joined(separator: "；")
+    }
     @Published private(set) var busy = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var notice: String?
@@ -19,6 +29,7 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
         job = nil
         generation = UUID()
         counts = nil
+        failedReasonCounts = [:]
         errorMessage = nil
         notice = nil
         busy = false
@@ -66,7 +77,13 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) else {
                     return
                 }
-                self.counts = try await queue.summary(owner: selected)
+                let nextCounts = try await queue.summary(owner: selected)
+                let reasons = try await queue.failureReasonCounts(owner: selected)
+                try Task.checkCancellation()
+                guard self.generation == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) else { return }
+                self.counts = nextCounts
+                self.failedReasonCounts = reasons
                 if requeued > 0 {
                     _ = try? XDriveIOSPhotoAutoScheduleStore.shared
                         .expediteForLibraryChange(owner: selected)
@@ -115,12 +132,14 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
                 }
                 let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: selected)
                 let result = try await queue.summary(owner: selected)
+                let reasons = try await queue.failureReasonCounts(owner: selected)
                 try Task.checkCancellation()
                 guard self.generation == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) else {
                     return
                 }
                 self.counts = result
+                self.failedReasonCounts = reasons
             } catch is CancellationError {
                 return
             } catch {
