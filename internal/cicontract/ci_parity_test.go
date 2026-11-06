@@ -1030,7 +1030,6 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"- job: package-linux-client",
 		"- job: package-windows-client",
 		"stage: release-build",
-		"verify-github-stable-final-gate.go",
 		"expire_in: 14 days",
 		"GLAB_ENABLE_CI_AUTOLOGIN: \"true\"",
 		"image: $XDRIVE_CI_GLAB_IMAGE",
@@ -1045,6 +1044,9 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		}
 	}
 
+	requireRaw(t, "GitLab stable release approval source", gitlabReleaseScripts,
+		"go run scripts/ci/verify-github-stable-final-gate.go",
+	)
 	requireRaw(t, "GitLab release scripts", gitlabReleaseScripts,
 		"XDRIVE_RELEASE_TAG=\"snapshot\"",
 		"0.0.0-snapshot.$short_sha",
