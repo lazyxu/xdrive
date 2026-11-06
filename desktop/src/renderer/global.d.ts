@@ -855,7 +855,7 @@ declare global {
         getDeviceBackups: (requestID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupsPage: (limit?: number, afterDeviceID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupFoldersPage: (deviceID: string, limit?: number, afterSourceID?: number) => Promise<DesktopResult<XDriveDeviceBackupFolderPage>>
-        getDeviceBackupLocalDevice: () => Promise<DesktopResult<{ device_id: string }>>
+        getDeviceBackupLocalDevice: () => Promise<DesktopResult<{ device_id: string; name: string }>>
         getDeviceBackupLocalDrafts: (limit?: number, afterID?: number) => Promise<DesktopResult<XDriveLocalSourceDraftPage>>
         getDeviceBackupLocalSource: (sourceID: number) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
         renameDeviceBackupLocalSource: (sourceID: number, revision: number, name: string) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>

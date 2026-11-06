@@ -709,6 +709,7 @@ export type AgentLocalBoundBackupRemoval = {
 
 export type AgentVerifiedLocalDevice = {
   device_id: string
+  name: string
 }
 
 export type AgentSource = {

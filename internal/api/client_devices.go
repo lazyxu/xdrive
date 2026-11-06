@@ -153,7 +153,7 @@ func (s *Server) verifyCurrentClientDevice(c *gin.Context) {
 		return
 	}
 	c.Header("Cache-Control", "private, no-store")
-	c.JSON(http.StatusOK, gin.H{"device_id": device.ID})
+	c.JSON(http.StatusOK, gin.H{"device_id": device.ID, "name": device.Name})
 }
 
 func (s *Server) listClientDevices(c *gin.Context) {

@@ -201,7 +201,8 @@ func setup(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	if err := ensureSynologyDeviceIdentity(ctx, cli, &cfg); err != nil {
+	deviceName, err := ensureSynologyDeviceIdentity(ctx, cli, &cfg)
+	if err != nil {
 		return err
 	}
 
@@ -250,7 +251,7 @@ func setup(args []string) error {
 		}
 	}
 
-	sourceName := setupSourceName(remote, *name)
+	sourceName := setupSourceName(remote, *name, deviceName)
 	var targetID uint64
 	if remote.ID != 0 {
 		if remote.TargetNodeID == nil || *remote.TargetNodeID == 0 {
@@ -391,32 +392,32 @@ func validateSynologySourceDeviceBinding(remote client.Source, configuredID, req
 
 func validateManagedTargetFlag(target string) error {
 	if strings.TrimSpace(target) != "" {
-		return fmt.Errorf("--target is no longer supported: xDrive Server provisions new Synology Push destinations under 同步文件夹/Push")
+		return fmt.Errorf("--target is no longer supported: xDrive Server provisions new Synology Push destinations under 同步文件夹/Push/<name>")
 	}
 	return nil
 }
 
-func ensureSynologyDeviceIdentity(ctx context.Context, api *client.Client, cfg *sourceagentconfig.Config) error {
+func ensureSynologyDeviceIdentity(ctx context.Context, api *client.Client, cfg *sourceagentconfig.Config) (string, error) {
 	if cfg == nil {
-		return fmt.Errorf("source-agent config is required")
+		return "", fmt.Errorf("source-agent config is required")
 	}
 	if cfg.DeviceID != "" && cfg.DeviceCredentialID != "" {
 		token, err := sourceagentconfig.LoadDeviceCredential(*cfg)
 		if err != nil {
-			return fmt.Errorf("load registered Synology device credential: %w", err)
+			return "", fmt.Errorf("load registered Synology device credential: %w", err)
 		}
 		verified, err := api.VerifyLocalDevice(ctx, cfg.DeviceID, token)
 		if err != nil {
-			return fmt.Errorf("verify registered Synology device: %w; revoke or re-enroll this device explicitly", err)
+			return "", fmt.Errorf("verify registered Synology device: %w; revoke or re-enroll this device explicitly", err)
 		}
 		if verified.DeviceID != cfg.DeviceID {
-			return fmt.Errorf("Synology device identity response does not match the configured device")
+			return "", fmt.Errorf("Synology device identity response does not match the configured device")
 		}
 		api.SetDeviceIdentity(cfg.DeviceID, token)
-		return nil
+		return verified.Name, nil
 	}
 	if cfg.DeviceID != "" || cfg.DeviceCredentialID != "" {
-		return fmt.Errorf("incomplete Synology device identity; remove the stale config and run setup again")
+		return "", fmt.Errorf("incomplete Synology device identity; remove the stale config and run setup again")
 	}
 	name, err := os.Hostname()
 	if err != nil || strings.TrimSpace(name) == "" {
@@ -424,26 +425,30 @@ func ensureSynologyDeviceIdentity(ctx context.Context, api *client.Client, cfg *
 	}
 	registered, err := api.RegisterClientDevice(ctx, name, "synology", version.String())
 	if err != nil {
-		return fmt.Errorf("register Synology Push device: %w", err)
+		return "", fmt.Errorf("register Synology Push device: %w", err)
 	}
 	if err := sourceagentconfig.SaveDeviceCredential(cfg, registered.Device.ID, registered.DeviceToken); err != nil {
-		return fmt.Errorf("save Synology device credential: %w", err)
+		return "", fmt.Errorf("save Synology device credential: %w", err)
 	}
 	if err := sourceagentconfig.Save(*cfg); err != nil {
-		return err
+		return "", err
 	}
 	api.SetDeviceIdentity(cfg.DeviceID, registered.DeviceToken)
-	return nil
+	return registered.Device.Name, nil
 }
 
-func setupSourceName(remote client.Source, requestedName string) string {
+func setupSourceName(remote client.Source, requestedName, deviceName string) string {
 	if value := strings.TrimSpace(requestedName); value != "" {
 		return value
 	}
 	if remote.ID != 0 && strings.TrimSpace(remote.Name) != "" {
 		return strings.TrimSpace(remote.Name)
 	}
-	return "Synology Photos"
+	candidate := strings.TrimSpace(deviceName)
+	if candidate != "" && meta.ValidSourceName(candidate) && meta.ValidateName(candidate) == nil {
+		return candidate
+	}
+	return "Synology NAS"
 }
 
 func status() error {

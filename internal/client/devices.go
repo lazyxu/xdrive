@@ -160,6 +160,7 @@ func (c *Client) LocalSourceDrafts(ctx context.Context, deviceID, deviceToken st
 
 type VerifiedLocalDevice struct {
 	DeviceID string `json:"device_id"`
+	Name     string `json:"name"`
 }
 
 // SendDeviceHeartbeat records only credential-verified Agent presence. It
