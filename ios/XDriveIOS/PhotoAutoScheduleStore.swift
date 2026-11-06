@@ -47,6 +47,11 @@ final class XDriveIOSPhotoAutoScheduleStore {
         var historyRecoveryRequired: Bool? = nil
         var historyRecoveryPassClean: Bool? = nil
         var historyRecoveryReadyToCommit: Bool? = nil
+        // The old only-new boundary cannot distinguish old-dated imports from
+        // pre-existing unbacked assets after history expiry. Require explicit
+        // one-time consent before a full-scope receipt reconciliation can upload.
+        var historyRecoveryRequiresConsent: Bool? = nil
+        var historyRecoveryFullScopeConfirmed: Bool? = nil
 
         var requiresFullLibraryReconciliation: Bool {
             historyRecoveryRequired == true
@@ -236,6 +241,7 @@ final class XDriveIOSPhotoAutoScheduleStore {
               state.targetSourceID == sourceID,
               state.targetNodeID == targetNodeID,
               state.enabled, !state.pausedForReview,
+              state.historyRecoveryRequiresConsent != true,
               state.nextDueAt <= now,
               let following = XDriveIOSPhotoAutoSchedulePolicy.nextDue(
                 after: now, intervalMinutes: state.intervalMinutes
@@ -264,6 +270,14 @@ final class XDriveIOSPhotoAutoScheduleStore {
             // previously visited positional window in the recovery pass.
             state.historyRecoveryPassClean = true
             state.historyRecoveryReadyToCommit = false
+            if state.historyRecoveryFullScopeConfirmed == true,
+               let previousAuthorization = state.libraryAuthorizationRaw,
+               previousAuthorization != epoch.authorization {
+                // Full/Limited scope expansion needs fresh explicit consent;
+                // do not silently broaden the library the user agreed to scan.
+                state.historyRecoveryRequiresConsent = true
+                state.historyRecoveryFullScopeConfirmed = false
+            }
         }
         state.libraryChangeEpoch = epoch.serialized
         state.libraryAuthorizationRaw = epoch.authorization
@@ -300,9 +314,17 @@ final class XDriveIOSPhotoAutoScheduleStore {
               ) : 0
         state.windowIndex = followingWindow
         var recoveryPassRestarted = false
-        if state.historyRecoveryRequired == true {
+        if state.historyRecoveryRequired == true &&
+           state.historyRecoveryFullScopeConfirmed == true {
             state.historyRecoveryReadyToCommit = false
             if !unchanged {
+                if let previousAuthorization = state.libraryAuthorizationRaw,
+                   previousAuthorization != epoch.authorization {
+                    // Permission changes can expand or shrink the set of
+                    // originals covered by this explicit recovery consent.
+                    state.historyRecoveryRequiresConsent = true
+                    state.historyRecoveryFullScopeConfirmed = false
+                }
                 // A changed PhotoKit generation invalidates the whole pass.
                 state.historyRecoveryPassClean = true
             } else {
@@ -385,10 +407,37 @@ final class XDriveIOSPhotoAutoScheduleStore {
         state.historyRecoveryRequired = true
         state.historyRecoveryPassClean = true
         state.historyRecoveryReadyToCommit = false
+        state.historyRecoveryRequiresConsent = true
+        state.historyRecoveryFullScopeConfirmed = false
         state.windowIndex = 0
         state.libraryChangeEpoch = nil
         state.libraryAuthorizationRaw = nil
         state.nextDueAt = min(state.nextDueAt, now)
+        try persist(state, owner: owner)
+        return state
+    }
+
+    /// Explicitly authorize one full-library receipt reconciliation after
+    /// the only-new history has expired. This may upload older-dated originals
+    /// that lack a current Server receipt; future runs return to only-new mode.
+    @discardableResult
+    func confirmFullLibraryReconciliation(
+        owner: XDriveNativeOwnerRoot,
+        now: Date = Date()
+    ) throws -> State? {
+        guard var state = status(owner: owner), state.enabled,
+              !state.pausedForReview,
+              state.backupStartRule == .onlyNew,
+              state.historyRecoveryRequired == true,
+              state.historyRecoveryRequiresConsent == true else { return nil }
+        state.historyRecoveryRequiresConsent = false
+        state.historyRecoveryFullScopeConfirmed = true
+        state.historyRecoveryPassClean = true
+        state.historyRecoveryReadyToCommit = false
+        state.windowIndex = 0
+        state.libraryChangeEpoch = nil
+        state.libraryAuthorizationRaw = nil
+        state.nextDueAt = now
         try persist(state, owner: owner)
         return state
     }
@@ -405,6 +454,8 @@ final class XDriveIOSPhotoAutoScheduleStore {
         guard var state = status(owner: owner), state.enabled,
               state.historyRecoveryRequired == true,
               state.historyRecoveryReadyToCommit == true,
+              state.historyRecoveryRequiresConsent != true,
+              state.historyRecoveryFullScopeConfirmed == true,
               state.windowIndex == 0,
               state.libraryChangeEpoch == expectedToken,
               state.libraryAuthorizationRaw == expectedAuthorization else {
@@ -413,6 +464,8 @@ final class XDriveIOSPhotoAutoScheduleStore {
         state.historyRecoveryRequired = false
         state.historyRecoveryPassClean = true
         state.historyRecoveryReadyToCommit = false
+        state.historyRecoveryRequiresConsent = false
+        state.historyRecoveryFullScopeConfirmed = false
         try persist(state, owner: owner)
         return state
     }
