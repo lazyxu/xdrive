@@ -808,6 +808,10 @@ struct XDriveIOSNativeFilesBrowser: View {
     // At most 200 same-parent, revision-locked Nodes survive virtual-window
     // eviction. Every mutation is still verified by the existing Server.
     @State private var selectedSnapshots = [UInt64: XDriveIOSNativeFilesNode]()
+    @State private var selectAllBusy = false
+    @State private var selectAllNotice: String?
+    @State private var selectAllEpoch = UUID()
+    @State private var selectAllJob: Task<Void, Never>?
     @State private var showingBatchTrashConfirmation = false
     @State private var draggedNode: XDriveIOSNativeFilesNode?
     @State private var draggedOwner: XDriveNativeOwnerRoot?
@@ -892,7 +896,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private var canSelectPage: Bool {
-        !model.loading && model.verifiedPage && !isGlobalSearch &&
+        !model.loading && !selectAllBusy && model.verifiedPage && !isGlobalSearch &&
             login.owner != nil && !model.entries.isEmpty &&
             !batchTrash.busy && !batchTarget.busy &&
             !batchExport.busy && batchExport.prepared.isEmpty
@@ -1582,6 +1586,20 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Section("批量操作") {
                     Text("已选 \(selectedIDs.count) 项（最多 200 项，可跨已加载窗口；服务器逐项复核）")
                         .font(.footnote).foregroundStyle(.secondary)
+                    if selectAllBusy {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("正在读取完整目录选择范围…")
+                            Button("取消全选读取") { cancelSelectAllRead() }
+                                .accessibilityIdentifier("native-ios-files-select-all-cancel")
+                        }
+                        .accessibilityIdentifier("native-ios-files-select-all-loading")
+                    }
+                    if let selectAllNotice {
+                        Text(selectAllNotice).font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("native-ios-files-select-all-status")
+                    }
                     if batchExport.busy {
                         ProgressView("正在顺序下载和核对文件…")
                         Button("取消批量下载", role: .cancel) {
@@ -1665,6 +1683,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .disabled(!canSelectPage || selectedIDs.isEmpty)
                 .accessibilityIdentifier("native-ios-files-batch-move")
                 Menu {
+                    Button("全选当前目录（最多 200 项）") {
+                        selectAllCurrentFolder()
+                    }
+                    .disabled(!canSelectPage ||
+                        model.total > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected)
+                    .accessibilityIdentifier("native-ios-files-select-all-server")
                     Button("选择已加载项目（最多 200 项）") {
                         guard canSelectPage else { return }
                         for entry in model.entries where !selectedIDs.contains(entry.id) {
@@ -1964,6 +1988,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Button("完成") {
                         guard !batchTrash.busy, !batchTarget.busy,
                               !batchExport.busy, batchExport.prepared.isEmpty else { return }
+                        cancelSelectAllRead()
                         model.cancelAdjacent()
                         selecting = false
                         selectedIDs.removeAll()
@@ -2364,6 +2389,7 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func suspendVisibleRange() {
         cancelPathLookup()
+        cancelSelectAllRead()
         clearInternalDrag()
         pendingDrop = nil
         inlineFolders.suspendForNavigation()
@@ -2434,6 +2460,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             inlineFolders.invalidate()
             showingFileOperations = false
             fileOperationsOwner = nil
+            cancelSelectAllRead()
+            selectAllNotice = nil
             operationWasAccepted = false
             managementWriteConfirmed = false
             versionRestoreConfirmed = false
@@ -2532,7 +2560,101 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     /// Both display modes operate on the same, currently verified 64-item
     /// Owner page. No grid-specific reads or copied mutation pipelines.
+    private func cancelSelectAllRead() {
+        selectAllEpoch = UUID()
+        selectAllJob?.cancel()
+        selectAllJob = nil
+        selectAllBusy = false
+    }
+
+    /// PWA parity: explicitly Select All only when the authoritative Server
+    /// directory has at most 200 items. Never select just the visible page.
+    private func selectAllCurrentFolder() {
+        guard selecting, canSelectPage, let owner = login.owner,
+              let folderID = parentID, model.total > 0,
+              model.total <= XDriveIOSNativeFilesBatchTrashPolicy.maxSelected,
+              model.canResume(
+                owner: owner, folderID: folderID, query: activeQuery,
+                filters: searchFilters, sort: sort, order: order,
+                grouping: grouping, foldersFirst: foldersFirst
+              ) else { return }
+        let total = model.total
+        let chosenSort = sort, chosenOrder = order
+        let chosenGroup = grouping, chosenFoldersFirst = foldersFirst
+        let token = UUID()
+        selectAllEpoch = token
+        selectAllBusy = true
+        selectAllNotice = nil
+        selectAllJob = Task { @MainActor in
+            defer {
+                if selectAllEpoch == token {
+                    selectAllBusy = false
+                    selectAllJob = nil
+                }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner)
+                else { throw XDriveIOSNativeFilesReadError.invalidScope }
+                let reader = XDriveIOSNativeFilesReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                )
+                var nodes = [UInt64: XDriveIOSNativeFilesNode]()
+                for start in stride(
+                    from: 0, to: total, by: XDriveIOSNativeFilesPagePolicy.pageSize
+                ) {
+                    let page = try await reader.children(
+                        parentID: folderID, offset: start,
+                        sort: chosenSort, order: chosenOrder,
+                        grouping: chosenGroup,
+                        foldersFirst: chosenFoldersFirst
+                    )
+                    try Task.checkCancellation()
+                    guard page.total_count == total,
+                          page.items.count == min(
+                            XDriveIOSNativeFilesPagePolicy.pageSize, total - start
+                          ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                    for node in page.items {
+                        guard node.parent_id == folderID, nodes[node.id] == nil
+                        else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                        nodes[node.id] = node
+                    }
+                }
+                let ids = Set(nodes.keys)
+                guard ids.count == total,
+                      XDriveIOSNativeFilesSelectionPolicy.validItems(
+                        snapshots: nodes, selectedIDs: ids, parentID: folderID
+                      ) != nil else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                try Task.checkCancellation()
+                guard selectAllEpoch == token, selecting, !model.loading,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      model.total == total,
+                      model.canResume(
+                        owner: owner, folderID: folderID, query: activeQuery,
+                        filters: searchFilters, sort: chosenSort,
+                        order: chosenOrder, grouping: chosenGroup,
+                        foldersFirst: chosenFoldersFirst
+                      ) else { return }
+                // Reject a concurrent changed revision even if the total is
+                // identical. Never commit a partial or unverified selection.
+                guard model.entries.allSatisfy({
+                    nodes[$0.id] == $0.node
+                }) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                selectedSnapshots = nodes
+                selectedIDs = ids
+                selectAllNotice = "已选择当前目录全部 \(total) 项。"
+            } catch is CancellationError {
+                // Cancellation preserves the previous selected snapshots.
+            } catch {
+                guard selectAllEpoch == token else { return }
+                selectAllNotice = "目录或权限已变化，保留原选择；请刷新后重试。"
+            }
+        }
+    }
+
     private func toggleSelection(_ entry: XDriveIOSNativeFilesEntry) {
+        if selectAllBusy { cancelSelectAllRead() }
         guard canSelectPage,
               model.entries.contains(where: { $0.node == entry.node }) else { return }
         if selectedIDs.contains(entry.id) {
@@ -3095,6 +3217,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func reload(resetOffset: Bool = false) {
+        cancelSelectAllRead()
+        selectAllNotice = nil
         clearInternalDrag()
         pendingDrop = nil
         inlineFolders.invalidate()
