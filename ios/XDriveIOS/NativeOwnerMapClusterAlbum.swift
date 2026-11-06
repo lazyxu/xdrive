@@ -106,16 +106,25 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                         Color.clear
                             .frame(height: 24)
                             .id("\(next.placeIndex):\(next.offset)")
-                            .onAppear {
-                                scrollFootVisible = true
-                                advanceIfVisible()
-                            }
+                            .onAppear { scrollFootVisible = true }
                             .onDisappear { scrollFootVisible = false }
                             .accessibilityHidden(true)
                     }
                 }
                 .padding(.horizontal, 4)
             }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12).onEnded { gesture in
+                    guard gesture.translation.height <= -12,
+                          abs(gesture.translation.height) >
+                            abs(gesture.translation.width),
+                          scrollFootVisible, activeOwner, !busy,
+                          viewing == nil, page != nil, let next else { return }
+                    scrollFootVisible = false
+                    load(next, history: earlier + [cursor],
+                         autoAdvance: true)
+                }
+            )
             .onChange(of: visiblePageRevision) { _ in
                 // Auto paging replaces the previous pair of 48-photo windows.
                 // Re-anchor only to a Node+revision still present in the exact
@@ -142,9 +151,6 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 returnScroll.scrollTo(anchor.id, anchor: .center)
                 viewerReturn = nil
             }
-            .onChange(of: busy) { isBusy in
-                if !isBusy { advanceIfVisible() }
-            }
             }
         }
         .navigationTitle("位置照片")
@@ -152,8 +158,16 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    // Paging is driven by the visible grid sentinels; expose
-                    // only an explicit refresh, not transport-page controls.
+                    Button("查看上一批照片") {
+                        guard let previous = earlier.last else { return }
+                        load(previous, history: Array(earlier.dropLast()))
+                    }
+                    .disabled(busy || !activeOwner || earlier.isEmpty || viewing != nil)
+                    Button("继续浏览下一批照片") {
+                        guard let next else { return }
+                        load(next, history: earlier + [cursor])
+                    }
+                    .disabled(busy || !activeOwner || next == nil || viewing != nil)
                     Button("重新核对当前位置照片") {
                         load(cursor, history: earlier)
                     }
@@ -497,13 +511,6 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             placeIndex: nextIndex, offset: nextOffset)
     }
 
-    private func advanceIfVisible() {
-        guard scrollFootVisible, activeOwner, !busy, !coverLoading,
-              viewing == nil, page != nil, error == nil, let next else { return }
-        scrollFootVisible = false
-        load(next, history: earlier + [cursor], autoAdvance: true)
-    }
-
     private func invalidate() {
         generation = UUID()
         loadTask?.cancel()
@@ -670,7 +677,6 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                         if generation == ticket {
                             coverLoading = false
                             coverTask = nil
-                            advanceIfVisible()
                         }
                     }
                     // At most 48 sequential thumbnails; no original download.
