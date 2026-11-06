@@ -1,0 +1,225 @@
+package api
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+)
+
+func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	rootDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootSQL, err := rootDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rootSQL.Close()
+
+	schema := "media_exact_trip_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := rootDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = rootDB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schema)).Error
+	}()
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := parsed.Query()
+	params.Set("search_path", schema)
+	parsed.RawQuery = params.Encode()
+	db, err := gorm.Open(postgres.Open(parsed.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	if err := db.AutoMigrate(
+		&meta.User{}, &meta.Node{}, &meta.File{},
+		&meta.MediaMetadata{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
+		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoMetadata{},
+		&meta.PhotoResource{}, &meta.PhotoPlaceLabel{},
+	); err != nil { t.Fatal(err) }
+
+	createOwner := func(label string) (meta.User, meta.Node) {
+		t.Helper()
+		owner := meta.User{
+			Username: label + uuid.NewString(), PasswordHash: "unused",
+			Role: meta.UserRoleUser, SessionVersion: 1,
+		}
+		if err := db.Create(&owner).Error; err != nil {
+			t.Fatal(err)
+		}
+		node := meta.Node{
+			Name: "", Type: meta.NodeTypeDir,
+			OwnerID: owner.ID, Revision: 1,
+		}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		return owner, node
+	}
+	owner, root := createOwner("trip-owner-")
+	other, otherRoot := createOwner("trip-foreign-")
+	add := func(uid uint64, parent uint64, name string, day int,
+		latitude, longitude *float64) uint64 {
+		t.Helper()
+		node := meta.Node{
+			ParentID: &parent, Name: name, Type: meta.NodeTypeFile,
+			OwnerID: uid, Revision: 1,
+		}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		file := meta.File{
+			NodeID: node.ID, Size: 100,
+			StorageKey: "exact-trip-" + name,
+			SHA256: fmt.Sprintf("%064x", node.ID),
+		}
+		if err := db.Create(&file).Error; err != nil {
+			t.Fatal(err)
+		}
+		captured := time.Date(2026, time.January, day, 12, 0, 0, 0, time.UTC)
+		if err := db.Create(&meta.MediaMetadata{
+			NodeID: node.ID, OwnerID: uid, NodeRevision: node.Revision,
+			SHA256: file.SHA256, MediaKind: meta.MediaKindImage,
+			MIMEType: "image/jpeg", CapturedAt: &captured,
+			Latitude: latitude, Longitude: longitude,
+			IndexState: meta.MediaIndexStateReady,
+		}).Error; err != nil { t.Fatal(err) }
+		asset := meta.PhotoAsset{
+			OwnerID: uid, PrimaryNodeID: node.ID,
+			Kind: meta.PhotoAssetKindImage, EvidenceKey: "trip:" + name,
+		}
+		if err := db.Create(&asset).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.PhotoMetadata{
+			AssetID: asset.ID, MediaKind: meta.MediaKindImage,
+			MIMEType: "image/jpeg", CapturedAt: &captured,
+			Latitude: latitude, Longitude: longitude,
+		}).Error; err != nil { t.Fatal(err) }
+		return node.ID
+	}
+	ptr := func(n float64) *float64 { return &n }
+	homeLat, homeLon := ptr(1.2), ptr(1.2)
+	awayLat, awayLon := ptr(10.1), ptr(10.1)
+	for day := 1; day <= 3; day++ {
+		add(owner.ID, root.ID, fmt.Sprintf("home-%d-a.jpg", day), day, homeLat, homeLon)
+		add(owner.ID, root.ID, fmt.Sprintf("home-%d-b.jpg", day), day, homeLat, homeLon)
+	}
+	included := map[uint64]bool{}
+	excluded := map[uint64]bool{}
+	var firstAway uint64
+	for day := 4; day <= 5; day++ {
+		first := add(owner.ID, root.ID, fmt.Sprintf("trip-%d-a.jpg", day), day, awayLat, awayLon)
+		if day == 4 {
+			firstAway = first
+		}
+		included[first] = true
+		included[add(owner.ID, root.ID, fmt.Sprintf("trip-%d-b.jpg", day), day, awayLat, awayLon)] = true
+		excluded[add(owner.ID, root.ID, fmt.Sprintf("same-day-home-%d.jpg", day), day, homeLat, homeLon)] = true
+		excluded[add(owner.ID, root.ID, fmt.Sprintf("unlocated-%d.jpg", day), day, nil, nil)] = true
+	}
+	excluded[add(owner.ID, root.ID, "same-day-other-city.jpg", 4, ptr(20.2), ptr(20.2))] = true
+	add(other.ID, otherRoot.ID, "foreign-away.jpg", 4, awayLat, awayLon)
+
+	ctx := context.Background()
+	segments, err := queryMediaExactTripSegments(ctx, db, owner.ID, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segments) != 1 {
+		t.Fatalf("exact trip segments=%+v, expected one", segments)
+	}
+	segment := segments[0]
+	id := mediaExactTripID(segment, "UTC")
+	if id == "" {
+		t.Fatal("missing exact trip id")
+	}
+	query, err := (&Server{DB: db}).mediaExactTripQuery(ctx, owner.ID, segment, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var total int64
+	if err := query.Session(&gorm.Session{}).
+		Distinct("xd_media_metadata.node_id").Count(&total).Error; err != nil {
+		t.Fatal(err)
+	}
+	if total != 4 {
+		t.Fatalf("exact member count=%d, expected 4", total)
+	}
+	server := &Server{DB: db}
+	for _, window := range []struct{ offset, limit, expected int }{
+		{0, 2, 2}, {2, 2, 2}, {4, 2, 0},
+	} {
+		q, err := server.mediaExactTripQuery(ctx, owner.ID, segment, "UTC")
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, err := server.materializeMediaItems(
+			ctx, owner.ID, q, window.limit, window.offset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) != window.expected {
+			t.Fatalf("window %+v has %d items", window, len(page))
+		}
+		for _, item := range page {
+			if !included[item.Node.ID] || excluded[item.Node.ID] {
+				t.Fatalf("non-trip item leaked: node=%d", item.Node.ID)
+			}
+			delete(included, item.Node.ID)
+		}
+	}
+	if len(included) != 0 {
+		t.Fatalf("missing expected trip members: %+v", included)
+	}
+
+	foreignSegments, err := queryMediaExactTripSegments(ctx, db, other.ID, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, current := range foreignSegments {
+		if mediaExactTripID(current, "UTC") == id {
+			t.Fatal("foreign Owner resolved another Owner trip")
+		}
+	}
+	// A GPS edit that makes home dominant on a former trip day must revoke
+	// the old exact segment rather than silently falling back to date range.
+	if err := db.Model(&meta.MediaMetadata{}).
+		Where("owner_id = ? AND node_id = ?", owner.ID, firstAway).
+		Updates(map[string]any{"latitude": 1.2, "longitude": 1.2}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Recheck that old members are never selected after changing location.
+	after, err := queryMediaExactTripSegments(ctx, db, owner.ID, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, current := range after {
+		if mediaExactTripID(current, "UTC") == id {
+			t.Fatal("geography-changed trip retained stale route")
+		}
+	}
+}
+

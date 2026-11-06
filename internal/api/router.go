@@ -407,6 +407,9 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/media/places/baidu-jsapi/scope-handoff/consume", s.baiduMapScopeHandoffConsumeHTTP)
 	authed.GET("/media/memories", s.listMediaMemories)
 	authed.GET("/media/memories/:memoryID/items", s.listMediaMemoryItems)
+	// B2: Owner GPS calendar-cell trips, separate from legacy date-only Memories.
+	authed.GET("/media/trips", s.listMediaExactTrips)
+	authed.GET("/media/trips/:tripID/items", s.listMediaExactTripItems)
 	authed.GET("/media/duplicate-organize/plan", s.mediaDuplicateOrganizePlan)
 	authed.POST("/media/duplicate-organize/apply", s.applyMediaDuplicateOrganize)
 	authed.GET("/media/duplicates", s.listMediaDuplicateGroups)
