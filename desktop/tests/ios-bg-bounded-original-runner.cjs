@@ -318,7 +318,8 @@ test('approved BG only-new run replays the durable PhotoKit queue before reservi
   assert.match(scope, /guard try await queue\.isCaughtUp\(owner: owner\) else \{[\s\S]*?resubmitOnlyIfStillApproved\(\)[\s\S]*?return/)
   assert.match(scope, /\.requiresExplicitBaseline \{[\s\S]*?\.invalidArchivedToken \{/)
   assert.match(scope, /newOnlySince = plan\.newOnlySince/)
-  assert.match(scope, /newOnlySince: newOnlySince,\s*changeQueue: incrementalQueue/)
+  assert.match(scope, /startOffset: offset,\s*maximumNewOriginals: min\([\s\S]*?\),\s*newOnlySince: newOnlySince,\s*changeQueue: incrementalQueue/, 
+    'Swift labeled arguments must follow the shared run signature order')
   assert.match(queue, /func pendingCandidates\(owner: XDriveNativeOwnerRoot, limit: Int = 64\)/)
   assert.match(runner, /changeQueue\.settle\(\s*candidate\.pending, result: \.confirmed/)
   assert.match(runner, /changeQueue\.settle\(\s*candidate\.pending, result: \.failed/)
