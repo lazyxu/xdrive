@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -96,7 +97,7 @@ func TestRetiredSynologyPhotosPushPreservesHistoryAndCannotWrite(t *testing.T) {
 
 	// Existing SourceID-bound sessions must fail closed even if the old
 	// caller still presents its historical Source/Root headers.
-	ctx, _ := gin.CreateTestContext(nil)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	init := uploadInitRequest{ParentID: &target.ID, Name: "new.jpg", SourceID: source.ID}
 	if err := requireSourceRunOrLocalPushTargetTx(context.Background(), db, ctx,
 		owner.ID, target.ID, init); !errors.Is(err, errManagedSourceWriteDenied) {

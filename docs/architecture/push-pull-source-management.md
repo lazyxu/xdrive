@@ -1,5 +1,12 @@
 # Unified Push/Pull Source Management Architecture
 
+> **2026-11-06 update:** DSM Synology Photos **Push** is retired as a
+> product feature. Back up its Personal/Shared original files with DSM
+> **local_folder Push** using the existing owning `xdrive-agent`.
+> Synology Photos **Pull**, Synology Files Pull, and all historical
+> Source/Node/UploadSession/CAS data remain supported. Earlier entries
+> describing a separate DSM Source Agent are historical, not active policy.
+
 **Decision:** 2026-11-05  
 **Scope:** new Push/Pull Sources and new destination directories only. Existing Sources, old destinations, old receipts, and data migration are out of scope. Do not add migration code or silently move existing data.
 
@@ -54,12 +61,12 @@ Current master contains older layouts such as 同步文件夹/设备备份, 同�
 | xd Push / xd backup | local_folder | push | same owning xdrive-agent |
 | iOS Photos Push | ios_photos | push | native PhotoKit runner |
 | Android Photos Push | android_photos (to add) | push | native MediaStore / WorkManager runner |
-| DSM Photos Push | synology_photos | push | DSM xdrive-source-agent |
+| DSM Photos Push (retired) | synology_photos | push | none; legacy records retained for read/archive only |
 | Yike Photos Pull | yike_photos | pull | Server Pull Worker |
 | Synology Photos Pull | synology_photos | pull | Server Pull Worker |
 | Synology Files Pull | synology_files | pull | Server Pull Worker |
 
-Kind and direction together identify the connector. Synology Photos legitimately uses the same kind for Push and Pull; never infer direction from kind alone. Desktop Push and xd Push are not separate Source kinds or upload implementations.
+Kind and direction together identify the connector. `synology_photos` **Pull** remains a Server worker; the historical `synology_photos` **Push** is read/archive-only and is not offered for new creation. Desktop Push and xd Push are not separate Source kinds or upload implementations.
 
 ## 4. Unified Push device identity and binding
 
@@ -75,7 +82,7 @@ Every Push executor has an Owner-scoped ClientDevice:
 |---|---|---|
 | Windows / Linux / macOS Desktop | registered Device + protected Agent token | owning Agent + verified local Root |
 | xd CLI | reuses Desktop's Device and Agent | no separate credential or Runner |
-| Synology DSM | registered Synology Device + protected source-agent token | source-agent + verified Personal/Shared roots |
+| Synology DSM | DSM folder Backup Agent and its authorized Root | original xdrive-agent --backup-only for Personal/Shared original paths |
 | iOS | registered identity-only Device | dedicated PhotoKit managed-upload / BG grant routes only |
 | Android | registered identity-only Device | dedicated MediaStore managed-upload / BG routes only |
 
@@ -97,7 +104,7 @@ Source.DeviceID is the connector-neutral Push creator/executor binding. New Loca
 ### One writer per device/source
 
 - Desktop and xd share one owning xdrive-agent and durable per-file Operation journal.
-- DSM has a separate source-agent because it reads DSM filesystem roots, but uses the same Server Source, Device, target, run and CAS receipt contracts.
+- DSM reuses the original folder Backup-only Agent for ordinary shares **and** Synology Photos original file directories; no dedicated DSM Photos uploader remains.
 - iOS and Android keep native encrypted intent ledgers and OS permission checks, but reuse the Go UploadSession/chunks/finalize/CAS writer through narrow authorization routes.
 - No second CAS writer, blind retry after uncertain ACK, or whole-Source completion claim from one batch.
 
