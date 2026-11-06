@@ -75,7 +75,7 @@ test('native context shortcuts reuse real Owner-scoped file/folder actions, not 
   assert.match(panel, /case \.favorite:\s*\/\/[^\n]*[\s\S]*?favoriteMutation\.add\(selected, login: login\)/)
   assert.match(browser, /Label\("收藏", systemImage: "star"\)/)
   assert.match(panel, /case \.shareLink:\s*shareNode = selected/)
-  assert.match(panel, /case \.download:[\s\S]*?exporter\.prepare\(file, login: login\)/)
+  assert.match(panel, /case \.download:[\s\S]*?exporter\.prepare\(file, login: login, transfers: transfers\)/)
   assert.match(panel, /folderArchive\.prepare\([\s\S]*?expectedOwner: expectedOwner/)
   assert.match(panel, /case \.trash:\s*showingTrash = true/)
   assert.match(panel, /mutator\.perform\(node: directory, kind: \.trash,/)

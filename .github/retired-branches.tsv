@@ -32,6 +32,14 @@ feat/dsm-device-backup-management-parity	12315b55f8daf48f6890fb9dee435aba1eb20c8
 feat/push-deviceid-upload-auth-audit-20261106	d02011e3a61c2912a2644f78cb9aa9cbba252889	duplicate exact SHA; ancestor of active S01/S09 integration PR #3927; no open PR head/base uses this alias
 feat/push-s01-s09-unified-device-upload-auth-20261106	d02011e3a61c2912a2644f78cb9aa9cbba252889	duplicate exact SHA; ancestor of active S01/S09 integration PR #3927; no open PR head/base uses this alias
 
+# Reviewed oldest no-PR branches by immutable 2026-10-29/30 tips (2026-11-06 audit).
+feat/ios-bg-ledger-after-first-unlock-20261029	32ad58987a4fa2b6b3889abc38f5c573e43ba03d	obsolete proof-only BG/legacy WebKit prototype: current master retains Owner-Device scoped Keychain grant, Source/Target bound native BG UploadSession+CAS, stronger tests; three old WebKit/PWA entry files intentionally retired by AGENTS native-only decision; do not merge old auth writer
+refactor/files-shared-location-ancestors-20261030	81448e43567d9949e14fdb7d514b8f411a3d9571	exact source tip proven ancestor of accepted merged PR #3246 head 7496e170f72411f79b05c2a9043142dbbd89d118 (compare ahead 34 behind 0); current master retains location/reveal code and tests; never re-merge stale UI
+
+feat/notes-desktop-shared-page-port-20261103	b9f89a9081be6ae5949d2eecdc6cb2dd28d214bb	obsolete Owner-scoped Notes Electron bridge precursor: four of six changed blobs byte-identical to merged #3726 exact HEAD bec77c034e2ee6742104585850280ac354e151a3; remaining Agent client and Notes port replaced by stronger authenticated Owner/revision/bounded adapter in #3726 and current master; no unique runtime feature
+
+feat/admin-offline-update-upload-20261103	c45100b04016edf8d0ea6e38e232ead67b203b33	obsolete raw PUT /update/imports candidate replaced by accepted #3765 and current master POST /update/offline/imports registration plus per-chunk SHA/manifest/finalize, os.Root containment and fixed admission; old UpdateImportsDir and unsafe raw append route deliberately not restored
+
 # Verified map aliases / explicitly declined legacy map path; 2026-11-06.
 dev/ios-map-3936-rebase-source-20261106	4d331a28ae83505ac1ec9b10b690e8ce57abd354	duplicate exact head of active native MapKit PR #3936; canonical source branch remains open and protected
 feat/ios-photo-map-limited-access-20261105	34bd62e70e5c64b0baecc455e739c5871b9eda71	rejected obsolete Limited PhotoKit map path; Full Access-only map design accepted in merged PR #3911 and #3922
