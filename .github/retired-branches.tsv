@@ -45,3 +45,6 @@ feat/notes-dsm-owner-agent-port-20261103	fec10acc70faabf51feb25f29563dff7e72d068
 # 2026-11-06 exact-SHA follow-up: retired historical development alias tips; protect live PR #3945.
 dev/ios-map-3936-exact-ci-rebase-20261106	042b67e062a8f89a011112b0ef29cf0d15f8a642	exact head alias of merged PR #3936 (merged 2026-11-06); canonical native MapKit code retained by master; no open PR head/base uses this alias
 dev/ios-map-3945-master-20261106	1d16c7a986612ca72584e4684cc4bc0547b9f789	exact source tip strict ancestor of active #3945 head fd8ef96567b013415eb06c5b52539401df9db8db (compare ahead 1 behind 0); preserve current PR head/base
+
+# 2026-11-06 exact-head MapKit locate-me alias retirement; accepted canonical PR #3955.
+dev/ios-map-3955-master-20261106	1e58aad412b1be6773d9822eb80cc967a239b8ef	all six changed Git blobs equal merged PR #3955 exact tested head c7528147b96bebd102c501af734808472aee8c14; no unique code; retain immutable source in Git history

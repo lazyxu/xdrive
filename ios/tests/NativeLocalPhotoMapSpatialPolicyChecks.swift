@@ -171,6 +171,55 @@ struct NativeLocalMapSpatialPolicyChecks {
         precondition(two.add(latitude: 0, longitude: 0, representative: "second"))
         precondition(two.cells.count == 1 && two.cells[0].count == 2)
         precondition(two.cells[0].representative == "first")
+        // Revalidation must detect a stale MapKit marker even when grid key,
+        // representative local ID, and count match the fresh PhotoKit scan.
+        typealias MapCell = XDriveIOSNativeLocalMapSpatialCell<String>
+        let fresh = two.cells[0]
+        func editedCell(
+            latitude: Double? = nil, longitude: Double? = nil,
+            firstSeen: Int? = nil, count: Int? = nil,
+            representative: String? = nil,
+            key: Policy.Key? = nil
+        ) -> MapCell {
+            MapCell(
+                key: key ?? fresh.key,
+                representative: representative ?? fresh.representative,
+                latitude: latitude ?? fresh.latitude,
+                longitude: longitude ?? fresh.longitude,
+                firstSeen: firstSeen ?? fresh.firstSeen,
+                count: count ?? fresh.count
+            )
+        }
+        precondition(Policy.matchesCurrentCell(
+            fresh, current: fresh, representativeID: { $0 }))
+        precondition(!Policy.matchesCurrentCell(
+            editedCell(latitude: fresh.latitude + 0.001),
+            current: fresh, representativeID: { $0 }))
+        precondition(!Policy.matchesCurrentCell(
+            editedCell(longitude: fresh.longitude + 0.001),
+            current: fresh, representativeID: { $0 }))
+        precondition(!Policy.matchesCurrentCell(
+            editedCell(firstSeen: fresh.firstSeen + 1),
+            current: fresh, representativeID: { $0 }))
+        precondition(!Policy.matchesCurrentCell(
+            editedCell(count: fresh.count + 1),
+            current: fresh, representativeID: { $0 }))
+        precondition(!Policy.matchesCurrentCell(
+            editedCell(representative: "stale-photo"),
+            current: fresh, representativeID: { $0 }))
+        precondition(!Policy.matchesCurrentCell(
+            editedCell(representative: ""),
+            current: fresh, representativeID: { $0 }))
+        precondition(!Policy.matchesCurrentCell(
+            editedCell(count: 0),
+            current: fresh, representativeID: { $0 }))
+        precondition(!Policy.matchesCurrentCell(
+            editedCell(key: Policy.Key(
+                level: fresh.key.level,
+                latitudeCell: fresh.key.latitudeCell + 1,
+                longitudeCell: fresh.key.longitudeCell)),
+            current: fresh, representativeID: { $0 }))
+
         // The settled camera is always contained by the overscanned GPS
         // window; a short pan or zoom doesn't rescan 100k PhotoKit slots.
         typealias Auto = XDriveIOSNativeLocalMapAutoRefinePolicy
