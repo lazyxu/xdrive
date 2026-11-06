@@ -152,6 +152,8 @@ test('expired or incomplete PhotoKit history triggers receipt-verified full-libr
     source.indexOf('private func verifyOwner(')
   )
   assert.match(source, /case historyUnavailable/)
+  assert.match(source, /guard let original = try store\.baseline\(\) else \{[\s\S]*?throw Failure\.historyUnavailable/)
+  assert.match(source, /guard let token = try NSKeyedUnarchiver\.unarchivedObject\([\s\S]*?throw Failure\.historyUnavailable/)
   assert.match(source, /PHPhotosError\.persistentChangeTokenExpired/)
   assert.match(source, /PHPhotosError\.persistentChangeDetailsUnavailable/)
   assert.match(recovery, /XDriveIOSPhotoKitLibraryEpoch\.matches\([\s\S]*?expectedToken/)
