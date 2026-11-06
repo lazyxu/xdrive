@@ -81,7 +81,7 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 	handler := SourceHandlerFunc(func(_ context.Context, source meta.Source) (client.SyncRun, error) {
 		seq := handlerCalls.Add(1)
 		return client.SyncRun{
-			ID: fmt.Sprintf("run-%d-%d", source.ID, seq),
+			ID:       fmt.Sprintf("run-%d-%d", source.ID, seq),
 			SourceID: source.ID, Status: meta.SyncRunStatusCompleted,
 		}, nil
 	})
