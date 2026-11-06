@@ -712,7 +712,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
                 .disabled(controller.busy || controller.schedule?.enabled == true)
                 .accessibilityIdentifier("native-ios-photo-auto-start-rule")
-                Text("“仅备份新照片”通过 PhotoKit 持久化变更历史发现新增、导入和编辑；每个候选仍需核验当前云端原件收据。历史 Token 过期或变更详情不可用时，自动计划会先暂停并要求确认一次全库核对，未经确认不会擅自补传启用前的旧照片。手动／集中备份仍按各自规则扫描。")
+                Text("“仅备份新照片”通过 PhotoKit 持久化变更历史发现新增、导入和编辑；每个候选仍需核验当前云端原件收据。历史 Token 缺失、损坏、过期或变更详情不可用时，自动计划会先暂停并要求确认一次全库核对，未经确认不会擅自补传启用前的旧照片。手动／集中备份仍按各自规则扫描。")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("前台自动备份允许下载 iCloud 原件", isOn: $autoAllowICloud)
                     .disabled(controller.busy || controller.schedule?.enabled == true)
@@ -723,7 +723,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .accessibilityIdentifier("native-ios-photos-auto-saved-settings")
                     if active.requiresFullLibraryReconciliation {
                         if active.historyRecoveryRequiresConsent == true {
-                            Label("增量历史过期：等待全库核对确认",
+                            Label("增量历史不可用：等待全库核对确认",
                                   systemImage: "exclamationmark.triangle")
                                 .accessibilityIdentifier("native-ios-photo-history-recovery")
                             Text("系统已无法可靠区分启用前的旧照片与历史导入照片。为遵守“仅备份新照片”，自动任务已暂停。确认后会逐段核对当前授权图库并补齐缺少的远端原件；可能上传拍摄日期较早、但当前没有备份收据的照片。完成后恢复仅新照片增量。")
