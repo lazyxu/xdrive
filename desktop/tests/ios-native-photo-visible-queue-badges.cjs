@@ -22,6 +22,8 @@ test('native Timeline only shows real Owner-local change states for opted-in onl
 test('only mounted 64-item PhotoKit page IDs are read and queue never uploads media', () => {
   assert.match(wall, /visibleStatuses\(\s*owner: owner, localIdentifiers: loaded\.items\.map\(\\\.id\)/)
   assert.match(wall, /visibleBackupQueueStates = \[:\]/)
+  assert.match(wall, /\.task\(id: "\\\(generation\)-\\\(offset\)-\\\(mediaFilter\.rawValue\)"\)/)
+  assert.match(wall, /\.onChange\(of: backupBadgeOwner\) \{ _ in\s*visibleBackupQueueStates = \[:\]/)
   assert.match(wall, /let states = try await queue\.visibleStatuses\(/)
   assert.match(queue, /guard localIdentifiers\.count <= 64 else/)
   assert.match(queue, /let baseline = try store\.baseline\(\)/)

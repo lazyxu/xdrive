@@ -276,7 +276,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         }
         .padding(.horizontal, 12)
         .id("page:\(offset)")
-        .task(id: "\(generation)-\(offset)-\(mediaFilter.rawValue)-\(backupBadgeOwner != nil)") {
+        .task(id: "\(generation)-\(offset)-\(mediaFilter.rawValue)") {
             page = nil
             precedingCapturedAt = nil
             visibleBackupQueueStates = [:]
@@ -329,6 +329,11 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             }
             await reader.reset()
             if !Task.isCancelled { scanner = nil }
+        }
+        .onChange(of: backupBadgeOwner) { _ in
+            // Owner/opt-in changes must not trigger another PhotoKit scan;
+            // until the current page is re-read, badges are unknown.
+            visibleBackupQueueStates = [:]
         }
         .onDisappear {
             page = nil
