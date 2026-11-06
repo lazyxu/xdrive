@@ -38,10 +38,14 @@ test('shared SourceManager adapter factory owns transport normalization and over
 test('Web feeds XDriveApi directly through the shared SourceManager factory', () => {
   assert.ok(web.includes('createXDriveSourceManagerAdapter(api)'), 'Web must use the shared SourceManager factory')
   assert.ok(web.includes('remotePull: {') && web.includes('adapter: sourceManagerAdapter') &&
-    browserHost.includes("remotePullPage: { ...ports.remotePull, directionFilter: 'pull' as const }") &&
+    browserHost.includes("remotePullPage: { ...ports.remotePull }") &&
+    browserHost.includes("...(ports.remotePull ? {") &&
+    browserHost.includes("platform: 'web'") &&
     sharedOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />'),
     'Web must pass the normalized adapter through its authenticated Host to SourceManager')
   assert.equal(web.includes('adapter={api}'), false, 'Web must not bypass the shared SourceManager factory')
+  assert.equal(browserHost.includes("directionFilter: 'pull' as const"), false,
+    'the shared Source Manager must display Push as well as Pull while retaining the Owner-authorized adapter')
 })
 
 test('Desktop keeps only Agent transport mapping and target browsing local', () => {
