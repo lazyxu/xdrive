@@ -222,9 +222,9 @@ func (s *Server) revokeClientDevice(c *gin.Context) {
 		if device.Platform == "synology" || device.Platform == "ios" || device.Platform == "android" {
 			var sourceIDs []uint64
 			if err := tx.Model(&meta.Source{}).
-				Where("owner_id = ? AND direction = ? AND status <> ? AND kind IN ? AND (device_id = ? OR local_creator_device_id = ?)",
+				Where("owner_id = ? AND direction = ? AND status <> ? AND kind IN ? AND device_id = ?",
 					device.OwnerID, meta.SourceDirectionPush, meta.SourceStatusArchived,
-					[]string{meta.SourceKindIOSPhotos, synologySourceKind, "android_photos"}, device.ID, device.ID).
+					[]string{meta.SourceKindIOSPhotos, synologySourceKind, "android_photos"}, device.ID).
 				Pluck("id", &sourceIDs).Error; err != nil {
 				return err
 			}
