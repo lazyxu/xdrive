@@ -94,10 +94,10 @@ func TestMigrateBackfillsOnlySameOwnerPlatformPushDeviceID(t *testing.T) {
 		source := meta.Source{
 			OwnerID: owner.ID, Name: item.name, Kind: item.kind,
 			Direction: meta.SourceDirectionPush,
-			SyncMode: meta.SourceSyncModeBackup,
-			RunMode: meta.SourceRunModeSync,
-			Status: meta.SourceStatusPaused,
-			Revision: 1, DeviceID: current, LocalCreatorDeviceID: &old,
+			SyncMode:  meta.SourceSyncModeBackup,
+			RunMode:   meta.SourceRunModeSync,
+			Status:    meta.SourceStatusPaused,
+			Revision:  1, DeviceID: current, LocalCreatorDeviceID: &old,
 		}
 		if err := db.Create(&source).Error; err != nil {
 			t.Fatal(err)
