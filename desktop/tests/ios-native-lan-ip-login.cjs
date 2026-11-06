@@ -53,6 +53,9 @@ test('every native Server session reuses the scoped TLS delegate', () => {
     assert.doesNotMatch(swift, /URLSession\.shared|URLSessionConfiguration\.background\(/, name)
     sessions += [...swift.matchAll(/URLSession\(/g)].length
   }
+  const savedSearch=read('ios/XDriveIOS/NativeFilesSavedSearches.swift')
+  assert.match(savedSearch,/XDriveIOSNativeFilesSavedSearchNoRedirect:\s*XDriveIOSServerTLSDelegate,\s*URLSessionTaskDelegate/)
+  assert.match(savedSearch,/willPerformHTTPRedirection[\s\S]*?completionHandler\(nil\)/)
   assert.ok(sessions >= 30)
 })
 

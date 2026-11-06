@@ -582,10 +582,44 @@ function seedDesktopPlacesWebAuthFromAgent(identity: DesktopPlacesWebIdentity):
   return pending
 }
 
+/**
+ * Check a previously established guest Cookie against current Server state,
+ * without rotating the refresh token (which would race the mounted WebView).
+ * A remembered identity is not evidence of a still-valid browser session.
+ */
+async function desktopPlacesWebCookieCurrent(identity: DesktopPlacesWebIdentity):
+  Promise<boolean> {
+  try {
+    const places=session.fromPartition(desktopPlacesWebPartition,{cache:false})
+    const response=await places.fetch(identity.origin+'/api/v1/auth/desktop-map/session',{
+      method:'POST',credentials:'include',redirect:'error',cache:'no-store',
+      signal:AbortSignal.timeout(8_000),
+      headers:{Origin:identity.origin,'X-XDrive-Browser-Owner':identity.owner},
+    })
+    if (!response.ok) return false
+    const parsed:unknown=await response.json()
+    const proof=parsed as {
+      username?:unknown;browser_session?:unknown;refresh_token?:unknown
+    }|null
+    return !!proof && proof.username===identity.owner &&
+      proof.browser_session===true && proof.refresh_token===undefined
+  } catch {return false}
+}
+
 async function ensureDesktopPlacesWebAuth(identity: DesktopPlacesWebIdentity):
   Promise<boolean> {
   if (!desktopPlacesWebOwnerStillCurrent(identity)) return false
-  if (sameDesktopPlacesWebIdentity(desktopPlacesWebReady, identity)) return true
+  if (sameDesktopPlacesWebIdentity(desktopPlacesWebReady, identity)) {
+    const generation=desktopPlacesWebGeneration
+    const valid=await desktopPlacesWebCookieCurrent(identity)
+    if (valid && generation===desktopPlacesWebGeneration &&
+        sameDesktopPlacesWebIdentity(desktopPlacesWebReady,identity) &&
+        desktopPlacesWebOwnerStillCurrent(identity)) return true
+    // Do not let a failed probe wipe a newer Owner/session generation.
+    if (generation===desktopPlacesWebGeneration &&
+        sameDesktopPlacesWebIdentity(desktopPlacesWebReady,identity))
+      resetDesktopPlacesWebAuth()
+  }
   if (desktopPlacesWebPending &&
       sameDesktopPlacesWebIdentity(desktopPlacesWebPending, identity))
     return desktopPlacesWebPending.promise

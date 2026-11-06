@@ -464,7 +464,12 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                             item.id, currentlyVisibleIDs: overview.items.map(\.id)),
                           overview.items.contains(where: {
                             $0.id == item.id && $0.item_count == item.item_count
-                          }) else { return }
+                          }),
+                          // Retained MapKit pins must match the freshly signed
+                          // facet, not just a reused ID and count.
+                          XDriveIOSNativeOwnerMapSelectionPolicy.acceptsSelectedFacet(
+                            item, currentlyVisible: overview.items
+                          ) else { return }
                     cameraSettleTask?.cancel()
                     cameraSettleTask = nil
                     coverTask?.cancel()

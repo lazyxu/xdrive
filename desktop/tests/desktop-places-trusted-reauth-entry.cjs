@@ -1,0 +1,40 @@
+'use strict'
+const test=require('node:test')
+const assert=require('node:assert/strict')
+const fs=require('node:fs')
+const path=require('node:path')
+const root=path.resolve(__dirname,'../..')
+const read=p=>fs.readFileSync(path.join(root,p),'utf8')
+
+test('map auth denial offers trusted Desktop reauthentication, never embedded Web login',()=>{
+  const map=read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
+  const desktop=read('desktop/src/renderer/App.tsx')
+  const guest=read('desktop/src/preload/places_embed.cts')
+  assert.match(map,/data-xdrive-desktop-places-native-reauth/)
+  assert.match(map,/\{denied \? <Stack direction="row"/)
+  assert.match(map,/\{onOpenDesktopReauthentication \? \(/)
+  assert.match(map,/onClick=\{onOpenDesktopReauthentication\}/)
+  assert.match(map,/从 Desktop 重新登录/)
+  assert.match(map,/确认退出后会中断正在进行的同步或传输/)
+  assert.match(map,/不会在地图中输入密码/)
+  assert.match(map,/onClick=\{\(\) => setEmbedRetry\(n=>n\+1\)\}/)
+  assert.match(desktop,/onOpenDesktopReauthentication: requestLogout/)
+  assert.match(desktop,/const requestLogout = \(\) => \{\s*requestConfirmation\(/)
+  assert.match(desktop,/await run\('logout', \(\) => window\.xdriveDesktop\.agent\.logout\(\)\)/)
+  assert.match(desktop,/if \(!configured\) \{[\s\S]*?<XDriveAuthShell>/)
+  // Comments document the absence of saved passwords; examine executable
+  // preload operations rather than rejecting that explanatory prose.
+  const guestOperations=guest.replace(/^\s*\/\/.*$/gm,'')
+  assert.doesNotMatch(guestOperations,/password|desktop-map\/issue|native_refresh_token|agent:login/)
+})
+
+test('Desktop account action passes only a callback through the shared Gallery',()=>{
+  const gallery=read('ui/shared/src/mui/MediaGallery.tsx')
+  const map=read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
+  const desktop=read('desktop/src/renderer/App.tsx')
+  assert.equal((gallery.match(/onOpenDesktopReauthentication\?: \(\) => void/g)||[]).length,2)
+  assert.equal((gallery.match(/onOpenDesktopReauthentication=\{onOpenDesktopReauthentication\}/g)||[]).length,2)
+  assert.match(map,/onOpenDesktopReauthentication\?: \(\) => void/)
+  assert.match(desktop,/onOpenDesktopReauthentication: requestLogout/)
+  assert.doesNotMatch(map,/loginHistory|encrypted_password|native_refresh_token|password:\s*/)
+})
