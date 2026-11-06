@@ -828,7 +828,13 @@ func (s *Server) getUploadSession(c *gin.Context) {
 		return recordUploadAuthorizationSuccessTx(tx, c, "session.read", session)
 	}); err != nil {
 		s.recordUploadAuthorizationFailure(c, "session.read", session, err)
-		fail(c, http.StatusForbidden, "UploadSession authority is no longer valid")
+		if errors.Is(err, errShareUploadDenied) || errors.Is(err, errShareUploadBusy) {
+			writePublicShareUploadError(c, err)
+		} else if uploadAuthorizationDenied(err) {
+			fail(c, http.StatusForbidden, "UploadSession authority is no longer valid")
+		} else {
+			fail(c, http.StatusInternalServerError, "upload session authorization audit failed")
+		}
 		return
 	}
 	if session.Status == meta.UploadStatusActive && time.Now().After(session.ExpiresAt) {
@@ -874,7 +880,13 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		return s.requireUploadChunkAuthorityTx(c.Request.Context(), tx, c, live)
 	}); err != nil {
 		s.recordUploadAuthorizationFailure(c, "chunk.prepare", session, err)
-		fail(c, http.StatusForbidden, "upload authority is no longer valid")
+		if errors.Is(err, errShareUploadDenied) || errors.Is(err, errShareUploadBusy) {
+			writePublicShareUploadError(c, err)
+		} else if uploadAuthorizationDenied(err) {
+			fail(c, http.StatusForbidden, "upload authority is no longer valid")
+		} else {
+			fail(c, http.StatusInternalServerError, "UploadPart authorization audit failed")
+		}
 		return
 	}
 	if time.Now().After(session.ExpiresAt) {
@@ -1071,7 +1083,13 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			return recordUploadAuthorizationSuccessTx(tx, c, "finalize.replay", session)
 		}); err != nil {
 			s.recordUploadAuthorizationFailure(c, "finalize.replay", session, err)
-			fail(c, http.StatusForbidden, "finalized upload receipt authority is no longer valid")
+			if errors.Is(err, errShareUploadDenied) || errors.Is(err, errShareUploadBusy) {
+				writePublicShareUploadError(c, err)
+			} else if uploadAuthorizationDenied(err) {
+				fail(c, http.StatusForbidden, "finalized upload receipt authority is no longer valid")
+			} else {
+				fail(c, http.StatusInternalServerError, "finalize receipt audit failed")
+			}
 			return
 		}
 		s.writeUploadSession(c, session, http.StatusOK)
@@ -1086,7 +1104,13 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		return recordUploadAuthorizationSuccessTx(tx, c, "finalize.prepare", session)
 	}); err != nil {
 		s.recordUploadAuthorizationFailure(c, "finalize.prepare", session, err)
-		fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
+		if errors.Is(err, errShareUploadDenied) || errors.Is(err, errShareUploadBusy) {
+			writePublicShareUploadError(c, err)
+		} else if uploadAuthorizationDenied(err) {
+			fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
+		} else {
+			fail(c, http.StatusInternalServerError, "finalize authorization audit failed")
+		}
 		return
 	}
 	if session.NodeID != nil {
