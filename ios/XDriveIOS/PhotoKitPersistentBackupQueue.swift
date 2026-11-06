@@ -288,10 +288,10 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         return progress
     }
 
-    /// Commit a new PhotoKit history checkpoint only after the caller has
-    /// completed a clean full-library pass and every supported original was
-    /// checked through the shared receipt verifier. The current PhotoKit
-    /// generation must still be exactly the one that was scanned.
+    /// Commit a new PhotoKit history checkpoint only after the user has
+    /// explicitly authorized full-library recovery, the caller completed a
+    /// clean pass, and every supported original was checked through the shared
+    /// receipt verifier. The scanned PhotoKit generation must still match.
     func completeFullLibraryReconciliation(
         owner: XDriveNativeOwnerRoot,
         expectedToken: Data,
