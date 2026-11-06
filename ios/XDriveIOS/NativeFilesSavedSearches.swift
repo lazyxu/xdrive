@@ -6,8 +6,6 @@ private enum XDriveIOSNativeFilesSavedSearchFailure: Error {
     case invalidOwner, invalidInput, malformed, uncertain, server(Int)
 }
 
-// Inherit the same Owner-scoped HTTPS trust validator used by other
-// native Server sessions. Preserve the existing redirect denial below.
 private final class XDriveIOSNativeFilesSavedSearchNoRedirect:
     XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
