@@ -25,11 +25,19 @@ promote = body.index('gh api --method PATCH "repos/$repo/git/refs/tags/snapshot"
 assert upload < verified < promote, "tag must only change after remote digest proof"
 assert '[[' + ' "$current_tag" == "$previous_snapshot" ]]' in body
 assert "python3 scripts/test-snapshot-publish-guards.py" in ci
-# The stand-alone DSM Photos Push Agent is retired. Neither publisher nor CI
-# may silently reintroduce its separate binary or artifact.
-assert "xdrive-source-agent-linux" not in release
+# The standalone DSM Photos Push Agent is retired from new builds, while
+# Snapshot may still carry legacy binaries from its previous release.
+# Only the three exact historical names may be deleted after remote digest
+# verification; no new Source Agent build/download/checksum can reappear.
 assert "build-source-agent:" not in ci
 assert "test-source-agent-artifact:" not in ci
+assert "name: xdrive-source-agent-linux" not in release
+assert "xdrive-source-agent-linux-" in body
+assert '[[ "$old_asset_name" =~ ^xdrive-source-agent-linux-(amd64|arm64|armv7)$ ]]' in body
+assert body.index('if [[ "$digest_mismatch" == 0 ]]') < body.index('Removing superseded Snapshot asset:')
+assert "xdrive-source-agent-linux-" not in release.split(
+    "      - name: Generate checksums\n", 1
+)[1].split("\n      # Sigstore", 1)[0]
 notify_marker = "      - name: Notify bounded queued-CI prune after verified Snapshot publication\n"
 assert release.count(notify_marker) == 1
 notify = release.split(notify_marker, 1)[1].split("\n      - name:", 1)[0]
