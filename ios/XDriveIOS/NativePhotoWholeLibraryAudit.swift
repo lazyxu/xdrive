@@ -10,6 +10,15 @@ import UIKit
 enum XDriveIOSNativePhotoWholeLibraryAuditPolicy {
     static let maximumOriginalsPerBatch = 8
 
+    /// Stable PhotoKit tie resolution is keyed to 256-slot windows, not
+    /// arbitrary 8-item verification sub-batches. Use the same logical
+    /// window start for all sub-batches so equal-date originals cannot be
+    /// repeated or skipped at a shifting window boundary.
+    static func stableWindowStart(for checked: Int) -> Int? {
+        guard checked >= 0 else { return nil }
+        return checked - checked % XDrivePhotoBackupScanWindow.maxItems
+    }
+
     static func complete(checked: Int, total: Int,
                          currentlyVerified: Int, unverified: Int) -> Bool {
         checked >= 0 && total >= 0 && checked == total &&
@@ -188,22 +197,43 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
                     self.photoToken = snapshot.serialized
                 }
 
+                // Every 8-item proof uses the SAME 256-slot stable
+                // PhotoKit tie-ordering window until that window is done.
+                // Starting at checked (8, 16, 24, ...) would shift both
+                // tie boundaries between batches and could repeat/omit
+                // originals with equal creation and modification dates.
+                guard let windowStart =
+                    XDriveIOSNativePhotoWholeLibraryAuditPolicy.stableWindowStart(
+                        for: self.checked
+                    ) else { throw XDriveIOSNativePhotoWholeAuditError.invalidProgress }
                 let count = try await scanner.start(
-                    atOffset: self.checked, requireStableResume: true
+                    atOffset: windowStart, requireStableResume: true
                 )
-                let page = try await scanner.nextPage()
+                var page = try await scanner.nextPage()
                 try Task.checkCancellation()
+                // At most four bounded 64-slot reads locate this sub-batch;
+                // no PhotoKit IDs, images or bulk manifests are retained.
+                while page.nextOffset <= self.checked && !page.finished {
+                    page = try await scanner.nextPage()
+                    try Task.checkCancellation()
+                }
+                let skippedInPage = self.checked - page.startOffset
                 guard self.epoch == token,
                       self.total == nil || self.total == count,
-                      self.checked <= count, page.startOffset == self.checked,
+                      self.checked <= count,
+                      page.startOffset <= self.checked,
+                      skippedInPage >= 0,
+                      skippedInPage <= page.items.count,
                       page.totalAccessibleAssets == count,
+                      (self.checked == count ||
+                       skippedInPage < page.items.count),
                       XDriveIOSNativePhotoOwnerScope.matches(
                         login.owner, requestedOwner
                       )
                 else { throw XDriveIOSNativePhotoWholeAuditError.invalidProgress }
                 self.total = count
 
-                for candidate in page.items.prefix(
+                for candidate in page.items.dropFirst(skippedInPage).prefix(
                     XDriveIOSNativePhotoWholeLibraryAuditPolicy.maximumOriginalsPerBatch
                 ) {
                     try Task.checkCancellation()

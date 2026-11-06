@@ -8,6 +8,10 @@ const audit = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativePhotoWholeLib
 
 test('explicit foreground continuous mode chains existing verified 8-original read-only batches', () => {
   assert.match(audit, /static let maximumOriginalsPerBatch = 8/)
+  assert.match(audit, /return checked - checked % XDrivePhotoBackupScanWindow\.maxItems/)
+  assert.match(audit, /scanner\.start\(\s*atOffset: windowStart, requireStableResume: true/)
+  assert.match(audit, /while page\.nextOffset <= self\.checked && !page\.finished/)
+  assert.match(audit, /page\.items\.dropFirst\(skippedInPage\)\.prefix\(/)
   assert.match(audit, /func verifyContinuously\(login: XDriveIOSNativeOwnerLoginModel,/)
   const mode = audit.slice(audit.indexOf('    func verifyContinuously('),
     audit.indexOf('    private func verifyGeneration('))
