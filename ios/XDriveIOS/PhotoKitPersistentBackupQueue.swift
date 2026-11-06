@@ -235,11 +235,17 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         guard original.authorization == epoch.authorization else {
             throw Failure.unauthorizedOrChanged
         }
-        guard let token = try NSKeyedUnarchiver.unarchivedObject(
-            ofClass: PHPersistentChangeToken.self, from: original.token
-        ) else {
-            // An unreadable checkpoint is equivalent to expired history: the
-            // only safe recovery is a user-confirmed full-library reconciliation.
+        let token: PHPersistentChangeToken
+        do {
+            guard let decoded = try NSKeyedUnarchiver.unarchivedObject(
+                ofClass: PHPersistentChangeToken.self, from: original.token
+            ) else {
+                throw Failure.historyUnavailable
+            }
+            token = decoded
+        } catch {
+            // A thrown decode error or an empty archive is equivalent to
+            // expired history; only user-confirmed full reconciliation is safe.
             throw Failure.historyUnavailable
         }
         // Apple's fetch result is a Sequence of change records; do not flatten
