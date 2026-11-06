@@ -964,6 +964,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     }
                 }
             }
+            XDriveIOSPhotoBackupNetworkSettings(login: login)
             Section("前台自动增量") {
                 if photoAuthorization != .authorized && photoAuthorization != .limited {
                     Label("照片访问权限不可用：已保存的前台自动计划不会执行。请在 iOS 设置中恢复照片访问。",
