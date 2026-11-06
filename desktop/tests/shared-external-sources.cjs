@@ -34,7 +34,6 @@ function loadSharedExternalSources() {
   const root = path.join(__dirname, '..', '..', 'ui', 'shared', 'src')
   return {
     ...loadSharedModule(path.join(root, 'external-sources.ts')),
-    ...loadSharedModule(path.join(root, 'synology-dsm-guide.ts')),
   }
 }
 
@@ -93,13 +92,13 @@ test('shared external-source defaults and schedule labels stay connector-neutral
 
 test('shared external-source state ordering is connector neutral', () => {
   assert.deepEqual(
-    shared.getExternalSourceState({ source: source({ status: 'paused' }) }),
+    shared.getExternalSourceState({ source: source({ status: 'paused', kind: 'local_folder' }) }),
     { key: 'paused', tone: 'neutral', label: '已暂停' },
   )
 
   assert.deepEqual(
     shared.getExternalSourceState({
-      source: source({ run_requested_at: '2026-09-26T01:00:00Z' }),
+      source: source({ kind: 'local_folder', run_requested_at: '2026-09-26T01:00:00Z' }),
     }),
     { key: 'pending', tone: 'busy', label: '等待执行' },
   )
@@ -114,7 +113,7 @@ test('shared external-source state ordering is connector neutral', () => {
 
   assert.deepEqual(
     shared.getExternalSourceState({
-      source: source({ last_error: 'boom' }),
+      source: source({ kind: 'local_folder', last_error: 'boom' }),
     }),
     { key: 'error', tone: 'bad', label: '异常' },
   )
@@ -150,8 +149,8 @@ test('shared external-source trigger gating matches connector execution model', 
       source: source(),
     }),
     {
-      ready: true,
-      label: '提交请求，由群晖 source-agent 下一次任务检查执行',
+      ready: false,
+      label: 'DSM 相册 Push 已停用，请改用 DSM 文件夹备份；原有数据和历史保留',
     },
   )
 
@@ -307,13 +306,14 @@ test('run history separates confirmed sync and saved bytes from skipped and canc
 })
 
 test('shared trigger action label promotes retries without hiding pending state', () => {
-  assert.equal(shared.externalSourceTriggerActionLabel({ source: source() }), '立即扫描')
+  assert.equal(shared.externalSourceTriggerActionLabel({ source: source() }), '已停用')
+  assert.equal(shared.externalSourceTriggerActionLabel({ source: source({ direction: 'pull' }) }), '立即扫描')
   assert.equal(shared.externalSourceTriggerActionLabel({
-    source: source(),
+    source: source({ direction: 'pull' }),
     latestRun: { failed_items: 3 },
   }), '重试失败项')
   assert.equal(shared.externalSourceTriggerActionLabel({
-    source: source({ run_requested_at: '2026-09-26T01:00:00Z' }),
+    source: source({ direction: 'pull', run_requested_at: '2026-09-26T01:00:00Z' }),
     latestRun: { failed_items: 3 },
   }), '已请求')
 })
@@ -321,11 +321,11 @@ test('shared trigger action label promotes retries without hiding pending state'
 test('shared connector profiles own credential and trigger semantics', () => {
   assert.deepEqual(shared.externalSourceConnectorProfile('synology_photos'), {
     kind: 'synology_photos',
-    label: '群晖 Photos',
+    label: '群晖 Photos Push（已停用）',
     direction: 'push',
     credential: null,
-    manualTriggerExecutor: 'source_agent',
-    defaultName: '群晖 Photos',
+    manualTriggerExecutor: 'retired',
+    defaultName: '已停用的群晖 Photos Push',
     defaultIgnoreRules: '@eaDir/\n\\#recycle/\n',
   })
   assert.deepEqual(shared.externalSourceConnectorProfile('yike_photos'), {
@@ -373,8 +373,8 @@ test('shared source card view derives display data once for both UIs', () => {
   assert.equal(view.scannedItems, 128493)
   assert.equal(view.scannedBytes, 2800000000000)
   assert.equal(view.failedItems, 2)
-  assert.equal(view.connector.manualTriggerExecutor, 'source_agent')
-  assert.equal(view.trigger.ready, true)
+  assert.equal(view.connector.manualTriggerExecutor, 'retired')
+  assert.equal(view.trigger.ready, false)
 })
 
 test('shared Mirror policy labels and safety copy stay explicit', () => {
@@ -394,7 +394,7 @@ test('shared Mirror policy labels and safety copy stay explicit', () => {
 
 test('shared source detail suppresses stale errors while a run is pending or active', () => {
   const running = shared.externalSourceDetailView({
-    source: source({ last_error: 'previous scan failed' }),
+    source: source({ kind:'local_folder', last_error: 'previous scan failed' }),
     latestRun: { status: 'running' },
   })
   assert.equal(running.state.key, 'running')
@@ -402,6 +402,7 @@ test('shared source detail suppresses stale errors while a run is pending or act
 
   const pending = shared.externalSourceDetailView({
     source: source({
+      kind:'local_folder',
       last_error: 'previous scan failed',
       run_requested_at: '2026-09-28T02:25:23Z',
     }),
@@ -410,7 +411,7 @@ test('shared source detail suppresses stale errors while a run is pending or act
   assert.equal(pending.error, undefined)
 
   const failed = shared.externalSourceDetailView({
-    source: source({ last_error: 'current scan failed' }),
+    source: source({ kind:'local_folder', last_error: 'current scan failed' }),
   })
   assert.equal(failed.state.key, 'error')
   assert.equal(failed.error, 'current scan failed')
@@ -503,33 +504,6 @@ test('shared run detail view defines one metric order for Web and Desktop', () =
   assert.deepEqual(detail.metrics[13], { key: 'failed', label: '失败', items: 1 })
 })
 
-test('shared Synology DSM guide binds the exact Source and keeps secrets out of scheduled task', () => {
-  const guide = shared.synologyDsmSetupGuide({
-    sourceID: 42,
-    sourceName: '家庭照片',
-    serverURL: 'https://drive.example.com',
-    xdriveUsername: 'alice',
-  })
-
-  assert.equal(guide.sourceID, 42)
-  assert.match(guide.subtitle, /同步文件夹 #42/)
-  const bind = guide.steps.find((step) => step.id === 'bind')
-  assert.ok(bind)
-  assert.match(bind.command, /setup --source-id 42/)
-  assert.equal(bind.command.includes('--target'), false)
-  assert.equal(bind.command.includes('--name'), false)
-
-  const scheduler = guide.steps.find((step) => step.id === 'task-script')
-  assert.ok(scheduler)
-  assert.match(scheduler.command, /run --due --interval 6h/)
-  assert.equal(scheduler.command.includes('XD_PASSWORD'), false)
-
-  assert.deepEqual(
-    guide.steps.filter((step) => step.visual).map((step) => step.visual),
-    ['task-create', 'task-schedule', 'task-script'],
-  )
-})
-
 test('shared Source collection labels are connector-neutral', () => {
   assert.equal(shared.externalSourceCollectionKindLabel('album'), '相册')
   assert.equal(shared.externalSourceCollectionKindLabel('smart'), 'smart')
@@ -543,7 +517,7 @@ test('shared Source collection labels are connector-neutral', () => {
 test('pull source defaults use sync mode instead of silently falling back to scan-only', () => {
   assert.equal(shared.externalSourceDefaults('yike_photos', 'pull').runMode, 'sync')
   assert.equal(shared.externalSourceDefaults('synology_photos', 'pull').runMode, 'sync')
-  assert.equal(shared.externalSourceDefaults('synology_photos', 'push').runMode, 'scan')
+  assert.equal(shared.externalSourceConnectorProfile('synology_photos', 'push').manualTriggerExecutor, 'retired')
 })
 
 test('Web and Desktop create flows consume the shared run-mode default', () => {
@@ -571,7 +545,7 @@ test('shared external-source defaults preserve connector-specific setup rules', 
   })
   assert.deepEqual(shared.externalSourceDefaults('synology_photos'), {
     kind: 'synology_photos',
-    name: '群晖 Photos',
+    name: '已停用的群晖 Photos Push',
     direction: 'push',
     runMode: 'scan',
     ignoreRules: '@eaDir/\n\\#recycle/\n',
@@ -599,7 +573,6 @@ test('shared create presets distinguish Synology Photos, File Station, and Yike 
   assert.deepEqual(
     shared.externalSourceCreateOptions.map((item) => [item.value, item.kind, item.direction]),
     [
-      ['synology_push', 'synology_photos', 'push'],
       ['synology_pull', 'synology_photos', 'pull'],
       ['synology_files_pull', 'synology_files', 'pull'],
       ['yike_pull', 'yike_photos', 'pull'],
@@ -607,7 +580,7 @@ test('shared create presets distinguish Synology Photos, File Station, and Yike 
     ],
   )
   assert.equal(shared.externalSourceCreateOption('synology_pull').label, '群晖 Photos')
-  assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'push'), 'synology_push')
+  assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'push'), 'synology_pull')
   assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'pull'), 'synology_pull')
   assert.equal(shared.externalSourceCreatePresetFor('synology_files', 'pull'), 'synology_files_pull')
   assert.equal(shared.externalSourceCreatePresetFor('yike_photos', 'pull'), 'yike_pull')
