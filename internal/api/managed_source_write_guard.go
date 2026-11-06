@@ -309,3 +309,25 @@ func trustedSourceRunUploadChunkTx(ctx context.Context, tx *gorm.DB, c *gin.Cont
 	}
 	return trustedSourceRunTargetTx(ctx, tx, c, session.OwnerID, nodeID, allowRoot)
 }
+
+// A previously admitted worker upload is not an ongoing write capability.
+// Before accepting chunk bytes and again when recording the chunk, prove the
+// current Source, Run, revision, cancellation and managed target. In particular,
+// disabled Synology Pull must not continue staging bytes on an old signed run.
+func trustedSourceRunUploadChunkTx(ctx context.Context, tx *gorm.DB, c *gin.Context, session meta.UploadSession) error {
+	if session.SourceRunID == "" || !sourceRunUploadSessionMatches(c, session) {
+		return errManagedSourceWriteDenied
+	}
+	var nodeID uint64
+	allowRoot := false
+	if session.ParentID != nil {
+		nodeID = *session.ParentID
+		allowRoot = true
+	} else if session.NodeID != nil {
+		nodeID = *session.NodeID
+	}
+	if nodeID == 0 {
+		return errManagedSourceWriteDenied
+	}
+	return trustedSourceRunTargetTx(ctx, tx, c, session.OwnerID, nodeID, allowRoot)
+}

@@ -348,6 +348,10 @@ func (s *Server) revealSourceCredential(c *gin.Context) {
 		fail(c, statusForLookup(err), "source not found")
 		return
 	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
+		return
+	}
 	if !sourceUsesStoredCredential(source) {
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
@@ -396,6 +400,10 @@ func (s *Server) getSourceCredentialStatus(c *gin.Context) {
 		fail(c, statusForLookup(err), "source not found")
 		return
 	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
+		return
+	}
 	if !sourceUsesStoredCredential(source) {
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
@@ -439,7 +447,7 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
 	}
-	if source.Status == meta.SourceStatusArchived {
+	if source.Status == meta.SourceStatusArchived && !meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
 		fail(c, http.StatusConflict, "source is archived; restore it before changing credentials")
 		return
 	}

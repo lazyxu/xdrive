@@ -571,35 +571,6 @@ type SourceCommit struct {
 	ResumeReusedBytes int64      `json:"resume_reused_bytes,omitempty"`
 }
 
-type SynologySourceRootBinding struct {
-	SourceID uint64 `json:"source_id"`
-	Revision uint64 `json:"revision"`
-	Status   string `json:"status"`
-}
-
-// BindSynologySourceRoot persists the Agent's aggregate Personal/Shared root
-// fingerprint before the Source can be activated.
-func (c *Client) BindSynologySourceRoot(ctx context.Context, sourceID, revision uint64, rootID, fingerprint string) (SynologySourceRootBinding, error) {
-	var out SynologySourceRootBinding
-	body, err := json.Marshal(map[string]string{"root_id": rootID, "root_fingerprint": fingerprint})
-	if err != nil {
-		return out, err
-	}
-	req, err := c.request(ctx, http.MethodPut, fmt.Sprintf("/api/v1/sources/%d/synology-root", sourceID), bytes.NewReader(body))
-	if err != nil {
-		return out, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("If-Match", strconv.Quote(strconv.FormatUint(revision, 10)))
-	resp, err := c.do(req)
-	if err != nil {
-		return out, err
-	}
-	defer resp.Body.Close()
-	err = decodeResponse(resp, &out)
-	return out, err
-}
-
 func (c *Client) BeginSourceRun(ctx context.Context, sourceID uint64, runID, trigger string) (SyncRun, error) {
 	var out SyncRun
 	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", sourceID), map[string]any{
