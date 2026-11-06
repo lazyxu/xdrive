@@ -129,6 +129,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     // Keep map source and cloud camera during native Gallery re-entry.
     // Never persist camera/GPS coordinates with the navigation snapshot.
     @State private var mapSource: XDriveIOSNativePhotoMapSource = .local
+    // Session-only return destination; never persist an Owner or GPS identity.
+    @State private var mapReturnGallerySource: XDriveIOSNativeGallerySource?
+    @State private var mapReturnOwnerScopeKey: String?
     @State private var cloudMapCamera: MKCoordinateRegion?
     // Session-only local WGS84 camera; never stored with navigation snapshot.
     @State private var localMapCamera: MKCoordinateRegion?
@@ -252,12 +255,12 @@ struct XDriveIOSNativePhotosDashboard: View {
                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
                   ) else { return }
             // Reuse the existing Gallery map; never spawn another map stack.
+            // Capture the Gallery source before installing this verified jump.
+            openGallery(.map)
             localMapJump = jump
             localMapCamera = jump.camera
             localMapScope = .library
             mapSource = .local
-            gallerySource = .map
-            tab = .gallery
         })
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showingLocalPhotoSearch) {
@@ -341,6 +344,9 @@ struct XDriveIOSNativePhotosDashboard: View {
             resetNavigation()
         }
         .onChange(of: login.owner) { owner in
+            // Revoke old-Owner map return before any delayed Done callback.
+            mapReturnGallerySource = nil
+            mapReturnOwnerScopeKey = nil
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             // No push-route account card: parent root owns signed-out state.
             showSignOutConsent = false
@@ -642,7 +648,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                                 expectedGeneration: focusGeneration
                             )
                         },
-                        onClose: { openGallery(.local) },
+                        onClose: { closeGalleryMap() },
                         mediaFilter: localGalleryMediaFilter
                     )
                 }
@@ -868,12 +874,35 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private func openGallery(_ source: XDriveIOSNativeGallerySource) {
+        if source == .map {
+            if gallerySource != .map {
+                // Only an active, authenticated Gallery supplies return state.
+                // Launcher and dynamic shortcuts use the default.
+                mapReturnGallerySource = tab == .gallery && login.owner != nil
+                    ? gallerySource : nil
+                mapReturnOwnerScopeKey = mapReturnGallerySource != nil
+                    ? ownerScopeKey : nil
+            }
+        } else {
+            mapReturnGallerySource = nil
+            mapReturnOwnerScopeKey = nil
+        }
         galleryFocusGeneration = UUID()
         galleryFocused = false
         if source == .map || source == .local { localMapJump = nil }
         gallerySource = source
         tab = .gallery
         // Gallery/map/Viewer are never dynamic feature-slot destinations.
+    }
+
+    private func closeGalleryMap() {
+        guard gallerySource == .map, login.owner != nil else { return }
+        // New unified Photos is the default when present; legacy builds
+        // safely return to the local Gallery without a captured entry.
+        let fallback = XDriveIOSNativeGallerySource(rawValue: "unified") ?? .local
+        let prior = mapReturnOwnerScopeKey == ownerScopeKey
+            ? mapReturnGallerySource : nil
+        openGallery(prior ?? fallback)
     }
 
     private func openDynamic(_ feature: XDriveIOSNativeDynamicFeature) {
@@ -928,6 +957,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     private func resetNavigation() {
         galleryFocusGeneration = UUID()
         galleryFocused = false
+        mapReturnGallerySource = nil
+        mapReturnOwnerScopeKey = nil
         gallerySource = .local
         localMapScope = .library
         localMapPageOffset = 0
