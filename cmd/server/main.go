@@ -559,9 +559,10 @@ WHERE NULLIF(BTRIM(s.device_id), '') IS NULL
 	`).Error; err != nil {
 		return err
 	}
-	if err := migrateLegacyYikeTargets(db); err != nil {
-		return fmt.Errorf("migrate legacy Yike targets: %w", err)
-	}
+	// S10–S18: startup must not relocate any pre-existing Yike Source,
+	// Node subtree, Share or CAS receipt. Legacy target paths remain valid.
+	// Historical migration helpers are retained for their isolated tests, but
+	// are not executed on Server startup under the new-source-only contract.
 	if err := meta.InstallNodeChangeJournal(db); err != nil {
 		return err
 	}
