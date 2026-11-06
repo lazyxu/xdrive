@@ -145,7 +145,7 @@ function sourceActionErrorMessage(error: unknown, fallback: string) {
   )
 }
 
-function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synology_push'): XDriveSourceCreateValues {
+function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synology_pull'): XDriveSourceCreateValues {
   const option = externalSourceCreateOption(preset)
   const defaults = externalSourceDefaults(option.kind, option.direction)
   return {
@@ -198,6 +198,10 @@ export function XDriveSourceManager({
   onError,
 }: XDriveSourceManagerProps) {
   const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
+  // Only an enrolled owning Agent can create Push. DSM Push is created
+  // through the NAS source-agent; generic Web/Owner sessions create Pull.
+  const defaultCreatePreset: ExternalSourceCreatePreset =
+    directionFilter === 'pull' ? 'synology_pull' : adapter.authorizeLocalFolder ? 'local_push' : 'synology_pull'
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
   const [showArchived, setShowArchived] = useState(false)
   const [restoringSourceID, setRestoringSourceID] = useState<number | null>(null)
@@ -265,7 +269,7 @@ export function XDriveSourceManager({
   const [settingsConnectorLoading, setSettingsConnectorLoading] = useState(false)
   const [settingsConnectorError, setSettingsConnectorError] = useState('')
   const settingsSessionRef = useRef(0)
-  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(() => initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(() => initialCreateSourceValues(defaultCreatePreset))
   const [createNameError, setCreateNameError] = useState('')
   const [createSpacesError, setCreateSpacesError] = useState('')
   const [createRootsError, setCreateRootsError] = useState('')
@@ -571,7 +575,7 @@ export function XDriveSourceManager({
 
   const openCreate = async () => {
     createNameEditedRef.current = false
-    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+    setCreateValues(initialCreateSourceValues(defaultCreatePreset))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
@@ -799,7 +803,7 @@ export function XDriveSourceManager({
             await adapter.deleteSource(created.id, created.revision)
             setFeedback('已取消创建；本机未绑定的来源草稿已安全清理')
             setCreateOpen(false)
-            setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+            setCreateValues(initialCreateSourceValues(defaultCreatePreset))
             setCreateNameError('')
             setCreateSpacesError('')
             setCreateRootsError('')
@@ -832,7 +836,7 @@ export function XDriveSourceManager({
       ? '群晖 File Station 拉取来源已添加；将同步所选目录中的所有文件和文件夹'
       : `${sourceNoun}已添加`)
     setCreateOpen(false)
-    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+    setCreateValues(initialCreateSourceValues(defaultCreatePreset))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
@@ -1544,11 +1548,11 @@ export function XDriveSourceManager({
         onRequestClose={() => {
           if (creating) return
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+          setCreateValues(initialCreateSourceValues(defaultCreatePreset))
         }}
         onCancel={() => {
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+          setCreateValues(initialCreateSourceValues(defaultCreatePreset))
           setCreateNameError('')
           setCreateSpacesError('')
           setCreateRootsError('')
