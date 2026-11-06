@@ -92,7 +92,7 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
         guard !busy, !checking, status?.enrolled == false,
               XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
               UIApplication.shared.applicationState == .active,
-              [.authorized, .limited].contains(
+              [.authorized].contains(
                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
               ) else {
             errorMessage = "请先验证当前账户、相册权限和后台授权状态。"
@@ -142,7 +142,7 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
                       XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion,
                       UIApplication.shared.applicationState == .active,
-                      [.authorized, .limited].contains(
+                      [.authorized].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { throw XDriveIOSNativeSessionError.staleSession }
                 // A BG grant is not valid for Owner root; the precise
@@ -192,7 +192,7 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
               ),
               XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
               UIApplication.shared.applicationState == .active,
-              [.authorized, .limited].contains(
+              [.authorized].contains(
                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
               ) else {
             errorMessage = "授权不在可续期状态，或账户、照片权限已发生变化。"
@@ -219,7 +219,7 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
                       XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion,
                       UIApplication.shared.applicationState == .active,
-                      [.authorized, .limited].contains(
+                      [.authorized].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { throw XDriveIOSNativeSessionError.staleSession }
                 // Verify the present grant against the live Server first.
@@ -247,7 +247,7 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
                       XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion,
                       UIApplication.shared.applicationState == .active,
-                      [.authorized, .limited].contains(
+                      [.authorized].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { throw XDriveIOSNativeSessionError.staleSession }
                 let rotated = try await manager.rotateNativeBackgroundGrant(

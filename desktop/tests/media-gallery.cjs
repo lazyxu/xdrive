@@ -1354,7 +1354,7 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
   assert.ok(sharedSidebar.includes('primary={destination.label}'), 'shared sidebar must render the Gallery label from its destination')
 })
 
-test('Web exposes Home, files, Gallery, two independent Push/Pull apps, Local Storage, and Cloud Storage as first-class workspace views', () => {
+test('Web exposes Home, files, Gallery, Owner device backup and a unified Push/Pull Source Manager as workspace views', () => {
   assert.ok(webApp.includes('useXDriveWebAppRuntime('))
   assert.ok(webAppRuntime.includes("return xDriveParseWebAppHash(window.location.hash) ?? { app: 'overview', params: {} }"),
     'Home must remain the default authenticated route')
@@ -1362,7 +1362,7 @@ test('Web exposes Home, files, Gallery, two independent Push/Pull apps, Local St
     sharedRouteTitles.includes("overview: '主页'"))
   for (const [view, label] of [
     ['files', '文件'], ['gallery', '图库'], ['device-backup', '设备备份'],
-    ['remote-pull', '远程拉取'], ['local-storage', '本地存储'],
+    ['remote-pull', '来源管理'], ['local-storage', '本地存储'],
     ['cloud-storage', '云端存储'],
   ]) {
     assert.ok(sharedRoute.includes(`'${view}'`), 'missing core route: ' + view)
@@ -1377,9 +1377,12 @@ test('Web exposes Home, files, Gallery, two independent Push/Pull apps, Local St
   assert.ok(sharedSidebar.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })') &&
     sharedSidebar.includes('primary={destination.label}'))
   assert.ok(webApp.includes('remotePull: {') && webApp.includes('adapter: sourceManagerAdapter') &&
-    browserHost.includes("directionFilter: 'pull' as const") &&
+    browserHost.includes("remotePullPage: { ...ports.remotePull }") &&
+    browserHost.includes("platform: 'web'") &&
     sharedHostOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />'),
-    'Remote Pull must be Owner-authorized and Pull-only')
+    'Unified Push/Pull Source Manager must use the authorized Browser Host without native device writer rights')
+  assert.equal(browserHost.includes("directionFilter: 'pull' as const"), false,
+    'the unified Source Manager must not silently filter out device Push')
   assert.ok(webApp.includes('deviceBackup: {') &&
     browserHost.includes('deviceBackupPage: {') &&
     sharedHostOutlet.includes('<XDriveDeviceBackupPage'),

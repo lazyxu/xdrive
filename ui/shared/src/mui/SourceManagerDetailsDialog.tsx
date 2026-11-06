@@ -316,7 +316,7 @@ export function XDriveSourceDetailsDialog({
             {historyRuns.length > 0 ? (
               <Stack spacing={1}>
                 {historyRuns.map((run) => {
-                  const runDetail = externalSourceRunDetailView(run)
+                  const runDetail = externalSourceRunDetailView(run, row.source.kind)
                   const canCancel = row.source.kind !== 'ios_photos' && run.status === 'running' && row.latestRun?.id === run.id
                   const failurePage = runFailurePages[run.id]
                   const skipPage = runSkipPages[run.id]
@@ -376,7 +376,7 @@ export function XDriveSourceDetailsDialog({
                           ) : null}
                           {runDetail.metrics
                             .filter((metric) => row.source.kind !== 'ios_photos' ||
-                              ['scanned', 'synced', 'new', 'unchanged', 'transferred', 'failed'].includes(metric.key))
+                              ['scanned', 'new', 'unchanged', 'failed'].includes(metric.key))
                             .map((metric) => (
                             <XDriveDescriptionItem key={metric.key} label={metric.label}>
                               {metric.items === undefined ? (metric.bytes === undefined ? '未知' : formatBytes(metric.bytes)) : `${metric.items.toLocaleString('zh-CN')} 项`}
@@ -479,6 +479,16 @@ export function XDriveSourceDetailsDialog({
                                 展开后加载本次失败文件明细。
                               </MuiTypography>
                             )}
+                          </MuiBox>
+                        ) : null}
+                        {runDetail.failedItems > 0 && row.source.kind === 'ios_photos' ? (
+                          <MuiBox sx={{ mt: 1.5 }}>
+                            <MuiTypography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                              待处理项目
+                            </MuiTypography>
+                            <XDriveStatusAlert tone="warning">
+                              iPhone 本次记录了 {runDetail.failedItems.toLocaleString('zh-CN')} 个待处理项目；逐项原因仅在手机端显示，不上传照片标识或文件名。
+                            </XDriveStatusAlert>
                           </MuiBox>
                         ) : null}
                       </AccordionDetails>

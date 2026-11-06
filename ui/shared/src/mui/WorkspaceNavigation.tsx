@@ -4,7 +4,7 @@ import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
 import BackupRoundedIcon from '@mui/icons-material/BackupRounded'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
-import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded'
+import SyncAltRoundedIcon from '@mui/icons-material/SyncAltRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined'
@@ -51,7 +51,7 @@ export function xDriveCoreWorkspaceDestinations({
     { key: 'files', label: xDriveWorkspaceRouteTitle('files'), icon: <CloudOutlinedIcon fontSize="small" /> },
     { key: 'gallery', label: xDriveWorkspaceRouteTitle('gallery'), icon: <PhotoLibraryRoundedIcon fontSize="small" /> },
     { key: 'device-backup', label: xDriveWorkspaceRouteTitle('device-backup'), icon: <BackupRoundedIcon fontSize="small" /> },
-    { key: 'remote-pull', label: xDriveWorkspaceRouteTitle('remote-pull'), icon: <CloudDownloadRoundedIcon fontSize="small" /> },
+    { key: 'remote-pull', label: xDriveWorkspaceRouteTitle('remote-pull'), icon: <SyncAltRoundedIcon fontSize="small" /> },
     {
       key: 'transfers',
       label: xDriveWorkspaceRouteTitle('transfers'),

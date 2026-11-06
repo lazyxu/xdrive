@@ -18,7 +18,7 @@ enum XDriveIOSPhotoKitLibraryEpoch {
 
     static func capture() throws -> Snapshot {
         let authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard authorization == .authorized || authorization == .limited else {
+        guard authorization == .authorized else {
             throw Failure.unauthorizedOrChanged
         }
         let token = PHPhotoLibrary.shared().currentChangeToken

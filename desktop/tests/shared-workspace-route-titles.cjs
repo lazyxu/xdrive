@@ -26,6 +26,7 @@ test('canonical route catalog has exactly one title for each workspace destinati
     assert.ok(labels.get(id).length > 0)
   }
   assert.equal(labels.get('notes'), '笔记')
+  assert.equal(labels.get('remote-pull'), '来源管理')
   assert.equal(labels.get('clipboard'), '剪贴板')
   assert.match(titles, /xDriveIsWorkspaceAppRoute\(route\)/)
   assert.match(titles, /fallback = 'xDrive'/)

@@ -12,7 +12,7 @@ export const XDRIVE_WORKSPACE_ROUTE_TITLES = {
   gallery: '图库',
   shares: '分享中心',
   'device-backup': '设备备份',
-  'remote-pull': '远程拉取',
+  'remote-pull': '来源管理',
   transfers: '任务',
   'global-tasks': '全局后台任务',
   'local-storage': '本地存储',

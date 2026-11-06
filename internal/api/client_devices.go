@@ -54,11 +54,11 @@ func validDeviceDisplayName(name string) bool {
 	return true
 }
 
-// iOS and Android installed Apps are identity-only device platforms.
-// Neither is a local_folder Agent or an executor for Desktop Source/Root.
+// iOS/Android installed Apps and the DSM source-agent are identity-only
+// device platforms. None is a generic Desktop local_folder Agent or Root grant.
 func validClientPlatform(platform string) bool {
 	return platform == "windows" || platform == "linux" || platform == "darwin" ||
-		platform == "ios" || platform == "android"
+		platform == "ios" || platform == "android" || platform == "synology"
 }
 
 func deviceCredentialDigest(raw string) string {
@@ -78,11 +78,11 @@ func clientDeviceIdentityCredentialMatches(device meta.ClientDevice, raw string)
 }
 
 // Existing Source/Root/Agent code uses this strictly stronger gate.
-// iOS/Android identity credentials must NEVER become Desktop Agent credentials,
-// including Source creation, local root binding and worker execution.
+// iOS/Android/Synology identity credentials must NEVER become Desktop Agent
+// credentials, including Source creation, local root binding and execution.
 // Keep this separate from identity-only /devices/self and heartbeat.
 func clientDeviceCredentialMatches(device meta.ClientDevice, raw string) bool {
-	return device.Platform != "ios" && device.Platform != "android" &&
+	return device.Platform != "ios" && device.Platform != "android" && device.Platform != "synology" &&
 		clientDeviceIdentityCredentialMatches(device, raw)
 }
 
@@ -217,6 +217,32 @@ func (s *Server) revokeClientDevice(c *gin.Context) {
 					"mirror_missing_full_scans": 0, "mirror_missing_since": nil,
 				}).Error; err != nil {
 				return err
+			}
+		}
+		if device.Platform == "synology" || device.Platform == "ios" || device.Platform == "android" {
+			var sourceIDs []uint64
+			if err := tx.Model(&meta.Source{}).
+				Where("owner_id = ? AND direction = ? AND status <> ? AND kind IN ? AND (device_id = ? OR local_creator_device_id = ?)",
+					device.OwnerID, meta.SourceDirectionPush, meta.SourceStatusArchived,
+					[]string{meta.SourceKindIOSPhotos, synologySourceKind, "android_photos"}, device.ID, device.ID).
+				Pluck("id", &sourceIDs).Error; err != nil {
+				return err
+			}
+			if len(sourceIDs) != 0 {
+				if err := tx.Model(&meta.Source{}).
+					Where("id IN ? AND owner_id = ?", sourceIDs, device.OwnerID).
+					Updates(map[string]any{
+						"status": meta.SourceStatusPaused, "run_requested_at": nil,
+						"revision": gorm.Expr("revision + 1"), "updated_at": now,
+					}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&meta.SyncRun{}).
+					Where("source_id IN ? AND status = ? AND cancel_requested_at IS NULL",
+						sourceIDs, meta.SyncRunStatusRunning).
+					Update("cancel_requested_at", now).Error; err != nil {
+					return err
+				}
 			}
 		}
 		return nil

@@ -123,7 +123,7 @@ private final class PhotoKitRequestGate: @unchecked Sendable {
 enum XDrivePhotoKitOriginalExporter {
     private static func authorized() -> Bool {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        return status == .authorized || status == .limited
+        return status == .authorized
     }
 
     /// Export one currently authorized PhotoKit asset, with a maximum of

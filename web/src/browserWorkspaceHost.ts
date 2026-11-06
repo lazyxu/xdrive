@@ -59,9 +59,9 @@ export function createXDriveBrowserWorkspaceHost(ports: {
         },
       } : {}),
       ...(ports.remotePull ? {
-        // Pull operations are existing Owner-authorized Server API calls,
-        // never a new NAS/Agent RPC. Do not permit a Push-only UI here.
-        remotePullPage: { ...ports.remotePull, directionFilter: 'pull' as const },
+        // Push and Pull share the same Owner-authorized Source Manager. Device-
+        // executed Push remains device-only; the Browser cannot trigger PhotoKit.
+        remotePullPage: { ...ports.remotePull },
       } : {}),
       ...(ports.taskCenter ? {
         // The existing Web TaskCenter controller owns transfers, background

@@ -27,6 +27,15 @@ struct NativePhotoCoveragePolicyChecks {
         precondition(snapshot.currentAuthorizedMedia == 5)
         precondition(snapshot.hasExistingLedger)
         precondition(!snapshot.wholeLibraryCompletionVerified)
+        let currentManaged = XDriveIOSNativePhotoCoverageSnapshot(
+            localImages: 5, localVideos: 1,
+            limitedAuthorization: false, historicLedger: tally,
+            checkedAt: Date(), managedTargetNodeID: 4242
+        )
+        precondition(currentManaged.managedTargetNodeID == 4242)
+        precondition(currentManaged.historicLedger?.historicallyConfirmed == 1)
+        precondition(!currentManaged.wholeLibraryCompletionVerified)
+        precondition(snapshot.managedTargetNodeID == nil)
         // Even a number of historical receipts exactly equal to the current
         // PhotoKit asset count is NOT proof of current Owner cloud coverage.
         var equalTally = XDriveIOSNativePhotoReceiptTally()

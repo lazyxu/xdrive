@@ -100,19 +100,17 @@ export XD_SYNOLOGY_PASSWORD='your-dsm-password'
   --synology-username alice
 ```
 
-With `--source-id`, setup preserves the Source name, target node, current run mode, and existing ignore rules unless those values are explicitly overridden. This avoids duplicate Sources and avoids reconstructing the UI-selected target path on DSM.
+With `--source-id`, setup preserves the Source name, exact target Node, current run mode, and existing ignore rules unless those values are explicitly overridden. It never moves an existing target. New setup also enrolls this DSM installation as an Owner-scoped `synology` ClientDevice and stores its device token in the NAS secret store.
 
 The Web/Desktop External Sources UI includes a **DSM 配置** guide with the generated Source ID, copyable commands, and DSM Task Scheduler diagrams.
 
-For a CLI-created Source, setup can still create or reuse by name/path:
+For a new Source, setup now asks only for the Source name/mode and local Personal/Shared roots. The Server creates the destination atomically under:
 
-```bash
-./xdrive-source-agent setup \
-  --personal /volume1/homes/alice/Photos \
-  --shared /volume1/photo \
-  --mode scan \
-  --target Photos/Synology
+```text
+我的文件/同步文件夹/Push/<DSMDeviceName>_<DeviceID>/<SourceName>
 ```
+
+The deprecated `--target` flag is rejected. The client cannot choose a cloud parent Node or arbitrary destination path.
 
 The DSM Photos credential is stored locally on the NAS through the same source-agent secret backend used for xDrive credentials (Secret Service when available, otherwise a private `0600` file). The password is not stored in `config.json` or on xDrive Server. Existing installations may omit these flags and continue in filesystem-identity compatibility mode; adding the credential later enables automatic identity promotion without re-uploading files.
 
@@ -123,9 +121,11 @@ Setup creates or reuses an xDrive Source with:
 - `kind=synology_photos`
 - `direction=push`
 - `sync_mode=backup`
+- `device_id=<registered DSM ClientDevice UUID>`
+- `target_managed=true` for newly provisioned Sources
 - `run_mode=scan` by default, or `run_mode=sync` with `--mode sync`
 
-The target path is created in xDrive when needed. New Sources default to `scan` when `--mode` is omitted; re-running setup for an existing Source preserves its current mode unless `--mode` is explicitly supplied. Existing ignore rules are likewise preserved unless `--ignore-file` is supplied.
+New Sources are created paused with their canonical Push target in the same Server transaction, then activated only after the NAS roots and local configuration are saved. Each subsequent Source mutation/run/upload carries the registered DSM Device proof. Revoking that Device pauses its newly bound Push Sources and requests cancellation of active runs. Re-running setup for an existing Source preserves its target Node and never migrates old data. Existing legacy Sources without a Device binding remain explicitly legacy and are not silently rebound.
 
 A recommended first deployment is to run in `scan` mode, review the planned counts/bytes, and then repeat setup with `--mode sync`:
 
@@ -133,8 +133,7 @@ A recommended first deployment is to run in `scan` mode, review the planned coun
 ./xdrive-source-agent setup \
   --personal /volume1/homes/alice/Photos \
   --shared /volume1/photo \
-  --mode sync \
-  --target Photos/Synology
+  --mode sync
 ```
 
 The default ignore rules are:
@@ -261,4 +260,6 @@ Photos API data is used only for file identity/path mapping. Original bytes are 
 
 ## Unified Push/Pull contract (2026-11-05)
 
-For new DSM Photos Push Sources, follow [the canonical Push/Pull architecture](./architecture/push-pull-source-management.md) and [platform audit](./architecture/push-pull-platform-audit.md). The current CLI setup described above is the as-built state: it still accepts a caller-selected target and does not enroll a Synology ClientDevice. This is a known MVP gap, not the target design. New setup must enroll a DSM Device, provision the paused Source and exclusive target on the Server under `同步文件夹/Push/<device>/<source>`, and bind each run/upload to that Device, Source and Target. Do not migrate old targets.
+New DSM Photos Push Sources now enroll an Owner-scoped Synology ClientDevice, store its token in the NAS secret store, and are created with a server-owned target under `同步文件夹/Push/<device>/<source>`. The Source stores the generic Push `DeviceID` and exact managed `TargetNodeID`; the source-agent sends the device proof on authenticated requests, and the Server rejects wrong/revoked devices on Source mutation and execution. Revocation pauses the bound Source. The deprecated arbitrary `--target` setup option is rejected.
+
+Legacy Sources with no `DeviceID` are left on their existing target and are not migrated or silently rebound. They are reported as legacy by setup. For newly provisioned Sources, the Server persists the aggregate Personal/Shared Root-set ID and fingerprint in the Source binding. Each run and each upload/chunk/Finalize rechecks the registered Synology Device token, Source ID/revision, Root binding and exact managed Target. The source-agent independently verifies the local filesystem root fingerprints before scanning; a changed root cannot silently replace the server binding and requires a new Source. Revoking the Device pauses its bound Sources and requests cancellation of active runs.

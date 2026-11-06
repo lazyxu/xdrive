@@ -18,6 +18,7 @@ import (
 type localSourceExecutorProof struct {
 	DeviceID       string
 	RootID         string
+	Platform       string
 	SourceRevision uint64
 }
 
@@ -41,7 +42,7 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 	}
 	var source meta.Source
 	err := s.DB.WithContext(c.Request.Context()).
-		Select("id", "owner_id", "kind", "direction", "revision").
+		Select("id", "owner_id", "kind", "direction", "revision", "device_id", "target_node_id", "target_managed").
 		Where("id = ? AND owner_id = ?", id, userID(c)).
 		Take(&source).Error
 	if err != nil {
@@ -52,8 +53,59 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 		}
 		return false
 	}
+	if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
+		// Every DSM Push Source must be registered to a Synology Device and
+		// bound to the aggregate Personal/Shared Root fingerprint. There is no
+		// owner-JWT or legacy unbound execution fallback.
+		if source.DeviceID == nil || *source.DeviceID == "" {
+			fail(c, http.StatusForbidden, "Synology Push Source must be bound to a registered device")
+			return false
+		}
+		sourceID, proof, proofOK := currentSynologySourceProof(c)
+		if !proofOK || sourceID != source.ID || proof.DeviceID != *source.DeviceID ||
+			proof.SourceRevision != source.Revision || !source.TargetManaged || source.TargetNodeID == nil {
+			fail(c, http.StatusForbidden, "Synology Source root proof required or stale")
+			return false
+		}
+		var device meta.ClientDevice
+		if err := s.DB.WithContext(c.Request.Context()).
+			Where("id = ? AND owner_id = ? AND platform = ?", proof.DeviceID, source.OwnerID, "synology").
+			Take(&device).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				fail(c, http.StatusForbidden, "Synology source device not found")
+			} else {
+				fail(c, http.StatusInternalServerError, "load Synology source device failed")
+			}
+			return false
+		}
+		if !clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+			fail(c, http.StatusForbidden, "Synology source device credential invalid or revoked")
+			return false
+		}
+		var binding meta.LocalSourceBinding
+		if err := s.DB.WithContext(c.Request.Context()).
+			Where("source_id = ? AND owner_id = ? AND device_id = ?", source.ID, source.OwnerID, proof.DeviceID).
+			Take(&binding).Error; err != nil ||
+			binding.RootID != proof.RootID ||
+			binding.RootFingerprint != strings.ToLower(strings.TrimSpace(c.GetHeader("X-XDrive-Local-Root-Fingerprint"))) {
+			fail(c, http.StatusForbidden, "Synology Source root fingerprint is not bound")
+			return false
+		}
+		var target meta.Node
+		if err := s.DB.WithContext(c.Request.Context()).
+			Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+				*source.TargetNodeID, source.OwnerID, meta.NodeTypeDir).
+			Take(&target).Error; err != nil {
+			fail(c, http.StatusForbidden, "Synology source target is unavailable")
+			return false
+		}
+		c.Set(localSourceExecutorContextKey, localSourceExecutorProof{
+			DeviceID: device.ID, RootID: binding.RootID, Platform: "synology", SourceRevision: source.Revision,
+		})
+		return true
+	}
 	if source.Kind != meta.SourceKindLocalFolder {
-		// Never widen the execution requirements of Yike/Synology/other Sources.
+		// Pull connectors and native PhotoKit routes have their own authority.
 		return true
 	}
 	if source.Direction != meta.SourceDirectionPush {
@@ -101,7 +153,7 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 		return false
 	}
 	c.Set(localSourceExecutorContextKey, localSourceExecutorProof{
-		DeviceID: device.ID, RootID: binding.RootID, SourceRevision: source.Revision,
+		DeviceID: device.ID, RootID: binding.RootID, Platform: device.Platform, SourceRevision: source.Revision,
 	})
 	return true
 }
@@ -122,17 +174,17 @@ func (s *Server) requireLocalSourceExecutorTx(tx *gorm.DB, c *gin.Context, sourc
 func (s *Server) requireLocalSourceMutationTx(tx *gorm.DB, c *gin.Context, sourceID uint64) error {
 	if _, hasProof := c.Get(localSourceExecutorContextKey); !hasProof {
 		var source meta.Source
-		if err := tx.Select("kind").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
+		if err := tx.Select("kind", "direction", "device_id").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
 			return err
 		}
-		switch source.Kind {
-		case meta.SourceKindLocalFolder:
-			return errLocalSourceExecutorTransactionUnauthorized
-		case meta.SourceKindIOSPhotos:
+		if source.Kind == meta.SourceKindIOSPhotos {
 			return s.requireIOSPhotoSourceRunProofTx(tx, c, sourceID)
-		default:
-			return nil
 		}
+		if source.Kind == meta.SourceKindLocalFolder ||
+			(source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush) {
+			return errLocalSourceExecutorTransactionUnauthorized
+		}
+		return nil
 	}
 	return s.requireLocalSourceProofTx(tx, c, sourceID, "", false)
 }
@@ -146,16 +198,25 @@ func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID
 		// iOS Photos uses its own Owner+registered-device proof; it is never
 		// admitted by the Desktop local-folder credential or by Owner JWT alone.
 		var source meta.Source
-		if err := tx.Select("kind").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
+		if err := tx.Select("kind", "direction").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
 			return err
 		}
 		if source.Kind == meta.SourceKindIOSPhotos {
 			return s.requireIOSPhotoSourceRunProofTx(tx, c, sourceID)
 		}
+		if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
+			return errLocalSourceExecutorTransactionUnauthorized
+		}
 		return nil
 	}
 	proof, ok := raw.(localSourceExecutorProof)
-	if !ok || proof.DeviceID == "" || proof.RootID == "" || proof.SourceRevision == 0 {
+	if !ok || proof.DeviceID == "" || proof.SourceRevision == 0 {
+		return errLocalSourceExecutorTransactionUnauthorized
+	}
+	if proof.Platform == "synology" {
+		return s.requireSynologySourceProofTx(tx, c, sourceID, runID, proof, requireActive)
+	}
+	if proof.RootID == "" {
 		return errLocalSourceExecutorTransactionUnauthorized
 	}
 	var device meta.ClientDevice
@@ -210,4 +271,14 @@ func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID
 		}
 	}
 	return nil
+}
+
+// requireSynologySourceProofTx keeps DSM Push on the identity-only device
+// credential path. It never grants Desktop Agent or generic local Root rights.
+func (s *Server) requireSynologySourceProofTx(
+	tx *gorm.DB, c *gin.Context, sourceID uint64, runID string,
+	proof localSourceExecutorProof, requireActive bool,
+) error {
+	_, err := requireSynologySourceProofTx(tx, c, sourceID, runID, proof, requireActive)
+	return err
 }

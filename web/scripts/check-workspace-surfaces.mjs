@@ -244,10 +244,10 @@ requireText(app, [
   "<XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />",
 ], 'Web Browser Host pull source manager mount')
 requireText(browserHost, [
-  "remotePullPage: { ...ports.remotePull, directionFilter: 'pull' as const }",
+  "remotePullPage: { ...ports.remotePull }",
   'deviceBackupPage: {',
   'source: ports.deviceBackup.source',
-], 'Browser Owner-scoped backup/pull ports')
+], 'Browser Owner-scoped backup/Source Manager ports')
 requireText(browserHost, [
   'adminRoleVerified: ports.adminRoleVerified === true',
   'taskCenterPage: ports.taskCenter',
@@ -299,7 +299,7 @@ requireText(sources, [
   'title={title}',
   'subtitle={subtitle}',
   'pageActions={',
-], 'RemotePull SourceManager workspace')
+], 'Unified Push/Pull SourceManager workspace')
 
 requireText(app, [
   "appView === 'device-backup'",

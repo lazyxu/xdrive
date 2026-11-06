@@ -20,6 +20,9 @@ func requireSourceRunOrLocalPushTargetTx(
 		}
 		return requireIOSPhotoManagedUploadTx(ctx, tx, c, ownerID, nodeID, req)
 	}
+	if req.SourceID != 0 {
+		return requireSynologyPushUploadTargetTx(ctx, tx, c, ownerID, nodeID, req)
+	}
 	if _, scoped := currentSourceRunScope(c); scoped {
 		return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, ownerID, nodeID)
 	}
@@ -34,6 +37,9 @@ func requireSourceRunOrLocalPushFinalizeTx(
 			return errManagedSourceWriteDenied
 		}
 		return requireIOSPhotoManagedFinalizeTx(ctx, tx, c, session, nodeID)
+	}
+	if session.SourceID != 0 {
+		return requireSynologyPushUploadSessionTx(ctx, tx, c, session)
 	}
 	if _, scoped := currentSourceRunScope(c); scoped {
 		return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, session.OwnerID, nodeID)

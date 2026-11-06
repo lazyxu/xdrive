@@ -1434,7 +1434,7 @@ export function XDriveSourceManager({
   return (
     <>
       <XDriveSourceManagerListPage
-        title={directionFilter === 'pull' ? '远程拉取' : '来源'}
+        title={directionFilter === 'pull' ? '远程拉取' : '来源管理'}
         subtitle={directionFilter === 'pull' ? '由 xDrive Server 管理远程连接、扫描和下载。' : undefined}
         rows={rows}
         directionFilter={directionFilter}

@@ -5,9 +5,7 @@ package api
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -62,6 +60,7 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
 		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{}, &meta.AuditEvent{},
+		&meta.ClientDevice{}, &meta.LocalSourceBinding{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SourceItemMetadata{},
 		&meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
@@ -90,28 +89,26 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 	}).Router()
 
 	token := createTestUser(t, db, router, "synology-push-user", "password-a")
-	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
-	target := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID),
-		token, strings.NewReader(`{"name":"Synology"}`), http.StatusCreated)
-
-	createBody := fmt.Sprintf(`{
-		"name":"Synology Photos",
-		"kind":"synology_photos",
-		"direction":"push",
-		"sync_mode":"backup",
-		"run_mode":"sync",
-		"target_node_id":%d,
-		"ignore_rules":"@eaDir/\n"
-	}`, target.ID)
-	createdRes := request(t, router, http.MethodPost, "/api/v1/sources", token, strings.NewReader(createBody), http.StatusCreated)
-	var source sourceDTO
-	if err := json.Unmarshal(createdRes.Body.Bytes(), &source); err != nil {
-		t.Fatal(err)
-	}
-
 	httpServer := httptest.NewServer(router)
 	defer httpServer.Close()
 	cli := client.New(httpServer.URL, token)
+	registered, err := cli.RegisterClientDevice(context.Background(), "Synology NAS", "synology", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli.SetDeviceIdentity(registered.Device.ID, registered.DeviceToken)
+	created, err := cli.CreateSource(context.Background(), client.CreateSourceInput{
+		Name: "Synology Photos", Kind: sourceagent.SynologyKind,
+		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeSync, TargetNodeID: 0, IgnoreRules: "@eaDir/\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == 0 || created.TargetNodeID == nil || !created.TargetManaged || created.DeviceID != registered.Device.ID || created.Status != meta.SourceStatusPaused {
+		t.Fatalf("unexpected device-bound DSM Source: %+v", created)
+	}
+	targetID := *created.TargetNodeID
 
 	shared := t.TempDir()
 	local := filepath.Join(shared, "photo.jpg")
@@ -122,13 +119,37 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sharedFingerprint, err := sourceagent.RootFingerprint("shared", shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := sourceagent.RootsWithIdentityState("", "", "", shared, sharedID, sharedFingerprint)
+	rootSetID, rootSetFingerprint, err := sourceagent.RootSetIdentity(roots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := cli.BindSynologySourceRoot(context.Background(), created.ID, created.Revision, rootSetID, rootSetFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli.SetSynologySourceRootProof(created.ID, binding.Revision, rootSetID, rootSetFingerprint)
+	active := meta.SourceStatusActive
+	created, err = cli.UpdateSource(context.Background(), created.ID, binding.Revision, client.UpdateSourceInput{Status: &active})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli.SetSynologySourceRootProof(created.ID, created.Revision, rootSetID, rootSetFingerprint)
+	if created.Status != meta.SourceStatusActive {
+		t.Fatalf("DSM Source did not activate after Root binding: %+v", created)
+	}
+
 	identityStore, err := sourceagentidentity.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	scanner := sourceagent.Scanner{
-		API: cli, ExecutionAPI: cli, SourceID: source.ID,
-		Roots:         sourceagent.RootsWithIdentities("", "", shared, sharedID),
+		API: cli, ExecutionAPI: cli, SourceID: created.ID,
+		Roots:         roots,
 		IdentityStore: identityStore,
 	}
 
@@ -140,14 +161,14 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 		run1.TransferredItems != 1 || run1.TransferredBytes != int64(len("first")) {
 		t.Fatalf("unexpected create run: %+v", run1)
 	}
-	sharedNode := mustChild(t, cli, target.ID, "Shared", meta.NodeTypeDir)
+	sharedNode := mustChild(t, cli, targetID, "Shared", meta.NodeTypeDir)
 	fileNode := mustChild(t, cli, sharedNode.ID, "photo.jpg", meta.NodeTypeFile)
 	firstNodeID := fileNode.ID
 	if got := mustDownload(t, cli, fileNode.ID); got != "first" {
 		t.Fatalf("created content=%q", got)
 	}
 	var beforePromotion meta.SourceItem
-	if err := db.Where("source_id = ? AND path = ?", source.ID, "Shared/photo.jpg").First(&beforePromotion).Error; err != nil {
+	if err := db.Where("source_id = ? AND path = ?", created.ID, "Shared/photo.jpg").First(&beforePromotion).Error; err != nil {
 		t.Fatal(err)
 	}
 	oldExternalID := beforePromotion.ExternalID
@@ -171,7 +192,7 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 		t.Fatalf("promotion changed item/node: %+v", promoted)
 	}
 	var aliases []meta.SourceItemAlias
-	if err := db.Where("source_id = ? AND source_item_id = ?", source.ID, promoted.ID).Find(&aliases).Error; err != nil {
+	if err := db.Where("source_id = ? AND source_item_id = ?", created.ID, promoted.ID).Find(&aliases).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(aliases) != 1 || aliases[0].AliasExternalID != oldExternalID {
@@ -251,7 +272,7 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 		t.Fatalf("source deletion changed remote node: got=%d want=%d", fileNode.ID, firstNodeID)
 	}
 	var item meta.SourceItem
-	if err := db.Where("source_id = ? AND path = ?", source.ID, "Shared/renamed.jpg").First(&item).Error; err != nil {
+	if err := db.Where("source_id = ? AND path = ?", created.ID, "Shared/renamed.jpg").First(&item).Error; err != nil {
 		t.Fatal(err)
 	}
 	if item.State != meta.SourceItemStateMissing || item.NodeID == nil || *item.NodeID != firstNodeID {
