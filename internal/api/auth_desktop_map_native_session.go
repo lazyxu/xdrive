@@ -34,13 +34,17 @@ func desktopMapNativeSessionActive(
 		}
 		var record meta.RefreshToken
 		if err := query.Where("id = ? AND user_id = ?", refreshID, ownerID).
-			Take(&record).Error; err != nil || !now.Before(record.ExpiresAt) {
+			Take(&record).Error; err != nil {
 			return false
 		}
 		if record.RevokedAt == nil {
-			return true
+			// Only the current active native credential needs an unexpired
+			// TTL. After a legitimate atomic refresh, a revoked predecessor
+			// can expire while its Server-recorded successor is still live.
+			return now.Before(record.ExpiresAt)
 		}
 		if record.ReplacedByID == nil || *record.ReplacedByID == 0 {
+			// A terminal revocation is logout, not a rotated session.
 			return false
 		}
 		refreshID = *record.ReplacedByID

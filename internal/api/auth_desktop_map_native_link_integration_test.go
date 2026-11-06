@@ -166,6 +166,35 @@ func TestDesktopMapRedeemedBrowserFollowsNativeRotationAndLogout(t *testing.T) {
 	if w := call("/api/v1/me", "", browserNext.AccessToken, "", "", nil); w.Code != 200 {
 		t.Fatalf("native rotation wrongly revoked mapped browser bearer: %d", w.Code)
 	}
+	// An old revoked native token can expire normally AFTER an authentic
+	// Server-recorded rotation; the still-live successor remains authority.
+	// Denying the historical expiry would break Desktop map sessions after
+	// an otherwise healthy long-running Agent refresh.
+	if err := db.Model(&meta.RefreshToken{}).Where("id = ?", nativeRow.ID).
+		Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if w := call("/api/v1/me", "", browserNext.AccessToken, "", "", nil); w.Code != 200 {
+		t.Fatalf("expired rotated native predecessor invalidated live successor: %d", w.Code)
+	}
+	// A terminal (not replaced) expired native credential is still rejected.
+	expiredNative, err := s.issueSession(db, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expiredNativeRow meta.RefreshToken
+	if err := db.Where("token_hash = ?", auth.HashRefreshToken(expiredNative.RefreshToken)).
+		Take(&expiredNativeRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.RefreshToken{}).Where("id = ?", expiredNativeRow.ID).
+		Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if desktopMapNativeSessionActive(db, owner.ID, expiredNativeRow.ID,
+		time.Now().UTC(), false) {
+		t.Fatal("expired terminal native refresh was accepted")
+	}
 	browserNextResult = call("/api/v1/auth/browser/refresh", "", "", origin, owner.Username, cookie)
 	browserNext = decode(browserNextResult)
 	cookie = getCookie(browserNextResult)
