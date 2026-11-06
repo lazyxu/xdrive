@@ -5,6 +5,7 @@ enum XDrivePhotoKitExportFailure: Error {
     case notAuthorized
     case assetNotVisible
     case originalResourceMissing
+    case iCloudDownloadRequired
     case incompleteLivePair
     case storageUnavailable
     case resourceTooLarge
@@ -104,7 +105,18 @@ private final class PhotoKitRequestGate: @unchecked Sendable {
         lock.unlock()
 
         if let error {
-            continuation.resume(throwing: error)
+            let photoError = error as NSError
+            if photoError.domain == PHPhotosErrorDomain &&
+               photoError.code == PHPhotosError.networkAccessRequired.rawValue {
+                // Only Apple's explicit network-required outcome is eligible
+                // for an optional later foreground iCloud retry. Never
+                // classify unknown read/write failures as iCloud-only.
+                continuation.resume(
+                    throwing: XDrivePhotoKitExportFailure.iCloudDownloadRequired
+                )
+            } else {
+                continuation.resume(throwing: error)
+            }
         } else if finalCount <= 0 {
             // PhotoKit reported no error but supplied no original bytes.
             // The file handle never failed: this is one missing/inaccessible
