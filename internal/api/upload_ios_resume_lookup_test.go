@@ -77,7 +77,7 @@ func TestIOSResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testing.T
 	var firstAudit meta.AuditEvent
 	if err := db.Where("action = ?", uploadAuthorizationAuditAction).Take(&firstAudit).Error; err != nil ||
 		firstAudit.Result != "success" || !strings.Contains(firstAudit.Metadata, `"phase":"ios.photo.resume_lookup"`) ||
-		strings.Contains(firstAudit.Metadata, key) {
+		!strings.Contains(firstAudit.Metadata, `"writer":"ios_photo"`) || strings.Contains(firstAudit.Metadata, key) {
 		t.Fatalf("iOS resume lookup audit missing or leaked resume key: %+v %v", firstAudit, err)
 	}
 	// A replayed read-only recovery cannot allocate a second UploadSession.
