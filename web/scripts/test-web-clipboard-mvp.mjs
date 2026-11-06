@@ -62,6 +62,8 @@ assert.match(ui, /xDriveClipboardDecrypt\(/)
 assert.match(ui, /port\.copyText\(text\)/)
 assert.doesNotMatch(ui, /localStorage|sessionStorage|indexedDB/)
 assert.match(read('web/src/App.tsx'), /clipboard: clipboardPort/)
+assert.match(read('web/src/App.tsx'), /appView === 'clipboard'/,
+  'Browser shared page outlet must actually mount clipboard route, not only register it')
 assert.match(read('web/src/browserWorkspaceHost.ts'), /clipboardPage: ports\.clipboard/)
 assert.match(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx'), /case 'clipboard'/)
 assert.match(read('ui/shared/src/web-app.ts'), /case 'clipboard':/)
