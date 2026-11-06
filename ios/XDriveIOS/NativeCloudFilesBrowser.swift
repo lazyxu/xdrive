@@ -25,6 +25,20 @@ struct XDriveIOSNativeFilesReader {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 
+    // Owner identity stays in the per-request bearer. The shared ephemeral
+    // transport never stores cookies or file data and refuses redirects.
+    private static let client: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        configuration.timeoutIntervalForRequest = 25
+        return URLSession(configuration: configuration,
+                          delegate: XDriveIOSNativeFilesRejectRedirects(),
+                          delegateQueue: nil)
+    }()
+
     private func endpoint(_ path: String, query: [URLQueryItem]) throws -> URL {
         guard owner.ownerID > 0, owner.rootNodeID > 0,
               !owner.instanceID.isEmpty, !accessToken.isEmpty,
@@ -44,23 +58,13 @@ struct XDriveIOSNativeFilesReader {
     }
 
     private func get<T: Decodable>(_ url: URL) async throws -> T {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieAcceptPolicy = .never
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.urlCache = nil
-        configuration.timeoutIntervalForRequest = 25
-        let client = URLSession(configuration: configuration,
-                                delegate: XDriveIOSNativeFilesRejectRedirects(),
-                                delegateQueue: nil)
-        defer { client.invalidateAndCancel() }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.httpShouldHandleCookies = false
         request.setValue("Bearer " + accessToken, forHTTPHeaderField: "Authorization")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await client.data(for: request)
+        let (data, response) = try await Self.client.data(for: request)
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else {
             throw XDriveIOSNativeFilesReadError.malformed
@@ -1553,8 +1557,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                     directory: intent.directory,
                     initialQuickAction: intent.quickAction
                 ) {
+                    // The sheet's onDismiss performs the sole refresh.
                     managementIntent = nil
-                    reload()
                 }
             } else {
                 Text("当前账户已变化，请关闭并重新选择文件。")
