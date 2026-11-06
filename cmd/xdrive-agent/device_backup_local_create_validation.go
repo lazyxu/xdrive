@@ -13,12 +13,20 @@ import (
 // may accept a generic Source without allocating its exclusive managed target.
 // In that case leave any possibly committed Source paused for draft recovery.
 func validateCreatedLocalBackupSource(created client.Source, requested client.CreateSourceInput, deviceID string) error {
+	syncMode := requested.SyncMode
+	if syncMode == "" {
+		syncMode = meta.SourceSyncModeBackup
+	}
+	runMode := requested.RunMode
+	if runMode == "" {
+		runMode = meta.SourceRunModeSync
+	}
 	if created.ID == 0 || created.Revision == 0 ||
-		created.Name != requested.Name ||
+		created.Name != strings.TrimSpace(requested.Name) ||
 		created.Kind != meta.SourceKindLocalFolder ||
 		created.Direction != meta.SourceDirectionPush ||
-		created.SyncMode != requested.SyncMode ||
-		created.RunMode != requested.RunMode ||
+		created.SyncMode != syncMode ||
+		created.RunMode != runMode ||
 		created.Status != meta.SourceStatusPaused ||
 		created.DeviceID != deviceID ||
 		!created.TargetManaged ||
