@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +26,7 @@ const (
 )
 
 var errClipboardInvalid = errors.New("invalid encrypted clipboard payload")
+var errClipboardVaultNotReady = errors.New("clipboard vault has no encrypted verifier")
 
 type clipboardWriteRequest struct {
 	ClientEventID string `json:"client_event_id"`
@@ -105,7 +108,29 @@ func clipboardVaultDTO(vault meta.ClipboardVault) gin.H {
 	return gin.H{
 		"salt": vault.Salt, "kdf": "PBKDF2-SHA256", "iterations": 310000,
 		"check_nonce": vault.CheckNonce, "check_ciphertext": vault.CheckCiphertext,
+		"aad_scope": vault.AADScope,
 	}
+}
+
+// The v1 AAD includes the first Browser origin and its authenticated Owner ID.
+// Pin that original scope once so another public/LAN URL can reuse the same
+// passphrase and history. It is metadata, never an authorization capability.
+func clipboardValidAADScope(scope string, ownerID uint64) bool {
+	if ownerID == 0 || len(scope) > 512 {
+		return false
+	}
+	suffix := ":" + strconv.FormatUint(ownerID, 10)
+	if !strings.HasSuffix(scope, suffix) {
+		return false
+	}
+	origin := strings.TrimSuffix(scope, suffix)
+	u, err := url.Parse(origin)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") ||
+		u.Host == "" || u.Hostname() == "" || u.Opaque != "" || u.User != nil ||
+		u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	return u.Scheme+"://"+u.Host == origin
 }
 
 // First Browser sets an encrypted canary once; later Browsers must locally
@@ -121,28 +146,42 @@ func (s *Server) putClipboardVaultCheck(c *gin.Context) {
 	var req struct {
 		Nonce      string `json:"nonce"`
 		Ciphertext string `json:"ciphertext"`
+		Scope string `json:"scope"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid vault check"})
 		return
 	}
-	if len(req.Ciphertext) > 256 || validateClipboardWrite(clipboardWriteRequest{
+	if !clipboardValidAADScope(req.Scope, uid) || len(req.Ciphertext) > 256 || validateClipboardWrite(clipboardWriteRequest{
 		ClientEventID: "00000000-0000-4000-8000-000000000001",
 		Kind:          "text/plain", Nonce: req.Nonce, Ciphertext: req.Ciphertext,
 	}) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid vault check"})
 		return
 	}
-	res := s.DB.WithContext(c.Request.Context()).Model(&meta.ClipboardVault{}).
+	// The initial canary and its AAD scope are pinned atomically. An existing
+	// legacy vault (created before AADScope was stored) can claim the missing
+	// scope only with its original unchanged encrypted canary.
+	db := s.DB.WithContext(c.Request.Context())
+	res := db.Model(&meta.ClipboardVault{}).
 		Where("owner_id = ? AND check_ciphertext = ''", uid).
-		Updates(map[string]interface{}{"check_nonce": req.Nonce, "check_ciphertext": req.Ciphertext})
+		Updates(map[string]interface{}{"check_nonce": req.Nonce, "check_ciphertext": req.Ciphertext, "aad_scope": req.Scope})
 	if res.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard vault unavailable"})
 		return
 	}
+	if res.RowsAffected == 0 {
+		res = db.Model(&meta.ClipboardVault{}).
+			Where("owner_id = ? AND aad_scope = '' AND check_nonce = ? AND check_ciphertext = ?",
+				uid, req.Nonce, req.Ciphertext).
+			Update("aad_scope", req.Scope)
+		if res.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard vault unavailable"})
+			return
+		}
+	}
 	var accepted meta.ClipboardVault
-	if err := s.DB.WithContext(c.Request.Context()).
-		Where("owner_id = ?", uid).First(&accepted).Error; err != nil {
+	if err := db.Where("owner_id = ?", uid).First(&accepted).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "clipboard vault not initialized"})
 		return
 	}
@@ -189,6 +228,17 @@ func (s *Server) createClipboardItem(c *gin.Context) {
 		CreatedAt: now, ExpiresAt: now.Add(clipboardRetention),
 	}
 	err := db.Transaction(func(tx *gorm.DB) error {
+		// Lock the Owner vault to serialize inserts + 50-item pruning. Two
+		// concurrent READ COMMITTED transactions otherwise can each retain
+		// different sets of 50 records and exceed the retention cap.
+		var vault meta.ClipboardVault
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("owner_id = ?", uid).First(&vault).Error; err != nil {
+			return err
+		}
+		if vault.CheckCiphertext == "" {
+			return errClipboardVaultNotReady
+		}
 		if err := tx.Create(&item).Error; err != nil {
 			return err
 		}
@@ -208,6 +258,10 @@ WHERE owner_id = ?
 			uid, now, uid, now, clipboardPageSize).Error
 	})
 	if err != nil {
+		if errors.Is(err, errClipboardVaultNotReady) || errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusConflict, gin.H{"error": "clipboard vault must be initialized before sending"})
+			return
+		}
 		// A concurrent retry may have inserted the same EventID. Return only
 		// an EXACT same-content receipt; never silently accept conflicting data.
 		if lookupErr := db.Where("owner_id = ? AND client_event_id = ?", uid, req.ClientEventID).
