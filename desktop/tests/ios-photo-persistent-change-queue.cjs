@@ -142,3 +142,38 @@ test('only-new automatic scanning waits for the PhotoKit persistent history curs
             controller.indexOf('.reserveDue(owner: selected,'),
     'do not reserve or date-filter a scan until persistent history catches up')
 });
+
+test('expired or incomplete PhotoKit history triggers receipt-verified full-library reconciliation before rebasing', () => {
+  const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift')
+  const schedule = read('ios/XDriveIOS/PhotoAutoScheduleStore.swift')
+  const policy = read('ios/XDriveIOS/PhotoAutoSchedulePolicy.swift')
+  const recovery = source.slice(
+    source.indexOf('func completeFullLibraryReconciliation('),
+    source.indexOf('private func verifyOwner(')
+  )
+  assert.match(source, /case historyUnavailable/)
+  assert.match(source, /PHPhotosError\.persistentChangeTokenExpired/)
+  assert.match(source, /PHPhotosError\.persistentChangeDetailsUnavailable/)
+  assert.match(recovery, /XDriveIOSPhotoKitLibraryEpoch\.matches\([\s\S]*?expectedToken/)
+  assert.match(recovery, /store\.completeFullReconciliation\(/)
+  assert.match(store, /func completeFullReconciliation\(token: Data, authorization: Int\)/)
+  assert.match(store, /BEGIN IMMEDIATE[\s\S]*?INSERT INTO baseline[\s\S]*?DELETE FROM entries[\s\S]*?COMMIT/)
+  assert.match(schedule, /historyRecoveryRequired: Bool\? = nil/)
+  assert.match(schedule, /historyRecoveryPassClean: Bool\? = nil/)
+  assert.match(schedule, /historyRecoveryReadyToCommit: Bool\? = nil/)
+  assert.match(schedule, /func requireFullLibraryReconciliation\(/)
+  assert.match(schedule, /func finishFullLibraryReconciliation\(/)
+  assert.match(schedule, /fullReconciliationWindowComplete\(/)
+  assert.match(schedule, /fullReconciliationWindowVerified\(/)
+  assert.match(policy, /verified \+ unsupported == scanned/)
+  assert.match(policy, /followingWindow == 0 && passClean/)
+  assert.match(controller, /\.historyUnavailable/)
+  assert.match(controller, /requireFullLibraryReconciliation\(owner: selected\)/)
+  assert.match(controller, /if activePlan\.requiresFullLibraryReconciliation[\s\S]*?incrementalQueue = nil[\s\S]*?canUseOnlyNewDateFilter = false/)
+  assert.match(controller, /completeFullLibraryReconciliation\([\s\S]*?expectedToken: expectedToken/)
+  assert.match(controller, /finishFullLibraryReconciliation\([\s\S]*?expectedToken: expectedToken/)
+  assert.doesNotMatch(controller.slice(
+    controller.indexOf('if activePlan.requiresFullLibraryReconciliation'),
+    controller.indexOf('guard let due = try XDriveIOSPhotoAutoScheduleStore.shared')
+  ), /newOnlySince = activePlan\.newOnlySince/)
+})
