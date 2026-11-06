@@ -68,3 +68,10 @@ test('verified preexisting receipt updates display only at terminal Owner-fenced
   assert.match(terminal, /self\.confirmedOriginalUpdate = ConfirmedOriginalUpdate\(/)
   assert.match(terminal, /owner: selected, id: UUID\(\)/)
 })
+
+test('single-item PhotoKit queue accesses correctly await the isolated actor', () => {
+  assert.match(single, /selectedRevision = try await queue\.pendingForSingle\(/)
+  assert.match(single, /queueRevisionSettled = try await selectedQueue\.settle\(/)
+  assert.doesNotMatch(single, /selectedRevision = try queue\.pendingForSingle\(/)
+  assert.doesNotMatch(single, /queueRevisionSettled = try selectedQueue\.settle\(/)
+})

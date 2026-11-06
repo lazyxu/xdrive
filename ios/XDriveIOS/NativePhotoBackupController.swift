@@ -465,7 +465,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                        !plan.requiresFullLibraryReconciliation {
                         let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: selected)
                         do {
-                            selectedRevision = try queue.pendingForSingle(
+                            selectedRevision = try await queue.pendingForSingle(
                                 owner: selected, localIdentifier: localIdentifier
                             )
                             if selectedRevision != nil { selectedQueue = queue }
@@ -508,7 +508,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         // Target Node receipt. Only then can this exact queued
                         // PhotoKit revision be atomically marked confirmed.
                         do {
-                            queueRevisionSettled = try selectedQueue.settle(
+                            queueRevisionSettled = try await selectedQueue.settle(
                                 selectedRevision, result: .confirmed, owner: selected
                             )
                             queueNeedsRecheck = !queueRevisionSettled
