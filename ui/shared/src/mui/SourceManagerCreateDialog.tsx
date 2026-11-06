@@ -62,12 +62,6 @@ export type XDriveSourceCreateValues = {
   roots?: string[]
 }
 
-type SourceTargetNode = {
-  id: number
-  name: string
-  path?: string
-}
-
 export function XDriveSourceCreateDialog({
   open,
   creating,
@@ -101,12 +95,6 @@ export function XDriveSourceCreateDialog({
   nameError: string
   spacesError: string
   rootsError: string
-  targetBrowsingEnabled: boolean
-  targetCrumbs: SourceTargetNode[]
-  targetDirectories: SourceTargetNode[]
-  targetLoading: boolean
-  defaultTargetLabel: string
-  defaultTargetPath: string
   cookieHelpVariant: 'accordion' | 'dialog'
   testingCredential: boolean
   credentialTest: ExternalSourceCredentialTestResult | null
@@ -121,7 +109,6 @@ export function XDriveSourceCreateDialog({
   onClearNameError: () => void
   onClearSpacesError: () => void
   onClearRootsError: () => void
-  onLoadTargetDirectory: (node: SourceTargetNode, crumbs: SourceTargetNode[]) => void
   onTestCredential: () => void
 }) {
   const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
