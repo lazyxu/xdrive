@@ -107,6 +107,22 @@ func TestAndroidResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testi
 		t.Fatal("read-only session lookup mutated the upload table or adopted a Source-bound session")
 	}
 
+	// A legacy row with SourceID cleared but SourceRevision retained cannot
+	// be adopted as an ordinary Android Owner-original receipt. Once the
+	// stray identity is removed, the exact prior receipt remains readable.
+	if err := db.Model(&meta.UploadSession{}).Where("id = ?", stored.ID).
+		Update("source_revision", uint64(7)).Error; err != nil {
+		t.Fatal(err)
+	}
+	request(t, router, http.MethodPost, url, token,
+		strings.NewReader(body(key, stored.Name, sha, size)), http.StatusNotFound)
+	if err := db.Model(&meta.UploadSession{}).Where("id = ?", stored.ID).
+		Update("source_revision", uint64(0)).Error; err != nil {
+		t.Fatal(err)
+	}
+	request(t, router, http.MethodPost, url, token,
+		strings.NewReader(body(key, stored.Name, sha, size)), http.StatusOK)
+
 	// Strong HMAC identity, full hash, size and file destination MUST match.
 	for _, requestBody := range []string{
 		body("and_"+strings.Repeat("c", 64), stored.Name, sha, size),
