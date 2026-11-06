@@ -1,7 +1,9 @@
 package client
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -43,11 +45,27 @@ func (c *Client) IssueDesktopMapGuestGrant(ctx context.Context) (DesktopMapGuest
 	if tokens.AccessToken == "" || strings.TrimSpace(tokens.RefreshToken) == "" {
 		return DesktopMapGuestGrant{}, errors.New("native Desktop session is unavailable")
 	}
+	// Issue carries the native RefreshToken in the POST body. A 307/308
+	// Location must NEVER replay that secret to any other Host or path.
+	body, err := json.Marshal(struct {
+		NativeRefreshToken string `json:"native_refresh_token"`
+	}{NativeRefreshToken: tokens.RefreshToken})
+	if err != nil {
+		return DesktopMapGuestGrant{}, err
+	}
+	req, err := c.request(ctx, http.MethodPost, "/api/v1/auth/desktop-map/issue",
+		bytes.NewReader(body))
+	if err != nil {
+		return DesktopMapGuestGrant{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.doAuth(req)
+	if err != nil {
+		return DesktopMapGuestGrant{}, err
+	}
+	defer resp.Body.Close()
 	var grant DesktopMapGuestGrant
-	if err := c.json(ctx, http.MethodPost, "/api/v1/auth/desktop-map/issue",
-		struct {
-			NativeRefreshToken string `json:"native_refresh_token"`
-		}{NativeRefreshToken: tokens.RefreshToken}, &grant); err != nil {
+	if err := decodeResponse(resp, &grant); err != nil {
 		return DesktopMapGuestGrant{}, err
 	}
 	if len(grant.Ticket) != 64 ||
