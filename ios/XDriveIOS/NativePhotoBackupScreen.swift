@@ -4,6 +4,9 @@ import SwiftUI
 
 /// Native opt-in for bounded still/video/Live originals, not a WebView bridge.
 struct XDriveIOSNativePhotoBackupScreen: View {
+    private enum Page: Equatable { case overview, setup, details }
+    private enum Detail: Hashable { case progress, automatic, receipts, result }
+
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var controller: XDriveIOSNativePhotoBackupController
     let onShowCloudOriginals: () -> Void
@@ -12,6 +15,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @StateObject private var coverage = XDriveIOSNativePhotoCoverageModel()
     @StateObject private var originalProof = XDriveIOSNativeCurrentPhotoReceiptModel()
     @StateObject private var destination = XDriveIOSNativePhotoBackupDestinationModel()
+    @State private var page = Page.overview
+    @State private var detail: Detail?
+    @State private var enablingAutomaticBackup = false
     @State private var selectedOriginalToVerify: PhotosPickerItem?
     @State private var selectedOriginalIdentifier: String?
     @State private var checkICloudOriginal = false
@@ -43,6 +49,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @State private var focusedConsentOwner: XDriveNativeOwnerRoot?
     @State private var focusedConsentAllowICloud = false
     @State private var autoConsentOwner: XDriveNativeOwnerRoot?
+    @State private var autoConsentDestination: XDriveIOSPhotoManagedDestination?
     @State private var autoConsentMinutes = 60
     @State private var autoConsentAllowICloud = false
     @State private var autoConsentStartRule: XDriveIOSPhotoAutoStartRule = .everything
@@ -82,27 +89,23 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     }
 
     var body: some View {
-        GeometryReader { viewport in
-            // Measured safe-area width and height, not the iPhone size class.
-            // The parent owns all consent, Owner verification and task state;
-            // rotating reflows sections only, never starts another uploader.
-            if viewport.size.width >= 760 &&
-                viewport.size.height < 500 &&
-                !dynamicTypeSize.isAccessibilitySize {
-                HStack(alignment: .top, spacing: 0) {
-                    Form { backupStatusSections }
-                        .frame(width: viewport.size.width * 0.48)
-                        .accessibilityIdentifier("native-ios-backup-landscape-status")
-                    Divider()
-                    Form { backupSettingsSections }
-                        .accessibilityIdentifier("native-ios-backup-landscape-settings")
+        Group {
+            switch page {
+            case .overview: backupOverview
+            case .setup: backupSetup
+            case .details: backupDetails
+            }
+        }
+        .toolbar {
+            if page != .overview {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        page = .overview
+                    } label: {
+                        Label("返回相册备份", systemImage: "chevron.left")
+                    }
+                    .disabled(enablingAutomaticBackup)
                 }
-            } else {
-                Form {
-                    backupSettingsSections
-                    backupStatusSections
-                }
-                .accessibilityIdentifier("native-ios-backup-portrait-form")
             }
         }
         // An active user's taps or scrolls reset the 10-second idle window.
@@ -215,24 +218,36 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                             isPresented: $showAutoConsent, titleVisibility: .visible) {
             Button("确认启用") {
                 guard let expected = autoConsentOwner,
-                      destination.confirmedForCurrentName,
+                      let approvedDestination = autoConsentDestination,
+                      approvedDestination == destination.confirmed,
+                      canEnableAutomaticBackup,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else {
-                    consentError = "服务器或账户已变化，自动备份授权失效；未开启计划。"
+                    consentError = "当前账户、备份目录或权限状态已变化，请重新确认。"
                     return
                 }
+                enablingAutomaticBackup = true
                 Task {
+                    defer { enablingAutomaticBackup = false }
                     await controller.configure(
                         login: login, expectedOwner: expected,
+                        expectedDestination: approvedDestination,
                         minutes: autoConsentMinutes,
                         allowICloud: autoConsentAllowICloud,
                         startRule: autoConsentStartRule,
                         enabledAt: autoConsentEnabledAt
                     )
+                    guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                    else { return }
+                    if page == .setup && controller.schedule?.enabled == true {
+                        page = .overview
+                    } else if controller.errorMessage != nil {
+                        receipts.refresh(login: login)
+                    }
                 }
             }
         } message: {
-            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证")。\(autoConsentStartRule == .onlyNew ? "仅自动备份启用后拍摄或编辑的照片；无法判断拍摄和修改日期的项目仍标记不可用。" : "自动检查所有已授权的照片和视频。") 首次积压未扫完时仅在前台约每分钟继续一轮，完成扫描后恢复每 \(autoConsentMinutes) 分钟检查；每轮最多新增 20 个原件。不保证锁屏或强制退出后执行。")
+            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证") · 目录：\(autoConsentDestination?.targetPath ?? "未验证")。\(autoConsentStartRule == .onlyNew ? "仅自动备份启用后拍摄或编辑的照片；无法判断拍摄和修改日期的项目仍标记不可用。" : "自动检查所有已授权的照片和视频。") 首次积压未扫完时仅在前台约每分钟继续一轮，完成扫描后恢复每 \(autoConsentMinutes) 分钟检查；每轮最多新增 20 个原件。不保证锁屏或强制退出后执行。")
         }
         .confirmationDialog("确认恢复当前 Owner 的前台自动备份？",
                             isPresented: $showResumeConsent, titleVisibility: .visible) {
@@ -400,12 +415,19 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             catchUpConsentOwner = nil
             manualConsentOwner = nil
             autoConsentOwner = nil
+            autoConsentDestination = nil
             resumeConsentOwner = nil
         }
         .onChange(of: receipts.mode) { mode in
             if mode == .idle {
                 controller.refresh(owner: login.owner)
                 background.refresh(login: login)
+            }
+        }
+        .onChange(of: controller.busy) { busy in
+            if !busy && !receipts.busy &&
+                ((controller.progress?.needsReview ?? 0) > 0 || controller.errorMessage != nil) {
+                receipts.refresh(login: login)
             }
         }
         .onChange(of: receipts.confirmedReadback) { readback in
@@ -448,6 +470,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             )
         }
         .onChange(of: login.owner) { _ in
+            page = .overview
             destination.reset()
             destination.refresh(login: login)
             originalProof.cancel()
@@ -475,6 +498,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             catchUpConsentOwner = nil
             manualConsentOwner = nil
             autoConsentOwner = nil
+            autoConsentDestination = nil
             resumeConsentOwner = nil
             receipts.cancel()
             // Per-Owner input state never flows to a replacement account.
@@ -487,6 +511,258 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         }
     }
 
+    private var backupOverview: some View {
+        Form {
+            Section("当前状态") {
+                if login.owner == nil {
+                    backupStatus("请先登录", icon: "person.crop.circle",
+                                 detail: "登录 xDrive 后即可设置本机相册备份。")
+                } else if controller.busy {
+                    ProgressView("正在备份")
+                    if let progress = controller.progress {
+                        Text(progress.stage).font(.subheadline)
+                    }
+                    Button("查看本轮进度") { openDetails(.progress) }
+                } else if (receipts.pending ?? 0) > 0 ||
+                            controller.schedule?.pausedForReview == true ||
+                            (background.status?.enabled == true && background.pausedForReview) {
+                    backupStatus("待核对收据", icon: "exclamationmark.shield",
+                                 detail: "请先核对已提交的上传结果，再继续备份。")
+                    Button("去核对收据") { openDetails(.receipts) }
+                } else if controller.schedule?.historyRecoveryRequiresConsent == true {
+                    backupStatus("自动备份已暂停", icon: "pause.circle",
+                                 detail: "照片变更记录已失效，继续前需要确认全库核对。")
+                    Button("查看恢复选项") { openDetails(.automatic) }
+                } else if enablingAutomaticBackup {
+                    ProgressView("正在启用前台自动备份")
+                } else if destination.busy {
+                    ProgressView("正在核验设备与备份目录")
+                } else if let error = destination.errorMessage {
+                    backupStatus("无法确认备份目录", icon: "exclamationmark.triangle", detail: error)
+                    refreshDestinationButton
+                } else if controller.schedule?.enabled == true {
+                    automaticBackupStatus
+                } else {
+                    backupStatus(
+                        destination.confirmed == nil ? "备份尚未设置" : "前台自动备份未开启",
+                        icon: "icloud.and.arrow.up",
+                        detail: "设置本机的备份目录和范围，再启用前台自动备份。"
+                    )
+                    if let error = controller.errorMessage {
+                        Text(error).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Button(destination.confirmed == nil ? "开始设置" : "继续设置") { page = .setup }
+                }
+            }
+            Section {
+                Button {
+                    openDetails()
+                } label: {
+                    Label("备份详情", systemImage: "slider.horizontal.3")
+                }
+            }
+        }
+        .accessibilityIdentifier("native-ios-backup-overview")
+    }
+
+    @ViewBuilder
+    private var automaticBackupStatus: some View {
+        if photoAuthorization != .authorized {
+            backupStatus("自动备份已暂停", icon: "pause.circle",
+                         detail: "请为 xDrive 开启「所有照片」访问权限。")
+            Button("恢复照片访问") { page = .setup }
+        } else if destination.confirmed == nil {
+            backupStatus("备份目录待确认", icon: "exclamationmark.triangle",
+                         detail: "当前设备的云端备份目录尚未核验。")
+            Button("去核验备份目录") { page = .setup }
+        } else if let error = controller.errorMessage {
+            backupStatus("备份遇到问题", icon: "exclamationmark.triangle", detail: error)
+            Button("查看执行结果") { openDetails(.result) }
+        } else if let schedule = controller.schedule, let target = destination.confirmed {
+            if schedule.targetSourceID != target.sourceID || schedule.targetNodeID != target.targetNodeID {
+                backupStatus("自动备份目录已变化", icon: "exclamationmark.triangle",
+                             detail: "请在详情关闭旧计划，再为当前目录重新启用。")
+                Button("查看前台自动备份设置") { openDetails(.automatic) }
+            } else {
+                backupStatus("前台自动备份已开启", icon: "checkmark.circle",
+                             detail: schedule.backupStartRule == .onlyNew
+                                ? "在 App 前台备份启用后新增或编辑的照片和视频。"
+                                : "在 App 前台分批检查照片和视频。")
+                LabeledContent("备份目录", value: target.targetPath)
+                Button("查看云端原件", action: onShowCloudOriginals)
+            }
+        }
+    }
+
+    private func backupStatus(_ title: String, icon: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: icon).font(.headline)
+            Text(detail).font(.subheadline).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var backupSetup: some View {
+        Form {
+            if destination.busy {
+                Section("设置相册备份") {
+                    ProgressView("正在核验设备与备份目录")
+                }
+            } else if let error = destination.errorMessage {
+                Section("备份目录待核验") {
+                    Text(error).foregroundStyle(.red)
+                    refreshDestinationButton
+                }
+            } else if destination.needsDeviceRegistration {
+                Section("1. 登记此 iPhone") {
+                    Text("将此 iPhone 登记到 \(login.owner?.username ?? "当前账户")，以便为本机绑定备份目录。")
+                    registerDeviceButton
+                }
+            } else if !destination.confirmedForCurrentName {
+                Section("2. 选择备份目录") {
+                    Text("为本机的云端备份文件夹命名。xDrive 会在设备备份下创建并核验目录。")
+                    destinationNameField
+                    saveDestinationButton
+                }
+            } else if photoAuthorization != .authorized {
+                Section("3. 允许访问所有照片") {
+                    Text("备份原件需要「所有照片」访问权限。开启后，仍由你选择要备份的范围。")
+                    Button(photoAuthorization == .notDetermined ? "允许访问照片" : "打开 iOS 设置") {
+                        if photoAuthorization == .notDetermined {
+                            Task {
+                                _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+                                photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                            }
+                        } else if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                }
+            } else if controller.schedule?.enabled == true {
+                Section("设置已完成") {
+                    Button("返回相册备份") { page = .overview }
+                }
+            } else {
+                Section("4. 选择范围并启用") {
+                    backupScopePicker
+                    Text(autoStartRule == .onlyNew
+                         ? "备份启用后新增或编辑的照片和视频。"
+                         : "分批扫描已有和新增的照片及视频。")
+                        .foregroundStyle(.secondary)
+                    if let path = destination.confirmed?.targetPath {
+                        LabeledContent("备份目录", value: path)
+                    }
+                    if enablingAutomaticBackup {
+                        ProgressView("正在启用前台自动备份")
+                    } else if (receipts.pending ?? 0) > 0 {
+                        Button("去核对收据") { openDetails(.receipts) }
+                    } else {
+                        enableAutomaticBackupButton
+                    }
+                    if let error = consentError ?? controller.errorMessage {
+                        Text(error).font(.footnote).foregroundStyle(.red)
+                        refreshDestinationButton
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("native-ios-backup-setup")
+    }
+
+    private func openDetails(_ section: Detail? = nil) {
+        detail = section
+        page = .details
+    }
+
+    private var backupDetails: some View {
+        ScrollViewReader { scroll in
+            GeometryReader { viewport in
+                // Rotating reflows the existing detail sections only.
+                if viewport.size.width >= 760 &&
+                    viewport.size.height < 500 &&
+                    !dynamicTypeSize.isAccessibilitySize {
+                    HStack(alignment: .top, spacing: 0) {
+                        Form { backupStatusSections }
+                            .frame(width: viewport.size.width * 0.48)
+                            .accessibilityIdentifier("native-ios-backup-landscape-status")
+                        Divider()
+                        Form { backupSettingsSections }
+                            .accessibilityIdentifier("native-ios-backup-landscape-settings")
+                    }
+                } else {
+                    Form {
+                        backupSettingsSections
+                        backupStatusSections
+                    }
+                    .accessibilityIdentifier("native-ios-backup-portrait-form")
+                }
+            }
+            .task {
+                if let detail {
+                    scroll.scrollTo(detail, anchor: .top)
+                }
+            }
+        }
+    }
+
+    private var destinationNameField: some View {
+        TextField("备份文件夹名称", text: $destination.folderName)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .disabled(destination.busy || controller.busy || enablingAutomaticBackup)
+            .accessibilityIdentifier("native-ios-photos-destination-name")
+    }
+
+    private var registerDeviceButton: some View {
+        Button("注册当前 iPhone") { destination.registerDevice(login: login) }
+            .disabled(destination.busy || controller.busy || enablingAutomaticBackup || login.owner == nil)
+            .accessibilityIdentifier("native-ios-photos-destination-device-register")
+    }
+
+    private var saveDestinationButton: some View {
+        Button("保存并核验目标目录") { destination.save(login: login) }
+            .disabled(!destination.canSave || controller.busy || enablingAutomaticBackup || login.owner == nil)
+            .accessibilityIdentifier("native-ios-photos-destination-save")
+    }
+
+    private var refreshDestinationButton: some View {
+        Button("重新核验备份目录") { destination.refresh(login: login) }
+            .disabled(destination.busy || enablingAutomaticBackup || login.owner == nil)
+            .accessibilityIdentifier("native-ios-photos-destination-refresh")
+    }
+
+    private var backupScopePicker: some View {
+        Picker("备份范围", selection: $autoStartRule) {
+            Text("扫描并备份全部照片").tag(XDriveIOSPhotoAutoStartRule.everything)
+            Text("仅备份新照片").tag(XDriveIOSPhotoAutoStartRule.onlyNew)
+        }
+        .disabled(controller.busy || enablingAutomaticBackup || controller.schedule?.enabled == true)
+        .accessibilityIdentifier("native-ios-photo-auto-start-rule")
+    }
+
+    private var canEnableAutomaticBackup: Bool {
+        !controller.busy && !background.busy && !enablingAutomaticBackup &&
+            controller.schedule?.enabled != true && login.owner != nil &&
+            destination.confirmedForCurrentName && photoAuthorization == .authorized
+    }
+
+    private var enableAutomaticBackupButton: some View {
+        Button("启用前台自动备份") {
+            guard canEnableAutomaticBackup else { return }
+            consentError = nil
+            autoConsentOwner = login.owner
+            autoConsentDestination = destination.confirmed
+            autoConsentMinutes = interval
+            autoConsentAllowICloud = autoAllowICloud
+            autoConsentStartRule = autoStartRule
+            autoConsentEnabledAt = Date()
+            showAutoConsent = autoConsentOwner != nil && autoConsentDestination != nil
+        }
+        .disabled(!canEnableAutomaticBackup)
+        .accessibilityIdentifier("native-ios-photos-auto-enable")
+    }
+
     // Native Form Sections are authored exactly once and reused by both
     // portrait and the two independently scrolling short-landscape groups.
     // Never duplicate mutable consent controls in parallel view trees.
@@ -495,31 +771,15 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             Section("备份目的地（必选）") {
                 Text("输入一个文件夹名称，默认使用本机设备名称；不输入云端完整路径。服务器按 Push/Pull 的受管目录规则自动创建实际目标。")
                     .font(.footnote).foregroundStyle(.secondary)
-                TextField("备份文件夹名称", text: $destination.folderName)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .disabled(destination.busy || controller.busy)
-                    .accessibilityIdentifier("native-ios-photos-destination-name")
+                destinationNameField
                 if destination.needsDeviceRegistration {
                     Text("当前 iPhone 尚未注册到此 Owner，必须先明确注册设备。")
                         .font(.footnote).foregroundStyle(.orange)
-                    Button("注册当前 iPhone") {
-                        destination.registerDevice(login: login)
-                    }
-                    .disabled(destination.busy || controller.busy || login.owner == nil)
-                    .accessibilityIdentifier("native-ios-photos-destination-device-register")
+                    registerDeviceButton
                 }
                 HStack {
-                    Button("保存并核验目标目录") {
-                        destination.save(login: login)
-                    }
-                    .disabled(!destination.canSave || controller.busy || login.owner == nil)
-                    .accessibilityIdentifier("native-ios-photos-destination-save")
-                    Button("刷新已绑定目录") {
-                        destination.refresh(login: login)
-                    }
-                    .disabled(destination.busy || login.owner == nil)
-                    .accessibilityIdentifier("native-ios-photos-destination-refresh")
+                    saveDestinationButton
+                    refreshDestinationButton
                 }
                 if destination.busy {
                     ProgressView("正在核验当前 Owner、设备和受管目标…")
@@ -563,6 +823,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 Text("下一次手动扫描：第 \(controller.manualNextWindow + 1) 段。每段最多 256 项；达到 20 项新增上限会重复当前段，完成后才进入下一段。重启 App、切换账户或相册变化会重新从头检查。")
                     .font(.caption).foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-photos-manual-window")
+                    .id(Detail.progress)
                 if photoAuthorization != .authorized {
                     Text("需要 iOS“所有照片”访问权限才能备份原件。仅部分照片授权暂不支持，请在系统设置中授予完整访问。")
                         .font(.footnote).foregroundStyle(.orange)
@@ -705,17 +966,13 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     Text("6 小时").tag(360)
                     Text("24 小时").tag(1440)
                 }
-                .disabled(controller.busy || controller.schedule?.enabled == true)
-                Picker("前台自动备份范围", selection: $autoStartRule) {
-                    Text("扫描并备份全部照片").tag(XDriveIOSPhotoAutoStartRule.everything)
-                    Text("仅备份新照片").tag(XDriveIOSPhotoAutoStartRule.onlyNew)
-                }
-                .disabled(controller.busy || controller.schedule?.enabled == true)
-                .accessibilityIdentifier("native-ios-photo-auto-start-rule")
+                .disabled(controller.busy || enablingAutomaticBackup || controller.schedule?.enabled == true)
+                .id(Detail.automatic)
+                backupScopePicker
                 Text("“仅备份新照片”通过 PhotoKit 持久化变更历史发现新增、导入和编辑；每个候选仍需核验当前云端原件收据。历史 Token 缺失、损坏、过期或变更详情不可用时，自动计划会先暂停并要求确认一次全库核对，未经确认不会擅自补传启用前的旧照片。手动／集中备份仍按各自规则扫描。")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("前台自动备份允许下载 iCloud 原件", isOn: $autoAllowICloud)
-                    .disabled(controller.busy || controller.schedule?.enabled == true)
+                    .disabled(controller.busy || enablingAutomaticBackup || controller.schedule?.enabled == true)
                     .accessibilityIdentifier("native-ios-photos-auto-icloud")
                 if let active = controller.schedule, active.enabled {
                     Text("当前已保存：\(active.backupStartRule == .onlyNew ? "仅备份新照片（含启用后编辑）" : "扫描并备份全部照片")；每 \(active.intervalMinutes) 分钟检查；iCloud 原件 \(active.allowICloudOriginals ? "允许下载" : "仅限本机已下载")。")
@@ -821,20 +1078,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     Button("关闭当前账户自动备份", role: .destructive) {
                         controller.disable(owner: login.owner)
                     }.accessibilityIdentifier("native-ios-photos-auto-disable")
+                } else if enablingAutomaticBackup {
+                    ProgressView("正在启用前台自动备份")
                 } else {
-                    Button("启用前台自动备份") {
-                        consentError = nil
-                        autoConsentOwner = login.owner
-                        autoConsentMinutes = interval
-                        autoConsentAllowICloud = autoAllowICloud
-                        autoConsentStartRule = autoStartRule
-                        autoConsentEnabledAt = Date()
-                        showAutoConsent = autoConsentOwner != nil
-                    }
-                        .disabled(controller.busy || background.busy || login.owner == nil ||
-                                  !destination.confirmedForCurrentName ||
-                                  (photoAuthorization != .authorized))
-                        .accessibilityIdentifier("native-ios-photos-auto-enable")
+                    enableAutomaticBackupButton
                 }
                 Text("自动计划采用启用时确认的备份范围、检查间隔、iCloud 设置和首次积压策略；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -1033,6 +1280,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             Section("不确定收据核对") {
                 Text("如果上传完成确认丢失，自动备份会暂停。以下功能只检查既有 Server 会话和文件收据，不重新上传、不删除账本。")
                     .font(.footnote).foregroundStyle(.secondary)
+                    .id(Detail.receipts)
                 if let pending = receipts.pending {
                     Label("待核对 \(pending) 项",
                           systemImage: pending == 0 ? "checkmark.shield" : "exclamationmark.shield")
@@ -1103,7 +1351,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     Text(consentError).foregroundStyle(.red)
                         .accessibilityIdentifier("native-ios-photos-consent-error")
                 }
-                Text(controller.message)
+                Text(controller.message).id(Detail.result)
                 if let error = controller.errorMessage {
                     Text(error).foregroundStyle(.red)
                         .accessibilityIdentifier("native-ios-photos-backup-error")
