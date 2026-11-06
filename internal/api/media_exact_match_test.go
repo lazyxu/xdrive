@@ -1,15 +1,22 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photoasset"
+	"github.com/lazyxu/xdrive/internal/storage"
 )
 
 func TestExactMediaMatchRejectsInvalidProbes(t *testing.T) {
@@ -125,7 +132,7 @@ func TestExactMediaMatchCurrentOwnerAndBothLiveParts(t *testing.T) {
 
 	live := image(user.ID, "live-container.livp", strings.Repeat("c", 64))
 	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", live.ID).
-		Update("live_photo_asset_identifier", "verified-pair").Error; err != nil {
+		Updates(map[string]any{"live_photo_asset_identifier": "verified-pair", "container_json": fmt.Sprintf(`{"still":{"sha256":"%s"},"motion":{"sha256":"%s"}}`, still, motion), "sha256": strings.Repeat("c", 64), "node_revision": live.Revision, "container_kind": "livp", "index_state": meta.MediaIndexStateReady, "derived_resource_version": mediapkg.LIVPDerivedResourceVersion}).Error; err != nil {
 		t.Fatal(err)
 	}
 	liveID := asset(live, meta.PhotoAssetKindLivePhoto)
@@ -137,7 +144,7 @@ func TestExactMediaMatchCurrentOwnerAndBothLiveParts(t *testing.T) {
 		put(&meta.PhotoResource{AssetID: liveID, NodeID: live.ID, ResourceKind: meta.PhotoResourceKindDerived,
 			Role: part.Role, Size: part.Size, SHA256: part.SHA256})
 		put(&meta.MediaDerivedResource{NodeID: live.ID, NodeRevision: live.Revision, OwnerID: user.ID,
-			Role: part.Role, ByteSize: part.Size, SHA256: part.SHA256, AssetIdentifier: "verified-pair"})
+			Role: part.Role, ByteSize: part.Size, SHA256: strings.Repeat("c", 64), AssetIdentifier: "verified-pair"})
 	}
 	check(probe, "matched", live.ID)
 	liveRef := ref(liveID, live.ID, live.Revision)
@@ -148,6 +155,20 @@ func TestExactMediaMatchCurrentOwnerAndBothLiveParts(t *testing.T) {
 		liveFingerprint.Components[1] != probe.Components[1] {
 		t.Fatalf("incorrect Live fingerprint %+v", liveFingerprint)
 	}
+
+	// Same-range replacement must not reuse an older PhotoResource digest.
+	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", live.ID).
+		Update("container_json", fmt.Sprintf(`{"still":{"sha256":"%s"},"motion":{"sha256":"%s"}}`, motion, motion)).Error; err != nil {
+		t.Fatal(err)
+	}
+	check(probe, "unmatched", 0)
+	if read(liveRef)[0] != nil {
+		t.Fatal("current descriptor accepted a stale projected member hash")
+	}
+	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", live.ID).
+		Update("container_json", fmt.Sprintf(`{"still":{"sha256":"%s"},"motion":{"sha256":"%s"}}`, still, motion)).Error; err != nil {
+		t.Fatal(err)
+	}
 	probe.Components[1].SHA256 = still
 	check(probe, "unmatched", 0)
 	probe.Components[1].SHA256 = motion
@@ -157,5 +178,104 @@ func TestExactMediaMatchCurrentOwnerAndBothLiveParts(t *testing.T) {
 	check(probe, "unmatched", 0)
 	if read(ref(liveID, live.ID, live.Revision+1))[0] != nil {
 		t.Fatal("stale Live derivative was exposed at new Node revision")
+	}
+}
+
+func TestExactMediaMatchRealIOSLiveArchive(t *testing.T) {
+	db := newDurableSelectionJobDB(t)
+	if err := db.AutoMigrate(&meta.File{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{},
+		&meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoResource{}, &meta.PhotoCollection{},
+		&meta.PhotoCollectionAsset{}, &meta.Source{}, &meta.SourceItem{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}); err != nil {
+		t.Fatal(err)
+	}
+	user := meta.User{Username: "real-live-owner", PasswordHash: "unused", Role: meta.UserRoleUser}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{DB: db, Store: store}
+	livp, still, motion := testLIVPResourceArchive(t, "E994E717-E3B4-47BC-B808-A57865FE837C")
+	var manifestParts []map[string]any
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	for i, part := range [][]byte{still, motion} {
+		role, path := "still", "media/still.jpg"
+		if i == 1 {
+			role, path = "motion", "media/motion.mov"
+		}
+		entry, err := writer.CreateHeader(&zip.FileHeader{Name: path, Method: zip.Store})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write(part); err != nil {
+			t.Fatal(err)
+		}
+		manifestParts = append(manifestParts, map[string]any{"role": role, "path": path, "originalFilename": path,
+			"bytes": len(part), "crc32": fmt.Sprintf("%08x", crc32.ChecksumIEEE(part))})
+	}
+	manifest, _ := json.Marshal(map[string]any{"format": "xdrive-live-originals", "version": 1, "resources": manifestParts})
+	entry, err := writer.CreateHeader(&zip.FileHeader{Name: "manifest.json", Method: zip.Store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = entry.Write(manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err = writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	probe := exactMediaProbe{Kind: meta.PhotoAssetKindLivePhoto, Components: []exactMediaComponent{
+		{Role: "still", Size: int64(len(still)), SHA256: fmt.Sprintf("%x", sha256.Sum256(still))},
+		{Role: "motion", Size: int64(len(motion)), SHA256: fmt.Sprintf("%x", sha256.Sum256(motion))},
+	}}
+	for i, content := range [][]byte{archive.Bytes(), livp} {
+		name := "Live-xios-0123456789abcdef01234567-0123456789ab.zip"
+		if i == 1 {
+			name = "same-originals.livp"
+		}
+		node := meta.Node{OwnerID: user.ID, Name: name, Type: meta.NodeTypeFile, Revision: 1}
+		if err = db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		file := meta.File{NodeID: node.ID, Size: int64(len(content)), SHA256: fmt.Sprintf("%x", sha256.Sum256(content)), StorageKey: name}
+		if _, err = store.Put(context.Background(), name, bytes.NewReader(content)); err != nil {
+			t.Fatal(err)
+		}
+		if err = db.Create(&file).Error; err != nil {
+			t.Fatal(err)
+		}
+		node.File = &file
+		if _, err = server.indexMediaNode(context.Background(), node); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = photoasset.ReconcileOwner(context.Background(), db, user.ID); err != nil {
+			t.Fatal(err)
+		}
+		match, err := server.findExactMediaMatch(context.Background(), user.ID, probe)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			if match.State != "matched" || match.NodeID != node.ID {
+				t.Fatalf("real iOS ZIP failed exact match: %+v", match)
+			}
+			ref := exactMediaReference{AssetID: match.AssetID, NodeID: match.NodeID, Revision: match.Revision}
+			actual, err := server.exactMediaFingerprint(context.Background(), user.ID, ref)
+			if err != nil || actual == nil || len(actual.Components) != 2 || actual.Components[0] != probe.Components[0] || actual.Components[1] != probe.Components[1] {
+				t.Fatalf("reverse real bytes: %+v %v", actual, err)
+			}
+			bad := probe
+			bad.Components = append([]exactMediaComponent(nil), probe.Components...)
+			bad.Components[0].SHA256 = file.SHA256
+			rejected, err := server.findExactMediaMatch(context.Background(), user.ID, bad)
+			if err != nil || rejected.State != "unmatched" {
+				t.Fatal("outer archive digest accepted as still digest")
+			}
+		} else if match.State != "ambiguous" {
+			t.Fatalf("two different container formats must remain ambiguous: %+v", match)
+		}
 	}
 }

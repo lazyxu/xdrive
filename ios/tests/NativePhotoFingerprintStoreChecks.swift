@@ -55,6 +55,14 @@ struct NativePhotoFingerprintStoreChecks {
         try require(try store.probe(id: "must-rollback") == nil, "failed batch rolls back all entries")
         try store.finish(checked: 100_001, unavailable: 1)
         try require(try store.state()?.unavailable == 1, "unreadable originals cannot prove absence")
+        try require(try store.state()?.unavailableByKind == nil, "legacy coverage cannot invent per-kind absence")
+        try store.finish(checked: 100_001, unavailable: 1, unavailableByKind: ["image": 0, "video": 1, "live_photo": 0])
+        try require(try store.state()?.unavailableByKind?["image"] == 0, "unavailable video does not block image coverage")
+        do {
+            try store.finish(checked: 100_001, unavailable: 1, unavailableByKind: ["image": 0, "video": 0, "live_photo": 0])
+            throw NSError(domain: "inconsistent type coverage accepted", code: 1)
+        } catch XDriveIOSNativePhotoFingerprintStore.Failure.invalidRecord {}
+        try require(try store.state()?.unavailableByKind?["video"] == 1, "invalid coverage did not erase prior evidence")
         try store.begin(library: Data([3]), invalidate: nil)
         try require(try store.probe(id: "asset-8") == nil, "expired history invalidates all old fingerprints")
         try store.finish(checked: 0, unavailable: 0)

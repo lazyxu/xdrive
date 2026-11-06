@@ -41,6 +41,7 @@ struct XDriveIOSNativeUnifiedPhoto: Identifiable {
     let match: XDriveIOSNativeExactPhotoMatch?
     let presence: XDriveIOSNativeGalleryPresence
     let capturedAt: Date?
+    var reason: XDriveIOSNativePhotoPairingReason? = nil
 
     var id: String {
         if let local { return "local:" + local.id }
@@ -48,6 +49,21 @@ struct XDriveIOSNativeUnifiedPhoto: Identifiable {
     }
     var isVideo: Bool { local?.kind == "video" || cloud?.isVideo == true }
     var isLive: Bool { local?.isLive == true || cloud?.isLive == true }
+
+    func unresolved(_ reason: XDriveIOSNativePhotoPairingReason) -> Self {
+        var copy = self
+        copy.reason = reason
+        return copy
+    }
+
+    func matches(_ query: XDriveIOSNativeUnifiedGalleryQuery) -> Bool {
+        var names = cloud.map { [$0.node.name] + ($0.resources ?? []).map(\.name) } ?? []
+        if !query.term.isEmpty, let local,
+           let asset = PHAsset.fetchAssets(withLocalIdentifiers: [local.id], options: nil).firstObject {
+            names += PHAssetResource.assetResources(for: asset).map(\.originalFilename)
+        }
+        return query.matches(video: isVideo, live: isLive, capturedAt: capturedAt, names: names)
+    }
 }
 
 /// Merge two bounded source cursors and apply the selected source filter
@@ -79,6 +95,7 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
     @Published private(set) var rows: [XDriveIOSNativeUnifiedPhoto] = []
     @Published private(set) var next: XDriveIOSNativeGalleryCursor?
     @Published private(set) var loading = false
+    @Published private(set) var completed = false
     @Published private(set) var notice: String?
     @Published private(set) var coverage: XDriveIOSNativePhotoFingerprintIndex.Coverage?
     @Published private(set) var indexRevision = UUID()
@@ -105,6 +122,7 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
         next = nil
         coverage = nil
         loading = false
+        completed = false
         notice = nil
     }
 
@@ -138,17 +156,24 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
     }
 
     func load(from start: XDriveIOSNativeGalleryCursor, filter: XDriveIOSNativeGalleryPresence?,
-              login: XDriveIOSNativeOwnerLoginModel) async {
+              login: XDriveIOSNativeOwnerLoginModel,
+              query: XDriveIOSNativeUnifiedGalleryQuery = .init(), library: Data? = nil) async {
         guard let expected = login.owner else { reset(); return }
         if let owner, !XDriveIOSNativePhotoOwnerScope.matches(owner, expected) { reset() }
         owner = expected
         let ticket = UUID()
         epoch = ticket
         loading = true
+        completed = false
         notice = nil
         rows = []
         next = nil
         defer { if epoch == ticket { loading = false } }
+        guard query.isValid else { notice = "请检查搜索文字与日期范围。"; return }
+        if let library, !XDriveIOSNativePhotoFingerprintIndex.isCurrent(library) {
+            notice = "本机图库已变化，请刷新后继续。"
+            return
+        }
 
         var cursor = start
         let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -169,19 +194,6 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
             lease = nil
         }
 
-        if filter == .cloudOnly {
-            let complete: Bool
-            if let lease {
-                complete = (try? await index.coverage(lease: lease))?.provesAbsence == true
-            } else {
-                complete = false
-            }
-            guard current(ticket, login: login, owner: expected) else { return }
-            guard complete else {
-                notice = "本机图库核对完整后，才能确认哪些照片仅在云端。可在「待核验」中查看其他照片。"
-                return
-            }
-        }
         let auth = try? await login.verifiedAuthorization()
         guard current(ticket, login: login, owner: expected) else { return }
         let reader: XDriveIOSNativeMediaGalleryReader?
@@ -237,28 +249,32 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
                 var resolved = window.map(\.provisional)
                 guard current(ticket, login: login, owner: expected),
                       PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission else { return }
-                if filter == nil { rows = visible + resolved }
+                if filter == nil && query == .init() { rows = visible + resolved }
                 if canMatch, let reader {
                     do {
-                        resolved = try await reconcile(window, reader: reader, lease: lease)
+                        resolved = try await reconcile(window, reader: reader, lease: lease, query: query)
                     } catch is CancellationError {
                         throw CancellationError()
                     } catch {
                         canMatch = false
                     }
                 }
+                if !canMatch { resolved = resolved.map { $0.unresolved(.cloudUnavailable) } }
                 guard current(ticket, login: login, owner: expected),
                       PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission else { return }
                 if let localEpoch, !XDriveIOSNativePhotoFingerprintIndex.isCurrent(localEpoch.serialized) {
                     throw XDrivePhotoKitScanFailure.snapshotChanged
                 }
-                visible.append(contentsOf: resolved.filter { filter == nil || $0.presence == filter })
+                visible.append(contentsOf: resolved.filter {
+                    (filter == nil || $0.presence == filter) && $0.matches(query)
+                })
                 // Publish verified work as each small window returns, while
                 // keeping paging disabled until the checkpoint commits.
                 rows = visible
             }
             guard current(ticket, login: login, owner: expected) else { return }
             next = cursor.finished ? nil : cursor
+            completed = true
             if reader != nil && !canMatch {
                 notice = "暂时无法确认本机与云端的对应关系。请刷新或检查服务器版本。"
             }
@@ -289,7 +305,8 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
 
     private func reconcile(
         _ page: [Item], reader: XDriveIOSNativeMediaGalleryReader,
-        lease: XDriveIOSNativePhotoFingerprintIndex.Lease?
+        lease: XDriveIOSNativePhotoFingerprintIndex.Lease?,
+        query: XDriveIOSNativeUnifiedGalleryQuery
     ) async throws -> [XDriveIOSNativeUnifiedPhoto] {
         let index = XDriveIOSNativePhotoFingerprintIndex.shared
         let locals = page.compactMap { item -> XDrivePhotoKitScanCandidate? in
@@ -336,32 +353,45 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
             let replies = try await reader.exactMatches(batch.compactMap { probes[$0] })
             for (key, reply) in zip(batch, replies) { matches[key] = reply }
         }
-        let checkedAllLocal: Bool
+        let checkedLocal: XDriveIOSNativePhotoFingerprintIndex.Coverage?
         if let lease {
-            checkedAllLocal = try await index.coverage(lease: lease)?.provesAbsence == true
+            checkedLocal = try await index.coverage(lease: lease)
         } else {
-            checkedAllLocal = false
+            checkedLocal = nil
         }
-        let cloudByNode = Dictionary(clouds.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var cloudByNode = Dictionary(clouds.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // Search both filenames of a paired row even when their capture dates
+        // put the cloud reference outside this source window.
+        if !query.term.isEmpty {
+            for candidate in locals {
+                guard let key = localProbes[candidate.id]?.fingerprint,
+                      localIDs[key] == [candidate.id], let match = matches[key],
+                      match.state == .matched, let node = match.node_id,
+                      cloudByNode[node] == nil else { continue }
+                cloudByNode[node] = try await reader.matchedMedia(match)
+            }
+        }
         return page.compactMap { item in
             switch item {
             case .local(let candidate):
                 guard let key = localProbes[candidate.id]?.fingerprint, let match = matches[key] else {
-                    return item.provisional
+                    return item.provisional.unresolved(.localUnavailable)
                 }
-                if match.state == .unmatched && !candidate.isLive {
+                if match.state == .unmatched {
                     return .init(local: candidate, cloud: nil, match: nil,
                                  presence: .localOnly, capturedAt: candidate.capturedAt)
                 }
-                guard localIDs[key] == [candidate.id] else { return item.provisional }
+                guard localIDs[key] == [candidate.id], match.state != .ambiguous else {
+                    return item.provisional.unresolved(.duplicate)
+                }
                 if let node = match.node_id, cloudByNode[node].map(match.matches) ?? true {
                     return .init(local: candidate, cloud: cloudByNode[node], match: match,
                                  presence: .both, capturedAt: candidate.capturedAt)
                 }
-                return item.provisional
+                return item.provisional.unresolved(.cloudIdentity)
             case .cloud(let photo, let date):
                 guard let key = cloudProbes[photo.id]?.fingerprint, let ids = localIDs[key] else {
-                    return item.provisional
+                    return item.provisional.unresolved(.cloudIdentity)
                 }
                 if ids.count == 1, let id = ids.first,
                    XDriveIOSNativePhotoProofStamp.current(id) != nil, matches[key]?.matches(photo) == true {
@@ -369,10 +399,11 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
                     // capture date places it in a different window.
                     return nil
                 }
-                if checkedAllLocal && ids.isEmpty {
+                if let probe = cloudProbes[photo.id], checkedLocal?.provesAbsence(for: probe.kind) == true && ids.isEmpty {
                     return .init(local: nil, cloud: photo, match: nil, presence: .cloudOnly, capturedAt: date)
                 }
-                return item.provisional
+                return item.provisional.unresolved(ids.count > 1 || matches[key]?.state == .ambiguous ? .duplicate :
+                    lease == nil ? .permission : .libraryIncomplete)
             }
         }
     }

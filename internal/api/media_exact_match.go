@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
 )
@@ -160,9 +161,16 @@ func (s *Server) currentExactMediaResources(ctx context.Context, uid uint64) *go
 	original := s.DB.WithContext(ctx).Table("xd_files AS resource_file").Select("1").
 		Where("resource_file.node_id = resource_node.id AND resource_file.sha256 = resource.sha256 AND resource_file.size = resource.size")
 	derived := s.DB.WithContext(ctx).Table("xd_media_derived_resources AS part").Select("1").
+		Joins("JOIN xd_files AS container_file ON container_file.node_id = part.node_id").
 		Where("part.node_id = n.id AND resource_node.id = n.id AND part.owner_id = ? AND part.node_revision = n.revision", uid).
-		Where("part.asset_identifier <> '' AND part.asset_identifier = xd_media_metadata.live_photo_asset_identifier").
-		Where("part.role = resource.role AND part.sha256 = resource.sha256 AND part.byte_size = resource.size")
+		Where("part.sha256 = container_file.sha256 AND xd_media_metadata.sha256 = container_file.sha256 AND xd_media_metadata.node_revision = n.revision").
+		Where("xd_media_metadata.container_kind = ? AND xd_media_metadata.index_state = ? AND xd_media_metadata.derived_resource_version >= ?",
+			mediapkg.ContainerKindLIVP, meta.MediaIndexStateReady, mediapkg.LIVPDerivedResourceVersion).
+		Where("part.asset_identifier = xd_media_metadata.live_photo_asset_identifier").
+		// A same-size overwrite can leave an older PhotoResource projection
+		// briefly present. Bind its member digest to the CURRENT parent index.
+		Where("resource.sha256 = (NULLIF(xd_media_metadata.container_json, '')::jsonb -> resource.role ->> 'sha256')").
+		Where("part.role = resource.role AND part.byte_size = resource.size AND part.byte_offset = resource.byte_offset AND resource.sha256 ~ '^[a-f0-9]{64}$'")
 	return s.DB.WithContext(ctx).Table("xd_photo_resources AS resource").
 		Joins("JOIN xd_nodes AS resource_node ON resource_node.id = resource.node_id").
 		Where("resource.asset_id = pa.id").

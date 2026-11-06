@@ -677,7 +677,8 @@ extension XDriveIOSNativeMediaGalleryReader {
               item.metadata.media_kind == "image", item.node.size > 0
         else { throw XDriveIOSNativeMediaReadFailure.unsupported }
         if item.metadata.container_kind?.lowercased() == "livp" &&
-            item.node.name.lowercased().hasSuffix(".livp") {
+            (item.node.name.lowercased().hasSuffix(".livp") ||
+             item.node.name.range(of: "^Live-xios-[a-f0-9]{24}-[a-f0-9]{12}\\.zip$", options: [.regularExpression, .caseInsensitive]) != nil) {
             guard UInt64(item.node.size) <= XDriveIOSLivePreviewArchive.maximumArchiveBytes
             else { throw XDriveIOSNativeMediaReadFailure.tooLarge }
             return .container

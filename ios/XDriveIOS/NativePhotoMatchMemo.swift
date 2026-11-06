@@ -17,8 +17,12 @@ actor XDriveIOSNativePhotoFingerprintIndex {
         let total: Int
         let unavailable: Int
         let finished: Bool
+        var unavailableByKind: [String: Int]? = nil
 
         var provesAbsence: Bool { finished && checked == total && unavailable == 0 }
+        func provesAbsence(for kind: String) -> Bool {
+            provesAbsence || (finished && checked == total && unavailableByKind?[kind] == 0)
+        }
     }
 
     private var activeScope: String?
@@ -72,7 +76,8 @@ actor XDriveIOSNativePhotoFingerprintIndex {
     func coverage(lease expected: Lease) throws -> Coverage? {
         guard let state = try database(expected).state(),
               let checked = state.checked, let unavailable = state.unavailable else { return nil }
-        return Coverage(checked: checked, total: checked, unavailable: unavailable, finished: true)
+        return Coverage(checked: checked, total: checked, unavailable: unavailable, finished: true,
+                        unavailableByKind: state.unavailableByKind)
     }
 
     /// Read only one 64-slot PhotoKit page at a time. Interruption leaves
@@ -91,6 +96,7 @@ actor XDriveIOSNativePhotoFingerprintIndex {
         _ = try await scanner.start()
         var checked = 0
         var unavailable = 0
+        var missing = ["image": 0, "video": 0, "live_photo": 0]
         while true {
             try Task.checkCancellation()
             let page = try await scanner.nextPage()
@@ -106,12 +112,14 @@ actor XDriveIOSNativePhotoFingerprintIndex {
                     throw CancellationError()
                 } catch {
                     unavailable += 1
+                    missing[candidate.isLive ? "live_photo" : candidate.kind, default: 0] += 1
                 }
             }
             try remember(additions, lease: expected)
             if page.finished {
-                try database(expected).finish(checked: checked, unavailable: unavailable)
-                await progress(Coverage(checked: checked, total: checked, unavailable: unavailable, finished: true))
+                try database(expected).finish(checked: checked, unavailable: unavailable, unavailableByKind: missing)
+                await progress(Coverage(checked: checked, total: checked, unavailable: unavailable, finished: true,
+                                        unavailableByKind: missing))
                 return
             }
             await progress(Coverage(checked: checked, total: page.totalAccessibleAssets,

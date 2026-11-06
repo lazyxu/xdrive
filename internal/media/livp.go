@@ -2,6 +2,8 @@ package media
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +16,7 @@ import (
 const (
 	ContainerKindLIVP          = "livp"
 	LIVPMIMEType               = "application/x-livp"
-	LIVPDerivedResourceVersion = 2
+	LIVPDerivedResourceVersion = 3
 	maxLIVPArchiveBytes        = int64(6 << 30) // 6 GiB including ZIP overhead
 	maxLIVPImageBytes          = int64(1 << 30) // 1 GiB
 	maxLIVPVideoBytes          = int64(4 << 30) // 4 GiB
@@ -28,10 +30,12 @@ type LIVPInfo struct {
 	StillName       string
 	StillOffset     int64
 	StillSize       int64
+	StillSHA256     string
 	Still           Result
 	MotionName      string
 	MotionOffset    int64
 	MotionSize      int64
+	MotionSHA256    string
 	Motion          Result
 }
 
@@ -94,6 +98,11 @@ func InspectLIVP(r io.ReaderAt, size int64) (LIVPInfo, error) {
 		return out, errors.New("livp must contain exactly one still image and one motion video")
 	}
 
+	return inspectLivePair(r, size, stillFile, motionFile)
+}
+
+func inspectLivePair(r io.ReaderAt, size int64, stillFile, motionFile *zip.File) (LIVPInfo, error) {
+	var out LIVPInfo
 	still, stillOffset, err := inspectStoredLIVPEntry(r, size, stillFile, maxLIVPImageBytes)
 	if err != nil {
 		return out, fmt.Errorf("inspect livp still %q: %w", stillFile.Name, err)
@@ -120,18 +129,46 @@ func InspectLIVP(r io.ReaderAt, size int64) (LIVPInfo, error) {
 		assetIdentifier = stillID
 	}
 
+	stillHash, err := hashStoredLiveEntry(stillFile)
+	if err != nil {
+		return out, err
+	}
+	motionHash, err := hashStoredLiveEntry(motionFile)
+	if err != nil {
+		return out, err
+	}
 	out = LIVPInfo{
 		AssetIdentifier: assetIdentifier,
 		StillName:       stillFile.Name,
 		StillOffset:     stillOffset,
 		StillSize:       int64(stillFile.UncompressedSize64),
+		StillSHA256:     stillHash,
 		Still:           still,
 		MotionName:      motionFile.Name,
 		MotionOffset:    motionOffset,
 		MotionSize:      int64(motionFile.UncompressedSize64),
+		MotionSHA256:    motionHash,
 		Motion:          motion,
 	}
 	return out, nil
+}
+
+// Open verifies ZIP CRC while hashing all original bytes without staging them.
+func hashStoredLiveEntry(file *zip.File) (string, error) {
+	stream, err := file.Open()
+	if err != nil {
+		return "", err
+	}
+	defer stream.Close()
+	hash := sha256.New()
+	count, err := io.Copy(hash, stream)
+	if err != nil {
+		return "", err
+	}
+	if count != int64(file.UncompressedSize64) {
+		return "", errors.New("live member size changed")
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func validateLIVPEntry(file *zip.File) error {
@@ -218,6 +255,31 @@ type LIVPContainerResourceDescriptor struct {
 	Offset   int64  `json:"offset"`
 	Size     int64  `json:"size"`
 	MIMEType string `json:"mime_type,omitempty"`
+	SHA256   string `json:"sha256,omitempty"`
+}
+
+// A member fingerprint is usable only with the exact indexed byte range.
+// Old descriptors without member hashes remain viewable but cannot pair.
+func LiveContainerMemberSHA256(raw, role string, offset, size int64) string {
+	descriptor, err := ParseLIVPContainerDescriptor(raw)
+	if err != nil {
+		return ""
+	}
+	var part LIVPContainerResourceDescriptor
+	switch role {
+	case "still":
+		part = descriptor.Still
+	case "motion":
+		part = descriptor.Motion
+	default:
+		return ""
+	}
+	decoded, err := hex.DecodeString(part.SHA256)
+	if err != nil || len(decoded) != 32 || part.SHA256 != strings.ToLower(part.SHA256) ||
+		part.Offset != offset || part.Size != size {
+		return ""
+	}
+	return part.SHA256
 }
 
 // ParseLIVPContainerDescriptor validates the persisted connector-neutral
@@ -279,6 +341,11 @@ func extractLIVP(r io.ReaderAt, size int64) (Result, error) {
 		return out, err
 	}
 
+	return projectLiveContainer(info), nil
+}
+
+func projectLiveContainer(info LIVPInfo) Result {
+	out := Result{Kind: KindImage, MIMEType: LIVPMIMEType, ContainerKind: ContainerKindLIVP, Orientation: 1}
 	out.Kind = KindImage
 	out.LivePhotoAssetIdentifier = info.AssetIdentifier
 
@@ -306,15 +373,15 @@ func extractLIVP(r io.ReaderAt, size int64) (Result, error) {
 		AssetIdentifier: info.AssetIdentifier,
 		Still: LIVPContainerResourceDescriptor{
 			Name: info.StillName, Offset: info.StillOffset, Size: info.StillSize,
-			MIMEType: info.Still.MIMEType,
+			MIMEType: info.Still.MIMEType, SHA256: info.StillSHA256,
 		},
 		Motion: LIVPContainerResourceDescriptor{
 			Name: info.MotionName, Offset: info.MotionOffset, Size: info.MotionSize,
-			MIMEType: info.Motion.MIMEType,
+			MIMEType: info.Motion.MIMEType, SHA256: info.MotionSHA256,
 		},
 	}
 	if encoded, encodeErr := json.Marshal(container); encodeErr == nil {
 		out.ContainerJSON = string(encoded)
 	}
-	return out, nil
+	return out
 }

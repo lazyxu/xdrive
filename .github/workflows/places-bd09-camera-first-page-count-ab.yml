@@ -6,6 +6,8 @@ on:
     paths:
       - 'internal/api/media.go'
       - 'internal/api/media_places_bd09_first_page_count_ab_linux_test.go'
+      - 'scripts/ci/prepare_camera_count_ab.py'
+      - 'scripts/ci/test_prepare_camera_count_ab.py'
       - '.github/workflows/places-bd09-camera-first-page-count-ab.yml'
   workflow_dispatch:
 
@@ -13,8 +15,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: places-camera-count-ab-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   owner-camera-95k-count-ab:
@@ -48,15 +50,14 @@ jobs:
         with:
           go-version: '1.25.x'
           cache: true
-      - name: Freeze exact HEAD parent and candidate, source formatting
+      - name: Freeze accepted historical query and current candidate
         shell: bash
         run: |
           set -euo pipefail
           git rev-parse HEAD | tee camera-count-ab-head.txt
-          # Merge-base remains the untouched BEFORE source if gofmt or
-          # focused tests require additional candidate commits.
-          git fetch --quiet origin master
-          git merge-base HEAD origin/master | tee camera-count-ab-baseline.txt
+          # master already includes #2973; merge-base is now optimized too.
+          # Keep that accepted optimization's exact parent as BEFORE.
+          echo '928f60c24bb2f966b70125c273315642c954516e' | tee camera-count-ab-baseline.txt
           echo "XD_PLACES_BD09_AB_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
@@ -66,19 +67,20 @@ jobs:
             gofmt -d internal/api/media_places_bd09_first_page_count_ab_linux_test.go
             exit 1
           fi
-          baseline="$(cat camera-count-ab-baseline.txt)"
-          if cmp -s internal/api/media.go <(git show "$baseline:internal/api/media.go"); then
-            echo 'Candidate media.go is identical to frozen BEFORE' >&2
-            exit 1
-          fi
+          python3 -m unittest discover -s scripts/ci -p 'test_prepare_camera_count_ab.py'
       - name: Build original and candidate Owner Camera Range from same Go test tree
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p camera-count-ab-results
           cp internal/api/media.go "$RUNNER_TEMP/media-count-after.go"
-          baseline="$(cat camera-count-ab-baseline.txt)"
-          git show "$baseline:internal/api/media.go" > internal/api/media.go
+          # Replace only the byte-identical historical query, preserving all
+          # current DTOs/helpers in BOTH arms. Refuse unreviewed query drift.
+          python3 scripts/ci/prepare_camera_count_ab.py \
+            --output "$RUNNER_TEMP/media-count-before.go" \
+            --evidence camera-count-ab-results/query-provenance.json
+          trap 'cp "$RUNNER_TEMP/media-count-after.go" internal/api/media.go' EXIT
+          cp "$RUNNER_TEMP/media-count-before.go" internal/api/media.go
           go test -c -o "$RUNNER_TEMP/camera-before.test" ./internal/api
           cp "$RUNNER_TEMP/media-count-after.go" internal/api/media.go
           go test -c -o "$RUNNER_TEMP/camera-after.test" ./internal/api

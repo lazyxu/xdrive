@@ -42,6 +42,11 @@ jobs:
             ios/tests/NativePhotoFingerprintStoreChecks.swift \
             -lsqlite3 -o "$RUNNER_TEMP/xdrive-ios-gallery-fingerprints"
           "$RUNNER_TEMP/xdrive-ios-gallery-fingerprints"
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeUnifiedGalleryPolicy.swift \
+            ios/tests/NativeUnifiedGalleryChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-unified-gallery"
+          "$RUNNER_TEMP/xdrive-ios-unified-gallery"
           node --test desktop/tests/ios-native-unified-photo-gallery.cjs
 
       - name: Verify cold launch recovery and BG registration safety

@@ -214,6 +214,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/download/archive", suite: "files"},
 		{method: "GET", path: "/api/v1/nodes/:id/location", suite: "files"},
 		{method: "GET", path: "/api/v1/media/items", suite: "media"},
+		{method: "POST", path: "/api/v1/media/exact-match", suite: "media-exact-match"},
 		{method: "GET", path: "/api/v1/media/facets", suite: "media"},
 		{method: "GET", path: "/api/v1/media/index-status", suite: "media"},
 		{method: "POST", path: "/api/v1/media/selection-snapshots", suite: "media"},
