@@ -28,6 +28,9 @@ func TestUploadSessionWriterClaimsAreExclusive(t *testing.T) {
 		{name: "Local Push", session: meta.UploadSession{ResumeKey: "lp2_" + strings.Repeat("a", 64)}},
 		{name: "Source plus Pull run", session: meta.UploadSession{SourceID: 11, SourceRunID: "run-id"}, deny: true},
 		{name: "Source plus Share", session: meta.UploadSession{SourceID: 11, ShareID: &shareID}, deny: true},
+		{name: "Source plus Local Push operation", session: meta.UploadSession{
+			SourceID: 11, ResumeKey: "lp2_" + strings.Repeat("a", 64),
+		}, deny: true},
 		{name: "Pull run plus Share", session: meta.UploadSession{SourceRunID: "run-id", ShareID: &shareID}, deny: true},
 		{name: "Local Push plus Pull run", session: meta.UploadSession{
 			ResumeKey: "lp2_" + strings.Repeat("a", 64), SourceRunID: "run-id",
@@ -107,6 +110,27 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 		}
 		regular.Request.Header.Del(header)
 	}
+	// Mixing an lp2_ Local Push operation with a DSM Source or an active
+	// Pull SourceRun is invalid even before UploadSession/UploadPart creation.
+	withLocalOperation := req
+	withLocalOperation.ResumeKey = "lp2_" + strings.Repeat("a", 64)
+	withLocalOperation.SourceID = source.ID
+	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, regular,
+		owner.ID, ordinary.ID, withLocalOperation); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("DSM Source adopted a local Push operation: %v", err)
+	}
+	withLocalOperation.SourceID = 0
+	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, scoped,
+		owner.ID, child.ID, withLocalOperation); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("Pull SourceRun adopted a local Push operation: %v", err)
+	}
+	shareID := uint64(44)
+	regular.Set("xdriveShareUploadID", shareID)
+	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, regular,
+		owner.ID, ordinary.ID, withLocalOperation); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("public Share adopted a local Push operation: %v", err)
+	}
+	delete(regular.Keys, "xdriveShareUploadID")
 	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, regular, owner.ID, child.ID, req); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("ordinary Owner gained Pull SourceRun writes: %v", err)
 	}

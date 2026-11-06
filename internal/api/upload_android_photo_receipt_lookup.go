@@ -57,7 +57,7 @@ func (s *Server) lookupAndroidPhotoUploadReceipt(c *gin.Context) {
 			"AND COALESCE(source_id, 0) = 0 AND COALESCE(source_run_id, '') = '' AND share_id IS NULL "+
 			"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = '' "+
 			"AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 "+
-			"AND status IN ?",
+			"AND COALESCE(source_revision, 0) = 0 AND status IN ?",
 		userID(c), req.ResumeKey, req.ParentID, req.Name, req.Name, req.Size,
 		req.ChunkSize, req.SHA256, meta.UploadConflictPolicyFail,
 		[]string{meta.UploadStatusActive, meta.UploadStatusFinalized},
@@ -93,12 +93,15 @@ func (s *Server) lookupAndroidPhotoUploadReceipt(c *gin.Context) {
 				"COALESCE(source_id, 0) = 0 AND COALESCE(source_run_id, '') = '' AND share_id IS NULL AND "+
 				"COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = '' AND "+
 				"COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 AND "+
-				"status IN ? AND expires_at > ?",
+				"COALESCE(source_revision, 0) = 0 AND status IN ? AND expires_at > ?",
 				snapshot.ID, userID(c), req.ResumeKey, req.ParentID, req.Name, req.Name,
 				req.Size, req.ChunkSize, req.SHA256, meta.UploadConflictPolicyFail,
 				[]string{meta.UploadStatusActive, meta.UploadStatusFinalized}, time.Now()).
 			Take(&current).Error; err != nil {
 			return errManagedSourceWriteDenied
+		}
+		if err := s.requireUploadSessionReadAuthorityTx(c.Request.Context(), tx, c, current); err != nil {
+			return err
 		}
 		snapshot = current
 		return recordUploadAuthorizationSuccessAsTx(tx, c,

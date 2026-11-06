@@ -19,7 +19,8 @@ func mixedUploadSessionWriterClaims(session meta.UploadSession) bool {
 		return true
 	}
 	if session.SourceID != 0 {
-		return session.SourceRunID != "" || session.ShareID != nil
+		return session.SourceRunID != "" || session.ShareID != nil ||
+			strings.HasPrefix(session.ResumeKey, "lp2_")
 	}
 	if session.ShareID != nil && session.SourceRunID != "" {
 		return true
@@ -31,9 +32,20 @@ func mixedUploadSessionWriterClaims(session meta.UploadSession) bool {
 // Do not fall back to generic Owner authority when the request identifies a
 // DSM Source but omits the canonical SourceID in its upload payload. Device
 // identity and Root headers alone never authorize an ordinary upload.
-func conflictingUploadRequestWriter(c *gin.Context, sourceID uint64) bool {
+func conflictingUploadRequestWriter(c *gin.Context, sourceID uint64, resumeKey string) bool {
 	if c == nil {
 		return true
+	}
+	if strings.HasPrefix(resumeKey, "lp2_") {
+		if sourceID != 0 {
+			return true
+		}
+		if _, scoped := currentSourceRunScope(c); scoped {
+			return true
+		}
+		if _, guest := c.Get("xdriveShareUploadID"); guest {
+			return true
+		}
 	}
 	if sourceID != 0 {
 		if _, scoped := currentSourceRunScope(c); scoped {
@@ -57,7 +69,7 @@ func conflictingUploadRequestWriter(c *gin.Context, sourceID uint64) bool {
 func requireSourceRunOrLocalPushTargetTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, ownerID, nodeID uint64, req uploadInitRequest,
 ) error {
-	if conflictingUploadRequestWriter(c, req.SourceID) {
+	if conflictingUploadRequestWriter(c, req.SourceID, req.ResumeKey) {
 		return errManagedSourceWriteDenied
 	}
 	if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
@@ -89,7 +101,7 @@ func requireSourceRunOrLocalPushFinalizeTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, session meta.UploadSession, nodeID uint64,
 ) error {
 	if mixedUploadSessionWriterClaims(session) ||
-		conflictingUploadRequestWriter(c, session.SourceID) {
+		conflictingUploadRequestWriter(c, session.SourceID, session.ResumeKey) {
 		return errManagedSourceWriteDenied
 	}
 	if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
@@ -131,7 +143,7 @@ func (s *Server) requireUploadSessionReadAuthorityTx(
 	}
 	session = current
 	if mixedUploadSessionWriterClaims(session) ||
-		conflictingUploadRequestWriter(c, session.SourceID) {
+		conflictingUploadRequestWriter(c, session.SourceID, session.ResumeKey) {
 		return errManagedSourceWriteDenied
 	}
 	if !sourceRunUploadSessionMatches(c, session) {
