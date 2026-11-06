@@ -117,7 +117,8 @@ class AndroidPhotoVerifiedIndexTest {
                 NativePhotoBackupResource.STILL, hash, 4096L))
             assertNull(db.findVerified(sourceA, key, version,
                 NativePhotoBackupResource.STILL, hash, 4096L))
-            db.recordVerified(intent(ownerScope = sourceA, nodeId = 80).copy(
+            db.recordVerified(intent(nodeId = 80).copy(
+                owner = sourceA,
                 destinationName = "xdrive-photo-" + "a".repeat(20) + "-" +
                     "b".repeat(20) + ".jpg",
                 destinationTargetNodeId = 120))
