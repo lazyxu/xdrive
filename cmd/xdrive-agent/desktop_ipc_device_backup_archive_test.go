@@ -11,7 +11,7 @@ import (
 
 type localBoundBackupArchiveFake struct {
 	*fakeDesktopIPCController
-	loadedID uint64
+	loadedID                   uint64
 	archiveID, archiveRevision uint64
 	restoreID, restoreRevision uint64
 }

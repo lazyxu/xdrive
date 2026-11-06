@@ -36,7 +36,6 @@ func TestRemoveLocalBoundSourceRequiresOwningDeviceRootAndRevision(t *testing.T)
 	}
 }
 
-
 func TestRemoveLocalBoundSourceReturnsArchiveWithoutAuthorizingRootCleanup(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/sources/42" ||

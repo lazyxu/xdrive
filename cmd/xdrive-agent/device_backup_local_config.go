@@ -102,7 +102,7 @@ func (c *agentController) localBoundBackupConfig(
 func localBoundBackupSettingsDTO(source client.Source) client.LocalBoundBackupSettings {
 	return client.LocalBoundBackupSettings{
 		SourceID: source.ID, Name: source.Name, Revision: source.Revision,
-		Status: source.Status,
+		Status:       source.Status,
 		SyncMode:     source.SyncMode,
 		TargetNodeID: source.TargetNodeID, TargetManaged: source.TargetManaged, TargetPath: source.TargetPath,
 	}

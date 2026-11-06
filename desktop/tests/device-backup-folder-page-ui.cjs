@@ -60,5 +60,6 @@ test('folder continuation cannot claim completeness or publish stale account dat
   assert.ok(view.includes('连接状态未知'))
   const gated = (view.match(/localOwnsFolder\([a-zA-Z]+\.id\)/g) ?? [])
   assert.ok(view.includes('localOwnsFolder(commonBatchTarget.id)'), 'new manual v2 upload must remain owning Desktop-only')
-  assert.equal(gated.length, 14, 'all fourteen own-Desktop local dialogs remain scope-gated, including manual v2 Push')
+  assert.ok(view.includes('localOwnsFolder(archiveTarget.id)'), 'archive and restore must remain owning Desktop-only')
+  assert.equal(gated.length, 15, 'all fifteen own-Desktop local dialogs remain scope-gated, including archive/restore and manual v2 Push')
 })

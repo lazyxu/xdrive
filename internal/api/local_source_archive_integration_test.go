@@ -57,11 +57,11 @@ func TestBoundLocalSourceArchiveRestoreRequiresOwningDeviceAndRetainsRootBinding
 	}
 	url := fmt.Sprintf("/api/v1/sources/%d", source.ID)
 	proof := map[string]string{
-		"X-XDrive-Device-ID": device.ID,
-		"X-XDrive-Device-Token": deviceSecret,
-		"X-XDrive-Local-Root-ID": rootID,
+		"X-XDrive-Device-ID":              device.ID,
+		"X-XDrive-Device-Token":           deviceSecret,
+		"X-XDrive-Local-Root-ID":          rootID,
 		"X-XDrive-Local-Root-Fingerprint": fingerprint,
-		"If-Match": `"1"`,
+		"If-Match":                        `"1"`,
 	}
 	// An Owner JWT cannot archive a local Push Source without the exact
 	// enrolled Device credential and Root identity.
