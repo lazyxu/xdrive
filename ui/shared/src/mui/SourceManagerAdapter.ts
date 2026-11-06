@@ -34,6 +34,7 @@ export type XDriveSourceManagerTransportResult<T> =
 export interface XDriveSourceManagerPort {
   authorizeLocalFolder?: (sourceID: number) => Promise<XDriveSourceManagerTransportResult<{ cancelled: boolean; grant?: { root_id: string; path: string; status: string } }>>
   me?: () => Promise<XDriveSourceManagerTransportResult<{ username: string }>>
+  suggestedPushName?: () => Promise<XDriveSourceManagerTransportResult<string>>
   sourceOverview?: (signal?: AbortSignal, includeArchived?: boolean) => Promise<XDriveSourceManagerTransportResult<ExternalSourceOverview[]>>
   sources?: (signal?: AbortSignal, includeArchived?: boolean) => Promise<XDriveSourceManagerTransportResult<ExternalSource[]>>
   restoreSource?: (sourceID: number, revision: number) => Promise<XDriveSourceManagerTransportResult<ExternalSource>>
@@ -173,6 +174,9 @@ export function createXDriveSourceManagerAdapter(
       : port.me
         ? () => resolveXDriveSourceManagerTransport(port.me!())
         : undefined,
+    suggestedPushName: port.suggestedPushName
+      ? () => resolveXDriveSourceManagerTransport(port.suggestedPushName!())
+      : undefined,
     sourceOverview: (signal, includeArchived) => port.sourceOverview
       ? resolveXDriveSourceManagerTransport(port.sourceOverview(signal, includeArchived))
       : synthesizedSourceOverview(port, signal, includeArchived),

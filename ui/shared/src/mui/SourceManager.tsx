@@ -57,6 +57,7 @@ import type {
 export interface XDriveSourceManagerAdapter {
   authorizeLocalFolder?(sourceID: number): Promise<{ cancelled: boolean; grant?: { root_id: string; path: string; status: string } }>
   me?(): Promise<{ username: string }>
+  suggestedPushName?(): Promise<string>
   sourceOverview(signal?: AbortSignal, includeArchived?: boolean): Promise<ExternalSourceOverview[]>
   restoreSource?(sourceID: number, revision: number): Promise<ExternalSource>
   canRestoreSource?(row: ExternalSourceRow): boolean
@@ -238,6 +239,7 @@ export function XDriveSourceManager({
   const [settingsSpacesError, setSettingsSpacesError] = useState('')
   const [settingsRootsError, setSettingsRootsError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const createNameEditedRef = useRef(false)
   const [createTargetCrumbs, setCreateTargetCrumbs] = useState<XDriveSourceTargetNode[]>([])
   const [createTargetDirectories, setCreateTargetDirectories] = useState<XDriveSourceTargetNode[]>([])
   const [createTargetLoading, setCreateTargetLoading] = useState(false)
@@ -571,6 +573,7 @@ export function XDriveSourceManager({
   }
 
   const openCreate = async () => {
+    createNameEditedRef.current = false
     setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
     setCreateNameError('')
     setCreateSpacesError('')
@@ -580,6 +583,14 @@ export function XDriveSourceManager({
     setCreateTargetCrumbs([])
     setCreateTargetDirectories([])
     setCreateOpen(true)
+    if (directionFilter !== 'pull' && adapter.suggestedPushName) {
+      void adapter.suggestedPushName().then((name) => {
+        const suggestion = name.trim()
+        if (suggestion && !createNameEditedRef.current) {
+          setCreateValues((current) => ({ ...current, name: suggestion }))
+        }
+      }).catch(() => undefined)
+    }
     if (!targetBrowser) return
     setCreateTargetLoading(true)
     try {
@@ -596,6 +607,7 @@ export function XDriveSourceManager({
     const option = externalSourceCreateOption(preset)
     if (directionFilter === 'pull' && option.direction !== 'pull') return
     const defaults = externalSourceDefaults(option.kind, option.direction)
+    createNameEditedRef.current = false
     setCreateValues((current) => ({
       ...current,
       preset,
@@ -618,6 +630,14 @@ export function XDriveSourceManager({
     setCreateRootsError('')
     setCreateCredentialTest(null)
     setCreateCredentialTestError('')
+    if (option.direction === 'push' && adapter.suggestedPushName) {
+      void adapter.suggestedPushName().then((name) => {
+        const suggestion = name.trim()
+        if (suggestion && !createNameEditedRef.current) {
+          setCreateValues((current) => ({ ...current, name: suggestion }))
+        }
+      }).catch(() => undefined)
+    }
   }
 
   const createCredentialPayload = () => {
@@ -653,6 +673,9 @@ export function XDriveSourceManager({
     try {
       const result = await adapter.testSourceCredential(createOption.kind, payload)
       setCreateCredentialTest(result)
+      if (!createNameEditedRef.current && result.suggested_name?.trim()) {
+        setCreateValues((current) => ({ ...current, name: result.suggested_name!.trim() }))
+      }
       return result
     } catch (error) {
       setCreateCredentialTest(null)
@@ -669,7 +692,7 @@ export function XDriveSourceManager({
   const createSource = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const values = createValues
-    const normalizedName = values.name.trim()
+    let normalizedName = values.name.trim()
     const nameError = !normalizedName ? `请填写${sourceNoun}名称` : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
     setCreateNameError(nameError)
     const option = externalSourceCreateOption(values.preset)
@@ -688,10 +711,6 @@ export function XDriveSourceManager({
     setCreateSpacesError(spacesError)
     setCreateRootsError(rootsError)
     if (nameError || spacesError || rootsError) return
-    if (option.direction !== 'pull' && option.kind !== 'local_folder' && !selectedCreateTargetNodeID) {
-      setErrorDialog({ title: `无法添加${sourceNoun}`, message: '当前目标文件夹尚未加载，请稍后重试。' })
-      return
-    }
     const credentialPayload = profile.credential ? createCredentialPayload() : null
     if (profile.credential && !credentialPayload) {
       setErrorDialog({
@@ -711,6 +730,9 @@ export function XDriveSourceManager({
         setCreating(false)
         return
       }
+      if (!createNameEditedRef.current && tested.suggested_name?.trim()) {
+        normalizedName = tested.suggested_name.trim()
+      }
     }
 
     let created: ExternalSource
@@ -724,7 +746,7 @@ export function XDriveSourceManager({
         schedule_type: values.schedule_type,
         schedule_expression: values.schedule_type === 'manual' ? '' : values.schedule_expression.trim(),
         schedule_timezone: values.schedule_type === 'cron' ? values.schedule_timezone.trim() : '',
-        target_node_id: option.direction === 'pull' || option.kind === 'local_folder' ? 0 : (selectedCreateTargetNodeID ?? 0),
+        target_node_id: 0,
         ignore_rules: values.ignore_rules ?? '',
       })
     } catch (error) {
@@ -1539,6 +1561,7 @@ export function XDriveSourceManager({
         }}
         onPresetChange={changeCreatePreset}
         onChange={(patch) => {
+          if (Object.prototype.hasOwnProperty.call(patch, 'name')) createNameEditedRef.current = true
           setCreateValues((current) => ({ ...current, ...patch }))
         }}
         onCredentialChange={(patch) => {

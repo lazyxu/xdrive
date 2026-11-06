@@ -160,77 +160,14 @@ export function XDriveSourceCreateDialog({
         closeDisabled={creating}
       />
       <XDriveDialogContent dividers>
-        {option.kind === 'yike_photos' ? (
-          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            存储子目录：{yikeManagedTargetDisplayLabel}。连接成功后由服务器在既有固定根目录下按百度 UID 和账号名称创建；底层文件仍使用 xDrive CAS 存储。
-          </XDriveStatusAlert>
-        ) : option.kind === 'local_folder' ? (
-          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            云端目标由服务器自动创建：设备备份 / 当前授权设备 / {values.name.trim() || '来源名称'}。
-            不占用已有普通目录。Desktop 仍需通过原生选择器单独授权本机 Root，授权完成前保持暂停。
-          </XDriveStatusAlert>
-        ) : option.direction === 'pull' ? (
-          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            目标目录由服务器自动创建：远程拉取 / {option.kind === 'synology_files' ? 'Synology Files' : 'Synology Photos'} / {values.name.trim() || '来源名称'}。
-            无需选择云端文件夹；不会占用已有的普通目录。服务器需能访问下面填写的 DSM 地址。
-          </XDriveStatusAlert>
-        ) : targetBrowsingEnabled ? (
-          <MuiBox sx={{ mb: 2, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
-            <Stack
-              direction={{ xs: 'column', sm: 'row' }}
-              spacing={1}
-              alignItems={{ sm: 'center' }}
-              justifyContent="space-between"
-            >
-              <MuiBox>
-                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标文件夹</MuiTypography>
-                <MuiTypography variant="body2" color="text.secondary">
-                  当前选择：{selectedTargetLabel || '正在加载…'}
-                </MuiTypography>
-              </MuiBox>
-              {targetLoading ? <CircularProgress size={18} /> : null}
-            </Stack>
-            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
-              {targetCrumbs.map((crumb, index) => (
-                <MuiButton
-                  key={crumb.id}
-                  size="small"
-                  variant={index === targetCrumbs.length - 1 ? 'contained' : 'text'}
-                  disabled={targetLoading || index === targetCrumbs.length - 1}
-                  onClick={() => onLoadTargetDirectory(crumb, targetCrumbs.slice(0, index + 1))}
-                >
-                  {crumb.name}
-                </MuiButton>
-              ))}
-            </Stack>
-            <Stack spacing={0.75} sx={{ mt: 1 }}>
-              {targetDirectories.length === 0 && !targetLoading ? (
-                <MuiTypography variant="caption" color="text.secondary">
-                  当前目录下没有子文件夹，可直接使用当前目录。
-                </MuiTypography>
-              ) : targetDirectories.map((directory) => (
-                <MuiButton
-                  key={directory.id}
-                  variant="outlined"
-                  size="small"
-                  disabled={targetLoading}
-                  onClick={() => onLoadTargetDirectory(directory, [...targetCrumbs, directory])}
-                  sx={{ justifyContent: 'space-between' }}
-                >
-                  <span>{directory.name}</span>
-                  <span>进入文件夹 ›</span>
-                </MuiButton>
-              ))}
-            </Stack>
-          </MuiBox>
-        ) : (
-          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标目录使用当前文件夹</MuiTypography>
-            <MuiTypography variant="body2">
-              当前目标：{selectedTargetLabel}{selectedTargetPath ? `（${selectedTargetPath}）` : '（我的文件根目录）'}
-            </MuiTypography>
-          </XDriveStatusAlert>
-        )}
+        <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
+          云端目标目录：{option.direction === 'push'
+            ? \`同步文件夹 / Push / \${values.name.trim() || '目录名称'}\`
+            : \`同步文件夹 / Pull / \${(option.kind === 'synology_files' ? 'Synology Files' : option.kind === 'synology_photos' ? 'Synology Photos' : 'Yike Photos')} / \${values.name.trim() || '目录名称'}\`}
+          <br />
+          只允许修改最后一级目录名称；同步文件夹、Push/Pull 和连接器目录由 Server 统一创建。
+          不提供任意目标目录选择，也不会认领已有普通目录。
+        </XDriveStatusAlert>
 
         <MuiBox id="external-source-create-form" component="form" onSubmit={onSubmit}>
           <Stack spacing={2}>
@@ -241,9 +178,10 @@ export function XDriveSourceCreateDialog({
               onChange={onPresetChange}
             />
             <XDriveSourceNameField
+              label="目标文件夹名称"
               value={values.name}
               error={Boolean(nameError)}
-              helperText={nameError || ' '}
+              helperText={nameError || '仅填写最后一级目录名称；Push/Pull 前缀由 Server 固定管理。'}
               onChange={(value) => {
                 onChange({ name: value })
                 if (nameError) onClearNameError()

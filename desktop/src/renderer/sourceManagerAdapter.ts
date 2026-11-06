@@ -11,6 +11,10 @@ import type {
 function desktopSourceManagerPort(localFolderSupported: boolean): XDriveSourceManagerPort {
   const agent = window.xdriveDesktop.agent
   return {
+    suggestedPushName: localFolderSupported ? async () => {
+      const device = await resolveXDriveSourceManagerTransport(agent.getDeviceBackupLocalDevice())
+      return device.name
+    } : undefined,
     sources: (_signal, includeArchived) => agent.getSources(includeArchived),
     sourceCredentialStatus: (sourceID) => agent.getSourceCredential(sourceID),
     createSource: (input) => agent.createSource(input),

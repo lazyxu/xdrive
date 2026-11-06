@@ -223,6 +223,7 @@ export interface ExternalSourceCredentialTestResult {
   kind: string
   account_external_id?: string
   account_name?: string
+  suggested_name?: string
 }
 
 export interface ExternalSourceOverview {
