@@ -38,8 +38,12 @@ if args[:2] == ["release", "create"]:
     release.mkdir()
     (release / ".source").write_text(target)
     for arg in args[3:]:
-        if Path(arg).is_file():
-            shutil.copyfile(arg, release / Path(arg).name)
+        if arg.startswith("--"):
+            break
+        source = Path(arg)
+        if not source.is_file():
+            fail("Release asset not a regular file")
+        shutil.copyfile(source, release / source.name)
     sys.exit(0)
 if args[:1] == ["api"]:
     path = args[1]
