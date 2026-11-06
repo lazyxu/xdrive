@@ -1,0 +1,32 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const source = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativePhotoWholeLibraryAudit.swift'), 'utf8')
+
+test('green library-wide audit stays under live PhotoKit invalidation until screen closes', () => {
+  assert.match(source, /class XDriveIOSNativeWholeAuditChangeObserver: NSObject, PHPhotoLibraryChangeObserver/)
+  assert.match(source, /func photoLibraryDidChange\(_ change: PHChange\)/)
+  assert.match(source, /PHPhotoLibrary\.shared\(\)\.register\(observer\)/)
+  assert.match(source, /PHPhotoLibrary\.shared\(\)\.unregisterChangeObserver\(changeObserver\)/)
+  assert.match(source, /monitorLibraryWhileResultIsVisible\(\)/)
+  assert.match(source, /self\.observerGeneration == generation/)
+  assert.match(source, /self\.reset\(\)\s*self\.message = "系统照片库已变化，旧的整库核验结果已失效/)
+  assert.match(source, /completeAt = nil/)
+  assert.match(source, /if audit\.completeAt != nil/)
+  assert.match(source, /\.onDisappear \{ audit\.reset\(\) \}/)
+  assert.match(source, /\.onChange\(of: login\.owner\) \{ _ in audit\.reset\(\) \}/)
+  assert.doesNotMatch(source, /UploadSessionTransport|uploadPrepared|finalize\(|deleteNode|\.settle\(/)
+})
+
+test('stale observer callbacks cannot clear a new Owner audit', () => {
+  const reset = source.slice(source.indexOf('    func reset() {'), source.indexOf('    private func monitorLibraryWhileResultIsVisible()'))
+  const monitor = source.slice(source.indexOf('    private func monitorLibraryWhileResultIsVisible()'), source.indexOf('    /// One click never reads more than 8 originals'))
+  assert.match(reset, /observerGeneration = UUID\(\)/)
+  assert.match(reset, /unregisterChangeObserver\(changeObserver\)/)
+  assert.match(monitor, /let generation = observerGeneration/)
+  assert.match(monitor, /self\.observerGeneration == generation else \{ return \}/)
+  assert.match(monitor, /self\.reset\(\)/)
+})

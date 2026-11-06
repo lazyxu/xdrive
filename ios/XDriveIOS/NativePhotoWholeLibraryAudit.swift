@@ -23,6 +23,17 @@ private enum XDriveIOSNativePhotoWholeAuditError: Error {
     case invalidProgress
 }
 
+/// A PhotoKit mutation invalidates even a previously green point-in-time
+/// cloud receipt audit while the user remains on this screen.
+private final class XDriveIOSNativeWholeAuditChangeObserver: NSObject, PHPhotoLibraryChangeObserver {
+    let invalidate: () -> Void
+    init(invalidate: @escaping () -> Void) { self.invalidate = invalidate }
+
+    func photoLibraryDidChange(_ change: PHChange) {
+        DispatchQueue.main.async { [invalidate] in invalidate() }
+    }
+}
+
 @MainActor
 final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
     @Published private(set) var busy = false
@@ -38,9 +49,16 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
     private var epoch = UUID()
     private var job: Task<Void, Never>?
     private var activeProof: XDriveIOSNativeCurrentPhotoReceiptModel?
+    private var changeObserver: XDriveIOSNativeWholeAuditChangeObserver?
+    private var observerGeneration = UUID()
 
     func reset() {
         epoch = UUID()
+        observerGeneration = UUID()
+        if let changeObserver {
+            PHPhotoLibrary.shared().unregisterChangeObserver(changeObserver)
+        }
+        changeObserver = nil
         job?.cancel()
         job = nil
         activeProof?.cancel()
@@ -54,6 +72,20 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
         unverified = 0
         completeAt = nil
         message = "尚未逐项核验当前图库。"
+    }
+
+    private func monitorLibraryWhileResultIsVisible() {
+        guard changeObserver == nil else { return }
+        let generation = observerGeneration
+        let observer = XDriveIOSNativeWholeAuditChangeObserver { [weak self] in
+            guard let self, self.observerGeneration == generation else { return }
+            // A queued callback from an old Owner cannot revoke a newer
+            // audit: reset rotates the observer generation first.
+            self.reset()
+            self.message = "系统照片库已变化，旧的整库核验结果已失效；请重新开始。"
+        }
+        PHPhotoLibrary.shared().register(observer)
+        changeObserver = observer
     }
 
     /// One click never reads more than 8 originals. A restart, background,
@@ -71,6 +103,9 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
             message = "本次图库已检查结束；如果照片或云端状态已变化，请重新开始核验。"
             return
         }
+        // Keep monitoring after all 8-item batches finish. A later PhotoKit
+        // edit must immediately revoke a green point-in-time result.
+        monitorLibraryWhileResultIsVisible()
         let token = UUID()
         epoch = token
         busy = true
