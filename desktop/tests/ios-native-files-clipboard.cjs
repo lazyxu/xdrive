@@ -1,0 +1,60 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = file => fs.readFileSync(path.resolve(__dirname, '../..', file), 'utf8')
+const browser = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
+const clipboard = read('ios/XDriveIOS/NativeFilesClipboard.swift')
+const batch = read('ios/XDriveIOS/NativeFilesBatchTarget.swift')
+const tags = read('ios/XDriveIOS/NativeFilesManagementPanel.swift')
+
+test('clipboard captures only one Owner and one bounded, verified same-parent set', () => {
+  assert.match(clipboard, /private var stored: Snapshot\?/)
+  assert.match(clipboard, /owner\.ownerID > 0, owner\.rootNodeID > 0/)
+  assert.match(clipboard, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection\(/)
+  assert.match(clipboard, /XDriveIOSNativePhotoOwnerScope\.matches\(owner, stored\.owner\)/)
+  assert.match(clipboard, /XDriveIOSNativeFilesBatchTargetPolicy\.validSelection\(/)
+  assert.doesNotMatch(clipboard, /accessToken|URLSession|Keychain|UserDefaults/)
+})
+
+test('clipboard survives navigation but is cleared by an Owner change', () => {
+  assert.match(browser, /@ObservedObject private var clipboard = XDriveIOSNativeFilesClipboard\.shared/)
+  assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?clipboard\.clear\(\)/)
+  const suspend = browser.slice(browser.indexOf('private func suspendVisibleRange()'), browser.indexOf('var body: some View', browser.indexOf('private func suspendVisibleRange()')))
+  assert.doesNotMatch(suspend, /clipboard\.clear\(\)/)
+})
+
+test('one-file and batch Cut/Copy use the same clipboard policy and current rows', () => {
+  assert.match(browser, /private func captureSelection\(/)
+  assert.match(browser, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
+  assert.match(browser, /private func captureItem\(/)
+  assert.match(browser, /model\.entries\.contains\(where: \{ \$0\.node == entry\.node \}\)/)
+  assert.match(browser, /native-ios-files-batch-clipboard-copy/)
+  assert.match(browser, /native-ios-files-batch-clipboard-cut/)
+  assert.match(browser, /native-ios-files-clipboard-copy/)
+  assert.match(browser, /native-ios-files-clipboard-cut/)
+})
+
+test('Paste uses existing Server-atomic writer, a real destination and explicit confirmation', () => {
+  assert.match(browser, /showingClipboardPasteConfirmation/)
+  assert.match(browser, /Button\("确认粘贴"\) \{ pasteClipboard\(\) \}/)
+  assert.match(browser, /clipboard\.canPaste\(to: parentID, owner: login\.owner\)/)
+  assert.match(browser, /XDriveIOSNativeFilesBatchTargetPolicy\.validSelection\(/)
+  assert.match(browser, /destination: XDriveIOSNativeFilesDestination\(/)
+  assert.match(browser, /batchTarget\.perform\(/)
+  assert.match(batch, /sourceParentID: sourceParentID/)
+  assert.match(batch, /return try await login\.verifiedAuthorization|let auth = try await login\.verifiedAuthorization/)
+  assert.match(browser, /if snapshot\.kind == \.move \{ clipboard\.clear\(\) \}/)
+})
+
+test('multi-selection tag entry reuses the real native Server tag writer', () => {
+  assert.match(browser, /Button\("为已选项目设置标签"\)/)
+  assert.match(browser, /XDriveIOSNativeFilesBatchTagsIntent/)
+  assert.match(browser, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
+  assert.match(browser, /XDriveIOSNativeFilesTagPanel\(/)
+  assert.match(tags, /struct XDriveIOSNativeFilesTagPanel: View/)
+  assert.match(tags, /model\.toggle\(tag\.id\)/)
+  assert.match(tags, /model\.create\(name: nameDraft, color: colorDraft\)/)
+  assert.match(tags, /model\.delete\(tag\.id\)/)
+})

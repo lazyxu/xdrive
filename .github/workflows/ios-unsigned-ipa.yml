@@ -572,6 +572,19 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-continuous-window"
           node --test desktop/tests/ios-native-files-continuous-scroll.cjs
 
+      - name: Verify native Files navigation, clipboard, thumbnail and Owner proof lifecycle
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesNavigationPolicy.swift \
+            ios/tests/NativeFilesNavigationChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-navigation"
+          "$RUNNER_TEMP/xdrive-ios-files-navigation"
+          node --test \
+            desktop/tests/ios-native-files-navigation-stability.cjs \
+            desktop/tests/ios-native-files-clipboard.cjs \
+            desktop/tests/ios-native-owner-authorization-flight.cjs
+
       - name: Verify native Files Viewer bounded navigation and Owner preview contracts
         run: |
           set -euo pipefail

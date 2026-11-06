@@ -28,6 +28,12 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
 
     private var active: Session?
     private var generation: UInt64 = 0
+    private struct AuthorizationFlight {
+        let id: UUID
+        let generation: UInt64
+        let task: Task<(owner: XDriveNativeOwnerRoot, accessToken: String), Error>
+    }
+    private var authorizationFlight: AuthorizationFlight?
     private var restoreAttempted = false
     private var retryDraftSnapshot: (server: String, lanIP: String, username: String)?
     // Track deliberate profile selection separately from SwiftUI TextField edits:
@@ -181,9 +187,39 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         XDriveIOSNativeOwnerLoginFailurePolicy.message(for: failure)
     }
 
-    /// Revalidate the Server Owner and root with an access token obtained
-    /// by native login. This is only for future native features, never JS.
+    /// Coalesce simultaneous Files tiles' Owner/root proof to one real
+    /// verification. Each caller still checks cancellation and the current
+    /// session generation; a changed Owner never inherits an older result.
+    /// Subsequent operations start a fresh verification, not a timed cache.
     func verifiedAuthorization() async throws ->
+        (owner: XDriveNativeOwnerRoot, accessToken: String) {
+        guard active != nil else { throw XDriveIOSNativeSessionError.notSignedIn }
+        let ticket = generation
+        let flight: AuthorizationFlight
+        if let running = authorizationFlight, running.generation == ticket {
+            flight = running
+        } else {
+            flight = AuthorizationFlight(
+                id: UUID(), generation: ticket,
+                task: Task { try await self.verifyAuthorizationDirect() }
+            )
+            authorizationFlight = flight
+        }
+        defer {
+            if authorizationFlight?.id == flight.id { authorizationFlight = nil }
+        }
+        let verified = try await flight.task.value
+        try Task.checkCancellation()
+        guard generation == ticket, let activeOwner = owner,
+              sameScope(verified.owner, activeOwner) else {
+            throw XDriveIOSNativeSessionError.staleSession
+        }
+        return verified
+    }
+
+    /// The only verification implementation; never bypass the HTTPS Owner
+    /// root probe or 401 refresh and durable same-scope checks.
+    private func verifyAuthorizationDirect() async throws ->
         (owner: XDriveNativeOwnerRoot, accessToken: String) {
         guard let snapshot = active else {
             throw XDriveIOSNativeSessionError.notSignedIn

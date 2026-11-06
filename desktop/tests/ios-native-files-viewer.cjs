@@ -25,7 +25,14 @@ test('one native Files modal opens from the current real page and reanchors afte
   assert.match(browser, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/);
   assert.match(browser, /private func suspendVisibleRange\(\) \{\s*guard selectedFile == nil else \{ return \}/);
   assert.match(browser, /if let saved = rememberedPosition\(\) \{\s*offset = saved\.pageOffset\s*pendingNavigationReturnNodeID = saved\.nodeID/);
-  assert.match(browser, /model\.invalidate\(\)\s*\}\s*var body: some View/);
+  // A parent NavigationLink must remain alive while its child is pushed.
+  // Cancellation is still mandatory; clearing the verified source rows here
+  // caused the observed immediate pop/flicker on folder taps.
+  const suspend = browser.slice(browser.indexOf('private func suspendVisibleRange()'),
+    browser.indexOf('var body: some View', browser.indexOf('private func suspendVisibleRange()')));
+  assert.match(suspend, /model\.suspendForNavigation\(\)/);
+  assert.doesNotMatch(suspend, /model\.invalidate\(\)/);
+  assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?model\.invalidate\(\)/);
   assert.match(browser, /\.onDisappear \{ suspendVisibleRange\(\) \}/);
 });
 
