@@ -126,6 +126,35 @@ func TestCreateSynologyPullManagedTargetWithoutClaimingLegacyFolder(t *testing.T
 		t.Fatalf("Yike Source did not receive the canonical user-named target at creation: %+v", yikeSource)
 	}
 
+	// Provider account identity is stored separately from the final folder name.
+	var persistedYike meta.Source
+	if err := db.First(&persistedYike, yikeSource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	yikeTargetID := *persistedYike.TargetNodeID
+	identity := sourceCredentialTestDTO{AccountExternalID: "12345", AccountName: "远端昵称"}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return bindYikeManagedTargetTx(context.Background(), tx, &persistedYike, identity)
+	}); err != nil {
+		t.Fatalf("bind Yike account to its pre-provisioned target: %v", err)
+	}
+	var boundYike meta.Source
+	if err := db.First(&boundYike, yikeSource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if boundYike.ProviderAccountID != "12345" || boundYike.TargetNodeID == nil ||
+		*boundYike.TargetNodeID != yikeTargetID || boundYike.Name != "我的一刻相册" ||
+		boundYike.Status != meta.SourceStatusActive {
+		t.Fatalf("Yike account binding changed the final folder or TargetNodeID: %+v", boundYike)
+	}
+	var boundYikeTarget meta.Node
+	if err := db.First(&boundYikeTarget, yikeTargetID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if boundYikeTarget.Name != "我的一刻相册" {
+		t.Fatalf("Yike provider identity leaked into folder name: %+v", boundYikeTarget)
+	}
+
 	// Normal new Source callers do not need any target_node_id.
 	photosRes := request(t, router, http.MethodPost, "/api/v1/sources", token,
 		strings.NewReader(`{"name":"照片备份","kind":"synology_photos","direction":"pull","schedule_type":"manual"}`),
