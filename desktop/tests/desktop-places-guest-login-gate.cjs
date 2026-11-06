@@ -45,8 +45,15 @@ test('reserved Desktop Places URL never falls through to ordinary Web credential
   assert.ok(deny >= 0 && deny < share && share < login,
     'fail-closed map error must render BEFORE public share and regular login form')
   assert.match(app.slice(deny, share), /!xDriveTrustedDesktopPlacesBridge\(\)/)
-  assert.match(app.slice(deny, share), /data-xdrive-desktop-places-auth-denied/)
+  assert.match(app.slice(deny, share), /return <XDriveDesktopPlacesAuthUnavailable/)
   assert.match(app.slice(deny, share), /请更新 Server Web 页面与 Desktop 客户端/)
+  const helper = web.slice(web.indexOf('function XDriveDesktopPlacesAuthUnavailable('), start)
+  assert.match(helper, /data-xdrive-desktop-places-auth-denied/)
+  assert.match(helper, /<XDriveBrandLockup iconSrc=\{xDriveBrandIcon\} variant="large"/)
+  assert.match(helper, /重试地图会话/)
+  assert.match(app, /if \(!session\.accessToken && xDriveTrustedDesktopPlacesBridge\(\)\) \{[\s\S]*?return <XDriveDesktopPlacesAuthUnavailable/)
+  assert.equal((web.match(/<XDriveBrandLockup\b[^>]*\/>/g)||[]).length,5,
+    'both embedded map error paths must reuse one branded view, not duplicate its JSX')
   assert.match(app, /xDriveDesktopPlacesEmbedIntent\(window\.location\.search\)\s*\? Boolean\(xDriveTrustedDesktopPlacesBridge\(\)\)/)
   assert.match(app, /const placesEmbedRequested=xDriveDesktopPlacesEmbedIntent\(window\.location\.search\)/)
   assert.match(app, /if \(!session\.accessToken && xDriveTrustedDesktopPlacesBridge\(\)\)/)
