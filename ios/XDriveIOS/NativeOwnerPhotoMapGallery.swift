@@ -170,6 +170,9 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
     let revision: UUID
     let mapType: MKMapType
     let initialCamera: MKCoordinateRegion
+    var focusRequestID: UUID? = nil
+    var focusCamera: MKCoordinateRegion? = nil
+    var showsUserDot = false
     let onCameraWillChange: () -> Void
     let onCamera: (MKCoordinateRegion) -> Void
     let onPlace: (XDriveIOSNativeOwnerMapFacet) -> Void
@@ -214,6 +217,17 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
         context.coordinator.coverImages = coverImages
         context.coordinator.markersEnabled = markersEnabled
         context.coordinator.refreshVisibleCovers(map)
+        if map.showsUserLocation != showsUserDot {
+            map.showsUserLocation = showsUserDot
+        }
+        if let focusID = focusRequestID,
+           context.coordinator.focusRequestID != focusID,
+           let focusCamera {
+            // This is a real camera change. MapKit's native delegate revokes
+            // the previous Owner/Cell lease and requests a fresh scoped scan.
+            context.coordinator.focusRequestID = focusID
+            map.setRegion(focusCamera, animated: true)
+        }
         guard context.coordinator.revision != revision else { return }
         context.coordinator.revision = revision
         map.removeAnnotations(map.annotations.filter {
@@ -236,6 +250,7 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
 
     final class Coordinator: NSObject, MKMapViewDelegate {
         var revision: UUID?
+        var focusRequestID: UUID?
         var coverImages: [String: UIImage] = [:]
         var markersEnabled = false
         var onCameraWillChange: () -> Void
@@ -384,6 +399,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @State private var singleTask: Task<Void, Never>?
     @State private var focused = false
     @State private var mapType: MKMapType = .standard
+    @StateObject private var currentLocation = XDriveIOSNativeMapUserLocationController()
     @State private var showingMapHelp = false
     @State private var camera = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
@@ -417,6 +433,9 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 markersEnabled: mapMarkersEnabled,
                 revision: revision, mapType: mapType,
                 initialCamera: cameraReturn ?? camera,
+                focusRequestID: currentLocation.requestID,
+                focusCamera: currentLocation.camera,
+                showsUserDot: currentLocation.showsUserDot,
                 onCameraWillChange: { revokeCameraAuthorization() },
                 onCamera: { next in
                     camera = next
@@ -538,6 +557,21 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 .accessibilityIdentifier("native-ios-owner-map-basemap")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    currentLocation.locate()
+                } label: {
+                    Label("我的位置", systemImage: "location")
+                }
+                .disabled(currentLocation.isLocating ||
+                          login.owner == nil || phase != .active)
+                .accessibilityIdentifier("native-ios-owner-map-locate")
+                .alert(item: $currentLocation.alert) { issue in
+                    Alert(title: Text("无法获取当前位置"),
+                          message: Text(issue.message),
+                          dismissButton: .default(Text("完成")))
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button(focused ? "显示底部导航" : "专注地图") {
                     focused.toggle()
                     onFocusChange?(focused)
@@ -590,7 +624,18 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             if let cameraReturn { camera = cameraReturn }
             if overview == nil && !busy && phase == .active { reload() }
         }
+        .onChange(of: currentLocation.requestID) { _ in
+            guard phase == .active, login.owner != nil,
+                  let target = currentLocation.camera else { return }
+            // Immediately revoke old Owner camera rights before moving to
+            // the user's position; no PhotoAsset can use stale ACLs.
+            revokeCameraAuthorization()
+            camera = target
+            onCameraChange?(target)
+            scheduleCameraRefresh()
+        }
         .onChange(of: login.owner) { _ in
+            currentLocation.cancel()
             selected = nil
             selectedCluster = nil
             singleViewer = nil
@@ -601,6 +646,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             if new == .active {
                 if singleViewer == nil { reload() }
             } else {
+                currentLocation.cancel()
                 selected = nil
                 selectedCluster = nil
                 singleViewer = nil
@@ -608,6 +654,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             }
         }
         .onDisappear {
+            currentLocation.cancel()
             if selected == nil && selectedCluster == nil && singleViewer == nil {
                 focused = false
                 onFocusChange?(false)

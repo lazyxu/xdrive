@@ -46,7 +46,7 @@ test('only a fresh authorized PhotoKit 64-slot scan supplies local map pins', ()
 })
 
 test('a presented cluster keeps PhotoKit change observation until dismissal', () => {
-  assert.match(map, /\.onDisappear \{\s*\/\/ A presented cluster sheet/)
+  assert.match(map, /\.onDisappear \{\s*currentLocation\.cancel\(\)\s*\/\/ A presented cluster sheet/)
   assert.match(map, /if selection == nil && globalSelection == nil &&\s*pendingNearbySelection == nil && nearbySelection == nil && singleViewer == nil \{\s*changes\.stop\(\)/)
   assert.match(map, /\} else \{ suspendForSheet\(\) \}/)
   assert.match(map, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?let returningCamera = globalCamera[\s\S]*?onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else \{ return \}/)
@@ -408,7 +408,7 @@ test('first full-library GPS scan displays inert native MapKit while PhotoKit pr
   assert.ok(mapIndex >= 0 && progressIndex > mapIndex,
     'MapKit must stay on-screen during initial scan, with progress beside it')
   assert.match(library, /if globalComplete && globalCells\.isEmpty \{[\s\S]*?\}\s*\/\/ Keep MapKit mounted/)
-  assert.match(library, /items: \[\], globalCells: globalComplete \? globalCells : provisionalCells,\s*revision: mapRevision, mapType: mapType, cameraReturn: globalCamera,\s*provisional: !globalComplete && !provisionalCells\.isEmpty/)
+  assert.match(library, /items: \[\], globalCells: globalComplete \? globalCells : provisionalCells,\s*revision: mapRevision, mapType: mapType, cameraReturn: globalCamera,\s*focusRequestID: currentLocation\.requestID,\s*focusCamera: currentLocation\.camera,\s*showsUserDot: currentLocation\.showsUserDot,\s*provisional: !globalComplete && !provisionalCells\.isEmpty/)
   assert.match(localMap, /private var refinedViewportIsCurrent: Bool \{\s*\/\/ Scanned-incomplete cells[\s\S]*?guard globalComplete, !busy else \{ return false \}/)
   assert.match(library, /canSelectCells: refinedViewportIsCurrent/)
   assert.match(library, /guard phase == \.active, !busy, globalComplete,\s*refinedViewportIsCurrent/)

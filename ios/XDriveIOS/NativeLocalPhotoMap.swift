@@ -227,6 +227,10 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     // Only a short-lived camera snapshot from the currently selected pin;
     // no GPS or PhotoKit identity is persisted between views or Owners.
     let cameraReturn: MKCoordinateRegion?
+    // Explicit foreground CoreLocation tap, separate from PhotoKit authority.
+    var focusRequestID: UUID? = nil
+    var focusCamera: MKCoordinateRegion? = nil
+    var showsUserDot = false
     var provisional = false
     var canSelectCells = true
     // Only previously viewport-filtered cells need instant gesture revocation.
@@ -268,6 +272,17 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         context.coordinator.canSelectCells = canSelectCells
         context.coordinator.cameraBoundCells = cameraBoundCells
         context.coordinator.showingProvisional = provisional
+        // A location request is a real camera move: reuse the same native
+        // gesture/auth-revocation path, but only once per explicit tap.
+        if map.showsUserLocation != showsUserDot {
+            map.showsUserLocation = showsUserDot
+        }
+        if let focusID = focusRequestID,
+           context.coordinator.focusRequestID != focusID,
+           let focusCamera {
+            context.coordinator.focusRequestID = focusID
+            map.setRegion(focusCamera, animated: true)
+        }
         // Camera movement does not change the photo grid revision. Revoke
         // old MapKit marker taps and accessibility activation immediately.
         for annotation in map.annotations {
@@ -350,6 +365,7 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         var canSelectCells = true
         var cameraBoundCells = false
         var showingProvisional = false
+        var focusRequestID: UUID?
         var provisionalPresented = false
         var provisionalCameraMoved = false
 
@@ -1102,6 +1118,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.xdriveNativeLocalMapJump) private var incomingMapJump
     @StateObject private var changes = XDriveIOSMapPhotoChanges()
+    @StateObject private var currentLocation = XDriveIOSNativeMapUserLocationController()
     @State private var scanner: XDrivePhotoKitBoundedSnapshotScanner?
     @State private var page: XDrivePhotoKitLocatedPage?
     @State private var task: Task<Void, Never>?
@@ -1221,6 +1238,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 XDriveIOSMapKitPhotoPage(
                         items: [], globalCells: globalComplete ? globalCells : provisionalCells,
                         revision: mapRevision, mapType: mapType, cameraReturn: globalCamera,
+                        focusRequestID: currentLocation.requestID,
+                        focusCamera: currentLocation.camera,
+                        showsUserDot: currentLocation.showsUserDot,
                         provisional: !globalComplete && !provisionalCells.isEmpty,
                         canSelectCells: refinedViewportIsCurrent,
                         cameraBoundCells: globalViewport != nil,
@@ -1434,6 +1454,17 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 }
                 .accessibilityIdentifier("native-ios-local-map-basemap")
             }
+            if mapScope == .library && authorization == .authorized {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        currentLocation.locate()
+                    } label: {
+                        Label("我的位置", systemImage: "location")
+                    }
+                    .disabled(currentLocation.isLocating || phase != .active)
+                    .accessibilityIdentifier("native-ios-local-map-locate")
+                }
+            }
             if album == nil && onFocusChange != nil {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(focused ? "显示底部导航" : "专注地图") {
@@ -1443,6 +1474,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     .accessibilityIdentifier("native-ios-map-focus-toggle")
                 }
             }
+        }
+        .alert(item: $currentLocation.alert) { issue in
+            Alert(title: Text("无法获取当前位置"),
+                  message: Text(issue.message),
+                  dismissButton: .default(Text("完成")))
         }
         .sheet(item: $selection, onDismiss: {
             if phase == .active { refresh(at: offset) }
@@ -1551,6 +1587,16 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         .onChange(of: incomingMapJump?.id) { _ in
             _ = focusOnRequestedPhotoLocation()
         }
+        .onChange(of: currentLocation.requestID) { _ in
+            guard phase == .active, mapScope == .library,
+                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                  let target = currentLocation.camera else { return }
+            // Before MapKit's animated camera callback, disable any prior
+            // viewport-bound Cell lease; the normal settled scan revalidates.
+            if globalViewport != nil { globalCameraMoving = true }
+            globalCamera = target
+            onLibraryCameraChange?(target)
+        }
         .onChange(of: mediaFilter) { _ in
             // A changed Gallery filter invalidates all previous Cell members
             // and the transient camera. Neither MapKit covers nor a place
@@ -1572,6 +1618,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             if next == .library && phase == .active { scanFullLibrary() }
         }
         .onChange(of: changes.revision) { _ in
+            currentLocation.cancel()
             // Revoke all old PhotoKit IDs first, then rebuild only if Full
             // Access is still present. A Limited/revoked library stays empty.
             let returningCamera = globalCamera
@@ -1600,6 +1647,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 if mapScope == .page { refresh(at: offset) }
                 else { scanFullLibrary() } // A new PhotoKit generation must re-scan.
             } else {
+                currentLocation.cancel()
                 changes.stop()
                 onLibraryCameraChange?(nil)
                 clearReturnCamera()
@@ -1607,6 +1655,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             }
         }
         .onDisappear {
+            currentLocation.cancel()
             // A presented cluster sheet may hide its map presenter. Keep
             // PhotoKit change observation active until the sheet is dismissed,
             // so permission/library changes revoke its transient member IDs.
