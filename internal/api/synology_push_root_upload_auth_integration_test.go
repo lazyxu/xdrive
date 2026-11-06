@@ -21,7 +21,13 @@ func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 	db, server, owner, _, _ := setupFilePropertiesTestDB(t)
 	// The test exercises managed upload authorization, not upload size limits.
 	server.MaxUploadBytes = 16 << 20
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{}); err != nil {
+	// Exercise the genuine quota and UploadSession admission path: the
+	// isolated file-properties fixture intentionally omits upload tables.
+	// They must exist here instead of bypassing production quota checks.
+	if err := db.AutoMigrate(
+		&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{},
+		&meta.FileVersion{}, &meta.UploadSession{}, &meta.UploadPart{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
