@@ -134,3 +134,9 @@ PR #3923 completes the DSM Device, Root and upload authorization closure:
 ### Accepted S10–S18 implementation note (2026-11-06)
 
 The implementation is a development branch, not master acceptance. New Push paths are flat and Owner+Direction names must be unique across connector kinds (including archived Sources). Yike account identity is separate from the leaf; new Yike targets are provisioned immediately. The scope does not migrate old Sources, paths or receipts. Android native Photos Source enrollment and Source-bound uploader are separate unfinished work, not certified by this path contract.
+
+### Android Photos 的阶段性交付（尚未端到端验收）
+
+在 S10–S18 开发分支上，Android 的 Owner+Device 专属 `GET/PUT /android/photos/backup-destination` 已按 iOS 的窄权限模式接入：首次由 Server 事务创建 `android_photos` Source 和 `同步文件夹/Push/<Source.Name>`，返回真实 SourceID、SourceRevision、TargetNodeID；重命名复用统一空闲判定和 Node 原子改名。Android Kotlin 客户端仅允许上述目标接口携带设备密钥，并严格比对 DeviceID、SourceID/Revision、TargetNodeID 和规范路径；Web/Desktop/DSM 的共享 Source Manager 能识别 Android 行，但不提供服务端“立即扫描”。已补服务端 PostgreSQL、原生 HTTP 契约及共享 UI 测试。
+
+**禁止误判为可用：** 当前 Android 原件写入、Finalize、未知 ACK 恢复仍使用旧 Owner-root UploadSession，不带 `android_photos` 的 Source/Device/Target 元组；不能把它们视为新目标的成功备份。尚需原生专属 UploadSession 和每次实际 CAS 写事务的权限复核，SourceID+TargetNodeID 绑定的持久化 intent/verified receipt，SourceRun 统计与历史，以及旧 Owner-root intent 的 fail-closed 兼容与真实 Android 设备验收。**不迁移任何既有 Source/目录/收据。**
