@@ -86,6 +86,7 @@ function fixture(adapter) {
     settingsSessionRef: { current: 0 },
     settingsRevealRequestRef: { current: 0 },
     externalSourceConnectorProfile: profile,
+    isReadOnlySynologySource: () => false,
     externalSourceDefaults: defaults,
     // Isolated controller handlers close over the app's UI noun and imported
     // display helper; supply both without copying business mutation logic.
@@ -328,4 +329,18 @@ test('the shared mobile settings dialog blocks unsafe saves and offers explicit 
   ]) {
     assert.ok(settingsDialog.includes(token), 'settings presentation missing: ' + token)
   }
+})
+
+test('temporarily disabled Synology Pull sources cannot open editable Settings', () => {
+  const h = fixture({sourceConnectorConfig: () => { throw Error('must not fetch disabled connector') }})
+  const guardedOpen = handler('openSettings', {
+    ...h.context,
+    savingSettings: false,
+    isReadOnlySynologySource: (source) => source.direction === 'pull' &&
+      (source.kind === 'synology_photos' || source.kind === 'synology_files'),
+  })
+  guardedOpen(sourceRow(1, 'synology_photos'))
+  guardedOpen(sourceRow(2, 'synology_files'))
+  assert.equal(h.state.setting, null)
+  assert.equal(h.state.settingsConnectorLoading, false)
 })
