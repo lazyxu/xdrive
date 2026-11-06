@@ -100,7 +100,6 @@ func TestDesktopMapBrowserSessionProbeRevokeAndOwnerPostgres(t *testing.T) {
 	}
 }
 
-
 // Desktop's cached Cookie readiness must never outlive the native Agent
 // RefreshToken that minted it. This tests the real read-only Gin endpoint
 // against PostgreSQL, not a mock boolean or a source-string assertion.
@@ -114,7 +113,7 @@ func TestDesktopMapBrowserSessionProbeRejectsRevokedNativeLinkPostgres(t *testin
 		t.Fatal(err)
 	}
 	owner := meta.User{
-		Username: "map-native-probe-" + uuid.NewString(),
+		Username:     "map-native-probe-" + uuid.NewString(),
 		PasswordHash: "synthetic", Role: meta.UserRoleUser, SessionVersion: 1,
 	}
 	if err := db.Create(&owner).Error; err != nil {
