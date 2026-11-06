@@ -40,10 +40,8 @@ export function XDriveSourcePresetField({
     >
       {externalSourceCreateOptions.filter((option) =>
         (!directionFilter || option.direction === directionFilter) &&
-        (allowLocalPush || option.kind !== 'local_folder') &&
-        // DSM Push provisioning requires a NAS Device token and Root proof.
-        // Never offer a generic Owner-only form that would fail closed.
-        option.value !== 'synology_push'
+        // The typed presets already exclude retired Synology Push.
+        (allowLocalPush || option.kind !== 'local_folder')
       ).map((option) => (
         <MenuItem key={option.value} value={option.value} sx={{ gap: 1 }}>
           <XDriveSourceKindIcon kind={option.kind} size="small" title={option.label} />
