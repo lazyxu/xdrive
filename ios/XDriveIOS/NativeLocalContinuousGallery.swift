@@ -312,11 +312,11 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                             owner: owner, localIdentifiers: loaded.items.map(\.id)
                         )
                         try Task.checkCancellation()
-                        guard photoQueueScenePhase == .active,
-                              XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
-                              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
-                        else { return }
-                        visibleBackupQueueStates = states
+                        if photoQueueScenePhase == .active,
+                           XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
+                           PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
+                            visibleBackupQueueStates = states
+                        }
                     } catch {
                         // Missing/corrupt/behind local history never implies
                         // confirmation; the ordinary Gallery remains readable.
