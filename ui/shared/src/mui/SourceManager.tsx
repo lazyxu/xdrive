@@ -612,7 +612,7 @@ export function XDriveSourceManager({
     setCreateValues((current) => ({
       ...current,
       preset,
-      name: defaults.name,
+      name: option.direction === 'push' && adapter.suggestedPushName ? '' : defaults.name,
       sync_mode: 'backup',
       run_mode: defaults.runMode,
       schedule_type: defaults.scheduleType,
@@ -694,7 +694,10 @@ export function XDriveSourceManager({
     event.preventDefault()
     const values = createValues
     let normalizedName = values.name.trim()
-    const nameError = !normalizedName ? `请填写${sourceNoun}名称` : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
+    const allowServerDeviceDefault = option.direction === 'push' && Boolean(adapter.suggestedPushName)
+    const nameError = !normalizedName && !allowServerDeviceDefault
+      ? `请填写${sourceNoun}名称`
+      : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
     setCreateNameError(nameError)
     const option = externalSourceCreateOption(values.preset)
     const profile = externalSourceConnectorProfile(option.kind, option.direction)
@@ -1561,6 +1564,7 @@ export function XDriveSourceManager({
           void createSource(event)
         }}
         onPresetChange={changeCreatePreset}
+        onNameEdit={() => { createNameEditedRef.current = true }}
         onChange={(patch) => {
           if (Object.prototype.hasOwnProperty.call(patch, 'name')) createNameEditedRef.current = true
           setCreateValues((current) => ({ ...current, ...patch }))

@@ -86,6 +86,7 @@ export function XDriveSourceCreateDialog({
   onSubmit,
   onPresetChange,
   onChange,
+  onNameEdit,
   onCredentialChange,
   onClearNameError,
   onClearSpacesError,
@@ -115,6 +116,7 @@ export function XDriveSourceCreateDialog({
   onSubmit: FormEventHandler<HTMLFormElement>
   onPresetChange: (preset: ExternalSourceCreatePreset) => void
   onChange: (patch: Partial<XDriveSourceCreateValues>) => void
+  onNameEdit?: () => void
   onCredentialChange: (patch: Partial<XDriveSourceCreateValues>) => void
   onClearNameError: () => void
   onClearSpacesError: () => void
@@ -167,6 +169,7 @@ export function XDriveSourceCreateDialog({
               error={Boolean(nameError)}
               helperText={nameError || '仅填写最后一级目录名称；Push/Pull 前缀由 Server 固定管理。'}
               onChange={(value) => {
+                onNameEdit?.()
                 onChange({ name: value })
                 if (nameError) onClearNameError()
               }}
