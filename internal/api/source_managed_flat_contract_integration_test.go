@@ -53,6 +53,12 @@ func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
 		}
 		return out
 	}
+	// Android must enroll as an identity-only native device before owning a
+	// managed Photos Source. A generic Owner bearer cannot choose a target.
+	create(token, `{"name":"伪造 Android","kind":"android_photos","direction":"push"}`,
+		http.StatusForbidden, nil)
+	create(token, `{"name":"伪造 Android","kind":"android_photos","direction":"push","target_node_id":999}`,
+		http.StatusForbidden, nil)
 	yike := create(token, `{"name":"相同名称","kind":"yike_photos","direction":"pull"}`,
 		http.StatusCreated, nil)
 	if yike.TargetPath != "同步文件夹/Pull/Yike Photos/相同名称" {
