@@ -32,9 +32,14 @@ struct XDriveIOSPhotoQueueSummarySection: View {
                     ProgressView("读取当前账户的持久化变更队列…")
                 }
                 if let counts = queueSummary.counts {
-                    Text("待处理 \(counts.pending) · 失败 \(counts.failed) · 已确认处理 \(counts.confirmed) · 本机已删除 \(counts.missingLocal)")
+                    Text("待处理 \(counts.pending) · 等待 iCloud \(counts.waitingICloud) · 失败 \(counts.failed) · 已确认处理 \(counts.confirmed) · 本机已删除 \(counts.missingLocal)")
                         .monospacedDigit()
                         .accessibilityIdentifier("native-ios-photo-change-queue-counts")
+                    if counts.waitingICloud > 0 {
+                        Text("系统后台不会下载 iCloud 原件。这些项目未备份；只有已明确允许下载 iCloud 原件的前台自动计划，才会每轮最多重新尝试 4 项，并重新核验云端收据。")
+                            .font(.footnote).foregroundStyle(.orange)
+                            .accessibilityIdentifier("native-ios-photo-change-queue-icloud-waiting")
+                    }
                     if counts.failed > 0 {
                         Text("失败候选仅包含已证明没有不确定服务器写入的项目；未知 ACK 不在此队列。")
                             .font(.footnote).foregroundStyle(.orange)

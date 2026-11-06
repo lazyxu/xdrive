@@ -35,6 +35,9 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
     enum Settled: String {
         case confirmed
         case failed
+        // PhotoKit explicitly reported that a local-only BG read needs
+        // iCloud network access. No original or remote write was committed.
+        case waitingICloud
     }
 
     /// Read-only per-item queue state; not the full-library cloud completion.
@@ -42,6 +45,7 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         case pending
         case confirmed
         case failed
+        case waitingICloud
         case missingLocal
     }
     struct ItemStatus: Equatable {
@@ -54,6 +58,7 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
     struct Counts: Equatable {
         var pending = 0
         var failed = 0
+        var waitingICloud = 0
         var confirmed = 0
         var missingLocal = 0
     }
@@ -244,6 +249,7 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             switch state {
             case .pending: totals.pending = count
             case .failed: totals.failed = count
+            case .waitingICloud: totals.waitingICloud = count
             case .confirmed: totals.confirmed = count
             case .missingLocal: totals.missingLocal = count
             }
@@ -380,6 +386,69 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         }
         let statement = try prepare(
             "UPDATE entries SET state='pending' WHERE asset_id=? AND revision=? AND state='failed'"
+        )
+        defer { sqlite3_finalize(statement) }
+        try bind(candidate.localIdentifier, into: statement, position: 1)
+        guard sqlite3_bind_int64(statement, 2, candidate.revision) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        try stepDone(statement)
+        let changed = sqlite3_changes(database) == 1
+        try execute("COMMIT")
+        committed = true
+        return changed
+    }
+
+    /// Bounded iCloud wait queue, separate from ordinary item-local failures.
+    /// Only a foreground writer with explicit iCloud download permission may
+    /// ask the Owner-fenced queue actor to move these rows to pending.
+    func waitingICloud(limit: Int = 4) throws -> [Pending] {
+        guard (1...4).contains(limit) else { throw Failure.invalidInput }
+        let statement = try prepare(
+            "SELECT asset_id,revision,priority FROM entries WHERE state='waitingICloud' ORDER BY priority DESC,queue_order DESC LIMIT ?"
+        )
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_bind_int(statement, 1, Int32(limit)) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        var rows: [Pending] = []
+        rows.reserveCapacity(limit)
+        while true {
+            let code = sqlite3_step(statement)
+            if code == SQLITE_DONE { return rows }
+            guard code == SQLITE_ROW, let raw = sqlite3_column_text(statement, 0) else {
+                throw Failure.database(code)
+            }
+            rows.append(Pending(
+                localIdentifier: String(cString: raw),
+                revision: sqlite3_column_int64(statement, 1),
+                priority: Int(sqlite3_column_int(statement, 2))
+            ))
+        }
+    }
+
+    /// Atomic exact-token/authorization/revision retry after explicit
+    /// foreground iCloud consent. An older callback cannot requeue edits,
+    /// unknown-ACK cases or anything not in the waitingICloud state.
+    @discardableResult
+    func retryWaitingICloud(_ candidate: Pending,
+                            expectedBaselineToken: Data,
+                            authorization: Int) throws -> Bool {
+        try validateIdentifier(candidate.localIdentifier)
+        try validateToken(expectedBaselineToken)
+        guard candidate.revision > 0, authorization > 0 else {
+            throw Failure.invalidInput
+        }
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { try? execute("ROLLBACK") } }
+        guard let current = try baseline(),
+              current.authorization == authorization,
+              current.token == expectedBaselineToken else {
+            throw Failure.baselineChanged
+        }
+        let statement = try prepare(
+            "UPDATE entries SET state='pending' WHERE asset_id=? AND revision=? AND state='waitingICloud'"
         )
         defer { sqlite3_finalize(statement) }
         try bind(candidate.localIdentifier, into: statement, position: 1)

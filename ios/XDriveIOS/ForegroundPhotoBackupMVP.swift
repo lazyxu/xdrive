@@ -125,6 +125,16 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             // still passes the exact existing Owner/Device/CAS/receipt writer.
             var queuedIdentifiers = Set<String>()
             if let changeQueue {
+                // Only an explicitly consented managed foreground run may
+                // download iCloud originals. System BG runs are local-only.
+                // At most four distinct network-required revisions are
+                // requeued; ordinary failed rows and unknown ACKs are never
+                // blindly retried.
+                if allowICloudOriginals, case .managedForeground = authorization {
+                    _ = try await changeQueue.retryWaitingICloudCandidates(
+                        owner: owner, limit: 4
+                    )
+                }
                 let queued = try await changeQueue.pendingCandidates(
                     owner: owner, limit: 64
                 )
@@ -186,14 +196,28 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                     } catch {
                         if Self.isTransientConfirmedReadbackFailure(error) ||
                            Self.mustAbortRun(after: error) { throw error }
-                        report.changeQueueFailed += 1
+                        let waitingForICloud: Bool
+                        if !allowICloudOriginals,
+                           let photoError = error as? XDrivePhotoKitExportFailure,
+                           case .iCloudDownloadRequired = photoError {
+                            waitingForICloud = true
+                        } else {
+                            waitingForICloud = false
+                        }
                         report.unavailable += 1
-                        report.stage = "有新增/修改原件暂不可用，已保留失败状态"
-                        // This path is item-local and the shared writer has
-                        // proven no ambiguous Server mutation. Global errors
-                        // and unknown ACKs abort above and remain unresolved.
+                        if waitingForICloud {
+                            report.stage = "原件仅在 iCloud，保留等待前台下载状态"
+                        } else {
+                            report.changeQueueFailed += 1
+                            report.stage = "有新增/修改原件暂不可用，已保留失败状态"
+                        }
+                        // Both states prove no ambiguous Server mutation.
+                        // Later retry requires the same PhotoKit baseline and
+                        // exact queued revision. Unknown ACKs abort above.
+                        let result: XDriveIOSPhotoBackupChangeQueueStore.Settled =
+                            waitingForICloud ? .waitingICloud : .failed
                         _ = try await changeQueue.settle(
-                            candidate.pending, result: .failed, owner: owner
+                            candidate.pending, result: result, owner: owner
                         )
                     }
                     await publish(report)
@@ -433,6 +457,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             switch source {
             case .assetNotVisible: return .notVisible
             case .originalResourceMissing: return .originalMissing
+            case .iCloudDownloadRequired: return .iCloudDownloadRequired
             case .incompleteLivePair: return .incompleteLivePair
             case .resourceTooLarge: return .resourceTooLarge
             case .notAuthorized, .storageUnavailable: return .unavailable
