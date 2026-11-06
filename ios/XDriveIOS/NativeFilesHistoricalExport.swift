@@ -253,13 +253,19 @@ struct XDriveIOSNativeFilesHistoricalExportReader {
 final class XDriveIOSNativeFilesHistoricalExportModel: ObservableObject {
     @Published private(set) var prepared: XDriveIOSNativeFilesPreparedHistoricalExport?
     @Published private(set) var busy = false
-    @Published private(set) var status: String?
+    @Published private(set) var status: String? {
+        didSet {
+            if let status { activity?.report(status) }
+        }
+    }
+    private var activity: XDriveIOSNativeTransferStore.Ticket?
 
     private var epoch = UUID()
     private var job: Task<Void, Never>?
 
     func invalidate() {
         epoch = UUID()
+        activity = nil
         job?.cancel()
         job = nil
         prepared?.discard()
@@ -277,7 +283,8 @@ final class XDriveIOSNativeFilesHistoricalExportModel: ObservableObject {
     func prepare(_ version: XDriveIOSNativeFilesVersionRecord,
                  node: XDriveIOSNativeFilesNode,
                  login: XDriveIOSNativeOwnerLoginModel,
-                 openedOwner: XDriveNativeOwnerRoot) {
+                 openedOwner: XDriveNativeOwnerRoot,
+                 transfers: XDriveIOSNativeTransferStore? = nil) {
         guard !busy else { return }
         invalidate()
         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner) else {
@@ -285,11 +292,24 @@ final class XDriveIOSNativeFilesHistoricalExportModel: ObservableObject {
             return
         }
         let ticket = epoch
+        let activity = transfers?.begin(.download, title: node.name + "（修订 \(version.revision)）", owner: openedOwner)
+        self.activity = activity
         busy = true
         status = "正在获取历史修订 \(version.revision) 的原件；下载完成仍需验证。"
         job = Task { @MainActor in
+            var failureDetail: String?
             defer {
-                if epoch == ticket { busy = false; job = nil }
+                let current = epoch == ticket
+                activity?.finishDownload(
+                    verified: current && prepared != nil,
+                    stopped: !current || Task.isCancelled,
+                    detail: failureDetail
+                )
+                if current {
+                    busy = false
+                    job = nil
+                    self.activity = nil
+                }
             }
             do {
                 let auth = try await login.verifiedAuthorization()
@@ -336,6 +356,7 @@ final class XDriveIOSNativeFilesHistoricalExportModel: ObservableObject {
                 } else {
                     status = "历史原件下载失败；没有保存到 iPhone。"
                 }
+                failureDetail = status
             }
         }
     }

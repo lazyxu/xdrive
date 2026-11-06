@@ -730,6 +730,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
     @StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel()
     @StateObject private var batchExport = XDriveIOSNativeFilesBatchExportModel()
+    @Environment(\.xdriveNativeTransfers) private var transfers
     @ObservedObject private var clipboard = XDriveIOSNativeFilesClipboard.shared
     @State private var showingClipboardPasteConfirmation = false
     @State private var showingSavedSearches = false
@@ -1494,7 +1495,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             return
         }
         batchExport.prepare(
-            chosenItems, parentID: sourceParentID, login: login
+            chosenItems, parentID: sourceParentID, login: login, transfers: transfers
         )
     }
 

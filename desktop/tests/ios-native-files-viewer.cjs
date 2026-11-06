@@ -144,7 +144,7 @@ test('unsupported, oversized, undecodable and failed-player Files previews expos
   assert.match(modal, /case \.malformed:[\s\S]*?exportFallbackEligible = true/);
   assert.match(modal, /failure = "媒体播放失败，请重试当前文件。"\s*exportFallbackEligible = true/);
   assert.match(modal, /staged\.nodeID == viewed\.id && staged\.revision == viewed\.revision/);
-  assert.match(modal, /exporter\.prepare\(viewed, login: login\)/);
+  assert.match(modal, /exporter\.prepare\(viewed, login: login, transfers: transfers\)/);
   assert.match(modal, /ShareLink\(item: staged\.fileURL\)/);
   assert.match(modal, /exporter\.invalidate\(\)[\s\S]*?exportFallbackEligible = false/);
   assert.match(modal, /accessibilityIdentifier\("native-ios-files-viewer-error-scroll"\)/);
