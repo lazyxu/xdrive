@@ -13,6 +13,17 @@ import (
 
 const uploadAuthorizationAuditAction = "upload.authorization"
 
+// uploadAuthorizationDenied separates an expected policy rejection from a
+// database/audit infrastructure failure. Callers must not misreport a failed
+// durable audit insert as an invalid client credential.
+func uploadAuthorizationDenied(err error) bool {
+	return errors.Is(err, errManagedSourceWriteDenied) ||
+		errors.Is(err, errSynologyPushAuthority) ||
+		errors.Is(err, errShareUploadDenied) ||
+		errors.Is(err, errShareUploadBusy) ||
+		errors.Is(err, errLocalPushCommonUploadUnavailable)
+}
+
 // Only opaque account-scoped identifiers enter audit metadata. Never persist
 // credentials, Root fingerprints, resume keys, local paths or photo names.
 func uploadAuthorizationAuditMetadata(phase string, session meta.UploadSession) map[string]any {
