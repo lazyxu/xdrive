@@ -1637,6 +1637,15 @@ func (s *Server) createSkippedUploadSession(
 		if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), tx, c, uid, *req.ParentID, req); err != nil {
 			return err
 		}
+		// A conflict observed outside the transaction can be moved, renamed,
+		// trashed or replaced before the skipped receipt is committed. Hold
+		// its exact live identity or refuse to acknowledge a skipped upload.
+		var liveConflict meta.Node
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("id = ? AND owner_id = ? AND parent_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL",
+				conflict.ID, uid, *req.ParentID, req.Name).Take(&liveConflict).Error; err != nil {
+			return errUploadNameTaken
+		}
 		if req.SourceID != 0 {
 			var source meta.Source
 			if err := tx.Select("target_node_id").Where("id = ? AND owner_id = ?", req.SourceID, uid).
@@ -1653,6 +1662,8 @@ func (s *Server) createSkippedUploadSession(
 		if errors.Is(err, errManagedSourceWriteDenied) || errors.Is(err, errShareUploadDenied) {
 			s.recordUploadAuthorizationFailure(c, "session.skip", session, err)
 			fail(c, http.StatusForbidden, "skipped upload authority is no longer valid")
+		} else if errors.Is(err, errUploadNameTaken) {
+			fail(c, http.StatusConflict, "skipped upload conflict changed; retry")
 		} else {
 			fail(c, http.StatusInternalServerError, "record skipped upload failed")
 		}
