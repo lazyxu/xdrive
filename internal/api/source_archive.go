@@ -54,8 +54,11 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 			Where("id = ? AND owner_id = ?", id, userID(c)).Take(&identity).Error; err != nil {
 			return err
 		}
-		if isRetiredSynologyPhotosPush(identity) {
+		if isRetiredSynologyPhotosPush(identity) || meta.SynologyPullTemporarilyDisabled(identity.Kind, identity.Direction) {
 			if !archive {
+				if meta.SynologyPullTemporarilyDisabled(identity.Kind, identity.Direction) {
+					return errSynologyPullDisabled
+				}
 				return errLocalSourceExecutorTransactionUnauthorized
 			}
 		} else if err := s.requireLocalSourceMutationTx(tx, c, id); err != nil {
@@ -81,20 +84,25 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 				return err
 			}
 			if running != 0 {
-				if !isRetiredSynologyPhotosPush(updated) {
+				if !isRetiredSynologyPhotosPush(updated) &&
+					!meta.SynologyPullTemporarilyDisabled(updated.Kind, updated.Direction) {
 					return errSourceRunActive
 				}
 				// Retired DSM Photos Push cannot finish orphaned old runs.
 				// Only these runs are cancelled in the Source-locked transaction;
 				// original files, identity, stats and CAS remain untouched.
 				cancelledAt := time.Now().UTC()
+				retireReason := "DSM Photos Push retired before run completed"
+				if meta.SynologyPullTemporarilyDisabled(updated.Kind, updated.Direction) {
+					retireReason = "Synology Pull disabled for DSM folder-Push MVP"
+				}
 				if err := tx.Model(&meta.SyncRun{}).
 					Where("source_id = ? AND status = ?", updated.ID, meta.SyncRunStatusRunning).
 					Updates(map[string]any{
 						"status":                meta.SyncRunStatusCancelled,
 						"cancel_requested_at":   cancelledAt,
 						"finished_at":           cancelledAt,
-						"error":                 gorm.Expr("CASE WHEN COALESCE(\"error\", '') = '' THEN ? ELSE \"error\" END", "DSM Photos Push retired before run completed"),
+						"error":                 gorm.Expr("CASE WHEN COALESCE(\"error\", '') = '' THEN ? ELSE \"error\" END", retireReason),
 						"active_transfer_path":  "",
 						"active_transfer_bytes": 0,
 						"active_transfer_total": 0,
@@ -106,7 +114,8 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 			// The retired DSM Photos Push writer is already disabled: its
 			// historical in-flight rows cannot resume and must not trap the
 			// Owner. All other Sources must settle uploads before archive.
-			if !isRetiredSynologyPhotosPush(updated) {
+			if !isRetiredSynologyPhotosPush(updated) &&
+				!meta.SynologyPullTemporarilyDisabled(updated.Kind, updated.Direction) {
 				if err := requireSourceNoUnsettledWritesTx(tx, updated); err != nil {
 					return err
 				}
@@ -154,6 +163,8 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 			fail(c, http.StatusConflict, "source has unsettled uploads; finish or cancel before archive")
 		case errors.Is(err, errSourceNotArchived):
 			fail(c, http.StatusConflict, "source is not archived")
+		case errors.Is(err, errSynologyPullDisabled):
+			fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
 		case errors.Is(err, gorm.ErrRecordNotFound):
