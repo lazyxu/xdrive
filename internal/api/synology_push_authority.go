@@ -16,7 +16,9 @@ import (
 var errSynologyPushAuthority = errors.New("Synology Push authority denied")
 
 func currentSynologySourceProof(c *gin.Context) (uint64, localSourceExecutorProof, bool) {
-	if c == nil {
+	// Synthetic or incomplete Gin contexts are never device credentials.
+	// Reject them before GetHeader can dereference a nil Request.
+	if c == nil || c.Request == nil {
 		return 0, localSourceExecutorProof{}, false
 	}
 	sourceID, ok := parseID(strings.TrimSpace(c.GetHeader("X-XDrive-Synology-Source-ID")))

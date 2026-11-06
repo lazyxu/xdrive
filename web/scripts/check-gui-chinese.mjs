@@ -199,7 +199,8 @@ for (const legacy of ['一刻相册 Cookie', 'DSM 地址', 'DSM 用户名', 'DSM
 if (files.sources.includes('synologyDsmAddressHelp')) throw new Error('Web 来源仍直接维护 DSM 地址帮助文案')
 if ((files.sources.match(/<XDriveSourcePresetField\b/g) || []).length !== 1) throw new Error('Web 来源创建没有复用共享来源类型字段')
 if ((files.sources.match(/<XDriveSourceNameField\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享名称字段')
-if ((files.sources.match(/<XDriveSourceRunModeField\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享运行模式字段')
+// Two Create variants (sync / scan) and the Settings editor share the same field.
+if ((files.sources.match(/<XDriveSourceRunModeField\b/g) || []).length !== 3) throw new Error('Web 来源创建（两种运行模式）及设置没有完整复用共享运行模式字段')
 if ((files.sources.match(/<XDriveSourceStatusField\b/g) || []).length !== 1) throw new Error('Web 来源设置没有复用共享状态字段')
 for (const legacy of ['同步文件夹名称', '初始运行模式', '运行模式']) {
   const localFieldPattern = new RegExp('<TextField[\\s\\S]{0,220}label="' + legacy + '"')
