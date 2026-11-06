@@ -5,6 +5,7 @@ import {
   xDriveClipboardValidateText, xDriveClipboardMakeVaultCheck,
   xDriveClipboardVerifyVaultCheck, type XDriveClipboardKind,
 } from '../clipboard-crypto'
+import { XDriveClipboardActionFence } from '../clipboard-action-fence'
 
 export type XDriveClipboardItem = {
   id: number
@@ -59,6 +60,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const [message, setMessage] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
   const active = useRef(true)
+  const actionFence = useRef(new XDriveClipboardActionFence())
   const generation = useRef(0)
   const readController = useRef<AbortController | null>(null)
   const writeController = useRef<AbortController | null>(null)
@@ -72,6 +74,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     active.current = true
     return () => {
       active.current = false
+      actionFence.current.invalidate()
       generation.current++
       readController.current?.abort()
       writeController.current?.abort()
@@ -125,6 +128,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
 
   const unlock = async () => {
     if (busy || key) return
+    const actionToken = actionFence.current.capture()
     setMessage('')
     setBusy(true)
     const controller = new AbortController()
@@ -168,12 +172,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     } catch (error) {
       if (active.current && !controller.signal.aborted) setMessage(errorLabel(error))
     } finally {
-      if (active.current) setBusy(false)
+      if (active.current && actionFence.current.isCurrent(actionToken)) setBusy(false)
     }
   }
 
   const send = async () => {
     if (!key || !aadScope || busy) return
+    const actionToken = actionFence.current.capture()
     setMessage('')
     try { xDriveClipboardValidateText(draft) } catch (error) {
       setMessage(errorLabel(error)); return
@@ -198,12 +203,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       if (active.current && !controller.signal.aborted)
         setMessage('发送未确认；原消息 ID 保留供重试。' + errorLabel(error))
     } finally {
-      if (active.current) setBusy(false)
+      if (active.current && actionFence.current.isCurrent(actionToken)) setBusy(false)
     }
   }
 
   const runAction = async (action: (signal: AbortSignal) => Promise<void>, success: string) => {
     if (busy) return
+    const actionToken = actionFence.current.capture()
     setBusy(true)
     setMessage('')
     const controller = new AbortController()
@@ -216,12 +222,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     } catch (error) {
       if (active.current && !controller.signal.aborted) setMessage(errorLabel(error))
     } finally {
-      if (active.current) setBusy(false)
+      if (active.current && actionFence.current.isCurrent(actionToken)) setBusy(false)
     }
   }
 
   const pasteFromBrowser = async () => {
     if (!port.readText || reading) return
+    const actionToken = actionFence.current.capture()
     setReading(true)
     setMessage('')
     try {
@@ -229,15 +236,18 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       // leaves the manual input untouched; no automatic OS-clipboard observer.
       const text = await port.readText()
       xDriveClipboardValidateText(text)
-      if (active.current) setDraft(text)
+      if (active.current && actionFence.current.isCurrent(actionToken)) setDraft(text)
     } catch {
-      if (active.current) setMessage('浏览器未允许读取剪贴板；请直接在输入框粘贴内容。')
+      if (active.current && actionFence.current.isCurrent(actionToken)) setMessage('浏览器未允许读取剪贴板；请直接在输入框粘贴内容。')
     } finally {
-      if (active.current) setReading(false)
+      if (active.current && actionFence.current.isCurrent(actionToken)) setReading(false)
     }
   }
 
   const lock = () => {
+    // A Browser clipboard permission prompt may finish after Lock. Never
+    // reintroduce its plaintext or a stale success/failure into this vault.
+    actionFence.current.invalidate()
     writeController.current?.abort()
     readController.current?.abort()
     generation.current++
@@ -248,6 +258,9 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     setNextBefore(null)
     setDraft('')
     setPassphrase('')
+    setReading(false)
+    setBusy(false)
+    setConfirmClear(false)
     setMessage('剪贴板已锁定，本地明文和密钥已从页面状态清除。')
   }
 
@@ -345,10 +358,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                       InputProps={{ readOnly: true }} aria-label="剪贴板明文（仅在此页面内解密）" />
                     <Stack direction="row" justifyContent="flex-end">
                       <Button size="small" onClick={() => {
+                        const actionToken = actionFence.current.capture()
                         void port.copyText(text).then(() => {
-                          if (active.current) setMessage('已复制到本机剪贴板。')
+                          if (active.current && actionFence.current.isCurrent(actionToken))
+                            setMessage('已复制到本机剪贴板。')
                         }).catch(error => {
-                          if (active.current) setMessage(errorLabel(error))
+                          if (active.current && actionFence.current.isCurrent(actionToken))
+                            setMessage(errorLabel(error))
                         })
                       }}>复制到本机</Button>
                     </Stack>
