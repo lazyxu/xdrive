@@ -8,6 +8,8 @@ const ts = require('typescript')
 const root = path.join(__dirname, '../..')
 const apiSrc = fs.readFileSync(path.join(root, 'web/src/api.ts'), 'utf8')
 const appSrc = fs.readFileSync(path.join(root, 'web/src/App.tsx'), 'utf8')
+const mapEmbedAdmissionSrc = fs.readFileSync(path.join(root,
+  'ui/shared/src/desktop-places-embed-admission.ts'), 'utf8')
 
 function extractedFunction(source, name, jsx = false) {
   const ast = ts.createSourceFile(jsx ? 'App.tsx' : 'api.ts', source, ts.ScriptTarget.Latest, true,
@@ -124,15 +126,29 @@ test('HTTPS cookie restoration never reads an old localStorage Access/Refresh JW
     AUTH_STORAGE_KEYS: ['xdrive.access_token','xdrive.token','xdrive.refresh_token',
       'xdrive.access_expires_at','xdrive.username'],
   }
+  // Use the real reserved-map admission helper in this source-derived Web
+  // auth fixture, rather than a missing global or a permissive false stub.
+  const admissionModule = { exports: {} }
+  const admissionJS = ts.transpileModule(mapEmbedAdmissionSrc, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  new Function('module', 'exports', admissionJS)(admissionModule, admissionModule.exports)
   const env = { ...storage, ...keys,
+    xDriveDesktopPlacesEmbedIntent:
+      admissionModule.exports.xDriveDesktopPlacesEmbedIntent,
     // Standalone HTTPS browser: no trusted Electron Places guest bridge.
     xDriveTrustedDesktopPlacesBridge: () => null,
-    window: { location: { protocol: 'https:' } } }
+    window: { location: { protocol: 'https:', search: '' } } }
   const exports = {}
   new Function('exports', ...Object.keys(env), transpiled)(exports, ...Object.values(env))
   assert.deepEqual(exports.run(), {
     accessToken: '', refreshToken: '', accessExpiresAt: 0, browserSession: true,
   })
+  env.window.location.search = '?desktop_places_embed=1'
+  assert.deepEqual(exports.run(), {
+    accessToken: '', refreshToken: '', accessExpiresAt: 0, browserSession: true,
+  }, 'reserved map URL cannot reuse the ordinary browser Owner/JWT')
+  env.window.location.search = ''
   env.window.location.protocol = 'http:'
   assert.deepEqual(exports.run(), { accessToken: '', refreshToken: '', accessExpiresAt: 0 },
     'HTTPS-only cutover must fail closed before loading any HTTP-origin JWT')

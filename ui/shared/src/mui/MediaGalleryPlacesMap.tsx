@@ -18,6 +18,7 @@ import {
 } from '../media-gallery-baidu-diagnostics'
 import type { XDriveBaiduMapDiagnostic } from '../media-gallery-baidu-diagnostics'
 import { XDriveMediaGalleryMapGPSCoverage } from './MediaGalleryMapGPSCoverage'
+import { XDRIVE_DESKTOP_PLACES_GUEST_PROBE, xDriveDesktopPlacesGuestProbeState } from '../desktop-places-embed-admission'
 
 /** Two user-selected dynamic SDK runtimes. A denied signed release never
  * silently downgrades the isolated Child to the legacy direct prototype. */
@@ -79,6 +80,7 @@ export function XDriveMediaGalleryPlacesMap({
   const [embedRetry,setEmbedRetry] = useState(0)
   const [desktopEmbedError,setDesktopEmbedError] = useState('')
   const embeddedWebviewRef=useRef<HTMLDivElement|null>(null)
+  const [embedGuestReady,setEmbedGuestReady] = useState<{key:string}|null>(null)
   const [embedPrepared,setEmbedPrepared] = useState<{key:string;state:'ready'|'denied'}|null>(null)
   const embedPrepareRef=useRef(onPrepareDesktopPlaces)
   embedPrepareRef.current=onPrepareDesktopPlaces
@@ -158,6 +160,7 @@ export function XDriveMediaGalleryPlacesMap({
     let active=true
     // Owner, filters and Server changes invalidate the old guest identity.
     setEmbedPrepared(null)
+    setEmbedGuestReady(null)
     setDesktopEmbedError('')
     const scope=xDriveNormalizeBaiduMapPhotoScope(embedScopeRef.current)
     const deny=(message:string)=>{
@@ -178,23 +181,81 @@ export function XDriveMediaGalleryPlacesMap({
   },[desktopOnly,desktopEmbeddedPlacesURL,diagnosticScope,embedIdentity,embedRetry])
   useEffect(()=>{
     if(embedPrepared?.key!==embedIdentity || embedPrepared.state!=='ready')return
-    const guest=embeddedWebviewRef.current
+    // The Server can return HTTP 200 with an entire Web login form. A successful
+    // did-finish-load is NOT evidence that our private map mounted. Keep the
+    // webview visually hidden until the actual map-only React root is present.
+    const guest=embeddedWebviewRef.current as (HTMLDivElement & {
+      executeJavaScript?: (script:string)=>Promise<unknown>
+    })|null
     if(!guest)return
+    let active=true
+    let denied=false
+    let probing=false
+    let mapMounted=false
+    let navigationStartedAt=Date.now()
+    const deny=(message:string)=>{
+      if(!active || denied)return
+      denied=true
+      setEmbedGuestReady(null)
+      setDesktopEmbedError(message)
+      setEmbedPrepared({key:embedIdentity,state:'denied'})
+    }
+    const probe=()=>{
+      if(!active || denied || probing || !guest.executeJavaScript)return
+      probing=true
+      // This reads only nonsecret DOM sentinels in the sandboxed guest.
+      // It never passes an Agent token, password, cookie or map capability.
+      void guest.executeJavaScript(XDRIVE_DESKTOP_PLACES_GUEST_PROBE)
+        .then(raw=>{
+          if(!active || denied)return
+          const state=xDriveDesktopPlacesGuestProbeState(raw)
+          if(state==='login') {
+            deny('Server Web 返回了完整登录页面，而不是地图。请更新 Server Web snapshot 与 Desktop 客户端后重试。')
+          } else if(state==='denied') {
+            deny('Web 地图身份桥接或临时会话验证失败，请检查 Server Web 版本后重试。')
+          } else if(state==='ready' && !mapMounted) {
+            mapMounted=true
+            setEmbedGuestReady({key:embedIdentity})
+          }
+        })
+        .catch(()=>{ /* Guest may be navigating; bounded watchdog handles failure. */ })
+        .finally(()=>{probing=false})
+    }
     const fail=(event:Event)=>{
       const load=event as Event & {errorCode?:number;isMainFrame?:boolean}
       if(load.errorCode===-3 || load.isMainFrame===false)return
-      setDesktopEmbedError('HTTPS Web 地图页面加载失败。')
-      setEmbedPrepared({key:embedIdentity,state:'denied'})
+      deny('HTTPS Web 地图页面加载失败，请检查 Server 连接。')
     }
-    const crashed=()=>{
-      setDesktopEmbedError('HTTPS Web 地图页面已退出。')
-      setEmbedPrepared({key:embedIdentity,state:'denied'})
+    const crashed=()=>deny('HTTPS Web 地图页面已退出。')
+    const navigating=(event:Event)=>{
+      const nav=event as Event & {isMainFrame?:boolean}
+      if(nav.isMainFrame===false)return
+      // Mode switching performs a full page navigation. Never expose an old
+      // or unauthenticated document before the new map root is verified.
+      mapMounted=false
+      navigationStartedAt=Date.now()
+      setEmbedGuestReady(null)
     }
+    const loaded=()=>probe()
     guest.addEventListener('did-fail-load',fail)
     guest.addEventListener('render-process-gone',crashed)
+    guest.addEventListener('did-start-navigation',navigating)
+    guest.addEventListener('dom-ready',loaded)
+    guest.addEventListener('did-finish-load',loaded)
+    const poll=window.setInterval(()=>{
+      if(!mapMounted && Date.now()-navigationStartedAt>20_000) {
+        deny('Web 地图没有进入就绪状态。请确认 Server Web snapshot 已更新、Desktop 专用 preload 已加载，然后重试。')
+      } else probe()
+    },900)
+    probe()
     return()=>{
+      active=false
+      window.clearInterval(poll)
       guest.removeEventListener('did-fail-load',fail)
       guest.removeEventListener('render-process-gone',crashed)
+      guest.removeEventListener('did-start-navigation',navigating)
+      guest.removeEventListener('dom-ready',loaded)
+      guest.removeEventListener('did-finish-load',loaded)
     }
   },[embedPrepared,embedIdentity])
   // Desktop file never loads third-party JSAPI; Web and PWA default to legacy.
@@ -392,6 +453,7 @@ export function XDriveMediaGalleryPlacesMap({
   if (desktopOnly && desktopEmbeddedPlacesURL && onPrepareDesktopPlaces) {
     const ready=embedPrepared?.key===embedIdentity && embedPrepared.state==='ready'
     const denied=embedPrepared?.key===embedIdentity && embedPrepared.state==='denied'
+    const guestReady=ready && embedGuestReady?.key===embedIdentity
     return (
       <Paper variant="outlined" data-xdrive-gallery-places-map
         data-xdrive-desktop-places-shared-web sx={{overflow:'hidden',borderRadius:2}}>
@@ -402,12 +464,25 @@ export function XDriveMediaGalleryPlacesMap({
             onClick={() => setEmbedRetry(n=>n+1)}>重试 Web 地图</Button> : null}
         </Stack>
         {ready ? (
-          <Box component={'webview' as 'div'} ref={embeddedWebviewRef}
-            {...{partition:'xdrive-places-web',src:desktopEmbeddedPlacesURL}}
-            data-xdrive-desktop-embedded-places
-            sx={{display:'flex',width:'100%',
-              height:'max(640px, calc(100dvh - 170px))',
-              maxHeight:1300,border:0}}/>
+          <Box sx={{position:'relative'}}>
+            <Box component={'webview' as 'div'} ref={embeddedWebviewRef}
+              {...{partition:'xdrive-places-web',src:desktopEmbeddedPlacesURL}}
+              data-xdrive-desktop-embedded-places
+              sx={{display:'flex',width:'100%',
+                height:'max(640px, calc(100dvh - 170px))',
+                maxHeight:1300,border:0,
+                visibility:guestReady?'visible':'hidden'}}/>
+            {!guestReady ? (
+              <Box role="status" data-xdrive-desktop-places-awaiting-guest
+                sx={{position:'absolute',inset:0,display:'flex',
+                  alignItems:'center',justifyContent:'center',
+                  bgcolor:'background.default',p:3}}>
+                <Typography variant="body2" color="text.secondary">
+                  正在确认 HTTPS Web 地图已完成身份验证并挂载地图…
+                </Typography>
+              </Box>
+            ) : null}
+          </Box>
         ) : (
           <Box role={denied?'alert':'status'} sx={{p:2,minHeight:280}}>
             <Typography variant="body2" color={denied?'error.main':'text.secondary'}>
