@@ -191,13 +191,14 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     func canResume(owner: XDriveNativeOwnerRoot?, folderID: UInt64,
                    query: String, filters: XDriveIOSNativeFilesSearchFilterState,
                    sort: String, order: String) -> Bool {
-        guard verifiedPage, !loading, let owner, let verifiedOwner else {
-            return false
-        }
-        return XDriveIOSNativePhotoOwnerScope.matches(owner, verifiedOwner) &&
-            verifiedFolderID == folderID && verifiedQuery == query &&
-            verifiedFilters == filters && verifiedSort == sort &&
-            verifiedOrder == order
+        guard let owner, let verifiedOwner else { return false }
+        return XDriveIOSNativeFilesNavigationPolicy.canResume(
+            verified: verifiedPage, loading: loading,
+            sameOwner: XDriveIOSNativePhotoOwnerScope.matches(owner, verifiedOwner),
+            sameFolder: verifiedFolderID == folderID,
+            sameQuery: verifiedQuery == query, sameFilters: verifiedFilters == filters,
+            sameSort: verifiedSort == sort, sameOrder: verifiedOrder == order
+        )
     }
 
     /// Removing NavigationLink source rows while a SwiftUI push is in
