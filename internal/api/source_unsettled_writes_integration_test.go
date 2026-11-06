@@ -45,7 +45,7 @@ func TestSourceArchiveAndDeleteRejectLiveUploadWithoutRunningRun(t *testing.T) {
 			file := createFilePropertiesFile(t, db, owner.ID, target.ID, "preserve.jpg", 8)
 			queuedAt := time.Now().UTC()
 			source := meta.Source{
-				OwnerID: owner.ID, Name: "Source", Kind: "synology_files",
+				OwnerID: owner.ID, Name: "Source", Kind: "yike_photos",
 				Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 				RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusActive,
 				Revision: 1, TargetNodeID: &target.ID, RunRequestedAt: &queuedAt,

@@ -21,13 +21,13 @@ func TestSourceArchiveGuardRunOnlyUploadAndForeignSourceIsolation(t *testing.T) 
 	target := createFilePropertiesDir(t, db, owner.ID, root.ID, "run-only target")
 	unrelatedTarget := createFilePropertiesDir(t, db, owner.ID, root.ID, "unrelated target")
 	source := meta.Source{
-		OwnerID: owner.ID, Name: "Run only Pull", Kind: "synology_files",
+		OwnerID: owner.ID, Name: "Run only Pull", Kind: "yike_photos",
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused,
 		Revision: 1, TargetNodeID: &target.ID,
 	}
 	unrelated := meta.Source{
-		OwnerID: owner.ID, Name: "Unrelated Pull", Kind: "synology_files",
+		OwnerID: owner.ID, Name: "Unrelated Pull", Kind: "yike_photos",
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused,
 		Revision: 1, TargetNodeID: &unrelatedTarget.ID,
