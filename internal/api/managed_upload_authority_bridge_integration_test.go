@@ -19,12 +19,12 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	}
 	umbrella := createFilePropertiesDir(t, db, owner.ID, root.ID, "同步文件夹")
 	pull := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, "Pull")
-	connector := createFilePropertiesDir(t, db, owner.ID, pull.ID, "Synology Photos")
-	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "Photos")
+	connector := createFilePropertiesDir(t, db, owner.ID, pull.ID, "Yike Photos")
+	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "uid_123_Photos")
 	child := createFilePropertiesDir(t, db, owner.ID, target.ID, "Albums")
 	ordinary := createFilePropertiesDir(t, db, owner.ID, root.ID, "Ordinary")
 	source := meta.Source{
-		OwnerID: owner.ID, Name: "Photos", Kind: synologySourceKind,
+		OwnerID: owner.ID, Name: "Photos", Kind: yikeSourceKind,
 		Direction: meta.SourceDirectionPull,
 		SyncMode:  meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
 		Status: meta.SourceStatusActive, Revision: 1,
@@ -71,7 +71,7 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 		t.Fatalf("fabricated lp2_ prefix bypassed Source authorization: %v", err)
 	}
 
-	// The server-signed active Pull SourceRun has precisely one subtree.
+	// A server-signed active Yike Pull SourceRun has precisely one subtree.
 	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, scoped, owner.ID, child.ID, req); err != nil {
 		t.Fatalf("valid Pull worker lost managed upload capability: %v", err)
 	}
