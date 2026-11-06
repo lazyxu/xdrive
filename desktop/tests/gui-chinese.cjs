@@ -79,7 +79,9 @@ const renderer = [
   desktopClientUpdatePanel,
   desktopHostFrame,
 ].join('\n')
-const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx'), 'utf8')
+// The standalone Synology Photos Push guide was retired; the supported DSM
+// folder backup setup remains the only native NAS backup creation flow.
+const synologyFolderBackupSetup = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyBackupSourceSetup.tsx'), 'utf8')
 const dialogTitle = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogTitle.tsx'), 'utf8')
 const dialogActions = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogActions.tsx'), 'utf8')
 const dialogContent = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogContent.tsx'), 'utf8')
@@ -172,9 +174,11 @@ test('desktop GUI defaults to Chinese', () => {
     assert.ok(main.includes(text), `missing Chinese desktop system label: ${text}`)
   }
 
-  for (const text of ['群晖 DSM 配置', 'DSM 操作示意图', '上一步', '下一步', '完成']) {
-    assert.ok(synologyGuide.includes(text), `missing Chinese Synology guide label: ${text}`)
+  for (const text of ['创建 NAS 本机备份来源', '我确认在当前 NAS', '每 6 小时自动增量备份']) {
+    assert.ok(synologyFolderBackupSetup.includes(text), `missing Chinese DSM folder backup label: ${text}`)
   }
+  assert.equal(fs.existsSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx')), false,
+    'retired standalone DSM Photos Push guide must not return')
 
   assert.match(html, /<html lang="zh-CN">/)
   assert.match(html, /<title>xDrive 桌面版<\/title>/)
@@ -354,7 +358,8 @@ test('desktop transient management surfaces use shared modal features', () => {
 
 test('desktop dialogs share one title, paper, content, and action treatment', () => {
   assert.ok(renderer.includes('XDriveDialogTitle') && renderer.includes('xDriveDialogPaperProps'), 'Desktop UI is not using the cross-client dialog chrome')
-  assert.ok(synologyGuide.includes("from './DialogTitle'") && synologyGuide.includes('XDriveDialogTitle'), 'Synology guide is not using the cross-client dialog title')
+  assert.ok(synologyFolderBackupSetup.includes('XDriveSynologyBackupSourceSetup'),
+    'supported DSM folder backup form must remain in the shared UI')
   assert.ok(dialogTitle.includes('aria-label="关闭弹窗"'), 'shared dialog title is missing the close control')
   assert.ok(dialogTitle.includes('export const xDriveDialogPaperProps'), 'shared dialog paper contract is missing')
   assert.ok(dialogActions.includes('export function XDriveDialogActions({'), 'shared dialog actions component is missing')
