@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { webcrypto } from 'node:crypto'
+if (!globalThis.crypto) globalThis.crypto = webcrypto
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
