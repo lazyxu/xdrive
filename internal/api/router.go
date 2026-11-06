@@ -236,6 +236,7 @@ func (s *Server) Router() *gin.Engine {
 	// Owner-only short-lived E2EE Web mailbox. No SourceRun, public share or
 	// native Photo grant can use these authenticated routes.
 	authed.GET("/clipboard/vault", s.clipboardVault)
+	authed.PUT("/clipboard/vault/check", s.putClipboardVaultCheck)
 	authed.GET("/clipboard/items", s.listClipboardItems)
 	authed.POST("/clipboard/items", s.createClipboardItem)
 	authed.DELETE("/clipboard/items/:id", s.deleteClipboardItem)
