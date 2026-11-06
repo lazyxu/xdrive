@@ -38,6 +38,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @StateObject private var photoObserver = XDriveIOSUnifiedPhotoObserver()
     @State private var selected: XDriveIOSNativeUnifiedGallerySelection?
     @State private var sourceFilter: XDriveIOSNativeGalleryPresence?
+    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var draft = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var showFilters = false
@@ -100,6 +101,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 }
                 Spacer()
                 if query != .init() { Button("清除") { query = .init() } }
+                Menu {
+                    xdrivePhotoWallDensityButtons($wallDensity)
+                } label: {
+                    Image(systemName: "square.grid.3x3")
+                }
+                .accessibilityLabel("缩略图大小")
+                .accessibilityIdentifier("native-ios-unified-wall-density")
                 NavigationLink {
                     XDriveIOSNativePhotoThumbnailCacheScreen(login: login)
                 } label: {
@@ -115,7 +123,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                         if let owner = login.owner {
                             ForEach(wall.index.pages) { page in
                                 XDriveIOSNativeUnifiedPhotoWallPage(page: page, wall: wall, login: login, owner: owner,
-                                    filter: sourceFilter, query: query, displayActive: selected == nil && phase == .active,
+                                    filter: sourceFilter, query: query, density: wallDensity,
+                                    displayActive: selected == nil && phase == .active,
                                     open: { payload, position in
                                         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
                                         selected = .init(owner: owner, page: payload, position: position)
@@ -133,6 +142,12 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     .padding(.horizontal, 12).padding(.vertical, 8)
                 }
                 .refreshable { reset(retryUnavailable: true) }
+                .simultaneousGesture(
+                    MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
+                        guard selected == nil, phase == .active, !showFilters else { return }
+                        wallDensity = wallDensity.applyingPinch(scale)
+                    }
+                )
                 .onChange(of: selected?.id) { selection in
                     if selection == nil, viewerReturnAnchor != nil {
                         scroll.scrollTo("unified-page-\(viewerReturnPage)", anchor: .top)

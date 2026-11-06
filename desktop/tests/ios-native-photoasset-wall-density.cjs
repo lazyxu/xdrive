@@ -33,7 +33,7 @@ test('native cloud tile has truly square aspect fill without extra filename labe
 
 test('cloud grid shares bounded three-step native PhotoKit density menu and pinch', () => {
   assert.match(wall, /@State private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
-  assert.match(wall, /ForEach\(XDriveIOSNativePhotoWallDensity\.allCases\)/)
+  assert.match(wall, /xdrivePhotoWallDensityButtons\(\$wallDensity\)/)
   assert.match(wall, /native-ios-cloud-wall-density/)
   assert.equal((virtual.match(/XDriveIOSNativePhotoWallGrid\(density: density\)/g) || []).length, 2)
   assert.match(shared, /minimum: density\.minimumCellWidth/)

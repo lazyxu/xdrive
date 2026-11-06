@@ -67,6 +67,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     let owner: XDriveNativeOwnerRoot
     let filter: XDriveIOSNativeGalleryPresence?
     let query: XDriveIOSNativeUnifiedGalleryQuery
+    let density: XDriveIOSNativePhotoWallDensity
     let displayActive: Bool
     let open: (XDriveIOSNativeUnifiedGalleryPage, Int) -> Void
     let loaded: () -> Void
@@ -102,8 +103,8 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
             let days = groups.keys.sorted { ($0 ?? .distantPast) > ($1 ?? .distantPast) }
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(days, id: \.self) { day in
-                    Text(day?.formatted(date: .abbreviated, time: .omitted) ?? "拍摄日期未知").font(.headline)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 4)], spacing: 4) {
+                    XDriveIOSNativePhotoWallDayHeader(title: day?.formatted(date: .abbreviated, time: .omitted) ?? "拍摄日期未知")
+                    XDriveIOSNativePhotoWallGrid(density: density) {
                         ForEach(groups[day] ?? []) { row in
                             Button {
                                 guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),

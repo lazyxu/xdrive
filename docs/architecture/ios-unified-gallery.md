@@ -10,6 +10,10 @@ Each visible window owns at most 48 reconciled rows and scans at most 192 raw ca
 
 One native viewer follows this same mixed sequence, including across windows. Swipes, adjacent buttons and the current window's filmstrip share that sequence. The existing still/video/held-Live renderers and actions remain the actual media viewers. If a matched local original becomes unreadable, the viewer revalidates the exact cloud asset/Node/revision before switching to it. Failure keeps a retryable local view. Returning restores the selected row's window and anchor.
 
+## Shared photo-wall presentation
+
+The unified local/cloud timeline uses the same adaptive SwiftUI `XDriveIOSNativePhotoWallGrid` and three bounded square-cell densities as native local Gallery, albums and map place sheets. The grid is presentation-only: source matching, 48-row cursors, authenticated Owner ranges, PhotoKit authorization, thumbnail request lifetimes and Viewer anchors remain owned by the unified Gallery. The density menu and pinch gesture do not reset source cursors or create additional media read paths. Location views preserve their own scope, cell counts, camera and Sheet state.
+
 ## Search and filtering
 
 One query combines filename substring, media type and an inclusive calendar-day range with the source filter. Both filenames of a matched row participate, even when its cloud reference was on another source window. Capture-date criteria apply to the canonical row; an unknown date cannot satisfy a date interval. Queries advance bounded source windows and cancel when the query, Owner or navigation changes. Search does not claim OCR/semantic matching.

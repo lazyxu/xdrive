@@ -31,13 +31,14 @@ test('native Photos wall offers three square thumbnail densities, no change to o
   assert.match(square, /GeometryReader \{ geometry in/)
   assert.match(square, /\.frame\(width: geometry\.size\.width, height: geometry\.size\.height\)/)
   assert.match(square, /\.aspectRatio\(1, contentMode: \.fit\)/)
-  assert.match(page, /private var placeholderTile: some View \{[\s\S]*?\.aspectRatio\(1, contentMode: \.fit\)/)
+  assert.match(page, /private var placeholderTile: some View \{[\s\S]*?XDriveIOSNativePhotoWallPlaceholderTile\(\)/)
+  assert.match(shared, /struct XDriveIOSNativePhotoWallPlaceholderTile: View/)
   assert.match(viewer, /struct XDriveIOSLocalPhotoTile: View/)
 })
 
 test('pinch and explicit density menu are bounded presentation-only controls', () => {
   assert.match(screen, /@State private var density: XDriveIOSNativePhotoWallDensity = \.standard/)
-  assert.match(screen, /ForEach\(XDriveIOSNativePhotoWallDensity\.allCases\)/)
+  assert.match(screen, /xdrivePhotoWallDensityButtons\(\$density\)/)
   assert.match(screen, /native-ios-local-wall-density/)
   assert.match(screen, /MagnificationGesture\(minimumScaleDelta: 0\.14\)\.onEnded/)
   assert.match(screen, /density = density\.applyingPinch\(value\)/)
