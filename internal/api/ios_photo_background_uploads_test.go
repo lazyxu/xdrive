@@ -101,10 +101,10 @@ func TestIOSPhotoManagedLargeOriginalRequiresExactTarget(t *testing.T) {
 	sha := strings.Repeat("a", 64)
 	key := "ios_" + strings.Repeat("b", 64)
 	req := uploadInitRequest{
-		ParentID: &ownerRoot,
-		Name: "Live-xios-0123456789abcdef01234567-0123456789ab.zip",
+		ParentID:       &ownerRoot,
+		Name:           "Live-xios-0123456789abcdef01234567-0123456789ab.zip",
 		ConflictPolicy: meta.UploadConflictPolicyFail,
-		Size: int64(8) << 30, ChunkSize: defaultUploadChunkSize,
+		Size:           int64(8) << 30, ChunkSize: defaultUploadChunkSize,
 		SHA256: sha, ResumeKey: key,
 	}
 	scope := iosPhotoManagedUploadScope{targetID: ownerRoot}

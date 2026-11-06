@@ -31,7 +31,7 @@ test('only mounted 64-item PhotoKit page IDs are read and queue never uploads me
   assert.match(queue, /XDriveIOSPhotoKitLibraryEpoch\.matches\(baseline\.token, as: epoch\.token\)/)
   assert.match(queue, /store\.status\(for: id\)/)
   assert.match(queue, /try verifyAuthorization\(stillMatches: epoch\)/)
-  assert.match(store, /SELECT revision,state FROM entries WHERE asset_id=\?/)
+  assert.match(store, /SELECT e\.revision,e\.state,r\.reason FROM entries e LEFT JOIN failure_reasons r ON r\.asset_id=e\.asset_id AND r\.revision=e\.revision WHERE e\.asset_id=\?/)
   const method = queue.slice(queue.indexOf('    func visibleStatuses('), queue.indexOf('    /// Whether every persisted PhotoKit change event'))
   assert.ok(method.length > 0)
   assert.doesNotMatch(method, /UploadSession|uploadPrepared|finalize|deleteNode|URLSession/)
