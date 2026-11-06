@@ -1369,13 +1369,13 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
             Text("我的相簿")
                 .font(.title3.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
-            albumGrid(userAlbums, page: snapshot)
+            albumGrid(userAlbums, page: page)
         }
         if !systemAlbums.isEmpty {
             Text("系统相簿")
                 .font(.title3.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
-            albumGrid(systemAlbums, page: snapshot)
+            albumGrid(systemAlbums, page: page)
         }
     }
 
