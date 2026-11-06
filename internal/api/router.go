@@ -473,6 +473,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/ios/photos/managed/receipts/nodes/:id", s.iosPhotoManagedReceipt)
 	authed.GET("/ios/photos/backup-destination", s.getIOSPhotoBackupDestination)
 	authed.PUT("/ios/photos/backup-destination", s.putIOSPhotoBackupDestination)
+	authed.GET("/android/photos/backup-destination", s.getAndroidPhotoBackupDestination)
+	authed.PUT("/android/photos/backup-destination", s.putAndroidPhotoBackupDestination)
 	authed.POST("/ios/photos/background-grants", s.createIOSPhotoBackgroundGrant)
 	authed.GET("/ios/photos/background-grants", s.listIOSPhotoBackgroundGrants)
 	authed.POST("/ios/photos/background-grants/:id/revoke", s.revokeIOSPhotoBackgroundGrant)
