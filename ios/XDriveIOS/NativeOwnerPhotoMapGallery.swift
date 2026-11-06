@@ -803,7 +803,13 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                             bounds, current: currentBounds())
                     else { return }
-                    guard page.total_count > 0, let first = page.items.first
+                    // The overview and this place Range are two separate
+                    // signed reads. A changed place count invalidates the
+                    // old map cover even if the new range is nonempty.
+                    guard XDriveIOSNativeOwnerMapSelectionPolicy.acceptsCurrentCoverPage(
+                        facet, returnedCount: page.total_count,
+                        hasPhoto: !page.items.isEmpty
+                    ), let first = page.items.first
                     else { continue }
                     let cover = try await reader.thumbnail(first)
                     try Task.checkCancellation()
