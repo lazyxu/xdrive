@@ -17,11 +17,13 @@ var errSynologyPushNotReady = errors.New("Synology Photos Push requires an enrol
 var errSynologyPushBackupOnly = errors.New("Synology Photos Push supports backup mode only")
 
 func requireSourceReadyForActivation(tx *gorm.DB, source meta.Source) error {
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		return errSynologyPullDisabled
+	}
+	// The dedicated DSM Photos Push executor is retired. Even a historical
+	// fully bound Source cannot be reactivated through a generic Owner update.
 	if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
-		if source.SyncMode != meta.SourceSyncModeBackup {
-			return errSynologyPushBackupOnly
-		}
-		return requireSynologyPushSourceReadyForActivation(tx, source)
+		return errSynologyPushNotReady
 	}
 	if source.Kind == meta.SourceKindLocalFolder {
 		return errLocalFolderNotReady

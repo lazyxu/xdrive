@@ -339,6 +339,16 @@ func (s *Server) createSource(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid source kind or direction")
 		return
 	}
+	// Latest Owner decision: DSM folder Push is the sole enabled Synology backup.
+	// Retain historical Sources and Pull connector code, not their write rights.
+	if meta.SynologyPullTemporarilyDisabled(req.Kind, req.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
+		return
+	}
+	if req.Kind == synologySourceKind && req.Direction == meta.SourceDirectionPush {
+		fail(c, http.StatusGone, "Synology Photos Push is retired; use DSM folder backup")
+		return
+	}
 	if req.Name == "" {
 		// A Push may omit the final name only when Server can derive it from
 		// the authenticated registered Device. Pull always needs an explicit
@@ -605,6 +615,9 @@ func (s *Server) updateSource(c *gin.Context) {
 		if current.Kind == meta.SourceKindIOSPhotos {
 			return errLocalSourceExecutorTransactionUnauthorized
 		}
+		if meta.SynologyPullTemporarilyDisabled(current.Kind, current.Direction) {
+			return errSynologyPullDisabled
+		}
 		currentRevision = current.Revision
 		if current.Revision != expected {
 			return errRevisionConflict
@@ -758,6 +771,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
 		case errors.Is(err, errSourceArchived):
 			fail(c, http.StatusConflict, "source is archived; restore it before editing")
+		case errors.Is(err, errSynologyPullDisabled):
+			fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		case errors.Is(err, errSourceTargetNameConflict):
 			fail(c, http.StatusConflict, "managed target folder name already exists")
 		case errors.Is(err, errSourceTargetMigrationRequired):
@@ -809,6 +824,9 @@ func (s *Server) triggerSource(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&source).Error; err != nil {
 			return err
+		}
+		if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+			return errSynologyPullDisabled
 		}
 		if source.Kind == meta.SourceKindLocalFolder {
 			// No local Source trigger is executable until the native Agent
@@ -994,6 +1012,9 @@ func (s *Server) deleteSource(c *gin.Context) {
 		if source.Kind == meta.SourceKindIOSPhotos {
 			return errLocalSourceExecutorTransactionUnauthorized
 		}
+		if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+			return errSynologyPullDisabled
+		}
 		currentRevision = source.Revision
 		if source.Revision != expected {
 			return errRevisionConflict
@@ -1043,6 +1064,8 @@ func (s *Server) deleteSource(c *gin.Context) {
 			fail(c, http.StatusConflict, "local backup must be archived before hard deletion")
 		case errors.Is(err, errSourceHistoryRequiresArchive):
 			fail(c, http.StatusConflict, "source has retained sync history; archive it before hard deletion")
+		case errors.Is(err, errSynologyPullDisabled):
+			fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
 		case errors.Is(err, gorm.ErrRecordNotFound):

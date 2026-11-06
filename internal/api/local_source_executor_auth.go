@@ -60,8 +60,14 @@ func (s *Server) requireSourceOwnerOrExecutor() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush &&
-			!hasSynologySourceProofAttempt(c, source) {
+		if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
+			// A historical dedicated NAS Photos Push may only be archived.
+			// Never elevate its old Device or Root headers to a live executor.
+			if c.Request.Method != http.MethodPost || c.FullPath() != "/api/v1/sources/:id/archive" {
+				fail(c, http.StatusGone, "Synology Photos Push is retired; use DSM folder backup")
+				c.Abort()
+				return
+			}
 			c.Set(synologySourceOwnerManagementContextKey, true)
 			c.Next()
 			return
@@ -113,56 +119,8 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 		return false
 	}
 	if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
-		// Every DSM Push Source must be registered to a Synology Device and
-		// bound to the aggregate Personal/Shared Root fingerprint. There is no
-		// owner-JWT or legacy unbound execution fallback.
-		boundDeviceID, bound := meta.SourceDeviceID(source)
-		if !bound {
-			fail(c, http.StatusForbidden, "Synology Push Source must be bound to a registered device")
-			return false
-		}
-		sourceID, proof, proofOK := currentSynologySourceProof(c)
-		if !proofOK || sourceID != source.ID || proof.DeviceID != boundDeviceID ||
-			proof.SourceRevision != source.Revision || !source.TargetManaged || source.TargetNodeID == nil {
-			fail(c, http.StatusForbidden, "Synology Source root proof required or stale")
-			return false
-		}
-		var device meta.ClientDevice
-		if err := s.DB.WithContext(c.Request.Context()).
-			Where("id = ? AND owner_id = ? AND platform = ?", proof.DeviceID, source.OwnerID, "synology").
-			Take(&device).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				fail(c, http.StatusForbidden, "Synology source device not found")
-			} else {
-				fail(c, http.StatusInternalServerError, "load Synology source device failed")
-			}
-			return false
-		}
-		if !clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
-			fail(c, http.StatusForbidden, "Synology source device credential invalid or revoked")
-			return false
-		}
-		var binding meta.LocalSourceBinding
-		if err := s.DB.WithContext(c.Request.Context()).
-			Where("source_id = ? AND owner_id = ? AND device_id = ?", source.ID, source.OwnerID, proof.DeviceID).
-			Take(&binding).Error; err != nil ||
-			binding.RootID != proof.RootID ||
-			binding.RootFingerprint != strings.ToLower(strings.TrimSpace(c.GetHeader("X-XDrive-Local-Root-Fingerprint"))) {
-			fail(c, http.StatusForbidden, "Synology Source root fingerprint is not bound")
-			return false
-		}
-		var target meta.Node
-		if err := s.DB.WithContext(c.Request.Context()).
-			Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-				*source.TargetNodeID, source.OwnerID, meta.NodeTypeDir).
-			Take(&target).Error; err != nil {
-			fail(c, http.StatusForbidden, "Synology source target is unavailable")
-			return false
-		}
-		c.Set(localSourceExecutorContextKey, localSourceExecutorProof{
-			DeviceID: device.ID, RootID: binding.RootID, Platform: "synology", SourceRevision: source.Revision,
-		})
-		return true
+		fail(c, http.StatusGone, "Synology Photos Push is retired; use DSM folder backup")
+		return false
 	}
 	if source.Kind != meta.SourceKindLocalFolder {
 		// Pull connectors and native PhotoKit routes have their own authority.
@@ -324,7 +282,8 @@ func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID
 		return errLocalSourceExecutorTransactionUnauthorized
 	}
 	if proof.Platform == "synology" {
-		return s.requireSynologySourceProofTx(tx, c, sourceID, runID, proof, requireActive)
+		// The standalone identity-only source-agent cannot run a folder backup.
+		return errLocalSourceExecutorTransactionUnauthorized
 	}
 	if proof.RootID == "" {
 		return errLocalSourceExecutorTransactionUnauthorized
