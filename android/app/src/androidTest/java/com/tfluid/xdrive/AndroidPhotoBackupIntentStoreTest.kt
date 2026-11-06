@@ -75,6 +75,32 @@ class AndroidPhotoBackupIntentStoreTest {
         // Never replace unknown old intentions with a new empty store.
         assertEquals(saved, prefs.getString("sealed-v1", null))
     }
+    @Test fun managedTargetPersistsBeforeNetworkAndOldOwnerRootKeyIsNotReused() {
+        val destination = "xdrive-photo-" + "a".repeat(20) + "-" +
+            "b".repeat(20) + ".heic"
+        val planned = ledger().plan(owner, key, "d".repeat(64),
+            NativePhotoBackupResource.STILL, hash, 4096L, destination,
+            destinationTargetNodeId = 120L)
+        val managedResumeKey = NativePhotoResumeKey.forIntent(planned)
+        assertTrue(managedResumeKey.matches(Regex("and_[0-9a-f]{64}")))
+        assertNotEquals(managedResumeKey, NativePhotoResumeKey.forIntent(
+            planned.copy(destinationTargetNodeId = null)))
+        ledger().beginAttempt(owner, planned.id, hash, 4096L)
+        val restored = ledger().inspect(owner).single()
+        assertEquals(120L, restored.destinationTargetNodeId)
+        assertEquals(destination, restored.destinationName)
+        assertEquals(NativePhotoBackupPhase.MAY_HAVE_SENT, restored.phase)
+        assertEquals(managedResumeKey, NativePhotoResumeKey.forIntent(restored))
+        val sealed = context.getSharedPreferences(pref, Context.MODE_PRIVATE)
+            .getString("sealed-v1", null)!!
+        assertFalse(sealed.contains(destination))
+        assertFalse(sealed.contains(owner.serverOrigin))
+        assertFalse(sealed.contains(managedResumeKey))
+        assertThrows(IllegalArgumentException::class.java) {
+            restored.copy(destinationTargetNodeId = 0)
+        }
+    }
+
     @Test fun newOriginalNameSurvivesEncryptedRestartWithoutLeakingPrivatePath() {
         val destination = "xdrive-photo-" + "a".repeat(20) + "-" +
             "b".repeat(20) + ".heic"
