@@ -101,7 +101,7 @@ func TestRetiredSynologyPhotosPushPreservesHistoryAndCannotWrite(t *testing.T) {
 	}
 	version := meta.FileVersion{
 		NodeID: photo.ID, Revision: 1, Size: 16,
-		SHA256: strings.Repeat("f", 64),
+		SHA256:     strings.Repeat("f", 64),
 		StorageKey: "retired-dsm-photos/retain-cas",
 	}
 	if err := db.Create(&version).Error; err != nil {
@@ -148,10 +148,10 @@ func TestRetiredSynologyPhotosPushPreservesHistoryAndCannotWrite(t *testing.T) {
 	// Retirement must terminally cancel only the currently running legacy Run,
 	// without marking a complete inventory or discarding its verified totals.
 	historicalRun := meta.SyncRun{
-		ID: "ae4c0482-28a3-4f3b-8f11-e112e38c0cb9",
+		ID:       "ae4c0482-28a3-4f3b-8f11-e112e38c0cb9",
 		SourceID: source.ID, SourceRevision: source.Revision,
 		Trigger: meta.SyncRunTriggerScheduled, Status: meta.SyncRunStatusRunning,
-		StartedAt: time.Now().UTC().Add(-time.Minute),
+		StartedAt:        time.Now().UTC().Add(-time.Minute),
 		CheckpointBefore: "opaque-pre-retirement", ScannedItems: 3,
 		SyncedBytes: 16, ActiveTransferPath: "Shared/incomplete.jpg",
 		ActiveTransferBytes: 4, ActiveTransferTotal: 64,
@@ -218,7 +218,7 @@ func TestRetiredSynologyPhotosPushPreservesHistoryAndCannotWrite(t *testing.T) {
 func TestOnlySynologyPhotosPushIsRetired(t *testing.T) {
 	for _, tc := range []struct {
 		kind, direction string
-		retired bool
+		retired         bool
 	}{
 		{synologySourceKind, meta.SourceDirectionPush, true},
 		{synologySourceKind, meta.SourceDirectionPull, false},

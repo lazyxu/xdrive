@@ -24,17 +24,17 @@ type Client struct {
 	Token   string
 	HTTP    *http.Client
 
-	sessionMu               sync.RWMutex
-	deviceMu                sync.RWMutex
-	deviceID                string
-	deviceToken             string
-	refreshMu               sync.Mutex
-	sharedRefreshMu         *sync.Mutex
-	refreshToken            string
-	accessExpiresAt         time.Time
-	refreshExpiresAt        time.Time
-	onTokens                func(SessionTokens) error
-	loadTokens              func() (SessionTokens, error)
+	sessionMu        sync.RWMutex
+	deviceMu         sync.RWMutex
+	deviceID         string
+	deviceToken      string
+	refreshMu        sync.Mutex
+	sharedRefreshMu  *sync.Mutex
+	refreshToken     string
+	accessExpiresAt  time.Time
+	refreshExpiresAt time.Time
+	onTokens         func(SessionTokens) error
+	loadTokens       func() (SessionTokens, error)
 }
 
 type Node struct {

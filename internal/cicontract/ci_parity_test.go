@@ -100,7 +100,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	// Keep platform/toolchain and artifact parity for all shared build jobs.
 	assertRunnerParity(t, github, gitlab, map[string]string{
 		"desktop-linux": "linux", "desktop-windows": "windows",
-		"build-client-core": "linux",
+		"build-client-core":    "linux",
 		"package-linux-client": "linux", "package-windows-client": "windows",
 		"server-image": "linux", "photo-face-image": "linux",
 		"media-worker-image": "linux", "caddy-image": "linux", "web": "linux",
