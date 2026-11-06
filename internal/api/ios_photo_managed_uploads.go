@@ -380,7 +380,7 @@ func (s *Server) iosPhotoManagedReceipt(c *gin.Context) {
 		if err := s.requireUploadSessionReadAuthorityTx(c.Request.Context(), tx, c, current); err != nil {
 			return err
 		}
-		return recordUploadAuthorizationSuccessTx(tx, c, "ios.photo.receipt.read", current)
+		return recordUploadAuthorizationSuccessAsTx(tx, c, "ios.photo.receipt.read", "ios_photo", current)
 	}); err != nil {
 		s.recordUploadAuthorizationFailure(c, "ios.photo.receipt.read", verifiedSession, err)
 		fail(c, http.StatusForbidden, "ios photo receipt authority is no longer valid")
