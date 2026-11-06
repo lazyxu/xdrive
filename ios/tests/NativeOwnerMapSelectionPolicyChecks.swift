@@ -155,6 +155,25 @@ struct NativeOwnerMapSelectionPolicyChecks {
         precondition(policy.prioritizedPhotoCovers(
             (0..<65).map { facet("place:10:\($0)") }
         ).isEmpty)
+        // A real, authorized location may change between overview and
+        // its independent 48-item cover read; stale counts never paint.
+        let coverPlace = facet("place:3500:13900", count: 3)
+        precondition(policy.acceptsCurrentCoverPage(
+            coverPlace, returnedCount: 3, hasPhoto: true))
+        precondition(!policy.acceptsCurrentCoverPage(
+            coverPlace, returnedCount: 2, hasPhoto: true))
+        precondition(!policy.acceptsCurrentCoverPage(
+            coverPlace, returnedCount: 4, hasPhoto: true))
+        precondition(!policy.acceptsCurrentCoverPage(
+            coverPlace, returnedCount: 0, hasPhoto: false))
+        precondition(!policy.acceptsCurrentCoverPage(
+            coverPlace, returnedCount: 3, hasPhoto: false))
+        precondition(!policy.acceptsCurrentCoverPage(
+            facet("map-region:q:0:0:1:1:0:0", kind: "map_region_sample"),
+            returnedCount: 3, hasPhoto: true))
+        precondition(policy.acceptsCurrentCoverPage(
+            facet("place:3500:13900", count: 100_000),
+            returnedCount: 100_000, hasPhoto: true))
         print("native Owner cloud MapKit place-range fence: PASS")
     }
 }
