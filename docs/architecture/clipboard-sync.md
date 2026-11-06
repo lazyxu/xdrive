@@ -1,6 +1,6 @@
 # xDrive Clipboard — cross-device design and Web MVP
 
-Status: Web MVP source merged in PR #3950 on 2026-11-06. This document describes the current source contract and follow-on hardening; source merge does not, by itself, verify a deployed Server, a physical browser, or an installed client.
+Status: Web MVP merged in PR #3950, with AAD and lifecycle hardening through PR #3999 on 2026-11-06. This document records the implemented contract and subsequent retry-integrity hardening; source merge does not, by itself, validate production deployment or a physical client.
 
 ## 1. Product boundary
 
@@ -26,7 +26,7 @@ Clipboard is **not** FileExplorer's existing Copy/Cut/Paste state. The latter us
 - `xd_clipboard_items`: monotonically allocated row ID (stable cursor), OwnerID, ClientEventID (unique for Owner), Kind, Nonce, Ciphertext, ExpiresAt, CreatedAt. No plaintext preview/index.
 - Up to 64 KiB of *plaintext* is allowed by the Web UI; Server imposes a conservative bound on encrypted wire bytes and validates base64/96-bit nonce/UUID/kind. A PostgreSQL row lock on the authenticated Owner's vault serializes insertion plus cap pruning, retaining at most 50 newest nonexpired rows even when several browsers send concurrently; the encrypted verifier must already be initialized. Expiry is 24 hours server-side, with opportunistic pruning and no claims of exact real-time global GC.
 - `GET /api/v1/clipboard/vault`: Owner-scoped salt, initialized idempotently. `POST /api/v1/clipboard/items`: write one encrypted item; `GET /api/v1/clipboard/items?before=ID`: 50-row descending keyset page; `DELETE /api/v1/clipboard/items/:id`: remove one; `DELETE /api/v1/clipboard/items`: clear current Owner's history.
-- Idempotency: `(OwnerID, ClientEventID)` uniqueness **while the item is retained**; a retry of a retained identical event returns the original receipt. After expiry or cap eviction, the Web UI must not blindly replay old unknown-ACK requests. **No cross-device target ID in MVP**; all authenticated sessions of the same Owner use the same mailbox.
+- Idempotency: `(OwnerID, ClientEventID)` uniqueness **while the item is retained and unexpired**; a retry of a retained identical *live* event returns the original receipt. A retained but expired matching ID yields HTTP 409, never a false successful delivery receipt. The Browser keeps the same encrypted bytes/ID after an unknown ACK only within a five-minute local retry window. After that interval, or after a local clock rollback, it refuses to replay and requires the user to inspect history and explicitly abandon the old receipt before a new send. Cap eviction may erase the original idempotency record sooner; the MVP therefore does **not** claim indefinite exactly-once delivery. **No cross-device target ID in MVP**; all authenticated sessions of the same Owner use the same mailbox.
 - Browser reads while the Clipboard page is visible (foreground refresh), and manually on demand; **no SSE, background clipboard API, notification subscription, or invisible global polling in this MVP**. Backend pagination is bounded, cancellation through AbortSignal, stale response fencing on Owner changes.
 
 ## 4. Native client growth (not implemented here)
