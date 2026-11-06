@@ -1031,11 +1031,6 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
 		return
 	}
-	if err := s.verifyPushUploadSession(c, session); err != nil {
-		s.recordUploadAuthorizationFailure(c, "finalize.prepare", session, err)
-		fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
-		return
-	}
 	if session.Status == meta.UploadStatusFinalized {
 		if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 			if err := s.requireUploadSessionReadAuthorityTx(c.Request.Context(), tx, c, session); err != nil {
@@ -1048,6 +1043,18 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			return
 		}
 		s.writeUploadSession(c, session, http.StatusOK)
+		return
+	}
+	// A finalize request may delete an expired session as a cleanup side
+	// effect, so validate the current platform authority before that cleanup.
+	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := s.requireUploadSessionReadAuthorityTx(c.Request.Context(), tx, c, session); err != nil {
+			return err
+		}
+		return recordUploadAuthorizationSuccessTx(tx, c, "finalize.prepare", session)
+	}); err != nil {
+		s.recordUploadAuthorizationFailure(c, "finalize.prepare", session, err)
+		fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
 		return
 	}
 	if session.NodeID != nil {
