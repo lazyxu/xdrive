@@ -1,4 +1,5 @@
 import Foundation
+import MapKit
 import Photos
 import SwiftUI
 import UIKit
@@ -453,6 +454,11 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingAlbumHelp = false
+    @State private var showingAlbumMap = false
+    @State private var albumMapCamera: MKCoordinateRegion?
+    @State private var mapAlbumScope: XDriveLocalPhotoAlbumSummary?
+    @State private var albumMapJump: XDriveIOSNativeLocalMapJump?
+    @State private var pendingAlbumMapJump: XDriveIOSNativeLocalMapJump?
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
@@ -681,10 +687,26 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showingAlbumHelp = true } label: {
-                    Label("相册说明", systemImage: "info.circle")
+                Menu {
+                    if permission == .authorized && selected == nil && !selectionMode {
+                        Button {
+                            mapAlbumScope = album
+                            albumMapJump = nil
+                            showingAlbumMap = true
+                        } label: {
+                            Label("显示地图", systemImage: "map")
+                        }
+                        .disabled(loading || albumActionBusy || albumShareBusy)
+                        .accessibilityIdentifier("native-ios-local-album-show-map")
+                    }
+                    Button { showingAlbumHelp = true } label: {
+                        Label("相册说明", systemImage: "info.circle")
+                    }
+                    .accessibilityIdentifier("native-ios-local-album-layout-help")
+                } label: {
+                    Label("更多", systemImage: "ellipsis.circle")
                 }
-                .accessibilityIdentifier("native-ios-local-album-layout-help")
+                .accessibilityIdentifier("native-ios-local-album-more")
             }
         }
         .alert("相册说明", isPresented: $showingAlbumHelp) {
@@ -732,6 +754,23 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             retainedAlbumShare = nil
         }) { session in
             XDriveIOSNativeLocalPhotoActivitySheet(fileURLs: session.fileURLs)
+        }
+        .fullScreenCover(isPresented: $showingAlbumMap) {
+            NavigationStack {
+                XDriveIOSNativeLocalPhotoMapScreen(
+                    album: mapAlbumScope,
+                    mapScope: .constant(.library),
+                    offset: .constant(0),
+                    onClose: {
+                        showingAlbumMap = false
+                        mapAlbumScope = nil
+                        albumMapJump = nil
+                    },
+                    cameraOnEntry: albumMapCamera,
+                    onLibraryCameraChange: { next in albumMapCamera = next }
+                )
+                .environment(\.xdriveNativeLocalMapJump, albumMapJump)
+            }
         }
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) { initial in
             XDriveIOSNativeLocalPhotoDetail(
@@ -792,12 +831,17 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     accessibilityFocusedTileID = nil
                 }
             )
+            .environment(\.xdriveOpenNativeLocalMap, { jump in
+                pendingAlbumMapJump = jump
+            })
         }
         .onAppear {
+            permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             libraryMonitor.start()
             if selected == nil && total == nil && !loading { reload() }
         }
         .onChange(of: libraryMonitor.revision) { _ in
+            permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             clearViewerTileAnchor()
             invalidate()
             error = "系统相册发生变化，请重新读取当前页面。"
@@ -1025,8 +1069,18 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         viewerPage = nil
         shouldRestoreViewerTile = viewerReturnID != nil && phase == .active
         // Open the same album/page only after fresh PhotoKit authorization.
-        if phase == .active { reload() }
-        else {
+        if phase == .active {
+            reload()
+            if let jump = pendingAlbumMapJump {
+                pendingAlbumMapJump = nil
+                mapAlbumScope = nil
+                albumMapJump = jump
+                showingAlbumMap = true
+            }
+        } else {
+            pendingAlbumMapJump = nil
+            albumMapJump = nil
+            mapAlbumScope = nil
             clearViewerTileAnchor()
             invalidate()
         }
@@ -1126,6 +1180,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
     // Parent-owned route hint, never a PhotoKit album ID.
     @Binding var savedOffset: Int
     @State private var timelineOffset = 0
+    @State private var timelineMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var pendingRestoreOffset: Int?
     // Only the presently visible last collection may request the next range.
     // A former last item cannot resume a read after the list was appended.
@@ -1152,164 +1207,197 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
     @State private var albumMutationEpoch = UUID()
 
     var body: some View {
-        ScrollViewReader { scroll in
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                if permission == .notDetermined {
-                    Button("允许查看本机相册") {
-                        Task {
-                            _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-                            reload()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                } else if permission == .denied || permission == .restricted {
-                    Label("相册访问权限不可用", systemImage: "lock")
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                        Link("打开 iOS 设置", destination: url)
-                    }
-                } else {
-                    if permission == .limited {
-                        Label("仅可查看 iOS 已授权的相册成员", systemImage: "lock.shield")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    NavigationLink {
-                        XDriveIOSNativeLocalPhotoTimelineContainer(
-                            savedOffset: $timelineOffset
-                        )
+        albumDirectoryContent
+            .navigationTitle("相册")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        createName = ""
+                        showingCreateAlbum = true
                     } label: {
-                        Label("按年、月、日浏览全部照片", systemImage: "calendar")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
-                            .background(
-                                Color(uiColor: .secondarySystemGroupedBackground),
-                                in: RoundedRectangle(cornerRadius: 12)
+                        Label("新建相簿", systemImage: "plus")
+                    }
+                    .disabled(albumMutationBusy ||
+                        (permission != .authorized && permission != .limited))
+                    .accessibilityIdentifier("native-ios-album-create")
+                }
+            }
+            .alert("新建相簿", isPresented: $showingCreateAlbum) {
+                TextField("相簿名称", text: $createName)
+                Button("新建") {
+                    let proposed = createName
+                    runAlbumMutation(success: "已创建系统用户相簿。") {
+                        try await XDriveIOSNativePhotoAlbumMutations.create(proposed)
+                    }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("创建 iOS 本机相簿，不会创建 xDrive 云端目录。")
+            }
+            .alert("重命名相簿", isPresented: $showingRenameAlbum) {
+                TextField("相簿名称", text: $renameName)
+                Button("保存") {
+                    if let target = renameTarget {
+                        let proposed = renameName
+                        runAlbumMutation(success: "系统相簿已重命名。") {
+                            try await XDriveIOSNativePhotoAlbumMutations.rename(
+                                target, to: proposed
                             )
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("native-ios-gallery-timeline-entry")
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("仅修改用户相簿名称，不会修改照片或云端文件。")
+            }
+            .confirmationDialog(
+                "删除这个用户相簿？", isPresented: $showingDeleteAlbum,
+                titleVisibility: .visible
+            ) {
+                Button("只删除相簿", role: .destructive) {
+                    if let target = deleteTarget {
+                        runAlbumMutation(success: "系统相簿已删除，原有照片保留。") {
+                            try await XDriveIOSNativePhotoAlbumMutations.delete(target)
+                        }
+                    }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("仅删除相簿本身，照片仍在系统照片库，云端备份不受影响。")
+            }
+            .onAppear {
+                isVisible = true
+                libraryMonitor.start()
+                reload()
+            }
+            .onChange(of: libraryMonitor.revision) { _ in
+                // Own successful mutations and external library changes both
+                // require a fresh, permission-checked directory snapshot.
+                if phase == .active && !albumMutationBusy { reload() }
+                else { invalidate() }
+            }
+            .onChange(of: phase) { state in
+                if state == .active { reload() } else { invalidate() }
+            }
+            .onDisappear {
+                isVisible = false
+                visibleTailAlbumID = nil
+                libraryMonitor.stop()
+                suspendForNavigation()
+            }
+    }
 
-                    if let page {
-                        Text(page.total == 0 ? "没有可访问的相簿。" : "\(page.total) 个相簿")
-                            .font(.caption).foregroundStyle(.secondary)
-                        // Keep the PhotoKit cursor order unchanged. Split only
-                        // presentation into user-owned and system smart albums.
-                        let userAlbums = page.items.filter { $0.kind == "用户相册" }
-                        let systemAlbums = page.items.filter { $0.kind == "系统智能相册" }
-                        if !userAlbums.isEmpty {
-                            Text("我的相簿")
-                                .font(.title3.weight(.semibold))
-                                .accessibilityAddTraits(.isHeader)
-                            albumGrid(userAlbums, page: page)
-                        }
-                        if !systemAlbums.isEmpty {
-                            Text("系统相簿")
-                                .font(.title3.weight(.semibold))
-                                .accessibilityAddTraits(.isHeader)
-                            albumGrid(systemAlbums, page: page)
-                        }
-                    }
+    /// Keep the scroll reader separate from the permission and album sections.
+    /// This limits SwiftUI's generic type-checking work without changing the
+    /// PhotoKit cursor, route state, or the directory's restoration behavior.
+    private var albumDirectoryContent: some View {
+        ScrollViewReader { scroll in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    albumPermissionContent
+                    albumDirectoryStatusContent
                 }
-                if loading { ProgressView("读取已授权相册…") }
-                if albumMutationBusy { ProgressView("正在更新系统相簿…") }
-                if let albumMutationMessage {
-                    Text(albumMutationMessage).font(.footnote).foregroundStyle(.secondary)
-                }
-                if let error {
-                    Text(error).foregroundStyle(.red)
-                    Button("重新读取相簿") { reload() }
-                }
-                Button("刷新相册") { reload() }
-                    .disabled(loading || albumMutationBusy ||
-                        permission == .denied || permission == .restricted)
+                .padding(12)
             }
-            .padding(12)
-        }
-        .onChange(of: loading) { active in
-            if !active {
-                restoreDirectoryIfReady(using: scroll)
-                continueDirectoryIfReady()
+            .onChange(of: loading) { active in
+                if !active {
+                    restoreDirectoryIfReady(using: scroll)
+                    continueDirectoryIfReady()
+                }
             }
         }
-        }
-        .navigationTitle("相册")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    createName = ""
-                    showingCreateAlbum = true
-                } label: {
-                    Label("新建相簿", systemImage: "plus")
-                }
-                .disabled(albumMutationBusy ||
-                    (permission != .authorized && permission != .limited))
-                .accessibilityIdentifier("native-ios-album-create")
-            }
-        }
-        .alert("新建相簿", isPresented: $showingCreateAlbum) {
-            TextField("相簿名称", text: $createName)
-            Button("新建") {
-                let proposed = createName
-                runAlbumMutation(success: "已创建系统用户相簿。") {
-                    try await XDriveIOSNativePhotoAlbumMutations.create(proposed)
+    }
+
+    @ViewBuilder
+    private var albumPermissionContent: some View {
+        if permission == .notDetermined {
+            Button("允许查看本机相册") {
+                Task {
+                    _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+                    reload()
                 }
             }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("创建 iOS 本机相簿，不会创建 xDrive 云端目录。")
-        }
-        .alert("重命名相簿", isPresented: $showingRenameAlbum) {
-            TextField("相簿名称", text: $renameName)
-            Button("保存") {
-                if let target = renameTarget {
-                    let proposed = renameName
-                    runAlbumMutation(success: "系统相簿已重命名。") {
-                        try await XDriveIOSNativePhotoAlbumMutations.rename(
-                            target, to: proposed
-                        )
-                    }
-                }
+            .buttonStyle(.borderedProminent)
+        } else if permission == .denied || permission == .restricted {
+            Label("相册访问权限不可用", systemImage: "lock")
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                Link("打开 iOS 设置", destination: url)
             }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("仅修改用户相簿名称，不会修改照片或云端文件。")
-        }
-        .confirmationDialog(
-            "删除这个用户相簿？", isPresented: $showingDeleteAlbum,
-            titleVisibility: .visible
-        ) {
-            Button("只删除相簿", role: .destructive) {
-                if let target = deleteTarget {
-                    runAlbumMutation(success: "系统相簿已删除，原有照片保留。") {
-                        try await XDriveIOSNativePhotoAlbumMutations.delete(target)
-                    }
-                }
+        } else {
+            if permission == .limited {
+                Label("仅可查看 iOS 已授权的相册成员", systemImage: "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("仅删除相簿本身，照片仍在系统照片库，云端备份不受影响。")
+            albumTimelineEntry
+            if let page {
+                albumDirectorySections(page)
+            }
         }
-        .onAppear {
-            isVisible = true
-            libraryMonitor.start()
-            reload()
+    }
+
+    private var albumTimelineEntry: some View {
+        NavigationLink {
+            XDriveIOSNativeLocalPhotoTimelineContainer(
+                savedOffset: $timelineOffset,
+                mediaFilter: $timelineMediaFilter
+            )
+        } label: {
+            Label("按年、月、日浏览全部照片", systemImage: "calendar")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 12)
+                )
         }
-        .onChange(of: libraryMonitor.revision) { _ in
-            // Own successful mutations and external library changes both
-            // require a fresh, permission-checked directory snapshot.
-            if phase == .active && !albumMutationBusy { reload() }
-            else { invalidate() }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("native-ios-gallery-timeline-entry")
+    }
+
+    @ViewBuilder
+    private func albumDirectorySections(_ page: XDriveLocalPhotoAlbumPage) -> some View {
+        Text(page.total == 0 ? "没有可访问的相簿。" : "\(page.total) 个相簿")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+        // Keep the PhotoKit cursor order unchanged. Split only presentation
+        // into user-owned and system smart albums.
+        let userAlbums = page.items.filter { $0.kind == "用户相册" }
+        let systemAlbums = page.items.filter { $0.kind == "系统智能相册" }
+
+        if !userAlbums.isEmpty {
+            Text("我的相簿")
+                .font(.title3.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            albumGrid(userAlbums, page: page)
         }
-        .onChange(of: phase) { state in
-            if state == .active { reload() } else { invalidate() }
+        if !systemAlbums.isEmpty {
+            Text("系统相簿")
+                .font(.title3.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            albumGrid(systemAlbums, page: page)
         }
-        .onDisappear {
-            isVisible = false
-            visibleTailAlbumID = nil
-            libraryMonitor.stop()
-            suspendForNavigation()
+    }
+
+    @ViewBuilder
+    private var albumDirectoryStatusContent: some View {
+        if loading { ProgressView("读取已授权相册…") }
+        if albumMutationBusy { ProgressView("正在更新系统相簿…") }
+        if let albumMutationMessage {
+            Text(albumMutationMessage)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
+        if let error {
+            Text(error)
+                .foregroundStyle(.red)
+            Button("重新读取相簿") { reload() }
+        }
+        Button("刷新相册") { reload() }
+            .disabled(loading || albumMutationBusy ||
+                permission == .denied || permission == .restricted)
     }
 
     private func albumGrid(

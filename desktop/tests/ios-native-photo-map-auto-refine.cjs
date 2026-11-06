@@ -5,6 +5,13 @@ const fs = require('node:fs')
 const path = require('node:path')
 const read = p => fs.readFileSync(path.resolve(__dirname, '../..', p), 'utf8')
 const map = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
+const coverStart = map.indexOf('private final class XDriveIOSMapPhotoCover')
+const coverEnd = map.indexOf('private struct XDriveIOSMapKitPhotoPage', coverStart)
+const refineStart = map.indexOf('private func scheduleAutomaticRefinement')
+const refineEnd = map.indexOf('\n    private func ', refineStart + 20)
+assert.ok(coverStart >= 0 && coverEnd > coverStart && refineStart >= 0 && refineEnd > refineStart)
+const mapCover = map.slice(coverStart, coverEnd)
+const refinement = map.slice(refineStart, refineEnd)
 const spatial = read('ios/XDriveIOS/NativeLocalPhotoMapSpatialPolicy.swift')
 const swift = read('ios/tests/NativeLocalPhotoMapSpatialPolicyChecks.swift')
 
@@ -40,9 +47,16 @@ test('auto refinement keeps the old inert MapKit camera while a bounded PhotoKit
   assert.match(map, /guard phase == \.active, !busy, globalComplete/)
   assert.match(map, /private func suspendForSheet\(\) \{\s*autoRefineTask\?\.cancel\(\)/)
   assert.match(map, /if target == nil \|\|[\s\S]*?map\.setRegion\(cameraReturn, animated: false\)/)
-  assert.match(map, /Button\("细化当前视窗的定位照片"\)/)
-  assert.match(map, /Button\("还原已授权全库概览"\)/)
-  assert.doesNotMatch(map, /isNetworkAccessAllowed = true|localStorage|CoreData/)
+  assert.match(map, /scheduleAutomaticRefinement\(current\)/)
+  assert.match(map, /Button\(album == nil \? "重新扫描已授权图库位置" : "重新扫描此相册位置"\) \{/)
+  assert.doesNotMatch(map, /Button\("细化当前视窗的定位照片"\)|Button\("还原已授权全库概览"\)/)
+  // Network access is allowed only for a visible 128px PhotoKit map
+  // rendition. Automatic camera refinement itself never fetches image bytes.
+  assert.match(mapCover, /options\.isNetworkAccessAllowed = true/)
+  assert.match(mapCover, /targetSize: CGSize\(width: 128, height: 128\)/)
+  assert.doesNotMatch(mapCover, /PHAssetResourceManager|requestData\(/)
+  assert.doesNotMatch(refinement, /isNetworkAccessAllowed = true|PHAssetResourceManager|requestData\(/)
+  assert.doesNotMatch(map, /localStorage|CoreData/)
 })
 
 test('PhotoKit WGS84 auto-refine policy has executed Swift fixtures for coverage, zoom, dateline and cancellation gates', () => {

@@ -716,8 +716,8 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
   if (source.kind === 'ios_photos') {
     if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: 'iPhone 正在备份' }
     if (latestRun?.status === 'partial') return { key: 'partial', tone: 'warning', label: '部分项目待处理' }
-    if (latestRun?.status === 'cancelled') return { key: 'cancelled', tone: 'neutral', label: '最近一次备份已取消' }
     if (latestRun?.status === 'failed' || source.last_error) return { key: 'error', tone: 'bad', label: '最近备份异常' }
+    if (latestRun?.status === 'cancelled') return { key: 'cancelled', tone: 'neutral', label: '最近一次备份已取消' }
     if (source.last_success_at) return { key: 'ready', tone: 'good', label: '最近一次备份完成' }
     return { key: 'idle', tone: 'neutral', label: '等待 iPhone 备份' }
   }

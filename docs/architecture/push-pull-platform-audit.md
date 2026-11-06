@@ -12,7 +12,7 @@ This is a source-code audit, not a deployment or physical-device acceptance repo
 |---|---|---|
 | Local Folder Push | #3757 provisions a device-bound paused local_folder Source and managed target. Owning Agent has Root binding, durable Operations, shared CAS uploader and automatic scheduling. | New target prefix must be Push/; generalize Source Device binding name; expose the same Source lifecycle/history in the unified manager. |
 | Desktop Push | Desktop owns the local Agent and native Root UI. | All create/configure/run actions must operate on the same Source ID; remove any parallel Desktop-only source state. |
-| xd Push | CLI is a thin client of the same owning Agent; CLI-only package and bootstrap exist (#2585). | New setup must not ask for arbitrary target-id. Accept local path + Source name and let Server provision the managed Push target. Desktop and xd must share Device and Runner. |
+| xd Push | CLI is a thin client of the same owning Agent; CLI-only package and bootstrap exist (#2585). This change removes `--target-id` from new setup and validates the Server-returned managed target before local Root binding. | Keep Desktop and xd on one Agent/Device/Source and Runner; no separate CLI target picker or cloud directory creator. |
 | DSM Photos Push | xdrive-source-agent scans Personal/Shared roots, optionally enriches Synology Photos IDs, supports scan/sync, Source runs, cancellation and resumable uploads. | No registered Synology ClientDevice identity; setup accepts arbitrary target path/Node; no canonical Push target; bind Source/run/upload to the DSM Device and exact target. |
 | iOS Photos Push | #3830 provides ios_photos Source, registered identity, managed target, foreground/BG managed UploadSession routes, destination-bound cursors and encrypted original receipts. | New target prefix must be Push/; unify Source status/history projection and management entry; real iPhone validation remains outstanding. |
 | Android Photos Push | MediaStore staging, encrypted intent/receipt ledger, identity-only enrollment, WorkManager opt-in, bounded upload and exact read-only ACK lookup exist. | No android_photos Source/managed target; upload and receipt lookup remain Owner-root scoped; add Device-bound Source, exact Target upload/finalize/receipt, Source-bound cursor and unified history. |
@@ -77,7 +77,7 @@ These are changes to **new provisioning only**. Do not move or rename old target
 ### P1 — existing Push convergence
 
 1. Move Local Folder and iOS **new** managed targets to the Push/ prefix.
-2. Keep Desktop and xd on one Agent/Device/Source; remove arbitrary target-id from new CLI initialization.
+2. Keep Desktop and xd on one Agent/Device/Source; verify new CLI initialization omits target_node_id and accepts only the Server-returned managed target.
 3. Make iOS destination setup and BG grants use the same generic Source/Device/Target contract while preserving its restricted PhotoKit route.
 4. Add a common Source status/history projection over existing per-file journals and SyncRun records. Do not discard native journals or invent Source completion.
 

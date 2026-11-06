@@ -90,8 +90,9 @@ test('backup display and delayed original progress never cross Owner changes or 
   const refresh = ctrl.slice(ctrl.indexOf('    func refresh(owner:'),
     ctrl.indexOf('    /// A receipt review', ctrl.indexOf('    func refresh(owner:')))
   const start = ctrl.slice(ctrl.indexOf('    private func start('))
-  const callback = start.slice(start.indexOf('.run(allowICloudOriginals: cloud'),
-    start.indexOf('                self.progress = result'))
+  const batchRun = start.indexOf('.run(allowICloudOriginals: cloud')
+  const callback = start.slice(batchRun,
+    start.indexOf('self.progress = result', batchRun))
   const terminal = start.slice(start.indexOf('            } catch is CancellationError {'))
   const ownerChanged = login.slice(login.indexOf('.onChange(of: model.owner)'),
     login.indexOf('    private var loginForm'))
@@ -112,7 +113,7 @@ test('backup display and delayed original progress never cross Owner changes or 
     'bind visible report to the current Owner generation before the async run')
   assert.match(callback, /guard XDriveIOSNativePhotoOwnerScope\.matches\(self\?\.runningOwner, selected\),\s*self\?\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)\s*else \{ return \}/)
   assert.match(start, /guard XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\),\s*self\.displayEpoch == uiEpoch else \{\s*throw XDriveIOSNativeSessionError\.staleSession/)
-  assert.match(terminal, /catch is CancellationError \{\s*if let reporter = sourceRunReporter \{ await reporter\.finish\(status: "cancelled"\) \}\s*if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
+  assert.match(terminal, /catch is CancellationError \{\s*if let reporter = sourceRunReporter \{ await reporter\.finishAfterCancellation\(status: "cancelled"\) \}\s*if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
   // The catch now first checks an eligible *pre-write* transient network
   // retry. Both that retry and the terminal error message must remain fenced
   // to the exact live UI epoch and currently signed-in Owner.

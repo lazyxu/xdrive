@@ -327,7 +327,8 @@ export function XDriveSourceDetailsDialog({
                       disableGutters
                       elevation={0}
                       onChange={(_, expanded) => {
-                        if (expanded && row.source.kind !== 'ios_photos' && run.failed_items > 0 && !failurePage?.loaded && !failurePage?.loading) {
+                        if (expanded && row.source.kind !== 'ios_photos' &&
+                            run.failed_items > 0 && !failurePage?.loaded && !failurePage?.loading) {
                           void onLoadRunFailures(row.source.id, run.id, 1)
                         }
                         if (expanded && run.skipped_items > 0 && !skipPage?.loaded && !skipPage?.loading) {
@@ -383,7 +384,10 @@ export function XDriveSourceDetailsDialog({
                             </XDriveDescriptionItem>
                           ))}
                         </XDriveDescriptionGrid>
-                        <XDriveStatusAlert tone={runDetail.error ? 'bad' : 'good'} sx={{ mt: 1.5 }}>
+                        <XDriveStatusAlert
+                          tone={run.status === 'partial' ? 'warning' : runDetail.error ? 'bad' : 'good'}
+                          sx={{ mt: 1.5 }}
+                        >
                           运行日志：{runDetail.error || '无错误日志'}
                         </XDriveStatusAlert>
                         {run.skipped_items > 0 ? (
@@ -424,12 +428,16 @@ export function XDriveSourceDetailsDialog({
                             )}
                           </MuiBox>
                         ) : null}
-                        {runDetail.failedItems > 0 && row.source.kind !== 'ios_photos' ? (
+                        {runDetail.failedItems > 0 ? (
                           <MuiBox sx={{ mt: 1.5 }}>
                             <MuiTypography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
-                              本次失败文件
+                              {row.source.kind === 'ios_photos' ? '本次待处理项目' : '本次失败文件'}
                             </MuiTypography>
-                            {!failurePage || (failurePage.loading && !failurePage.loaded) ? (
+                            {row.source.kind === 'ios_photos' ? (
+                              <XDriveStatusAlert tone="warning">
+                                iPhone 本次有 {runDetail.failedItems.toLocaleString('zh-CN')} 个待处理项目；逐项原因和照片标识仅在手机端显示。
+                              </XDriveStatusAlert>
+                            ) : !failurePage || (failurePage.loading && !failurePage.loaded) ? (
                               <MuiBox data-xdrive-source-run-failures-first-read
                                 aria-busy={Boolean(failurePage?.loading) || undefined}
                                 sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }} />

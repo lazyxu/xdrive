@@ -133,6 +133,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var localMapJump: XDriveIOSNativeLocalMapJump?
     // A bounded navigation position; never holds a PhotoKit asset identity.
     @State private var localGalleryPageOffset = 0
+    // Keep the active local Photos filter when a Viewer opens the map route.
+    @State private var localGalleryMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     // Restore only the coarse 32-slot album directory, never album IDs.
     @State private var localAlbumDirectoryOffset = 0
     @State private var dynamicFeature: XDriveIOSNativeDynamicFeature?
@@ -490,7 +492,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     private var gallerySourceRow: some View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(XDriveIOSNativeGallerySource.allCases) { source in
+                    ForEach(XDriveIOSNativeGallerySource.allCases.filter { $0 != .map }) { source in
                         Button {
                             if source == .map { localMapJump = nil }
                             gallerySource = source
@@ -586,7 +588,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                 switch gallerySource {
                 case .local:
                     XDriveIOSNativeLocalPhotoTimelineContainer(
-                        savedOffset: $localGalleryPageOffset
+                        savedOffset: $localGalleryPageOffset,
+                        mediaFilter: $localGalleryMediaFilter
                     )
                 case .albums:
                     XDriveIOSNativePhotoAlbumsScreen(
@@ -620,7 +623,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                                 $0, from: .map, expectedOwnerKey: focusOwnerKey,
                                 expectedGeneration: focusGeneration
                             )
-                        }
+                        },
+                        onClose: { openGallery(.local) }
                     )
                 }
             }
@@ -839,7 +843,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private func openGallery(_ source: XDriveIOSNativeGallerySource) {
-        if source == .map { localMapJump = nil }
+        galleryFocusGeneration = UUID()
+        galleryFocused = false
+        if source == .map || source == .local { localMapJump = nil }
         gallerySource = source
         tab = .gallery
         // Gallery/map/Viewer are never dynamic feature-slot destinations.

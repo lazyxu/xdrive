@@ -28,6 +28,7 @@ func (a *dsmBootstrapManualRunAgent) Sources(context.Context) ([]localbackupipc.
 	// the CGI must not expose it as a runnable local Source without proof.
 	return []localbackupipc.BackupSource{{
 		ID: 57, Name: "NAS Photos", Kind: "local_folder", Direction: "push", SyncMode: "backup",
+		TargetManaged: true, TargetPath: "同步文件夹/设备备份/NAS_123456789012/NAS Photos",
 	}}, nil
 }
 
@@ -91,6 +92,7 @@ func TestDSMNativeSourceSetupToManualRunCGIFailClosed(t *testing.T) {
 	sources := requestServerLogin(g, http.MethodGet, "", "", "", cgi+"sources")
 	if sources.Code != http.StatusOK ||
 		!strings.Contains(sources.Body.String(), `"source_id":57`) ||
+		!strings.Contains(sources.Body.String(), `"target_path":"同步文件夹/设备备份/NAS_123456789012/NAS Photos"`) ||
 		strings.Contains(sources.Body.String(), native.wantPath) ||
 		strings.Contains(sources.Body.String(), scope) {
 		t.Fatalf("authenticated local Source projection failed: %d %s", sources.Code, sources.Body.String())

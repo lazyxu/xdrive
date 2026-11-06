@@ -20,6 +20,12 @@ struct XDriveIOSPhotoBackupProgress: Equatable {
     var videosNotSupported = 0
     var unavailable = 0
     var skippedBeforeBaseline = 0
+    // Persistent PhotoKit queue work is reported separately from the 256-slot
+    // positional scan so it cannot corrupt the auto-window cursor arithmetic.
+    var changeQueueProcessed = 0
+    var changeQueueUploaded = 0
+    var changeQueueVerified = 0
+    var changeQueueFailed = 0
     // Bounded in-memory reasons for THIS window, not a persistent retry queue.
     var issues = XDriveIOSPhotoBackupIssueSummary()
     var needsReview = 0
@@ -38,7 +44,7 @@ enum XDriveIOSPhotoBackupMVPError: Error {
 struct XDriveIOSForegroundPhotoBackupMVP {
     let owner: XDriveNativeOwnerRoot
     private let authorization: XDriveIOSOriginalOwnerAuthorization
-    private let sourceProgress: @MainActor (XDriveIOSPhotoBackupProgress) -> Void
+    private let sourceProgress: @MainActor (XDriveIOSPhotoBackupProgress) async -> Void
 
     init(owner: XDriveNativeOwnerRoot, accessToken: String) {
         self.owner = owner
@@ -51,14 +57,15 @@ struct XDriveIOSForegroundPhotoBackupMVP {
          onSourceProgress: @escaping @MainActor (XDriveIOSPhotoBackupProgress) -> Void = { _ in }) {
         self.owner = owner
         self.authorization = .managedForeground(managedForeground)
-        self.sourceProgress = onSourceProgress
+        self.sourceProgress = { value in onSourceProgress(value) }
     }
 
     init(owner: XDriveNativeOwnerRoot,
-         approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential) {
+         approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential,
+         onSourceProgress: @escaping @MainActor (XDriveIOSPhotoBackupProgress) -> Void = { _ in }) {
         self.owner = owner
         self.authorization = .background(approvedBackgroundGrant)
-        self.sourceProgress = { _ in }
+        self.sourceProgress = onSourceProgress
     }
 
     /// One deliberate foreground click; bounded work for a usable first
@@ -69,6 +76,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     func run(allowICloudOriginals: Bool, startOffset: Int = 0,
              maximumNewOriginals: Int = Self.maxNewOriginalsPerRun,
              newOnlySince: Date? = nil,
+             changeQueue: XDriveIOSPhotoKitPersistentBackupQueue? = nil,
              onPotentialWrite: @MainActor @escaping () -> Void = {},
              onProgress: @MainActor @escaping (XDriveIOSPhotoBackupProgress) -> Void)
         async throws -> XDriveIOSPhotoBackupProgress {
@@ -111,6 +119,88 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             )
             await publish(report)
 
+            // New/edited assets captured by PhotoKit since the explicit
+            // only-new baseline are consumed before the older positional
+            // catch-up window. The queue supplies IDs only; every original
+            // still passes the exact existing Owner/Device/CAS/receipt writer.
+            var queuedIdentifiers = Set<String>()
+            if let changeQueue {
+                let queued = try await changeQueue.pendingCandidates(
+                    owner: owner, limit: 64
+                )
+                for candidate in queued {
+                    try Task.checkCancellation()
+                    queuedIdentifiers.insert(candidate.pending.localIdentifier)
+                    if report.uploaded >= maximumNewOriginals { break }
+                    report.changeQueueProcessed += 1
+                    report.stage = "优先处理新增/修改的原件（队列 \(report.changeQueueProcessed)）…"
+                    await publish(report)
+
+                    guard candidate.kind == "image" || candidate.kind == "video",
+                          candidate.kind != "unsupported",
+                          !candidate.isLive || candidate.kind == "image" else {
+                        report.changeQueueFailed += 1
+                        report.videosNotSupported += 1
+                        report.stage = "变更队列中存在不支持的媒体类型"
+                        _ = try await changeQueue.settle(
+                            candidate.pending, result: .failed, owner: owner
+                        )
+                        await publish(report)
+                        continue
+                    }
+
+                    do {
+                        let outcome = try await uploadOrVerifyOriginal(
+                            candidate.pending.localIdentifier,
+                            isVideo: candidate.kind == "video",
+                            isLive: candidate.isLive,
+                            allowICloud: allowICloudOriginals,
+                            onPotentialWrite: onPotentialWrite
+                        )
+                        switch outcome {
+                        case .uploaded:
+                            report.uploaded += 1
+                            report.changeQueueUploaded += 1
+                            if candidate.kind == "video" { report.videoUploaded += 1 }
+                            if candidate.isLive { report.liveBundleUploaded += 1 }
+                        case .alreadyConfirmed:
+                            report.verifiedAlready += 1
+                            report.changeQueueVerified += 1
+                            if candidate.kind == "video" { report.videoVerifiedAlready += 1 }
+                            if candidate.isLive { report.liveBundleVerifiedAlready += 1 }
+                        case .requiresReview:
+                            report.needsReview += 1
+                            report.stoppedForReview = true
+                            report.stage = "新增/修改原件的上传结果待核对，已暂停"
+                        }
+                        if !report.stoppedForReview {
+                            // A newer edit may have advanced this asset's
+                            // queue revision while the original was staged.
+                            // CAS then leaves that newer revision pending.
+                            _ = try await changeQueue.settle(
+                                candidate.pending, result: .confirmed, owner: owner
+                            )
+                        }
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        if Self.isTransientConfirmedReadbackFailure(error) ||
+                           Self.mustAbortRun(after: error) { throw error }
+                        report.changeQueueFailed += 1
+                        report.unavailable += 1
+                        report.stage = "有新增/修改原件暂不可用，已保留失败状态"
+                        // This path is item-local and the shared writer has
+                        // proven no ambiguous Server mutation. Global errors
+                        // and unknown ACKs abort above and remain unresolved.
+                        _ = try await changeQueue.settle(
+                            candidate.pending, result: .failed, owner: owner
+                        )
+                    }
+                    await publish(report)
+                    if report.stoppedForReview { break }
+                }
+            }
+
             scanning: while report.scanned < windowCapacity &&
                     !report.stoppedForReview &&
                     report.uploaded < maximumNewOriginals {
@@ -123,6 +213,11 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         break scanning
                     }
                     report.scanned += 1
+                    if queuedIdentifiers.contains(candidate.id) {
+                        // Already handled by the priority queue in this run.
+                        // Count the positional slot but never upload it twice.
+                        continue
+                    }
                     if let newOnlySince {
                         switch XDriveIOSPhotoAutoSchedulePolicy.newOnlyCandidate(
                             capturedAt: candidate.capturedAt,
@@ -233,6 +328,101 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             await scanner.reset()
             throw error
         }
+    }
+
+
+    /// Explicit one-photo priority upload. It bypasses the date/window filter,
+    /// but uses the exact same Owner/Device/CAS/receipt writer as batch backup.
+    /// A picker selection is never treated as an upload receipt.
+    func runSingle(localIdentifier: String,
+                   allowICloudOriginals: Bool,
+                   onPotentialWrite: @MainActor @escaping () -> Void = {},
+                   onProgress: @MainActor @escaping (XDriveIOSPhotoBackupProgress) -> Void)
+        async throws -> XDriveIOSPhotoBackupProgress {
+        guard !localIdentifier.isEmpty, localIdentifier.utf8.count <= 1024,
+              !localIdentifier.contains("\u{0}"),
+              owner.ownerID > 0, owner.rootNodeID > 0,
+              !owner.instanceID.isEmpty else {
+            throw XDriveIOSPhotoBackupMVPError.identityNotVerified
+        }
+        try await authorization.verify(owner: owner)
+        try Task.checkCancellation()
+        var report = XDriveIOSPhotoBackupProgress()
+        report.totalVisible = 1
+        report.scanned = 1
+        report.stage = "正在核验所选原件…"
+        report.isLimited = await currentLimitedAuthorization()
+        func publish(_ value: XDriveIOSPhotoBackupProgress) async {
+            await onProgress(value)
+            await sourceProgress(value)
+        }
+        await publish(report)
+
+        let assets = PHAsset.fetchAssets(
+            withLocalIdentifiers: [localIdentifier], options: nil
+        )
+        guard let asset = assets.firstObject else {
+            report.unavailable = 1
+            report.issues.append(position: 1, mediaKind: "image", reason: .notVisible)
+            report.stage = "所选照片不在当前授权范围内，未上传"
+            await publish(report)
+            return report
+        }
+        let kind: String
+        switch asset.mediaType {
+        case .image: kind = "image"
+        case .video: kind = "video"
+        default: kind = "unsupported"
+        }
+        guard kind == "image" || kind == "video" else {
+            report.unavailable = 1
+            report.videosNotSupported = 1
+            report.issues.append(position: 1, mediaKind: kind, reason: .unsupported)
+            report.stage = "所选媒体类型暂不支持，未上传"
+            await publish(report)
+            return report
+        }
+        let isLive = kind == "image" &&
+            asset.mediaSubtypes.contains(.photoLive)
+        report.stage = "正在优先备份所选\(isLive ? "Live Photo" : kind == "video" ? "视频" : "照片")原件…"
+        await publish(report)
+        do {
+            let outcome = try await uploadOrVerifyOriginal(
+                localIdentifier, isVideo: kind == "video", isLive: isLive,
+                allowICloud: allowICloudOriginals,
+                onPotentialWrite: onPotentialWrite
+            )
+            switch outcome {
+            case .uploaded:
+                report.uploaded = 1
+                if kind == "video" { report.videoUploaded = 1 }
+                if isLive { report.liveBundleUploaded = 1 }
+                report.stage = "所选原件已上传并核验服务器收据"
+            case .alreadyConfirmed:
+                report.verifiedAlready = 1
+                if kind == "video" { report.videoVerifiedAlready = 1 }
+                if isLive { report.liveBundleVerifiedAlready = 1 }
+                report.stage = "所选原件已存在，服务器收据重新核验通过"
+            case .requiresReview:
+                report.needsReview = 1
+                report.stoppedForReview = true
+                report.stage = "所选原件上传结果不确定；请先核对收据，不能盲目重传"
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            if Self.isTransientConfirmedReadbackFailure(error) ||
+               Self.mustAbortRun(after: error) { throw error }
+            report.unavailable = 1
+            report.issues.append(
+                position: 1, mediaKind: isLive ? "live" : kind,
+                reason: Self.issueReason(after: error)
+            )
+            report.stage = "所选原件暂不可用或不支持，未将其计作备份成功"
+        }
+        try Task.checkCancellation()
+        await publish(report)
+        return report
     }
 
     /// Only ITEM-LOCAL errors are summarized. Network, authorization,

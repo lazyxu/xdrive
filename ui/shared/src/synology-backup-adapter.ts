@@ -18,6 +18,7 @@ export type XDriveSynologyLocalSource = {
   source_id: number
   name: string
   sync_mode: 'backup' | 'mirror'
+  target_path?: string
 }
 export type XDriveSynologyNASVolumeSpace = {
   capacity_bytes: number
@@ -592,7 +593,7 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   ): Promise<XDriveSynologyCreatedBackupSource>
   /** Creates a paused native Source on the verified NAS share; never starts Runner. */
   createNASBackupSource(
-    selectionID: string, ownerScope: string, targetID: number, name: string, signal?: AbortSignal,
+    selectionID: string, ownerScope: string, name: string, signal?: AbortSignal,
   ): Promise<XDriveSynologyCreatedBackupSource>
   diagnostics(signal?: AbortSignal): Promise<XDriveDiagnosticReport>
   /** Authorized DSM package configuration filesystem only; never all NAS disks or Server quota. */
@@ -1103,17 +1104,16 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       }
       return { source_id: sourceID, state: response.state }
     },
-    async createNASBackupSource(selectionID, ownerScope, targetID, name, signal) {
+    async createNASBackupSource(selectionID, ownerScope, name, signal) {
       if (!/^[0-9a-f]{64}$/.test(selectionID) ||
         !/^[0-9a-f]{64}$/.test(ownerScope) ||
-        !Number.isSafeInteger(targetID) || targetID < 1 ||
-        name.trim() !== name || name.length < 1 ||
+        typeof name !== 'string' || name.trim() !== name || name.length < 1 ||
         new TextEncoder().encode(name).length > 128 ||
         /[\r\n\0]/.test(name)) {
         throw new Error('Invalid DSM local Source setup selection')
       }
       const raw = await request<unknown>('/v1/nas-share-create', 'POST',
-        { selection_id: selectionID, owner_scope: ownerScope, target_id: targetID, name, confirmed: true }, signal)
+        { selection_id: selectionID, owner_scope: ownerScope, name, confirmed: true }, signal)
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
         throw new Error('Unverified owning Agent Source setup')
       }
@@ -1206,9 +1206,14 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       if (!Array.isArray(page?.items) || page.items.length > 512) throw new Error('Invalid DSM Source list')
       const unique = new Set<number>()
       for (const item of page.items) {
-        if (!item || !Number.isSafeInteger(item.source_id) || item.source_id < 1 ||
+        if (!item || Object.keys(item).some(key =>
+          !['source_id', 'name', 'sync_mode', 'target_path'].includes(key)) ||
+          !Number.isSafeInteger(item.source_id) || item.source_id < 1 ||
           typeof item.name !== 'string' || item.name.length > 512 ||
           (item.sync_mode !== 'backup' && item.sync_mode !== 'mirror') ||
+          (item.target_path !== undefined &&
+            (typeof item.target_path !== 'string' || item.target_path.length > 2048 ||
+              /[\u0000\r\n]/.test(item.target_path))) ||
           unique.has(item.source_id)) {
           throw new Error('Invalid or duplicate DSM Source')
         }

@@ -350,6 +350,16 @@ export function XDriveSourceManager({
   }, [adapter, directionFilter, onError, showArchived])
 
   const loadRunFailures = useCallback(async (sourceID: number, runID: string, page = 1) => {
+    const isIOSPhotoSource = (selected?.source.id === sourceID &&
+      selected.source.kind === 'ios_photos') ||
+      rows.some((row) => row.source.id === sourceID && row.source.kind === 'ios_photos')
+    if (isIOSPhotoSource) {
+      setRunFailurePages((current) => ({
+        ...current,
+        [runID]: { items: [], page: 1, hasNext: false, loading: false, loaded: true },
+      }))
+      return
+    }
     const nextPage = Math.max(1, Math.trunc(page))
     setRunFailurePages((current) => ({
       ...current,
@@ -387,7 +397,7 @@ export function XDriveSourceManager({
       }))
       onError(error)
     }
-  }, [adapter, onError])
+  }, [adapter, onError, rows, selected?.source.id, selected?.source.kind])
 
   const loadRunSkips = useCallback(async (sourceID: number, runID: string, page = 1) => {
     const nextPage = Math.max(1, Math.trunc(page))

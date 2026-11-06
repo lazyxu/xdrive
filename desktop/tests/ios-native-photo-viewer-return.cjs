@@ -35,7 +35,7 @@ test('PhotoKit viewer returns to same 64-item page after fresh permission check'
   assert.doesNotMatch(wall, /@State private var savedOffset = 0/)
   // The enclosing Gallery owns only a bounded numeric cursor, not a PhotoKit ID.
   assert.match(dashboard, /@State private var localGalleryPageOffset = 0/)
-  assert.match(dashboard, /XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset\s*\)/)
+  assert.match(dashboard, /XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset,\s*mediaFilter: \$localGalleryMediaFilter\s*\)/)
   assert.doesNotMatch(dashboard, /XDriveIOSNativeLocalGalleryScreen\(/)
   assert.match(dashboard, /localGalleryPageOffset = 0\s*dynamicFeature = nil/)
   assert.match(wall, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/)
@@ -61,7 +61,7 @@ test('album viewer return revalidates the same album and last confirmed offset',
   assert.match(wall, /@State private var savedOffset = 0/)
   assert.match(wall, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/)
   assert.match(wall, /if selected == nil && total == nil && !loading \{ reload\(\) \}/)
-  assert.match(wall, /if phase == \.active \{ reload\(\) \}/)
+  assert.match(wall, /\} else \{\s*reload\(\)\s*\}/)
   assert.match(wall, /load\(offset: savedOffset\)/)
   assert.match(wall, /savedOffset = loadedPage\.startOffset/)
   assert.match(wall, /let anchor = XDriveIOSNativePhotoVirtualPagePolicy\.normalizedAnchor\(/)

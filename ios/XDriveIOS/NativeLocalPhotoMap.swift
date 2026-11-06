@@ -81,6 +81,8 @@ private final class XDriveIOSMapPhotoPin: NSObject, MKAnnotation {
 /// All image requests belong to a reused visible MapKit view, never a 100k cache.
 private final class XDriveIOSMapPhotoCover: MKAnnotationView {
     private let photo = UIImageView()
+    private let placeholder = UIImageView(image: UIImage(systemName: "photo"))
+    private let loading = UIActivityIndicatorView(style: .medium)
     private let badge = UILabel()
     private var request = PHInvalidImageRequestID
     private var epoch = UUID()
@@ -109,6 +111,13 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         photo.layer.borderColor = UIColor.white.cgColor
         photo.backgroundColor = .secondarySystemGroupedBackground
         addSubview(photo)
+        placeholder.frame = CGRect(x: 20, y: 20, width: 28, height: 28)
+        placeholder.contentMode = .scaleAspectFit
+        placeholder.tintColor = .secondaryLabel
+        addSubview(placeholder)
+        loading.frame = CGRect(x: 20, y: 20, width: 28, height: 28)
+        loading.hidesWhenStopped = true
+        addSubview(loading)
         badge.frame = CGRect(x: 43, y: -7, width: 28, height: 28)
         badge.textAlignment = .center
         badge.font = .boldSystemFont(ofSize: 12)
@@ -131,26 +140,32 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         accessibilityLabel = wholeLibrary ?
             "已扫描图库区域有\(count)张带定位照片" :
             XDriveIOSNativePhotoMapPolicy.markerLabel(count)
-        guard [.authorized, .limited].contains(
+        guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ), let asset = PHAsset.fetchAssets(
             withLocalIdentifiers: [representative.id], options: nil
         ).firstObject else { return }
         let snapshot = epoch
         let options = PHImageRequestOptions()
-        options.isNetworkAccessAllowed = false
+        // Map covers are visible, bounded 128px renditions. Allow PhotoKit to
+        // fetch an iCloud-only thumbnail; this is not an original export/read.
+        options.isNetworkAccessAllowed = true
         options.deliveryMode = .fastFormat
         options.resizeMode = .fast
+        placeholder.isHidden = true
+        loading.startAnimating()
         request = PHImageManager.default().requestImage(
             for: asset, targetSize: CGSize(width: 128, height: 128),
             contentMode: .aspectFill, options: options
         ) { [weak self] value, _ in
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.epoch == snapshot,
-                      [.authorized, .limited].contains(
+                      [.authorized].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { return }
+                self.loading.stopAnimating()
                 self.photo.image = value
+                self.placeholder.isHidden = value != nil
             }
         }
     }
@@ -162,6 +177,8 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
             request = PHInvalidImageRequestID
         }
         photo.image = nil
+        loading.stopAnimating()
+        placeholder.isHidden = false
     }
 
     override func prepareForReuse() {
@@ -176,7 +193,6 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         if superview == nil { cancel() }
     }
 }
-
 private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     typealias Cell = XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>
     let items: [XDrivePhotoKitLocatedCandidate]
@@ -413,7 +429,7 @@ private enum XDriveIOSNativeMapViewerAdmission {
         sceneActive: Bool
     ) -> Bool {
         let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard sceneActive, permission == .authorized || permission == .limited,
+        guard sceneActive, permission == .authorized,
               supported(item),
               XDriveIOSNativePhotoViewerReturnAnchorPolicy.localLoadedIndex(
                   currentID: item.id, in: loaded.map(\.id), authorized: true
@@ -536,6 +552,9 @@ private struct XDriveIOSMapSpatialSelection: Identifiable {
 private struct XDriveIOSMapSpatialAlbum: View {
     typealias Policy = XDriveIOSNativeLocalMapSpatialPolicy
     let selection: XDriveIOSMapSpatialSelection
+    var album: XDriveLocalPhotoAlbumSummary? = nil
+    var onShowNearby: (() -> Void)? = nil
+    var isNearbyExpansion = false
     @Environment(\.scenePhase) private var phase
     @Environment(\.dismiss) private var dismiss
     @StateObject private var changes = XDriveIOSMapPhotoChanges()
@@ -627,7 +646,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             VStack(spacing: 8) {
-                Text("此处照片 · \(selectedPhotoCount) 张")
+                Text(isNearbyExpansion ?
+                     "附近照片 · 已加载 \(visibleItems.count) 张" :
+                     "此处照片 · \(selectedPhotoCount) 张")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityValue(
                         busy ? "正在读取位置照片" :
@@ -652,30 +673,23 @@ private struct XDriveIOSMapSpatialAlbum: View {
                               spacing: 4) {
                         ForEach(priorWindow) { item in photoTile(item) }
                         ForEach(items) { item in photoTile(item) }
-                        // The sentinel lives inside LazyVGrid. Its appearance
-                        // only arms the next read; a deliberate upward user
-                        // drag at the bottom performs the actual advancement.
+                        // The lazy-grid sentinel is the native infinite-scroll
+                        // trigger. It advances only as the last visible window
+                        // approaches the viewport; busy/error guards prevent repeats.
                         if hasNext {
                             Color.clear
                                 .frame(height: 24)
                                 .id("map:\(windowNumber):\(nextOffset)")
-                                .onAppear { scrollFootVisible = true }
+                                .onAppear {
+                                    scrollFootVisible = true
+                                    advanceIfVisible()
+                                }
                                 .onDisappear { scrollFootVisible = false }
                                 .accessibilityHidden(true)
                         }
                     }
                     .padding(8)
                 }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 12).onEnded { gesture in
-                        guard gesture.translation.height <= -12,
-                              abs(gesture.translation.height) >
-                                abs(gesture.translation.width),
-                              scrollFootVisible, !busy, viewer == nil, hasNext
-                        else { return }
-                        loadNext()
-                    }
-                )
                 .onChange(of: visibleWindowRevision) { _ in
                     if let anchor = autoScrollReturnID,
                        visibleItems.contains(where: { $0.id == anchor }) {
@@ -683,15 +697,24 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     }
                     autoScrollReturnID = nil
                 }
+                .onChange(of: busy) { isBusy in
+                    if !isBusy { advanceIfVisible() }
+                }
             }
-            .navigationTitle("此处照片")
+            .navigationTitle(isNearbyExpansion ? "附近照片" :
+                (album.map { "\($0.name) · 此处照片" } ?? "此处照片"))
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        if album != nil, onShowNearby != nil {
+                            Button("显示附近照片") {
+                                onShowNearby?()
+                                dismiss()
+                            }
+                            .disabled(busy || viewer != nil || phase != .active)
+                        }
                         Button("重新核对当前位置照片") { loadInitial() }
                             .disabled(busy || viewer != nil || phase != .active)
-                        Button("继续浏览下一批照片") { loadNext() }
-                            .disabled(busy || !hasNext || viewer != nil || phase != .active)
                     } label: {
                         Label("位置照片操作", systemImage: "ellipsis.circle")
                     }
@@ -823,7 +846,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
     private func loadInitial() {
         retire()
         guard phase == .active,
-              [.authorized, .limited].contains(
+              [.authorized].contains(
                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
               ) else {
             error = "照片库权限已变化，请返回地图重新扫描。"
@@ -856,14 +879,14 @@ private struct XDriveIOSMapSpatialAlbum: View {
         windowNumber = 0
         readTask = Task { @MainActor in
             do {
-                let total = try await scanner.start(atOffset: 0)
+                let total = try await scanner.start(atOffset: 0, album: album)
                 let result = try await readWindow(
                     scanner: scanner, pending: [], pendingIndex: 0,
                     nextOffset: 0, scannerFinished: total == 0
                 )
                 try Task.checkCancellation()
                 guard generation == ticket, phase == .active,
-                      [.authorized, .limited].contains(
+                      [.authorized].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { return }
                 pendingLocated = result.pending
@@ -900,6 +923,13 @@ private struct XDriveIOSMapSpatialAlbum: View {
         }
     }
 
+    private func advanceIfVisible() {
+        guard scrollFootVisible, !busy, viewer == nil, hasNext, error == nil else {
+            return
+        }
+        loadNext()
+    }
+
     private func loadNext() {
         guard phase == .active, !busy, viewer == nil, hasNext,
               let scanner = worker, !items.isEmpty else { return }
@@ -917,7 +947,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 )
                 try Task.checkCancellation()
                 guard generation == ticket, phase == .active,
-                      [.authorized, .limited].contains(
+                      [.authorized].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { return }
                 pendingLocated = result.pending
@@ -985,13 +1015,19 @@ private struct XDriveIOSMapSpatialAlbum: View {
 /// second backup/upload worker; never persists or sends GPS/local IDs.
 struct XDriveIOSNativeLocalPhotoMapScreen: View {
     // Parent-owned route hints; all PhotoKit GPS/thumbnail data stays transient.
+    // When present, the same map surface is scoped to this verified PhotoKit album.
+    var album: XDriveLocalPhotoAlbumSummary? = nil
     @Binding var mapScope: XDriveIOSNativeLocalMapScope
     @Binding var offset: Int
+    /// Optional dismissal action for a full-screen map opened from the Gallery.
+    /// The presenting Gallery remains mounted underneath and keeps its scroll/filter state.
+    var onClose: (() -> Void)? = nil
     var cameraOnEntry: MKCoordinateRegion? = nil
     var onLibraryCameraChange: ((MKCoordinateRegion?) -> Void)? = nil
     var onFocusChange: ((Bool) -> Void)?
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.xdriveNativeLocalMapJump) private var incomingMapJump
     @StateObject private var changes = XDriveIOSMapPhotoChanges()
     @State private var scanner: XDrivePhotoKitBoundedSnapshotScanner?
@@ -1016,6 +1052,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var globalTotal = 0
     @State private var globalLocated = 0
     @State private var globalSelection: XDriveIOSMapSpatialSelection?
+    // Queue the nearby expansion until the album-scoped full-screen cover has
+    // fully dismissed; two fullScreenCover modifiers must never race to present.
+    @State private var pendingNearbySelection: XDriveIOSMapSpatialSelection?
+    @State private var nearbySelection: XDriveIOSMapSpatialSelection?
     @State private var globalCamera: MKCoordinateRegion?
     @State private var globalViewport: XDriveIOSNativeLocalMapViewport?
     @State private var globalCameraMoving = false
@@ -1048,29 +1088,53 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         )
         VStack(spacing: compactMap ? 4 : 8) {
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
-                Text("显示已授权图库中具有位置数据的照片和视频。")
+                Text(album == nil ?
+                    "显示已授权图库中具有位置数据的照片和视频。" :
+                    "仅显示此相册中带有拍摄位置的照片和视频。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if authorization == .notDetermined {
                 Button("允许查看本机照片") {
                     Task {
                         _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-                        // The user explicitly opened Places. When PhotoKit
-                        // grants access, start the existing bounded local-only
-                        // full-library GPS scan without another Scan tap.
+                        // The local map deliberately requires Full Access.
+                        // A Limited grant must never start a partial GPS scan.
                         authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                        if mapScope == .page { refresh(at: 0) }
-                        else if authorization == .authorized || authorization == .limited {
-                            scanFullLibrary()
-                        } else { invalidate() }
+                        if authorization == .authorized {
+                            if mapScope == .page { refresh(at: 0) }
+                            else { scanFullLibrary() }
+                        } else {
+                            onLibraryCameraChange?(nil)
+                            clearReturnCamera()
+                            invalidate()
+                        }
                     }
                 }.buttonStyle(.borderedProminent)
+            } else if authorization == .limited {
+                VStack(spacing: 10) {
+                    Text("本机照片地图需要完整照片访问权限。当前为“有限访问”，不会扫描或显示部分图库。")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                    Button("打开 iOS 设置") { openPhotoSettings() }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("native-ios-map-open-photo-settings")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if authorization == .denied || authorization == .restricted {
-                Text("相册权限不可用；请到 iOS 设置中授权。")
-                    .foregroundStyle(.secondary)
+                VStack(spacing: 10) {
+                    Text("本机照片地图需要完整照片访问权限。请在 iOS 设置中允许访问所有照片。")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                    Button("打开 iOS 设置") { openPhotoSettings() }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("native-ios-map-open-photo-settings")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if mapScope == .library {
                 if globalComplete && globalCells.isEmpty {
-                    Text("此授权图库没有可显示位置的照片或视频。")
+                    Text(album == nil ?
+                        "此授权图库没有可显示位置的照片或视频。" :
+                        "此相册没有可显示位置的照片或视频。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 // Keep MapKit mounted from first authorized entry through the
@@ -1087,7 +1151,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                             // this PhotoKit scan; never trust stale SDK markers.
                             guard phase == .active, !busy, globalComplete,
                                   refinedViewportIsCurrent,
-                                  [.authorized, .limited].contains(
+                                  [.authorized].contains(
                                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
                                   ),
                                   XDriveIOSNativeLocalMapSpatialPolicy.acceptsCellSelection(
@@ -1137,19 +1201,21 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         onOpen: { _, _ in }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityIdentifier("native-ios-full-library-gps-map")
+                    .accessibilityIdentifier(album == nil ? "native-ios-full-library-gps-map" : "native-ios-album-gps-map")
                 if busy {
-                    ProgressView("正在读取照片位置…")
-                        .accessibilityIdentifier("native-ios-map-full-library-scan-progress")
+                    ProgressView(album == nil ? "正在读取照片位置…" : "正在读取相册位置…")
+                        .accessibilityIdentifier(album == nil ? "native-ios-map-full-library-scan-progress" : "native-ios-map-album-scan-progress")
                 }
                 // The authorized full-library scan starts on entry. Retain
                 // an explicit retry before any map exists, then give its
                 // verified photo covers the space occupied by these controls.
                 if !globalComplete && !busy {
-                    Button("扫描已授权图库位置") { scanFullLibrary() }
+                    Button(album == nil ? "扫描已授权图库位置" : "扫描此相册位置") {
+                        scanFullLibrary()
+                    }
                         .frame(minHeight: 44)
                         .buttonStyle(.bordered)
-                        .accessibilityIdentifier("native-ios-map-scan-full-library")
+                        .accessibilityIdentifier(album == nil ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
                 }
             } else if let page {
                 Text("已检查 \(page.page.startOffset)–\(page.page.nextOffset) / \(page.page.totalAccessibleAssets)，当前页有 \(page.items.count) 张带位置照片")
@@ -1162,7 +1228,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     // The current State page, not the captured SwiftUI
                     // branch or the annotation, is the membership authority.
                     guard phase == .active, !busy,
-                          [.authorized, .limited].contains(
+                          [.authorized].contains(
                             PHPhotoLibrary.authorizationStatus(for: .readWrite)
                           ),
                           let currentPage = self.page,
@@ -1226,63 +1292,88 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         }
         }
         .padding(.horizontal, 8)
-        .navigationTitle("地图")
+        .navigationTitle(album.map { "\($0.name) · 地图" } ?? "地图")
         .toolbar {
+            if album != nil || onClose != nil {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("完成") {
+                        if onClose != nil { onClose?() }
+                        else { dismiss() }
+                    }
+                    .accessibilityIdentifier(
+                        album != nil ? "native-ios-album-map-dismiss" : "native-ios-map-dismiss"
+                    )
+                }
+            }
             if mapScope == .library && globalComplete {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Button("重新扫描已授权图库位置") { scanFullLibrary() }
+                        Button(album == nil ? "重新扫描已授权图库位置" : "重新扫描此相册位置") {
+                            scanFullLibrary()
+                        }
                             .disabled(busy)
-                            .accessibilityIdentifier("native-ios-map-scan-full-library")
-                        Button("细化当前视窗的定位照片") {
-                            guard let region = globalCamera,
-                                  let view = XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
-                                    latitude: region.center.latitude,
-                                    longitude: region.center.longitude,
-                                    latitudeSpan: region.span.latitudeDelta,
-                                    longitudeSpan: region.span.longitudeDelta
-                                  ) else {
-                                error = "当前地图视窗无效，请移动或缩放地图后重试。"
-                                return
-                            }
-                            scanFullLibrary(viewport: view)
-                        }
-                        .disabled(busy || globalCamera == nil)
-                        .accessibilityIdentifier("native-ios-map-refine-viewport")
-                        if globalViewport != nil {
-                            Button("还原已授权全库概览") { scanFullLibrary() }
-                                .disabled(busy)
-                                .accessibilityIdentifier("native-ios-map-restore-global-overview")
-                        }
+                            .accessibilityIdentifier(album == nil ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
                     } label: {
                         Label("地图操作", systemImage: "ellipsis.circle")
                     }
                     .accessibilityIdentifier("native-ios-local-map-actions")
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(focused ? "显示底部导航" : "专注地图") {
-                    focused.toggle()
-                    onFocusChange?(focused)
+            if album == nil && onFocusChange != nil {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(focused ? "显示底部导航" : "专注地图") {
+                        focused.toggle()
+                        onFocusChange?(focused)
+                    }
+                    .accessibilityIdentifier("native-ios-map-focus-toggle")
                 }
-                .accessibilityIdentifier("native-ios-map-focus-toggle")
             }
         }
         .sheet(item: $selection, onDismiss: {
             if phase == .active { refresh(at: offset) }
             else { invalidate() }
         }) { chosen in XDriveIOSMapPhotoAlbum(items: chosen.items) }
-        .sheet(item: $globalSelection) { chosen in
-            XDriveIOSMapSpatialAlbum(selection: chosen)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+        .fullScreenCover(item: $globalSelection, onDismiss: {
+            // Present the broader-library result only after the album place
+            // wall has completed its dismissal transition.
+            guard let pending = pendingNearbySelection else { return }
+            pendingNearbySelection = nil
+            guard phase == .active,
+                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+            else {
+                onLibraryCameraChange?(nil)
+                clearReturnCamera()
+                invalidate()
+                return
+            }
+            nearbySelection = pending
+        }) { chosen in
+            XDriveIOSMapSpatialAlbum(
+                selection: chosen, album: album,
+                onShowNearby: album == nil ? nil : {
+                    guard phase == .active,
+                          PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                    else {
+                        onLibraryCameraChange?(nil)
+                        clearReturnCamera()
+                        invalidate()
+                        return
+                    }
+                    pendingNearbySelection = chosen
+                }
+            )
+        }
+        .fullScreenCover(item: $nearbySelection) { chosen in
+            XDriveIOSMapSpatialAlbum(
+                selection: chosen, album: nil, isNearbyExpansion: true
+            )
         }
         .fullScreenCover(item: $singleViewer, onDismiss: {
             guard phase == .active else { invalidate(); return }
             if mapScope == .page {
                 // Recheck the PhotoKit page while restoring the same camera.
                 refresh(at: offset)
-            } else if ![.authorized, .limited].contains(
+            } else if ![.authorized].contains(
                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
             ) {
                 invalidate()
@@ -1294,17 +1385,20 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         }
         .onAppear {
             authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-            if authorization != .authorized && authorization != .limited {
-                onLibraryCameraChange?(nil)
-            }
             changes.start()
+            guard authorization == .authorized else {
+                onLibraryCameraChange?(nil)
+                clearReturnCamera()
+                invalidate()
+                return
+            }
             if focusOnRequestedPhotoLocation() { return }
             if mapScope == .page, page == nil, !busy, phase == .active {
                 refresh(at: offset)
             } else if mapScope == .library && !globalComplete && !busy &&
-                phase == .active && (authorization == .authorized || authorization == .limited) {
-                // First re-entry rescans current PhotoKit authority; reuse
-                // only the parent's transient camera, never old cell IDs.
+                phase == .active {
+                // First re-entry rescans current full PhotoKit authority;
+                // reuse only the parent's transient camera, never old IDs.
                 if let cameraOnEntry {
                     scanFullLibrary(returningCamera: cameraOnEntry)
                 } else {
@@ -1323,15 +1417,31 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             if next == .library && phase == .active { scanFullLibrary() }
         }
         .onChange(of: changes.revision) { _ in
+            // Revoke all old PhotoKit IDs first, then rebuild only if Full
+            // Access is still present. A Limited/revoked library stays empty.
+            let returningCamera = globalCamera
             onLibraryCameraChange?(nil)
             clearReturnCamera()
             invalidate()
-            error = "照片库已改变，旧地图已经清除；请刷新。"
+            authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            guard phase == .active, authorization == .authorized else { return }
+            if mapScope == .library {
+                scanFullLibrary(returningCamera: returningCamera)
+                onLibraryCameraChange?(returningCamera)
+            } else {
+                refresh(at: offset)
+            }
         }
         .onChange(of: phase) { state in
             if state == .active {
                 authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
                 changes.start()
+                guard authorization == .authorized else {
+                    onLibraryCameraChange?(nil)
+                    clearReturnCamera()
+                    invalidate()
+                    return
+                }
                 if mapScope == .page { refresh(at: offset) }
                 else { scanFullLibrary() } // A new PhotoKit generation must re-scan.
             } else {
@@ -1345,7 +1455,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             // A presented cluster sheet may hide its map presenter. Keep
             // PhotoKit change observation active until the sheet is dismissed,
             // so permission/library changes revoke its transient member IDs.
-            if selection == nil && globalSelection == nil && singleViewer == nil {
+            if selection == nil && globalSelection == nil &&
+                pendingNearbySelection == nil && nearbySelection == nil && singleViewer == nil {
                 changes.stop()
                 clearReturnCamera()
                 focused = false
@@ -1358,8 +1469,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     /// Reuse the SAME PhotoKit/MapKit route for nearby media rather than
     /// constructing an unrelated map screen in each Viewer.
     private func focusOnRequestedPhotoLocation() -> Bool {
-        guard mapScope == .library, phase == .active,
-              [.authorized, .limited].contains(
+        guard album == nil, mapScope == .library, phase == .active,
+              [.authorized].contains(
                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
               ), let jump = incomingMapJump, handledMapJumpID != jump.id,
               let viewport = jump.nearbyViewport else { return false }
@@ -1378,7 +1489,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         guard mapScope == .library, globalComplete, !busy,
               globalSelection == nil, selection == nil,
               singleViewer == nil, phase == .active,
-              [.authorized, .limited].contains(
+              [.authorized].contains(
                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
               ),
               let cameraViewport = XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
@@ -1402,7 +1513,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                   globalSelection == nil, selection == nil,
                   singleViewer == nil, phase == .active,
                   let finalCamera = globalCamera,
-                  [.authorized, .limited].contains(
+                  [.authorized].contains(
                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
                   ),
                   let finalViewport = XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
@@ -1427,6 +1538,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             autoRefineTask = nil
             scanFullLibrary(viewport: padded, preserveCurrentMap: true)
         }
+    }
+
+    private func openPhotoSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 
     private func scanFullLibrary(
@@ -1458,14 +1574,19 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             }
         }
         guard mapScope == .library, phase == .active,
-              authorization == .authorized || authorization == .limited else { return }
+              authorization == .authorized else {
+            onLibraryCameraChange?(nil)
+            clearReturnCamera()
+            invalidate()
+            return
+        }
         let worker = XDrivePhotoKitBoundedSnapshotScanner()
         scanner = worker
         let ticket = generation
         busy = true
         task = Task { @MainActor in
             do {
-                let total = try await worker.start(atOffset: 0)
+                let total = try await worker.start(atOffset: 0, album: album)
                 var index = XDriveIOSNativeLocalMapSpatialIndex<XDrivePhotoKitLocatedCandidate>()
                 var scanned = 0
                 var pages = 0
@@ -1501,7 +1622,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 }
                 try Task.checkCancellation()
                 guard generation == ticket, mapScope == .library, phase == .active,
-                      [.authorized, .limited].contains(
+                      [.authorized].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ), scanned == total else { return }
                 await worker.reset()
@@ -1524,7 +1645,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         globalCells = []
                         globalComplete = false
                     }
-                    self.error = "授权图库在扫描过程中发生变化，请重新扫描。"
+                    self.error = album == nil ?
+                        "授权图库在扫描过程中发生变化，请重新扫描。" :
+                        "相册在扫描过程中发生变化，请重新打开地图。"
                 }
             }
             if generation == ticket { busy = false }
@@ -1536,14 +1659,19 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         if !XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
             savedPageOffset: cameraReturnOffset,
             requestedPageOffset: max(0, requested),
-            permissionGranted: authorization == .authorized || authorization == .limited,
+            permissionGranted: authorization == .authorized,
             sceneActive: phase == .active
         ) {
             clearReturnCamera()
         }
         invalidate()
         guard phase == .active,
-              authorization == .authorized || authorization == .limited else { return }
+              authorization == .authorized else {
+            onLibraryCameraChange?(nil)
+            clearReturnCamera()
+            invalidate()
+            return
+        }
         let worker = XDrivePhotoKitBoundedSnapshotScanner()
         scanner = worker
         let ticket = generation
@@ -1609,6 +1737,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         page = nil
         selection = nil
         globalSelection = nil
+        pendingNearbySelection = nil
+        nearbySelection = nil
         singleViewer = nil
         globalCells = []
         globalComplete = false

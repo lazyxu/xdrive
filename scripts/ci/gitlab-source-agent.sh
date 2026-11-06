@@ -6,3 +6,4 @@ source scripts/ci/client-artifact-version.sh
 bash scripts/build-source-agent.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
 test -x release/source-agent/xdrive-source-agent-linux-amd64
 test -x release/source-agent/xdrive-source-agent-linux-arm64
+test -x release/source-agent/xdrive-source-agent-linux-armv7

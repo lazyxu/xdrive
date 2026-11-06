@@ -9,21 +9,38 @@ VERSION_LDFLAG="-X github.com/lazyxu/xdrive/internal/version.Version=$VERSION"
 mkdir -p "$OUT_DIR"
 
 build_one() {
-  local arch="$1"
-  local output="$OUT_DIR/xdrive-source-agent-linux-$arch"
+  local artifact_arch="$1"
+  local goarch="$artifact_arch"
+  local goarm=""
+  if [[ "$artifact_arch" == "armv7" ]]; then
+    goarch="arm"
+    goarm="7"
+  fi
+  local output="$OUT_DIR/xdrive-source-agent-linux-$artifact_arch"
+  local go_env=(CGO_ENABLED=0 GOOS=linux "GOARCH=$goarch")
+  if [[ -n "$goarm" ]]; then
+    go_env+=("GOARM=$goarm")
+  fi
 
   (
     cd "$ROOT"
-    CGO_ENABLED=0 GOOS=linux GOARCH="$arch"       go build -trimpath -ldflags="-s -w $VERSION_LDFLAG"       -o "$output" ./cmd/xdrive-source-agent
+    env "${go_env[@]}" go build -trimpath \
+      -ldflags="-s -w $VERSION_LDFLAG" -o "$output" ./cmd/xdrive-source-agent
   )
   chmod 0755 "$output"
 
-  go version -m "$output" | grep -q "GOOS=linux"
-  go version -m "$output" | grep -q "GOARCH=$arch"
+  local metadata
+  metadata="$(go version -m "$output")"
+  grep -Fq "GOOS=linux" <<< "$metadata"
+  grep -Fq "GOARCH=$goarch" <<< "$metadata"
+  if [[ -n "$goarm" ]]; then
+    grep -Fq "GOARM=$goarm" <<< "$metadata"
+  fi
 }
 
 build_one amd64
 build_one arm64
+build_one armv7
 
 if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
   actual="$("$OUT_DIR/xdrive-source-agent-linux-amd64" version)"
@@ -33,4 +50,7 @@ if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
   }
 fi
 
-printf '%s\n'   "$OUT_DIR/xdrive-source-agent-linux-amd64"   "$OUT_DIR/xdrive-source-agent-linux-arm64"
+printf '%s\n' \
+  "$OUT_DIR/xdrive-source-agent-linux-amd64" \
+  "$OUT_DIR/xdrive-source-agent-linux-arm64" \
+  "$OUT_DIR/xdrive-source-agent-linux-armv7"

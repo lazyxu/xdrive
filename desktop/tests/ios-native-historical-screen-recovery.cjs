@@ -63,7 +63,7 @@ test('continuous scan virtualizes 64-slot metadata windows and invalidates stale
   assert.match(view, /\.onDisappear \{\s*page = nil\s*if let scanner/)
   assert.match(view, /item\.isLive/)
   assert.match(scanner, /static let pageSize = 64/)
-  assert.match(scanner, /func start\(atOffset requestedOffset: Int = 0,\s*requireStableResume: Bool = false\)/)
+  assert.match(scanner, /func start\(atOffset requestedOffset: Int = 0,\s*requireStableResume: Bool = false,\s*album: XDriveLocalPhotoAlbumSummary\? = nil\)/)
   // Preview pages remain ordinary PhotoKit ordering. Only a verified
   // original-backup scan may resolve equal-date 256-slot boundaries.
   assert.match(view, /let count = try await current\.start\(atOffset: offset\)/)

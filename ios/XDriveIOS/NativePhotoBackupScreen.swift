@@ -553,6 +553,12 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 Text("此开关只用于手动备份；前台自动备份的 iCloud 选项在下方独立保存。关闭时只备份本机可读取的原件，不降低原件质量。")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            XDriveIOSPhotoPriorityBackupSection(
+                login: login,
+                controller: controller,
+                destination: destination,
+                allowICloud: allowICloud
+            )
             Section("手动备份") {
                 Text("下一次手动扫描：第 \(controller.manualNextWindow + 1) 段。每段最多 256 项；达到 20 项新增上限会重复当前段，完成后才进入下一段。重启 App、切换账户或相册变化会重新从头检查。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -632,6 +638,11 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .accessibilityIdentifier("native-ios-photos-manual-coverage")
                     Text("当前段已扫描 \(result.scanned) · 新增 \(result.uploaded) · 已验证 \(result.verifiedAlready)")
                         .monospacedDigit()
+                    if result.changeQueueProcessed > 0 {
+                        Text("优先增量队列：处理 \(result.changeQueueProcessed) · 新增 \(result.changeQueueUploaded) · 已验证 \(result.changeQueueVerified) · 失败 \(result.changeQueueFailed)")
+                            .font(.footnote).monospacedDigit()
+                            .accessibilityIdentifier("native-ios-photo-change-queue-progress")
+                    }
                     Text("视频新增 \(result.videoUploaded)，Live ZIP 新增 \(result.liveBundleUploaded)，待核对 \(result.needsReview)，不可用 \(result.unavailable)")
                         .font(.footnote)
                     if result.skippedBeforeBaseline > 0 {
@@ -701,7 +712,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
                 .disabled(controller.busy || controller.schedule?.enabled == true)
                 .accessibilityIdentifier("native-ios-photo-auto-start-rule")
-                Text("“仅备份新照片”按启用时刻与 PhotoKit 拍摄／修改日期初步判断，也核验之后编辑的旧照片；历史导入、日期变更仍待变更队列完善。只影响前台自动计划，手动／集中备份和独立 BGProcessing 仍会扫描全部已授权原件。")
+                Text("“仅备份新照片”通过 PhotoKit 持久化变更历史发现新增、导入和编辑；每个候选仍需核验当前云端原件收据。历史 Token 缺失、损坏、过期或变更详情不可用时，自动计划会先暂停并要求确认一次全库核对，未经确认不会擅自补传启用前的旧照片。手动／集中备份仍按各自规则扫描。")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("前台自动备份允许下载 iCloud 原件", isOn: $autoAllowICloud)
                     .disabled(controller.busy || controller.schedule?.enabled == true)
@@ -710,7 +721,65 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     Text("当前已保存：\(active.backupStartRule == .onlyNew ? "仅备份新照片（含启用后编辑）" : "扫描并备份全部照片")；每 \(active.intervalMinutes) 分钟检查；iCloud 原件 \(active.allowICloudOriginals ? "允许下载" : "仅限本机已下载")。")
                         .font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("native-ios-photos-auto-saved-settings")
-                    if active.pausedForReview {
+                    if active.requiresFullLibraryReconciliation {
+                        if active.historyRecoveryRequiresConsent == true {
+                            Label("增量历史不可用：等待全库核对确认",
+                                  systemImage: "exclamationmark.triangle")
+                                .accessibilityIdentifier("native-ios-photo-history-recovery")
+                            Text("系统已无法可靠区分启用前的旧照片与历史导入照片。为遵守“仅备份新照片”，自动任务已暂停。确认后会逐段核对当前授权图库并补齐缺少的远端原件；可能上传拍摄日期较早、但当前没有备份收据的照片。完成后恢复仅新照片增量。")
+                                .font(.caption).foregroundStyle(.secondary)
+                            if !active.pausedForReview {
+                                Button("确认全库核对并补齐缺失原件") {
+                                    guard let selected = login.owner,
+                                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
+                                    else {
+                                        consentError = "服务器或账户已变化，不能授权全库恢复。"
+                                        return
+                                    }
+                                    consentError = nil
+                                    let stopVersion = XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration
+                                    Task { @MainActor in
+                                        do {
+                                            let proof = try await login.verifiedAuthorization()
+                                            guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                                                  XDriveIOSNativePhotoOwnerScope.matches(proof.owner, selected),
+                                                  XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion,
+                                                  phase == .active,
+                                                  [.authorized, .limited].contains(
+                                                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                                                  ) else {
+                                                throw XDriveIOSNativeSessionError.staleSession
+                                            }
+                                            guard try XDriveIOSPhotoAutoScheduleStore.shared
+                                                .confirmFullLibraryReconciliation(owner: selected) != nil else {
+                                                throw XDriveIOSPhotoAutoScheduleError.persistenceUnavailable
+                                            }
+                                            controller.refresh(owner: selected)
+                                            controller.tickIfDue(login: login)
+                                        } catch {
+                                            consentError = "未能确认全库恢复；自动备份仍保持暂停，原件不会被擅自补传。"
+                                        }
+                                    }
+                                }
+                                .disabled(controller.busy || background.busy || login.owner == nil ||
+                                          (photoAuthorization != .authorized && photoAuthorization != .limited))
+                                .accessibilityIdentifier("native-ios-photo-history-recovery-confirm")
+                            } else {
+                                Text("请先完成上传收据核对，再确认全库恢复。")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Label("正在安全恢复 PhotoKit 增量基准",
+                                  systemImage: "arrow.triangle.2.circlepath")
+                                .accessibilityIdentifier("native-ios-photo-history-recovery")
+                            Text("正在逐段核对当前授权图库；只有所有支持的原件都通过当前 Server 收据核验后，才会恢复增量备份。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if active.historyRecoveryRequiresConsent == true {
+                        Label("自动备份已暂停：等待全库核对确认",
+                              systemImage: "exclamationmark.triangle")
+                    } else if active.pausedForReview {
                         Label("已暂停：需核对收据", systemImage: "exclamationmark.triangle")
                     } else if photoAuthorization != .authorized && photoAuthorization != .limited {
                         Label("备份计划已保存：照片权限不可用", systemImage: "exclamationmark.triangle")
@@ -774,6 +843,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
 
     @ViewBuilder
     private var backupStatusSections: some View {
+            XDriveIOSPhotoQueueSummarySection(login: login, controller: controller)
             Section("当前图库与历史原件收据") {
                 Button("只读统计当前图库和既有收据") {
                     coverage.refresh(login: login)

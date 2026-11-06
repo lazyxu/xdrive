@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import MapKit
 import Photos
 import SwiftUI
 import UIKit
@@ -350,6 +351,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var dragTileFrames: [String: CGRect] = [:]
     @State private var dragPreviousSlot: Int?
     @State private var dragVisitedIDs: Set<String> = []
+    @State private var showingMap = false
+    @State private var mapCamera: MKCoordinateRegion?
+    @State private var mapJump: XDriveIOSNativeLocalMapJump?
+    @State private var pendingViewerMapJump: XDriveIOSNativeLocalMapJump?
     @State private var showingAlbumPicker = false
     @State private var albumPickerCandidates: [XDrivePhotoKitScanCandidate] = []
     @State private var confirmingDelete = false
@@ -440,16 +445,52 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             .accessibilityIdentifier("native-ios-photos-local-select-mode")
                         }
                         .padding(.horizontal, 12)
-                        Picker("媒体类型", selection: $mediaFilter) {
-                            ForEach(XDriveIOSNativePhotoMediaFilter.allCases) { option in
-                                Text(option.title).tag(option)
+                        Menu {
+                            Section("媒体类型") {
+                                Toggle("照片", isOn: mediaFilterBinding(for: .photos))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-photos")
+                                Toggle("视频", isOn: mediaFilterBinding(for: .videos))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-videos")
                             }
+                            Section("内容") {
+                                Toggle("收藏", isOn: mediaFilterBinding(for: .favorites))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-favorites")
+                                Toggle("实况", isOn: mediaFilterBinding(for: .livePhotos))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-live")
+                                Toggle("截屏", isOn: mediaFilterBinding(for: .screenshots))
+                                    .accessibilityIdentifier("native-ios-local-gallery-filter-screenshots")
+                            }
+                            Divider()
+                            Button("重置筛选") { mediaFilter = .all }
+                                .disabled(mediaFilter.isAll)
+                            Section("地图") {
+                                Button {
+                                    showingMap = true
+                                } label: {
+                                    Label("显示地图", systemImage: "map")
+                                }
+                                .disabled(
+                                    permission != .authorized || phase != .active ||
+                                    selectionMode || selected != nil || actionBusy || shareBusy
+                                )
+                                .accessibilityIdentifier("native-ios-local-wall-show-map")
+                            }
+                        } label: {
+                            Label(
+                                mediaFilter.isAll ? "筛选" : "筛选 · \(mediaFilter.title)",
+                                systemImage: "line.3.horizontal.decrease.circle"
+                            )
                         }
-                        // Six native source predicates fit cleanly in a
-                        // compact menu even on a 375pt iPhone/landscape.
-                        .pickerStyle(.menu)
+                        .accessibilityLabel("媒体筛选：\(mediaFilter.title)")
                         .padding(.horizontal, 12)
                         .accessibilityIdentifier("native-ios-local-gallery-media-filter")
+                        if permission == .limited {
+                            Label("地图需要完整照片访问权限；有限访问不会生成部分地图。",
+                                  systemImage: "lock.shield")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                        }
                         if selectionMode {
                             Text("按住照片并拖动，可连续选择已加载的照片。")
                                 .font(.caption)
@@ -553,12 +594,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             ProgressView("正在读取已授权图库…")
                                 .frame(maxWidth: .infinity).padding()
                         } else if failure == nil {
-                            Text(mediaFilter == .videos ? "当前已授权图库中没有视频。" :
-                                 mediaFilter == .photos ? "当前已授权图库中没有照片。" :
-                                 mediaFilter == .favorites ? "当前已授权图库中没有收藏照片。" :
-                                 mediaFilter == .livePhotos ? "当前已授权图库中没有实况照片。" :
-                                 mediaFilter == .screenshots ? "当前已授权图库中没有截屏。" :
-                                 "当前已授权图库中没有可浏览的照片或视频。")
+                            Text(mediaFilter.emptyMessage)
                                 .foregroundStyle(.secondary).padding(12)
                         }
                         if let failure {
@@ -608,6 +644,24 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                     guard phase == .active else { return }
                     scroll.scrollTo("page:\(start)", anchor: .top)
                     requestedOffset = nil
+                }
+            }
+            // Present over the existing wall instead of replacing its Gallery
+            // route. The PhotoKit filter, loaded scroll anchor and Viewer state
+            // remain owned by this still-mounted screen when the map is closed.
+            .fullScreenCover(isPresented: $showingMap) {
+                NavigationStack {
+                    XDriveIOSNativeLocalPhotoMapScreen(
+                        mapScope: .constant(.library),
+                        offset: .constant(0),
+                        onClose: {
+                            showingMap = false
+                            mapJump = nil
+                        },
+                        cameraOnEntry: mapCamera,
+                        onLibraryCameraChange: { next in mapCamera = next }
+                    )
+                    .environment(\.xdriveNativeLocalMapJump, mapJump)
                 }
             }
         }
@@ -685,6 +739,11 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                     returnModified = next.modifiedAt
                 }
             )
+            // The local Viewer uses this wall's cover instead of replacing the
+            // Gallery route, so its exact return tile/filter survive map browsing.
+            .environment(\.xdriveOpenNativeLocalMap, { jump in
+                pendingViewerMapJump = jump
+            })
         }
         .onAppear {
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -732,6 +791,15 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             monitor?.stop()
             monitor = nil
         }
+    }
+
+    private func mediaFilterBinding(
+        for criterion: XDriveIOSNativePhotoMediaFilterCriterion
+    ) -> Binding<Bool> {
+        Binding(
+            get: { mediaFilter.isEnabled(criterion) },
+            set: { mediaFilter = mediaFilter.setting(criterion, enabled: $0) }
+        )
     }
 
     private var authorized: Bool { permission == .authorized || permission == .limited }
@@ -975,8 +1043,19 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     }
 
     private func restoreAfterViewer() {
-        if phase == .active && authorized { reload() }
-        else { clearReturn(); invalidate(with: nil) }
+        guard phase == .active && authorized else {
+            pendingViewerMapJump = nil
+            mapJump = nil
+            clearReturn()
+            invalidate(with: nil)
+            return
+        }
+        reload()
+        if let jump = pendingViewerMapJump {
+            pendingViewerMapJump = nil
+            mapJump = jump
+            showingMap = true
+        }
     }
 
     private func clearReturn() {
