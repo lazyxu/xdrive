@@ -50,6 +50,8 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	sqlDB.SetMaxIdleConns(0)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.Migrator().DropTable(
+		&meta.PhotoOCRText{},
+		&meta.PhotoAnalysisState{},
 		&meta.PhotoCollectionAsset{},
 		&meta.PhotoCollection{},
 		&meta.PhotoMetadata{},
@@ -67,6 +69,7 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		&meta.Share{},
 		&meta.UploadPart{},
 		&meta.UploadSession{},
+		&meta.LocalPushQuotaHold{},
 		&meta.ContentDigestAlias{},
 		&meta.ContentBlob{},
 		&meta.FileVersion{},
@@ -88,6 +91,7 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		&meta.Share{},
 		&meta.UploadSession{},
 		&meta.UploadPart{},
+		&meta.LocalPushQuotaHold{},
 		&meta.AuditEvent{},
 		&meta.Source{},
 		&meta.SourceItem{},
@@ -98,6 +102,8 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		&meta.MediaGroup{},
 		&meta.MediaGroupItem{},
 		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
+		&meta.PhotoAnalysisState{},
+		&meta.PhotoOCRText{},
 		&meta.PhotoResource{},
 		&meta.PhotoMetadata{},
 		&meta.PhotoCollection{},

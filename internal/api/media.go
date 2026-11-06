@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,6 +62,7 @@ type mediaMetadataDTO struct {
 	ThumbnailMIME            string         `json:"thumbnail_mime_type,omitempty"`
 	ThumbnailWidth           int            `json:"thumbnail_width,omitempty"`
 	ThumbnailHeight          int            `json:"thumbnail_height,omitempty"`
+	ThumbnailVersion         string         `json:"thumbnail_version,omitempty"`
 }
 
 type mediaEditRecipeDTO struct {
@@ -106,6 +106,7 @@ type mediaResourceDTO struct {
 type mediaItemDTO struct {
 	Node             nodeDTO                   `json:"node"`
 	Metadata         mediaMetadataDTO          `json:"metadata"`
+	AssetID          uint64                    `json:"asset_id,omitempty"`
 	AssetKind        string                    `json:"asset_kind,omitempty"`
 	Favorite         bool                      `json:"favorite"`
 	Tags             []string                  `json:"tags,omitempty"`
@@ -183,6 +184,9 @@ func toMediaMetadataDTO(row meta.MediaMetadata) mediaMetadataDTO {
 		ThumbnailMIME:            row.ThumbnailMIMEType,
 		ThumbnailWidth:           row.ThumbnailWidth,
 		ThumbnailHeight:          row.ThumbnailHeight,
+	}
+	if out.HasThumbnail && !row.UpdatedAt.IsZero() {
+		out.ThumbnailVersion = strconv.FormatInt(row.UpdatedAt.UnixNano(), 10)
 	}
 	if strings.TrimSpace(row.EXIFJSON) != "" {
 		_ = json.Unmarshal([]byte(row.EXIFJSON), &out.EXIF)
@@ -311,6 +315,7 @@ func (s *Server) getMediaItem(c *gin.Context) {
 	c.JSON(http.StatusOK, mediaItemDTO{
 		Node:             toNodeDTO(node),
 		Metadata:         toMediaMetadataDTO(metadata),
+		AssetID:          presentation.ID,
 		AssetKind:        presentation.Kind,
 		Favorite:         presentation.Favorite,
 		Tags:             presentation.Tags,
@@ -707,6 +712,7 @@ func (s *Server) materializeMediaItems(
 				FoldMemberIDs: memberIDs,
 				Node:          toNodeDTO(node),
 				Metadata:      toMediaMetadataDTO(row),
+				AssetID:       presentation.ID,
 				AssetKind:     presentation.Kind,
 				Favorite:      presentation.Favorite,
 				Tags:          presentation.Tags,
@@ -1682,7 +1688,7 @@ func (s *Server) ensureMediaMetadata(
 }
 
 func legacyLIVPMetadata(node meta.Node, row meta.MediaMetadata) bool {
-	return strings.EqualFold(filepath.Ext(node.Name), ".livp") &&
+	return mediapkg.IsLivePhotoContainerName(node.Name) &&
 		(strings.TrimSpace(row.ContainerKind) == "" ||
 			row.DerivedResourceVersion < mediapkg.LIVPDerivedResourceVersion)
 }
@@ -1747,7 +1753,7 @@ func (s *Server) indexMediaNode(
 		RelationEvidenceVersion:  mediapkg.RelationEvidenceVersion,
 		RelationJSON:             extracted.RelationJSON,
 		DerivedResourceVersion: func() int {
-			if strings.EqualFold(filepath.Ext(node.Name), ".livp") {
+			if mediapkg.IsLivePhotoContainerName(node.Name) {
 				return mediapkg.LIVPDerivedResourceVersion
 			}
 			return 0
@@ -1954,7 +1960,7 @@ func (s *Server) staleMediaQuery(
 			"n.type = ? AND n.deleted_at IS NULL AND "+
 				"(mm.node_id IS NULL OR mm.node_revision <> n.revision OR mm.sha256 <> f.sha256 OR "+
 				"COALESCE(mm.relation_evidence_version, 0) < ? OR "+
-				"(lower(n.name) LIKE '%.livp' AND (COALESCE(mm.container_kind, '') = '' OR "+
+				"((lower(n.name) LIKE '%.livp' OR lower(n.name) ~ '^live-xios-[a-f0-9]{24}-[a-f0-9]{12}\\.zip$') AND (COALESCE(mm.container_kind, '') = '' OR "+
 				"COALESCE(mm.derived_resource_version, 0) < ?)))",
 			meta.NodeTypeFile,
 			mediapkg.RelationEvidenceVersion,
@@ -2043,7 +2049,7 @@ func (s *Server) listMediaDerivedResources(
 	// but lose the separately materialized range-view rows. Project only the
 	// missing roles from that exact current source; never read all originals,
 	// change the media index, or mutate CAS during a detail read.
-	if strings.EqualFold(filepath.Ext(node.Name), ".livp") && len(rows) < 2 {
+	if mediapkg.IsLivePhotoContainerName(node.Name) && len(rows) < 2 {
 		present := make(map[string]bool, len(rows))
 		for _, row := range rows {
 			present[row.Role] = true
@@ -2084,7 +2090,7 @@ func (s *Server) validatedLIVPResourceFromCurrentIndex(
 	var missing meta.MediaDerivedResource
 	if node.Type != meta.NodeTypeFile || node.File == nil ||
 		node.File.Size <= 0 || strings.TrimSpace(node.File.SHA256) == "" ||
-		!strings.EqualFold(filepath.Ext(node.Name), ".livp") ||
+		!mediapkg.IsLivePhotoContainerName(node.Name) ||
 		!meta.ValidMediaDerivedResourceRole(role) {
 		return missing, gorm.ErrRecordNotFound
 	}

@@ -90,7 +90,7 @@ struct XDriveIOSNativeNavigationRouteStore {
             version: 1,
             scopeHash: scopeHash,
             selectedTab: safeTab,
-            gallerySource: Self.validGallery(gallerySource) ? gallerySource : "local",
+            gallerySource: Self.validGallery(gallerySource) ? gallerySource : "unified",
             activeDynamic: safeDynamic,
             recentDynamic: Array(recentDynamic.filter { $0 == "backup" }.prefix(6)),
             mapScope: Self.validMapScope(mapScope) ? mapScope : "page",
@@ -119,7 +119,7 @@ struct XDriveIOSNativeNavigationRouteStore {
     }
 
     private static func validGallery(_ source: String) -> Bool {
-        ["local", "albums", "cloud", "originals", "map"].contains(source)
+        source == "unified" || ["local", "albums", "cloud", "originals", "map"].contains(source)
     }
 
     private static func validDynamic(_ feature: String?) -> Bool {

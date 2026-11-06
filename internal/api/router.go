@@ -363,6 +363,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/creative/:generationID", s.getMediaCreativeGeneration)
 	authed.POST("/media/creative/:generationID/cancel", s.cancelMediaCreativeGeneration)
 	authed.GET("/media/items/:id/thumbnail", s.mediaThumbnail)
+	authed.POST("/media/exact-match", s.matchExactMedia)
 	authed.PUT("/media/items/:id/video-poster", s.putMediaVideoPoster)
 	authed.GET("/media/items/:id/analysis-preview", s.mediaAnalysisPreview)
 	// Foreground-only viewer derivative; the original and 512px wall thumbnail stay unchanged.

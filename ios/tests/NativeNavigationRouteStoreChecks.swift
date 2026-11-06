@@ -38,10 +38,24 @@ struct XDriveNativeRouteChecks {
                    activeDynamic: nil, recentDynamic: [])
         require(store.restore(scopeHash: ownerB)?.gallerySource == "map",
                 "restores verified Owner Gallery map route")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "unified",
+                   activeDynamic: nil, recentDynamic: [])
+        require(store.restore(scopeHash: ownerB)?.gallerySource == "unified",
+                "restores verified Owner unified Gallery route")
         store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "missing",
                    activeDynamic: nil, recentDynamic: [])
-        require(store.restore(scopeHash: ownerB)?.gallerySource == "local",
-                "unknown Gallery sources still fail closed")
+        require(store.restore(scopeHash: ownerB)?.gallerySource == "unified",
+                "unknown input saves only the default Gallery route")
+        let unknown = XDriveIOSNativeNavigationRouteSnapshot(
+            version: 1, scopeHash: ownerB, selectedTab: "gallery",
+            gallerySource: "missing", activeDynamic: nil, recentDynamic: [],
+            mapScope: nil, mapPageOffset: nil, localGalleryPageOffset: nil,
+            localAlbumDirectoryOffset: nil
+        )
+        defaults.set(try! JSONEncoder().encode(unknown),
+                     forKey: XDriveIOSNativeNavigationRouteStore.key)
+        require(store.restore(scopeHash: ownerB) == nil,
+                "unknown persisted Gallery sources still fail closed")
 
         store.save(scopeHash: ownerB, selectedTab: "files", gallerySource: "cloud",
                    activeDynamic: nil, recentDynamic: [])

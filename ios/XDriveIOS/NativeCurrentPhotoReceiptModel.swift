@@ -4,7 +4,7 @@ import Foundation
 import Photos
 import UIKit
 
-private struct XDriveIOSNativePhotoProofStamp: Equatable {
+struct XDriveIOSNativePhotoProofStamp: Equatable {
     let id: String
     let kind: String
     let isLive: Bool

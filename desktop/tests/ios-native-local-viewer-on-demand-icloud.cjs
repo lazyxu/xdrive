@@ -11,7 +11,8 @@ const albums = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
 test('local PhotoKit lists fetch bounded iCloud thumbnails but never original media implicitly', () => {
   const loader = local.slice(local.indexOf('final class XDriveIOSPhotoImageLoader'),
     local.indexOf('struct XDriveIOSLocalPhotoTile'))
-  assert.match(loader, /settings\.isNetworkAccessAllowed = true/)
+  assert.match(loader, /allowICloud: Bool = true/)
+  assert.match(loader, /settings\.isNetworkAccessAllowed = allowICloud/)
   assert.match(loader, /PHImageManager\.default\(\)\.requestImage/)
   assert.match(loader, /targetSize: size/)
   assert.match(loader, /settings\.resizeMode = \.fast/)

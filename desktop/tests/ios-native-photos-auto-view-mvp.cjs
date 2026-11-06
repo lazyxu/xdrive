@@ -61,7 +61,8 @@ test('native viewer pages PhotoKit without exporting data, provides still video 
     local.indexOf('struct XDriveIOSLocalPhotoTile'))
   const detailModel = local.slice(local.indexOf('final class XDriveIOSLocalPhotoDetailModel'),
     local.indexOf('private struct XDriveIOSNativeLivePhotoView'))
-  assert.match(thumbnailLoader, /settings\.isNetworkAccessAllowed = true/)
+  assert.match(thumbnailLoader, /allowICloud: Bool = true/)
+  assert.match(thumbnailLoader, /settings\.isNetworkAccessAllowed = allowICloud/)
   assert.match(thumbnailLoader, /PHImageManager\.default\(\)\.requestImage/)
   assert.match(detailModel, /func load\(_ candidate: XDrivePhotoKitScanCandidate, allowICloud: Bool = false\)/)
   assert.match(detailModel, /options\.isNetworkAccessAllowed = allowICloud/)

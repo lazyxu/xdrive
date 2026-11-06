@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: places-camera-count-ab-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   owner-camera-95k-count-ab:
@@ -126,8 +126,14 @@ jobs:
               assert sample['camera_count']==95000 and sample['timeline_count']==95000
               assert sample['items']==sample['next_items']==48
               assert sample['group_sql']==sample['page_sql']==1
-              assert sample['first_page_sql_count']==(3 if arm=='before' else 2)
-              assert sample['standalone_count_sql']==(1 if arm=='before' else 0)
+              if arm == 'before':
+                  # An already-optimized parent uses 2 phases. Older A/B
+                  # optimization parents use 3; both must preserve roles.
+                  assert sample['first_page_sql_count'] in (2, 3)
+                  assert sample['standalone_count_sql']==sample['first_page_sql_count']-2
+              else:
+                  assert sample['first_page_sql_count']==2
+                  assert sample['standalone_count_sql']==0
               assert sample['provider_conversion_verified'] is False
               assert 0 < sample['latency_ms'] < 20000
               arms[arm].append(sample['latency_ms'])
@@ -151,9 +157,15 @@ jobs:
           print('PLACES_BD09_CAMERA_COUNT_AB_MEDIANS',
                 json.dumps({k:report[k] for k in
                     ('before_median_ms','after_median_ms','after_over_before','measured_gain_percent')}))
-          # No presumed gain: reject candidates not at least 10% faster on
-          # the SAME seeded Owner and runner, in this small n=3 diagnostic.
-          assert after <= before*.90, 'Candidate did not prove material median benefit'
+          before_phases={s['first_page_sql_count'] for s in result if s['arm']=='before'}
+          assert len(before_phases)==1, 'Inconsistent baseline SQL phase count'
+          if before_phases == {3}:
+              # Original optimization A/B must still prove a material gain.
+              assert after <= before*.90, 'Candidate did not prove material median benefit'
+          else:
+              # A parent that already has the optimization is a regression
+              # check, not a request for an impossible second 10% improvement.
+              assert after <= before*1.10, 'Already-optimized candidate regressed >10%'
           assert max(arms['after']) < 3000, 'Candidate exceeded original 3s user-facing budget'
           PY
       - name: Retain bounded source and anonymized matched measurements
