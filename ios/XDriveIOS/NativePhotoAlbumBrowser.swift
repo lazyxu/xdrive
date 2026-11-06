@@ -366,10 +366,9 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
                                     ZStack(alignment: .topTrailing) {
                                         XDriveIOSNativeSquarePhotoTile(candidate: item)
                                         if selectionMode {
-                                            Image(systemName: selectedIDs.contains(item.id)
-                                                ? "checkmark.circle.fill" : "circle")
-                                                .font(.title2).foregroundStyle(.white)
-                                                .padding(6)
+                                            XDriveIOSNativePhotoWallSelectionIndicator(
+                                                selected: selectedIDs.contains(item.id)
+                                            )
                                         }
                                     }
                                 }

@@ -240,12 +240,10 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                         }
                                     }
                                     if selectionMode {
-                                        Image(systemName: selectedIDs.contains(candidate.id)
-                                            ? "checkmark.circle.fill" : "circle")
-                                            .font(.title2)
-                                            .symbolRenderingMode(.palette)
-                                            .foregroundStyle(.white, Color.accentColor)
-                                            .padding(6)
+                                        XDriveIOSNativePhotoWallSelectionIndicator(
+                                            selected: selectedIDs.contains(candidate.id),
+                                            accented: true
+                                        )
                                     }
                                 }
                             }

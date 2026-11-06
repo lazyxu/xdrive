@@ -122,3 +122,19 @@ test('shared retry feedback preserves the current scope and exact caller action'
   assert.match(cloud, /canRetry: !model\.busy && !viewerActive/)
   assert.match(cloud, /model\.load\(login: login, albumID: albumID, placeID: placeID,/)
 })
+
+
+test('Gallery and albums share purely visual selection badges, never batch authority', () => {
+  assert.match(shared, /struct XDriveIOSNativePhotoWallSelectionIndicator: View/)
+  assert.match(shared, /Image\(systemName: selected \? "checkmark\.circle\.fill" : "circle"\)/)
+  assert.match(shared, /\.symbolRenderingMode\(\.palette\)/)
+  assert.match(shared, /\.foregroundStyle\(\.white, Color\.accentColor\)/)
+  assert.match(shared, /\.foregroundStyle\(\.white\)/)
+  assert.match(local, /if selectionMode \{\s*XDriveIOSNativePhotoWallSelectionIndicator\(\s*selected: selectedIDs\.contains\(candidate\.id\),\s*accented: true/)
+  assert.match(album, /if selectionMode \{\s*XDriveIOSNativePhotoWallSelectionIndicator\(\s*selected: selectedIDs\.contains\(item\.id\)/)
+  assert.match(local, /Button \{ onSelect\(candidate, page\) \}/)
+  assert.match(album, /Button \{ onSelect\(item, page\) \}/)
+  assert.doesNotMatch(map, /XDriveIOSNativePhotoWallSelectionIndicator\(/)
+  assert.doesNotMatch(cluster, /XDriveIOSNativePhotoWallSelectionIndicator\(/)
+  assert.doesNotMatch(shared, /PHAsset|PHPhotoLibrary|URLSession|UploadSession|verifiedAuthorization|accessToken|UserDefaults/)
+})

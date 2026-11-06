@@ -93,3 +93,26 @@ struct XDriveIOSNativePhotoWallRetryMessage: View {
         }
     }
 }
+
+ 
+/// Selection indicator only. The page remains responsible for membership,
+/// batch-action rights, accessibility text and selection lifecycle.
+struct XDriveIOSNativePhotoWallSelectionIndicator: View {
+    let selected: Bool
+    var accented: Bool = false
+
+    var body: some View {
+        if accented {
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                .font(.title2)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, Color.accentColor)
+                .padding(6)
+        } else {
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                .font(.title2)
+                .foregroundStyle(.white)
+                .padding(6)
+        }
+    }
+}
