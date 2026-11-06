@@ -105,7 +105,11 @@ func (s *Server) lookupAndroidPhotoUploadReceipt(c *gin.Context) {
 			"android.photo.receipt.read", "android_photo", current)
 	}); err != nil {
 		s.recordUploadAuthorizationFailure(c, "android.photo.receipt.read", snapshot, err)
-		fail(c, http.StatusForbidden, "Android photo receipt authority is no longer valid")
+		if uploadAuthorizationDenied(err) {
+			fail(c, http.StatusForbidden, "Android photo receipt authority is no longer valid")
+		} else {
+			fail(c, http.StatusInternalServerError, "Android photo receipt audit failed")
+		}
 		return
 	}
 	s.writeUploadSession(c, snapshot, http.StatusOK)
