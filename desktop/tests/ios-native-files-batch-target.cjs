@@ -25,7 +25,7 @@ test('one real Owner-verified native Files page supports bounded multi-copy and 
   assert.match(page, /private func openBatchDestination\(/)
   assert.match(page, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection\(\s*chosenItems, parentID: sourceParentID/)
   assert.match(page, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
-  assert.match(page, /model\.entries\.contains\(where: \{ \$0\.node == selected \}\)/)
+  assert.match(page, /selectedSnapshots\[selected\.id\] == selected/)
   assert.match(page, /selected: intent\.items\[0\], selectedItems: intent\.items/)
   assert.match(page, /batchTarget\.perform\(/)
   assert.match(page, /batchTarget\.invalidate\(\)/)
@@ -81,7 +81,7 @@ test('native batch action does not retry a lost commit and cancels on Owner or p
   // operation before any replacement Owner directory request is launched.
   // Reload must retire the page selection and staged downloads before
   // invalidating the independent copy/move mutation task.
-  assert.match(page, /private func reload\(resetOffset: Bool = false\) \{\s*selecting = false\s*selectedIDs\.removeAll\(\)\s*batchExport\.invalidate\(\)\s*batchTarget\.invalidate\(\)/)
+  assert.match(page, /private func reload\(resetOffset: Bool = false\) \{\s*selecting = false\s*selectedIDs\.removeAll\(\)\s*selectedSnapshots\.removeAll\(\)\s*batchExport\.invalidate\(\)\s*batchTarget\.invalidate\(\)/)
   assert.doesNotMatch(writer, /WKWebView|localStorage|URLSession\.shared|\/api\/v1\/uploads/)
 })
 
@@ -89,7 +89,8 @@ test('native batch action does not retry a lost commit and cancels on Owner or p
 test('native copy and move use the same 200-item bounded verified selection as Server', () => {
   assert.match(sourcePolicy, /static let maxSelected = 200/)
   assert.match(page, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
-  assert.match(page, /selectedIDs\.formIntersection\(visibleIDs\)/)
+  assert.doesNotMatch(page, /selectedIDs\.formIntersection\(visibleIDs\)/)
+  assert.match(page, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(/)
   assert.match(page, /selectedIDs == Set\(intent\.items\.map\(\\\.id\)\)/)
   assert.match(page, /model\.entries\.contains\(where: \{ \$0\.node == selected \}\)/)
   assert.match(policy, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection/)
