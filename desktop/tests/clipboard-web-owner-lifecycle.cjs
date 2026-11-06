@@ -1,0 +1,272 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const ts = require('typescript')
+const React = require('react')
+const Renderer = require('react-test-renderer')
+
+const root = path.resolve(__dirname, '../..')
+const sourceFile = path.join(root, 'ui/shared/src/mui/ClipboardPage.tsx')
+const source = fs.readFileSync(sourceFile, 'utf8')
+const fenceFile = path.join(root, 'ui/shared/src/clipboard-action-fence.ts')
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
+globalThis.window = { isSecureContext: true, setInterval: () => 1, clearInterval: () => {} }
+globalThis.document = { visibilityState: 'visible' }
+test.after(() => {
+  for (const [name, descriptor] of [['window', originalWindow], ['document', originalDocument]]) {
+    if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+    else delete globalThis[name]
+  }
+})
+
+function loadTS(filename, sourceText, injected = {}, jsx = false) {
+  const compiled = ts.transpileModule(sourceText, {
+    fileName: filename, reportDiagnostics: true,
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
+      jsx: jsx ? ts.JsxEmit.ReactJSX : undefined },
+  })
+  assert.deepEqual((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error)
+    .map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), [])
+  const module = { exports: {} }
+  new Function('module', 'exports', 'require', compiled.outputText)(
+    module, module.exports, request => {
+      if (request === 'react') return React
+      if (request === 'react/jsx-runtime') return require('react/jsx-runtime')
+      if (Object.hasOwn(injected, request)) return injected[request]
+      throw new Error('Unexpected Clipboard test dependency: ' + request)
+    },
+  )
+  return module.exports
+}
+const fence = loadTS(fenceFile, fs.readFileSync(fenceFile, 'utf8'))
+function makeUI(encrypt = async (_key, _scope, _id, value) => ({
+  kind: 'text/plain', nonce: 'nonce', ciphertext: 'cipher:' + value,
+})) {
+  // Only MUI's presentational tree is mocked. This executes the real
+  // ClipboardPage component, its hooks, effects and click/change handlers.
+  const mui = Object.fromEntries(
+    ['Alert', 'Box', 'Button', 'Card', 'Divider', 'Stack', 'TextField', 'Typography']
+      .map(name => [name, ({ children, ...props }) => React.createElement(name, props, children)]),
+  )
+  const crypt = {
+    xDriveClipboardDeriveKey: async passphrase => ({ passphrase }),
+    xDriveClipboardMakeVaultCheck: async () => ({ nonce: 'check-nonce', ciphertext: 'check-cipher' }),
+    xDriveClipboardVerifyVaultCheck: async () => {},
+    xDriveClipboardEncrypt: encrypt,
+    xDriveClipboardDecrypt: async (_key, _scope, item) => 'decrypted:' + item.ciphertext,
+    xDriveClipboardValidateText: text => {
+      if (!text || Buffer.byteLength(text, 'utf8') > 65536) throw new Error('invalid text')
+    },
+  }
+  return loadTS(sourceFile, source, {
+    '@mui/material': mui,
+    '../clipboard-crypto': crypt,
+    '../clipboard-action-fence': fence,
+  }, true).XDriveClipboardPage
+}
+function deferred() {
+  let resolve, reject
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+function port(scope, extra = {}) {
+  return {
+    ownerScopeKey: scope,
+    vault: async () => ({ salt: 'fixture-salt', kdf: 'PBKDF2-SHA256', iterations: 310000,
+      check_nonce: 'check-nonce', check_ciphertext: 'check-cipher', aad_scope: scope }),
+    initializeCheck: async proof => ({ salt: 'fixture-salt', kdf: 'PBKDF2-SHA256',
+      iterations: 310000, check_nonce: proof.nonce, check_ciphertext: proof.ciphertext, aad_scope: proof.scope }),
+    list: async () => ({ items: [], next_before: null }),
+    create: async item => ({ id: 1, ...item }),
+    remove: async () => {},
+    clear: async () => {},
+    readText: async () => 'clipboard text',
+    copyText: async () => {},
+    ...extra,
+  }
+}
+async function act(fn) {
+  await Renderer.act(async () => { fn(); await Promise.resolve() })
+}
+async function mount(Page, owner) {
+  let renderer
+  await act(() => { renderer = Renderer.create(React.createElement(Page, { port: owner })) })
+  return {
+    renderer,
+    update: next => act(() => renderer.update(React.createElement(Page, { port: next }))),
+    unmount: () => act(() => renderer.unmount()),
+    button(label) {
+      const button = renderer.root.findAllByType('Button')
+        .find(item => item.props.children === label)
+      assert.ok(button, 'expected actual Clipboard button: ' + label)
+      return button
+    },
+    field(label) {
+      const field = renderer.root.findAllByType('TextField')
+        .find(item => item.props.label === label)
+      assert.ok(field, 'expected actual Clipboard field: ' + label)
+      return field
+    },
+    snapshot: () => JSON.stringify(renderer.toJSON()),
+  }
+}
+const click = (app, label) => act(() => app.button(label).props.onClick())
+const type = (app, label, value) => act(() =>
+  app.field(label).props.onChange({ target: { value } }))
+async function unlock(app) {
+  await type(app, '剪贴板口令', 'correct long test passphrase')
+  await click(app, '解锁')
+  assert.ok(app.button('锁定'))
+}
+
+test('Clipboard React mounts A→B→A with fresh vault and discards late A unlock', async () => {
+  const Page = makeUI()
+  const oldVault = deferred()
+  let oldLoads = 0
+  const a = port('https://drive.example:1', {
+    vault: () => oldVault.promise,
+    list: async () => { oldLoads++; return { items: [], next_before: null } },
+  })
+  const b = port('https://drive.example:2')
+  const app = await mount(Page, a)
+  await type(app, '剪贴板口令', 'correct long test passphrase')
+  await click(app, '解锁') // unresolved A vault request
+  await app.update(b) // should unmount A and revoke A's action fence
+  oldVault.resolve(await port(a.ownerScopeKey).vault())
+  await act(() => {})
+  assert.equal(oldLoads, 0)
+  assert.ok(app.button('解锁'), 'B must not inherit A key or plaintext')
+  await unlock(app)
+  await app.update(a)
+  assert.ok(app.button('解锁'), 'A→B→A must require a new explicit unlock')
+  await app.unmount()
+})
+
+test('Clipboard React lock and unmount discard a late OS clipboard permission result', async () => {
+  const read = deferred()
+  const app = await mount(makeUI(), port('https://drive.example:3', {
+    readText: () => read.promise,
+  }))
+  await unlock(app)
+  await type(app, '输入内容', 'my private draft')
+  await click(app, '从系统剪贴板读取')
+  await click(app, '锁定')
+  read.resolve('obsolete secret text')
+  await act(() => {})
+  assert.ok(app.button('解锁'))
+  assert.doesNotMatch(app.snapshot(), /obsolete secret text|my private draft/)
+  await app.unmount()
+})
+
+test('Clipboard React lock prevents late copy success/error from replacing lock status', async () => {
+  const copying = deferred()
+  const records = [{ id: 7, kind: 'text/plain', client_event_id: 'event-7',
+    nonce: 'nonce', ciphertext: 'known-secret', created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 50000).toISOString() }]
+  const app = await mount(makeUI(), port('https://drive.example:4', {
+    list: async () => ({ items: records, next_before: null }),
+    copyText: () => copying.promise,
+  }))
+  await unlock(app)
+  await click(app, '复制到本机')
+  await click(app, '锁定')
+  copying.resolve()
+  await act(() => {})
+  assert.match(app.snapshot(), /剪贴板已锁定/)
+  assert.doesNotMatch(app.snapshot(), /已复制到本机|known-secret/)
+  await app.unmount()
+})
+
+test('Clipboard React unknown ACK retry preserves encrypted bytes and EventID', async () => {
+  const saved = []
+  const app = await mount(makeUI(), port('https://drive.example:5', {
+    create: async item => {
+      saved.push({ ...item })
+      if (saved.length === 1) throw new Error('simulated lost ACK after server write')
+      return { id: 31, ...item }
+    },
+  }))
+  await unlock(app)
+  await type(app, '输入内容', 'same payload')
+  await click(app, '加密发送')
+  assert.match(app.snapshot(), /发送未确认/)
+  await click(app, '加密发送')
+  assert.equal(saved.length, 2)
+  assert.deepEqual(saved[1], saved[0], 'retry must never re-encrypt unknown ACK')
+  assert.equal(app.field('输入内容').props.value, '')
+  await app.unmount()
+})
+
+test('Clipboard React preserves newer draft after delayed ACK, and drops post-lock encryption', async () => {
+  const ack = deferred()
+  const app = await mount(makeUI(), port('https://drive.example:6', {
+    create: () => ack.promise,
+  }))
+  await unlock(app)
+  await type(app, '输入内容', 'draft before send')
+  await click(app, '加密发送')
+  await type(app, '输入内容', 'newer draft while request is in flight')
+  ack.resolve({ id: 11 })
+  await act(() => {})
+  assert.equal(app.field('输入内容').props.value, 'newer draft while request is in flight')
+  await app.unmount()
+
+  const cipher = deferred()
+  let submitted = 0
+  const other = await mount(makeUI(() => cipher.promise), port('https://drive.example:7', {
+    create: async () => { submitted++; return { id: 8 } },
+  }))
+  await unlock(other)
+  await type(other, '输入内容', 'old secret')
+  await click(other, '加密发送')
+  await click(other, '锁定')
+  cipher.resolve({ kind: 'text/plain', nonce: 'n', ciphertext: 'c' })
+  await act(() => {})
+  assert.equal(submitted, 0, 'late crypto completion must not start a Server write')
+  assert.doesNotMatch(other.snapshot(), /old secret/)
+  await other.unmount()
+})
+
+test('Clipboard React permission rejection keeps manual input and shows failure', async () => {
+  const app = await mount(makeUI(), port('https://drive.example:8', {
+    readText: async () => { throw new Error('NotAllowedError') },
+  }))
+  await unlock(app)
+  await type(app, '输入内容', 'manual text remains')
+  await click(app, '从系统剪贴板读取')
+  assert.equal(app.field('输入内容').props.value, 'manual text remains')
+  assert.match(app.snapshot(), /浏览器未允许读取剪贴板/)
+  await app.unmount()
+})
+
+test('Browser Clipboard port rejects insecure and missing readText contexts', async () => {
+  const file = path.join(root, 'web/src/clipboardDataPort.ts')
+  const { createXDriveWebClipboardPort } = loadTS(file, fs.readFileSync(file, 'utf8'), {
+    './browserClipboard': { xDriveBrowserCopyText: async () => {} },
+  })
+  const savedNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  try {
+    let calls = 0
+    Object.defineProperty(globalThis, 'navigator', { configurable: true,
+      value: { clipboard: { readText: async () => { calls++; return 'private' } } } })
+    const api = {}
+    const runtimePort = createXDriveWebClipboardPort(api, 'https://drive.example:8')
+    globalThis.window.isSecureContext = false
+    await assert.rejects(runtimePort.readText(), /浏览器不允许读取系统剪贴板/)
+    assert.equal(calls, 0, 'insecure context must not access OS clipboard')
+    globalThis.window.isSecureContext = true
+    assert.equal(await runtimePort.readText(), 'private')
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {} })
+    await assert.rejects(runtimePort.readText(), /浏览器不允许读取系统剪贴板/)
+    Object.defineProperty(globalThis, 'navigator', { configurable: true,
+      value: { clipboard: { readText: async () => { throw new Error('NotAllowedError') } } } })
+    await assert.rejects(runtimePort.readText(), /NotAllowedError/)
+  } finally {
+    globalThis.window.isSecureContext = true
+    if (savedNavigator) Object.defineProperty(globalThis, 'navigator', savedNavigator)
+    else delete globalThis.navigator
+  }
+})
