@@ -67,6 +67,7 @@ test('native safe-area editing toolbar retains bounded explicit export and clean
   assert.match(browser, /native-ios-files-batch-discard-toolbar/)
   assert.match(browser, /Button\("选择已加载项目（最多 200 项）"\)/)
   assert.match(browser, /Button\("清空选择"\)/)
-  assert.match(browser, /Menu \{\s*Button\("选择已加载项目（最多 200 项）"\)/)
+  assert.match(browser, /Menu \{\s*Button\("全选当前目录（最多 200 项）"\)[\s\S]*?Button\("选择已加载项目（最多 200 项）"\)/)
+  assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(/)
   assert.doesNotMatch(browser, /position: fixed|bottom: 0px/)
 })
