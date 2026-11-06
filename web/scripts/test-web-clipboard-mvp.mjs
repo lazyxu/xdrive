@@ -64,6 +64,52 @@ assert.throws(() => mod.xDriveClipboardValidateText(''))
 assert.throws(() => mod.xDriveClipboardValidateText('X'.repeat(65537)))
 assert.equal(mod.xDriveClipboardKind('https://example.test'), 'text/uri-list')
 
+// A pending OS clipboard permission prompt can resolve *after* Lock. Test
+// the actual async fence, not merely a regex over the React source.
+const fenceFilename = 'ui/shared/src/clipboard-action-fence.ts'
+const compiledFence = ts.transpileModule(read(fenceFilename), {
+  fileName: fenceFilename, reportDiagnostics: true,
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+})
+assert.deepEqual((compiledFence.diagnostics ?? []).filter(x => x.category === ts.DiagnosticCategory.Error), [])
+const { XDriveClipboardActionFence } = await import('data:text/javascript;base64,' +
+  Buffer.from(compiledFence.outputText).toString('base64'))
+const fence = new XDriveClipboardActionFence()
+let resolveRead
+let screenDraft = ''
+const oldReadToken = fence.capture()
+const delayedRead = new Promise(resolve => { resolveRead = resolve }).then(value => {
+  if (fence.isCurrent(oldReadToken)) screenDraft = value
+})
+fence.invalidate() // the user locked or switched Owner before permission resolved
+resolveRead('sensitive clipboard text')
+await delayedRead
+assert.equal(screenDraft, '', 'late OS clipboard plaintext must not return after Lock')
+const freshReadToken = fence.capture()
+assert.equal(fence.isCurrent(freshReadToken), true)
+assert.equal(fence.isCurrent(oldReadToken), false)
+let copyNotice = ''
+const copyToken = fence.capture()
+const lateCopy = Promise.resolve().then(() => {
+  if (fence.isCurrent(copyToken)) copyNotice = 'copied'
+})
+fence.invalidate()
+await lateCopy
+assert.equal(copyNotice, '', 'late copy promise must not overwrite Locked notice')
+
+// A non-secure Browser context is rejected by WebCrypto before key use.
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+try {
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true, value: { isSecureContext: false },
+  })
+  await assert.rejects(mod.xDriveClipboardDeriveKey('same long passphrase for both browsers', salt),
+    /HTTPS.*localhost/, 'unsafe HTTP pages cannot initialize encrypted Clipboard')
+} finally {
+  if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
+  else delete globalThis.window
+}
+
 const ui = read('ui/shared/src/mui/ClipboardPage.tsx')
 const transpiledUI = ts.transpileModule(ui, {
   fileName: 'ClipboardPage.tsx', reportDiagnostics: true,
@@ -72,6 +118,10 @@ const transpiledUI = ts.transpileModule(ui, {
 assert.deepEqual((transpiledUI.diagnostics ?? []).filter(x => x.category === ts.DiagnosticCategory.Error), [])
 assert.match(ui, /key=\{port\.ownerScopeKey\}/)
 assert.match(ui, /readController\.current\?\.abort\(\)/)
+assert.match(ui, /actionFence\.current\.invalidate\(\)/)
+assert.match(ui, /actionFence\.current\.isCurrent\(actionToken\)/)
+assert.match(ui, /setReading\(false\)/)
+assert.match(ui, /setConfirmClear\(false\)/)
 assert.match(ui, /pending\.current\?\.text !== draft/)
 assert.match(ui, /xDriveClipboardDecrypt\(/)
 assert.match(ui, /canonicalScope = verified\.aad_scope \|\| port\.ownerScopeKey/)
