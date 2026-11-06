@@ -414,7 +414,7 @@ func openPhotoIntelligenceAPITestDB(
 		&meta.RefreshToken{},
 		&meta.Node{},
 		&meta.AuditEvent{},
-		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoAnalysisState{},
 		&meta.PhotoPersonClusterState{},
 		&meta.BackgroundOwnerCancellation{},

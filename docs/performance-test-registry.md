@@ -1,3 +1,20 @@
+## Photo content binding · 100k SQL paired measurement (2026-11-07)
+
+- Same Windows host and PostgreSQL 16 Alpine Docker database, 100,000 synthetic
+  photo/original metadata rows. Three alternating legacy / full-check OR /
+  equivalent full-check CASE samples; all COUNT results were 100,000 and pages 50.
+- Full-check page medians: OR **345.485 ms**, CASE **19.783 ms** (94.3% less).
+  The unguarded legacy median was **1.032 ms**; the new integrity check is not
+  faster than that baseline. Full-check COUNT remains about **1.0 s**.
+- EXPLAIN identified the OR estimate/JIT overhead; CASE preserves all Owner,
+  original count/digest/size and current-reference predicates. Retain this
+  measured rewrite, without changing database-wide JIT settings.
+- [All nine samples and predicate fingerprint](performance-evidence/photo-content-binding-20261107.json).
+  Reproduce with `XD_TEST_DATABASE_URL` and `XD_PHOTO_CONTENT_PERF=1`, then
+  `go test ./internal/photoasset -run '^TestPhotoContentBindingPerformance100K$' -count=1 -v`.
+- This measures SQL only. Reconciliation, 100k physical originals, model inference,
+  native UI and production latency are not measured by this fixture.
+
 ## P073 · 真实100k Share 游标分页隐藏窗口→Go 取消（2026-10-22）
 
 ## PWA-P1M · Owner 100k mixed Viewer ABBA before/after #2808 (2026-10-27)

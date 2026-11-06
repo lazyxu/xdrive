@@ -355,6 +355,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         state.galleryMapCellSelected != null || state.galleryMapOpen ||
         localPhotoMapOpen || state.gallerySelectionMode || state.gallerySelected != null ||
         state.galleryViewer != null || state.gallerySelectedAlbum != null ||
+        state.galleryPrimaryTab == GalleryPrimaryTab.PEOPLE ||
         state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS)
     val showingCloudGallery = nativeNavigation.gallerySource == NativeGallerySource.CLOUD ||
         state.galleryMapOpen || localPhotoMapOpen || state.galleryViewer != null
@@ -659,6 +660,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             state.galleryMapOpen && state.galleryBd09History.isNotEmpty() ->
                                 "返回上一级聚合"
                             state.galleryMapOpen -> "返回图库"
+                            state.gallerySelectedPerson != null -> "返回人物"
+                            state.galleryPrimaryTab == GalleryPrimaryTab.PEOPLE -> "返回图库"
                             state.gallerySelectedAlbum != null -> "返回精选集"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "返回图库"
                             else -> "返回图库"
@@ -681,6 +684,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             localAlbumTopBack -> localAlbumSelection?.title ?: "本机相册"
                             nativeNavigation.gallerySource == NativeGallerySource.LOCAL -> "本机照片"
                             nativeNavigation.gallerySource == NativeGallerySource.ALBUMS -> "本机相册"
+                            state.gallerySelectedPerson != null -> state.gallerySelectedPerson?.title ?: "人物"
+                            state.galleryPrimaryTab == GalleryPrimaryTab.PEOPLE -> "人物"
                             state.gallerySelectedAlbum != null -> state.gallerySelectedAlbum?.name ?: "相册"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "精选集"
                             else -> "照片"
@@ -972,7 +977,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 Text("打开当前账户的地点地图")
                             }
                             NativeGallerySource.CLOUD ->
-                                if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                                if (state.galleryPrimaryTab == GalleryPrimaryTab.PEOPLE &&
+                                    state.gallerySelectedPerson == null) {
+                                    GalleryPeople(state, controller)
+                                } else if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                                     state.gallerySelectedAlbum == null) {
                                     gallerySaveable.SaveableStateProvider(galleryAlbumsStateKey) {
                                         GalleryCollections(state, controller, galleryThumbnails)

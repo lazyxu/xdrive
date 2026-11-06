@@ -1,3 +1,5 @@
+import { XDrivePhotoContentSources } from './PhotoContentSources'
+import type { PhotoContentSources } from '../photo-content-identity'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -246,7 +248,8 @@ export interface XDriveMediaDetailsContentProps {
   loadNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
   onShowInFolder?: (location: NodeLocation) => void
   loadThumbnail: MediaThumbnailLoader
-  loadMediaItem?: (nodeID: number, signal?: AbortSignal) => Promise<MediaItem>
+  loadContentSources?: (key: string, cursor?: string, signal?: AbortSignal) => Promise<PhotoContentSources>
+  loadMediaItem?: (nodeID: number, signal?: AbortSignal, contentKey?: string) => Promise<MediaItem>
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
   albums: MediaAlbum[]
@@ -266,6 +269,7 @@ export function XDriveMediaDetailsContent({
   loadNodeLocation,
   onShowInFolder,
   loadThumbnail,
+  loadContentSources,
   loadMediaItem,
   loadLivePhotoMotion,
   loadPreviewURL,
@@ -707,6 +711,8 @@ export function XDriveMediaDetailsContent({
           ) : null}
         </Stack>
       </Box>
+      {item.content_key && loadContentSources && <XDrivePhotoContentSources
+        contentKey={item.content_key} load={loadContentSources} />}
       {(loadMediaItem || item.ocr) && item.metadata.media_kind === "image" ? (
         <XDriveMediaOCRDetails key={String(item.node.id) + ":" + String(item.node.revision)}
           item={item} loadMediaItem={loadMediaItem} />

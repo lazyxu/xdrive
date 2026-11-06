@@ -31,6 +31,7 @@ func prepareContentAssets(tx *gorm.DB, ownerID uint64, desired []desiredAsset) (
 		}
 	}
 	legacyResources := make(map[uint64][]meta.PhotoResource)
+	legacyIdentities := make(map[uint64]ContentIdentity)
 	for start := 0; start < len(legacyIDs); start += photoAssetNodeBatchSize {
 		var rows []meta.PhotoResource
 		if err := tx.Where("asset_id IN ?", legacyIDs[start:min(start+photoAssetNodeBatchSize, len(legacyIDs))]).Find(&rows).Error; err != nil {
@@ -54,6 +55,7 @@ func prepareContentAssets(tx *gorm.DB, ownerID uint64, desired []desiredAsset) (
 		}
 		if identity, err := IdentifyOriginals(asset.Kind, originals); err == nil {
 			byKey[identity.Key] = append(byKey[identity.Key], asset)
+			legacyIdentities[asset.ID] = identity
 		}
 	}
 	result := make(map[uint64]meta.PhotoAsset)
@@ -71,6 +73,9 @@ func prepareContentAssets(tx *gorm.DB, ownerID uint64, desired []desiredAsset) (
 		// ranges exactly match this newly verified current complete descriptor.
 		seen := make(map[uint64]bool)
 		for _, candidate := range candidates {
+			if identity, ok := legacyIdentities[candidate.ID]; ok && identity.Manifest != want.identity.Manifest {
+				return nil, fmt.Errorf("legacy photo manifest disagrees with original evidence")
+			}
 			seen[candidate.ID] = true
 		}
 		for _, origin := range want.origins {
@@ -114,6 +119,11 @@ func prepareContentAssets(tx *gorm.DB, ownerID uint64, desired []desiredAsset) (
 	}
 	// An old hash is never reattached to new bytes merely because Node ID is
 	// unchanged. Keep hidden annotations for trash/restore; no CAS pin is added.
+	if err := tx.Exec(`UPDATE xd_photo_collections pc SET preferred_cover_content_key = pa.content_key
+	 FROM xd_photo_assets pa WHERE pc.owner_id = ? AND pa.owner_id = pc.owner_id
+	 AND pc.preferred_cover_content_key = '' AND pc.preferred_cover_node_id = pa.primary_node_id AND pa.content_key <> ''`, ownerID).Error; err != nil {
+		return nil, err
+	}
 	for _, asset := range existing {
 		if used[asset.ID] || asset.PrimaryNodeID == 0 {
 			continue
@@ -141,9 +151,35 @@ func mergeLegacyContentAsset(tx *gorm.DB, ownerID uint64, keeper, duplicate meta
 	if keeper.OwnerID != ownerID || duplicate.OwnerID != ownerID || keeper.ID == duplicate.ID || keeper.ContentKey == "" {
 		return fmt.Errorf("invalid photo identity migration scope")
 	}
+	// Lock user-owned rows before reading their values. A concurrent successful
+	// edit must be included; an edit waiting on a removed alias cannot report a
+	// successful write to the new content. Parent revisions invalidate old ETags.
+	for _, relation := range []struct{ table, parent, column string }{
+		{"xd_photo_collection_assets", "xd_photo_collections", "collection_id"},
+		{"xd_photo_person_assets", "xd_photo_people", "person_id"},
+	} {
+		if !tx.Migrator().HasTable(relation.table) {
+			continue
+		}
+		var invalid int64
+		if err := tx.Table(relation.table+" AS m").Joins("JOIN "+relation.parent+" p ON p.id = m."+relation.column).
+			Where("m.asset_id IN ? AND p.owner_id <> ?", []uint64{keeper.ID, duplicate.ID}, ownerID).Count(&invalid).Error; err != nil {
+			return err
+		}
+		if invalid != 0 {
+			return fmt.Errorf("legacy photo membership crosses Owner boundary")
+		}
+		if err := tx.Exec("SELECT p.id FROM "+relation.parent+" p WHERE p.owner_id = ? AND p.id IN (SELECT "+relation.column+" FROM "+relation.table+" WHERE asset_id IN ?) ORDER BY p.id FOR UPDATE", ownerID, []uint64{keeper.ID, duplicate.ID}).Error; err != nil {
+			return err
+		}
+	}
+	var rows []meta.PhotoMetadata
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("asset_id IN ?", []uint64{keeper.ID, duplicate.ID}).Order("asset_id ASC").Find(&rows).Error; err != nil {
+		return err
+	}
 	// Snapshot all human-owned annotations before changing any relation. Derived
 	// model/map results can be rebuilt; saved people and albums cannot.
-	snapshot := map[string]any{"asset": duplicate}
+	snapshot := map[string]any{"asset": map[string]any{"id": duplicate.ID, "owner_id": duplicate.OwnerID, "primary_node_id": duplicate.PrimaryNodeID, "kind": duplicate.Kind, "evidence_key": duplicate.EvidenceKey}}
 	for _, table := range []string{"xd_photo_metadata", "xd_photo_edit_recipes", "xd_photo_collection_assets", "xd_photo_person_assets"} {
 		if !tx.Migrator().HasTable(table) {
 			continue
@@ -160,10 +196,6 @@ func mergeLegacyContentAsset(tx *gorm.DB, ownerID uint64, keeper, duplicate meta
 	}
 	alias := meta.PhotoAssetIdentityAlias{LegacyAssetID: duplicate.ID, CanonicalAssetID: keeper.ID, OwnerID: ownerID, ContentKey: keeper.ContentKey, SnapshotJSON: string(raw), CreatedAt: time.Now().UTC()}
 	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&alias).Error; err != nil {
-		return err
-	}
-	var rows []meta.PhotoMetadata
-	if err := tx.Where("asset_id IN ?", []uint64{keeper.ID, duplicate.ID}).Order("asset_id ASC").Find(&rows).Error; err != nil {
 		return err
 	}
 	combined := meta.PhotoMetadata{AssetID: keeper.ID}
@@ -193,9 +225,12 @@ func mergeLegacyContentAsset(tx *gorm.DB, ownerID uint64, keeper, duplicate meta
 	if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "asset_id"}}, DoUpdates: clause.AssignmentColumns([]string{"favorite", "tags_json", "people_json", "description"})}).Create(&combined).Error; err != nil {
 		return err
 	}
-	for _, value := range []struct{ table, parent string }{{"xd_photo_collection_assets", "collection_id"}, {"xd_photo_person_assets", "person_id"}} {
+	for _, value := range []struct{ table, parent, parentTable string }{{"xd_photo_collection_assets", "collection_id", "xd_photo_collections"}, {"xd_photo_person_assets", "person_id", "xd_photo_people"}} {
 		if !tx.Migrator().HasTable(value.table) {
 			continue
+		}
+		if err := tx.Exec("UPDATE "+value.parentTable+" SET revision = revision + 1, updated_at = ? WHERE owner_id = ? AND id IN (SELECT "+value.parent+" FROM "+value.table+" WHERE asset_id = ?)", time.Now().UTC(), ownerID, duplicate.ID).Error; err != nil {
+			return err
 		}
 		// Remove duplicate membership first; preserve each remaining album's
 		// original position without copying physical files or merging people.
@@ -207,7 +242,7 @@ func mergeLegacyContentAsset(tx *gorm.DB, ownerID uint64, keeper, duplicate meta
 		}
 	}
 	if tx.Migrator().HasTable(&meta.PhotoPerson{}) {
-		if err := tx.Model(&meta.PhotoPerson{}).Where("owner_id = ? AND cover_asset_id = ?", ownerID, duplicate.ID).Update("cover_asset_id", keeper.ID).Error; err != nil {
+		if err := tx.Model(&meta.PhotoPerson{}).Where("owner_id = ? AND cover_asset_id = ?", ownerID, duplicate.ID).Updates(map[string]any{"cover_asset_id": keeper.ID, "revision": gorm.Expr("revision + 1")}).Error; err != nil {
 			return err
 		}
 	}

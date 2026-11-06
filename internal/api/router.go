@@ -446,6 +446,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/albums/:albumID/items", s.listMediaAlbumItems)
 	authed.POST("/media/albums/:albumID/items", s.addMediaAlbumItems)
 	authed.DELETE("/media/albums/:albumID/items/:nodeID", s.removeMediaAlbumItem)
+	authed.DELETE("/media/albums/:albumID/content/:contentKey", s.removeMediaAlbumItem)
 	authed.POST("/media/smart-albums", s.createSmartMediaAlbum)
 	authed.PATCH("/media/smart-albums/:albumID", s.updateSmartMediaAlbum)
 	authed.DELETE("/media/smart-albums/:albumID", s.deleteSmartMediaAlbum)

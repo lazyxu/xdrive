@@ -25,7 +25,8 @@ func TestMediaContentIdentityRealOriginalsOwnerAndSourceHandoff(t *testing.T) {
 	}
 	db := openPhotoIntelligenceAPITestDB(t, dsn)
 	if err := db.AutoMigrate(&meta.File{}, &meta.SourceItem{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoOCRText{}); err != nil {
+		&meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoOCRText{},
+		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoVisualLabel{}, &meta.PhotoPlaceLabel{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := photoasset.InstallContentIdentitySchema(db); err != nil {
@@ -90,7 +91,30 @@ func TestMediaContentIdentityRealOriginalsOwnerAndSourceHandoff(t *testing.T) {
 	if page.TotalCount != 1 || len(page.Items) != 1 || page.Items[0].ContentKey != key {
 		t.Fatalf("same original appears repeatedly in Gallery: %+v", page)
 	}
+	response = request(t, router, http.MethodGet, "/api/v1/media/items?range=true&limit=10&q=copy-51", token, nil, http.StatusOK)
+	var sourceSearch mediaItemRangeDTO
+	if err := json.Unmarshal(response.Body.Bytes(), &sourceSearch); err != nil {
+		t.Fatal(err)
+	}
+	if sourceSearch.TotalCount != 1 || len(sourceSearch.Items) != 1 || sourceSearch.Items[0].ContentKey != key {
+		t.Fatal("nonrepresentative filename did not find the canonical photo")
+	}
 	request(t, router, http.MethodPatch, base+"/favorite", token, strings.NewReader(`{"favorite":true}`), http.StatusOK)
+	request(t, router, http.MethodPatch, "/api/v1/media/batch/favorite", token, strings.NewReader(fmt.Sprintf(`{"content_keys":[%q],"favorite":true}`, key)), http.StatusOK)
+	album := meta.PhotoCollection{OwnerID: owner.ID, ExternalKey: "manual:content-api", Kind: meta.PhotoCollectionKindManual, Name: "Content album", State: meta.PhotoCollectionStateActive, Revision: 1}
+	if err := db.Create(&album).Error; err != nil {
+		t.Fatal(err)
+	}
+	albumPath := "/api/v1/media/albums/" + url.PathEscape(album.ExternalKey)
+	added := requestWithHeaders(t, router, http.MethodPost, albumPath+"/items", token, strings.NewReader(fmt.Sprintf(`{"content_keys":[%q,%q]}`, key, key)), http.StatusOK, map[string]string{"If-Match": `"1"`})
+	var albumDTO mediaAlbumDTO
+	if err := json.Unmarshal(added.Body.Bytes(), &albumDTO); err != nil {
+		t.Fatal(err)
+	}
+	if albumDTO.ItemCount != 1 || albumDTO.Revision != 2 {
+		t.Fatalf("hash album membership: %+v", albumDTO)
+	}
+	requestWithHeaders(t, router, http.MethodPut, albumPath+"/cover", token, strings.NewReader(fmt.Sprintf(`{"content_key":%q}`, key)), http.StatusOK, map[string]string{"If-Match": `"2"`})
 	response = request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/media/items/%d", nodes[1].ID), token, nil, http.StatusOK)
 	var item mediaItemDTO
 	if err := json.Unmarshal(response.Body.Bytes(), &item); err != nil {
@@ -108,10 +132,11 @@ func TestMediaContentIdentityRealOriginalsOwnerAndSourceHandoff(t *testing.T) {
 		t.Fatalf("source pagination is not bounded: %+v", sources)
 	}
 	response = request(t, router, http.MethodGet, fmt.Sprintf("%s/sources?cursor=%d", base, *sources.NextCursor), token, nil, http.StatusOK)
+	sources = mediaContentSourcesDTO{}
 	if err := json.Unmarshal(response.Body.Bytes(), &sources); err != nil {
 		t.Fatal(err)
 	}
-	if len(sources.Items) != 2 {
+	if len(sources.Items) != 2 || sources.NextCursor != nil {
 		t.Fatalf("source continuation: %+v", sources)
 	}
 	request(t, router, http.MethodGet, base, foreignToken, nil, http.StatusNotFound)
@@ -147,4 +172,16 @@ func TestMediaContentIdentityRealOriginalsOwnerAndSourceHandoff(t *testing.T) {
 	if item.ContentKey != "sha256:"+newSHA || item.Node.ID != nodes[0].ID || item.Favorite {
 		t.Fatalf("replacement acquired old identity/annotation: %+v", item)
 	}
+	currentAlbum, err := server.mediaAlbumDTOByKey(context.Background(), owner.ID, album.ExternalKey)
+	if err != nil || currentAlbum.ItemCount != 1 || currentAlbum.CoverNodeID == nil || *currentAlbum.CoverNodeID == nodes[0].ID {
+		t.Fatalf("album cover followed replaced file: %+v %v", currentAlbum, err)
+	}
+	removed := requestWithHeaders(t, router, http.MethodDelete, albumPath+"/content/"+url.PathEscape(key), token, nil, http.StatusOK, map[string]string{"If-Match": fmt.Sprintf(`"%d"`, currentAlbum.Revision)})
+	if err := json.Unmarshal(removed.Body.Bytes(), &albumDTO); err != nil {
+		t.Fatal(err)
+	}
+	if albumDTO.ItemCount != 0 {
+		t.Fatalf("hash album removal: %+v", albumDTO)
+	}
+	request(t, router, http.MethodPatch, "/api/v1/media/batch/favorite", foreignToken, strings.NewReader(fmt.Sprintf(`{"content_keys":[%q],"favorite":false}`, key)), http.StatusNotFound)
 }

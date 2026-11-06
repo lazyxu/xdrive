@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
+	"github.com/lazyxu/xdrive/internal/photoasset"
 )
 
 // Aliases are fixed by the owning SQL queries, never supplied by an API caller.
@@ -15,7 +16,8 @@ func CurrentFaceEvidenceSQL(face, asset string) string {
   ELSE 'media-analysis-node-' || cf_node.id::text || '-' || cf_node.revision::text || '-v%d-%d' END`,
 		mediapkg.AnalysisPreviewVersion, mediapkg.AnalysisPreviewEdge,
 		mediapkg.AnalysisPreviewVersion, mediapkg.AnalysisPreviewEdge)
-	return fmt.Sprintf(`EXISTS (
+	fingerprint = faceContentFingerprintSQL(asset, fingerprint)
+	return photoasset.CurrentContentBindingSQL(asset) + " AND " + fmt.Sprintf(`EXISTS (
   SELECT 1 FROM xd_nodes AS cf_node
   JOIN xd_files AS cf_file ON cf_file.node_id = cf_node.id
   JOIN xd_media_metadata AS cf_media ON cf_media.node_id = cf_node.id

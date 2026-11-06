@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import type { MediaItem } from '../models'
+import { photoContentIdentity } from '../photo-content-identity'
 
 const ocrFailureLabels: Record<string, string> = {
   analysis_failed: '分析任务执行失败',
@@ -22,7 +23,7 @@ export function XDriveMediaOCRDetails({
   item, loadMediaItem,
 }: {
   item: MediaItem
-  loadMediaItem?: (nodeID: number, signal?: AbortSignal) => Promise<MediaItem>
+  loadMediaItem?: (nodeID: number, signal?: AbortSignal, contentKey?: string) => Promise<MediaItem>
 }) {
   const [detail, setDetail] = useState<MediaItem | null>(item.ocr ? item : null)
   const [phase, setPhase] = useState<'loading' | 'loaded' | 'error'>(item.ocr ? 'loaded' : 'loading')
@@ -42,9 +43,9 @@ export function XDriveMediaOCRDetails({
       setPhase('loaded')
       return () => abort.abort()
     }
-    void loadMediaItem(item.node.id, abort.signal).then(value => {
+    void loadMediaItem(item.node.id, abort.signal, item.content_key).then(value => {
       if (abort.signal.aborted) return
-      if (value.node.id !== item.node.id || value.node.revision !== item.node.revision) {
+      if (photoContentIdentity(value) !== photoContentIdentity(item)) {
         setPhase('error')
         return
       }
@@ -54,10 +55,9 @@ export function XDriveMediaOCRDetails({
       if (!abort.signal.aborted) setPhase('error')
     })
     return () => abort.abort()
-  }, [item.node.id, item.node.revision, item.ocr, loadMediaItem])
+  }, [item.node.id, item.node.revision, item.content_key, item.ocr, loadMediaItem])
 
-  const ocr = detail?.node.id === item.node.id &&
-    detail?.node.revision === item.node.revision ? detail.ocr : undefined
+  const ocr = detail && photoContentIdentity(detail) === photoContentIdentity(item) ? detail.ocr : undefined
   const readyText = phase === 'loaded' && ocr?.state === 'ready' ? ocr.text?.trim() || '' : ''
   const message = phase === 'loading' ? '正在读取 OCR 结果…'
     : phase === 'error' ? '无法读取识别结果，请重新打开属性'

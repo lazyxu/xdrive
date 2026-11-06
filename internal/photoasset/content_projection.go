@@ -17,7 +17,7 @@ func desiredContentIdentity(asset desiredAsset, nodes map[uint64]meta.Node, meta
 	var originals []OriginalResource
 	for _, resource := range asset.resources {
 		node, ok := nodes[resource.nodeID]
-		if !ok || node.File == nil || node.DeletedAt != nil || node.File.SHA256 != resource.sha256 ||
+		if !ok || node.File == nil || node.DeletedAt != nil ||
 			!validContentSHA256(node.File.SHA256) || node.File.Size <= 0 {
 			return ContentIdentity{}, fmt.Errorf("photo source changed")
 		}
@@ -29,6 +29,9 @@ func desiredContentIdentity(asset desiredAsset, nodes map[uint64]meta.Node, meta
 			}
 		}
 		if resource.role == meta.PhotoResourceRoleContainer {
+			if resource.kind != meta.PhotoResourceKindNode || resource.sha256 != node.File.SHA256 || resource.size != node.File.Size {
+				return ContentIdentity{}, fmt.Errorf("photo container changed")
+			}
 			continue // Packaging is a source location, not a third Live original.
 		}
 		sha := resource.sha256
@@ -39,7 +42,10 @@ func desiredContentIdentity(asset desiredAsset, nodes map[uint64]meta.Node, meta
 				return ContentIdentity{}, fmt.Errorf("container original digests need reindexing")
 			}
 			sha = mediapkg.LiveContainerMemberSHA256(row.ContainerJSON, resource.role, resource.byteOffset, resource.size)
-		} else if resource.kind != meta.PhotoResourceKindNode || resource.size != node.File.Size {
+			if sha == "" || sha != resource.sha256 {
+				return ContentIdentity{}, fmt.Errorf("container member digest is not current")
+			}
+		} else if resource.kind != meta.PhotoResourceKindNode || resource.size != node.File.Size || resource.sha256 != node.File.SHA256 {
 			return ContentIdentity{}, fmt.Errorf("photo original size is not current")
 		}
 		originals = append(originals, OriginalResource{Role: resource.role, SHA256: sha, Size: resource.size, Ordinal: resource.ordinal})

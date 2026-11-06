@@ -181,8 +181,9 @@ type PhotoCollection struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 
-	PreferredCoverNodeID *uint64
-	AlbumFolderID        uint64 `gorm:"not null;default:0;index"`
+	PreferredCoverNodeID     *uint64
+	PreferredCoverContentKey string `gorm:"size:96;not null;default:''"`
+	AlbumFolderID            uint64 `gorm:"not null;default:0;index"`
 
 	Owner User `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }

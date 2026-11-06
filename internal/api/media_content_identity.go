@@ -164,7 +164,7 @@ func (s *Server) listMediaContentSources(c *gin.Context) {
 		Joins("JOIN xd_photo_asset_occurrences po ON po.primary_node_id = n.id AND po.owner_id = n.owner_id").
 		Where("po.asset_id = ? AND po.owner_id = ? AND po.primary_node_id > ?", asset.ID, userID(c), after).
 		Where(photoasset.CurrentOccurrenceBindingSQL("po")).Order("po.primary_node_id ASC").Limit(pageSize + 1)
-	if err := query.Find(&nodes).Error; err != nil {
+	if err := query.Preload("File").Find(&nodes).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list photo sources failed")
 		return
 	}

@@ -55,7 +55,7 @@ func TestGallerySyncFolderBrowserUsesLocalNodeTree(t *testing.T) {
 	dbSQL.SetMaxOpenConns(2)
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.Source{},
-		&meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoMetadata{},
+		&meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoMetadata{},
 	); err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photoasset"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -78,14 +79,14 @@ func (s *Server) mediaAlbumDTOByKey(
 		Select(
 			"pc.album_folder_id, pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json, "+
 				"COUNT(DISTINCT album_n.id) AS item_count, "+
-				"COALESCE(MAX(CASE WHEN album_n.id = pc.preferred_cover_node_id AND mm.media_kind IN ? THEN album_n.id END), MIN(CASE WHEN album_n.id IS NOT NULL AND lower(mm.mime_type) IN ? THEN pa.primary_node_id END)) AS cover_node_id, "+
+				"COALESCE(MAX(CASE WHEN ((pc.preferred_cover_content_key <> '' AND pa.content_key = pc.preferred_cover_content_key) OR (pc.preferred_cover_content_key = '' AND album_n.id = pc.preferred_cover_node_id)) AND mm.media_kind IN ? THEN album_n.id END), MIN(CASE WHEN album_n.id IS NOT NULL AND lower(mm.mime_type) IN ? THEN pa.primary_node_id END)) AS cover_node_id, "+
 				"MAX(CASE WHEN album_n.id IS NOT NULL THEN COALESCE(pm.captured_at, pc.updated_at) ELSE pc.updated_at END) AS updated_at",
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
 			thumbnailMIMEs,
 		).
 		Joins("LEFT JOIN xd_photo_collection_assets AS pca ON pca.collection_id = pc.id").
 		Joins("LEFT JOIN xd_photo_assets AS pa ON pa.id = pca.asset_id AND pa.owner_id = pc.owner_id").
-		Joins("LEFT JOIN xd_nodes AS album_n ON album_n.id = pa.primary_node_id AND album_n.owner_id = pc.owner_id AND album_n.deleted_at IS NULL").
+		Joins("LEFT JOIN xd_nodes AS album_n ON album_n.id = pa.primary_node_id AND album_n.owner_id = pc.owner_id AND album_n.deleted_at IS NULL AND "+photoasset.CurrentContentBindingSQL("pa")).
 		Joins("LEFT JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
 		Joins("LEFT JOIN xd_media_metadata AS mm ON mm.node_id = pa.primary_node_id").
 		Where(
@@ -453,9 +454,14 @@ func (s *Server) removeMediaAlbumItem(c *gin.Context) {
 		fail(c, http.StatusConflict, "only manual albums can be modified")
 		return
 	}
-	nodeID, ok := parseID(c.Param("nodeID"))
-	if !ok {
+	nodeID, validNode := parseID(c.Param("nodeID"))
+	contentKey := c.Param("contentKey")
+	if (contentKey == "" && !validNode) || (contentKey != "" && !photoasset.ValidContentKey(contentKey)) {
 		fail(c, http.StatusBadRequest, "invalid media node id")
+		return
+	}
+	if err := s.refreshMediaIndexForGalleryRead(c.Request.Context(), userID(c), mediaRequestIndexBatch); err != nil {
+		fail(c, http.StatusInternalServerError, "refresh media projection failed")
 		return
 	}
 
@@ -477,14 +483,15 @@ func (s *Server) removeMediaAlbumItem(c *gin.Context) {
 		if collection.Revision != expected {
 			return errRevisionConflict
 		}
-		var asset meta.PhotoAsset
-		if err := tx.Where(
-			"owner_id = ? AND primary_node_id = ?",
-			userID(c),
-			nodeID,
-		).First(&asset).Error; err != nil {
+		nodes, keys := []uint64{nodeID}, []string(nil)
+		if contentKey != "" {
+			nodes, keys = nil, []string{contentKey}
+		}
+		assets, err := mediaAssetsForSelection(c.Request.Context(), tx, userID(c), nodes, keys)
+		if err != nil {
 			return err
 		}
+		asset := assets[0]
 		result := tx.Where(
 			"collection_id = ? AND asset_id = ?",
 			collection.ID,

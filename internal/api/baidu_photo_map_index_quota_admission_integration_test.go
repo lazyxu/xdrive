@@ -96,7 +96,7 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 	db, peer := open(), open()
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.MediaMetadata{},
-		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.BaiduPhotoMapConsent{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.BaiduPhotoMapConsent{},
 		&meta.BaiduPhotoMapIndexIntent{}, &meta.BaiduPhotoMapPosition{},
 		&meta.BaiduGeoconvQuotaBucket{}, &meta.BaiduGeoconvFlight{},
 	); err != nil {

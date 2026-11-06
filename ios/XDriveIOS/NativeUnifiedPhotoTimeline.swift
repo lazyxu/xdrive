@@ -45,7 +45,7 @@ struct XDriveIOSNativeUnifiedPhoto: Identifiable {
 
     var id: String {
         if let local { return "local:" + local.id }
-        return "cloud:\(cloud?.id ?? 0)"
+        return "cloud:\(cloud?.contentIdentity ?? "unavailable")"
     }
     var isVideo: Bool { local?.kind == "video" || cloud?.isVideo == true }
     var isLive: Bool { local?.isLive == true || cloud?.isLive == true }

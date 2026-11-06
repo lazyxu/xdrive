@@ -58,8 +58,8 @@ func TestPhotoContentProjectionUsesFullContainerMembers(t *testing.T) {
 		ContainerKind: mediapkg.ContainerKindLIVP, ContainerJSON: string(raw), DerivedResourceVersion: mediapkg.LIVPDerivedResourceVersion}
 	asset := desiredAsset{kind: meta.PhotoAssetKindLivePhoto, primaryID: 1, metadata: row, resources: []desiredResource{
 		{kind: meta.PhotoResourceKindNode, nodeID: 1, sha256: parentSHA, size: 600, role: "container"},
-		{kind: meta.PhotoResourceKindDerived, nodeID: 1, sha256: parentSHA, size: 100, role: "still", byteOffset: 50},
-		{kind: meta.PhotoResourceKindDerived, nodeID: 1, sha256: parentSHA, size: 300, role: "motion", byteOffset: 200},
+		{kind: meta.PhotoResourceKindDerived, nodeID: 1, sha256: stillSHA, size: 100, role: "still", byteOffset: 50},
+		{kind: meta.PhotoResourceKindDerived, nodeID: 1, sha256: motionSHA, size: 300, role: "motion", byteOffset: 200},
 	}}
 	want, err := IdentifyOriginals(meta.PhotoAssetKindLivePhoto, []OriginalResource{{Role: "still", SHA256: stillSHA, Size: 100}, {Role: "motion", SHA256: motionSHA, Size: 300}})
 	if err != nil {

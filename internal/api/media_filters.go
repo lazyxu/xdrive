@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/geoquery"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photoasset"
 	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"gorm.io/gorm"
 )
@@ -371,6 +372,8 @@ func applyMediaSearchFilter(query *gorm.DB, search string) *gorm.DB {
 	like := "%" + strings.ToLower(search) + "%"
 	return query.Where(
 		"LOWER(n.name) LIKE ? "+
+			"OR EXISTS (SELECT 1 FROM xd_photo_asset_occurrences search_po JOIN xd_nodes search_node ON search_node.id = search_po.primary_node_id "+
+			"WHERE search_po.asset_id = pa.id AND search_po.owner_id = pa.owner_id AND search_node.owner_id = pa.owner_id AND "+photoasset.CurrentOccurrenceBindingSQL("search_po")+" AND LOWER(search_node.name) LIKE ?) "+
 			"OR LOWER(COALESCE(xd_media_metadata.camera_make, '')) LIKE ? "+
 			"OR LOWER(COALESCE(xd_media_metadata.camera_model, '')) LIKE ? "+
 			"OR LOWER(COALESCE(xd_media_metadata.lens_model, '')) LIKE ? "+
@@ -405,7 +408,7 @@ func applyMediaSearchFilter(query *gorm.DB, search string) *gorm.DB {
 			"WHERE search_place.asset_id = pa.id AND search_place_state.kind = ? AND search_place_state.state = ? "+
 			"AND LOWER(CONCAT_WS(' ', search_place.formatted, search_place.country, search_place.region, search_place.city, search_place.district, search_place.locality)) LIKE ?"+
 			")",
-		like, like, like, like, like, like, like, like,
+		like, like, like, like, like, like, like, like, like,
 		meta.PhotoAnalysisKindVisualLabel, meta.PhotoAnalysisStateReady, like,
 		meta.PhotoAnalysisKindOCRText, meta.PhotoAnalysisStateReady, meta.MediaIndexStateReady, like,
 		meta.PhotoAnalysisKindPlaceLabel, meta.PhotoAnalysisStateReady, like,
@@ -426,7 +429,7 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions, ownerID u
 		if options.IncludeDescendants {
 			// Postgres resolves the owner-scoped folder tree once, without
 			// materializing media bytes or generating an unbounded ID placeholder list.
-			query = query.Where(`n.parent_id IN (
+			query = query.Where(`EXISTS (SELECT 1 FROM xd_nodes scope_file WHERE scope_file.owner_id = pa.owner_id AND scope_file.deleted_at IS NULL AND (scope_file.id = n.id OR EXISTS (SELECT 1 FROM xd_photo_asset_occurrences po WHERE po.asset_id = pa.id AND po.owner_id = pa.owner_id AND po.primary_node_id = scope_file.id AND `+photoasset.CurrentOccurrenceBindingSQL("po")+`)) AND scope_file.parent_id IN (
 				WITH RECURSIVE folder_scope(id, depth, visited) AS (
 					SELECT seed.id, 0, ARRAY[seed.id]::bigint[]
 					FROM xd_nodes AS seed
@@ -438,9 +441,9 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions, ownerID u
 					WHERE child.owner_id = ? AND child.type = ? AND child.deleted_at IS NULL
 					AND parent_scope.depth < 256 AND NOT (child.id = ANY(parent_scope.visited))
 				) SELECT id FROM folder_scope
-			)`, *options.FolderID, ownerID, meta.NodeTypeDir, ownerID, meta.NodeTypeDir)
+			))`, *options.FolderID, ownerID, meta.NodeTypeDir, ownerID, meta.NodeTypeDir)
 		} else {
-			query = query.Where("n.parent_id = ?", *options.FolderID)
+			query = query.Where("n.parent_id = ? OR EXISTS (SELECT 1 FROM xd_photo_asset_occurrences po JOIN xd_nodes source_node ON source_node.id = po.primary_node_id AND source_node.owner_id = po.owner_id WHERE po.asset_id = pa.id AND po.owner_id = pa.owner_id AND source_node.parent_id = ? AND "+photoasset.CurrentOccurrenceBindingSQL("po")+")", *options.FolderID, *options.FolderID)
 		}
 	}
 	switch options.Category {

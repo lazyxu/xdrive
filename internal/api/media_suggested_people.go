@@ -64,12 +64,22 @@ func (s *Server) listMediaSuggestedPeople(c *gin.Context) {
 		limit = value
 	}
 
+	offset := 0
+	if raw := c.Query("offset"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 || value > 10_000_000 {
+			fail(c, http.StatusBadRequest, "offset must be between 0 and 10000000")
+			return
+		}
+		offset = value
+	}
 	items, err := queryMediaSuggestedPeopleWithReview(
 		c.Request.Context(),
 		s.DB,
 		userID(c),
 		includeReviewed,
 		limit,
+		offset,
 	)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "list suggested people failed")
@@ -94,12 +104,20 @@ func queryMediaSuggestedPeopleWithReview(
 	ownerID uint64,
 	includeReviewed bool,
 	limit int,
+	offsets ...int,
 ) ([]mediaSuggestedPersonDTO, error) {
 	if db == nil || ownerID == 0 {
 		return nil, fmt.Errorf("suggested people query is not configured")
 	}
 	if limit <= 0 || limit > mediaSuggestedPeopleMaxLimit {
 		limit = mediaSuggestedPeopleDefaultLimit
+	}
+	offset := 0
+	if len(offsets) > 0 {
+		offset = offsets[0]
+		if offset < 0 || offset > 10_000_000 {
+			return nil, fmt.Errorf("invalid suggested people offset")
+		}
 	}
 
 	type row struct {
@@ -166,7 +184,7 @@ func queryMediaSuggestedPeopleWithReview(
 		Order(
 			"item_count DESC, face_count DESC, updated_at DESC NULLS LAST, pc.cluster_key ASC",
 		).
-		Limit(limit).
+		Limit(limit).Offset(offset).
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}

@@ -77,6 +77,71 @@ func createContentIdentitySource(t *testing.T, db *gorm.DB, owner meta.User, par
 	return node
 }
 
+func TestPhotoContentBundleRejectsChangedOrMissingMotion(t *testing.T) {
+	db := contentIdentityTestDB(t)
+	owner := meta.User{Username: "bundle-owner", PasswordHash: "unused", Role: meta.UserRoleUser}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	root := meta.Node{OwnerID: owner.ID, Type: meta.NodeTypeDir, Name: "Bundle", Revision: 1}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatal(err)
+	}
+	stillHash, motionHash := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	still := createContentIdentitySource(t, db, owner, root.ID, "still.jpg", stillHash)
+	motion := createContentIdentitySource(t, db, owner, root.ID, "motion.mov", motionHash)
+	identity, err := IdentifyOriginals(meta.PhotoAssetKindLivePhoto, []OriginalResource{
+		{Role: "still", SHA256: stillHash, Size: 100}, {Role: "motion", SHA256: motionHash, Size: 100},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset := meta.PhotoAsset{OwnerID: owner.ID, PrimaryNodeID: still.ID, Kind: meta.PhotoAssetKindLivePhoto,
+		ContentKey: identity.Key, EvidenceKey: identity.Key, ContentManifest: identity.Manifest}
+	if err := db.Create(&asset).Error; err != nil {
+		t.Fatal(err)
+	}
+	resources := []meta.PhotoResource{
+		{AssetID: asset.ID, ResourceKind: "node", NodeID: still.ID, Role: "still", SHA256: stillHash, Size: 100},
+		{AssetID: asset.ID, ResourceKind: "node", NodeID: motion.ID, Role: "motion", SHA256: motionHash, Size: 100},
+	}
+	if err := db.Create(&resources).Error; err != nil {
+		t.Fatal(err)
+	}
+	check := func(want int64) {
+		t.Helper()
+		var count int64
+		if err := db.Table("xd_photo_assets pa").Where("pa.id = ?", asset.ID).Where(CurrentContentBindingSQL("pa")).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != want {
+			t.Fatalf("current bundle count=%d want=%d", count, want)
+		}
+	}
+	check(1)
+	// Still bytes and primary Node are unchanged; motion alone invalidates the bundle.
+	if err := db.Model(&meta.File{}).Where("node_id = ?", motion.ID).Update("sha256", strings.Repeat("c", 64)).Error; err != nil {
+		t.Fatal(err)
+	}
+	check(0)
+	if err := db.Model(&meta.File{}).Where("node_id = ?", motion.ID).Update("sha256", motionHash).Error; err != nil {
+		t.Fatal(err)
+	}
+	check(1)
+	if err := db.Delete(&resources[1]).Error; err != nil {
+		t.Fatal(err)
+	}
+	check(0)
+	if err := db.Create(&resources[1]).Error; err != nil {
+		t.Fatal(err)
+	}
+	check(1)
+	if err := db.Model(&meta.Node{}).Where("id = ?", motion.ID).Update("deleted_at", time.Now().UTC()).Error; err != nil {
+		t.Fatal(err)
+	}
+	check(0)
+}
+
 func TestPhotoContentReconcileSourcesAlbumsReplacementAndRestore(t *testing.T) {
 	db := contentIdentityTestDB(t)
 	owner := meta.User{Username: "content-owner", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
@@ -311,5 +376,71 @@ func TestPhotoContentUpgradePreservesLegacyAnnotations(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatal("identity migration removed original files")
+	}
+}
+
+func TestPhotoContentLegacyLocatorSchemaUpgradeIsIdempotent(t *testing.T) {
+	db := contentIdentityTestDB(t)
+	owner := meta.User{Username: "schema-upgrade", PasswordHash: "unused", Role: meta.UserRoleUser}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	root := meta.Node{OwnerID: owner.ID, Name: "", Type: meta.NodeTypeDir, Revision: 1}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.Repeat("f", 64)
+	first := createContentIdentitySource(t, db, owner, root.ID, "old.jpg", sha)
+	second := createContentIdentitySource(t, db, owner, root.ID, "copy.jpg", sha)
+	legacy := meta.PhotoAsset{OwnerID: owner.ID, PrimaryNodeID: first.ID, Kind: meta.PhotoAssetKindImage, EvidenceKey: fmt.Sprintf("node:%d", first.ID)}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.PhotoResource{AssetID: legacy.ID, ResourceKind: meta.PhotoResourceKindNode, NodeID: first.ID, Role: "primary", Name: first.Name, MediaKind: meta.MediaKindImage, Size: 100, SHA256: sha}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Recreate the actual pre-content schema constraints before upgrading.
+	for _, sql := range []string{
+		`ALTER TABLE xd_photo_assets ADD CONSTRAINT fk_xd_photo_assets_primary_node FOREIGN KEY (primary_node_id) REFERENCES xd_nodes(id) ON DELETE CASCADE`,
+		`CREATE UNIQUE INDEX idx_xd_photo_assets_owner_primary ON xd_photo_assets(owner_id, primary_node_id)`,
+	} {
+		if err := db.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if err := InstallContentIdentitySchema(db); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReconcileOwner(context.Background(), db, owner.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var before meta.PhotoAsset
+	if err := db.Where("owner_id = ? AND content_key = ?", owner.ID, "sha256:"+sha).First(&before).Error; err != nil {
+		t.Fatal(err)
+	}
+	if before.ID != legacy.ID {
+		t.Fatal("matching legacy identity was not preserved")
+	}
+	if err := db.Delete(&meta.File{}, "node_id = ?", first.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Unscoped().Delete(&first).Error; err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := db.Model(&meta.PhotoAsset{}).Where("id = ?", before.ID).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("legacy cascade removed content identity: %d %v", count, err)
+	}
+	if _, err := ReconcileOwner(context.Background(), db, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	var after meta.PhotoAsset
+	if err := db.First(&after, before.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if after.ContentKey != before.ContentKey || after.PrimaryNodeID != second.ID {
+		t.Fatal("remaining original did not retain content identity")
 	}
 }

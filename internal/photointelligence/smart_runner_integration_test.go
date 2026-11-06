@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -65,7 +66,7 @@ func TestSmartRunnerPersistsSearchEvidence(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
-		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoAnalysisState{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoAnalysisState{},
 		&meta.PhotoVisualLabel{}, &meta.PhotoOCRText{},
 	); err != nil {
 		t.Fatal(err)
@@ -118,6 +119,7 @@ func TestSmartRunnerPersistsSearchEvidence(t *testing.T) {
 	if err := db.Create(&asset).Error; err != nil {
 		t.Fatal(err)
 	}
+	bindTestOriginalContent(t, db, &asset, node, file)
 
 	info := testSmartAnalyzerInfo()
 	runner := &SmartRunner{
@@ -188,7 +190,7 @@ func TestSmartRunnerPersistsSearchEvidence(t *testing.T) {
 			t.Fatal(err)
 		}
 		if state.State != meta.PhotoAnalysisStateReady ||
-			state.InputFingerprint == "" {
+			state.InputFingerprint != mediapkg.AnalysisPreviewFingerprint(node.ID, node.Revision, file.SHA256) {
 			t.Fatalf("state=%+v", state)
 		}
 	}

@@ -11,12 +11,13 @@ import (
 )
 
 type originalLocation struct {
-	NodeID uint64 `json:"node_id"`
-	Kind   string `json:"kind"`
-	Role   string `json:"role"`
-	SHA256 string `json:"sha256"`
-	Size   int64  `json:"size"`
-	Offset int64  `json:"offset"`
+	NodeID       uint64 `json:"node_id"`
+	Kind         string `json:"kind"`
+	Role         string `json:"role"`
+	SHA256       string `json:"sha256"`
+	SourceSHA256 string `json:"source_sha256"`
+	Size         int64  `json:"size"`
+	Offset       int64  `json:"offset"`
 }
 
 func persistContentOccurrences(tx *gorm.DB, ownerID uint64, desired []desiredAsset, nodeToAsset map[uint64]uint64, now time.Time) error {
@@ -39,7 +40,16 @@ func persistContentOccurrences(tx *gorm.DB, ownerID uint64, desired []desiredAss
 			seen[origin.primaryID] = true
 			locations := make([]originalLocation, 0, len(origin.resources))
 			for _, resource := range origin.resources {
-				locations = append(locations, originalLocation{NodeID: resource.nodeID, Kind: resource.kind, Role: resource.role, SHA256: resource.sha256, Size: resource.size, Offset: resource.byteOffset})
+				sourceSHA := resource.sha256
+				if resource.kind == meta.PhotoResourceKindDerived {
+					sourceSHA = ""
+					for _, parent := range origin.resources {
+						if parent.nodeID == resource.nodeID && parent.kind == meta.PhotoResourceKindNode && parent.role == meta.PhotoResourceRoleContainer {
+							sourceSHA = parent.sha256
+						}
+					}
+				}
+				locations = append(locations, originalLocation{NodeID: resource.nodeID, Kind: resource.kind, Role: resource.role, SHA256: resource.sha256, SourceSHA256: sourceSHA, Size: resource.size, Offset: resource.byteOffset})
 			}
 			raw, err := json.Marshal(locations)
 			if err != nil {

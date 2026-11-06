@@ -146,6 +146,10 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     private var filters: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack {
+                NavigationLink {
+                    XDriveIOSNativeGalleryPeople(login: login)
+                } label: { Label("人物", systemImage: "person.2") }
+                .accessibilityIdentifier("native-ios-gallery-people")
                 filterButton(nil, title: "全部")
                 ForEach(XDriveIOSNativeGalleryPresence.allCases) { presence in filterButton(presence, title: presence.title) }
             }

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -755,11 +756,8 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	if detail.Metadata.Width != 5 || detail.Metadata.Height != 4 {
 		t.Fatalf("reindexed metadata=%+v", detail.Metadata)
 	}
-	if detail.Description != "Marina Bay sunset\nTrip note" {
-		t.Fatalf("reindexed description=%q", detail.Description)
-	}
-	if !detail.Favorite {
-		t.Fatalf("favorite was lost after media re-index: %+v", detail)
+	if detail.ContentKey != fmt.Sprintf("sha256:%x", sha256.Sum256(secondPNG)) || detail.Description != "" || detail.Favorite {
+		t.Fatalf("replacement original inherited previous photo identity or annotations: %+v", detail)
 	}
 
 	// Real Node overwrite: the original revision URL must NOT respond with
