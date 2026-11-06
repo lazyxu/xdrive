@@ -456,3 +456,9 @@ test('one-photo priority backup is explicit, Owner-bound, and uses the shared CA
   assert.doesNotMatch(single, /XDriveNativeUploadSessionTransport|URLSession\(/)
 })
 
+test('only-new PhotoKit history recovery is visible and never presented as ordinary incremental progress', () => {
+  const ui = read('ios/XDriveIOS/NativePhotoBackupScreen.swift')
+  assert.match(ui, /native-ios-photo-history-recovery/)
+  assert.match(ui, /历史 Token 过期或变更详情不可用时/)
+  assert.match(ui, /只有所有支持的原件都通过当前 Server 收据核验后，才会恢复增量备份/)
+})
