@@ -121,6 +121,15 @@ bash scripts/ci/publish-dsm-package-source.sh stable "$tmp/release" "$two"
 test -f "$tmp/remote/dsm-stable-feed/catalog.json"
 grep -Fq '"version":"0.1.0-9001"' "$tmp/remote/dsm-edge-feed/catalog.json"
 
+# A previously uploaded SPK whose remote digest changed is never reused.
+remote_spk="$tmp/remote/dsm-stable-$two/xdrivenas-armada38x-0.1.0-9001.spk"
+cp "$remote_spk" "$tmp/pristine-remote-spk"
+printf 'remote tamper' >> "$remote_spk"
+if bash scripts/ci/publish-dsm-package-source.sh stable "$tmp/release" "$two" >/dev/null 2>&1; then
+  echo "modified immutable remote release unexpectedly accepted" >&2; exit 1
+fi
+cp "$tmp/pristine-remote-spk" "$remote_spk"
+
 # Mutated package bytes must be rejected even when its version remains constant.
 printf 'tamper' >> "$tmp/release/xdrivenas-armada38x-0.1.0-9001.spk"
 if bash scripts/ci/publish-dsm-package-source.sh stable "$tmp/release" "$two" >/dev/null 2>&1; then
