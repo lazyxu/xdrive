@@ -265,17 +265,21 @@ jobs:
         run: |
           set -euo pipefail
           swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeLANTrust.swift \
             ios/XDriveIOS/AuthService.swift \
+            ios/XDriveIOS/NativeLANCertificateBootstrap.swift \
             ios/XDriveIOS/NativeLANLoginRoute.swift \
             ios/tests/NativeLANLoginRouteChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-lan-route-check"
           "$RUNNER_TEMP/xdrive-ios-lan-route-check"
           node --test desktop/tests/ios-native-lan-ip-login.cjs
+          bash ios/tests/check-native-lan-trust.sh "$RUNNER_TEMP"
 
       - name: Reproduce and classify native login TLS, Owner/root and retry errors
         run: |
           set -euo pipefail
           swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeLANTrust.swift \
             ios/XDriveIOS/AuthService.swift \
             ios/XDriveIOS/OwnerRootVerifier.swift \
             ios/XDriveIOS/NativeOwnerSessionStore.swift \
@@ -289,7 +293,9 @@ jobs:
         run: |
           set -euo pipefail
           swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeLANTrust.swift \
             ios/XDriveIOS/AuthService.swift \
+            ios/XDriveIOS/NativeLANCertificateBootstrap.swift \
             ios/XDriveIOS/NativeLANLoginRoute.swift \
             ios/XDriveIOS/NativeOwnerSessionStore.swift \
             ios/XDriveIOS/NativePasswordProfiles.swift \

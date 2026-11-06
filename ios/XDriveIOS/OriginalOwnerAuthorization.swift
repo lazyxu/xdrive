@@ -151,7 +151,7 @@ private struct XDriveIOSBGOriginalNodeDTO: Decodable {
     let sha256: String
 }
 
-private final class XDriveIOSBGOriginalDenyRedirect: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSBGOriginalDenyRedirect: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

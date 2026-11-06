@@ -20,7 +20,7 @@ private struct XDriveIOSNativeFilesUploadNodeDTO: Decodable {
     let sha256: String?
 }
 
-private final class XDriveIOSNativeFilesUploadDenyRedirect: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeFilesUploadDenyRedirect: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

@@ -59,7 +59,7 @@ enum AuthFailure: Error {
             switch urlError.code {
             case .secureConnectionFailed, .serverCertificateUntrusted,
                  .serverCertificateHasUnknownRoot:
-                return "HTTPS 证书身份或信任校验失败；内网 IP 入口要求证书包含该 IP 的 SAN，并且 iPhone 信任签发 CA。"
+                return "HTTPS 证书身份或信任校验失败。请确认内网证书包含该 IP 的 SAN，并在登录页配对内网 HTTPS。"
             case .serverCertificateHasBadDate, .serverCertificateNotYetValid:
                 return "HTTPS 证书有效期验证失败；请核对手机时间、证书有效期及服务器证书。"
             case .cannotFindHost, .dnsLookupFailed, .cannotConnectToHost,
@@ -90,7 +90,7 @@ struct AuthResponse: Decodable {
 
 /// URLSession's normal redirect behavior is inappropriate for credentials.
 /// Redirects are rejected even if the destination appears to be same-origin.
-private final class RejectRedirects: NSObject, URLSessionTaskDelegate {
+private final class RejectRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

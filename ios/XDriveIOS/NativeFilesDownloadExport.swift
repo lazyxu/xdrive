@@ -29,11 +29,12 @@ private struct XDriveIOSFilesDownloadTicket: Decodable {
 
 /// Download callbacks report *actual received device bytes*, not simulated
 /// time/speed or the Server-side number of bytes scheduled for sending.
-private final class XDriveIOSFilesDenyDownloadRedirects: NSObject, URLSessionDownloadDelegate {
+private final class XDriveIOSFilesDenyDownloadRedirects: XDriveIOSServerTLSDelegate, URLSessionDownloadDelegate, @unchecked Sendable {
     private let onProgress: (Int64, Int64) -> Void
 
     init(onProgress: @escaping (Int64, Int64) -> Void) {
         self.onProgress = onProgress
+        super.init(mode: .storedPairings)
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,

@@ -30,7 +30,7 @@ private enum XDriveIOSPhotoManagedDestinationFailure: Error {
 }
 
 private final class XDriveIOSPhotoManagedDestinationDenyRedirect:
-    NSObject, URLSessionTaskDelegate {
+    XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

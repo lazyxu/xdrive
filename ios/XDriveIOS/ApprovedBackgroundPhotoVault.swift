@@ -292,7 +292,7 @@ private enum XDriveIOSBGDateParser {
     }
 }
 
-private final class XDriveIOSPhotoBGDenyRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSPhotoBGDenyRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

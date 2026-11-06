@@ -11,7 +11,7 @@ private enum XDriveIOSNativeFilesThumbnailFailure: Error {
 /// One shared, cancellation-aware admission gate for Files tiles. A Viewer
 /// preempts tiles by changing their task identity; no 64-request fan-out.
 private final class XDriveIOSNativeFilesThumbnailDenyRedirect:
-    NSObject, URLSessionTaskDelegate {
+    XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

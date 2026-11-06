@@ -28,7 +28,7 @@ private struct XDriveIOSNativeFilesArchiveTicket: Decodable {
     let url: String
 }
 
-private final class XDriveIOSNativeFilesArchiveNoRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeFilesArchiveNoRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

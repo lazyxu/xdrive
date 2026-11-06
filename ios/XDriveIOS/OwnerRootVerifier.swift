@@ -128,7 +128,7 @@ private struct NativeOwnerRootDTO: Decodable {
     let revision: UInt64
 }
 
-private final class XDriveNativeOwnerRejectRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveNativeOwnerRejectRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,

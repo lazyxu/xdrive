@@ -51,7 +51,7 @@ test('1 GiB foreground single-file export has a real free-space preflight and un
 })
 
 test('single-file download shows URLSession real received bytes, not fake timer or Save-to-Files completion', () => {
-  assert.match(exportFile, /NSObject, URLSessionDownloadDelegate/)
+  assert.match(exportFile, /XDriveIOSServerTLSDelegate, URLSessionDownloadDelegate/)
   assert.match(exportFile, /didWriteData bytesWritten: Int64, totalBytesWritten: Int64/)
   assert.match(exportFile, /onProgress\(totalBytesWritten, totalBytesExpectedToWrite\)/)
   assert.match(exportFile, /didFinishDownloadingTo location: URL/)

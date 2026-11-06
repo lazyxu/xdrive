@@ -52,7 +52,7 @@ enum XDriveIOSNativeFilesVersionHistoryFailure: Error {
     case server(Int)
 }
 
-private final class XDriveIOSNativeVersionNoRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeVersionNoRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

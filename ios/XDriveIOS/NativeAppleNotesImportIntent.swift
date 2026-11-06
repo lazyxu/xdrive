@@ -82,7 +82,7 @@ private struct XDriveIOSNotesNodeDTO: Decodable {
     let sha256: String?
 }
 
-private final class XDriveIOSNotesDenyRedirect: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNotesDenyRedirect: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

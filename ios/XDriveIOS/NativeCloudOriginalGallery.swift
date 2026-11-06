@@ -63,7 +63,7 @@ enum XDriveIOSNativeCloudStillFallback: Error {
     case unavailable
 }
 
-private final class XDriveIOSNativeRejectReadRedirect: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeRejectReadRedirect: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

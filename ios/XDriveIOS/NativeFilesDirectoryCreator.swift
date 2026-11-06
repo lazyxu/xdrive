@@ -15,7 +15,7 @@ private struct XDriveIOSNativeCreatedDirectory: Decodable {
     let revision: UInt64
 }
 
-private final class XDriveIOSFilesDenyMutationRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSFilesDenyMutationRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

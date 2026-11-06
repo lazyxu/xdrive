@@ -8,7 +8,7 @@ enum XDriveIOSNativeFilesBatchTrashError: Error {
     case server(Int)
 }
 
-private final class XDriveIOSNativeFilesBatchTrashNoRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeFilesBatchTrashNoRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

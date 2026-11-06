@@ -15,7 +15,7 @@ private struct XDriveIOSNativeFilesMutationTransport {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 
-    private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+    private final class NoRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
         func urlSession(_ session: URLSession, task: URLSessionTask,
                         willPerformHTTPRedirection response: HTTPURLResponse,
                         newRequest request: URLRequest,
