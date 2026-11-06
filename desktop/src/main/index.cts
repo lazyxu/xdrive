@@ -377,11 +377,16 @@ function resetDesktopPlacesWebAuth() {
   const clear = desktopPlacesWebQueue.then(async () => {
     const stale = session.fromPartition(oldPartition, {cache:false})
     // Kill pooled/streaming connections as well as Cookies and DOM storage.
-    await stale.closeAllConnections()
-    await stale.clearStorageData({
-      storages: ['cookies', 'localstorage'],
-    })
-    desktopPlacesWebConfiguredPartitions.delete(oldPartition)
+    // A failed connection shutdown must not skip Cookie removal. The old
+    // partition remains denied even if Electron cannot clear its storage.
+    try { await stale.closeAllConnections() } catch { /* retired partition */ }
+    try {
+      await stale.clearStorageData({
+        storages: ['cookies', 'localstorage'],
+      })
+    } finally {
+      desktopPlacesWebConfiguredPartitions.delete(oldPartition)
+    }
   })
   desktopPlacesWebQueue = clear.catch(() => {})
 }
