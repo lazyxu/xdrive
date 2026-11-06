@@ -26,6 +26,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  ios-release-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact iOS release test source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Test direct IPA publisher, SHA validation, and immutable release safety
+        run: bash scripts/ci/test-ios-unsigned-release.sh
+
   unsigned-ipa:
     runs-on: macos-15
     timeout-minutes: 35
@@ -968,7 +982,7 @@ jobs:
           retention-days: 14
 
   publish-unsigned-ipa:
-    needs: unsigned-ipa
+    needs: [unsigned-ipa, ios-release-contract]
     # The PR's untrusted/unsigned build is retained as an Action Artifact only.
     # Publication requires a successful, exact-source master build.
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
@@ -988,12 +1002,9 @@ jobs:
         with:
           name: xDrive-iOS-unsigned-${{ github.sha }}
           path: dist/ios-unsigned
-      - name: Verify public IPA release contract and fail-closed publisher fixtures
+      - name: Verify exact checked-out source commit
         shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          bash scripts/ci/test-ios-unsigned-release.sh
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Publish direct .ipa and .sha256 to an immutable GitHub Release
         shell: bash
         env:
