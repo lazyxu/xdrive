@@ -48,8 +48,8 @@ p = Path(sys.argv[1])
 with zipfile.ZipFile(p) as archive:
     names = archive.namelist()
     assert names and len(names) == len(set(names)), "empty or duplicated IPA members"
-    assert all(name.startswith("Payload/xDriveIOS.app/") and
-               ".." not in name.split("/") and not name.endswith("/../")
+    assert all((name == "Payload/" or name.startswith("Payload/xDriveIOS.app/")) and
+               ".." not in name.split("/") and not name.startswith("/")
                for name in names), "unexpected IPA payload path"
     assert "Payload/xDriveIOS.app/Info.plist" in names, "missing native Info.plist"
     assert "Payload/xDriveIOS.app/xDriveIOS" in names, "missing native executable"
