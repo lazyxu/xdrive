@@ -555,6 +555,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/trigger", s.requireLocalSourceExecutor(), s.triggerSource)
 	authed.GET("/sources/:id/local-binding", s.getLocalSourceBinding)
 	authed.POST("/sources/:id/local-binding", s.bindLocalSource)
+	// DSM identity-only Device binds its aggregate Personal/Shared Root-set fingerprint.
+	authed.PUT("/sources/:id/synology-root", s.bindSynologySourceRoot)
 	authed.DELETE("/sources/:id/local-binding", s.requireLocalSourceExecutor(), s.unbindLocalSource)
 	authed.GET("/sources/:id/credential", s.getSourceCredentialStatus)
 	authed.PUT("/sources/:id/credential", s.putSourceCredential)

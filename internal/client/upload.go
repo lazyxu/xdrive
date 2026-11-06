@@ -52,17 +52,21 @@ const (
 )
 
 type UploadInit struct {
-	ParentID         *uint64              `json:"parent_id,omitempty"`
-	NodeID           *uint64              `json:"node_id,omitempty"`
-	Name             string               `json:"name,omitempty"`
-	ConflictPolicy   UploadConflictPolicy `json:"conflict_policy,omitempty"`
-	Size             int64                `json:"size"`
-	ChunkSize        int64                `json:"chunk_size,omitempty"`
-	SHA256           string               `json:"sha256,omitempty"`
-	MD5              string               `json:"md5,omitempty"`
-	ChunkSHA256      []string             `json:"chunk_sha256,omitempty"`
-	ResumeKey        string               `json:"resume_key,omitempty"`
-	ExpectedRevision uint64               `json:"expected_revision,omitempty"`
+	ParentID              *uint64              `json:"parent_id,omitempty"`
+	NodeID                *uint64              `json:"node_id,omitempty"`
+	Name                  string               `json:"name,omitempty"`
+	ConflictPolicy        UploadConflictPolicy `json:"conflict_policy,omitempty"`
+	Size                  int64                `json:"size"`
+	ChunkSize             int64                `json:"chunk_size,omitempty"`
+	SHA256                string               `json:"sha256,omitempty"`
+	MD5                   string               `json:"md5,omitempty"`
+	ChunkSHA256           []string             `json:"chunk_sha256,omitempty"`
+	ResumeKey             string               `json:"resume_key,omitempty"`
+	ExpectedRevision      uint64               `json:"expected_revision,omitempty"`
+	SourceID              uint64               `json:"source_id,omitempty"`
+	SourceRevision        uint64               `json:"source_revision,omitempty"`
+	SourceRootID          string               `json:"source_root_id,omitempty"`
+	SourceRootFingerprint string               `json:"source_root_fingerprint,omitempty"`
 }
 
 type UploadPart struct {
@@ -124,6 +128,14 @@ func (c *Client) UploadConflictPreflightBatch(
 
 func (c *Client) StartUpload(ctx context.Context, init UploadInit) (UploadSession, error) {
 	var out UploadSession
+	c.synologySourceMu.RLock()
+	if init.SourceID == 0 && c.synologySourceID != 0 {
+		init.SourceID = c.synologySourceID
+		init.SourceRevision = c.synologySourceRevision
+		init.SourceRootID = c.synologyRootID
+		init.SourceRootFingerprint = c.synologyRootFingerprint
+	}
+	c.synologySourceMu.RUnlock()
 	err := c.json(ctx, http.MethodPost, "/api/v1/uploads", init, &out)
 	return out, err
 }

@@ -31,6 +31,7 @@ type sourceDTO struct {
 	Revision           uint64     `json:"revision"`
 	TargetNodeID       *uint64    `json:"target_node_id,omitempty"`
 	TargetManaged      bool       `json:"target_managed,omitempty"`
+	DeviceID           string     `json:"device_id,omitempty"`
 	TargetPath         string     `json:"target_path,omitempty"`
 	IgnoreRules        string     `json:"ignore_rules,omitempty"`
 	Checkpoint         string     `json:"checkpoint,omitempty"`
@@ -130,6 +131,11 @@ func toSourceDTO(source meta.Source) sourceDTO {
 		Checkpoint: source.Checkpoint, LastRunAt: source.LastRunAt, LastSuccessAt: source.LastSuccessAt,
 		LastError: source.LastError, RunRequestedAt: source.RunRequestedAt,
 		CreatedAt: source.CreatedAt, UpdatedAt: source.UpdatedAt,
+	}
+	if source.DeviceID != nil {
+		dto.DeviceID = *source.DeviceID
+	} else if source.LocalCreatorDeviceID != nil {
+		dto.DeviceID = *source.LocalCreatorDeviceID
 	}
 	if isLocalFolderPush(source) {
 		dto.IgnoreRules = ""
@@ -351,11 +357,12 @@ func (s *Server) createSource(c *gin.Context) {
 		return
 	}
 	isLocalFolder := req.Kind == meta.SourceKindLocalFolder
+	isSynologyPush := req.Kind == synologySourceKind && req.Direction == meta.SourceDirectionPush
 	var creatorDeviceID string
-	if isLocalFolder && req.Direction == meta.SourceDirectionPush {
+	if (isLocalFolder || isSynologyPush) && req.Direction == meta.SourceDirectionPush {
 		parsed, err := uuid.Parse(strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
 		if err != nil {
-			fail(c, http.StatusForbidden, "owning device credential required to create local backup")
+			fail(c, http.StatusForbidden, "registered Push device credential required")
 			return
 		}
 		creatorDeviceID = parsed.String()
@@ -378,6 +385,11 @@ func (s *Server) createSource(c *gin.Context) {
 		}
 		if req.TargetNodeID != 0 {
 			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
+			return
+		}
+	} else if isSynologyPush {
+		if req.TargetNodeID != 0 {
+			fail(c, http.StatusBadRequest, "Synology Photos Push target is managed automatically")
 			return
 		}
 	} else if isSynologyPull || isLocalFolder {
@@ -419,10 +431,14 @@ func (s *Server) createSource(c *gin.Context) {
 		if isLocalFolder {
 			// Never activate a local directory Source without a verified device,
 			// locally authorized root, and the dedicated local-push executor.
-			// Device enrollment and binding are a separate guarded delivery phase.
 			status = meta.SourceStatusPaused
 		}
-		if !isSynologyPull && !isLocalFolder {
+		if isSynologyPush {
+			// DSM Push remains paused until its owning source-agent has bound
+			// and verified its local Personal/Shared filesystem roots.
+			status = meta.SourceStatusPaused
+		}
+		if !isSynologyPull && !isLocalFolder && !isSynologyPush {
 			value := req.TargetNodeID
 			target = &value
 		}
@@ -436,8 +452,11 @@ func (s *Server) createSource(c *gin.Context) {
 	// Lock enrollment before inserting this Source so a concurrent revoke
 	// cannot authorize an orphan unbound Source with a stale credential.
 	var createErr error
-	if isLocalFolder {
-		source.LocalCreatorDeviceID = &creatorDeviceID
+	if isLocalFolder || isSynologyPush {
+		source.DeviceID = &creatorDeviceID
+		if isLocalFolder {
+			source.LocalCreatorDeviceID = &creatorDeviceID
+		}
 		createErr = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 			var device meta.ClientDevice
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -448,7 +467,12 @@ func (s *Server) createSource(c *gin.Context) {
 				}
 				return err
 			}
-			if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+			if isLocalFolder {
+				if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+					return errLocalSourceCreateDeviceUnauthorized
+				}
+			} else if device.Platform != "synology" ||
+				!clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
 				return errLocalSourceCreateDeviceUnauthorized
 			}
 			if err := tx.Create(&source).Error; err != nil {
@@ -456,7 +480,12 @@ func (s *Server) createSource(c *gin.Context) {
 			}
 			// Device identity comes from the device lock and credential, not
 			// the UI's target picker or an unauthenticated display name.
-			managed, err := createLocalPushManagedTargetTx(c.Request.Context(), tx, source, device)
+			var managed meta.Node
+			if isLocalFolder {
+				managed, err = createLocalPushManagedTargetTx(c.Request.Context(), tx, source, device)
+			} else {
+				managed, err = createSynologyPushManagedTargetTx(c.Request.Context(), tx, source, device)
+			}
 			if err != nil {
 				return err
 			}
@@ -515,7 +544,7 @@ func (s *Server) createSource(c *gin.Context) {
 		}
 		return
 	}
-	if isLocalFolder {
+	if isLocalFolder || isSynologyPush {
 		c.Header("Cache-Control", "private, no-store")
 	}
 	c.Header("ETag", strconv.Quote(strconv.FormatUint(source.Revision, 10)))

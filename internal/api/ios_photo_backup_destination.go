@@ -235,7 +235,7 @@ func (s *Server) putIOSPhotoBackupDestination(c *gin.Context) {
 			OwnerID: owner.ID, Name: name, Kind: meta.SourceKindIOSPhotos,
 			Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
 			RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused,
-			Revision: 1, LocalCreatorDeviceID: &creatorID,
+			Revision: 1, DeviceID: &creatorID, LocalCreatorDeviceID: &creatorID,
 		}
 		if err := tx.Create(&source).Error; err != nil {
 			return err
