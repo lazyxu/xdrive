@@ -49,23 +49,7 @@ test('every native Server session reuses the scoped TLS delegate', () => {
   for (const name of fs.readdirSync(source).filter(name => name.endsWith('.swift'))) {
     const swift = read(`ios/XDriveIOS/${name}`)
     const delegates = [...swift.matchAll(/:\s*NSObject,\s*URLSession(?:Task|Data|Download|Stream)?Delegate/g)]
-    // The private Files Saved Searches client owns a redirect-only task
-    // delegate. It must not implement TLS challenge handling, bypass trust,
-    // set cookies or introduce a second certificate authority. Keep every
-    // other delegate creation forbidden rather than removing this audit.
-    if (name === 'NativeLANTrust.swift') {
-      assert.equal(delegates.length, 1, name)
-    } else if (name === 'NativeFilesSavedSearches.swift') {
-      assert.equal(delegates.length, 1, name)
-      assert.match(swift, /class XDriveIOSNativeFilesSavedSearchNoRedirect: NSObject, URLSessionTaskDelegate/)
-      assert.match(swift, /willPerformHTTPRedirection[\s\S]*?completionHandler\(nil\)/)
-      assert.doesNotMatch(swift, /didReceive challenge|serverTrust|SecTrustSetAnchorCertificates|allowInsecure|rejectUnauthorized/)
-      assert.match(swift, /ServerAddress\.parse\(owner\.origin\.absoluteString\)/)
-      assert.match(swift, /parts\.scheme == "https"/)
-      assert.match(swift, /config\.httpShouldSetCookies = false/)
-    } else {
-      assert.equal(delegates.length, 0, name)
-    }
+    assert.equal(delegates.length, name === 'NativeLANTrust.swift' ? 1 : 0, name)
     assert.doesNotMatch(swift, /URLSession\.shared|URLSessionConfiguration\.background\(/, name)
     sessions += [...swift.matchAll(/URLSession\(/g)].length
   }
