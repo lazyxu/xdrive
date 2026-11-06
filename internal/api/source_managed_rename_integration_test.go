@@ -1,8 +1,8 @@
 package api
 
 import (
+	"errors"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,6 +16,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// The disabled HTTP entry point no longer authorizes Synology Pull edits.
+// Keep testing the dormant provider's existing atomic target-renamer directly,
+// so its legacy data-safety contract remains protected for future re-enable.
 func TestManagedSourceRename5BAtomicAndLegacyGuard(t *testing.T) {
 	db, srv, owner, _, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(&meta.SyncRun{}); err != nil {
@@ -33,40 +36,45 @@ func TestManagedSourceRename5BAtomicAndLegacyGuard(t *testing.T) {
 	connector := createFilePropertiesDir(t, db, owner.ID, pull.ID, "Synology Photos")
 	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "原目录")
 	file := createFilePropertiesFile(t, db, owner.ID, target.ID, "document.jpg", 32)
-	targetID := target.ID
 	src := meta.Source{
 		OwnerID: owner.ID, Name: "原目录", Kind: synologySourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused,
-		Revision: 1, TargetNodeID: &targetID, TargetManaged: true,
+		Revision: 1, TargetNodeID: &target.ID, TargetManaged: true,
 	}
 	if err := db.Create(&src).Error; err != nil {
 		t.Fatal(err)
 	}
-	fileID := file.ID
 	item := meta.SourceItem{
-		SourceID: src.ID, ExternalID: "remote:original", NodeID: &fileID,
+		SourceID: src.ID, ExternalID: "remote:original", NodeID: &file.ID,
 		Kind: meta.SourceItemKindFile, Path: "document.jpg",
-		NodeRevision: file.Revision, State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+		NodeRevision: file.Revision, State: meta.SourceItemStateSynced,
+		LastSeenAt: time.Now().UTC(),
 	}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
 	}
-
-	patch := func(id, revision uint64, payload string, status int) sourceDTO {
-		t.Helper()
-		response := requestWithHeaders(t, router, http.MethodPatch,
-			fmt.Sprintf("/api/v1/sources/%d", id), token, strings.NewReader(payload),
-			status, map[string]string{"If-Match": fmt.Sprintf("%q", fmt.Sprint(revision))})
-		var dto sourceDTO
-		if status == http.StatusOK {
-			if err := json.Unmarshal(response.Body.Bytes(), &dto); err != nil {
-				t.Fatal(err)
+	path := fmt.Sprintf("/api/v1/sources/%d", src.ID)
+	requestWithHeaders(t, router, http.MethodPatch, path, token,
+		strings.NewReader(`{"name":"HTTP 不再可改"}`), http.StatusGone,
+		map[string]string{"If-Match": `"1"`})
+	rename := func(name string) error {
+		return db.Transaction(func(tx *gorm.DB) error {
+			var current meta.Source
+			if err := tx.Where("id = ? AND owner_id = ?", src.ID, owner.ID).
+				Take(&current).Error; err != nil {
+				return err
 			}
-		}
-		return dto
+			if err := renameManagedSourceTargetTx(tx, current, name); err != nil {
+				return err
+			}
+			return tx.Model(&meta.Source{}).Where("id = ? AND revision = ?",
+				current.ID, current.Revision).Updates(map[string]any{
+				"name": name, "revision": gorm.Expr("revision + 1"),
+			}).Error
+		})
 	}
-	check := func(wantSourceName, wantTargetName string, sourceRevision, nodeRevision uint64) {
+	check := func(name string, revision uint64) {
 		t.Helper()
 		var actualSource meta.Source
 		if err := db.First(&actualSource, src.ID).Error; err != nil {
@@ -76,45 +84,39 @@ func TestManagedSourceRename5BAtomicAndLegacyGuard(t *testing.T) {
 		if err := db.First(&actualTarget, target.ID).Error; err != nil {
 			t.Fatal(err)
 		}
-		if actualSource.Name != wantSourceName || actualTarget.Name != wantTargetName ||
-			actualSource.Revision != sourceRevision || actualTarget.Revision != nodeRevision ||
-			actualSource.TargetNodeID == nil || *actualSource.TargetNodeID != target.ID ||
-			actualTarget.ParentID == nil || *actualTarget.ParentID != connector.ID {
-			t.Fatalf("Source / Node lost their atomic identity: source=%+v node=%+v", actualSource, actualTarget)
+		if actualSource.Name != name || actualTarget.Name != name ||
+			actualSource.Revision != revision || actualTarget.Revision != revision ||
+			actualSource.TargetNodeID == nil || *actualSource.TargetNodeID != target.ID {
+			t.Fatalf("atomic rename lost source/target: source=%+v target=%+v",
+				actualSource, actualTarget)
+		}
+		var stillFile meta.Node
+		var stillItem meta.SourceItem
+		if err := db.First(&stillFile, file.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.First(&stillItem, item.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if stillFile.ParentID == nil || *stillFile.ParentID != target.ID ||
+			stillItem.NodeID == nil || *stillItem.NodeID != file.ID ||
+			stillItem.Path != "document.jpg" {
+			t.Fatal("rename changed historical original or SourceItem identity")
 		}
 	}
-
-	// No ordinary user directory is renamed: only the single server-managed
-	// target is updated. File Node IDs, source-relative paths and blob bytes do
-	// not move, and direct Node-ID shares keep referring to the same root.
-	renamed := patch(src.ID, 1, `{"name":"新目录"}`, http.StatusOK)
-	if renamed.Name != "新目录" || renamed.TargetNodeID == nil ||
-		*renamed.TargetNodeID != target.ID ||
-		renamed.TargetPath != "同步文件夹/远程拉取/Synology Photos/新目录" {
-		t.Fatalf("managed rename DTO=%+v", renamed)
-	}
-	check("新目录", "新目录", 2, 2)
-	var preservedFile meta.Node
-	if err := db.First(&preservedFile, file.ID).Error; err != nil {
+	if err := rename("新目录"); err != nil {
 		t.Fatal(err)
 	}
-	var preservedItem meta.SourceItem
-	if err := db.First(&preservedItem, item.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if preservedFile.ID != file.ID || preservedFile.ParentID == nil ||
-		*preservedFile.ParentID != target.ID || preservedItem.NodeID == nil ||
-		*preservedItem.NodeID != file.ID || preservedItem.Path != "document.jpg" {
-		t.Fatalf("rename changed synced file identity: file=%+v item=%+v", preservedFile, preservedItem)
-	}
-
+	check("新目录", 2)
 	createFilePropertiesDir(t, db, owner.ID, connector.ID, "已占用")
-	patch(src.ID, 2, `{"name":"已占用"}`, http.StatusConflict)
-	check("新目录", "新目录", 2, 2)
-	patch(src.ID, 2, `{"name":"CON"}`, http.StatusBadRequest)
-	check("新目录", "新目录", 2, 2)
-
-	// An in-flight writer cannot race an otherwise-valid folder rename.
+	if err := rename("已占用"); !errors.Is(err, errSourceTargetNameConflict) {
+		t.Fatalf("occupied managed name was accepted: %v", err)
+	}
+	check("新目录", 2)
+	if err := rename("CON"); !errors.Is(err, errInvalidSourceConfig) {
+		t.Fatalf("invalid managed name was accepted: %v", err)
+	}
+	check("新目录", 2)
 	run := meta.SyncRun{
 		ID: uuid.NewString(), SourceID: src.ID, SourceRevision: 2,
 		Mode: meta.SourceRunModeScan, Trigger: meta.SyncRunTriggerManual,
@@ -123,48 +125,41 @@ func TestManagedSourceRename5BAtomicAndLegacyGuard(t *testing.T) {
 	if err := db.Create(&run).Error; err != nil {
 		t.Fatal(err)
 	}
-	patch(src.ID, 2, `{"name":"写入期间"}`, http.StatusConflict)
-	check("新目录", "新目录", 2, 2)
+	if err := rename("写入期间"); !errors.Is(err, errSourceTargetRenameActive) {
+		t.Fatalf("running Source rename was accepted: %v", err)
+	}
+	check("新目录", 2)
 	if err := db.Model(&meta.SyncRun{}).Where("id = ?", run.ID).
 		Update("status", meta.SyncRunStatusCancelled).Error; err != nil {
 		t.Fatal(err)
 	}
-
-	// Re-targeting and renaming in one request cannot silently detach the
-	// Source from the directory just renamed.
-	other := createFilePropertiesDir(t, db, owner.ID, connector.ID, "另一目录")
-	patch(src.ID, 2, fmt.Sprintf(`{"name":"错误目标","target_node_id":%d}`, other.ID), http.StatusConflict)
-	check("新目录", "新目录", 2, 2)
-
-	// A pre-migration Source can still target a mixed ordinary directory;
-	// its Source.Name may not rename that directory until ownership is proven.
-	legacy := createFilePropertiesDir(t, db, owner.ID, root.ID, "个人文件")
-	legacyID := legacy.ID
+	ordinary := createFilePropertiesDir(t, db, owner.ID, root.ID, "个人文件")
 	old := meta.Source{
 		OwnerID: owner.ID, Name: "旧来源", Kind: synologySourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused,
-		Revision: 1, TargetNodeID: &legacyID,
+		Revision: 1, TargetNodeID: &ordinary.ID,
 	}
 	if err := db.Create(&old).Error; err != nil {
 		t.Fatal(err)
 	}
-	patch(old.ID, 1, `{"name":"不允许改普通目录"}`, http.StatusConflict)
-	var unchanged meta.Source
-	if err := db.First(&unchanged, old.ID).Error; err != nil {
+	err = db.Transaction(func(tx *gorm.DB) error {
+		return renameManagedSourceTargetTx(tx, old, "不能重命名普通目录")
+	})
+	if !errors.Is(err, errSourceTargetMigrationRequired) {
+		t.Fatalf("legacy mixed directory rename bypassed provenance: %v", err)
+	}
+	var stillOrdinary meta.Node
+	if err := db.First(&stillOrdinary, ordinary.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	var ordinary meta.Node
-	if err := db.First(&ordinary, legacy.ID).Error; err != nil {
+	if stillOrdinary.Name != ordinary.Name || stillOrdinary.Revision != ordinary.Revision {
+		t.Fatal("legacy Source mutated ordinary folder")
+	}
+	if err := rename("最终目录"); err != nil {
 		t.Fatal(err)
 	}
-	if unchanged.Name != old.Name || unchanged.Revision != 1 || ordinary.Name != legacy.Name {
-		t.Fatalf("unsafe legacy rename mutated data: source=%+v node=%+v", unchanged, ordinary)
-	}
-	// Ensure the failed operations did not leave an open transaction or stale
-	// target claim: one normal rename remains possible afterward.
-	patch(src.ID, 2, `{"name":"最终目录"}`, http.StatusOK)
-	check("最终目录", "最终目录", 3, 3)
+	check("最终目录", 3)
 }
 
 func TestYikeSourceRenameKeepsAccountIDAndIgnoresCredentialNickname(t *testing.T) {
