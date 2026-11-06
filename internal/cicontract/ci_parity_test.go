@@ -48,7 +48,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		t.Fatalf("GitLab must build/package only, got jobs=%v want=%v", gitlabJobs, requiredGitLabJobs)
 	}
 	for _, name := range []string{
-		"single-commit", "desktop-tests", "go-linux", "go-linux-api", "go-windows",
+		"desktop-tests", "go-linux", "go-linux-api", "go-windows",
 		"server-validation", "server-backup", "offline-release-tests",
 		"offline-security-contract", "test-backup-cli-windows",
 		"test-linux-artifact", "test-source-agent-artifact",
@@ -59,6 +59,11 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		if !strings.Contains("|"+strings.Join(githubJobs, "|")+"|", "|"+name+"|") {
 			t.Errorf("GitHub must retain full test/publish gate %s", name)
 		}
+	}
+	// Commit count is intentionally not a CI gate. Keep every real source,
+	// artifact and Final Gate requirement without restoring that old job.
+	if strings.Contains("|"+strings.Join(githubJobs, "|")+"|", "|single-commit|") {
+		t.Error("GitHub CI must not reintroduce the single-commit PR gate")
 	}
 	requireRaw(t, "GitHub-owned full CI and Final Gate", githubRaw,
 		"merge_group:", "pr-scope:", "final-gate:",
