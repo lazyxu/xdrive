@@ -16,6 +16,35 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
+// Retiring the separate DSM Photos Push uploader must reject its old
+// SourceID/Root proof at every generic upload entry. Ordinary Files, owning
+// local_folder lp2_ operations, and Pull SourceRun upload admission still
+// carry no retired Synology SourceID proof.
+func TestRetiredSynologyPhotosUploadScopeAndSessionGuard(t *testing.T) {
+	if !validUploadWithoutRetiredSynologyProof(uploadInitRequest{}) {
+		t.Fatal("ordinary and local-folder requests require no legacy Synology proof")
+	}
+	for _, req := range []uploadInitRequest{
+		{SourceID: 42},
+		{SourceRevision: 7},
+		{SourceRootID: "legacy-root"},
+		{SourceRootFingerprint: strings.Repeat("a", 64)},
+		{SourceID: 42, SourceRevision: 7, SourceRootID: "legacy-root"},
+	} {
+		if validUploadWithoutRetiredSynologyProof(req) {
+			t.Fatalf("retired Synology proof survived upload initialization: %+v", req)
+		}
+	}
+	if err := requireUploadWithoutRetiredSynologySource(meta.UploadSession{}); err != nil {
+		t.Fatalf("unbound generic upload lost original writer: %v", err)
+	}
+	if err := requireUploadWithoutRetiredSynologySource(meta.UploadSession{
+		SourceID: 42, SourceRevision: 7,
+	}); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("retired SourceID upload must fail closed: %v", err)
+	}
+}
+
 // This regression deliberately keeps legacy rows in PostgreSQL. Removing the
 // old DSM Photos Push executor must never cascade-delete Source/Node/CAS data.
 func TestRetiredSynologyPhotosPushPreservesHistoryAndCannotWrite(t *testing.T) {
