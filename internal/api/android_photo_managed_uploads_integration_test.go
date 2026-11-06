@@ -176,7 +176,7 @@ func TestAndroidPhotoManagedUploadUsesDeviceSourceTargetAndCanonicalCAS(t *testi
 	// committed Node is not erased and cannot be falsified into another ACK.
 	nextName := "xdrive-video-" + strings.Repeat("d", 20) + "-" + strings.Repeat("e", 20) + ".mp4"
 	nextKey := "and_" + strings.Repeat("f", 64)
-	nextInit := strings.ReplaceAll(strings.Replace(start, name, nextName), resume, nextKey)
+	nextInit := strings.ReplaceAll(strings.ReplaceAll(start, name, nextName), resume, nextKey)
 	pending := requestWithHeaders(t, router, http.MethodPost, endpoint,
 		token, strings.NewReader(nextInit), http.StatusCreated, proof)
 	var next uploadSessionDTO
