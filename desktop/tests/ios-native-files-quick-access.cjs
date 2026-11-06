@@ -60,7 +60,12 @@ test('pinned folder transport is HTTPS no Cookie no redirects and guards Owner o
   assert.match(client, /config\.urlCache = nil/)
   assert.match(client, /req\.setValue\("Bearer " \+ accessToken/)
   assert.match(client, /let next = try await list\(in: client\)/)
-  assert.match(client, /quick access/i)
+  // Verify real mutation readback and Owner generation, not an incidental
+  // English spelling inside Swift documentation.
+  assert.match(client, /let after = try await client\.perform\(action, previous: before\)/)
+  assert.match(client, /guard let self, self\.epoch == ticket,/)
+  assert.match(client, /self\.items = after/)
+  assert.match(client, /self\.verified = true/)
   assert.match(client, /快捷目录操作结果未确认，请刷新核对，不要直接重试。/)
   assert.doesNotMatch(client, /WKWebView|document\.cookie|URLSession\.shared/)
 })
