@@ -296,3 +296,33 @@ test('staged SHA reads and Live ZIP destination I/O stop the whole auto/BG windo
   assert.match(scanning, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
   assert.doesNotMatch(policy, /UploadSession|beginCreate|confirmReceipt|UserDefaults/)
 })
+
+test('approved BG only-new run replays the durable PhotoKit queue before reserving a window', () => {
+  const task = read('BackgroundPhotoTask.swift')
+  const runner = read('ForegroundPhotoBackupMVP.swift')
+  const queue = read('PhotoKitPersistentBackupQueue.swift')
+  const scope = task.slice(task.indexOf('let olderPending ='))
+  const preflight = scope.indexOf('.pendingCount(owner: owner)')
+  const replay = scope.indexOf('queue.replay(')
+  const caughtUp = scope.indexOf('queue.isCaughtUp(owner: owner)')
+  const reserve = scope.indexOf('.reserveDue(owner: owner, approved: approved)')
+  const writer = scope.indexOf('XDriveIOSForegroundPhotoBackupMVP(')
+
+  assert.ok(preflight >= 0 && preflight < replay,
+    'existing global unknown-ACK preflight must precede queue history replay')
+  assert.ok(replay > 0 && replay < caughtUp && caughtUp < reserve && reserve < writer,
+    'PhotoKit revisions must be durable and caught up before BG reservation and write')
+  assert.match(scope, /plan\.enabled, plan\.backupStartRule == \.onlyNew/)
+  assert.match(scope, /if plan\.pausedForReview \{[\s\S]*?\.pause\(owner: owner\)[\s\S]*?return/)
+  assert.match(scope, /queue\.replay\(owner: owner, maximumEvents: 4\)/)
+  assert.match(scope, /guard try await queue\.isCaughtUp\(owner: owner\) else \{[\s\S]*?resubmitOnlyIfStillApproved\(\)[\s\S]*?return/)
+  assert.match(scope, /\.requiresExplicitBaseline \{[\s\S]*?\.invalidArchivedToken \{/)
+  assert.match(scope, /newOnlySince = plan\.newOnlySince/)
+  assert.match(scope, /startOffset: offset,\s*maximumNewOriginals: min\([\s\S]*?\),\s*newOnlySince: newOnlySince,\s*changeQueue: incrementalQueue/, 
+    'Swift labeled arguments must follow the shared run signature order')
+  assert.match(queue, /func pendingCandidates\(owner: XDriveNativeOwnerRoot, limit: Int = 64\)/)
+  assert.match(runner, /changeQueue\.settle\(\s*candidate\.pending, result: \.confirmed/)
+  assert.match(runner, /changeQueue\.settle\(\s*candidate\.pending, result: \.failed/)
+  assert.equal((task.match(/XDriveIOSForegroundPhotoBackupMVP\(/g) || []).length, 1,
+    'the background runner must not spawn an independent upload path')
+})
