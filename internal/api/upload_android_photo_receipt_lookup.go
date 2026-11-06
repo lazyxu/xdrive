@@ -87,11 +87,13 @@ func (s *Server) lookupAndroidPhotoUploadReceipt(c *gin.Context) {
 	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var current meta.UploadSession
 		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
-			Where("id = ? AND owner_id = ? AND resume_key = ? AND parent_id = ? AND node_id IS NULL AND name = ? AND requested_name = ? AND total_size = ? AND chunk_size = ? AND sha256 = ? AND (conflict_policy = ? OR conflict_policy = '') AND
-				COALESCE(source_id, 0) = 0 AND COALESCE(source_run_id, '') = '' AND share_id IS NULL AND
-				COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = '' AND
-				COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 AND
-				status IN ? AND expires_at > ?",
+			Where("id = ? AND owner_id = ? AND resume_key = ? AND parent_id = ? AND node_id IS NULL AND "+
+				"name = ? AND requested_name = ? AND total_size = ? AND chunk_size = ? AND sha256 = ? "+
+				"AND (conflict_policy = ? OR conflict_policy = '') AND "+
+				"COALESCE(source_id, 0) = 0 AND COALESCE(source_run_id, '') = '' AND share_id IS NULL AND "+
+				"COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = '' AND "+
+				"COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 AND "+
+				"status IN ? AND expires_at > ?",
 				snapshot.ID, userID(c), req.ResumeKey, req.ParentID, req.Name, req.Name,
 				req.Size, req.ChunkSize, req.SHA256, meta.UploadConflictPolicyFail,
 				[]string{meta.UploadStatusActive, meta.UploadStatusFinalized}, time.Now()).
