@@ -189,7 +189,7 @@ func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
 
 func TestManagedTargetRenameRejectsInFlightUploadAndRun(t *testing.T) {
 	db, server, owner, _, _ := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.SyncRun{}, &meta.LocalPushCommonUploadOperation{}); err != nil {
+	if err := db.AutoMigrate(&meta.SyncRun{}, &meta.UploadSession{}, &meta.LocalPushCommonUploadOperation{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
