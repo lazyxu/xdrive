@@ -31,3 +31,7 @@ feat/dsm-device-backup-management-parity	12315b55f8daf48f6890fb9dee435aba1eb20c8
 # Verified S01/S09 duplicate aliases, 2026-11-06: exact unchanged tip is an ancestor of open PR #3927 head f8b380e904c41a8f5728ea45fc5b76f401bfbbb5. The canonical development PR is retained until validated and merged.
 feat/push-deviceid-upload-auth-audit-20261106	d02011e3a61c2912a2644f78cb9aa9cbba252889	duplicate exact SHA; ancestor of active S01/S09 integration PR #3927; no open PR head/base uses this alias
 feat/push-s01-s09-unified-device-upload-auth-20261106	d02011e3a61c2912a2644f78cb9aa9cbba252889	duplicate exact SHA; ancestor of active S01/S09 integration PR #3927; no open PR head/base uses this alias
+
+# Verified map aliases / explicitly declined legacy map path; 2026-11-06.
+dev/ios-map-3936-rebase-source-20261106	4d331a28ae83505ac1ec9b10b690e8ce57abd354	duplicate exact head of active native MapKit PR #3936; canonical source branch remains open and protected
+feat/ios-photo-map-limited-access-20261105	34bd62e70e5c64b0baecc455e739c5871b9eda71	rejected obsolete Limited PhotoKit map path; Full Access-only map design accepted in merged PR #3911 and #3922
