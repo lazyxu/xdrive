@@ -36,6 +36,8 @@ FILES = (
 )
 
 MOCK_GLAB = r'''#!/usr/bin/python3
+A='a'*40
+B='b'*40
 import hashlib
 import json
 import os
@@ -55,16 +57,8 @@ def fail(message):
     sys.exit(22)
 
 if args[:2] == ['release','create']:
-    tag = args[2]
-    if tag == 'snapshot':
-        if state['release'] is not None:
-            fail('already exists')
-        state['release'] = {'description':args[args.index('--notes') + 1],
-                            'name':args[args.index('--name') + 1], 'links':[]}
-        state['events'].append('create-release')
-        persist()
-        print('release created')
-        sys.exit(0)
+    if args[2] == 'snapshot':
+        fail('unsafe implicit glab release create snapshot was reintroduced')
     state['events'].append('create-stable')
     persist()
     print('release created')
@@ -130,10 +124,31 @@ if endpoint.startswith('projects/42/packages/123/package_files?'):
     print(json.dumps(files))
     sys.exit(0)
 
+if endpoint == 'projects/42/releases' and method == 'POST':
+    if state['release'] is not None:
+        fail('409 Conflict (HTTP 409)')
+    if os.getenv('MOCK_RELEASE_CREATE_500_BEFORE'):
+        fail('glab: 500 Internal Server Error (HTTP 500)')
+    assert fields.get('tag_name') == 'snapshot' and fields.get('ref') in (A, B), fields
+    state['release'] = {'description': fields['description'],
+                        'name': fields['name'], 'tag_name': 'snapshot', 'links': []}
+    state['events'].append('create-release')
+    persist()
+    if os.getenv('MOCK_RELEASE_CREATE_500_AFTER'):
+        fail('glab: 500 Internal Server Error (HTTP 500)')
+    print(json.dumps(state['release']))
+    sys.exit(0)
+
 if endpoint == 'projects/42/releases/snapshot':
     if method == 'GET':
+        if os.getenv('MOCK_RELEASE_GET_500_ALWAYS'):
+            fail('glab: 500 Internal Server Error (HTTP 500)')
+        if state.get('release_get_500_remaining', 0) > 0:
+            state['release_get_500_remaining'] -= 1
+            persist()
+            fail('glab: 500 Internal Server Error (HTTP 500)')
         if state['release'] is None:
-            fail('404 Not Found')
+            fail('404 Not Found (HTTP 404)')
         print('{invalid JSON' if os.getenv('MOCK_INVALID_RELEASE_JSON')
               else json.dumps(state['release']))
         sys.exit(0)
@@ -243,12 +258,8 @@ def real_cli_api(tmp):
                     args += ['--input', str(upload)]
                 elif body:
                     fields = json.loads(body)
-                    if self.command == 'POST' and endpoint == 'projects/42/releases':
-                        args = ['release', 'create', fields['tag_name'],
-                                '--notes', fields['description'], '--name', fields['name']]
-                    else:
-                        for key, value in fields.items():
-                            args += ['-f', f'{key}={value}']
+                    for key, value in fields.items():
+                        args += ['-f', f'{key}={value}']
                 result = subprocess.run(
                     [sys.executable, str(tmp/'api-model'), *args],
                     env=self.server.fixture_env, capture_output=True, timeout=5,
@@ -328,7 +339,9 @@ def run(tmp, sha, **switches):
             'NO_PROXY':'127.0.0.1', 'no_proxy':'127.0.0.1',
         })
     for key in ('MOCK_FAIL_ASSET','MOCK_CORRUPT_DIGEST','MOCK_FAIL_LINK','MOCK_STALE',
-                'MOCK_FAIL_PACKAGE_READ','MOCK_INVALID_RELEASE_JSON','MOCK_LINK_PAGE_FAILURE'):
+                'MOCK_FAIL_PACKAGE_READ','MOCK_INVALID_RELEASE_JSON','MOCK_LINK_PAGE_FAILURE',
+                'MOCK_RELEASE_GET_500_ALWAYS','MOCK_RELEASE_CREATE_500_BEFORE',
+                'MOCK_RELEASE_CREATE_500_AFTER'):
         env.pop(key,None)
     env.update(switches)
     if api_server is not None:
@@ -446,6 +459,45 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp, Exit
     initial={'packages':{},'release':None,'next_link':0,'events':[]}
     (tmp/'state.json').write_text(json.dumps(initial))
 
+    # A 500 on Release GET must not be misreported as 404. No upload or
+    # accidental Release creation may occur while server state is unknown.
+    unavailable,after=run(tmp,A,MOCK_RELEASE_GET_500_ALWAYS='1')
+    assert unavailable.returncode != 0
+    assert after == initial, after
+    assert 'state unknown' in unavailable.stderr or 'GET remained unavailable' in unavailable.stderr
+
+    # A transient GET 500 is safe to retry without generating extra Releases.
+    transient = dict(initial, release_get_500_remaining=1)
+    (tmp/'state.json').write_text(json.dumps(transient))
+    recovered,after=run(tmp,A)
+    check('one transient GitLab Release GET 500',recovered)
+    assert after['release_get_500_remaining'] == 0
+    assert [event for event in after['events'] if event == 'create-release'] == ['create-release']
+
+    # A failing POST may leave all package bytes correctly staged. The next
+    # run must reuse those SHA-verified bytes rather than upload duplicates.
+    (tmp/'state.json').write_text(json.dumps(initial))
+    create_failed,after=run(tmp,A,MOCK_RELEASE_CREATE_500_BEFORE='1')
+    assert create_failed.returncode != 0
+    assert after['release'] is None
+    assert len(after['packages']['sha-'+A]) == len(FILES)
+    assert not any(event == 'create-release' for event in after['events'])
+    staged = after
+    replay,after=run(tmp,A)
+    check('reuse verified package files after failed Release POST',replay)
+    assert len([event for event in after['events'] if event.startswith('upload-')]) == len(FILES)
+    assert len([event for event in after['events'] if event == 'create-release']) == 1
+    assert 'reuse verified GitLab package file' in replay.stdout
+
+    # GitLab can return 500 after committing a POST. Read back first; do not
+    # send another POST to create a duplicate Release/tag.
+    (tmp/'state.json').write_text(json.dumps(initial))
+    committed_error,after=run(tmp,A,MOCK_RELEASE_CREATE_500_AFTER='1')
+    check('500 response after the Release was actually created', committed_error)
+    assert len([event for event in after['events'] if event == 'create-release']) == 1
+    assert 'XDRIVE_RELEASE_COMMIT='+A in after['release']['description']
+
+    (tmp/'state.json').write_text(json.dumps(initial))
     fresh,new=run(tmp,A)
     check('new',fresh)
     assert 'XDRIVE_RELEASE_COMMIT='+A in new['release']['description']
