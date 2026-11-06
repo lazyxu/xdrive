@@ -435,6 +435,67 @@ function seedDesktopPlacesWebAuth(server: string, owner: string,
   return pending
 }
 
+/**
+ * Restart-safe native Agent -> one-use Server grant -> isolated Electron
+ * Cookie exchange. Main is the ONLY holder of the grant, and only for this
+ * operation. No native Access/Refresh token is ever read by Main or sent to
+ * the guest's JS, URL, preload or third-party Baidu provider.
+ */
+function seedDesktopPlacesWebAuthFromAgent(identity: DesktopPlacesWebIdentity):
+  Promise<boolean> {
+  if (!desktopPlacesWebOwnerStillCurrent(identity)) return Promise.resolve(false)
+  if (sameDesktopPlacesWebIdentity(desktopPlacesWebReady, identity))
+    return Promise.resolve(true)
+  if (desktopPlacesWebPending &&
+      sameDesktopPlacesWebIdentity(desktopPlacesWebPending, identity))
+    return desktopPlacesWebPending.promise
+  if (desktopPlacesWebReady || desktopPlacesWebPending) resetDesktopPlacesWebAuth()
+  const generation = desktopPlacesWebGeneration
+  const pending = desktopPlacesWebQueue.then(async () => {
+    if (generation !== desktopPlacesWebGeneration ||
+        !desktopPlacesWebOwnerStillCurrent(identity)) return false
+    // Agent's own TLS-pinned HTTP client proves its native RefreshToken on
+    // Server. The local IPC returns ONLY a 30s one-use opaque grant.
+    const grant = await requireAgentClient().desktopMapGuestGrant()
+    if (!grant || grant.username !== identity.owner ||
+        typeof grant.ticket !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(grant.ticket) ||
+        !Number.isInteger(grant.expires_in) ||
+        grant.expires_in <= 0 || grant.expires_in > 30) return false
+    if (generation !== desktopPlacesWebGeneration ||
+        !desktopPlacesWebOwnerStillCurrent(identity)) return false
+    const places = session.fromPartition(desktopPlacesWebPartition, {cache:false})
+    const response = await places.fetch(identity.origin + '/api/v1/auth/desktop-map/redeem', {
+      method: 'POST', credentials: 'include', redirect: 'error',
+      signal: AbortSignal.timeout(12_000),
+      headers: { Origin: identity.origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ticket:grant.ticket}),
+    })
+    if (!response.ok) return false
+    const result: unknown = await response.json()
+    const auth = result as {username?:unknown;browser_session?:unknown;refresh_token?:unknown}|null
+    if (!auth || auth.username !== identity.owner ||
+        auth.browser_session !== true || auth.refresh_token !== '') return false
+    const cookies = await places.cookies.get({
+      url: identity.origin, name: '__Host-xdrive_refresh',
+    })
+    if (!cookies.some(cookie => cookie.httpOnly && cookie.secure)) return false
+    if (generation !== desktopPlacesWebGeneration ||
+        !desktopPlacesWebOwnerStillCurrent(identity)) return false
+    desktopPlacesWebReady = identity
+    return true
+  }).catch(() => false)
+  desktopPlacesWebPending = {...identity, promise:pending}
+  desktopPlacesWebQueue = pending.then(() => {})
+  void pending.then(ok => {
+    if (desktopPlacesWebPending?.promise === pending)
+      desktopPlacesWebPending = null
+    if (!ok && generation === desktopPlacesWebGeneration)
+      resetDesktopPlacesWebAuth()
+  })
+  return pending
+}
+
 async function ensureDesktopPlacesWebAuth(identity: DesktopPlacesWebIdentity):
   Promise<boolean> {
   if (!desktopPlacesWebOwnerStillCurrent(identity)) return false
@@ -442,8 +503,12 @@ async function ensureDesktopPlacesWebAuth(identity: DesktopPlacesWebIdentity):
   if (desktopPlacesWebPending &&
       sameDesktopPlacesWebIdentity(desktopPlacesWebPending, identity))
     return desktopPlacesWebPending.promise
-  // A retained Agent session may outlive a Desktop window. Only a password
-  // the user explicitly chose to remember may be decrypted for that case.
+  // Prefer the retained native Agent session. This works after restarting
+  // Desktop with "remember password" disabled and never decrypts any password.
+  if (await seedDesktopPlacesWebAuthFromAgent(identity)) return true
+  if (!desktopPlacesWebOwnerStillCurrent(identity)) return false
+  // Compatibility with old Servers/Agents: the existing explicitly saved
+  // encrypted-password route is retained, but never required for new systems.
   if (!securePasswordStorageAvailable()) return false
   const profile = findLoginProfile(loginHistory, identity.origin + '/', identity.owner)
   if (!profile?.remember_password || !profile.encrypted_password) return false
