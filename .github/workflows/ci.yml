@@ -1267,6 +1267,11 @@ jobs:
           sh -n scripts/ci/gitlab-publish-release.sh
           sh -n scripts/ci/install-gitlab-release-tools.sh
           bash scripts/ci/test-gitlab-release-tools.sh
+          # DSM Package Center: POST catalog + immutable version monotonicity.
+          node --test infra/dsm-package-source/worker.test.mjs
+          bash -n scripts/ci/publish-dsm-package-source.sh
+          bash -n scripts/ci/test-publish-dsm-package-source.sh
+          bash scripts/ci/test-publish-dsm-package-source.sh
           bash -n scripts/ci/test-gitlab-release-version.sh
           bash scripts/ci/test-gitlab-release-version.sh
           python3 scripts/ci/test-gitlab-snapshot-publish.py
