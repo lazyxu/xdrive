@@ -179,6 +179,22 @@ func setup(args []string) error {
 	if strings.TrimSpace(*personal) == "" && strings.TrimSpace(*shared) == "" {
 		return fmt.Errorf("at least one of --personal or --shared is required")
 	}
+	// A scheduled scan holds this lock while it reads root identity, updates
+	// its private identity journal and commits SourceItems. Reconfiguration
+	// must use the same lock before inspecting roots or changing Source state:
+	// otherwise setup can replace the configured root beneath an active scan.
+	lockDir, err := sourceagentconfig.Dir()
+	if err != nil {
+		return err
+	}
+	unlock, acquired, err := lockSourceAgentRun(lockDir)
+	if err != nil {
+		return fmt.Errorf("acquire source-agent setup lock: %w", err)
+	}
+	if !acquired {
+		return fmt.Errorf("source-agent is already running; cannot reconfigure Synology Photos roots during a scan")
+	}
+	defer unlock()
 	personalID, personalFingerprint, err := validateLocalRoot("personal", *personal)
 	if err != nil {
 		return fmt.Errorf("personal root: %w", err)
