@@ -79,8 +79,8 @@ func TestSourceArchiveAndDeleteRejectLiveUploadWithoutRunningRun(t *testing.T) {
 			}
 			if err := db.Model(&meta.UploadSession{}).Where("id = ?", session.ID).
 				Update("status", meta.UploadStatusFinalized).Error; err != nil {
-					t.Fatal(err)
-				}
+				t.Fatal(err)
+			}
 			requestWithHeaders(t, router, tc.method, path, token, nil, tc.okStatus, headers)
 			var after meta.Source
 			var kept meta.Node
@@ -107,8 +107,8 @@ func TestSourceLifecycleUnsettledNativeOperationsAndExpiry(t *testing.T) {
 	if err := db.AutoMigrate(&meta.SyncRun{}, &meta.UploadSession{},
 		&meta.LocalPushCommonUploadOperation{}, &meta.LocalPushOperationIntent{},
 		&meta.LocalPushStaging{}, &meta.LocalPushQuotaHold{}); err != nil {
-			t.Fatal(err)
-		}
+		t.Fatal(err)
+	}
 	target := createFilePropertiesDir(t, db, owner.ID, root.ID, "native source target")
 	source := meta.Source{
 		OwnerID: owner.ID, Name: "local push", Kind: meta.SourceKindLocalFolder,
@@ -139,13 +139,13 @@ func TestSourceLifecycleUnsettledNativeOperationsAndExpiry(t *testing.T) {
 	check(true)
 	if err := db.Model(&meta.LocalPushCommonUploadOperation{}).Where("operation_id = ?", common.OperationID).
 		Update("state", meta.LocalPushCommonUploadBound).Error; err != nil {
-			t.Fatal(err)
-		}
+		t.Fatal(err)
+	}
 	check(true)
 	if err := db.Model(&meta.LocalPushCommonUploadOperation{}).Where("operation_id = ?", common.OperationID).
 		Update("state", meta.LocalPushCommonUploadCommitted).Error; err != nil {
-			t.Fatal(err)
-		}
+		t.Fatal(err)
+	}
 	check(false)
 	now := time.Now().UTC()
 	intent := meta.LocalPushOperationIntent{
@@ -158,8 +158,8 @@ func TestSourceLifecycleUnsettledNativeOperationsAndExpiry(t *testing.T) {
 	check(true)
 	if err := db.Model(&meta.LocalPushOperationIntent{}).Where("id = ?", intent.ID).
 		Update("expires_at", now.Add(-time.Minute)).Error; err != nil {
-			t.Fatal(err)
-		}
+		t.Fatal(err)
+	}
 	check(false)
 	stage := meta.LocalPushStaging{
 		SourceID: source.ID, StageID: uuid.NewString(), OwnerID: owner.ID,
@@ -171,14 +171,14 @@ func TestSourceLifecycleUnsettledNativeOperationsAndExpiry(t *testing.T) {
 	for _, status := range []string{localPushStageReserved, localPushStageWriting, localPushStageReady} {
 		if err := db.Model(&meta.LocalPushStaging{}).Where("source_id = ?", source.ID).
 			Update("status", status).Error; err != nil {
-				t.Fatal(err)
-			}
+			t.Fatal(err)
+		}
 		check(true)
 	}
 	if err := db.Model(&meta.LocalPushStaging{}).Where("source_id = ?", source.ID).
 		Update("expires_at", now.Add(-time.Minute)).Error; err != nil {
-			t.Fatal(err)
-		}
+		t.Fatal(err)
+	}
 	check(false)
 	hold := meta.LocalPushQuotaHold{
 		StageID: stage.StageID, OwnerID: owner.ID, SourceID: source.ID,
@@ -190,7 +190,7 @@ func TestSourceLifecycleUnsettledNativeOperationsAndExpiry(t *testing.T) {
 	check(true)
 	if err := db.Model(&meta.LocalPushQuotaHold{}).Where("stage_id = ?", hold.StageID).
 		Update("released_at", &now).Error; err != nil {
-			t.Fatal(err)
-		}
+		t.Fatal(err)
+	}
 	check(false)
 }
