@@ -39,7 +39,7 @@ func TestLocalSourceCreateAndFirstBindRequireCreatingDevice(t *testing.T) {
 		}
 	}
 	target := createFilePropertiesDir(t, db, owner.ID, root.ID, "Backups")
-	createBody := fmt.Sprintf(`{"name":"A photos","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual","target_node_id":%d}`, target.ID)
+	createBody := `{"name":"A photos","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual","target_node_id":0}`
 	request(t, router, http.MethodPost, "/api/v1/sources", ownerJWT, strings.NewReader(createBody), http.StatusForbidden)
 	requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", ownerJWT, strings.NewReader(createBody), http.StatusForbidden,
 		map[string]string{"X-XDrive-Device-ID": deviceA.ID, "X-XDrive-Device-Token": secretB})
@@ -51,11 +51,10 @@ func TestLocalSourceCreateAndFirstBindRequireCreatingDevice(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	deviceFolder := "A_" + strings.ReplaceAll(deviceA.ID, "-", "")[:12]
 	if created.ID == 0 || created.Revision != 1 || created.Status != meta.SourceStatusPaused ||
 		created.TargetNodeID == nil || *created.TargetNodeID == target.ID ||
-		created.TargetPath != "同步文件夹/Push/"+deviceFolder+"/A photos" {
-		t.Fatalf("local Source must use server-managed device directory, not old target: %+v", created)
+		created.TargetPath != "同步文件夹/Push/A photos" {
+		t.Fatalf("local Source must use flat managed Push directory, not old target: %+v", created)
 	}
 	if strings.Contains(response.Body.String(), "creator_device") || strings.Contains(response.Body.String(), secretA) {
 		t.Fatalf("device claim or secret leaked: %s", response.Body.String())

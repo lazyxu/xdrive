@@ -200,6 +200,11 @@ func discardPristineLocalManagedTargetTx(ctx context.Context, tx *gorm.DB, sourc
 			Take(&group).Error; err != nil {
 			return err
 		}
+		// Flat managed Push targets have no per-device ancestor to prune.
+		// The fixed Push namespace must survive even the last draft deletion.
+		if group.Name == "Push" {
+			return nil
+		}
 		var childCount int64
 		if err := tx.Model(&meta.Node{}).Where("parent_id = ?", group.ID).Count(&childCount).Error; err != nil {
 			return err

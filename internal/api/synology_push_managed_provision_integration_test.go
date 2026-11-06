@@ -59,17 +59,10 @@ func TestCreateSynologyPushRequiresRegisteredDeviceAndProvisionsCanonicalTarget(
 		t.Fatal(err)
 	}
 	if target.ParentID == nil {
-		t.Fatalf("managed target has no device group: %+v", target)
-	}
-	var group meta.Node
-	if err := db.First(&group, *target.ParentID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if group.ParentID == nil {
-		t.Fatalf("device group has no Push parent: %+v", group)
+		t.Fatalf("managed target is missing flat Push parent: %+v", target)
 	}
 	var pushRoot meta.Node
-	if err := db.First(&pushRoot, *group.ParentID).Error; err != nil {
+	if err := db.First(&pushRoot, *target.ParentID).Error; err != nil {
 		t.Fatal(err)
 	}
 	if pushRoot.Name != "Push" || pushRoot.ParentID == nil {
@@ -146,7 +139,7 @@ func TestCreateSynologyPushRequiresRegisteredDeviceAndProvisionsCanonicalTarget(
 		strings.NewReader(`{"status":"active"}`), http.StatusForbidden, revokedHeaders)
 }
 
-func TestSynologyPushManagedTargetRejectsUnclaimedDeviceGroup(t *testing.T) {
+func TestSynologyPushManagedTargetRejectsOccupiedOrdinaryLeaf(t *testing.T) {
 	db, _, owner, _, root := setupFilePropertiesTestDB(t)
 	device := meta.ClientDevice{
 		ID: uuid.NewString(), OwnerID: owner.ID, Name: "DSM Conflict", Platform: "synology",
@@ -155,13 +148,9 @@ func TestSynologyPushManagedTargetRejectsUnclaimedDeviceGroup(t *testing.T) {
 	if err := db.Create(&device).Error; err != nil {
 		t.Fatal(err)
 	}
-	groupName, err := managedPushDeviceFolderName(device)
-	if err != nil {
-		t.Fatal(err)
-	}
 	syncRoot := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
 	pushRoot := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, "Push")
-	_ = createFilePropertiesDir(t, db, owner.ID, pushRoot.ID, groupName)
+	_ = createFilePropertiesDir(t, db, owner.ID, pushRoot.ID, "Photos")
 	source := meta.Source{
 		OwnerID: owner.ID, Name: "Photos", Kind: synologySourceKind,
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
@@ -176,6 +165,6 @@ func TestSynologyPushManagedTargetRejectsUnclaimedDeviceGroup(t *testing.T) {
 		return err
 	})
 	if err == nil || !errors.Is(err, errSourceManagedDirectoryOccupied) {
-		t.Fatalf("unclaimed same-name device group should be rejected, got %v", err)
+		t.Fatalf("occupied ordinary leaf should be rejected, got %v", err)
 	}
 }

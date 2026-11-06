@@ -23,8 +23,8 @@ func TestCreateSynologyPullManagedTargetWithoutClaimingLegacyFolder(t *testing.T
 		WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_name
-		ON xd_sources(owner_id, lower(name))`).Error; err != nil {
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_direction_name
+		ON xd_sources(owner_id, direction, lower(name))`).Error; err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
@@ -40,8 +40,13 @@ func TestCreateSynologyPullManagedTargetWithoutClaimingLegacyFolder(t *testing.T
 		`{"name":"我的文档","kind":"synology_files","direction":"pull","sync_mode":"backup","run_mode":"sync","target_node_id":%d}`,
 		ordinary.ID,
 	)
+	// An old client-supplied target is no longer accepted, even if it is
+	// an Owner-owned folder. The caller may only supply the last leaf name.
+	request(t, router, http.MethodPost, "/api/v1/sources", token,
+		strings.NewReader(legacyInput), http.StatusBadRequest)
 	createdRes := request(t, router, http.MethodPost, "/api/v1/sources", token,
-		strings.NewReader(legacyInput), http.StatusCreated)
+		strings.NewReader(`{"name":"我的文档","kind":"synology_files","direction":"pull","sync_mode":"backup","run_mode":"sync"}`),
+		http.StatusCreated)
 	var created sourceDTO
 	if err := json.Unmarshal(createdRes.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
