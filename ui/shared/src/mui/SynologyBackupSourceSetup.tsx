@@ -127,9 +127,11 @@ function XDriveSynologyBackupSourceSetupForHost({
     const pinnedClient = client
     const pinnedOwnerScope = ownerScope
     const explicitlyEnableAuto = enableAutoAfterCreate
+    // Keep both explicit negative checks: an old Host or Owner must never
+    // authorize a Source, schedule or upload after the NAS session rotates.
     const sameOwningHost = () => mountedRef.current &&
-      latestScopeRef.current.client === pinnedClient &&
-      latestScopeRef.current.ownerScope === pinnedOwnerScope
+      !(latestScopeRef.current.client !== pinnedClient ||
+        latestScopeRef.current.ownerScope !== pinnedOwnerScope)
     setStatus('creating')
     setCreatedID(null)
     setAutoResult('none')
