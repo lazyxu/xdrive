@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -48,4 +49,48 @@ func TestSourceAgentRunLockDoesNotCoupleIndependentConfigurations(t *testing.T) 
 		t.Fatalf("independent config: acquired=%v err=%v", b, err)
 	}
 	defer releaseB()
+}
+
+func TestSourceAgentSetupCannotChangeRootsDuringScheduledRun(t *testing.T) {
+	base := t.TempDir()
+	configDir := filepath.Join(base, "config")
+	t.Setenv("XD_SOURCE_AGENT_CONFIG_DIR", configDir)
+	release, acquired, err := lockSourceAgentRun(configDir)
+	if err != nil || !acquired || release == nil {
+		t.Fatalf("scheduled run lock: acquired=%v err=%v", acquired, err)
+	}
+	locked := true
+	defer func() {
+		if locked {
+			release()
+		}
+	}()
+
+	// The missing root would normally fail validation. Setup must first
+	// reject the active scan, before reading or changing roots, credentials
+	// or the bound Source on the server.
+	missingRoot := filepath.Join(base, "missing-photos")
+	for _, mode := range []string{"scan", "sync"} {
+		err := setup([]string{"--shared", missingRoot, "--mode", mode})
+		if err == nil || !strings.Contains(err.Error(), "already running") {
+			t.Fatalf("setup mode=%s while scanning: got %v; want busy rejection", mode, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "config.json")); !os.IsNotExist(err) {
+		t.Fatalf("setup mutated configuration during active scan: %v", err)
+	}
+
+	release()
+	locked = false
+	// The setup lock has been released. Normal root validation must run;
+	// it must not remain stuck in an already-running state after a scan.
+	err = setup([]string{"--shared", missingRoot, "--mode", "scan"})
+	if err == nil || !strings.Contains(err.Error(), "shared root:") {
+		t.Fatalf("setup after scan released lock: got %v; want root validation", err)
+	}
+	unlockAgain, reacquired, err := lockSourceAgentRun(configDir)
+	if err != nil || !reacquired || unlockAgain == nil {
+		t.Fatalf("setup leaked scheduled run lock: acquired=%v err=%v", reacquired, err)
+	}
+	unlockAgain()
 }
