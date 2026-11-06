@@ -305,3 +305,18 @@ test('cloud Owner map album automatically advances when its lazy-grid sentinel e
   assert.doesNotMatch(clusterAlbum, /DragGesture\(minimumDistance: 12\)/)
   assert.doesNotMatch(clusterAlbum, /Button\("查看上一批照片"\)|Button\("继续浏览下一批照片"\)/)
 })
+
+
+test('Owner MapKit single-pin tap admits only the current signed facet, not an obsolete position', () => {
+  const start = map.indexOf('onPlace: { item in')
+  const end = map.indexOf('onPlaces: { facets in', start)
+  assert.ok(start >= 0 && end > start)
+  const admission = map.slice(start, end)
+  assert.match(admission, /XDriveIOSNativeOwnerMapSelectionPolicy\.acceptsSelectedFacet\(\s*item,\s*currentlyVisible: overview\.items/)
+  assert.match(policy, /static func acceptsSelectedFacet\(/)
+  assert.match(policy, /canOpenPhotoRange\(chosen\)/)
+  assert.match(policy, /canOpenPhotoRange\(signed\)/)
+  for (const field of ['item_count', 'coordinate_kind', 'latitude', 'longitude', 'sample_latitude', 'sample_longitude']) {
+    assert.match(policy, new RegExp('chosen\\.' + field + ' == signed\\.' + field))
+  }
+})
