@@ -88,7 +88,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         }
     }
 
-    var body: some View {
+    private var backupContent: some View {
         Group {
             switch page {
             case .overview: backupOverview
@@ -174,6 +174,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             }
         }
         .navigationTitle("相册备份")
+    }
+
+    private var foregroundConsentContent: some View {
+        backupContent
         .confirmationDialog("确认开始上传已授权的照片/视频/Live 原件？",
                             isPresented: $showManualConsent, titleVisibility: .visible) {
             Button("确认备份到已核验的云端账户") {
@@ -299,6 +303,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         } message: {
             Text("仅当前服务器和 Owner。积压未完成时每轮最多新增 20 个原件，约 60 秒后再尝试；完成整库一次扫描后恢复原间隔。不启用后台权限，未知收据继续暂停。")
         }
+    }
+
+    private var backgroundConsentContent: some View {
+        foregroundConsentContent
         .confirmationDialog(
             "为当前账户授权系统后台原件备份？",
             isPresented: $showBackgroundEnableConsent,
@@ -379,6 +387,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         } message: {
             Text("会优先停用本机后台授权，即使网络不可达；远端撤销需要服务器确认。已上传原件和加密收据不会删除，不影响前台自动计划。")
         }
+    }
+
+    private var backupLifetimeContent: some View {
+        backgroundConsentContent
         .onAppear {
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             syncSavedAutomaticSettings()
@@ -418,6 +430,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             autoConsentDestination = nil
             resumeConsentOwner = nil
         }
+    }
+
+    var body: some View {
+        backupLifetimeContent
         .onChange(of: receipts.mode) { mode in
             if mode == .idle {
                 controller.refresh(owner: login.owner)
