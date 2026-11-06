@@ -303,8 +303,8 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid private upload policy")
 		return
 	}
-	if !validSynologyUploadScope(req) {
-		fail(c, http.StatusBadRequest, "invalid Synology Source upload scope")
+	if !validUploadWithoutRetiredSynologyProof(req) {
+		fail(c, http.StatusBadRequest, "retired Synology Push upload scope is not accepted")
 		return
 	}
 
@@ -429,8 +429,8 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			q = q.Where("expected_md5 = ? OR expected_md5 = ''", req.MD5)
 		}
 		if err := q.Order("created_at DESC").First(&existing).Error; err == nil {
-			if err := s.verifySynologyUploadSession(c, existing); err != nil {
-				fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
+			if err := requireUploadWithoutRetiredSynologySource(existing); err != nil {
+				fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
 				return
 			}
 			if existing.Status == meta.UploadStatusFinalized || existing.Status == meta.UploadStatusSkipped {
@@ -765,8 +765,8 @@ func (s *Server) getUploadSession(c *gin.Context) {
 		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
 		return
 	}
-	if err := s.verifySynologyUploadSession(c, session); err != nil {
-		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
+	if err := requireUploadWithoutRetiredSynologySource(session); err != nil {
+		fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
 		return
 	}
 	if session.Status == meta.UploadStatusActive && time.Now().After(session.ExpiresAt) {
@@ -787,8 +787,8 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
 		return
 	}
-	if err := s.verifySynologyUploadSession(c, session); err != nil {
-		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
+	if err := requireUploadWithoutRetiredSynologySource(session); err != nil {
+		fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
 		return
 	}
 	if session.Status != meta.UploadStatusActive {
@@ -915,7 +915,7 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		case errors.Is(err, errUploadExpired):
 			fail(c, http.StatusGone, "upload session expired")
 		case errors.Is(err, errManagedSourceWriteDenied):
-			fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
+			fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
 		default:
 			fail(c, http.StatusInternalServerError, "record chunk failed")
 		}
@@ -975,8 +975,8 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
 		return
 	}
-	if err := s.verifySynologyUploadSession(c, session); err != nil {
-		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
+	if err := requireUploadWithoutRetiredSynologySource(session); err != nil {
+		fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
 		return
 	}
 	if session.Status == meta.UploadStatusFinalized {
