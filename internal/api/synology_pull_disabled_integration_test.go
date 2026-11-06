@@ -24,7 +24,7 @@ func TestDormantSynologyPullPreservesHistoryAndRejectsNewExecution(t *testing.T)
 		t.Run(kind, func(t *testing.T) {
 			db, server, owner, stranger, root := setupFilePropertiesTestDB(t)
 			if err := db.AutoMigrate(&meta.SyncRun{}, &meta.UploadSession{},
-				&meta.SourceItem{}, &meta.FileVersion{}); err != nil {
+				&meta.SourceItem{}, &meta.FileVersion{}, &meta.SourceCredential{}); err != nil {
 				t.Fatal(err)
 			}
 			gin.SetMode(gin.TestMode)
@@ -52,6 +52,12 @@ func TestDormantSynologyPullPreservesHistoryAndRejectsNewExecution(t *testing.T)
 				Revision: 1, TargetNodeID: &target.ID, TargetManaged: true,
 			}
 			if err := db.Create(&source).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&meta.SourceCredential{
+				SourceID: source.ID, Ciphertext: []byte("historical-encrypted-credential"),
+				KeyVersion: 1,
+			}).Error; err != nil {
 				t.Fatal(err)
 			}
 			item := meta.SourceItem{
@@ -124,8 +130,30 @@ func TestDormantSynologyPullPreservesHistoryAndRejectsNewExecution(t *testing.T)
 				archived.TargetNodeID == nil || *archived.TargetNodeID != target.ID {
 				t.Fatalf("archived Source lost target identity: %+v", archived)
 			}
+			// Owner may revoke an old DSM secret after archival, but never
+			// restore the Source as a side effect of credential deletion.
+			request(t, router, http.MethodDelete, path+"/credential", strangerToken,
+				nil, http.StatusNotFound)
+			request(t, router, http.MethodDelete, path+"/credential", ownerToken,
+				nil, http.StatusNoContent)
+			var archivedAfterRevoke meta.Source
+			if err := db.First(&archivedAfterRevoke, source.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if archivedAfterRevoke.Status != meta.SourceStatusArchived ||
+				archivedAfterRevoke.Revision != 3 {
+				t.Fatalf("credential revocation reactivated archived Pull: %+v", archivedAfterRevoke)
+			}
+			var remainingCredentials int64
+			if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", source.ID).
+				Count(&remainingCredentials).Error; err != nil {
+				t.Fatal(err)
+			}
+			if remainingCredentials != 0 {
+				t.Fatalf("Owner credential revocation left %d secrets", remainingCredentials)
+			}
 			requestWithHeaders(t, router, http.MethodPost, path+"/restore", ownerToken,
-				nil, http.StatusGone, map[string]string{"If-Match": `"2"`})
+				nil, http.StatusGone, map[string]string{"If-Match": `"3"`})
 			var keptRun meta.SyncRun
 			if err := db.Where("id = ?", run.ID).Take(&keptRun).Error; err != nil {
 				t.Fatal(err)
