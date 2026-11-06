@@ -139,7 +139,7 @@ func runLocalPushCommonActualProcessKillReplay(t *testing.T, crashBeforeAdmitACK
 		OwnerID: owner.ID, Name: "Native crash",
 		Kind: meta.SourceKindLocalFolder, Direction: meta.SourceDirectionPush,
 		SyncMode: meta.SourceSyncModeBackup, Status: meta.SourceStatusPaused,
-		Revision: 7, TargetNodeID: &parent.ID,
+		Revision: 7, TargetNodeID: &parent.ID, DeviceID: &device.ID, TargetManaged: true,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)

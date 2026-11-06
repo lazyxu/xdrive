@@ -125,7 +125,7 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
 		Status: meta.SourceStatusPaused, Revision: 7, TargetNodeID: &target.ID,
 		TargetManaged: true, // Only a Server-managed target is writable by the bound Local Push operation.
-		DeviceID: &deviceID, LocalCreatorDeviceID: &deviceID,
+		DeviceID:      &deviceID, LocalCreatorDeviceID: &deviceID,
 	}
 	// The manual first Source run arms the already-saved interval policy;
 	// only the owning Agent scheduler may later admit incremental work.
