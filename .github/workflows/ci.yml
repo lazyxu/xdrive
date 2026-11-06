@@ -1104,35 +1104,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  build-source-agent:
-    needs: pr-scope
-    if: needs.pr-scope.outputs.scope == 'full'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.x"
-          cache: true
-      - name: Resolve client artifact version
-        shell: bash
-        run: |
-          set -euo pipefail
-          source scripts/ci/client-artifact-version.sh
-          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
-      - name: Build Synology source-agent binaries
-        shell: bash
-        run: bash scripts/build-source-agent.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
-      - uses: actions/upload-artifact@v4
-        with:
-          name: xdrive-source-agent-linux
-          path: |
-            release/source-agent/xdrive-source-agent-linux-amd64
-            release/source-agent/xdrive-source-agent-linux-arm64
-            release/source-agent/xdrive-source-agent-linux-armv7
-          if-no-files-found: error
-          retention-days: 14
-
   package-linux-client:
     needs: [desktop-linux, build-client-core]
     runs-on: ubuntu-latest
@@ -1300,7 +1271,6 @@ jobs:
           bash -n scripts/ci/gitlab-desktop-windows.sh
           bash -n scripts/ci/gitlab-go-linux.sh
           bash -n scripts/ci/gitlab-package-linux-client.sh
-          bash -n scripts/ci/gitlab-source-agent.sh
           bash -n scripts/ci/gitlab-server-validation.sh
           bash -n scripts/ci/export-docker-image.sh
           bash -n scripts/ci/import-docker-image.sh
@@ -1320,11 +1290,9 @@ jobs:
           bash -n scripts/ci/gitlab-go-windows.sh
           bash -n scripts/ci/gitlab-package-windows-client.sh
           bash -n scripts/ci/gitlab-test-linux-artifact.sh
-          bash -n scripts/ci/gitlab-test-source-agent-artifact.sh
           bash -n scripts/ci/gitlab-test-windows-artifact.sh
           bash -n scripts/ci/gitlab-test-windows-smoke-artifact.sh
           bash -n scripts/ci/test-linux-client-package.sh
-          bash -n scripts/ci/test-source-agent-package.sh
           bash -n scripts/ci/prepare-go-mod-cache.sh
           bash -n scripts/ci/test-prepare-go-mod-cache.sh
           bash scripts/ci/test-prepare-go-mod-cache.sh
@@ -1858,28 +1826,6 @@ jobs:
           path: release
       - name: Test exact Linux release package
         run: bash scripts/ci/test-linux-client-package.sh "$XDRIVE_RELEASE_VERSION" release/xdrive-linux-amd64.deb
-
-  test-source-agent-artifact:
-    needs: build-source-agent
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.x"
-          cache: true
-      - name: Resolve client artifact version
-        shell: bash
-        run: |
-          set -euo pipefail
-          source scripts/ci/client-artifact-version.sh
-          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v4
-        with:
-          name: xdrive-source-agent-linux
-          path: release/source-agent
-      - name: Test exact source-agent binaries
-        run: bash scripts/ci/test-source-agent-package.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
 
   test-windows-rollback-artifact:
     needs: package-windows-client
@@ -2595,7 +2541,6 @@ jobs:
       - server-backup
       - web
       - test-linux-artifact
-      - test-source-agent-artifact
       - test-windows-rollback-artifact
       - test-windows-upgrade-artifact
       - test-windows-smoke-artifact
@@ -2704,7 +2649,6 @@ jobs:
     needs:
       - final-gate
       - build-client-core
-      - build-source-agent
       - package-linux-client
       - package-windows-client
       - server-image
