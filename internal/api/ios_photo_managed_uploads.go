@@ -370,10 +370,17 @@ func (s *Server) iosPhotoManagedReceipt(c *gin.Context) {
 		return
 	}
 	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := requireIOSPhotoManagedSessionTx(c.Request.Context(), tx, c, verifiedSession); err != nil {
+		var current meta.UploadSession
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("id = ? AND owner_id = ?", verifiedSession.ID, scope.ownerID).
+			Take(&current).Error; err != nil {
+			return errManagedSourceWriteDenied
+		}
+		verifiedSession = current
+		if err := s.requireUploadSessionReadAuthorityTx(c.Request.Context(), tx, c, current); err != nil {
 			return err
 		}
-		return recordUploadAuthorizationSuccessTx(tx, c, "ios.photo.receipt.read", verifiedSession)
+		return recordUploadAuthorizationSuccessTx(tx, c, "ios.photo.receipt.read", current)
 	}); err != nil {
 		s.recordUploadAuthorizationFailure(c, "ios.photo.receipt.read", verifiedSession, err)
 		fail(c, http.StatusForbidden, "ios photo receipt authority is no longer valid")
