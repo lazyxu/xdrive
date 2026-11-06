@@ -75,10 +75,10 @@ func iosPhotoDestinationBindingTx(tx *gorm.DB, device meta.ClientDevice) (meta.S
 		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
 	}
 	source := sources[0]
+	boundDeviceID, bound := meta.SourceDeviceID(source)
 	if !iosPhotoDestinationSource(source) || !source.TargetManaged ||
 		source.TargetNodeID == nil || *source.TargetNodeID == 0 ||
-		source.DeviceID == nil || *source.DeviceID != device.ID ||
-		!meta.ValidSourceName(source.Name) {
+		!bound || boundDeviceID != device.ID || !meta.ValidSourceName(source.Name) {
 		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
 	}
 	var target meta.Node
