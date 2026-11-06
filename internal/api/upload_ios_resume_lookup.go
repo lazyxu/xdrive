@@ -125,7 +125,11 @@ func (s *Server) lookupIOSUploadResumeKey(c *gin.Context) {
 		return recordUploadAuthorizationSuccessAsTx(tx, c, "ios.photo.resume_lookup", "ios_photo", current)
 	}); err != nil {
 		s.recordUploadAuthorizationFailure(c, "ios.photo.resume_lookup", snapshot, err)
-		fail(c, http.StatusForbidden, "upload receipt authority is no longer valid")
+		if uploadAuthorizationDenied(err) {
+			fail(c, http.StatusForbidden, "upload receipt authority is no longer valid")
+		} else {
+			fail(c, http.StatusInternalServerError, "iOS receipt authorization audit failed")
+		}
 		return
 	}
 	s.writeUploadSession(c, snapshot, http.StatusOK)
