@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Read-only labels for PhotoKit's Owner-local incremental change queue.
@@ -40,5 +41,26 @@ extension EnvironmentValues {
     var xdriveNativePhotoQueueBadgeOwner: XDriveNativeOwnerRoot? {
         get { self[XDriveIOSNativePhotoQueueBadgeOwnerKey.self] }
         set { self[XDriveIOSNativePhotoQueueBadgeOwnerKey.self] = newValue }
+    }
+}
+
+
+/// Lightweight UI-only refresh marker. It never uploads data or changes the
+/// PhotoKit scan task identifier, so visible page contents stay mounted.
+struct XDriveIOSNativePhotoQueueBadgeRefresh: Equatable {
+    let busy: Bool
+    let confirmedID: UUID?
+}
+
+private struct XDriveIOSNativePhotoQueueBadgeRefreshKey: EnvironmentKey {
+    static let defaultValue = XDriveIOSNativePhotoQueueBadgeRefresh(
+        busy: false, confirmedID: nil
+    )
+}
+
+extension EnvironmentValues {
+    var xdriveNativePhotoQueueBadgeRefresh: XDriveIOSNativePhotoQueueBadgeRefresh {
+        get { self[XDriveIOSNativePhotoQueueBadgeRefreshKey.self] }
+        set { self[XDriveIOSNativePhotoQueueBadgeRefreshKey.self] = newValue }
     }
 }

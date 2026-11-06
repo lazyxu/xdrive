@@ -597,6 +597,13 @@ struct XDriveIOSNativePhotosDashboard: View {
                         backup.schedule?.backupStartRule == .onlyNew
                             ? login.owner : nil
                     )
+                    .environment(
+                        \.xdriveNativePhotoQueueBadgeRefresh,
+                        XDriveIOSNativePhotoQueueBadgeRefresh(
+                            busy: backup.busy,
+                            confirmedID: backup.confirmedOriginalUpdate?.id
+                        )
+                    )
                 case .albums:
                     XDriveIOSNativePhotoAlbumsScreen(
                         savedOffset: $localAlbumDirectoryOffset

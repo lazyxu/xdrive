@@ -57,6 +57,9 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
     @Published private(set) var message = "请选择一张本机照片或视频进行核验。"
     @Published private(set) var currentNodeVerified = false
     @Published private(set) var verifiedAt: Date?
+    // Set only after the current original SHA and exact live managed Node
+    // were both reverified. A historical ledger receipt cannot set this.
+    private(set) var verifiedManagedDestination: XDriveIOSPhotoManagedDestination?
 
     private var epoch = UUID()
     private var worker: Task<Void, Never>?
@@ -73,6 +76,7 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
         busy = false
         currentNodeVerified = false
         verifiedAt = nil
+        verifiedManagedDestination = nil
         message = "请选择一张本机照片或视频进行核验。"
     }
 
@@ -290,6 +294,7 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                 ) else {
                     throw XDriveIOSNativeCurrentPhotoReceiptError.invalidOriginal
                 }
+                self.verifiedManagedDestination = latestManaged.destination
                 self.currentNodeVerified = true
                 self.verifiedAt = Date()
                 self.message =
@@ -327,6 +332,7 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
         guard epoch == token else { return }
         currentNodeVerified = false
         verifiedAt = nil
+        verifiedManagedDestination = nil
         message = reason
     }
 

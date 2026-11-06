@@ -23,6 +23,17 @@ private enum XDriveIOSNativePhotoWholeAuditError: Error {
     case invalidProgress
 }
 
+/// A PhotoKit mutation invalidates even a previously green point-in-time
+/// cloud receipt audit while the user remains on this screen.
+private final class XDriveIOSNativeWholeAuditChangeObserver: NSObject, PHPhotoLibraryChangeObserver {
+    let invalidate: () -> Void
+    init(invalidate: @escaping () -> Void) { self.invalidate = invalidate }
+
+    func photoLibraryDidChange(_ change: PHChange) {
+        DispatchQueue.main.async { [invalidate] in invalidate() }
+    }
+}
+
 @MainActor
 final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
     @Published private(set) var busy = false
@@ -35,18 +46,34 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
 
     private var owner: XDriveNativeOwnerRoot?
     private var photoToken: Data?
+    private var managedSourceID: UInt64?
+    private var managedTargetNodeID: UInt64?
     private var epoch = UUID()
     private var job: Task<Void, Never>?
     private var activeProof: XDriveIOSNativeCurrentPhotoReceiptModel?
+    private var changeObserver: XDriveIOSNativeWholeAuditChangeObserver?
+    private var observerGeneration = UUID()
+
+    private func stopMonitoringLibrary() {
+        // Also invalidate callbacks already dispatched onto the main queue.
+        observerGeneration = UUID()
+        if let changeObserver {
+            PHPhotoLibrary.shared().unregisterChangeObserver(changeObserver)
+        }
+        changeObserver = nil
+    }
 
     func reset() {
         epoch = UUID()
+        stopMonitoringLibrary()
         job?.cancel()
         job = nil
         activeProof?.cancel()
         activeProof = nil
         owner = nil
         photoToken = nil
+        managedSourceID = nil
+        managedTargetNodeID = nil
         busy = false
         total = nil
         checked = 0
@@ -54,6 +81,20 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
         unverified = 0
         completeAt = nil
         message = "尚未逐项核验当前图库。"
+    }
+
+    private func monitorLibraryWhileResultIsVisible() {
+        guard changeObserver == nil else { return }
+        let generation = observerGeneration
+        let observer = XDriveIOSNativeWholeAuditChangeObserver { [weak self] in
+            guard let self, self.observerGeneration == generation else { return }
+            // A queued callback from an old Owner cannot revoke a newer
+            // audit: reset rotates the observer generation first.
+            self.reset()
+            self.message = "系统照片库已变化，旧的整库核验结果已失效；请重新开始。"
+        }
+        PHPhotoLibrary.shared().register(observer)
+        changeObserver = observer
     }
 
     /// One click never reads more than 8 originals. A restart, background,
@@ -71,6 +112,9 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
             message = "本次图库已检查结束；如果照片或云端状态已变化，请重新开始核验。"
             return
         }
+        // Keep monitoring after all 8-item batches finish. A later PhotoKit
+        // edit must immediately revoke a green point-in-time result.
+        monitorLibraryWhileResultIsVisible()
         let token = UUID()
         epoch = token
         busy = true
@@ -98,6 +142,30 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
                       ),
                       UIApplication.shared.applicationState == .active
                 else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+
+                // One audit may only describe ONE current Server-proven
+                // Source/Target, across every foreground 8-item batch.
+                let managed = try await XDriveIOSNativePhotoBackupDestinationModel
+                    .readExistingForUpload(owner: requestedOwner,
+                                           accessToken: authenticated.accessToken)
+                try Task.checkCancellation()
+                guard self.epoch == token,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, requestedOwner),
+                      managed.destination.sourceID > 0,
+                      managed.destination.targetNodeID > 0
+                else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+                if let sourceID = self.managedSourceID,
+                   let targetNodeID = self.managedTargetNodeID {
+                    guard sourceID == managed.destination.sourceID,
+                          targetNodeID == managed.destination.targetNodeID
+                    else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+                } else {
+                    guard self.managedSourceID == nil,
+                          self.managedTargetNodeID == nil
+                    else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+                    self.managedSourceID = managed.destination.sourceID
+                    self.managedTargetNodeID = managed.destination.targetNodeID
+                }
 
                 let snapshot = try XDriveIOSPhotoKitLibraryEpoch.capture()
                 if let original = self.photoToken {
@@ -144,6 +212,15 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
                             allowICloudOriginals: allowICloudOriginals
                         )
                         try Task.checkCancellation()
+                        if verified {
+                            // Per-item proof itself revalidates its Source
+                            // after Node readback. Never add an ACK from
+                            // another current managed destination to this audit.
+                            guard let bound = proof.verifiedManagedDestination,
+                                  bound.sourceID == self.managedSourceID,
+                                  bound.targetNodeID == self.managedTargetNodeID
+                            else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+                        }
                         proof.cancel()
                         self.activeProof = nil
                     }
@@ -164,7 +241,39 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
                 try self.verifyGeneration(
                     requestedOwner: requestedOwner, login: login
                 )
+                // Do not publish a green result if Source/Target was revoked,
+                // switched or renamed to another binding during the batch.
+                let verifiedEnd = try await login.verifiedAuthorization()
+                let latestTarget = try await XDriveIOSNativePhotoBackupDestinationModel
+                    .readExistingForUpload(owner: requestedOwner,
+                                           accessToken: verifiedEnd.accessToken)
+                try Task.checkCancellation()
+                guard self.epoch == token,
+                      XDriveIOSNativePhotoOwnerScope.matches(
+                        verifiedEnd.owner, requestedOwner
+                      ),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, requestedOwner),
+                      latestTarget.destination.sourceID == self.managedSourceID,
+                      latestTarget.destination.targetNodeID == self.managedTargetNodeID
+                else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+                try self.verifyGeneration(
+                    requestedOwner: requestedOwner, login: login
+                )
                 await scanner.reset()
+                // Actor cleanup is an await point: an Owner change, UI
+                // dismissal or PhotoKit notification can cancel this run
+                // while the scanner releases resources. Never republish a
+                // green result from the retired task after that suspension.
+                try Task.checkCancellation()
+                guard self.epoch == token,
+                      XDriveIOSNativePhotoOwnerScope.matches(
+                          login.owner, requestedOwner
+                      ),
+                      UIApplication.shared.applicationState == .active
+                else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+                try self.verifyGeneration(
+                    requestedOwner: requestedOwner, login: login
+                )
                 if XDriveIOSNativePhotoWholeLibraryAuditPolicy.complete(
                     checked: self.checked, total: count,
                     currentlyVerified: self.currentVerified,
@@ -184,10 +293,15 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
             } catch {
                 await scanner.reset()
                 if self.epoch == token {
+                    // An aborted audit no longer owns a usable generation.
+                    // Release the PhotoKit listener and fence queued events.
+                    self.stopMonitoringLibrary()
                     // Any stale PhotoKit generation, stale Owner/session or
                     // failed scan invalidates this entire in-memory snapshot.
                     self.owner = nil
                     self.photoToken = nil
+                    self.managedSourceID = nil
+                    self.managedTargetNodeID = nil
                     self.total = nil
                     self.checked = 0
                     self.currentVerified = 0
