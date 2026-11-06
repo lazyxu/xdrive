@@ -3381,7 +3381,7 @@ function FileManager({
           ) : (
             <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
           )
-        ) : appView === 'notes' || appView === 'shares' || appView === 'transfers' || appView === 'global-tasks' ? (
+        ) : appView === 'notes' || appView === 'shares' || appView === 'clipboard' || appView === 'transfers' || appView === 'global-tasks' ? (
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : appView === 'local-storage' || appView === 'cloud-storage' ? (
           // First two real Browser Host-backed routes in the shared page
