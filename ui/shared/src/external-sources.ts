@@ -398,7 +398,7 @@ export const yikeRateLimitNotice = '为减少一刻相册返回“操作过于�
 // Historical physical directory name remains the source of truth, never rename it
 // merely to simplify the Pull UI.
 export const yikeManagedTargetLabel = '同步文件夹 / 一刻相册 / uid_<百度UID>_<账号名称>'
-export const yikeManagedTargetDisplayLabel = '一刻相册 / uid_<百度UID>_<账号名称>'
+export const yikeManagedTargetDisplayLabel = '同步文件夹/Pull/Yike Photos'
 
 // Presentation only: keep the Server's actual target_path and target_node_id
 // unchanged. The shortened Yike path is explicitly labelled a subdirectory.
