@@ -331,7 +331,12 @@ func (s *Server) createSource(c *gin.Context) {
 	}
 	// Synology Photos Push was replaced by DSM's single local-folder Push
 	// executor. Historical Sources and their CAS/Nodes remain read-only.
-	// Synology Photos Pull remains a separately supported Server worker.
+	// Synology remote Pull connectors are dormant during the DSM folder-Push MVP.
+	// Historical Source, credentials, target Nodes and CAS bytes are retained.
+	if meta.SynologyPullTemporarilyDisabled(req.Kind, req.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
+		return
+	}
 	if req.Kind == synologySourceKind && req.Direction == meta.SourceDirectionPush {
 		fail(c, http.StatusGone, "Synology Photos Push is retired; use DSM folder backup")
 		return
@@ -593,6 +598,9 @@ func (s *Server) updateSource(c *gin.Context) {
 		if current.Kind == meta.SourceKindIOSPhotos {
 			return errLocalSourceExecutorTransactionUnauthorized
 		}
+		if meta.SynologyPullTemporarilyDisabled(current.Kind, current.Direction) {
+			return errSynologyPullDisabled
+		}
 		currentRevision = current.Revision
 		if current.Revision != expected {
 			return errRevisionConflict
@@ -739,6 +747,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
+		case errors.Is(err, errSynologyPullDisabled):
+			fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		case errors.Is(err, errSourceArchived):
 			fail(c, http.StatusConflict, "source is archived; restore it before editing")
 		case errors.Is(err, errSourceTargetNameConflict):
@@ -788,6 +798,9 @@ func (s *Server) triggerSource(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&source).Error; err != nil {
 			return err
+		}
+		if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+			return errSynologyPullDisabled
 		}
 		if source.Kind == meta.SourceKindLocalFolder {
 			// No local Source trigger is executable until the native Agent
@@ -973,6 +986,9 @@ func (s *Server) deleteSource(c *gin.Context) {
 		if source.Kind == meta.SourceKindIOSPhotos {
 			return errLocalSourceExecutorTransactionUnauthorized
 		}
+		if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+			return errSynologyPullDisabled
+		}
 		currentRevision = source.Revision
 		if source.Revision != expected {
 			return errRevisionConflict
@@ -1023,6 +1039,8 @@ func (s *Server) deleteSource(c *gin.Context) {
 			fail(c, http.StatusConflict, "source already has an active run")
 		case errors.Is(err, errSourceUnsettledWrites):
 			fail(c, http.StatusConflict, "source has unsettled uploads; finish or cancel before deletion")
+		case errors.Is(err, errSynologyPullDisabled):
+			fail(c, http.StatusGone, "Synology Pull is disabled; archive its history instead")
 		case errors.Is(err, errSourceArchived):
 			fail(c, http.StatusConflict, "archived source must be restored before removal")
 		case errors.Is(err, errLocalSourceRemovalWouldDropHistory):
