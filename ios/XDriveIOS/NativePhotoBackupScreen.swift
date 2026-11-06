@@ -712,7 +712,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
                 .disabled(controller.busy || controller.schedule?.enabled == true)
                 .accessibilityIdentifier("native-ios-photo-auto-start-rule")
-                Text("“仅备份新照片”按启用时刻与 PhotoKit 拍摄／修改日期初步判断，也核验之后编辑的旧照片；历史导入、日期变更仍待变更队列完善。只影响前台自动计划，手动／集中备份和独立 BGProcessing 仍会扫描全部已授权原件。")
+                Text("“仅备份新照片”通过 PhotoKit 持久化变更历史发现新增、导入和编辑；每个候选仍需核验当前云端原件收据。历史 Token 过期或变更详情不可用时，自动计划会先完整核对当前授权图库，完成前不会按拍摄日期跳过旧照片。手动／集中备份仍按各自规则扫描。")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("前台自动备份允许下载 iCloud 原件", isOn: $autoAllowICloud)
                     .disabled(controller.busy || controller.schedule?.enabled == true)
@@ -721,6 +721,13 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     Text("当前已保存：\(active.backupStartRule == .onlyNew ? "仅备份新照片（含启用后编辑）" : "扫描并备份全部照片")；每 \(active.intervalMinutes) 分钟检查；iCloud 原件 \(active.allowICloudOriginals ? "允许下载" : "仅限本机已下载")。")
                         .font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("native-ios-photos-auto-saved-settings")
+                    if active.requiresFullLibraryReconciliation {
+                        Label("正在安全恢复 PhotoKit 增量基准",
+                              systemImage: "arrow.triangle.2.circlepath")
+                            .accessibilityIdentifier("native-ios-photo-history-recovery")
+                        Text("系统变更历史不可用，正在逐段核对当前授权图库；只有所有支持的原件都通过当前 Server 收据核验后，才会恢复增量备份。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if active.pausedForReview {
                         Label("已暂停：需核对收据", systemImage: "exclamationmark.triangle")
                     } else if photoAuthorization != .authorized && photoAuthorization != .limited {
