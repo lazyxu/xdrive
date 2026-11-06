@@ -31,6 +31,24 @@ func validAndroidPhotoResumeLookupKey(key string) bool {
 // This logically read-only POST is the ONLY Android photo unknown-ACK
 // lookup. Ordinary GET /uploads/:id is not suitable because it can abort
 // expired ACTIVE sessions. Never expose generic partial upload resume.
+// Apply a single read-only identity predicate to both the initial lookup and
+// the locked authorization transaction. A managed Android backup may only
+// inspect its precise Source/Revision/Device/Target; a legacy Owner-root
+// receipt must never adopt or reveal a managed Source upload.
+func androidPhotoReceiptScopeQuery(q *gorm.DB, c *gin.Context) *gorm.DB {
+	if scope, ok := currentAndroidPhotoManagedUploadScope(c); ok {
+		return q.Where("source_id = ? AND source_revision = ? AND source_device_id = ? AND source_target_id = ? "+
+			"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = ''",
+			scope.sourceID, scope.sourceRevision, scope.deviceID, scope.targetID)
+	}
+	return q.Where("COALESCE(source_id, 0) = 0 AND COALESCE(source_revision, 0) = 0 "+
+		"AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 "+
+		"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = ''")
+}
+
+// This logically read-only POST is the only Android photo UNKNOWN_ACK lookup.
+// An expired/active session is never proof that a new POST is safe; the query
+// does not create, finalize, reserve space or abort a session.
 func (s *Server) lookupAndroidPhotoUploadReceipt(c *gin.Context) {
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("Pragma", "no-cache")
@@ -49,25 +67,23 @@ func (s *Server) lookupAndroidPhotoUploadReceipt(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid Android photo receipt identity")
 		return
 	}
-	var matches []meta.UploadSession
-	err := s.DB.WithContext(c.Request.Context()).Where(
-		"owner_id = ? AND resume_key = ? AND parent_id = ? AND node_id IS NULL AND "+
-			"name = ? AND requested_name = ? AND total_size = ? AND chunk_size = ? AND sha256 = ? "+
-			"AND (conflict_policy = ? OR conflict_policy = '') "+
-			"AND COALESCE(source_id, 0) = 0 AND COALESCE(source_run_id, '') = '' AND share_id IS NULL "+
-			"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = '' "+
-			"AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 "+
-			"AND COALESCE(source_revision, 0) = 0 AND status IN ?",
+	q := s.DB.WithContext(c.Request.Context()).Where(
+		"owner_id = ? AND resume_key = ? AND parent_id = ? AND node_id IS NULL "+
+			"AND name = ? AND requested_name = ? AND total_size = ? AND chunk_size = ? AND sha256 = ? "+
+			"AND (conflict_policy = ? OR conflict_policy = '') AND "+
+			"COALESCE(source_run_id, '') = '' AND share_id IS NULL AND status IN ?",
 		userID(c), req.ResumeKey, req.ParentID, req.Name, req.Name, req.Size,
 		req.ChunkSize, req.SHA256, meta.UploadConflictPolicyFail,
 		[]string{meta.UploadStatusActive, meta.UploadStatusFinalized},
-	).Order("created_at DESC, id DESC").Limit(2).Find(&matches).Error
+	)
+	var matches []meta.UploadSession
+	err := androidPhotoReceiptScopeQuery(q, c).
+		Order("created_at DESC, id DESC").Limit(2).Find(&matches).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		fail(c, http.StatusInternalServerError, "Android photo receipt lookup failed")
 		return
 	}
 	if len(matches) == 0 {
-		// A missing receipt is never proof that another POST is safe.
 		s.recordUploadAuthorizationFailure(c, "android.photo.receipt.read", meta.UploadSession{}, errManagedSourceWriteDenied)
 		fail(c, http.StatusNotFound, "Android photo upload not found")
 		return
@@ -79,25 +95,22 @@ func (s *Server) lookupAndroidPhotoUploadReceipt(c *gin.Context) {
 	}
 	snapshot := matches[0]
 	if !snapshot.ExpiresAt.After(time.Now()) {
-		// No mutation, abort, new reservation, retry or janitor cleanup.
 		s.recordUploadAuthorizationFailure(c, "android.photo.receipt.read", snapshot, errManagedSourceWriteDenied)
 		fail(c, http.StatusGone, "Android photo upload receipt expired")
 		return
 	}
 	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var current meta.UploadSession
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
-			Where("id = ? AND owner_id = ? AND resume_key = ? AND parent_id = ? AND node_id IS NULL AND "+
-				"name = ? AND requested_name = ? AND total_size = ? AND chunk_size = ? AND sha256 = ? "+
+		q := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("id = ? AND owner_id = ? AND resume_key = ? AND parent_id = ? AND node_id IS NULL "+
+				"AND name = ? AND requested_name = ? AND total_size = ? AND chunk_size = ? AND sha256 = ? "+
 				"AND (conflict_policy = ? OR conflict_policy = '') AND "+
-				"COALESCE(source_id, 0) = 0 AND COALESCE(source_run_id, '') = '' AND share_id IS NULL AND "+
-				"COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = '' AND "+
-				"COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 AND "+
-				"COALESCE(source_revision, 0) = 0 AND status IN ? AND expires_at > ?",
+				"COALESCE(source_run_id, '') = '' AND share_id IS NULL AND "+
+				"status IN ? AND expires_at > ?",
 				snapshot.ID, userID(c), req.ResumeKey, req.ParentID, req.Name, req.Name,
 				req.Size, req.ChunkSize, req.SHA256, meta.UploadConflictPolicyFail,
-				[]string{meta.UploadStatusActive, meta.UploadStatusFinalized}, time.Now()).
-			Take(&current).Error; err != nil {
+				[]string{meta.UploadStatusActive, meta.UploadStatusFinalized}, time.Now())
+		if err := androidPhotoReceiptScopeQuery(q, c).Take(&current).Error; err != nil {
 			return errManagedSourceWriteDenied
 		}
 		if err := s.requireUploadSessionReadAuthorityTx(c.Request.Context(), tx, c, current); err != nil {
