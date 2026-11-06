@@ -591,6 +591,12 @@ struct XDriveIOSNativePhotosDashboard: View {
                         savedOffset: $localGalleryPageOffset,
                         mediaFilter: $localGalleryMediaFilter
                     )
+                    .environment(
+                        \.xdriveNativePhotoQueueBadgeOwner,
+                        backup.schedule?.enabled == true &&
+                        backup.schedule?.backupStartRule == .onlyNew
+                            ? login.owner : nil
+                    )
                 case .albums:
                     XDriveIOSNativePhotoAlbumsScreen(
                         savedOffset: $localAlbumDirectoryOffset
