@@ -54,13 +54,69 @@ func uploadAuthorizationAuditMetadata(phase string, session meta.UploadSession) 
 // as its UploadSession, UploadPart, CAS/Node or abort mutation. Audit failure
 // fails closed: no committed writer without its durable authorization record.
 func recordUploadAuthorizationSuccessTx(tx *gorm.DB, c *gin.Context, phase string, session meta.UploadSession) error {
+	return recordUploadAuthorizationSuccessAsTx(tx, c, phase, "", session)
+}
+
+func recordUploadAuthorizationSuccessAsTx(
+	tx *gorm.DB, c *gin.Context, phase, writer string, session meta.UploadSession,
+) error {
 	if tx == nil || c == nil || session.ID == "" {
 		return errManagedSourceWriteDenied
 	}
+	metadata := uploadAuthorizationAuditMetadata(phase, session)
+	if writer != "" {
+		metadata["writer"] = writer
+	}
 	event := auditEventFromContext(c, uploadAuthorizationAuditAction,
-		"upload_session", session.ID, "", auditpkg.ResultSuccess,
-		uploadAuthorizationAuditMetadata(phase, session))
+		"upload_session", session.ID, "", auditpkg.ResultSuccess, metadata)
 	return recordAuditTx(tx, event)
+}
+
+// The Local Push original-operation ledger is a second durable writer
+// boundary, independent of the short-lived generic UploadSession. Audit its
+// admission, bind/rebind and private receipt inside the same SQL transaction.
+func localPushOperationAuditMetadata(phase string, op meta.LocalPushCommonUploadOperation) map[string]any {
+	metadata := map[string]any{
+		"phase": phase, "writer": "local_push",
+		"owner_id": op.OwnerID, "source_id": op.SourceID,
+		"source_revision": op.SourceRevision, "device_id": op.DeviceID,
+		"target_node_id": op.SourceTargetID, "state": op.State,
+	}
+	return metadata
+}
+
+func recordUploadAuthorizationOperationSuccessTx(
+	tx *gorm.DB, c *gin.Context, phase string, op meta.LocalPushCommonUploadOperation,
+) error {
+	if tx == nil || c == nil || op.OperationID == "" || op.OwnerID == 0 ||
+		op.SourceID == 0 || op.DeviceID == "" || op.SourceTargetID == 0 {
+		return errLocalPushCommonUploadUnavailable
+	}
+	event := auditEventFromContext(c, uploadAuthorizationAuditAction,
+		"local_push_operation", op.OperationID, "", auditpkg.ResultSuccess,
+		localPushOperationAuditMetadata(phase, op))
+	return recordAuditTx(tx, event)
+}
+
+func (s *Server) recordUploadAuthorizationOperationFailure(
+	c *gin.Context, phase string, sourceID, revision uint64,
+	proof localSourceExecutorProof, err error,
+) {
+	if s == nil || s.DB == nil || c == nil || err == nil ||
+		(!errors.Is(err, errLocalPushCommonUploadUnavailable) &&
+			!errors.Is(err, errManagedSourceWriteDenied)) {
+		return
+	}
+	metadata := map[string]any{
+		"phase": phase, "writer": "local_push", "reason": "permission_denied",
+		"source_id": sourceID, "source_revision": revision,
+	}
+	if proof.DeviceID != "" {
+		metadata["device_id"] = proof.DeviceID
+	}
+	event := auditEventFromContext(c, uploadAuthorizationAuditAction,
+		"source", strconv.FormatUint(sourceID, 10), "", auditpkg.ResultFailure, metadata)
+	s.recordAuditBestEffort(c, event)
 }
 
 // Denials cannot be logged in their failed write transaction: that would roll
@@ -70,7 +126,8 @@ func (s *Server) recordUploadAuthorizationFailure(c *gin.Context, phase string, 
 	if s == nil || s.DB == nil || c == nil || err == nil ||
 		(!errors.Is(err, errManagedSourceWriteDenied) &&
 			!errors.Is(err, errSynologyPushAuthority) &&
-			!errors.Is(err, errShareUploadDenied)) {
+			!errors.Is(err, errShareUploadDenied) &&
+			!errors.Is(err, errLocalPushCommonUploadUnavailable)) {
 		return
 	}
 	metadata := uploadAuthorizationAuditMetadata(phase, session)
