@@ -358,6 +358,6 @@ test('Owner map cover reads are structured, capped at three and revoke all sibli
   assert.match(covers, /selected == nil, selectedCluster == nil/)
   assert.match(covers, /singleViewer == nil, singleTask == nil, phase == \.active/)
   assert.match(covers, /case \.revoked:[\s\S]*?group\.cancelAll\(\)[\s\S]*?invalidate\(\)/)
-  assert.match(covers, /case \.unavailable:[\s\S]*?missing derivative is NOT a missing original/i/)
+  assert.match(covers, /case \.unavailable:[\s\S]*?missing derivative is NOT a missing original/i)
   assert.doesNotMatch(covers, /cover_node_id|offset: 0, placeID: nil|UploadSession/)
 })
