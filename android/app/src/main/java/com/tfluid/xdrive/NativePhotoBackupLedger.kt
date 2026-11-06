@@ -95,11 +95,11 @@ internal data class NativePhotoBackupIntent(
     /** Exact new original destination for an Owner-scoped, read-only ACK lookup.
      * Old journal rows omit it and stay blocked rather than guessing a filename. */
     val destinationName: String? = null,
-    /** Server-created managed target, never the Owner root. Old v1 intents
-     * omit this field and retain their original legacy receipt namespace. */
-    val destinationTargetNodeId: Long? = null,
     val verifiedNodeId: Long? = null,
     val verifiedNodeRevision: Long? = null,
+    /** Server-created managed target, never the Owner root. Kept after the
+     * established constructor parameters for older positional fixtures. */
+    val destinationTargetNodeId: Long? = null,
 ) {
     init {
         require(runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false))
