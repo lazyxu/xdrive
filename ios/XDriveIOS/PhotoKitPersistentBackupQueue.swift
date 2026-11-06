@@ -299,15 +299,23 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
     ) throws {
         try verifyOwner(owner)
         let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
-        guard epoch.authorization == expectedAuthorization,
-              XDriveIOSPhotoKitLibraryEpoch.matches(
-                expectedToken, as: epoch.token
-              ) else { throw Failure.unauthorizedOrChanged }
+        guard epoch.authorization == expectedAuthorization else {
+            throw Failure.unauthorizedOrChanged
+        }
+        // If the process stopped after the atomic SQLite commit, the durable
+        // marker proves the exact scanned checkpoint was already installed.
+        // Later PhotoKit changes remain replayable from that checkpoint.
+        if try store.hasCompletedFullReconciliation(
+            token: expectedToken, authorization: expectedAuthorization
+        ) {
+            return
+        }
+        guard XDriveIOSPhotoKitLibraryEpoch.matches(
+            expectedToken, as: epoch.token
+        ) else { throw Failure.unauthorizedOrChanged }
         try store.completeFullReconciliation(
             token: epoch.serialized, authorization: epoch.authorization
         )
-        // Changes committed after the captured token remain in PhotoKit
-        // history and will be replayed from this new checkpoint next time.
     }
 
     private func verifyOwner(_ owner: XDriveNativeOwnerRoot) throws {
