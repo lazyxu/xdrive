@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Box, Button, Card, Divider, Stack, TextField, Typography } from '@mui/material'
 import {
   xDriveClipboardDeriveKey, xDriveClipboardEncrypt, xDriveClipboardDecrypt,
-  xDriveClipboardValidateText, type XDriveClipboardKind,
+  xDriveClipboardValidateText, xDriveClipboardMakeVaultCheck,
+  xDriveClipboardVerifyVaultCheck, type XDriveClipboardKind,
 } from '../clipboard-crypto'
 
 export type XDriveClipboardItem = {
@@ -18,7 +19,10 @@ export type XDriveClipboardItem = {
 export type XDriveClipboardDataPort = {
   /** Server origin + authenticated, verified Owner ID. Never contain a token. */
   readonly ownerScopeKey: string
-  vault(signal?: AbortSignal): Promise<{ salt: string; iterations: number; kdf: string }>
+  vault(signal?: AbortSignal): Promise<{ salt: string; iterations: number; kdf: string;
+    check_nonce: string; check_ciphertext: string }>
+  initializeCheck(check: { nonce: string; ciphertext: string }, signal?: AbortSignal): Promise<{
+    salt: string; iterations: number; kdf: string; check_nonce: string; check_ciphertext: string }>
   list(before?: number, signal?: AbortSignal): Promise<{ items: XDriveClipboardItem[]; next_before: number | null }>
   create(item: {
     client_event_id: string; kind: XDriveClipboardKind
@@ -130,6 +134,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
         throw new Error('Server 剪贴板加密版本不兼容。')
       }
       const nextKey = await xDriveClipboardDeriveKey(passphrase, info.salt)
+      const verified = info.check_ciphertext
+        ? info
+        : await port.initializeCheck(
+            await xDriveClipboardMakeVaultCheck(nextKey, port.ownerScopeKey), controller.signal)
+      await xDriveClipboardVerifyVaultCheck(nextKey, port.ownerScopeKey, {
+        nonce: verified.check_nonce, ciphertext: verified.check_ciphertext,
+      })
       if (!active.current || controller.signal.aborted) return
       setKey(nextKey)
       setPassphrase('')
