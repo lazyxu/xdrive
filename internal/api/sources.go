@@ -763,7 +763,7 @@ func (s *Server) updateSource(c *gin.Context) {
 		case errors.Is(err, errSourceTargetMigrationRequired):
 			fail(c, http.StatusConflict, "source target migration required before rename")
 		case errors.Is(err, errSourceTargetRenameActive):
-			fail(c, http.StatusConflict, "source has an active run; retry after it finishes")
+			fail(c, http.StatusConflict, "source has an active run or unsettled upload; retry after it finishes")
 		case errors.Is(err, errSourceNameTaken), isDuplicate(err):
 			fail(c, http.StatusConflict, "source name already exists")
 		case errors.Is(err, errLocalFolderNotReady):

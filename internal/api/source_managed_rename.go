@@ -79,6 +79,36 @@ func requireSourceTargetRenameQuiescentTx(tx *gorm.DB, source meta.Source, targe
 			return errSourceTargetRenameActive
 		}
 	}
+	// A native Local Push may hold a staged original without an active
+	// SourceRun, generic UploadSession or common Upload Operation. The device
+	// cannot finish that original safely after a Source/Node rename changes
+	// its Source revision. The Source row lock serializes this check against
+	// Stage admission and transitions, which also lock the Source.
+	if tx.Migrator().HasTable(&meta.LocalPushStaging{}) {
+		if err := tx.Model(&meta.LocalPushStaging{}).
+			Where("owner_id = ? AND source_id = ? AND status IN ? AND expires_at > ?",
+				source.OwnerID, source.ID,
+				[]string{localPushStageReserved, localPushStageWriting, localPushStageReady},
+				time.Now().UTC()).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 0 {
+			return errSourceTargetRenameActive
+		}
+	}
+	// A live quota reservation can survive a failed or cancelled Stage until
+	// it is explicitly released, committed, or expires. Do not rename while
+	// its unsettled original still holds Source/Target-bound capacity.
+	if tx.Migrator().HasTable(&meta.LocalPushQuotaHold{}) {
+		if err := tx.Model(&meta.LocalPushQuotaHold{}).
+			Where("owner_id = ? AND source_id = ? AND released_at IS NULL AND committed_at IS NULL AND expires_at > ?",
+				source.OwnerID, source.ID, time.Now().UTC()).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 0 {
+			return errSourceTargetRenameActive
+		}
+	}
 	return nil
 }
 
