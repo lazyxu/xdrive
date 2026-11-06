@@ -82,7 +82,6 @@ fi
 exec /usr/bin/git "$@"
 SH
 # Mock may intentionally implement a tag in the remote but no Release.
-sed -i 's/\\${/${/g' "$tmp/bin/git"
 chmod +x "$tmp/bin/git"
 export PATH="$tmp/bin:$PATH"
 
