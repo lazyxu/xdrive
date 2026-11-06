@@ -46,6 +46,8 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
 
     private var owner: XDriveNativeOwnerRoot?
     private var photoToken: Data?
+    private var managedSourceID: UInt64?
+    private var managedTargetNodeID: UInt64?
     private var epoch = UUID()
     private var job: Task<Void, Never>?
     private var activeProof: XDriveIOSNativeCurrentPhotoReceiptModel?
@@ -65,6 +67,8 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
         activeProof = nil
         owner = nil
         photoToken = nil
+        managedSourceID = nil
+        managedTargetNodeID = nil
         busy = false
         total = nil
         checked = 0
@@ -134,6 +138,30 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
                       UIApplication.shared.applicationState == .active
                 else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
 
+                // One audit may only describe ONE current Server-proven
+                // Source/Target, across every foreground 8-item batch.
+                let managed = try await XDriveIOSNativePhotoBackupDestinationModel
+                    .readExistingForUpload(owner: requestedOwner,
+                                           accessToken: authenticated.accessToken)
+                try Task.checkCancellation()
+                guard self.epoch == token,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, requestedOwner),
+                      managed.destination.sourceID > 0,
+                      managed.destination.targetNodeID > 0
+                else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+                if let sourceID = self.managedSourceID,
+                   let targetNodeID = self.managedTargetNodeID {
+                    guard sourceID == managed.destination.sourceID,
+                          targetNodeID == managed.destination.targetNodeID
+                    else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+                } else {
+                    guard self.managedSourceID == nil,
+                          self.managedTargetNodeID == nil
+                    else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+                    self.managedSourceID = managed.destination.sourceID
+                    self.managedTargetNodeID = managed.destination.targetNodeID
+                }
+
                 let snapshot = try XDriveIOSPhotoKitLibraryEpoch.capture()
                 if let original = self.photoToken {
                     guard XDriveIOSNativePhotoOwnerScope.matches(
@@ -179,6 +207,15 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
                             allowICloudOriginals: allowICloudOriginals
                         )
                         try Task.checkCancellation()
+                        if verified {
+                            // Per-item proof itself revalidates its Source
+                            // after Node readback. Never add an ACK from
+                            // another current managed destination to this audit.
+                            guard let bound = proof.verifiedManagedDestination,
+                                  bound.sourceID == self.managedSourceID,
+                                  bound.targetNodeID == self.managedTargetNodeID
+                            else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+                        }
                         proof.cancel()
                         self.activeProof = nil
                     }
@@ -196,6 +233,24 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
                 // Distinguish a scan of every current source from proof of
                 // every original. A prior confirmed journal entry is not
                 // sufficient: the single-item proof freshly reads the Node.
+                try self.verifyGeneration(
+                    requestedOwner: requestedOwner, login: login
+                )
+                // Do not publish a green result if Source/Target was revoked,
+                // switched or renamed to another binding during the batch.
+                let verifiedEnd = try await login.verifiedAuthorization()
+                let latestTarget = try await XDriveIOSNativePhotoBackupDestinationModel
+                    .readExistingForUpload(owner: requestedOwner,
+                                           accessToken: verifiedEnd.accessToken)
+                try Task.checkCancellation()
+                guard self.epoch == token,
+                      XDriveIOSNativePhotoOwnerScope.matches(
+                        verifiedEnd.owner, requestedOwner
+                      ),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, requestedOwner),
+                      latestTarget.destination.sourceID == self.managedSourceID,
+                      latestTarget.destination.targetNodeID == self.managedTargetNodeID
+                else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
                 try self.verifyGeneration(
                     requestedOwner: requestedOwner, login: login
                 )
@@ -223,6 +278,8 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
                     // failed scan invalidates this entire in-memory snapshot.
                     self.owner = nil
                     self.photoToken = nil
+                    self.managedSourceID = nil
+                    self.managedTargetNodeID = nil
                     self.total = nil
                     self.checked = 0
                     self.currentVerified = 0

@@ -1,0 +1,32 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const read = file => fs.readFileSync(path.join(root, file), 'utf8')
+const audit = read('ios/XDriveIOS/NativePhotoWholeLibraryAudit.swift')
+const proof = read('ios/XDriveIOS/NativeCurrentPhotoReceiptModel.swift')
+
+test('a successful one-original proof exposes only its freshly verified managed target', () => {
+  assert.match(proof, /private\(set\) var verifiedManagedDestination: XDriveIOSPhotoManagedDestination\?/)
+  assert.match(proof, /self\.verifiedManagedDestination = latestManaged\.destination/)
+  assert.match(proof, /auth\.verifyNodeReceipt\(/)
+  assert.match(proof, /receipt\.sha256 == sha256/)
+  assert.match(proof, /verifiedManagedDestination = nil/)
+})
+
+test('a whole-library audit pins one current Source and Node across batches and every confirmed original', () => {
+  assert.match(audit, /private var managedSourceID: UInt64\?/)
+  assert.match(audit, /private var managedTargetNodeID: UInt64\?/)
+  assert.match(audit, /readExistingForUpload\(owner: requestedOwner,/)
+  assert.match(audit, /sourceID == managed\.destination\.sourceID/)
+  assert.match(audit, /targetNodeID == managed\.destination\.targetNodeID/)
+  assert.match(audit, /bound\.sourceID == self\.managedSourceID/)
+  assert.match(audit, /bound\.targetNodeID == self\.managedTargetNodeID/)
+  assert.match(audit, /latestTarget\.destination\.sourceID == self\.managedSourceID/)
+  assert.match(audit, /latestTarget\.destination\.targetNodeID == self\.managedTargetNodeID/)
+  assert.match(audit, /self\.managedSourceID = nil/)
+  assert.match(audit, /self\.managedTargetNodeID = nil/)
+  assert.doesNotMatch(audit, /UploadSessionTransport|uploadPrepared|finalize\(|deleteNode|\.settle\(/)
+})
