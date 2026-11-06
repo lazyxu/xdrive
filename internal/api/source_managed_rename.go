@@ -47,7 +47,7 @@ func requireSourceTargetRenameQuiescentTx(tx *gorm.DB, source meta.Source, targe
 	}
 	if err := tx.Model(&meta.UploadSession{}).
 		Where("owner_id = ? AND status = ? AND (source_id = ? OR source_target_id = ? OR source_run_id IN (SELECT id FROM xd_sync_runs WHERE source_id = ?))",
-			source.OwnerID, meta.UploadStatusActive, source.ID, target.ID, source.ID).
+			source.OwnerID, "active", source.ID, target.ID, source.ID).
 		Count(&count).Error; err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func requireSourceTargetRenameQuiescentTx(tx *gorm.DB, source meta.Source, targe
 		if err := tx.Model(&meta.LocalPushCommonUploadOperation{}).
 			Where("owner_id = ? AND source_id = ? AND state IN ?",
 				source.OwnerID, source.ID,
-				[]string{meta.LocalPushCommonUploadReserved, meta.LocalPushCommonUploadBound}).
+				[]string{"reserved", "bound"}).
 			Count(&count).Error; err != nil {
 			return err
 		}
@@ -69,7 +69,7 @@ func requireSourceTargetRenameQuiescentTx(tx *gorm.DB, source meta.Source, targe
 	if tx.Migrator().HasTable(&meta.LocalPushOperationIntent{}) {
 		if err := tx.Model(&meta.LocalPushOperationIntent{}).
 			Where("owner_id = ? AND source_id = ? AND state = ? AND expires_at > ?",
-				source.OwnerID, source.ID, meta.LocalPushOperationIntentReserved, time.Now().UTC()).
+				source.OwnerID, source.ID, "reserved", time.Now().UTC()).
 			Count(&count).Error; err != nil {
 			return err
 		}

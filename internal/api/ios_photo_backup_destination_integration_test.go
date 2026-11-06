@@ -130,8 +130,7 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 	}
 	renamed := read(http.MethodPut, ownerToken, `{"name":"新版照片"}`, http.StatusOK, headers)
 	if renamed.TargetNodeID != result.TargetNodeID || renamed.SourceID != result.SourceID ||
-		renamed.TargetPath != "同步文件夹/Push/新版照片" {
-		t.Fatalf("5B rename replaced Source/Node IDs or used a fake path: %+v", renamed)
+		renamed.TargetPath != "同步文件夹/Push/Node IDs or used a fake path: %+v", renamed)
 	}
 	var node meta.Node
 	if err := db.First(&node, renamed.TargetNodeID).Error; err != nil {

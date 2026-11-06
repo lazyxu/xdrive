@@ -111,6 +111,21 @@ func TestCreateSynologyPullManagedTargetWithoutClaimingLegacyFolder(t *testing.T
 		t.Fatalf("5B changed root ID or did not rename it: %+v", actualTarget)
 	}
 
+	// New Yike Sources receive their user-named managed leaf immediately,
+	// before credentials are stored. The account UID is private Source metadata.
+	yikeRes := request(t, router, http.MethodPost, "/api/v1/sources", token,
+		strings.NewReader(`{"name":"我的一刻相册","kind":"yike_photos","direction":"pull","schedule_type":"manual"}`),
+		http.StatusCreated)
+	var yikeSource sourceDTO
+	if err := json.Unmarshal(yikeRes.Body.Bytes(), &yikeSource); err != nil {
+		t.Fatal(err)
+	}
+	if yikeSource.TargetNodeID == nil || !yikeSource.TargetManaged ||
+		yikeSource.TargetPath != "同步文件夹/Pull/Yike Photos/我的一刻相册" ||
+		yikeSource.Status != meta.SourceStatusPaused {
+		t.Fatalf("Yike Source did not receive the canonical user-named target at creation: %+v", yikeSource)
+	}
+
 	// Normal new Source callers do not need any target_node_id.
 	photosRes := request(t, router, http.MethodPost, "/api/v1/sources", token,
 		strings.NewReader(`{"name":"照片备份","kind":"synology_photos","direction":"pull","schedule_type":"manual"}`),
