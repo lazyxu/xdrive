@@ -1,7 +1,7 @@
 package client
 
 import (
-	"strings"
+
 	"bytes"
 	"context"
 	"encoding/json"
