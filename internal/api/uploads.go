@@ -829,6 +829,21 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		fail(c, http.StatusConflict, "upload session is finalized")
 		return
 	}
+	// A read-only authorization preflight also protects existing-part ACKs
+	// and prevents streaming staging bytes for revoked native writers.
+	// The UploadPart transaction below repeats authorization under its lock.
+	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var live meta.UploadSession
+		if err := tx.Where("id = ? AND owner_id = ?", session.ID, session.OwnerID).
+			Take(&live).Error; err != nil {
+			return errManagedSourceWriteDenied
+		}
+		return s.requireUploadChunkAuthorityTx(c.Request.Context(), tx, c, live)
+	}); err != nil {
+		s.recordUploadAuthorizationFailure(c, "chunk.prepare", session, err)
+		fail(c, http.StatusForbidden, "upload authority is no longer valid")
+		return
+	}
 	if time.Now().After(session.ExpiresAt) {
 		_ = s.abortUploadSessionData(c.Request.Context(), session)
 		fail(c, http.StatusGone, "upload session expired")
