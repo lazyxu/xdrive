@@ -190,9 +190,6 @@ export function XDriveSourceManager({
   directionFilter,
   initialSourceID,
   focusedRun,
-  defaultTargetLabel,
-  defaultTargetPath,
-  targetBrowser,
   cookieHelpVariant = 'accordion',
   onSelectedSourceChange,
   onError,
@@ -243,9 +240,6 @@ export function XDriveSourceManager({
   const [settingsRootsError, setSettingsRootsError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const createNameEditedRef = useRef(false)
-  const [createTargetCrumbs, setCreateTargetCrumbs] = useState<XDriveSourceTargetNode[]>([])
-  const [createTargetDirectories, setCreateTargetDirectories] = useState<XDriveSourceTargetNode[]>([])
-  const [createTargetLoading, setCreateTargetLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [triggeringSourceID, setTriggeringSourceID] = useState<number | null>(null)
   const [cancellingRunID, setCancellingRunID] = useState<string | null>(null)
@@ -556,23 +550,6 @@ export function XDriveSourceManager({
       .catch(() => setGuideUsername(undefined))
   }
 
-  const loadCreateTargetDirectory = async (
-    node: XDriveSourceTargetNode,
-    crumbs: XDriveSourceTargetNode[],
-  ) => {
-    if (!targetBrowser) return
-    setCreateTargetLoading(true)
-    try {
-      const children = await targetBrowser.children(node.id)
-      setCreateTargetCrumbs(crumbs)
-      setCreateTargetDirectories(children)
-    } catch (error) {
-      onError(error)
-    } finally {
-      setCreateTargetLoading(false)
-    }
-  }
-
   const openCreate = async () => {
     createNameEditedRef.current = false
     setCreateValues(initialCreateSourceValues(defaultCreatePreset))
@@ -581,8 +558,6 @@ export function XDriveSourceManager({
     setCreateRootsError('')
     setCreateCredentialTest(null)
     setCreateCredentialTestError('')
-    setCreateTargetCrumbs([])
-    setCreateTargetDirectories([])
     setCreateOpen(true)
     if (directionFilter !== 'pull' && adapter.suggestedPushName) {
       void adapter.suggestedPushName().then((name) => {
@@ -591,16 +566,6 @@ export function XDriveSourceManager({
           setCreateValues((current) => ({ ...current, name: suggestion }))
         }
       }).catch(() => undefined)
-    }
-    if (!targetBrowser) return
-    setCreateTargetLoading(true)
-    try {
-      const root = await targetBrowser.root()
-      await loadCreateTargetDirectory(root, [root])
-    } catch (error) {
-      onError(error)
-    } finally {
-      setCreateTargetLoading(false)
     }
   }
 
@@ -1546,12 +1511,6 @@ export function XDriveSourceManager({
         nameError={createNameError}
         spacesError={createSpacesError}
         rootsError={createRootsError}
-        targetBrowsingEnabled={Boolean(targetBrowser)}
-        targetCrumbs={createTargetCrumbs}
-        targetDirectories={createTargetDirectories}
-        targetLoading={createTargetLoading}
-        defaultTargetLabel={defaultTargetLabel}
-        defaultTargetPath={defaultTargetPath}
         cookieHelpVariant={cookieHelpVariant}
         testingCredential={testingCreateCredential}
         credentialTest={createCredentialTest}
@@ -1585,9 +1544,6 @@ export function XDriveSourceManager({
         onClearNameError={() => setCreateNameError('')}
         onClearSpacesError={() => setCreateSpacesError('')}
         onClearRootsError={() => setCreateRootsError('')}
-        onLoadTargetDirectory={(node, crumbs) => {
-          void loadCreateTargetDirectory(node, crumbs)
-        }}
         onTestCredential={() => {
           void testCreateCredential()
         }}
