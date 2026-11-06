@@ -1300,7 +1300,7 @@ photo_host_control_set_profiles() {
   mv -f "$tmp" "$ENV_PATH"
 }
 photo_host_control_probe() {
-  local raw=""
+  local raw="" existing=""
   [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] || { printf 'unknown\n'; return; }
   raw="$(timeout 3s docker inspect \
     --format '{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
@@ -1311,7 +1311,16 @@ photo_host_control_probe() {
     'true|starting') printf 'starting\n' ;;
     'true|') printf 'running-unverified\n' ;;
     false\|*) printf 'stopped\n' ;;
-    *) printf 'unknown\n' ;;
+    *)
+      # A failed inspect alone is ambiguous (missing container, Docker down,
+      # permission failure). Only a successful exact-name inventory can prove
+      # that this fixed optional container has never been created.
+      if existing="$(timeout 3s docker container ls -a --filter 'name=^/xdrive-photo-face$' --format '{{.ID}}' 2>/dev/null)" &&
+          [[ -z "$existing" ]]; then
+        printf 'stopped\n'
+      else
+        printf 'unknown\n'
+      fi ;;
   esac
 }
 photo_host_control_write_status() {
@@ -1385,9 +1394,38 @@ photo_host_control_recover() {
   fi
   rm -f "$recovery"
 }
+# Stage only the configured fixed model image before creating its container.
+# Downloads have their own bound and heartbeat; the short container-start
+# timeout is not also an implicit first-download deadline. Cached offline
+# images remain usable without contacting a registry.
+photo_host_control_start() (
+  local image pid="" result=0 ticks=0
+  image="$(env_value XD_PHOTO_FACE_IMAGE)"
+  [[ -n "$image" ]] || image=ghcr.io/lazyxu/xdrive-photo-face:latest
+  trap 'if [[ -n "$pid" ]]; then kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; fi' EXIT
+  trap 'exit 130' INT TERM
+  if ! timeout 3s docker image inspect "$image" >/dev/null 2>&1; then
+    timeout --kill-after=5s 600s docker compose --profile photo-intelligence --env-file "$ENV_PATH" \
+      -f "$COMPOSE_PATH" pull photo-face >/dev/null 2>&1 &
+    pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+      touch_heartbeat
+      # Both heartbeat and status have a 45-second freshness fence. Keep
+      # the running receipt current during a first multi-minute download.
+      if (( ticks % 10 == 0 )); then photo_host_control_refresh; fi
+      ticks=$((ticks + 1))
+      sleep 1
+    done
+    wait "$pid" || result=$?
+    pid=""
+    [[ "$result" == 0 ]] || return "$result"
+  fi
+  timeout 25s docker compose --profile photo-intelligence --env-file "$ENV_PATH" \
+    -f "$COMPOSE_PATH" up -d --no-deps photo-face >/dev/null 2>&1
+)
 photo_host_control_process() {
   local dir request active status request_id revision enabled created_at applied last_state
-  local previous next initial current verified=false launched=false applied_instance_digest="" model_ack_at_apply=false
+  local previous next initial current health_deadline refresh_at verified=false launched=false applied_instance_digest="" model_ack_at_apply=false
   dir="$(prepare_dir)"
   request="$dir/photo-host-control-request.json"
   active="$dir/photo-host-control-active.json"
@@ -1437,11 +1475,21 @@ photo_host_control_process() {
   if photo_host_control_set_profiles "$next"; then
     if [[ "$initial" == healthy ]]; then
       launched=true
-    elif timeout 25s docker compose --profile photo-intelligence --env-file "$ENV_PATH" \
-        -f "$COMPOSE_PATH" up -d --no-deps photo-face >/dev/null 2>&1; then
-      for _ in $(seq 1 20); do
+    elif photo_host_control_start; then
+      # Compose has a 15s start period, 30s health interval and 3 retries.
+      # A 20s deadline could expire before its first normal health result.
+      # Bound elapsed time across the full health window, not only sleeps.
+      health_deadline=$((SECONDS + 120))
+      refresh_at=$SECONDS
+      while (( SECONDS < health_deadline )); do
         touch_heartbeat
-        if [[ "$(photo_host_control_probe)" == healthy ]]; then launched=true; break; fi
+        current="$(photo_host_control_probe)"
+        if [[ "$current" == healthy ]]; then launched=true; break; fi
+        case "$current" in unhealthy|stopped) break ;; esac
+        if (( SECONDS >= refresh_at )); then
+          photo_host_control_refresh
+          refresh_at=$((SECONDS + 10))
+        fi
         sleep 1
       done
     fi
@@ -1545,24 +1593,12 @@ photo_intelligence_socket_owner_observed() {
 }
 
 photo_intelligence_host_refresh() {
-  local dir tmp profile observed="" state=unknown profile_configured=false session_digest="" socket_owner_verified=false
+  local dir tmp profile state=unknown profile_configured=false session_digest="" socket_owner_verified=false
   profile="$(env_value COMPOSE_PROFILES)"
   case ",$profile," in
     *,photo-intelligence,*) profile_configured=true ;;
   esac
-  if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]]; then
-    observed="$(timeout 3s docker inspect \
-      --format '{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
-      xdrive-photo-face 2>/dev/null || true)"
-  fi
-  case "$observed" in
-    "true|healthy") state=healthy ;;
-    "true|unhealthy") state=unhealthy ;;
-    "true|starting") state=starting ;;
-    "true|") state=running-unverified ;;
-    false\|*) state=stopped ;;
-    *) state=unknown ;;
-  esac
+  state="$(photo_host_control_probe)"
   if [[ "$state" == healthy ]]; then
     session_digest="$(photo_intelligence_healthcheck_digest)"
     if photo_intelligence_socket_owner_observed; then

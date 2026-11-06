@@ -56,7 +56,7 @@ SFACE_LICENSE_URL = (
 )
 
 SMART_PROTOCOL_VERSION = 1
-SMART_ANALYZER_NAME = "xdrive-opencv-mobilenetv2-ppocr-crnn"
+SMART_ANALYZER_NAME = "xdrive-mobilenetv2-ppocrv3-ppocrv5"
 
 MOBILENET_MODEL_NAME = "image_classification_mobilenetv2_2022apr.onnx"
 MOBILENET_MODEL_VERSION = "2022apr"
@@ -76,13 +76,14 @@ PPOCR_LICENSE_URL = (
     "47534e27c9851bb1128ccc0102f1145e27f23f98/models/text_detection_ppocr"
 )
 
-CRNN_MODEL_NAME = "text_recognition_CRNN_CN_2021nov.onnx"
-CRNN_MODEL_VERSION = "CN-2021nov"
-CRNN_SHA256 = "c760bf82d684b87dfabb288e6c0f92d41a8cd6c1780661ca2c3cd10c2065a9ba"
-CRNN_LICENSE = "Apache-2.0"
-CRNN_LICENSE_URL = (
-    "https://github.com/opencv/opencv_zoo/tree/"
-    "47534e27c9851bb1128ccc0102f1145e27f23f98/models/text_recognition_crnn"
+PPOCR_REC_MODEL_NAME = "ppocrv5_mobile_rec.onnx"
+PPOCR_REC_MODEL_VERSION = "v5-mobile-ed152b8"
+PPOCR_REC_SHA256 = "da72dc72ca4dc220df0dfde68c1dedc31c58d3e76a25871122e5056227d50092"
+PPOCR_CHARSET_SHA256 = "8ad94e456475f65c95944b1b1601695b3f027198163bdd31b1bb31092e185642"
+PPOCR_REC_LICENSE = "Apache-2.0"
+PPOCR_REC_LICENSE_URL = (
+    "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/tree/"
+    "ed152b8b495f84de93cda5709d768548a9127622"
 )
 
 SMART_VISUAL_TOP_K = 5
@@ -91,6 +92,7 @@ SMART_OCR_INPUT_SIZE = (736, 736)
 SMART_OCR_MAX_CANDIDATES = 64
 SMART_OCR_LANGUAGE = "zh-en"
 SMART_OCR_MAX_TEXT_CHARS = 8192
+SMART_OCR_REC_MAX_WIDTH = 1600
 
 SEMANTIC_PROTOCOL_VERSION = 1
 SEMANTIC_ANALYZER_NAME = "xdrive-siglip2-base-patch16-224-int8"
@@ -143,7 +145,7 @@ PIPELINE_VERSION = (
 
 SMART_PIPELINE_VERSION = (
     f"opencv-{cv.__version__}-cpu-mobilenetv2-2022apr"
-    "-ppocrv3-cn-2023may-crnn-cn-2021nov-v2-label-index"
+    f"-ppocrv3-cn-2023may-ort{ort.__version__}-ppocrv5-mobile-ed152b8-v3-w1600"
 )
 
 
@@ -798,7 +800,7 @@ class SmartRuntime:
             recognizer_path
             or os.environ.get(
                 "XD_SMART_OCR_RECOGNIZER_MODEL",
-                f"/models/{CRNN_MODEL_NAME}",
+                f"/models/{PPOCR_REC_MODEL_NAME}",
             )
         )
         self.labels_path = Path(
@@ -812,13 +814,13 @@ class SmartRuntime:
             charset_path
             or os.environ.get(
                 "XD_SMART_OCR_CHARSET",
-                "/models/crnn_cn_charset.txt",
+                "/models/ppocrv5_rec_charset.json",
             )
         )
 
         FaceRuntime._verify_model(self.classifier_path, MOBILENET_SHA256)
         FaceRuntime._verify_model(self.detector_path, PPOCR_SHA256)
-        FaceRuntime._verify_model(self.recognizer_path, CRNN_SHA256)
+        FaceRuntime._verify_model(self.recognizer_path, PPOCR_REC_SHA256)
 
         self.labels = [
             value.strip()
@@ -829,9 +831,12 @@ class SmartRuntime:
             raise RuntimeError(
                 f"ImageNet label count is {len(self.labels)}, expected 1000"
             )
-        self.charset = self.charset_path.read_text(encoding="utf-8")
-        if len(self.charset) < 3900:
-            raise RuntimeError("CRNN CN charset is incomplete")
+        FaceRuntime._verify_model(self.charset_path, PPOCR_CHARSET_SHA256)
+        characters = json.loads(self.charset_path.read_text(encoding="utf-8"))
+        if not isinstance(characters, list) or len(characters) != 18383 or any(not isinstance(c, str) or not c for c in characters):
+            raise RuntimeError("PP-OCRv5 charset is incomplete")
+        # The pinned Paddle CTC decoder prepends blank and appends space.
+        self.charset = [""] + characters + [" "]
 
         self.classifier = cv.dnn.readNet(str(self.classifier_path))
         self.classifier.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
@@ -851,9 +856,14 @@ class SmartRuntime:
             1.0 / 255.0 / np.array([0.229, 0.224, 0.225])
         )
 
-        self.text_recognizer = cv.dnn.readNet(str(self.recognizer_path))
-        self.text_recognizer.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
-        self.text_recognizer.setPreferableTarget(cv.dnn.DNN_TARGET_CPU)
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = 2
+        options.inter_op_num_threads = 1
+        options.log_severity_level = 3
+        self.text_recognizer = ort.InferenceSession(
+            str(self.recognizer_path), sess_options=options,
+            providers=["CPUExecutionProvider"],
+        )
         self.lock = threading.Lock()
         self._ocr_target_vertices = np.array(
             [[0, 31], [0, 0], [99, 0], [99, 31]],
@@ -862,8 +872,8 @@ class SmartRuntime:
 
     def info(self) -> dict[str, Any]:
         runtime = {
-            "framework": "opencv_dnn",
-            "version": cv.__version__,
+            "framework": "opencv_dnn+onnxruntime",
+            "version": f"{cv.__version__}+{ort.__version__}",
             "device": "cpu",
         }
         return {
@@ -885,11 +895,11 @@ class SmartRuntime:
                 "license_url": PPOCR_LICENSE_URL,
             },
             "text_recognizer": {
-                "name": "CRNN-CN",
-                "version": CRNN_MODEL_VERSION,
-                "sha256": CRNN_SHA256,
-                "license": CRNN_LICENSE,
-                "license_url": CRNN_LICENSE_URL,
+                "name": "PP-OCRv5 mobile",
+                "version": PPOCR_REC_MODEL_VERSION,
+                "sha256": PPOCR_REC_SHA256,
+                "license": PPOCR_REC_LICENSE,
+                "license_url": PPOCR_REC_LICENSE_URL,
             },
             "ocr_language": SMART_OCR_LANGUAGE,
             "runtime": runtime,
@@ -935,15 +945,18 @@ class SmartRuntime:
         return labels
 
     def _decode_text(self, output: np.ndarray) -> str:
+        output = np.asarray(output)
+        if (output.ndim != 3 or output.shape[0] != 1
+                or not 0 < output.shape[1] <= SMART_OCR_REC_MAX_WIDTH
+                or output.shape[2] != len(self.charset)
+                or not np.isfinite(output).all()):
+            raise RuntimeError("PP-OCRv5 returned invalid output")
         chars: list[str] = []
         previous = -1
-        for step in np.asarray(output):
-            values = np.asarray(step).reshape(-1)
-            index = int(np.argmax(values))
+        for value in output[0].argmax(axis=1):
+            index = int(value)
             if index != 0 and index != previous:
-                charset_index = index - 1
-                if 0 <= charset_index < len(self.charset):
-                    chars.append(self.charset[charset_index])
+                chars.append(self.charset[index])
             previous = index
         return "".join(chars).strip()
 
@@ -953,19 +966,21 @@ class SmartRuntime:
         box: np.ndarray,
     ) -> str:
         vertices = np.asarray(box, dtype=np.float32).reshape((4, 2))
+        if not np.isfinite(vertices).all():
+            raise RuntimeError("OCR region is invalid")
+        width = max(float(np.linalg.norm(vertices[0] - vertices[3])), 1.0)
+        height = max(float(np.linalg.norm(vertices[0] - vertices[1])), 1.0)
+        resized_width = min(SMART_OCR_REC_MAX_WIDTH, max(1, math.ceil(48 * width / height)))
+        target = np.array([[0, 47], [0, 0], [resized_width - 1, 0], [resized_width - 1, 47]], dtype=np.float32)
         transform = cv.getPerspectiveTransform(
             vertices,
-            self._ocr_target_vertices,
+            target,
         )
-        cropped = cv.warpPerspective(image, transform, (100, 32))
-        blob = cv.dnn.blobFromImage(
-            cropped,
-            size=(100, 32),
-            mean=127.5,
-            scalefactor=1 / 127.5,
-        )
-        self.text_recognizer.setInput(blob)
-        return self._decode_text(self.text_recognizer.forward())
+        cropped = cv.warpPerspective(image, transform, (resized_width, 48))
+        # BGR, height 48, preserve aspect ratio and right-pad normalized zeros.
+        blob = np.zeros((1, 3, 48, max(320, resized_width)), dtype=np.float32)
+        blob[0, :, :, :resized_width] = (cropped.astype(np.float32) / 127.5 - 1).transpose(2, 0, 1)
+        return self._decode_text(self.text_recognizer.run(None, {"x": blob})[0])
 
     def _ocr(self, image: np.ndarray) -> str:
         resized = cv.resize(image, SMART_OCR_INPUT_SIZE, interpolation=cv.INTER_AREA)
@@ -1004,13 +1019,13 @@ class SmartRuntime:
     @staticmethod
     def _fixed_ocr_fixture_matches(text: str) -> bool:
         # Compare decoded text inside the trusted model process only.
-        # Executing CRNN and recognizing the known fixture are distinct.
+        # Executing PP-OCRv5 and recognizing the known fixture are distinct.
         return isinstance(text, str) and text == "XD"
 
     def probe_synthetic_visual_ocr(self) -> dict[str, Any]:
         # Only fixed artificial pixels created inside the trusted model
         # process. This checks THREE real networks independently, even when
-        # PP-OCR finds no text boxes or CRNN decodes an empty string.
+        # PP-OCR finds no text boxes or PP-OCRv5 decodes an empty string.
         image = np.full((240, 320, 3), 255, dtype=np.uint8)
         cv.putText(
             image, "XDRIVE", (22, 137), cv.FONT_HERSHEY_SIMPLEX,
@@ -1031,7 +1046,7 @@ class SmartRuntime:
                 patch, self._ocr_target_vertices,
             )
         if not isinstance(recognized, str):
-            raise RuntimeError("CRNN synthetic inference returned invalid text")
+            raise RuntimeError("PP-OCRv5 synthetic inference returned invalid text")
         return {
             "classifier_executed": True,
             "ocr_detector_executed": True,
@@ -1874,7 +1889,7 @@ def self_test(
         smart_runtime._ocr_target_vertices,
     )
     if not isinstance(ocr_probe, str):
-        raise RuntimeError("CRNN self-test returned invalid text")
+        raise RuntimeError("PP-OCRv5 self-test returned invalid text")
     semantic_image = semantic_runtime.embed_image(
         np.zeros((SEMANTIC_IMAGE_SIZE, SEMANTIC_IMAGE_SIZE, 3), dtype=np.uint8)
     )

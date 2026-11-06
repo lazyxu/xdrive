@@ -944,7 +944,11 @@ struct XDriveIOSNativeServerMediaPreview: View {
             .toolbar(showChrome ? .visible : .hidden, for: .navigationBar)
             .sheet(isPresented: $showingMediaInfo) {
                 if ownerAuthorized {
-                    XDriveIOSNativeViewerInfoSheet(details: mediaInfoDetails)
+                    XDriveIOSNativeViewerInfoSheet(details: mediaInfoDetails,
+                        ocr: viewed.isVideo ? nil : XDriveIOSNativeCloudOCRView(
+                            login: login, owner: openedOwner,
+                            target: .init(id: viewed.node.id, revision: viewed.node.revision,
+                                name: viewed.node.name, size: viewed.node.size)))
                 }
             }
             .alert("保存到 iOS 照片", isPresented: $photosRestoreNoticePresented) {
@@ -1430,7 +1434,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 8) {
-                    TextField("搜索当前云端图库", text: $searchDraft)
+                    TextField("搜索照片名称、标签或识别文字", text: $searchDraft)
                         .textFieldStyle(.roundedBorder)
                         .submitLabel(.search)
                         .onSubmit { applySearch() }

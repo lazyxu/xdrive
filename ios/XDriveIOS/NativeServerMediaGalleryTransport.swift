@@ -124,8 +124,8 @@ private final class XDriveIOSNativeMediaRejectRedirect: XDriveIOSServerTLSDelega
     }
 }
 
-/// Read-only native transport. Uses the same Server's documented media
-/// endpoints as Web/PWA; never imports a browser cookie or writes CAS.
+/// Native media transport with an explicit OCR queue request. Uses the same
+/// Server endpoints as Web/PWA; never imports a browser cookie or writes CAS.
 struct XDriveIOSNativeMediaGalleryReader {
     static let pageSize = 48
     let owner: XDriveNativeOwnerRoot
@@ -165,11 +165,14 @@ struct XDriveIOSNativeMediaGalleryReader {
     }
 
     private func read(_ url: URL, method: String = "GET",
-                      bearer: Bool = true, maximum: Int) async throws -> Data {
+                      bearer: Bool = true, maximum: Int,
+                      body: Data? = nil, expectedStatus: Int = 200) async throws -> Data {
         let client = session()
         defer { client.invalidateAndCancel() }
         var request = URLRequest(url: url)
         request.httpMethod = method
+        request.httpBody = body
+        if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         request.httpShouldHandleCookies = false
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -181,7 +184,7 @@ struct XDriveIOSNativeMediaGalleryReader {
         guard let reply = response as? HTTPURLResponse else {
             throw XDriveIOSNativeMediaReadFailure.malformed
         }
-        guard reply.statusCode == 200 else {
+        guard reply.statusCode == expectedStatus else {
             throw XDriveIOSNativeMediaReadFailure.response(reply.statusCode)
         }
         guard maximum > 0 else {
@@ -219,6 +222,22 @@ struct XDriveIOSNativeMediaGalleryReader {
             throw XDriveIOSNativeMediaReadFailure.invalidScope
         }
         return escaped
+    }
+
+    func ocr(_ target: XDriveIOSNativeOCRTarget) async throws -> XDriveIOSNativeOCRResult? {
+        guard target.id > 0, target.revision > 0, target.size >= 0 else {
+            throw XDriveIOSNativeMediaReadFailure.invalidScope
+        }
+        let bytes = try await read(try endpoint("/api/v1/media/items/\(target.id)"), maximum: 128 * 1024)
+        return try XDriveIOSNativeOCRPolicy.detail(bytes, target: target)
+    }
+
+    /// Explicit whole-Owner reanalysis: same durable queue as Web; one POST, no retry.
+    func reanalyzeOCR() async throws {
+        let body = try JSONEncoder().encode(["kinds": ["smart_search"]])
+        let bytes = try await read(try endpoint("/api/v1/photo-intelligence/reanalyze"),
+            method: "POST", maximum: 4096, body: body, expectedStatus: 202)
+        try XDriveIOSNativeOCRPolicy.acceptReanalysis(bytes, ownerID: owner.ownerID)
     }
 
     func page(offset: Int, albumID: String? = nil,

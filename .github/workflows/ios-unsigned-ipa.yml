@@ -45,6 +45,15 @@ jobs:
           node --test desktop/tests/ios-native-launch-recovery.cjs
 
       # Pure Foundation contract test is quick and independent of signing.
+      - name: Verify native cloud OCR detail privacy and decoding
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeCloudOCRPolicy.swift \
+            ios/tests/NativeCloudOCRPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-cloud-ocr"
+          "$RUNNER_TEMP/xdrive-ios-cloud-ocr"
+
       - name: Verify Apple Notes import text and source identity policy
         run: |
           set -euo pipefail

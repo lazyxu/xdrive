@@ -1594,15 +1594,15 @@ jobs:
         id: photo-face-build
         shell: bash
         run: bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
-      # Source-only OCR PR fixture stays isolated from ordinary artifact jobs.
-      # The shared script is also used by the post-build master/tag smoke below.
+      # OCR integration changes exercise the real pinned model before review.
+      # Keep ordinary artifact publishing independent of this database smoke.
       - uses: actions/setup-go@v5
-        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-')
+        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-') || github.head_ref == 'codex/ocr-cloud-end-to-end')
         with:
           go-version: "1.25.x"
           cache: true
       - name: Real JPEG PP-OCR and Gallery search PostgreSQL integration
-        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-')
+        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-') || github.head_ref == 'codex/ocr-cloud-end-to-end')
         run: bash scripts/ci/test-photo-ocr-real-model.sh
 
       - name: Save Photo Intelligence model download progress

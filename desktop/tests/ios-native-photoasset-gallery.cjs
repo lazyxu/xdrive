@@ -258,7 +258,10 @@ test('native PhotoAsset authenticated reads stream and stop at the first byte ov
   assert.match(read, /bytes\.count \+ chunk\.count < maximum/);
   assert.match(read, /throw XDriveIOSNativeMediaReadFailure\.tooLarge/);
   assert.match(read, /try Task\.checkCancellation\(\)/);
-  assert.match(read, /reply\.statusCode == 200/);
+  assert.match(read, /expectedStatus: Int = 200/);
+  assert.match(read, /reply\.statusCode == expectedStatus/);
+  const reanalyze = api.slice(api.indexOf('func reanalyzeOCR()'), api.indexOf('func page('));
+  assert.match(reanalyze, /method: "POST"[\s\S]*expectedStatus: 202/);
   assert.doesNotMatch(read, /client\.data\(for:/);
 });
 

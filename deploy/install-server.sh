@@ -2380,13 +2380,18 @@ if compose_profile_enabled media-worker; then
 elif [[ "$(env_value XD_MEDIA_WORKER_SOCKET)" == "/run/xdrive-media-worker/media-worker.sock" ]]; then
   unset_env XD_MEDIA_WORKER_SOCKET
 fi
-if compose_profile_enabled photo-intelligence; then
-  if [[ -z "$(env_value XD_PHOTO_FACE_ANALYZER_SOCKET)" ]]; then
-    set_env XD_PHOTO_FACE_ANALYZER_SOCKET "/run/xdrive-photo-face/photo-face.sock"
-  fi
-  if [[ -z "$(env_value XD_PHOTO_FACE_ANALYZER_TOKEN)" ]]; then
-    set_env XD_PHOTO_FACE_ANALYZER_TOKEN "$(random_hex 32)"
-  fi
+# Provision the private client before the Server starts, even while the model
+# profile is disabled. A later audited Host enable must not require restarting
+# the Server (and its uploads) just to construct the optional model clients.
+# This does not start a model or enable automatic analysis.
+if [[ -z "$(env_value XD_PHOTO_FACE_ANALYZER_SOCKET)" ]]; then
+  set_env XD_PHOTO_FACE_ANALYZER_SOCKET "/run/xdrive-photo-face/photo-face.sock"
+fi
+if [[ -z "$(env_value XD_PHOTO_FACE_ANALYZER_TOKEN)" ]]; then
+  set_env XD_PHOTO_FACE_ANALYZER_TOKEN "$(random_hex 32)"
+fi
+if [[ -z "$(env_value XD_PHOTO_HOST_APPLY_TOKEN)" ]]; then
+  set_env XD_PHOTO_HOST_APPLY_TOKEN "$(random_hex 32)"
 fi
 ensure_env XD_POSTGRES_MEMORY_LIMIT "${XD_POSTGRES_MEMORY_LIMIT:-1g}"
 ensure_env XD_POSTGRES_CPU_LIMIT "${XD_POSTGRES_CPU_LIMIT:-1.0}"
@@ -2397,7 +2402,7 @@ ensure_env XD_SERVER_PIDS_LIMIT "${XD_SERVER_PIDS_LIMIT:-256}"
 ensure_env XD_CADDY_MEMORY_LIMIT "${XD_CADDY_MEMORY_LIMIT:-256m}"
 ensure_env XD_CADDY_CPU_LIMIT "${XD_CADDY_CPU_LIMIT:-0.50}"
 ensure_env XD_CADDY_PIDS_LIMIT "${XD_CADDY_PIDS_LIMIT:-128}"
-ensure_env XD_PHOTO_FACE_MEMORY_LIMIT "${XD_PHOTO_FACE_MEMORY_LIMIT:-1g}"
+ensure_env XD_PHOTO_FACE_MEMORY_LIMIT "${XD_PHOTO_FACE_MEMORY_LIMIT:-2g}"
 ensure_env XD_PHOTO_FACE_CPU_LIMIT "${XD_PHOTO_FACE_CPU_LIMIT:-1.0}"
 ensure_env XD_PHOTO_FACE_PIDS_LIMIT "${XD_PHOTO_FACE_PIDS_LIMIT:-128}"
 ensure_env XD_LOG_MAX_SIZE "${XD_LOG_MAX_SIZE:-10m}"

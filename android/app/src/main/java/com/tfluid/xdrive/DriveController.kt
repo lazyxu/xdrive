@@ -4254,6 +4254,33 @@ class DriveController(
             fileExportPending = null, fileExportOrigin = null)
     }
 
+    /** One explicit detail read, fenced to the current Owner and Info selection. */
+    suspend fun galleryOCR(item: GalleryAsset): PhotoOCR? {
+        val ticket = generation
+        val service = api ?: throw CancellationException()
+        fun current() = state.value.screen == Screen.GALLERY &&
+            state.value.gallerySelected == item && state.value.galleryItems.any { it == item }
+        checkCurrent(ticket)
+        if (!current()) throw CancellationException()
+        val result = authenticated(service, ticket) { token -> service.filesMediaItem(token, item.node).ocr }
+        checkCurrent(ticket)
+        if (!current()) throw CancellationException()
+        return result
+    }
+
+    /** Confirmed whole-library reanalysis uses the existing durable Owner queue. No POST retry. */
+    suspend fun reanalyzeGalleryOCR(item: GalleryAsset) {
+        val ticket = generation
+        val service = api ?: throw CancellationException()
+        val token = session?.accessToken ?: throw CancellationException()
+        checkCurrent(ticket)
+        if (state.value.screen != Screen.GALLERY || state.value.gallerySelected != item)
+            throw CancellationException()
+        service.reanalyzePhotoOCR(token)
+        checkCurrent(ticket)
+        if (state.value.gallerySelected != item) throw CancellationException()
+    }
+
     /** Jump to an already-visited ancestor without trusting an unverified path. */
     fun navigateToAncestor(index: Int) {
         val current = state.value

@@ -247,6 +247,7 @@ data class GalleryAsset(
     val hasThumbnail: Boolean = false,
     /** Null means older/partial media DTO did not describe favorite state. */
     val favorite: Boolean? = null,
+    val ocr: PhotoOCR? = null,
 )
 data class GalleryTimelineGroup(val key: String, val itemCount: Long, val startIndex: Int)
 data class GalleryTimelineSets(
@@ -495,6 +496,8 @@ interface XDriveService {
     /** Validate a current Files node against its authenticated Owner media DTO. */
     suspend fun filesMediaItem(accessToken: String, node: DriveNode): GalleryAsset =
         throw ApiException(501, "Native Files media detail unavailable")
+    suspend fun reanalyzePhotoOCR(accessToken: String): Unit =
+        throw ApiException(501, "Photo OCR reanalysis unavailable")
     /** BD09-only 8×8 Owner Map/Cells, gated by signed Server release. */
     suspend fun baiduNativeMapCells(
         accessToken: String, bounds: OwnerBd09Bounds,
@@ -1777,7 +1780,18 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             else -> invalidPayload()
         }
         if (live && kind != "image") invalidPayload()
-        return GalleryAsset(original, kind, captured, duration, live, thumbnail)
+        return GalleryAsset(original, kind, captured, duration, live, thumbnail,
+            ocr = if (kind == "image") parsePhotoOCR(detail["ocr"]) else null)
+    }
+
+    override suspend fun reanalyzePhotoOCR(accessToken: String) {
+        require(validToken(accessToken))
+        val owner = verifiedOwnerIdentity(accessToken)
+        val result = request("photo-intelligence/reanalyze", accessToken,
+            expectedStatus = 202,
+            bodyObject = buildJsonObject { put("kinds", buildJsonArray { add("smart_search") }) })
+        if (result.long("owner_id") != owner.id ||
+            result["accepted"] != buildJsonArray { add("smart_search") }) invalidPayload()
     }
 
     /** Decode both Owner lists and create ACKs through one strict contract. */
@@ -2665,8 +2679,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         longRunning: Boolean = false,
         pathTailSegments: List<String> = emptyList(),
         deviceIdentity: NativeAndroidDeviceEnrollment? = null,
+        expectedStatus: Int? = null,
     ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method,
-        ifMatch, numberValues, bodyObject, longRunning, pathTailSegments, deviceIdentity)
+        ifMatch, numberValues, bodyObject, longRunning, pathTailSegments, deviceIdentity, expectedStatus)
         as? JsonObject ?: invalidPayload()
 
     private suspend fun requestArray(
@@ -2689,6 +2704,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         longRunning: Boolean = false,
         pathTailSegments: List<String> = emptyList(),
         deviceIdentity: NativeAndroidDeviceEnrollment? = null,
+        expectedStatus: Int? = null,
     ): JsonElement {
         // Device headers are allowed on exactly one read-only identity route.
         // A token never appears in the query, URI, body or ordinary API calls.
@@ -2761,6 +2777,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                     try {
                         val result = response.use {
                             if (!it.isSuccessful) throw ApiException(it.code, "Server request failed", errorReason(path, it))
+                            if (expectedStatus != null && it.code != expectedStatus) invalidPayload()
                             if (emptyResponse) return@use JsonObject(emptyMap())
                             val body = it.body ?: invalidPayload()
                             // Go returns up to 1 MiB of UTF-8 as JSON.
