@@ -3201,6 +3201,15 @@ function registerIPCHandlers() {
   // Source is the verified local file Renderer, not HTTPS or a map Child.
   // Preparation is one-use per guest attach and bound to this Desktop Owner.
   ipcMain.handle('desktop:prepare-places-embed',async (event,rawScope:unknown)=>{
+    // An untrusted guest or stale IPC sender must NEVER cancel a pending,
+    // currently authorized one-use Owner/scope attach from the local host.
+    // Authenticate the caller BEFORE advancing the preparation generation.
+    if (!mainWindow || mainWindow.isDestroyed() ||
+        event.sender!==mainWindow.webContents ||
+        event.senderFrame!==mainWindow.webContents.mainFrame) {
+      return {ok:false,error:{code:'map_scope_denied',
+        message:'当前 Desktop 地图范围或账户不受信任。'}}
+    }
     const prepareRevision=++desktopPlacesPrepareRevision
     // Last trusted Renderer prepare owns the pending one-use admission.
     // The previous WebView cannot attach an older filtered scope during retry.
@@ -3208,12 +3217,8 @@ function registerIPCHandlers() {
     const status=agentState.status
     const target=xDriveResolveSecureBaiduMapTarget(status?.server)
     const scope=xDriveParseDesktopBaiduMapScope(rawScope)
-    if (!mainWindow || mainWindow.isDestroyed() ||
-        event.sender!==mainWindow.webContents ||
-        event.senderFrame!==mainWindow.webContents.mainFrame ||
-        !agentState.connected || !status?.configured ||
+    if (!agentState.connected || !status?.configured ||
         !status.username || !target || !scope) {
-      desktopPlacesPending=null
       return {ok:false,error:{code:'map_scope_denied',
         message:'当前 Desktop 地图范围或账户不受信任。'}}
     }

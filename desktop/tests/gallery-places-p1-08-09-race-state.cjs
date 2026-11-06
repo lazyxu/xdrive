@@ -222,6 +222,14 @@ test('P1-08: actual Desktop Main handler refuses stale concurrent Owner/scope pr
   assert.equal(stale.ok,false)
   assert.equal(runtime.pending().scope.albumKey,'manual:new',
     'late request must not clear the new Owner/scope receipt')
+  // An untrusted or stale WebView IPC sender must not mutate the trusted
+  // Main window's already prepared Owner scope or generation.
+  const revisionBefore=runtime.revision()
+  const foreign=await handler({sender:{},senderFrame:{}},scopeA)
+  assert.equal(foreign.ok,false)
+  assert.equal(runtime.revision(),revisionBefore)
+  assert.equal(runtime.pending().scope.albumKey,'manual:new')
+  assert.equal(requests.length,2)
   const third=handler(event,scopeA)
   state.status={...state.status,username:'bob'}
   requests[2](true)
