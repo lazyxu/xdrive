@@ -154,6 +154,8 @@ func (s *Server) Router() *gin.Engine {
 	// Only Desktop Main can redeem a one-use Agent-issued ticket into its
 	// own isolated HTTPS Cookie jar. No browser bearer alone can issue it.
 	v1.POST("/auth/desktop-map/redeem", s.redeemDesktopMapGuestGrant)
+	// Read-only same-Origin Cookie validation for Desktop Retry; never rotates it.
+	v1.POST("/auth/desktop-map/session", s.desktopMapBrowserSessionProbe)
 	// Revocable native iOS Photo grant proof is NOT a general bearer session.
 	// Only these dedicated routes accept the grant+Device credential pair.
 	v1.GET("/ios/photos/background-grants/proof",
