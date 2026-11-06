@@ -1,11 +1,23 @@
 package com.tfluid.xdrive
 
 import android.content.Context
+import com.tfluid.xdrive.core.NativeAndroidPhotoRunCounts
 import com.tfluid.xdrive.core.NativePhotoBackupScope
 import com.tfluid.xdrive.core.NativePhotoOwnerPreflight
 import com.tfluid.xdrive.core.XDriveService
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
 
 /** One explicit foreground session, never an automatic WorkManager grant. */
 internal data class NativePhotoForegroundBatchResult(
@@ -51,6 +63,7 @@ internal class NativePhotoForegroundBatch(
         maxScanned: Int = 128,
         maxUploads: Int = 8,
         onProgress: (NativePhotoForegroundBatchResult) -> Unit = {},
+        runTrigger: String = "manual",
     ): NativePhotoForegroundBatchResult {
         require(startAfterId >= 0 && maxScanned in 1..1024 &&
             maxUploads in 1..16 && maxUploads <= maxScanned)
@@ -99,7 +112,36 @@ internal class NativePhotoForegroundBatch(
         var after = if (startAfterId == 0L) durableAfter else startAfterId
         var exhausted = false
 
+        // A real Server SourceRun now fences the managed target for the WHOLE
+        // foreground/scheduled batch, including MediaStore staging gaps before
+        // an UploadSession exists. A failed begin cannot fall back to Owner root.
+        val sourceRun = service.beginNativeAndroidPhotoSourceRun(
+            token, device, managedDestination, UUID.randomUUID().toString(), runTrigger)
+        val heartbeatFailure = AtomicReference<Throwable?>(null)
+        val parentJob = currentCoroutineContext()[Job]
+        val heartbeat = CoroutineScope(
+            currentCoroutineContext() + kotlinx.coroutines.SupervisorJob(parentJob)).launch {
+            while (isActive) {
+                delay(20_000)
+                try {
+                    service.heartbeatNativeAndroidPhotoSourceRun(
+                        token, device, managedDestination, sourceRun)
+                } catch (failure: Throwable) {
+                    if (failure is CancellationException) throw failure
+                    heartbeatFailure.set(failure)
+                    break
+                }
+            }
+        }
+        fun verifyHeartbeat() {
+            check(heartbeatFailure.get() == null) { "Android SourceRun heartbeat failed" }
+        }
+        fun runCounts(failed: Int = 0) = NativeAndroidPhotoRunCounts(
+            scanned = scanned, uploaded = uploaded, alreadyVerified = already, failed = failed)
+        var settled = false
+        try {
         while (scanned < maxScanned && uploaded < maxUploads) {
+            verifyHeartbeat()
             checkActive(currentSession)
             check(hasNativeFullPhotoVideoReadGrant(app)) {
                 "Photo or video grant changed during incremental backup"
@@ -111,6 +153,7 @@ internal class NativePhotoForegroundBatch(
                 break
             }
             for (candidate in page.candidates) {
+                verifyHeartbeat()
                 checkActive(currentSession)
                 // stageOriginal checks the exact canonical URI, size, timestamp,
                 // visibility and current MediaStore permission before AND after
@@ -133,6 +176,7 @@ internal class NativePhotoForegroundBatch(
                     when (writer.uploadOne(
                         service, token, fresh, device.deviceId, root, source,
                         staged, currentSession,
+                        onProgress = { verifyHeartbeat() },
                         managedDevice = device, managedDestination = managedDestination,
                     )) {
                         NativePhotoIncrementalOutcome.ALREADY_VERIFIED -> already++
@@ -145,6 +189,11 @@ internal class NativePhotoForegroundBatch(
                 cursor.advanceVerified(scope, after, candidate.localId)
                 scanned++
                 after = candidate.localId
+                verifyHeartbeat()
+                // All counters are receipt-backed and cumulative. Failure to
+                // persist SourceRun progress blocks the next original.
+                service.progressNativeAndroidPhotoSourceRun(
+                    token, device, managedDestination, sourceRun, runCounts())
                 onProgress(NativePhotoForegroundBatchResult(
                     scanned, uploaded, already, after, false))
                 if (uploaded >= maxUploads) break
@@ -156,12 +205,38 @@ internal class NativePhotoForegroundBatch(
                 break
             }
         }
+        verifyHeartbeat()
         checkActive(currentSession)
         if (exhausted) {
             cursor.finishSweep(scope, after)
         }
+        heartbeat.cancelAndJoin()
+        service.finishNativeAndroidPhotoSourceRun(
+            token, device, managedDestination, sourceRun, runCounts(), "completed")
+        settled = true
         return NativePhotoForegroundBatchResult(
             scanned, uploaded, already, after, exhausted)
+        } catch (failure: Throwable) {
+            heartbeat.cancel()
+            if (!settled) {
+                // A cancellation, unknown CAS ACK or SourceRun network failure
+                // NEVER becomes a successful batch. Terminal reporting is
+                // best effort; durable real original receipts remain unchanged.
+                withContext(NonCancellable) {
+                    try {
+                        service.finishNativeAndroidPhotoSourceRun(
+                            token, device, managedDestination, sourceRun,
+                            runCounts(), if (failure is CancellationException)
+                                "cancelled" else "failed")
+                    } catch (reportError: Throwable) {
+                        if (reportError !== failure) failure.addSuppressed(reportError)
+                    }
+                }
+            }
+            throw failure
+        } finally {
+            withContext(NonCancellable) { heartbeat.cancelAndJoin() }
+        }
     }
 
     private suspend fun checkActive(currentSession: () -> Boolean) {

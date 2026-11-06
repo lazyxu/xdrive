@@ -119,7 +119,7 @@ internal class AndroidPhotoAutoBackupWorker(
                             AndroidPhotoBackupIntentStore(app), index)
                             .run(service, session.accessToken, saved.server,
                                 saved.username, stillApproved,
-                                maxScanned = 128, maxUploads = 8)
+                                maxScanned = 128, maxUploads = 8, runTrigger = "scheduled")
                     }
                 }
                 if (page == null) return Result.success()
