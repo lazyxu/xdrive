@@ -307,7 +307,17 @@ jobs:
       - name: Build Linux desktop runtime
         working-directory: desktop
         run: |
+          set -euo pipefail
           npm install --no-audit --no-fund
+          # npm may omit Rollup's Linux glibc optional native dependency.
+          # Fix only the observed missing package, pinned to the resolved
+          # Rollup version; never skip or mask the real Vite/Electron build.
+          if ! node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" >/dev/null 2>&1; then
+            rollup_version="$(node -p "require('./node_modules/rollup/package.json').version")"
+            npm install --no-audit --no-fund --no-save --no-package-lock \
+              "@rollup/rollup-linux-x64-gnu@$rollup_version"
+          fi
+          node -e "require('@rollup/rollup-linux-x64-gnu')"
           node scripts/set-version.mjs "$XDRIVE_DESKTOP_VERSION"
           npm run runtime:linux
           test -x release/linux-unpacked/xdrive-desktop
