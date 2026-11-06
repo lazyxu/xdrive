@@ -22,7 +22,7 @@ func TestValidateCreatedLocalBackupSourceRequiresManagedTargetAndOwningDevice(t 
 		RunMode: request.RunMode, Status: meta.SourceStatusPaused,
 		Revision: 1, TargetNodeID: &id, TargetManaged: true,
 		TargetPath: "同步文件夹/Push/win",
-		DeviceID: "device-a",
+		DeviceID:   "device-a",
 	}
 	if err := validateCreatedLocalBackupSource(valid, request, "device-a"); err != nil {
 		t.Fatalf("valid managed Local Push must be accepted: %v", err)
