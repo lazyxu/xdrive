@@ -41,6 +41,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		// one-use ticket and same-Origin HTTPS, never a general bearer.
 		{method: "POST", path: "/api/v1/auth/desktop-map/issue", suite: "auth-desktop-map-native"},
 		{method: "POST", path: "/api/v1/auth/desktop-map/redeem", suite: "auth-desktop-map-cookie"},
+		{method: "POST", path: "/api/v1/auth/desktop-map/session", suite: "auth-desktop-map-cookie"},
 		{method: "POST", path: "/api/v1/me/change-password/browser", suite: "auth-browser-cookie"},
 		// Explicit audit coverage: iOS Photo grants are NOT general bearer tokens.
 		// Dedicated iPhone managed Source/Target routes need their own independent gate.
@@ -560,6 +561,7 @@ func TestEveryProtectedAPIEndpointRequiresBearerToken(t *testing.T) {
 		// issue route REQUIRES Bearer plus a current native RefreshToken proof.
 		// Verify exact Origin, Host, replay and revocation separately.
 		"POST /api/v1/auth/desktop-map/redeem":               {},
+		"POST /api/v1/auth/desktop-map/session":              {},
 		"GET /api/v1/public/share":                           {},
 		"POST /api/v1/public/share/children":                 {},
 		"POST /api/v1/public/share/directories":              {},
