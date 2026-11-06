@@ -39,6 +39,21 @@ struct XDriveIOSNativePhotoCoverageSnapshot: Equatable {
     let limitedAuthorization: Bool
     let historicLedger: XDriveIOSNativePhotoReceiptTally?
     let checkedAt: Date
+    // A locally sealed receipt under this Server-proven target is still
+    // historical evidence, not a fresh Owner Node readback.
+    let managedTargetNodeID: UInt64?
+
+    init(localImages: Int, localVideos: Int,
+         limitedAuthorization: Bool,
+         historicLedger: XDriveIOSNativePhotoReceiptTally?,
+         checkedAt: Date, managedTargetNodeID: UInt64? = nil) {
+        self.localImages = localImages
+        self.localVideos = localVideos
+        self.limitedAuthorization = limitedAuthorization
+        self.historicLedger = historicLedger
+        self.checkedAt = checkedAt
+        self.managedTargetNodeID = managedTargetNodeID
+    }
 
     var currentAuthorizedMedia: Int { localImages + localVideos }
     var hasExistingLedger: Bool { historicLedger != nil }
