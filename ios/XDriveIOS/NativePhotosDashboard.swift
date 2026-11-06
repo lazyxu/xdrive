@@ -521,6 +521,16 @@ struct XDriveIOSNativePhotosDashboard: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    Menu {
+                        Button("本机照片") { gallerySource = .local }
+                        Button("云端图库") { gallerySource = .cloud }
+                    } label: {
+                        Label("单独浏览", systemImage: "line.3.horizontal.decrease.circle")
+                            .font(.subheadline)
+                            .frame(minHeight: 44)
+                            .padding(.horizontal, 10)
+                    }
+                    .accessibilityIdentifier("native-ios-gallery-source-menu")
                 }
                 .padding(.horizontal, 12)
             }

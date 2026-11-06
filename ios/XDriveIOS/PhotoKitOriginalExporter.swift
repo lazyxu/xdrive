@@ -156,36 +156,7 @@ enum XDrivePhotoKitOriginalExporter {
             throw XDrivePhotoKitExportFailure.resourceTooLarge
         }
 
-        let resources = PHAssetResource.assetResources(for: asset)
-        let selected: [(role: String, resource: PHAssetResource)]
-        let kind: String
-
-        if asset.mediaType == .video {
-            guard let video = resources.first(where: { $0.type == .fullSizeVideo })
-                ?? resources.first(where: { $0.type == .video }) else {
-                throw XDrivePhotoKitExportFailure.originalResourceMissing
-            }
-            kind = "video"
-            selected = [("video", video)]
-        } else if asset.mediaType == .image {
-            guard let still = resources.first(where: { $0.type == .fullSizePhoto })
-                ?? resources.first(where: { $0.type == .photo }) else {
-                throw XDrivePhotoKitExportFailure.originalResourceMissing
-            }
-            if asset.mediaSubtypes.contains(.photoLive) {
-                guard let motion = resources.first(where: { $0.type == .fullSizePairedVideo })
-                    ?? resources.first(where: { $0.type == .pairedVideo }) else {
-                    throw XDrivePhotoKitExportFailure.incompleteLivePair
-                }
-                kind = "live"
-                selected = [("still", still), ("motion", motion)]
-            } else {
-                kind = "image"
-                selected = [("still", still)]
-            }
-        } else {
-            throw XDrivePhotoKitExportFailure.originalResourceMissing
-        }
+        let (kind, selected) = try originalResources(for: asset)
 
         // Reclaim only old exporter-owned UUID directories left by an app
         // crash. The bounded, fail-closed cleanup never touches a current
@@ -250,6 +221,33 @@ enum XDrivePhotoKitOriginalExporter {
             try? FileManager.default.removeItem(at: folder)
             throw error
         }
+    }
+
+    /// Canonical original identity shared by backup and read-only Gallery
+    /// hashing, including the same authoritative PhotoKit Live pair.
+    static func originalResources(for asset: PHAsset) throws
+        -> (kind: String, parts: [(role: String, resource: PHAssetResource)]) {
+        let resources = PHAssetResource.assetResources(for: asset)
+        if asset.mediaType == .video {
+            guard let video = resources.first(where: { $0.type == .fullSizeVideo })
+                ?? resources.first(where: { $0.type == .video }) else {
+                throw XDrivePhotoKitExportFailure.originalResourceMissing
+            }
+            return ("video", [("video", video)])
+        }
+        guard asset.mediaType == .image,
+              let still = resources.first(where: { $0.type == .fullSizePhoto })
+                  ?? resources.first(where: { $0.type == .photo }) else {
+            throw XDrivePhotoKitExportFailure.originalResourceMissing
+        }
+        if asset.mediaSubtypes.contains(.photoLive) {
+            guard let motion = resources.first(where: { $0.type == .fullSizePairedVideo })
+                ?? resources.first(where: { $0.type == .pairedVideo }) else {
+                throw XDrivePhotoKitExportFailure.incompleteLivePair
+            }
+            return ("live", [("still", still), ("motion", motion)])
+        }
+        return ("image", [("still", still)])
     }
 
     private static func writeResource(_ resource: PHAssetResource, to url: URL,

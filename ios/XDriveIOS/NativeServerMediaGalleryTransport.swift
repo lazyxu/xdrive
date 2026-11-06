@@ -327,6 +327,19 @@ struct XDriveIOSNativeMediaGalleryReader {
         return reply.matches
     }
 
+    func exactFingerprints(_ refs: [XDriveIOSNativeExactPhotoReference]) async throws -> [XDriveIOSNativeExactPhotoProbe?] {
+        guard !refs.isEmpty, refs.count <= 8 else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        let url = try endpoint("/api/v1/media/exact-match")
+        let body = try JSONEncoder().encode(["references": refs])
+        let bytes = try await read(url, method: "POST", maximum: 8192, body: body)
+        let reply = try JSONDecoder().decode(XDriveIOSNativeExactPhotoFingerprints.self, from: bytes)
+        guard reply.fingerprints.count == refs.count,
+              reply.fingerprints.allSatisfy({ $0 == nil || $0?.fingerprint != nil }) else {
+            throw XDriveIOSNativeMediaReadFailure.invalidPage
+        }
+        return reply.fingerprints
+    }
+
     func matchedMedia(_ match: XDriveIOSNativeExactPhotoMatch) async throws -> XDriveIOSNativeMediaItem {
         guard match.state == .matched, let id = match.node_id else {
             throw XDriveIOSNativeMediaReadFailure.invalidPage

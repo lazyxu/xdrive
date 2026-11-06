@@ -34,6 +34,16 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      - name: Verify persistent unified Gallery fingerprint index
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativePhotoFingerprintStore.swift \
+            ios/tests/NativePhotoFingerprintStoreChecks.swift \
+            -lsqlite3 -o "$RUNNER_TEMP/xdrive-ios-gallery-fingerprints"
+          "$RUNNER_TEMP/xdrive-ios-gallery-fingerprints"
+          node --test desktop/tests/ios-native-unified-photo-gallery.cjs
+
       - name: Verify cold launch recovery and BG registration safety
         run: |
           set -euo pipefail

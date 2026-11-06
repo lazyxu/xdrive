@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -17,6 +19,8 @@ func TestExactMediaMatchRejectsInvalidProbes(t *testing.T) {
 		`{"probes":[{"kind":"image","components":[{"role":"primary","sha256":"bad","size":1}]}]}`,
 		`{"probes":[{"kind":"live_photo","components":[{"role":"still","sha256":"` + strings.Repeat("a", 64) + `","size":1}]}]}`,
 		`{"probes":[` + strings.Repeat(`{},`, 8) + `{}]}`,
+		`{"references":[{"asset_id":1,"node_id":2,"revision":0}]}`,
+		`{"probes":[{}],"references":[{"asset_id":1,"node_id":2,"revision":3}]}`,
 	} {
 		ctx, recorder := newDurableJobContext(1, http.MethodPost, "/api/v1/media/exact-match", payload)
 		server.matchExactMedia(ctx)
@@ -56,15 +60,18 @@ func TestExactMediaMatchCurrentOwnerAndBothLiveParts(t *testing.T) {
 		put(&meta.PhotoMetadata{AssetID: item.ID, MediaKind: meta.MediaKindImage})
 		return item.ID
 	}
-	add := func(node meta.Node, kind, digest string) {
+	add := func(node meta.Node, kind, digest string) uint64 {
+		id := asset(node, kind)
 		put(&meta.PhotoResource{
-			AssetID: asset(node, kind), NodeID: node.ID, ResourceKind: meta.PhotoResourceKindNode,
+			AssetID: id, NodeID: node.ID, ResourceKind: meta.PhotoResourceKindNode,
 			Role: meta.PhotoResourceRolePrimary, Size: 123, SHA256: digest,
 		})
+		return id
 	}
 	one := image(user.ID, "web-import.jpg", still)
-	add(one, meta.PhotoAssetKindImage, still)
-	add(image(other.ID, "other-owner.jpg", still), meta.PhotoAssetKindImage, still)
+	oneID := add(one, meta.PhotoAssetKindImage, still)
+	foreign := image(other.ID, "other-owner.jpg", still)
+	foreignID := add(foreign, meta.PhotoAssetKindImage, still)
 	add(image(user.ID, "same-name.jpg", motion), meta.PhotoAssetKindImage, motion)
 	server := &Server{DB: db}
 	probe := exactMediaProbe{Kind: meta.PhotoAssetKindImage, Components: []exactMediaComponent{
@@ -78,6 +85,29 @@ func TestExactMediaMatchCurrentOwnerAndBothLiveParts(t *testing.T) {
 		}
 	}
 	check(probe, "matched", one.ID)
+	read := func(refs string) []*exactMediaProbe {
+		t.Helper()
+		ctx, recorder := newDurableJobContext(user.ID, http.MethodPost, "/api/v1/media/exact-match", `{"references":[`+refs+`]}`)
+		server.matchExactMedia(ctx)
+		var reply struct{ Fingerprints []*exactMediaProbe }
+		if recorder.Code != http.StatusOK || json.Unmarshal(recorder.Body.Bytes(), &reply) != nil || len(reply.Fingerprints) == 0 {
+			t.Fatalf("fingerprint status %d body %s", recorder.Code, recorder.Body.String())
+		}
+		return reply.Fingerprints
+	}
+	ref := func(assetID, nodeID, revision uint64) string {
+		return fmt.Sprintf(`{"asset_id":%d,"node_id":%d,"revision":%d}`, assetID, nodeID, revision)
+	}
+	oneRef := ref(oneID, one.ID, one.Revision)
+	fingerprints := read(strings.Join([]string{
+		oneRef, ref(foreignID, foreign.ID, foreign.Revision),
+		ref(oneID, one.ID, one.Revision+1), ref(foreignID, one.ID, one.Revision),
+	}, ","))
+	if len(fingerprints) != 4 || fingerprints[0] == nil || fingerprints[0].Kind != probe.Kind ||
+		fingerprints[0].Components[0] != probe.Components[0] ||
+		fingerprints[1] != nil || fingerprints[2] != nil || fingerprints[3] != nil {
+		t.Fatalf("incorrect fingerprint projection: %+v", fingerprints)
+	}
 	duplicate := image(user.ID, "nas-import.jpg", still)
 	add(duplicate, meta.PhotoAssetKindImage, still)
 	check(probe, "ambiguous", 0)
@@ -89,6 +119,9 @@ func TestExactMediaMatchCurrentOwnerAndBothLiveParts(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(probe, "unmatched", 0)
+	if read(oneRef)[0] != nil {
+		t.Fatal("stale file hash was exposed")
+	}
 
 	live := image(user.ID, "live-container.livp", strings.Repeat("c", 64))
 	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", live.ID).
@@ -107,6 +140,14 @@ func TestExactMediaMatchCurrentOwnerAndBothLiveParts(t *testing.T) {
 			Role: part.Role, ByteSize: part.Size, SHA256: part.SHA256, AssetIdentifier: "verified-pair"})
 	}
 	check(probe, "matched", live.ID)
+	liveRef := ref(liveID, live.ID, live.Revision)
+	liveFingerprint := read(liveRef)[0]
+	if liveFingerprint == nil || liveFingerprint.Kind != probe.Kind ||
+		len(liveFingerprint.Components) != 2 ||
+		liveFingerprint.Components[0] != probe.Components[0] ||
+		liveFingerprint.Components[1] != probe.Components[1] {
+		t.Fatalf("incorrect Live fingerprint %+v", liveFingerprint)
+	}
 	probe.Components[1].SHA256 = still
 	check(probe, "unmatched", 0)
 	probe.Components[1].SHA256 = motion
@@ -114,4 +155,7 @@ func TestExactMediaMatchCurrentOwnerAndBothLiveParts(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(probe, "unmatched", 0)
+	if read(ref(liveID, live.ID, live.Revision+1))[0] != nil {
+		t.Fatal("stale Live derivative was exposed at new Node revision")
+	}
 }

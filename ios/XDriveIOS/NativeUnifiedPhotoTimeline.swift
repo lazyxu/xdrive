@@ -50,8 +50,9 @@ struct XDriveIOSNativeUnifiedPhoto: Identifiable {
     var isLive: Bool { local?.isLive == true || cloud?.isLive == true }
 }
 
-/// Two independently bounded source cursors. The merged page never retains
-/// a full PhotoKit list, Cloud gallery list, or full-size original in memory.
+/// Merge two bounded source cursors and apply the selected source filter
+/// before committing a visible page. An empty result still advances the
+/// checkpoint when the bounded search has more candidates.
 @MainActor
 final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
     private enum Item {
@@ -64,26 +65,31 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
             case .cloud(_, let date): return date
             }
         }
+
+        var provisional: XDriveIOSNativeUnifiedPhoto {
+            switch self {
+            case .local(let row):
+                return .init(local: row, cloud: nil, match: nil, presence: .unverified, capturedAt: row.capturedAt)
+            case .cloud(let item, let date):
+                return .init(local: nil, cloud: item, match: nil, presence: .unverified, capturedAt: date)
+            }
+        }
     }
 
     @Published private(set) var rows: [XDriveIOSNativeUnifiedPhoto] = []
     @Published private(set) var next: XDriveIOSNativeGalleryCursor?
     @Published private(set) var loading = false
-    @Published private(set) var checking = false
     @Published private(set) var notice: String?
+    @Published private(set) var coverage: XDriveIOSNativePhotoFingerprintIndex.Coverage?
+    @Published private(set) var indexRevision = UUID()
 
     private var owner: XDriveNativeOwnerRoot?
     private var epoch = UUID()
-    private var window: [Item] = []
-    private var proofs: [String: XDriveIOSNativeExactPhotoMatch] = [:]
-    private var proofOrder: [String] = []
-    private var currentProofs: Set<String> = []
     private var libraryArchive: Data?
-    private var fullLocalAccess = false
-    private var localCount: Int?
+    private var indexTicket = UUID()
     private static let pageSize = 48
-    private static let probeBatch = 4
-    private static let proofLimit = 512
+    private static let probeBatch = 8
+    private static let searchLimit = 192
 
     func belongs(to current: XDriveNativeOwnerRoot?) -> Bool {
         guard let owner else { return false }
@@ -92,51 +98,90 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
 
     func reset() {
         epoch = UUID()
+        indexTicket = UUID()
         owner = nil
-        window = []
-        rows = []
-        proofs = [:]
-        proofOrder = []
-        currentProofs = []
         libraryArchive = nil
-        localCount = nil
+        rows = []
         next = nil
+        coverage = nil
         loading = false
-        checking = false
         notice = nil
     }
 
-    func load(from start: XDriveIOSNativeGalleryCursor, login: XDriveIOSNativeOwnerLoginModel) async {
+    func scanLocal(login: XDriveIOSNativeOwnerLoginModel, retryUnavailable: Bool) async {
+        guard let expected = login.owner, let library = try? XDriveIOSPhotoKitLibraryEpoch.capture() else { return }
+        let ticket = UUID()
+        indexTicket = ticket
+        let index = XDriveIOSNativePhotoFingerprintIndex.shared
+        do {
+            let lease = try await index.bind(
+                scope: XDriveIOSNativePhotoThumbnailCache.scope(for: expected), library: library.serialized
+            )
+            try await index.scan(lease: lease, retryUnavailable: retryUnavailable) { [weak self] status in
+                await self?.publishCoverage(status, ticket: ticket, login: login, owner: expected)
+            }
+        } catch is CancellationError {
+        } catch {
+            guard indexTicket == ticket, !Task.isCancelled,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else { return }
+            notice = "本机原件索引暂不可用。可继续浏览并刷新后重试。"
+        }
+    }
+
+    private func publishCoverage(_ status: XDriveIOSNativePhotoFingerprintIndex.Coverage, ticket: UUID,
+                                 login: XDriveIOSNativeOwnerLoginModel, owner: XDriveNativeOwnerRoot) {
+        guard indexTicket == ticket, !Task.isCancelled,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+        let advanced = status.finished && coverage?.finished != true
+        coverage = status
+        if advanced { indexRevision = UUID() }
+    }
+
+    func load(from start: XDriveIOSNativeGalleryCursor, filter: XDriveIOSNativeGalleryPresence?,
+              login: XDriveIOSNativeOwnerLoginModel) async {
         guard let expected = login.owner else { reset(); return }
-        if !belongs(to: expected) { reset() }
+        if let owner, !XDriveIOSNativePhotoOwnerScope.matches(owner, expected) { reset() }
         owner = expected
         let ticket = UUID()
         epoch = ticket
         loading = true
-        checking = false
         notice = nil
-        defer {
-            if epoch == ticket { loading = false; checking = false }
-        }
+        rows = []
+        next = nil
+        defer { if epoch == ticket { loading = false } }
+
         var cursor = start
         let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        fullLocalAccess = permission == .authorized
         if permission != .authorized && permission != .limited { cursor.localEnd = true }
-        currentProofs = []
         let localEpoch = try? XDriveIOSPhotoKitLibraryEpoch.capture()
-        if !fullLocalAccess || localEpoch.map({
-            XDriveIOSPhotoKitLibraryEpoch.matches(libraryArchive, as: $0.token)
-        }) != true {
-            proofs = [:]
-            proofOrder = []
-            localCount = nil
-            if libraryArchive != nil && cursor.local > 0 {
-                notice = "本机照片已变化，请回到最新重新核对。"
+        if cursor.local > 0, let libraryArchive,
+           !XDriveIOSNativePhotoFingerprintIndex.isCurrent(libraryArchive) {
+            notice = "本机照片已变化，请回到最新重新核对。"
+            return
+        }
+        libraryArchive = localEpoch?.serialized
+        let index = XDriveIOSNativePhotoFingerprintIndex.shared
+        let lease: XDriveIOSNativePhotoFingerprintIndex.Lease?
+        if let localEpoch {
+            lease = try? await index.bind(scope: XDriveIOSNativePhotoThumbnailCache.scope(for: expected),
+                                          library: localEpoch.serialized)
+        } else {
+            lease = nil
+        }
+
+        if filter == .cloudOnly {
+            let complete: Bool
+            if let lease {
+                complete = (try? await index.coverage(lease: lease))?.provesAbsence == true
+            } else {
+                complete = false
+            }
+            guard current(ticket, login: login, owner: expected) else { return }
+            guard complete else {
+                notice = "本机图库核对完整后，才能确认哪些照片仅在云端。可在「待核验」中查看其他照片。"
                 return
             }
         }
-        libraryArchive = localEpoch?.serialized
-
         let auth = try? await login.verifiedAuthorization()
         guard current(ticket, login: login, owner: expected) else { return }
         let reader: XDriveIOSNativeMediaGalleryReader?
@@ -150,68 +195,72 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
 
         let scanner = XDrivePhotoKitBoundedSnapshotScanner()
         do {
+            let localTotal = cursor.localEnd ? cursor.local : try await scanner.start(atOffset: cursor.local)
             var local: ArraySlice<XDrivePhotoKitScanCandidate> = []
             var cloud: ArraySlice<Item> = []
-            var localTotal = cursor.local
-            var cloudTotal = cursor.cloudCount ?? cursor.cloud
-            var page: [Item] = []
-            if !cursor.localEnd {
-                localTotal = try await scanner.start(atOffset: cursor.local)
-                localCount = localTotal
-            }
-            while page.count < Self.pageSize {
-                try Task.checkCancellation()
-                if local.isEmpty && !cursor.localEnd {
-                    let slice = try await scanner.nextPage()
-                    local = slice.items[...]
-                    cursor.localEnd = local.isEmpty
-                }
-                if cloud.isEmpty && !cursor.cloudEnd, let reader {
-                    let anchored = cursor.cloud > 0
-                    let slice = try await reader.page(offset: anchored ? cursor.cloud - 1 : 0)
-                    if anchored {
-                        guard slice.total_count == cursor.cloudCount,
-                              slice.items.first?.id == cursor.cloudAnchor,
-                              slice.items.first?.node.revision == cursor.cloudAnchorRevision else {
-                            throw XDriveIOSNativeMediaReadFailure.invalidPage
-                        }
+            var visible: [XDriveIOSNativeUnifiedPhoto] = []
+            var visited = 0
+            var canMatch = reader != nil
+            while visible.count < Self.pageSize && visited < Self.searchLimit && !cursor.finished {
+                var window: [Item] = []
+                let limit = min(Self.pageSize - visible.count, Self.searchLimit - visited)
+                while window.count < limit && visited < Self.searchLimit {
+                    try Task.checkCancellation()
+                    if local.isEmpty && !cursor.localEnd {
+                        local = try await scanner.nextPage().items[...]
+                        cursor.localEnd = local.isEmpty
                     }
-                    cloudTotal = slice.total_count
-                    cursor.cloudCount = cloudTotal
-                    cloud = slice.items.dropFirst(anchored ? 1 : 0)
-                        .map { Item.cloud($0, Self.date($0.metadata.captured_at)) }[...]
-                    cursor.cloudEnd = cloud.isEmpty
-                }
-                let localHead = local.first
-                let cloudHead = cloud.first
-                if let localHead,
-                   cloudHead == nil || (localHead.capturedAt ?? .distantPast) >= (cloudHead?.capturedAt ?? .distantPast) {
-                    cursor.local += 1
-                    local = local.dropFirst()
-                    cursor.localEnd = cursor.local >= localTotal
-                    if localHead.kind != "unsupported" { page.append(.local(localHead)) }
-                } else if let cloudHead {
-                    cursor.cloud += 1
-                    cloud = cloud.dropFirst()
-                    if case .cloud(let item, _) = cloudHead {
+                    if cloud.isEmpty && !cursor.cloudEnd, let reader {
+                        cloud = try await cloudWindow(reader, cursor: &cursor)
+                    }
+                    let localHead = local.first
+                    let cloudHead = cloud.first
+                    if let localHead,
+                       cloudHead == nil || (localHead.capturedAt ?? .distantPast) >= (cloudHead?.capturedAt ?? .distantPast) {
+                        cursor.local += 1
+                        local = local.dropFirst()
+                        cursor.localEnd = cursor.local >= localTotal
+                        if localHead.kind != "unsupported" { window.append(.local(localHead)) }
+                    } else if let cloudHead, case .cloud(let item, _) = cloudHead {
+                        cursor.cloud += 1
+                        cloud = cloud.dropFirst()
                         cursor.cloudAnchor = item.id
                         cursor.cloudAnchorRevision = item.node.revision
+                        cursor.cloudEnd = cursor.cloud == cursor.cloudCount
+                        window.append(cloudHead)
+                    } else {
+                        break
                     }
-                    cursor.cloudEnd = cursor.cloud >= cloudTotal
-                    page.append(cloudHead)
-                } else {
-                    break
+                    visited += 1
                 }
+                guard !window.isEmpty else { break }
+                var resolved = window.map(\.provisional)
+                guard current(ticket, login: login, owner: expected),
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission else { return }
+                if filter == nil { rows = visible + resolved }
+                if canMatch, let reader {
+                    do {
+                        resolved = try await reconcile(window, reader: reader, lease: lease)
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        canMatch = false
+                    }
+                }
+                guard current(ticket, login: login, owner: expected),
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission else { return }
+                if let localEpoch, !XDriveIOSNativePhotoFingerprintIndex.isCurrent(localEpoch.serialized) {
+                    throw XDrivePhotoKitScanFailure.snapshotChanged
+                }
+                visible.append(contentsOf: resolved.filter { filter == nil || $0.presence == filter })
+                // Publish verified work as each small window returns, while
+                // keeping paging disabled until the checkpoint commits.
+                rows = visible
             }
             guard current(ticket, login: login, owner: expected) else { return }
-            window = page
             next = cursor.finished ? nil : cursor
-            publish()
-            loading = false
-            if let reader {
-                checking = true
-                try await reconcile(page, reader: reader, ticket: ticket, login: login,
-                                    owner: expected, library: localEpoch?.serialized)
+            if reader != nil && !canMatch {
+                notice = "暂时无法确认本机与云端的对应关系。请刷新或检查服务器版本。"
             }
         } catch is CancellationError {
         } catch {
@@ -220,120 +269,124 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
         }
     }
 
+    private func cloudWindow(_ reader: XDriveIOSNativeMediaGalleryReader,
+                             cursor: inout XDriveIOSNativeGalleryCursor) async throws -> ArraySlice<Item> {
+        let anchored = cursor.cloud > 0
+        let slice = try await reader.page(offset: anchored ? cursor.cloud - 1 : 0)
+        if anchored {
+            guard slice.total_count == cursor.cloudCount,
+                  slice.items.first?.id == cursor.cloudAnchor,
+                  slice.items.first?.node.revision == cursor.cloudAnchorRevision else {
+                throw XDriveIOSNativeMediaReadFailure.invalidPage
+            }
+        }
+        cursor.cloudCount = slice.total_count
+        let items = slice.items.dropFirst(anchored ? 1 : 0)
+            .map { Item.cloud($0, Self.date($0.metadata.captured_at)) }
+        cursor.cloudEnd = items.isEmpty
+        return items[...]
+    }
+
     private func reconcile(
-        _ page: [Item], reader: XDriveIOSNativeMediaGalleryReader, ticket: UUID,
-        login: XDriveIOSNativeOwnerLoginModel, owner: XDriveNativeOwnerRoot, library: Data?
-    ) async throws {
+        _ page: [Item], reader: XDriveIOSNativeMediaGalleryReader,
+        lease: XDriveIOSNativePhotoFingerprintIndex.Lease?
+    ) async throws -> [XDriveIOSNativeUnifiedPhoto] {
+        let index = XDriveIOSNativePhotoFingerprintIndex.shared
         let locals = page.compactMap { item -> XDrivePhotoKitScanCandidate? in
             if case .local(let row) = item { return row }
             return nil
         }
-        let memo = XDriveIOSNativePhotoMatchMemo.shared
-        let memoTicket: UUID?
-        if let library {
-            memoTicket = await memo.bind(
-                scope: XDriveIOSNativePhotoThumbnailCache.scope(for: owner), library: library
-            )
-        } else {
-            memoTicket = nil
-        }
-        for start in stride(from: 0, to: locals.count, by: Self.probeBatch) {
-            var probes: [XDriveIOSNativeExactPhotoProbe] = []
-            var candidates: [XDrivePhotoKitScanCandidate] = []
-            let end = min(start + Self.probeBatch, locals.count)
-            for candidate in locals[start..<end] {
-                try Task.checkCancellation()
-                // Evicted iCloud originals and unsupported or oversized
-                // originals stay unknown; no thumbnail/name inference.
-                let saved: XDriveIOSNativeExactPhotoProbe?
-                if let memoTicket {
-                    saved = await memo.probe(localID: candidate.id, ticket: memoTicket)
-                } else {
-                    saved = nil
-                }
-                if let saved {
-                    probes.append(saved)
-                    candidates.append(candidate)
-                } else if let probe = try? await XDriveIOSNativeExactPhotoProbe.read(candidate) {
-                    probes.append(probe)
-                    candidates.append(candidate)
-                }
-            }
-            guard current(ticket, login: login, owner: owner) else { return }
-            if probes.isEmpty { continue }
-            let matches = try await reader.exactMatches(probes)
-            guard current(ticket, login: login, owner: owner) else { return }
-            if let library {
-                guard let epoch = try? XDriveIOSPhotoKitLibraryEpoch.capture(),
-                      XDriveIOSPhotoKitLibraryEpoch.matches(library, as: epoch.token) else {
-                    throw XDrivePhotoKitScanFailure.snapshotChanged
-                }
-            }
-            var verifiedProbes: [(String, XDriveIOSNativeExactPhotoProbe)] = []
-            for (index, candidate) in candidates.enumerated() {
-                guard let stamp = XDriveIOSNativePhotoProofStamp.current(candidate.id),
-                      stamp.modifiedAt == candidate.modifiedAt, stamp.createdAt == candidate.capturedAt,
-                      stamp.kind == candidate.kind, stamp.isLive == candidate.isLive else { continue }
-                remember(matches[index], for: candidate.id)
-                currentProofs.insert(candidate.id)
-                verifiedProbes.append((candidate.id, probes[index]))
-            }
-            publish()
-            if let memoTicket { await memo.remember(verifiedProbes, ticket: memoTicket) }
-            await Task.yield()
-        }
-    }
-
-    private func remember(_ match: XDriveIOSNativeExactPhotoMatch, for id: String) {
-        proofOrder.removeAll { $0 == id }
-        proofs[id] = match
-        proofOrder.append(id)
-        if proofOrder.count > Self.proofLimit {
-            proofs[proofOrder.removeFirst()] = nil
-        }
-    }
-
-    private func publish() {
-        let cloudItems = window.compactMap { row -> XDriveIOSNativeMediaItem? in
-            if case .cloud(let item, _) = row { return item }
+        let clouds = page.compactMap { item -> XDriveIOSNativeMediaItem? in
+            if case .cloud(let row, _) = item { return row }
             return nil
         }
-        let cloudByNode = Dictionary(cloudItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var claims: [UInt64: [XDriveIOSNativeExactPhotoMatch]] = [:]
-        for proof in proofs.values where proof.state == .matched {
-            if let node = proof.node_id { claims[node, default: []].append(proof) }
-        }
-        // Absence is evidence only after the full accessible local snapshot
-        // has been checked, including an empty authorized library.
-        let checkedAllLocal = fullLocalAccess && localCount == proofs.count &&
-            !proofs.values.contains(where: { $0.state == .ambiguous })
-        rows = window.compactMap { item in
-            switch item {
-            case .local(let candidate):
-                let proof = currentProofs.contains(candidate.id) ? proofs[candidate.id] : nil
-                if let proof, let node = proof.node_id, claims[node]?.count == 1,
-                   cloudByNode[node].map(proof.matches) ?? true {
-                    return XDriveIOSNativeUnifiedPhoto(
-                        local: candidate, cloud: cloudByNode[node], match: proof,
-                        presence: .both, capturedAt: candidate.capturedAt
-                    )
-                }
-                return XDriveIOSNativeUnifiedPhoto(
-                    local: candidate, cloud: nil, match: nil,
-                    // A managed Live ZIP can still exist in backup storage
-                    // before the Server projects its two gallery resources.
-                    presence: proof?.state == .unmatched && !candidate.isLive ? .localOnly : .unverified,
-                    capturedAt: candidate.capturedAt
-                )
-            case .cloud(let item, let date):
-                if let proof = claims[item.id], proof.count == 1, proof[0].matches(item) { return nil }
-                return XDriveIOSNativeUnifiedPhoto(
-                    local: nil, cloud: item, match: nil,
-                    presence: checkedAllLocal && claims[item.id] == nil ? .cloudOnly : .unverified,
-                    capturedAt: date
-                )
+        var localProbes: [String: XDriveIOSNativeExactPhotoProbe] = [:]
+        var additions: [(String, XDriveIOSNativeExactPhotoProbe)] = []
+        for candidate in locals {
+            try Task.checkCancellation()
+            if let lease, let cached = try await index.probe(id: candidate.id, lease: lease) {
+                localProbes[candidate.id] = cached
+            } else if let fresh = try? await XDriveIOSNativeExactPhotoProbe.read(candidate) {
+                localProbes[candidate.id] = fresh
+                additions.append((candidate.id, fresh))
             }
         }
+        try Task.checkCancellation()
+        if let lease { try await index.remember(additions, lease: lease) }
+        let cloudProbes = try await fingerprints(clouds, reader: reader)
+        let probes = Dictionary((Array(localProbes.values) + Array(cloudProbes.values)).compactMap { probe in
+            probe.fingerprint.map { ($0, probe) }
+        }, uniquingKeysWith: { first, _ in first })
+        let windowIDs = Dictionary(grouping: localProbes.keys) { localProbes[$0]?.fingerprint ?? "" }
+        var localIDs: [String: [String]] = [:]
+        for (key, probe) in probes {
+            if let lease {
+                localIDs[key] = try await index.localIDs(for: probe, lease: lease)
+            } else {
+                localIDs[key] = windowIDs[key] ?? []
+            }
+        }
+        // Cloud fingerprints with no local hit never initiate a global lookup.
+        let keys = probes.keys.filter {
+            windowIDs[$0]?.isEmpty == false || localIDs[$0]?.count == 1
+        }.sorted()
+        var matches: [String: XDriveIOSNativeExactPhotoMatch] = [:]
+        for start in stride(from: 0, to: keys.count, by: Self.probeBatch) {
+            let batch = Array(keys[start..<min(start + Self.probeBatch, keys.count)])
+            let replies = try await reader.exactMatches(batch.compactMap { probes[$0] })
+            for (key, reply) in zip(batch, replies) { matches[key] = reply }
+        }
+        let checkedAllLocal: Bool
+        if let lease {
+            checkedAllLocal = try await index.coverage(lease: lease)?.provesAbsence == true
+        } else {
+            checkedAllLocal = false
+        }
+        let cloudByNode = Dictionary(clouds.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return page.compactMap { item in
+            switch item {
+            case .local(let candidate):
+                guard let key = localProbes[candidate.id]?.fingerprint, let match = matches[key] else {
+                    return item.provisional
+                }
+                if match.state == .unmatched && !candidate.isLive {
+                    return .init(local: candidate, cloud: nil, match: nil,
+                                 presence: .localOnly, capturedAt: candidate.capturedAt)
+                }
+                guard localIDs[key] == [candidate.id] else { return item.provisional }
+                if let node = match.node_id, cloudByNode[node].map(match.matches) ?? true {
+                    return .init(local: candidate, cloud: cloudByNode[node], match: match,
+                                 presence: .both, capturedAt: candidate.capturedAt)
+                }
+                return item.provisional
+            case .cloud(let photo, let date):
+                guard let key = cloudProbes[photo.id]?.fingerprint, let ids = localIDs[key] else {
+                    return item.provisional
+                }
+                if ids.count == 1, let id = ids.first,
+                   XDriveIOSNativePhotoProofStamp.current(id) != nil, matches[key]?.matches(photo) == true {
+                    // The local row owns the timeline position even if its
+                    // capture date places it in a different window.
+                    return nil
+                }
+                if checkedAllLocal && ids.isEmpty {
+                    return .init(local: nil, cloud: photo, match: nil, presence: .cloudOnly, capturedAt: date)
+                }
+                return item.provisional
+            }
+        }
+    }
+
+    private func fingerprints(_ clouds: [XDriveIOSNativeMediaItem], reader: XDriveIOSNativeMediaGalleryReader)
+        async throws -> [UInt64: XDriveIOSNativeExactPhotoProbe] {
+        let refs = clouds.compactMap(XDriveIOSNativeExactPhotoReference.init)
+        var values: [UInt64: XDriveIOSNativeExactPhotoProbe] = [:]
+        for start in stride(from: 0, to: refs.count, by: Self.probeBatch) {
+            let batch = Array(refs[start..<min(start + Self.probeBatch, refs.count)])
+            let reply = try await reader.exactFingerprints(batch)
+            for (ref, probe) in zip(batch, reply) { values[ref.node_id] = probe }
+        }
+        return values
     }
 
     private func current(_ ticket: UUID, login: XDriveIOSNativeOwnerLoginModel, owner: XDriveNativeOwnerRoot) -> Bool {
