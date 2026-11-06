@@ -73,7 +73,7 @@ test('focused work holds the established serial gate and global uncertain-receip
   assert.match(focus, /XDriveIOSPhotoFocusedBackupPolicy\.afterWindow\(/);
   assert.match(focus, /case \.pausedForReview:/);
   assert.match(focus, /case \.invalidProgress:/);
-  assert.match(focus, /\.run\(allowICloudOriginals: allowICloud, startOffset: offset\)/);
+  assert.match(focus, /\.run\(\s*allowICloudOriginals: allowICloud,\s*startOffset: offset,\s*changeQueue: focusedChangeQueue\s*\)/);
   assert.doesNotMatch(focus, /reserveDue\(|recordResult\(|scheduleApprovedProbe\(|UploadSessionTransport\(|BGProcessingTask|UserDefaults|SecItem/);
   assert.match(writer, /static let maxScannedAssets = XDrivePhotoBackupScanWindow\.maxItems/);
   assert.match(writer, /static let maxNewOriginalsPerRun = 20/);
