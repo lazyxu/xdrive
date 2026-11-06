@@ -79,10 +79,13 @@ func persistLocalPushCommonUploadFinalizedTx(
 	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
 		Where("id = ? AND owner_id = ? AND revision = ?",
 			op.SourceID, op.OwnerID, op.SourceRevision).
-		Take(&source).Error; err != nil ||
-		source.Kind != meta.SourceKindLocalFolder ||
+		Take(&source).Error; err != nil {
+		return deny
+	}
+	boundDeviceID, bound := meta.SourceDeviceID(source)
+	if source.Kind != meta.SourceKindLocalFolder ||
 		source.Direction != meta.SourceDirectionPush ||
-		source.DeviceID == nil || *source.DeviceID != op.DeviceID ||
+		!bound || boundDeviceID != op.DeviceID ||
 		source.SyncMode != meta.SourceSyncModeBackup ||
 		source.Status != meta.SourceStatusPaused ||
 		source.TargetNodeID == nil || *source.TargetNodeID != op.SourceTargetID {

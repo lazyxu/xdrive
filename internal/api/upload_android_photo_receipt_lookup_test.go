@@ -50,6 +50,17 @@ func TestAndroidResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testi
 	if err := db.Create(&stored).Error; err != nil {
 		t.Fatal(err)
 	}
+	// A matching resume key and Owner are not enough to let the Android
+	// receipt endpoint adopt a different native Source-bound writer session.
+	sourceBound := stored
+	sourceBound.ID = uuid.NewString()
+	sourceBound.SourceID = 42
+	sourceBound.SourceRevision = 1
+	sourceBound.SourceDeviceID = "another-native-device"
+	sourceBound.SourceTargetID = root.ID
+	if err := db.Create(&sourceBound).Error; err != nil {
+		t.Fatal(err)
+	}
 	body := func(k, file, hash string, bytes int64) string {
 		return fmt.Sprintf(
 			`{"resume_key":%q,"parent_id":%d,"name":%q,"size":%d,"chunk_size":%d,"sha256":%q}`,
@@ -74,6 +85,13 @@ func TestAndroidResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testi
 	if received.Result != nil {
 		t.Fatal("an unfinalized session returned a finalized file receipt")
 	}
+	var firstAudit meta.AuditEvent
+	if err := db.Where("action = ?", uploadAuthorizationAuditAction).Take(&firstAudit).Error; err != nil ||
+		firstAudit.Result != "success" ||
+		!strings.Contains(firstAudit.Metadata, `"writer":"android_photo"`) ||
+		strings.Contains(firstAudit.Metadata, key) {
+		t.Fatalf("Android receipt audit missing or leaked resume key: %+v %v", firstAudit, err)
+	}
 	// A replayed read-only recovery cannot allocate a second UploadSession.
 	var before int64
 	if err := db.Model(&meta.UploadSession{}).Count(&before).Error; err != nil {
@@ -85,8 +103,8 @@ func TestAndroidResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testi
 	if err := db.Model(&meta.UploadSession{}).Count(&after).Error; err != nil {
 		t.Fatal(err)
 	}
-	if before != 1 || after != before {
-		t.Fatal("read-only session lookup mutated the upload table")
+	if before != 2 || after != before {
+		t.Fatal("read-only session lookup mutated the upload table or adopted a Source-bound session")
 	}
 
 	// Strong HMAC identity, full hash, size and file destination MUST match.

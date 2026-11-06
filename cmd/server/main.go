@@ -362,7 +362,7 @@ func migrate(db *gorm.DB) error {
 UPDATE xd_sources AS s
 SET device_id = d.id
 FROM xd_client_devices AS d
-WHERE s.device_id IS NULL
+WHERE NULLIF(BTRIM(s.device_id), '') IS NULL
   AND s.local_creator_device_id = d.id
   AND s.owner_id = d.owner_id
   AND s.direction = 'push'

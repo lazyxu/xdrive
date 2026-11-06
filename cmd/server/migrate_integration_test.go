@@ -588,3 +588,122 @@ func TestMigrateDropsLegacySourceMediaMetadataColumns(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrateBackfillsOnlyVerifiedCanonicalPushDeviceID(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	baseDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "migrate_source_device_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = baseDB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schema)).Error
+	}()
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.ClientDevice{}, &meta.Source{}); err != nil {
+		t.Fatal(err)
+	}
+	owner := meta.User{Username: "device-backfill-owner", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
+	foreignOwner := meta.User{Username: "device-backfill-foreign", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
+	if err := db.Create(&[]meta.User{owner, foreignOwner}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&owner, "username = ?", owner.Username).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&foreignOwner, "username = ?", foreignOwner.Username).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	windowsA, windowsB := uuid.NewString(), uuid.NewString()
+	iosID, synologyID, androidID, foreignID := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	devices := []meta.ClientDevice{
+		{ID: windowsA, OwnerID: owner.ID, Name: "Windows A", Platform: "windows", CredentialHash: strings.Repeat("a", 64), CreatedAt: now, UpdatedAt: now},
+		{ID: windowsB, OwnerID: owner.ID, Name: "Windows B", Platform: "windows", CredentialHash: strings.Repeat("b", 64), CreatedAt: now, UpdatedAt: now},
+		{ID: iosID, OwnerID: owner.ID, Name: "iPhone", Platform: "ios", CredentialHash: strings.Repeat("c", 64), CreatedAt: now, UpdatedAt: now},
+		{ID: synologyID, OwnerID: owner.ID, Name: "NAS", Platform: "synology", CredentialHash: strings.Repeat("d", 64), CreatedAt: now, UpdatedAt: now},
+		{ID: androidID, OwnerID: owner.ID, Name: "Android", Platform: "android", CredentialHash: strings.Repeat("e", 64), CreatedAt: now, UpdatedAt: now},
+		{ID: foreignID, OwnerID: foreignOwner.ID, Name: "Foreign", Platform: "windows", CredentialHash: strings.Repeat("f", 64), CreatedAt: now, UpdatedAt: now},
+	}
+	if err := db.Create(&devices).Error; err != nil {
+		t.Fatal(err)
+	}
+	ptr := func(value string) *string { return &value }
+	makeSource := func(name, kind string, creator, canonical *string) meta.Source {
+		return meta.Source{
+			OwnerID: owner.ID, Name: name, Kind: kind,
+			Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
+			RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused,
+			Revision: 1, DeviceID: canonical, LocalCreatorDeviceID: creator,
+		}
+	}
+	rows := []meta.Source{
+		makeSource("legacy desktop", meta.SourceKindLocalFolder, ptr(windowsA), nil),
+		makeSource("empty desktop", meta.SourceKindLocalFolder, ptr(windowsA), ptr("")),
+		makeSource("legacy iphone", meta.SourceKindIOSPhotos, ptr(iosID), nil),
+		makeSource("wrong platform", meta.SourceKindLocalFolder, ptr(iosID), nil),
+		makeSource("wrong photo platform", meta.SourceKindIOSPhotos, ptr(androidID), nil),
+		makeSource("foreign owner", meta.SourceKindLocalFolder, ptr(foreignID), nil),
+		makeSource("legacy dsm", "synology_photos", ptr(synologyID), nil),
+		makeSource("canonical wins conflict", meta.SourceKindLocalFolder, ptr(windowsA), ptr(windowsB)),
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]*string{
+		"legacy desktop": ptr(windowsA),
+		"empty desktop": ptr(windowsA),
+		"legacy iphone": ptr(iosID),
+		"wrong platform": nil,
+		"wrong photo platform": nil,
+		"foreign owner": nil,
+		"legacy dsm": nil,
+		"canonical wins conflict": ptr(windowsB),
+	}
+	for _, row := range rows {
+		var got meta.Source
+		if err := db.First(&got, row.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		expected := want[row.Name]
+		if expected == nil {
+			if got.DeviceID != nil && *got.DeviceID != "" {
+				t.Fatalf("%s was incorrectly rebound to DeviceID %q", row.Name, *got.DeviceID)
+			}
+		} else if got.DeviceID == nil || *got.DeviceID != *expected {
+			t.Fatalf("%s DeviceID=%v want=%q", row.Name, got.DeviceID, *expected)
+		}
+	}
+	// Re-running startup migration never overwrites an established canonical
+	// binding, even if the old compatibility alias still points elsewhere.
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	var conflict meta.Source
+	if err := db.First(&conflict, rows[len(rows)-1].ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if conflict.DeviceID == nil || *conflict.DeviceID != windowsB {
+		t.Fatalf("migration overwrote canonical DeviceID: %+v", conflict)
+	}
+}

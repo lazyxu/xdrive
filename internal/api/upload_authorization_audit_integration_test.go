@@ -16,7 +16,7 @@ import (
 
 func TestUploadAuthorizationAuditFollowsWriteTransactionAndRedactsSecrets(t *testing.T) {
 	db, _, owner, _, _ := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.AuditEvent{}); err != nil {
+	if err := db.AutoMigrate(&meta.AuditEvent{}, &meta.LocalPushCommonUploadOperation{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
@@ -27,7 +27,7 @@ func TestUploadAuthorizationAuditFollowsWriteTransactionAndRedactsSecrets(t *tes
 		ID: uuid.NewString(), OwnerID: owner.ID, SourceID: 42,
 		SourceRevision: 3, SourceDeviceID: uuid.NewString(), SourceTargetID: 12,
 		SourceRootFingerprint: strings.Repeat("f", 64),
-		SourceRootID: uuid.NewString(), ResumeKey: "secret_resume_1234",
+		SourceRootID:          uuid.NewString(), ResumeKey: "secret_resume_1234",
 		Status: meta.UploadStatusActive,
 	}
 	rollback := errors.New("force transaction rollback")
@@ -49,29 +49,74 @@ func TestUploadAuthorizationAuditFollowsWriteTransactionAndRedactsSecrets(t *tes
 	}); err != nil {
 		t.Fatal(err)
 	}
+	op := meta.LocalPushCommonUploadOperation{
+		OperationID: uuid.NewString(), OwnerID: owner.ID, OwnerSession: 1,
+		DeviceID: uuid.NewString(), RootID: uuid.NewString(),
+		RootFingerprint: strings.Repeat("a", 64), SourceID: 42,
+		SourceRevision: 3, SourceTargetID: 12, ResumeKey: "lp2_" + strings.Repeat("b", 64),
+		ContentSHA256: strings.Repeat("c", 64), TotalSize: 1024,
+		State: meta.LocalPushCommonUploadReserved,
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return recordUploadAuthorizationOperationSuccessTx(tx, c, "local_push.operation.admit", op)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Bind creates an auditable join between the device-authorized
+	// Operation and the ordinary UploadSession without exposing resume keys.
+	op.State = meta.LocalPushCommonUploadBound
+	op.UploadSessionID = &session.ID
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return recordUploadAuthorizationOperationSuccessTx(tx, c, "local_push.operation.bind", op)
+	}); err != nil {
+		t.Fatal(err)
+	}
 	server := &Server{DB: db}
 	server.recordUploadAuthorizationFailure(c, "finalize.commit", session, errManagedSourceWriteDenied)
+	server.recordUploadAuthorizationOperationFailure(c, "local_push.operation.admit", op.SourceID,
+		op.SourceRevision, localSourceExecutorProof{DeviceID: op.DeviceID}, errLocalPushCommonUploadUnavailable)
 	var rows []meta.AuditEvent
-	if err := db.Order("id ASC").Find(&rows).Error; err != nil || len(rows) != 2 {
+	if err := db.Order("id ASC").Find(&rows).Error; err != nil || len(rows) != 5 {
 		t.Fatalf("missing committed/denied authorization audits: count=%d err=%v", len(rows), err)
 	}
 	if rows[0].Action != uploadAuthorizationAuditAction || rows[0].Result != "success" ||
-		rows[1].Action != uploadAuthorizationAuditAction || rows[1].Result != "failure" {
+		rows[1].Action != uploadAuthorizationAuditAction || rows[1].Result != "success" ||
+		rows[2].Action != uploadAuthorizationAuditAction || rows[2].Result != "success" ||
+		rows[3].Action != uploadAuthorizationAuditAction || rows[3].Result != "failure" ||
+		rows[4].Action != uploadAuthorizationAuditAction || rows[4].Result != "failure" {
 		t.Fatalf("wrong audit outcomes: %+v", rows)
 	}
-	for _, row := range rows {
-		if strings.Contains(row.Metadata, session.ResumeKey) ||
-			strings.Contains(row.Metadata, session.SourceRootFingerprint) ||
-			strings.Contains(row.Metadata, session.SourceRootID) {
-			t.Fatalf("secret or Root proof leaked in upload authorization audit: %s", row.Metadata)
+	for i, row := range rows {
+		for _, secret := range []string{
+			session.ResumeKey, session.SourceRootFingerprint, session.SourceRootID,
+			op.ResumeKey, op.RootID, op.RootFingerprint, op.ContentSHA256,
+		} {
+			if secret != "" && strings.Contains(row.Metadata, secret) {
+				t.Fatalf("secret or Root proof leaked in upload authorization audit: %s", row.Metadata)
+			}
 		}
 		var m map[string]any
 		if err := json.Unmarshal([]byte(row.Metadata), &m); err != nil {
 			t.Fatal(err)
 		}
-		if m["source_id"] != float64(session.SourceID) || m["device_id"] != session.SourceDeviceID ||
-			m["target_node_id"] != float64(session.SourceTargetID) {
-			t.Fatalf("audit lost owning Device/Source/Target: %v", m)
+		if i == 0 && (m["source_id"] != float64(session.SourceID) ||
+			m["device_id"] != session.SourceDeviceID ||
+			m["target_node_id"] != float64(session.SourceTargetID)) {
+			t.Fatalf("session audit lost owning Device/Source/Target: %v", m)
+		}
+		if i == 1 && (m["source_id"] != float64(op.SourceID) ||
+			m["device_id"] != op.DeviceID ||
+			m["target_node_id"] != float64(op.SourceTargetID) ||
+			m["phase"] != "local_push.operation.admit" ||
+			m["upload_session_id"] != nil) {
+			t.Fatalf("Local Push admission audit lost Device/Source/Target or claimed premature binding: %v", m)
+		}
+		if i == 2 && (m["source_id"] != float64(op.SourceID) ||
+			m["device_id"] != op.DeviceID ||
+			m["target_node_id"] != float64(op.SourceTargetID) ||
+			m["phase"] != "local_push.operation.bind" ||
+			m["upload_session_id"] != session.ID) {
+			t.Fatalf("Local Push bind audit lost verified operation-to-session linkage: %v", m)
 		}
 	}
 }

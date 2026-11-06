@@ -101,7 +101,7 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 	}
 	var source meta.Source
 	err := s.DB.WithContext(c.Request.Context()).
-		Select("id", "owner_id", "kind", "direction", "revision", "device_id", "target_node_id", "target_managed").
+		Select("id", "owner_id", "kind", "direction", "revision", "device_id", "local_creator_device_id", "target_node_id", "target_managed").
 		Where("id = ? AND owner_id = ?", id, userID(c)).
 		Take(&source).Error
 	if err != nil {
@@ -116,12 +116,13 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 		// Every DSM Push Source must be registered to a Synology Device and
 		// bound to the aggregate Personal/Shared Root fingerprint. There is no
 		// owner-JWT or legacy unbound execution fallback.
-		if source.DeviceID == nil || *source.DeviceID == "" {
+		boundDeviceID, bound := meta.SourceDeviceID(source)
+		if !bound {
 			fail(c, http.StatusForbidden, "Synology Push Source must be bound to a registered device")
 			return false
 		}
 		sourceID, proof, proofOK := currentSynologySourceProof(c)
-		if !proofOK || sourceID != source.ID || proof.DeviceID != *source.DeviceID ||
+		if !proofOK || sourceID != source.ID || proof.DeviceID != boundDeviceID ||
 			proof.SourceRevision != source.Revision || !source.TargetManaged || source.TargetNodeID == nil {
 			fail(c, http.StatusForbidden, "Synology Source root proof required or stale")
 			return false
@@ -191,7 +192,8 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 		}
 		return false
 	}
-	if source.DeviceID == nil || *source.DeviceID != deviceID.String() ||
+	boundDeviceID, bound := meta.SourceDeviceID(source)
+	if !bound || boundDeviceID != deviceID.String() ||
 		binding.RootID != rootID.String() || binding.RootFingerprint != fingerprint {
 		fail(c, http.StatusForbidden, "local source executor root mismatch")
 		return false
@@ -342,8 +344,9 @@ func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID
 		}
 		return err
 	}
+	boundDeviceID, bound := meta.SourceDeviceID(source)
 	if source.Kind != meta.SourceKindLocalFolder || source.Direction != meta.SourceDirectionPush ||
-		source.DeviceID == nil || *source.DeviceID != proof.DeviceID ||
+		!bound || boundDeviceID != proof.DeviceID ||
 		source.Revision != proof.SourceRevision || (requireActive && source.Status != meta.SourceStatusActive) {
 		return errLocalSourceExecutorTransactionUnauthorized
 	}

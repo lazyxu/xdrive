@@ -56,7 +56,7 @@ func TestLocalDraftListIsOwningDeviceOnlyAndCursorPaged(t *testing.T) {
 			Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
 			RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused,
 			ScheduleType: "manual", Revision: 1,
-			TargetNodeID: &target.ID, LocalCreatorDeviceID: creator,
+			TargetNodeID: &target.ID, DeviceID: creator, LocalCreatorDeviceID: creator,
 		}
 		if err := db.Create(&row).Error; err != nil {
 			t.Fatal(err)
@@ -69,6 +69,17 @@ func TestLocalDraftListIsOwningDeviceOnlyAndCursorPaged(t *testing.T) {
 	a3 := created("a3", &aID)
 	b := created("b-private", &bID)
 	legacy := created("legacy-unclaimed", nil)
+	// An unverified legacy creator alias is not a canonical Push binding.
+	aliasOnly := meta.Source{
+		OwnerID: owner.ID, Name: "alias-only", Kind: meta.SourceKindLocalFolder,
+		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused,
+		ScheduleType: "manual", Revision: 1, TargetNodeID: &target.ID,
+		LocalCreatorDeviceID: &aID,
+	}
+	if err := db.Create(&aliasOnly).Error; err != nil {
+		t.Fatal(err)
+	}
 	bound := created("A-bound", &aID)
 	if err := db.Create(&meta.LocalSourceBinding{
 		SourceID: bound.ID, OwnerID: owner.ID, DeviceID: deviceA.ID,
@@ -136,6 +147,10 @@ func TestLocalDraftListIsOwningDeviceOnlyAndCursorPaged(t *testing.T) {
 	if len(p2.Items) != 1 || p2.Items[0].SourceID != a3.ID ||
 		p2.HasMore || p2.NextAfterID != 0 {
 		t.Fatalf("unexpected next draft page: %+v", p2)
+	}
+	allA := fetchPage(uri+"?limit=20", hdrA)
+	if len(allA.Items) != 3 || strings.Contains(fmt.Sprint(allA.Items), "alias-only") {
+		t.Fatalf("legacy alias-only Source was treated as a device-owned draft: %+v", allA)
 	}
 	bOnly := fetchPage(uri+"?limit=5", hdrB)
 	if len(bOnly.Items) != 1 || bOnly.Items[0].SourceID != b.ID {

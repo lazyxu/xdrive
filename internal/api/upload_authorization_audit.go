@@ -13,6 +13,17 @@ import (
 
 const uploadAuthorizationAuditAction = "upload.authorization"
 
+// uploadAuthorizationDenied separates an expected policy rejection from a
+// database/audit infrastructure failure. Callers must not misreport a failed
+// durable audit insert as an invalid client credential.
+func uploadAuthorizationDenied(err error) bool {
+	return errors.Is(err, errManagedSourceWriteDenied) ||
+		errors.Is(err, errSynologyPushAuthority) ||
+		errors.Is(err, errShareUploadDenied) ||
+		errors.Is(err, errShareUploadBusy) ||
+		errors.Is(err, errLocalPushCommonUploadUnavailable)
+}
+
 // Only opaque account-scoped identifiers enter audit metadata. Never persist
 // credentials, Root fingerprints, resume keys, local paths or photo names.
 func uploadAuthorizationAuditMetadata(phase string, session meta.UploadSession) map[string]any {
@@ -82,6 +93,13 @@ func localPushOperationAuditMetadata(phase string, op meta.LocalPushCommonUpload
 		"source_revision": op.SourceRevision, "device_id": op.DeviceID,
 		"target_node_id": op.SourceTargetID, "state": op.State,
 	}
+	// The Operation is the device-authorized Source/Root ledger, while
+	// UploadParts belong to a generic UploadSession. Preserve the verified
+	// correlation when binding so audits can be joined without persisting
+	// secret resume keys or root proofs.
+	if op.UploadSessionID != nil && *op.UploadSessionID != "" {
+		metadata["upload_session_id"] = *op.UploadSessionID
+	}
 	return metadata
 }
 
@@ -131,6 +149,11 @@ func (s *Server) recordUploadAuthorizationFailure(c *gin.Context, phase string, 
 		return
 	}
 	metadata := uploadAuthorizationAuditMetadata(phase, session)
+	if strings.HasPrefix(phase, "ios.photo.") {
+		metadata["writer"] = "ios_photo"
+	} else if strings.HasPrefix(phase, "android.photo.") {
+		metadata["writer"] = "android_photo"
+	}
 	metadata["reason"] = "permission_denied"
 	event := auditEventFromContext(c, uploadAuthorizationAuditAction,
 		"upload_session", session.ID, "", auditpkg.ResultFailure, metadata)
@@ -151,8 +174,9 @@ func recordUploadAuthorizationSystemTx(tx *gorm.DB, phase string, session meta.U
 	return recordAuditTx(tx, auditpkg.Event{
 		ActorUserID: &ownerID,
 		Action:      uploadAuthorizationAuditAction,
-		TargetType:  "upload_session", TargetID: session.ID,
-		Result:   auditpkg.ResultSuccess,
-		Metadata: uploadAuthorizationAuditMetadata(phase, session),
+		TargetType: "upload_session",
+		TargetID:   session.ID,
+		Result:     auditpkg.ResultSuccess,
+		Metadata:   uploadAuthorizationAuditMetadata(phase, session),
 	})
 }

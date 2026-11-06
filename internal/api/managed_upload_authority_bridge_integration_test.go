@@ -85,8 +85,16 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	// The checked Finalize path must preserve the same scoped separation.
 	session := meta.UploadSession{ID: "120af9d6-9c02-4080-a6ff-2f219b17fda1",
 		OwnerID: owner.ID, ParentID: &child.ID, Name: req.Name,
-		SourceRunID: runID, Status: meta.UploadStatusActive,
-		ConflictPolicy: meta.UploadConflictPolicyFail, TotalSize: req.Size}
+		RequestedName: req.Name, SourceRunID: runID, Status: meta.UploadStatusActive,
+		ConflictPolicy: meta.UploadConflictPolicyFail, TotalSize: req.Size,
+		ChunkSize: defaultUploadChunkSize, ChunkCount: 1, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	// The authorization helper intentionally reloads and locks the durable
+	// session, not the caller's mutable in-memory struct. Model that real SQL
+	// boundary instead of passing a session UUID that does not exist.
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, scoped, session, child.ID); err != nil {
 		t.Fatalf("valid Pull worker Finalize authorization rejected: %v", err)
 	}
@@ -98,6 +106,12 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	if err := server.requireUploadChunkAuthorityTx(ctx, db, scoped, session); err != nil {
 		t.Fatalf("valid Pull worker UploadPart rejected: %v", err)
 	}
+	if err := server.requireUploadSessionReadAuthorityTx(ctx, db, scoped, session); err != nil {
+		t.Fatalf("valid Pull worker UploadSession read rejected: %v", err)
+	}
+	if err := server.requireUploadSessionReadAuthorityTx(ctx, db, regular, session); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("ordinary Owner read a Pull SourceRun session: %v", err)
+	}
 	for _, noProof := range []*gin.Context{regular, wrongRun} {
 		if err := server.requireUploadChunkAuthorityTx(ctx, db, noProof, session); !errors.Is(err, errManagedSourceWriteDenied) {
 			t.Fatalf("unauthorized SourceRun reached chunk SQL transaction: %v", err)
@@ -105,14 +119,64 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	}
 	ordinarySession := meta.UploadSession{
 		ID: "899de10a-62bf-4470-ae8f-a4c62d2a611a",
-		OwnerID: owner.ID, ParentID: &ordinary.ID, Name: req.Name,
+		OwnerID: owner.ID, ParentID: &ordinary.ID, Name: req.Name, RequestedName: req.Name,
 		Status: meta.UploadStatusActive, ConflictPolicy: meta.UploadConflictPolicyFail,
+		ChunkSize: defaultUploadChunkSize, ChunkCount: 1, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	if err := db.Create(&ordinarySession).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := server.requireUploadChunkAuthorityTx(ctx, db, regular, ordinarySession); err != nil {
 		t.Fatalf("ordinary Owner folder cannot upload chunks: %v", err)
 	}
+	if err := server.requireUploadSessionReadAuthorityTx(ctx, db, regular, ordinarySession); err != nil {
+		t.Fatalf("ordinary Owner folder cannot read its own session: %v", err)
+	}
+	if err := server.requireUploadSessionReadAuthorityTx(ctx, db, scoped, ordinarySession); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("SourceRun adopted an ordinary Owner UploadSession read: %v", err)
+	}
 	if err := server.requireUploadChunkAuthorityTx(ctx, db, scoped, ordinarySession); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("signed SourceRun adopted an ordinary Owner UploadSession: %v", err)
+	}
+
+	// Old and partially populated Source-session rows must never be treated
+	// as generic Owner sessions. Exercise each identity column separately
+	// against both the real chunk/receipt SQL check and Finalize dispatch.
+	for _, marker := range []struct {
+		column string
+		value  any
+		reset  any
+	}{
+		{"source_revision", uint64(7), uint64(0)},
+		{"source_device_id", "13dfbb14-cf78-49d0-ab3f-1da99e57c870", ""},
+		{"source_target_id", ordinary.ID, uint64(0)},
+		{"source_root_id", "98e9b808-6de4-4b26-8fe4-85d81c20baae", ""},
+		{"source_root_fingerprint", strings.Repeat("f", 64), ""},
+	} {
+		if err := db.Model(&meta.UploadSession{}).
+			Where("id = ?", ordinarySession.ID).Update(marker.column, marker.value).Error; err != nil {
+			t.Fatal(err)
+		}
+		var partial meta.UploadSession
+		if err := db.Where("id = ?", ordinarySession.ID).Take(&partial).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := server.requireUploadChunkAuthorityTx(ctx, db, regular, partial); !errors.Is(err, errManagedSourceWriteDenied) {
+			t.Fatalf("%s escaped UploadPart SQL authority: %v", marker.column, err)
+		}
+		if err := server.requireUploadSessionReadAuthorityTx(ctx, db, regular, partial); !errors.Is(err, errManagedSourceWriteDenied) {
+			t.Fatalf("%s escaped upload receipt SQL authority: %v", marker.column, err)
+		}
+		if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, regular, partial, ordinary.ID); !errors.Is(err, errManagedSourceWriteDenied) {
+			t.Fatalf("%s escaped Finalize source authority: %v", marker.column, err)
+		}
+		if err := db.Model(&meta.UploadSession{}).
+			Where("id = ?", ordinarySession.ID).Update(marker.column, marker.reset).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := server.requireUploadChunkAuthorityTx(ctx, db, regular, ordinarySession); err != nil {
+			t.Fatalf("clean ordinary upload rejected after %s isolation check: %v", marker.column, err)
+		}
 	}
 
 	// Cancellation revokes a still-signed SourceRun writer before the JWT
@@ -127,6 +191,9 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	}
 	if err := server.requireUploadChunkAuthorityTx(ctx, db, scoped, session); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("cancelled SourceRun committed an UploadPart: %v", err)
+	}
+	if err := server.requireUploadSessionReadAuthorityTx(ctx, db, scoped, session); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("cancelled SourceRun still read its upload session: %v", err)
 	}
 	if err := db.Model(&meta.SyncRun{}).Where("id = ?", runID).
 		Update("status", meta.SyncRunStatusCompleted).Error; err != nil {

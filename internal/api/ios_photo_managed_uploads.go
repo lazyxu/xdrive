@@ -159,8 +159,9 @@ func requireIOSPhotoManagedUploadTx(ctx context.Context, tx *gorm.DB,
 		meta.SourceDirectionPush, scope.deviceID, scope.sourceRevision).Take(&source).Error; err != nil {
 		return errManagedSourceWriteDenied
 	}
-	if !iosPhotoDestinationSource(source) || !source.TargetManaged ||
-		source.TargetNodeID == nil || *source.TargetNodeID != targetID {
+	boundDeviceID, bound := meta.SourceDeviceID(source)
+	if !iosPhotoDestinationSource(source) || !bound || boundDeviceID != scope.deviceID ||
+		!source.TargetManaged || source.TargetNodeID == nil || *source.TargetNodeID != targetID {
 		return errManagedSourceWriteDenied
 	}
 	var device meta.ClientDevice
@@ -369,13 +370,24 @@ func (s *Server) iosPhotoManagedReceipt(c *gin.Context) {
 		return
 	}
 	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := requireIOSPhotoManagedSessionTx(c.Request.Context(), tx, c, verifiedSession); err != nil {
+		var current meta.UploadSession
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("id = ? AND owner_id = ?", verifiedSession.ID, scope.ownerID).
+			Take(&current).Error; err != nil {
+			return errManagedSourceWriteDenied
+		}
+		verifiedSession = current
+		if err := s.requireUploadSessionReadAuthorityTx(c.Request.Context(), tx, c, current); err != nil {
 			return err
 		}
-		return recordUploadAuthorizationSuccessTx(tx, c, "ios.photo.receipt.read", verifiedSession)
+		return recordUploadAuthorizationSuccessAsTx(tx, c, "ios.photo.receipt.read", "ios_photo", current)
 	}); err != nil {
 		s.recordUploadAuthorizationFailure(c, "ios.photo.receipt.read", verifiedSession, err)
-		fail(c, http.StatusForbidden, "ios photo receipt authority is no longer valid")
+		if uploadAuthorizationDenied(err) {
+			fail(c, http.StatusForbidden, "ios photo receipt authority is no longer valid")
+		} else {
+			fail(c, http.StatusInternalServerError, "iOS photo receipt audit failed")
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

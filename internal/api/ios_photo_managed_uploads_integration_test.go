@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -107,8 +108,13 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 		SourceDeviceID: device.ID, SourceTargetID: response.TargetNodeID,
 		ParentID: &response.TargetNodeID, Name: name, RequestedName: name,
 		ConflictPolicy: meta.UploadConflictPolicyFail, TotalSize: req.Size,
-		ChunkSize: req.ChunkSize, SHA256: digest, ResumeKey: key,
-		Status: meta.UploadStatusActive,
+		ChunkSize: req.ChunkSize, ChunkCount: 1, SHA256: digest, ResumeKey: key,
+		Status: meta.UploadStatusActive, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	// All transaction rechecks load the persisted UploadSession, not the
+	// caller's struct. Write the real row before exercising each authority.
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := requireSourceRunOrLocalPushFinalizeTx(
 		ctx, db, c, session, response.TargetNodeID); err != nil {
@@ -117,19 +123,31 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 	if err := server.requireUploadChunkAuthorityTx(ctx, db, c, session); err != nil {
 		t.Fatalf("valid iOS UploadPart transaction denied: %v", err)
 	}
+	// Each hostile tuple is altered in the DATABASE itself. Merely changing
+	// the caller's copy would not test the locked durable-row authorization.
 	for _, scenario := range []struct {
-		name string
-		alter func(*meta.UploadSession)
+		name   string
+		column string
+		value  any
 	}{
-		{"wrong device", func(row *meta.UploadSession) { row.SourceDeviceID = uuid.NewString() }},
-		{"stale Source revision", func(row *meta.UploadSession) { row.SourceRevision++ }},
-		{"wrong target", func(row *meta.UploadSession) { row.SourceTargetID = root.ID }},
-		{"legacy unbound session", func(row *meta.UploadSession) { row.SourceID = 0 }},
+		{"wrong device", "source_device_id", uuid.NewString()},
+		{"stale Source revision", "source_revision", scope.sourceRevision + 1},
+		{"wrong target", "source_target_id", root.ID},
+		{"legacy unbound session", "source_id", uint64(0)},
 	} {
-		bad := session
-		scenario.alter(&bad)
-		if err := server.requireUploadChunkAuthorityTx(ctx, db, c, bad); !errors.Is(err, errManagedSourceWriteDenied) {
-			t.Fatalf("%s reached UploadPart write transaction: %v", scenario.name, err)
+		rollback := errors.New("restore hostile session after assertion")
+		err := db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&meta.UploadSession{}).Where("id = ?", session.ID).
+				Update(scenario.column, scenario.value).Error; err != nil {
+				return err
+			}
+			if err := server.requireUploadChunkAuthorityTx(ctx, tx, c, session); !errors.Is(err, errManagedSourceWriteDenied) {
+				return fmt.Errorf("%s reached UploadPart transaction: %v", scenario.name, err)
+			}
+			return rollback
+		})
+		if !errors.Is(err, rollback) {
+			t.Fatalf("%s hostile session test failed: %v", scenario.name, err)
 		}
 	}
 	if err := server.requireUploadChunkAuthorityTx(ctx, db, regular, session); !errors.Is(err, errManagedSourceWriteDenied) {
