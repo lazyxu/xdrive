@@ -100,3 +100,28 @@ export async function xDriveClipboardDecrypt(
   xDriveClipboardValidateText(text)
   return text
 }
+
+const vaultCheckEventID = '00000000-0000-4000-8000-000000000001'
+const vaultCheckPlaintext = 'xDrive Clipboard Vault v1'
+
+export async function xDriveClipboardMakeVaultCheck(
+  key: CryptoKey, ownerScope: string,
+): Promise<{ nonce: string; ciphertext: string }> {
+  const { nonce, ciphertext } = await xDriveClipboardEncrypt(
+    key, ownerScope, vaultCheckEventID, vaultCheckPlaintext,
+  )
+  return { nonce, ciphertext }
+}
+
+export async function xDriveClipboardVerifyVaultCheck(
+  key: CryptoKey, ownerScope: string, check: { nonce: string; ciphertext: string },
+): Promise<void> {
+  try {
+    const text = await xDriveClipboardDecrypt(key, ownerScope, {
+      kind: 'text/plain', client_event_id: vaultCheckEventID,
+      nonce: check.nonce, ciphertext: check.ciphertext,
+    })
+    if (text === vaultCheckPlaintext) return
+  } catch { /* Wrong passphrase or corrupted canary: never unlock. */ }
+  throw new Error('剪贴板口令不正确，或密钥校验已损坏。')
+}
