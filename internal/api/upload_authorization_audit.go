@@ -93,6 +93,13 @@ func localPushOperationAuditMetadata(phase string, op meta.LocalPushCommonUpload
 		"source_revision": op.SourceRevision, "device_id": op.DeviceID,
 		"target_node_id": op.SourceTargetID, "state": op.State,
 	}
+	// The Operation is the device-authorized Source/Root ledger, while
+	// UploadParts belong to a generic UploadSession. Preserve the verified
+	// correlation when binding so audits can be joined without persisting
+	// secret resume keys or root proofs.
+	if op.UploadSessionID != nil && *op.UploadSessionID != "" {
+		metadata["upload_session_id"] = *op.UploadSessionID
+	}
 	return metadata
 }
 

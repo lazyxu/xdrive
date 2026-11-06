@@ -139,6 +139,46 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 		t.Fatalf("signed SourceRun adopted an ordinary Owner UploadSession: %v", err)
 	}
 
+	// Old and partially populated Source-session rows must never be treated
+	// as generic Owner sessions. Exercise each identity column separately
+	// against both the real chunk/receipt SQL check and Finalize dispatch.
+	for _, marker := range []struct {
+		column string
+		value  any
+		reset  any
+	}{
+		{"source_revision", uint64(7), uint64(0)},
+		{"source_device_id", "13dfbb14-cf78-49d0-ab3f-1da99e57c870", ""},
+		{"source_target_id", ordinary.ID, uint64(0)},
+		{"source_root_id", "98e9b808-6de4-4b26-8fe4-85d81c20baae", ""},
+		{"source_root_fingerprint", strings.Repeat("f", 64), ""},
+	} {
+		if err := db.Model(&meta.UploadSession{}).
+			Where("id = ?", ordinarySession.ID).Update(marker.column, marker.value).Error; err != nil {
+			t.Fatal(err)
+		}
+		var partial meta.UploadSession
+		if err := db.Where("id = ?", ordinarySession.ID).Take(&partial).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := server.requireUploadChunkAuthorityTx(ctx, db, regular, partial); !errors.Is(err, errManagedSourceWriteDenied) {
+			t.Fatalf("%s escaped UploadPart SQL authority: %v", marker.column, err)
+		}
+		if err := server.requireUploadSessionReadAuthorityTx(ctx, db, regular, partial); !errors.Is(err, errManagedSourceWriteDenied) {
+			t.Fatalf("%s escaped upload receipt SQL authority: %v", marker.column, err)
+		}
+		if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, regular, partial, ordinary.ID); !errors.Is(err, errManagedSourceWriteDenied) {
+			t.Fatalf("%s escaped Finalize source authority: %v", marker.column, err)
+		}
+		if err := db.Model(&meta.UploadSession{}).
+			Where("id = ?", ordinarySession.ID).Update(marker.column, marker.reset).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := server.requireUploadChunkAuthorityTx(ctx, db, regular, ordinarySession); err != nil {
+			t.Fatalf("clean ordinary upload rejected after %s isolation check: %v", marker.column, err)
+		}
+	}
+
 	// Cancellation revokes a still-signed SourceRun writer before the JWT
 	// expires, including Finalize on an already prepared UploadSession.
 	cancelled := time.Now().UTC()

@@ -31,9 +31,22 @@ func requireSourceRunOrLocalPushTargetTx(
 	return requireOrdinaryOrAdmittedLocalPushTargetTx(ctx, tx, ownerID, nodeID, req)
 }
 
+// A Source-less upload must have no residual managed Push identity. Reject
+// half-bound/legacy sessions rather than silently giving them Owner, Local
+// Push or SourceRun rights at a durable upload mutation boundary.
+func unboundSourceUploadSession(session meta.UploadSession) bool {
+	return session.SourceID == 0 &&
+		(session.SourceRevision != 0 || session.SourceDeviceID != "" ||
+			session.SourceTargetID != 0 || session.SourceRootID != "" ||
+			session.SourceRootFingerprint != "")
+}
+
 func requireSourceRunOrLocalPushFinalizeTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, session meta.UploadSession, nodeID uint64,
 ) error {
+	if unboundSourceUploadSession(session) {
+		return errManagedSourceWriteDenied
+	}
 	if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
 		if _, run := currentSourceRunScope(c); run {
 			return errManagedSourceWriteDenied
@@ -72,6 +85,9 @@ func (s *Server) requireUploadSessionReadAuthorityTx(
 		return errManagedSourceWriteDenied
 	}
 	session = current
+	if unboundSourceUploadSession(session) {
+		return errManagedSourceWriteDenied
+	}
 	if !sourceRunUploadSessionMatches(c, session) {
 		return errManagedSourceWriteDenied
 	}

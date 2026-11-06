@@ -62,18 +62,28 @@ func TestUploadAuthorizationAuditFollowsWriteTransactionAndRedactsSecrets(t *tes
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Bind creates an auditable join between the device-authorized
+	// Operation and the ordinary UploadSession without exposing resume keys.
+	op.State = meta.LocalPushCommonUploadBound
+	op.UploadSessionID = &session.ID
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return recordUploadAuthorizationOperationSuccessTx(tx, c, "local_push.operation.bind", op)
+	}); err != nil {
+		t.Fatal(err)
+	}
 	server := &Server{DB: db}
 	server.recordUploadAuthorizationFailure(c, "finalize.commit", session, errManagedSourceWriteDenied)
 	server.recordUploadAuthorizationOperationFailure(c, "local_push.operation.admit", op.SourceID,
 		op.SourceRevision, localSourceExecutorProof{DeviceID: op.DeviceID}, errLocalPushCommonUploadUnavailable)
 	var rows []meta.AuditEvent
-	if err := db.Order("id ASC").Find(&rows).Error; err != nil || len(rows) != 4 {
+	if err := db.Order("id ASC").Find(&rows).Error; err != nil || len(rows) != 5 {
 		t.Fatalf("missing committed/denied authorization audits: count=%d err=%v", len(rows), err)
 	}
 	if rows[0].Action != uploadAuthorizationAuditAction || rows[0].Result != "success" ||
 		rows[1].Action != uploadAuthorizationAuditAction || rows[1].Result != "success" ||
-		rows[2].Action != uploadAuthorizationAuditAction || rows[2].Result != "failure" ||
-		rows[3].Action != uploadAuthorizationAuditAction || rows[3].Result != "failure" {
+		rows[2].Action != uploadAuthorizationAuditAction || rows[2].Result != "success" ||
+		rows[3].Action != uploadAuthorizationAuditAction || rows[3].Result != "failure" ||
+		rows[4].Action != uploadAuthorizationAuditAction || rows[4].Result != "failure" {
 		t.Fatalf("wrong audit outcomes: %+v", rows)
 	}
 	for i, row := range rows {
@@ -97,8 +107,16 @@ func TestUploadAuthorizationAuditFollowsWriteTransactionAndRedactsSecrets(t *tes
 		if i == 1 && (m["source_id"] != float64(op.SourceID) ||
 			m["device_id"] != op.DeviceID ||
 			m["target_node_id"] != float64(op.SourceTargetID) ||
-			m["phase"] != "local_push.operation.admit") {
-			t.Fatalf("Local Push operation audit lost Device/Source/Target: %v", m)
+			m["phase"] != "local_push.operation.admit" ||
+			m["upload_session_id"] != nil) {
+			t.Fatalf("Local Push admission audit lost Device/Source/Target or claimed premature binding: %v", m)
+		}
+		if i == 2 && (m["source_id"] != float64(op.SourceID) ||
+			m["device_id"] != op.DeviceID ||
+			m["target_node_id"] != float64(op.SourceTargetID) ||
+			m["phase"] != "local_push.operation.bind" ||
+			m["upload_session_id"] != session.ID) {
+			t.Fatalf("Local Push bind audit lost verified operation-to-session linkage: %v", m)
 		}
 	}
 }
