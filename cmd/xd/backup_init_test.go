@@ -17,6 +17,8 @@ type fakeBootstrapAgent struct {
 	createErr    error
 	bindErr      error
 	scheduleErr  error
+	readScheduleOverride  *localbackupipc.Schedule
+	savedScheduleOverride *localbackupipc.Schedule
 	preflighted  int
 	created      int
 	bound        int
@@ -54,12 +56,18 @@ func (f *fakeBootstrapAgent) ReadSchedule(_ context.Context, id uint64) (localba
 	if f.scheduleErr != nil {
 		return localbackupipc.Schedule{}, f.scheduleErr
 	}
+	if f.readScheduleOverride != nil {
+		return *f.readScheduleOverride, nil
+	}
 	return localbackupipc.Schedule{SourceID: id, Revision: 1, ScheduleType: "manual"}, nil
 }
 func (f *fakeBootstrapAgent) SaveSchedule(_ context.Context, id, revision uint64, spec localbackupipc.Schedule) (localbackupipc.Schedule, error) {
 	f.saved++
 	if f.scheduleErr != nil {
 		return localbackupipc.Schedule{}, f.scheduleErr
+	}
+	if f.savedScheduleOverride != nil {
+		return *f.savedScheduleOverride, nil
 	}
 	spec.Revision = revision + 1
 	return spec, nil
@@ -123,6 +131,84 @@ func TestHeadlessInitRunNowUsesSameAgentOnlyAfterVerifiedBootstrap(t *testing.T)
 				id, err, agent)
 		}
 	})
+}
+
+
+func TestHeadlessInitRefusesUnverifiedPlanAckBeforeRunNow(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "files")
+	spec := sourceschedule.Spec{Type: "interval", Expression: "6h"}
+	for _, tc := range []struct {
+		name string
+		read *localbackupipc.Schedule
+		write *localbackupipc.Schedule
+		wantWrites int
+	}{
+		{
+			name: "read_different_source",
+			read: &localbackupipc.Schedule{SourceID: 99, Revision: 1, ScheduleType: "manual"},
+		},
+		{
+			name: "read_without_revision",
+			read: &localbackupipc.Schedule{SourceID: 42, ScheduleType: "manual"},
+		},
+		{
+			name: "saved_different_source",
+			write: &localbackupipc.Schedule{SourceID: 99, Revision: 2, ScheduleType: "interval", ScheduleExpression: "6h"},
+			wantWrites: 1,
+		},
+		{
+			name: "saved_stale_revision",
+			write: &localbackupipc.Schedule{SourceID: 42, Revision: 1, ScheduleType: "interval", ScheduleExpression: "6h"},
+			wantWrites: 1,
+		},
+		{
+			name: "saved_wrong_interval",
+			write: &localbackupipc.Schedule{SourceID: 42, Revision: 2, ScheduleType: "interval", ScheduleExpression: "12h"},
+			wantWrites: 1,
+		},
+		{
+			name: "saved_invalid_readiness",
+			write: &localbackupipc.Schedule{SourceID: 42, Revision: 2, ScheduleType: "interval", ScheduleExpression: "6h", AutoReadiness: "unverified_from_elsewhere"},
+			wantWrites: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := &fakeInitOnceAgent{
+				fakeBootstrapAgent: &fakeBootstrapAgent{
+					readScheduleOverride: tc.read, savedScheduleOverride: tc.write,
+				},
+				result: localbackupipc.Summary{SourceID: 42, Revision: 2, State: "partial"},
+			}
+			id, err := runBackupInitAndMaybeOnce(context.Background(), agent,
+				"NAS Files", root, spec, true, &bytes.Buffer{})
+			if id != 42 || err == nil || agent.starts != 0 ||
+				agent.bound != 1 || agent.saved != tc.wantWrites ||
+				!strings.Contains(err.Error(), "inspect its plan") {
+				t.Fatalf("unverified schedule must retain bound Source without upload: id=%d err=%v agent=%+v",
+					id, err, agent)
+			}
+		})
+	}
+}
+
+func TestHeadlessInitAlreadySavedPlanDoesNotInvalidateCheckpoint(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "files")
+	agent := &fakeInitOnceAgent{
+		fakeBootstrapAgent: &fakeBootstrapAgent{
+			readScheduleOverride: &localbackupipc.Schedule{
+				SourceID: 42, Revision: 5, ScheduleType: "interval", ScheduleExpression: "6h",
+			},
+		},
+		result: localbackupipc.Summary{SourceID: 42, Revision: 5, State: "partial",
+			InspectedFiles: 1, ConfirmedFiles: 1},
+	}
+	id, err := runBackupInitAndMaybeOnce(context.Background(), agent,
+		"NAS Files", root, sourceschedule.Spec{Type: "interval", Expression: "6h"},
+		true, &bytes.Buffer{})
+	if err != nil || id != 42 || agent.saved != 0 || agent.starts != 1 {
+		t.Fatalf("already saved plan was rewritten or first run skipped: id=%d err=%v agent=%+v",
+			id, err, agent)
+	}
 }
 
 func TestHeadlessInitReusesOwningAgentAndArmsOnlyAfterOnce(t *testing.T) {
