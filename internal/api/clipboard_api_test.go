@@ -274,6 +274,15 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
 		strings.NewReader(payload(firstID, base64.StdEncoding.EncodeToString([]byte("different secure data")))),
 		http.StatusConflict)
+	// A retained expired EventID is already invisible in history. Replaying
+	// its exact ciphertext must not falsely acknowledge a delivered message.
+	if err := db.Model(&meta.ClipboardItem{}).
+		Where("owner_id = ? AND client_event_id = ?", ownerA.ID, firstID).
+		Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
+		strings.NewReader(payload(firstID, ciphertext)), http.StatusConflict)
 	request(t, router, http.MethodGet, "/api/v1/clipboard/items?before=bogus",
 		a, nil, http.StatusBadRequest)
 	request(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/clipboard/items/%d", first.ID),
