@@ -3,6 +3,7 @@ import { XDriveStatePanel } from './StatePanel'
 import { XDriveHomePage } from './HomePage'
 import { XDriveShareCenterPage } from './ShareCenterPage'
 import { XDriveNotesPage } from './NotesPage'
+import { XDriveClipboardPage } from './ClipboardPage'
 import { XDriveOverviewPage } from './OverviewPage'
 import { XDriveMediaGalleryPage } from './MediaGallery'
 import { XDriveSourceManager } from './SourceManager'
@@ -74,6 +75,9 @@ export function XDriveAppPageOutlet({
         break
       case 'notes':
         if (services.notesPage) page = <XDriveNotesPage port={services.notesPage} />
+        break
+      case 'clipboard':
+        if (services.clipboardPage) page = <XDriveClipboardPage port={services.clipboardPage} />
         break
       case 'gallery':
         if (services.galleryPage) page = <XDriveMediaGalleryPage {...services.galleryPage} />

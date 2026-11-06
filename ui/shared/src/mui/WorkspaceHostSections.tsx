@@ -10,6 +10,7 @@ import SystemUpdateRoundedIcon from '@mui/icons-material/SystemUpdateRounded'
 import UpdateRoundedIcon from '@mui/icons-material/UpdateRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import NotesRoundedIcon from '@mui/icons-material/NotesRounded'
+import ContentPasteRoundedIcon from '@mui/icons-material/ContentPasteRounded'
 import {
   xDriveDiagnosticsSidebarDestination,
   xDriveSettingsSidebarDestination,
@@ -27,6 +28,7 @@ export function xDriveWorkspaceHostSections({
   includeClientUpdate = false,
   showShareCenter = false,
   showNotes = false,
+  showClipboard = false,
 }: {
   adminRoleVerified?: boolean
   conflictCount?: number
@@ -38,6 +40,8 @@ export function xDriveWorkspaceHostSections({
   showShareCenter?: boolean
   /** Available only with a verified Notes domain port for the current Owner. */
   showNotes?: boolean
+  /** Only display when the Host supplies an authenticated Clipboard port. */
+  showClipboard?: boolean
 } = {}): XDriveSidebarSectionModel[] {
   return [
     {
@@ -49,6 +53,11 @@ export function xDriveWorkspaceHostSections({
       key: 'notes',
       placement: 'after-core' as const,
       items: [{ key: 'notes', label: xDriveWorkspaceRouteTitle('notes'), icon: <NotesRoundedIcon fontSize="small" /> }],
+    }] : []),
+    ...(showClipboard ? [{
+      key: 'clipboard',
+      placement: 'after-core' as const,
+      items: [{ key: 'clipboard', label: xDriveWorkspaceRouteTitle('clipboard'), icon: <ContentPasteRoundedIcon fontSize="small" /> }],
     }] : []),
     ...(showShareCenter ? [{
       key: 'shares',

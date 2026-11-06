@@ -112,6 +112,7 @@ import { xDriveTakeMapScopeHandoffFromURL, xDriveAbandonMapScopeRequired, xDrive
 import type { XDriveMapScopeHandoffState } from './mapScopeHandoff'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import { createXDriveWebNotesPort } from './notesDataPort'
+import { createXDriveWebClipboardPort } from './clipboardDataPort'
 import { createXDriveBrowserWorkspaceHost, xDriveBrowserFilesRouteHost } from './browserWorkspaceHost'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import { xDriveBrowserStorageRead, xDriveBrowserStorageWrite, xDriveBrowserStorageRemove } from './browserSafeStorage'
@@ -1717,6 +1718,9 @@ function FileManager({
   const notesPort = useMemo(() => mobileOwnerScope
     ? createXDriveWebNotesPort(api, mobileOwnerScope)
     : undefined, [api, mobileOwnerScope])
+  const clipboardPort = useMemo(() => mobileOwnerScope
+    ? createXDriveWebClipboardPort(api, mobileOwnerScope)
+    : undefined, [api, mobileOwnerScope])
   const shareCenterPort = useMemo(() => ({
     listPage: (cursor: number, limit: number, signal?: AbortSignal) => api.ownerShares(cursor, limit, signal),
     getShareLink: async (id: number) => {
@@ -2528,6 +2532,7 @@ function FileManager({
     showShareCenter: true,
     // The current authenticated Owner Notes port, not a UI role, unlocks this item.
     showNotes: Boolean(notesPort),
+    showClipboard: Boolean(clipboardPort),
   })
 
   const chooseUploadForResume = (id: string) => {
@@ -2847,6 +2852,7 @@ function FileManager({
       localStorage: localStorageSource,
       shareCenter: shareCenterPort,
       notes: notesPort,
+      clipboard: clipboardPort,
       deviceBackup: { source: deviceBackupSource, initialSourceID: deviceBackupSourceID },
       remotePull: {
         adapter: sourceManagerAdapter,
@@ -2862,7 +2868,7 @@ function FileManager({
         },
       },
     }),
-    [cloudStorageSource, localStorageSource, shareCenterPort, notesPort, deviceBackupSource,
+    [cloudStorageSource, localStorageSource, shareCenterPort, notesPort, clipboardPort, deviceBackupSource,
       deviceBackupSourceID, sourceManagerAdapter, remotePullSourceID,
       isRemotePullRoute, current?.id, current?.name, remotePullTargetPath,
       handleError, launchWebApp, serverAdminVerified, taskCenter.pageProps,
@@ -3375,7 +3381,7 @@ function FileManager({
           ) : (
             <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
           )
-        ) : appView === 'notes' || appView === 'shares' || appView === 'transfers' || appView === 'global-tasks' ? (
+        ) : appView === 'notes' || appView === 'shares' || appView === 'clipboard' || appView === 'transfers' || appView === 'global-tasks' ? (
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : appView === 'local-storage' || appView === 'cloud-storage' ? (
           // First two real Browser Host-backed routes in the shared page
