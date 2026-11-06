@@ -36,8 +36,8 @@ test('native destination and DSM Push use flat leaves but preserve Device ID aut
 test('unsettled Source operations block managed target rename without changing Node ID', () => {
   const rename = read('internal', 'api', 'source_managed_rename.go')
   assert.match(rename, /requireSourceTargetRenameQuiescentTx/)
-  assert.match(rename, /LocalPushCommonUploadReserved/)
-  assert.match(rename, /LocalPushCommonUploadBound/)
+  assert.match(rename, /meta\.LocalPushCommonUploadOperation/)
+  assert.match(rename, /\[\]string\{"reserved", "bound"\}/)
   assert.match(rename, /meta\.UploadSession/)
   assert.match(rename, /source\.RunRequestedAt != nil/)
   assert.match(rename, /"revision": gorm\.Expr\("revision \+ 1"\)/)
