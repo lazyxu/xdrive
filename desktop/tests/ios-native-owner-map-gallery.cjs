@@ -295,12 +295,15 @@ test('native map source uses one navigation menu instead of a permanently stacke
 })
 
 
-test('cloud Owner map album automatically advances when its lazy-grid sentinel enters the viewport', () => {
-  assert.match(clusterAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)
-  assert.match(clusterAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/)
-  assert.match(clusterAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, activeOwner, !busy, !coverLoading,[\s\S]*?viewing == nil, page != nil, error == nil, let next/)
-  assert.match(clusterAlbum, /coverLoading = true[\s\S]*?defer \{[\s\S]*?coverLoading = false[\s\S]*?advanceIfVisible\(\)/)
-  assert.match(clusterAlbum, /load\(next, history: earlier \+ \[cursor\], autoAdvance: true\)/)
-  assert.doesNotMatch(clusterAlbum, /DragGesture\(minimumDistance: 12\)/)
-  assert.doesNotMatch(clusterAlbum, /Button\("查看上一批照片"\)|Button\("继续浏览下一批照片"\)/)
+test('cloud Owner map album advances only on a deliberate upward drag at the visible lazy-grid foot', () => {
+  assert.match(clusterAlbum, /LazyVGrid\(columns: columns, spacing: 2\) \{[\s\S]*?if let next \{\s*Color\.clear/)
+  assert.match(clusterAlbum, /\.onAppear \{ scrollFootVisible = true \}/)
+  assert.match(clusterAlbum, /\.onDisappear \{ scrollFootVisible = false \}/)
+  assert.match(clusterAlbum, /\.simultaneousGesture\(\s*DragGesture\(minimumDistance: 12\)\.onEnded \{ gesture in/)
+  assert.match(clusterAlbum, /guard gesture\.translation\.height <= -12,[\s\S]*?abs\(gesture\.translation\.height\) >\s*abs\(gesture\.translation\.width\),[\s\S]*?scrollFootVisible, activeOwner, !busy,[\s\S]*?viewing == nil, page != nil, let next else \{ return \}/)
+  assert.match(clusterAlbum, /scrollFootVisible = false\s*load\(next, history: earlier \+ \[cursor\],\s*autoAdvance: true\)/)
+  assert.match(clusterAlbum, /private func load\(_ target: XDriveIOSOwnerClusterCursor,[\s\S]*?autoAdvance: Bool = false/)
+  assert.match(clusterAlbum, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selection\.owner\)/)
+  assert.match(clusterAlbum, /if autoAdvance, let departingPage,[\s\S]*?priorWindow = departingPage/)
+  assert.doesNotMatch(clusterAlbum, /private func advanceIfVisible\(|onAppear \{\s*load\(next|Timer\.scheduledTimer|cacheAllPhotos/)
 })
