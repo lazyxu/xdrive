@@ -57,7 +57,7 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	broken := meta.Source{
-		OwnerID: owner.ID, Name: "Broken schedule", Kind: "synology_files",
+		OwnerID: owner.ID, Name: "Broken schedule", Kind: "yike_photos",
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1,
 		ScheduleType: sourceschedule.TypeCron, ScheduleExpression: "bad-cron", ScheduleTimezone: "UTC",
@@ -73,9 +73,11 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	badHandler, goodHandler := &fakeHandler{}, &fakeHandler{}
+	// Both Sources have an enabled connector: the malformed schedule must be
+	// isolated by Source rather than silently dropped as disabled.
+	handler := &fakeHandler{}
 	runner := &Runner{DB: db, Handlers: map[string]SourceHandler{
-		"synology_files": badHandler, "yike_photos": goodHandler,
+		"yike_photos": handler,
 	}, MaxConcurrency: 2}
 	now := time.Now().UTC()
 	report, err := runner.RunDue(context.Background(), now, 6*time.Hour)
@@ -83,9 +85,9 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 		t.Fatalf("bad schedule error not attributed to its Source: %v", err)
 	}
 	if report.Eligible != 2 || report.Completed != 1 || report.Failed != 1 ||
-		badHandler.calls != 0 || goodHandler.calls != 1 {
-		t.Fatalf("one malformed schedule blocked healthy Pull: report=%+v bad=%d good=%d",
-			report, badHandler.calls, goodHandler.calls)
+		handler.calls != 1 {
+		t.Fatalf("one malformed schedule blocked healthy Pull: report=%+v totalCalls=%d",
+			report, handler.calls)
 	}
 	var recorded, independent meta.Source
 	if err := db.First(&recorded, broken.ID).Error; err != nil {
@@ -111,8 +113,8 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 	}
 	report, err = runner.RunDue(context.Background(), now.Add(time.Minute), 6*time.Hour)
 	if err != nil || report.Completed != 2 || report.Failed != 0 ||
-		badHandler.calls != 1 || goodHandler.calls != 2 {
-		t.Fatalf("repair did not restore normal dispatch: report=%+v err=%v bad=%d good=%d",
-			report, err, badHandler.calls, goodHandler.calls)
+		handler.calls != 3 {
+		t.Fatalf("repair did not restore normal dispatch: report=%+v err=%v totalCalls=%d",
+			report, err, handler.calls)
 	}
 }
