@@ -92,6 +92,7 @@ func (s *Server) lookupIOSUploadResumeKey(c *gin.Context) {
 	if len(rows) == 0 {
 		// No durable proof of a committed upload. The client must not infer
 		// it can safely resend a create POST with a fresh resume key.
+		s.recordUploadAuthorizationFailure(c, "ios.photo.resume_lookup", meta.UploadSession{}, errManagedSourceWriteDenied)
 		fail(c, http.StatusNotFound, "matching upload session not found")
 		return
 	}
@@ -104,6 +105,20 @@ func (s *Server) lookupIOSUploadResumeKey(c *gin.Context) {
 		// Do not call the existing GET handler's abort/cleanup path here:
 		// unknown intent lookup must remain genuinely side-effect-free.
 		fail(c, http.StatusGone, "matching upload session expired")
+		return
+	}
+	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if native, ok := currentIOSPhotoManagedUploadScope(c); ok {
+			if err := requireIOSPhotoManagedSessionTx(c.Request.Context(), tx, c, snapshot); err != nil {
+				return err
+			}
+		} else if snapshot.SourceID != 0 {
+			return errManagedSourceWriteDenied
+		}
+		return recordUploadAuthorizationSuccessTx(tx, c, "ios.photo.resume_lookup", snapshot)
+	}); err != nil {
+		s.recordUploadAuthorizationFailure(c, "ios.photo.resume_lookup", snapshot, err)
+		fail(c, http.StatusForbidden, "upload receipt authority is no longer valid")
 		return
 	}
 	s.writeUploadSession(c, snapshot, http.StatusOK)
