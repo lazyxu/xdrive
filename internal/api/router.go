@@ -151,6 +151,9 @@ func (s *Server) Router() *gin.Engine {
 	v1.POST("/auth/browser/login", s.login)
 	v1.POST("/auth/browser/refresh", s.refresh)
 	v1.POST("/auth/browser/logout", s.logout)
+	// Only Desktop Main can redeem a one-use Agent-issued ticket into its
+	// own isolated HTTPS Cookie jar. No browser bearer alone can issue it.
+	v1.POST("/auth/desktop-map/redeem", s.redeemDesktopMapGuestGrant)
 	// Revocable native iOS Photo grant proof is NOT a general bearer session.
 	// Only these dedicated routes accept the grant+Device credential pair.
 	v1.GET("/ios/photos/background-grants/proof",
@@ -224,6 +227,9 @@ func (s *Server) Router() *gin.Engine {
 
 	authed := v1.Group("")
 	authed.Use(s.requireAuth())
+	// Native RefreshToken proof in addition to authenticated Owner bearer.
+	// Never expose this issuance endpoint to normal Web-only authentication.
+	authed.POST("/auth/desktop-map/issue", s.issueDesktopMapGuestGrant)
 	authed.GET("/me", s.me)
 	authed.GET("/me/quota", s.quotaUsage)
 	authed.GET("/me/storage", s.storageStats)
