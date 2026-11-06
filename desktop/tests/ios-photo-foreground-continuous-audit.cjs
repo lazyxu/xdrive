@@ -35,6 +35,8 @@ test('cancellation, Owner, PhotoKit access and UI lifecycle fence the continuous
   assert.match(audit, /\.onChange\(of: phase\) \{ state in[\s\S]*?audit\.reset\(\)/)
   assert.match(audit, /\.onDisappear \{ audit\.reset\(\) \}/)
   assert.match(audit, /if audit\.busy \|\| audit\.verifyingContinuously/)
+  // A continuous run must keep its initially consented iCloud policy.
+  assert.match(audit, /Toggle\("核验时允许下载 iCloud 原件",[\s\S]*?\.disabled\(audit\.busy \|\| audit\.verifyingContinuously\)/)
   assert.match(audit, /native-ios-photo-whole-audit-continuous/)
 })
 
