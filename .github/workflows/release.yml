@@ -57,8 +57,15 @@ jobs:
             find exact -maxdepth 1 -type f -print >&2
             exit 1
           }
-          test -f source-agent/xdrive-source-agent-linux-amd64
-          test -f source-agent/xdrive-source-agent-linux-arm64
+          # The exact CI-built Source Agent has three Linux architectures,
+          # including the 32-bit ARMv7 binary for DSM. Reject empty/linked files.
+          for arch in amd64 arm64 armv7; do
+            binary="source-agent/xdrive-source-agent-linux-$arch"
+            [[ -f "$binary" && -s "$binary" && ! -L "$binary" ]] || {
+              echo "missing, empty or linked source-agent binary: $binary" >&2
+              exit 1
+            }
+          done
           test -s backup-cli/xdrive-backup-linux-amd64.tar.gz
           test -s backup-cli/xdrive-backup-windows-amd64.zip
           bash scripts/ci/verify-synology-spk-release.sh synology --require-mui
@@ -67,10 +74,12 @@ jobs:
             echo "expected exactly two standalone Backup CLI archives; found $cli_count" >&2
             exit 1
           }
-          source_count="$(find source-agent -maxdepth 1 -type f | wc -l)"
-          [[ "$source_count" == "2" ]] || {
-            echo "expected exactly two source-agent binaries; found $source_count" >&2
-            find source-agent -maxdepth 1 -type f -print >&2
+          # Count every top-level entry, including hidden files and links.
+          # Do not broaden the release allowlist to silence an unexpected file.
+          source_count="$(find source-agent -mindepth 1 -maxdepth 1 | wc -l)"
+          [[ "$source_count" == "3" ]] || {
+            echo "expected exactly three source-agent binaries; found $source_count" >&2
+            find source-agent -mindepth 1 -maxdepth 1 -print >&2
             exit 1
           }
 
@@ -320,8 +329,13 @@ jobs:
           set -euo pipefail
           test -f release/xdrive-linux-amd64.deb
           test -f release/xDriveSetup-amd64.exe
-          test -f release/xdrive-source-agent-linux-amd64
-          test -f release/xdrive-source-agent-linux-arm64
+          for arch in amd64 arm64 armv7; do
+            binary="release/xdrive-source-agent-linux-$arch"
+            [[ -f "$binary" && -s "$binary" && ! -L "$binary" ]] || {
+              echo "missing, empty or linked release source-agent binary: $binary" >&2
+              exit 1
+            }
+          done
           test -s release/xdrive-backup-linux-amd64.tar.gz
           test -s release/xdrive-backup-windows-amd64.zip
           bash scripts/ci/verify-synology-spk-release.sh release --require-mui
@@ -340,6 +354,7 @@ jobs:
             xDriveSetup-amd64.exe \
             xdrive-source-agent-linux-amd64 \
             xdrive-source-agent-linux-arm64 \
+            xdrive-source-agent-linux-armv7 \
             xdrive-backup-linux-amd64.tar.gz \
             xdrive-backup-windows-amd64.zip \
             xdrivenas-armada38x-*.spk \
