@@ -121,6 +121,41 @@ enum XDriveIOSNativeLocalMapSpatialPolicy {
         }
     }
 
+    /// "Show Nearby Photos" expands only to adjoining verified geographic
+    /// cells, never to an unbounded whole-library match. The resulting keys
+    /// are metadata predicates; every photo is re-read through fresh PhotoKit.
+    /// The current 64 selected cells imply at most 576 transient neighbor keys.
+    static func adjacentCellKeys(around selected: Set<Key>) -> Set<Key> {
+        guard !selected.isEmpty, selected.count <= maximumCells,
+              let level = selected.first?.level,
+              (0...maximumLevel).contains(level),
+              selected.allSatisfy({ $0.level == level }) else { return [] }
+        let step = initialCellDegrees * Double(1 << level)
+        let longitudeCells = max(1, Int(ceil(360.0 / step)))
+        let lastLatitudeCell = Int(floor(180.0 / step))
+        var nearby: Set<Key> = []
+        nearby.reserveCapacity(selected.count * 9)
+        for original in selected {
+            guard (0...lastLatitudeCell).contains(original.latitudeCell),
+                  (0..<longitudeCells).contains(original.longitudeCell)
+            else { return [] }
+            for latitudeDelta in -1...1 {
+                let latitudeCell = original.latitudeCell + latitudeDelta
+                guard (0...lastLatitudeCell).contains(latitudeCell) else { continue }
+                for longitudeDelta in -1...1 {
+                    let rawLongitude = original.longitudeCell + longitudeDelta
+                    let longitudeCell =
+                        (rawLongitude % longitudeCells + longitudeCells) % longitudeCells
+                    nearby.insert(Key(
+                        level: level, latitudeCell: latitudeCell,
+                        longitudeCell: longitudeCell
+                    ))
+                }
+            }
+        }
+        return nearby
+    }
+
     static func key(latitude: Double, longitude: Double, level: Int) -> Key? {
         guard (0...maximumLevel).contains(level),
               latitude.isFinite, longitude.isFinite,

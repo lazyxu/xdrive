@@ -14,6 +14,34 @@ struct NativeLocalMapSpatialPolicyChecks {
         precondition(Policy.key(latitude: 90, longitude: 180, level: 0) != nil)
         precondition(Policy.key(latitude: -90, longitude: -180, level: 0) != nil)
 
+        // Full-library nearby expansion includes the eight adjacent cells
+        // but never expands into an unbounded set or across invalid poles.
+        let centerKey = Policy.key(latitude: 35.001, longitude: 139.001, level: 0)!
+        let adjacent = Policy.adjacentCellKeys(around: Set([centerKey]))
+        precondition(adjacent.count == 9 && adjacent.contains(centerKey))
+        precondition(adjacent.contains(Policy.key(
+            latitude: 35.011, longitude: 139.001, level: 0)!
+        ))
+        precondition(!adjacent.contains(Policy.key(
+            latitude: 35.031, longitude: 139.001, level: 0)!
+        ))
+        let meridianNeighbors = Policy.adjacentCellKeys(
+            around: Set([Policy.key(latitude: 0, longitude: -180, level: 0)!])
+        )
+        precondition(meridianNeighbors.count == 9)
+        precondition(meridianNeighbors.contains(Policy.key(
+            latitude: 0, longitude: 179.995, level: 0)!
+        ))
+        precondition(meridianNeighbors.contains(Policy.key(
+            latitude: 0, longitude: -179.985, level: 0)!
+        ))
+        let northPole = Policy.key(latitude: 90, longitude: 0, level: 0)!
+        precondition(Policy.adjacentCellKeys(around: Set([northPole])).count == 6)
+        precondition(Policy.adjacentCellKeys(around: Set<Policy.Key>()).isEmpty)
+        precondition(Policy.adjacentCellKeys(around: Set([
+            Policy.Key(level: -1, latitudeCell: 0, longitudeCell: 0)
+        ])).isEmpty)
+
         var same = XDriveIOSNativeLocalMapSpatialIndex<String>()
         for i in 0..<100_000 {
             precondition(same.add(latitude: 35.001, longitude: 139.001,

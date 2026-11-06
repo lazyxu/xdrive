@@ -797,6 +797,14 @@ private struct XDriveIOSMapSpatialAlbum: View {
             throw XDrivePhotoKitScanFailure.snapshotChanged
         }
         let selectedKeys = Set(selection.cells.map(\.key))
+        // An album place wall uses only its exact selected cells. An explicit
+        // nearby expansion uses adjacent cells from the full authorized library,
+        // so "附近" is not silently equivalent to re-opening the same cell.
+        let adjacentKeys = isNearbyExpansion
+            ? Policy.adjacentCellKeys(around: selectedKeys) : []
+        guard !isNearbyExpansion || !adjacentKeys.isEmpty else {
+            throw XDrivePhotoKitScanFailure.snapshotChanged
+        }
         var pending = initialPending
         var cursor = initialPendingIndex
         var offset = initialNextOffset
@@ -823,13 +831,17 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 throw XDrivePhotoKitScanFailure.snapshotChanged
             }
             pending = next.items.filter { asset in
-                guard Policy.includes(
+                // The nearby action intentionally extends beyond the original
+                // album's scanned viewport; the regular cell wall stays exact.
+                guard (isNearbyExpansion || Policy.includes(
                     selection.viewport,
                     latitude: asset.latitude, longitude: asset.longitude
-                ), let key = Policy.key(
+                )), let key = Policy.key(
                     latitude: asset.latitude, longitude: asset.longitude,
                     level: level
-                ), selectedKeys.contains(key) else { return false }
+                ), (isNearbyExpansion
+                    ? adjacentKeys.contains(key) : selectedKeys.contains(key))
+                else { return false }
                 return true
             }
             cursor = 0
