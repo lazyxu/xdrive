@@ -757,6 +757,20 @@ private struct XDriveIOSNativeFilesBatchTagsIntent: Identifiable {
     let nodeIDs: [UInt64]
 }
 
+/// One exact Owner + revision captured when a row action is opened.
+private struct XDriveIOSNativeFilesQuickIntent: Identifiable {
+    let id = UUID()
+    let owner: XDriveNativeOwnerRoot
+    let node: XDriveIOSNativeFilesNode
+}
+
+private struct XDriveIOSNativeFilesRowDestinationIntent: Identifiable {
+    let id = UUID()
+    let owner: XDriveNativeOwnerRoot
+    let node: XDriveIOSNativeFilesNode
+    let kind: XDriveIOSNativeFilesDestinationKind
+}
+
 private struct XDriveIOSNativeFilesFolder: Hashable {
     let id: UInt64
     let name: String
@@ -784,6 +798,16 @@ struct XDriveIOSNativeFilesBrowser: View {
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
     @StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel()
     @StateObject private var batchExport = XDriveIOSNativeFilesBatchExportModel()
+    // Row actions reuse the existing verified Server writers, not a second API.
+    @StateObject private var quickMutation = XDriveIOSNativeFilesMutationModel()
+    @StateObject private var quickDestinationWriter =
+        XDriveIOSNativeFilesDestinationMutationModel()
+    @StateObject private var quickFavorite = XDriveIOSNativeFilesFavoriteMutationModel()
+    @State private var quickRenameIntent: XDriveIOSNativeFilesQuickIntent?
+    @State private var quickTrashIntent: XDriveIOSNativeFilesQuickIntent?
+    @State private var rowDestinationIntent: XDriveIOSNativeFilesRowDestinationIntent?
+    @State private var quickRenameDraft = ""
+    @State private var quickActionNotice: String?
     @Environment(\.xdriveNativeTransfers) private var transfers
     @ObservedObject private var clipboard = XDriveIOSNativeFilesClipboard.shared
     @State private var showingClipboardPasteConfirmation = false
@@ -1917,9 +1941,34 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
+    /// Non-reflowing feedback shares one native location for progress,
+    /// confirmed result and uncertain-operation errors.
+    @ViewBuilder private var filesQuickFeedback: some View {
+        let message = quickActionNotice ?? quickMutation.status ??
+            quickDestinationWriter.status ?? quickFavorite.status
+        if let message {
+            HStack(spacing: 10) {
+                if quickMutation.busy || quickDestinationWriter.busy || quickFavorite.busy {
+                    ProgressView()
+                }
+                Text(message)
+                    .font(.footnote)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 16)
+            .padding(.bottom, selecting ? 64 : 10)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("native-ios-files-quick-feedback")
+        }
+    }
+
     private var filesChrome: some View {
         filesList
         .listStyle(.plain)
+        .overlay(alignment: .bottom) { filesQuickFeedback }
         .searchable(
             text: $queryDraft,
             placement: .navigationBarDrawer(displayMode: .automatic),
@@ -2158,6 +2207,49 @@ struct XDriveIOSNativeFilesBrowser: View {
             Button("取消", role: .cancel) { pendingDrop = nil }
         } message: {
             Text("仅支持本 App 内长按拖动。服务器会重新核验账号、文件修订和目标目录；移动结果不确定时不自动重试。")
+        }
+        .alert("重命名", isPresented: Binding(
+            get: { quickRenameIntent != nil },
+            set: { if !$0 { quickRenameIntent = nil } }
+        )) {
+            TextField("新名称", text: $quickRenameDraft)
+            Button("保存") { confirmQuickRename() }
+            Button("取消", role: .cancel) { quickRenameIntent = nil }
+        } message: {
+            Text("会核验当前账号与文件版本；发生冲突或结果不确定时不自动重试。")
+        }
+        .confirmationDialog(
+            "将“\(quickTrashIntent?.node.name ?? "所选文件")”移入回收站？",
+            isPresented: Binding(
+                get: { quickTrashIntent != nil },
+                set: { if !$0 { quickTrashIntent = nil } }
+            ), titleVisibility: .visible
+        ) {
+            Button("确认移入回收站", role: .destructive) { confirmQuickTrash() }
+            Button("取消", role: .cancel) { quickTrashIntent = nil }
+        } message: {
+            Text("包含文件夹中的子项；服务器确认前不能认定删除成功。")
+        }
+        .sheet(item: $rowDestinationIntent) { intent in
+            if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
+                XDriveIOSNativeFilesDestinationPicker(
+                    login: login, originalOwner: intent.owner,
+                    selected: intent.node, kind: intent.kind
+                ) { target in
+                    rowDestinationIntent = nil
+                    guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
+                          canQuickMutate(intent.node) else {
+                        quickActionNotice = "文件或账户已变化，请重新选择后再操作。"
+                        return
+                    }
+                    quickDestinationWriter.perform(
+                        intent.kind, original: intent.node,
+                        destination: target, login: login
+                    ) { reload() }
+                }
+            } else {
+                Text("账户已经变化，请关闭后重新选择目标文件夹。")
+            }
         }
         .sheet(isPresented: $showingBatchShare, onDismiss: {
             // The iOS Share Sheet only exports already staged originals.
@@ -2451,6 +2543,14 @@ struct XDriveIOSNativeFilesBrowser: View {
             batchTrash.invalidate()
             batchTarget.invalidate()
             if !showingBatchShare { batchExport.invalidate() }
+            if rowDestinationIntent == nil {
+                quickMutation.invalidate()
+                quickDestinationWriter.invalidate()
+                quickFavorite.invalidate()
+                quickRenameIntent = nil
+                quickTrashIntent = nil
+                quickActionNotice = nil
+            }
             batchDestinationIntent = nil
             selecting = false
             selectedIDs.removeAll()
@@ -2458,6 +2558,13 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: login.owner) { _ in
+            quickMutation.invalidate()
+            quickDestinationWriter.invalidate()
+            quickFavorite.invalidate()
+            quickRenameIntent = nil
+            quickTrashIntent = nil
+            rowDestinationIntent = nil
+            quickActionNotice = nil
             batchTrash.invalidate()
             batchTarget.invalidate()
             batchExport.invalidate()
@@ -3023,9 +3130,88 @@ struct XDriveIOSNativeFilesBrowser: View {
         )
     }
 
-    /// Context-menu shortcuts route through the existing Owner-scoped
-    /// management screen. Favorite is an explicit idempotent action; deletion,
-    /// rename and transfers still require their existing user confirmation.
+    /// The list/grid row is an exact, already committed Server Node snapshot.
+    /// An Owner transition or a newer revision invalidates its quick actions.
+    private func canQuickMutate(_ node: XDriveIOSNativeFilesNode) -> Bool {
+        !selecting && !model.loading && model.verifiedPage &&
+            selectedFile == nil && managementIntent == nil &&
+            !batchTrash.busy && !batchTarget.busy && !batchExport.busy &&
+            batchExport.prepared.isEmpty &&
+            !quickMutation.busy && !quickDestinationWriter.busy &&
+            !quickFavorite.busy && login.owner != nil &&
+            node.parent_id != nil && containsVerifiedNode(node)
+    }
+
+    private func clearQuickResult() {
+        quickActionNotice = nil
+        quickMutation.invalidate()
+        quickDestinationWriter.invalidate()
+        quickFavorite.invalidate()
+    }
+
+    private func requestQuickRename(_ node: XDriveIOSNativeFilesNode) {
+        guard canQuickMutate(node), let owner = login.owner else { return }
+        clearQuickResult()
+        quickRenameDraft = node.name
+        quickRenameIntent = .init(owner: owner, node: node)
+    }
+
+    private func confirmQuickRename() {
+        guard let intent = quickRenameIntent else { return }
+        quickRenameIntent = nil
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
+              canQuickMutate(intent.node) else {
+            quickActionNotice = "文件版本或账户已变化，请刷新后重新选择。"
+            return
+        }
+        // Reuse NativeFilesSingleMutation: GET proof, revision If-Match,
+        // confirmed receipt and no retry after an uncertain PATCH response.
+        quickMutation.perform(
+            node: intent.node, kind: .rename(quickRenameDraft), login: login
+        ) { reload() }
+    }
+
+    private func requestQuickTrash(_ node: XDriveIOSNativeFilesNode) {
+        guard canQuickMutate(node), let owner = login.owner else { return }
+        clearQuickResult()
+        quickTrashIntent = .init(owner: owner, node: node)
+    }
+
+    private func confirmQuickTrash() {
+        guard let intent = quickTrashIntent else { return }
+        quickTrashIntent = nil
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
+              canQuickMutate(intent.node) else {
+            quickActionNotice = "文件版本或账户已变化，请刷新后重新选择。"
+            return
+        }
+        quickMutation.perform(node: intent.node, kind: .trash, login: login) {
+            reload()
+        }
+    }
+
+    private func requestRowDestination(
+        _ node: XDriveIOSNativeFilesNode,
+        kind: XDriveIOSNativeFilesDestinationKind
+    ) {
+        guard canQuickMutate(node), let owner = login.owner,
+              let sourceParent = node.parent_id,
+              XDriveIOSNativeFilesBatchTrashPolicy.validSelection(
+                [node], parentID: sourceParent
+              ) else { return }
+        clearQuickResult()
+        rowDestinationIntent = .init(owner: owner, node: node, kind: kind)
+    }
+
+    private func requestQuickFavorite(_ node: XDriveIOSNativeFilesNode) {
+        guard canQuickMutate(node) else { return }
+        clearQuickResult()
+        quickFavorite.add(node, login: login)
+    }
+
+    /// File-row actions present the native confirmation/target immediately.
+    /// Properties, download and cloud-link setup remain in their specialized
+    /// verified panels, rather than duplicating any Server writer.
     @ViewBuilder private func nativeQuickActions(for entry: XDriveIOSNativeFilesEntry)
         -> some View {
         if !entry.node.isDirectory {
@@ -3063,25 +3249,33 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .accessibilityIdentifier("native-ios-files-clipboard-cut")
         Button {
-            openManagement(for: entry.node, quickAction: .copy)
+            requestRowDestination(entry.node, kind: .copy)
         } label: {
             Label("复制到…", systemImage: "doc.on.doc")
         }
+        .disabled(!canQuickMutate(entry.node))
+        .accessibilityIdentifier("native-ios-files-row-copy-to")
         Button {
-            openManagement(for: entry.node, quickAction: .move)
+            requestRowDestination(entry.node, kind: .move)
         } label: {
             Label("移动到…", systemImage: "folder")
         }
+        .disabled(!canQuickMutate(entry.node))
+        .accessibilityIdentifier("native-ios-files-row-move-to")
         Button {
-            openManagement(for: entry.node, quickAction: .rename)
+            requestQuickRename(entry.node)
         } label: {
             Label("重命名", systemImage: "pencil")
         }
+        .disabled(!canQuickMutate(entry.node))
+        .accessibilityIdentifier("native-ios-files-row-rename")
         Button {
-            openManagement(for: entry.node, quickAction: .favorite)
+            requestQuickFavorite(entry.node)
         } label: {
             Label("收藏", systemImage: "star")
         }
+        .disabled(!canQuickMutate(entry.node))
+        .accessibilityIdentifier("native-ios-files-row-favorite")
         Button {
             openManagement(for: entry.node, quickAction: .shareLink)
         } label: {
@@ -3094,9 +3288,15 @@ struct XDriveIOSNativeFilesBrowser: View {
                   systemImage: "arrow.down.to.line")
         }
         Button(role: .destructive) {
-            openManagement(for: entry.node, quickAction: .trash)
+            requestQuickTrash(entry.node)
         } label: {
             Label("移入回收站", systemImage: "trash")
+        }
+        .disabled(!canQuickMutate(entry.node))
+        .accessibilityIdentifier("native-ios-files-row-trash")
+        if !canQuickMutate(entry.node) {
+            Text("当前文件尚未验证，或另一个文件操作正在进行。")
+                .foregroundStyle(.secondary)
         }
     }
 

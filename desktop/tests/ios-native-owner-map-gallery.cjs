@@ -320,3 +320,18 @@ test('Owner MapKit single-pin tap admits only the current signed facet, not an o
     assert.match(policy, new RegExp('chosen\\.' + field + ' == signed\\.' + field))
   }
 })
+
+
+test('Owner map photo covers require unchanged signed place count before thumbnail', () => {
+  const start = map.indexOf('private func loadCurrentOwnerCovers(')
+  const end = map.indexOf('private func revokeCameraAuthorization()', start)
+  assert.ok(start >= 0 && end > start)
+  const covers = map.slice(start, end)
+  assert.match(covers, /reader\.page\(offset: 0, placeID: facet\.id\)/)
+  assert.match(covers, /guard XDriveIOSNativeOwnerMapSelectionPolicy\.acceptsCoverPage\(\s*facet, rangeTotal: page\.total_count, offset: page\.offset\s*\), let first = page\.items\.first\(where: \{ \$0\.supportsPreview \}\)/)
+  assert.ok(covers.indexOf('acceptsCoverPage(') < covers.indexOf('reader.thumbnail(first)'))
+  assert.match(covers, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
+  assert.match(covers, /XDriveIOSNativeOwnerMapSelectionPolicy\.isSameViewport\(/)
+  assert.match(policy, /static func acceptsCoverPage\(/)
+  assert.match(policy, /canOpenPhotoRange\(facet\)[\s\S]*?offset == 0[\s\S]*?rangeTotal == facet\.item_count/)
+})

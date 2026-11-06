@@ -129,7 +129,9 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
   assert.match(local, /GridItem\(\.adaptive\(minimum: 95, maximum: 150\)/)
   if (album.includes('XDriveIOSNativeAlbumVirtualPage(')) {
     // #3670 continuous album uses dynamic-density columns; keep the bound exact.
-    assert.match(album, /GridItem\(\.adaptive\(\s*minimum: density\.minimumCellWidth,\s*maximum: density\.maximumCellWidth/)
+    assert.match(album, /XDriveIOSNativePhotoWallGrid\(density: density\)/)
+    assert.match(src('ios/XDriveIOS/NativePhotoWallComponents.swift'),
+      /minimum: density\.minimumCellWidth,\s*maximum: density\.maximumCellWidth/)
   } else {
     // Until #3670 is merged, the old native album grid has fixed columns.
     assert.match(album, /GridItem\(\.adaptive\(minimum: 95, maximum: 150\)/)

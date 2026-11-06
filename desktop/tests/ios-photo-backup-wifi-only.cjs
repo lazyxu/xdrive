@@ -1,0 +1,36 @@
+'use strict'
+
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const read = name => fs.readFileSync(path.join(__dirname, '../../ios/XDriveIOS', name + '.swift'), 'utf8')
+
+test('Wi-Fi-only defaults on per Owner and waits before reserving any scan window', () => {
+  const policy = read('PhotoBackupNetworkPolicy')
+  assert.match(policy, /object\(forKey: key\(for: owner\)\) as\? Bool \?\? true/)
+  assert.match(policy, /path\.status == \.satisfied && path\.usesInterfaceType\(\.wifi\)/)
+  assert.match(policy, /guard !onlyWiFi \|\| hasWiFi else \{ throw XDriveIOSPhotoBackupNetworkError\.wifiRequired \}/)
+  assert.match(policy, /owner\.origin\.absoluteString[\s\S]*?owner\.instanceID[\s\S]*?owner\.ownerID[\s\S]*?owner\.rootNodeID/)
+  assert.match(policy, /func setWiFiOnly[\s\S]*?XDriveIOSOriginalRunGate\.shared\.acquire\(\)[\s\S]*?UserDefaults\.standard\.set\(/)
+  assert.match(read('NativePhotoBackupScreen'), /XDriveIOSPhotoBackupNetworkSettings\(login: login\)/)
+  assert.match(read('NativePhotoBackupController'), /requireWiFiIfNeeded\(for: selected\)\s*guard let due = try[\s\S]*?\.reserveDue\(/)
+  const bg = read('BackgroundPhotoTask')
+  assert.match(bg, /requireWiFiIfNeeded\(for: owner\)\s*guard let window = try[\s\S]*?\.reserveDue\(/)
+  assert.match(bg, /retryablePreflightNetworkFailure\(_ error: Error\)[\s\S]*?error is XDriveIOSPhotoBackupNetworkError \{ return true \}/)
+})
+
+test('photo data cannot fall back to cellular after starting on Wi-Fi', () => {
+  const upload = read('NativeUploadSessionTransport')
+  assert.match(upload, /config\.allowsCellularAccess = allowsCellularAccess/)
+  assert.match(upload, /request\.allowsCellularAccess = allowsCellularAccess/)
+  assert.match(upload, /accessToken: String, allowsCellularAccess: Bool = true/)
+  const journal = read('IOSJournaledOriginalUpload')
+  assert.match(journal, /requireWiFiIfNeeded\(for: owner\)\s*let transport = try authorization\.transport\(\s*origin: canonicalOrigin, allowsCellularAccess: !onlyWiFi/)
+  const authorization = read('OriginalOwnerAuthorization')
+  assert.equal((authorization.match(/allowsCellularAccess: allowsCellularAccess/g) ?? []).length, 3)
+  const runner = read('ForegroundPhotoBackupMVP')
+  assert.equal((runner.match(/let allowICloudOriginals = allowICloudOriginals && !onlyWiFi/g) ?? []).length, 2)
+  assert.match(runner, /if error is XDriveIOSPhotoBackupNetworkError \|\|/)
+})

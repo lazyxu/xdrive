@@ -803,7 +803,14 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                             bounds, current: currentBounds())
                     else { return }
-                    guard page.total_count > 0, let first = page.items.first
+                    // The overview and exact-place Range are different Server
+                    // reads. Do not draw a newer photo's thumbnail beside a
+                    // stale signed count if membership changed between reads.
+                    // Use the first previewable item from the verified 48-slot
+                    // page rather than giving up on an unsupported first item.
+                    guard XDriveIOSNativeOwnerMapSelectionPolicy.acceptsCoverPage(
+                        facet, rangeTotal: page.total_count, offset: page.offset
+                    ), let first = page.items.first(where: { $0.supportsPreview })
                     else { continue }
                     let cover = try await reader.thumbnail(first)
                     try Task.checkCancellation()

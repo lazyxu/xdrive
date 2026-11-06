@@ -38,3 +38,31 @@ Existing #3965 Swift/Foundation grouping, inline and Quick Access tests plus all
 - Real iPhone gesture, screenshot, accessibility and latency: **跳过（未验收）**, not added to the actionable automated backlog.
 
 Do not merge if #3965 is still Draft/failed, if a required check is queued/failed/skipped, or if retargeting changes production source or test contract semantics without revalidation.
+
+## Seven-gap source audit and direct row-action closure
+
+The already present #3992 browser code covers P0 scoped navigation/Viewer return,
+64-item bidirectional large-window handling and revision-aware selection;
+P0 entire-directory Select All <=200; P1 process-local nonce-bound confirmed
+folder drop; and P1 Owner-verified Browse tag shortcuts. These remain subject
+to exact-HEAD CI, and source contracts are not hardware gesture evidence.
+
+The remaining UI route gap is addressed here without introducing a new writer:
+**list and grid long-hold** now send Copy To / Move To directly to the existing
+Owner-bound native destination picker; Rename directly to a TextField alert;
+Delete directly to a destructive confirmation; and Favorite to the existing
+verified collection writer. Properties, cloud link and original-export flows
+retain specialized panels. Quick actions require the same committed Owner
+and Node/revision identity as the visible row. Every mutation still uses the
+existing Server version/ACL proof, no uncertain-ACK retry, and confirmation
+before any destructive write. On confirmed writes only, refresh the owning
+directory; canceled and read-only views retain current scroll/thumbnails.
+
+Menu actions display their disabled state during unverified or busy writes,
+with an explicit reason in the context menu. A shared native material-overlay
+shows in-flight/confirmed/uncertain action feedback without adding/removing a
+row in the file list. Owner change and navigation cancel stale row-action state;
+selection and drag contracts remain unchanged. CI now requires the new
+`desktop/tests/ios-native-files-quick-actions.cjs` source/interaction contract
+alongside the existing final parity test, and the full unsigned IPA build remains
+mandatory. Real device interaction: **跳过（未验收）**.

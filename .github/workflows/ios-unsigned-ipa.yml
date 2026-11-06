@@ -427,7 +427,7 @@ jobs:
             ios/tests/NativePhotoWallDensityPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-wall-density-policy"
           "$RUNNER_TEMP/xdrive-ios-wall-density-policy"
-          node --test desktop/tests/ios-native-photo-wall-density.cjs
+          node --test desktop/tests/ios-native-photo-wall-density.cjs desktop/tests/ios-native-photo-wall-shared.cjs
 
       - name: Verify native PhotoKit actual-day group boundaries
         run: |
@@ -672,7 +672,7 @@ jobs:
       - name: Verify native Files final UI/gesture parity contracts
         run: |
           set -euo pipefail
-          node --test desktop/tests/ios-native-files-final-parity.cjs
+          node --test desktop/tests/ios-native-files-final-parity.cjs desktop/tests/ios-native-files-quick-actions.cjs
 
       - name: Verify native Files exact 200-item Server Select All across pages
         run: |
