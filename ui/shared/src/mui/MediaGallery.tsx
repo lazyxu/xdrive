@@ -697,7 +697,7 @@ export interface XDriveMediaGalleryPageProps {
   onShowInFolder?: (location: NodeLocation) => void
   onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
   desktopEmbeddedPlacesURL?: string
-  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope)=>Promise<boolean>
+  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope)=>Promise<string|false>
   onOpenDesktopReauthentication?: () => void
   onOpenBaiduMapDiagnostics?: () => void
   onError?: (error: unknown) => void
@@ -4925,7 +4925,7 @@ export interface XDriveMediaGalleryProps {
   onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
   desktopEmbeddedPlacesURL?: string
-  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope)=>Promise<boolean>
+  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope)=>Promise<string|false>
   onOpenDesktopReauthentication?: () => void
   onOpenBaiduMapDiagnostics?: () => void
   focusPlaceID?: string

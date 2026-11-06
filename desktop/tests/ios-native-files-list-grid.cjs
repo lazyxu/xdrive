@@ -15,17 +15,19 @@ test('native Files list/grid switch is a real persisted presentation preference'
   assert.match(browser, /Menu \{[\s\S]*?Picker\("显示方式", selection: \$viewMode\)/)
   assert.match(browser, /native-ios-files-more-options/)
   assert.doesNotMatch(browser, /\.pickerStyle\(\.segmented\)/)
-  assert.match(browser, /if viewMode == "grid" \{[\s\S]*?LazyVGrid\(/)
+  assert.match(browser, /private func filesGrid\(_ items: \[XDriveIOSNativeFilesEntry\]\) -> some View \{\s*LazyVGrid\(/)
+  assert.match(browser, /if viewMode == "grid" \{[\s\S]*?filesGrid\(model\.entries\)/)
   assert.match(browser, /GridItem\(\.adaptive\(minimum: 128, maximum: 184\), spacing: 10\)/)
   assert.match(browser, /\.listRowSeparator\(\.hidden\)/)
   assert.match(browser, /native-ios-files-grid/)
   assert.match(policy, /static let pageSize = 64/)
-  assert.match(browser, /ForEach\(model\.entries\) \{ entry in[\s\S]*?gridTile\(entry\)/)
+  assert.match(browser, /private func filesGrid\([\s\S]*?ForEach\(items\) \{ entry in\s*gridTile\(entry\)/)
+  assert.match(browser, /ForEach\(model\.visibleGroups\) \{ group in[\s\S]*?filesGrid\(group\.entries\)/)
 })
 
 test('list and grid share verified-page selection, folder navigation, Viewer and management', () => {
   assert.match(browser, /private func toggleSelection\([\s\S]*?guard canSelectPage,[\s\S]*?model\.entries\.contains/)
-  assert.match(browser, /private func openViewer\([\s\S]*?model\.verifiedPage,[\s\S]*?model\.entries\.contains/)
+  assert.match(browser, /private func openViewer\([\s\S]*?containsVerifiedNode\(entry\.node\)/)
   assert.match(browser, /selectedOwner = owner[\s\S]*?lastViewedFile = entry\.node[\s\S]*?selectedFile = entry/)
   assert.equal((browser.match(/Button \{ toggleSelection\(entry\) \}/g) || []).length, 2)
   assert.equal((browser.match(/Button \{ openViewer\(entry\) \}/g) || []).length, 2)
@@ -43,7 +45,7 @@ test('list and grid share verified-page selection, folder navigation, Viewer and
 
 test('switching layout does not introduce another owner request, mutation or transfer path', () => {
   assert.match(browser, /private var canSelectPage: Bool \{[\s\S]*?model\.verifiedPage && !isGlobalSearch/)
-  assert.match(browser, /private func reload\(resetOffset: Bool = false\) \{\s*selecting = false\s*selectedIDs\.removeAll\(\)/)
+  assert.match(browser, /private func reload\(resetOffset: Bool = false\) \{\s*inlineFolders\.invalidate\(\)\s*selecting = false\s*selectedIDs\.removeAll\(\)/)
   assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?selectedIDs\.removeAll\(\)/)
   assert.match(browser, /batchTarget\.invalidate\(\)/)
   assert.match(browser, /batchTrash\.invalidate\(\)/)
@@ -53,7 +55,9 @@ test('switching layout does not introduce another owner request, mutation or tra
 
 
 test('native Files list swipe actions preserve Owner-verified action gates and explicit trash confirmation', () => {
-  assert.match(browser, /ForEach\(model\.entries\) \{ entry in[\s\S]*?fileEntryRow\(entry\)[\s\S]*?\.swipeActions\(edge: \.trailing, allowsFullSwipe: false\)/)
+  assert.match(browser, /private func filesActionRow\([\s\S]*?fileEntryRow\(entry\)[\s\S]*?\.swipeActions\(edge: \.trailing, allowsFullSwipe: false\)/)
+  assert.match(browser, /ForEach\(model\.entries\) \{ entry in\s*filesActionRow\(entry\)/)
+  assert.match(browser, /ForEach\(group\.entries\) \{ entry in\s*filesActionRow\(entry\)/)
   assert.match(browser, /if !selecting && model\.verifiedPage && !model\.loading/)
   assert.match(browser, /Label\("更多", systemImage: "ellipsis"\)/)
   assert.match(browser, /openManagement\(for: entry\.node\)/)

@@ -1286,9 +1286,7 @@ private struct XDriveIOSNativeServerVirtualRange: View {
     @AccessibilityFocusState private var focusedTileID: UInt64?
 
     private var placeholders: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(
-            minimum: density.minimumCellWidth, maximum: density.maximumCellWidth
-        ), spacing: 2)], spacing: 2) {
+        XDriveIOSNativePhotoWallGrid(density: density) {
             ForEach(0..<min(48, max(0, expectedTotal - offset)), id: \.self) { _ in
                 RoundedRectangle(cornerRadius: 3)
                     .fill(Color(uiColor: .secondarySystemGroupedBackground))
@@ -1302,9 +1300,7 @@ private struct XDriveIOSNativeServerVirtualRange: View {
         VStack(spacing: 4) {
             if let verified = model.page,
                verified.offset == offset, verified.total_count == expectedTotal {
-                LazyVGrid(columns: [GridItem(.adaptive(
-                    minimum: density.minimumCellWidth, maximum: density.maximumCellWidth
-                ), spacing: 2)], spacing: 2) {
+                XDriveIOSNativePhotoWallGrid(density: density) {
                     ForEach(verified.items) { item in
                         Button { onSelect(item, model) } label: {
                             XDriveIOSNativeMediaWallTile(

@@ -24,6 +24,18 @@ struct NativeOwnerMapSelectionPolicyChecks {
         precondition(!policy.canOpenPhotoRange(facet("place:3500:13900",
                                                     kind: "map_region_sample")))
         precondition(!policy.canOpenPhotoRange(facet("map-region:q:0:0:1:1:0:0")))
+        // A changed exact-place Range cannot publish a misleading image
+        // under an older signed Owner map count, even at 100k members.
+        let counted = facet("place:3500:13900", count: 100_000)
+        precondition(policy.acceptsCoverPage(counted, rangeTotal: 100_000, offset: 0))
+        precondition(!policy.acceptsCoverPage(counted, rangeTotal: 99_999, offset: 0))
+        precondition(!policy.acceptsCoverPage(counted, rangeTotal: 100_001, offset: 0))
+        precondition(!policy.acceptsCoverPage(counted, rangeTotal: 100_000, offset: 48))
+        precondition(!policy.acceptsCoverPage(
+            facet("place:3500:13900", count: 0), rangeTotal: 0, offset: 0))
+        precondition(!policy.acceptsCoverPage(
+            facet("map-region:q:0:0:1:1:0:0", kind: "map_region_sample",
+                  count: 100_000), rangeTotal: 100_000, offset: 0))
         precondition(policy.acceptsSelectedPlace("place:1:2",
             currentlyVisibleIDs: ["place:1:2","place:1:3"]))
         precondition(!policy.acceptsSelectedPlace("place:1:2",

@@ -24,6 +24,17 @@ def final_gate_script():
 
 
 class FinalGateContract(unittest.TestCase):
+    def test_pr_commit_count_is_not_a_ci_gate(self):
+        # PRs may contain multiple commits: no extra status check is needed
+        # to record or restrict their count. Exact-HEAD Final Gate remains.
+        self.assertNotIn("  single-commit:\n", WORKFLOW)
+        self.assertNotIn("github.event.pull_request.commits", WORKFLOW)
+        self.assertIn("  final-gate:\n", WORKFLOW)
+        self.assertIn(
+            "PR commit count is not a CI gate",
+            (ROOT / "AGENTS.md").read_text(encoding="utf-8"),
+        )
+
     def test_merge_queue_full_ci_and_snapshot_publish_after_artifacts(self):
         self.assertRegex(WORKFLOW, r"(?m)^  merge_group:\n    types: \[checks_requested\]")
         self.assertIn('if [[ "$GITHUB_EVENT_NAME" == "pull_request"', WORKFLOW)

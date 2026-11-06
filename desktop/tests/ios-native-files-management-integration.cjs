@@ -16,13 +16,16 @@ test('Files retains the same independent native L3 Viewer and file-specific acti
   assert.match(files, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/)
   assert.match(files, /\.sheet\(item: \$managementIntent, onDismiss:/)
   assert.match(files, /XDriveIOSNativeFilesManagementPanel\(/)
-  assert.match(files, /folderID: folder\?\.id \?\? intent\.file\?\.parent_id \?\?\s*intent\.directory\?\.parent_id \?\? intent\.owner\.rootNodeID/)
-  assert.match(files, /guard model\.entries\.contains\(where: \{ \$0\.node == node \}\)/)
+  // Inline children are not necessarily direct children of the open Browse
+  // folder. Management must target the selected Node's real parent first,
+  // using the outer folder only when there is no selected Node.
+  assert.match(files, /folderID: intent\.file\?\.parent_id \?\? intent\.directory\?\.parent_id \?\?\s*folder\?\.id \?\? intent\.owner\.rootNodeID/)
+  assert.match(files, /guard containsVerifiedNode\(node\) else \{ return \}/)
   // Owner switch retires management, the new version-history sheet and
   // locate before the Viewer. Preserve the ordering and check every intent.
   assert.match(files, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?managementIntent = nil\s*versionHistoryIntent = nil\s*locateIntent = nil\s*selectedFile = nil\s*selectedOwner = nil/)
   assert.match(files, /\.onDisappear \{ suspendVisibleRange\(\) \}/)
-  assert.match(files, /private func suspendVisibleRange\(\) \{[\s\S]*?guard selectedFile == nil else \{ return \}[\s\S]*?model\.invalidate\(\)/)
+  assert.match(files, /private func suspendVisibleRange\(\) \{[\s\S]*?inlineFolders\.suspendForNavigation\(\)[\s\S]*?guard selectedFile == nil else \{ return \}[\s\S]*?model\.suspendForNavigation\(\)/)
   assert.match(viewer, /XDriveIOSNativeFilesPreviewReader\(/)
   assert.match(management, /let expectedOwner: XDriveNativeOwnerRoot/)
   assert.match(management, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expectedOwner\)/)

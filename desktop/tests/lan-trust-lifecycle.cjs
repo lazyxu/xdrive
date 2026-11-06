@@ -70,6 +70,9 @@ function makeHarness(dir, initialHistory, agentState, dialogResponse = 1) {
       throw Error('revoked IP must never re-enroll silently')
     },
     probeWithTrustedLANRoot: async () => '1.0',
+    // Trust mutations rotate the transient map partition; this extracted
+    // test harness intentionally does not mount a real Electron session.
+    closeDesktopPlacesGuests: () => {},
     app: { getPath: key => {
       assert.equal(key, 'userData')
       return dir
@@ -238,5 +241,7 @@ test('LAN trust status IPC exposes fingerprint only and native revoke remains op
   const end = main.indexOf('\nasync function ensurePrivateLANRoot', start)
   assert.ok(start > 0 && end > start)
   assert.doesNotMatch(main.slice(start, end), /root_pem|encrypted_password|refresh_token/)
-  assert.doesNotMatch(main, /setCertificateVerifyProc|ignoreCertificateErrors/)
+  assert.doesNotMatch(main, /ignoreCertificateErrors|ignore-certificate-errors/)
+  assert.match(main, /placesSession\.setCertificateVerifyProc/)
+  assert.match(main, /verifyDesktopPlacesLANCertificate\(request,pin,target\.origin,stillCurrent\)/)
 })

@@ -23,7 +23,7 @@ test('real native multi-select accepts up to 200 verified loaded Owner Nodes', (
   assert.match(page, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
   assert.match(page, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection\(/)
   assert.match(page, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?batchTrash\.invalidate\(\)/)
-  assert.match(page, /private func reload\(resetOffset: Bool = false\) \{\s*selecting = false\s*selectedIDs\.removeAll\(\)\s*selectedSnapshots\.removeAll\(\)/)
+  assert.match(page, /private func reload\(resetOffset: Bool = false\) \{\s*inlineFolders\.invalidate\(\)\s*selecting = false\s*selectedIDs\.removeAll\(\)\s*selectedSnapshots\.removeAll\(\)/)
   assert.match(policy, /static let maxSelected = 200/)
 })
 test('Server batch trash atomically validates revision/subtrees, not per-item fake progress', () => {

@@ -58,7 +58,7 @@ export function XDriveMediaGalleryPlacesMap({
   /** Trusted Agent HTTPS Web Gallery in an Electron guest with no Desktop API. */
   desktopEmbeddedPlacesURL?: string
   /** Prepare this exact Owner/filter scope in Desktop Main before guest attach. */
-  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope) => Promise<boolean>
+  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope) => Promise<string|false>
   /** Trusted Desktop confirmation -> Agent logout -> native login; never a Web guest challenge. */
   onOpenDesktopReauthentication?: () => void
   diagnosticScope?: string
@@ -83,7 +83,7 @@ export function XDriveMediaGalleryPlacesMap({
   const [desktopEmbedError,setDesktopEmbedError] = useState('')
   const embeddedWebviewRef=useRef<HTMLDivElement|null>(null)
   const [embedGuestReady,setEmbedGuestReady] = useState<{key:string}|null>(null)
-  const [embedPrepared,setEmbedPrepared] = useState<{key:string;state:'ready'|'denied'}|null>(null)
+  const [embedPrepared,setEmbedPrepared] = useState<{key:string;state:'ready'|'denied';partition?:string}|null>(null)
   const embedPrepareRef=useRef(onPrepareDesktopPlaces)
   embedPrepareRef.current=onPrepareDesktopPlaces
   const embedScopeRef=useRef(mapPhotoScope)
@@ -176,7 +176,10 @@ export function XDriveMediaGalleryPlacesMap({
     }
     void embedPrepareRef.current(scope).then(ok=>{
       if(!active)return
-      if(ok)setEmbedPrepared({key:embedIdentity,state:'ready'})
+      // The partition is minted by trusted Desktop Main after authenticating
+      // this exact Owner+scope, never selected by the Renderer or Web guest.
+      if(typeof ok==='string' && /^xdrive-places-web-[0-9a-f-]{36}$/.test(ok))
+        setEmbedPrepared({key:embedIdentity,state:'ready',partition:ok})
       else deny('当前账户的 HTTPS Web 地图会话验证失败。')
     }).catch(()=>deny('HTTPS Web 地图连接准备失败。'))
     return()=>{active=false}
@@ -477,8 +480,9 @@ export function XDriveMediaGalleryPlacesMap({
         </Stack>
         {ready ? (
           <Box sx={{position:'relative'}}>
-            <Box component={'webview' as 'div'} ref={embeddedWebviewRef}
-              {...{partition:'xdrive-places-web',src:desktopEmbeddedPlacesURL}}
+            <Box component={'webview' as 'div'} key={embedPrepared?.partition}
+              ref={embeddedWebviewRef}
+              {...{partition:embedPrepared?.partition,src:desktopEmbeddedPlacesURL}}
               data-xdrive-desktop-embedded-places
               sx={{display:'flex',width:'100%',
                 height:'max(640px, calc(100dvh - 170px))',

@@ -190,17 +190,24 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       if (pending.current?.text !== draft) {
         const client_event_id = crypto.randomUUID()
         const encrypted = await xDriveClipboardEncrypt(key, aadScope, client_event_id, draft)
+        // AES-GCM is not abortable: Lock can happen while encryption is pending.
+        // Do not resurrect the previous Owner/session's retry cache.
+        if (!active.current || controller.signal.aborted ||
+            !actionFence.current.isCurrent(actionToken)) return
         pending.current = { text: draft, item: { client_event_id, ...encrypted } }
       }
-      if (!active.current || controller.signal.aborted) return
+      if (!active.current || controller.signal.aborted ||
+          !actionFence.current.isCurrent(actionToken)) return
       await port.create(pending.current.item, controller.signal)
-      if (!active.current || controller.signal.aborted) return
+      if (!active.current || controller.signal.aborted ||
+          !actionFence.current.isCurrent(actionToken)) return
       pending.current = null
-      setDraft('')
+      setDraft(current => current === draft ? '' : current)
       setMessage('已加密发送至当前账号的剪贴板历史。')
       void load()
     } catch (error) {
-      if (active.current && !controller.signal.aborted)
+      if (active.current && !controller.signal.aborted &&
+          actionFence.current.isCurrent(actionToken))
         setMessage('发送未确认；原消息 ID 保留供重试。' + errorLabel(error))
     } finally {
       if (active.current && actionFence.current.isCurrent(actionToken)) setBusy(false)

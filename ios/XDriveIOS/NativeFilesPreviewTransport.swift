@@ -52,6 +52,24 @@ struct XDriveIOSNativeFilesPreviewReader {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 
+    // Reuse connections for the sequential Node proof, preview ticket and
+    // bounded payload reads. Only requests carry bearer credentials: the
+    // session never stores an Owner identity, cookies, or response cache.
+    // Task cancellation still cancels the individual URLSession data task,
+    // rather than disrupting another Owner's in-flight preview.
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpShouldSetCookies = false
+        config.httpCookieAcceptPolicy = .never
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.timeoutIntervalForRequest = 25
+        return URLSession(
+            configuration: config, delegate: XDriveIOSNativeFilesPreviewRejectRedirect(),
+            delegateQueue: nil
+        )
+    }()
+
     private func endpoint(_ path: String) throws -> URL {
         guard owner.ownerID > 0, owner.rootNodeID > 0,
               !owner.instanceID.isEmpty, !accessToken.isEmpty,
@@ -94,17 +112,6 @@ struct XDriveIOSNativeFilesPreviewReader {
         maximum: Int, expectedMIME: String? = nil,
         allowedMIMEs: Set<String>? = nil
     ) async throws -> Data {
-        let config = URLSessionConfiguration.ephemeral
-        config.httpShouldSetCookies = false
-        config.httpCookieAcceptPolicy = .never
-        config.urlCache = nil
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.timeoutIntervalForRequest = 25
-        let client = URLSession(
-            configuration: config, delegate: XDriveIOSNativeFilesPreviewRejectRedirect(),
-            delegateQueue: nil
-        )
-        defer { client.invalidateAndCancel() }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpShouldHandleCookies = false
@@ -114,7 +121,7 @@ struct XDriveIOSNativeFilesPreviewReader {
         if authenticated {
             request.setValue("Bearer " + accessToken, forHTTPHeaderField: "Authorization")
         }
-        let (data, response) = try await client.data(for: request)
+        let (data, response) = try await Self.session.data(for: request)
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else {
             throw XDriveIOSNativeFilesPreviewError.malformed

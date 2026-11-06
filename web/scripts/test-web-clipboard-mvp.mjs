@@ -97,6 +97,24 @@ fence.invalidate()
 await lateCopy
 assert.equal(copyNotice, '', 'late copy promise must not overwrite Locked notice')
 
+// Lock can happen while WebCrypto is still producing ciphertext; do not
+// repopulate the old retry cache with a late AES-GCM completion.
+const pendingFence = new XDriveClipboardActionFence()
+const pendingPayload = { current: null }
+let finishEncrypt
+const oldSendToken = pendingFence.capture()
+const lateEncrypted = new Promise(resolve => { finishEncrypt = resolve }).then(value => {
+  if (pendingFence.isCurrent(oldSendToken)) pendingPayload.current = value
+})
+pendingFence.invalidate()
+finishEncrypt({ text: 'secret from locked session', event: 'obsolete' })
+await lateEncrypted
+assert.equal(pendingPayload.current, null,
+  'encrypt() completing after Lock must not recreate the retry payload')
+assert.equal(pendingFence.isCurrent(oldSendToken), false)
+assert.equal(pendingFence.isCurrent(pendingFence.capture()), true,
+  'a fresh session can still use the encrypted Clipboard')
+
 // A non-secure Browser context is rejected by WebCrypto before key use.
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
 try {
@@ -108,6 +126,25 @@ try {
 } finally {
   if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
   else delete globalThis.window
+}
+
+// Fail closed when crypto.subtle or secure randomness is unavailable.
+// The fallback may never send plaintext or silently invent encryption.
+const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+try {
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true, value: { getRandomValues: () => new Uint8Array(16) },
+  })
+  await assert.rejects(mod.xDriveClipboardDeriveKey('same long passphrase for both browsers', salt),
+    /不支持安全加密/, 'PBKDF2 must refuse missing crypto.subtle')
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true, value: { subtle: webcrypto.subtle },
+  })
+  await assert.rejects(mod.xDriveClipboardEncrypt(key, owner, crypto.randomUUID?.() ?? 'id', 'secret'),
+    /不支持安全加密/, 'encryption must refuse missing secure randomness')
+} finally {
+  if (originalCrypto) Object.defineProperty(globalThis, 'crypto', originalCrypto)
+  else delete globalThis.crypto
 }
 
 const ui = read('ui/shared/src/mui/ClipboardPage.tsx')
@@ -123,6 +160,10 @@ assert.match(ui, /actionFence\.current\.isCurrent\(actionToken\)/)
 assert.match(ui, /setReading\(false\)/)
 assert.match(ui, /setConfirmClear\(false\)/)
 assert.match(ui, /pending\.current\?\.text !== draft/)
+assert.match(ui, /await xDriveClipboardEncrypt\(key, aadScope, client_event_id, draft\)[\s\S]*?actionFence\.current\.isCurrent\(actionToken\)\) return\s+pending\.current =/,
+  'Sender must check the action fence after encryption, before writing retry cache')
+assert.match(ui, /setDraft\(current => current === draft \? '' : current\)/,
+  'successful old send must preserve draft text entered during that send')
 assert.match(ui, /xDriveClipboardDecrypt\(/)
 assert.match(ui, /canonicalScope = verified\.aad_scope \|\| port\.ownerScopeKey/)
 assert.match(ui, /setAADScope\(canonicalScope\)/)

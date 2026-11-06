@@ -8,6 +8,7 @@ const read = p => fs.readFileSync(path.join(root, p), 'utf8')
 
 const wall = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
 const density = read('ios/XDriveIOS/NativePhotoWallDensityPolicy.swift')
+const shared = read('ios/XDriveIOS/NativePhotoWallComponents.swift')
 const viewer = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
 const page = wall.slice(
   wall.indexOf('private struct XDriveIOSNativeVirtualPhotoPage: View'),
@@ -23,8 +24,10 @@ test('native Photos wall offers three square thumbnail densities, no change to o
   }
   assert.match(page, /let density: XDriveIOSNativePhotoWallDensity/)
   assert.match(page, /XDriveIOSNativeSquarePhotoTile\(\s*candidate: candidate, framing: framing/)
-  assert.equal((page.match(/minimum: density\.minimumCellWidth/g) || []).length, 2)
-  assert.equal((page.match(/maximum: density\.maximumCellWidth/g) || []).length, 2)
+  assert.equal((page.match(/XDriveIOSNativePhotoWallGrid\(density: density\)/g) || []).length, 2)
+  assert.match(shared, /minimum: density\.minimumCellWidth/)
+  assert.match(shared, /maximum: density\.maximumCellWidth/)
+  assert.match(shared, /LazyVGrid\(columns:/)
   assert.match(square, /GeometryReader \{ geometry in/)
   assert.match(square, /\.frame\(width: geometry\.size\.width, height: geometry\.size\.height\)/)
   assert.match(square, /\.aspectRatio\(1, contentMode: \.fit\)/)
