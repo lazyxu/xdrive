@@ -163,7 +163,7 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 	// exact byte copies live in different folders or accounts. Include a
 	// foreign-owned, incorrectly linked SourceItem to enforce owner isolation.
 	sourceA := meta.Source{
-		OwnerID: owners[0].ID, Name: "Synology A", Kind: "synology_files",
+		OwnerID: owners[0].ID, Name: "Yike A", Kind: "yike_photos",
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1,
 	}

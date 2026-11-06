@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -49,31 +48,19 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 	if err := db.Where("username = ?", "mirror-duplicate-user").First(&owner).Error; err != nil {
 		t.Fatal(err)
 	}
-	// This regression exercises Mirror's SourceItem and PhotoAsset semantics,
-	// not a deprecated DSM Photos Push writer. Provision a real managed
-	// Synology Files Pull target through the Owner API, then seed a previously
-	// authorized active Pull state (remote credentials are outside this test).
-	// Retired Synology Photos Push creation must keep returning HTTP 410 in
-	// its separate retirement integration test.
-	createSource := `{"name":"Mirror Copies","kind":"synology_files","direction":"pull","sync_mode":"mirror","run_mode":"sync","target_node_id":0}`
-	sourceRes := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources",
-		token, strings.NewReader(createSource), http.StatusCreated, nil)
-	var source sourceDTO
-	if err := json.Unmarshal(sourceRes.Body.Bytes(), &source); err != nil {
-		t.Fatal(err)
+	// Mirror reconciliation is provider-independent. Use an already-bound
+	// active Yike Pull fixture instead of re-enabling disabled Synology Pull.
+	// The HTTP 410 admission/continuation checks are covered separately.
+	rootForTarget := requestNode(t, router, http.MethodGet,
+		"/api/v1/nodes/root", token, nil, http.StatusOK)
+	target := createFilePropertiesDir(t, db, owner.ID, rootForTarget.ID, "Mirror Copies")
+	source := meta.Source{
+		OwnerID: owner.ID, Name: "Mirror Copies", Kind: yikeSourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeMirror,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
+		Revision: 1, TargetNodeID: &target.ID, TargetManaged: true,
 	}
-	if source.SyncMode != meta.SourceSyncModeMirror || source.TargetNodeID == nil ||
-		!source.TargetManaged || source.Direction != meta.SourceDirectionPull ||
-		source.Kind != synologyFilesSourceKind || source.Status != meta.SourceStatusPaused {
-		t.Fatalf("managed Pull Mirror fixture is invalid: %+v", source)
-	}
-	if err := db.Model(&meta.Source{}).
-		Where("id = ? AND owner_id = ?", source.ID, owner.ID).
-		Update("status", meta.SourceStatusActive).Error; err != nil {
-		t.Fatal(err)
-	}
-	var target meta.Node
-	if err := db.First(&target, *source.TargetNodeID).Error; err != nil {
+	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
 	hash := strings.Repeat("a", 64)
