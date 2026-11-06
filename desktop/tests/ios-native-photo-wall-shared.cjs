@@ -23,7 +23,7 @@ test('one adaptive SwiftUI photo grid is wired into local, album, location and c
     assert.equal((source.match(/XDriveIOSNativePhotoWallGrid\(density:/g) || []).length,
       count, 'each expected wall and its placeholder must use shared grid')
   }
-  assert.doesNotMatch(shared, /PHAsset|URLSession|Owner|UploadSession|UserDefaults|fetchAssets/)
+  assert.doesNotMatch(shared, /PHAsset|URLSession|UploadSession|UserDefaults|fetchAssets|verifiedAuthorization|accessToken|PHPhotoLibrary/)
 })
 
 test('local GPS photos reuse the canonical album square thumbnail without changing data source', () => {
