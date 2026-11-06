@@ -50,6 +50,18 @@ func (s *Server) desktopMapBrowserSessionProbe(c *gin.Context) {
 		fail(c, http.StatusForbidden, "browser session requires new login")
 		return
 	}
+	// A redeemed Desktop-map Cookie is only as live as the native Agent
+	// RefreshToken that authorized it. The read-only readiness probe must
+	// enforce the same binding as browser refresh and requireAuth; otherwise
+	// Desktop Retry can reuse a Cookie that can no longer authorize any map.
+	if current.DesktopMapNativeRefreshID != nil &&
+		(current.DesktopMapSessionVersion == 0 ||
+			current.DesktopMapSessionVersion != user.SessionVersion ||
+			!desktopMapNativeSessionActive(s.DB.WithContext(c.Request.Context()),
+				user.ID, *current.DesktopMapNativeRefreshID, now, false)) {
+		fail(c, http.StatusUnauthorized, "invalid browser session")
+		return
+	}
 	if user.Username != expected {
 		fail(c, http.StatusConflict, "browser session owner changed")
 		return
