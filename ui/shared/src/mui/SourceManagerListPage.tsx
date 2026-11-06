@@ -18,6 +18,7 @@ import {
   externalSourceDisplayName,
   externalSourceTriggerActionLabel,
   formatExternalSourceTime,
+  isReadOnlySynologySource,
 } from '../external-sources'
 import { formatBytes } from '../format'
 import type { ExternalSourceRow } from '../external-sources'
@@ -239,7 +240,7 @@ export function XDriveSourceManagerListPage({
                             停止
                           </XDriveActionButton>
                         ) : null}
-                        {!(row.source.kind === 'synology_photos' && row.source.direction === 'push') ? (
+                        {!isReadOnlySynologySource(row.source) ? (
                           <XDriveActionButton compact onClick={() => onOpenSettings(row)}>
                             设置
                           </XDriveActionButton>
