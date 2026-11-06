@@ -35,3 +35,9 @@ feat/push-s01-s09-unified-device-upload-auth-20261106	d02011e3a61c2912a2644f78cb
 # Verified map aliases / explicitly declined legacy map path; 2026-11-06.
 dev/ios-map-3936-rebase-source-20261106	4d331a28ae83505ac1ec9b10b690e8ce57abd354	duplicate exact head of active native MapKit PR #3936; canonical source branch remains open and protected
 feat/ios-photo-map-limited-access-20261105	34bd62e70e5c64b0baecc455e739c5871b9eda71	rejected obsolete Limited PhotoKit map path; Full Access-only map design accepted in merged PR #3911 and #3922
+
+# Reviewed 2026-11-06 no-PR branch audit: exact immutable tips only; old source is not reintroduced to master.
+dev/ios-map-filter-parity-rebased-20261106	7df8df90f86e4d09257ae7bfdd7a044b9cc80a58	exact tip ancestor of active #3945 head (ahead 10 behind 0); retain open PR head/base and canonical map implementation
+fix/ios-files-trash-sort-contract-20261104	963c455b49c70a358070ca602df9472a821ba365	merged #3881 and later master contain identical three Swift UI-policy-test blobs; remaining differences are superseded source-regex fixture and outdated gap wording
+fix/web-mobile-empty-dynamic-map-fallback-20261102	b6c3f7268731c40c354a8040f6f38227580f09e0	current master retains same empty-recent Gallery Places route and host wiring across all five touched paths; old branch lacks newer launcher and UI improvements
+feat/notes-dsm-owner-agent-port-20261103	fec10acc70faabf51feb25f29563dff7e72d0682	current master has the same nine Owner Notes operations via stronger capability and receipt validation plus expanded tests; supersedes obsolete DSM IPC prototype
