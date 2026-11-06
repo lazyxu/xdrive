@@ -1,3 +1,21 @@
+## Photo content identity · existing 95k map Range regression (2026-11-07)
+
+- The original 100k legacy-photo / 115k metadata fixture exposed a real 12-second
+  timeout after adding content validation. PostgreSQL repeatedly scanned a
+  severely underestimated map membership join. Reuse the exact shared map
+  Owner/source query directly; check the constant Owner once via EXISTS.
+- Same PostgreSQL 17 dataset/runner, unchanged six-sample order and assertions:
+  baseline median **539.152 ms**, candidate **540.563 ms** (ratio **1.0026**).
+  All samples retained 95,000 members, exact day groups, two SQL phases and
+  disjoint 48-row pages. Original 1.10 ratio and 3,000 ms limits both passed.
+- The baseline builder now replaces only the frozen Gallery/map query functions,
+  preserving current DTOs and tests in both arms. Whole-file historical overlays
+  had failed compilation after the content-key DTO addition.
+- [Local samples, source fingerprints and rejected intermediate measurement](performance-evidence/photo-content-map-20261107.json).
+  This is synthetic legacy-map SQL evidence, not physical media, model, native
+  UI, provider conversion or exact-HEAD CI acceptance. The separate keyed-original
+  predicate measurement below retains its own scope.
+
 ## Photo content binding · 100k SQL paired measurement (2026-11-07)
 
 - Same Windows host and PostgreSQL 16 Alpine Docker database, 100,000 synthetic

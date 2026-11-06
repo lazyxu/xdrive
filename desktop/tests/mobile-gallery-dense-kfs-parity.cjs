@@ -23,18 +23,24 @@ new Function('exports', 'module', 'require', gridJs)(
   gridModule.exports, gridModule, (id) => { throw Error('unexpected grid import: ' + id) },
 )
 const metrics = gridModule.exports.xDriveMediaGalleryGridMetrics
+const identityModule = { exports: {} }
+new Function('exports', 'module', ts.transpileModule(read('ui/shared/src/photo-content-identity.ts'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText)(identityModule.exports, identityModule)
 const Box = React.forwardRef((props, ref) => (
   React.createElement('gallery-test-box', { ...props, ref }, props.children)
 ))
-const MediaTile = ({ item, logicalIndex }) => (
+const MediaTile = ({ item, logicalIndex, selectedForAction }) => (
   React.createElement('gallery-test-tile', {
     'data-node-id': item.node.id,
     'data-logical-index': logicalIndex,
+    'data-selected': selectedForAction,
   })
 )
 const source = [
   "import { useLayoutEffect, useRef, useState } from 'react'",
   "import { Box, MediaTile } from './fixture'",
+  "import { photoContentIdentity } from './photo-content-identity'",
   "import { xDriveMediaGalleryGridMetrics, XDRIVE_MEDIA_GALLERY_GRID_GAP } from './MediaGalleryVirtualGrid'",
   gallery.slice(denseStart, denseEnd),
   'export { MediaTileGrid }',
@@ -53,6 +59,7 @@ const mocks = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
   './fixture': { Box, MediaTile },
+  './photo-content-identity': identityModule.exports,
   './MediaGalleryVirtualGrid': gridModule.exports,
 }
 new Function('exports', 'module', 'require', compiled)(
@@ -63,10 +70,12 @@ new Function('exports', 'module', 'require', compiled)(
   },
 )
 const DenseGrid = componentModule.exports.MediaTileGrid
-const items = Array.from({ length: 12 }, (_, i) => ({ node: { id: i + 1 } }))
+const items = Array.from({ length: 12 }, (_, i) => ({
+  node: { id: i + 1, revision: 1 }, content_key: 'sha256:' + (i + 1).toString(16).padStart(64, '0'),
+}))
 const baseProps = {
   items, minTileWidth: 144, selectionMode: false,
-  selectedNodeIDs: new Set(), onSelect: () => {},
+  selectedContentKeys: new Set([identityModule.exports.photoContentIdentity(items[0])]), onSelect: () => {},
   loadThumbnail: async () => null,
   onOpen: () => {}, onPreview: () => {}, onToggleFavorite: () => {},
 }
@@ -98,6 +107,8 @@ test('P0-2b dense Gallery fallback uses the SAME 390px KFS columns as shared vir
       minColumns: 3, referenceColumnWidth: 144,
     }).columns, 3)
     assert.equal(view.root.findAllByType('gallery-test-tile').length, items.length)
+    assert.deepEqual(view.root.findAllByType('gallery-test-tile').filter(t => t.props['data-selected'])
+      .map(t => t.props['data-node-id']), [items[0].node.id])
     // A width change must recalculate columns with the exact shared metrics,
     // and not change item identity/order or create a parallel Range API.
     await act(async () => { node.clientWidth = 899; observer.callback() })

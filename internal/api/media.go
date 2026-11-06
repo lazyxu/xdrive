@@ -571,7 +571,23 @@ func (s *Server) mediaItemsBaseQuery(
 		).
 		Joins(
 			"JOIN xd_nodes AS n ON n.id = xd_media_metadata.node_id AND n.owner_id = pa.owner_id AND n.deleted_at IS NULL",
-		).
+		)
+	if options.BaiduViewport != nil {
+		b := *options.BaiduViewport
+		if options.BaiduCell != nil || b.CoordinateSpace != meta.BaiduPhotoMapSpaceBD09LL || !b.valid() {
+			return nil, fmt.Errorf("invalid Owner map viewport selection")
+		}
+		projection, ok := meta.BaiduPhotoMapProjectionForSpace(b.CoordinateSpace)
+		if !ok {
+			return nil, fmt.Errorf("invalid map viewport projection")
+		}
+		// Reuse the exact /cells Owner/source/revision selection. A second
+		// membership join over the same tables can be severely underestimated
+		// and repeatedly rescan 95k rows once content validation is included.
+		query = baiduPhotoMapOwnerEligibleQueryWithMediaAlias(ctx, s.DB, uid, b, projection, "xd_media_metadata").
+			Model(&meta.MediaMetadata{})
+	}
+	query = query.
 		Where(photoasset.CurrentContentBindingSQL("pa")).
 		Joins("JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
 		Where(
@@ -593,21 +609,6 @@ func (s *Server) mediaItemsBaseQuery(
 			return nil, err
 		}
 		query = query.Where("n.id IN (?)", memberNodes)
-	}
-	if options.BaiduViewport != nil {
-		// The current-map photo wall shares the EXACT consent/source/revision
-		// predicate with /cells. Never send native BD09 bounds to WGS84 filters.
-		b := *options.BaiduViewport
-		if options.BaiduCell != nil || b.CoordinateSpace != meta.BaiduPhotoMapSpaceBD09LL || !b.valid() {
-			return nil, fmt.Errorf("invalid Owner map viewport selection")
-		}
-		projection, ok := meta.BaiduPhotoMapProjectionForSpace(b.CoordinateSpace)
-		if !ok {
-			return nil, fmt.Errorf("invalid map viewport projection")
-		}
-		members := baiduPhotoMapOwnerEligibleQuery(ctx, s.DB, uid, b, projection).
-			Select("p.primary_node_id")
-		query = query.Where("n.id IN (?)", members)
 	}
 
 	if albumKey == "" {

@@ -28,8 +28,8 @@ test('P1-3c2a Mobile and wide actual controls share one Gallery, REST DataSource
   assert.match(toolbar, /data-xdrive-gallery-selection-more/)
   assert.match(toolbar, /data-xdrive-gallery-album-picker/)
   assert.match(toolbar, /onAddToAlbum/)
-  assert.match(adapter, /addToAlbum: \(albumID, revision, nodeIDs\) =>/)
-  assert.match(api, /addMediaAlbumItems\(albumID: string, revision: number, nodeIDs: number\[\]\)/)
+  assert.match(adapter, /addToAlbum: \(albumID, revision, nodeIDs, contentKeys\) =>/)
+  assert.match(api, /addMediaAlbumItems\(albumID: string, revision: number, nodeIDs: number\[\], contentKeys\?: string\[\]\)/)
   assert.match(api, /headers: \{ 'If-Match':/)
 })
 

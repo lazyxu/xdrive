@@ -46,7 +46,9 @@ docker run -d --rm --name "$model" --network "$network" \
   --entrypoint python xdrive/photo-face:test -c "$program" >/dev/null
 ready=false
 for _ in $(seq 1 40); do
-  if docker exec "$database" pg_isready -U postgres >/dev/null; then ready=true; break; fi
+  # initdb temporarily starts a Unix-socket-only server. The test peer needs
+  # the final TCP listener, so a local socket success is not readiness.
+  if docker exec "$database" pg_isready -h 127.0.0.1 -U postgres >/dev/null; then ready=true; break; fi
   sleep 0.25
 done
 [[ "$ready" == true ]]

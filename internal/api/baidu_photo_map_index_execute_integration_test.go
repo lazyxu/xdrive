@@ -86,7 +86,7 @@ func TestBaiduMapExecutorRealPostgresCompletionCancellationAndPrivacy(t *testing
 	}
 	db, peer := openDB(), openDB()
 	if err := db.AutoMigrate(
-		&meta.User{}, &meta.Node{}, &meta.MediaMetadata{},
+		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
 		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.BaiduPhotoMapConsent{},
 		&meta.BaiduPhotoMapPosition{}, &meta.BaiduPhotoMapIndexIntent{},
 	); err != nil {

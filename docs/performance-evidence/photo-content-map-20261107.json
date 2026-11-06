@@ -1,0 +1,117 @@
+{
+  "environment": "Local Windows Docker / PostgreSQL17 / Linux Go binary; one disposable synthetic dataset",
+  "baseline_commit": "2ace3f56539db54be8c7433aea0727b0e15c6a94",
+  "candidate_parent_commit": "0573495046b9ebb82d594ad6b28ea208634944ba",
+  "candidate_is_uncommitted_working_tree": true,
+  "candidate_source_sha256_lf": {
+    "internal/api/media.go": "c22feab9ed14b04f9f7720bddb4725cdb650a454b55262a0c9506414ae0f1585",
+    "internal/api/baidu_photo_map_viewport.go": "87cf1dda2ab6681e51bf59726d71b3c9691730b0de6435ad5950857c0bf87a8e",
+    "internal/photoasset/content_evidence.go": "249a58ff5621b662f84dca09a64b28d223f6d5ad4c650feb760213e7c2b01dc6"
+  },
+  "dataset": "100000 legacy logical photos / 115000 metadata rows, synthetic BD09, 95000 viewport members",
+  "samples": [
+    {
+      "arm": "before",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 535.518,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    },
+    {
+      "arm": "after",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 540.563,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    },
+    {
+      "arm": "after",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 548.907,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    },
+    {
+      "arm": "before",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 540.543,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    },
+    {
+      "arm": "before",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 539.152,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    },
+    {
+      "arm": "after",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 537.708,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    }
+  ],
+  "before_median_ms": 539.152,
+  "after_median_ms": 540.563,
+  "after_over_before": 1.0026170727364452,
+  "original_limits": {
+    "median_ratio_max": 1.1,
+    "candidate_sample_max_ms": 3000
+  },
+  "prior_failure": "Initial content-bound membership query timed out at 12 seconds; direct shared joins alone measured median 607.655 vs 534.338 ms and failed the 10% regression gate. Constant Owner validation as an uncorrelated EXISTS removed repeated account lookups.",
+  "scope_limitations": [
+    "Not physical photo bytes, browser/native performance or provider conversion",
+    "Legacy map fixture; separate content-binding 100k fixture measures keyed-original predicate",
+    "Local validation is not exact-HEAD CI evidence"
+  ]
+}
