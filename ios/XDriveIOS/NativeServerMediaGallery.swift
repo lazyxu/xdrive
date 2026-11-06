@@ -1288,10 +1288,7 @@ private struct XDriveIOSNativeServerVirtualRange: View {
     private var placeholders: some View {
         XDriveIOSNativePhotoWallGrid(density: density) {
             ForEach(0..<min(48, max(0, expectedTotal - offset)), id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                    .aspectRatio(1, contentMode: .fit)
-                    .accessibilityHidden(true)
+                XDriveIOSNativePhotoWallPlaceholderTile()
             }
         }
     }
@@ -1324,13 +1321,14 @@ private struct XDriveIOSNativeServerVirtualRange: View {
                 placeholders
             }
             if let error = model.error {
-                Text(error).font(.caption).foregroundStyle(.secondary)
-                Button("重试当前照片范围") {
+                XDriveIOSNativePhotoWallRetryMessage(
+                    message: error, buttonTitle: "重试当前照片范围",
+                    canRetry: !model.busy && !viewerActive,
+                    textFont: .caption
+                ) {
                     model.load(login: login, albumID: albumID, placeID: placeID,
                                offset: offset, search: search)
                 }
-                .buttonStyle(.bordered)
-                .disabled(model.busy || viewerActive)
             }
         }
         .id("cloud-range:\(offset)")
@@ -1458,14 +1456,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer(minLength: 4)
                         Menu {
-                            ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
-                                Button {
-                                    wallDensity = option
-                                } label: {
-                                    Label(option.title, systemImage: wallDensity == option
-                                          ? "checkmark.circle.fill" : "square.grid.3x3")
-                                }
-                            }
+                            xdrivePhotoWallDensityButtons($wallDensity)
                         } label: {
                             Image(systemName: "square.grid.3x3")
                                 .frame(width: 44, height: 44)

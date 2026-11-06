@@ -199,9 +199,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     }
 
     private var placeholderTile: some View {
-        RoundedRectangle(cornerRadius: 3)
-            .fill(Color(uiColor: .secondarySystemGroupedBackground))
-            .aspectRatio(1, contentMode: .fit)
+        XDriveIOSNativePhotoWallPlaceholderTile()
     }
 
     var body: some View {
@@ -214,11 +212,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 )
                 ForEach(daySections) { section in
                     if !section.continuesPreviousPage {
-                        Text(section.title)
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 4)
-                            .accessibilityAddTraits(.isHeader)
+                        XDriveIOSNativePhotoWallDayHeader(
+                            title: section.title, topPadding: 4
+                        )
                     }
                     XDriveIOSNativePhotoWallGrid(density: density) {
                         ForEach(page.items[section.startIndex..<section.endIndex]) { candidate in
@@ -495,14 +491,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 .font(.subheadline).foregroundStyle(.secondary)
                             Spacer(minLength: 6)
                             Menu {
-                                ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
-                                    Button {
-                                        density = option
-                                    } label: {
-                                        Label(option.title, systemImage: density == option
-                                              ? "checkmark.circle.fill" : "square.grid.3x3")
-                                    }
-                                }
+                                xdrivePhotoWallDensityButtons($density)
                                 Section("图片显示") {
                                     ForEach(XDriveIOSNativePhotoWallFraming.allCases) { option in
                                         Button {
