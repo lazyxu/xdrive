@@ -16,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,9 +33,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.tfluid.xdrive.core.validDriveNodeName
 
 internal enum class NativePhotoBatchConsent {
-    REGISTER_DEVICE, START_BATCH, ENABLE_AUTO, DISABLE_AUTO,
+    REGISTER_DEVICE, CONFIGURE_TARGET, START_BATCH, ENABLE_AUTO, DISABLE_AUTO,
 }
 
 /** UI-only interpretation of the persisted WorkManager *last-known* state.
@@ -101,6 +103,7 @@ internal fun NativePhotoBatchControls(
     autoStatus: String? = null,
     onEnableAuto: () -> Unit = {},
     onDisableAuto: () -> Unit = {},
+    onConfigureDestination: (String) -> Unit = {},
 ) {
     if (state.screen != Screen.GALLERY || state.nativeUiSessionId <= 0L) return
 
@@ -108,6 +111,12 @@ internal fun NativePhotoBatchControls(
     var confirmation by remember(state.nativeUiSessionId) {
         mutableStateOf<NativePhotoBatchConsent?>(null)
     }
+    var targetName by remember(state.nativeUiSessionId, state.nativePhotoTargetName) {
+        mutableStateOf(state.nativePhotoTargetName)
+    }
+    val validTargetName = targetName.isNotEmpty() &&
+        targetName == targetName.trim() && validDriveNodeName(targetName) &&
+        targetName.toByteArray(Charsets.UTF_8).size <= 128
     val busy = state.nativePhotoBatchRunning
     val otherWriterBusy = state.fileUploadActive && !busy
     val eligible = state.canStartNativePhotoForeground()
@@ -157,6 +166,18 @@ internal fun NativePhotoBatchControls(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             .testTag("native-photo-batch-register-device"),
                     ) { Text("登记或核验本机备份设备") }
+                    Text(if (state.nativePhotoTargetConfigured)
+                        "托管备份目录：同步文件夹/Push/" + state.nativePhotoTargetName
+                        else "托管备份目录尚未配置；不允许向账户根目录增量备份。",
+                        modifier = Modifier.testTag("native-photo-managed-target-status"))
+                    OutlinedButton(
+                        onClick = { confirmation = NativePhotoBatchConsent.CONFIGURE_TARGET },
+                        enabled = eligible && state.nativePhotoDeviceVerified && !busy &&
+                            !otherWriterBusy,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .testTag("native-photo-managed-target-configure"),
+                    ) { Text(if (state.nativePhotoTargetConfigured)
+                        "修改备份目录" else "配置本机托管备份目录") }
 
                     if (state.nativePhotoBatchScanned > 0) {
                         Text("本次已扫描 ${state.nativePhotoBatchScanned} 项；" +
@@ -186,7 +207,8 @@ internal fun NativePhotoBatchControls(
                         Button(
                             onClick = { confirmation = NativePhotoBatchConsent.START_BATCH },
                             enabled = eligible && fullReadGrant &&
-                                state.nativePhotoDeviceVerified,
+                                state.nativePhotoDeviceVerified &&
+                                state.nativePhotoTargetConfigured,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                                 .testTag("native-photo-batch-confirm-open"),
                         ) { Text(if (nextCursor > 0) "继续下一批（需要确认）"
@@ -208,7 +230,8 @@ internal fun NativePhotoBatchControls(
                         OutlinedButton(
                             onClick = { confirmation = NativePhotoBatchConsent.ENABLE_AUTO },
                             enabled = eligible && fullReadGrant &&
-                                state.nativePhotoDeviceVerified,
+                                state.nativePhotoDeviceVerified &&
+                                state.nativePhotoTargetConfigured,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                                 .testTag("native-photo-auto-enable"),
                         ) { Text("开启定时增量备份（需确认）") }
@@ -256,17 +279,53 @@ internal fun NativePhotoBatchControls(
                 ) { Text("取消") }
             },
         )
+        NativePhotoBatchConsent.CONFIGURE_TARGET -> AlertDialog(
+            onDismissRequest = { confirmation = null },
+            title = { Text("配置 Android 原件托管目录") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("服务器将在同步文件夹/Push 下创建独立目录。设备身份和 Source" +
+                        " 绑定；目录改名必须等待运行及未结算上传完成。")
+                    OutlinedTextField(
+                        value = targetName,
+                        onValueChange = { if (it.length <= 128) targetName = it },
+                        label = { Text("目标目录名称") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                            .testTag("native-photo-managed-target-name"),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = eligible && state.nativePhotoDeviceVerified &&
+                        !busy && !otherWriterBusy && validTargetName,
+                    onClick = {
+                        confirmation = null
+                        onConfigureDestination(targetName)
+                    },
+                    modifier = Modifier.testTag("native-photo-managed-target-save"),
+                ) { Text("确认配置") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmation = null },
+                    modifier = Modifier.testTag("native-photo-managed-target-cancel")) {
+                    Text("取消")
+                }
+            },
+        )
         NativePhotoBatchConsent.START_BATCH -> AlertDialog(
             onDismissRequest = { confirmation = null },
             title = { Text("确认增量备份这一批") },
             text = {
-                Text("只向当前已验证账户的根目录上传本机照片或视频原件，最多 8 项新上传；" +
+                Text("只向当前设备绑定的同步文件夹/Push 托管目录上传照片或视频原件，最多 8 项新上传；" +
                     "不会覆盖已有云端文件。未知 ACK 不重试，必须先核对；不会自行继续下一批或后台执行。")
             },
             confirmButton = {
                 TextButton(
                     enabled = eligible && fullReadGrant &&
-                        state.nativePhotoDeviceVerified,
+                        state.nativePhotoDeviceVerified &&
+                                state.nativePhotoTargetConfigured,
                     onClick = {
                         confirmation = null
                         onStartBatch(nextCursor)
@@ -292,7 +351,8 @@ internal fun NativePhotoBatchControls(
             confirmButton = {
                 TextButton(
                     enabled = eligible && fullReadGrant &&
-                        state.nativePhotoDeviceVerified,
+                        state.nativePhotoDeviceVerified &&
+                                state.nativePhotoTargetConfigured,
                     onClick = { confirmation = null; onEnableAuto() },
                     modifier = Modifier.testTag("native-photo-auto-enable-confirm"),
                 ) { Text("确认开启") }
@@ -363,6 +423,9 @@ internal fun NativePhotoBatchPanel(state: DriveState, controller: DriveControlle
         onEnrollDevice = {
             controller.enrollNativePhotoDeviceExplicit(context,
                 "Android Photos", versionName)
+        },
+        onConfigureDestination = { name ->
+            controller.configureNativePhotoDestinationExplicit(context, name)
         },
         onStartBatch = { after ->
             controller.backupNativePhotoNextForegroundBatch(context, after)
