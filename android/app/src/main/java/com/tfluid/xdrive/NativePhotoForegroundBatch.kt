@@ -62,13 +62,27 @@ internal class NativePhotoForegroundBatch(
             service, origin, token, expectedUsername, currentSession)
             ?: throw IllegalStateException("Register this Android device explicitly before backup")
         checkActive(currentSession)
+        // A native scheduled or foreground pass may read the existing Source,
+        // but never silently create a new one or fall back to Owner root.
+        // An explicitly configured destination is required for any new write.
+        val managedDestination = service.nativeAndroidPhotoDestination(token, device)
+        checkActive(currentSession)
         // Existing UNKNOWN_ACK/MAY_HAVE_SENT has priority over new scans.
         // One exact, current Owner /devices/self proof already occurred.
         // The read-only receipt query never starts a second UploadSession;
         // active, missing or expired sessions keep the journal write-blocked.
         writer.reconcileUncertain(
-            service, token, initial, device.deviceId, currentSession)
+            service, token, initial, device.deviceId, currentSession,
+            managedDevice = device,
+            managedDestination = managedDestination)
         checkActive(currentSession)
+        check(managedDestination.configured &&
+            managedDestination.deviceId == device.deviceId &&
+            managedDestination.sourceId != null &&
+            managedDestination.sourceRevision != null &&
+            managedDestination.targetNodeId != null) {
+            "Configure this Android Device's managed photo destination before backup"
+        }
         val scope = NativePhotoBackupOwner(
             initial.origin, initial.serverInstanceId, initial.ownerId,
             initial.username, initial.rootId, initial.rootRevision, device.deviceId)
@@ -117,6 +131,7 @@ internal class NativePhotoForegroundBatch(
                     when (writer.uploadOne(
                         service, token, fresh, device.deviceId, root, source,
                         staged, currentSession,
+                        managedDevice = device, managedDestination = managedDestination,
                     )) {
                         NativePhotoIncrementalOutcome.ALREADY_VERIFIED -> already++
                         NativePhotoIncrementalOutcome.UPLOADED -> uploaded++
