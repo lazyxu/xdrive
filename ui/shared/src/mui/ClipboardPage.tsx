@@ -152,8 +152,11 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
           nonce: verified.check_nonce, ciphertext: verified.check_ciphertext,
           scope: port.ownerScopeKey,
         }, controller.signal)
-        canonicalScope = pinned.aad_scope
-        if (!canonicalScope) throw new Error('剪贴板域名绑定失败，请重试。')
+        // During a rolling Server/Web deployment an older Server may omit
+        // aad_scope. The successfully verified original-origin v1 vault
+        // remains usable; cross-domain support becomes available after
+        // the Server is upgraded and the original browser pins its scope.
+        canonicalScope = pinned.aad_scope || port.ownerScopeKey
         await xDriveClipboardVerifyVaultCheck(nextKey, canonicalScope, {
           nonce: pinned.check_nonce, ciphertext: pinned.check_ciphertext,
         })
