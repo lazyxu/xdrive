@@ -131,6 +131,11 @@ func (s *Server) recordUploadAuthorizationFailure(c *gin.Context, phase string, 
 		return
 	}
 	metadata := uploadAuthorizationAuditMetadata(phase, session)
+	if strings.HasPrefix(phase, "ios.photo.") {
+		metadata["writer"] = "ios_photo"
+	} else if strings.HasPrefix(phase, "android.photo.") {
+		metadata["writer"] = "android_photo"
+	}
 	metadata["reason"] = "permission_denied"
 	event := auditEventFromContext(c, uploadAuthorizationAuditAction,
 		"upload_session", session.ID, "", auditpkg.ResultFailure, metadata)
