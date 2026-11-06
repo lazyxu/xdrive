@@ -5,7 +5,7 @@ import "testing"
 func TestSynologyPullMVPPolicy(t *testing.T) {
 	for _, tc := range []struct {
 		kind, direction string
-		disabled bool
+		disabled        bool
 	}{
 		{"synology_photos", SourceDirectionPull, true},
 		{"synology_files", SourceDirectionPull, true},

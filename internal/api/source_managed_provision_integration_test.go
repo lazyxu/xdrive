@@ -75,8 +75,8 @@ func TestDormantSynologyPullProvisionerPreservesExclusiveTargets(t *testing.T) {
 	}
 	for _, entry := range []struct {
 		source meta.Source
-		node meta.Node
-		want string
+		node   meta.Node
+		want   string
 	}{
 		{filesSource, filesTarget, "同步文件夹/Pull/Synology Files/我的文档"},
 		{photosSource, photosTarget, "同步文件夹/Pull/Synology Photos/照片备份"},
