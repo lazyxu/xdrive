@@ -1518,7 +1518,12 @@ func (s *Server) createSkippedUploadSession(
 		ResultNodeID:   &resultID,
 		ExpiresAt:      time.Now().Add(uploadSessionTTL),
 	}
-	if err := s.DB.Create(&session).Error; err != nil {
+	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&session).Error; err != nil {
+			return err
+		}
+		return recordUploadAuthorizationSuccessTx(tx, c, "session.skip", session)
+	}); err != nil {
 		fail(c, http.StatusInternalServerError, "record skipped upload failed")
 		return
 	}
