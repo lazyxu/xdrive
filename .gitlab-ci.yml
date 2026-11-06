@@ -348,30 +348,6 @@ go-linux-api:
     paths:
       - test-results/api-race.log
 
-build-source-agent:
-  # Preserve only master snapshot publication prerequisites across frequent pushes.
-  # Other tests remain interruptible; MR and stable behavior is unchanged.
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
-      interruptible: false
-    - when: on_success
-  image: $XDRIVE_CI_GO_IMAGE
-  extends: .go-linux-cache
-  stage: package
-  needs: []
-  tags:
-    - linux
-  script:
-    - bash scripts/ci/gitlab-source-agent.sh
-  artifacts:
-    name: "xdrive-source-agent-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
-    expire_in: 14 days
-    when: on_success
-    paths:
-      - release/source-agent/xdrive-source-agent-linux-amd64
-      - release/source-agent/xdrive-source-agent-linux-arm64
-      - release/source-agent/xdrive-source-agent-linux-armv7
-
 package-linux-client:
   # Preserve only master snapshot publication prerequisites across frequent pushes.
   # Other tests remain interruptible; MR and stable behavior is unchanged.
@@ -693,26 +669,6 @@ test-linux-artifact:
   script:
     - bash scripts/ci/gitlab-test-linux-artifact.sh
 
-test-source-agent-artifact:
-  # GitHub CI is the required master test gate. Keep GitLab failures visible
-  # without letting local Runner environment problems block snapshot release.
-  rules:
-    # Registry-backed master runs this exact test after publication instead.
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
-      when: never
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
-      allow_failure: true
-    - when: on_success
-  image: $XDRIVE_CI_GO_IMAGE
-  stage: test
-  needs:
-    - job: build-source-agent
-      artifacts: true
-  tags:
-    - linux
-  script:
-    - bash scripts/ci/gitlab-test-source-agent-artifact.sh
-
 test-windows-rollback-artifact:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
@@ -861,8 +817,6 @@ final-gate:
       artifacts: false
     - job: test-linux-artifact
       artifacts: false
-    - job: test-source-agent-artifact
-      artifacts: false
     - job: test-windows-rollback-artifact
       artifacts: false
     - job: test-windows-upgrade-artifact
@@ -940,16 +894,6 @@ master-test-linux-artifact:
     - job: publish-release
       artifacts: false
     - job: package-linux-client
-      artifacts: true
-
-master-test-source-agent-artifact:
-  extends:
-    - test-source-agent-artifact
-    - .master-post-release-test
-  needs:
-    - job: publish-release
-      artifacts: false
-    - job: build-source-agent
       artifacts: true
 
 master-test-windows-rollback-artifact:
