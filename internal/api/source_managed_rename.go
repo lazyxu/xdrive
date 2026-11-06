@@ -286,7 +286,7 @@ func managedSourceTargetAncestorNamesTx(tx *gorm.DB, source meta.Source, target 
 	switch source.Direction {
 	case meta.SourceDirectionPush:
 		switch source.Kind {
-		case meta.SourceKindLocalFolder, meta.SourceKindIOSPhotos, synologySourceKind, "android_photos":
+		case meta.SourceKindLocalFolder, meta.SourceKindIOSPhotos, meta.SourceKindAndroidPhotos, synologySourceKind:
 		default:
 			return nil, errSourceTargetMigrationRequired
 		}
