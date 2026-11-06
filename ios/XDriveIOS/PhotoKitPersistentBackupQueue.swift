@@ -126,6 +126,38 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         }
     }
 
+    /// Read the explicitly selected PhotoKit revision with an indexed lookup.
+    /// An item beyond the first 64 auto-queue candidates must still be found.
+    /// This creates no upload receipt and never rebases missing history.
+    func pendingForSingle(
+        owner: XDriveNativeOwnerRoot, localIdentifier: String
+    ) throws -> XDriveIOSPhotoBackupChangeQueueStore.Pending? {
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline() else { return nil }
+        guard baseline.authorization == epoch.authorization else {
+            throw Failure.unauthorizedOrChanged
+        }
+        guard XDriveIOSPhotoKitLibraryEpoch.matches(
+            baseline.token, as: epoch.token
+        ) else {
+            // A PhotoKit change is not yet replayed: leave its revision pending.
+            return nil
+        }
+        guard let status = try store.status(for: localIdentifier),
+              status.state == .pending else { return nil }
+        let fetched = PHAsset.fetchAssets(
+            withLocalIdentifiers: [localIdentifier], options: nil
+        )
+        guard fetched.firstObject != nil else { return nil }
+        try verifyAuthorization(stillMatches: epoch)
+        // Priority is ignored by the exact-ID, exact-revision CAS settlement.
+        return XDriveIOSPhotoBackupChangeQueueStore.Pending(
+            localIdentifier: localIdentifier,
+            revision: status.revision, priority: 0
+        )
+    }
+
     /// Settle one exact queued revision only after the caller's shared
     /// original writer has verified the current Server Node receipt. A newer
     /// PhotoKit edit or an unreplayed change invalidates the settlement.

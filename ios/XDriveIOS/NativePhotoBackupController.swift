@@ -450,6 +450,28 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     guard let localIdentifier = singleLocalIdentifier else {
                         throw XDriveIOSPhotoBackupMVPError.identityNotVerified
                     }
+                    // Capture the queued revision before calling the
+                    // shared original writer. Never fetch a new revision
+                    // after upload and accidentally confirm a newer edit.
+                    var selectedQueue: XDriveIOSPhotoKitPersistentBackupQueue?
+                    var selectedRevision: XDriveIOSPhotoBackupChangeQueueStore.Pending?
+                    if let plan = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: selected),
+                       plan.enabled, plan.backupStartRule == .onlyNew,
+                       !plan.pausedForReview,
+                       !plan.requiresFullLibraryReconciliation {
+                        let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: selected)
+                        do {
+                            selectedRevision = try queue.pendingForSingle(
+                                owner: selected, localIdentifier: localIdentifier
+                            )
+                            if selectedRevision != nil { selectedQueue = queue }
+                        } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure.unauthorizedOrChanged {
+                            // Do not settle a generation whose authorization
+                            // changed; the explicit single writer still uses
+                            // current independent Server admission checks.
+                        }
+                    }
+                    try Task.checkCancellation()
                     await reporter.begin()
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, managedForeground: managed,
@@ -473,6 +495,33 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         throw XDriveIOSNativeSessionError.staleSession
                     }
                     self.progress = result
+                    var queueNeedsRecheck = false
+                    var queueRevisionSettled = false
+                    if (result.uploaded == 1 || result.verifiedAlready == 1),
+                       !result.stoppedForReview, result.needsReview == 0,
+                       let selectedQueue, let selectedRevision {
+                        // runSingle has already verified the current Owner/
+                        // Target Node receipt. Only then can this exact queued
+                        // PhotoKit revision be atomically marked confirmed.
+                        do {
+                            queueRevisionSettled = try selectedQueue.settle(
+                                selectedRevision, result: .confirmed, owner: selected
+                            )
+                            queueNeedsRecheck = !queueRevisionSettled
+                        } catch {
+                            // A newer edit, local persistence problem or
+                            // permission change must leave the pending row
+                            // untouched. Never retry an ambiguous write here.
+                            queueNeedsRecheck = true
+                        }
+                    }
+                    if queueRevisionSettled && result.verifiedAlready > 0 {
+                        // The current Node was verified already; the local
+                        // status badge needs its current Owner-scoped refresh.
+                        self.confirmedOriginalUpdate = ConfirmedOriginalUpdate(
+                            owner: selected, id: UUID()
+                        )
+                    }
                     if result.stoppedForReview || result.needsReview > 0 {
                         // An unknown ACK from a one-photo priority action must
                         // pause the current Owner's foreground schedule now,
@@ -487,6 +536,9 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared
                             .pauseForPendingReceipts(owner: selected)
                         self.errorMessage = "单张优先备份结果不确定；当前账户的自动备份已暂停，请先核对上传收据。"
+                    }
+                    if queueNeedsRecheck {
+                        self.errorMessage = "服务器原件收据已核验，但 PhotoKit 队列版本未结算；保留待核验记录，不自动重传。"
                     }
                     await reporter.finish(status: "completed")
                 } else if kind == .focused {
@@ -842,6 +894,73 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     /// The independent focused session never modifies a saved interval,
     /// BG grant, manual cursor, or persistent encrypted receipt. Each window
     /// re-verifies the Owner to allow native refresh while the App is visible.
+    /// A manually approved Focused pass can settle an existing only-new
+    /// PhotoKit change queue through the SAME verified original writer. It
+    /// never grants a new schedule or silently rebases missing history.
+    private func prepareFocusedIncrementalQueue(
+        login: XDriveIOSNativeOwnerLoginModel,
+        owner: XDriveNativeOwnerRoot, uiEpoch: UUID,
+        expectedEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot
+    ) async throws -> XDriveIOSPhotoKitPersistentBackupQueue? {
+        guard let plan = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner),
+              plan.enabled, plan.backupStartRule == .onlyNew,
+              !plan.pausedForReview,
+              !plan.requiresFullLibraryReconciliation else { return nil }
+
+        let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
+        var replayedEvents = 0
+        do {
+            while true {
+                try Task.checkCancellation()
+                guard displayEpoch == uiEpoch,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      XDriveIOSNativePhotoOwnerScope.matches(runningOwner, owner),
+                      UIApplication.shared.applicationState == .active else {
+                    throw XDriveIOSNativeSessionError.staleSession
+                }
+                // A disabled or paused automatic schedule must not be
+                // re-enabled by this independent foreground session.
+                guard let active = XDriveIOSPhotoAutoScheduleStore.shared
+                    .status(owner: owner),
+                      active.enabled, active.backupStartRule == .onlyNew,
+                      !active.pausedForReview,
+                      !active.requiresFullLibraryReconciliation else { return nil }
+                let current = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                guard current.authorization == expectedEpoch.authorization,
+                      XDriveIOSPhotoKitLibraryEpoch.matches(
+                          expectedEpoch.serialized, as: current.token
+                      ) else { throw XDriveIOSFocusedBackupFailure.libraryChanged }
+
+                // Four history records per durable SQLite transaction.
+                // Drain before scanning: even an old-dated new import must
+                // not remain hidden behind the positional full-pass cursor.
+                let batch = try await queue.replay(owner: owner, maximumEvents: 4)
+                if try await queue.isCaughtUp(owner: owner) {
+                    return queue
+                }
+                guard batch.events > 0 else {
+                    // Avoid an infinite loop or an unsafe date-based fallback.
+                    throw XDriveIOSFocusedBackupFailure.libraryChanged
+                }
+                replayedEvents += batch.events
+                message = "集中备份先恢复 PhotoKit 增量变更（已回放 \(replayedEvents) 条）…"
+                await Task.yield()
+            }
+        } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure.requiresExplicitBaseline,
+                XDriveIOSPhotoKitPersistentBackupQueue.Failure.invalidArchivedToken,
+                XDriveIOSPhotoKitPersistentBackupQueue.Failure.historyUnavailable {
+            // Focused is full-scope, but only-new auto still needs its own
+            // explicit consent before a lost baseline can be replaced.
+            schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                .requireFullLibraryReconciliation(owner: owner)
+            return nil
+        } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure.authorizationChanged {
+            schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                .requireFullLibraryReconciliation(owner: owner)
+            throw XDriveIOSFocusedBackupFailure.libraryChanged
+        }
+    }
+
     private func runFocused(
         login: XDriveIOSNativeOwnerLoginModel,
         owner: XDriveNativeOwnerRoot, uiEpoch: UUID, allowICloud: Bool,
@@ -858,6 +977,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
               XDriveIOSPhotoKitLibraryEpoch.matches(
                 initial.serialized, as: afterCount.token
               ) else { throw XDriveIOSFocusedBackupFailure.libraryChanged }
+        let focusedChangeQueue = try await prepareFocusedIncrementalQueue(
+            login: login, owner: owner, uiEpoch: uiEpoch,
+            expectedEpoch: initial
+        )
         // Reuse a checkpoint only after the caller's global current-Owner
         // pending/unknown ACK preflight under the serial original writer gate.
         // A cursor never substitutes for Server-confirmed Node receipts.
@@ -939,7 +1062,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 onSourceProgress: { value in
                     sourceRunReporter.enqueueUpdate(value, base: sourceRunBase)
                 }
-            ).run(allowICloudOriginals: allowICloud, startOffset: offset) { [weak self] value in
+            ).run(
+                allowICloudOriginals: allowICloud, startOffset: offset,
+                changeQueue: focusedChangeQueue
+            ) { [weak self] value in
                 guard let self,
                       self.displayEpoch == uiEpoch,
                       XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, owner),
