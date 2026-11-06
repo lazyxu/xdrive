@@ -2,7 +2,9 @@ package api
 
 import (
 	"errors"
+	"strings"
 
+	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/synology"
 	"gorm.io/gorm"
@@ -11,9 +13,19 @@ import (
 // L01-A is intentionally fail-closed: ordinary local folders must not become
 // active until the device-binding and native execution protocol is implemented.
 // Synology and pull connector activation behavior remains unchanged.
-var errLocalFolderNotReady = errors.New("local folder device binding and executor unavailable")
+var (
+	errLocalFolderNotReady = errors.New("local folder device binding and executor unavailable")
+	errSynologyPushNotReady = errors.New("Synology Photos Push requires an enrolled Device and verified Root binding")
+	errSynologyPushBackupOnly = errors.New("Synology Photos Push supports backup mode only")
+)
 
 func requireSourceReadyForActivation(tx *gorm.DB, source meta.Source) error {
+	if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
+		if source.SyncMode != meta.SourceSyncModeBackup {
+			return errSynologyPushBackupOnly
+		}
+		return requireSynologyPushSourceReadyForActivation(tx, source)
+	}
 	if source.Kind == meta.SourceKindLocalFolder {
 		return errLocalFolderNotReady
 	}
@@ -42,6 +54,50 @@ func requireSourceReadyForActivation(tx *gorm.DB, source meta.Source) error {
 	}
 	if _, err := synology.ParseFilePullConfig([]byte(config.Payload)); err != nil {
 		return errSourceConnectorConfigRequired
+	}
+	return nil
+}
+
+
+// requireSynologyPushSourceReadyForActivation validates persisted enrollment
+// state for Owner-initiated resume. It does not impersonate the NAS: every
+// actual SourceRun and content mutation still requires live Device/Root proof.
+func requireSynologyPushSourceReadyForActivation(tx *gorm.DB, source meta.Source) error {
+	if tx == nil || source.DeviceID == nil || strings.TrimSpace(*source.DeviceID) == "" ||
+		!source.TargetManaged || source.TargetNodeID == nil || *source.TargetNodeID == 0 {
+		return errSynologyPushNotReady
+	}
+	var device meta.ClientDevice
+	if err := tx.Where("id = ? AND owner_id = ? AND platform = ? AND revoked_at IS NULL",
+		*source.DeviceID, source.OwnerID, "synology").Take(&device).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errSynologyPushNotReady
+		}
+		return err
+	}
+	if strings.TrimSpace(device.CredentialHash) == "" {
+		return errSynologyPushNotReady
+	}
+	var binding meta.LocalSourceBinding
+	if err := tx.Where("source_id = ? AND owner_id = ? AND device_id = ?",
+		source.ID, source.OwnerID, device.ID).Take(&binding).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errSynologyPushNotReady
+		}
+		return err
+	}
+	if _, err := uuid.Parse(binding.RootID); err != nil ||
+		!validSHA256(binding.RootFingerprint) ||
+		binding.RootFingerprint != strings.ToLower(binding.RootFingerprint) {
+		return errSynologyPushNotReady
+	}
+	var target meta.Node
+	if err := tx.Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+		*source.TargetNodeID, source.OwnerID, meta.NodeTypeDir).Take(&target).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errSynologyPushNotReady
+		}
+		return err
 	}
 	return nil
 }

@@ -141,13 +141,16 @@ export function XDriveSourceCreateDialog({
       slotProps={{ paper: dialogPaper }}
     >
       <XDriveDialogTitle
-        title={`添加${sourceNoun}`}
+        title={option.kind === 'synology_photos' && option.direction === 'push' ? '配置 DSM Photos Push' : `添加${sourceNoun}`}
         onClose={onRequestClose}
         closeDisabled={creating}
       />
       <XDriveDialogContent dividers>
         <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-          云端目标目录：{option.direction === 'push'
+          {option.kind === 'synology_photos' && option.direction === 'push'
+            ? 'DSM Push 必须由 NAS 端 Source Agent 注册设备及授权本地 Root。下方只生成配置命令，不会在浏览器中创建未绑定设备的来源。'
+            : '云端目标目录：'}
+          {option.direction === 'push'
             ? `同步文件夹 / Push / ${values.name.trim() || '目录名称'}`
             : `同步文件夹 / Pull / ${(option.kind === 'synology_files' ? 'Synology Files' : option.kind === 'synology_photos' ? 'Synology Photos' : 'Yike Photos')} / ${values.name.trim() || '目录名称'}`}
           <br />
@@ -179,6 +182,18 @@ export function XDriveSourceCreateDialog({
                 本机文件夹会先在云端创建暂停的来源，随后由 Desktop 原生目录选择器完成本机 Root 授权。
                 扫描、上传与自动同步执行器尚未启用，当前不会传输或删除任何文件。
               </XDriveStatusAlert>
+            ) : option.kind === 'synology_photos' && option.direction === 'push' ? (
+              <>
+                <XDriveSourceRunModeField
+                  label="初始运行模式"
+                  value={values.run_mode}
+                  scanLabel="仅扫描（推荐先使用）"
+                  onChange={(value) => onChange({ run_mode: value })}
+                />
+                <XDriveStatusAlert tone="neutral">
+                  DSM Photos Push 仅支持备份模式。NAS 中删除照片不会自动删除云端备份；完成 NAS setup 后可管理计划和忽略规则。
+                </XDriveStatusAlert>
+              </>
             ) : (
               <>
             <XDriveSourceRunModeField
@@ -202,7 +217,7 @@ export function XDriveSourceCreateDialog({
             ) : null}
               </>
             )}
-            {option.kind !== 'local_folder' ? <XDriveSourceScheduleFields
+            {option.kind !== 'local_folder' && !(option.kind === 'synology_photos' && option.direction === 'push') ? <XDriveSourceScheduleFields
               wideAt="md"
               scheduleType={values.schedule_type}
               expression={values.schedule_expression}
@@ -211,11 +226,13 @@ export function XDriveSourceCreateDialog({
               onExpressionChange={(value) => onChange({ schedule_expression: value })}
               onTimezoneChange={(value) => onChange({ schedule_timezone: value })}
             /> : null}
-            <XDriveSourceIgnoreRulesField
-              value={values.ignore_rules ?? ''}
-              onChange={(value) => onChange({ ignore_rules: value })}
-              monospace
-            />
+            {!(option.kind === 'synology_photos' && option.direction === 'push') ? (
+              <XDriveSourceIgnoreRulesField
+                value={values.ignore_rules ?? ''}
+                onChange={(value) => onChange({ ignore_rules: value })}
+                monospace
+              />
+            ) : null}
 
             {profile.credential === 'cookie' ? (
               <>
@@ -319,7 +336,7 @@ export function XDriveSourceCreateDialog({
           loading={creating}
           loadingLabel="正在添加…"
         >
-          添加{sourceNoun}
+          {option.kind === 'synology_photos' && option.direction === 'push' ? '打开 DSM 配置指南' : `添加${sourceNoun}`}
         </XDriveActionButton>
       </XDriveDialogActions>
     </Dialog>

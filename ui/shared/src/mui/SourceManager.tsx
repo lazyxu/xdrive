@@ -259,7 +259,7 @@ export function XDriveSourceManager({
   const [settingsCredentialTestError, setSettingsCredentialTestError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [deletingSourceID, setDeletingSourceID] = useState<number | null>(null)
-  const [guideSource, setGuideSource] = useState<ExternalSource | null>(null)
+  const [guideSource, setGuideSource] = useState<Pick<ExternalSource, 'id' | 'name' | 'run_mode'> | null>(null)
   const [guideUsername, setGuideUsername] = useState<string | undefined>()
   const [errorDialog, setErrorDialog] = useState<XDriveSourceErrorDialogState | null>(null)
   const [feedback, setFeedback] = useState('')
@@ -545,7 +545,7 @@ export function XDriveSourceManager({
     }
   }, [selected, historyPage, loadRunHistory])
 
-  const openSynologyGuide = (source: ExternalSource) => {
+  const openSynologyGuide = (source: Pick<ExternalSource, 'id' | 'name' | 'run_mode'>) => {
     setGuideSource(source)
     if (!adapter.me) {
       setGuideUsername(undefined)
@@ -696,7 +696,8 @@ export function XDriveSourceManager({
 
     const option = externalSourceCreateOption(values.preset)
     let normalizedName = values.name.trim()
-    const allowServerDeviceDefault = option.direction === 'push' && Boolean(adapter.suggestedPushName)
+    const allowServerDeviceDefault = option.direction === 'push' &&
+      option.kind !== 'synology_photos' && Boolean(adapter.suggestedPushName)
     const nameError = !normalizedName && !allowServerDeviceDefault
       ? `请填写${sourceNoun}名称`
       : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
@@ -717,6 +718,15 @@ export function XDriveSourceManager({
     setCreateSpacesError(spacesError)
     setCreateRootsError(rootsError)
     if (nameError || spacesError || rootsError) return
+    if (option.kind === 'synology_photos' && option.direction === 'push') {
+      // Browser Owner tokens cannot create DSM Push Sources: NAS setup must
+      // enroll the Device, bind the Root and obtain the managed target.
+      setCreateOpen(false)
+      setCreateNameError('')
+      setFeedback('在 NAS 运行 DSM 配置指南的 setup 命令；注册完成后刷新此来源列表。')
+      openSynologyGuide({ id: 0, name: normalizedName, run_mode: values.run_mode })
+      return
+    }
     const credentialPayload = profile.credential ? createCredentialPayload() : null
     if (profile.credential && !credentialPayload) {
       setErrorDialog({
@@ -933,7 +943,7 @@ export function XDriveSourceManager({
     setSettingsConnectorError('')
     setSettingsValues({
       name: externalSourceDisplayName(row.source),
-      sync_mode: row.source.sync_mode,
+      sync_mode: row.source.kind === 'synology_photos' && row.source.direction === 'push' ? 'backup' : row.source.sync_mode,
       run_mode: row.source.run_mode,
       status: row.source.status === 'active' ? 'active' : 'paused',
       schedule_type: row.source.schedule_type ?? 'interval',
@@ -1081,6 +1091,7 @@ export function XDriveSourceManager({
     const nameError = !normalizedName ? `请填写${sourceNoun}名称` : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
     const isSynologyFiles = setting.source.kind === 'synology_files'
     const isLocalFolder = setting.source.kind === 'local_folder'
+    const isSynologyPush = setting.source.kind === 'synology_photos' && setting.source.direction === 'push'
     const desiredRoots = normalizeSynologyFileRoots(values.roots ?? [])
     const spacesError = setting.source.kind === 'synology_photos' && profile.credential === 'synology_dsm' && !(values.spaces?.length)
       ? '至少选择一个照片空间'
@@ -1141,7 +1152,7 @@ export function XDriveSourceManager({
       )
       let updatedSource = await adapter.updateSource(setting.source.id, setting.source.revision, {
         name: nameToPersist,
-        sync_mode: isLocalFolder ? 'backup' : values.sync_mode,
+        sync_mode: isLocalFolder || isSynologyPush ? 'backup' : values.sync_mode,
         run_mode: isLocalFolder ? 'sync' : values.run_mode,
         status: isLocalFolder
           ? 'paused'

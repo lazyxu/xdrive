@@ -66,6 +66,7 @@ func requireSynologySourceProofTx(
 		return zero, errSynologyPushAuthority
 	}
 	if source.Kind != synologySourceKind || source.Direction != meta.SourceDirectionPush ||
+		source.SyncMode != meta.SourceSyncModeBackup ||
 		source.DeviceID == nil || *source.DeviceID != device.ID ||
 		source.Revision != proof.SourceRevision || !source.TargetManaged || source.TargetNodeID == nil ||
 		(requireActive && source.Status != meta.SourceStatusActive) {
