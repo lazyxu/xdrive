@@ -198,6 +198,9 @@ export function XDriveSourceManager({
   onError,
 }: XDriveSourceManagerProps) {
   const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
+  // Pull-only mode starts with Yike. Normal/DSM managers prioritize the
+  // supported Synology folder Push instead of a retired remote Pull.
+  const defaultCreatePreset: ExternalSourceCreatePreset = directionFilter === 'pull' ? 'yike_pull' : 'local_push'
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
   const [showArchived, setShowArchived] = useState(false)
   const [restoringSourceID, setRestoringSourceID] = useState<number | null>(null)
@@ -262,7 +265,7 @@ export function XDriveSourceManager({
   const [settingsConnectorLoading, setSettingsConnectorLoading] = useState(false)
   const [settingsConnectorError, setSettingsConnectorError] = useState('')
   const settingsSessionRef = useRef(0)
-  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(() => initialCreateSourceValues('yike_pull'))
+  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(() => initialCreateSourceValues(defaultCreatePreset))
   const [createNameError, setCreateNameError] = useState('')
   const [createSpacesError, setCreateSpacesError] = useState('')
   const [createRootsError, setCreateRootsError] = useState('')
@@ -558,7 +561,7 @@ export function XDriveSourceManager({
   }
 
   const openCreate = async () => {
-    setCreateValues(initialCreateSourceValues('yike_pull'))
+    setCreateValues(initialCreateSourceValues(defaultCreatePreset))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
@@ -767,7 +770,7 @@ export function XDriveSourceManager({
             await adapter.deleteSource(created.id, created.revision)
             setFeedback('已取消创建；本机未绑定的来源草稿已安全清理')
             setCreateOpen(false)
-            setCreateValues(initialCreateSourceValues('yike_pull'))
+            setCreateValues(initialCreateSourceValues(defaultCreatePreset))
             setCreateNameError('')
             setCreateSpacesError('')
             setCreateRootsError('')
@@ -800,7 +803,7 @@ export function XDriveSourceManager({
       ? '群晖 File Station 拉取来源已添加；将同步所选目录中的所有文件和文件夹'
       : `${sourceNoun}已添加`)
     setCreateOpen(false)
-    setCreateValues(initialCreateSourceValues('yike_pull'))
+    setCreateValues(initialCreateSourceValues(defaultCreatePreset))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
@@ -1509,11 +1512,11 @@ export function XDriveSourceManager({
         onRequestClose={() => {
           if (creating) return
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues('yike_pull'))
+          setCreateValues(initialCreateSourceValues(defaultCreatePreset))
         }}
         onCancel={() => {
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues('yike_pull'))
+          setCreateValues(initialCreateSourceValues(defaultCreatePreset))
           setCreateNameError('')
           setCreateSpacesError('')
           setCreateRootsError('')
