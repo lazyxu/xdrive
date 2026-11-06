@@ -203,9 +203,10 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Exercise generic Source CRUD/optimistic revisions here; Synology Push is covered by its device-proof integration tests.
 	createBody := fmt.Sprintf(`{
 		"name":"Synology Photos",
-		"kind":"synology_photos",
+		"kind":"test",
 		"direction":"push",
 		"sync_mode":"backup",
 		"run_mode":"scan",

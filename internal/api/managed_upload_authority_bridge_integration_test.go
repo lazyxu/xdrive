@@ -12,6 +12,42 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
+func TestUploadSessionWriterClaimsAreExclusive(t *testing.T) {
+	shareID := uint64(9)
+	cases := []struct {
+		name    string
+		session meta.UploadSession
+		deny    bool
+	}{
+		{name: "ordinary Owner", session: meta.UploadSession{}},
+		{name: "native device Source", session: meta.UploadSession{
+			SourceID: 11, SourceRevision: 2, SourceDeviceID: "device-id", SourceTargetID: 42,
+		}},
+		{name: "Pull SourceRun", session: meta.UploadSession{SourceRunID: "run-id"}},
+		{name: "public Share", session: meta.UploadSession{ShareID: &shareID}},
+		{name: "Local Push", session: meta.UploadSession{ResumeKey: "lp2_" + strings.Repeat("a", 64)}},
+		{name: "Source plus Pull run", session: meta.UploadSession{SourceID: 11, SourceRunID: "run-id"}, deny: true},
+		{name: "Source plus Share", session: meta.UploadSession{SourceID: 11, ShareID: &shareID}, deny: true},
+		{name: "Pull run plus Share", session: meta.UploadSession{SourceRunID: "run-id", ShareID: &shareID}, deny: true},
+		{name: "Local Push plus Pull run", session: meta.UploadSession{
+			ResumeKey: "lp2_" + strings.Repeat("a", 64), SourceRunID: "run-id",
+		}, deny: true},
+		{name: "Local Push plus Share", session: meta.UploadSession{
+			ResumeKey: "lp2_" + strings.Repeat("a", 64), ShareID: &shareID,
+		}, deny: true},
+		{name: "orphaned Source revision", session: meta.UploadSession{SourceRevision: 2}, deny: true},
+		{name: "orphaned Source device", session: meta.UploadSession{SourceDeviceID: "device-id"}, deny: true},
+		{name: "orphaned Source target", session: meta.UploadSession{SourceTargetID: 42}, deny: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mixedUploadSessionWriterClaims(tc.session); got != tc.deny {
+				t.Fatalf("session writer claim conflict: got=%v want=%v", got, tc.deny)
+			}
+		})
+	}
+}
+
 func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	db, server, owner, _, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(&meta.SyncRun{}, &meta.UploadSession{}); err != nil {
@@ -60,6 +96,16 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	// arbitrary lp2_ prefix may create files inside another Source's tree.
 	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, regular, owner.ID, ordinary.ID, req); err != nil {
 		t.Fatalf("ordinary Files folder was rejected: %v", err)
+	}
+	// Even when the target itself is ordinary, an incomplete DSM Source claim
+	// cannot silently fall back to a generic Owner upload admission.
+	regular.Request = httptest.NewRequest("POST", "/api/v1/uploads", nil)
+	for _, header := range []string{"X-XDrive-Synology-Source-ID", "X-XDrive-Synology-Source-Revision"} {
+		regular.Request.Header.Set(header, "42")
+		if err := requireSourceRunOrLocalPushTargetTx(ctx, db, regular, owner.ID, ordinary.ID, req); !errors.Is(err, errManagedSourceWriteDenied) {
+			t.Fatalf("unbound %s fell back to Owner upload: %v", header, err)
+		}
+		regular.Request.Header.Del(header)
 	}
 	if err := requireSourceRunOrLocalPushTargetTx(ctx, db, regular, owner.ID, child.ID, req); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("ordinary Owner gained Pull SourceRun writes: %v", err)

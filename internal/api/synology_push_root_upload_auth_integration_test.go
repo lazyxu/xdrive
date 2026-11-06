@@ -59,7 +59,12 @@ func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 	rootFingerprint := strings.Repeat("a", 64)
 	bindingPath := fmt.Sprintf("/api/v1/sources/%d/synology-root", source.ID)
 	body := fmt.Sprintf(`{"root_id":%q,"root_fingerprint":%q}`, rootID, rootFingerprint)
-	request(t, router, http.MethodPut, bindingPath, ownerToken, strings.NewReader(body), http.StatusForbidden)
+	// A missing revision fails before credential evaluation; supplying a
+	// revision without device proof must still be denied.
+	request(t, router, http.MethodPut, bindingPath, ownerToken, strings.NewReader(body), http.StatusPreconditionRequired)
+	requestWithHeaders(t, router, http.MethodPut, bindingPath, ownerToken,
+		strings.NewReader(body), http.StatusForbidden,
+		map[string]string{"If-Match": `"1"`})
 	bindHeaders := map[string]string{
 		"X-XDrive-Device-ID":    deviceID,
 		"X-XDrive-Device-Token": deviceToken,
@@ -118,7 +123,11 @@ func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 		"X-XDrive-Local-Root-ID":            rootID,
 		"X-XDrive-Local-Root-Fingerprint":   rootFingerprint,
 	}
-	requestWithHeaders(t, router, http.MethodGet, sourcePath, ownerToken, nil, http.StatusOK, proofHeaders)
+	// This endpoint is deliberately local_folder-only. Even complete DSM
+	// Device/Source/Root proof must not grant generic Desktop Agent rights.
+	// Positive DSM authorization is exercised by the activation and managed
+	// CAS upload below, which use the Synology-specific proof path.
+	requestWithHeaders(t, router, http.MethodGet, sourcePath, ownerToken, nil, http.StatusBadRequest, proofHeaders)
 
 	// Activation is allowed only with the same persisted Device/Source/Root proof.
 	activationHeaders := map[string]string{}
