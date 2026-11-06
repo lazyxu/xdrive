@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// Synthetic provider tests the generic SourceRun protocol independently of device-bound DSM Push authorization.
 func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -61,7 +62,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 
 	createBody := fmt.Sprintf(`{
 		"name":"Synology Photos",
-		"kind":"synology_photos",
+		"kind":"test",
 		"direction":"push",
 		"sync_mode":"backup",
 		"run_mode":"scan",
@@ -433,7 +434,7 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 
 	createBody := fmt.Sprintf(`{
 		"name":"Synology Photos",
-		"kind":"synology_photos",
+		"kind":"test",
 		"direction":"push",
 		"sync_mode":"backup",
 		"run_mode":"sync",
