@@ -329,7 +329,7 @@ export function XDriveMediaGalleryPlacesMap({
       setModeWarning('当前照片范围或地图位置无法安全交接，保持原地图，不会切换到全图库。')
       return
     }
-    handoffAbort.current?.abort()
+    // The guard above already refuses an in-flight handoff.
     const controller = new AbortController()
     handoffAbort.current = controller
     const issuedFence = {
