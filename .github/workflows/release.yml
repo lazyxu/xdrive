@@ -704,3 +704,21 @@ jobs:
             --verify-tag \
             --generate-notes \
             --title "xDrive $GITHUB_REF_NAME"
+      # Publish only after the same exact SPK passed the normal release gate.
+      # Edge clients opt into /edge; /stable only advances on a verified v* tag.
+      - name: Publish immutable DSM Package Center feed
+        if: github.ref != 'refs/heads/master' || steps.snapshot_eligibility.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.ref == 'refs/heads/master' && steps.snapshot_app_token.outputs.token || github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/heads/master ]]; then
+            channel=edge
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            channel=stable
+          else
+            echo "unsupported DSM publication ref: $GITHUB_REF" >&2
+            exit 1
+          fi
+          bash scripts/ci/publish-dsm-package-source.sh "$channel" release "$GITHUB_SHA"
