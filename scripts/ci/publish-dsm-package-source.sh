@@ -86,7 +86,14 @@ if ! gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
       --title "xDrive DSM stable $version" --notes "Immutable verified SPK from $commit"
   fi
 fi
-verify_immutable
+# GitHub can expose the Release before every asset digest is indexed.
+# Keep fail-closed verification, but allow bounded propagation.
+immutable_ok=0
+for attempt in 1 2 3 4 5; do
+  if verify_immutable; then immutable_ok=1; break; fi
+  [[ "$attempt" == 5 ]] || sleep 2
+done
+[[ "$immutable_ok" == 1 ]] || { echo "immutable SPK remote verification incomplete" >&2; exit 1; }
 
 # Revalidate the published Snapshot immediately before edge feed promotion.
 if [[ "$channel" == edge ]]; then
@@ -132,7 +139,12 @@ fi
 
 # Promotion is accepted only when GitHub's remote asset SHA256 matches.
 expected="sha256:$(sha256sum "$tmp/catalog.json" | awk '{print $1}')"
-remote="$(gh api "repos/$repo/releases/tags/$feed")"
-actual="$(jq -r '[.assets[] | select(.name == "catalog.json") | .digest] | if length == 1 then .[0] else empty end' <<< "$remote")"
-[[ "$actual" == "$expected" ]] || { echo "DSM feed digest mismatch" >&2; exit 1; }
+feed_ok=0
+for attempt in 1 2 3 4 5; do
+  remote="$(gh api "repos/$repo/releases/tags/$feed")"
+  actual="$(jq -r '[.assets[] | select(.name == "catalog.json") | .digest] | if length == 1 then .[0] else empty end' <<< "$remote")"
+  if [[ "$actual" == "$expected" ]]; then feed_ok=1; break; fi
+  [[ "$attempt" == 5 ]] || sleep 2
+done
+[[ "$feed_ok" == 1 ]] || { echo "DSM feed remote digest mismatch" >&2; exit 1; }
 echo "Published DSM $channel feed: $version commit=$commit immutable=$tag"
