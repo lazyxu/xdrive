@@ -150,9 +150,9 @@ func recordUploadAuthorizationSystemTx(tx *gorm.DB, phase string, session meta.U
 	ownerID := session.OwnerID
 	return recordAuditTx(tx, auditpkg.Event{
 		ActorUserID: &ownerID,
-		Action: uploadAuthorizationAuditAction,
-		TargetType: "upload_session", TargetID: session.ID,
-		Result: auditpkg.ResultSuccess,
+		Action:      uploadAuthorizationAuditAction,
+		TargetType:  "upload_session", TargetID: session.ID,
+		Result:   auditpkg.ResultSuccess,
 		Metadata: uploadAuthorizationAuditMetadata(phase, session),
 	})
 }
