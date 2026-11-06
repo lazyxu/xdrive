@@ -414,7 +414,7 @@ test('first full-library GPS scan displays inert native MapKit while PhotoKit pr
   assert.match(library, /guard phase == \.active, !busy, globalComplete,\s*refinedViewportIsCurrent/)
   assert.doesNotMatch(library, /native-ios-map-stale-viewport|上次细化的视窗/)
   assert.match(library, /if busy \{[\s\S]*?ProgressView\(album == nil \? "正在读取照片位置…" : "正在读取相册位置…"\)/)
-  assert.match(library, /accessibilityIdentifier\("native-ios-map-full-library-scan-progress"\)/)
+  assert.match(library, /accessibilityIdentifier\(album == nil \? "native-ios-map-full-library-scan-progress" : "native-ios-map-album-scan-progress"\)/)
   assert.doesNotMatch(library, /扫描完整授权范围中的位置元数据|已检查 .*个槽位/)
   assert.match(library, /if !globalComplete && !busy \{\s*Button\(album == nil \? "扫描已授权图库位置" : "扫描此相册位置"\)/)
   assert.match(localMap, /globalCells = index\.cells[\s\S]*?globalComplete = true[\s\S]*?mapRevision = UUID\(\)/)
@@ -468,7 +468,7 @@ test('native Photos album exposes Show Map only with Full Photo Library access',
   assert.match(map, /worker\.start\(atOffset: 0, album: album\)/)
   assert.match(map, /\.fullScreenCover\(item: \$globalSelection, onDismiss: \{[\s\S]*?\}\) \{ chosen in[\s\S]*?XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: album,/)
   assert.match(map, /scanner\.start\(atOffset: 0, album: album\)/)
-  assert.match(map, /album == nil \? "此授权图库没有可显示位置的照片或视频。" :\s*"此相册没有可显示位置的照片或视频。"/)
+  assert.match(map, /album == nil \?\s*"此授权图库没有可显示位置的照片或视频。" :\s*"此相册没有可显示位置的照片或视频。"/)
 })
 
 test('album map scans the current PhotoKit collection snapshot, not the whole library or Server', () => {
@@ -492,7 +492,8 @@ test('native local Gallery opens the full-library map from its filter menu witho
   assert.match(localWall, /\.environment\(\\\.xdriveNativeLocalMapJump, mapJump\)/)
   assert.match(map, /if album != nil \|\| onClose != nil[\s\S]*?if onClose != nil \{ onClose\?\(\) \}/)
   assert.match(map, /if album == nil && onFocusChange != nil/)
-  assert.match(localWall, /mediaFilter = option/)
+  assert.match(localWall, /Toggle\("照片", isOn: mediaFilterBinding\(for: \.photos\)\)/)
+  assert.match(localWall, /Button\("重置筛选"\) \{ mediaFilter = \.all \}/)
   assert.match(localWall, /\.environment\(\\\.xdriveOpenNativeLocalMap, \{ jump in\s*pendingViewerMapJump = jump/)
   assert.match(localWall, /private func restoreAfterViewer\(\)[\s\S]*?pendingViewerMapJump[\s\S]*?mapJump = jump[\s\S]*?showingMap = true/)
   assert.match(dashboard, /ForEach\(XDriveIOSNativeGallerySource\.allCases\.filter \{ \$0 != \.map \}/)
