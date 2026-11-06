@@ -533,6 +533,22 @@ interface XDriveService {
         openSource: () -> InputStream, onProgress: (Long) -> Unit = {},
     ): DriveNode = uploadFile(accessToken, parent, name, size, openSource, onProgress)
 
+    /** Managed Android Source/Device/Target CAS writer; no generic Owner-root
+     * fallback, no new physical uploader, no unverified receipt replay. */
+    suspend fun uploadManagedAndroidPhotoOriginal(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination,
+        name: String, size: Long, originalSha256: String, resumeKey: String,
+        openSource: () -> InputStream, onProgress: (Long) -> Unit = {},
+    ): DriveNode = throw ApiException(501, "Android managed photo writer unavailable")
+
+    /** Managed original read-only exact receipt query, not a retry. */
+    suspend fun inspectManagedAndroidPhotoUpload(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination,
+        name: String, size: Long, originalSha256: String, resumeKey: String,
+    ): DriveNode? = throw ApiException(501, "Android managed photo receipt lookup unavailable")
+
     /** Owner-JWT read-only exact lookup: null = ACTIVE / no finalized proof.
      * Missing/expired/ambiguous responses throw and NEVER authorize replay. */
     suspend fun inspectNativePhotoUpload(
@@ -1640,20 +1656,42 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     override suspend fun uploadFile(
         accessToken: String, parent: DriveNode, name: String, size: Long,
         openSource: () -> InputStream, onProgress: (Long) -> Unit,
-    ): DriveNode = uploadFileWithPhotoIdentity(
-        accessToken, parent, name, size, openSource, onProgress, null, null)
+    ): DriveNode {
+        require(parent.isDirectory)
+        return uploadFileWithPhotoIdentity(
+            accessToken, parent.id, name, size, openSource, onProgress, null, null)
+    }
 
     override suspend fun uploadNativePhotoOriginal(
         accessToken: String, parent: DriveNode, name: String, size: Long,
         originalSha256: String, resumeKey: String,
         openSource: () -> InputStream, onProgress: (Long) -> Unit,
-    ): DriveNode = uploadFileWithPhotoIdentity(
-        accessToken, parent, name, size, openSource, onProgress, originalSha256, resumeKey)
+    ): DriveNode {
+        require(parent.isDirectory)
+        return uploadFileWithPhotoIdentity(accessToken, parent.id, name, size,
+            openSource, onProgress, originalSha256, resumeKey)
+    }
+
+    override suspend fun uploadManagedAndroidPhotoOriginal(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination,
+        name: String, size: Long, originalSha256: String, resumeKey: String,
+        openSource: () -> InputStream, onProgress: (Long) -> Unit,
+    ): DriveNode {
+        require(destination.configured && destination.deviceId == enrolled.deviceId &&
+            destination.targetNodeId != null && destination.sourceId != null &&
+            destination.sourceRevision != null && destination.name != null &&
+            destination.targetPath == "同步文件夹/Push/" + destination.name)
+        return uploadFileWithPhotoIdentity(
+            accessToken, requireNotNull(destination.targetNodeId), name, size,
+            openSource, onProgress, originalSha256, resumeKey, enrolled)
+    }
 
     private suspend fun uploadFileWithPhotoIdentity(
-        accessToken: String, parent: DriveNode, name: String, size: Long,
+        accessToken: String, parentId: Long, name: String, size: Long,
         openSource: () -> InputStream, onProgress: (Long) -> Unit,
         originalSha256: String?, resumeKey: String?,
+        deviceIdentity: NativeAndroidDeviceEnrollment? = null,
     ): DriveNode = withContext(Dispatchers.IO) {
         NativeUploadAdmission.withWriter {
         require((resumeKey == null && originalSha256 == null) ||
@@ -1661,13 +1699,15 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 resumeKey.matches(Regex("and_[0-9a-f]{64}")) &&
                 originalSha256.matches(Regex("[0-9a-f]{64}")) && size > 0))
 
-        require(parent.isDirectory && parent.id > 0 && validDriveNodeName(name) && size >= 0)
+        require(parentId > 0 && validDriveNodeName(name) && size >= 0)
         require(validToken(accessToken)) { "Invalid access token" }
         val chunkSize = 8 * 1024 * 1024
         val chunkCount = if (size == 0L) 0L else ((size - 1) / chunkSize + 1)
+        val uploadPath = if (deviceIdentity != null)
+            "android/photos/managed/uploads" else "uploads"
         require(chunkCount <= 1_000_000) { "Upload has too many chunks" }
-        val session = request("uploads", accessToken, bodyObject = JsonObject(mapOf(
-            "parent_id" to JsonPrimitive(parent.id),
+        val session = request(uploadPath, accessToken, deviceIdentity = deviceIdentity, bodyObject = JsonObject(mapOf(
+            "parent_id" to JsonPrimitive(parentId),
             "name" to JsonPrimitive(name),
             "size" to JsonPrimitive(size),
             "chunk_size" to JsonPrimitive(chunkSize),
@@ -1678,7 +1718,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         ) else emptyMap())))
         val id = session.string("id")
         if (!id.matches(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")) ||
-            session.long("parent_id") != parent.id ||
+            session.long("parent_id") != parentId ||
             session.string("name") != name || session.long("size") != size ||
             session.long("chunk_size") != chunkSize.toLong() ||
             session.long("chunk_count") != chunkCount ||
@@ -1689,7 +1729,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         // reuse. Only an exact finalized Node+SHA is proof; no chunk replay.
         if (status == "finalized" && resumeKey != null) {
             val result = node(session["result"] as? JsonObject ?: invalidPayload())
-            if (result.id <= 0 || result.parentId != parent.id ||
+            if (result.id <= 0 || result.parentId != parentId ||
                 result.type != "file" || result.name != name ||
                 result.size != size || result.revision <= 0) invalidPayload()
             onProgress(size)
@@ -1719,7 +1759,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                     val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") {
                         "%02x".format(Locale.ROOT, it.toInt() and 0xff)
                     }
-                    val ack = putUploadChunk(accessToken, id, index, bytes, hash)
+                    val ack = putUploadChunk(accessToken, id, index, bytes, hash, deviceIdentity)
                     if (ack.long("index") != index.toLong() ||
                         ack.long("size") != wanted.toLong() ||
                         !ack.string("sha256").equals(hash, ignoreCase = true)) invalidPayload()
@@ -1728,19 +1768,20 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 }
                 if (input.read() != -1) throw ApiException(0, "Selected file grew during upload")
             }
-            val finalized = request("uploads/$id/finalize", accessToken,
-                bodyObject = JsonObject(emptyMap()), longRunning = true)
+            val finalized = request("$uploadPath/$id/finalize", accessToken,
+                bodyObject = JsonObject(emptyMap()), longRunning = true,
+                deviceIdentity = deviceIdentity)
             if (finalized.string("id") != id || finalized.string("status") != "finalized" ||
-                finalized.long("parent_id") != parent.id ||
+                finalized.long("parent_id") != parentId ||
                 finalized.long("size") != size) invalidPayload()
             val result = node(finalized["result"] as? JsonObject ?: invalidPayload())
-            if (result.id <= 0 || result.type != "file" || result.parentId != parent.id ||
+            if (result.id <= 0 || result.type != "file" || result.parentId != parentId ||
                 result.name != name || result.size != size || result.revision <= 0)
                 invalidPayload()
             completed = true
             result
         } finally {
-            if (!completed) {
+            if (!completed && deviceIdentity == null) {
                 // May already be finalized after a lost ACK. DELETE is best effort;
                 // it cannot remove a finalized Node. Never retry the finalize write.
                 withContext(NonCancellable) {
@@ -1762,12 +1803,35 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     override suspend fun inspectNativePhotoUpload(
         accessToken: String, parentId: Long, name: String, size: Long,
         originalSha256: String, resumeKey: String,
+    ): DriveNode? = inspectNativePhotoUploadExact(
+        accessToken, parentId, name, size, originalSha256, resumeKey, null)
+
+    override suspend fun inspectManagedAndroidPhotoUpload(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination,
+        name: String, size: Long, originalSha256: String, resumeKey: String,
+    ): DriveNode? {
+        require(destination.configured && destination.deviceId == enrolled.deviceId &&
+            destination.targetNodeId != null && destination.sourceId != null &&
+            destination.sourceRevision != null && destination.name != null &&
+            destination.targetPath == "同步文件夹/Push/" + destination.name)
+        return inspectNativePhotoUploadExact(
+            accessToken, requireNotNull(destination.targetNodeId), name, size,
+            originalSha256, resumeKey, enrolled)
+    }
+
+    private suspend fun inspectNativePhotoUploadExact(
+        accessToken: String, parentId: Long, name: String, size: Long,
+        originalSha256: String, resumeKey: String,
+        deviceIdentity: NativeAndroidDeviceEnrollment?,
     ): DriveNode? {
         require(validToken(accessToken) && parentId > 0 && size > 0 &&
             validDriveNodeName(name) &&
             originalSha256.matches(Regex("[0-9a-f]{64}")) &&
             resumeKey.matches(Regex("and_[0-9a-f]{64}")))
-        val dto = request("uploads/android-photo-receipt", accessToken,
+        val lookupPath = if (deviceIdentity != null)
+            "android/photos/managed/uploads/resume-lookup" else "uploads/android-photo-receipt"
+        val dto = request(lookupPath, accessToken, deviceIdentity = deviceIdentity,
             bodyObject = JsonObject(mapOf(
                 "resume_key" to JsonPrimitive(resumeKey),
                 "parent_id" to JsonPrimitive(parentId),
@@ -1798,13 +1862,20 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     private suspend fun putUploadChunk(
         accessToken: String, sessionId: String, index: Int,
         bytes: ByteArray, checksum: String,
+        deviceIdentity: NativeAndroidDeviceEnrollment? = null,
     ): JsonObject = suspendCancellableCoroutine { continuation ->
+        val prefix = if (deviceIdentity != null) "android/photos/managed/uploads" else "uploads"
         val url = address.url.toHttpUrlOrNull()!!.newBuilder()
-            .addPathSegments("api/v1/uploads/$sessionId/chunks/$index").build()
-        val request = Request.Builder().url(url)
+            .addPathSegments("api/v1/$prefix/$sessionId/chunks/$index").build()
+        val builder = Request.Builder().url(url)
             .header("Authorization", "Bearer $accessToken")
             .header("X-Chunk-SHA256", checksum)
             .header("Accept", "application/json")
+        if (deviceIdentity != null) {
+            builder.header("X-XDrive-Device-ID", deviceIdentity.deviceId)
+            builder.header("X-XDrive-Device-Token", deviceIdentity.deviceToken)
+        }
+        val request = builder
             .put(bytes.toRequestBody("application/octet-stream".toMediaType())).build()
         val call = http.newCall(request)
         call.timeout().timeout(0, TimeUnit.MILLISECONDS)
@@ -2796,11 +2867,23 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         val nativeDestinationRequest = path == "android/photos/backup-destination" &&
             ((method == null && values == null) ||
                 (method == "PUT" && values?.keys == setOf("name")))
+        val managedAndroidInit = path == "android/photos/managed/uploads" &&
+            method == null && bodyObject != null
+        val managedAndroidResume = path == "android/photos/managed/uploads/resume-lookup" &&
+            method == null && bodyObject != null
+        val managedAndroidFinalize = path.matches(
+            Regex("android/photos/managed/uploads/[0-9a-fA-F-]{36}/finalize")) &&
+            method == null && bodyObject != null && longRunning
+        val nativeManagedUploadRequest =
+            managedAndroidInit || managedAndroidResume || managedAndroidFinalize
         require(deviceIdentity == null ||
-            (accessToken != null && (nativeIdentityRequest || nativeDestinationRequest) &&
+            (accessToken != null &&
+                (nativeIdentityRequest || nativeDestinationRequest ||
+                    nativeManagedUploadRequest) &&
                 query.isEmpty() && ifMatch == null && numberValues.isEmpty() &&
-                bodyObject == null && !longRunning && pathTailSegments.isEmpty())) {
-            "Device credentials are restricted to native identity and photo destination"
+                (bodyObject == null || nativeManagedUploadRequest) &&
+                (!longRunning || managedAndroidFinalize) && pathTailSegments.isEmpty())) {
+            "Device credentials are restricted to native identity, destination and managed originals"
         }
         val url = address.url.toHttpUrlOrNull()!!.newBuilder().addPathSegments("api/v1/$path").apply {
             // Authenticated album IDs may be opaque (including reserved characters):
