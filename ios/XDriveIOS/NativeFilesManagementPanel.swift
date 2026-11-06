@@ -1051,7 +1051,8 @@ private final class XDriveIOSNativeFilesTagModel: ObservableObject {
     }
 }
 
-private struct XDriveIOSNativeFilesTagPanel: View {
+/// Reused by single-node management and the native Files batch selection.
+struct XDriveIOSNativeFilesTagPanel: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let expectedOwner: XDriveNativeOwnerRoot
     let nodeIDs: [UInt64]
