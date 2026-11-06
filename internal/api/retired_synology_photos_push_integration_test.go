@@ -88,6 +88,11 @@ func TestRetiredSynologyPhotosPushPreservesHistoryAndCannotWrite(t *testing.T) {
 		{http.MethodPost, "/trigger", ""},
 		{http.MethodPatch, "", `{"status":"active"}`},
 		{http.MethodPost, "/restore", ""},
+		// A legacy DSM Photos Push may never be deleted, re-run or updated
+		// through the generic Source/Run endpoints, even with Owner JWT.
+		{http.MethodDelete, "", ""},
+		{http.MethodPost, "/runs", `{"run_id":"0e424788-23fa-4c81-a344-1c8f8adc7a80","trigger":"manual"}`},
+		{http.MethodPost, "/runs/0e424788-23fa-4c81-a344-1c8f8adc7a80/heartbeat", `{}`},
 	} {
 		requestWithHeaders(t, router, call.method, url+call.suffix, ownerJWT,
 			strings.NewReader(call.body), http.StatusGone, map[string]string{"If-Match": `"1"`})
