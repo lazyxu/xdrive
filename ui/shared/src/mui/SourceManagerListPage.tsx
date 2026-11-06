@@ -15,10 +15,10 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import {
   externalSourceCardView,
-  externalSourceConnectorProfile,
   externalSourceDisplayName,
   externalSourceTriggerActionLabel,
   formatExternalSourceTime,
+  isReadOnlySynologySource,
 } from '../external-sources'
 import { formatBytes } from '../format'
 import type { ExternalSourceRow } from '../external-sources'
@@ -43,7 +43,6 @@ export function XDriveSourceManagerListPage({
   onAdd,
   onOpenError,
   onOpenDetails,
-  onOpenSynologyGuide,
   onTriggerNow,
   onCancelRun,
   onOpenSettings,
@@ -67,7 +66,6 @@ export function XDriveSourceManagerListPage({
   onAdd: () => void | Promise<void>
   onOpenError: (row: ExternalSourceRow) => void
   onOpenDetails: (row: ExternalSourceRow) => void | Promise<void>
-  onOpenSynologyGuide: (row: ExternalSourceRow) => void
   onTriggerNow: (row: ExternalSourceRow) => void | Promise<void>
   onCancelRun: (row: ExternalSourceRow) => void | Promise<void>
   onOpenSettings: (row: ExternalSourceRow) => void
@@ -211,11 +209,6 @@ export function XDriveSourceManagerListPage({
                     >
                       查看
                     </XDriveActionButton>
-                    {externalSourceConnectorProfile(row.source.kind, row.source.direction).manualTriggerExecutor === 'source_agent' ? (
-                      <XDriveActionButton compact onClick={() => onOpenSynologyGuide(row)}>
-                        DSM 配置
-                      </XDriveActionButton>
-                    ) : null}
                     {row.source.kind === 'ios_photos' ? (
                       <MuiTypography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
                         请在已绑定 iPhone 的相册备份页启动
@@ -247,9 +240,11 @@ export function XDriveSourceManagerListPage({
                             停止
                           </XDriveActionButton>
                         ) : null}
-                        <XDriveActionButton compact onClick={() => onOpenSettings(row)}>
-                          设置
-                        </XDriveActionButton>
+                        {!isReadOnlySynologySource(row.source) ? (
+                          <XDriveActionButton compact onClick={() => onOpenSettings(row)}>
+                            设置
+                          </XDriveActionButton>
+                        ) : null}
                       </>
                     )}
 

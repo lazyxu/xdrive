@@ -9,6 +9,7 @@ test('own Desktop alone may remove pristine bound Source through private Agent p
   const api = read('internal', 'api', 'sources.go')
   const auth = read('internal', 'api', 'local_source_executor_auth.go')
   const transport = read('internal', 'client', 'local_bound_remove.go')
+  const proofHeaders = read('internal', 'client', 'local_bound_rules.go')
   const agent = read('cmd', 'xdrive-agent', 'device_backup_local_remove.go')
   const ipc = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
   const main = read('desktop', 'src', 'main', 'index.cts')
@@ -25,8 +26,9 @@ test('own Desktop alone may remove pristine bound Source through private Agent p
   assert.match(auth, /clientDeviceCredentialMatches\(/)
   for (const header of ['X-XDrive-Device-ID', 'X-XDrive-Device-Token',
     'X-XDrive-Local-Root-ID', 'X-XDrive-Local-Root-Fingerprint']) {
-    assert.ok(transport.includes(header), header)
+    assert.ok(proofHeaders.includes(header), header)
   }
+  assert.match(transport, /localRulesProofHeaders\(req, proof\)/)
   assert.match(agent, /localBoundBackupConfig\(ctx, sourceID\)/)
   assert.ok(agent.indexOf('cli.RemoveLocalBoundSource(ctx, sourceID, revision, proof)') <
     agent.indexOf('localpush.RemoveRootGrant('))
@@ -35,7 +37,7 @@ test('own Desktop alone may remove pristine bound Source through private Agent p
   assert.match(preload, /removeDeviceBackupLocalSource:/)
   assert.match(app, /localRemove:\s*localBackupRemove/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
-  assert.match(page, /remove: Boolean\(localRemove\)/)
+  assert.match(page, /remove: folder\.status === 'paused' && Boolean\(localRemove\)/)
   assert.match(page, /localActions\.remove \?/)
   assert.match(page, /localOwnsFolder\(removeTarget\.id\)/)
   assert.match(dialog, /actions\.remove\(sourceID, settings\.revision\)/)

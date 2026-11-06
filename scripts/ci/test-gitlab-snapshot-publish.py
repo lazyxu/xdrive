@@ -25,7 +25,6 @@ A = 'a' * 40
 B = 'b' * 40
 FILES = (
     'xdrive-linux-amd64.deb', 'xDriveSetup-amd64.exe',
-    'xdrive-source-agent-linux-amd64', 'xdrive-source-agent-linux-arm64',
     'xdrive-backup-linux-amd64.tar.gz', 'xdrive-backup-windows-amd64.zip',
     SPK_NAME, SPK_NAME + '.sha256',
     'xdrive-server-install.sh', 'server-backup.sh', 'server-backup-scheduled.sh',

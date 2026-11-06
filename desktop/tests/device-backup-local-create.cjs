@@ -18,7 +18,7 @@ test('Device Backup local creation is only wired by Desktop Agent capabilities',
   assert.match(app, /targetBrowser:\s*localBackupCreate \|\| localBackupTarget \? desktopSourceTargetBrowser : undefined/)
   assert.match(app, /localTarget:\s*localBackupTarget/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
-  assert.match(page, /target: Boolean\(localTarget && targetBrowser\)/)
+  assert.match(page, /target: folder\.status !== 'archived' && Boolean\(localTarget && targetBrowser\)/)
   assert.match(page, /localActions\.target \?/)
   assert.equal(web.includes('localCreate='), false)
   assert.match(page, /localCreate && source/) 

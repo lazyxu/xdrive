@@ -30,11 +30,6 @@ jobs:
         with:
           name: xdrive-windows-amd64
           path: exact
-      - name: Download exact Synology source-agent binaries produced by CI
-        uses: actions/download-artifact@v4
-        with:
-          name: xdrive-source-agent-linux
-          path: source-agent
       - name: Download exact CLI-only backup archives produced by CI
         uses: actions/download-artifact@v4
         with:
@@ -57,20 +52,12 @@ jobs:
             find exact -maxdepth 1 -type f -print >&2
             exit 1
           }
-          test -f source-agent/xdrive-source-agent-linux-amd64
-          test -f source-agent/xdrive-source-agent-linux-arm64
           test -s backup-cli/xdrive-backup-linux-amd64.tar.gz
           test -s backup-cli/xdrive-backup-windows-amd64.zip
           bash scripts/ci/verify-synology-spk-release.sh synology --require-mui
           cli_count="$(find backup-cli -maxdepth 1 -type f | wc -l)"
           [[ "$cli_count" == "2" ]] || {
             echo "expected exactly two standalone Backup CLI archives; found $cli_count" >&2
-            exit 1
-          }
-          source_count="$(find source-agent -maxdepth 1 -type f | wc -l)"
-          [[ "$source_count" == "2" ]] || {
-            echo "expected exactly two source-agent binaries; found $source_count" >&2
-            find source-agent -maxdepth 1 -type f -print >&2
             exit 1
           }
 
@@ -278,11 +265,6 @@ jobs:
         with:
           name: xdrive-windows-amd64
           path: release
-      - name: Download exact Synology source-agent binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: xdrive-source-agent-linux
-          path: release
       - name: Download exact CLI-only backup archives
         uses: actions/download-artifact@v4
         with:
@@ -320,8 +302,6 @@ jobs:
           set -euo pipefail
           test -f release/xdrive-linux-amd64.deb
           test -f release/xDriveSetup-amd64.exe
-          test -f release/xdrive-source-agent-linux-amd64
-          test -f release/xdrive-source-agent-linux-arm64
           test -s release/xdrive-backup-linux-amd64.tar.gz
           test -s release/xdrive-backup-windows-amd64.zip
           bash scripts/ci/verify-synology-spk-release.sh release --require-mui
@@ -338,8 +318,6 @@ jobs:
           sha256sum \
             xdrive-linux-amd64.deb \
             xDriveSetup-amd64.exe \
-            xdrive-source-agent-linux-amd64 \
-            xdrive-source-agent-linux-arm64 \
             xdrive-backup-linux-amd64.tar.gz \
             xdrive-backup-windows-amd64.zip \
             xdrivenas-armada38x-*.spk \
@@ -574,18 +552,18 @@ jobs:
                 remote_complete=1
                 break
               fi
-              # Versioned Synology installers change names each build.
-              # --clobber leaves old versions in place; prune ONLY older SPKs
-              # after all expected digests match, retaining the exact-set gate
-              # for unrelated unexpected files.
+              # Retire only superseded SPKs or standalone DSM Photos
+              # source-agent binaries, and only after current digests match.
+              # Unrelated unexpected Release assets remain fail-closed.
               while IFS=$'\t' read -r old_asset_id old_asset_name; do
-                if [[ "$old_asset_name" =~ ^xdrivenas-armada38x-[0-9][0-9A-Za-z.-]*\.spk(\.sha256)?$ &&
-                      ! -f "release/$old_asset_name" ]]; then
+                if [[ ! -f "release/$old_asset_name" ]] &&
+                   { [[ "$old_asset_name" =~ ^xdrivenas-armada38x-[0-9][0-9A-Za-z.-]*\.spk(\.sha256)?$ ]] ||
+                     [[ "$old_asset_name" =~ ^xdrive-source-agent-linux-(amd64|arm64|armv7)$ ]]; }; then
                   [[ "$old_asset_id" =~ ^[0-9]+$ ]] || {
                     echo "Invalid superseded Snapshot asset ID." >&2
                     exit 1
                   }
-                  echo "[xDrive] Removing superseded Snapshot SPK: $old_asset_name"
+                  echo "[xDrive] Removing superseded Snapshot asset: $old_asset_name"
                   gh api --method DELETE "repos/$repo/releases/assets/$old_asset_id" >/dev/null
                 fi
               done < <(jq -r '.assets[] | "\(.id)\t\(.name)"' <<< "$release_json")

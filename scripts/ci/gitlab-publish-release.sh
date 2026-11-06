@@ -9,7 +9,6 @@ printf '%s' "$CI_COMMIT_SHA" | grep -Eq '^[a-f0-9]{40}$' || { echo "GitLab relea
 
 set -- \
   xdrive-linux-amd64.deb xDriveSetup-amd64.exe \
-  xdrive-source-agent-linux-amd64 xdrive-source-agent-linux-arm64 \
   xdrive-backup-linux-amd64.tar.gz xdrive-backup-windows-amd64.zip \
   xdrive-server-install.sh server-backup.sh server-backup-scheduled.sh \
   server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh \
@@ -172,6 +171,7 @@ rollback_links() {
     case "$kind" in
       restore) glab api --method PUT "$release_endpoint/assets/links/$id" -f "url=$old_url" >/dev/null 2>&1 || true ;;
       delete) glab api --method DELETE "$release_endpoint/assets/links/$id" >/dev/null 2>&1 || true ;;
+      recreate) glab api --method POST "$release_endpoint/assets/links" -f "name=$id" -f "url=$old_url" -f 'link_type=package' >/dev/null 2>&1 || true ;;
     esac
   done < "$rollback_file"
 }
@@ -226,6 +226,46 @@ if [ "$current_description" != "$old_description" ]; then
   echo "GitLab Release changed during link update; refusing promotion" >&2
   exit 1
 fi
+# The retired standalone DSM Photos Push is no longer a public asset.
+# Delete only historical source-agent Release links, preserving immutable
+# package bytes and every unrelated link. Roll back if any mutation fails.
+for obsolete_name in xdrive-source-agent-linux-amd64 xdrive-source-agent-linux-arm64 xdrive-source-agent-linux-armv7; do
+  obsolete_row="$(printf '%s\n' "$active_links" | awk -F '\t' -v n="$obsolete_name" '$1 == n {print $0}')"
+  obsolete_count="$(printf '%s\n' "$obsolete_row" | awk 'NF {n++} END {print n+0}')"
+  [ "$obsolete_count" -le 1 ] || {
+    echo "duplicate retired DSM source-agent Release links: $obsolete_name" >&2
+    exit 1
+  }
+  [ "$obsolete_count" -eq 1 ] || continue
+  obsolete_id="$(printf '%s\n' "$obsolete_row" | awk -F '\t' '{print $2}')"
+  obsolete_url="$(printf '%s\n' "$obsolete_row" | awk -F '\t' '{print $3}')"
+  printf '%s' "$obsolete_id" | grep -Eq '^[0-9]+glab api --method PUT "$release_endpoint" -f "name=$release_name" -f "description=$release_notes" >/dev/null
+committed=1
+current_description="$(glab_api_jq '.description' "$release_endpoint")"
+[ "$current_description" = "$release_notes" ] || {
+  echo "GitLab Release commit-marker read-back disagrees; inspect publication" >&2
+  exit 1
+}
+echo "Published GitLab snapshot $CI_COMMIT_SHA (verified assets, release links, commit marker)."
+ || {
+    echo "invalid retired Release link ID: $obsolete_name" >&2
+    exit 1
+  }
+  case "$obsolete_url" in
+    http://*/"$obsolete_name"|https://*/"$obsolete_name") ;;
+    *) echo "unrecognized retired Release link URL: $obsolete_name" >&2; exit 1 ;;
+  esac
+  printf 'recreate\t%s\t%s\n' "$obsolete_name" "$obsolete_url" >> "$rollback_file"
+  glab api --method DELETE "$release_endpoint/assets/links/$obsolete_id" >/dev/null
+done
+final_links="$(glab_api_jq '.[] | "\(.name)\t\(.id)\t\(.url)"' --paginate "$release_endpoint/assets/links")"
+for obsolete_name in xdrive-source-agent-linux-amd64 xdrive-source-agent-linux-arm64 xdrive-source-agent-linux-armv7; do
+  if printf '%s\n' "$final_links" | awk -F '\t' -v n="$obsolete_name" '$1 == n {found=1} END {exit !found}'; then
+    echo "retired DSM source-agent Release link still exists: $obsolete_name" >&2
+    exit 1
+  fi
+done
+
 # Publish the verified commit marker LAST, after all Package SHA-256s and URLs.
 glab api --method PUT "$release_endpoint" -f "name=$release_name" -f "description=$release_notes" >/dev/null
 committed=1

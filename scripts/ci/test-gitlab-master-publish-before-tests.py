@@ -26,7 +26,7 @@ master_builds = required_images | {"web"}
 nonblocking_tests = {
     "desktop-tests", "go-linux", "go-linux-api", "server-validation",
     "server-backup", "go-windows", "test-linux-artifact",
-    "test-source-agent-artifact", "test-windows-rollback-artifact",
+    "test-windows-rollback-artifact",
     "test-windows-upgrade-artifact", "test-windows-smoke-artifact",
 }
 
@@ -124,7 +124,6 @@ image_publisher = jobs["publish-server-images"]
 for name in required_images:
     assert name in image_publisher, f"missing exact published image {name}"
 assert "web" in jobs["caddy-image"]
-assert "build-source-agent" in jobs["release-assets"]
 assert "final-gate" not in re.findall(
     r'(?m)^        - job: ([\w-]+)$',
     jobs["release-assets"].split("    - if: '"+release_only, 1)[-1]

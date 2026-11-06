@@ -29,11 +29,9 @@ for source in "${sources[@]}"; do
   mkdir -p "$fixture/$(dirname "$source")"
   cp "$ROOT/$source" "$fixture/$source"
 done
-
-mkdir -p "$fixture/release/source-agent"
-for arch in amd64 arm64; do
-  printf '#!/bin/sh\nexit 0\n' > "$fixture/release/source-agent/xdrive-source-agent-linux-$arch"
-done
+# Production packaging provides the release staging directory; reproduce that
+# prerequisite while still verifying every generated artifact and digest.
+mkdir -p "$fixture/release"
 
 sha="0123456789abcdef0123456789abcdef01234567"
 (

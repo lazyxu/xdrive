@@ -1,5 +1,18 @@
 # Unified Push/Pull Source Management Architecture
 
+> **2026-11-06 / 2026-11-07 integration decision:** DSM's separate
+> `xdrive-source-agent` and the dedicated Synology Photos Push connector
+> are retired. Only the owning DSM `local_folder` Push agent is enabled.
+> Synology Photos Pull and Synology Files Pull are temporarily dormant; their
+> source, credential, run, target, UploadSession and CAS history is retained.
+> Yike Pull and device-scoped Desktop, iOS and Android Push remain enabled.
+> These rules supersede older DSM Source Agent descriptions below.
+> Native Local Push archive/paused restore requires the owning Device and
+> verified Root proof, never an Owner session alone.
+> New Push targets are flat `同步文件夹/Push/<SourceName>`, and legacy
+> target directories are not migrated.
+
+
 **Decision:** 2026-11-05  
 **Scope:** new Push/Pull Sources and new destinations. Old directories, file contents and receipts are not migrated. S01 allows only a verified Owner/platform-matched Source.DeviceID metadata backfill; it does not move targets or rebind unrelated devices.
 

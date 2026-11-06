@@ -34,7 +34,6 @@ const files = {
   sectionHeader: readRepo('ui/shared/src/mui/SectionHeader.tsx'),
   tableSurface: readRepo('ui/shared/src/mui/TableSurface.tsx'),
   externalSourcesShared: readRepo('ui/shared/src/external-sources.ts'),
-  synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
   yikeCookieHelp: readRepo('ui/shared/src/mui/YikeCookieHelp.tsx'),
   sourceRunProgress: readRepo('ui/shared/src/mui/SourceRunProgress.tsx'),
   sourceFailureItem: readRepo('ui/shared/src/mui/SourceFailureItem.tsx'),
@@ -139,7 +138,8 @@ if (/from ['"]antd['"]/.test(files.share) || files.share.includes('@ant-design/i
 requireText(files.publicShare, ['安全文件分享', '分享密码', '下载不限次数', 'XDriveStatusAlert', 'XDriveActionButton'], '公开分享')
 if (/<Alert\b/.test(files.publicShare)) throw new Error('公开分享仍在直接渲染 AntD Alert')
 if (/from ['"]antd['"]/.test(files.publicShare) || files.publicShare.includes('@ant-design/icons')) throw new Error('公开分享仍依赖 Ant Design')
-requireText(files.sources + files.externalSourcesShared + files.sourceRunProgress + files.sourceFailureItem + files.paginationControls + files.sourceRunSummary + files.sourceScheduleFields + files.sourceCredentialFields, ['拉取来源', '添加{sourceNoun}', '群晖 Photos', '一刻相册', '群晖 Photos · Push', '群晖 File Station', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetDisplayLabel', '存储子目录', '立即重试', '未自动删除或归档', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', '相册与集合', '该来源暂无相册/集合元数据', 'sourceCollections', 'sourceCollectionItems', 'XDriveSourceTargetField', 'XDriveSensitiveField', '一刻相册 Cookie', 'DSM 密码', 'revealSourceCredential', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveSourceRunProgress', 'XDriveSourceFailureItem', 'XDrivePaginationControls', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert', 'WorkspaceSurface', 'presentation="page"', 'pageActions={', 'XDriveSectionHeader'], '同步文件夹')
+if (/value:\\s*['\"]synology_push['\"]/.test(files.externalSourcesShared)) throw new Error('DSM Photos Push 创建入口不得恢复')
+requireText(files.sources + files.externalSourcesShared + files.sourceRunProgress + files.sourceFailureItem + files.paginationControls + files.sourceRunSummary + files.sourceScheduleFields + files.sourceCredentialFields, ['拉取来源', '添加{sourceNoun}', '群晖 Photos', '一刻相册', '群晖 File Station', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetDisplayLabel', '存储子目录', '立即重试', '未自动删除或归档', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', '相册与集合', '该来源暂无相册/集合元数据', 'sourceCollections', 'sourceCollectionItems', 'XDriveSourceTargetField', 'XDriveSensitiveField', '一刻相册 Cookie', 'DSM 密码', 'revealSourceCredential', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveSourceRunProgress', 'XDriveSourceFailureItem', 'XDrivePaginationControls', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert', 'WorkspaceSurface', 'presentation="page"', 'pageActions={', 'XDriveSectionHeader'], '同步文件夹')
 if (files.sources.includes('<DialogTitle')) throw new Error('Web 外部来源仍在直接渲染原生 DialogTitle')
 if (files.sources.includes('<MuiAlert')) throw new Error('Web 外部来源仍在直接渲染原生 MUI Alert')
 if (((files.sources + files.workspaceSurface).match(/<XDriveDialogTitle/g) || []).length < 8) throw new Error('Web 外部来源弹窗没有全部复用共享 Dialog chrome')
@@ -217,9 +217,6 @@ if (files.sources.includes('externalSourceCollectionKindLabel(collection.kind)')
 requireText(files.yikeCookieHelp, ['如何获取 Cookie？', '点击展开', '关闭', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert'], '一刻相册 Cookie 帮助')
 if (/<Alert\b/.test(files.yikeCookieHelp)) throw new Error('一刻相册 Cookie 帮助仍在直接渲染原生 MUI Alert')
 if (/<DialogContent(?:\s|>)/.test(files.yikeCookieHelp)) throw new Error('一刻相册 Cookie 帮助仍在直接渲染原生 MUI DialogContent')
-requireText(files.synologyGuide, ['群晖 DSM 配置', 'DSM 操作示意图', '上一步', '下一步', '完成', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert'], '群晖 DSM 向导')
-if (/<Alert\b/.test(files.synologyGuide)) throw new Error('群晖 DSM 向导仍在直接渲染原生 MUI Alert')
-if (/<DialogContent(?:\s|>)/.test(files.synologyGuide)) throw new Error('群晖 DSM 向导仍在直接渲染原生 MUI DialogContent')
 requireText(files.main, ['XDriveAppearanceThemeProvider', 'normalizeXDriveAppearance', "xdrive.appearance", '<App appearance={appearance} onAppearanceChange={changeAppearance} />'], 'MUI Web 入口')
 requireText(files.app + files.settingsDialog + files.accountChrome, ['XDriveAccountMenuActions', '设置', 'subtitle="外观、Viewer 画质与服务端信息"', 'XDriveAppearanceField', 'XDriveBuildInfoCard', 'Server 构建信息'], 'Web 设置弹窗')
 if (/antd|ConfigProvider|AntApp|zhCN/.test(files.main)) throw new Error('Web 入口仍保留 Ant Design provider')

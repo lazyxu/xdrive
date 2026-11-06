@@ -44,7 +44,7 @@ test('owning Desktop stages only advisory identity evidence through real authent
   assert.match(globals, /XDriveLocalBackupEvidence/)
   assert.match(app, /localEvidence:\s*localBackupEvidence/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
-  assert.match(page, /evidence: Boolean\(localEvidence\)/)
+  assert.match(page, /evidence: folder\.status !== 'archived' && Boolean\(localEvidence\)/)
   assert.match(page, /localActions\.evidence \?/)
   assert.match(page, /localOwnsFolder\(evidenceTarget\.id\)/)
   assert.match(page, /evidenceTarget.source === source/)

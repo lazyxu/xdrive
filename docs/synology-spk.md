@@ -129,10 +129,28 @@ Root authorization and must not expose the private Agent IPC listener.
 - P1: expose the existing shared `@xdrive/ui/mui` Backup page in DSM through
   a **DSM-authenticated, CSRF-protected, owner-scoped local adapter**, not the
   unauthenticated private Agent IPC port. Do not bundle Electron.
-- P2: add other Synology CPU architectures and optionally integrate the
-  existing `xdrive-source-agent` Photos metadata path, without duplicate
-  backup uploads or Source/Runners.
+- P2: add other Synology CPU architectures. Synology Photos Personal/Shared
+  originals are backed up by selecting their filesystem directories in the
+  **existing DSM folder Push**. There is no standalone DSM Photos Push agent.
+  Avoid overlapping Sources for the same Photos root.
 
+
+## Synology Photos original files
+
+For a backup of Synology Photos originals, use the same DSM folder backup
+workflow (DSM package user **read-only** permissions required). Typical roots
+are `/volume1/photo` for Shared Space and
+`/volume1/homes/<DSM-user>/Photos` for Personal Space. Exact volume numbers
+and homes paths depend on NAS configuration. Do not configure both a parent
+folder Source and a nested Photos Source, or the same files may be represented
+twice under different target Nodes.
+
+The dedicated Synology Photos **Push** connector and its separately installed
+`xdrive-source-agent` have been retired. Historical Push Sources and their
+existing xDrive Nodes, versions and CAS data remain readable and may be archived
+without deleting backups. **Synology Photos Pull** remains supported by the
+Server connector. Folder backups do not preserve DSM virtual album membership,
+people/face data, favorites or sharing configuration.
 
 ## ARMv7 DSM 7 old-kernel filesystem compatibility
 

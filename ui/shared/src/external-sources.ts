@@ -2,7 +2,7 @@ import { formatBytes } from './format'
 
 export type SupportedExternalSourceKind = 'synology_photos' | 'synology_files' | 'yike_photos' | 'local_folder' | 'ios_photos' | 'android_photos'
 export type ExternalSourceDirection = 'push' | 'pull'
-export type ExternalSourceCreatePreset = 'synology_push' | 'synology_pull' | 'synology_files_pull' | 'yike_pull' | 'local_push'
+export type ExternalSourceCreatePreset = 'synology_pull' | 'synology_files_pull' | 'yike_pull' | 'local_push'
 export type SynologyPhotoSpace = 'personal' | 'shared'
 export type ExternalSourceRunMode = 'scan' | 'sync'
 export type ExternalSourceSyncMode = 'backup' | 'mirror'
@@ -307,27 +307,7 @@ export interface ExternalSourceCreateOption {
 }
 
 export const externalSourceCreateOptions: ExternalSourceCreateOption[] = [
-  {
-    value: 'synology_push',
-    kind: 'synology_photos',
-    direction: 'push',
-    label: '群晖 Photos · Push',
-    description: '在 NAS 上运行 xdrive-source-agent，主动把照片推送到 xDrive。',
-  },
-  {
-    value: 'synology_pull',
-    kind: 'synology_photos',
-    direction: 'pull',
-    label: '群晖 Photos',
-    description: '由 xDrive Server 通过 DSM / Synology Photos API 定时读取并同步照片。',
-  },
-  {
-    value: 'synology_files_pull',
-    kind: 'synology_files',
-    direction: 'pull',
-    label: '群晖 File Station',
-    description: '由 xDrive Server 通过 DSM / File Station API 同步选定目录中的任意文件和文件夹。',
-  },
+  // Dormant Synology Photos/Files Pull and retired DSM Photos Push remain historical only.
   {
     value: 'yike_pull',
     kind: 'yike_photos',
@@ -391,7 +371,7 @@ export function externalSourceCreatePresetFor(kind: string, direction: ExternalS
   if (kind === 'local_folder') return 'local_push'
   if (kind === 'yike_photos') return 'yike_pull'
   if (kind === 'synology_files') return 'synology_files_pull'
-  return direction === 'pull' ? 'synology_pull' : 'synology_push'
+  return kind === 'synology_photos' ? 'synology_pull' : 'local_push'
 }
 
 export const yikeConnectorNotice = '一刻相册连接依赖当前网页版未公开接口，服务端变化可能导致连接暂时失效。xDrive 仅执行读取与备份，不会上传、删除或修改一刻相册中的内容。'
@@ -440,7 +420,7 @@ export interface ExternalSourceConnectorProfile {
   label: string
   direction: ExternalSourceDirection
   credential: 'cookie' | 'synology_dsm' | null
-  manualTriggerExecutor: 'pull_worker' | 'source_agent' | 'local_agent' | 'ios_device' | 'android_device'
+  manualTriggerExecutor: 'pull_worker' | 'retired' | 'local_agent' | 'ios_device' | 'android_device'
   defaultName: string
   defaultIgnoreRules: string
 }
@@ -656,11 +636,11 @@ export function externalSourceConnectorProfile(kind: string, direction?: Externa
   if (kind === 'synology_photos') {
     return {
       kind,
-      label: '群晖 Photos',
+      label: '群晖 Photos Push（已停用）',
       direction: 'push',
       credential: null,
-      manualTriggerExecutor: 'source_agent',
-      defaultName: '群晖 Photos',
+      manualTriggerExecutor: 'retired',
+      defaultName: '已停用的群晖 Photos Push',
       defaultIgnoreRules: '@eaDir/\n\\#recycle/\n',
     }
   }
@@ -669,7 +649,7 @@ export function externalSourceConnectorProfile(kind: string, direction?: Externa
     label: kind,
     direction: direction ?? 'pull',
     credential: null,
-    manualTriggerExecutor: direction === 'push' ? 'source_agent' : 'pull_worker',
+    manualTriggerExecutor: direction === 'push' ? 'retired' : 'pull_worker',
     defaultName: kind,
     defaultIgnoreRules: '',
   }
@@ -721,10 +701,22 @@ export function externalSourceRunStatusTone(status: ExternalSourceRunStatus): Ex
   return 'neutral'
 }
 
+export function isSynologyPullTemporarilyDisabled(source: Pick<ExternalSource, 'kind' | 'direction'>) {
+  return source.direction === 'pull' &&
+    (source.kind === 'synology_photos' || source.kind === 'synology_files')
+}
+
+export function isReadOnlySynologySource(source: Pick<ExternalSource, 'kind' | 'direction'>) {
+  return isSynologyPullTemporarilyDisabled(source) ||
+    (source.kind === 'synology_photos' && source.direction === 'push')
+}
+
 export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceState {
   const { source, latestRun, credential } = row
   const connector = externalSourceConnectorProfile(source.kind, source.direction)
   if (source.status === 'archived') return { key: 'archived', tone: 'neutral', label: '已归档' }
+  if (isSynologyPullTemporarilyDisabled(source)) return { key: 'paused', tone: 'warning', label: 'Synology Pull 暂停提供 · 历史数据保留' }
+  if (source.kind === 'synology_photos' && source.direction === 'push') return { key: 'paused', tone: 'warning', label: '已停用 · 保留历史数据' }
   if (source.kind === 'android_photos') {
     // Native MediaStore uploads execute while the Source remains paused to
     // prohibit Server execution. Never mask a real device-owned SourceRun.
@@ -765,6 +757,8 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
 }
 
 export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalSourceTriggerState {
+  if (isSynologyPullTemporarilyDisabled(row.source)) return { ready: false, label: 'Synology Photos/Files Pull 暂停提供；请使用 DSM 文件夹 Push 备份。已有数据保留。' }
+  if (row.source.kind === 'synology_photos' && row.source.direction === 'push') return { ready: false, label: 'DSM 相册 Push 已停用，请改用 DSM 文件夹备份；原有数据和历史保留' }
   if (row.source.status === 'archived') {
     return { ready: false, label: '来源已归档，请先恢复' }
   }
@@ -786,13 +780,11 @@ export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalS
     return { ready: false, label: '来源正在取消' }
   }
   if (latestRun?.status === 'running') return { ready: false, label: '来源正在运行' }
-  if (connector.manualTriggerExecutor === 'source_agent') {
-    return { ready: true, label: '提交请求，由群晖 source-agent 下一次任务检查执行' }
-  }
   return { ready: true, label: '立即唤醒服务器拉取任务扫描该来源；定时检查作为兜底' }
 }
 
 export function externalSourceTriggerActionLabel(row: ExternalSourceRow) {
+  if (isReadOnlySynologySource(row.source)) return '已停用'
   if (row.source.kind === 'ios_photos') return 'iPhone 端操作'
   if (row.source.kind === 'android_photos') return 'Android 端操作'
   if (row.source.run_requested_at) return '已请求'
