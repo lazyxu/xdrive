@@ -85,7 +85,8 @@ func requireSourceRunOrLocalPushTargetTx(
 		return requireIOSPhotoManagedUploadTx(ctx, tx, c, ownerID, nodeID, req)
 	}
 	if req.SourceID != 0 {
-		return requireSynologyPushUploadTargetTx(ctx, tx, c, ownerID, nodeID, req)
+		// The retired standalone DSM Photos Push protocol never authorizes SourceID uploads.
+		return errManagedSourceWriteDenied
 	}
 	if _, scoped := currentSourceRunScope(c); scoped {
 		return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, ownerID, nodeID)
@@ -128,7 +129,7 @@ func requireSourceRunOrLocalPushFinalizeTx(
 		if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
 			return requireIOSPhotoManagedFinalizeTx(ctx, tx, c, session, nodeID)
 		}
-		return requireSynologyPushUploadSessionTx(ctx, tx, c, session)
+		return errManagedSourceWriteDenied
 	}
 	if _, scoped := currentSourceRunScope(c); scoped {
 		return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, session.OwnerID, nodeID)
@@ -168,7 +169,7 @@ func (s *Server) requireUploadSessionReadAuthorityTx(
 		if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
 			return requireIOSPhotoManagedSessionTx(ctx, tx, c, session)
 		}
-		return requireSynologyPushUploadSessionTx(ctx, tx, c, session)
+		return errManagedSourceWriteDenied
 	}
 	if _, photos := currentAndroidPhotoManagedUploadScope(c); photos {
 		return errManagedSourceWriteDenied
