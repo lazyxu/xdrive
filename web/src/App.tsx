@@ -362,6 +362,28 @@ function WebAccountMenu({
   )
 }
 
+// All Desktop map-only authentication failures share one branded presentation.
+// A missing preload and a failed ephemeral Cookie must never render AuthView.
+function XDriveDesktopPlacesAuthUnavailable({
+  notice,
+}: {
+  notice: string
+}) {
+  return (
+    <XDriveAuthShell viewport decorated spacing="compact">
+      <XDriveAuthPanel size="compact">
+        <Box role="alert" data-xdrive-desktop-places-auth-denied>
+          <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="large"
+            subtitle={notice} />
+          <Button onClick={() => window.location.reload()}>
+            重试地图会话
+          </Button>
+        </Box>
+      </XDriveAuthPanel>
+    </XDriveAuthShell>
+  )
+}
+
 function App({
   appearance,
   onAppearanceChange,
@@ -704,16 +726,8 @@ function App({
   // never an invitation to enter credentials inside a Desktop WebView.
   if (xDriveDesktopPlacesEmbedIntent(window.location.search) &&
       !xDriveTrustedDesktopPlacesBridge()) {
-    return (
-      <XDriveAuthShell viewport decorated spacing="compact">
-        <XDriveAuthPanel size="compact">
-          <Box role="alert" data-xdrive-desktop-places-auth-denied>
-            <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="large"
-              subtitle="Desktop 地图身份桥接不可用。请更新 Server Web 页面与 Desktop 客户端，然后重试地图。" />
-          </Box>
-        </XDriveAuthPanel>
-      </XDriveAuthShell>
-    )
+    return <XDriveDesktopPlacesAuthUnavailable
+      notice="Desktop 地图身份桥接不可用。请更新 Server Web 页面与 Desktop 客户端，然后重试地图。" />
   }
 
   if (publicShareToken) {
@@ -751,19 +765,8 @@ function App({
   if (!session.accessToken && xDriveTrustedDesktopPlacesBridge()) {
     // Never place a second full xDrive login form inside the Desktop map.
     // No implicit switch to an unrestricted Owner when this session fails.
-    return (
-      <XDriveAuthShell viewport decorated spacing="compact">
-        <XDriveAuthPanel size="compact">
-          <Box role="alert" data-xdrive-desktop-places-auth-denied>
-            <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="large"
-              subtitle={authNotice || '正在等待 Desktop 地图会话验证…'} />
-            <Button onClick={() => window.location.reload()}>
-              重试地图会话
-            </Button>
-          </Box>
-        </XDriveAuthPanel>
-      </XDriveAuthShell>
-    )
+    return <XDriveDesktopPlacesAuthUnavailable
+      notice={authNotice || '正在等待 Desktop 地图会话验证…'} />
   }
 
   if (!session.accessToken) {
