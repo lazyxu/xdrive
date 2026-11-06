@@ -143,7 +143,7 @@ function sourceActionErrorMessage(error: unknown, fallback: string) {
   )
 }
 
-function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'local_push'): XDriveSourceCreateValues {
+function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synology_pull'): XDriveSourceCreateValues {
   const option = externalSourceCreateOption(preset)
   const defaults = externalSourceDefaults(option.kind, option.direction)
   return {
@@ -261,7 +261,7 @@ export function XDriveSourceManager({
   const [settingsConnectorLoading, setSettingsConnectorLoading] = useState(false)
   const [settingsConnectorError, setSettingsConnectorError] = useState('')
   const settingsSessionRef = useRef(0)
-  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(() => initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
+  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(() => initialCreateSourceValues('synology_pull'))
   const [createNameError, setCreateNameError] = useState('')
   const [createSpacesError, setCreateSpacesError] = useState('')
   const [createRootsError, setCreateRootsError] = useState('')
@@ -557,7 +557,7 @@ export function XDriveSourceManager({
   }
 
   const openCreate = async () => {
-    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
+    setCreateValues(initialCreateSourceValues('synology_pull'))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
@@ -766,7 +766,7 @@ export function XDriveSourceManager({
             await adapter.deleteSource(created.id, created.revision)
             setFeedback('已取消创建；本机未绑定的来源草稿已安全清理')
             setCreateOpen(false)
-            setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
+            setCreateValues(initialCreateSourceValues('synology_pull'))
             setCreateNameError('')
             setCreateSpacesError('')
             setCreateRootsError('')
@@ -799,7 +799,7 @@ export function XDriveSourceManager({
       ? '群晖 File Station 拉取来源已添加；将同步所选目录中的所有文件和文件夹'
       : `${sourceNoun}已添加`)
     setCreateOpen(false)
-    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
+    setCreateValues(initialCreateSourceValues('synology_pull'))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
@@ -882,7 +882,8 @@ export function XDriveSourceManager({
   }
 
   const openSettings = (row: ExternalSourceRow) => {
-    if (savingSettings || row.source.status === 'archived') return
+    if (savingSettings || row.source.status === 'archived' ||
+      (row.source.kind === 'synology_photos' && row.source.direction === 'push')) return
     ++settingsSessionRef.current
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     setSetting(row)
@@ -1217,7 +1218,8 @@ export function XDriveSourceManager({
   }
 
   const restoreSource = async (row: ExternalSourceRow) => {
-    const allowed = adapter.canRestoreSource?.(row) ?? row.source.kind !== 'local_folder'
+    const allowed = !(row.source.kind === 'synology_photos' && row.source.direction === 'push') &&
+      (adapter.canRestoreSource?.(row) ?? row.source.kind !== 'local_folder')
     if (!adapter.restoreSource || !allowed) return
     setRestoringSourceID(row.source.id)
     try {
@@ -1422,7 +1424,8 @@ export function XDriveSourceManager({
         showArchived={showArchived}
         onToggleArchived={() => setShowArchived((current) => !current)}
         restoringSourceID={restoringSourceID}
-        canRestoreSource={(row) => adapter.canRestoreSource?.(row) ?? Boolean(adapter.restoreSource && row.source.kind !== 'local_folder')}
+        canRestoreSource={(row) => !(row.source.kind === 'synology_photos' && row.source.direction === 'push') &&
+          (adapter.canRestoreSource?.(row) ?? Boolean(adapter.restoreSource && row.source.kind !== 'local_folder'))}
         onRestoreSource={(row) => { void restoreSource(row) }}
         loading={loading}
         hasLoaded={hasLoaded}
@@ -1505,11 +1508,11 @@ export function XDriveSourceManager({
         onRequestClose={() => {
           if (creating) return
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
+          setCreateValues(initialCreateSourceValues('synology_pull'))
         }}
         onCancel={() => {
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
+          setCreateValues(initialCreateSourceValues('synology_pull'))
           setCreateNameError('')
           setCreateSpacesError('')
           setCreateRootsError('')
