@@ -41,6 +41,9 @@ data class DriveState(
     /** Foreground photo progress only; neither cursor nor success is persisted
      * as a backup receipt. Owner/session changes reset these fields. */
     val nativePhotoDeviceVerified: Boolean = false,
+    /** Owner/Device-verified managed target, never an inferred Owner-root path. */
+    val nativePhotoTargetConfigured: Boolean = false,
+    val nativePhotoTargetName: String = "",
     /** Only a live current Owner verification may mark scheduling approved. */
     val nativePhotoAutoApproved: Boolean = false,
     val nativePhotoBatchScanned: Int = 0,
@@ -1499,8 +1502,56 @@ class DriveController(
                 privateStore.saveVerified(verified, enrolled)
             }
             checkCurrent(ticket)
+            val boundDevice = privateStore.readFor(proof)
+                ?: throw IllegalStateException("Registered Android device identity missing")
+            val destination = service.nativeAndroidPhotoDestination(token, boundDevice)
+            checkCurrent(ticket)
             mutableState.value = state.value.copy(
-                nativePhotoDeviceVerified = true, error = null)
+                nativePhotoDeviceVerified = true,
+                nativePhotoTargetConfigured = destination.configured,
+                nativePhotoTargetName = destination.name ?: destination.suggestedName.orEmpty(),
+                error = null)
+        }
+    }
+
+    /**
+     * Device provisioning and rename are explicit current-Owner actions.
+     * They cannot be initiated by WorkManager, an automatic upload retry or
+     * a cached filename. The server performs the atomic Source/Node update.
+     */
+    internal fun configureNativePhotoDestinationExplicit(context: Context, name: String) {
+        val initial = state.value
+        val service = api ?: return
+        if (!initial.canStartNativePhotoForeground() ||
+            !initial.nativePhotoDeviceVerified ||
+            initial.nativePhotoBatchRunning || initial.fileUploadActive ||
+            session == null || !initial.server.startsWith("https://")) return
+        val requested = name.trim()
+        if (requested != name || requested.isEmpty() ||
+            requested.toByteArray(Charsets.UTF_8).size > 128 ||
+            !validDriveNodeName(requested)) return
+        val origin = initial.server
+        val username = initial.username
+        request { ticket ->
+            val sameOwner = {
+                ticket == generation && session != null &&
+                    state.value.nativeUiSessionId == initial.nativeUiSessionId &&
+                    state.value.server == origin && state.value.username == username &&
+                    state.value.screen == Screen.GALLERY
+            }
+            val token = session?.accessToken ?: throw CancellationException()
+            val verified = AndroidPhotoDeviceCredentialStore(context).verifyExisting(
+                service, origin, token, username, sameOwner)
+                ?: throw IllegalStateException("Registered Android Owner Device unavailable")
+            checkCurrent(ticket)
+            val destination = service.configureNativeAndroidPhotoDestination(
+                token, verified.second, requested)
+            checkCurrent(ticket)
+            check(destination.configured && destination.deviceId == verified.second.deviceId &&
+                destination.name == requested)
+            mutableState.value = state.value.copy(
+                nativePhotoDeviceVerified = true, nativePhotoTargetConfigured = true,
+                nativePhotoTargetName = requested, error = null)
         }
     }
 
@@ -1513,7 +1564,7 @@ class DriveController(
         val initial = state.value
         val service = api ?: return
         if (!initial.canStartNativePhotoForeground() ||
-            !initial.nativePhotoDeviceVerified ||
+            !initial.nativePhotoDeviceVerified || !initial.nativePhotoTargetConfigured ||
             session == null || !initial.server.startsWith("https://") ||
             !hasNativeFullPhotoVideoReadGrant(context)) return
         if (!keepLogin || sessionPersistence !is AndroidSessionStore) {
@@ -1536,6 +1587,10 @@ class DriveController(
                 ?: throw IllegalStateException("Registered Android Owner device unavailable")
             checkCurrent(ticket)
             check(sameOwner())
+            val destination = service.nativeAndroidPhotoDestination(token, verified.second)
+            check(destination.configured && destination.deviceId == verified.second.deviceId &&
+                destination.targetNodeId != null && destination.sourceId != null)
+            checkCurrent(ticket)
             val scope = verified.first
             val owner = NativePhotoBackupOwner(
                 scope.origin, scope.serverInstanceId, scope.ownerId, scope.username,
@@ -1564,6 +1619,7 @@ class DriveController(
         val initial = state.value
         val service = api ?: return
         if (!initial.canStartNativePhotoForeground() || session == null ||
+            !initial.nativePhotoTargetConfigured ||
             !initial.server.startsWith("https://") ||
             !hasNativeFullPhotoVideoReadGrant(context) ||
             startAfterId < 0 || maxUploads !in 1..16) return
