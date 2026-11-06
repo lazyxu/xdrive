@@ -20,8 +20,10 @@ func requireSourceRunOrLocalPushTargetTx(
 		}
 		return requireIOSPhotoManagedUploadTx(ctx, tx, c, ownerID, nodeID, req)
 	}
+	// Retired Synology Photos Push sessions can never be upgraded to a
+	// generic Owner or SourceRun writer; preserve their stored receipts.
 	if req.SourceID != 0 {
-		return requireSynologyPushUploadTargetTx(ctx, tx, c, ownerID, nodeID, req)
+		return errManagedSourceWriteDenied
 	}
 	if _, scoped := currentSourceRunScope(c); scoped {
 		return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, ownerID, nodeID)
@@ -39,7 +41,7 @@ func requireSourceRunOrLocalPushFinalizeTx(
 		return requireIOSPhotoManagedFinalizeTx(ctx, tx, c, session, nodeID)
 	}
 	if session.SourceID != 0 {
-		return requireSynologyPushUploadSessionTx(ctx, tx, c, session)
+		return errManagedSourceWriteDenied
 	}
 	if _, scoped := currentSourceRunScope(c); scoped {
 		return requireSourceRunOrOrdinaryTargetTx(ctx, tx, c, session.OwnerID, nodeID)

@@ -46,9 +46,19 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 	var currentRevision uint64
 	var updated meta.Source
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		// Keep the same device-first lock and Root proof used for modifying
-		// a bound local Push Source. Owner JWT alone cannot impersonate Agent.
-		if err := s.requireLocalSourceMutationTx(tx, c, id); err != nil {
+		// Historical Synology Photos Push may only be archived by its Owner,
+		// without resuming execution or deleting any Source/Target/CAS data.
+		// Other Source types retain their original device/Root proof.
+		var identity meta.Source
+		if err := tx.Select("kind", "direction").
+			Where("id = ? AND owner_id = ?", id, userID(c)).Take(&identity).Error; err != nil {
+			return err
+		}
+		if isRetiredSynologyPhotosPush(identity) {
+			if !archive {
+				return errLocalSourceExecutorTransactionUnauthorized
+			}
+		} else if err := s.requireLocalSourceMutationTx(tx, c, id); err != nil {
 			return err
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).

@@ -873,7 +873,9 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		if current.Status != meta.UploadStatusActive {
 			return errUploadFinalized
 		}
-		if err := requireSynologyPushUploadSessionTx(c.Request.Context(), tx, c, current); err != nil {
+		// A historical Synology Photos Push UploadSession is retained for
+		// auditing but must not accept any further bytes after retirement.
+		if current.SourceID != 0 {
 			return errManagedSourceWriteDenied
 		}
 		if time.Now().After(current.ExpiresAt) {
