@@ -182,12 +182,15 @@ test('SourceManager delegates the list page to an internal presentation module',
     'formatExternalSourceTime',
     '添加{sourceNoun}',
     '查看最近错误',
-    'DSM 配置',
     '正在取消…',
   ]) {
     assert.ok(sourceList.includes(token), `SourceManagerListPage missing: ${token}`)
   }
 
+  assert.equal(sourceList.includes('DSM 配置'), false,
+    'retired DSM Photos Push setup action must not return to the Source list')
+  assert.ok(sourceList.includes("row.source.kind === 'synology_photos' && row.source.direction === 'push'"),
+    'historical retired Photos Push must not show an editable Source settings action')
   assert.equal(/adapter\./.test(sourceList), false, 'list page presentation must not call the Source adapter')
   assert.equal(/use(?:State|Effect)\(/.test(sourceList), false, 'list page presentation must not own async/state orchestration')
   assert.equal(sourceManager.includes('<XDriveWorkspaceSurface'), false, 'workspace page chrome must not remain inline')
