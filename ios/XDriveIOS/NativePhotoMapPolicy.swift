@@ -22,7 +22,11 @@ enum XDriveIOSNativePhotoMapPolicy {
     static func validPage(total: Int, start: Int, next: Int, rows: Int, pins: Int) -> Bool {
         total >= 0 && start >= 0 && start <= next && next <= total &&
         next - start <= pageSize && rows == next - start &&
-        pins >= 0 && pins <= rows
+        pins >= 0 && pins <= rows &&
+        // A nonterminal snapshot page must advance. Otherwise the full
+        // 100k PhotoKit map loop can retry the same empty cursor forever.
+        // The zero-length page at the actual end remains valid.
+        (start == total || next > start)
     }
 
     /// A delayed MapKit didSelect must never reopen a photo from the old
@@ -38,7 +42,8 @@ enum XDriveIOSNativePhotoMapPolicy {
         let pageSet = Set(currentPageIDs)
         return selectedSet.count == selectedIDs.count &&
             pageSet.count == currentPageIDs.count &&
-            !selectedSet.contains("") && selectedSet.isSubset(of: pageSet)
+            !selectedSet.contains("") && !pageSet.contains("") &&
+            selectedSet.isSubset(of: pageSet)
     }
 
     /// A Viewer return may reuse its source PhotoKit page camera only while
