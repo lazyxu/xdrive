@@ -153,7 +153,7 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
                            stillFilename: String,
                            motionFilename: String) throws -> LivePhotoStamp {
         let authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard authorization == .authorized || authorization == .limited,
+        guard authorization == .authorized,
               let asset = PHAsset.fetchAssets(
                 withLocalIdentifiers: [identifier], options: nil
               ).firstObject,
@@ -298,7 +298,7 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
         role: XDrivePhotoSyncResourceRole
     ) throws -> PhotoKitResourceStamp {
         let access = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard access == .authorized || access == .limited,
+        guard access == .authorized,
               let asset = PHAsset.fetchAssets(
                 withLocalIdentifiers: [identifier], options: nil
               ).firstObject,

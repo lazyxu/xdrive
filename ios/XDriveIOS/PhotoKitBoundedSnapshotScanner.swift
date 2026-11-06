@@ -97,7 +97,7 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
             throw XDrivePhotoKitScanFailure.invalidOffset
         }
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard status == .authorized || (album == nil && status == .limited) else {
+        guard status == .authorized || (!requireStableResume && album == nil && status == .limited) else {
             throw XDrivePhotoKitScanFailure.notAuthorized
         }
         PHPhotoLibrary.shared().register(observer)

@@ -468,8 +468,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                             Label("备份计划已保存：照片权限不可用",
                                   systemImage: "exclamationmark.triangle")
                         } else if photoAuthorization == .limited {
-                            Label("前台自动备份：仅处理已授权照片",
-                                  systemImage: "checkmark.shield")
+                            Label("自动备份已暂停：需要“所有照片”权限",
+                                  systemImage: "exclamationmark.triangle")
                         } else {
                             Label("前台自动备份已开启",
                                   systemImage: "checkmark.shield")

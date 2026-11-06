@@ -473,7 +473,10 @@ test('native Photos album exposes Show Map only with Full Photo Library access',
 
 test('album map scans the current PhotoKit collection snapshot, not the whole library or Server', () => {
   assert.match(scanner, /func start\(atOffset requestedOffset: Int = 0,[\s\S]*?album: XDriveLocalPhotoAlbumSummary\? = nil\)/)
-  assert.match(scanner, /status == \.authorized \|\| \(album == nil && status == \.limited\)/)
+  assert.match(scanner, /status == \.authorized \|\| \(!requireStableResume && album == nil && status == \.limited\)/)
+  // Backup passes requireStableResume=true; read-only Gallery keeps Limited scope.
+  assert.match(scanner, /if requireStableResume \{/)
+  assert.match(read("ios/XDriveIOS/ForegroundPhotoBackupMVP.swift"), /requireStableResume: true/)
   assert.match(scanner, /PHAssetCollection\.fetchAssetCollections\(\s*withLocalIdentifiers: \[album\.collectionIdentifier\]/)
   assert.match(scanner, /currentName == album\.name, currentKind == album\.kind/)
   assert.match(scanner, /PHAsset\.fetchAssets\(in: collection, options: options\)/)
