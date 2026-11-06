@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,7 +59,7 @@ func TestClipboardAADScopeIsOwnerBoundOrigin(t *testing.T) {
 		"", "https://drive.example:43", "https://drive.example",
 		"https://drive.example/a:42", "https://drive.example?query=x:42",
 		"https://drive.example#fragment:42", "https://user@drive.example:42",
-		"ftp://drive.example:42", "https://drive.example:42:42",
+		"ftp://drive.example:42", "https://drive.example:bad:42",
 		"https://drive.example:42" + strings.Repeat("x", 513),
 	} {
 		if clipboardValidAADScope(bad, 42) {
@@ -251,5 +253,44 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	page = request(t, router, http.MethodGet, "/api/v1/clipboard/items", a, nil, http.StatusOK)
 	if json.Unmarshal(page.Body.Bytes(), &list) != nil || len(list.Items) != 0 {
 		t.Fatalf("Owner clear failed: %s", page.Body.String())
+	}
+
+	// Prefill near the cap, then race real authenticated HTTP requests from
+	// the SAME Owner. A row lock must keep the final count at exactly 50.
+	for i := 0; i < 40; i++ {
+		request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
+			strings.NewReader(payload(uuid.NewString(), ciphertext)), http.StatusCreated)
+	}
+	const parallel = 20
+	var wg sync.WaitGroup
+	results := make([]int, parallel)
+	for i := 0; i < parallel; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			body := payload(uuid.NewString(), ciphertext)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/clipboard/items", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+a)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			results[index] = rec.Code
+		}(i)
+	}
+	wg.Wait()
+	for i, code := range results {
+		if code != http.StatusCreated {
+			t.Fatalf("concurrent send %d status=%d; expected %d", i, code, http.StatusCreated)
+		}
+	}
+	var retained int64
+	if err := db.Model(&meta.ClipboardItem{}).Where("owner_id = ?", ownerA.ID).
+		Count(&retained).Error; err != nil { t.Fatal(err) }
+	if retained != clipboardPageSize {
+		t.Fatalf("concurrent same-Owner sends retained %d rows, wanted %d", retained, clipboardPageSize)
+	}
+	other = request(t, router, http.MethodGet, "/api/v1/clipboard/items", b, nil, http.StatusOK)
+	if json.Unmarshal(other.Body.Bytes(), &otherList) != nil || len(otherList.Items) != 0 {
+		t.Fatalf("concurrent Owner A writes leaked to Owner B: %s", other.Body.String())
 	}
 }
