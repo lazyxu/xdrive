@@ -24,6 +24,13 @@ const verifier = await mod.xDriveClipboardMakeVaultCheck(key, 'owner-scope')
 await mod.xDriveClipboardVerifyVaultCheck(peer, 'owner-scope', verifier)
 await assert.rejects(mod.xDriveClipboardVerifyVaultCheck(wrong, 'owner-scope', verifier))
 await assert.rejects(mod.xDriveClipboardVerifyVaultCheck(peer, 'different-owner', verifier))
+// Two different Browser origins on one Server must use the AAD scope pinned
+// by its first verified browser, never each browser's own current URL.
+const publicOrigin = 'https://nas.example.test:12'
+const lanOrigin = 'http://nas.lan:5000:12'
+const initialVerifier = await mod.xDriveClipboardMakeVaultCheck(key, publicOrigin)
+await mod.xDriveClipboardVerifyVaultCheck(peer, publicOrigin, initialVerifier)
+await assert.rejects(mod.xDriveClipboardVerifyVaultCheck(peer, lanOrigin, initialVerifier))
 const eventID = crypto.randomUUID()
 const owner = 'https://drive.example.test:12'
 const text = 'https://example.com/path?参数=文档'
@@ -31,6 +38,14 @@ const encrypted = await mod.xDriveClipboardEncrypt(key, owner, eventID, text)
 assert.equal(encrypted.kind, 'text/uri-list')
 const record = { client_event_id: eventID, ...encrypted }
 assert.equal(await mod.xDriveClipboardDecrypt(peer, owner, record), text)
+const aliasEventID = crypto.randomUUID()
+const crossAlias = await mod.xDriveClipboardEncrypt(key, publicOrigin, aliasEventID, 'NAS 内网与公网共享')
+assert.equal(await mod.xDriveClipboardDecrypt(peer, publicOrigin, {
+  client_event_id: aliasEventID, ...crossAlias,
+}), 'NAS 内网与公网共享')
+await assert.rejects(mod.xDriveClipboardDecrypt(peer, lanOrigin, {
+  client_event_id: aliasEventID, ...crossAlias,
+}), 'a different URL cannot invent an unrelated AAD scope')
 await assert.rejects(mod.xDriveClipboardDecrypt(wrong, owner, record))
 await assert.rejects(mod.xDriveClipboardDecrypt(peer, 'another-owner', record))
 await assert.rejects(mod.xDriveClipboardDecrypt(peer, owner, { ...record, client_event_id: crypto.randomUUID() }))
@@ -59,6 +74,12 @@ assert.match(ui, /key=\{port\.ownerScopeKey\}/)
 assert.match(ui, /readController\.current\?\.abort\(\)/)
 assert.match(ui, /pending\.current\?\.text !== draft/)
 assert.match(ui, /xDriveClipboardDecrypt\(/)
+assert.match(ui, /canonicalScope = verified\.aad_scope \|\| port\.ownerScopeKey/)
+assert.match(ui, /setAADScope\(canonicalScope\)/)
+assert.match(ui, /!verified\.aad_scope/)
+assert.match(ui, /scope: port\.ownerScopeKey/)
+assert.match(ui, /xDriveClipboardEncrypt\(key, aadScope/)
+assert.match(ui, /xDriveClipboardDecrypt\(key, aadScope/)
 assert.match(ui, /port\.copyText\(text\)/)
 assert.doesNotMatch(ui, /localStorage|sessionStorage|indexedDB/)
 assert.match(read('web/src/App.tsx'), /clipboard: clipboardPort/)
@@ -68,4 +89,6 @@ assert.match(read('web/src/browserWorkspaceHost.ts'), /clipboardPage: ports\.cli
 assert.match(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx'), /case 'clipboard'/)
 assert.match(read('ui/shared/src/web-app.ts'), /case 'clipboard':/)
 assert.match(read('internal/api/router.go'), /authed\.POST\("\/clipboard\/items"/)
+assert.match(read('internal/api/clipboard.go'), /clause\.Locking\{Strength: "UPDATE"\}/)
+assert.match(read('internal/meta/clipboard.go'), /AADScope string/)
 console.log('Web Clipboard MVP: E2EE roundtrip/Owner AAD/rejections and route boundaries passed')
