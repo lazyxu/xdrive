@@ -26,6 +26,22 @@ struct XDriveIOSNativeFilesThumbnailReader {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 
+    // Requests still carry a fresh Owner bearer and disable cookies/caching.
+    // Reuse TCP/TLS instead of creating and destroying one URLSession per tile.
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpShouldSetCookies = false
+        config.httpCookieAcceptPolicy = .never
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
+        config.timeoutIntervalForRequest = 25
+        return URLSession(
+            configuration: config,
+            delegate: XDriveIOSNativeFilesThumbnailDenyRedirect(),
+            delegateQueue: nil
+        )
+    }()
+
     func thumbnail(_ node: XDriveIOSNativeFilesNode) async throws -> UIImage {
         guard XDriveIOSNativeFilesThumbnailPolicy.canRequest(node),
               owner.ownerID > 0, owner.rootNodeID > 0,
@@ -44,25 +60,13 @@ struct XDriveIOSNativeFilesThumbnailReader {
         guard let url = parts.url else {
             throw XDriveIOSNativeFilesThumbnailFailure.invalidOwner
         }
-        let config = URLSessionConfiguration.ephemeral
-        config.httpShouldSetCookies = false
-        config.httpCookieAcceptPolicy = .never
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.urlCache = nil
-        config.timeoutIntervalForRequest = 25
-        let session = URLSession(
-            configuration: config,
-            delegate: XDriveIOSNativeFilesThumbnailDenyRedirect(),
-            delegateQueue: nil
-        )
-        defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.httpShouldHandleCookies = false
         request.setValue("Bearer " + accessToken, forHTTPHeaderField: "Authorization")
         request.setValue("image/jpeg, image/png", forHTTPHeaderField: "Accept")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await Self.session.data(for: request)
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse,
               http.statusCode == 200,
@@ -124,6 +128,7 @@ struct XDriveIOSNativeFilesThumbnailTile: View {
 
     @Environment(\.scenePhase) private var phase
     @State private var bitmap: UIImage?
+    @State private var bitmapIdentity: XDriveIOSNativeFilesThumbnailIdentity?
 
     private var identity: XDriveIOSNativeFilesThumbnailIdentity {
         let owner = login.owner
@@ -139,7 +144,13 @@ struct XDriveIOSNativeFilesThumbnailTile: View {
         ZStack {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.accentColor.opacity(0.07))
-            if let bitmap {
+            if let bitmap, let bitmapIdentity,
+               bitmapIdentity.nodeID == identity.nodeID,
+               bitmapIdentity.revision == identity.revision,
+               bitmapIdentity.serverOrigin == identity.serverOrigin,
+               bitmapIdentity.instanceID == identity.instanceID,
+               bitmapIdentity.ownerID == identity.ownerID,
+               bitmapIdentity.rootNodeID == identity.rootNodeID {
                 Image(uiImage: bitmap)
                     .resizable()
                     .scaledToFill()
@@ -158,7 +169,19 @@ struct XDriveIOSNativeFilesThumbnailTile: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityHidden(true)
         .task(id: identity) {
+            // SwiftUI retains parent rows while a child folder or Viewer
+            // is pushed. Reusing an Owner/revision-matched image avoids the
+            // blank-icon flash and duplicate decode on every return.
+            if let previous = bitmapIdentity,
+               previous.nodeID == identity.nodeID,
+               previous.revision == identity.revision,
+               previous.serverOrigin == identity.serverOrigin,
+               previous.instanceID == identity.instanceID,
+               previous.ownerID == identity.ownerID,
+               previous.rootNodeID == identity.rootNodeID,
+               bitmap != nil { return }
             bitmap = nil
+            bitmapIdentity = nil
             guard identity.visible,
                   XDriveIOSNativeFilesThumbnailPolicy.canRequest(node),
                   let expected = login.owner else { return }
@@ -177,12 +200,15 @@ struct XDriveIOSNativeFilesThumbnailTile: View {
                 guard !viewerActive, phase == .active,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
+                bitmapIdentity = identity
                 bitmap = image
             } catch {
                 // No derivative (e.g. cold video poster) is not an absent file.
                 // Keep the native icon; never load the original as fallback.
             }
         }
-        .onDisappear { bitmap = nil }
+        // Lifecycle cancellation comes from .task(id:). The bounded list
+        // retains a decoded thumbnail across child navigation; the rendered
+        // image is still fenced by the exact Owner/revision identity.
     }
 }
