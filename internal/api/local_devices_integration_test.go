@@ -52,6 +52,7 @@ func TestLocalFolderSourceRunDeviceProofIsRequiredOnEveryWriteStage(t *testing.T
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
 		Revision: 1, TargetNodeID: &rootNodeID,
+		DeviceID: &device.ID, LocalCreatorDeviceID: &device.ID,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
@@ -175,7 +176,7 @@ func TestLocalFolderSourceRunDeviceProofIsRequiredOnEveryWriteStage(t *testing.T
 }
 
 func TestLocalFolderDeviceBindingAndRevocation(t *testing.T) {
-	db, server, owner, other, root := setupFilePropertiesTestDB(t)
+	db, server, owner, other, _ := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{}); err != nil {
 		t.Fatal(err)
 	}
@@ -223,8 +224,9 @@ func TestLocalFolderDeviceBindingAndRevocation(t *testing.T) {
 		t.Fatal("another owner saw registered device")
 	}
 
-	target := createFilePropertiesDir(t, db, owner.ID, root.ID, "Backup")
-	create := fmt.Sprintf(`{"name":"Laptop Photos","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual","target_node_id":%d}`, target.ID)
+	// New device-backed Local Push always gets a Server-provisioned target.
+	// The old arbitrary target_node_id parameter must never be accepted.
+	create := `{"name":"Laptop Photos","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual"}`
 	created := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", ownerToken,
 		strings.NewReader(create), http.StatusCreated, map[string]string{
 			"X-XDrive-Device-ID": enrolled.Device.ID, "X-XDrive-Device-Token": enrolled.DeviceToken,
@@ -233,8 +235,11 @@ func TestLocalFolderDeviceBindingAndRevocation(t *testing.T) {
 	if err := json.Unmarshal(created.Body.Bytes(), &source); err != nil {
 		t.Fatal(err)
 	}
-	if source.Status != meta.SourceStatusPaused || source.Revision != 1 {
-		t.Fatalf("local source must start paused: %+v", source)
+	if source.Status != meta.SourceStatusPaused || source.Revision != 1 ||
+		!source.TargetManaged || source.TargetNodeID == nil ||
+		source.DeviceID != enrolled.Device.ID ||
+		!strings.Contains(source.TargetPath, "同步文件夹/Push/") {
+		t.Fatalf("new Local Push must have an exact device-bound managed target: %+v", source)
 	}
 	sourceURL := fmt.Sprintf("/api/v1/sources/%d", source.ID)
 
