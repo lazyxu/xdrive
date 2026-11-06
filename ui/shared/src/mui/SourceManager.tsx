@@ -777,23 +777,18 @@ export function XDriveSourceManager({
       }
     } catch (error) {
       const credentialLabel = externalSourceCredentialLabel(profile)
-      try {
-        await adapter.deleteSource(created.id, created.revision)
-        setErrorDialog({
-          title: profile.credential === 'synology_dsm' ? '群晖连接配置失败' : 'Cookie 保存失败',
-          message: `刚创建的${profile.label}${sourceNoun}已自动撤销，请检查配置后重试。`,
-          detail: sourceActionErrorMessage(error, `保存${credentialLabel}失败`),
-        })
-        await load()
-        setCreating(false)
-        return
-      } catch (rollbackError) {
-        setErrorDialog({
-          title: `${sourceNoun}创建未完成`,
-          message: `${sourceNoun}已创建，但${credentialLabel}或连接配置保存失败且自动回滚也失败。请进入“设置”修复或删除该来源。`,
-          detail: `配置：${sourceActionErrorMessage(error, '保存失败')}；回滚：${sourceActionErrorMessage(rollbackError, '回滚失败')}`,
-        })
-      }
+      // S10: Source and empty managed Node have already committed together.
+      // DELETE archives the Source and reserves its leaf; do not claim that
+      // an automatic rollback removed a still-reserved name.
+      setErrorDialog({
+        title: `${sourceNoun}设置尚未完成`,
+        message: `受管来源「${created.name}」（Source #${created.id}）已创建，目标目录及名称已保留。未自动删除或归档。请在 Source Manager 的设置中完成${credentialLabel}和连接配置。`,
+        detail: sourceActionErrorMessage(error, `保存${credentialLabel}失败`),
+      })
+      setCreateOpen(false)
+      await load()
+      setCreating(false)
+      return
     }
 
     let localAuthorization: 'bound' | 'cancelled' | 'error' | null = null
