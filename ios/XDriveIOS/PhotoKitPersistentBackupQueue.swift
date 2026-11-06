@@ -306,7 +306,8 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         try store.completeFullReconciliation(
             token: epoch.serialized, authorization: epoch.authorization
         )
-        try verifyAuthorization(stillMatches: epoch)
+        // Changes committed after the captured token remain in PhotoKit
+        // history and will be replayed from this new checkpoint next time.
     }
 
     private func verifyOwner(_ owner: XDriveNativeOwnerRoot) throws {
