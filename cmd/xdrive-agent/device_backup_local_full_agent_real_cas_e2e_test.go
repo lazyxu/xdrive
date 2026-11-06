@@ -124,7 +124,7 @@ func TestDSMFullOwningAgentSourceBatchRealSQLCASAndIncremental(t *testing.T) {
 		OwnerID: owner.ID, Name: "NAS camera", Kind: meta.SourceKindLocalFolder,
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
 		Status: meta.SourceStatusPaused, Revision: 7, TargetNodeID: &target.ID,
-		LocalCreatorDeviceID: &deviceID,
+		DeviceID: &deviceID, LocalCreatorDeviceID: &deviceID,
 	}
 	// The manual first Source run arms the already-saved interval policy;
 	// only the owning Agent scheduler may later admit incremental work.
