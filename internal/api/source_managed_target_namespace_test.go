@@ -9,7 +9,7 @@ import (
 
 func TestManagedSourceTargetRenameAcceptsCanonicalAndExistingNamespaces(t *testing.T) {
 	db, _, owner, _, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.SyncRun{}); err != nil {
+	if err := db.AutoMigrate(&meta.SyncRun{}, &meta.UploadSession{}); err != nil {
 		t.Fatal(err)
 	}
 	syncFolder := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
