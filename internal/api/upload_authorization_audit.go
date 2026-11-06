@@ -83,3 +83,19 @@ func (s *Server) recordUploadAuthorizationFailure(c *gin.Context, phase string, 
 	}
 	s.recordAuditBestEffort(c, event)
 }
+
+// Workers such as instant CAS reuse do not carry a Gin request, but they still
+// record the same writer/Source/Target tuple inside their canonical SQL write.
+func recordUploadAuthorizationSystemTx(tx *gorm.DB, phase string, session meta.UploadSession) error {
+	if tx == nil || session.ID == "" || session.OwnerID == 0 {
+		return errManagedSourceWriteDenied
+	}
+	ownerID := session.OwnerID
+	return recordAuditTx(tx, auditpkg.Event{
+		ActorUserID: &ownerID,
+		Action: uploadAuthorizationAuditAction,
+		TargetType: "upload_session", TargetID: session.ID,
+		Result: auditpkg.ResultSuccess,
+		Metadata: uploadAuthorizationAuditMetadata(phase, session),
+	})
+}
