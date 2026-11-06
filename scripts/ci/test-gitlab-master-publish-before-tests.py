@@ -89,6 +89,16 @@ for name in ("server-image", "caddy-image", "photo-face-image", "media-worker-im
     assert name in release_jobs["publish-server-images"], name
 assert "release-assets" in release_jobs["promote-server-images"]
 assert "publish-server-images" in release_jobs["promote-server-images"]
+snapshot_publisher = (ROOT / "scripts/ci/gitlab-publish-release.sh").read_text(encoding="utf-8")
+assert 'read_snapshot || exit 1' in snapshot_publisher
+assert "HTTP 404|404 Not Found" in snapshot_publisher
+assert "HTTP (429|500|502|503|504)" in snapshot_publisher
+assert 'glab api --method POST "$project_api/releases"' in snapshot_publisher
+assert "glab release create snapshot --ref" not in snapshot_publisher
+for phase in ("probe-existing-snapshot", "create-initial-snapshot",
+              "stage-verified-links", "commit-verified-marker"):
+    assert "release phase=" + phase in snapshot_publisher
+
 publisher = release_jobs["publish-release"]
 for name in ("build-client-core", "package-linux-client", "package-windows-client",
              "release-assets", "promote-server-images"):
