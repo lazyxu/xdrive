@@ -2148,8 +2148,14 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
             searchOptions.invalidate()
-            favoriteShortcuts.invalidate()
-            favoriteShortcutsOwner = nil
+            if isHome, let current = login.owner,
+               let retained = favoriteShortcutsOwner,
+               XDriveIOSNativePhotoOwnerScope.matches(current, retained) {
+                favoriteShortcuts.suspendForNavigation()
+            } else {
+                favoriteShortcuts.invalidate()
+                favoriteShortcutsOwner = nil
+            }
             batchTrash.invalidate()
             batchTarget.invalidate()
             if !showingBatchShare { batchExport.invalidate() }
@@ -2804,11 +2810,24 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func loadFavoriteShortcuts() {
-        favoriteShortcuts.invalidate()
-        favoriteShortcutsOwner = nil
-        guard isHome, let owner = login.owner else { return }
-        favoriteShortcutsOwner = owner
-        favoriteShortcuts.load(.favorites, login: login)
+        guard isHome, let owner = login.owner else {
+            favoriteShortcuts.invalidate()
+            favoriteShortcutsOwner = nil
+            return
+        }
+        let sameOwner = favoriteShortcutsOwner.map {
+            XDriveIOSNativePhotoOwnerScope.matches(owner, $0)
+        } ?? false
+        if !sameOwner {
+            favoriteShortcuts.invalidate()
+            favoriteShortcutsOwner = owner
+        }
+        // Returning to Home must not erase the NavigationLinks used for
+        // favorited directories or briefly flash an empty shortcuts section.
+        // The Server still revalidates Owner/root and all current rows.
+        favoriteShortcuts.load(
+            .favorites, login: login, preserveVerifiedRows: sameOwner
+        )
     }
 
     private func reload(resetOffset: Bool = false) {
