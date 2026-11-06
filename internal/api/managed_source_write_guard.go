@@ -188,6 +188,9 @@ func trustedSourceRunTargetTx(ctx context.Context, tx *gorm.DB, c *gin.Context, 
 		Take(&source).Error; err != nil {
 		return errManagedSourceWriteDenied
 	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		return errManagedSourceWriteDenied
+	}
 	if source.TargetNodeID == nil || *source.TargetNodeID == 0 ||
 		(!source.TargetManaged && source.Kind != yikeSourceKind) {
 		return errManagedSourceWriteDenied
