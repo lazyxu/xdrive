@@ -791,6 +791,15 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
 		return
 	}
+	// A legacy signed SourceRun token is not enough: the Source may have
+	// been disabled, archived or cancelled since this session was created.
+	// Deny before storing any physical staging bytes, then repeat under SQL.
+	if session.SourceRunID != "" {
+		if err := trustedSourceRunUploadChunkTx(c.Request.Context(), s.DB, c, session); err != nil {
+			fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
+			return
+		}
+	}
 	if session.Status != meta.UploadStatusActive {
 		fail(c, http.StatusConflict, "upload session is finalized")
 		return
@@ -872,6 +881,18 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		}
 		if current.Status != meta.UploadStatusActive {
 			return errUploadFinalized
+		}
+		if current.SourceRunID != session.SourceRunID ||
+			!sourceRunUploadSessionMatches(c, current) {
+			return errManagedSourceWriteDenied
+		}
+		// The final SQL receipt has to be fenced as strictly as Finalize:
+		// a Source archive/cancel during physical staging cannot commit a
+		// new UploadPart, even with an old otherwise-valid worker token.
+		if current.SourceRunID != "" {
+			if err := trustedSourceRunUploadChunkTx(c.Request.Context(), tx, c, current); err != nil {
+				return errManagedSourceWriteDenied
+			}
 		}
 		// A historical Synology Photos Push UploadSession is retained for
 		// auditing but must not accept any further bytes after retirement.

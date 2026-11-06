@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/storage"
 )
 
 // Remote Synology Pull is dormant in the folder-Push MVP, including legacy
@@ -23,7 +26,7 @@ func TestDormantSynologyPullPreservesHistoryAndRejectsNewExecution(t *testing.T)
 	for _, kind := range []string{"synology_photos", "synology_files"} {
 		t.Run(kind, func(t *testing.T) {
 			db, server, owner, stranger, root := setupFilePropertiesTestDB(t)
-			if err := db.AutoMigrate(&meta.SyncRun{}, &meta.UploadSession{},
+			if err := db.AutoMigrate(&meta.SyncRun{}, &meta.UploadSession{}, &meta.UploadPart{},
 				&meta.SourceItem{}, &meta.FileVersion{}, &meta.SourceCredential{}); err != nil {
 				t.Fatal(err)
 			}
@@ -93,6 +96,36 @@ func TestDormantSynologyPullPreservesHistoryAndRejectsNewExecution(t *testing.T)
 			}
 			if err := db.Create(&session).Error; err != nil {
 				t.Fatal(err)
+			}
+			// Even a matching historical SourceRun bearer must not stage
+			// new chunks after Synology Pull is suspended. Prior data is kept.
+			localStore, err := storage.NewLocal(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			server.Store = localStore
+			chunk := "old!"
+			digest := sha256.Sum256([]byte(chunk))
+			response := httptest.NewRecorder()
+			chunkContext, _ := gin.CreateTestContext(response)
+			chunkContext.Set("userID", owner.ID)
+			chunkContext.Set("sourceRunScope", sourceRunScope{sourceID: source.ID, runID: run.ID})
+			chunkContext.Params = gin.Params{
+				{Key: "id", Value: session.ID},
+				{Key: "index", Value: "0"},
+			}
+			chunkContext.Request = httptest.NewRequest(http.MethodPut,
+				fmt.Sprintf("/api/v1/uploads/%s/chunks/0", session.ID), strings.NewReader(chunk))
+			chunkContext.Request.Header.Set("X-Chunk-SHA256", hex.EncodeToString(digest[:]))
+			server.putUploadChunk(chunkContext)
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("dormant %s SourceRun accepted chunk staging: HTTP %d %s",
+					kind, response.Code, response.Body.String())
+			}
+			var parts int64
+			if err := db.Model(&meta.UploadPart{}).Where("session_id = ?", session.ID).
+				Count(&parts).Error; err != nil || parts != 0 {
+				t.Fatalf("dormant %s Pull stored %d upload parts: %v", kind, parts, err)
 			}
 			path := fmt.Sprintf("/api/v1/sources/%d", source.ID)
 			request(t, router, http.MethodGet, path, ownerToken, nil, http.StatusOK)
