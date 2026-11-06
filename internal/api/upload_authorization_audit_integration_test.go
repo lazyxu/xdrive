@@ -27,7 +27,7 @@ func TestUploadAuthorizationAuditFollowsWriteTransactionAndRedactsSecrets(t *tes
 		ID: uuid.NewString(), OwnerID: owner.ID, SourceID: 42,
 		SourceRevision: 3, SourceDeviceID: uuid.NewString(), SourceTargetID: 12,
 		SourceRootFingerprint: strings.Repeat("f", 64),
-		SourceRootID: uuid.NewString(), ResumeKey: "secret_resume_1234",
+		SourceRootID:          uuid.NewString(), ResumeKey: "secret_resume_1234",
 		Status: meta.UploadStatusActive,
 	}
 	rollback := errors.New("force transaction rollback")
