@@ -83,6 +83,18 @@ enum XDriveIOSNativeOwnerMapSelectionPolicy {
         return true
     }
 
+    /// The second authenticated place Range can race a photo move/deletion.
+    /// Never publish a thumbnail against a stale signed overview count.
+    /// The Reader already validates the exact place, range and Owner.
+    static func acceptsCurrentCoverPage(
+        _ facet: XDriveIOSNativeOwnerMapFacet,
+        returnedCount: Int, hasPhoto: Bool
+    ) -> Bool {
+        canOpenPhotoRange(facet) &&
+        returnedCount == facet.item_count &&
+        hasPhoto
+    }
+
     /// Camera movement revokes the click authority of the previous signed
     /// Owner overview, even if its pins remain visible as inert map markers.
     /// Never use a previous WGS84 viewport as a fresh PhotoAsset Range scope.
