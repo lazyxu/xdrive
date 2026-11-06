@@ -38,7 +38,7 @@ test('shared core navigation owns common destinations and capability-gates local
     ["key: 'files'", "files: '文件'"],
     ["key: 'gallery'", "gallery: '图库'"],
     ["key: 'device-backup'", "'device-backup': '设备备份'"],
-    ["key: 'remote-pull'", "'remote-pull': '远程拉取'"],
+    ["key: 'remote-pull'", "'remote-pull': '来源管理'"],
     ["key: 'transfers'", "transfers: '任务'"],
     ["key: 'local-storage' as const", "'local-storage': '本地存储'"],
     ["key: 'cloud-storage'", "'cloud-storage': '云端存储'"],
