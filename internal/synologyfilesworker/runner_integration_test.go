@@ -208,6 +208,35 @@ func TestRunnerSyncsArbitraryFilesAndPreservesEmptyDirectories(t *testing.T) {
 	}
 
 	run, result, err := runner.RunSource(context.Background(), source)
+	// While Synology Pull is dormant, retain the live API-denial integration
+	// coverage without enabling a test-only bypass of Server authorization.
+	// The original end-to-end connector assertions below remain available
+	// when this Source kind is explicitly re-enabled in the production policy.
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		if err == nil || !strings.Contains(err.Error(), "(410)") {
+			t.Fatalf("disabled Synology Files Pull must fail closed at SourceRun admission: run=%+v err=%v", run, err)
+		}
+		if remote.downloadOpens != 0 {
+			t.Fatalf("disabled Synology Files Pull read remote file bytes: %d", remote.downloadOpens)
+		}
+		var runs, items int64
+		if err := db.Model(&meta.SyncRun{}).Where("source_id = ?", source.ID).Count(&runs).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&meta.SourceItem{}).Where("source_id = ?", source.ID).Count(&items).Error; err != nil {
+			t.Fatal(err)
+		}
+		var kept meta.Source
+		if err := db.First(&kept, source.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if runs != 0 || items != 0 || kept.Revision != source.Revision ||
+			kept.TargetNodeID == nil || *kept.TargetNodeID != target.ID ||
+			kept.Status != meta.SourceStatusActive {
+			t.Fatalf("disabled Synology Files Pull mutated durable Source state: runs=%d items=%d kept=%+v", runs, items, kept)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
