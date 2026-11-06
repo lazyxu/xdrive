@@ -693,6 +693,7 @@ export function XDriveSourceManager({
   const createSource = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const values = createValues
+
     const option = externalSourceCreateOption(values.preset)
     let normalizedName = values.name.trim()
     const allowServerDeviceDefault = option.direction === 'push' && Boolean(adapter.suggestedPushName)
@@ -700,7 +701,7 @@ export function XDriveSourceManager({
       ? `请填写${sourceNoun}名称`
       : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
     setCreateNameError(nameError)
-    const option = externalSourceCreateOption(values.preset)
+
     const profile = externalSourceConnectorProfile(option.kind, option.direction)
     if (directionFilter === 'pull' && option.direction !== 'pull') {
       setErrorDialog({ title: '无法添加拉取来源', message: '此页面只能添加远程拉取来源。' })
