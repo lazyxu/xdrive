@@ -408,7 +408,7 @@ struct XDriveIOSNativePhotoWholeLibraryAuditSection: View {
             Text("从本机读取原件 SHA-256，并逐项查询当前受管目标的历史收据与服务器 Node。每次最多核验 8 项；只读取，不上传、不删除。")
                 .font(.footnote).foregroundStyle(.secondary)
             Toggle("核验时允许下载 iCloud 原件", isOn: $allowICloudOriginals)
-                .disabled(audit.busy)
+                .disabled(audit.busy || audit.verifyingContinuously)
             if let total = audit.total {
                 Text("本次已核验 \(audit.checked)/\(total) 项 · 当前云端核验通过 \(audit.currentVerified) · 尚未通过 \(audit.unverified)")
                     .monospacedDigit()
