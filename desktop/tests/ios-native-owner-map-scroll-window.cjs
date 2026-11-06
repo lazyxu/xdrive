@@ -6,7 +6,7 @@ const path = require('node:path')
 const album = fs.readFileSync(path.resolve(__dirname, '../../ios/XDriveIOS/NativeOwnerMapClusterAlbum.swift'), 'utf8')
 
 test('native Owner map cluster advances from a visible LazyVGrid sentinel without an extra drag', () => {
-  assert.match(album, /LazyVGrid\(columns: columns, spacing: 2\) \{[\s\S]*?if let next \{\s*Color\.clear/)
+  assert.match(album, /XDriveIOSNativePhotoWallGrid\(density: wallDensity\) \{[\s\S]*?if let next \{\s*Color\.clear/)
   assert.match(album, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)
   assert.match(album, /\.onDisappear \{ scrollFootVisible = false \}/)
   assert.match(album, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/)
@@ -110,7 +110,7 @@ test('cluster photo wall hides transport pagination and retains verified sentine
   const body = album.slice(album.indexOf('var body: some View {'),
                            album.indexOf('.fullScreenCover(item: $viewing'))
   assert.doesNotMatch(body, /Button\("上一批"\)|Button\("下一批"\)|Button\("查看上一批照片"\)|Button\("继续浏览下一批照片"\)/)
-  assert.match(body, /ScrollViewReader \{ returnScroll in\s*ScrollView \{[\s\S]*?LazyVGrid/)
+  assert.match(body, /ScrollViewReader \{ returnScroll in\s*ScrollView \{[\s\S]*?XDriveIOSNativePhotoWallGrid/)
   assert.match(body, /if let next \{[\s\S]*?\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)
   assert.match(body, /\.accessibilityValue\([\s\S]*?page\.map \{/)
   assert.match(body, /if let error \{[\s\S]*?Button\("重试读取照片"\) \{ load\(cursor, history: earlier\) \}/)

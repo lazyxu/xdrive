@@ -220,10 +220,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                             .padding(.top, 4)
                             .accessibilityAddTraits(.isHeader)
                     }
-                    LazyVGrid(columns: [GridItem(.adaptive(
-                        minimum: density.minimumCellWidth,
-                        maximum: density.maximumCellWidth
-                    ), spacing: 2)], spacing: 2) {
+                    XDriveIOSNativePhotoWallGrid(density: density) {
                         ForEach(page.items[section.startIndex..<section.endIndex]) { candidate in
                         if candidate.kind != "unsupported" {
                             Button { onSelect(candidate, page) } label: {
@@ -299,10 +296,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                     .frame(maxWidth: .infinity)
                 // Match the number of real grid cells before PhotoKit finishes.
                 // A one-row spinner would shift the entire scroll offset later.
-                LazyVGrid(columns: [GridItem(.adaptive(
-                        minimum: density.minimumCellWidth,
-                        maximum: density.maximumCellWidth
-                    ), spacing: 2)], spacing: 2) {
+                XDriveIOSNativePhotoWallGrid(density: density) {
                     ForEach(0..<min(64, expectedTotal - offset), id: \.self) { _ in
                         placeholderTile.accessibilityHidden(true)
                     }

@@ -49,7 +49,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // A Viewer may only promote an exact adjacent Range after verifying its
     // prior signed place page. No guessed place or cached media identities.
     @State private var pendingViewerCross: XDriveIOSOwnerClusterCursor?
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
+    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
 
     init(login: XDriveIOSNativeOwnerLoginModel,
          selection: XDriveIOSOwnerMapChosenCluster) {
@@ -88,7 +88,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             if busy { ProgressView("核对当前 Owner 的地点照片…") }
             ScrollViewReader { returnScroll in
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 2) {
+                XDriveIOSNativePhotoWallGrid(density: wallDensity) {
                     if let priorWindow {
                         ForEach(priorWindow.items) { item in
                             photoTile(item, from: priorWindow)
@@ -158,12 +158,28 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                         load(cursor, history: earlier)
                     }
                     .disabled(busy || !activeOwner || viewing != nil)
+                    Section("照片网格") {
+                        ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
+                            Button {
+                                wallDensity = option
+                            } label: {
+                                Label(option.title, systemImage: wallDensity == option
+                                    ? "checkmark.circle.fill" : "square.grid.3x3")
+                            }
+                        }
+                    }
                 } label: {
                     Label("位置照片操作", systemImage: "ellipsis.circle")
                 }
                 .accessibilityIdentifier("native-ios-owner-map-cluster-more")
             }
         }
+        .simultaneousGesture(
+            MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
+                guard activeOwner, !busy, viewing == nil else { return }
+                wallDensity = wallDensity.applyingPinch(scale)
+            }
+        )
         .fullScreenCover(item: $viewing, onDismiss: {
             pendingViewerCross = nil
             if activeOwner {
