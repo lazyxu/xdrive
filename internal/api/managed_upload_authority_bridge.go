@@ -10,12 +10,56 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// A single UploadSession belongs to exactly one writer class. A row with
+// conflicting device-Source, SourceRun or Share claims is quarantined even if
+// its Owner credentials are otherwise valid. A Local Push lp2_ claim is also
+// never a second capability layered on a worker or public Share grant.
+func mixedUploadSessionWriterClaims(session meta.UploadSession) bool {
+	if unboundSourceUploadSession(session) {
+		return true
+	}
+	if session.SourceID != 0 {
+		return session.SourceRunID != "" || session.ShareID != nil
+	}
+	if session.ShareID != nil && session.SourceRunID != "" {
+		return true
+	}
+	return strings.HasPrefix(session.ResumeKey, "lp2_") &&
+		(session.SourceRunID != "" || session.ShareID != nil)
+}
+
+// Do not fall back to generic Owner authority when the request identifies a
+// DSM Source but omits the canonical SourceID in its upload payload. Device
+// identity and Root headers alone never authorize an ordinary upload.
+func conflictingUploadRequestWriter(c *gin.Context, sourceID uint64) bool {
+	if c == nil {
+		return true
+	}
+	if sourceID != 0 {
+		if _, scoped := currentSourceRunScope(c); scoped {
+			return true
+		}
+		if _, guest := c.Get("xdriveShareUploadID"); guest {
+			return true
+		}
+		return false
+	}
+	if c.Request == nil {
+		return false // direct transaction helpers in tests have no HTTP request
+	}
+	return strings.TrimSpace(c.GetHeader("X-XDrive-Synology-Source-ID")) != "" ||
+		strings.TrimSpace(c.GetHeader("X-XDrive-Synology-Source-Revision")) != ""
+}
+
 // A Pull worker's signed SourceRun grants and a native Local Push device's
 // durable Operation are independent authorities. Never let a generic Owner
 // bearer or a mere lp2_ prefix become a managed-tree writer.
 func requireSourceRunOrLocalPushTargetTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, ownerID, nodeID uint64, req uploadInitRequest,
 ) error {
+	if conflictingUploadRequestWriter(c, req.SourceID) {
+		return errManagedSourceWriteDenied
+	}
 	if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
 		if _, run := currentSourceRunScope(c); run {
 			return errManagedSourceWriteDenied
@@ -44,7 +88,8 @@ func unboundSourceUploadSession(session meta.UploadSession) bool {
 func requireSourceRunOrLocalPushFinalizeTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, session meta.UploadSession, nodeID uint64,
 ) error {
-	if unboundSourceUploadSession(session) {
+	if mixedUploadSessionWriterClaims(session) ||
+		conflictingUploadRequestWriter(c, session.SourceID) {
 		return errManagedSourceWriteDenied
 	}
 	if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
@@ -85,7 +130,8 @@ func (s *Server) requireUploadSessionReadAuthorityTx(
 		return errManagedSourceWriteDenied
 	}
 	session = current
-	if unboundSourceUploadSession(session) {
+	if mixedUploadSessionWriterClaims(session) ||
+		conflictingUploadRequestWriter(c, session.SourceID) {
 		return errManagedSourceWriteDenied
 	}
 	if !sourceRunUploadSessionMatches(c, session) {
