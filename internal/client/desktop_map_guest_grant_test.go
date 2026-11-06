@@ -35,35 +35,35 @@ func TestNativeDesktopMapGrantRequiresFreshNativeSecretAndNoRedirect(t *testing.
 	server := httptest.NewTLSServer(mux)
 	defer server.Close()
 	cli := NewManagedSession(server.URL, SessionTokens{
-		AccessToken:"test-access", RefreshToken:"test-native-refresh",
-		AccessExpiresAt:time.Now().Add(time.Hour), RefreshExpiresAt:time.Now().Add(time.Hour),
+		AccessToken: "test-access", RefreshToken: "test-native-refresh",
+		AccessExpiresAt: time.Now().Add(time.Hour), RefreshExpiresAt: time.Now().Add(time.Hour),
 	}, nil, nil)
 	cli.HTTP = server.Client()
 	_, err := cli.IssueDesktopMapGuestGrant(context.Background())
-	if !errors.Is(err, ErrAuthRedirect) || redirected.Load()!=0 || issued.Load()!=1 {
+	if !errors.Is(err, ErrAuthRedirect) || redirected.Load() != 0 || issued.Load() != 1 {
 		t.Fatalf("native refresh credential was redirected: err=%v, issued=%d, redirected=%d",
-			err,issued.Load(),redirected.Load())
+			err, issued.Load(), redirected.Load())
 	}
 }
 
 func TestNativeDesktopMapGrantRejectsMalformedServerAndReceipt(t *testing.T) {
 	httpClient := NewManagedSession("http://localhost:18080", SessionTokens{
-		AccessToken:"native",RefreshToken:"native-refresh",
+		AccessToken: "native", RefreshToken: "native-refresh",
 	}, nil, nil)
-	if _,err:=httpClient.IssueDesktopMapGuestGrant(context.Background());err==nil {
+	if _, err := httpClient.IssueDesktopMapGuestGrant(context.Background()); err == nil {
 		t.Fatal("native map grant must not use plaintext HTTP")
 	}
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request) {
-		w.Header().Set("Content-Type","application/json")
-		_,_ = io.WriteString(w,`{"ticket":"invalid","username":"owner","expires_in":30}`)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"ticket":"invalid","username":"owner","expires_in":30}`)
 	}))
 	defer server.Close()
-	cli:=NewManagedSession(server.URL,SessionTokens{
-		AccessToken:"native",RefreshToken:"native-refresh",
-		AccessExpiresAt:time.Now().Add(time.Hour),RefreshExpiresAt:time.Now().Add(time.Hour),
-	},nil,nil)
-	cli.HTTP=server.Client()
-	if _,err:=cli.IssueDesktopMapGuestGrant(context.Background());err==nil {
+	cli := NewManagedSession(server.URL, SessionTokens{
+		AccessToken: "native", RefreshToken: "native-refresh",
+		AccessExpiresAt: time.Now().Add(time.Hour), RefreshExpiresAt: time.Now().Add(time.Hour),
+	}, nil, nil)
+	cli.HTTP = server.Client()
+	if _, err := cli.IssueDesktopMapGuestGrant(context.Background()); err == nil {
 		t.Fatal("native Agent accepted success-shaped untrusted Server ticket")
 	}
 }

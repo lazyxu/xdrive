@@ -21,7 +21,7 @@ const desktopMapGuestGrantTTL = 30 * time.Second
 const desktopMapGuestMaxPending = 4
 
 var (
-	errDesktopMapGrantDenied = errors.New("desktop map grant denied")
+	errDesktopMapGrantDenied  = errors.New("desktop map grant denied")
 	errDesktopMapGrantLimited = errors.New("desktop map grant limit")
 )
 

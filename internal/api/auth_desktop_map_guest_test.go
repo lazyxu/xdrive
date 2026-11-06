@@ -62,9 +62,9 @@ func TestDesktopMapGuestRedeemRequiresSameOriginHTTPSBeforeDB(t *testing.T) {
 	r := gin.New()
 	r.POST("/api/v1/auth/desktop-map/redeem", server.redeemDesktopMapGuestGrant)
 	const host = "https://drive.example.test:8443"
-	for _, tc := range []struct{
+	for _, tc := range []struct {
 		name, origin, fetchSite, authorization, body, contentType string
-		want int
+		want                                                      int
 	}{
 		{"missing Origin", "", "", "", "{}", "application/json", 403},
 		{"cross origin", "https://attacker.example.net", "cross-site", "", "{}", "application/json", 403},
@@ -78,9 +78,15 @@ func TestDesktopMapGuestRedeemRequiresSameOriginHTTPSBeforeDB(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, host+"/api/v1/auth/desktop-map/redeem",
 				strings.NewReader(tc.body))
-			if tc.origin != "" { req.Header.Set("Origin", tc.origin) }
-			if tc.fetchSite != "" { req.Header.Set("Sec-Fetch-Site", tc.fetchSite) }
-			if tc.authorization != "" { req.Header.Set("Authorization", tc.authorization) }
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			if tc.fetchSite != "" {
+				req.Header.Set("Sec-Fetch-Site", tc.fetchSite)
+			}
+			if tc.authorization != "" {
+				req.Header.Set("Authorization", tc.authorization)
+			}
 			req.Header.Set("Content-Type", tc.contentType)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
