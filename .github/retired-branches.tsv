@@ -76,3 +76,6 @@ dev/ios-map-filter-3945-parent-20261106	aa6215cef30febc89cc6a34e5fb7e703ee90266f
 
 # Reconciled accepted #3971 exact-SHA MapKit alias row from canonical master; retain on follow-up merge.
 dev/ios-map-3955-master-20261106	1e58aad412b1be6773d9822eb80cc967a239b8ef	all six changed Git blobs equal merged PR #3955 exact tested head c7528147b96bebd102c501af734808472aee8c14; no unique code; retain immutable source in Git history
+
+# 2026-11-07 reviewed iOS Files orphan after accepted #3965 consolidation; immutable exact tip only.
+feat/ios-files-grouping-inline-20261106	dfd905125db874cd1ece972f0d3a2755a9e11476	historical pre-CI grouped Files/Quick Access/inline/undo branch explicitly integrated by merged exact-green #3965, with later #3992 native Files parity work in progress; branch last commit only adjusts shared Quick Access source-contract assertion, whose Owner-scoped singleton and stronger tests are present on accepted master; do not restore stale 36-file UI
