@@ -7,6 +7,8 @@ import "time"
 type ClipboardVault struct {
 	OwnerID   uint64    `gorm:"primaryKey"`
 	Salt      string    `gorm:"size:24;not null"`
+	CheckNonce string `gorm:"size:24"`
+	CheckCiphertext string `gorm:"size:256"`
 	CreatedAt time.Time
 }
 
