@@ -498,7 +498,11 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     }
 
     private func advanceIfVisible() {
-        guard scrollFootVisible, activeOwner, !busy, !coverLoading,
+        // The next Owner Range is independent of decorative thumbnails.
+        // A slow or missing cover must never block continuous scrolling:
+        // load() cancels the old coverTask, rechecks the departing signed
+        // Range, and keeps at most two verified 48-item windows visible.
+        guard scrollFootVisible, activeOwner, !busy,
               viewing == nil, page != nil, error == nil, let next else { return }
         scrollFootVisible = false
         load(next, history: earlier + [cursor], autoAdvance: true)

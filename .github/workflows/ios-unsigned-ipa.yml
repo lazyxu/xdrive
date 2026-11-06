@@ -591,6 +591,40 @@ jobs:
             desktop/tests/ios-native-files-clipboard.cjs \
             desktop/tests/ios-native-owner-authorization-flight.cjs
 
+      - name: Verify native Files Saved Searches and PWA Server parity
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesSavedSearchPolicy.swift \
+            ios/tests/NativeFilesSavedSearchChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-saved-search"
+          "$RUNNER_TEMP/xdrive-ios-files-saved-search"
+          node --test desktop/tests/ios-native-files-saved-searches.cjs
+
+      - name: Verify Native Files typed-path navigation and Owner cancellation
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesPathPolicy.swift \
+            ios/tests/NativeFilesPathChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-path"
+          "$RUNNER_TEMP/xdrive-ios-files-path"
+          node --test desktop/tests/ios-native-files-path-navigation.cjs
+
+      - name: Verify native Files cross-window selection and revision snapshots
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift \
+            ios/XDriveIOS/NativeFilesSelectionPolicy.swift \
+            ios/tests/NativeFilesSelectionChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-selection"
+          "$RUNNER_TEMP/xdrive-ios-files-selection"
+          node --test desktop/tests/ios-native-files-cross-window-selection.cjs
+
       - name: Verify native Files Viewer bounded navigation and Owner preview contracts
         run: |
           set -euo pipefail

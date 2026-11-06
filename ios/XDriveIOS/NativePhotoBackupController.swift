@@ -151,6 +151,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
 
     func configure(login: XDriveIOSNativeOwnerLoginModel,
                    expectedOwner: XDriveNativeOwnerRoot,
+                   expectedDestination: XDriveIOSPhotoManagedDestination,
                    minutes: Int, allowICloud: Bool,
                    startRule: XDriveIOSPhotoAutoStartRule,
                    enabledAt: Date) async {
@@ -251,6 +252,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             guard displayEpoch == uiEpoch,
                   store.localStopGeneration == stopVersion,
                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                  managed.destination == expectedDestination,
                   UIApplication.shared.applicationState == .active else {
                 throw XDriveIOSNativeSessionError.staleSession
             }

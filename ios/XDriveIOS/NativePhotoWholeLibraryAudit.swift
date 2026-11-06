@@ -10,6 +10,15 @@ import UIKit
 enum XDriveIOSNativePhotoWholeLibraryAuditPolicy {
     static let maximumOriginalsPerBatch = 8
 
+    /// Stable PhotoKit tie resolution is keyed to 256-slot windows, not
+    /// arbitrary 8-item verification sub-batches. Use the same logical
+    /// window start for all sub-batches so equal-date originals cannot be
+    /// repeated or skipped at a shifting window boundary.
+    static func stableWindowStart(for checked: Int) -> Int? {
+        guard checked >= 0 else { return nil }
+        return checked - checked % XDrivePhotoBackupScanWindow.maxItems
+    }
+
     static func complete(checked: Int, total: Int,
                          currentlyVerified: Int, unverified: Int) -> Bool {
         checked >= 0 && total >= 0 && checked == total &&
@@ -37,6 +46,7 @@ private final class XDriveIOSNativeWholeAuditChangeObserver: NSObject, PHPhotoLi
 @MainActor
 final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
     @Published private(set) var busy = false
+    @Published private(set) var verifyingContinuously = false
     @Published private(set) var total: Int?
     @Published private(set) var checked = 0
     @Published private(set) var currentVerified = 0
@@ -50,6 +60,8 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
     private var managedTargetNodeID: UInt64?
     private var epoch = UUID()
     private var job: Task<Void, Never>?
+    private var continuousJob: Task<Void, Never>?
+    private var continuousEpoch = UUID()
     private var activeProof: XDriveIOSNativeCurrentPhotoReceiptModel?
     private var changeObserver: XDriveIOSNativeWholeAuditChangeObserver?
     private var observerGeneration = UUID()
@@ -64,6 +76,10 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
     }
 
     func reset() {
+        continuousEpoch = UUID()
+        continuousJob?.cancel()
+        continuousJob = nil
+        verifyingContinuously = false
         epoch = UUID()
         stopMonitoringLibrary()
         job?.cancel()
@@ -181,22 +197,43 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
                     self.photoToken = snapshot.serialized
                 }
 
+                // Every 8-item proof uses the SAME 256-slot stable
+                // PhotoKit tie-ordering window until that window is done.
+                // Starting at checked (8, 16, 24, ...) would shift both
+                // tie boundaries between batches and could repeat/omit
+                // originals with equal creation and modification dates.
+                guard let windowStart =
+                    XDriveIOSNativePhotoWholeLibraryAuditPolicy.stableWindowStart(
+                        for: self.checked
+                    ) else { throw XDriveIOSNativePhotoWholeAuditError.invalidProgress }
                 let count = try await scanner.start(
-                    atOffset: self.checked, requireStableResume: true
+                    atOffset: windowStart, requireStableResume: true
                 )
-                let page = try await scanner.nextPage()
+                var page = try await scanner.nextPage()
                 try Task.checkCancellation()
+                // At most four bounded 64-slot reads locate this sub-batch;
+                // no PhotoKit IDs, images or bulk manifests are retained.
+                while page.nextOffset <= self.checked && !page.finished {
+                    page = try await scanner.nextPage()
+                    try Task.checkCancellation()
+                }
+                let skippedInPage = self.checked - page.startOffset
                 guard self.epoch == token,
                       self.total == nil || self.total == count,
-                      self.checked <= count, page.startOffset == self.checked,
+                      self.checked <= count,
+                      page.startOffset <= self.checked,
+                      skippedInPage >= 0,
+                      skippedInPage <= page.items.count,
                       page.totalAccessibleAssets == count,
+                      (self.checked == count ||
+                       skippedInPage < page.items.count),
                       XDriveIOSNativePhotoOwnerScope.matches(
                         login.owner, requestedOwner
                       )
                 else { throw XDriveIOSNativePhotoWholeAuditError.invalidProgress }
                 self.total = count
 
-                for candidate in page.items.prefix(
+                for candidate in page.items.dropFirst(skippedInPage).prefix(
                     XDriveIOSNativePhotoWholeLibraryAuditPolicy.maximumOriginalsPerBatch
                 ) {
                     try Task.checkCancellation()
@@ -313,6 +350,63 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
         }
     }
 
+    /// Explicit, foreground-only continuous read-only verification. One
+    /// inner scan still handles at most eight originals and releases the
+    /// PhotoKit scanner before the next batch. Nothing is uploaded or
+    /// persisted as cloud completion; quitting/Owner change cancels both
+    /// tasks via reset() and leaves the result unknown.
+    func verifyContinuously(login: XDriveIOSNativeOwnerLoginModel,
+                            allowICloudOriginals: Bool) {
+        guard !busy, continuousJob == nil,
+              let selected = login.owner,
+              UIApplication.shared.applicationState == .active,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+              total == nil || checked < total!
+        else { return }
+        let ticket = UUID()
+        continuousEpoch = ticket
+        verifyingContinuously = true
+        message = "正在连续核验当前图库；仅在此页面前台执行，每批最多 8 项。"
+        continuousJob = Task { @MainActor [weak self, weak login] in
+            guard let self, let login else { return }
+            defer {
+                if self.continuousEpoch == ticket {
+                    self.verifyingContinuously = false
+                    self.continuousJob = nil
+                }
+            }
+            while !Task.isCancelled && self.continuousEpoch == ticket {
+                guard XDriveIOSNativePhotoOwnerScope.matches(
+                          login.owner, selected
+                      ),
+                      UIApplication.shared.applicationState == .active,
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                else {
+                    self.reset()
+                    self.message = "账户、照片权限或前台状态已变化；连续核验已取消，旧结果作废。"
+                    return
+                }
+                guard self.total == nil || self.checked < self.total! else { return }
+                let previous = self.checked
+                self.verifyNext(login: login,
+                                allowICloudOriginals: allowICloudOriginals)
+                guard let batch = self.job else { return }
+                await batch.value
+                guard !Task.isCancelled, self.continuousEpoch == ticket
+                else { return }
+                // Any invalidated generation makes total nil. A stalled page
+                // cannot create a hot loop or manufacture a completion count.
+                guard let total = self.total,
+                      self.checked > previous,
+                      self.checked <= total else { return }
+                if self.checked == total { return }
+                // Give SwiftUI/Owner/PhotoKit cancellation and progress UI
+                // an actor turn before admitting another bounded batch.
+                await Task.yield()
+            }
+        }
+    }
+
     private func verifyGeneration(
         requestedOwner: XDriveNativeOwnerRoot,
         login: XDriveIOSNativeOwnerLoginModel
@@ -344,7 +438,7 @@ struct XDriveIOSNativePhotoWholeLibraryAuditSection: View {
             Text("从本机读取原件 SHA-256，并逐项查询当前受管目标的历史收据与服务器 Node。每次最多核验 8 项；只读取，不上传、不删除。")
                 .font(.footnote).foregroundStyle(.secondary)
             Toggle("核验时允许下载 iCloud 原件", isOn: $allowICloudOriginals)
-                .disabled(audit.busy)
+                .disabled(audit.busy || audit.verifyingContinuously)
             if let total = audit.total {
                 Text("本次已核验 \(audit.checked)/\(total) 项 · 当前云端核验通过 \(audit.currentVerified) · 尚未通过 \(audit.unverified)")
                     .monospacedDigit()
@@ -361,8 +455,10 @@ struct XDriveIOSNativePhotoWholeLibraryAuditSection: View {
             }
             Text(audit.message)
                 .font(.footnote).foregroundStyle(.secondary)
-            if audit.busy {
-                ProgressView("正在核验当前原件及云端 Node…")
+            if audit.busy || audit.verifyingContinuously {
+                ProgressView(audit.verifyingContinuously
+                             ? "正在前台连续核验当前图库…"
+                             : "正在核验当前原件及云端 Node…")
                 Button("停止并清除本次核验") { audit.reset() }
                     .accessibilityIdentifier("native-ios-photo-whole-audit-cancel")
             } else {
@@ -374,6 +470,17 @@ struct XDriveIOSNativePhotoWholeLibraryAuditSection: View {
                           PHPhotoLibrary.authorizationStatus(for: .readWrite) != .authorized ||
                           (audit.total != nil && audit.checked >= audit.total!))
                 .accessibilityIdentifier("native-ios-photo-whole-audit-next")
+                Button("前台连续核验剩余原件") {
+                    audit.verifyContinuously(
+                        login: login, allowICloudOriginals: allowICloudOriginals
+                    )
+                }
+                .disabled(login.owner == nil || phase != .active ||
+                          PHPhotoLibrary.authorizationStatus(for: .readWrite) != .authorized ||
+                          (audit.total != nil && audit.checked >= audit.total!))
+                .accessibilityIdentifier("native-ios-photo-whole-audit-continuous")
+                Text("连续模式自动衔接每批最多 8 项的只读核验；需保持此页面在前台。可能消耗大量时间、网络和电量，不保证在后台或锁屏后继续。")
+                    .font(.caption).foregroundStyle(.secondary)
                 if audit.total != nil {
                     Button("重新开始整库核验") {
                         audit.reset()

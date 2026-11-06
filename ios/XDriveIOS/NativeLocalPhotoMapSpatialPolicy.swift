@@ -111,6 +111,33 @@ enum XDriveIOSNativeLocalMapSpatialPolicy {
             selected.isSubset(of: current)
     }
 
+    /// An old MapKit annotation may retain its grid ID, photo count and
+    /// representative local ID while the latest PhotoKit scan has a different
+    /// representative GPS point or insertion order. Do not open that old pin.
+    /// This is an in-memory snapshot check; actual PhotoKit permission and
+    /// live Viewer admission remain independently required.
+    static func matchesCurrentCell<Payload>(
+        _ chosen: XDriveIOSNativeLocalMapSpatialCell<Payload>,
+        current: XDriveIOSNativeLocalMapSpatialCell<Payload>,
+        representativeID: (Payload) -> String
+    ) -> Bool {
+        let chosenID = representativeID(chosen.representative)
+        let currentID = representativeID(current.representative)
+        guard chosen.count > 0, current.count > 0,
+              chosen.firstSeen > 0, current.firstSeen > 0,
+              !chosenID.isEmpty, !currentID.isEmpty else { return false }
+        return chosen.key == current.key &&
+               chosen.count == current.count &&
+               chosen.firstSeen == current.firstSeen &&
+               chosen.latitude == current.latitude &&
+               chosen.longitude == current.longitude &&
+               chosenID == currentID &&
+               key(latitude: chosen.latitude, longitude: chosen.longitude,
+                   level: chosen.key.level) == chosen.key &&
+               key(latitude: current.latitude, longitude: current.longitude,
+                   level: current.key.level) == current.key
+    }
+
     struct Key: Hashable {
         let level: Int
         let latitudeCell: Int

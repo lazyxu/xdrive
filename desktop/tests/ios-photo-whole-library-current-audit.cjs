@@ -21,8 +21,11 @@ test('current library audit uses exact existing one-photo Owner Node/SHA receipt
 
 test('audit is bounded, foreground only, full-permission and PhotoKit-generation fenced', () => {
   assert.match(audit, /static let maximumOriginalsPerBatch = 8/)
-  assert.match(audit, /scanner\.start\(\s*atOffset: self\.checked, requireStableResume: true/)
-  assert.match(audit, /page\.items\.prefix\(\s*XDriveIOSNativePhotoWholeLibraryAuditPolicy\.maximumOriginalsPerBatch/)
+  assert.match(audit, /stableWindowStart\(\s*for: self\.checked/)
+  assert.match(audit, /scanner\.start\(\s*atOffset: windowStart, requireStableResume: true/)
+  assert.match(audit, /while page\.nextOffset <= self\.checked && !page\.finished/)
+  assert.match(audit, /page\.items\.dropFirst\(skippedInPage\)\.prefix\(/)
+  assert.match(audit, /page\.items\.dropFirst\(skippedInPage\)\.prefix\(\s*XDriveIOSNativePhotoWholeLibraryAuditPolicy\.maximumOriginalsPerBatch/)
   assert.match(audit, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
   assert.match(audit, /XDriveIOSPhotoKitLibraryEpoch\.matches\(\s*photoToken, as: latest\.token/)
   assert.match(audit, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, requestedOwner\)/)
