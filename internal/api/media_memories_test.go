@@ -103,6 +103,69 @@ func TestMediaMemoryTripSegmentsRejectsSparseAwayDay(t *testing.T) {
 	}
 }
 
+func TestMediaMemoryTripAntimeridianHomeCells(t *testing.T) {
+	const seam = int64(180) * mediaMemoryTripCellScale
+	atEast := mediaMemoryTripDay{LatitudeCell: 10, LongitudeCell: seam}
+	atWest := mediaMemoryTripDay{LatitudeCell: 10, LongitudeCell: -seam}
+	if mediaMemoryTripCellKey(atEast) != mediaMemoryTripCellKey(atWest) {
+		t.Fatalf("identical +/-180 degree WGS84 positions got different home keys: %q vs %q",
+			mediaMemoryTripCellKey(atEast), mediaMemoryTripCellKey(atWest))
+	}
+
+	cases := []struct {
+		name string
+		day  int64
+		home int64
+		near bool
+	}{
+		{"same meridian +180/-180", seam, -seam, true},
+		{"one cell across east", seam - 1, -seam, true},
+		{"one cell across west", -seam, seam - 1, true},
+		{"two cells across east", seam - 1, -seam + 1, false},
+		{"two cells across west", -seam + 1, seam - 1, false},
+		{"far across longitude", 0, seam, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			day := mediaMemoryTripDay{LatitudeCell: 10, LongitudeCell: tc.day}
+			if got := mediaMemoryTripNearHome(day, 10, tc.home); got != tc.near {
+				t.Fatalf("near home for lon %d vs %d: got %v, want %v", tc.day, tc.home, got, tc.near)
+			}
+			if mediaMemoryTripNearHome(mediaMemoryTripDay{
+				LatitudeCell: 12, LongitudeCell: tc.day,
+			}, 10, tc.home) {
+				t.Fatal("latitude outside one cell was accepted")
+			}
+		})
+	}
+
+	day := func(index int, lat, lon int64, count int64) mediaMemoryTripDay {
+		date := time.Date(2026, time.January, index, 0, 0, 0, 0, time.UTC)
+		return mediaMemoryTripDay{
+			Date: date, DateKey: date.Format("2006-01-02"),
+			LatitudeCell: lat, LongitudeCell: lon, ItemCount: count,
+		}
+	}
+	// Alternating +180/-180 is still one home location. Only the
+	// separate two-day segment should be classified as an away trip.
+	days := []mediaMemoryTripDay{
+		day(1, 10, seam, 1),
+		day(2, 10, -seam, 1),
+		day(3, 10, seam, 1),
+		day(4, 10, -seam, 1),
+		day(5, 50, 100, 3),
+		day(6, 50, 101, 3),
+		day(7, 10, -seam, 1),
+	}
+	segments := mediaMemoryTripSegments(days)
+	if len(segments) != 1 || len(segments[0].Days) != 2 ||
+		segments[0].Days[0].DateKey != "2026-01-05" ||
+		segments[0].Days[1].DateKey != "2026-01-06" ||
+		segments[0].ItemCount != 6 {
+		t.Fatalf("antimeridian home was split or misclassified: %+v", segments)
+	}
+}
+
 func TestMediaMemoryDateRangeLabel(t *testing.T) {
 	start := time.Date(2026, time.October, 2, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, time.October, 5, 0, 0, 0, 0, time.UTC)

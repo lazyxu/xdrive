@@ -214,4 +214,34 @@ func TestMediaMemoriesRecentAndOnThisDayProjectionMatchesDetailRange(t *testing.
 		len(historyRange.Items) != 2 {
 		t.Fatalf("history range=%+v memory=%+v", historyRange, onThisDay)
 	}
+
+	// Original EXIF +180 and -180 longitudes designate the same WGS84
+	// meridian. The SQL day/cell aggregation must count both PhotoAssets
+	// once in one location, not split a true home across two cells.
+	gpsDate := time.Date(2026, time.October, 10, 12, 0, 0, 0, time.UTC)
+	addGPSAtMeridian := func(name string, longitude float64) {
+		t.Helper()
+		nodeID := addMedia(name, gpsDate)
+		if err := db.Model(&meta.MediaMetadata{}).
+			Where("node_id = ? AND owner_id = ?", nodeID, user.ID).
+			Updates(map[string]any{
+				"latitude":  0.0,
+				"longitude": longitude,
+			}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	addGPSAtMeridian("east-meridian.jpg", 180)
+	addGPSAtMeridian("west-meridian.jpg", -180)
+	gpsDays, err := queryMediaTripDays(context.Background(), db, user.ID, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gpsDays) != 1 ||
+		gpsDays[0].DateKey != "2026-10-10" ||
+		gpsDays[0].LatitudeCell != 0 ||
+		gpsDays[0].LongitudeCell != -180*mediaMemoryTripCellScale ||
+		gpsDays[0].ItemCount != 2 {
+		t.Fatalf("international date line PhotoAssets split into distinct GPS cells: %+v", gpsDays)
+	}
 }
