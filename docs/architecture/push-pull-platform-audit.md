@@ -41,11 +41,11 @@ The work is therefore **not** to create three new worker services. The remaining
 
 | Source | Current new-source target layout | Required new-source layout |
 |---|---|---|
-| Local Folder / iOS Push | 同步文件夹/设备备份/<device>/<source> | 同步文件夹/Push/<device>/<source> |
+| Local Folder / iOS Push | 旧 Device 分组目录 | 同步文件夹/Push/<用户填写的目录名> |
 | Synology Pull | 同步文件夹/远程拉取/<connector>/<source> | 同步文件夹/Pull/<connector>/<source> |
 | Yike Pull | 同步文件夹/一刻相册/<account identity> | 同步文件夹/Pull/Yike Photos/<source> |
-| DSM Photos Push | 同步文件夹/Push/<DSM device>/<source> | 同步文件夹/Push/<DSM device>/<source> |
-| Android Photos Push | Owner root | 同步文件夹/Push/<Android device>/<source> |
+| DSM Photos Push | 已有设备分组目录 | 同步文件夹/Push/<用户填写的目录名> |
+| Android Photos Push | Owner root（原生 Source 尚未接入） | 同步文件夹/Push/<用户填写的目录名>（待原生接入） |
 
 These are changes to **new provisioning only**. Do not move or rename old targets, old Nodes, old receipts or old Source records in this project.
 
@@ -53,7 +53,7 @@ These are changes to **new provisioning only**. Do not move or rename old target
 
 ### P0 — shared Server contract
 
-1. Introduce one server-side managed target provisioner for Push and Pull. It creates the canonical root/group/connector/leaf and Source atomically, sets TargetManaged, returns the actual path and stable TargetNodeID, and rejects conflicts/overlap.
+1. Introduce one server-side managed target provisioner for Push and Pull. It creates the canonical root/connector/leaf and Source atomically, sets TargetManaged, returns the actual path and stable TargetNodeID, and rejects conflicts/overlap.
 2. Generalize the Push Source Device binding. Current LocalCreatorDeviceID is local-folder-specific by name; new Push types must have one connector-neutral DeviceID binding.
 3. Keep platform capability separate from Device identity. A valid Device token alone must not grant local Root, PhotoKit, MediaStore or arbitrary Files access.
 4. Ensure managed-subtree write guards apply equally to every new Push/Pull target and every upload route.
@@ -122,7 +122,7 @@ PR #3923 completes the DSM Device, Root and upload authorization closure:
 
 - Register `synology` as an identity-only ClientDevice platform. Its credential is explicitly excluded from the generic Desktop Agent credential gate.
 - Store the independent DSM Device token in the source-agent secret store; config.json contains only DeviceID and the opaque credential reference.
-- New Synology Photos Push creation requires registered Device proof, rejects caller-selected target Nodes, and creates `同步文件夹/Push/<device>/<source>` transactionally.
+- New Synology Photos Push creation requires registered Device proof, rejects caller-selected target Nodes, and creates `同步文件夹/Push/<用户填写的目录名>` transactionally.
 - Source stores the generic `DeviceID`, exact managed `TargetNodeID`, and `TargetManaged` provenance.
 - The server persists the aggregate Personal/Shared Root-set ID and fingerprint in the Source binding. The source-agent independently verifies the local filesystem roots before scanning.
 - Every Source mutation/run and every upload admission, chunk write and Finalize rechecks Owner, Device platform/token/revocation, Source ID/revision, Root ID/fingerprint and the exact managed Target/descendant.
@@ -130,3 +130,7 @@ PR #3923 completes the DSM Device, Root and upload authorization closure:
 - Existing Sources with no DeviceID remain on their exact old target and are not migrated or silently rebound.
 
 **Remaining DSM acceptance:** a real DSM NAS run has not been performed and must be reported as **跳过（未验收）**. The standalone source-agent CI currently builds Linux amd64 and arm64 binaries. The legacy ARMv7 SPK remains the separate `xd` / `xdrive-agent` package and does not include `xdrive-source-agent`; ARMv7 source-agent distribution is not yet provided.
+
+### Accepted S10–S18 implementation note (2026-11-06)
+
+The implementation is a development branch, not master acceptance. New Push paths are flat and Owner+Direction names must be unique across connector kinds (including archived Sources). Yike account identity is separate from the leaf; new Yike targets are provisioned immediately. The scope does not migrate old Sources, paths or receipts. Android native Photos Source enrollment and Source-bound uploader are separate unfinished work, not certified by this path contract.
