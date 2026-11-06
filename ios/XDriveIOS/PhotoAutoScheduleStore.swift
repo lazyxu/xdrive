@@ -299,6 +299,7 @@ final class XDriveIOSPhotoAutoScheduleStore {
                 needsReview: pending
               ) : 0
         state.windowIndex = followingWindow
+        var recoveryPassRestarted = false
         if state.historyRecoveryRequired == true {
             state.historyRecoveryReadyToCommit = false
             if !unchanged {
@@ -311,7 +312,7 @@ final class XDriveIOSPhotoAutoScheduleStore {
                         visibleTotal: progress.totalVisible,
                         scanned: progress.scanned
                     )
-                if windowComplete {
+                if windowComplete && !pending {
                     let windowVerified =
                         XDriveIOSPhotoAutoSchedulePolicy.fullReconciliationWindowVerified(
                             scanned: progress.scanned,
@@ -338,6 +339,7 @@ final class XDriveIOSPhotoAutoScheduleStore {
                         // At least one window failed this pass. Start another
                         // complete pass; only a clean pass can rebase history.
                         state.historyRecoveryPassClean = true
+                        recoveryPassRestarted = true
                     }
                 }
             }
@@ -353,6 +355,13 @@ final class XDriveIOSPhotoAutoScheduleStore {
                 libraryUnchanged: unchanged
             ) else { throw XDriveIOSPhotoAutoScheduleError.unsupportedInterval }
             state.nextDueAt = due
+        }
+        if recoveryPassRestarted && state.catchUpWhenBehind == true {
+            // Retry a failed full reconciliation pass promptly, but still
+            // through the existing active-scene scheduler (never a hot loop).
+            state.nextDueAt = now.addingTimeInterval(
+                XDriveIOSPhotoAutoSchedulePolicy.catchUpCooldown
+            )
         }
         state.libraryChangeEpoch = epoch.serialized
         state.libraryAuthorizationRaw = epoch.authorization
