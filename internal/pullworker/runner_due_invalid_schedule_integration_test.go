@@ -6,10 +6,12 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourceschedule"
 	"gorm.io/driver/postgres"
@@ -75,7 +77,14 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 	}
 	// Both Sources have an enabled connector: the malformed schedule must be
 	// isolated by Source rather than silently dropped as disabled.
-	handler := &fakeHandler{}
+	var handlerCalls atomic.Int32
+	handler := SourceHandlerFunc(func(_ context.Context, source meta.Source) (client.SyncRun, error) {
+		seq := handlerCalls.Add(1)
+		return client.SyncRun{
+			ID: fmt.Sprintf("run-%d-%d", source.ID, seq),
+			SourceID: source.ID, Status: meta.SyncRunStatusCompleted,
+		}, nil
+	})
 	runner := &Runner{DB: db, Handlers: map[string]SourceHandler{
 		"yike_photos": handler,
 	}, MaxConcurrency: 2}
@@ -85,9 +94,9 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 		t.Fatalf("bad schedule error not attributed to its Source: %v", err)
 	}
 	if report.Eligible != 2 || report.Completed != 1 || report.Failed != 1 ||
-		handler.calls != 1 {
+		handlerCalls.Load() != 1 {
 		t.Fatalf("one malformed schedule blocked healthy Pull: report=%+v totalCalls=%d",
-			report, handler.calls)
+			report, handlerCalls.Load())
 	}
 	var recorded, independent meta.Source
 	if err := db.First(&recorded, broken.ID).Error; err != nil {
@@ -113,8 +122,8 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 	}
 	report, err = runner.RunDue(context.Background(), now.Add(time.Minute), 6*time.Hour)
 	if err != nil || report.Completed != 2 || report.Failed != 0 ||
-		handler.calls != 3 {
+		handlerCalls.Load() != 3 {
 		t.Fatalf("repair did not restore normal dispatch: report=%+v err=%v totalCalls=%d",
-			report, err, handler.calls)
+			report, err, handlerCalls.Load())
 	}
 }
