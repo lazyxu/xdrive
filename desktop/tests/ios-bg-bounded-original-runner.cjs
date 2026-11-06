@@ -362,3 +362,33 @@ test('BG only-new history loss requires consent and full Photos permission', () 
     'history loss cannot silently downgrade into full-date discovery')
   assert.match(store, /func requireFullLibraryReconciliation\([\s\S]*?state\.historyRecoveryRequiresConsent = true[\s\S]*?state\.historyRecoveryFullScopeConfirmed = false/)
 })
+
+
+test('BG only-new generation drift re-arms future work without advancing or uploading', () => {
+  const task = read('BackgroundPhotoTask.swift')
+  const queue = read('PhotoKitPersistentBackupQueue.swift')
+  const replayStart = task.indexOf('let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)')
+  const reserve = task.indexOf('.reserveDue(owner: owner, approved: approved)')
+  const scope = task.slice(replayStart, reserve)
+  const generation = scope.indexOf('.unauthorizedOrChanged {')
+  const expired = scope.indexOf('.requiresExplicitBaseline,')
+  assert.ok(replayStart >= 0 && reserve > replayStart &&
+    generation >= 0 && expired > generation,
+    'transient generation changes must be caught separately from lost history')
+  const handler = scope.slice(generation, expired)
+  assert.match(handler, /try Task\.checkCancellation\(\)/)
+  assert.match(handler, /guard approved\.matches\(owner\)/)
+  assert.match(handler, /PHPhotoLibrary\.authorizationStatus\(\s*for: \.readWrite\s*\) == \.authorized/)
+  assert.match(handler, /\.requireFullLibraryReconciliation\(owner: owner\)/,
+    'a permission downgrade needs explicit full-scope Owner consent')
+  assert.match(handler, /resubmitRecoveryOnlyIfStillRequired\(owner: owner\)\s*return/)
+  assert.match(handler, /await resubmitOnlyIfStillApproved\(\)\s*return/,
+    'a benign PhotoKit edit must rearm only the approved future OS task')
+  assert.doesNotMatch(handler, /reserveDue\(|\.run\(|newOnlySince\s*=\s*nil|XDriveIOSForegroundPhotoBackupMVP\(|UploadSession/,
+    'a history race cannot open a writer or turn only-new into full-date backup')
+  // Every completed PhotoKit event keeps its token + revisions in one
+  // durable SQLite transaction, so retry may safely resume from it.
+  assert.match(queue, /let applied = try store\.apply\(/)
+  assert.match(queue, /expectedToken: previousToken, nextToken: nextToken/)
+  assert.match(queue, /throw Failure\.unauthorizedOrChanged/)
+})
