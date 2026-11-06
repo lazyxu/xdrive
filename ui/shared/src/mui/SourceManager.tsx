@@ -699,7 +699,7 @@ export function XDriveSourceManager({
     const allowServerDeviceDefault = option.direction === 'push' && Boolean(adapter.suggestedPushName)
     const nameError = !normalizedName && !allowServerDeviceDefault
       ? `请填写${sourceNoun}名称`
-      : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
+      : new TextEncoder().encode(normalizedName).length > 128 ? `${sourceNoun}名称不能超过 128 字节` : ''
     setCreateNameError(nameError)
 
     const profile = externalSourceConnectorProfile(option.kind, option.direction)
@@ -1078,7 +1078,7 @@ export function XDriveSourceManager({
     const nameToPersist = normalizedName === externalSourceDisplayName(setting.source)
       ? setting.source.name
       : normalizedName
-    const nameError = !normalizedName ? `请填写${sourceNoun}名称` : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
+    const nameError = !normalizedName ? `请填写${sourceNoun}名称` : new TextEncoder().encode(normalizedName).length > 128 ? `${sourceNoun}名称不能超过 128 字节` : ''
     const isSynologyFiles = setting.source.kind === 'synology_files'
     const isLocalFolder = setting.source.kind === 'local_folder'
     const desiredRoots = normalizeSynologyFileRoots(values.roots ?? [])
