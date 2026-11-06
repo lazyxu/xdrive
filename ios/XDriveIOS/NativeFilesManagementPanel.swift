@@ -90,6 +90,18 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                                            value: XDriveIOSNativeFilesDatePolicy.display(date))
                         }
                     }
+                    Section("标签") {
+                        NavigationLink {
+                            XDriveIOSNativeFilesTagPanel(
+                                login: login, expectedOwner: expectedOwner,
+                                nodeIDs: [file.id], selectionLabel: file.name
+                            )
+                        } label: {
+                            Label("设置标签", systemImage: "tag")
+                        }
+                        .disabled(anyBusy)
+                        .accessibilityIdentifier("native-ios-files-manage-tags")
+                    }
                     Section("收藏夹") {
                         Button("收藏此文件") {
                             favoriteMutation.add(file, login: login)
@@ -198,6 +210,18 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             LabeledContent("修改时间",
                                            value: XDriveIOSNativeFilesDatePolicy.display(date))
                         }
+                    }
+                    Section("标签") {
+                        NavigationLink {
+                            XDriveIOSNativeFilesTagPanel(
+                                login: login, expectedOwner: expectedOwner,
+                                nodeIDs: [directory.id], selectionLabel: directory.name
+                            )
+                        } label: {
+                            Label("设置标签", systemImage: "tag")
+                        }
+                        .disabled(anyBusy)
+                        .accessibilityIdentifier("native-ios-files-manage-folder-tags")
                     }
                     Section("收藏夹") {
                         Button("收藏此文件夹") {
@@ -657,5 +681,541 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                 }
             }
         }
+    }
+}
+
+
+// Native tag management mirrors the Web tag dialog's owner-scoped CRUD and
+// assignment endpoints. The model supports up to 500 selected nodes so the
+// same screen can be reused by the native batch-selection toolbar later.
+private struct XDriveIOSNativeFilesTag: Decodable, Identifiable, Equatable {
+    let id: UInt64
+    let name: String
+    let color: String?
+    let itemCount: Int?
+}
+
+private struct XDriveIOSNativeFilesNodeTags: Decodable {
+    let nodeID: UInt64
+    let tags: [XDriveIOSNativeFilesTag]?
+}
+
+private struct XDriveIOSNativeFilesTagNodeIDs: Encodable {
+    let nodeIDs: [UInt64]
+}
+
+private struct XDriveIOSNativeFilesTagPayload: Encodable {
+    let name: String
+    let color: String
+}
+
+private enum XDriveIOSNativeFilesTagFailure: Error {
+    case invalidScope
+    case invalidSelection
+    case malformedReply
+    case server(Int)
+}
+
+private struct XDriveIOSNativeFilesTagClient {
+    let owner: XDriveNativeOwnerRoot
+    let accessToken: String
+
+    private final class DenyRedirects: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask,
+                        willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest,
+                        completionHandler: @escaping (URLRequest?) -> Void) {
+            completionHandler(nil)
+        }
+    }
+
+    private func endpoint(_ path: String) throws -> URL {
+        guard owner.ownerID > 0, owner.rootNodeID > 0,
+              !owner.instanceID.isEmpty, !accessToken.isEmpty,
+              let origin = try? ServerAddress.parse(owner.origin.absoluteString),
+              origin == owner.origin, path.hasPrefix("/api/v1/"),
+              !path.contains("?"), !path.contains("#"),
+              var components = URLComponents(url: origin, resolvingAgainstBaseURL: false),
+              components.scheme == "https" else {
+            throw XDriveIOSNativeFilesTagFailure.invalidScope
+        }
+        components.path = path
+        components.query = nil
+        guard let url = components.url else {
+            throw XDriveIOSNativeFilesTagFailure.invalidScope
+        }
+        return url
+    }
+
+    private func perform(_ path: String, method: String = "GET",
+                         body: Data? = nil, accepted: Set<Int>) async throws -> Data {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpShouldSetCookies = false
+        config.httpCookieAcceptPolicy = .never
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.timeoutIntervalForRequest = 25
+        let session = URLSession(configuration: config,
+                                 delegate: DenyRedirects(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+
+        var request = URLRequest(url: try endpoint(path))
+        request.httpMethod = method
+        request.httpShouldHandleCookies = false
+        request.setValue("Bearer " + accessToken, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse else {
+            throw XDriveIOSNativeFilesTagFailure.malformedReply
+        }
+        guard accepted.contains(http.statusCode) else {
+            throw XDriveIOSNativeFilesTagFailure.server(http.statusCode)
+        }
+        guard data.count <= 2_097_152 else {
+            throw XDriveIOSNativeFilesTagFailure.malformedReply
+        }
+        return data
+    }
+
+    private func decoder() -> JSONDecoder {
+        let value = JSONDecoder()
+        value.keyDecodingStrategy = .convertFromSnakeCase
+        return value
+    }
+
+    private func encoder() -> JSONEncoder {
+        let value = JSONEncoder()
+        value.keyEncodingStrategy = .convertToSnakeCase
+        return value
+    }
+
+    private func valid(_ tag: XDriveIOSNativeFilesTag) -> Bool {
+        let name = tag.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let validColor = tag.color == nil || tag.color == "" ||
+            (tag.color?.count == 7 && tag.color?.first == "#" &&
+             Int(tag.color?.dropFirst() ?? "", radix: 16) != nil)
+        return tag.id > 0 && !name.isEmpty && name.utf8.count <= 64 &&
+            !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) &&
+            validColor && (tag.itemCount == nil || tag.itemCount! >= 0)
+    }
+
+    func list() async throws -> [XDriveIOSNativeFilesTag] {
+        let data = try await perform("/api/v1/file-tags", accepted: [200])
+        let tags = try decoder().decode([XDriveIOSNativeFilesTag].self, from: data)
+        guard tags.count <= 4096,
+              tags.allSatisfy(valid),
+              Set(tags.map(\.id)).count == tags.count else {
+            throw XDriveIOSNativeFilesTagFailure.malformedReply
+        }
+        return tags
+    }
+
+    func query(nodeIDs: [UInt64]) async throws -> [XDriveIOSNativeFilesNodeTags] {
+        guard !nodeIDs.isEmpty, nodeIDs.count <= 500,
+              nodeIDs.allSatisfy({ $0 > 0 }),
+              Set(nodeIDs).count == nodeIDs.count else {
+            throw XDriveIOSNativeFilesTagFailure.invalidSelection
+        }
+        let body = try encoder().encode(XDriveIOSNativeFilesTagNodeIDs(nodeIDs: nodeIDs))
+        let data = try await perform("/api/v1/nodes/tags/query",
+                                     method: "POST", body: body, accepted: [200])
+        let rows = try decoder().decode([XDriveIOSNativeFilesNodeTags].self, from: data)
+        let rowIDs = rows.map(\.nodeID)
+        guard rows.count == nodeIDs.count, Set(rowIDs) == Set(nodeIDs),
+              rows.allSatisfy({ row in
+                  (row.tags ?? []).allSatisfy(valid)
+              }) else {
+            throw XDriveIOSNativeFilesTagFailure.malformedReply
+        }
+        return rows
+    }
+
+    func create(name: String, color: String) async throws -> XDriveIOSNativeFilesTag {
+        let body = try encoder().encode(XDriveIOSNativeFilesTagPayload(name: name, color: color))
+        let data = try await perform("/api/v1/file-tags", method: "POST",
+                                     body: body, accepted: [200, 201])
+        let tag = try decoder().decode(XDriveIOSNativeFilesTag.self, from: data)
+        guard valid(tag), tag.name == name, tag.color == color else {
+            throw XDriveIOSNativeFilesTagFailure.malformedReply
+        }
+        return tag
+    }
+
+    func update(id: UInt64, name: String, color: String) async throws {
+        guard id > 0 else { throw XDriveIOSNativeFilesTagFailure.invalidSelection }
+        let body = try encoder().encode(XDriveIOSNativeFilesTagPayload(name: name, color: color))
+        let data = try await perform("/api/v1/file-tags/\(id)", method: "PATCH",
+                                     body: body, accepted: [200])
+        let tag = try decoder().decode(XDriveIOSNativeFilesTag.self, from: data)
+        guard valid(tag), tag.id == id, tag.name == name, tag.color == color else {
+            throw XDriveIOSNativeFilesTagFailure.malformedReply
+        }
+    }
+
+    func delete(id: UInt64) async throws {
+        guard id > 0 else { throw XDriveIOSNativeFilesTagFailure.invalidSelection }
+        _ = try await perform("/api/v1/file-tags/\(id)", method: "DELETE",
+                              accepted: [200, 204])
+    }
+
+    func setNodes(tagID: UInt64, nodeIDs: [UInt64], assigned: Bool) async throws {
+        guard tagID > 0, !nodeIDs.isEmpty, nodeIDs.count <= 500,
+              nodeIDs.allSatisfy({ $0 > 0 }), Set(nodeIDs).count == nodeIDs.count else {
+            throw XDriveIOSNativeFilesTagFailure.invalidSelection
+        }
+        let body = try encoder().encode(XDriveIOSNativeFilesTagNodeIDs(nodeIDs: nodeIDs))
+        let method = assigned ? "PUT" : "DELETE"
+        _ = try await perform("/api/v1/file-tags/\(tagID)/nodes", method: method,
+                              body: body, accepted: [200, 204])
+    }
+}
+
+@MainActor
+private final class XDriveIOSNativeFilesTagModel: ObservableObject {
+    @Published private(set) var tags: [XDriveIOSNativeFilesTag] = []
+    @Published private(set) var assignedCounts: [UInt64: Int] = [:]
+    @Published private(set) var loading = false
+    @Published private(set) var busy = false
+    @Published private(set) var status: String?
+
+    private let login: XDriveIOSNativeOwnerLoginModel
+    private let expectedOwner: XDriveNativeOwnerRoot
+    private let nodeIDs: [UInt64]
+    private var epoch = UUID()
+    private var task: Task<Void, Never>?
+
+    init(login: XDriveIOSNativeOwnerLoginModel,
+         expectedOwner: XDriveNativeOwnerRoot, nodeIDs: [UInt64]) {
+        self.login = login
+        self.expectedOwner = expectedOwner
+        self.nodeIDs = nodeIDs
+    }
+
+    func invalidate() {
+        epoch = UUID()
+        task?.cancel()
+        task = nil
+        loading = false
+        busy = false
+    }
+
+    private func client(ticket: UUID) async throws -> XDriveIOSNativeFilesTagClient {
+        let credentials = try await login.verifiedAuthorization()
+        try Task.checkCancellation()
+        guard epoch == ticket,
+              XDriveIOSNativePhotoOwnerScope.matches(credentials.owner, expectedOwner),
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) else {
+            throw XDriveIOSNativeFilesTagFailure.invalidScope
+        }
+        return XDriveIOSNativeFilesTagClient(
+            owner: credentials.owner, accessToken: credentials.accessToken
+        )
+    }
+
+    private func verify(ticket: UUID) async throws {
+        let credentials = try await login.verifiedAuthorization()
+        try Task.checkCancellation()
+        guard epoch == ticket,
+              XDriveIOSNativePhotoOwnerScope.matches(credentials.owner, expectedOwner),
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) else {
+            throw XDriveIOSNativeFilesTagFailure.invalidScope
+        }
+    }
+
+    private func reload(ticket: UUID, client: XDriveIOSNativeFilesTagClient) async throws {
+        async let nextTags = client.list()
+        async let nextRows = client.query(nodeIDs: nodeIDs)
+        let (loadedTags, rows) = try await (nextTags, nextRows)
+        try await verify(ticket: ticket)
+        var counts: [UInt64: Int] = [:]
+        for row in rows {
+            for tag in row.tags ?? [] {
+                counts[tag.id, default: 0] += 1
+            }
+        }
+        tags = loadedTags
+        assignedCounts = counts
+    }
+
+    private func run(loading shouldLoad: Bool, message: String,
+                     operation: @escaping @MainActor (UUID) async throws -> Void) {
+        guard !loading, !busy else { return }
+        let ticket = UUID()
+        epoch = ticket
+        if shouldLoad { loading = true } else { busy = true }
+        status = message
+        task = Task { @MainActor in
+            defer {
+                if epoch == ticket {
+                    loading = false
+                    busy = false
+                    task = nil
+                }
+            }
+            do {
+                try await operation(ticket)
+            } catch is CancellationError {
+                if epoch == ticket {
+                    status = shouldLoad
+                        ? "加载已取消。"
+                        : "操作结果未确认；请刷新核对，不要直接重复操作。"
+                }
+            } catch {
+                guard epoch == ticket else { return }
+                if shouldLoad {
+                    status = "标签加载失败，请检查网络后刷新。"
+                } else {
+                    status = "标签操作结果未确认，请刷新核对后再继续。"
+                }
+            }
+        }
+    }
+
+    func load() {
+        guard !nodeIDs.isEmpty, nodeIDs.count <= 500,
+              nodeIDs.allSatisfy({ $0 > 0 }), Set(nodeIDs).count == nodeIDs.count else {
+            status = "所选文件无效，或一次选择超过 500 项。"
+            return
+        }
+        run(loading: true, message: "正在加载标签…") { ticket in
+            let client = try await self.client(ticket: ticket)
+            try await self.reload(ticket: ticket, client: client)
+            self.status = "已加载 \(self.tags.count) 个标签。"
+        }
+    }
+
+    func assignedCount(for tagID: UInt64) -> Int {
+        min(max(0, assignedCounts[tagID, default: 0]), nodeIDs.count)
+    }
+
+    func toggle(_ tagID: UInt64) {
+        let shouldAssign = assignedCount(for: tagID) < nodeIDs.count
+        run(loading: false, message: shouldAssign ? "正在应用标签…" : "正在移除标签…") { ticket in
+            let client = try await self.client(ticket: ticket)
+            try await client.setNodes(tagID: tagID, nodeIDs: self.nodeIDs,
+                                      assigned: shouldAssign)
+            try await self.reload(ticket: ticket, client: client)
+            self.status = shouldAssign ? "标签已应用。" : "标签已从所选项目移除。"
+        }
+    }
+
+    func create(name: String, color: String) {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, clean.utf8.count <= 64,
+              !clean.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+              color.count == 7, color.first == "#",
+              Int(color.dropFirst(), radix: 16) != nil else {
+            status = "标签名称不能为空且最多 64 个 UTF-8 字节；颜色必须为 #RRGGBB。"
+            return
+        }
+        run(loading: false, message: "正在创建并应用标签…") { ticket in
+            let client = try await self.client(ticket: ticket)
+            let created = try await client.create(name: clean, color: color)
+            try await client.setNodes(tagID: created.id, nodeIDs: self.nodeIDs,
+                                      assigned: true)
+            try await self.reload(ticket: ticket, client: client)
+            self.status = "标签已创建并应用。"
+        }
+    }
+
+    func update(id: UInt64, name: String, color: String) {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, clean.utf8.count <= 64,
+              !clean.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+              color.count == 7, color.first == "#",
+              Int(color.dropFirst(), radix: 16) != nil else {
+            status = "标签名称不能为空且最多 64 个 UTF-8 字节；颜色必须为 #RRGGBB。"
+            return
+        }
+        run(loading: false, message: "正在保存标签…") { ticket in
+            let client = try await self.client(ticket: ticket)
+            try await client.update(id: id, name: clean, color: color)
+            try await self.reload(ticket: ticket, client: client)
+            self.status = "标签已更新。"
+        }
+    }
+
+    func delete(_ tagID: UInt64) {
+        run(loading: false, message: "正在删除标签…") { ticket in
+            let client = try await self.client(ticket: ticket)
+            try await client.delete(id: tagID)
+            try await self.reload(ticket: ticket, client: client)
+            self.status = "标签已删除。"
+        }
+    }
+}
+
+private struct XDriveIOSNativeFilesTagPanel: View {
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    let expectedOwner: XDriveNativeOwnerRoot
+    let nodeIDs: [UInt64]
+    let selectionLabel: String
+
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var model: XDriveIOSNativeFilesTagModel
+    @State private var nameDraft = ""
+    @State private var colorDraft = "#2563EB"
+    @State private var editingTagID: UInt64?
+    @State private var deleteTarget: XDriveIOSNativeFilesTag?
+    @State private var showingDeleteConfirmation = false
+
+    private let palette: [(String, String)] = [
+        ("灰色", "#6B7280"), ("蓝色", "#2563EB"), ("绿色", "#059669"),
+        ("橙色", "#D97706"), ("红色", "#DC2626"), ("紫色", "#7C3AED"),
+        ("粉色", "#DB2777")
+    ]
+
+    init(login: XDriveIOSNativeOwnerLoginModel,
+         expectedOwner: XDriveNativeOwnerRoot,
+         nodeIDs: [UInt64], selectionLabel: String) {
+        self.login = login
+        self.expectedOwner = expectedOwner
+        self.nodeIDs = nodeIDs
+        self.selectionLabel = selectionLabel
+        _model = StateObject(wrappedValue: XDriveIOSNativeFilesTagModel(
+            login: login, expectedOwner: expectedOwner, nodeIDs: nodeIDs
+        ))
+    }
+
+    private func swatch(_ hex: String) -> Color {
+        guard hex.count == 7, let value = UInt32(hex.dropFirst(), radix: 16) else {
+            return .gray
+        }
+        return Color(
+            red: Double((value >> 16) & 0xff) / 255,
+            green: Double((value >> 8) & 0xff) / 255,
+            blue: Double(value & 0xff) / 255
+        )
+    }
+
+    var body: some View {
+        Form {
+            Section("选择范围") {
+                Text(selectionLabel)
+                Text("\(nodeIDs.count) 个文件或文件夹")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Text("支持一次为最多 500 个项目分配标签。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("已有标签") {
+                if model.loading {
+                    ProgressView("正在加载标签…")
+                } else if model.tags.isEmpty {
+                    Text("还没有标签，可以在下方创建。")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(model.tags) { tag in
+                    HStack(spacing: 10) {
+                        Button {
+                            model.toggle(tag.id)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Circle().fill(swatch(tag.color ?? "#6B7280"))
+                                    .frame(width: 10, height: 10)
+                                Text(tag.name)
+                                Spacer()
+                                let count = model.assignedCount(for: tag.id)
+                                if count == nodeIDs.count {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.tint)
+                                } else if count > 0 {
+                                    Image(systemName: "minus.circle")
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text("\(count)/\(nodeIDs.count)")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.loading || model.busy)
+                        Menu {
+                            Button("编辑") {
+                                editingTagID = tag.id
+                                nameDraft = tag.name
+                                colorDraft = tag.color ?? "#6B7280"
+                            }
+                            Button("删除", role: .destructive) {
+                                deleteTarget = tag
+                                showingDeleteConfirmation = true
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .frame(width: 32, height: 32)
+                        }
+                        .disabled(model.loading || model.busy)
+                    }
+                    .accessibilityIdentifier("native-ios-files-tag-row-\(tag.id)")
+                }
+            }
+            Section(editingTagID == nil ? "新建标签" : "编辑标签") {
+                TextField("标签名称", text: $nameDraft)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Picker("颜色", selection: $colorDraft) {
+                    ForEach(palette, id: \.1) { item in
+                        HStack {
+                            Circle().fill(swatch(item.1)).frame(width: 10, height: 10)
+                            Text(item.0)
+                        }.tag(item.1)
+                    }
+                }
+                Button(editingTagID == nil ? "创建并应用" : "保存修改") {
+                    if let id = editingTagID {
+                        model.update(id: id, name: nameDraft, color: colorDraft)
+                    } else {
+                        model.create(name: nameDraft, color: colorDraft)
+                    }
+                    nameDraft = ""
+                    editingTagID = nil
+                }
+                .disabled(model.loading || model.busy || nameDraft.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ).isEmpty)
+                .accessibilityIdentifier("native-ios-files-tag-save")
+                if editingTagID != nil {
+                    Button("取消编辑", role: .cancel) {
+                        editingTagID = nil
+                        nameDraft = ""
+                        colorDraft = "#2563EB"
+                    }
+                    .disabled(model.busy)
+                }
+            }
+            if let status = model.status {
+                Section("状态") {
+                    Text(status).font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("标签")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("刷新") { model.load() }
+                    .disabled(model.loading || model.busy)
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("完成") { dismiss() }
+            }
+        }
+        .task { model.load() }
+        .onDisappear { model.invalidate() }
+        .alert("删除标签", isPresented: $showingDeleteConfirmation) {
+            Button("删除", role: .destructive) {
+                if let tag = deleteTarget { model.delete(tag.id) }
+                deleteTarget = nil
+            }
+            Button("取消", role: .cancel) { deleteTarget = nil }
+        } message: {
+            Text("删除标签不会删除文件；该标签将从所有已关联项目中移除。")
+        }
+        .accessibilityIdentifier("native-ios-files-tag-management")
     }
 }
