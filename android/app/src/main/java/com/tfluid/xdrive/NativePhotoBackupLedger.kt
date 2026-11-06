@@ -89,6 +89,9 @@ internal data class NativePhotoBackupIntent(
     /** Exact new original destination for an Owner-scoped, read-only ACK lookup.
      * Old journal rows omit it and stay blocked rather than guessing a filename. */
     val destinationName: String? = null,
+    /** Server-created managed target, never the Owner root. Old v1 intents
+     * omit this field and retain their original legacy receipt namespace. */
+    val destinationTargetNodeId: Long? = null,
     val verifiedNodeId: Long? = null,
     val verifiedNodeRevision: Long? = null,
 ) {
@@ -98,6 +101,8 @@ internal data class NativePhotoBackupIntent(
             nativeBackupHex(originalSha256))
         require(sizeBytes > 0 && createdAtMillis > 0)
         require(destinationName == null || validDriveNodeName(destinationName))
+        require(destinationTargetNodeId == null ||
+            (destinationTargetNodeId > 0 && destinationName != null))
         require((verifiedNodeId == null) == (verifiedNodeRevision == null))
         if (phase == NativePhotoBackupPhase.VERIFIED) {
             require(verifiedNodeId != null && verifiedNodeId > 0 &&
@@ -145,6 +150,7 @@ internal class NativePhotoBackupLedger(
         originalSha256: String,
         sizeBytes: Long,
         destinationName: String? = null,
+        destinationTargetNodeId: Long? = null,
     ): NativePhotoBackupIntent {
         val previous = validated()
         require(nativeBackupHex(assetKey) && nativeBackupHex(versionKey) &&
@@ -157,7 +163,8 @@ internal class NativePhotoBackupLedger(
             // One asset/resource/version cannot change content under our feet.
             check(existing.originalSha256 == originalSha256 &&
                 existing.sizeBytes == sizeBytes &&
-                (destinationName == null || existing.destinationName == destinationName)) {
+                (destinationName == null || existing.destinationName == destinationName) &&
+                existing.destinationTargetNodeId == destinationTargetNodeId) {
                 "Original changed: new verified version required"
             }
             return existing
@@ -166,7 +173,7 @@ internal class NativePhotoBackupLedger(
         val intent = NativePhotoBackupIntent(
             nextId(), owner, assetKey, versionKey, resource, originalSha256,
             sizeBytes, NativePhotoBackupPhase.PLANNED, now(),
-            destinationName = destinationName)
+            destinationName = destinationName, destinationTargetNodeId = destinationTargetNodeId)
         check(previous.none { it.id == intent.id })
         store.write(previous + intent)
         return intent

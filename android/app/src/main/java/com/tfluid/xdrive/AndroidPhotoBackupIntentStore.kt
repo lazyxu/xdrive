@@ -51,8 +51,10 @@ internal class AndroidPhotoBackupIntentStore(
                 val row = rows.getJSONObject(i)
                 // Old 17-field rows are intentionally accepted, but have
                 // no exact destination and cannot be guessed/replayed.
-                require(row.length() == 17 || row.length() == 18 &&
-                    row.has("destination_name"))
+                require(row.length() == 17 ||
+                    row.length() == 18 && row.has("destination_name") ||
+                    row.length() == 19 && row.has("destination_name") &&
+                        row.has("destination_target_node_id"))
                 NativePhotoBackupIntent(
                     id = row.getString("id"),
                     owner = NativePhotoBackupOwner(
@@ -74,6 +76,8 @@ internal class AndroidPhotoBackupIntentStore(
                     destinationName = if (row.has("destination_name") &&
                         !row.isNull("destination_name"))
                         row.getString("destination_name") else null,
+                    destinationTargetNodeId = if (row.has("destination_target_node_id"))
+                        row.getLong("destination_target_node_id") else null,
                     verifiedNodeId = if (row.isNull("node_id")) null else row.getLong("node_id"),
                     verifiedNodeRevision = if (row.isNull("node_revision")) null
                         else row.getLong("node_revision"),
@@ -135,6 +139,8 @@ internal class AndroidPhotoBackupIntentStore(
                     .apply {
                         if (entry.destinationName != null)
                             put("destination_name", entry.destinationName)
+                        if (entry.destinationTargetNodeId != null)
+                            put("destination_target_node_id", entry.destinationTargetNodeId)
                     })
             }
             clear = JSONObject().put("version", 1).put("entries", rows)
