@@ -29,6 +29,9 @@ for source in "${sources[@]}"; do
   mkdir -p "$fixture/$(dirname "$source")"
   cp "$ROOT/$source" "$fixture/$source"
 done
+# Production packaging provides the release staging directory; reproduce that
+# prerequisite while still verifying every generated artifact and digest.
+mkdir -p "$fixture/release"
 
 sha="0123456789abcdef0123456789abcdef01234567"
 (
