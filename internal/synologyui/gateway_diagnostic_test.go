@@ -49,11 +49,14 @@ func TestDSMShareScanErrorIsNotMisclassifiedAsAgentOutage(t *testing.T) {
 	}
 }
 
-type failingDSMServerConnectionAgent struct{ *fakeAgent }
+type failingDSMServerConnectionAgent struct {
+	*fakeAgent
+}
 
 func (f *failingDSMServerConnectionAgent) ServerConnection(context.Context) (localbackupipc.ServerConnection, error) {
 	return localbackupipc.ServerConnection{}, errors.New("private stored login state")
 }
+
 func (f *failingDSMServerConnectionAgent) LoginServer(context.Context, string, string, string) error {
 	return errors.New("private stored login state")
 }
