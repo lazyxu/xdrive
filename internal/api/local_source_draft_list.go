@@ -72,6 +72,7 @@ func (s *Server) listOwningLocalSourceDrafts(c *gin.Context) {
 	query := db.Model(&meta.Source{}).Select("id", "name", "revision", "created_at").
 		Where("owner_id = ? AND device_id = ? AND kind = ? AND direction = ?",
 			userID(c), device.ID, meta.SourceKindLocalFolder, meta.SourceDirectionPush).
+		Where("(local_creator_device_id IS NULL OR local_creator_device_id = '' OR local_creator_device_id = device_id)").
 		Where("status = ? AND revision = ? AND run_requested_at IS NULL", meta.SourceStatusPaused, 1).
 		Where("last_run_at IS NULL AND last_success_at IS NULL AND checkpoint = ''").
 		Where("id > ?", afterID).
