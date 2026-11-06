@@ -87,6 +87,22 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	}
 	nonce := base64.StdEncoding.EncodeToString(make([]byte, 12))
 	ciphertext := base64.StdEncoding.EncodeToString([]byte("fake ciphertext and auth tag"))
+	check := fmt.Sprintf(`{"nonce":%q,"ciphertext":%q}`, nonce, ciphertext)
+	accepted := request(t, router, http.MethodPut, "/api/v1/clipboard/vault/check", a,
+		strings.NewReader(check), http.StatusOK)
+	var checkDTO struct { CheckCiphertext string `json:"check_ciphertext"` }
+	if json.Unmarshal(accepted.Body.Bytes(), &checkDTO) != nil || checkDTO.CheckCiphertext != ciphertext {
+		t.Fatal("initial encrypted vault verifier was not stored")
+	}
+	otherProof := fmt.Sprintf(`{"nonce":%q,"ciphertext":%q}`, nonce,
+		base64.StdEncoding.EncodeToString([]byte("another encrypted verifier")))
+	accepted = request(t, router, http.MethodPut, "/api/v1/clipboard/vault/check", a,
+		strings.NewReader(otherProof), http.StatusOK)
+	if json.Unmarshal(accepted.Body.Bytes(), &checkDTO) != nil || checkDTO.CheckCiphertext != ciphertext {
+		t.Fatal("later caller changed the immutable encrypted vault verifier")
+	}
+	request(t, router, http.MethodPut, "/api/v1/clipboard/vault/check", b,
+		strings.NewReader(check), http.StatusOK)
 	firstID := uuid.NewString()
 	payload := func(id, ct string) string {
 		return fmt.Sprintf(`{"client_event_id":%q,"kind":"text/plain","nonce":%q,"ciphertext":%q}`, id, nonce, ct)
