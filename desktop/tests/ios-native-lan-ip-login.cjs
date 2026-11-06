@@ -10,6 +10,7 @@ const model = read('ios/XDriveIOS/NativeOwnerLoginModel.swift')
 const ui = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
 const auth = read('ios/XDriveIOS/AuthService.swift')
 const trust = read('ios/XDriveIOS/NativeLANTrust.swift')
+const bootstrap = read('ios/XDriveIOS/NativeLANCertificateBootstrap.swift')
 
 test('iOS offers optional private IPv4 without inventing a parallel login identity', () => {
   assert.match(ui, /native-ios-login-lan-ip/)
@@ -53,6 +54,18 @@ test('every native Server session reuses the scoped TLS delegate', () => {
     sessions += [...swift.matchAll(/URLSession\(/g)].length
   }
   assert.ok(sessions >= 30)
+})
+
+test('LAN certificate bootstrap authenticates the configured domain without dialing its public IP', () => {
+  assert.match(bootstrap, /NWConnection\(host: \.ipv4\(address\)/)
+  assert.match(bootstrap, /sec_protocol_options_set_tls_server_name\(options, host\)/)
+  assert.match(bootstrap, /SecPolicyCreateSSL\(true, host as CFString\)/)
+  assert.match(bootstrap, /SecTrustEvaluateWithError\(evaluation, nil\)/)
+  assert.match(bootstrap, /GET \/_xdrive\/desktop\/lan-root\.crt HTTP\/1\.0/)
+  assert.doesNotMatch(bootstrap, /SecTrustSetAnchorCertificates|Authorization:|Cookie:|http:\/\//)
+  const pairing = route.slice(route.indexOf('static func verifyPairing('), route.indexOf('private static func probeVersion('))
+  assert.ok(pairing.indexOf('XDriveIOSLANCertificateBootstrap.fetch') < pairing.indexOf('try await probeVersion'))
+  assert.match(pairing, /mode: \.verifyingPairing\(target, der\)/)
 })
 
 test('native login reuses chosen HTTPS origin for real login, Owner, refresh and logout', () => {

@@ -64,9 +64,8 @@ enum XDriveIOSNativeLANLoginRoute {
         }
     }
 
-    /// Reuse the public Caddy certificate route used by Desktop. Trust only
-    /// a system-verified DNS HTTPS response, then independently verify the LAN
-    /// endpoint under that exact CA before returning anything for persistence.
+    /// Reuse the Desktop bootstrap: direct LAN dial, system-verified DNS name,
+    /// then independently verify the IP endpoint under that exact CA.
     static func verifyPairing(origin: URL, lanIP: String) async throws -> (XDriveIOSLANAuthority, XDriveIOSLANPairing) {
         guard let domain = XDriveIOSLANPairing.publicDomain(origin),
               let local = try candidate(origin: origin, ip: lanIP),
@@ -78,8 +77,7 @@ enum XDriveIOSNativeLANLoginRoute {
         }
         let pem: Data
         do {
-            pem = try await read(origin, path: "/_xdrive/desktop/lan-root.crt", mode: .systemOnly,
-                                 mimeType: "application/x-pem-file", maxBytes: 8192, timeout: 8)
+            pem = try await XDriveIOSLANCertificateBootstrap.fetch(origin: origin, target: target)
         } catch {
             try Task.checkCancellation()
             throw XDriveIOSLANPairingFailure.rootUnavailable

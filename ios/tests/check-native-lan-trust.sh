@@ -36,6 +36,7 @@ EOF
 done
 
 swiftc -swift-version 5 -parse-as-library \
-  ios/XDriveIOS/NativeLANTrust.swift ios/tests/NativeLANTrustChecks.swift \
+  ios/XDriveIOS/NativeLANTrust.swift ios/XDriveIOS/NativeLANCertificateBootstrap.swift \
+  ios/tests/NativeLANTrustChecks.swift \
   -o "$fixture/check"
 "$fixture/check" "$fixture"

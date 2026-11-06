@@ -185,7 +185,7 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if !model.lanIPText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("首次使用或 Caddy 根证书更换后，请在可访问域名和内网 IP 的网络中配对。xDrive 会从上方可信域名获取证书并核验 IP，只在此 App 内使用。")
+                Text("首次使用或 Caddy 根证书更换后，请连接服务器所在的内网并配对。xDrive 会验证上方域名的证书，再核验内网 IP。配对只在此 App 内生效。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-lan-certificate-help")

@@ -36,7 +36,7 @@ enum XDriveIOSLANPairingFailure: Error {
     var message: String {
         switch self {
         case .invalidAuthority: return "请填写有效的 HTTPS 域名和私网 IPv4 地址。"
-        case .rootUnavailable: return "无法从该 HTTPS 域名读取内网证书。请检查域名能否访问及 Caddy 是否已启用内网 HTTPS。"
+        case .rootUnavailable: return "无法通过内网读取 Caddy 证书。请检查内网 IP 和端口是否可达，以及 Caddy 的域名证书。"
         case .invalidRoot: return "域名提供的证书无法验证该内网地址。请核对 Caddy 的 IP 和证书。"
         case .differentDomain: return "该内网地址已绑定另一个 HTTPS 域名。请使用原域名或为新服务器配置不同的内网入口。"
         case .keychain: return "无法读取或保存内网证书配对，请解锁设备后重试。"
@@ -141,7 +141,6 @@ enum XDriveIOSLANPairingStore {
 class XDriveIOSServerTLSDelegate: NSObject, URLSessionDelegate, @unchecked Sendable {
     enum TrustMode: Sendable {
         case storedPairings
-        case systemOnly
         case verifyingPairing(XDriveIOSLANAuthority, Data)
     }
 
@@ -163,9 +162,6 @@ class XDriveIOSServerTLSDelegate: NSObject, URLSessionDelegate, @unchecked Senda
             ? XDriveIOSLANAuthority(ip: space.host, port: space.port == 0 ? 443 : space.port) : nil
         let root: Data
         switch mode {
-        case .systemOnly:
-            completionHandler(.performDefaultHandling, nil)
-            return
         case .storedPairings:
             do {
                 guard let target, let pairing = try XDriveIOSLANPairingStore.load(target) else {

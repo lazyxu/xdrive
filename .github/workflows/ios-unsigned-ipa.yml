@@ -267,6 +267,7 @@ jobs:
           swiftc -swift-version 5 -parse-as-library \
             ios/XDriveIOS/NativeLANTrust.swift \
             ios/XDriveIOS/AuthService.swift \
+            ios/XDriveIOS/NativeLANCertificateBootstrap.swift \
             ios/XDriveIOS/NativeLANLoginRoute.swift \
             ios/tests/NativeLANLoginRouteChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-lan-route-check"
@@ -294,6 +295,7 @@ jobs:
           swiftc -swift-version 5 -parse-as-library \
             ios/XDriveIOS/NativeLANTrust.swift \
             ios/XDriveIOS/AuthService.swift \
+            ios/XDriveIOS/NativeLANCertificateBootstrap.swift \
             ios/XDriveIOS/NativeLANLoginRoute.swift \
             ios/XDriveIOS/NativeOwnerSessionStore.swift \
             ios/XDriveIOS/NativePasswordProfiles.swift \
