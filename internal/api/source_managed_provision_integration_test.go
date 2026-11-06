@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
 )
 
 func TestCreateSynologyPullManagedTargetWithoutClaimingLegacyFolder(t *testing.T) {
