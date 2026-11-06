@@ -82,8 +82,8 @@ for step, condition in (
     step_header = release.split(step_start, 1)[1].split("\n      - name:", 1)[0]
     assert condition in step_header.split("        run: |", 1)[0], step
 assert 'if: startsWith(github.ref, \x27refs/tags/v\x27)' in release, "stable release remains independent"
-dsm_marker = "      - name: Publish immutable DSM Package Center feed\\n"
-assert release.index(dsm_marker) > release.index("      - name: Publish GitHub Release\\n")
+dsm_marker = "      - name: Publish immutable DSM Package Center feed\n"
+assert release.index(dsm_marker) > release.index("      - name: Publish GitHub Release\n")
 dsm_step = release.split(dsm_marker, 1)[1]
 assert "GH_TOKEN: ${{ github.ref == 'refs/heads/master' && steps.snapshot_app_token.outputs.token || github.token }}" in dsm_step
 assert 'bash scripts/ci/publish-dsm-package-source.sh "$channel" release "$GITHUB_SHA"' in dsm_step
