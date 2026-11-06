@@ -47,7 +47,8 @@ test('Main establishes an ephemeral HTTPS Cookie session before attaching map gu
 
 test('Guest sessions are revoked on Desktop Owner/server change and never persisted',()=>{
   const main=read('desktop/src/main/index.cts')
-  assert.match(main,/function closeDesktopPlacesGuests\(\) \{\s*resetDesktopPlacesWebAuth\(\)/)
+  // Revoke pending attach generations before retiring the HTTP Cookie jar.
+  assert.match(main,/function closeDesktopPlacesGuests\(\) \{\s*\+\+desktopPlacesPrepareRevision\s*resetDesktopPlacesWebAuth\(\)/)
   assert.match(main,/desktopPlacesWebGeneration/)
   assert.match(main,/desktopPlacesWebQueue/)
   assert.match(main,/clearStorageData\(\{\s*storages: \['cookies', 'localstorage'\]/)
