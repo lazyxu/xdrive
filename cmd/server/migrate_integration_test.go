@@ -633,13 +633,14 @@ func TestMigrateBackfillsOnlyVerifiedCanonicalPushDeviceID(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	windowsA, windowsB := uuid.NewString(), uuid.NewString()
-	iosID, synologyID, foreignID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	iosID, synologyID, androidID, foreignID := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
 	devices := []meta.ClientDevice{
 		{ID: windowsA, OwnerID: owner.ID, Name: "Windows A", Platform: "windows", CredentialHash: strings.Repeat("a", 64), CreatedAt: now, UpdatedAt: now},
 		{ID: windowsB, OwnerID: owner.ID, Name: "Windows B", Platform: "windows", CredentialHash: strings.Repeat("b", 64), CreatedAt: now, UpdatedAt: now},
 		{ID: iosID, OwnerID: owner.ID, Name: "iPhone", Platform: "ios", CredentialHash: strings.Repeat("c", 64), CreatedAt: now, UpdatedAt: now},
 		{ID: synologyID, OwnerID: owner.ID, Name: "NAS", Platform: "synology", CredentialHash: strings.Repeat("d", 64), CreatedAt: now, UpdatedAt: now},
-		{ID: foreignID, OwnerID: foreignOwner.ID, Name: "Foreign", Platform: "windows", CredentialHash: strings.Repeat("e", 64), CreatedAt: now, UpdatedAt: now},
+		{ID: androidID, OwnerID: owner.ID, Name: "Android", Platform: "android", CredentialHash: strings.Repeat("e", 64), CreatedAt: now, UpdatedAt: now},
+		{ID: foreignID, OwnerID: foreignOwner.ID, Name: "Foreign", Platform: "windows", CredentialHash: strings.Repeat("f", 64), CreatedAt: now, UpdatedAt: now},
 	}
 	if err := db.Create(&devices).Error; err != nil {
 		t.Fatal(err)
@@ -658,6 +659,7 @@ func TestMigrateBackfillsOnlyVerifiedCanonicalPushDeviceID(t *testing.T) {
 		makeSource("empty desktop", meta.SourceKindLocalFolder, ptr(windowsA), ptr("")),
 		makeSource("legacy iphone", meta.SourceKindIOSPhotos, ptr(iosID), nil),
 		makeSource("wrong platform", meta.SourceKindLocalFolder, ptr(iosID), nil),
+		makeSource("wrong photo platform", meta.SourceKindIOSPhotos, ptr(androidID), nil),
 		makeSource("foreign owner", meta.SourceKindLocalFolder, ptr(foreignID), nil),
 		makeSource("legacy dsm", "synology_photos", ptr(synologyID), nil),
 		makeSource("canonical wins conflict", meta.SourceKindLocalFolder, ptr(windowsA), ptr(windowsB)),
@@ -673,6 +675,7 @@ func TestMigrateBackfillsOnlyVerifiedCanonicalPushDeviceID(t *testing.T) {
 		"empty desktop": ptr(windowsA),
 		"legacy iphone": ptr(iosID),
 		"wrong platform": nil,
+		"wrong photo platform": nil,
 		"foreign owner": nil,
 		"legacy dsm": nil,
 		"canonical wins conflict": ptr(windowsB),
