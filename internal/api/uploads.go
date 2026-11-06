@@ -1331,7 +1331,12 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			if strings.HasPrefix(currentSession.ResumeKey, "lp2_") {
 				return errLocalPushCommonUploadUnavailable
 			}
-			return tx.Where("session_id = ?", currentSession.ID).Delete(&meta.UploadPart{}).Error
+			if err := tx.Where("session_id = ?", currentSession.ID).Delete(&meta.UploadPart{}).Error; err != nil {
+				return err
+			}
+			// Skipping a conflict is not an uploaded file, but is still a
+			// durable session/part/quota mutation and must be audited atomically.
+			return recordUploadAuthorizationSuccessTx(tx, c, "finalize.skip", currentSession)
 		}
 		if _, err := s.ensureQuotaForStorageKeyExcludingSession(
 			tx, currentSession.OwnerID, currentSession.TotalSize, casKey, currentSession.ID, true,
@@ -1590,14 +1595,43 @@ func (s *Server) createSkippedUploadSession(
 		Status:         meta.UploadStatusSkipped,
 		ResultNodeID:   &resultID,
 		ExpiresAt:      time.Now().Add(uploadSessionTTL),
+		SourceID:       req.SourceID,
+		SourceRevision: req.SourceRevision,
+		SourceRootID:   req.SourceRootID,
+		SourceRootFingerprint: req.SourceRootFingerprint,
+	}
+	if req.SourceID != 0 {
+		session.SourceDeviceID = strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID"))
+	}
+	if scope, scoped := currentSourceRunScope(c); scoped {
+		session.SourceRunID = scope.runID
 	}
 	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if req.ParentID == nil || *req.ParentID == 0 {
+			return errManagedSourceWriteDenied
+		}
+		if err := requireSourceRunOrLocalPushTargetTx(c.Request.Context(), tx, c, uid, *req.ParentID, req); err != nil {
+			return err
+		}
+		if req.SourceID != 0 {
+			var source meta.Source
+			if err := tx.Select("target_node_id").Where("id = ? AND owner_id = ?", req.SourceID, uid).
+				Take(&source).Error; err != nil || source.TargetNodeID == nil {
+				return errManagedSourceWriteDenied
+			}
+			session.SourceTargetID = *source.TargetNodeID
+		}
 		if err := tx.Create(&session).Error; err != nil {
 			return err
 		}
 		return recordUploadAuthorizationSuccessTx(tx, c, "session.skip", session)
 	}); err != nil {
-		fail(c, http.StatusInternalServerError, "record skipped upload failed")
+		if errors.Is(err, errManagedSourceWriteDenied) || errors.Is(err, errShareUploadDenied) {
+			s.recordUploadAuthorizationFailure(c, "session.skip", session, err)
+			fail(c, http.StatusForbidden, "skipped upload authority is no longer valid")
+		} else {
+			fail(c, http.StatusInternalServerError, "record skipped upload failed")
+		}
 		return
 	}
 	s.writeUploadSession(c, session, http.StatusOK)
