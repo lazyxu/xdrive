@@ -226,7 +226,10 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         }
         try verifyOwner(owner)
         guard let original = try store.baseline() else {
-            throw Failure.requiresExplicitBaseline
+            // A caller must not interpret a missing only-new checkpoint as
+            // permission to upload the whole library. Foreground recovery
+            // requires explicit scope consent; BG callers fail closed.
+            throw Failure.historyUnavailable
         }
         let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
         guard original.authorization == epoch.authorization else {
@@ -234,7 +237,11 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         }
         guard let token = try NSKeyedUnarchiver.unarchivedObject(
             ofClass: PHPersistentChangeToken.self, from: original.token
-        ) else { throw Failure.invalidArchivedToken }
+        ) else {
+            // An unreadable checkpoint is equivalent to expired history: the
+            // only safe recovery is a user-confirmed full-library reconciliation.
+            throw Failure.historyUnavailable
+        }
         // Apple's fetch result is a Sequence of change records; do not flatten
         // 100k asset identifiers into a new unbounded in-memory Swift array.
         let changes: PHPersistentChangeFetchResult
