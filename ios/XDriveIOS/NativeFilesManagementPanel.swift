@@ -30,6 +30,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
+    @Environment(\.xdriveNativeTransfers) private var transfers
     @StateObject private var folderArchive = XDriveIOSNativeFilesFolderArchiveModel()
     @StateObject private var uploader = XDriveIOSNativeFilesManualUploadModel()
     @StateObject private var mutator = XDriveIOSNativeFilesMutationModel()
@@ -129,7 +130,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                                 .font(.footnote).foregroundStyle(.secondary)
                         } else {
                             Button(exporter.busy ? "正在下载…" : "下载并准备导出") {
-                                exporter.prepare(file, login: login)
+                                exporter.prepare(file, login: login, transfers: transfers)
                             }
                             .disabled(anyBusy)
                             .accessibilityIdentifier("native-ios-files-export")
@@ -252,7 +253,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         } else {
                             Button(folderArchive.busy ? "正在准备 ZIP…" : "下载并导出文件夹 ZIP") {
                                 folderArchive.prepare(directory, login: login,
-                                                      expectedOwner: expectedOwner)
+                                                      expectedOwner: expectedOwner, transfers: transfers)
                             }
                             .disabled(anyBusy)
                             .accessibilityIdentifier("native-ios-files-folder-zip-download")
@@ -351,6 +352,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                                 uploader.start(
                                     fileURL: pickedURL, login: login,
                                     parentID: folderID, expectedFolderName: folderName,
+                                    transfers: transfers,
                                     onConfirmed: finishConfirmed
                                 )
                             case .failure:
@@ -376,6 +378,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                                 uploader.start(
                                     files: pickedURLs, login: login,
                                     parentID: folderID, expectedFolderName: folderName,
+                                    transfers: transfers,
                                     onConfirmed: finishConfirmed
                                 )
                             case .failure:
@@ -401,6 +404,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                                 uploader.start(
                                     folderURL: pickedFolder, login: login,
                                     parentID: folderID, expectedFolderName: folderName,
+                                    transfers: transfers,
                                     onConfirmed: finishConfirmed
                                 )
                             case .failure:
@@ -525,10 +529,10 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                 shareNode = selected
             case .download:
                 if let file {
-                    exporter.prepare(file, login: login)
+                    exporter.prepare(file, login: login, transfers: transfers)
                 } else if let directory {
                     folderArchive.prepare(
-                        directory, login: login, expectedOwner: expectedOwner
+                        directory, login: login, expectedOwner: expectedOwner, transfers: transfers
                     )
                 }
             case .trash:

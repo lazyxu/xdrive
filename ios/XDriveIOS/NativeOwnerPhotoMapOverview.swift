@@ -45,6 +45,7 @@ enum XDriveIOSNativeOwnerMapOverviewPolicy {
         guard overview.items.count <= maximumCells,
               (0...100_000_000).contains(overview.total_photo_count) else { return false }
         var identities = Set<String>()
+        var summedPhotoCount = 0
         for item in overview.items {
             guard !item.id.isEmpty, item.id.utf8.count <= 256,
                   identities.insert(item.id).inserted,
@@ -64,7 +65,15 @@ enum XDriveIOSNativeOwnerMapOverviewPolicy {
             } else if item.sample_latitude != nil || item.sample_longitude != nil {
                 return false
             }
+            // Server exact-place pages and aggregate 8x8 buckets partition
+            // one Owner/viewport selection. Their disjoint item counts must
+            // add up to the same authenticated total, never overlap or omit
+            // photos. Reject a changed/non-atomic snapshot rather than
+            // rendering a misleading count or cover.
+            let (next, overflow) = summedPhotoCount.addingReportingOverflow(item.item_count)
+            guard !overflow && next <= overview.total_photo_count else { return false }
+            summedPhotoCount = next
         }
-        return true
+        return summedPhotoCount == overview.total_photo_count
     }
 }

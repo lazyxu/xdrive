@@ -46,7 +46,7 @@ private enum XDriveIOSNativeDynamicFeature: String, CaseIterable, Identifiable {
         case .diagnostics: return "waveform.path.ecg"
         }
     }
-    var implemented: Bool { self == .backup || self == .notes }
+    var implemented: Bool { self == .backup || self == .notes || self == .transfers }
 }
 
 private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
@@ -90,6 +90,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
     var available: Bool {
         switch self {
         case .local, .albums, .cloud, .originals, .map, .files, .notes, .backup: return true
+        case .transfers: return true
         default: return false
         }
     }
@@ -111,6 +112,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     let signingOut: Bool
     let logoutWarning: String?
     let onSignOut: (XDriveNativeOwnerRoot) -> Void
+    @StateObject private var transfers = XDriveIOSNativeTransferStore()
     @State private var showSignOutConsent = false
     @State private var signOutConsentOwner: XDriveNativeOwnerRoot?
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -241,6 +243,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         }
         .id(ownerScopeKey)
+        .environment(\.xdriveNativeTransfers, transfers)
         .environment(\.xdriveNativeLocalMapJump, localMapJump)
         .environment(\.xdriveOpenNativeLocalMap, { jump in
             guard ownerScopeKey == expectedRouteOwnerKey, login.owner != nil,
@@ -310,6 +313,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .onAppear {
             restoreNavigationIfNeeded()
+            transfers.selectOwner(login.owner)
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             backup.refresh(owner: login.owner)
         }
@@ -327,6 +331,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             backup.refresh(owner: login.owner)
         }
         .onChange(of: ownerScopeKey) { _ in
+            transfers.selectOwner(login.owner)
             // TabView .id does not reset this parent's @State. Revoke the old
             // Owner's saved UI route even if switching A -> B -> A in one scene.
             routeRestoreScopeKey = nil
@@ -744,6 +749,12 @@ struct XDriveIOSNativePhotosDashboard: View {
                     guard login.owner != nil else { return }
                     openGallery(.originals)
                 }
+            case .transfers:
+                XDriveIOSNativeTransfersScreen(
+                    transfers: transfers, backup: backup, owner: login.owner,
+                    openFiles: { tab = .files },
+                    openBackup: { openDynamic(.backup) }
+                )
             default:
                 unavailable(
                     title: "\(feature.title)尚未接通",

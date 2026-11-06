@@ -48,7 +48,12 @@ test('Photos permission revocation and limited access are accurately disclosed o
   assert.match(backupScreen, /onChange\(of: phase\) \{ state in[\s\S]*?photoAuthorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
   assert.match(backupScreen, /Live ZIP 通过双资源校验后可在 Viewer 中播放原生实况/)
   assert.doesNotMatch(backupScreen, /尚不支持云端动态播放/)
-  assert.doesNotMatch(dash + backupScreen, /PHPhotoLibrary\.requestAuthorization|PHPhotoLibrary\.shared\(\)\.performChanges/)
+  const setup = backupScreen.slice(backupScreen.indexOf('private var backupSetup:'),
+    backupScreen.indexOf('private func openDetails('))
+  assert.match(setup, /Button\(photoAuthorization == \.notDetermined[\s\S]*?if photoAuthorization == \.notDetermined \{\s*Task \{\s*_ = await PHPhotoLibrary\.requestAuthorization\(for: \.readWrite\)/)
+  assert.equal((backupScreen.match(/PHPhotoLibrary\.requestAuthorization/g) ?? []).length, 1)
+  assert.doesNotMatch(dash, /PHPhotoLibrary\.requestAuthorization/)
+  assert.doesNotMatch(dash + backupScreen, /PHPhotoLibrary\.shared\(\)\.performChanges/)
 })
 
 test('revoked PhotoKit permission cannot silently accept a manual original backup', () => {
@@ -81,7 +86,11 @@ test('saved auto-backup status and enable action do not advertise success withou
     'pending receipt pause outranks revoked/limited permission status')
   assert.match(auto, /备份计划已保存：照片权限不可用/)
   assert.match(auto, /自动备份已暂停：需要“所有照片”权限/)
-  assert.match(auto, /\.disabled\(controller\.busy \|\| background\.busy \|\| login\.owner == nil \|\|\s*!destination\.confirmedForCurrentName \|\|\s*\(photoAuthorization != \.authorized\)\)\s*\.accessibilityIdentifier\("native-ios-photos-auto-enable"\)/)
+  const admission = backupScreen.slice(backupScreen.indexOf('private var canEnableAutomaticBackup:'),
+    backupScreen.indexOf('private var backupSettingsSections:'))
+  assert.match(admission, /!controller\.busy && !background\.busy && !enablingAutomaticBackup &&\s*controller\.schedule\?\.enabled != true && login\.owner != nil &&\s*destination\.confirmedForCurrentName && photoAuthorization == \.authorized/)
+  assert.match(admission, /\.disabled\(!canEnableAutomaticBackup\)\s*\.accessibilityIdentifier\("native-ios-photos-auto-enable"\)/)
+  assert.match(auto, /enableAutomaticBackupButton/)
   assert.match(backupScreen, /onChange\(of: phase\) \{ state in[\s\S]*?photoAuthorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
   assert.doesNotMatch(auto, /requestAuthorization|UploadSession|performChanges/)
 })
