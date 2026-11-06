@@ -1,3 +1,24 @@
+## Photo content identity · first map page bounded by exact timeline (2026-11-07)
+
+- Exact HEAD `1ae552ad7722111ae10257d4c7c56171de29ce1f` failed the
+  [existing 95k paired gate twice](https://github.com/lazyxu/xdrive/actions/runs/42286170067):
+  591.161 → 654.710 ms and 930.721 → 1033.591 ms. The earlier direct-join
+  local pass below was not sufficient; both CI failures remain recorded.
+- The first Range already aggregates exact day groups. Retain their private
+  MIN/MAX timestamps to restrict the first page sort, including ties and unknown
+  dates, without changing its Owner/current-content/source filters or full count.
+  Later sparse pages retain the independent query. Concurrent deletions that
+  shorten the measured range trigger at most one fresh unrestricted refill.
+- Same PostgreSQL 17 dataset/runner and original six-sample order: baseline
+  median **528.029 ms**, candidate **337.126 ms** (ratio **0.6385**, 36.2% less).
+  All six samples kept 95,000 members, exact groups, two SQL phases and disjoint
+  48-row pages. Original 1.10 ratio / 3,000 ms thresholds remain unchanged.
+- [Samples, exact source fingerprints and previous failures](performance-evidence/photo-content-map-first-range-20261107.json).
+  Local synthetic SQL evidence only; not real media, native UI, provider
+  conversion or exact-HEAD CI acceptance. Timestamp/order tests additionally
+  exercise both directions, added date, time zones, unknown-first and concurrent
+  deletion against the complete authorized sort.
+
 ## Photo content identity · existing 95k map Range regression (2026-11-07)
 
 - The original 100k legacy-photo / 115k metadata fixture exposed a real 12-second

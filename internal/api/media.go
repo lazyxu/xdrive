@@ -123,9 +123,11 @@ type mediaItemDTO struct {
 }
 
 type mediaTimelineGroupDTO struct {
-	Key        string `json:"key"`
-	ItemCount  int64  `json:"item_count"`
-	StartIndex int64  `json:"start_index"`
+	Key         string `json:"key"`
+	ItemCount   int64  `json:"item_count"`
+	StartIndex  int64  `json:"start_index"`
+	minSortTime *time.Time
+	maxSortTime *time.Time
 }
 
 type mediaTimelineGroupSetsDTO struct {
@@ -871,6 +873,16 @@ func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (me
 		Key         string `gorm:"column:group_key"`
 		ItemCount   int64  `gorm:"column:item_count"`
 		UnknownRank int    `gorm:"column:unknown_rank"`
+		MinSortTime *time.Time
+		MaxSortTime *time.Time
+	}
+	pageBoundsSQL := ""
+	if options.BaiduViewport != nil {
+		column := "xd_media_metadata.captured_at"
+		if options.SortBy == "added" {
+			column = "n.created_at"
+		}
+		pageBoundsSQL = ", MIN(" + column + ") AS min_sort_time, MAX(" + column + ") AS max_sort_time"
 	}
 
 	var rows []groupRow
@@ -879,7 +891,7 @@ func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (me
 		Select(
 			expression +
 				" AS group_key, COUNT(DISTINCT xd_media_metadata.node_id) AS item_count, " +
-				unknownRankSQL + " AS unknown_rank",
+				unknownRankSQL + " AS unknown_rank" + pageBoundsSQL,
 		).
 		Group(expression).
 		Order(mediaTimelineUnknownOrder(options)).
@@ -895,9 +907,11 @@ func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (me
 			continue
 		}
 		day = append(day, mediaTimelineGroupDTO{
-			Key:        row.Key,
-			ItemCount:  row.ItemCount,
-			StartIndex: startIndex,
+			Key:         row.Key,
+			ItemCount:   row.ItemCount,
+			StartIndex:  startIndex,
+			minSortTime: row.MinSortTime,
+			maxSortTime: row.MaxSortTime,
 		})
 		startIndex += row.ItemCount
 	}
@@ -906,6 +920,63 @@ func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (me
 		Month: collapseMediaTimelineGroups(day, 7),
 		Day:   day,
 	}, nil
+}
+
+// The first Range already computed exact ordered day groups. Limit its page
+// sort to a timestamp range containing the requested rows, while retaining
+// the original Owner/content/source predicates. This avoids sorting the whole
+// map viewport again. Later sparse pages keep their independent Count/Range.
+func mediaFirstPageTimelineQuery(query *gorm.DB, options mediaQueryOptions, sets mediaTimelineGroupSetsDTO, total int64, limit int) (*gorm.DB, bool) {
+	if limit <= 0 || total <= int64(limit) {
+		return query, false
+	}
+	var boundary *time.Time
+	includeUnknown := false
+	var covered int64
+	for _, day := range sets.Day {
+		if day.Key == "unknown" && options.SortBy != "added" {
+			includeUnknown = true
+		} else {
+			value := day.minSortTime
+			if options.SortDir == "asc" {
+				value = day.maxSortTime
+			}
+			if value == nil {
+				return query, false
+			}
+			if boundary == nil || (options.SortDir == "asc" && value.After(*boundary)) || (options.SortDir != "asc" && value.Before(*boundary)) {
+				boundary = value
+			}
+		}
+		covered += day.ItemCount
+		if covered >= int64(limit) {
+			break
+		}
+	}
+	if covered < int64(limit) || covered >= total {
+		return query, false
+	}
+	column := "xd_media_metadata.captured_at"
+	if options.SortBy == "added" {
+		column = "n.created_at"
+	}
+	if boundary == nil {
+		if !includeUnknown {
+			return query, false
+		}
+		return query.Session(&gorm.Session{}).Where(column + " IS NULL"), true
+	}
+	// Real MIN/MAX instants include every tie and also remain safe when local
+	// calendar dates are not monotonic across historical timezone transitions.
+	comparison := " >= ?"
+	if options.SortDir == "asc" {
+		comparison = " <= ?"
+	}
+	predicate := column + comparison
+	if includeUnknown {
+		predicate = "(" + predicate + " OR " + column + " IS NULL)"
+	}
+	return query.Session(&gorm.Session{}).Where(predicate, *boundary), true
 }
 
 func (s *Server) queryMediaItemRange(
@@ -1044,7 +1115,17 @@ func (s *Server) queryMediaItemRange(
 			TimelineGroupSets: timelineGroupSets,
 		}, nil
 	}
-	items, err := s.materializeMediaItems(ctx, uid, query, limit, offset, options)
+	pageQuery, narrowed := query, false
+	if options.BaiduViewport != nil && offset == 0 && timelineGroupSets != nil {
+		pageQuery, narrowed = mediaFirstPageTimelineQuery(query, options, *timelineGroupSets, totalCount, limit)
+	}
+	items, err := s.materializeMediaItems(ctx, uid, pageQuery, limit, offset, options)
+	if err == nil && narrowed && len(items) < limit {
+		// A concurrent deletion/replacement can shrink the measured leading
+		// range. Re-read once from the original fresh authorized scope to fill
+		// the page; never reuse old IDs or loop without a bound.
+		items, err = s.materializeMediaItems(ctx, uid, query, limit, offset, options)
+	}
 	if err != nil {
 		return mediaItemRangeDTO{}, err
 	}
