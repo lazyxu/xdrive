@@ -13,16 +13,16 @@ import (
 )
 
 type fakeBootstrapAgent struct {
-	preflightErr error
-	createErr    error
-	bindErr      error
-	scheduleErr  error
+	preflightErr          error
+	createErr             error
+	bindErr               error
+	scheduleErr           error
 	readScheduleOverride  *localbackupipc.Schedule
 	savedScheduleOverride *localbackupipc.Schedule
-	preflighted  int
-	created      int
-	bound        int
-	saved        int
+	preflighted           int
+	created               int
+	bound                 int
+	saved                 int
 }
 
 func (f *fakeBootstrapAgent) PreflightLocalRoot(context.Context, string) error {
@@ -138,9 +138,9 @@ func TestHeadlessInitRefusesUnverifiedPlanAckBeforeRunNow(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "files")
 	spec := sourceschedule.Spec{Type: "interval", Expression: "6h"}
 	for _, tc := range []struct {
-		name string
-		read *localbackupipc.Schedule
-		write *localbackupipc.Schedule
+		name       string
+		read       *localbackupipc.Schedule
+		write      *localbackupipc.Schedule
 		wantWrites int
 	}{
 		{
