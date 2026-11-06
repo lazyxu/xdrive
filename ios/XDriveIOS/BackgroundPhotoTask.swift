@@ -142,6 +142,13 @@ enum XDriveIOSBackgroundPhotoTask {
                         try XDriveIOSBGOriginalWindowStore.shared.pause(owner: owner)
                         return
                     }
+                    if plan.historyRecoveryRequired == true {
+                        // Only the foreground Owner flow may obtain explicit
+                        // full-scope consent and reconcile the expired history.
+                        // BG must not bypass that consent or race the full pass.
+                        await resubmitRecoveryOnlyIfStillRequired(owner: owner)
+                        return
+                    }
                     let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
                     do {
                         _ = try await queue.replay(owner: owner, maximumEvents: 4)
@@ -308,6 +315,23 @@ enum XDriveIOSBackgroundPhotoTask {
             return true
         default:
             return false
+        }
+    }
+
+    @MainActor
+    private static func resubmitRecoveryOnlyIfStillRequired(
+        owner: XDriveNativeOwnerRoot
+    ) async {
+        do {
+            guard let grant = try await XDriveIOSApprovedPhotoBGVault.shared.current(),
+                  grant.matches(owner),
+                  let plan = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner),
+                  plan.enabled, plan.historyRecoveryRequired == true else { return }
+            // Keep the OS request alive while the foreground flow waits for
+            // explicit scope consent or finishes its full-library pass.
+            try scheduleApprovedProbe(afterMinutes: grant.intervalMinutes)
+        } catch {
+            // No stale grant, disabled plan or guessed retry.
         }
     }
 

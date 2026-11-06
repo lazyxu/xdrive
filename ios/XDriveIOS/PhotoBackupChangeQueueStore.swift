@@ -79,6 +79,7 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             try execute("PRAGMA journal_mode=DELETE")
             try execute("PRAGMA synchronous=FULL")
             try execute("CREATE TABLE IF NOT EXISTS baseline (id INTEGER PRIMARY KEY CHECK(id=1), token BLOB NOT NULL, authorization INTEGER NOT NULL)")
+            try execute("CREATE TABLE IF NOT EXISTS reconciliation (id INTEGER PRIMARY KEY CHECK(id=1), token BLOB NOT NULL, authorization INTEGER NOT NULL)")
             try execute("CREATE TABLE IF NOT EXISTS sequence (id INTEGER PRIMARY KEY CHECK(id=1), value INTEGER NOT NULL)")
             try execute("INSERT OR IGNORE INTO sequence (id,value) VALUES (1,0)")
             try execute("CREATE TABLE IF NOT EXISTS entries (asset_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0), priority INTEGER NOT NULL, queue_order INTEGER NOT NULL, state TEXT NOT NULL)")
@@ -110,6 +111,64 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         }
         try stepDone(statement)
         return sqlite3_changes(database) == 1
+    }
+
+    /// Replace an unreplayable PhotoKit history checkpoint only after the
+    /// Owner-scoped caller has completed a full current-library scan and
+    /// verified every supported original against the current Server receipt.
+    /// The new token and clearing of stale change rows are one SQLite commit.
+    /// This operation itself proves NOTHING about uploads.
+    func completeFullReconciliation(token: Data, authorization: Int) throws {
+        try validateToken(token)
+        guard authorization > 0 else { throw Failure.invalidInput }
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { try? execute("ROLLBACK") } }
+        let statement = try prepare(
+            "INSERT INTO baseline(id,token,authorization) VALUES(1,?,?) " +
+            "ON CONFLICT(id) DO UPDATE SET token=excluded.token,authorization=excluded.authorization"
+        )
+        defer { sqlite3_finalize(statement) }
+        try bind(token, into: statement, position: 1)
+        guard sqlite3_bind_int64(statement, 2, Int64(authorization)) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        try stepDone(statement)
+        try execute("DELETE FROM entries")
+        let marker = try prepare(
+            "INSERT INTO reconciliation(id,token,authorization) VALUES(1,?,?) " +
+            "ON CONFLICT(id) DO UPDATE SET token=excluded.token,authorization=excluded.authorization"
+        )
+        defer { sqlite3_finalize(marker) }
+        try bind(token, into: marker, position: 1)
+        guard sqlite3_bind_int64(marker, 2, Int64(authorization)) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        try stepDone(marker)
+        try execute("COMMIT")
+        committed = true
+    }
+
+    /// A durable marker distinguishes a completed full pass from an ordinary
+    /// incremental replay that happens to advance the same baseline later.
+    func hasCompletedFullReconciliation(token: Data, authorization: Int) throws -> Bool {
+        try validateToken(token)
+        guard authorization > 0 else { throw Failure.invalidInput }
+        let statement = try prepare(
+            "SELECT token,authorization FROM reconciliation WHERE id=1"
+        )
+        defer { sqlite3_finalize(statement) }
+        let code = sqlite3_step(statement)
+        if code == SQLITE_DONE { return false }
+        guard code == SQLITE_ROW else { throw Failure.database(code) }
+        let size = sqlite3_column_bytes(statement, 0)
+        guard size > 0 && size <= 65_536,
+              let raw = sqlite3_column_blob(statement, 0) else {
+            throw Failure.invalidInput
+        }
+        let savedToken = Data(bytes: raw, count: Int(size))
+        let savedAuthorization = Int(sqlite3_column_int64(statement, 1))
+        return savedAuthorization == authorization && savedToken == token
     }
 
     func baseline() throws -> Baseline? {

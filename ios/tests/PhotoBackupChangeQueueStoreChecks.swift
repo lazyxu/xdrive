@@ -120,6 +120,38 @@ import Foundation
             try expect(try store.status(for: "not-here") == nil)
             try expect(try !store.settle(newer, result: .confirmed))
         }
+        // A full authorized-library reconciliation atomically installs a
+        // fresh token and discards stale queue rows only after receipt proof.
+        do {
+            let store = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: url)
+            try expect(try store.counts() == .init(
+                pending: 1, failed: 0, confirmed: 0, missingLocal: 2
+            ))
+            try store.completeFullReconciliation(
+                token: Data([7]), authorization: 3
+            )
+            try expect(try store.baseline()?.token == Data([7]))
+            try expect(try store.baseline()?.authorization == 3)
+            try expect(try store.counts() == .init())
+            try expect(try store.pending().isEmpty)
+            try expect(try store.failed().isEmpty)
+            try expect(try store.status(for: "old") == nil)
+            try expect(try store.hasCompletedFullReconciliation(
+                token: Data([7]), authorization: 3
+            ))
+            try expect(try !store.hasCompletedFullReconciliation(
+                token: Data([6]), authorization: 3
+            ))
+        }
+        do {
+            let reopened = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: url)
+            try expect(try reopened.baseline()?.token == Data([7]))
+            try expect(try reopened.baseline()?.authorization == 3)
+            try expect(try reopened.counts() == .init())
+            try expect(try reopened.hasCompletedFullReconciliation(
+                token: Data([7]), authorization: 3
+            ))
+        }
         let isolated = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: dir.appendingPathComponent("owner-b.sqlite3"))
         try expect(try isolated.baseline() == nil)
         try expect(try isolated.pending().isEmpty)

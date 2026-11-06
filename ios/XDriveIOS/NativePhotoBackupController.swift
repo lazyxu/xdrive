@@ -500,47 +500,93 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         // Durably replay a bounded PhotoKit change batch before
                         // reserving the positional scan window. The same queue
                         // is then consumed by the existing CAS original writer.
-                        if let activePlan = XDriveIOSPhotoAutoScheduleStore.shared
+                        if kind == .automatic,
+                           var activePlan = XDriveIOSPhotoAutoScheduleStore.shared
                             .status(owner: selected),
                            activePlan.backupStartRule == .onlyNew {
-                            let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
-                                owner: selected
-                            )
-                            incrementalQueue = changeQueue
-                            do {
-                                _ = try await changeQueue.replay(
-                                    owner: selected, maximumEvents: 4
+                            // If the process stopped after the full scan but
+                            // before its SQLite rebase, finish only the exact
+                            // token/authorization generation that was scanned.
+                            if activePlan.historyRecoveryReadyToCommit == true,
+                               let expectedToken = activePlan.libraryChangeEpoch,
+                               let expectedAuthorization = activePlan.libraryAuthorizationRaw {
+                                let recoveryQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                                    owner: selected
                                 )
-                                guard try await changeQueue.isCaughtUp(owner: selected) else {
-                                    // Do not let the date-filtered positional
-                                    // scan pass an old-dated import while its
-                                    // persistent PhotoKit event is still behind
-                                    // the bounded replay cursor. Keep this due
-                                    // window unreserved; the foreground timer
-                                    // will replay the next bounded batch.
-                                    self.message = "PhotoKit 增量变更仍在分批回放；本轮暂不扫描，避免漏掉拍摄日期较早的新导入照片。"
-                                    await reporter.finish(status: "cancelled")
-                                    self.refresh(owner: selected)
-                                    return
+                                do {
+                                    try await recoveryQueue.completeFullLibraryReconciliation(
+                                        owner: selected, expectedToken: expectedToken,
+                                        expectedAuthorization: expectedAuthorization
+                                    )
+                                    guard let finished = try XDriveIOSPhotoAutoScheduleStore.shared
+                                        .finishFullLibraryReconciliation(
+                                            owner: selected, expectedToken: expectedToken,
+                                            expectedAuthorization: expectedAuthorization
+                                        ) else {
+                                        throw XDriveIOSPhotoAutoScheduleError.persistenceUnavailable
+                                    }
+                                    activePlan = finished
+                                    self.schedule = finished
+                                } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                                    .unauthorizedOrChanged {
+                                    // The library changed after the last full
+                                    // scan. Re-run under the same explicit scope
+                                    // consent; do not ask again unless permission expands.
+                                    activePlan = try XDriveIOSPhotoAutoScheduleStore.shared
+                                        .restartFullLibraryReconciliation(owner: selected) ?? activePlan
+                                    self.schedule = activePlan
+                                } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                                    .authorizationChanged {
+                                    // Full/Limited authorization changed after
+                                    // consent. Require a fresh scope decision.
+                                    activePlan = try XDriveIOSPhotoAutoScheduleStore.shared
+                                        .requireFullLibraryReconciliation(owner: selected) ?? activePlan
+                                    self.schedule = activePlan
                                 }
-                            } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
-                                .requiresExplicitBaseline {
-                                // A legacy plan has no trustworthy persistent
-                                // change baseline. Do not apply capture-date
-                                // filtering: scan the authorized library by
-                                // bounded windows and let the original receipt
-                                // verifier deduplicate it. Keep doing this on
-                                // later ticks until an explicit, safe baseline
-                                // migration exists; never silently skip old-dated
-                                // imports or invent a new baseline.
+                            }
+                            if activePlan.requiresFullLibraryReconciliation {
+                                // History was expired/unavailable. Reconcile
+                                // the entire current authorized snapshot with
+                                // the shared receipt verifier; never apply the
+                                // only-new capture-date filter or stale queue.
                                 incrementalQueue = nil
                                 canUseOnlyNewDateFilter = false
-                            } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
-                                .invalidArchivedToken {
-                                // An unreadable token has the same conservative
-                                // fallback as a missing legacy baseline.
-                                incrementalQueue = nil
-                                canUseOnlyNewDateFilter = false
+                            } else {
+                                let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                                    owner: selected
+                                )
+                                incrementalQueue = changeQueue
+                                do {
+                                    _ = try await changeQueue.replay(
+                                        owner: selected, maximumEvents: 4
+                                    )
+                                    guard try await changeQueue.isCaughtUp(owner: selected) else {
+                                        // Do not let the date-filtered positional
+                                        // scan pass an old-dated import while its
+                                        // persistent PhotoKit event is still behind
+                                        // the bounded replay cursor. Keep this due
+                                        // window unreserved; the foreground timer
+                                        // will replay the next bounded batch.
+                                        self.message = "PhotoKit 增量变更仍在分批回放；本轮暂不扫描，避免漏掉拍摄日期较早的新导入照片。"
+                                        await reporter.finish(status: "cancelled")
+                                        self.refresh(owner: selected)
+                                        return
+                                    }
+                                } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                                    .requiresExplicitBaseline,
+                                    XDriveIOSPhotoKitPersistentBackupQueue.Failure.invalidArchivedToken,
+                                    XDriveIOSPhotoKitPersistentBackupQueue.Failure.historyUnavailable,
+                                    XDriveIOSPhotoKitPersistentBackupQueue.Failure.authorizationChanged {
+                                    // A missing, expired, incomplete or
+                                    // generation-mismatched history cannot
+                                    // justify date filtering. Persist a pause;
+                                    // the user must consent before full-scope writes.
+                                    activePlan = try XDriveIOSPhotoAutoScheduleStore.shared
+                                        .requireFullLibraryReconciliation(owner: selected) ?? activePlan
+                                    self.schedule = activePlan
+                                    incrementalQueue = nil
+                                    canUseOnlyNewDateFilter = false
+                                }
                             }
                             try Task.checkCancellation()
                             guard self.displayEpoch == uiEpoch,
@@ -626,12 +672,33 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     }
                     self.progress = result
                     if kind == .automatic {
-                        self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared.recordResult(
+                        let recorded = try XDriveIOSPhotoAutoScheduleStore.shared.recordResult(
                             owner: selected,
                             sourceID: managed.destination.sourceID,
                             targetNodeID: managed.destination.targetNodeID,
                             progress: result
                         )
+                        self.schedule = recorded
+                        if let recovery = recorded,
+                           recovery.historyRecoveryReadyToCommit == true,
+                           let expectedToken = recovery.libraryChangeEpoch,
+                           let expectedAuthorization = recovery.libraryAuthorizationRaw {
+                            let recoveryQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                                owner: selected
+                            )
+                            try await recoveryQueue.completeFullLibraryReconciliation(
+                                owner: selected, expectedToken: expectedToken,
+                                expectedAuthorization: expectedAuthorization
+                            )
+                            guard let finished = try XDriveIOSPhotoAutoScheduleStore.shared
+                                .finishFullLibraryReconciliation(
+                                    owner: selected, expectedToken: expectedToken,
+                                    expectedAuthorization: expectedAuthorization
+                                ) else {
+                                throw XDriveIOSPhotoAutoScheduleError.persistenceUnavailable
+                            }
+                            self.schedule = finished
+                        }
                     } else if let initial = manualStartEpoch {
                         // Never advance a manual cursor if PhotoKit changed while
                         // an original was staged/uploaded. Repeat a partial

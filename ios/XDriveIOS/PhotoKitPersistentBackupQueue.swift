@@ -10,8 +10,10 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
     enum Failure: Error {
         case invalidOwner
         case unauthorizedOrChanged
+        case authorizationChanged
         case requiresExplicitBaseline
         case invalidArchivedToken
+        case historyUnavailable
         case invalidReplayLimit
     }
 
@@ -215,9 +217,9 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
 
     /// Durable capture from PhotoKit's persistent change history. Every
     /// PHPersistentChange changeToken and its inserted/updated/deleted asset
-    /// IDs are committed together. Expired/unavailable history is propagated
-    /// to the caller for a conservative full-library reconciliation; NEVER
-    /// replace the baseline token or report those assets as backed up.
+    /// IDs are committed together. Expired/unavailable history is surfaced
+    /// to the caller; explicit scope consent is required before a full-library
+    /// reconciliation. NEVER replace the baseline token or claim backup.
     func replay(owner: XDriveNativeOwnerRoot,
                 maximumEvents: Int = 2) throws -> Replay {
         guard (1...4).contains(maximumEvents) else {
@@ -225,49 +227,102 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         }
         try verifyOwner(owner)
         guard let original = try store.baseline() else {
-            throw Failure.requiresExplicitBaseline
+            // A caller must not interpret a missing only-new checkpoint as
+            // permission to upload the whole library. Foreground recovery
+            // requires explicit scope consent; BG callers fail closed.
+            throw Failure.historyUnavailable
         }
         let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
         guard original.authorization == epoch.authorization else {
-            throw Failure.unauthorizedOrChanged
+            throw Failure.authorizationChanged
         }
-        guard let token = try NSKeyedUnarchiver.unarchivedObject(
-            ofClass: PHPersistentChangeToken.self, from: original.token
-        ) else { throw Failure.invalidArchivedToken }
+        let token: PHPersistentChangeToken
+        do {
+            guard let decoded = try NSKeyedUnarchiver.unarchivedObject(
+                ofClass: PHPersistentChangeToken.self, from: original.token
+            ) else {
+                throw Failure.historyUnavailable
+            }
+            token = decoded
+        } catch {
+            // A thrown decode error or an empty archive is equivalent to
+            // expired history; only user-confirmed full reconciliation is safe.
+            throw Failure.historyUnavailable
+        }
         // Apple's fetch result is a Sequence of change records; do not flatten
         // 100k asset identifiers into a new unbounded in-memory Swift array.
-        let changes = try PHPhotoLibrary.shared().fetchPersistentChanges(since: token)
+        let changes: PHPersistentChangeFetchResult
+        do {
+            changes = try PHPhotoLibrary.shared().fetchPersistentChanges(since: token)
+        } catch PHPhotosError.persistentChangeTokenExpired,
+                PHPhotosError.persistentChangeDetailsUnavailable {
+            throw Failure.historyUnavailable
+        }
         var previousToken = original.token
         var progress = Replay()
         for change in changes {
-            try Task.checkCancellation()
-            try verifyAuthorization(stillMatches: epoch)
-            let details = try change.changeDetails(for: .asset)
-            let nextToken = try NSKeyedArchiver.archivedData(
-                withRootObject: change.changeToken, requiringSecureCoding: true
-            )
-            // Only a verified, unchanged authorized library generation may
-            // write the next token. The SQLite store transaction ensures a
-            // crash never moves it ahead of queued IDs.
-            try verifyAuthorization(stillMatches: epoch)
-            let applied = try store.apply(
-                inserted: details.insertedLocalIdentifiers,
-                updated: details.updatedLocalIdentifiers,
-                deleted: details.deletedLocalIdentifiers,
-                expectedToken: previousToken, nextToken: nextToken,
-                authorization: epoch.authorization
-            )
-            previousToken = nextToken
-            progress.inserted += applied.inserted
-            progress.updated += applied.updated
-            progress.deleted += applied.deleted
-            progress.events += 1
-            // The saved per-record token is the next replay checkpoint.
-            // Never traverse an unbounded change history in one auto tick.
-            if progress.events >= maximumEvents { break }
+            do {
+                try Task.checkCancellation()
+                try verifyAuthorization(stillMatches: epoch)
+                let details = try change.changeDetails(for: .asset)
+                let nextToken = try NSKeyedArchiver.archivedData(
+                    withRootObject: change.changeToken, requiringSecureCoding: true
+                )
+                // Only a verified, unchanged authorized library generation may
+                // write the next token. The SQLite store transaction ensures a
+                // crash never moves it ahead of queued IDs.
+                try verifyAuthorization(stillMatches: epoch)
+                let applied = try store.apply(
+                    inserted: details.insertedLocalIdentifiers,
+                    updated: details.updatedLocalIdentifiers,
+                    deleted: details.deletedLocalIdentifiers,
+                    expectedToken: previousToken, nextToken: nextToken,
+                    authorization: epoch.authorization
+                )
+                previousToken = nextToken
+                progress.inserted += applied.inserted
+                progress.updated += applied.updated
+                progress.deleted += applied.deleted
+                progress.events += 1
+                // The saved per-record token is the next replay checkpoint.
+                // Never traverse an unbounded change history in one auto tick.
+                if progress.events >= maximumEvents { break }
+            } catch PHPhotosError.persistentChangeDetailsUnavailable {
+                throw Failure.historyUnavailable
+            }
         }
         try verifyAuthorization(stillMatches: epoch)
         return progress
+    }
+
+    /// Commit a new PhotoKit history checkpoint only after the user has
+    /// explicitly authorized full-library recovery, the caller completed a
+    /// clean pass, and every supported original was checked through the shared
+    /// receipt verifier. The scanned PhotoKit generation must still match.
+    func completeFullLibraryReconciliation(
+        owner: XDriveNativeOwnerRoot,
+        expectedToken: Data,
+        expectedAuthorization: Int
+    ) throws {
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard epoch.authorization == expectedAuthorization else {
+            throw Failure.authorizationChanged
+        }
+        // If the process stopped after the atomic SQLite commit, the durable
+        // marker proves the exact scanned checkpoint was already installed.
+        // Later PhotoKit changes remain replayable from that checkpoint.
+        if try store.hasCompletedFullReconciliation(
+            token: expectedToken, authorization: expectedAuthorization
+        ) {
+            return
+        }
+        guard XDriveIOSPhotoKitLibraryEpoch.matches(
+            expectedToken, as: epoch.token
+        ) else { throw Failure.unauthorizedOrChanged }
+        try store.completeFullReconciliation(
+            token: epoch.serialized, authorization: epoch.authorization
+        )
     }
 
     private func verifyOwner(_ owner: XDriveNativeOwnerRoot) throws {
@@ -280,10 +335,12 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         stillMatches initial: XDriveIOSPhotoKitLibraryEpoch.Snapshot
     ) throws {
         let current = try XDriveIOSPhotoKitLibraryEpoch.capture()
-        guard current.authorization == initial.authorization,
-              XDriveIOSPhotoKitLibraryEpoch.matches(
-                initial.serialized, as: current.token
-              ) else { throw Failure.unauthorizedOrChanged }
+        guard current.authorization == initial.authorization else {
+            throw Failure.authorizationChanged
+        }
+        guard XDriveIOSPhotoKitLibraryEpoch.matches(
+            initial.serialized, as: current.token
+        ) else { throw Failure.unauthorizedOrChanged }
     }
 
     private static func ownerScope(_ owner: XDriveNativeOwnerRoot) -> String {
