@@ -282,21 +282,29 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	requestWithHeaders(t, router, http.MethodPut, synologyPullCredentialPath, tokenA,
 		strings.NewReader(synologyCredentialBody), http.StatusGone,
 		map[string]string{"Content-Type": "application/json"})
-	request(t, router, http.MethodDelete, synologyPullCredentialPath, tokenA, nil, http.StatusGone)
 	request(t, router, http.MethodGet, synologyPullCredentialPath, tokenB, nil, http.StatusNotFound)
-	var stillPaused meta.Source
-	if err := db.First(&stillPaused, synologyPull.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if stillPaused.Revision != 1 || stillPaused.Status != meta.SourceStatusPaused {
-		t.Fatalf("disabled Synology Pull unexpectedly changed status/revision: %+v", stillPaused)
-	}
 	var encrypted meta.SourceCredential
 	if err := db.Where("source_id = ?", synologyPull.ID).Take(&encrypted).Error; err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(encrypted.Ciphertext, legacyCiphertext) {
-		t.Fatal("disabled Synology Pull replaced or erased stored ciphertext")
+		t.Fatal("disabled Synology Pull replaced its historical ciphertext")
+	}
+	// Credential revocation is still Owner-controlled even for dormant Sources.
+	request(t, router, http.MethodDelete, synologyPullCredentialPath, tokenA, nil, http.StatusNoContent)
+	var stillPaused meta.Source
+	if err := db.First(&stillPaused, synologyPull.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stillPaused.Revision != 2 || stillPaused.Status != meta.SourceStatusPaused {
+		t.Fatalf("Owner credential revocation changed Source lifecycle incorrectly: %+v", stillPaused)
+	}
+	var credentialCount int64
+	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", synologyPull.ID).Count(&credentialCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if credentialCount != 0 {
+		t.Fatalf("revoked historical credential still persisted: %d", credentialCount)
 	}
 
 	statusPath := fmt.Sprintf("/api/v1/sources/%d/credential", source.ID)
