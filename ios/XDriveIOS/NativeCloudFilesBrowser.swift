@@ -179,6 +179,37 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     private var adjacentTicket = UUID()
     private var job: Task<Void, Never>?
     private var adjacentJob: Task<Void, Never>?
+    // A restored navigation page may only reuse rows from the exact Owner
+    // and directory/search scope that the Server previously verified.
+    private var verifiedOwner: XDriveNativeOwnerRoot?
+    private var verifiedFolderID: UInt64?
+    private var verifiedQuery: String?
+    private var verifiedFilters: XDriveIOSNativeFilesSearchFilterState?
+    private var verifiedSort: String?
+    private var verifiedOrder: String?
+
+    func canResume(owner: XDriveNativeOwnerRoot?, folderID: UInt64,
+                   query: String, filters: XDriveIOSNativeFilesSearchFilterState,
+                   sort: String, order: String) -> Bool {
+        guard verifiedPage, !loading, let owner, let verifiedOwner else {
+            return false
+        }
+        return XDriveIOSNativePhotoOwnerScope.matches(owner, verifiedOwner) &&
+            verifiedFolderID == folderID && verifiedQuery == query &&
+            verifiedFilters == filters && verifiedSort == sort &&
+            verifiedOrder == order
+    }
+
+    /// Removing NavigationLink source rows while a SwiftUI push is in
+    /// progress can pop straight back to the parent directory. Cancel I/O,
+    /// not the already authenticated visible rows or their identity.
+    func suspendForNavigation() {
+        epoch = UUID()
+        job?.cancel()
+        job = nil
+        cancelAdjacent()
+        loading = false
+    }
 
     func cancelAdjacent() {
         adjacentTicket = UUID()
@@ -192,6 +223,12 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
         job?.cancel()
         job = nil
         cancelAdjacent()
+        verifiedOwner = nil
+        verifiedFolderID = nil
+        verifiedQuery = nil
+        verifiedFilters = nil
+        verifiedSort = nil
+        verifiedOrder = nil
         entries = []
         total = 0
         startOffset = 0
@@ -253,6 +290,12 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 self?.entries = found
                 self?.total = count
                 self?.startOffset = offset
+                self?.verifiedOwner = expected
+                self?.verifiedFolderID = folderID
+                self?.verifiedQuery = query
+                self?.verifiedFilters = filters
+                self?.verifiedSort = sort
+                self?.verifiedOrder = order
                 self?.verifiedPage = true
                 self?.errorMessage = nil
             } catch is CancellationError {
@@ -849,6 +892,13 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .disabled(login.owner == nil)
+            }
+            if !hasVerifiedSearchOptionsForOwner && !searchOptions.loading {
+                Button("加载同步文件夹与标签筛选") {
+                    searchOptions.load(login: login)
+                }
+                .accessibilityIdentifier("native-ios-files-load-advanced-filter-options")
                 .disabled(login.owner == nil)
             }
             if searchOptions.loading && hasSearchOptionsStateForOwner {
@@ -1527,15 +1577,31 @@ struct XDriveIOSNativeFilesBrowser: View {
         } else {
             pendingNavigationReturnNodeID = nil
         }
-        model.invalidate()
+        model.suspendForNavigation()
     }
 
     var body: some View {
         ScrollViewReader { returnScroll in
             filesModals
         .onAppear {
-            reload()
-            searchOptions.load(login: login)
+            // Returning from a child must keep the same verified rows, their
+            // SwiftUI NavigationLinks and scroll position. Do not refetch on
+            // every stack pop; explicit refresh and Owner change still do.
+            if isHome {
+                reload()
+            } else if let folderID = parentID,
+                      model.canResume(
+                        owner: login.owner, folderID: folderID,
+                        query: activeQuery, filters: searchFilters,
+                        sort: sort, order: order
+                      ) {
+                pendingNavigationReturnNodeID = nil
+            } else {
+                reload()
+            }
+            // Listing directories does not need two additional source/tag
+            // GETs. The optional filter choices load on explicit demand.
+            if isGlobalSearch { searchOptions.load(login: login) }
         }
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
