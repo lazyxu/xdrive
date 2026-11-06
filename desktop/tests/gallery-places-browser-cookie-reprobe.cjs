@@ -45,6 +45,8 @@ function loadRealMainAuthFlow({probeOK=true,grantOK=true,onProbe}={}) {
     },
   }
   const sandbox={
+    // TypeScript's CommonJS transpiler emits __esModule on exports.
+    exports:{},module:{exports:{}},
     Promise,AbortSignal,
     agentState:connection,
     session:{fromPartition:name=>{assert.equal(name,'xdrive-places-web');return jar}},

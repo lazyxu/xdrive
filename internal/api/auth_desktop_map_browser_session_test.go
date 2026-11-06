@@ -17,7 +17,7 @@ func TestDesktopMapBrowserSessionProbeAdmissionBeforeDB(t *testing.T) {
 	const origin = "https://drive.example.test:8443"
 	for _, tc := range []struct {
 		name, requestOrigin, owner, body, bearer string
-		want int
+		want                                     int
 	}{
 		{"no origin", "", "owner", "", "", 403},
 		{"cross origin", "https://attacker.test", "owner", "", "", 403},
