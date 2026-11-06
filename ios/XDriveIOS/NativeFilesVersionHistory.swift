@@ -331,6 +331,7 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesVersionHistoryModel()
     @StateObject private var historicalExport = XDriveIOSNativeFilesHistoricalExportModel()
+    @Environment(\.xdriveNativeTransfers) private var transfers
     @State private var pendingVersion: XDriveIOSNativeFilesVersionRecord?
     @State private var confirming = false
 
@@ -384,7 +385,7 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
                                     Button("下载这个旧版本") {
                                         historicalExport.prepare(
                                             version, node: node,
-                                            login: login, openedOwner: openedOwner
+                                            login: login, openedOwner: openedOwner, transfers: transfers
                                         )
                                     }
                                     .disabled(model.busy || historicalExport.busy ||

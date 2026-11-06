@@ -31,3 +31,14 @@ test('64-cell WGS84 map representatives are bounded and separate from photo GPS 
   assert.match(model, /item\.coordinate_kind == "grid_cell_center"/)
   assert.doesNotMatch(model, /URLSession|Bearer|MKMapView|PHAsset|UserDefaults/)
 })
+
+test('native Owner map overview conserves exact Owner photo totals across at most 64 cells', () => {
+  assert.match(model, /var summedPhotoCount = 0/)
+  assert.match(model, /summedPhotoCount\.addingReportingOverflow\(item\.item_count\)/)
+  assert.match(model, /!overflow && next <= overview\.total_photo_count/)
+  assert.match(model, /return summedPhotoCount == overview\.total_photo_count/)
+  // Wire reader must reject invalid totals before publishing any trusted
+  // annotations or place-photo Range, not only validate each cell separately.
+  assert.match(reader, /XDriveIOSNativeOwnerMapOverviewPolicy\.valid\(overview\)/)
+  assert.doesNotMatch(model, /UploadSession|URLSession|UserDefaults|PHAsset/)
+})
