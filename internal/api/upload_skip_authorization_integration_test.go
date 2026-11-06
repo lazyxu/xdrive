@@ -51,6 +51,18 @@ func TestSkippedUploadSessionRequiresLiveTargetAndAudit(t *testing.T) {
 		!strings.Contains(succeeded.Metadata, `"phase":"session.skip"`) {
 		t.Fatalf("skipped upload not audited: %+v %v", succeeded, err)
 	}
+	// The conflict identity is a point-in-time observation, not authority.
+	// A concurrent rename before the skipped-session SQL commit must not
+	// acknowledge the old filename or mint another durable receipt.
+	if err := db.Model(&meta.Node{}).Where("id = ?", existing.ID).
+		Update("name", "renamed.txt").Error; err != nil {
+		t.Fatal(err)
+	}
+	c, response = ctx()
+	s.createSkippedUploadSession(c, owner.ID, req, 1, existing)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("stale filename acknowledged as skip: %d %s", response.Code, response.Body.String())
+	}
 
 	protected := createFilePropertiesDir(t, db, owner.ID, root.ID, "Managed")
 	private := createFilePropertiesFile(t, db, owner.ID, protected.ID, "private.txt", 4)
