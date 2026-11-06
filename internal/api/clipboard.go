@@ -211,6 +211,12 @@ func (s *Server) createClipboardItem(c *gin.Context) {
 	var existing meta.ClipboardItem
 	if err := db.Where("owner_id = ? AND client_event_id = ?", uid, req.ClientEventID).
 		First(&existing).Error; err == nil {
+		// A retained but expired item is invisible to GET /items. Returning
+		// 200 for its EventID would falsely claim successful delivery.
+		if !existing.ExpiresAt.After(time.Now().UTC()) {
+			c.JSON(http.StatusConflict, gin.H{"error": "clipboard event expired; check history before retrying"})
+			return
+		}
 		if !clipboardSameItem(existing, req) {
 			c.JSON(http.StatusConflict, gin.H{"error": "clipboard event ID conflict"})
 			return
@@ -266,6 +272,10 @@ WHERE owner_id = ?
 		// an EXACT same-content receipt; never silently accept conflicting data.
 		if lookupErr := db.Where("owner_id = ? AND client_event_id = ?", uid, req.ClientEventID).
 			First(&existing).Error; lookupErr == nil {
+			if !existing.ExpiresAt.After(time.Now().UTC()) {
+				c.JSON(http.StatusConflict, gin.H{"error": "clipboard event expired; check history before retrying"})
+				return
+			}
 			if clipboardSameItem(existing, req) {
 				c.JSON(http.StatusOK, clipboardItemDTO(existing))
 			} else {
