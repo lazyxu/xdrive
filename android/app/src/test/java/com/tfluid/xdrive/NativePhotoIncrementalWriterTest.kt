@@ -487,4 +487,38 @@ class NativePhotoIncrementalWriterTest {
         }
     }
 
+
+@Test fun legacyRootOriginalMustBeReuploadedUnderNewManagedSource(): Unit = runBlocking {
+        val journal = Journal()
+        val index = Index()
+        val service = UploadService()
+        val writer = NativePhotoIncrementalWriter(journal, index)
+        val device = NativeAndroidDeviceEnrollment(deviceId, "A".repeat(43), "Pixel", "1")
+        val managed = NativeAndroidPhotoDestination(
+            configured = true, deviceId = deviceId, name = "Pixel Backup",
+            sourceId = 19, sourceRevision = 1, targetNodeId = 120,
+            targetPath = "同步文件夹/Push/Pixel Backup")
+        staged().use { original ->
+            val item = source(original)
+            assertEquals(NativePhotoIncrementalOutcome.UPLOADED,
+                writer.uploadOne(service, "owner-token", scope,
+                    deviceId, root, item, original, { true }))
+            assertEquals(1, service.calls)
+            assertEquals(0, service.managedCalls)
+            // The historical Owner-root receipt is NOT evidence of a file
+            // under the newly provisioned, separately owned managed Target.
+            assertEquals(NativePhotoIncrementalOutcome.UPLOADED,
+                writer.uploadOne(service, "owner-token", scope, deviceId, root,
+                    item, original, { true },
+                    managedDevice = device, managedDestination = managed))
+            assertEquals(1, service.calls)
+            assertEquals(1, service.managedCalls)
+            // The exact new Source/Target receipt can now safely skip.
+            assertEquals(NativePhotoIncrementalOutcome.ALREADY_VERIFIED,
+                writer.uploadOne(service, "owner-token", scope, deviceId, root,
+                    item, original, { true },
+                    managedDevice = device, managedDestination = managed))
+            assertEquals(1, service.managedCalls)
+        }
+    }
 }
