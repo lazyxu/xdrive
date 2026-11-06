@@ -797,9 +797,14 @@ func (s *Server) getUploadSession(c *gin.Context) {
 		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
 		return
 	}
-	if err := s.verifyPushUploadSession(c, session); err != nil {
+	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := s.requireUploadSessionReadAuthorityTx(c.Request.Context(), tx, c, session); err != nil {
+			return err
+		}
+		return recordUploadAuthorizationSuccessTx(tx, c, "session.read", session)
+	}); err != nil {
 		s.recordUploadAuthorizationFailure(c, "session.read", session, err)
-		fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
+		fail(c, http.StatusForbidden, "UploadSession authority is no longer valid")
 		return
 	}
 	if session.Status == meta.UploadStatusActive && time.Now().After(session.ExpiresAt) {
@@ -1032,6 +1037,16 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		return
 	}
 	if session.Status == meta.UploadStatusFinalized {
+		if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+			if err := s.requireUploadSessionReadAuthorityTx(c.Request.Context(), tx, c, session); err != nil {
+				return err
+			}
+			return recordUploadAuthorizationSuccessTx(tx, c, "finalize.replay", session)
+		}); err != nil {
+			s.recordUploadAuthorizationFailure(c, "finalize.replay", session, err)
+			fail(c, http.StatusForbidden, "finalized upload receipt authority is no longer valid")
+			return
+		}
 		s.writeUploadSession(c, session, http.StatusOK)
 		return
 	}
