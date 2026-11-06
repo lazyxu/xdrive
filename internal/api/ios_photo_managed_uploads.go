@@ -383,7 +383,11 @@ func (s *Server) iosPhotoManagedReceipt(c *gin.Context) {
 		return recordUploadAuthorizationSuccessAsTx(tx, c, "ios.photo.receipt.read", "ios_photo", current)
 	}); err != nil {
 		s.recordUploadAuthorizationFailure(c, "ios.photo.receipt.read", verifiedSession, err)
-		fail(c, http.StatusForbidden, "ios photo receipt authority is no longer valid")
+		if uploadAuthorizationDenied(err) {
+			fail(c, http.StatusForbidden, "ios photo receipt authority is no longer valid")
+		} else {
+			fail(c, http.StatusInternalServerError, "iOS photo receipt audit failed")
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
