@@ -193,3 +193,14 @@ func createSynologyPullManagedTargetTx(
 	}
 	return provisionManagedSourceTargetTx(ctx, tx, source, nil)
 }
+
+// managedTargetSuggestion converts provider/device display names into a
+// portable final folder segment. The caller supplies a stable fallback when
+// the remote service does not publish a usable display name.
+func managedTargetSuggestion(value, fallback string) string {
+	name := sanitizeYikeTargetSegment(value)
+	if name == "" || meta.ValidateName(name) != nil || !meta.ValidSourceName(name) {
+		return fallback
+	}
+	return name
+}

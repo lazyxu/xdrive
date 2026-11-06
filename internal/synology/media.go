@@ -95,6 +95,20 @@ type Session struct {
 	closed bool
 }
 
+func (s *Session) DeviceName(ctx context.Context) string {
+	if s == nil || s.client == nil {
+		return ""
+	}
+	s.mu.Lock()
+	auth := s.auth
+	closed := s.closed
+	s.mu.Unlock()
+	if closed {
+		return ""
+	}
+	return s.client.deviceName(ctx, auth)
+}
+
 func (c *Client) Connect(ctx context.Context) (*Session, error) {
 	apis, err := c.apiInfo(ctx)
 	if err != nil {

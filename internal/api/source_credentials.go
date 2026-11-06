@@ -39,6 +39,7 @@ type sourceCredentialTestDTO struct {
 	Kind              string `json:"kind"`
 	AccountExternalID string `json:"account_external_id,omitempty"`
 	AccountName       string `json:"account_name,omitempty"`
+	SuggestedName     string `json:"suggested_name,omitempty"`
 }
 
 type sourceCredentialTester func(context.Context, string, json.RawMessage) (sourceCredentialTestDTO, error)
@@ -223,6 +224,7 @@ func defaultSourceCredentialTester(ctx context.Context, kind string, payload jso
 			Valid: true, Kind: kind,
 			AccountExternalID: strings.TrimSpace(info.YouaID),
 			AccountName:       strings.TrimSpace(info.Nickname),
+			SuggestedName:     managedTargetSuggestion(info.Nickname, "一刻相册"),
 		}, nil
 	case synologySourceKind, synologyFilesSourceKind:
 		var credential synology.Credential
@@ -245,8 +247,9 @@ func defaultSourceCredentialTester(ctx context.Context, kind string, payload jso
 		}
 		return sourceCredentialTestDTO{
 			Valid:       true,
-			Kind:        kind,
-			AccountName: strings.TrimSpace(info.Username),
+			Kind:          kind,
+			AccountName:   strings.TrimSpace(info.Username),
+			SuggestedName: managedTargetSuggestion(info.DeviceName, "Synology NAS"),
 		}, nil
 	default:
 		return sourceCredentialTestDTO{}, errUnsupportedSourceCredentialTest
