@@ -28,6 +28,23 @@ struct XDriveIOSLiveOriginalArchiveChecks {
         )
         let recorded = try FileManager.default.attributesOfItem(atPath: output.path)
         precondition(count == (recorded[.size] as? NSNumber)?.int64Value)
+        // A tiny archive must also carry authoritative ZIP64 sizes/offsets.
+        // This exercises ZIP64 layout without allocating multi-GiB CI files.
+        let archiveBytes = try Data(contentsOf: output)
+        let signatures: [[UInt8]] = [
+            [0x50, 0x4b, 0x03, 0x04], // local file header
+            [0x50, 0x4b, 0x01, 0x02], // central directory
+            [0x50, 0x4b, 0x06, 0x06], // ZIP64 end record
+            [0x50, 0x4b, 0x06, 0x07], // ZIP64 locator
+            [0x50, 0x4b, 0x05, 0x06], // classic EOCD sentinel
+        ]
+        for bytes in signatures {
+            precondition(archiveBytes.range(of: Data(bytes)) != nil,
+                         "Live original ZIP64 signature missing")
+        }
+        // Local ZIP64 extra contains 64-bit uncompressed/compressed sizes.
+        let extra = Data([0x01, 0x00, 0x10, 0x00])
+        precondition(archiveBytes.range(of: extra) != nil)
         // macOS's own ZIP reader validates the STORE entries and CRC32.
         func unzip(_ arguments: [String]) throws -> Data {
             let task = Process()

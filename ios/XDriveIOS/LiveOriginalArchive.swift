@@ -21,13 +21,15 @@ enum XDriveIOSLiveArchiveFailure: Error {
 }
 
 enum XDriveIOSLiveOriginalArchive {
-    static let maximumPartBytes: Int64 = 512 * 1_048_576
-    static let maximumBundleBytes: Int64 = 1_073_741_824
+    // Legacy compatibility constants describe the Int64 byte-count range,
+    // not an iOS-specific photo/video size policy. ZIP64 stores 64-bit sizes.
+    static let maximumPartBytes: Int64 = .max
+    static let maximumBundleBytes: Int64 = .max
     private static let bufferSize = 1 * 1_048_576
 
     private struct Entry {
         let path: String
-        let size: UInt32
+        let size: UInt64
         let checksum: UInt32
         let source: URL?
         let memory: Data?
@@ -46,7 +48,7 @@ enum XDriveIOSLiveOriginalArchive {
     }
     private struct Central {
         let entry: Entry
-        let offset: UInt32
+        let offset: UInt64
     }
 
     /// The caller creates a unique, private, protected staging directory and
@@ -68,14 +70,11 @@ enum XDriveIOSLiveOriginalArchive {
             throw XDriveIOSLiveArchiveFailure.invalidPair
         }
         for resource in [still, motion] {
-            guard resource.byteCount > 0, resource.byteCount <= maximumPartBytes,
+            guard resource.byteCount > 0,
                   !resource.originalFilename.isEmpty,
                   resource.originalFilename.utf8.count <= 255 else {
                 throw XDriveIOSLiveArchiveFailure.tooLarge
             }
-        }
-        guard still.byteCount <= maximumBundleBytes - motion.byteCount else {
-            throw XDriveIOSLiveArchiveFailure.tooLarge
         }
         try Task.checkCancellation()
         let pair: [(role: String, input: XDriveIOSLiveArchiveInput)] = [
@@ -86,7 +85,7 @@ enum XDriveIOSLiveOriginalArchive {
         for part in pair {
             let path = "media/" + part.role + extensionFor(part.input.originalFilename)
             let crc = try checksum(part.input.fileURL, expected: part.input.byteCount)
-            content.append(Entry(path: path, size: UInt32(part.input.byteCount),
+            content.append(Entry(path: path, size: UInt64(part.input.byteCount),
                                  checksum: crc, source: part.input.fileURL, memory: nil))
             parts.append(Manifest.Part(
                 role: part.role, path: path,
@@ -103,7 +102,7 @@ enum XDriveIOSLiveOriginalArchive {
         guard manifest.count <= 65_535 else {
             throw XDriveIOSLiveArchiveFailure.archiveFailed
         }
-        content.append(Entry(path: "manifest.json", size: UInt32(manifest.count),
+        content.append(Entry(path: "manifest.json", size: UInt64(manifest.count),
                              checksum: crc32(manifest), source: nil, memory: manifest))
         var attributes: [FileAttributeKey: Any] = [
             .posixPermissions: NSNumber(value: 0o600)
@@ -128,37 +127,42 @@ enum XDriveIOSLiveOriginalArchive {
         var cursor: UInt64 = 0
         func write(_ data: Data) throws {
             try Task.checkCancellation()
+            let (next, overflow) = cursor.addingReportingOverflow(UInt64(data.count))
+            guard !overflow && next <= UInt64(Int64.max) else {
+                // Int64 is the on-disk file metadata / UploadSession range,
+                // not a product-imposed media limit.
+                throw XDriveIOSLiveArchiveFailure.tooLarge
+            }
             do {
                 try handle.write(contentsOf: data)
             } catch {
                 throw XDriveIOSLiveArchiveFailure.storageUnavailable
             }
-            cursor += UInt64(data.count)
-            guard cursor < UInt64(UInt32.max) else {
-                throw XDriveIOSLiveArchiveFailure.tooLarge
-            }
+            cursor = next
         }
         var central: [Central] = []
         for entry in content {
-            let localOffset = UInt32(cursor)
+            let localOffset = cursor
             let name = Data(entry.path.utf8)
             guard name.count < 65_535 else {
                 throw XDriveIOSLiveArchiveFailure.archiveFailed
             }
+            let extra = zip64Extra(size: entry.size, offset: nil)
             var header = Data()
             append(UInt32(0x04034b50), to: &header)
-            append(UInt16(20), to: &header)
+            append(UInt16(45), to: &header) // ZIP64 version needed
             append(UInt16(0x0800), to: &header) // UTF-8 ZIP filename
             append(UInt16(0), to: &header) // STORE, no lossy transcoding
-            append(UInt16(0), to: &header) // DOS time
-            append(UInt16(0x0021), to: &header) // 1980-01-01
-            append(entry.checksum, to: &header)
-            append(entry.size, to: &header)
-            append(entry.size, to: &header)
-            append(UInt16(name.count), to: &header)
             append(UInt16(0), to: &header)
+            append(UInt16(0x0021), to: &header)
+            append(entry.checksum, to: &header)
+            append(UInt32.max, to: &header) // true sizes in ZIP64 extra
+            append(UInt32.max, to: &header)
+            append(UInt16(name.count), to: &header)
+            append(UInt16(extra.count), to: &header)
             try write(header)
             try write(name)
+            try write(extra)
             if let original = entry.source {
                 let input = try FileHandle(forReadingFrom: original)
                 defer { try? input.close() }
@@ -181,40 +185,63 @@ enum XDriveIOSLiveOriginalArchive {
             }
             central.append(Central(entry: entry, offset: localOffset))
         }
-        let directoryOffset = UInt32(cursor)
+        let directoryOffset = cursor
         for record in central {
             let entry = record.entry
             let name = Data(entry.path.utf8)
+            let extra = zip64Extra(size: entry.size, offset: record.offset)
             var header = Data()
             append(UInt32(0x02014b50), to: &header)
-            append(UInt16(20), to: &header)
-            append(UInt16(20), to: &header)
+            append(UInt16(45), to: &header) // ZIP64 version made by
+            append(UInt16(45), to: &header) // ZIP64 version needed
             append(UInt16(0x0800), to: &header)
             append(UInt16(0), to: &header)
             append(UInt16(0), to: &header)
             append(UInt16(0x0021), to: &header)
             append(entry.checksum, to: &header)
-            append(entry.size, to: &header)
-            append(entry.size, to: &header)
+            append(UInt32.max, to: &header)
+            append(UInt32.max, to: &header)
             append(UInt16(name.count), to: &header)
-            append(UInt16(0), to: &header)
-            append(UInt16(0), to: &header)
-            append(UInt16(0), to: &header)
-            append(UInt16(0), to: &header)
-            append(UInt32(0), to: &header)
-            append(record.offset, to: &header)
+            append(UInt16(extra.count), to: &header)
+            append(UInt16(0), to: &header) // comment
+            append(UInt16(0), to: &header) // disk
+            append(UInt16(0), to: &header) // internal attributes
+            append(UInt32(0), to: &header) // external attributes
+            append(UInt32.max, to: &header) // true offset in ZIP64 extra
             try write(header)
             try write(name)
+            try write(extra)
         }
-        let centralBytes = UInt32(cursor) - directoryOffset
+        let directoryBytes = cursor - directoryOffset
+        let zip64EndOffset = cursor
+        var zip64End = Data()
+        append(UInt32(0x06064b50), to: &zip64End)
+        append(UInt64(44), to: &zip64End) // bytes after this size field
+        append(UInt16(45), to: &zip64End)
+        append(UInt16(45), to: &zip64End)
+        append(UInt32(0), to: &zip64End)
+        append(UInt32(0), to: &zip64End)
+        append(UInt64(central.count), to: &zip64End)
+        append(UInt64(central.count), to: &zip64End)
+        append(directoryBytes, to: &zip64End)
+        append(directoryOffset, to: &zip64End)
+        try write(zip64End)
+        var locator = Data()
+        append(UInt32(0x07064b50), to: &locator)
+        append(UInt32(0), to: &locator)
+        append(zip64EndOffset, to: &locator)
+        append(UInt32(1), to: &locator)
+        try write(locator)
+        // Classic EOCD fields are sentinels; ZIP64 stores authoritative
+        // sizes, counts and offsets even for small archives.
         var footer = Data()
         append(UInt32(0x06054b50), to: &footer)
         append(UInt16(0), to: &footer)
         append(UInt16(0), to: &footer)
-        append(UInt16(central.count), to: &footer)
-        append(UInt16(central.count), to: &footer)
-        append(centralBytes, to: &footer)
-        append(directoryOffset, to: &footer)
+        append(UInt16.max, to: &footer)
+        append(UInt16.max, to: &footer)
+        append(UInt32.max, to: &footer)
+        append(UInt32.max, to: &footer)
         append(UInt16(0), to: &footer)
         try write(footer)
         do {
@@ -224,6 +251,18 @@ enum XDriveIOSLiveOriginalArchive {
         }
         committed = true
         return Int64(cursor)
+    }
+
+    /// Per-file ZIP64 extra: sizes in local/central entries, and the
+    /// local-header offset in the central directory record.
+    private static func zip64Extra(size: UInt64, offset: UInt64?) -> Data {
+        var extra = Data()
+        append(UInt16(0x0001), to: &extra)
+        append(UInt16(offset == nil ? 16 : 24), to: &extra)
+        append(size, to: &extra)
+        append(size, to: &extra)
+        if let offset { append(offset, to: &extra) }
+        return extra
     }
 
     private static func extensionFor(_ name: String) -> String {

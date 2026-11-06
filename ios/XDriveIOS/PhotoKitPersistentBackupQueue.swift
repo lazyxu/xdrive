@@ -132,6 +132,7 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
     @discardableResult
     func settle(_ candidate: XDriveIOSPhotoBackupChangeQueueStore.Pending,
                 result: XDriveIOSPhotoBackupChangeQueueStore.Settled,
+                reasonCode: String? = nil,
                 owner: XDriveNativeOwnerRoot) throws -> Bool {
         try verifyOwner(owner)
         let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
@@ -144,7 +145,7 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
               ) else { throw Failure.unauthorizedOrChanged }
         try verifyAuthorization(stillMatches: epoch)
         return try store.settle(
-            candidate, result: result,
+            candidate, result: result, reasonCode: reasonCode,
             expectedBaselineToken: baseline.token,
             authorization: epoch.authorization
         )
@@ -212,6 +213,19 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         }
         try verifyAuthorization(stillMatches: epoch)
         return requeued
+    }
+
+    /// Aggregate current Owner-only failure categories; no IDs cross this API.
+    func failureReasonCounts(owner: XDriveNativeOwnerRoot) throws -> [String: Int] {
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline(),
+              baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(baseline.token, as: epoch.token)
+        else { return [:] }
+        let result = try store.failureReasonCounts()
+        try verifyAuthorization(stillMatches: epoch)
+        return result
     }
 
     /// Metadata-only, 64-item read for mounted native Gallery pages.

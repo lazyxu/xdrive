@@ -31,6 +31,23 @@ import Foundation
             (p.mappingForGroup(identifiers: reverse, groupStart: 0,
                 windowStart: 256, windowEnd: 512) ?? [])
         precondition(other.map { reverse[$0.physicalIndex] } == names.sorted())
+        // 100k-equivalent equal-timestamp groups: every bounded 257-item
+        // group straddles stable 256-slot windows without duplication.
+        // Only one group is kept in memory at any time.
+        for groupIndex in 0..<390 {
+            let start = groupIndex * 257
+            let windowStart = (start / 256) * 256
+            let mapped = (p.mappingForGroup(
+                identifiers: names, groupStart: start,
+                windowStart: windowStart, windowEnd: windowStart + 256
+            ) ?? []) + (p.mappingForGroup(
+                identifiers: names, groupStart: start,
+                windowStart: windowStart + 256, windowEnd: windowStart + 512
+            ) ?? [])
+            precondition(mapped.count == 257, "Tie group lost entries")
+            precondition(mapped.map(\.logicalIndex) == Array(start..<(start + 257)))
+            precondition(Set(mapped.map(\.physicalIndex)).count == 257)
+        }
         precondition(p.mappingForGroup(identifiers: ["a", "a"],
             groupStart: 0, windowStart: 0, windowEnd: 256) == nil)
         precondition(p.mappingForGroup(identifiers: [""],

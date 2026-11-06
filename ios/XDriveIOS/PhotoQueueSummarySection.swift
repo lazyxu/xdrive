@@ -43,6 +43,11 @@ struct XDriveIOSPhotoQueueSummarySection: View {
                     if counts.failed > 0 {
                         Text("失败候选仅包含已证明没有不确定服务器写入的项目；未知 ACK 不在此队列。")
                             .font(.footnote).foregroundStyle(.orange)
+                        if let reasons = queueSummary.failedReasonDescription {
+                            Text("失败原因（仅本机当前变更版本）：\(reasons)")
+                                .font(.footnote).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("native-ios-photo-change-queue-failure-reasons")
+                        }
                         Button("重新排队失败项（最多 64 项）") {
                             queueSummary.retryFailed(login: login)
                         }

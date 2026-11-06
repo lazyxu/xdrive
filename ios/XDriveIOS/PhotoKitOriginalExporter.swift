@@ -139,11 +139,11 @@ enum XDrivePhotoKitOriginalExporter {
             (allowLimitedPhotoAccess && status == .limited)
     }
 
-    /// Export one currently authorized PhotoKit asset, with a maximum of
-    /// 1 GiB per resource by default. A Live Photo is all-or-nothing:
+    /// Export a currently authorized PhotoKit asset without a backup byte
+    /// ceiling. A Live Photo remains all-or-nothing:
     /// both still and paired-video originals must be present and fully read.
     static func stage(localIdentifier: String, allowICloudDownload: Bool = false,
-                      maximumBytesPerResource: Int64 = 1_073_741_824,
+                      maximumBytesPerResource: Int64 = .max,
                       allowLimitedPhotoAccess: Bool = false) async throws
         -> XDriveStagedPhotoKitAsset {
         guard authorized(allowLimitedPhotoAccess: allowLimitedPhotoAccess) else { throw XDrivePhotoKitExportFailure.notAuthorized }
@@ -151,8 +151,7 @@ enum XDrivePhotoKitOriginalExporter {
               let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier],
                                               options: nil).firstObject
         else { throw XDrivePhotoKitExportFailure.assetNotVisible }
-        guard maximumBytesPerResource > 0,
-              maximumBytesPerResource <= 4_294_967_296 else {
+        guard maximumBytesPerResource > 0 else {
             throw XDrivePhotoKitExportFailure.resourceTooLarge
         }
 

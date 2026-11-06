@@ -215,6 +215,55 @@ import Foundation
         try expect(try isolated.baseline() == nil)
         try expect(try isolated.pending().isEmpty)
         try expect(try isolated.counts() == .init())
-        print("iOS PhotoKit change queue atomic token+priority+restart+Owner isolation: PASS")
+        // Failure reasons are local-only normalized codes and committed
+        // atomically with the same baseline/revision fence as the queue state.
+        // Reopen the database to prove that diagnostics survive an app restart.
+        let reasonFile = dir.appendingPathComponent("failure-reasons.sqlite3")
+        do {
+            let reasons = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: reasonFile)
+            _ = try reasons.installBaselineIfAbsent(token: Data([10]), authorization: 3)
+            _ = try reasons.apply(inserted: ["reason-video"], updated: [], deleted: [],
+                                  expectedToken: Data([10]), nextToken: Data([11]), authorization: 3)
+            guard let item = try reasons.pending().first else {
+                preconditionFailure("failure test candidate missing")
+            }
+            do {
+                _ = try reasons.settle(item, result: .failed,
+                                       reasonCode: "http-403-secret-body",
+                                       expectedBaselineToken: Data([11]), authorization: 3)
+                preconditionFailure("arbitrary remote error body persisted")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.invalidInput {}
+            try expect(try reasons.status(for: "reason-video")?.state == .pending)
+            try expect(try reasons.settle(item, result: .failed,
+                                           reasonCode: "incompleteLivePair",
+                                           expectedBaselineToken: Data([11]), authorization: 3))
+            try expect(try reasons.status(for: "reason-video")?.failureReasonCode ==
+                       "incompleteLivePair")
+            try expect(try reasons.failureReasonCounts()["incompleteLivePair"] == 1)
+        }
+        do {
+            let reopened = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: reasonFile)
+            try expect(try reopened.status(for: "reason-video")?.failureReasonCode ==
+                       "incompleteLivePair")
+            try expect(try reopened.failureReasonCounts()["incompleteLivePair"] == 1)
+            guard let item = try reopened.failed().first else {
+                preconditionFailure("durable failure missing after reopen")
+            }
+            do {
+                _ = try reopened.retryFailed(item, expectedBaselineToken: Data([99]),
+                                             authorization: 3)
+                preconditionFailure("stale baseline retried failure")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.baselineChanged {}
+            try expect(try reopened.retryFailed(item, expectedBaselineToken: Data([11]),
+                                                authorization: 3))
+            try expect(try reopened.failureReasonCounts().isEmpty)
+            try expect(try reopened.status(for: "reason-video")?.failureReasonCode == nil)
+            _ = try reopened.apply(inserted: [], updated: ["reason-video"], deleted: [],
+                                   expectedToken: Data([11]), nextToken: Data([12]),
+                                   authorization: 3)
+            try expect(try reopened.status(for: "reason-video")?.failureReasonCode == nil)
+            try expect(try reopened.failureReasonCounts().isEmpty)
+        }
+        print("iOS PhotoKit change queue atomic token+priority+restart+Owner isolation+failure codes: PASS")
     }
 }

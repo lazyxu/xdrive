@@ -19,7 +19,9 @@ import (
 // the actual storage/quota/CSRF/Owner/CAS commit engine remains the existing
 // Go UploadSession handlers. Never register a generic /nodes or /uploads
 // group under the IOSPhotoBackgroundGrant middleware.
-const iosBackgroundOriginalMaxBytes = int64(1_073_741_824 + 1_048_576)
+// iOS photo originals have no platform-specific size ceiling. The shared
+// UploadSession still enforces Server.MaxUploadBytes, storage quota, and
+// per-chunk body limits after the exact Owner/Device/Source authorization.
 
 func iosBackgroundOriginalNameValid(name string) bool {
 	if meta.ValidateName(name) != nil || !strings.Contains(name, "-xios-") {
@@ -67,7 +69,7 @@ func iosBackgroundUploadInitValid(req uploadInitRequest, grant meta.IOSPhotoBack
 		iosBackgroundOriginalNameValid(req.Name) &&
 		req.ConflictPolicy == meta.UploadConflictPolicyFail &&
 		req.ExpectedRevision == 0 && req.MD5 == "" &&
-		req.Size > 0 && req.Size <= iosBackgroundOriginalMaxBytes &&
+		req.Size > 0 &&
 		req.ChunkSize == defaultUploadChunkSize &&
 		req.SHA256 == strings.ToLower(req.SHA256) &&
 		validSHA256(req.SHA256) &&
@@ -138,7 +140,6 @@ func (s *Server) iosBackgroundOwnedUpload(c *gin.Context) bool {
 		(session.ConflictPolicy != meta.UploadConflictPolicyFail &&
 			session.ConflictPolicy != "") ||
 		session.TotalSize <= 0 ||
-		session.TotalSize > iosBackgroundOriginalMaxBytes ||
 		session.ChunkSize != defaultUploadChunkSize ||
 		session.SHA256 != strings.ToLower(session.SHA256) ||
 		!validSHA256(session.SHA256) {
@@ -187,7 +188,7 @@ func (s *Server) iosBackgroundResumeLookup(c *gin.Context) {
 	var req iosUploadResumeLookupRequest
 	if err := json.Unmarshal(body, &req); err != nil ||
 		req.ParentID != grant.RootNodeID ||
-		req.Size <= 0 || req.Size > iosBackgroundOriginalMaxBytes ||
+		req.Size <= 0 ||
 		req.ChunkSize != defaultUploadChunkSize ||
 		!validIOSUploadResumeLookupKey(req.ResumeKey) ||
 		!iosBackgroundOriginalNameValid(req.Name) ||

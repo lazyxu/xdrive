@@ -53,17 +53,17 @@ struct XDriveIOSManualPhotoOriginalUpload {
         try Task.checkCancellation()
 
         // Explicit user opt-in is the only way to permit downloading an
-        // evicted original from iCloud. Stage at most 128 MiB, with complete
+        // evicted original from iCloud. Stage without a media byte ceiling, with complete
         // iOS file protection and caller-owned deletion in all outcomes.
         let staged = try await XDrivePhotoKitOriginalExporter.stage(
             localIdentifier: localIdentifier,
             allowICloudDownload: allowICloudOriginal,
-            maximumBytesPerResource: 128 * 1_048_576
+            maximumBytesPerResource: .max
         )
         defer { staged.delete() }
         guard staged.kind == "image", staged.resources.count == 1,
               let still = staged.resources.first, still.role == "still",
-              still.byteCount > 0, still.byteCount <= 128 * 1_048_576 else {
+              still.byteCount > 0 else {
             throw XDriveIOSManualPhotoUploadFailure.stagingUnexpected
         }
         try Task.checkCancellation()

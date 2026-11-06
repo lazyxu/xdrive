@@ -181,7 +181,7 @@ final class XDriveNativeUploadSessionTransport {
               resumeKey.dropFirst(4).utf8.allSatisfy({
                   ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
               }),
-              expectedSize >= 0, expectedSHA256.utf8.count == 64,
+              expectedSize > 0, expectedSHA256.utf8.count == 64,
               expectedSHA256.utf8.allSatisfy({
                   ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
               }) else {
@@ -191,8 +191,7 @@ final class XDriveNativeUploadSessionTransport {
             guard authority.matches(authority.owner),
                   parentID == authority.destination.targetNodeID,
                   XDriveIOSBackgroundOriginalNamePolicy.valid(name),
-                  expectedSize > 0,
-                  expectedSize <= 1_073_741_824 + 1_048_576 else {
+                  expectedSize > 0 else {
                 throw XDriveNativeUploadError.unauthorizedOrRejected(403)
             }
         }
@@ -200,18 +199,12 @@ final class XDriveNativeUploadSessionTransport {
             guard credential.hasManagedDestination,
                   parentID == credential.targetNodeID,
                   XDriveIOSBackgroundOriginalNamePolicy.valid(name),
-                  expectedSize > 0,
-                  expectedSize <= 1_073_741_824 + 1_048_576 else {
+                  expectedSize > 0 else {
                 throw XDriveNativeUploadError.unauthorizedOrRejected(403)
             }
-        } else {
-            // The single foreground Original writer is still size bounded;
-            // a larger file never creates a server UploadSession.
-            guard expectedSize > 0,
-                  expectedSize <= XDriveIOSOriginalBackupMediaPolicy.videoLimit else {
-                throw XDriveNativeUploadError.invalidLocalFile
-            }
         }
+        // No iOS media cap; preserve exact byte count/hash and scoped rights.
+        // Generic Server MaxUploadBytes and quota are enforced on create.
         return try await uploadInternally(from: stagedFileURL, name: name, parentID: parentID,
                                           resumeKey: resumeKey, expectedSize: expectedSize,
                                           expectedSHA256: expectedSHA256, hooks: hooks,

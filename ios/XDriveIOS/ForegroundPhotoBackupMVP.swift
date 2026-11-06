@@ -156,7 +156,9 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         report.videosNotSupported += 1
                         report.stage = "变更队列中存在不支持的媒体类型"
                         _ = try await changeQueue.settle(
-                            candidate.pending, result: .failed, owner: owner
+                            candidate.pending, result: .failed,
+                            reasonCode: XDriveIOSPhotoBackupIssueReason.unsupported.rawValue,
+                            owner: owner
                         )
                         await publish(report)
                         continue
@@ -220,7 +222,10 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         let result: XDriveIOSPhotoBackupChangeQueueStore.Settled =
                             waitingForICloud ? .waitingICloud : .failed
                         _ = try await changeQueue.settle(
-                            candidate.pending, result: result, owner: owner
+                            candidate.pending, result: result,
+                            reasonCode: waitingForICloud
+                                ? nil : Self.issueReason(after: error).rawValue,
+                            owner: owner
                         )
                     }
                     await publish(report)
@@ -569,25 +574,13 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         let binding = try await XDriveIOSForegroundBackupIdentity.shared
             .localScopeAndTag(owner: owner, localIdentifier: localIdentifier)
         try Task.checkCancellation()
-        // The approved BGProcessing writer keeps the legacy 1 GiB video
-        // bound; only an active, JWT-authorized foreground run can export
-        // and stage a video up to 4 GiB. Live remains a separate ZIP bound.
-        let videoMaxBytes: Int64
-        if case .background = authorization {
-            videoMaxBytes = XDriveIOSOriginalBackupMediaPolicy.backgroundVideoLimit
-        } else {
-            videoMaxBytes = XDriveIOSOriginalBackupMediaPolicy.videoLimit
-        }
+        // No iOS-specific media size ceiling. The exporter streams to
+        // protected staging and the existing UploadSession sends 8 MiB chunks.
         _ = try await XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: owner)
         let staged = try await XDrivePhotoKitOriginalExporter.stage(
             localIdentifier: localIdentifier,
             allowICloudDownload: allowICloud,
-            // Larger uncompressed originals are handled as bounded 8-MiB
-            // UploadSession chunks. Disk staging is still one resource at a time.
-            maximumBytesPerResource: isLive
-                ? XDriveIOSLiveOriginalArchive.maximumPartBytes
-                : isVideo ? videoMaxBytes
-                  : XDriveIOSOriginalBackupMediaPolicy.stillLimit
+            maximumBytesPerResource: .max
         )
         defer { staged.delete() }
         try Task.checkCancellation()
