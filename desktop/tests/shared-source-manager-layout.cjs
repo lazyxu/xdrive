@@ -122,7 +122,7 @@ test('SourceManager delegates the create dialog to an internal presentation modu
     'XDriveSynologyPhotoSpacesField',
     'XDriveSynologyFileRootsField',
     'XDriveYikeCookieHelp',
-    '存储子目录',
+    '目标文件夹名称',
     '目标文件夹',
     'Synology DSM 连接',
   ]) {
