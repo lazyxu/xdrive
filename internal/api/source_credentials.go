@@ -577,7 +577,7 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
 	}
-	if source.Status == meta.SourceStatusArchived {
+	if source.Status == meta.SourceStatusArchived && !meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
 		fail(c, http.StatusConflict, "source is archived; restore it before changing credentials")
 		return
 	}
@@ -590,16 +590,21 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 			Take(&live).Error; err != nil {
 			return err
 		}
-		if live.Status == meta.SourceStatusArchived {
+		if live.Status == meta.SourceStatusArchived && !meta.SynologyPullTemporarilyDisabled(live.Kind, live.Direction) {
 			return errSourceArchived
 		}
 		if err := sourcecredential.Delete(c.Request.Context(), tx, source.ID); err != nil {
 			return err
 		}
 		now := time.Now().UTC()
+		nextStatus := meta.SourceStatusPaused
+		if live.Status == meta.SourceStatusArchived {
+			// Revocation must never restore a retired Source.
+			nextStatus = meta.SourceStatusArchived
+		}
 		return tx.Model(&meta.Source{}).Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
 			Updates(map[string]any{
-				"status":           meta.SourceStatusPaused,
+				"status":           nextStatus,
 				"revision":         gorm.Expr("revision + 1"),
 				"run_requested_at": nil,
 				"updated_at":       now,
