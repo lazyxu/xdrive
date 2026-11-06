@@ -24,8 +24,7 @@ All newly provisioned Source targets live below one root:
 我的文件/
 └── 同步文件夹/
     ├── Push/
-    │   └── <DeviceName>_<DeviceIdPrefix>/
-    │       └── <SourceName>/
+    │   └── <UserEditableName>/
     └── Pull/
         ├── Yike Photos/<SourceName>/
         ├── Synology Photos/<SourceName>/
@@ -35,10 +34,10 @@ All newly provisioned Source targets live below one root:
 Rules:
 
 1. 同步文件夹/Push and 同步文件夹/Pull are the only roots for new Push/Pull destinations.
-2. Device name is cosmetic. Stable Server-issued Device UUID is the identity and authorization key.
-3. Connector directory names are stable product identifiers, not user-editable labels.
-4. The Source leaf is the validated Source name. Source rename and managed leaf rename are one revision-checked Server transaction (5B atomic rename).
-5. Server creates the path and leaf in the Source provisioning transaction. Clients do not submit arbitrary target_node_id, cloud parent ID or absolute cloud path.
+2. Device name is a suggested editable Push leaf, not an authorization key. Stable Server-issued Device UUID and Source.DeviceID carry the real identity; there is no device-group directory.
+3. Pull connector directory names are fixed product identifiers. Synology Pull suggests its remote NAS name; Yike Pull suggests the remote account nickname. Only the final leaf can be edited.
+4. The Source leaf is the validated Source name. All Push kinds of one Owner share a unique, case-insensitive name namespace; all Pull connectors share a second namespace. Archived Sources still reserve their names. Source and Node renames are one revision-checked Server transaction.
+5. Server creates the final path and leaf in the Source provisioning transaction, including a new Yike Source before credentials are attached. Clients cannot submit a target_node_id, cloud parent ID or absolute cloud path.
 6. Source.TargetNodeID is the stable target identity; paths are display-only and never authorization.
 7. TargetManaged is set only after successful Server provisioning. Existing managed-subtree write guards remain mandatory.
 8. Occupied leaves, unverified ancestors, duplicate bindings and overlapping Source subtrees fail closed. Never adopt an ordinary same-name folder.
@@ -87,7 +86,7 @@ iOS/Android identity-only credentials must never become Desktop Agent credential
 2. Platform enrolls or verifies its registered Device.
 3. Client submits Source kind, direction=push, validated Source name and Device proof. It does not choose a cloud destination.
 4. Server validates Owner, Device platform/token/revocation, supported kind and uniqueness.
-5. In one SQL transaction, Server creates a paused Source, Push device group/leaf, TargetNodeID, TargetManaged and Source-to-Device binding.
+5. In one SQL transaction, Server creates a paused Source, flat Push leaf, TargetNodeID, TargetManaged and Source-to-Device binding.
 6. Platform obtains local capability: verified filesystem Root for Desktop/xd/DSM, PhotoKit permission for iOS, MediaStore permission for Android.
 7. Platform binds/proves that capability to the exact Source. Missing or stale permission never falls back to Owner root.
 8. Each upload admission and finalize rechecks Owner, Device, Source, TargetNodeID, provenance, platform-specific permission proof, revision and receipt constraints.
@@ -170,3 +169,13 @@ iOS Photos 使用统一的 `Source(kind=ios_photos, direction=push, sync_mode=ba
 - 只上传聚合计数：扫描、确认新增、云端原件已核验、待处理/不可用。PhotoKit localIdentifier、文件名、位置、原始媒体字节和逐项私有账本不进入 SourceItem 或 SyncRun。
 - Source Manager 展示统一目标目录、最近运行状态和分页运行历史；不提供 Server 端 Run Now、通用来源设置、虚构的相册集合或逐文件错误快照。继续备份、权限和自动计划仍在绑定的 iPhone 上管理。
 
+
+## S10–S18 accepted destination policy (2026-11-06)
+
+- Push: `同步文件夹/Push/<name>`, without a DeviceID/device-name group. Pull: `同步文件夹/Pull/<connector>/<name>`, with only the leaf editable.
+- The one Server-managed provisioner creates Source and Node together, refuses occupied ordinary leaves and overlapping Source subtrees, and returns an immutable TargetNodeID.
+- PostgreSQL enforces Owner + Direction + case-insensitive Source name uniqueness across connector kinds, including archived Sources. Push and Pull may use the same leaf name.
+- Registered Push device names, remote Synology NAS names and Yike account nicknames are defaults, not authorization proofs. User edits override suggestions.
+- New Yike Pull creates its target at Source creation. Remote account identity is privately stored apart from its display name; refreshing credentials preserves the same target Node.
+- Running/queued SourceRuns, active UploadSessions and unsettled local Push operations block rename. Otherwise Source/Node names and revisions commit atomically; child IDs and CAS receipts remain unchanged.
+- Old Sources, old directories, and old receipts are not migrated or silently adopted.
