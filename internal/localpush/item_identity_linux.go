@@ -3,6 +3,7 @@
 package localpush
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -23,24 +24,31 @@ func platformNativeItemIdentity(path string, info os.FileInfo) (nativeItemObject
 	var stx unix.Statx_t
 	err := unix.Statx(unix.AT_FDCWD, path, unix.AT_SYMLINK_NOFOLLOW,
 		unix.STATX_TYPE|unix.STATX_INO|unix.STATX_BTIME, &stx)
-	if err != nil {
-		// Older kernels/filesystems do not reliably expose birth time.
-		// This remains a weak, non-rename-safe key.
+	if err != nil && !errors.Is(err, unix.ENOSYS) {
+		// Unexpected statx failures are not evidence for a safe fallback.
 		return identity, nil
 	}
-	if stx.Mask&unix.STATX_INO != 0 && stx.Ino != uint64(stat.Ino) {
+	if err == nil && stx.Mask&unix.STATX_INO != 0 && stx.Ino != uint64(stat.Ino) {
 		return nativeItemObject{}, ErrRootChanged
 	}
-	if stx.Mask&unix.STATX_TYPE != 0 {
+	if err == nil && stx.Mask&unix.STATX_TYPE != 0 {
 		kind := stx.Mode & unix.S_IFMT
 		if (info.IsDir() && kind != unix.S_IFDIR) ||
 			(info.Mode().IsRegular() && kind != unix.S_IFREG) {
 			return nativeItemObject{}, ErrRootChanged
 		}
 	}
-	if stx.Mask&unix.STATX_BTIME != 0 {
+	if err == nil && stx.Mask&unix.STATX_BTIME != 0 {
 		identity.Token = fmt.Sprintf("%s:birth:%d:%d", base, stx.Btime.Sec, stx.Btime.Nsec)
 		identity.Strong = true
+		return identity, nil
+	}
+	legacy, strong, legacyErr := linuxLegacyObjectIdentity(path, info, linuxExt4Generation)
+	if legacyErr != nil {
+		return nativeItemObject{}, legacyErr
+	}
+	if strong {
+		return legacy, nil
 	}
 	return identity, nil
 }
@@ -58,14 +66,21 @@ func platformPinnedNativeItemIdentity(pinned *os.File, info os.FileInfo) (native
 		return nativeItemObject{}, ErrRootChanged
 	}
 	var pinnedStat unix.Statx_t
-	if err := unix.Statx(int(pinned.Fd()), "", unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW,
-		unix.STATX_TYPE|unix.STATX_INO|unix.STATX_BTIME, &pinnedStat); err != nil {
+	err := unix.Statx(int(pinned.Fd()), "", unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW,
+		unix.STATX_TYPE|unix.STATX_INO|unix.STATX_BTIME, &pinnedStat)
+	if errors.Is(err, unix.ENOSYS) {
+		return linuxLegacyPinnedIdentity(pinned, info, linuxExt4Generation)
+	}
+	if err != nil {
 		return nativeItemObject{}, ErrRootChanged
 	}
 	if pinnedStat.Mask&unix.STATX_INO == 0 || pinnedStat.Mask&unix.STATX_TYPE == 0 ||
-		pinnedStat.Mask&unix.STATX_BTIME == 0 || pinnedStat.Ino != uint64(st.Ino) ||
+		pinnedStat.Ino != uint64(st.Ino) ||
 		pinnedStat.Mode&unix.S_IFMT != unix.S_IFDIR {
 		return nativeItemObject{}, ErrRootChanged
+	}
+	if pinnedStat.Mask&unix.STATX_BTIME == 0 {
+		return linuxLegacyPinnedIdentity(pinned, info, linuxExt4Generation)
 	}
 	return nativeItemObject{
 		Token: fmt.Sprintf("linux:%d:%d:birth:%d:%d",

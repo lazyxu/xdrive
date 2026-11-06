@@ -164,6 +164,7 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
     let coverImages: [String: UIImage]
     let markersEnabled: Bool
     let revision: UUID
+    let mapType: MKMapType
     let initialCamera: MKCoordinateRegion
     let onCameraWillChange: () -> Void
     let onCamera: (MKCoordinateRegion) -> Void
@@ -182,6 +183,7 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
         // Do not treat the initial, programmatic world-region setup as a
         // user pan. Install the delegate only after setRegion completes.
         map.showsUserLocation = false
+        map.mapType = mapType
         map.register(XDriveIOSOwnerMapPhotoCover.self,
                      forAnnotationViewWithReuseIdentifier: "xdrive-owner-pin")
         map.register(XDriveIOSOwnerMapPhotoCover.self,
@@ -192,6 +194,14 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
+        // Base-layer changes keep the verified Owner bounds and current camera.
+        if map.mapType != mapType {
+            // MapKit may emit camera callbacks while replacing its base layer.
+            // This is not a user pan: preserve the existing verified GPS cells.
+            map.delegate = nil
+            map.mapType = mapType
+            map.delegate = context.coordinator
+        }
         context.coordinator.onCameraWillChange = onCameraWillChange
         context.coordinator.onCamera = onCamera
         context.coordinator.onPlace = onPlace
@@ -369,6 +379,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @State private var singleOwner: XDriveNativeOwnerRoot?
     @State private var singleTask: Task<Void, Never>?
     @State private var focused = false
+    @State private var mapType: MKMapType = .standard
     @State private var showingMapHelp = false
     @State private var camera = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
@@ -400,7 +411,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             XDriveIOSOwnerMapSurface(
                 overview: overview, coverImages: coverImages,
                 markersEnabled: mapMarkersEnabled,
-                revision: revision, initialCamera: cameraReturn ?? camera,
+                revision: revision, mapType: mapType,
+                initialCamera: cameraReturn ?? camera,
                 onCameraWillChange: { revokeCameraAuthorization() },
                 onCamera: { next in
                     camera = next
@@ -509,6 +521,17 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     Label("地图操作", systemImage: "ellipsis.circle")
                 }
                 .accessibilityIdentifier("native-ios-owner-map-actions")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Picker("底图样式", selection: $mapType) {
+                        Text("标准地图").tag(MKMapType.standard)
+                        Text("卫星地图").tag(MKMapType.satellite)
+                    }
+                } label: {
+                    Label("底图样式", systemImage: "square.3.layers.3d")
+                }
+                .accessibilityIdentifier("native-ios-owner-map-basemap")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(focused ? "显示底部导航" : "专注地图") {

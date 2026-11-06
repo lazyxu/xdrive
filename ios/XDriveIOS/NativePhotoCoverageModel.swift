@@ -63,11 +63,29 @@ final class XDriveIOSNativePhotoCoverageModel: ObservableObject {
                 let existingScope = try await XDriveIOSForegroundBackupIdentity.shared
                     .existingLocalScope(owner: expectedOwner)
                 let counts: XDriveIOSNativePhotoReceiptTally?
+                let managedTargetNodeID: UInt64?
                 if let existingScope {
+                    // Do not read all old Owner-root receipts as if they
+                    // belonged to today's Server-managed iPhone Source.
+                    // This lookup is read-only and requires current
+                    // authenticated Owner + independently registered Device.
+                    let managed = try await XDriveIOSNativePhotoBackupDestinationModel
+                        .readExistingForUpload(
+                            owner: expectedOwner,
+                            accessToken: verified.accessToken
+                        )
+                    guard managed.destination.targetNodeID > 0 else {
+                        throw XDriveIOSNativeSessionError.staleSession
+                    }
+                    managedTargetNodeID = managed.destination.targetNodeID
                     counts = try await XDrivePhotoSyncLedger.shared
-                        .historicalReceiptTally(scope: existingScope)
+                        .historicalReceiptTally(
+                            scope: existingScope,
+                            verifiedParentID: managed.destination.targetNodeID
+                        )
                 } else {
                     counts = nil
+                    managedTargetNodeID = nil
                 }
                 try Task.checkCancellation()
                 guard self.epoch == request,
@@ -81,13 +99,14 @@ final class XDriveIOSNativePhotoCoverageModel: ObservableObject {
                 self.snapshot = XDriveIOSNativePhotoCoverageSnapshot(
                     localImages: photos, localVideos: videos,
                     limitedAuthorization: authorization == .limited,
-                    historicLedger: counts, checkedAt: Date()
+                    historicLedger: counts, checkedAt: Date(),
+                    managedTargetNodeID: managedTargetNodeID
                 )
             } catch is CancellationError {
             } catch {
                 guard self.epoch == request else { return }
                 self.errorMessage =
-                    "无法核验当前 Owner 或读取既有账本；历史收据数未知，不能认定整库完成。"
+                    "无法核验当前 Owner、受管备份目标或读取既有账本；当前目标的历史收据数未知，不可把旧目录计入当前备份。"
             }
         }
     }

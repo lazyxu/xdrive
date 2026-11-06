@@ -239,6 +239,14 @@ func (s *Server) Router() *gin.Engine {
 	// Authenticated browser password rotation gets a new HttpOnly cookie,
 	// without exposing the new durable refresh token in JSON.
 	authed.POST("/me/change-password/browser", s.changePassword)
+	// Owner-only short-lived E2EE Web mailbox. No SourceRun, public share or
+	// native Photo grant can use these authenticated routes.
+	authed.GET("/clipboard/vault", s.clipboardVault)
+	authed.PUT("/clipboard/vault/check", s.putClipboardVaultCheck)
+	authed.GET("/clipboard/items", s.listClipboardItems)
+	authed.POST("/clipboard/items", s.createClipboardItem)
+	authed.DELETE("/clipboard/items/:id", s.deleteClipboardItem)
+	authed.DELETE("/clipboard/items", s.clearClipboardItems)
 	authed.GET("/search", s.searchNodes)
 	authed.GET("/changes", s.listNodeChanges)
 	authed.POST("/notes/namespace", s.initializeNotesNamespace)
@@ -561,6 +569,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/trigger", s.requireLocalSourceExecutor(), s.triggerSource)
 	authed.GET("/sources/:id/local-binding", s.getLocalSourceBinding)
 	authed.POST("/sources/:id/local-binding", s.bindLocalSource)
+	// DSM identity-only Device binds its aggregate Personal/Shared Root-set fingerprint.
+	authed.PUT("/sources/:id/synology-root", s.bindSynologySourceRoot)
 	authed.DELETE("/sources/:id/local-binding", s.requireLocalSourceExecutor(), s.unbindLocalSource)
 	authed.GET("/sources/:id/credential", s.getSourceCredentialStatus)
 	authed.PUT("/sources/:id/credential", s.putSourceCredential)

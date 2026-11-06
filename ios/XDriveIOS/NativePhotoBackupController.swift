@@ -82,7 +82,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         guard libraryObserver == nil else { return }
         let observer = XDriveIOSForegroundPhotoLibraryObserver { [weak self, weak login] in
             guard let self, let login, let owner = login.owner,
-                  [.authorized, .limited].contains(
+                  [.authorized].contains(
                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
                   ) else { return }
             guard (try? XDriveIOSPhotoAutoScheduleStore.shared
@@ -167,7 +167,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         let uiEpoch = displayEpoch
         let store = XDriveIOSPhotoAutoScheduleStore.shared
         let stopVersion = store.localStopGeneration
-        guard [.authorized, .limited].contains(
+        guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "请先在本机相册页面授权访问照片。"
@@ -238,7 +238,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   store.localStopGeneration == stopVersion,
                   displayEpoch == uiEpoch,
                   UIApplication.shared.applicationState == .active,
-                  [.authorized, .limited].contains(
+                  [.authorized].contains(
                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
                   ) else {
                 throw XDriveIOSNativeSessionError.staleSession
@@ -293,7 +293,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         // PhotoKit access may be revoked while the native consent sheet is
         // open. The shared writer's guard must not fail silently or leave an
         // earlier successful upload report looking like this attempt.
-        guard [.authorized, .limited].contains(
+        guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             if !busy { progress = nil }
@@ -316,7 +316,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             errorMessage = "服务器、账户或所选照片已变化；未启动优先备份。"
             return
         }
-        guard [.authorized, .limited].contains(
+        guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "照片访问权限已变化，无法优先备份所选原件。"
@@ -337,7 +337,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             errorMessage = "集中备份确认后服务器或账户已改变，未上传原件。"
             return
         }
-        guard [.authorized, .limited].contains(
+        guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "照片读取权限已变化，无法开始集中备份。"
@@ -359,7 +359,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                        singleLocalIdentifier: String? = nil) {
         guard !busy, running == nil, let selected = login.owner,
               UIApplication.shared.applicationState == .active,
-              [.authorized, .limited].contains(
+              [.authorized].contains(
                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
               ) else { return }
         // Acquire BEFORE reserveDue, shared with legacy Web manual/auto and
@@ -436,12 +436,12 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     trigger: kind == .automatic ? "scheduled" : "manual"
                 )
                 sourceRunReporter = reporter
-                await reporter.begin()
 
                 if kind == .single {
                     guard let localIdentifier = singleLocalIdentifier else {
                         throw XDriveIOSPhotoBackupMVPError.identityNotVerified
                     }
+                    await reporter.begin()
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, managedForeground: managed,
                         onSourceProgress: { value in
@@ -481,6 +481,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     }
                     await reporter.finish(status: "completed")
                 } else if kind == .focused {
+                    await reporter.begin()
                     try await self.runFocused(
                         login: login, owner: selected, uiEpoch: uiEpoch,
                         allowICloud: allowICloud,
@@ -662,6 +663,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     self.message = kind == .automatic
                         ? "自动增量备份正在检查第 \(window + 1) 段…"
                         : "手动备份正在检查第 \(window + 1) 段…"
+                    await reporter.begin()
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, managedForeground: managed,
                         onSourceProgress: { value in

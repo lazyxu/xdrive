@@ -408,7 +408,7 @@ test('first full-library GPS scan displays inert native MapKit while PhotoKit pr
   assert.ok(mapIndex >= 0 && progressIndex > mapIndex,
     'MapKit must stay on-screen during initial scan, with progress beside it')
   assert.match(library, /if globalComplete && globalCells\.isEmpty \{[\s\S]*?\}\s*\/\/ Keep MapKit mounted/)
-  assert.match(library, /items: \[\], globalCells: globalCells,\s*revision: mapRevision, cameraReturn: globalCamera/)
+  assert.match(library, /items: \[\], globalCells: globalComplete \? globalCells : provisionalCells,\s*revision: mapRevision, mapType: mapType, cameraReturn: globalCamera,\s*provisional: !globalComplete && !provisionalCells\.isEmpty/)
   assert.match(localMap, /private var refinedViewportIsCurrent: Bool \{\s*\/\/ Scanned-incomplete cells[\s\S]*?guard globalComplete, !busy else \{ return false \}/)
   assert.match(library, /canSelectCells: refinedViewportIsCurrent/)
   assert.match(library, /guard phase == \.active, !busy, globalComplete,\s*refinedViewportIsCurrent/)
@@ -473,7 +473,10 @@ test('native Photos album exposes Show Map only with Full Photo Library access',
 
 test('album map scans the current PhotoKit collection snapshot, not the whole library or Server', () => {
   assert.match(scanner, /func start\(atOffset requestedOffset: Int = 0,[\s\S]*?album: XDriveLocalPhotoAlbumSummary\? = nil\)/)
-  assert.match(scanner, /status == \.authorized \|\| \(album == nil && status == \.limited\)/)
+  assert.match(scanner, /status == \.authorized \|\| \(!requireStableResume && album == nil && status == \.limited\)/)
+  // Backup passes requireStableResume=true; read-only Gallery keeps Limited scope.
+  assert.match(scanner, /if requireStableResume \{/)
+  assert.match(read("ios/XDriveIOS/ForegroundPhotoBackupMVP.swift"), /requireStableResume: true/)
   assert.match(scanner, /PHAssetCollection\.fetchAssetCollections\(\s*withLocalIdentifiers: \[album\.collectionIdentifier\]/)
   assert.match(scanner, /currentName == album\.name, currentKind == album\.kind/)
   assert.match(scanner, /PHAsset\.fetchAssets\(in: collection, options: options\)/)

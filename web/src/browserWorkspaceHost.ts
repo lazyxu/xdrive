@@ -24,6 +24,7 @@ export function createXDriveBrowserWorkspaceHost(ports: {
   localStorage: XDriveLocalStorageDataSource
   shareCenter?: NonNullable<XDriveWorkspaceHostServices['shareCenterPage']>
   notes?: NonNullable<XDriveWorkspaceHostServices['notesPage']>
+  clipboard?: NonNullable<XDriveWorkspaceHostServices['clipboardPage']>
   deviceBackup?: DeviceBackupPagePorts
   remotePull?: RemotePullPagePorts
   /** Accepted only from the current authenticated Server /me profile. */
@@ -48,6 +49,7 @@ export function createXDriveBrowserWorkspaceHost(ports: {
       localStorage: ports.localStorage,
       ...(ports.shareCenter ? { shareCenterPage: ports.shareCenter } : {}),
       ...(ports.notes ? { notesPage: ports.notes } : {}),
+      ...(ports.clipboard ? { clipboardPage: ports.clipboard } : {}),
       ...(ports.deviceBackup ? {
         // Owner device history and folder runs are Server read ports. No
         // local agent, device-root control, or native backup writer is exposed.
@@ -57,9 +59,9 @@ export function createXDriveBrowserWorkspaceHost(ports: {
         },
       } : {}),
       ...(ports.remotePull ? {
-        // Pull operations are existing Owner-authorized Server API calls,
-        // never a new NAS/Agent RPC. Do not permit a Push-only UI here.
-        remotePullPage: { ...ports.remotePull, directionFilter: 'pull' as const },
+        // Push and Pull share the same Owner-authorized Source Manager. Device-
+        // executed Push remains device-only; the Browser cannot trigger PhotoKit.
+        remotePullPage: { ...ports.remotePull },
       } : {}),
       ...(ports.taskCenter ? {
         // The existing Web TaskCenter controller owns transfers, background

@@ -131,14 +131,17 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
     }
 
     func configure(_ representative: XDrivePhotoKitScanCandidate, count: Int,
-                   wholeLibrary: Bool = false) {
+                   wholeLibrary: Bool = false, provisional: Bool = false) {
         cancel()
-        badge.isHidden = count <= 1
-        badge.text = count > 999 ? "999+" : String(count)
-        isAccessibilityElement = true
-        accessibilityTraits = .button
-        accessibilityLabel = wholeLibrary ?
-            "已扫描图库区域有\(count)张带定位照片" :
+        // An incomplete 64-cell preview has neither a final member count
+        // nor permission to open a PhotoKit location album.
+        badge.isHidden = provisional || count <= 1
+        badge.text = provisional ? nil : (count > 999 ? "999+" : String(count))
+        isAccessibilityElement = !provisional
+        accessibilityTraits = provisional ? [] : .button
+        accessibilityLabel = provisional ?
+            "正在核对位置照片，封面暂不可打开" :
+            wholeLibrary ? "已扫描图库区域有\(count)张带定位照片" :
             XDriveIOSNativePhotoMapPolicy.markerLabel(count)
         guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -198,9 +201,11 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     let items: [XDrivePhotoKitLocatedCandidate]
     var globalCells: [Cell]? = nil
     let revision: UUID
+    let mapType: MKMapType
     // Only a short-lived camera snapshot from the currently selected pin;
     // no GPS or PhotoKit identity is persisted between views or Owners.
     let cameraReturn: MKCoordinateRegion?
+    var provisional = false
     var canSelectCells = true
     // Only previously viewport-filtered cells need instant gesture revocation.
     // All-library overview and normal photo page remain directly selectable.
@@ -219,18 +224,28 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         let map = MKMapView()
         map.delegate = context.coordinator
         map.showsUserLocation = false
+        map.mapType = mapType
         map.register(XDriveIOSMapPhotoCover.self, forAnnotationViewWithReuseIdentifier: "photo")
         map.register(XDriveIOSMapPhotoCover.self, forAnnotationViewWithReuseIdentifier: "cluster")
         return map
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
+        // Change the base layer on the same MKMapView; never invalidate PhotoKit cells.
+        if map.mapType != mapType {
+            // MapKit may emit camera callbacks while replacing its base layer.
+            // This is not a user pan: preserve the existing verified GPS cells.
+            map.delegate = nil
+            map.mapType = mapType
+            map.delegate = context.coordinator
+        }
         context.coordinator.onOpen = onOpen
         context.coordinator.onCells = onCells
         context.coordinator.onCamera = onCamera
         context.coordinator.onCameraWillChange = onCameraWillChange
         context.coordinator.canSelectCells = canSelectCells
         context.coordinator.cameraBoundCells = cameraBoundCells
+        context.coordinator.showingProvisional = provisional
         // Camera movement does not change the photo grid revision. Revoke
         // old MapKit marker taps and accessibility activation immediately.
         for annotation in map.annotations {
@@ -280,8 +295,23 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
                 map.setRegion(cameraReturn, animated: false)
             }
         } else if !pins.isEmpty {
-            map.showAnnotations(pins, animated: false)
+            if provisional {
+                // Fit the first useful GPS representative without treating
+                // this programmatic move as a user gesture. Subsequent scan
+                // updates never repeatedly recenter the native map.
+                if !context.coordinator.provisionalPresented {
+                    map.delegate = nil
+                    map.showAnnotations(pins, animated: false)
+                    map.delegate = context.coordinator
+                }
+            } else if !context.coordinator.provisionalCameraMoved {
+                // Final verified counts may auto-fit only if the user did not
+                // move the camera while the partial preview was visible.
+                map.showAnnotations(pins, animated: false)
+            }
         }
+        context.coordinator.provisionalPresented = provisional && !pins.isEmpty
+        if !provisional { context.coordinator.provisionalCameraMoved = false }
     }
 
     static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) {
@@ -297,6 +327,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         var onCameraWillChange: (() -> Void)?
         var canSelectCells = true
         var cameraBoundCells = false
+        var showingProvisional = false
+        var provisionalPresented = false
+        var provisionalCameraMoved = false
 
         init(onOpen: @escaping ([XDrivePhotoKitScanCandidate], MKCoordinateRegion) -> Void,
              onCells: (([Cell], MKCoordinateRegion) -> Void)?,
@@ -309,6 +342,11 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            // Preview auto-fit runs without a delegate; only subsequent
+            // native camera changes preserve the user's chosen viewport.
+            if showingProvisional && provisionalPresented {
+                provisionalCameraMoved = true
+            }
             if cameraBoundCells {
                 // UIKit's delegate fires before SwiftUI re-renders. Make
                 // every stale GPS cell cover unclickable and unreachable by
@@ -349,7 +387,8 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
             view?.configure(
                 first.candidate,
                 count: items.reduce(0) { $0 + $1.displayCount },
-                wholeLibrary: first.cell != nil
+                wholeLibrary: first.cell != nil,
+                provisional: showingProvisional
             )
             view?.isEnabled = canSelectCells
             view?.isAccessibilityElement = canSelectCells
@@ -1040,11 +1079,17 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var busy = false
     @State private var gpsFindPagesScanned = 0
     @State private var focused = false
+    @State private var mapType: MKMapType = .standard
     @State private var error: String?
     @State private var selection: XDriveIOSMapPhotoSelection?
     @State private var singleViewer: XDrivePhotoKitScanCandidate?
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var globalCells: [
+        XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>
+    ] = []
+    // Earliest bounded GPS representatives are DISPLAY-ONLY until the full
+    // PhotoKit snapshot and exact counts have been verified.
+    @State private var provisionalCells: [
         XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>
     ] = []
     @State private var globalComplete = false
@@ -1137,12 +1182,13 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         "此相册没有可显示位置的照片或视频。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                // Keep MapKit mounted from first authorized entry through the
-                // complete 64-cell bounded GPS scan. No provisional photo
-                // covers are published or selectable during the scan.
+                // Keep MapKit mounted through the full 64-cell bounded scan.
+                // Early representative covers are inert and hide partial counts
+                // until the PhotoKit snapshot is fully verified.
                 XDriveIOSMapKitPhotoPage(
-                        items: [], globalCells: globalCells,
-                        revision: mapRevision, cameraReturn: globalCamera,
+                        items: [], globalCells: globalComplete ? globalCells : provisionalCells,
+                        revision: mapRevision, mapType: mapType, cameraReturn: globalCamera,
+                        provisional: !globalComplete && !provisionalCells.isEmpty,
                         canSelectCells: refinedViewportIsCurrent,
                         cameraBoundCells: globalViewport != nil,
                         onCells: { cells, _ in
@@ -1181,7 +1227,18 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                             }
                         },
                         onCamera: { current in
-                            guard mapScope == .library, globalComplete else { return }
+                            guard mapScope == .library, phase == .active else { return }
+                            if !globalComplete {
+                                // Preview auto-fit has no MapKit delegate.
+                                // A real pan while scanning must survive the
+                                // later final-cell promotion and avoid a snap.
+                                guard !provisionalCells.isEmpty,
+                                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                                else { return }
+                                globalCamera = current
+                                onLibraryCameraChange?(current)
+                                return
+                            }
                             globalCamera = current
                             onLibraryCameraChange?(current)
                             globalCameraMoving = false
@@ -1206,6 +1263,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     ProgressView(album == nil ? "正在读取照片位置…" : "正在读取相册位置…")
                         .accessibilityIdentifier(album == nil ? "native-ios-map-full-library-scan-progress" : "native-ios-map-album-scan-progress")
                 }
+                if !globalComplete && !provisionalCells.isEmpty && !compactMap {
+                    Text("位置封面正在核对，完整数量确认前暂不可打开。")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-map-provisional-covers")
+                }
                 // The authorized full-library scan starts on entry. Retain
                 // an explicit retry before any map exists, then give its
                 // verified photo covers the space occupied by these controls.
@@ -1221,7 +1283,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 Text("已检查 \(page.page.startOffset)–\(page.page.nextOffset) / \(page.page.totalAccessibleAssets)，当前页有 \(page.items.count) 张带位置照片")
                     .font(.footnote).monospacedDigit()
                 XDriveIOSMapKitPhotoPage(
-                    items: page.items, revision: mapRevision, cameraReturn: cameraReturn
+                    items: page.items, revision: mapRevision, mapType: mapType, cameraReturn: cameraReturn
                 ) { selected, region in
                     // UIKit can dispatch an old annotation selection after a
                     // new PhotoKit page has replaced the displayed markers.
@@ -1318,6 +1380,17 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     }
                     .accessibilityIdentifier("native-ios-local-map-actions")
                 }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Picker("底图样式", selection: $mapType) {
+                        Text("标准地图").tag(MKMapType.standard)
+                        Text("卫星地图").tag(MKMapType.satellite)
+                    }
+                } label: {
+                    Label("底图样式", systemImage: "square.3.layers.3d")
+                }
+                .accessibilityIdentifier("native-ios-local-map-basemap")
             }
             if album == nil && onFocusChange != nil {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -1612,6 +1685,18 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     }
                     scanned = next.page.nextOffset
                     pages += 1
+                    if !keepOldMap && provisionalCells.isEmpty && !index.cells.isEmpty {
+                        // Publish ONLY the first <=64 transient representatives.
+                        // Do not report incomplete counts or grant photo access.
+                        // The scanner has checked its PhotoKit snapshot lease
+                        // for this page; check runtime permission again here.
+                        guard generation == ticket, mapScope == .library,
+                              phase == .active else { return }
+                        guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                        else { throw XDrivePhotoKitScanFailure.snapshotChanged }
+                        provisionalCells = index.cells
+                        mapRevision = UUID()
+                    }
                     if pages % 16 == 0 || next.page.finished {
                         guard generation == ticket, phase == .active else { return }
                         globalScanned = scanned
@@ -1621,13 +1706,17 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     if next.page.finished { break }
                 }
                 try Task.checkCancellation()
-                guard generation == ticket, mapScope == .library, phase == .active,
-                      [.authorized].contains(
-                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                      ), scanned == total else { return }
+                guard generation == ticket, mapScope == .library, phase == .active
+                else { return }
+                // Revoke the preview through the common error cleanup if
+                // Full Access disappears before the final trusted promotion.
+                guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                      scanned == total
+                else { throw XDrivePhotoKitScanFailure.snapshotChanged }
                 await worker.reset()
                 scanner = nil
                 globalCells = index.cells
+                provisionalCells = []
                 globalScanned = scanned
                 globalLocated = index.locatedCount
                 globalViewport = viewport
@@ -1643,7 +1732,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         globalCameraMoving = false
                     } else {
                         globalCells = []
+                        provisionalCells = []
                         globalComplete = false
+                        mapRevision = UUID()
                     }
                     self.error = album == nil ?
                         "授权图库在扫描过程中发生变化，请重新扫描。" :
@@ -1741,6 +1832,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         nearbySelection = nil
         singleViewer = nil
         globalCells = []
+        provisionalCells = []
         globalComplete = false
         globalScanned = 0
         globalTotal = 0

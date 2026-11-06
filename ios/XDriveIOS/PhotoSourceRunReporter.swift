@@ -68,6 +68,7 @@ final class XDriveIOSPhotoSourceRunReporter {
     private let credential: XDriveIOSPhotoSourceRunReporterCredential
     private let trigger: String
     private let runID = UUID().uuidString.lowercased()
+    private var beginRequested = false
     private var started = false
     private var finished = false
     private var progressInFlight = false
@@ -90,6 +91,7 @@ final class XDriveIOSPhotoSourceRunReporter {
     }
 
     func begin() async {
+        beginRequested = true
         await ensureStarted(force: true)
     }
 
@@ -113,6 +115,7 @@ final class XDriveIOSPhotoSourceRunReporter {
     func enqueueUpdate(_ progress: XDriveIOSPhotoBackupProgress,
                        base: XDriveIOSPhotoSourceRunCounts = .init()) {
         guard !finished, let basePath = credential.sourceRunPath else { return }
+        beginRequested = true
         var current = base
         current.add(progress)
         counts = current
@@ -135,7 +138,8 @@ final class XDriveIOSPhotoSourceRunReporter {
     }
 
     func finish(status requestedStatus: String) async {
-        guard !finished, let basePath = credential.sourceRunPath else { return }
+        guard !finished, beginRequested,
+              let basePath = credential.sourceRunPath else { return }
         await progressTask?.value
         if !started { await ensureStarted(force: true) }
         guard started else { return }

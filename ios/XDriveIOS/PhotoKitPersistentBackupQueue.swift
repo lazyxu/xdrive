@@ -182,6 +182,38 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
     }
 
 
+    /// Recover only explicit PhotoKit network-access-required rows, at most
+    /// four per foreground pass. The caller must already have current
+    /// Owner/Device proof and a user-approved iCloud download policy.
+    /// Background calls never reach this path.
+    func retryWaitingICloudCandidates(owner: XDriveNativeOwnerRoot,
+                                      limit: Int = 4) throws -> Int {
+        guard (1...4).contains(limit) else { throw Failure.invalidReplayLimit }
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline() else {
+            throw Failure.requiresExplicitBaseline
+        }
+        guard baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(
+                baseline.token, as: epoch.token
+              ) else { throw Failure.unauthorizedOrChanged }
+        let waiting = try store.waitingICloud(limit: limit)
+        var requeued = 0
+        for candidate in waiting {
+            try Task.checkCancellation()
+            try verifyAuthorization(stillMatches: epoch)
+            if try store.retryWaitingICloud(
+                candidate, expectedBaselineToken: baseline.token,
+                authorization: epoch.authorization
+            ) {
+                requeued += 1
+            }
+        }
+        try verifyAuthorization(stillMatches: epoch)
+        return requeued
+    }
+
     /// Whether every persisted PhotoKit change event has been replayed. The
     /// automatic runner must defer its date-filtered scan while this is false:
     /// an older-dated imported photo may still be waiting behind the event cap.

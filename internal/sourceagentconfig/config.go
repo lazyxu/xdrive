@@ -35,6 +35,8 @@ type Config struct {
 	SynologyBaseURL         string `json:"synology_base_url,omitempty"`
 	SynologyUsername        string `json:"synology_username,omitempty"`
 	SynologyCredentialID    string `json:"synology_credential_id,omitempty"`
+	DeviceID                string `json:"device_id,omitempty"`
+	DeviceCredentialID      string `json:"device_credential_id,omitempty"`
 }
 
 func Dir() (string, error) {
@@ -155,6 +157,9 @@ func Remove() error {
 		if cfg.SynologyCredentialID != "" {
 			_ = secretstore.Delete(dir, cfg.SynologyCredentialID)
 		}
+		if cfg.DeviceCredentialID != "" {
+			_ = secretstore.Delete(dir, cfg.DeviceCredentialID)
+		}
 	}
 	path, err := Path()
 	if err != nil {
@@ -220,7 +225,80 @@ func NewClient(cfg Config) (*client.Client, error) {
 			RefreshExpiresAt: latest.RefreshExpiresAt,
 		}, nil
 	}
-	return client.NewManagedSession(cfg.Server, tokens, saveTokens, loadTokens), nil
+	api := client.NewManagedSession(cfg.Server, tokens, saveTokens, loadTokens)
+	if cfg.DeviceID != "" || cfg.DeviceCredentialID != "" {
+		if cfg.DeviceID == "" || cfg.DeviceCredentialID == "" {
+			return nil, fmt.Errorf("incomplete Synology device identity; run setup again")
+		}
+		deviceToken, err := LoadDeviceCredential(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("load Synology device credential: %w; run setup again", err)
+		}
+		api.SetDeviceIdentity(cfg.DeviceID, deviceToken)
+	}
+	return api, nil
+}
+
+// SaveDeviceCredential stores the device token in the OS-backed secret
+// store. Only the stable device ID and opaque credential reference are kept
+// in config.json.
+func SaveDeviceCredential(cfg *Config, deviceID, token string) error {
+	if cfg == nil {
+		return fmt.Errorf("source-agent config is required")
+	}
+	deviceID = strings.TrimSpace(deviceID)
+	token = strings.TrimSpace(token)
+	if _, err := uuid.Parse(deviceID); err != nil || token == "" {
+		return fmt.Errorf("invalid Synology device identity")
+	}
+	if cfg.DeviceCredentialID == "" {
+		cfg.DeviceCredentialID = uuid.NewString()
+	}
+	dir, err := Dir()
+	if err != nil {
+		return err
+	}
+	if err := secretstore.Save(dir, cfg.DeviceCredentialID, deviceCredentialLabel(*cfg), secretstore.Credentials{
+		OpaquePayload: token,
+	}); err != nil {
+		return err
+	}
+	cfg.DeviceID = deviceID
+	return nil
+}
+
+func LoadDeviceCredential(cfg Config) (string, error) {
+	if strings.TrimSpace(cfg.DeviceID) == "" || strings.TrimSpace(cfg.DeviceCredentialID) == "" {
+		return "", secretstore.ErrNotFound
+	}
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	stored, err := secretstore.Load(dir, cfg.DeviceCredentialID)
+	if err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(stored.OpaquePayload)
+	if token == "" {
+		return "", fmt.Errorf("Synology device credential is empty")
+	}
+	return token, nil
+}
+
+func DeviceCredentialBackend(cfg Config) string {
+	dir, err := Dir()
+	if err != nil || cfg.DeviceCredentialID == "" {
+		return "unavailable"
+	}
+	return secretstore.Backend(dir, cfg.DeviceCredentialID)
+}
+
+func deviceCredentialLabel(cfg Config) string {
+	if cfg.Username == "" {
+		return "xDrive Synology Source Agent Device @ " + cfg.Server
+	}
+	return "xDrive Synology Source Agent Device " + cfg.Username + " @ " + cfg.Server
 }
 
 func SaveSynologyCredential(cfg *Config, credential synology.Credential) error {
@@ -315,6 +393,8 @@ func normalize(cfg *Config) error {
 	cfg.SynologyBaseURL = strings.TrimRight(strings.TrimSpace(cfg.SynologyBaseURL), "/")
 	cfg.SynologyUsername = strings.TrimSpace(cfg.SynologyUsername)
 	cfg.SynologyCredentialID = strings.TrimSpace(cfg.SynologyCredentialID)
+	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	cfg.DeviceCredentialID = strings.TrimSpace(cfg.DeviceCredentialID)
 	var err error
 	if cfg.PersonalRoot != "" {
 		cfg.PersonalRoot, err = normalizeRoot(cfg.PersonalRoot)

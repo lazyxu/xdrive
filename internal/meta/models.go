@@ -313,30 +313,36 @@ func NormalizeUploadConflictPolicy(value string) (string, bool) {
 }
 
 type UploadSession struct {
-	SourceRunID        string  `gorm:"size:36;index"` // internal Pull executor only; must match on finalize
-	ShareID            *uint64 `gorm:"index"`         // non-nil only for scoped anonymous Share uploads
-	ID                 string  `gorm:"size:36;primaryKey"`
-	OwnerID            uint64  `gorm:"not null;index"`
-	ParentID           *uint64 `gorm:"index"`
-	NodeID             *uint64 `gorm:"index"`
-	Name               string  `gorm:"size:255"`
-	RequestedName      string  `gorm:"size:255"`
-	ConflictPolicy     string  `gorm:"size:16;not null;default:'';index"`
-	ExpectedRevision   uint64
-	TotalSize          int64  `gorm:"not null"`
-	ChunkSize          int64  `gorm:"not null"`
-	ChunkCount         int    `gorm:"not null"`
-	SHA256             string `gorm:"size:64;index"`
-	ExpectedMD5        string `gorm:"size:32;index"`
-	ResumeKey          string `gorm:"size:128;index"`
-	Status             string `gorm:"size:16;not null;index"`
-	InstantCAS         bool   `gorm:"not null;default:false"` // authenticated owner CAS fast path, persisted with finalized session
-	ReservedBytes      int64  `gorm:"not null;default:0"`
-	QuotaReservedBytes int64  `gorm:"not null;default:0"`
-	ResultNodeID       *uint64
-	ExpiresAt          time.Time `gorm:"not null;index"`
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	SourceRunID           string `gorm:"size:36;index"` // internal Pull executor only; must match on finalize
+	SourceID              uint64 `gorm:"index"`
+	SourceRevision        uint64
+	SourceDeviceID        string  `gorm:"size:36;index"`
+	SourceRootID          string  `gorm:"size:36"`
+	SourceRootFingerprint string  `gorm:"size:64"`
+	SourceTargetID        uint64  `gorm:"index"`
+	ShareID               *uint64 `gorm:"index"` // non-nil only for scoped anonymous Share uploads
+	ID                    string  `gorm:"size:36;primaryKey"`
+	OwnerID               uint64  `gorm:"not null;index"`
+	ParentID              *uint64 `gorm:"index"`
+	NodeID                *uint64 `gorm:"index"`
+	Name                  string  `gorm:"size:255"`
+	RequestedName         string  `gorm:"size:255"`
+	ConflictPolicy        string  `gorm:"size:16;not null;default:'';index"`
+	ExpectedRevision      uint64
+	TotalSize             int64  `gorm:"not null"`
+	ChunkSize             int64  `gorm:"not null"`
+	ChunkCount            int    `gorm:"not null"`
+	SHA256                string `gorm:"size:64;index"`
+	ExpectedMD5           string `gorm:"size:32;index"`
+	ResumeKey             string `gorm:"size:128;index"`
+	Status                string `gorm:"size:16;not null;index"`
+	InstantCAS            bool   `gorm:"not null;default:false"` // authenticated owner CAS fast path, persisted with finalized session
+	ReservedBytes         int64  `gorm:"not null;default:0"`
+	QuotaReservedBytes    int64  `gorm:"not null;default:0"`
+	ResultNodeID          *uint64
+	ExpiresAt             time.Time `gorm:"not null;index"`
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 func (UploadSession) TableName() string { return "xd_upload_sessions" }

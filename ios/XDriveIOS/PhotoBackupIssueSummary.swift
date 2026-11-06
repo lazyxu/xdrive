@@ -5,6 +5,7 @@ import Foundation
 enum XDriveIOSPhotoBackupIssueReason: String, Equatable {
     case notVisible
     case originalMissing
+    case iCloudDownloadRequired
     case incompleteLivePair
     case resourceTooLarge
     case sourceChanged
@@ -15,6 +16,7 @@ enum XDriveIOSPhotoBackupIssueReason: String, Equatable {
         switch self {
         case .notVisible: return "此照片目前不在已授权范围内"
         case .originalMissing: return "系统未提供完整原件"
+        case .iCloudDownloadRequired: return "原件仅在 iCloud，需在获准的前台任务中下载后再核验"
         case .incompleteLivePair: return "Live Photo 缺少静态或动态原件"
         case .resourceTooLarge: return "原件超过本次备份大小上限"
         case .sourceChanged: return "读取期间原件发生变化"
