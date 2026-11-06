@@ -316,7 +316,7 @@ test('approved BG only-new run replays the durable PhotoKit queue before reservi
   assert.match(scope, /if plan\.pausedForReview \{[\s\S]*?\.pause\(owner: owner\)[\s\S]*?return/)
   assert.match(scope, /queue\.replay\(owner: owner, maximumEvents: 4\)/)
   assert.match(scope, /guard try await queue\.isCaughtUp\(owner: owner\) else \{[\s\S]*?resubmitOnlyIfStillApproved\(\)[\s\S]*?return/)
-  assert.match(scope, /\.requiresExplicitBaseline \{[\s\S]*?\.invalidArchivedToken \{/)
+  assert.match(scope, /\.requiresExplicitBaseline,[\s\S]*?\.invalidArchivedToken,[\s\S]*?\.historyUnavailable,[\s\S]*?\.authorizationChanged \{/)
   assert.match(scope, /newOnlySince = plan\.newOnlySince/)
   assert.match(scope, /startOffset: offset,\s*maximumNewOriginals: min\([\s\S]*?\),\s*newOnlySince: newOnlySince,\s*changeQueue: incrementalQueue/, 
     'Swift labeled arguments must follow the shared run signature order')
@@ -344,4 +344,21 @@ test('BG runner defers to foreground when only-new history requires full reconci
   assert.match(helper, /grant\.matches\(owner\)/)
   assert.match(helper, /plan\.enabled, plan\.historyRecoveryRequired == true/)
   assert.match(helper, /scheduleApprovedProbe\(afterMinutes: grant\.intervalMinutes\)/)
+})
+
+test('BG only-new history loss requires consent and full Photos permission', () => {
+  const task = read('BackgroundPhotoTask.swift')
+  const store = read('PhotoAutoScheduleStore.swift')
+  assert.match(task, /guard access == \.authorized else \{ return \}/)
+  assert.doesNotMatch(task, /guard access == \.authorized \|\| access == \.limited/)
+  const replay = task.slice(
+    task.indexOf('let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)'),
+    task.indexOf('guard let window = try XDriveIOSBGOriginalWindowStore.shared')
+  )
+  assert.match(replay, /\.requiresExplicitBaseline,[\s\S]*?\.invalidArchivedToken,[\s\S]*?\.historyUnavailable,[\s\S]*?\.authorizationChanged \{/)
+  assert.match(replay, /guard approved\.matches\(owner\),[\s\S]*?\.requireFullLibraryReconciliation\(owner: owner\),[\s\S]*?recovery\.requiresFullLibraryReconciliation else \{/)
+  assert.match(replay, /resubmitRecoveryOnlyIfStillRequired\(owner: owner\)\s*return/)
+  assert.doesNotMatch(replay, /newOnlySince\s*=\s*nil|incrementalQueue\s*=\s*nil/,
+    'history loss cannot silently downgrade into full-date discovery')
+  assert.match(store, /func requireFullLibraryReconciliation\([\s\S]*?state\.historyRecoveryRequiresConsent = true[\s\S]*?state\.historyRecoveryFullScopeConfirmed = false/)
 })

@@ -99,7 +99,7 @@ enum XDriveIOSBackgroundPhotoTask {
                     return
                 }
                 let access = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                guard access == .authorized || access == .limited else { return }
+                guard access == .authorized else { return }
                 let owner = try approved.ownerScope()
                 guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
                     // A foreground upload consumed this one OS request.
@@ -162,15 +162,24 @@ enum XDriveIOSBackgroundPhotoTask {
                         incrementalQueue = queue
                         newOnlySince = plan.newOnlySince
                     } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
-                        .requiresExplicitBaseline {
-                        // Legacy plans lack an authenticated baseline. Scan
-                        // all authorized dates, using exact Server receipts
-                        // to deduplicate instead of inventing a new token.
-                    } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
-                        .invalidArchivedToken {
-                        // Unreadable historical baseline: fail open only to
-                        // conservative full-date discovery, never to a
-                        // capture-date-only filter that could lose imports.
+                        .requiresExplicitBaseline,
+                        XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                        .invalidArchivedToken,
+                        XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                        .historyUnavailable,
+                        XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                        .authorizationChanged {
+                        // Only-new consent never authorizes a full-date scan.
+                        // Reuse the foreground's durable recovery/consent gate.
+                        // Preserve the BG due window; do not reserve or write.
+                        guard approved.matches(owner),
+                              let recovery = try XDriveIOSPhotoAutoScheduleStore.shared
+                                  .requireFullLibraryReconciliation(owner: owner),
+                              recovery.requiresFullLibraryReconciliation else {
+                            throw XDriveIOSPhotoBGVaultFailure.invalidProof
+                        }
+                        await resubmitRecoveryOnlyIfStillRequired(owner: owner)
+                        return
                     }
                     try Task.checkCancellation()
                     guard approved.matches(owner) else {
