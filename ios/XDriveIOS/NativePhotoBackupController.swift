@@ -842,6 +842,73 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     /// The independent focused session never modifies a saved interval,
     /// BG grant, manual cursor, or persistent encrypted receipt. Each window
     /// re-verifies the Owner to allow native refresh while the App is visible.
+    /// A manually approved Focused pass can settle an existing only-new
+    /// PhotoKit change queue through the SAME verified original writer. It
+    /// never grants a new schedule or silently rebases missing history.
+    private func prepareFocusedIncrementalQueue(
+        login: XDriveIOSNativeOwnerLoginModel,
+        owner: XDriveNativeOwnerRoot, uiEpoch: UUID,
+        expectedEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot
+    ) async throws -> XDriveIOSPhotoKitPersistentBackupQueue? {
+        guard let plan = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner),
+              plan.enabled, plan.backupStartRule == .onlyNew,
+              !plan.pausedForReview,
+              !plan.requiresFullLibraryReconciliation else { return nil }
+
+        let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
+        var replayedEvents = 0
+        do {
+            while true {
+                try Task.checkCancellation()
+                guard displayEpoch == uiEpoch,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      XDriveIOSNativePhotoOwnerScope.matches(runningOwner, owner),
+                      UIApplication.shared.applicationState == .active else {
+                    throw XDriveIOSNativeSessionError.staleSession
+                }
+                // A disabled or paused automatic schedule must not be
+                // re-enabled by this independent foreground session.
+                guard let active = XDriveIOSPhotoAutoScheduleStore.shared
+                    .status(owner: owner),
+                      active.enabled, active.backupStartRule == .onlyNew,
+                      !active.pausedForReview,
+                      !active.requiresFullLibraryReconciliation else { return nil }
+                let current = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                guard current.authorization == expectedEpoch.authorization,
+                      XDriveIOSPhotoKitLibraryEpoch.matches(
+                          expectedEpoch.serialized, as: current.token
+                      ) else { throw XDriveIOSFocusedBackupFailure.libraryChanged }
+
+                // Four history records per durable SQLite transaction.
+                // Drain before scanning: even an old-dated new import must
+                // not remain hidden behind the positional full-pass cursor.
+                let batch = try await queue.replay(owner: owner, maximumEvents: 4)
+                if try await queue.isCaughtUp(owner: owner) {
+                    return queue
+                }
+                guard batch.events > 0 else {
+                    // Avoid an infinite loop or an unsafe date-based fallback.
+                    throw XDriveIOSFocusedBackupFailure.libraryChanged
+                }
+                replayedEvents += batch.events
+                message = "集中备份先恢复 PhotoKit 增量变更（已回放 \(replayedEvents) 条）…"
+                await Task.yield()
+            }
+        } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure.requiresExplicitBaseline,
+                XDriveIOSPhotoKitPersistentBackupQueue.Failure.invalidArchivedToken,
+                XDriveIOSPhotoKitPersistentBackupQueue.Failure.historyUnavailable {
+            // Focused is full-scope, but only-new auto still needs its own
+            // explicit consent before a lost baseline can be replaced.
+            schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                .requireFullLibraryReconciliation(owner: owner)
+            return nil
+        } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure.authorizationChanged {
+            schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                .requireFullLibraryReconciliation(owner: owner)
+            throw XDriveIOSFocusedBackupFailure.libraryChanged
+        }
+    }
+
     private func runFocused(
         login: XDriveIOSNativeOwnerLoginModel,
         owner: XDriveNativeOwnerRoot, uiEpoch: UUID, allowICloud: Bool,
@@ -858,6 +925,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
               XDriveIOSPhotoKitLibraryEpoch.matches(
                 initial.serialized, as: afterCount.token
               ) else { throw XDriveIOSFocusedBackupFailure.libraryChanged }
+        let focusedChangeQueue = try await prepareFocusedIncrementalQueue(
+            login: login, owner: owner, uiEpoch: uiEpoch,
+            expectedEpoch: initial
+        )
         // Reuse a checkpoint only after the caller's global current-Owner
         // pending/unknown ACK preflight under the serial original writer gate.
         // A cursor never substitutes for Server-confirmed Node receipts.
@@ -939,7 +1010,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 onSourceProgress: { value in
                     sourceRunReporter.enqueueUpdate(value, base: sourceRunBase)
                 }
-            ).run(allowICloudOriginals: allowICloud, startOffset: offset) { [weak self] value in
+            ).run(
+                allowICloudOriginals: allowICloud, startOffset: offset,
+                changeQueue: focusedChangeQueue
+            ) { [weak self] value in
                 guard let self,
                       self.displayEpoch == uiEpoch,
                       XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, owner),
