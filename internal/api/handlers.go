@@ -196,6 +196,18 @@ func (s *Server) refresh(c *gin.Context) {
 			_ = tx.Model(&current).Update("revoked_at", now).Error
 			return errAccountDisabled
 		}
+		var nativeMapRefreshID uint64
+		if current.DesktopMapNativeRefreshID != nil {
+			// Only the Cookie-based refresh path may rotate this native-bound
+			// browser session. A JSON refresh must never strip the binding.
+			if !browser || current.DesktopMapSessionVersion == 0 ||
+				current.DesktopMapSessionVersion != user.SessionVersion ||
+				!desktopMapNativeSessionActive(tx, user.ID,
+					*current.DesktopMapNativeRefreshID, now.UTC(), true) {
+				return errInvalidRefreshToken
+			}
+			nativeMapRefreshID = *current.DesktopMapNativeRefreshID
+		}
 		next, err := s.issueSession(tx, user)
 		if err != nil {
 			return err
@@ -203,6 +215,21 @@ func (s *Server) refresh(c *gin.Context) {
 		var replacement meta.RefreshToken
 		if err := tx.Where("token_hash = ?", auth.HashRefreshToken(next.RefreshToken)).First(&replacement).Error; err != nil {
 			return err
+		}
+		if nativeMapRefreshID != 0 {
+			// Preserve the original native session binding after Cookie rotation.
+			if err := tx.Model(&replacement).Updates(map[string]any{
+				"desktop_map_native_refresh_id": nativeMapRefreshID,
+				"desktop_map_session_version":   current.DesktopMapSessionVersion,
+			}).Error; err != nil {
+				return err
+			}
+			mapAccess, err := s.Auth.IssueDesktopMapAccess(
+				user.ID, user.SessionVersion, nativeMapRefreshID)
+			if err != nil {
+				return err
+			}
+			next.Token, next.AccessToken = mapAccess, mapAccess
 		}
 		if err := tx.Model(&current).Updates(map[string]any{
 			"revoked_at":     now,

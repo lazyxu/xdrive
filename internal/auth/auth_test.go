@@ -127,3 +127,30 @@ func TestSourceRunJWTClaimsAreExactAndOrdinaryJWTStaysUnscoped(t *testing.T) {
 		t.Fatal("empty SourceRunID was accepted")
 	}
 }
+
+func TestDesktopMapNativeBoundAccessClaims(t *testing.T) {
+	manager := New("desktop-map-access-test-secret", time.Minute)
+	token, err := manager.IssueDesktopMapAccess(42, 7, 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := manager.ParseClaims(token)
+	if err != nil || claims.UserID != 42 || claims.SessionVersion != 7 ||
+		claims.DesktopMapNativeRefreshID != 99 || claims.TokenType != "access" ||
+		claims.SourceID != 0 || claims.SourceRunID != "" {
+		t.Fatalf("native-bound claims invalid: %+v, err=%v", claims, err)
+	}
+	ordinary, err := manager.Issue(42, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	basic, err := manager.ParseClaims(ordinary)
+	if err != nil || basic.DesktopMapNativeRefreshID != 0 {
+		t.Fatalf("ordinary JWT inherited Desktop native grant: %+v, %v", basic, err)
+	}
+	for _, input := range [][3]uint64{{42, 7, 0}, {42, 0, 99}, {0, 7, 99}} {
+		if _, err := manager.IssueDesktopMapAccess(input[0], input[1], input[2]); err == nil {
+			t.Fatalf("accepted invalid native-bound access parameters: %v", input)
+		}
+	}
+}
