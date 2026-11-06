@@ -62,7 +62,7 @@ type RunAllReport struct {
 }
 
 func (r *Runner) RunAll(ctx context.Context) (RunAllReport, error) {
-	sources, err := r.loadSources(ctx, false, time.Time{}, 0)
+	sources, err := r.loadSources(ctx)
 	if err != nil {
 		return RunAllReport{}, err
 	}
@@ -73,46 +73,57 @@ func (r *Runner) RunDue(ctx context.Context, now time.Time, interval time.Durati
 	if interval <= 0 {
 		interval = DefaultRunInterval
 	}
-	sources, err := r.loadSources(ctx, true, now.UTC(), interval)
+	now = now.UTC()
+	sources, err := r.loadSources(ctx)
 	if err != nil {
 		return RunAllReport{}, err
 	}
-	sources, err = prioritizeDueSources(sources, now.UTC(), interval)
-	if err != nil {
-		return RunAllReport{}, err
-	}
-	return r.runSources(ctx, sources, now.UTC())
-}
-
-func (r *Runner) loadSources(ctx context.Context, dueOnly bool, now time.Time, interval time.Duration) ([]meta.Source, error) {
-	if r == nil || r.DB == nil {
-		return nil, fmt.Errorf("pull worker database is unavailable")
-	}
-	query := r.DB.WithContext(ctx).
-		Model(&meta.Source{}).
-		Where("xd_sources.direction = ? AND xd_sources.status = ? AND xd_sources.sync_mode = ?",
-			meta.SourceDirectionPull, meta.SourceStatusActive, meta.SourceSyncModeBackup)
-	var sources []meta.Source
-	if err := query.Order("xd_sources.id ASC").Find(&sources).Error; err != nil {
-		return nil, err
-	}
-	if !dueOnly {
-		return sources, nil
-	}
+	// A broken stored schedule must never starve unrelated Pull Sources.
+	// Report and persist the error using the normal snapshot-fenced preflight
+	// path, then continue dispatching every other eligible Source.
 	due := make([]meta.Source, 0, len(sources))
+	var badSchedules []error
 	for _, source := range sources {
-		if r.handler(source.Kind) == nil {
+		handler := r.handler(source.Kind)
+		if handler == nil {
 			continue
 		}
-		isDue, err := sourceschedule.Due(source, now, interval)
-		if err != nil {
-			return nil, fmt.Errorf("source %d schedule: %w", source.ID, err)
+		isDue, scheduleErr := sourceschedule.Due(source, now, interval)
+		if scheduleErr != nil {
+			failure := fmt.Errorf("source %d (%s) schedule: %w", source.ID, source.Name, scheduleErr)
+			if saveErr := r.recordPreflightFailure(ctx, source, handler, now, failure); saveErr != nil {
+				failure = errors.Join(failure, fmt.Errorf("record source schedule failure: %w", saveErr))
+			}
+			r.logger().Error("pull_source_schedule_invalid",
+				"source_id", source.ID, "source_kind", source.Kind, "error", failure)
+			badSchedules = append(badSchedules, failure)
+			continue
 		}
 		if isDue {
 			due = append(due, source)
 		}
 	}
-	return due, nil
+	due, err = prioritizeDueSources(due, now, interval)
+	if err != nil {
+		return RunAllReport{Eligible: len(badSchedules), Failed: len(badSchedules)},
+			errors.Join(append(badSchedules, err)...)
+	}
+	report, runErr := r.runSources(ctx, due, now)
+	report.Eligible += len(badSchedules)
+	report.Failed += len(badSchedules)
+	return report, errors.Join(append(badSchedules, runErr)...)
+}
+
+func (r *Runner) loadSources(ctx context.Context) ([]meta.Source, error) {
+	if r == nil || r.DB == nil {
+		return nil, fmt.Errorf("pull worker database is unavailable")
+	}
+	var sources []meta.Source
+	err := r.DB.WithContext(ctx).Model(&meta.Source{}).
+		Where("xd_sources.direction = ? AND xd_sources.status = ? AND xd_sources.sync_mode = ?",
+			meta.SourceDirectionPull, meta.SourceStatusActive, meta.SourceSyncModeBackup).
+		Order("xd_sources.id ASC").Find(&sources).Error
+	return sources, err
 }
 
 type rankedSource struct {
