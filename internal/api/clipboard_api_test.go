@@ -222,7 +222,7 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 		claimWG.Add(1)
 		go func(index int) {
 			defer claimWG.Done()
-			scope := legacyScopes[index%len(legacyScopes)]
+			scope := legacyScopes[index % len(legacyScopes)]
 			body := fmt.Sprintf(`{"nonce":%q,"ciphertext":%q,"scope":%q}`, nonce, ciphertext, scope)
 			req := httptest.NewRequest(http.MethodPut, "/api/v1/clipboard/vault/check", strings.NewReader(body))
 			req.Header.Set("Authorization", "Bearer "+a)
@@ -382,7 +382,7 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Model(&meta.User{}).Where("id = ?", ownerB.ID).
-		Update("session_version", ownerB.SessionVersion+1).Error; err != nil {
+		Update("session_version", ownerB.SessionVersion + 1).Error; err != nil {
 		t.Fatal(err)
 	}
 	request(t, router, http.MethodGet, "/api/v1/clipboard/items", b, nil, http.StatusUnauthorized)
