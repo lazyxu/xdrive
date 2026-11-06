@@ -353,7 +353,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                         if badgeReadEpoch == initialBadgeEpoch,
                            photoQueueScenePhase == .active,
                            XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
-                           PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
+                           PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                           page?.startOffset == loaded.startOffset,
+                           page?.items.map(\.id) == loaded.items.map(\.id) {
                             visibleBackupQueueStates = states
                         }
                     } catch {

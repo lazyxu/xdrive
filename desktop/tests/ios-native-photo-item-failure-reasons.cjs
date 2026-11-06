@@ -50,5 +50,10 @@ test('only visible mounted 64 ID page receives reason detail and invalidates on 
   assert.match(wall, /photoQueueScenePhase == \.active/)
   assert.match(wall, /visibleBackupQueueStates = \[:\]/)
   assert.match(wall, /failureReasonCode: visibleBackupQueueStates\[candidate\.id\]\?\.failureReasonCode/)
+  // Both a refresh and the initial page-load await must fence results to
+  // the same mounted IDs; a reused page offset cannot show old item reasons.
+  const initial = wall.slice(wall.indexOf('let initialBadgeEpoch = UUID()'))
+  assert.match(initial, /page\?\.startOffset == loaded\.startOffset/)
+  assert.match(initial, /page\?\.items\.map\(\\\.id\) == loaded\.items\.map\(\\\.id\)/)
   assert.doesNotMatch(wall, /uploadPreparedOriginal|createUploadSession|stageOriginal\(/)
 })
