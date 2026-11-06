@@ -3,6 +3,49 @@ import MapKit
 import SwiftUI
 import UIKit
 
+/// A cover read never has access to SwiftUI map state. Its result crosses
+/// back to the MainActor before any image is published or authorization revoked.
+/// UIImage is immutable here; the sole UI mutation remains MainActor-bound.
+private enum XDriveIOSOwnerMapCoverOutcome: @unchecked Sendable {
+    case ready(String, UIImage)
+    case revoked
+    case unavailable
+}
+
+/// Immutable snapshot only. The Reader creates one ephemeral HTTPS session per
+/// request; no UIKit view, Owner authorization state or map camera is captured
+/// by an independently executing child task.
+private struct XDriveIOSOwnerMapCoverRead: @unchecked Sendable {
+    let facet: XDriveIOSNativeOwnerMapFacet
+    let reader: XDriveIOSNativeMediaGalleryReader
+
+    func perform() async -> XDriveIOSOwnerMapCoverOutcome {
+        do {
+            try Task.checkCancellation()
+            let page = try await reader.page(offset: 0, placeID: facet.id)
+            try Task.checkCancellation()
+            // A verified page total is mandatory; a MapKit cover Node ID
+            // is never a credential for a thumbnail or an Owner PhotoAsset.
+            guard XDriveIOSNativeOwnerMapSelectionPolicy.acceptsCoverPage(
+                facet, rangeTotal: page.total_count, offset: page.offset
+            ), let first = page.items.first(where: { $0.supportsPreview })
+            else { return .unavailable }
+            let image = try await reader.thumbnail(first)
+            try Task.checkCancellation()
+            return .ready(facet.id, image)
+        } catch is CancellationError {
+            return .unavailable
+        } catch let failure as XDriveIOSNativeMediaReadFailure {
+            if case .response(let status) = failure, status == 401 || status == 403 {
+                return .revoked
+            }
+            return .unavailable
+        } catch {
+            return .unavailable
+        }
+    }
+}
+
 enum XDriveIOSNativePhotoMapSource: String, CaseIterable {
     case local, cloud
     var label: String { self == .local ? "本机位置" : "云端 Owner" }
@@ -781,65 +824,58 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     ) {
         coverTask?.cancel()
         coverTask = Task { @MainActor in
-            // At most 64 bounded covers per viewport, sourced from fresh exact-place
-            // Owner Range pages. Never trust bare cover_node_id as an image
-            // credential. Sequential requests bound foreground memory/traffic.
-            for facet in XDriveIOSNativeOwnerMapSelectionPolicy
-                .prioritizedPhotoCovers(result.items) {
+            defer { if epoch == ticket { coverTask = nil } }
+            // Do not serialize up to 64 independent Range + thumbnail pairs:
+            // a single slow derivative must not starve all remaining places.
+            // Three concurrent reads is a hard ceiling, not 64 fan-out.
+            // Every group is structured under coverTask so gesture, Owner,
+            // Viewer or scene cancellation terminates in-flight URL requests.
+            let maximumConcurrentCovers = 3
+            let facets = XDriveIOSNativeOwnerMapSelectionPolicy
+                .prioritizedPhotoCovers(result.items)
+            for start in stride(from: 0, to: facets.count, by: maximumConcurrentCovers) {
                 guard !Task.isCancelled, epoch == ticket,
-                      selected == nil, selectedCluster == nil, phase == .active,
+                      selected == nil, selectedCluster == nil,
+                      singleViewer == nil, singleTask == nil, phase == .active,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
                       XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                         bounds, current: currentBounds())
                 else { return }
-                do {
-                    let page = try await reader.page(offset: 0, placeID: facet.id)
-                    try Task.checkCancellation()
-                    // An Owner or camera switch during the first await must
-                    // not dispatch another thumbnail request for the old scope.
-                    guard epoch == ticket, selected == nil,
-                          selectedCluster == nil, phase == .active,
-                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
-                          XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
-                            bounds, current: currentBounds())
-                    else { return }
-                    // The overview and exact-place Range are different Server
-                    // reads. Do not draw a newer photo's thumbnail beside a
-                    // stale signed count if membership changed between reads.
-                    // Use the first previewable item from the verified 48-slot
-                    // page rather than giving up on an unsupported first item.
-                    guard XDriveIOSNativeOwnerMapSelectionPolicy.acceptsCoverPage(
-                        facet, rangeTotal: page.total_count, offset: page.offset
-                    ), let first = page.items.first(where: { $0.supportsPreview })
-                    else { continue }
-                    let cover = try await reader.thumbnail(first)
-                    try Task.checkCancellation()
-                    guard epoch == ticket, selected == nil,
-                          selectedCluster == nil, phase == .active,
-                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
-                          XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
-                            bounds, current: currentBounds())
-                    else { return }
-                    coverImages[facet.id] = cover
-                } catch is CancellationError {
-                    return
-                } catch let failure as XDriveIOSNativeMediaReadFailure {
-                    // A revoked Owner may return an auth failure without a
-                    // local login notification. Stop the whole cover sequence
-                    // immediately; never issue eleven more old-Owner reads.
-                    if case .response(let status) = failure,
-                       status == 401 || status == 403 {
-                        if epoch == ticket {
-                            // The signed Owner session is no longer an
-                            // authority for either images or location pins.
+
+                let end = min(facets.count, start + maximumConcurrentCovers)
+                await withTaskGroup(of: XDriveIOSOwnerMapCoverOutcome.self) { group in
+                    for facet in facets[start..<end] {
+                        let request = XDriveIOSOwnerMapCoverRead(facet: facet, reader: reader)
+                        group.addTask { await request.perform() }
+                    }
+                    for await completed in group {
+                        // Only this actor may commit decoded images to the map.
+                        // A late old-Owner/old-camera result cannot reappear
+                        // after revocation, cancellation or Viewer navigation.
+                        guard !Task.isCancelled, epoch == ticket,
+                              selected == nil, selectedCluster == nil,
+                              singleViewer == nil, singleTask == nil, phase == .active,
+                              XDriveIOSNativePhotoOwnerScope.matches(
+                                login.owner, expected),
+                              XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
+                                bounds, current: currentBounds())
+                        else { group.cancelAll(); return }
+                        switch completed {
+                        case .ready(let placeID, let image):
+                            coverImages[placeID] = image
+                        case .revoked:
+                            // Even one 401/403 invalidates this entire signed
+                            // Owner snapshot. Cancel siblings and clear every
+                            // previously displayed cover and interactive pin.
+                            group.cancelAll()
                             invalidate()
                             error = "当前 Owner 身份或地图权限已失效，请重新验证。"
+                            return
+                        case .unavailable:
+                            // A missing derivative is NOT a missing original.
+                            break
                         }
-                        return
                     }
-                } catch {
-                    // No derivative is not a missing original or an excuse
-                    // to fetch a broad all-Owner photo range.
                 }
             }
         }
