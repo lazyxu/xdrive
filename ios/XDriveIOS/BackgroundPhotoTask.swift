@@ -78,6 +78,7 @@ enum XDriveIOSBackgroundPhotoTask {
             }
             do {
                 try Task.checkCancellation()
+                let network = XDriveIOSPhotoBackupNetworkPolicy.shared
                 // The grant proves current Owner, independent Device secret,
                 // Root, Server instance, expiry and revocation. No Web token.
                 let approved = try await XDriveIOSApprovedPhotoBGVault.shared
@@ -101,6 +102,7 @@ enum XDriveIOSBackgroundPhotoTask {
                 let access = PHPhotoLibrary.authorizationStatus(for: .readWrite)
                 guard access == .authorized || access == .limited else { return }
                 let owner = try approved.ownerScope()
+                _ = try network.requireWiFiIfNeeded(for: owner)
                 guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
                     // A foreground upload consumed this one OS request.
                     // Keep an explicitly approved future OS window, without
@@ -177,6 +179,7 @@ enum XDriveIOSBackgroundPhotoTask {
                         throw XDriveIOSPhotoBGVaultFailure.corrupt
                     }
                 }
+                _ = try network.requireWiFiIfNeeded(for: owner)
                 guard let window = try XDriveIOSBGOriginalWindowStore.shared
                         .reserveDue(owner: owner, approved: approved),
                       let offset = XDrivePhotoBackupScanWindow.offset(
@@ -292,6 +295,7 @@ enum XDriveIOSBackgroundPhotoTask {
     /// strand a valid user-approved backup. Never resubmit when a network
     /// write might have begun or the Server rejected the grant.
     private static func retryablePreflightNetworkFailure(_ error: Error) -> Bool {
+        if error is XDriveIOSPhotoBackupNetworkError { return true }
         if let grant = error as? XDriveIOSPhotoBGVaultFailure,
            case .transientServerStatus(let code) = grant {
             return code == 408 || code == 429 || (500...599).contains(code)
