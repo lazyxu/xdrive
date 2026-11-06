@@ -101,7 +101,7 @@ The Web/Desktop External Sources UI includes a **DSM 配置** guide with the gen
 For a new Source, setup now asks only for the Source name/mode and local Personal/Shared roots. The Server creates the destination atomically under:
 
 ```text
-我的文件/同步文件夹/Push/<DSMDeviceName>_<DeviceID>/<SourceName>
+我的文件/同步文件夹/Push/<用户填写的目录名>
 ```
 
 The deprecated `--target` flag is rejected. The client cannot choose a cloud parent Node or arbitrary destination path.
@@ -246,6 +246,6 @@ Photos API data is used only for file identity/path mapping. Original bytes are 
 
 ## Unified Push/Pull contract (2026-11-05)
 
-New DSM Photos Push Sources now enroll an Owner-scoped Synology ClientDevice, store its token in the NAS secret store, and are created with a server-owned target under `同步文件夹/Push/<device>/<source>`. The Source stores the generic Push `DeviceID` and exact managed `TargetNodeID`; the source-agent sends the device proof on authenticated requests, and the Server rejects wrong/revoked devices on Source mutation and execution. Revocation pauses the bound Source. The deprecated arbitrary `--target` setup option is rejected.
+New DSM Photos Push Sources now enroll an Owner-scoped Synology ClientDevice, store its token in the NAS secret store, and are created with a server-owned target under `同步文件夹/Push/<用户填写的目录名>`. The Source stores the generic Push `DeviceID` and exact managed `TargetNodeID`; the source-agent sends the device proof on authenticated requests, and the Server rejects wrong/revoked devices on Source mutation and execution. Revocation pauses the bound Source. The deprecated arbitrary `--target` setup option is rejected.
 
 Legacy Sources with no `DeviceID` are left on their existing target and are not migrated or silently rebound. They are reported as legacy by setup. For newly provisioned Sources, the Server persists the aggregate Personal/Shared Root-set ID and fingerprint in the Source binding. Each run and each upload/chunk/Finalize rechecks the registered Synology Device token, Source ID/revision, Root binding and exact managed Target. The source-agent independently verifies the local filesystem root fingerprints before scanning; a changed root cannot silently replace the server binding and requires a new Source. Revoking the Device pauses its bound Sources and requests cancellation of active runs.
