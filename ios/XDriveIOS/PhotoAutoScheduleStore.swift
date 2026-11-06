@@ -279,6 +279,13 @@ final class XDriveIOSPhotoAutoScheduleStore {
                 state.historyRecoveryFullScopeConfirmed = false
             }
         }
+        if state.historyRecoveryRequiresConsent == true {
+            // Do not reserve or start a scan after a permission-scope change
+            // invalidated the user's previous full-library recovery consent.
+            state.nextDueAt = now
+            try persist(state, owner: owner)
+            return nil
+        }
         state.libraryChangeEpoch = epoch.serialized
         state.libraryAuthorizationRaw = epoch.authorization
         state.nextDueAt = following
@@ -430,13 +437,16 @@ final class XDriveIOSPhotoAutoScheduleStore {
               state.backupStartRule == .onlyNew,
               state.historyRecoveryRequired == true,
               state.historyRecoveryRequiresConsent == true else { return nil }
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
         state.historyRecoveryRequiresConsent = false
         state.historyRecoveryFullScopeConfirmed = true
         state.historyRecoveryPassClean = true
         state.historyRecoveryReadyToCommit = false
         state.windowIndex = 0
-        state.libraryChangeEpoch = nil
-        state.libraryAuthorizationRaw = nil
+        // Bind consent to the exact PhotoKit authorization scope and library
+        // generation present when the user confirmed the one-time full scan.
+        state.libraryChangeEpoch = epoch.serialized
+        state.libraryAuthorizationRaw = epoch.authorization
         state.nextDueAt = now
         try persist(state, owner: owner)
         return state
