@@ -46,6 +46,12 @@ test('map Cells and their location photo wall use the same frozen filtered snaps
   assert.match(local, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: album,/)
   assert.match(local, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: nil, isNearbyExpansion: true/)
   assert.match(local, /let next = try await scanner\.nextLocatedPage\(\)/)
+  // The second bounded PhotoKit read must never use only location proximity:
+  // it must retain the exact trusted Cell keys AND original viewport.
+  const window = local.slice(local.indexOf('private func readWindow('),
+    local.indexOf('private func loadInitial()', local.indexOf('private func readWindow(')))
+  assert.ok(window.includes('let selectedKeys = Set(selection.cells.map(\\.key))'))
+  assert.match(window, /pending = next\.items\.filter \{ asset in[\s\S]*?Policy\.includes\(\s*selection\.viewport,[\s\S]*?selectedKeys\.contains\(key\)/)
 })
 
 test('changing the Gallery filter discards earlier map Cells and camera hints', () => {
