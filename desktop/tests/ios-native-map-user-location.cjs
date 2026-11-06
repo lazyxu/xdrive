@@ -102,3 +102,12 @@ test('an existing authorization callback cannot double-submit one location reque
   assert.match(controller, /func cancel\(\) \{\s*pending = false\s*isLocating = false\s*requestedFix = false/)
   assert.match(controller, /private func fail\(_ message: String\) \{\s*pending = false\s*isLocating = false\s*requestedFix = false/)
 })
+
+test('re-locating revokes stale location on global disable or pending refresh', () => {
+  const locate = controller.slice(controller.indexOf('func locate()'),
+    controller.indexOf('func locationManagerDidChangeAuthorization'))
+  assert.match(locate, /guard CLLocationManager\.locationServicesEnabled\(\) else \{[\s\S]*?fail\("系统定位服务未开启[^"]*"\)\s*return\s*\}/)
+  assert.doesNotMatch(locate, /locationServicesEnabled\(\) else \{\s*alert =/)
+  assert.match(locate, /camera = nil\s*requestID = nil\s*showsUserDot = false\s*pending = true/)
+  assert.match(controller, /private func fail\(_ message: String\) \{[\s\S]*?camera = nil\s*requestID = nil\s*showsUserDot = false/)
+})
