@@ -22,7 +22,15 @@ func platformRootIdentity(path string, info os.FileInfo) (string, bool, error) {
 		statx.Mask&unix.STATX_BTIME != 0 {
 		return fmt.Sprintf("%s:%d:%d", base, statx.Btime.Sec, statx.Btime.Nsec), true, nil
 	}
-	// inode can be reused without birth time. Future Mirror must reject weak
-	// roots rather than infer deletion from a matching weak fingerprint.
+	// DSM 7 armada38x uses Linux 3.10 without statx. ext4's read-only
+	// inode-generation ioctl is an older strong object witness. Unsupported
+	// filesystems remain weak and are NEVER admitted by automatic Push.
+	legacy, strong, err := linuxLegacyObjectIdentity(path, info, linuxExt4Generation)
+	if err != nil {
+		return "", false, err
+	}
+	if strong {
+		return legacy.Token, true, nil
+	}
 	return base, false, nil
 }
