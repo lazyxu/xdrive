@@ -2698,11 +2698,11 @@ jobs:
           echo "Scoped $CI_SCOPE PR validation passed; master and v* remain full."
 
   publish-master:
-    # Build and package jobs may run in parallel, but *publishing* a Snapshot
-    # must wait for every applicable test, including the real Android emulator.
+    # Snapshot is intentionally artifact-first: exact CI-built images, installers
+    # and Source Agent must exist, then the release workflow verifies integrity.
+    # Full Final Gate keeps running independently; stable v* still waits for it.
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs:
-      - final-gate
       - build-client-core
       - build-source-agent
       - package-linux-client
