@@ -98,6 +98,12 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	if err := server.requireUploadChunkAuthorityTx(ctx, db, scoped, session); err != nil {
 		t.Fatalf("valid Pull worker UploadPart rejected: %v", err)
 	}
+	if err := server.requireUploadSessionReadAuthorityTx(ctx, db, scoped, session); err != nil {
+		t.Fatalf("valid Pull worker UploadSession read rejected: %v", err)
+	}
+	if err := server.requireUploadSessionReadAuthorityTx(ctx, db, regular, session); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("ordinary Owner read a Pull SourceRun session: %v", err)
+	}
 	for _, noProof := range []*gin.Context{regular, wrongRun} {
 		if err := server.requireUploadChunkAuthorityTx(ctx, db, noProof, session); !errors.Is(err, errManagedSourceWriteDenied) {
 			t.Fatalf("unauthorized SourceRun reached chunk SQL transaction: %v", err)
@@ -110,6 +116,12 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	}
 	if err := server.requireUploadChunkAuthorityTx(ctx, db, regular, ordinarySession); err != nil {
 		t.Fatalf("ordinary Owner folder cannot upload chunks: %v", err)
+	}
+	if err := server.requireUploadSessionReadAuthorityTx(ctx, db, regular, ordinarySession); err != nil {
+		t.Fatalf("ordinary Owner folder cannot read its own session: %v", err)
+	}
+	if err := server.requireUploadSessionReadAuthorityTx(ctx, db, scoped, ordinarySession); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("SourceRun adopted an ordinary Owner UploadSession read: %v", err)
 	}
 	if err := server.requireUploadChunkAuthorityTx(ctx, db, scoped, ordinarySession); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("signed SourceRun adopted an ordinary Owner UploadSession: %v", err)
@@ -127,6 +139,9 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	}
 	if err := server.requireUploadChunkAuthorityTx(ctx, db, scoped, session); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("cancelled SourceRun committed an UploadPart: %v", err)
+	}
+	if err := server.requireUploadSessionReadAuthorityTx(ctx, db, scoped, session); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("cancelled SourceRun still read its upload session: %v", err)
 	}
 	if err := db.Model(&meta.SyncRun{}).Where("id = ?", runID).
 		Update("status", meta.SyncRunStatusCompleted).Error; err != nil {
