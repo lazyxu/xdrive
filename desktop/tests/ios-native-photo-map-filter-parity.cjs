@@ -58,7 +58,7 @@ test('changing the Gallery filter discards earlier map Cells and camera hints', 
 test('backup scanner keeps original unfiltered full/limited access and stable resume', () => {
   assert.match(scanner, /func start\(atOffset requestedOffset: Int = 0,\s*requireStableResume: Bool = false,\s*album: XDriveLocalPhotoAlbumSummary\? = nil\) throws -> Int \{\s*try startConfigured/)
   assert.match(scanner, /requireStableResume: requireStableResume,\s*album: album, mediaFilter: \.all/)
-  assert.match(scanner, /status == \.authorized \|\| \(album == nil && status == \.limited\)/)
+  assert.match(scanner, /status == \.authorized \|\| \(!requireStableResume && album == nil && status == \.limited\)/)
   assert.match(scanner, /if requireStableResume \{[\s\S]*?stableBackupBoundaryIndices/)
   assert.match(scanner, /try ensureCurrent\(initialAuthorization\)/)
   assert.doesNotMatch(scanner, /UserDefaults|UploadSession|URLSession/)
