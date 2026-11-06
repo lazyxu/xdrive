@@ -303,8 +303,12 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid private upload policy")
 		return
 	}
-	if !validSynologyUploadScope(req) {
-		fail(c, http.StatusBadRequest, "invalid Synology Source upload scope")
+	// The generic Owner UploadSession endpoint never accepts an old DSM
+	// Photos SourceID/Root proof. Native iOS/Android handlers stamp their
+	// trusted Source binding server-side after scoped Device authorization.
+	if req.SourceID != 0 || req.SourceRevision != 0 ||
+		req.SourceRootID != "" || req.SourceRootFingerprint != "" {
+		fail(c, http.StatusBadRequest, "retired Synology Source upload scope is not accepted")
 		return
 	}
 
@@ -451,7 +455,6 @@ func (s *Server) createUploadSession(c *gin.Context) {
 				if errors.Is(err, errShareUploadDenied) || errors.Is(err, errShareUploadBusy) {
 					writePublicShareUploadError(c, err)
 				} else if errors.Is(err, errManagedSourceWriteDenied) ||
-					errors.Is(err, errSynologyPushAuthority) ||
 					errors.Is(err, errLocalPushCommonUploadUnavailable) {
 					fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
 				} else {
