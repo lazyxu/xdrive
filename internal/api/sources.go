@@ -378,29 +378,12 @@ func (s *Server) createSource(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "Synology File Station only supports pull direction")
 		return
 	}
-	if isYike {
-		if req.Direction != meta.SourceDirectionPull {
-			fail(c, http.StatusBadRequest, "Yike Photos only supports pull direction")
-			return
-		}
+	managedPush := isLocalFolder || isSynologyPush
+	managedPull := isYike || isSynologyPull
+	if managedPush || managedPull {
 		if req.TargetNodeID != 0 {
-			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
+			fail(c, http.StatusBadRequest, "managed Push/Pull target is server-provisioned; target_node_id is not accepted")
 			return
-		}
-	} else if isSynologyPush {
-		if req.TargetNodeID != 0 {
-			fail(c, http.StatusBadRequest, "Synology Photos Push target is managed automatically")
-			return
-		}
-	} else if isSynologyPull || isLocalFolder {
-		// Older clients may still submit a selected Owner directory; validate
-		// its ownership for compatibility, but never adopt that directory as
-		// a new managed Pull or device-bound Push target.
-		if req.TargetNodeID != 0 {
-			if _, err := s.ownedDirectory(userID(c), req.TargetNodeID); err != nil {
-				fail(c, http.StatusBadRequest, "target directory not found")
-				return
-			}
 		}
 	} else {
 		if req.TargetNodeID == 0 {
@@ -418,9 +401,9 @@ func (s *Server) createSource(c *gin.Context) {
 	}
 	var target *uint64
 	status := meta.SourceStatusActive
-	if isYike {
-		// The managed target is bound atomically after the Cookie is validated and
-		// the Yike account UID/name are known.
+	if managedPull {
+		// Pull Sources stay paused until their provider credential is validated,
+		// but their final destination is provisioned at Source creation time.
 		status = meta.SourceStatusPaused
 	} else {
 		if isSynologyPull {
@@ -438,7 +421,7 @@ func (s *Server) createSource(c *gin.Context) {
 			// and verified its local Personal/Shared filesystem roots.
 			status = meta.SourceStatusPaused
 		}
-		if !isSynologyPull && !isLocalFolder && !isSynologyPush {
+		if !managedPull && !managedPush {
 			value := req.TargetNodeID
 			target = &value
 		}
@@ -449,43 +432,48 @@ func (s *Server) createSource(c *gin.Context) {
 		ScheduleType: schedule.Type, ScheduleExpression: schedule.Expression, ScheduleTimezone: schedule.Timezone,
 		Revision: 1, TargetNodeID: target, IgnoreRules: req.IgnoreRules,
 	}
-	// Lock enrollment before inserting this Source so a concurrent revoke
-	// cannot authorize an orphan unbound Source with a stale credential.
+	// All Source creation paths lock the Owner first. Managed provisioning,
+	// Source-name uniqueness and ancestor-overlap checks then share one
+	// transaction and cannot race another new Source for the same Owner.
 	var createErr error
-	if isLocalFolder || isSynologyPush {
+	if managedPush {
 		source.DeviceID = &creatorDeviceID
 		if isLocalFolder {
 			source.LocalCreatorDeviceID = &creatorDeviceID
 		}
+	}
+	if managedPush || managedPull {
 		createErr = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-			var device meta.ClientDevice
+			var lockedOwner meta.User
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("id = ? AND owner_id = ?", creatorDeviceID, userID(c)).
-				Take(&device).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return errLocalSourceCreateDeviceUnauthorized
-				}
+				Where("id = ?", source.OwnerID).Take(&lockedOwner).Error; err != nil {
 				return err
 			}
-			if isLocalFolder {
-				if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+			var device meta.ClientDevice
+			var devicePtr *meta.ClientDevice
+			if managedPush {
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("id = ? AND owner_id = ?", creatorDeviceID, userID(c)).
+					Take(&device).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return errLocalSourceCreateDeviceUnauthorized
+					}
+					return err
+				}
+				if isLocalFolder {
+					if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+						return errLocalSourceCreateDeviceUnauthorized
+					}
+				} else if device.Platform != "synology" ||
+					!clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
 					return errLocalSourceCreateDeviceUnauthorized
 				}
-			} else if device.Platform != "synology" ||
-				!clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
-				return errLocalSourceCreateDeviceUnauthorized
+				devicePtr = &device
 			}
 			if err := tx.Create(&source).Error; err != nil {
 				return err
 			}
-			// Device identity comes from the device lock and credential, not
-			// the UI's target picker or an unauthenticated display name.
-			var managed meta.Node
-			if isLocalFolder {
-				managed, err = createLocalPushManagedTargetTx(c.Request.Context(), tx, source, device)
-			} else {
-				managed, err = createSynologyPushManagedTargetTx(c.Request.Context(), tx, source, device)
-			}
+			managed, err := provisionManagedSourceTargetTx(c.Request.Context(), tx, source, devicePtr)
 			if err != nil {
 				return err
 			}
@@ -502,32 +490,15 @@ func (s *Server) createSource(c *gin.Context) {
 			source.TargetManaged = true
 			return nil
 		})
-	} else if isSynologyPull {
-		// A new Pull Source owns its newly-created leaf; older manual target
-		// selections are ignored. Source + Node creation must commit together.
-		createErr = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-			if err := tx.Create(&source).Error; err != nil {
-				return err
-			}
-			managed, err := createSynologyPullManagedTargetTx(c.Request.Context(), tx, source)
-			if err != nil {
-				return err
-			}
-			updated := tx.Model(&meta.Source{}).
-				Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
-				Updates(map[string]any{"target_node_id": managed.ID, "target_managed": true})
-			if updated.Error != nil {
-				return updated.Error
-			}
-			if updated.RowsAffected != 1 {
-				return errSourceManagedDirectoryOccupied
-			}
-			source.TargetNodeID = &managed.ID
-			source.TargetManaged = true
-			return nil
-		})
 	} else {
-		createErr = s.DB.WithContext(c.Request.Context()).Create(&source).Error
+		createErr = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+			var lockedOwner meta.User
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ?", source.OwnerID).Take(&lockedOwner).Error; err != nil {
+				return err
+			}
+			return tx.Create(&source).Error
+		})
 	}
 	if createErr != nil {
 		switch {
@@ -535,6 +506,8 @@ func (s *Server) createSource(c *gin.Context) {
 			fail(c, http.StatusConflict, "managed source target name/path is occupied")
 		case errors.Is(createErr, errSourceManagedAncestorInUse):
 			fail(c, http.StatusConflict, "managed source hierarchy overlaps an existing Source")
+		case errors.Is(createErr, errSourceManagedDeviceMismatch):
+			fail(c, http.StatusForbidden, "registered Push device does not match this Source")
 		case errors.Is(createErr, errLocalSourceCreateDeviceUnauthorized):
 			fail(c, http.StatusForbidden, "owning device credential invalid or revoked")
 		case isDuplicate(createErr):
@@ -625,7 +598,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			}
 			var count int64
 			if err := tx.Model(&meta.Source{}).
-				Where("owner_id = ? AND id <> ? AND lower(name) = lower(?)", userID(c), id, name).
+				Where("owner_id = ? AND direction = ? AND id <> ? AND lower(name) = lower(?)",
+					userID(c), current.Direction, id, name).
 				Count(&count).Error; err != nil {
 				return err
 			}

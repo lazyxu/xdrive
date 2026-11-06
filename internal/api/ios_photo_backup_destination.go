@@ -89,16 +89,6 @@ func iosPhotoDestinationBindingTx(tx *gorm.DB, device meta.ClientDevice) (meta.S
 	if target.Name != source.Name || target.ParentID == nil {
 		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
 	}
-	groupName, err := managedPushDeviceFolderName(device)
-	if err != nil {
-		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
-	}
-	var group meta.Node
-	if err := tx.Where("id = ? AND owner_id = ? AND name = ? AND type = ? AND deleted_at IS NULL",
-		*target.ParentID, device.OwnerID, groupName, meta.NodeTypeDir).
-		Take(&group).Error; err != nil {
-		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
-	}
 	if _, err := managedSourceTargetAncestorIDsTx(tx, source, target); err != nil {
 		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
 	}

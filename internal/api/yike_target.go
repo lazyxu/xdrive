@@ -212,8 +212,6 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 	if source == nil || source.ID == 0 || source.Kind != yikeSourceKind {
 		return nil
 	}
-	// A successful Cookie refresh must never move or reactivate an archived
-	// Source. Restoration is an explicit revision-checked operation.
 	if source.Status == meta.SourceStatusArchived {
 		return errSourceArchived
 	}
@@ -221,119 +219,157 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 	if err != nil {
 		return err
 	}
-
-	var itemCount int64
-	if err := tx.WithContext(ctx).Model(&meta.SourceItem{}).Where("source_id = ?", source.ID).Count(&itemCount).Error; err != nil {
-		return err
+	accountIDText := strconv.FormatInt(accountID, 10)
+	if source.ProviderAccountID != "" && source.ProviderAccountID != accountIDText {
+		return errYikeAccountMismatch
 	}
-	// Once the server has bound a uid_* target, keep its Node ID and the
-	// Owner-controlled leaf name even before the first photo has synced.
-	// Credential refresh is not a folder rename operation.
+
+	var target meta.Node
 	if source.TargetNodeID != nil {
-		var currentTarget meta.Node
 		if err := tx.WithContext(ctx).
 			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", *source.TargetNodeID, source.OwnerID).
-			First(&currentTarget).Error; err != nil {
+			Take(&target).Error; err != nil {
 			return err
 		}
-		boundManaged := false
-		if currentAccountID, managed := managedYikeTargetAccountID(currentTarget.Name); managed {
-			boundManaged = true
+		if target.Type != meta.NodeTypeDir || target.ParentID == nil {
+			return errYikeTargetContainsData
+		}
+
+		// New Sources already own Pull/Yike Photos/<SourceName>. Bind the
+		// provider account identity without changing the Node ID or leaf.
+		if source.TargetManaged && target.Name == source.Name {
+			names, err := managedSourceTargetAncestorNamesTx(tx, *source, target)
+			if err != nil {
+				return errYikeTargetContainsData
+			}
+			if len(names) == 3 && names[0] == "Yike Photos" &&
+				names[1] == yikePullTargetRootName && names[2] == yikeTargetRootName {
+				return bindYikeProviderAccountTx(ctx, tx, source, accountIDText)
+			}
+		}
+
+		// Existing uid_* targets are legacy identities. Preserve their exact
+		// path and Node ID; never migrate or rename them as part of credential
+		// refresh. Unmarked targets are accepted only at the verified legacy
+		// location with the existing exclusive-subtree checks.
+		if currentAccountID, managed := managedYikeTargetAccountID(target.Name); managed {
 			if currentAccountID != accountID {
 				return errYikeAccountMismatch
 			}
-			// Credential refresh is not a destination migration. Preserve the
-			// exact existing Node ID and path for every already-bound Source.
-			// Unmarked historical targets are accepted only at the exact
-			// previously server-owned hierarchy and after the existing subtree
-			// ownership/run checks pass.
 			if !source.TargetManaged {
-				proven, err := verifiedLegacyYikeTargetLocationTx(ctx, tx, *source, currentTarget)
+				proven, err := verifiedLegacyYikeTargetLocationTx(ctx, tx, *source, target)
 				if err != nil {
 					return err
 				}
 				if !proven {
 					return errYikeTargetContainsData
 				}
-				if err := verifyYikeTargetRelocationTx(ctx, tx, *source, currentTarget); err != nil {
+				if err := verifyYikeTargetRelocationTx(ctx, tx, *source, target); err != nil {
 					return err
 				}
 			}
-		} else if itemCount > 0 {
-			// Never detach a populated, unverified target. Old targets are not
-			// silently migrated or replaced during credential updates.
-			return errYikeTargetContainsData
+			return bindYikeProviderAccountTx(ctx, tx, source, accountIDText)
 		}
-		if boundManaged {
-			if source.Status != meta.SourceStatusActive {
-				now := time.Now().UTC()
-				if err := tx.WithContext(ctx).Model(&meta.Source{}).
-					Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
-					Updates(map[string]any{
-						"status":     meta.SourceStatusActive,
-						"revision":   gorm.Expr("revision + 1"),
-						"updated_at": now,
-						"last_error": "",
-					}).Error; err != nil {
-					return err
-				}
-				source.Status = meta.SourceStatusActive
-				source.Revision++
-			}
-			return nil
-		}
+
+		// Never take over, detach, or silently replace an ordinary directory,
+		// even when it is empty. This is not a migration endpoint.
+		return errYikeTargetContainsData
 	}
 
-	target, err := createExclusiveYikeManagedTargetTx(ctx, tx, *source, identity)
+	// Compatibility for a pre-existing Source that has never had a target.
+	// It keeps the historical UID-based layout; all newly created Sources use
+	// the new user-named leaf provisioned during POST /sources.
+	target, err = createExclusiveYikeManagedTargetTx(ctx, tx, *source, identity)
 	if err != nil {
 		return err
 	}
+	return bindYikeLegacyCreatedTargetTx(ctx, tx, source, target, accountIDText)
+}
+
+func bindYikeLegacyCreatedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Source, target meta.Node, accountID string) error {
 	var duplicateCount int64
 	if err := tx.WithContext(ctx).Model(&meta.Source{}).
-		Where("owner_id = ? AND kind = ? AND id <> ? AND target_node_id = ?", source.OwnerID, yikeSourceKind, source.ID, target.ID).
+		Where("owner_id = ? AND id <> ? AND kind = ? AND provider_account_id = ?",
+			source.OwnerID, source.ID, yikeSourceKind, accountID).
 		Count(&duplicateCount).Error; err != nil {
 		return err
 	}
 	if duplicateCount != 0 {
 		return errYikeAccountAlreadyConfigured
 	}
-	if source.TargetNodeID == nil || *source.TargetNodeID != target.ID {
-		var childCount int64
-		if err := tx.WithContext(ctx).Model(&meta.Node{}).
-			Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", source.OwnerID, target.ID).
-			Count(&childCount).Error; err != nil {
-			return err
-		}
-		if childCount != 0 {
-			return errYikeTargetContainsData
-		}
-	}
+	targetID := target.ID
 	updates := map[string]any{
 		"target_node_id": target.ID,
 		"target_managed": true,
-		"updated_at":     time.Now().UTC(),
+		"provider_account_id": accountID,
+		"updated_at": time.Now().UTC(),
+		"status": meta.SourceStatusActive,
+		"last_error": "",
+		"revision": gorm.Expr("revision + 1"),
+	}
+	if err := tx.WithContext(ctx).Model(&meta.Source{}).
+		Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+		Updates(updates).Error; err != nil {
+		if isDuplicate(err) {
+			return errYikeAccountAlreadyConfigured
+		}
+		return err
+	}
+	source.TargetNodeID = &targetID
+	source.TargetManaged = true
+	source.ProviderAccountID = accountID
+	source.Status = meta.SourceStatusActive
+	source.Revision++
+	return nil
+}
+
+func bindYikeProviderAccountTx(ctx context.Context, tx *gorm.DB, source *meta.Source, accountID string) error {
+	if source == nil || source.ID == 0 || accountID == "" {
+		return errInvalidSourceConfig
+	}
+	if source.ProviderAccountID != "" && source.ProviderAccountID != accountID {
+		return errYikeAccountMismatch
+	}
+	var duplicateCount int64
+	if err := tx.WithContext(ctx).Model(&meta.Source{}).
+		Where("owner_id = ? AND id <> ? AND kind = ? AND provider_account_id = ?",
+			source.OwnerID, source.ID, yikeSourceKind, accountID).
+		Count(&duplicateCount).Error; err != nil {
+		return err
+	}
+	if duplicateCount != 0 {
+		return errYikeAccountAlreadyConfigured
+	}
+	updates := map[string]any{}
+	if source.ProviderAccountID != accountID {
+		updates["provider_account_id"] = accountID
 	}
 	if source.Status != meta.SourceStatusActive {
 		updates["status"] = meta.SourceStatusActive
 		updates["last_error"] = ""
 	}
-	if source.TargetNodeID == nil || *source.TargetNodeID != target.ID || source.Status != meta.SourceStatusActive {
-		updates["revision"] = gorm.Expr("revision + 1")
+	if len(updates) == 0 {
+		return nil
 	}
-	if err := tx.WithContext(ctx).Model(&meta.Source{}).
-		Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
-		Updates(updates).Error; err != nil {
-		return err
+	updates["revision"] = gorm.Expr("revision + 1")
+	updates["updated_at"] = time.Now().UTC()
+	result := tx.WithContext(ctx).Model(&meta.Source{}).
+		Where("id = ? AND owner_id = ? AND revision = ?", source.ID, source.OwnerID, source.Revision).
+		Updates(updates)
+	if result.Error != nil {
+		if isDuplicate(result.Error) {
+			return errYikeAccountAlreadyConfigured
+		}
+		return result.Error
 	}
-	targetID := target.ID
-	source.TargetNodeID = &targetID
-	source.TargetManaged = true
+	if result.RowsAffected != 1 {
+		return errRevisionConflict
+	}
+	source.ProviderAccountID = accountID
 	if _, ok := updates["status"]; ok {
 		source.Status = meta.SourceStatusActive
 	}
-	if _, ok := updates["revision"]; ok {
-		source.Revision++
-	}
+	source.Revision++
 	return nil
 }
 

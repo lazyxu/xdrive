@@ -16,6 +16,70 @@ var (
 	errSourceTargetRenameActive      = errors.New("source has an active run; target rename is unsafe")
 )
 
+func ensureManagedSourceNameAvailableTx(tx *gorm.DB, source meta.Source, nextName string) error {
+	var count int64
+	if err := tx.Model(&meta.Source{}).
+		Where("owner_id = ? AND direction = ? AND id <> ? AND lower(name) = lower(?)",
+			source.OwnerID, source.Direction, source.ID, nextName).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 0 {
+		return errSourceTargetNameConflict
+	}
+	return nil
+}
+
+// A destination rename is refused while any run, active UploadSession, or
+// uncommitted device operation can still settle against its stable TargetNodeID.
+func requireSourceTargetRenameQuiescentTx(tx *gorm.DB, source meta.Source, target meta.Node) error {
+	if source.RunRequestedAt != nil {
+		return errSourceTargetRenameActive
+	}
+	var count int64
+	if err := tx.Model(&meta.SyncRun{}).
+		Where("source_id = ? AND status = ?", source.ID, meta.SyncRunStatusRunning).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 0 {
+		return errSourceTargetRenameActive
+	}
+	if err := tx.Model(&meta.UploadSession{}).
+		Where("owner_id = ? AND status = ? AND (source_id = ? OR source_target_id = ? OR source_run_id IN (SELECT id FROM xd_sync_runs WHERE source_id = ?))",
+			source.OwnerID, meta.UploadStatusActive, source.ID, target.ID, source.ID).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 0 {
+		return errSourceTargetRenameActive
+	}
+	if tx.Migrator().HasTable(&meta.LocalPushCommonUploadOperation{}) {
+		if err := tx.Model(&meta.LocalPushCommonUploadOperation{}).
+			Where("owner_id = ? AND source_id = ? AND state IN ?",
+				source.OwnerID, source.ID,
+				[]string{meta.LocalPushCommonUploadReserved, meta.LocalPushCommonUploadBound}).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 0 {
+			return errSourceTargetRenameActive
+		}
+	}
+	if tx.Migrator().HasTable(&meta.LocalPushOperationIntent{}) {
+		if err := tx.Model(&meta.LocalPushOperationIntent{}).
+			Where("owner_id = ? AND source_id = ? AND state = ? AND expires_at > ?",
+				source.OwnerID, source.ID, meta.LocalPushOperationIntentReserved, time.Now().UTC()).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 0 {
+			return errSourceTargetRenameActive
+		}
+	}
+	return nil
+}
+
 // renameManagedSourceTargetTx is part of PATCH /sources/:id's Source-locked
 // transaction. Only a proven managed root may be renamed. A legacy Source may
 // point at a user-owned mixed folder; renaming that folder is not authorized by
@@ -82,29 +146,35 @@ WHERE s.owner_id = ? AND s.id <> ?`,
 		return errSourceTargetMigrationRequired
 	}
 
-	var running int64
-	if err := tx.Model(&meta.SyncRun{}).
-		Where("source_id = ? AND status = ?", source.ID, meta.SyncRunStatusRunning).
-		Count(&running).Error; err != nil {
+	if err := requireSourceTargetRenameQuiescentTx(tx, source, target); err != nil {
 		return err
-	}
-	if running != 0 {
-		return errSourceTargetRenameActive
 	}
 
 	leaf := nextName
 	if source.Kind == yikeSourceKind {
-		accountID, ok := managedYikeTargetAccountID(target.Name)
-		if !ok {
-			return errSourceTargetMigrationRequired
+		names, err := managedSourceTargetAncestorNamesTx(tx, source, target)
+		if err != nil {
+			return err
 		}
-		leaf = fmt.Sprintf("uid_%d_%s", accountID, nextName)
+		if len(names) >= 3 && names[0] == "Yike Photos" && names[1] == "Pull" &&
+			names[2] == yikeTargetRootName && target.Name == source.Name {
+			leaf = nextName
+		} else {
+			accountID, ok := managedYikeTargetAccountID(target.Name)
+			if !ok {
+				return errSourceTargetMigrationRequired
+			}
+			leaf = fmt.Sprintf("uid_%d_%s", accountID, nextName)
+		}
 	}
 	if err := meta.ValidateName(leaf); err != nil {
 		return errInvalidSourceConfig
 	}
 	if leaf == target.Name {
 		return nil
+	}
+	if err := ensureManagedSourceNameAvailableTx(tx, source, nextName); err != nil {
+		return err
 	}
 
 	var collisions int64
@@ -217,6 +287,11 @@ func managedSourceTargetAncestorNamesTx(tx *gorm.DB, source meta.Source, target 
 		case meta.SourceKindLocalFolder, meta.SourceKindIOSPhotos, synologySourceKind, "android_photos":
 		default:
 			return nil, errSourceTargetMigrationRequired
+		}
+		// New Push targets are direct children of 同步文件夹/Push. Older
+		// Sources retain their existing device-group or 设备备份 ancestry.
+		if leafParent.Name == "Push" && namespace.Name == yikeTargetRootName {
+			return []string{"Push", yikeTargetRootName}, nil
 		}
 		if namespace.Name != "Push" && namespace.Name != "设备备份" {
 			return nil, errSourceTargetMigrationRequired
