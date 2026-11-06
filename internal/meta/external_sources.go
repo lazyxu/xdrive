@@ -89,6 +89,26 @@ type Source struct {
 
 func (Source) TableName() string { return "xd_sources" }
 
+// SourceDeviceID returns the verified canonical Device binding for a Push
+// Source. LocalCreatorDeviceID is migration input only; it never grants
+// authority when DeviceID is absent. Conflicting legacy metadata fails closed.
+func SourceDeviceID(source Source) (string, bool) {
+	if source.DeviceID == nil {
+		return "", false
+	}
+	deviceID := strings.TrimSpace(*source.DeviceID)
+	if deviceID == "" {
+		return "", false
+	}
+	if source.LocalCreatorDeviceID != nil {
+		legacyID := strings.TrimSpace(*source.LocalCreatorDeviceID)
+		if legacyID != "" && legacyID != deviceID {
+			return "", false
+		}
+	}
+	return deviceID, true
+}
+
 // SourceItem preserves the stable identity of one external item independently
 // from its path or content. NodeID is deliberately nullable: deleting an xDrive
 // node must not erase the external identity needed for a later reconciliation.
