@@ -488,7 +488,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/ci/test-server-rootless-e2e.sh dist/server-image dist/caddy-image",
 		"- server-rootless-e2e",
 	)
-	requireRaw(t, "GitLab exact server image artifact contract", gitlabRaw,
+	requireRaw(t, "GitLab exact server image artifact contract",
+		gitlabRaw+"\n"+readFile(t, filepath.Join(root, "infra", "ci", "gitlab-release.yml")),
 		"dist/server-image/",
 		"web/dist/",
 		"dist/caddy-image/",
