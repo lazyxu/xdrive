@@ -659,7 +659,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             mapJump = nil
                         },
                         cameraOnEntry: mapCamera,
-                        onLibraryCameraChange: { next in mapCamera = next }
+                        onLibraryCameraChange: { next in mapCamera = next },
+                        mediaFilter: mediaFilter
                     )
                     .environment(\.xdriveNativeLocalMapJump, mapJump)
                 }
