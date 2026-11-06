@@ -23,6 +23,7 @@ type localSourceExecutorProof struct {
 }
 
 const localSourceExecutorContextKey = "local_source_executor_proof"
+const synologySourceOwnerManagementContextKey = "synology_source_owner_management"
 
 func (s *Server) requireLocalSourceExecutor() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -32,6 +33,64 @@ func (s *Server) requireLocalSourceExecutor() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// requireSourceOwnerOrExecutor permits Owner-only control-plane management of
+// DSM Push Sources. It never grants run, Root-binding or content-write
+// authority: those endpoints still require the live NAS Device/Root proof.
+func (s *Server) requireSourceOwnerOrExecutor() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c.Param("id"))
+		if !ok {
+			fail(c, http.StatusBadRequest, "invalid source id")
+			c.Abort()
+			return
+		}
+		var source meta.Source
+		err := s.DB.WithContext(c.Request.Context()).
+			Select("id", "owner_id", "kind", "direction", "device_id").
+			Where("id = ? AND owner_id = ?", id, userID(c)).
+			Take(&source).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				fail(c, http.StatusNotFound, "source not found")
+			} else {
+				fail(c, http.StatusInternalServerError, "load source for management authorization failed")
+			}
+			c.Abort()
+			return
+		}
+		if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush &&
+			!hasSynologySourceProofAttempt(c, source) {
+			c.Set(synologySourceOwnerManagementContextKey, true)
+			c.Next()
+			return
+		}
+		if !s.checkLocalSourceExecutor(c) {
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+func hasSynologySourceProofAttempt(c *gin.Context, source meta.Source) bool {
+	if c == nil {
+		return false
+	}
+	for _, header := range []string{
+		"X-XDrive-Synology-Source-ID",
+		"X-XDrive-Synology-Source-Revision",
+		"X-XDrive-Local-Root-ID",
+		"X-XDrive-Local-Root-Fingerprint",
+	} {
+		if strings.TrimSpace(c.GetHeader(header)) != "" {
+			return true
+		}
+	}
+	return source.DeviceID != nil &&
+		strings.TrimSpace(*source.DeviceID) != "" &&
+		strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")) == strings.TrimSpace(*source.DeviceID)
 }
 
 func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
@@ -172,7 +231,49 @@ func (s *Server) requireLocalSourceExecutorTx(tx *gorm.DB, c *gin.Context, sourc
 // proof as a run, but may occur while the Source is paused. In particular,
 // unbind and delete cannot be authorized by the owner JWT alone. This helper
 // must run before any Source row lock, to preserve revoke's device-first order.
+func (s *Server) requireSynologySourceOwnerManagementTx(tx *gorm.DB, c *gin.Context, sourceID uint64) error {
+	if tx == nil || c == nil || sourceID == 0 {
+		return errLocalSourceExecutorTransactionUnauthorized
+	}
+	var snapshot meta.Source
+	if err := tx.Select("id", "owner_id", "kind", "direction", "device_id").
+		Where("id = ? AND owner_id = ?", sourceID, userID(c)).
+		Take(&snapshot).Error; err != nil {
+		return err
+	}
+	if snapshot.Kind != synologySourceKind || snapshot.Direction != meta.SourceDirectionPush {
+		return errLocalSourceExecutorTransactionUnauthorized
+	}
+	// Preserve Device -> Source lock ordering with revoke. Owner control-plane
+	// actions do not need the NAS secret or local Root proof; DeviceID and Target
+	// remain immutable through the generic Source update API.
+	if snapshot.DeviceID != nil && strings.TrimSpace(*snapshot.DeviceID) != "" {
+		var device meta.ClientDevice
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ? AND platform = ?", *snapshot.DeviceID, userID(c), "synology").
+			Take(&device).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+	}
+	var current meta.Source
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND owner_id = ?", sourceID, userID(c)).
+		Take(&current).Error; err != nil {
+		return err
+	}
+	if current.Kind != synologySourceKind || current.Direction != meta.SourceDirectionPush ||
+		((current.DeviceID == nil) != (snapshot.DeviceID == nil)) ||
+		(current.DeviceID != nil && snapshot.DeviceID != nil && *current.DeviceID != *snapshot.DeviceID) {
+		return errLocalSourceExecutorTransactionUnauthorized
+	}
+	return nil
+}
+
 func (s *Server) requireLocalSourceMutationTx(tx *gorm.DB, c *gin.Context, sourceID uint64) error {
+	if ownerManagement, ok := c.Get(synologySourceOwnerManagementContextKey); ok && ownerManagement == true {
+		return s.requireSynologySourceOwnerManagementTx(tx, c, sourceID)
+	}
 	if _, hasProof := c.Get(localSourceExecutorContextKey); !hasProof {
 		var source meta.Source
 		if err := tx.Select("kind", "direction", "device_id").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {

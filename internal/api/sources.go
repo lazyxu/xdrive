@@ -371,6 +371,10 @@ func (s *Server) createSource(c *gin.Context) {
 	}
 	isLocalFolder := req.Kind == meta.SourceKindLocalFolder
 	isSynologyPush := req.Kind == synologySourceKind && req.Direction == meta.SourceDirectionPush
+	if isSynologyPush && req.SyncMode != meta.SourceSyncModeBackup {
+		fail(c, http.StatusBadRequest, "Synology Photos Push supports backup mode only")
+		return
+	}
 	var creatorDeviceID string
 	if (isLocalFolder || isSynologyPush) && req.Direction == meta.SourceDirectionPush {
 		parsed, err := uuid.Parse(strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
@@ -640,6 +644,10 @@ func (s *Server) updateSource(c *gin.Context) {
 			if !meta.ValidSourceSyncMode(mode) {
 				return errInvalidSourceConfig
 			}
+			if current.Kind == synologySourceKind && current.Direction == meta.SourceDirectionPush &&
+				mode != meta.SourceSyncModeBackup {
+				return errSynologyPushBackupOnly
+			}
 			if mode != current.SyncMode {
 				resetMirrorEvidence = true
 			}
@@ -764,6 +772,10 @@ func (s *Server) updateSource(c *gin.Context) {
 			fail(c, http.StatusConflict, "source credential must be configured before activation")
 		case errors.Is(err, errSourceConnectorConfigRequired):
 			fail(c, http.StatusConflict, "source connector config must be configured before activation")
+		case errors.Is(err, errSynologyPushNotReady):
+			fail(c, http.StatusConflict, "Synology Photos Push requires a current Device and verified Root binding")
+		case errors.Is(err, errSynologyPushBackupOnly):
+			fail(c, http.StatusBadRequest, "Synology Photos Push supports backup mode only")
 		case errors.Is(err, errManagedSourceTarget):
 			fail(c, http.StatusBadRequest, "managed source target cannot be changed manually")
 		case errors.Is(err, errInvalidSourceTarget):

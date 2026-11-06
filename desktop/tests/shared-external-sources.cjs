@@ -530,6 +530,35 @@ test('shared Synology DSM guide binds the exact Source and keeps secrets out of 
   )
 })
 
+test('DSM Push guide creates new Device-bound Sources on NAS, not via Owner API', () => {
+  const guide = shared.synologyDsmSetupGuide({
+    sourceName: '家庭照片',
+    runMode: 'sync',
+    serverURL: 'https://drive.example.com',
+    xdriveUsername: 'alice',
+  })
+  assert.equal(guide.sourceID, undefined)
+  assert.match(guide.subtitle, /NAS 注册设备并创建新来源/)
+  const setup = guide.steps.find((step) => step.id === 'bind')
+  assert.ok(setup)
+  assert.match(setup.command, /setup --name '家庭照片' --mode sync/)
+  assert.doesNotMatch(setup.command, /--source-id|--target/)
+  const scheduled = guide.steps.find((step) => step.id === 'task-script')
+  assert.ok(scheduled)
+  assert.match(scheduled.command, /run --due --interval 6h/)
+  assert.match(scheduled.command, /\$HOME\/\.config\/xdrive-source-agent/)
+  assert.doesNotMatch(scheduled.command, /XD_PASSWORD|X-XDrive-Device-Token/)
+
+  const muiDir = path.join(__dirname, '..', '..', 'ui', 'shared', 'src', 'mui')
+  const manager = fs.readFileSync(path.join(muiDir, 'SourceManager.tsx'), 'utf8')
+  const createDialog = fs.readFileSync(path.join(muiDir, 'SourceManagerCreateDialog.tsx'), 'utf8')
+  const settingsDialog = fs.readFileSync(path.join(muiDir, 'SourceManagerSettingsDialog.tsx'), 'utf8')
+  assert.match(manager, /openSynologyGuide\(\{ id: 0, name: normalizedName, run_mode: values\.run_mode \}\)/)
+  assert.match(manager, /sync_mode: isLocalFolder \|\| isSynologyPush \? 'backup' : values\.sync_mode/)
+  assert.match(createDialog, /DSM Photos Push 仅支持备份模式/)
+  assert.match(settingsDialog, /DSM Photos Push 固定为备份模式/)
+})
+
 test('shared Source collection labels are connector-neutral', () => {
   assert.equal(shared.externalSourceCollectionKindLabel('album'), '相册')
   assert.equal(shared.externalSourceCollectionKindLabel('smart'), 'smart')

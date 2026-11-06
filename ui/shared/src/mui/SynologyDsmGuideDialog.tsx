@@ -33,7 +33,7 @@ export function XDriveSynologyDsmGuideDialog({
   onClose,
 }: {
   open: boolean
-  source: ExternalSource | null
+  source: Pick<ExternalSource, 'id' | 'name' | 'run_mode'> | null
   serverURL?: string
   username?: string
   onClose: () => void
@@ -51,8 +51,9 @@ export function XDriveSynologyDsmGuideDialog({
   const guide = useMemo(() => {
     if (!source) return null
     return synologyDsmSetupGuide({
-      sourceID: source.id,
+      sourceID: source.id > 0 ? source.id : undefined,
       sourceName: source.name,
+      runMode: source.run_mode === 'sync' ? 'sync' : 'scan',
       serverURL,
       xdriveUsername: username,
     })
