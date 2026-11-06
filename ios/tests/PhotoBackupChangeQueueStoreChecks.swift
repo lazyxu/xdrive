@@ -137,6 +137,12 @@ import Foundation
             try expect(try store.pending().isEmpty)
             try expect(try store.failed().isEmpty)
             try expect(try store.status(for: "old") == nil)
+            try expect(try store.hasCompletedFullReconciliation(
+                token: Data([7]), authorization: 3
+            ))
+            try expect(try !store.hasCompletedFullReconciliation(
+                token: Data([6]), authorization: 3
+            ))
         }
         do {
             let reopened = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: url)
@@ -144,6 +150,9 @@ import Foundation
                 token: Data([7]), authorization: 3
             ))
             try expect(try reopened.counts() == .init())
+            try expect(try reopened.hasCompletedFullReconciliation(
+                token: Data([7]), authorization: 3
+            ))
         }
         let isolated = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: dir.appendingPathComponent("owner-b.sqlite3"))
         try expect(try isolated.baseline() == nil)
