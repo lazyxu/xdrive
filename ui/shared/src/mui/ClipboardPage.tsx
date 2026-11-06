@@ -38,6 +38,10 @@ export type XDriveClipboardDataPort = {
 
 type DecodedItem = { record: XDriveClipboardItem; text: string | null }
 
+// Unknown ACKs are only briefly retryable. After history expiry/eviction,
+// replaying the same EventID is not reliably idempotent.
+const CLIPBOARD_PENDING_RETRY_WINDOW_MS = 5 * 60 * 1000
+
 function errorLabel(reason: unknown): string {
   return reason instanceof Error && reason.message ? reason.message : '剪贴板操作失败，请重试。'
 }
@@ -59,6 +63,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
+  const [retryExpired, setRetryExpired] = useState(false)
   const active = useRef(true)
   const actionFence = useRef(new XDriveClipboardActionFence())
   const generation = useRef(0)
@@ -67,6 +72,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   // A failed/unknown ACK retry must use the *same* encrypted EventID/bytes.
   const pending = useRef<{
     text: string
+    createdAt: number
     item: { client_event_id: string; kind: XDriveClipboardKind; nonce: string; ciphertext: string }
   } | null>(null)
 
@@ -183,6 +189,15 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     try { xDriveClipboardValidateText(draft) } catch (error) {
       setMessage(errorLabel(error)); return
     }
+    if (pending.current?.text === draft) {
+      const age = Date.now() - pending.current.createdAt
+      if (!Number.isFinite(age) || age < 0 || age >= CLIPBOARD_PENDING_RETRY_WINDOW_MS) {
+        setRetryExpired(true)
+        setMessage('待确认回执已超过安全重试期限。请先核对历史，或明确放弃旧回执再重新发送。')
+        return
+      }
+    }
+    setRetryExpired(false)
     setBusy(true)
     const controller = new AbortController()
     writeController.current = controller
@@ -194,7 +209,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
         // Do not resurrect the previous Owner/session's retry cache.
         if (!active.current || controller.signal.aborted ||
             !actionFence.current.isCurrent(actionToken)) return
-        pending.current = { text: draft, item: { client_event_id, ...encrypted } }
+        pending.current = { text: draft, createdAt: Date.now(), item: { client_event_id, ...encrypted } }
       }
       if (!active.current || controller.signal.aborted ||
           !actionFence.current.isCurrent(actionToken)) return
@@ -268,6 +283,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     setReading(false)
     setBusy(false)
     setConfirmClear(false)
+    setRetryExpired(false)
     setMessage('剪贴板已锁定，本地明文和密钥已从页面状态清除。')
   }
 
@@ -309,7 +325,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
             <Stack spacing={2}>
               <Typography variant="h6">发送文字或链接</Typography>
               <TextField label="输入内容" multiline minRows={3} maxRows={10} fullWidth
-                value={draft} onChange={event => setDraft(event.target.value)}
+                value={draft} onChange={event => { setDraft(event.target.value); setRetryExpired(false) }}
                 helperText="最多 64 KiB；不会在浏览器本地持久保存。" />
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button variant="contained" disabled={busy || !draft.length} onClick={() => { void send() }}>
@@ -319,6 +335,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                   onClick={() => { void pasteFromBrowser() }}>
                   从系统剪贴板读取
                 </Button>
+                {retryExpired && pending.current?.text === draft ? (
+                  <Button variant="outlined" color="warning" onClick={() => {
+                    pending.current = null
+                    setRetryExpired(false)
+                    setMessage('已放弃旧回执。请先核对历史，再决定是否重新发送。')
+                  }}>放弃过期重试</Button>
+                ) : null}
               </Stack>
             </Stack>
           </Card>

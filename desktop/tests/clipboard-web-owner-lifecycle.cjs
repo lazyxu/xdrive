@@ -215,6 +215,62 @@ test('Clipboard React unknown ACK retry preserves encrypted bytes and EventID', 
   await app.unmount()
 })
 
+
+test('Clipboard React blocks stale unknown ACK retries until explicitly abandoned', async () => {
+  const realNow = Date.now
+  let clock = realNow()
+  const sent = []
+  const app = await mount(makeUI(), port('https://drive.example:55', {
+    create: async item => {
+      sent.push({ ...item })
+      if (sent.length === 1) throw new Error('simulated unknown ACK')
+      return { id: 55, ...item }
+    },
+  }))
+  try {
+    Date.now = () => clock
+    await unlock(app)
+    await type(app, '输入内容', 'an uncertain long-lived message')
+    await click(app, '加密发送')
+    assert.equal(sent.length, 1)
+    clock += 5 * 60 * 1000
+    await click(app, '加密发送')
+    assert.equal(sent.length, 1, 'expired pending payload must never be replayed')
+    assert.match(app.snapshot(), /待确认回执已超过安全重试期限/)
+    await click(app, '放弃过期重试')
+    assert.match(app.snapshot(), /已放弃旧回执/)
+    await click(app, '加密发送')
+    assert.equal(sent.length, 2)
+    assert.notEqual(sent[0].client_event_id, sent[1].client_event_id,
+      'new send after explicit abandon must receive a fresh EventID')
+  } finally {
+    Date.now = realNow
+    await app.unmount()
+  }
+})
+
+test('Clipboard React rejects unknown ACK retry after local clock rollback', async () => {
+  const realNow = Date.now
+  let clock = realNow()
+  let submitted = 0
+  const app = await mount(makeUI(), port('https://drive.example:56', {
+    create: async () => { submitted++; throw new Error('lost ACK') },
+  }))
+  try {
+    Date.now = () => clock
+    await unlock(app)
+    await type(app, '输入内容', 'do not retry after clock rollback')
+    await click(app, '加密发送')
+    clock -= 1000
+    await click(app, '加密发送')
+    assert.equal(submitted, 1, 'clock rollback must not enable repeated writes')
+    assert.match(app.snapshot(), /待确认回执已超过安全重试期限/)
+  } finally {
+    Date.now = realNow
+    await app.unmount()
+  }
+})
+
 test('Clipboard React preserves newer draft after delayed ACK, and drops post-lock encryption', async () => {
   const ack = deferred()
   const app = await mount(makeUI(), port('https://drive.example:6', {
