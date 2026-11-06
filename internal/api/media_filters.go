@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/geoquery"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"gorm.io/gorm"
 )
 
@@ -516,7 +517,7 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions, ownerID u
 				"ON person_pf.id = person_pcf.face_id "+
 				"WHERE person_pc.owner_id = pa.owner_id "+
 				"AND person_pc.cluster_key = ? "+
-				"AND person_pf.asset_id = pa.id"+
+				"AND person_pf.asset_id = pa.id AND "+photointelligence.CurrentPersonClusterEvidenceSQL("person_pc")+
 				")",
 			meta.PhotoAnalysisStateReady,
 			options.PersonCluster,

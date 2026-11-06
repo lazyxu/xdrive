@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -245,6 +246,9 @@ func (s *Server) addMediaSuggestedPersonToIdentity(c *gin.Context) {
 		).First(&cluster).Error; err != nil {
 			return err
 		}
+		if err := ensureCurrentSuggestedPerson(c.Request.Context(), tx, userID(c), clusterID); err != nil {
+			return err
+		}
 		type member struct {
 			AssetID    uint64
 			Confidence float64
@@ -258,6 +262,7 @@ func (s *Server) addMediaSuggestedPersonToIdentity(c *gin.Context) {
 				userID(c),
 			).
 			Where("pcf.cluster_id = ?", cluster.ID).
+			Where(photointelligence.CurrentFaceEvidenceSQL("pf", "pa")).
 			Group("pf.asset_id").
 			Order("confidence DESC, pf.asset_id ASC").
 			Scan(&members).Error; err != nil {

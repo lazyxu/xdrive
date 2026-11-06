@@ -197,6 +197,7 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 	if err := db.Create(&faces).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedCurrentFaceEvidence(t, db, faces)
 	if err := db.Create(&[]meta.PhotoPersonClusterFace{
 		{ClusterID: cluster.ID, FaceID: faces[0].ID, Confidence: 0.91},
 		{ClusterID: cluster.ID, FaceID: faces[1].ID, Confidence: 0.98},
@@ -624,6 +625,7 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 	if err := db.Create(&secondFaces).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedCurrentFaceEvidence(t, db, secondFaces)
 	if err := db.Create(&[]meta.PhotoPersonClusterFace{
 		{ClusterID: secondCluster.ID, FaceID: secondFaces[0].ID, Confidence: 0.94},
 		{ClusterID: secondCluster.ID, FaceID: secondFaces[1].ID, Confidence: 0.96},

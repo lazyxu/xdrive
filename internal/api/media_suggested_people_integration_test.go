@@ -182,6 +182,7 @@ func TestSuggestedPeopleReadyProjectionAndItems(t *testing.T) {
 	if err := db.Create(&faces).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedCurrentFaceEvidence(t, db, faces)
 	memberships := []meta.PhotoPersonClusterFace{
 		{ClusterID: cluster.ID, FaceID: faces[0].ID, Confidence: 0.91},
 		{ClusterID: cluster.ID, FaceID: faces[1].ID, Confidence: 0.98},

@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"gorm.io/gorm"
 )
 
@@ -154,7 +155,7 @@ func queryMediaSuggestedPeopleWithReview(
 				"ON target_person.id = review.target_person_id "+
 				"AND target_person.owner_id = pc.owner_id",
 		).
-		Where("pc.owner_id = ?", ownerID)
+		Where("pc.owner_id = ?", ownerID).Where(photointelligence.CurrentPersonClusterEvidenceSQL("pc"))
 	if !includeReviewed {
 		query = query.Where("review.suggestion_key IS NULL")
 	}
@@ -286,5 +287,6 @@ func ensureCurrentSuggestedPerson(
 			ownerID,
 			clusterID,
 		).
+		Where(photointelligence.CurrentPersonClusterEvidenceSQL("pc")).
 		Take(&cluster).Error
 }
