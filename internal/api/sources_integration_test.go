@@ -89,54 +89,23 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", yikeManaged.ID), tokenA,
 		nil, http.StatusNoContent, map[string]string{"If-Match": `"1"`})
 
-	// File Station Pull is a generic file source. It starts paused and cannot
-	// become active until both an encrypted DSM credential record and a valid
-	// non-empty root configuration exist.
+	// Both remote Synology Pull modes are disabled during DSM folder-Push MVP.
+	// The response is explicit and must not create Source or target records.
 	filePush := fmt.Sprintf(`{"name":"Files push invalid","kind":"synology_files","direction":"push","sync_mode":"backup","run_mode":"scan","target_node_id":%d}`, targetA.ID)
 	request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(filePush), http.StatusBadRequest)
-
-	fileCreateBody := fmt.Sprintf(`{"name":"Synology Files","kind":"synology_files","direction":"pull","sync_mode":"backup","run_mode":"sync","target_node_id":%d}`, targetA.ID)
-	fileCreate := request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(fileCreateBody), http.StatusCreated)
-	var fileSource sourceDTO
-	if err := json.Unmarshal(fileCreate.Body.Bytes(), &fileSource); err != nil {
+	for _, kind := range []string{"synology_photos", "synology_files"} {
+		body := fmt.Sprintf(`{"name":"Disabled %s","kind":%q,"direction":"pull","sync_mode":"backup","run_mode":"sync","target_node_id":%d}`, kind, kind, targetA.ID)
+		request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(body), http.StatusGone)
+	}
+	var disabledSourceCount int64
+	if err := db.Model(&meta.Source{}).Where("kind IN ? AND direction = ?",
+		[]string{"synology_photos", "synology_files"}, meta.SourceDirectionPull).
+		Count(&disabledSourceCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if fileSource.Status != meta.SourceStatusPaused || fileSource.Revision != 1 ||
-		fileSource.TargetNodeID == nil || *fileSource.TargetNodeID == targetA.ID ||
-		fileSource.TargetPath != "同步文件夹/Pull/Synology Files/Synology Files" {
-		t.Fatalf("File Station source should start paused with an exclusive managed target: %+v", fileSource)
+	if disabledSourceCount != 0 {
+		t.Fatalf("disabled Synology Pull inserted Sources: %d", disabledSourceCount)
 	}
-	filePath := fmt.Sprintf("/api/v1/sources/%d", fileSource.ID)
-	requestWithHeaders(t, router, http.MethodPatch, filePath, tokenA,
-		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
-		map[string]string{"If-Match": `"1"`})
-
-	if err := db.Create(&meta.SourceCredential{
-		SourceID: fileSource.ID, Ciphertext: []byte("test-only"), KeyVersion: 1,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	requestWithHeaders(t, router, http.MethodPatch, filePath, tokenA,
-		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
-		map[string]string{"If-Match": `"1"`})
-
-	if err := db.Create(&meta.SourceConnectorConfig{
-		SourceID: fileSource.ID, Payload: `{"roots":["/documents"]}`, Revision: 1,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	activatedFiles := requestWithHeaders(t, router, http.MethodPatch, filePath, tokenA,
-		strings.NewReader(`{"status":"active"}`), http.StatusOK,
-		map[string]string{"If-Match": `"1"`})
-	var activeFileSource sourceDTO
-	if err := json.Unmarshal(activatedFiles.Body.Bytes(), &activeFileSource); err != nil {
-		t.Fatal(err)
-	}
-	if activeFileSource.Status != meta.SourceStatusActive || activeFileSource.Revision != 2 {
-		t.Fatalf("File Station source did not activate after readiness: %+v", activeFileSource)
-	}
-	requestWithHeaders(t, router, http.MethodDelete, filePath, tokenA,
-		nil, http.StatusNoContent, map[string]string{"If-Match": `"2"`})
 
 	// L01-A: the universal local-folder connector is server-recognized but
 	// deliberately fail-closed until an agent-bound root and executor exist.
