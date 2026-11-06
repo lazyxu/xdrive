@@ -21,7 +21,7 @@ test('only Server-confirmed original receipts refresh the cloud wall, even after
   const saved = runner.indexOf('self.schedule = recorded', persist)
   const cancelled = runner.indexOf('} catch is CancellationError {')
   const failed = runner.indexOf('} catch {', cancelled)
-  const notify = runner.indexOf('if let current = self.progress, current.uploaded > 0,')
+  const notify = runner.indexOf('if let current = self.progress,', failed)
   const refresh = runner.lastIndexOf('self.refresh(owner: login.owner)')
   assert.match(controller, /struct ConfirmedOriginalUpdate: Equatable/)
   assert.match(controller, /@Published private\(set\) var confirmedOriginalUpdate/)
@@ -38,6 +38,10 @@ test('only Server-confirmed original receipts refresh the cloud wall, even after
     /self\.schedule = recorded[\s\S]*?completeFullLibraryReconciliation\([\s\S]*?finishFullLibraryReconciliation\(/)
   assert.ok(notify > failed && refresh > notify,
     'a successful original must refresh even if PhotoKit scanning or schedule persistence later throws')
+  // Existing originals refresh only after exact-revision queue settlement
+  // at the Owner-fenced terminal boundary, not on a pending ACK.
+  assert.match(runner.slice(notify, refresh),
+    /\(current\.uploaded > 0 \|\|\s*\(didSettleVerifiedExistingSingle && current\.verifiedAlready > 0\)\)/)
   assert.match(backup, /case \.uploaded:\s*report\.uploaded \+= 1/)
   assert.match(runner, /guard XDriveIOSNativePhotoOwnerScope\.matches\(self\?\.runningOwner, selected\)/)
   assert.match(runner, /XDriveIOSNativePhotoOwnerScope\.matches\(self\.runningOwner, selected\),\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)

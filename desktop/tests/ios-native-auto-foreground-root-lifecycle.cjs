@@ -135,7 +135,9 @@ test('backup display and delayed original progress never cross Owner changes or 
   assert.match(catchBranch, /if kind == \.automatic,[\s\S]*?!beganOriginalWrite, !Task\.isCancelled,[\s\S]*?self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\),\s*UIApplication\.shared\.applicationState == \.active/)
   assert.match(catchBranch, /if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\) \{\s*self\.errorMessage = scheduledNetworkRetry/)
   assert.doesNotMatch(catchBranch, /uploadPrepared|confirmReceipt|\.run\(|start\(login:/)
-  assert.match(terminal, /if let current = self\.progress, current\.uploaded > 0,\s*self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(self\.runningOwner, selected\),\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
+  // Exact settled already-confirmed revisions can also refresh at terminal,
+  // but a pending/unknown receipt and an old Owner epoch must not.
+  assert.match(terminal, /if let current = self\.progress,\s*\(current\.uploaded > 0 \|\|\s*\(didSettleVerifiedExistingSingle && current\.verifiedAlready > 0\)\),\s*self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(self\.runningOwner, selected\),\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
   assert.doesNotMatch(refresh, /cancel\(|delete\(|disable\(|uploadPrepared|confirmReceipt|reserveDue/)
 })
 
