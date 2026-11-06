@@ -101,7 +101,7 @@ func validIOSPhotoManagedUploadInit(req uploadInitRequest, scope iosPhotoManaged
 		iosBackgroundOriginalNameValid(req.Name) &&
 		req.ConflictPolicy == meta.UploadConflictPolicyFail &&
 		req.ExpectedRevision == 0 && req.MD5 == "" &&
-		req.Size > 0 && req.Size <= iosBackgroundOriginalMaxBytes &&
+		req.Size > 0 &&
 		req.ChunkSize == defaultUploadChunkSize &&
 		req.SHA256 == strings.ToLower(req.SHA256) &&
 		validSHA256(req.SHA256) &&

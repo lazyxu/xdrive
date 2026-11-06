@@ -18,7 +18,7 @@ enum XDriveIOSPhotoBackupIssueReason: String, Equatable {
         case .originalMissing: return "系统未提供完整原件"
         case .iCloudDownloadRequired: return "原件仅在 iCloud，需在获准的前台任务中下载后再核验"
         case .incompleteLivePair: return "Live Photo 缺少静态或动态原件"
-        case .resourceTooLarge: return "原件超过本次备份大小上限"
+        case .resourceTooLarge: return "原件字节数超出可表示范围，尚未备份"
         case .sourceChanged: return "读取期间原件发生变化"
         case .unsupported: return "尚不支持这种媒体类型"
         case .unavailable: return "原件暂时不可用，请检查 iCloud 或照片状态"

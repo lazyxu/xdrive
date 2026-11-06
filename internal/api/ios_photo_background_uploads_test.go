@@ -83,21 +83,49 @@ func TestIOSBackgroundUploadCannotOverwriteOrEscapeRoot(t *testing.T) {
 	check("nonstandard chunk size")
 	req.Size = 0
 	check("zero bytes")
-	req.Size = iosBackgroundOriginalMaxBytes + 1
-	check("oversized media")
+	// A large legitimate original is authorized by scope, not an iOS cap.
+	// Generic createUploadSession independently enforces MaxUploadBytes and quota.
+	req.Size = int64(8) << 30
+	if !admitted() {
+		t.Fatal("8 GiB Owner-scoped PhotoKit original rejected")
+	}
+	req = pristine
 	req.SHA256 = strings.Repeat("G", 64)
 	check("invalid full SHA")
 	req.ChunkSHA256 = []string{strings.Repeat("c", 64)}
 	check("caller directed CAS reuse")
 }
 
+func TestIOSPhotoManagedLargeOriginalRequiresExactTarget(t *testing.T) {
+	ownerRoot := uint64(91)
+	sha := strings.Repeat("a", 64)
+	key := "ios_" + strings.Repeat("b", 64)
+	req := uploadInitRequest{
+		ParentID: &ownerRoot,
+		Name: "Live-xios-0123456789abcdef01234567-0123456789ab.zip",
+		ConflictPolicy: meta.UploadConflictPolicyFail,
+		Size: int64(8) << 30, ChunkSize: defaultUploadChunkSize,
+		SHA256: sha, ResumeKey: key,
+	}
+	scope := iosPhotoManagedUploadScope{targetID: ownerRoot}
+	if !validIOSPhotoManagedUploadInit(req, scope) {
+		t.Fatal("valid large managed iOS original rejected")
+	}
+	scope.targetID = ownerRoot + 1
+	if validIOSPhotoManagedUploadInit(req, scope) {
+		t.Fatal("large original escaped current managed target")
+	}
+	req.ParentID = nil
+	if validIOSPhotoManagedUploadInit(req, iosPhotoManagedUploadScope{targetID: ownerRoot}) {
+		t.Fatal("large original without Owner target admitted")
+	}
+}
+
 func TestIOSBackgroundGrantIsNotUsedForGenericRoutes(t *testing.T) {
-	// The route contract is exact and intentionally denies generic folder
-	// listings, deletion, node mutation and SourceRun.
-	// Background wrappers call existing Go handlers only AFTER the
-	// scoped Owner/root and iOS HMAC policy validates each operation.
-	if iosBackgroundOriginalMaxBytes <= 1_073_741_824 ||
-		iosBackgroundOriginalMaxBytes > 1_073_741_824+8*1_048_576 {
-		t.Fatal("Live ZIP overhead needs a small upper bound")
+	// The route contract remains exact and denies generic folder listings,
+	// deletion, node mutation and SourceRun. Only the iOS media byte ceiling
+	// changed; the shared Go UploadSession still enforces MaxUploadBytes/quota.
+	if defaultUploadChunkSize != 8*1_048_576 {
+		t.Fatal("iOS media must keep bounded UploadSession chunk transport")
 	}
 }
