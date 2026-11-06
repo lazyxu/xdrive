@@ -669,6 +669,11 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-quick-access"
           node --test desktop/tests/ios-native-files-quick-access.cjs
 
+      - name: Verify native Files final UI/gesture parity contracts
+        run: |
+          set -euo pipefail
+          node --test desktop/tests/ios-native-files-final-parity.cjs
+
       - name: Verify native Files Viewer bounded navigation and Owner preview contracts
         run: |
           set -euo pipefail
