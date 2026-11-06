@@ -890,6 +890,9 @@ declare global {
         getDeviceBackupLocalEvidencePreflight: (sourceID: number, afterEvidenceID: number, requestID: string) => Promise<DesktopResult<XDriveLocalBackupEvidencePreflight>>
         cancelDeviceBackupLocalEvidencePreflight: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
         removeDeviceBackupLocalSource: (sourceID: number, revision: number) => Promise<DesktopResult<XDriveLocalBoundBackupRemoval>>
+        getDeviceBackupLocalArchiveSettings: (sourceID: number) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
+        archiveDeviceBackupLocalSource: (sourceID: number, revision: number) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
+        restoreDeviceBackupLocalSource: (sourceID: number, revision: number) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
         getDeviceBackupRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<XDriveDeviceBackupRunPage>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceRunFailures: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunFailure[]>>
