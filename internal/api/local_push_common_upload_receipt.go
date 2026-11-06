@@ -123,9 +123,13 @@ func (s *Server) readBoundLocalPushCommonUploadOriginal(
 		default:
 			return deny
 		}
+		if err := recordUploadAuthorizationOperationSuccessTx(tx, c, "local_push.receipt.read", op); err != nil {
+			return err
+		}
 		return c.Request.Context().Err()
 	})
 	if err != nil {
+		s.recordUploadAuthorizationOperationFailure(c, "local_push.receipt.read", sourceID, revision, proof, err)
 		return localPushCommonReceiptDTO{}, deny
 	}
 	return out, nil
