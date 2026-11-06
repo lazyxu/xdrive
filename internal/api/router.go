@@ -475,6 +475,13 @@ func (s *Server) Router() *gin.Engine {
 	authed.PUT("/ios/photos/backup-destination", s.putIOSPhotoBackupDestination)
 	authed.GET("/android/photos/backup-destination", s.getAndroidPhotoBackupDestination)
 	authed.PUT("/android/photos/backup-destination", s.putAndroidPhotoBackupDestination)
+	// Native MediaStore originals reuse the canonical CAS/UploadSession writer,
+	// but every route requires an exact current Android Device + Source scope.
+	authed.POST("/android/photos/managed/uploads", s.androidPhotoManagedCreateUpload)
+	authed.GET("/android/photos/managed/uploads/:id", s.androidPhotoManagedGetUpload)
+	authed.PUT("/android/photos/managed/uploads/:id/chunks/:index", s.androidPhotoManagedPutChunk)
+	authed.POST("/android/photos/managed/uploads/:id/finalize", s.androidPhotoManagedFinalizeUpload)
+	authed.POST("/android/photos/managed/uploads/resume-lookup", s.androidPhotoManagedResumeLookup)
 	authed.POST("/ios/photos/background-grants", s.createIOSPhotoBackgroundGrant)
 	authed.GET("/ios/photos/background-grants", s.listIOSPhotoBackgroundGrants)
 	authed.POST("/ios/photos/background-grants/:id/revoke", s.revokeIOSPhotoBackgroundGrant)

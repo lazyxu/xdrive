@@ -252,12 +252,18 @@ func requireSynologyPushUploadSessionTx(
 // mutations additionally repeat these checks in their actual SQL transaction.
 func (s *Server) verifyPushUploadSession(c *gin.Context, session meta.UploadSession) error {
 	if session.SourceID == 0 {
+		if _, native := currentAndroidPhotoManagedUploadScope(c); native {
+			return errManagedSourceWriteDenied
+		}
 		if _, native := currentIOSPhotoManagedUploadScope(c); native {
 			return errManagedSourceWriteDenied
 		}
 		return nil
 	}
 	return s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if _, native := currentAndroidPhotoManagedUploadScope(c); native {
+			return requireAndroidPhotoManagedSessionTx(c.Request.Context(), tx, c, session)
+		}
 		if _, native := currentIOSPhotoManagedUploadScope(c); native {
 			return requireIOSPhotoManagedSessionTx(c.Request.Context(), tx, c, session)
 		}

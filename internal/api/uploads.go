@@ -406,7 +406,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		// A resumable DSM session belongs to one exact Source/Device/Root
 		// tuple. Ordinary sessions remain compatible with existing clients.
-		if native, ok := currentIOSPhotoManagedUploadScope(c); ok {
+		if native, ok := currentAndroidPhotoManagedUploadScope(c); ok {
+			q = q.Where("source_id = ? AND source_revision = ? AND source_device_id = ? AND source_target_id = ? AND source_root_id = '' AND source_root_fingerprint = ''",
+				native.sourceID, native.sourceRevision, native.deviceID, native.targetID)
+		} else if native, ok := currentIOSPhotoManagedUploadScope(c); ok {
 			q = q.Where("source_id = ? AND source_revision = ? AND source_device_id = ? AND source_target_id = ? AND source_root_id = '' AND source_root_fingerprint = ''",
 				native.sourceID, native.sourceRevision, native.deviceID, native.targetID)
 		} else if req.SourceID != 0 {
@@ -627,8 +630,9 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	// Managed iOS Photos must pass the exact Source/Device/Node transaction
 	// admission; generic instant CAS is not scoped and cannot skip it.
 	_, managedIOSPhoto := currentIOSPhotoManagedUploadScope(c)
+	_, managedAndroidPhoto := currentAndroidPhotoManagedUploadScope(c)
 	if req.SourceID == 0 && req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") &&
-		!scopedRun && !managedIOSPhoto {
+		!scopedRun && !managedIOSPhoto && !managedAndroidPhoto {
 		session, currentRevision, handled, err := s.tryInstantUploadSession(
 			c.Request.Context(), uid, req, chunkCount, shareGrant,
 		)
@@ -710,6 +714,14 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	if native, ok := currentIOSPhotoManagedUploadScope(c); ok {
 		// The iPhone client cannot choose a Source or target; Server stamps
 		// the verified tuple on its canonical CAS session before persistence.
+		session.SourceID = native.sourceID
+		session.SourceRevision = native.sourceRevision
+		session.SourceDeviceID = native.deviceID
+		session.SourceTargetID = native.targetID
+	}
+	if native, ok := currentAndroidPhotoManagedUploadScope(c); ok {
+		// Android's identity-only Device credential never grants generic
+		// Owner Files rights; Source and Target are Server-stamped only.
 		session.SourceID = native.sourceID
 		session.SourceRevision = native.sourceRevision
 		session.SourceDeviceID = native.deviceID

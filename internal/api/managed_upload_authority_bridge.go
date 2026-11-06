@@ -72,6 +72,12 @@ func requireSourceRunOrLocalPushTargetTx(
 	if conflictingUploadRequestWriter(c, req.SourceID, req.ResumeKey) {
 		return errManagedSourceWriteDenied
 	}
+	if _, photos := currentAndroidPhotoManagedUploadScope(c); photos {
+		if _, run := currentSourceRunScope(c); run {
+			return errManagedSourceWriteDenied
+		}
+		return requireAndroidPhotoManagedUploadTx(ctx, tx, c, ownerID, nodeID, req)
+	}
 	if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
 		if _, run := currentSourceRunScope(c); run {
 			return errManagedSourceWriteDenied
@@ -103,6 +109,12 @@ func requireSourceRunOrLocalPushFinalizeTx(
 	if mixedUploadSessionWriterClaims(session) ||
 		conflictingUploadRequestWriter(c, session.SourceID, session.ResumeKey) {
 		return errManagedSourceWriteDenied
+	}
+	if _, photos := currentAndroidPhotoManagedUploadScope(c); photos {
+		if _, run := currentSourceRunScope(c); run {
+			return errManagedSourceWriteDenied
+		}
+		return requireAndroidPhotoManagedSessionTx(ctx, tx, c, session)
 	}
 	if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
 		if _, run := currentSourceRunScope(c); run {
@@ -150,10 +162,16 @@ func (s *Server) requireUploadSessionReadAuthorityTx(
 		return errManagedSourceWriteDenied
 	}
 	if session.SourceID != 0 {
+		if _, photos := currentAndroidPhotoManagedUploadScope(c); photos {
+			return requireAndroidPhotoManagedSessionTx(ctx, tx, c, session)
+		}
 		if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
 			return requireIOSPhotoManagedSessionTx(ctx, tx, c, session)
 		}
 		return requireSynologyPushUploadSessionTx(ctx, tx, c, session)
+	}
+	if _, photos := currentAndroidPhotoManagedUploadScope(c); photos {
+		return errManagedSourceWriteDenied
 	}
 	if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
 		return errManagedSourceWriteDenied
