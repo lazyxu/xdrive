@@ -1355,15 +1355,15 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
     }
 
     @ViewBuilder
-    private func albumDirectorySections(_ snapshot: XDriveLocalPhotoAlbumPage) -> some View {
-        Text(snapshot.total == 0 ? "没有可访问的相簿。" : "\(snapshot.total) 个相簿")
+    private func albumDirectorySections(_ page: XDriveLocalPhotoAlbumPage) -> some View {
+        Text(page.total == 0 ? "没有可访问的相簿。" : "\(page.total) 个相簿")
             .font(.caption)
             .foregroundStyle(.secondary)
 
         // Keep the PhotoKit cursor order unchanged. Split only presentation
         // into user-owned and system smart albums.
-        let userAlbums = snapshot.items.filter { $0.kind == "用户相册" }
-        let systemAlbums = snapshot.items.filter { $0.kind == "系统智能相册" }
+        let userAlbums = page.items.filter { $0.kind == "用户相册" }
+        let systemAlbums = page.items.filter { $0.kind == "系统智能相册" }
 
         if !userAlbums.isEmpty {
             Text("我的相簿")
