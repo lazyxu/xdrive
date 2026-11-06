@@ -92,11 +92,13 @@ read -rsp 'xDrive password: ' xd_once_password; echo
 printf '%s\n' "$xd_once_password" | xd_nas login \
   --server https://drive.example.com --username YOUR_XDRIVE_USER --password-stdin
 unset xd_once_password
-xd_nas backup targets
-xd_nas backup init --name NAS-Photos --path /volume1/photo --target-id 123 --every 6h
-# Use the actual Source ID returned by init:
-xd_nas backup once --source 42
+# One explicit setup: the Server provisions an exclusive Push target, the
+# owning DSM Agent binds this folder and starts a verified first file-level run.
+# Substitute your own readable DSM share; do NOT provide --target-id.
+xd_nas backup init --name NAS-Documents --path /volume1/Documents --every 6h --run-now
+# Use the actual Source ID printed above, never copy 42 literally:
 xd_nas backup status --source 42
+xd_nas backup history --source 42
 ```
 
 Do not copy the example cloud target or Source ID verbatim. Before `init`,
@@ -104,8 +106,24 @@ grant the `xdrivenas` system-internal DSM user read access to that share.
 `--password-stdin` reads one bounded line rather than accepting credentials
 in argv or exporting them to the package process environment. The service
 may need restarting after initial login so its in-memory session view refreshes.
-Only a verified first manual run arms saved automatic schedules. Subsequent
-`status`, `history`, `pause`, and `cancel` commands use the same helper.
+The explicit `--run-now` starts the existing owning Agent's initial run.
+Only a trustworthy, uncertainty-free per-file checkpoint for the current
+Source revision arms later automatic runs. The background package Agent
+checks saved schedules while it is running and resumes checking after restart.
+An unchanged subsequent run skips existing confirmed SQL/CAS files; a modified
+file creates a new cloud version. No local deletion is propagated to the
+cloud in Backup mode.
+
+The exit status and history describe **verified per-file transfers**, not
+a guarantee that every file is backed up or that current cloud CAS bytes
+were reverified. Unsupported native entries or uncertain operations require
+inspection; never blindly recreate the Source after a lost reply. Use
+`xd_nas backup drafts` and the original Source ID to recover an unbound draft.
+
+The DSM shared Device Backup page can also choose a verified NAS folder,
+create its Source and—only after the separate explicit opt-in—save a 6-hour
+incremental plan and submit the first Agent run. Subsequent `status`,
+`history`, `pause`, and `cancel` commands use the same helper.
 See [standalone CLI contract](xd-backup-only-cli.md).
 
 This is a transitional local provisioning path, **not** a remote DSM/Web
