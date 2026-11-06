@@ -44,3 +44,23 @@ One `clipboard` workspace route and `XDriveClipboardPage` shared React/MUI prese
 - Owner A/B isolation for vault, lists, deletes and clear; forbidden SourceRun bearer, disabled/revoked session, unauthenticated access, UUID and payload validation, idempotency, 50-row bounded paging and TTL.
 - React Owner A→B→A and route teardown abort stale requests and discard crypto keys/visible data; no unbounded history, private storage or console logs; preserve existing FileExplorer clipboard.
 - Required Go/PostgreSQL integration and Web build/lint/router tests must run on the **exact PR HEAD**, including Final Gate. Physical browser/device/production acceptance: **跳过（未验收）** unless actually exercised. Never report queued or skipped CI as successful.
+
+## 7. Source wiring and release gate
+
+The Web MVP files deliberately share the canonical Host/UI boundary:
+
+| Contract | Code |
+| --- | --- |
+| Authenticated API routes and Server metadata | `internal/api/router.go`, `internal/api/clipboard.go`, `internal/meta/clipboard.go` |
+| Startup schema | `cmd/server/main.go` |
+| Browser-only WebCrypto and passphrase verifier | `ui/shared/src/clipboard-crypto.ts` |
+| One shared React presentation and typed data port | `ui/shared/src/mui/ClipboardPage.tsx`, `ui/shared/src/mui/WorkspaceHostAdapter.ts` |
+| Web/PWA adapters and user-gesture copy/read | `web/src/api.ts`, `web/src/clipboardDataPort.ts`, `web/src/browserClipboard.ts` |
+| Web navigation and mobile tool entry | `ui/shared/src/web-app.ts`, `web/src/webApps.ts`, `web/src/App.tsx` |
+| Server/route regression coverage | `internal/api/clipboard_api_test.go`, `internal/api/router_contract_test.go`, `web/scripts/test-web-clipboard-mvp.mjs`, shared Desktop route parity tests |
+
+This change is **Web-only** even though its page is registered in the canonical Desktop/DSM route registry; those Hosts receive a truthful unavailable state unless an authenticated Clipboard port is separately provided. Registration does not grant local OS clipboard privileges.
+
+The clipboard password is intentionally distinct from the xDrive login password, is not recoverable from the Server and is not written to Browser persistent storage. Multiple browsers of the same Owner must use an identical password to unlock the immutable encrypted verifier; no implicit reset is allowed. This protects confidentiality but does not protect already-decrypted content from the local Browser or OS.
+
+PR acceptance is source-SHA-specific: successful Web TypeScript/build and crypto regression, genuine PostgreSQL Owner-isolation tests, `gofmt`/Go race and shared Desktop/DSM navigation parity, plus all required Final Gate checks. A Draft PR, successful isolated check, queued job or a merge commit on a development branch is not proof of publication or deployment.
