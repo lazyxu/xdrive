@@ -19,6 +19,8 @@ import (
 
 func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 	db, server, owner, _, _ := setupFilePropertiesTestDB(t)
+	// This test checks Source authorization, not the default zero-size server limit.
+	server.MaxUploadBytes = 16 << 20
 	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{},
 		&meta.FileVersion{}, &meta.UploadSession{}); err != nil {
 		t.Fatal(err)
@@ -149,12 +151,12 @@ func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 	proofHeaders["X-XDrive-Synology-Source-Revision"] = "3"
 
 	// The generic Owner upload path cannot write into the managed DSM target.
-	ordinaryUpload := fmt.Sprintf(`{"parent_id":%d,"name":"owner.jpg","size":3,"chunk_size":3}`, *source.TargetNodeID)
+	ordinaryUpload := fmt.Sprintf(`{"parent_id":%d,"name":"owner.jpg","size":3}`, *source.TargetNodeID)
 	request(t, router, http.MethodPost, "/api/v1/uploads", ownerToken,
 		strings.NewReader(ordinaryUpload), http.StatusConflict)
 
 	// The same CAS UploadSession engine accepts an exact current DSM proof.
-	managedUpload := fmt.Sprintf(`{"parent_id":%d,"name":"dsm.jpg","size":3,"chunk_size":3,"source_id":%d,"source_revision":3,"source_root_id":%q,"source_root_fingerprint":%q}`,
+	managedUpload := fmt.Sprintf(`{"parent_id":%d,"name":"dsm.jpg","size":3,"source_id":%d,"source_revision":3,"source_root_id":%q,"source_root_fingerprint":%q}`,
 		*source.TargetNodeID, source.ID, rootID, rootFingerprint)
 	uploadResponse := requestWithHeaders(t, router, http.MethodPost, "/api/v1/uploads", ownerToken,
 		strings.NewReader(managedUpload), http.StatusCreated, proofHeaders)
