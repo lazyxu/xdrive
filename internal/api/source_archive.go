@@ -103,6 +103,14 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 					return err
 				}
 			}
+			// The retired DSM Photos Push writer is already disabled: its
+			// historical in-flight rows cannot resume and must not trap the
+			// Owner. All other Sources must settle uploads before archive.
+			if !isRetiredSynologyPhotosPush(updated) {
+				if err := requireSourceNoUnsettledWritesTx(tx, updated); err != nil {
+					return err
+				}
+			}
 		} else if updated.Status != meta.SourceStatusArchived {
 			return errSourceNotArchived
 		}
@@ -142,6 +150,8 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errSourceRunActive):
 			fail(c, http.StatusConflict, "source has an active run; cancel or finish it before archive")
+		case errors.Is(err, errSourceUnsettledWrites):
+			fail(c, http.StatusConflict, "source has unsettled uploads; finish or cancel before archive")
 		case errors.Is(err, errSourceNotArchived):
 			fail(c, http.StatusConflict, "source is not archived")
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):

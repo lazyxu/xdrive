@@ -989,6 +989,11 @@ func (s *Server) deleteSource(c *gin.Context) {
 		if activeRuns != 0 {
 			return errSourceRunActive
 		}
+		// DELETE may archive or hard-delete a pristine Source. Neither may
+		// invalidate a live Source-bound UploadSession or native write.
+		if err := requireSourceNoUnsettledWritesTx(tx, source); err != nil {
+			return err
+		}
 		archive, err := sourceDeleteRequiresArchiveTx(tx, source)
 		if err != nil {
 			return err
@@ -1016,6 +1021,8 @@ func (s *Server) deleteSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errSourceRunActive):
 			fail(c, http.StatusConflict, "source already has an active run")
+		case errors.Is(err, errSourceUnsettledWrites):
+			fail(c, http.StatusConflict, "source has unsettled uploads; finish or cancel before deletion")
 		case errors.Is(err, errSourceArchived):
 			fail(c, http.StatusConflict, "archived source must be restored before removal")
 		case errors.Is(err, errLocalSourceRemovalWouldDropHistory):
