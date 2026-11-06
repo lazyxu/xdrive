@@ -123,7 +123,11 @@ func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 		"X-XDrive-Local-Root-ID":            rootID,
 		"X-XDrive-Local-Root-Fingerprint":   rootFingerprint,
 	}
-	requestWithHeaders(t, router, http.MethodGet, sourcePath, ownerToken, nil, http.StatusOK, proofHeaders)
+	// This endpoint is deliberately local_folder-only. Even complete DSM
+	// Device/Source/Root proof must not grant generic Desktop Agent rights.
+	// Positive DSM authorization is exercised by the activation and managed
+	// CAS upload below, which use the Synology-specific proof path.
+	requestWithHeaders(t, router, http.MethodGet, sourcePath, ownerToken, nil, http.StatusBadRequest, proofHeaders)
 
 	// Activation is allowed only with the same persisted Device/Source/Root proof.
 	activationHeaders := map[string]string{}
