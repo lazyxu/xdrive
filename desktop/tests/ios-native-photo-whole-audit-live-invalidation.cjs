@@ -15,6 +15,8 @@ test('green library-wide audit stays under live PhotoKit invalidation until scre
   assert.match(source, /self\.observerGeneration == generation/)
   assert.match(source, /self\.reset\(\)\s*self\.message = "系统照片库已变化，旧的整库核验结果已失效/)
   assert.match(source, /completeAt = nil/)
+  // Actor cleanup can suspend: an obsolete audit must not re-publish green.
+  assert.match(source, /await scanner\.reset\(\)[\s\S]*?try Task\.checkCancellation\(\)[\s\S]*?guard self\.epoch == token,[\s\S]*?try self\.verifyGeneration\(/)
   assert.match(source, /if audit\.completeAt != nil/)
   assert.match(source, /\.onDisappear \{ audit\.reset\(\) \}/)
   assert.match(source, /\.onChange\(of: login\.owner\) \{ _ in audit\.reset\(\) \}/)
