@@ -395,9 +395,9 @@ export function externalSourceCreatePresetFor(kind: string, direction: ExternalS
 
 export const yikeConnectorNotice = '一刻相册连接依赖当前网页版未公开接口，服务端变化可能导致连接暂时失效。xDrive 仅执行读取与备份，不会上传、删除或修改一刻相册中的内容。'
 export const yikeRateLimitNotice = '为减少一刻相册返回“操作过于频繁（50005）”，xDrive 会将私有 API 控制面限制为约 2 次/秒，并尽量批量获取下载链接。若下载链接接口仍触发 50005，当前同步会立即停止继续请求，并进入约 10–15 分钟起步的冷却后自动续跑；已完成文件不会重复下载。该限制不限制照片/视频文件本身的下载速度。'
-// Historical physical directory name remains the source of truth, never rename it
-// merely to simplify the Pull UI.
-export const yikeManagedTargetLabel = '同步文件夹 / 一刻相册 / uid_<百度UID>_<账号名称>'
+// New Yike Sources create their editable leaf under this immutable prefix.
+// Existing UID-based targets keep their historic real paths unchanged.
+export const yikeManagedTargetLabel = '同步文件夹 / Pull / Yike Photos / <用户填写的目录名>'
 export const yikeManagedTargetDisplayLabel = '同步文件夹/Pull/Yike Photos'
 
 // Presentation only: keep the Server's actual target_path and target_node_id
