@@ -97,10 +97,13 @@ assert "xdrive-backup-windows-amd64.zip" in publisher
 assert "verify-synology-spk-release.sh release --require-mui" in publisher
 assert "rm -rf release/core release/backup-cli release/synology" in publisher
 assert "docker info >/dev/null" in release_jobs[".release-linux-docker"]
-promoter = (ROOT / "scripts/ci/gitlab-promote-images.sh").read_text(encoding="utf-8")
-assert 'if [[ -n "${CI_COMMIT_TAG:-}" ]]; then' in promoter
-assert "go run scripts/ci/verify-github-stable-final-gate.go" in promoter
-assert promoter.index("verify-github-stable-final-gate.go") < promoter.index("docker login")
+# Both public v* tag upload and mutable latest promotion need the gate:
+# checking only at promotion would publish an untested stable image first.
+for script in ("gitlab-server-images.sh", "gitlab-promote-images.sh"):
+    publisher_script = (ROOT / "scripts/ci" / script).read_text(encoding="utf-8")
+    assert 'if [[ -n "${CI_COMMIT_TAG:-}" ]]; then' in publisher_script, script
+    assert "go run scripts/ci/verify-github-stable-final-gate.go" in publisher_script, script
+    assert publisher_script.index("verify-github-stable-final-gate.go") < publisher_script.index("docker login"), script
 gate = (ROOT / "scripts/ci/verify-github-stable-final-gate.go").read_text(encoding="utf-8")
 for token in ("stableTagPattern", "fullCommitPattern", 'HeadBranch != tag',
               'run.Conclusion != "success"', '"final-gate"', '"photo-ocr-master-smoke"'):
