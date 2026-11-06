@@ -19,6 +19,7 @@ export const XDRIVE_WEB_APPS: Record<XDriveWebAppID, XDriveWebAppDescriptor> = {
   overview: { id: 'overview', title: xDriveWorkspaceRouteTitle('overview'), presentation: 'workspace', workspaceKey: 'overview', sidebar: true },
   files: { id: 'files', title: xDriveWorkspaceRouteTitle('files'), presentation: 'workspace', workspaceKey: 'files', sidebar: true },
   notes: { id: 'notes', title: xDriveWorkspaceRouteTitle('notes'), presentation: 'workspace', workspaceKey: 'notes', sidebar: true },
+  clipboard: { id: 'clipboard', title: xDriveWorkspaceRouteTitle('clipboard'), presentation: 'workspace', workspaceKey: 'clipboard', sidebar: true },
   gallery: { id: 'gallery', title: xDriveWorkspaceRouteTitle('gallery'), presentation: 'workspace', workspaceKey: 'gallery', sidebar: true },
   shares: { id: 'shares', title: xDriveWorkspaceRouteTitle('shares'), presentation: 'workspace', workspaceKey: 'shares', sidebar: true },
   'sync-folders': { id: 'sync-folders', title: '同步文件夹', presentation: 'workspace', sidebar: false }, // compatibility route
