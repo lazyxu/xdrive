@@ -15,7 +15,6 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import {
   externalSourceCardView,
-  externalSourceConnectorProfile,
   externalSourceDisplayName,
   externalSourceTriggerActionLabel,
   formatExternalSourceTime,

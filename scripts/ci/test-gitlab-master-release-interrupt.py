@@ -73,7 +73,7 @@ while stack:
 
 required = {
     "publish-release", "promote-server-images", "publish-server-images",
-    "release-assets", "build-source-agent", "server-image", "caddy-image",
+    "release-assets", "server-image", "caddy-image",
     "photo-face-image", "media-worker-image", "web", "package-linux-client",
     "package-windows-client", "desktop-linux", "desktop-windows",
     "build-client-core", "build-synology-ui",

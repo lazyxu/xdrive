@@ -30,7 +30,7 @@ release_only = '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" &
 
 required_builds = {
     "desktop-linux", "desktop-windows", "build-synology-ui", "build-client-core",
-    "build-source-agent", "package-linux-client", "server-image",
+    "package-linux-client", "server-image",
     "media-worker-image", "photo-face-image", "caddy-image",
     "package-windows-client", "web",
 }
@@ -84,7 +84,7 @@ for name in required_publishers:
     assert "CI_COMMIT_TAG =~ /^v.+/'" in block, name
     assert "      when: on_success" in block, name
 
-assert "build-source-agent" in release_jobs["release-assets"]
+assert "build-source-agent" not in release_jobs["release-assets"]
 for name in ("server-image", "caddy-image", "photo-face-image", "media-worker-image"):
     assert name in release_jobs["publish-server-images"], name
 assert "release-assets" in release_jobs["promote-server-images"]
