@@ -228,7 +228,7 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 			return err
 		}
 
-		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
+		if source.Status != meta.SourceStatusActive && !nativePhotoSourceRunKind(source.Kind) {
 			return errSourcePaused
 		}
 		if !meta.ValidSourceSyncMode(source.SyncMode) || !meta.ValidSourceRunMode(source.RunMode) {
@@ -940,7 +940,7 @@ func (s *Server) progressSourceRun(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
+		if source.Status != meta.SourceStatusActive && !nativePhotoSourceRunKind(source.Kind) {
 			return errSourcePaused
 		}
 		var run meta.SyncRun
@@ -956,7 +956,7 @@ func (s *Server) progressSourceRun(c *gin.Context) {
 			for key, value := range sourceRunSummaryUpdates(*req.Summary) {
 				updates[key] = value
 			}
-			if source.Kind == meta.SourceKindIOSPhotos {
+			if nativePhotoSourceRunKind(source.Kind) {
 				synced := req.Summary.NewItems + req.Summary.UnchangedItems
 				updates["synced_file_items"] = gorm.Expr("GREATEST(synced_file_items, ?)", synced)
 				updates["transferred_items"] = gorm.Expr("GREATEST(transferred_items, ?)", req.Summary.NewItems)
@@ -1105,7 +1105,7 @@ func (s *Server) heartbeatSourceRun(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Status != meta.SourceStatusActive && source.Kind != meta.SourceKindIOSPhotos {
+		if source.Status != meta.SourceStatusActive && !nativePhotoSourceRunKind(source.Kind) {
 			return errSourcePaused
 		}
 		var run meta.SyncRun
@@ -1179,7 +1179,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		}
 		// A SyncRun owns its original Source revision, not a later target or
 		// policy revision committed while its long-running worker was active.
-		sourceOwnsRun := source.Revision == run.SourceRevision && (source.Status == meta.SourceStatusActive || source.Kind == meta.SourceKindIOSPhotos && source.Status == meta.SourceStatusPaused)
+		sourceOwnsRun := source.Revision == run.SourceRevision && (source.Status == meta.SourceStatusActive || nativePhotoSourceRunKind(source.Kind) && source.Status == meta.SourceStatusPaused)
 
 		status := req.Status
 		if run.CancelRequestedAt != nil {
@@ -1301,7 +1301,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 			run.UnprocessedItems = &pending
 		}
 		summary.ApplyToSyncRun(&run)
-		if source.Kind == meta.SourceKindIOSPhotos {
+		if nativePhotoSourceRunKind(source.Kind) {
 			// PhotoKit does not publish persistent SourceItems: these counts are
 			// backed by per-original Server Node receipt readback on the iPhone.
 			run.SyncedFileItems = summary.NewItems + summary.UnchangedItems
@@ -1316,7 +1316,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		run.CheckpointAfter = req.Checkpoint
 		runError := strings.TrimSpace(req.Error)
 		if runError == "" && status == meta.SyncRunStatusPartial {
-			if source.Kind == meta.SourceKindIOSPhotos {
+			if nativePhotoSourceRunKind(source.Kind) {
 				runError = fmt.Sprintf("%d photo items need review or were unavailable", summary.FailedItems)
 			} else {
 				runError = fmt.Sprintf("%d source items failed", summary.FailedItems)
@@ -1336,7 +1336,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		}
 
 		sourceUpdates := map[string]any{"last_run_at": now, "updated_at": now}
-		if status == meta.SyncRunStatusCompleted && (inventoryComplete || source.Kind == meta.SourceKindIOSPhotos) {
+		if status == meta.SyncRunStatusCompleted && (inventoryComplete || nativePhotoSourceRunKind(source.Kind)) {
 			sourceUpdates["last_success_at"] = now
 			sourceUpdates["last_error"] = ""
 			if req.Checkpoint != "" {
@@ -1529,7 +1529,8 @@ func writeSourceRunError(c *gin.Context, err error) {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		fail(c, http.StatusNotFound, "source or source run not found")
 	case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized),
-		errors.Is(err, errIOSPhotoSourceRunUnauthorized):
+		errors.Is(err, errIOSPhotoSourceRunUnauthorized),
+		errors.Is(err, errAndroidPhotoSourceRunUnauthorized):
 		fail(c, http.StatusForbidden, "source executor device binding was revoked or changed")
 	case errors.Is(err, errLocalFolderNotReady):
 		fail(c, http.StatusConflict, "local folder has no authorized device-bound executor")

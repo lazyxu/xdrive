@@ -284,6 +284,9 @@ func (s *Server) requireLocalSourceMutationTx(tx *gorm.DB, c *gin.Context, sourc
 		if source.Kind == meta.SourceKindIOSPhotos {
 			return s.requireIOSPhotoSourceRunProofTx(tx, c, sourceID)
 		}
+		if source.Kind == meta.SourceKindAndroidPhotos {
+			return s.requireAndroidPhotoSourceRunProofTx(tx, c, sourceID)
+		}
 		if source.Kind == meta.SourceKindLocalFolder ||
 			(source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush) {
 			return errLocalSourceExecutorTransactionUnauthorized
@@ -307,6 +310,9 @@ func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID
 		}
 		if source.Kind == meta.SourceKindIOSPhotos {
 			return s.requireIOSPhotoSourceRunProofTx(tx, c, sourceID)
+		}
+		if source.Kind == meta.SourceKindAndroidPhotos {
+			return s.requireAndroidPhotoSourceRunProofTx(tx, c, sourceID)
 		}
 		if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
 			return errLocalSourceExecutorTransactionUnauthorized
