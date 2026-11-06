@@ -3070,6 +3070,9 @@ export default function App({
       const result=await window.xdriveDesktop.preparePlacesEmbed(scope)
       return result.ok && result.data.allowed===true
     },
+    // Reuse the trusted local Desktop confirmation + Agent logout path.
+    // The user then signs in through Desktop itself; never the HTTPS guest.
+    onOpenDesktopReauthentication: requestLogout,
     onOpenSecureDesktopMap: (scope) => {
               void run('baidu-secure-map', () => window.xdriveDesktop.openBaiduMapSecure(scope))
                 .catch((openError) => setError(
