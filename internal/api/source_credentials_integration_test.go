@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -145,37 +146,40 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	}
 	credentialTestErr = nil
 
-	synologyTestBody := `{"kind":"synology_photos","payload":{"base_url":"https://nas.example:5001","username":"alice","password":"secret"}}`
-	credentialTestErr = context.DeadlineExceeded
-	synologyTimeout := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
-		strings.NewReader(synologyTestBody), http.StatusGatewayTimeout, map[string]string{"Content-Type": "application/json"})
-	if !strings.Contains(synologyTimeout.Body.String(), "synology_timeout") {
-		t.Fatalf("Synology timeout response=%s", synologyTimeout.Body.String())
+	// Synology credential diagnostics are dormant at the public API, including
+	// both legacy connector kinds. The mock must never see these requests.
+	for _, kind := range []string{synologySourceKind, synologyFilesSourceKind} {
+		beforeKind, beforePayload := testedKind, string(testedPayload)
+		body := fmt.Sprintf(`{"kind":%q,"payload":{"base_url":"https://nas.example:5001","username":"alice","password":"secret"}}`, kind)
+		response := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
+			strings.NewReader(body), http.StatusGone, map[string]string{"Content-Type": "application/json"})
+		if testedKind != beforeKind || string(testedPayload) != beforePayload || strings.Contains(response.Body.String(), "secret") {
+			t.Fatalf("dormant Synology credential probe invoked remote tester or leaked secret: %s", response.Body.String())
+		}
 	}
 
-	credentialTestErr = fmt.Errorf("%w: %w", synology.ErrUnavailable, syscall.ECONNREFUSED)
-	synologyRefused := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
-		strings.NewReader(synologyTestBody), http.StatusBadGateway, map[string]string{"Content-Type": "application/json"})
-	if !strings.Contains(synologyRefused.Body.String(), "synology_connection_refused") ||
-		!strings.Contains(synologyRefused.Body.String(), "\"detail\"") ||
-		!strings.Contains(synologyRefused.Body.String(), "端口拒绝连接") {
-		t.Fatalf("Synology refused response=%s", synologyRefused.Body.String())
+	// Keep Synology-specific TLS, refused-connection and timeout error mapping
+	// covered directly, so enabling the adapter later does not lose diagnostics.
+	for _, tc := range []struct {
+		err    error
+		status int
+		code   string
+		detail string
+	}{
+		{context.DeadlineExceeded, http.StatusGatewayTimeout, "synology_timeout", ""},
+		{fmt.Errorf("%w: %w", synology.ErrUnavailable, syscall.ECONNREFUSED),
+			http.StatusBadGateway, "synology_connection_refused", "端口拒绝连接"},
+		{fmt.Errorf("%w: %w", synology.ErrUnavailable, x509.UnknownAuthorityError{Cert: &x509.Certificate{}}),
+			http.StatusBadGateway, "synology_tls_unknown_authority", "证书"},
+	} {
+		response := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(response)
+		writeSourceCredentialTestError(c, synologySourceKind, tc.err)
+		if response.Code != tc.status || !strings.Contains(response.Body.String(), tc.code) ||
+			(tc.detail != "" && !strings.Contains(response.Body.String(), tc.detail)) {
+			t.Fatalf("Synology diagnostic error %v: HTTP %d %s", tc.err, response.Code, response.Body.String())
+		}
 	}
-	credentialTestErr = nil
-
-	credentialTestErr = fmt.Errorf(
-		"%w: %w",
-		synology.ErrUnavailable,
-		x509.UnknownAuthorityError{Cert: &x509.Certificate{}},
-	)
-	synologyTLS := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
-		strings.NewReader(synologyTestBody), http.StatusBadGateway, map[string]string{"Content-Type": "application/json"})
-	if !strings.Contains(synologyTLS.Body.String(), "synology_tls_unknown_authority") ||
-		!strings.Contains(synologyTLS.Body.String(), "\"detail\"") ||
-		!strings.Contains(synologyTLS.Body.String(), "证书") {
-		t.Fatalf("Synology TLS diagnostic response=%s", synologyTLS.Body.String())
-	}
-	credentialTestErr = nil
 
 	var userA meta.User
 	if err := db.Where("username = ?", "credential-alice").First(&userA).Error; err != nil {
@@ -273,6 +277,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	synologyPullCredentialPath := fmt.Sprintf("/api/v1/sources/%d/credential", synologyPull.ID)
+	request(t, router, http.MethodPost, synologyPullCredentialPath+"/test", tokenA, nil, http.StatusGone)
 	synologyStatus := request(t, router, http.MethodGet, synologyPullCredentialPath, tokenA, nil, http.StatusOK)
 	if !strings.Contains(synologyStatus.Body.String(), `"configured":true`) ||
 		strings.Contains(synologyStatus.Body.String(), "opaque-historical") {

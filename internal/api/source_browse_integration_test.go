@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -135,11 +136,31 @@ func TestSourceFileStationBrowseUsesStoredCredentialAndReturnsDirectoriesOnly(t 
 	}
 	clear(credentialBytes)
 
-	first := request(
-		t, router, http.MethodGet,
+	// Public browse is unavailable during folder-Push MVP and must not
+	// contact the NAS or decrypt a dormant Pull credential.
+	request(t, router, http.MethodGet,
 		fmt.Sprintf("/api/v1/sources/%d/browse?limit=3", source.ID),
-		tokenA, nil, http.StatusOK,
-	)
+		tokenA, nil, http.StatusGone)
+	if len(browseCalls) != 0 {
+		t.Fatalf("disabled public browse contacted NAS: %+v", browseCalls)
+	}
+
+	// Preserve the full FileStation pagination/validation implementation tests
+	// beneath the public capability gate for later connector re-enablement.
+	probe := func(src meta.Source, path string, wantStatus int) *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(response)
+		c.Request = httptest.NewRequest(http.MethodGet, path, nil)
+		server.browseSourceDirectoriesForSource(c, src)
+		if response.Code != wantStatus {
+			t.Fatalf("internal FileStation browse %s: status=%d, want=%d, body=%s",
+				path, response.Code, wantStatus, response.Body.String())
+		}
+		return response
+	}
+
+	first := probe(source,
+		fmt.Sprintf("/api/v1/sources/%d/browse?limit=3", source.ID), http.StatusOK)
 	if strings.Contains(first.Body.String(), "browse-secret") {
 		t.Fatal("browse response exposed source credential")
 	}
@@ -156,11 +177,8 @@ func TestSourceFileStationBrowseUsesStoredCredentialAndReturnsDirectoriesOnly(t 
 		t.Fatalf("first browse page must contain directories only: %+v", page1.Items)
 	}
 
-	second := request(
-		t, router, http.MethodGet,
-		fmt.Sprintf("/api/v1/sources/%d/browse?path=%%2Fdocuments&offset=3&limit=2", source.ID),
-		tokenA, nil, http.StatusOK,
-	)
+	second := probe(source,
+		fmt.Sprintf("/api/v1/sources/%d/browse?path=%%2Fdocuments&offset=3&limit=2", source.ID), http.StatusOK)
 	var page2 sourceBrowsePageDTO
 	if err := json.Unmarshal(second.Body.Bytes(), &page2); err != nil {
 		t.Fatal(err)
@@ -182,16 +200,8 @@ func TestSourceFileStationBrowseUsesStoredCredentialAndReturnsDirectoriesOnly(t 
 		fmt.Sprintf("/api/v1/sources/%d/browse", source.ID),
 		tokenB, nil, http.StatusNotFound,
 	)
-	request(
-		t, router, http.MethodGet,
-		fmt.Sprintf("/api/v1/sources/%d/browse?path=%%2F", source.ID),
-		tokenA, nil, http.StatusBadRequest,
-	)
-	request(
-		t, router, http.MethodGet,
-		fmt.Sprintf("/api/v1/sources/%d/browse?limit=1001", source.ID),
-		tokenA, nil, http.StatusBadRequest,
-	)
+	probe(source, fmt.Sprintf("/api/v1/sources/%d/browse?path=%%2F", source.ID), http.StatusBadRequest)
+	probe(source, fmt.Sprintf("/api/v1/sources/%d/browse?limit=1001", source.ID), http.StatusBadRequest)
 
 	missingCredential := meta.Source{
 		OwnerID:   alice.ID,
@@ -206,11 +216,7 @@ func TestSourceFileStationBrowseUsesStoredCredentialAndReturnsDirectoriesOnly(t 
 	if err := db.Create(&missingCredential).Error; err != nil {
 		t.Fatal(err)
 	}
-	request(
-		t, router, http.MethodGet,
-		fmt.Sprintf("/api/v1/sources/%d/browse", missingCredential.ID),
-		tokenA, nil, http.StatusConflict,
-	)
+	probe(missingCredential, fmt.Sprintf("/api/v1/sources/%d/browse", missingCredential.ID), http.StatusConflict)
 
 	photos := meta.Source{
 		OwnerID:   alice.ID,
@@ -225,9 +231,5 @@ func TestSourceFileStationBrowseUsesStoredCredentialAndReturnsDirectoriesOnly(t 
 	if err := db.Create(&photos).Error; err != nil {
 		t.Fatal(err)
 	}
-	request(
-		t, router, http.MethodGet,
-		fmt.Sprintf("/api/v1/sources/%d/browse", photos.ID),
-		tokenA, nil, http.StatusBadRequest,
-	)
+	probe(photos, fmt.Sprintf("/api/v1/sources/%d/browse", photos.ID), http.StatusBadRequest)
 }

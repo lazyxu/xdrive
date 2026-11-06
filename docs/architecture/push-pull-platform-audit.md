@@ -2,9 +2,10 @@
 
 > **2026-11-06 superseding product decision:** the standalone DSM Synology
 > Photos **Push** connector has been retired in favor of the original DSM
-> `local_folder` Backup-only Agent. The 2026-11-05 implementation notes below
-> are retained as historical audit evidence, **not active implementation
-> guidance**. Synology Photos **Pull** and historical Push data remain intact.
+> `local_folder` Backup-only Agent. Synology Photos/Files **Pull** are now
+> temporarily disabled, with implementations and all historical data retained.
+> The 2026-11-05 implementation notes below are historical audit evidence,
+> **not active implementation guidance**.
 
 **Audit date:** 2026-11-05  
 **Authority:** [Unified Push/Pull Source Management Architecture](./push-pull-source-management.md)  

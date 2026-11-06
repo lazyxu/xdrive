@@ -3,8 +3,9 @@
 > **2026-11-06 update:** DSM Synology Photos **Push** is retired as a
 > product feature. Back up its Personal/Shared original files with DSM
 > **local_folder Push** using the existing owning `xdrive-agent`.
-> Synology Photos **Pull**, Synology Files Pull, and all historical
-> Source/Node/UploadSession/CAS data remain supported. Earlier entries
+> Synology Photos **Pull** and Synology Files Pull implementations and all
+> historical Source/Node/UploadSession/CAS data are preserved, but both Pull
+> modes are **temporarily disabled** for the DSM folder-Push MVP. Earlier entries
 > describing a separate DSM Source Agent are historical, not active policy.
 
 **Decision:** 2026-11-05  
@@ -63,8 +64,8 @@ Current master contains older layouts such as 同步文件夹/设备备份, 同�
 | Android Photos Push | android_photos (to add) | push | native MediaStore / WorkManager runner |
 | DSM Photos Push (retired) | synology_photos | push | none; legacy records retained for read/archive only |
 | Yike Photos Pull | yike_photos | pull | Server Pull Worker |
-| Synology Photos Pull | synology_photos | pull | Server Pull Worker |
-| Synology Files Pull | synology_files | pull | Server Pull Worker |
+| Synology Photos Pull (暂禁用) | synology_photos | pull | Server Pull Worker (handler not registered) |
+| Synology Files Pull (暂禁用) | synology_files | pull | Server Pull Worker (handler not registered) |
 
 Kind and direction together identify the connector. `synology_photos` **Pull** remains a Server worker; the historical `synology_photos` **Push** is read/archive-only and is not offered for new creation. Desktop Push and xd Push are not separate Source kinds or upload implementations.
 
@@ -114,7 +115,7 @@ Pull is always Server-executed. Desktop, browser, phones and DSM do not execute 
 
 - One long-lived Server Pull Worker service hosts the connector dispatcher.
 - Each eligible Source receives an isolated worker execution context, cancellation context, run lease, checkpoint, retry state and progress. This is logical per-Source isolation, not one OS process/container per Source.
-- Yike Photos, Synology Photos and Synology Files are adapters in the same dispatcher; they do not own separate schedulers or upload pipelines.
+- Yike Photos is registered in the shared dispatcher; Synology Photos/Files Pull adapters remain in source code but are not registered during the DSM folder-Push MVP.
 - Each Source stores its own encrypted credential/configuration, schedule, checkpoint, SourceItems and SyncRun history.
 - Shared scheduling provides bounded global concurrency and per-upstream-account serialization. One Source's timeout, expired credential, 429 or bad item cannot block unrelated Sources.
 - Manual trigger, scheduled run and retry use the same Source worker path; manual work has priority.
