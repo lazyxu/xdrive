@@ -92,12 +92,44 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
     func start(atOffset requestedOffset: Int = 0,
                requireStableResume: Bool = false,
                album: XDriveLocalPhotoAlbumSummary? = nil) throws -> Int {
+        try startConfigured(atOffset: requestedOffset,
+                            requireStableResume: requireStableResume,
+                            album: album, mediaFilter: .all)
+    }
+
+    /// Map-only filtered PhotoKit lease. Ordinary backup scans continue to use
+    /// start() with its original all-media ordering and stable resume rules.
+    /// A partially authorized PhotoKit library must never produce a map.
+    func startMap(atOffset requestedOffset: Int = 0,
+                  album: XDriveLocalPhotoAlbumSummary? = nil,
+                  mediaFilter: XDriveIOSNativePhotoMediaFilter) throws -> Int {
+        guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else {
+            // Never retain an earlier scan after Full Access has been revoked.
+            reset()
+            throw XDrivePhotoKitScanFailure.notAuthorized
+        }
+        return try startConfigured(atOffset: requestedOffset,
+                                   requireStableResume: false,
+                                   album: album, mediaFilter: mediaFilter,
+                                   requireFullLibrary: true)
+    }
+
+    private func startConfigured(atOffset requestedOffset: Int,
+                                 requireStableResume: Bool,
+                                 album: XDriveLocalPhotoAlbumSummary?,
+                                 mediaFilter: XDriveIOSNativePhotoMediaFilter,
+                                 requireFullLibrary: Bool = false) throws -> Int {
         reset()
         guard requestedOffset >= 0 else {
             throw XDrivePhotoKitScanFailure.invalidOffset
         }
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard status == .authorized || (!requireStableResume && album == nil && status == .limited) else {
+            throw XDrivePhotoKitScanFailure.notAuthorized
+        }
+        // Recheck at the actual snapshot admission, not only in startMap():
+        // a Limited PhotoKit selection can never become a partial map.
+        guard !requireFullLibrary || status == .authorized else {
             throw XDrivePhotoKitScanFailure.notAuthorized
         }
         PHPhotoLibrary.shared().register(observer)
@@ -113,6 +145,9 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
             NSSortDescriptor(key: "creationDate", ascending: false),
             NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
+        // Map and Gallery use the same AND predicates. All-media scans retain
+        // the original unfiltered backup PHFetchResult and cursor ordering.
+        mediaFilter.applyPredicates(to: options)
         let snapshot: PHFetchResult<PHAsset>
         if let album {
             guard let collection = PHAssetCollection.fetchAssetCollections(
@@ -131,7 +166,24 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
                 reset()
                 throw XDrivePhotoKitScanFailure.snapshotChanged
             }
+            // Album fetches do not have PhotoKit's typed fetch overload.
+            // Intersect the collection with the exact image/video criterion.
+            if let kind = mediaFilter.fetchKind {
+                let mediaType: PHAssetMediaType = kind == "image" ? .image : .video
+                let typed = NSPredicate(format: "mediaType == %d", mediaType.rawValue)
+                if let selected = options.predicate {
+                    options.predicate = NSCompoundPredicate(
+                        andPredicateWithSubpredicates: [selected, typed]
+                    )
+                } else {
+                    options.predicate = typed
+                }
+            }
             snapshot = PHAsset.fetchAssets(in: collection, options: options)
+        } else if mediaFilter.fetchKind == "image" {
+            snapshot = PHAsset.fetchAssets(with: .image, options: options)
+        } else if mediaFilter.fetchKind == "video" {
+            snapshot = PHAsset.fetchAssets(with: .video, options: options)
         } else {
             snapshot = PHAsset.fetchAssets(with: options)
         }
