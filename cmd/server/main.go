@@ -510,7 +510,15 @@ WHERE s.device_id IS NULL
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_xd_files_size_node ON xd_files(size, node_id)`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_name ON xd_sources(owner_id, lower(name))`).Error; err != nil {
+	// Source names are unique per Owner and direction: Push and Pull are
+	// independent namespaces, while every connector within Pull shares one.
+	if err := db.Exec("DROP INDEX IF EXISTS idx_xd_sources_owner_name").Error; err != nil {
+		return err
+	}
+	if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_direction_name ON xd_sources(owner_id, direction, lower(name))").Error; err != nil {
+		return err
+	}
+	if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_yike_account ON xd_sources(owner_id, kind, provider_account_id) WHERE kind = 'yike_photos' AND provider_account_id <> ''").Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`

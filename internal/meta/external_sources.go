@@ -65,6 +65,7 @@ type Source struct {
 	Revision           uint64     `gorm:"not null;default:1"`
 	TargetNodeID       *uint64    `gorm:"index"`
 	TargetManaged      bool       `gorm:"not null;default:false"` // set only by verified server-owned target provisioning/migration
+	ProviderAccountID  string     `gorm:"size:128;index"` // private stable remote account identity; never a directory name
 	IgnoreRules        string     `gorm:"type:text"`
 	Checkpoint         string     `gorm:"type:text"`
 	LastRunAt          *time.Time `gorm:"index"`
