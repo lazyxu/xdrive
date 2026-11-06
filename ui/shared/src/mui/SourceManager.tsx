@@ -20,7 +20,6 @@ import type {
   XDriveSourceRunFailurePage,
   XDriveSourceRunSkipPage,
 } from './SourceManagerDetailsDialog'
-import { XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from './SynologyDsmGuideDialog'
 import {
   externalSourceConnectorProfile,
   externalSourceCreateOption,
@@ -144,7 +143,7 @@ function sourceActionErrorMessage(error: unknown, fallback: string) {
   )
 }
 
-function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synology_push'): XDriveSourceCreateValues {
+function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'local_push'): XDriveSourceCreateValues {
   const option = externalSourceCreateOption(preset)
   const defaults = externalSourceDefaults(option.kind, option.direction)
   return {
@@ -254,8 +253,6 @@ export function XDriveSourceManager({
   const [settingsCredentialTestError, setSettingsCredentialTestError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [deletingSourceID, setDeletingSourceID] = useState<number | null>(null)
-  const [guideSource, setGuideSource] = useState<ExternalSource | null>(null)
-  const [guideUsername, setGuideUsername] = useState<string | undefined>()
   const [errorDialog, setErrorDialog] = useState<XDriveSourceErrorDialogState | null>(null)
   const [feedback, setFeedback] = useState('')
   const [clearCookieConfirmOpen, setClearCookieConfirmOpen] = useState(false)
@@ -264,7 +261,7 @@ export function XDriveSourceManager({
   const [settingsConnectorLoading, setSettingsConnectorLoading] = useState(false)
   const [settingsConnectorError, setSettingsConnectorError] = useState('')
   const settingsSessionRef = useRef(0)
-  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(() => initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(() => initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
   const [createNameError, setCreateNameError] = useState('')
   const [createSpacesError, setCreateSpacesError] = useState('')
   const [createRootsError, setCreateRootsError] = useState('')
@@ -542,17 +539,6 @@ export function XDriveSourceManager({
     }
   }, [selected, historyPage, loadRunHistory])
 
-  const openSynologyGuide = (source: ExternalSource) => {
-    setGuideSource(source)
-    if (!adapter.me) {
-      setGuideUsername(undefined)
-      return
-    }
-    void adapter.me()
-      .then((me) => setGuideUsername(me.username))
-      .catch(() => setGuideUsername(undefined))
-  }
-
   const loadCreateTargetDirectory = async (
     node: XDriveSourceTargetNode,
     crumbs: XDriveSourceTargetNode[],
@@ -571,7 +557,7 @@ export function XDriveSourceManager({
   }
 
   const openCreate = async () => {
-    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
@@ -780,7 +766,7 @@ export function XDriveSourceManager({
             await adapter.deleteSource(created.id, created.revision)
             setFeedback('已取消创建；本机未绑定的来源草稿已安全清理')
             setCreateOpen(false)
-            setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+            setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
             setCreateNameError('')
             setCreateSpacesError('')
             setCreateRootsError('')
@@ -813,16 +799,13 @@ export function XDriveSourceManager({
       ? '群晖 File Station 拉取来源已添加；将同步所选目录中的所有文件和文件夹'
       : `${sourceNoun}已添加`)
     setCreateOpen(false)
-    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
     await load()
     setCreating(false)
 
-    if (profile.manualTriggerExecutor === 'source_agent') {
-      openSynologyGuide(created)
-    }
   }
 
 
@@ -843,9 +826,7 @@ export function XDriveSourceManager({
     try {
       await adapter.triggerSource(row.source.id)
       const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
-      setFeedback(profile.manualTriggerExecutor === 'source_agent'
-        ? '已请求立即扫描，等待群晖 source-agent 下一次任务检查'
-        : '已请求立即扫描，服务器后台拉取任务已唤醒；定时检查仅作为兜底')
+      setFeedback('已请求立即扫描，服务器后台拉取任务已唤醒；定时检查仅作为兜底')
       await load()
     } catch (error) {
       showActionError('立即扫描失败', error, '无法提交立即扫描请求，请稍后重试。')
@@ -1456,7 +1437,6 @@ export function XDriveSourceManager({
           message: row.source.last_error || '未提供具体错误信息',
         })}
         onOpenDetails={openDetails}
-        onOpenSynologyGuide={(row) => openSynologyGuide(row.source)}
         onTriggerNow={triggerNow}
         onCancelRun={cancelRun}
         onOpenSettings={openSettings}
@@ -1525,11 +1505,11 @@ export function XDriveSourceManager({
         onRequestClose={() => {
           if (creating) return
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
         }}
         onCancel={() => {
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'local_push'))
           setCreateNameError('')
           setCreateSpacesError('')
           setCreateRootsError('')
@@ -1638,14 +1618,6 @@ export function XDriveSourceManager({
         tone="good"
         message={feedback}
         onClose={() => setFeedback('')}
-      />
-
-      <SynologyDsmGuideDialog
-        open={!!guideSource}
-        source={guideSource}
-        serverURL={window.location.origin}
-        username={guideUsername}
-        onClose={() => setGuideSource(null)}
       />
     </>
   )
