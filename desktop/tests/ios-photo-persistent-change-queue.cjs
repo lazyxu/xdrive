@@ -177,3 +177,17 @@ test('expired or incomplete PhotoKit history triggers receipt-verified full-libr
     controller.indexOf('guard let due = try XDriveIOSPhotoAutoScheduleStore.shared')
   ), /newOnlySince = activePlan\.newOnlySince/)
 })
+
+test('expired only-new history pauses until explicit full-library upload scope consent', () => {
+  const schedule = read('ios/XDriveIOS/PhotoAutoScheduleStore.swift')
+  const ui = read('ios/XDriveIOS/NativePhotoBackupScreen.swift')
+  assert.match(schedule, /historyRecoveryRequiresConsent: Bool\? = nil/)
+  assert.match(schedule, /historyRecoveryFullScopeConfirmed: Bool\? = nil/)
+  assert.match(schedule, /state\.historyRecoveryRequiresConsent = true/)
+  assert.match(schedule, /func confirmFullLibraryReconciliation\(/)
+  assert.match(schedule, /state\.historyRecoveryRequiresConsent != true/)
+  assert.match(schedule, /previousAuthorization != epoch\.authorization/)
+  assert.match(ui, /native-ios-photo-history-recovery-confirm/)
+  assert.match(ui, /可能上传拍摄日期较早、但当前没有备份收据的照片/)
+  assert.match(ui, /确认全库核对并补齐缺失原件/)
+})
