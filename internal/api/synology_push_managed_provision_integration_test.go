@@ -141,6 +141,9 @@ func TestCreateSynologyPushRequiresRegisteredDeviceAndProvisionsCanonicalTarget(
 
 func TestSynologyPushManagedTargetRejectsOccupiedOrdinaryLeaf(t *testing.T) {
 	db, _, owner, _, root := setupFilePropertiesTestDB(t)
+	if err := db.AutoMigrate(&meta.ClientDevice{}); err != nil {
+		t.Fatal(err)
+	}
 	device := meta.ClientDevice{
 		ID: uuid.NewString(), OwnerID: owner.ID, Name: "DSM Conflict", Platform: "synology",
 		CredentialHash: deviceCredentialDigest(strings.Repeat("device-secret-", 4)),
@@ -160,7 +163,7 @@ func TestSynologyPushManagedTargetRejectsOccupiedOrdinaryLeaf(t *testing.T) {
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err := db.Transaction(func(tx *gorm.DB) error {
 		_, err := createSynologyPushManagedTargetTx(context.Background(), tx, source, device)
 		return err
 	})
