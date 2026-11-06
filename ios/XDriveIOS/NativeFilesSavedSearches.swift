@@ -6,7 +6,10 @@ private enum XDriveIOSNativeFilesSavedSearchFailure: Error {
     case invalidOwner, invalidInput, malformed, uncertain, server(Int)
 }
 
-private final class XDriveIOSNativeFilesSavedSearchNoRedirect: NSObject, URLSessionTaskDelegate {
+// Native Files requests reuse the Owner-scoped HTTPS trust validator, just
+// like the Gallery and upload transports. Redirects remain denied below.
+private final class XDriveIOSNativeFilesSavedSearchNoRedirect:
+    XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
