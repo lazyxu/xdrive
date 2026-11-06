@@ -133,7 +133,6 @@ func TestHeadlessInitRunNowUsesSameAgentOnlyAfterVerifiedBootstrap(t *testing.T)
 	})
 }
 
-
 func TestHeadlessInitRefusesUnverifiedPlanAckBeforeRunNow(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "files")
 	spec := sourceschedule.Spec{Type: "interval", Expression: "6h"}
@@ -152,23 +151,23 @@ func TestHeadlessInitRefusesUnverifiedPlanAckBeforeRunNow(t *testing.T) {
 			read: &localbackupipc.Schedule{SourceID: 42, ScheduleType: "manual"},
 		},
 		{
-			name: "saved_different_source",
-			write: &localbackupipc.Schedule{SourceID: 99, Revision: 2, ScheduleType: "interval", ScheduleExpression: "6h"},
+			name:       "saved_different_source",
+			write:      &localbackupipc.Schedule{SourceID: 99, Revision: 2, ScheduleType: "interval", ScheduleExpression: "6h"},
 			wantWrites: 1,
 		},
 		{
-			name: "saved_stale_revision",
-			write: &localbackupipc.Schedule{SourceID: 42, Revision: 1, ScheduleType: "interval", ScheduleExpression: "6h"},
+			name:       "saved_stale_revision",
+			write:      &localbackupipc.Schedule{SourceID: 42, Revision: 1, ScheduleType: "interval", ScheduleExpression: "6h"},
 			wantWrites: 1,
 		},
 		{
-			name: "saved_wrong_interval",
-			write: &localbackupipc.Schedule{SourceID: 42, Revision: 2, ScheduleType: "interval", ScheduleExpression: "12h"},
+			name:       "saved_wrong_interval",
+			write:      &localbackupipc.Schedule{SourceID: 42, Revision: 2, ScheduleType: "interval", ScheduleExpression: "12h"},
 			wantWrites: 1,
 		},
 		{
-			name: "saved_invalid_readiness",
-			write: &localbackupipc.Schedule{SourceID: 42, Revision: 2, ScheduleType: "interval", ScheduleExpression: "6h", AutoReadiness: "unverified_from_elsewhere"},
+			name:       "saved_invalid_readiness",
+			write:      &localbackupipc.Schedule{SourceID: 42, Revision: 2, ScheduleType: "interval", ScheduleExpression: "6h", AutoReadiness: "unverified_from_elsewhere"},
 			wantWrites: 1,
 		},
 	} {
