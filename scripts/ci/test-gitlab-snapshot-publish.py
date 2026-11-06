@@ -210,6 +210,8 @@ if endpoint.startswith('projects/42/releases/snapshot/assets/links/'):
         print(json.dumps(link))
         sys.exit(0)
     if method == 'DELETE':
+        if os.getenv('MOCK_FAIL_RETIRED_LINK_DELETE') == link['name']:
+            fail('simulated retired link deletion failure')
         state['release']['links'].remove(link)
         state['events'].append('delete-link-'+link['name'])
         persist()
@@ -340,7 +342,7 @@ def run(tmp, sha, **switches):
     for key in ('MOCK_FAIL_ASSET','MOCK_CORRUPT_DIGEST','MOCK_FAIL_LINK','MOCK_STALE',
                 'MOCK_FAIL_PACKAGE_READ','MOCK_INVALID_RELEASE_JSON','MOCK_LINK_PAGE_FAILURE',
                 'MOCK_RELEASE_GET_500_ALWAYS','MOCK_RELEASE_CREATE_500_BEFORE',
-                'MOCK_RELEASE_CREATE_500_AFTER'):
+                'MOCK_RELEASE_CREATE_500_AFTER','MOCK_FAIL_RETIRED_LINK_DELETE'):
         env.pop(key,None)
     env.update(switches)
     if api_server is not None:
@@ -504,6 +506,42 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp, Exit
     assert new['events'][-1]=='promote-marker'
     assert len(new['packages']['sha-'+A]) == len(FILES)
     assert len([e for e in new['events'] if e=='promote-marker']) == 1
+
+    # Retire only obsolete DSM Photos Push release links after all required
+    # assets are verified; unrelated manual links remain untouched.
+    retired = copy.deepcopy(new)
+    retired_names = (
+        'xdrive-source-agent-linux-amd64',
+        'xdrive-source-agent-linux-arm64',
+        'xdrive-source-agent-linux-armv7',
+    )
+    for legacy_name in retired_names:
+        retired['next_link'] += 1
+        retired['release']['links'].append({
+            'id': retired['next_link'], 'name': legacy_name,
+            'url': ('http://gitlab.local/api/v4/projects/42/packages/generic/'
+                    'xdrive-build-packages/sha-' + A + '/' + legacy_name),
+        })
+    retired['next_link'] += 1
+    operator_link = {'id': retired['next_link'], 'name': 'operator-guide',
+                     'url': 'https://archive.example/operators'}
+    retired['release']['links'].append(operator_link)
+    (tmp/'state.json').write_text(json.dumps(retired))
+    failed_retirement, after = run(tmp, B, MOCK_FAIL_RETIRED_LINK_DELETE=retired_names[0])
+    assert failed_retirement.returncode != 0
+    unchanged(retired, after)
+    assert 'promote-marker' not in after['events'][len(retired['events']):]
+    (tmp/'state.json').write_text(json.dumps(retired))
+    cleaned, after = run(tmp, B)
+    check('retire only obsolete DSM Photos Push links', cleaned)
+    linked_names = [item['name'] for item in after['release']['links']]
+    assert all(name not in linked_names for name in retired_names)
+    assert operator_link in after['release']['links']
+    assert all('delete-link-' + name in after['events'] for name in retired_names)
+    assert 'XDRIVE_RELEASE_COMMIT=' + B in after['release']['description']
+    assert after['events'][-1] == 'promote-marker'
+    # Other cases continue from the untouched historical A baseline.
+    (tmp/'state.json').write_text(json.dumps(new))
 
     # Corrupting the DSM package must fail before uploading or promoting
     # a newer snapshot. Restore the known-good bytes for later fixtures.
