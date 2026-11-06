@@ -1,6 +1,6 @@
 import { formatBytes } from './format'
 
-export type SupportedExternalSourceKind = 'synology_photos' | 'synology_files' | 'yike_photos' | 'local_folder' | 'ios_photos'
+export type SupportedExternalSourceKind = 'synology_photos' | 'synology_files' | 'yike_photos' | 'local_folder' | 'ios_photos' | 'android_photos'
 export type ExternalSourceDirection = 'push' | 'pull'
 export type ExternalSourceCreatePreset = 'synology_push' | 'synology_pull' | 'synology_files_pull' | 'yike_pull' | 'local_push'
 export type SynologyPhotoSpace = 'personal' | 'shared'
@@ -439,7 +439,7 @@ export interface ExternalSourceConnectorProfile {
   label: string
   direction: ExternalSourceDirection
   credential: 'cookie' | 'synology_dsm' | null
-  manualTriggerExecutor: 'pull_worker' | 'source_agent' | 'local_agent' | 'ios_device'
+  manualTriggerExecutor: 'pull_worker' | 'source_agent' | 'local_agent' | 'ios_device' | 'android_device'
   defaultName: string
   defaultIgnoreRules: string
 }
@@ -586,6 +586,17 @@ export function defaultExternalSourceTimezone() {
 }
 
 export function externalSourceConnectorProfile(kind: string, direction?: ExternalSourceDirection): ExternalSourceConnectorProfile {
+  if (kind === 'android_photos') {
+    return {
+      kind,
+      label: 'Android Photos',
+      direction: 'push',
+      credential: null,
+      manualTriggerExecutor: 'android_device',
+      defaultName: 'Android 相册备份',
+      defaultIgnoreRules: '',
+    }
+  }
   if (kind === 'ios_photos') {
     return {
       kind,
@@ -713,6 +724,14 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
   const { source, latestRun, credential } = row
   const connector = externalSourceConnectorProfile(source.kind, source.direction)
   if (source.status === 'archived') return { key: 'archived', tone: 'neutral', label: '已归档' }
+  if (source.kind === 'android_photos') {
+    if (source.status === 'paused') return { key: 'paused', tone: 'neutral', label: '等待 Android 端配置备份' }
+    if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: 'Android 正在备份' }
+    if (latestRun?.status === 'partial') return { key: 'partial', tone: 'warning', label: '部分项目待处理' }
+    if (latestRun?.status === 'failed' || source.last_error) return { key: 'error', tone: 'bad', label: '最近备份异常' }
+    if (source.last_success_at) return { key: 'ready', tone: 'good', label: '最近一次备份完成' }
+    return { key: 'idle', tone: 'neutral', label: '等待 Android 端备份' }
+  }
   if (source.kind === 'ios_photos') {
     if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: 'iPhone 正在备份' }
     if (latestRun?.status === 'partial') return { key: 'partial', tone: 'warning', label: '部分项目待处理' }
@@ -747,6 +766,9 @@ export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalS
   if (row.source.kind === 'ios_photos') {
     return { ready: false, label: '请在已绑定的 iPhone「相册备份」中启动；Server 不执行 PhotoKit 扫描或原件读取' }
   }
+  if (row.source.kind === 'android_photos') {
+    return { ready: false, label: '请在已绑定的 Android 设备上配置；Server 不执行 MediaStore 原件读取或后台上传' }
+  }
   if (row.source.kind === 'local_folder') {
     return { ready: false, label: '本机同步执行器尚未启用，请先完成本地目录授权' }
   }
@@ -767,6 +789,7 @@ export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalS
 
 export function externalSourceTriggerActionLabel(row: ExternalSourceRow) {
   if (row.source.kind === 'ios_photos') return 'iPhone 端操作'
+  if (row.source.kind === 'android_photos') return 'Android 端操作'
   if (row.source.run_requested_at) return '已请求'
   if ((row.latestRun?.failed_items ?? 0) > 0) return '重试失败项'
   return '立即扫描'
@@ -796,7 +819,8 @@ export function externalSourceDefaults(kind: SupportedExternalSourceKind, direct
 export function externalSourceCardView(row: ExternalSourceRow): ExternalSourceCardView {
   const { source, latestRun } = row
   return {
-    modeLabel: source.kind === 'ios_photos' ? 'iPhone Push · 原件备份' : externalSourceModeLabel(source),
+    modeLabel: source.kind === 'ios_photos' ? 'iPhone Push · 原件备份' :
+      source.kind === 'android_photos' ? 'Android Push · 原件备份' : externalSourceModeLabel(source),
     state: getExternalSourceState(row),
     trigger: getExternalSourceTriggerState(row),
     lastActivityLabel: source.kind === 'ios_photos'
@@ -824,14 +848,17 @@ export function externalSourceDetailView(row: ExternalSourceRow): ExternalSource
   return {
     connector,
     kindLabel: connector.label,
-    modeLabel: row.source.kind === 'ios_photos' ? 'iPhone Push · 原件备份' : externalSourceModeLabel(row.source),
+    modeLabel: row.source.kind === 'ios_photos' ? 'iPhone Push · 原件备份' :
+      row.source.kind === 'android_photos' ? 'Android Push · 原件备份' : externalSourceModeLabel(row.source),
     state: getExternalSourceState(row),
     targetNodeID: row.source.target_node_id,
     lastRunAt: row.source.last_run_at,
     lastSuccessAt: row.source.last_success_at,
     scheduleLabel: row.source.kind === 'ios_photos'
       ? '由 iPhone 自动备份计划控制（前台执行；系统后台按授权与 iOS 调度）'
-      : externalSourceScheduleLabel(row.source),
+      : row.source.kind === 'android_photos'
+        ? '由 Android 原生相册备份控制；服务端不执行 MediaStore 扫描'
+        : externalSourceScheduleLabel(row.source),
     credential: connector.credential
       ? { label: externalSourceCredentialLabel(connector), configured: row.credential?.configured === true }
       : undefined,

@@ -92,6 +92,42 @@ data class NativeAndroidDeviceEnrollment(
     override fun toString(): String = "NativeAndroidDeviceEnrollment([redacted])"
 }
 
+
+/**
+ * One Server-owned Android Photos Source target. This response never grants
+ * upload capability; no Owner root or local Device name can substitute for
+ * the verified Source/Node tuple. Sensitive Device secrets are never serialized.
+ */
+data class NativeAndroidPhotoDestination(
+    val configured: Boolean,
+    val deviceId: String,
+    val suggestedName: String? = null,
+    val name: String? = null,
+    val sourceId: Long? = null,
+    val sourceRevision: Long? = null,
+    val targetNodeId: Long? = null,
+    val targetPath: String? = null,
+) {
+    init {
+        require(runCatching {
+            java.util.UUID.fromString(deviceId).toString() == deviceId
+        }.getOrDefault(false))
+        if (configured) {
+            require(suggestedName == null && name != null && validDriveNodeName(name) &&
+                sourceId != null && sourceId > 0 &&
+                sourceRevision != null && sourceRevision > 0 &&
+                targetNodeId != null && targetNodeId > 0 &&
+                targetPath == "同步文件夹/Push/" + name)
+        } else {
+            require(name == null && sourceId == null && sourceRevision == null &&
+                targetNodeId == null && targetPath == null &&
+                suggestedName != null && validDriveNodeName(suggestedName))
+        }
+    }
+
+    override fun toString(): String = "NativeAndroidPhotoDestination([redacted])"
+}
+
 data class DriveNode(
     val id: Long,
     val parentId: Long? = null,
@@ -374,6 +410,17 @@ interface XDriveService {
     suspend fun verifyNativeAndroidDevice(
         accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
     ): Unit = throw ApiException(501, "Android device identity verification unavailable")
+
+    /** Read-only current Owner+Android-Device managed Source/Target discovery. */
+    suspend fun nativeAndroidPhotoDestination(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+    ): NativeAndroidPhotoDestination =
+        throw ApiException(501, "Android managed photo destination unavailable")
+    /** Explicit user configuration only: cannot be called by an upload retry. */
+    suspend fun configureNativeAndroidPhotoDestination(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, name: String,
+    ): NativeAndroidPhotoDestination =
+        throw ApiException(501, "Android managed photo provisioning unavailable")
     /** Exact Owner Notes endpoints. Mocks without Notes support fail closed. */
     suspend fun notesInitialize(accessToken: String) {
         throw ApiException(501, "Owner Notes namespace API unavailable")
@@ -680,6 +727,57 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         // Go returns only one Owner-bound, unrevoked identity proof.
         if (result.size != 1 || result.string("device_id") != enrolled.deviceId)
             invalidPayload()
+    }
+
+
+    /** The same narrowly scoped Device credential as Go's managed destination
+     * API. No automatic enrollment, permission upgrade or write to Owner root. */
+    override suspend fun nativeAndroidPhotoDestination(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+    ): NativeAndroidPhotoDestination = parseNativeAndroidPhotoDestination(
+        request("android/photos/backup-destination", accessToken,
+            deviceIdentity = enrolled), enrolled, false)
+
+    override suspend fun configureNativeAndroidPhotoDestination(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, name: String,
+    ): NativeAndroidPhotoDestination {
+        require(validDriveNodeName(name) && name.toByteArray(Charsets.UTF_8).size <= 128 &&
+            name == name.trim()) { "Invalid managed Android photo folder name" }
+        return parseNativeAndroidPhotoDestination(
+            request("android/photos/backup-destination", accessToken,
+                values = mapOf("name" to name), method = "PUT", deviceIdentity = enrolled),
+            enrolled, true)
+    }
+
+    private fun parseNativeAndroidPhotoDestination(
+        raw: JsonObject, enrolled: NativeAndroidDeviceEnrollment, requireConfigured: Boolean,
+    ): NativeAndroidPhotoDestination {
+        try {
+            if (raw.string("device_id") != enrolled.deviceId) invalidPayload()
+            val configured = when (raw["configured"]) {
+                JsonPrimitive(true) -> true
+                JsonPrimitive(false) -> false
+                else -> invalidPayload()
+            }
+            if (requireConfigured && !configured) invalidPayload()
+            return if (configured) {
+                if (raw.keys != setOf("configured", "source_id", "source_revision",
+                        "device_id", "name", "target_node_id", "target_path")) invalidPayload()
+                NativeAndroidPhotoDestination(
+                    configured = true, deviceId = enrolled.deviceId,
+                    name = raw.string("name"), sourceId = raw.long("source_id"),
+                    sourceRevision = raw.long("source_revision"),
+                    targetNodeId = raw.long("target_node_id"),
+                    targetPath = raw.string("target_path"))
+            } else {
+                if (raw.keys != setOf("configured", "device_id", "suggested_name")) invalidPayload()
+                NativeAndroidPhotoDestination(
+                    configured = false, deviceId = enrolled.deviceId,
+                    suggestedName = raw.string("suggested_name"))
+            }
+        } catch (_: IllegalArgumentException) {
+            invalidPayload()
+        }
     }
 
     private fun notesRow(data: JsonObject): OwnerNoteRow {
@@ -2690,14 +2788,19 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         pathTailSegments: List<String> = emptyList(),
         deviceIdentity: NativeAndroidDeviceEnrollment? = null,
     ): JsonElement {
-        // Device headers are allowed on exactly one read-only identity route.
-        // A token never appears in the query, URI, body or ordinary API calls.
+        // Native Device credentials are restricted to exact identity and
+        // managed-destination routes. Never attach them to ordinary Files,
+        // uploads, a redirect, source mutation or an arbitrary caller URL.
+        val nativeIdentityRequest = path == "devices/self" && method == null &&
+            values == null
+        val nativeDestinationRequest = path == "android/photos/backup-destination" &&
+            ((method == null && values == null) ||
+                (method == "PUT" && values?.keys == setOf("name")))
         require(deviceIdentity == null ||
-            (path == "devices/self" && accessToken != null && method == null &&
-                values == null && query.isEmpty() && ifMatch == null &&
-                numberValues.isEmpty() && bodyObject == null &&
-                !longRunning && pathTailSegments.isEmpty())) {
-            "Device credentials may only be used for the current Owner identity GET"
+            (accessToken != null && (nativeIdentityRequest || nativeDestinationRequest) &&
+                query.isEmpty() && ifMatch == null && numberValues.isEmpty() &&
+                bodyObject == null && !longRunning && pathTailSegments.isEmpty())) {
+            "Device credentials are restricted to native identity and photo destination"
         }
         val url = address.url.toHttpUrlOrNull()!!.newBuilder().addPathSegments("api/v1/$path").apply {
             // Authenticated album IDs may be opaque (including reserved characters):

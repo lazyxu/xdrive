@@ -999,3 +999,17 @@ test('local folder Source UI stays Desktop-only and explicitly non-executable', 
     latestRun: null, credential: null,
   }).ready, false)
 })
+
+
+test('Android Photos Sources are visible but cannot be executed by the Server', () => {
+  const row = { source: source({ kind: 'android_photos', direction: 'push', status: 'paused' }) }
+  assert.equal(shared.externalSourceConnectorProfile('android_photos').label, 'Android Photos')
+  assert.equal(shared.externalSourceConnectorProfile('android_photos').manualTriggerExecutor, 'android_device')
+  assert.deepEqual(shared.getExternalSourceTriggerState(row), {
+    ready: false,
+    label: '请在已绑定的 Android 设备上配置；Server 不执行 MediaStore 原件读取或后台上传',
+  })
+  assert.equal(shared.externalSourceTriggerActionLabel(row), 'Android 端操作')
+  assert.equal(shared.externalSourceCardView(row).modeLabel, 'Android Push · 原件备份')
+  assert.equal(shared.getExternalSourceState(row).key, 'paused')
+})
