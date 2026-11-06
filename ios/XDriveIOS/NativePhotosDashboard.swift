@@ -630,7 +630,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                                 expectedGeneration: focusGeneration
                             )
                         },
-                        onClose: { openGallery(.local) }
+                        onClose: { openGallery(.local) },
+                        mediaFilter: localGalleryMediaFilter
                     )
                 }
             }

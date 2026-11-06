@@ -21,6 +21,9 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     @Binding var localMapCamera: MKCoordinateRegion?
     var onFocusChange: ((Bool) -> Void)?
     var onClose: (() -> Void)? = nil
+    // Shared Gallery media selection applies only to the local PhotoKit map.
+    // Cloud Owner Map remains governed by its signed Server PhotoScope.
+    var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
 
     var body: some View {
         let expectedOwner = login.owner
@@ -39,7 +42,8 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                               ) else { return }
                         localMapCamera = next
                     },
-                    onFocusChange: onFocusChange
+                    onFocusChange: onFocusChange,
+                    mediaFilter: mediaFilter
                 )
             case .cloud:
                 XDriveIOSNativeOwnerPhotoMapScreen(

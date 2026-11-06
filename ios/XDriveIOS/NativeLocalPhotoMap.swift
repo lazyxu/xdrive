@@ -4,6 +4,28 @@ import Photos
 import SwiftUI
 import UIKit
 
+/// A stale PhotoKit edit can precede the PHChange callback. Re-admit a
+/// just-tapped Viewer item against the live Full Access library and the exact
+/// Gallery filter, without reading originals or retaining private identities.
+private enum XDriveIOSMapCurrentPhotoKitAdmission {
+    static func allows(
+        _ candidate: XDrivePhotoKitScanCandidate,
+        filter: XDriveIOSNativePhotoMediaFilter
+    ) -> Bool {
+        guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+              let asset = PHAsset.fetchAssets(
+                withLocalIdentifiers: [candidate.id], options: nil
+              ).firstObject else { return false }
+        let kind: String
+        switch asset.mediaType {
+        case .image: kind = "image"
+        case .video: kind = "video"
+        default: return false
+        }
+        return candidate.kind == kind && filter.includes(asset: asset)
+    }
+}
+
 /// Transient, one-shot location handoff into the existing Gallery map.
 /// No local photo ID or GPS position is persisted or sent to a server.
 struct XDriveIOSNativeLocalMapJump: Equatable {
@@ -495,6 +517,7 @@ private enum XDriveIOSNativeMapViewerAdmission {
 
 private struct XDriveIOSMapPhotoAlbum: View {
     let items: [XDrivePhotoKitScanCandidate]
+    var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State private var selected: XDrivePhotoKitScanCandidate?
@@ -516,6 +539,8 @@ private struct XDriveIOSMapPhotoAlbum: View {
                         Button {
                             guard XDriveIOSNativeMapViewerAdmission.allows(
                                 item, in: previewItems, sceneActive: phase == .active
+                            ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
+                                item, filter: mediaFilter
                             ) else { return }
                             viewerReturnID = item.id
                             focusedTileID = nil
@@ -583,6 +608,8 @@ private struct XDriveIOSMapSpatialSelection: Identifiable {
     // Frozen scope of the completed viewport scan. Changing the camera does
     // not widen the transient 48-item cell wall to all-library coordinates.
     let viewport: XDriveIOSNativeLocalMapViewport?
+    // Freeze the same Gallery filter as the verified map Cell count.
+    let mediaFilter: XDriveIOSNativePhotoMediaFilter
 }
 
 /// On-demand bounded local-only cell paging. Re-scan the lazy PhotoKit
@@ -667,6 +694,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
             guard !busy,
                   XDriveIOSNativeMapViewerAdmission.allows(
                     item, in: loaded, sceneActive: phase == .active
+                  ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
+                    item, filter: selection.mediaFilter
                   ) else { return }
             viewerReturnID = item.id
             viewerItems = loaded
@@ -918,7 +947,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
         windowNumber = 0
         readTask = Task { @MainActor in
             do {
-                let total = try await scanner.start(atOffset: 0, album: album)
+                let total = try await scanner.startMap(
+                    atOffset: 0, album: album, mediaFilter: selection.mediaFilter
+                )
                 let result = try await readWindow(
                     scanner: scanner, pending: [], pendingIndex: 0,
                     nextOffset: 0, scannerFinished: total == 0
@@ -1064,6 +1095,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     var cameraOnEntry: MKCoordinateRegion? = nil
     var onLibraryCameraChange: ((MKCoordinateRegion?) -> Void)? = nil
     var onFocusChange: ((Bool) -> Void)?
+    // The local map is a projection of the calling Gallery's exact media scope.
+    var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
@@ -1219,11 +1252,14 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                 guard XDriveIOSNativeMapViewerAdmission.allows(
                                     candidate, in: [candidate],
                                     sceneActive: phase == .active
+                                ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
+                                    candidate, filter: mediaFilter
                                 ) else { return }
                                 singleViewer = candidate
                             } else {
                                 globalSelection = XDriveIOSMapSpatialSelection(
-                                    cells: cells, viewport: globalViewport)
+                                    cells: cells, viewport: globalViewport,
+                                    mediaFilter: mediaFilter)
                             }
                         },
                         onCamera: { current in
@@ -1297,7 +1333,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                           XDriveIOSNativePhotoMapPolicy.acceptsSelection(
                             selectedIDs: selected.map(\.id),
                             currentPageIDs: currentPage.items.map(\.id)
-                          ) else { return }
+                          ),
+                          selected.allSatisfy({
+                            XDriveIOSMapCurrentPhotoKitAdmission.allows(
+                                $0, filter: mediaFilter
+                            )
+                          }) else { return }
                     cameraReturn = region
                     cameraReturnOffset = currentPage.page.startOffset
                     if selected.count == 1, let only = selected.first,
@@ -1354,7 +1395,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         }
         }
         .padding(.horizontal, 8)
-        .navigationTitle(album.map { "\($0.name) · 地图" } ?? "地图")
+        .navigationTitle(album.map { "\($0.name) · 地图" } ??
+            (mediaFilter.isAll ? "地图" : "地图 · \(mediaFilter.title)"))
         .toolbar {
             if album != nil || onClose != nil {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -1405,20 +1447,28 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         .sheet(item: $selection, onDismiss: {
             if phase == .active { refresh(at: offset) }
             else { invalidate() }
-        }) { chosen in XDriveIOSMapPhotoAlbum(items: chosen.items) }
-        .fullScreenCover(item: $globalSelection, onDismiss: {
-            // Present the broader-library result only after the album place
-            // wall has completed its dismissal transition.
-            guard let pending = pendingNearbySelection else { return }
-            pendingNearbySelection = nil
+        }) { chosen in
+            XDriveIOSMapPhotoAlbum(items: chosen.items, mediaFilter: mediaFilter)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $globalSelection, onDismiss: {
+            // The map is now visible behind a native sheet. Even an ordinary
+            // swipe-to-dismiss (without Nearby) must recheck Full Access before
+            // the previous PhotoKit covers can remain on screen.
             guard phase == .active,
                   PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
             else {
+                pendingNearbySelection = nil
                 onLibraryCameraChange?(nil)
                 clearReturnCamera()
                 invalidate()
                 return
             }
+            // The optional nearby-library expansion starts only after this
+            // place sheet has actually completed dismissal.
+            guard let pending = pendingNearbySelection else { return }
+            pendingNearbySelection = nil
             nearbySelection = pending
         }) { chosen in
             XDriveIOSMapSpatialAlbum(
@@ -1435,11 +1485,30 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     pendingNearbySelection = chosen
                 }
             )
+            // Match the Owner map's native medium-to-large place photo wall.
+            // Keep the MapKit canvas visible underneath; never promote an
+            // unverified provisional cell into Viewer or Gallery authority.
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
-        .fullScreenCover(item: $nearbySelection) { chosen in
+        .sheet(item: $nearbySelection, onDismiss: {
+            // The map is still visible behind the Nearby sheet. A revoked
+            // Full Photo Library grant must not reveal earlier GPS covers
+            // after a drag-to-dismiss, even without another PhotoKit callback.
+            guard phase == .active,
+                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+            else {
+                onLibraryCameraChange?(nil)
+                clearReturnCamera()
+                invalidate()
+                return
+            }
+        }) { chosen in
             XDriveIOSMapSpatialAlbum(
                 selection: chosen, album: nil, isNearbyExpansion: true
             )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .fullScreenCover(item: $singleViewer, onDismiss: {
             guard phase == .active else { invalidate(); return }
@@ -1481,6 +1550,19 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         }
         .onChange(of: incomingMapJump?.id) { _ in
             _ = focusOnRequestedPhotoLocation()
+        }
+        .onChange(of: mediaFilter) { _ in
+            // A changed Gallery filter invalidates all previous Cell members
+            // and the transient camera. Neither MapKit covers nor a place
+            // wall may retain the earlier filtered PhotoKit lease.
+            onLibraryCameraChange?(nil)
+            if phase == .active && mapScope == .library {
+                scanFullLibrary()
+            } else if phase == .active {
+                refresh(at: 0)
+            } else {
+                invalidate()
+            }
         }
         .onChange(of: mapScope) { next in
             if next == .page { onLibraryCameraChange?(nil) }
@@ -1659,7 +1741,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         busy = true
         task = Task { @MainActor in
             do {
-                let total = try await worker.start(atOffset: 0, album: album)
+                let total = try await worker.startMap(
+                    atOffset: 0, album: album, mediaFilter: mediaFilter
+                )
                 var index = XDriveIOSNativeLocalMapSpatialIndex<XDrivePhotoKitLocatedCandidate>()
                 var scanned = 0
                 var pages = 0
@@ -1769,7 +1853,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         busy = true
         task = Task { @MainActor in
             do {
-                _ = try await worker.start(atOffset: max(0, requested))
+                _ = try await worker.startMap(
+                    atOffset: max(0, requested), mediaFilter: mediaFilter
+                )
                 var next = try await worker.nextLocatedPage()
                 var pagesRead = 1
                 // Reuse one lazy, permission-generation-fenced PhotoKit

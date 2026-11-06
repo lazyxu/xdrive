@@ -198,6 +198,35 @@ struct XDriveIOSNativePhotoMediaFilter: Hashable, CaseIterable, Identifiable, Ra
         }
     }
 
+    /// Deterministic combination predicate shared by on-tap map validation.
+    /// The exact same media-type, favorite and subtype conjunction is covered
+    /// by the native pure Swift filter test without needing a live PhotoKit DB.
+    func includes(
+        kind: String, isFavorite: Bool, isLive: Bool, isScreenshot: Bool
+    ) -> Bool {
+        includes(kind: kind) &&
+            (!requiresFavorite || isFavorite) &&
+            (!requiresLive || isLive) &&
+            (!requiresScreenshot || isScreenshot)
+    }
+
+    /// Revalidate a just-tapped map tile against the same Gallery filter.
+    /// A PhotoKit favorite/subtype edit can race its PHChange notification;
+    /// previously scanned map membership alone is not live Viewer authority.
+    func includes(asset: PHAsset) -> Bool {
+        let kind: String
+        switch asset.mediaType {
+        case .image: kind = "image"
+        case .video: kind = "video"
+        default: return false
+        }
+        return includes(
+            kind: kind, isFavorite: asset.isFavorite,
+            isLive: asset.mediaSubtypes.contains(.photoLive),
+            isScreenshot: asset.mediaSubtypes.contains(.photoScreenshot)
+        )
+    }
+
     /// Build one AND predicate so favorite, Live and screenshot filters can
     /// be combined without silently dropping any selected condition.
     func applyPredicates(to options: PHFetchOptions) {

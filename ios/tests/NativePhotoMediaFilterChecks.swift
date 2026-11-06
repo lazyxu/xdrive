@@ -83,6 +83,49 @@ struct NativePhotoMediaFilterChecks {
         precondition(liveAndScreenshot.requiresLive && liveAndScreenshot.requiresScreenshot)
         precondition(liveAndScreenshot.fetchKind == "image")
 
+        // The map's live on-tap admission must agree with the original
+        // PhotoKit fetch predicates for image/video and combined subtypes.
+        precondition(all.includes(
+            kind: "image", isFavorite: false, isLive: false, isScreenshot: false))
+        precondition(all.includes(
+            kind: "video", isFavorite: false, isLive: false, isScreenshot: false))
+        precondition(!all.includes(
+            kind: "unsupported", isFavorite: true, isLive: true, isScreenshot: true))
+        precondition(photos.includes(
+            kind: "image", isFavorite: false, isLive: false, isScreenshot: false))
+        precondition(!photos.includes(
+            kind: "video", isFavorite: true, isLive: false, isScreenshot: false))
+        precondition(videos.includes(
+            kind: "video", isFavorite: false, isLive: false, isScreenshot: false))
+        precondition(!videos.includes(
+            kind: "image", isFavorite: false, isLive: false, isScreenshot: false))
+        precondition(!favorites.includes(
+            kind: "image", isFavorite: false, isLive: true, isScreenshot: false))
+        precondition(favorites.includes(
+            kind: "video", isFavorite: true, isLive: false, isScreenshot: false))
+        precondition(!live.includes(
+            kind: "image", isFavorite: false, isLive: false, isScreenshot: false))
+        precondition(live.includes(
+            kind: "image", isFavorite: false, isLive: true, isScreenshot: false))
+        precondition(!live.includes(
+            kind: "video", isFavorite: true, isLive: true, isScreenshot: false))
+        precondition(screenshots.includes(
+            kind: "image", isFavorite: false, isLive: false, isScreenshot: true))
+        precondition(!screenshots.includes(
+            kind: "image", isFavorite: true, isLive: false, isScreenshot: false))
+        precondition(favoriteLive.includes(
+            kind: "image", isFavorite: true, isLive: true, isScreenshot: false))
+        precondition(!favoriteLive.includes(
+            kind: "image", isFavorite: false, isLive: true, isScreenshot: false))
+        precondition(!favoriteLive.includes(
+            kind: "image", isFavorite: true, isLive: false, isScreenshot: false))
+        precondition(liveAndScreenshot.includes(
+            kind: "image", isFavorite: false, isLive: true, isScreenshot: true))
+        precondition(!liveAndScreenshot.includes(
+            kind: "image", isFavorite: false, isLive: true, isScreenshot: false))
+        precondition(!liveAndScreenshot.includes(
+            kind: "image", isFavorite: false, isLive: false, isScreenshot: true))
+
         precondition(all.emptyMessage == "当前已授权图库中没有可浏览的照片或视频。")
         precondition(photos.emptyMessage == "当前已授权图库中没有照片。")
         precondition(videos.emptyMessage == "当前已授权图库中没有视频。")
