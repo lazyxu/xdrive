@@ -148,5 +148,5 @@ test('cloud place sheet keeps Gallery wall but omits transport-only prose', () =
   assert.doesNotMatch(wall, /Text\(placeID != nil \?/)
   assert.match(wall, /XDriveIOSNativeServerVirtualRange\([\s\S]*?placeID: placeID/)
   assert.match(wall, /model\.load\(login: login, albumID: album\?\.id, placeID: placeID/)
-  assert.match(wall, /pagePlaceID == placeID/)
+  assert.match(cloud, /pagePlaceID == placeID/)
 })
