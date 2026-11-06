@@ -19,6 +19,18 @@ enum XDriveIOSNativeOwnerMapSelectionPolicy {
         facet.item_count > 0
     }
 
+    /// A current signed Owner map facet can only lend its display count to a
+    /// freshly fetched, exact-place Range with the same count. A photo added
+    /// or removed between the two reads makes its thumbnail ineligible until
+    /// the viewport is refreshed. A cover is presentation, not access proof.
+    static func acceptsCoverPage(
+        _ facet: XDriveIOSNativeOwnerMapFacet, rangeTotal: Int, offset: Int
+    ) -> Bool {
+        canOpenPhotoRange(facet) &&
+            offset == 0 &&
+            rangeTotal == facet.item_count
+    }
+
     /// Never promote an SDK- or annotation-provided identity. Caller checks
     /// membership against the current verified Owner overview at tap time.
     static func acceptsSelectedPlace(
