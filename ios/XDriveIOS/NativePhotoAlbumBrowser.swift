@@ -363,12 +363,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .accessibilityAddTraits(.isHeader)
                     }
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(
-                            minimum: density.minimumCellWidth,
-                            maximum: density.maximumCellWidth
-                        ), spacing: 2)], spacing: 2
-                    ) {
+                    XDriveIOSNativePhotoWallGrid(density: density) {
                         ForEach(page.items[section.startIndex..<section.endIndex]) { item in
                             if item.kind == "unsupported" {
                                 placeholder
@@ -396,12 +391,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
                     }
                 }
             } else {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(
-                        minimum: density.minimumCellWidth,
-                        maximum: density.maximumCellWidth
-                    ), spacing: 2)], spacing: 2
-                ) {
+                XDriveIOSNativePhotoWallGrid(density: density) {
                     ForEach(0..<min(64, max(0, expectedTotal - offset)), id: \.self) { _ in
                         placeholder
                     }

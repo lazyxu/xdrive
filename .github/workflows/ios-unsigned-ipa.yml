@@ -427,7 +427,7 @@ jobs:
             ios/tests/NativePhotoWallDensityPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-wall-density-policy"
           "$RUNNER_TEMP/xdrive-ios-wall-density-policy"
-          node --test desktop/tests/ios-native-photo-wall-density.cjs
+          node --test desktop/tests/ios-native-photo-wall-density.cjs desktop/tests/ios-native-photo-wall-shared.cjs
 
       - name: Verify native PhotoKit actual-day group boundaries
         run: |

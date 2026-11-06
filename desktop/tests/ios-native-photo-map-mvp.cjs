@@ -432,7 +432,7 @@ test('GPS cell album automatically advances as its lazy-grid sentinel enters the
   assert.match(spatialAlbum, /while rows\.count < 48/);
   assert.match(spatialAlbum, /scanner\.nextLocatedPage\(\)/);
   assert.match(spatialAlbum, /pending\[cursor\]\.candidate/);
-  assert.match(spatialAlbum, /LazyVGrid[\s\S]*?ForEach\(priorWindow\)[\s\S]*?ForEach\(items\)[\s\S]*?if hasNext \{\s*Color\.clear/);
+  assert.match(spatialAlbum, /XDriveIOSNativePhotoWallGrid\(density: wallDensity\)[\s\S]*?ForEach\(priorWindow\)[\s\S]*?ForEach\(items\)[\s\S]*?if hasNext \{\s*Color\.clear/);
   assert.match(spatialAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/);
   assert.match(spatialAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/);
   assert.match(spatialAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, !busy, viewer == nil, hasNext, error == nil/);
