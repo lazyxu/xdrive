@@ -9,7 +9,6 @@ printf '%s' "$CI_COMMIT_SHA" | grep -Eq '^[a-f0-9]{40}$' || { echo "GitLab relea
 
 set -- \
   xdrive-linux-amd64.deb xDriveSetup-amd64.exe \
-  xdrive-source-agent-linux-amd64 xdrive-source-agent-linux-arm64 \
   xdrive-backup-linux-amd64.tar.gz xdrive-backup-windows-amd64.zip \
   xdrive-server-install.sh server-backup.sh server-backup-scheduled.sh \
   server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh \

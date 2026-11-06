@@ -30,11 +30,6 @@ for source in "${sources[@]}"; do
   cp "$ROOT/$source" "$fixture/$source"
 done
 
-mkdir -p "$fixture/release/source-agent"
-for arch in amd64 arm64; do
-  printf '#!/bin/sh\nexit 0\n' > "$fixture/release/source-agent/xdrive-source-agent-linux-$arch"
-done
-
 sha="0123456789abcdef0123456789abcdef01234567"
 (
   cd "$fixture"

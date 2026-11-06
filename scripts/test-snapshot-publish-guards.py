@@ -25,29 +25,11 @@ promote = body.index('gh api --method PATCH "repos/$repo/git/refs/tags/snapshot"
 assert upload < verified < promote, "tag must only change after remote digest proof"
 assert '[[' + ' "$current_tag" == "$previous_snapshot" ]]' in body
 assert "python3 scripts/test-snapshot-publish-guards.py" in ci
-# Regression: DSM ARMv7 Source Agent became a third real CI artifact.
-# The publisher must not reject that valid binary or omit it from release
-# checksum coverage. These checks retain the exact-file and no-symlink gates.
-client_verification = release.split(
-    "      - name: Verify exact client artifact contract\n", 1
-)[1].split("\n  server-images:\n", 1)[0]
-bundle_verification = release.split(
-    "      - name: Verify single-installer distribution contract\n", 1
-)[1].split("\n      - name: Generate checksums\n", 1)[0]
-checksum_step = release.split(
-    "      - name: Generate checksums\n", 1
-)[1].split("\n      # Sigstore", 1)[0]
-
-assert client_verification.count("for arch in amd64 arm64 armv7; do") == 1
-assert 'binary="source-agent/xdrive-source-agent-linux-$arch"' in client_verification
-assert '[[ -f "$binary" && -s "$binary" && ! -L "$binary" ]]' in client_verification
-assert 'find source-agent -mindepth 1 -maxdepth 1' in client_verification
-assert '[[' + ' "$source_count" == "3" ]]' in client_verification
-assert bundle_verification.count("for arch in amd64 arm64 armv7; do") == 1
-assert 'binary="release/xdrive-source-agent-linux-$arch"' in bundle_verification
-assert '[[ -f "$binary" && -s "$binary" && ! -L "$binary" ]]' in bundle_verification
-for arch in ("amd64", "arm64", "armv7"):
-    assert f"xdrive-source-agent-linux-{arch} \\" in checksum_step
+# The stand-alone DSM Photos Push Agent is retired. Neither publisher nor CI
+# may silently reintroduce its separate binary or artifact.
+assert "xdrive-source-agent-linux" not in release
+assert "build-source-agent:" not in ci
+assert "test-source-agent-artifact:" not in ci
 notify_marker = "      - name: Notify bounded queued-CI prune after verified Snapshot publication\n"
 assert release.count(notify_marker) == 1
 notify = release.split(notify_marker, 1)[1].split("\n      - name:", 1)[0]
