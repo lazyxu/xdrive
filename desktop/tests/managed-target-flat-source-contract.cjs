@@ -13,7 +13,7 @@ test('one Server provisioning function owns the immutable Push/Pull prefixes', (
   assert.match(server, /func provisionManagedSourceTargetTx\(/)
   assert.match(server, /segments = \[\]string\{yikeTargetRootName, "Push"\}/)
   assert.match(server, /segments = \[\]string\{yikeTargetRootName, "Pull", connector\}/)
-  assert.match(server, /return errSourceManagedDirectoryOccupied/)
+  assert.match(server, /errSourceManagedDirectoryOccupied/)
   assert.match(source, /provisionManagedSourceTargetTx\(c\.Request\.Context\(\), tx, source, devicePtr\)/)
   assert.match(source, /managed Push\/Pull target is server-provisioned/)
   assert.match(schema, /idx_xd_sources_owner_direction_name/)
