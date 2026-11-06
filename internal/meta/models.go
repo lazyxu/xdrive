@@ -43,7 +43,7 @@ type RefreshToken struct {
 	// link. The original Agent refresh token (or its server-recorded rotation
 	// chain) must remain active. Ordinary browser/native sessions stay unlinked.
 	DesktopMapNativeRefreshID *uint64 `gorm:"index"`
-	DesktopMapSessionVersion uint64 `gorm:"not null;default:0"`
+	DesktopMapSessionVersion  uint64  `gorm:"not null;default:0"`
 }
 
 func (RefreshToken) TableName() string { return "xd_refresh_tokens" }
