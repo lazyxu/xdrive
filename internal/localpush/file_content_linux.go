@@ -132,7 +132,7 @@ func openLegacyRootScopedRegularFile(
 			_ = unix.Close(fd)
 			return -1, ErrRootChanged
 		}
-		for j := len(parents)-1; j > 0; j-- {
+		for j := len(parents) - 1; j > 0; j-- {
 			var actualParent, fromChild unix.Stat_t
 			if err := unix.Fstat(parents[j-1], &actualParent); err != nil {
 				_ = unix.Close(fd)
