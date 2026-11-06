@@ -2,8 +2,8 @@ package synology
 
 import (
 	"context"
-	"encoding/json"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
