@@ -811,6 +811,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var showingBatchTrashConfirmation = false
     @State private var draggedNode: XDriveIOSNativeFilesNode?
     @State private var draggedOwner: XDriveNativeOwnerRoot?
+    @State private var dragNonce: UUID?
     @State private var pendingDrop: XDriveIOSNativeFilesDropIntent?
     @State private var offset = 0
     @State private var queryDraft = ""
@@ -1354,15 +1355,25 @@ struct XDriveIOSNativeFilesBrowser: View {
               XDriveIOSNativeFilesBatchTrashPolicy.validSelection(
                 [entry.node], parentID: sourceParent
               ) else { return provider }
+        let nonce = UUID()
         draggedNode = entry.node
         draggedOwner = owner
+        dragNonce = nonce
         provider.registerDataRepresentation(
             forTypeIdentifier: Self.internalDragType, visibility: .ownProcess
         ) { completion in
-            completion(Data([0x78, 0x64]), nil)
+            // The process-local payload ties this provider to exactly one
+            // drag intent even if a later gesture replaces the UI snapshot.
+            completion(Data(nonce.uuidString.utf8), nil)
             return nil
         }
         return provider
+    }
+
+    private func clearInternalDrag() {
+        draggedNode = nil
+        draggedOwner = nil
+        dragNonce = nil
     }
 
     private func prepareInternalDrop(
@@ -1373,6 +1384,7 @@ struct XDriveIOSNativeFilesBrowser: View {
               destination.isDirectory, !selecting, !model.loading,
               !batchTarget.busy, let owner = login.owner,
               let startedOwner = draggedOwner, let original = draggedNode,
+              let nonce = dragNonce,
               XDriveIOSNativePhotoOwnerScope.matches(owner, startedOwner),
               containsVerifiedNode(original), containsVerifiedNode(destination),
               let sourceParent = original.parent_id,
@@ -1380,14 +1392,31 @@ struct XDriveIOSNativeFilesBrowser: View {
                 [original], sourceParentID: sourceParent,
                 destinationID: destination.id, kind: .move
               ) else {
-            draggedNode = nil
-            draggedOwner = nil
+            clearInternalDrag()
             return false
         }
-        pendingDrop = .init(owner: owner, original: original,
-                            destination: destination)
-        draggedNode = nil
-        draggedOwner = nil
+        // The payload is opaque and scoped to this process. Never infer the
+        // dropped file from a global drag state without matching its nonce;
+        // the system may deliver another gesture's provider out of order.
+        providers[0].loadDataRepresentation(forTypeIdentifier: Self.internalDragType) {
+            bytes, error in
+            Task { @MainActor in
+                guard error == nil, let bytes,
+                      let received = String(data: bytes, encoding: .utf8),
+                      received == nonce.uuidString, dragNonce == nonce,
+                      draggedNode == original,
+                      let current = login.owner,
+                      XDriveIOSNativePhotoOwnerScope.matches(current, startedOwner),
+                      containsVerifiedNode(original), containsVerifiedNode(destination),
+                      !model.loading, !batchTarget.busy else {
+                    if dragNonce == nonce { clearInternalDrag() }
+                    return
+                }
+                pendingDrop = .init(owner: startedOwner, original: original,
+                                    destination: destination)
+                clearInternalDrag()
+            }
+        }
         return true
     }
 
@@ -2335,8 +2364,7 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func suspendVisibleRange() {
         cancelPathLookup()
-        draggedNode = nil
-        draggedOwner = nil
+        clearInternalDrag()
         pendingDrop = nil
         inlineFolders.suspendForNavigation()
         guard selectedFile == nil else { return }
@@ -2409,8 +2437,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             operationWasAccepted = false
             managementWriteConfirmed = false
             versionRestoreConfirmed = false
-            draggedNode = nil
-            draggedOwner = nil
+            clearInternalDrag()
             pendingDrop = nil
             showingPathPrompt = false
             pathDestination = nil
@@ -3068,8 +3095,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func reload(resetOffset: Bool = false) {
-        draggedNode = nil
-        draggedOwner = nil
+        clearInternalDrag()
         pendingDrop = nil
         inlineFolders.invalidate()
         selecting = false
