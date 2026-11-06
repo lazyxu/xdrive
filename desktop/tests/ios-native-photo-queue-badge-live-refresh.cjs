@@ -29,7 +29,7 @@ test('stale asynchronous badge results never cross Owners, pages or inactive sce
   assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(backupBadgeOwner, owner\)/)
   assert.match(wall, /\.onChange\(of: backupBadgeOwner\) \{ _ in[\s\S]*?badgeReadEpoch = UUID\(\)/)
   assert.match(wall, /\.onChange\(of: photoQueueScenePhase\) \{ state in/)
-  assert.match(wall, /\.onDisappear \{\s*badgeReadEpoch = UUID\(\)/)
+  assert.match(wall, /\.onDisappear \{\s*page = nil\s*precedingCapturedAt = nil\s*visibleBackupQueueStates = \[:\]\s*badgeReadEpoch = UUID\(\)/)
   assert.match(wall, /visibleBackupQueueStates = \[:\]/)
   assert.doesNotMatch(wall, /UploadSessionTransport|uploadPrepared\(|\.finalize\(|deleteNode\(/)
 })

@@ -390,10 +390,10 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             }
         }
         .onDisappear {
-            badgeReadEpoch = UUID()
             page = nil
             precedingCapturedAt = nil
             visibleBackupQueueStates = [:]
+            badgeReadEpoch = UUID()
             if let scanner { Task { await scanner.reset() } }
             scanner = nil
             onPageHidden(offset)
