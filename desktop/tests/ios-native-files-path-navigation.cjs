@@ -1,0 +1,61 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = f => fs.readFileSync(path.resolve(__dirname, '../..', f), 'utf8')
+const browser = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
+const policy = read('ios/XDriveIOS/NativeFilesPathPolicy.swift')
+const web = read('ui/shared/src/file-explorer-controller.ts')
+
+test('Native path uses PWA exact-name Server query rather than client scanning', () => {
+  assert.match(web, /function xDriveFileExplorerPathLookupPageOptions\(name: string\)/)
+  assert.match(web, /limit: 1,[\s\S]*?sort: 'name'[\s\S]*?order: 'asc'[\s\S]*?name,/)
+  assert.match(browser, /func namedDirectory\(parentID: UInt64, name: String\)/)
+  const namedLookup = browser.slice(browser.indexOf('func namedDirectory('),
+    browser.indexOf('func searchSources()', browser.indexOf('func namedDirectory(')))
+  assert.doesNotMatch(namedLookup, /URLQueryItem\(name: "offset"/)
+  assert.match(namedLookup, /let page: XDriveIOSNativeFilesNamedPage = try await get\(url\)/)
+  assert.match(policy, /struct XDriveIOSNativeFilesNamedPage: Decodable/)
+  const server = read('internal/api/children_pagination.go')
+  assert.match(server, /name filters do not accept offset/)
+  assert.match(server, /c.JSON\(http.StatusOK, childrenPageDTO\{/);
+  assert.match(browser, /URLQueryItem\(name: "limit", value: "1"\)/)
+  assert.match(browser, /URLQueryItem\(name: "name", value: name\)/)
+  assert.match(browser, /XDriveIOSNativeFilesPathPolicy\.validNamedChild\(/)
+  assert.match(policy, /node\.parent_id == parentID &&\s*node\.name == exactName/)
+  assert.doesNotMatch(policy, /caseInsensitiveCompare|lowercased\(\) == exactName/)
+})
+
+test('typed path UI is a real iOS NavigationStack route and reports safe failure', () => {
+  assert.match(browser, /Label\("前往文件夹路径…", systemImage: "folder\.badge\.questionmark"\)/)
+  assert.match(browser, /native-ios-files-go-to-path/)
+  assert.match(browser, /\.alert\("前往文件夹", isPresented: \$showingPathPrompt\)/)
+  assert.match(browser, /Button\("打开"\) \{ resolveTypedPath\(\) \}/)
+  assert.match(browser, /XDriveIOSNativeFilesPathPolicy\.segments\(pathDraft\)/)
+  assert.match(browser, /\.navigationDestination\(isPresented: Binding\(/)
+  assert.match(browser, /pathDestination = XDriveIOSNativeFilesFolder\(/)
+  assert.match(browser, /Text\(pathError\)\.foregroundStyle\(\.orange\)/)
+})
+
+test('stale path and cross-Owner requests cannot enter another directory', () => {
+  assert.match(browser, /private func cancelPathLookup\(\)/)
+  assert.match(browser, /pathTicket = UUID\(\)[\s\S]*?pathTask\?\.cancel\(\)/)
+  assert.match(browser, /try Task\.checkCancellation\(\)/)
+  assert.match(browser, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expectedOwner\)/)
+  assert.match(browser, /pathTicket == ticket,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expectedOwner\)/)
+  assert.match(browser, /private func suspendVisibleRange\(\) \{\s*cancelPathLookup\(\)/)
+  assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?cancelPathLookup\(\)/)
+  assert.doesNotMatch(browser, /URLSession\.shared|WKWebView/)
+})
+
+test('path reader reuses bounded HTTPS Owner transport with no redirects or cookies', () => {
+  assert.match(browser, /func namedDirectory\(parentID: UInt64, name: String\)[\s\S]*?endpoint\("\/api\/v1\/nodes\/\\\(parentID\)\/children"/)
+  assert.match(browser, /request\.setValue\("Bearer " \+ accessToken/)
+  assert.match(browser, /completionHandler\(nil\)/)
+  assert.match(browser, /URLSessionConfiguration\.ephemeral/)
+  assert.match(browser, /configuration\.httpShouldSetCookies = false/)
+  assert.match(browser, /try await Self\.client\.data\(for: request\)/)
+  assert.match(policy, /maximumSegments = 32/)
+  assert.match(policy, /maximumPathBytes = 2_048/)
+})

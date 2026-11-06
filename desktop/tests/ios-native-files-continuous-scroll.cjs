@@ -39,7 +39,7 @@ test('sliding range preserves Viewer return and bounded selection, and owner/nav
   assert.match(browser, /offset = model\.startOffset \+[\s\S]*?XDriveIOSNativeFilesPagePolicy\.pageSize/)
   assert.match(browser, /model\.cancelAdjacent\(\)\s*selectedOwner = owner/)
   assert.match(browser, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
-  assert.match(browser, /selectedIDs\.formUnion\(model\.entries\.filter/)
+  assert.match(browser, /selectedSnapshots\[entry\.id\] = entry\.node/)
   assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in/)
   assert.match(browser, /func invalidate\(\) \{[\s\S]*?cancelAdjacent\(\)/)
   assert.match(browser, /self\.entries = \[\]\s*self\.total = 0\s*self\.verifiedPage = false/)
@@ -50,10 +50,12 @@ test('sliding range preserves Viewer return and bounded selection, and owner/nav
 })
 
 
-test('bounded Files window never retains unloaded selected IDs and batch cap matches existing Server', () => {
-  assert.match(browser, /\.onChange\(of: model\.entries\.map\(\\\.id\)\) \{ visibleIDs in/)
-  assert.match(browser, /selectedIDs\.formIntersection\(visibleIDs\)/)
-  assert.match(browser, /XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected -\s*selectedIDs\.count/)
+test('bounded Files window retains only 200 revision snapshots while Server verifies all writes', () => {
+  assert.match(browser, /\.onChange\(of: model\.entries\.map\(\\\.id\)\) \{ _ in/)
+  assert.doesNotMatch(browser, /selectedIDs\.formIntersection\(visibleIDs\)/)
+  assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(/)
+  assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.conflictingIDs\(/)
+  assert.match(browser, /selectedIDs\.count >= XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
   assert.match(browser, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
   assert.match(window, /static let maximumVisibleItems = 4 \* pageSize/)
   // 4*64 loaded rows, but only 200 selectable for one Server operation.

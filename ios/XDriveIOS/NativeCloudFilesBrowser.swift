@@ -78,6 +78,28 @@ struct XDriveIOSNativeFilesReader {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    /// A single exact-name lookup for each path component. Server filtering
+    /// avoids scanning 100k-directory pages or using unverified local names.
+    func namedDirectory(parentID: UInt64, name: String) async throws
+        -> XDriveIOSNativeFilesNode? {
+        guard parentID > 0, !name.isEmpty, name.utf8.count <= 255 else {
+            throw XDriveIOSNativeFilesReadError.invalidPage
+        }
+        // Server intentionally refuses name + offset. Use the cursor-page
+        // response with an exact one-item name filter, just like Web/PWA.
+        let url = try endpoint("/api/v1/nodes/\(parentID)/children", query: [
+            URLQueryItem(name: "limit", value: "1"),
+            URLQueryItem(name: "sort", value: "name"),
+            URLQueryItem(name: "order", value: "asc"),
+            URLQueryItem(name: "name", value: name)
+        ])
+        let page: XDriveIOSNativeFilesNamedPage = try await get(url)
+        guard XDriveIOSNativeFilesPathPolicy.validNamedChild(
+            page, parentID: parentID, exactName: name
+        ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        return page.items.first
+    }
+
     func searchSources() async throws -> [XDriveIOSNativeFilesSearchSourceOption] {
         let url = try endpoint("/api/v1/sources", query: [])
         let items: [XDriveIOSNativeFilesSearchSourceOption] = try await get(url)
@@ -582,11 +604,23 @@ struct XDriveIOSNativeFilesBrowser: View {
     @StateObject private var batchExport = XDriveIOSNativeFilesBatchExportModel()
     @ObservedObject private var clipboard = XDriveIOSNativeFilesClipboard.shared
     @State private var showingClipboardPasteConfirmation = false
+    @State private var showingSavedSearches = false
+    @State private var savedSearchOwner: XDriveNativeOwnerRoot?
+    @State private var showingPathPrompt = false
+    @State private var pathDraft = ""
+    @State private var pathBusy = false
+    @State private var pathError: String?
+    @State private var pathDestination: XDriveIOSNativeFilesFolder?
+    @State private var pathTicket = UUID()
+    @State private var pathTask: Task<Void, Never>?
     @State private var batchTagsIntent: XDriveIOSNativeFilesBatchTagsIntent?
     @State private var showingBatchShare = false
     @State private var batchDestinationIntent: XDriveIOSNativeFilesBatchDestinationIntent?
     @State private var selecting = false
     @State private var selectedIDs = Set<UInt64>()
+    // At most 200 same-parent, revision-locked Nodes survive virtual-window
+    // eviction. Every mutation is still verified by the existing Server.
+    @State private var selectedSnapshots = [UInt64: XDriveIOSNativeFilesNode]()
     @State private var showingBatchTrashConfirmation = false
     @State private var offset = 0
     @State private var queryDraft = ""
@@ -672,7 +706,11 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private var chosenItems: [XDriveIOSNativeFilesNode] {
-        model.entries.filter { selectedIDs.contains($0.id) }.map(\.node)
+        guard let parentID else { return [] }
+        return XDriveIOSNativeFilesSelectionPolicy.validItems(
+            snapshots: selectedSnapshots, selectedIDs: selectedIDs,
+            parentID: parentID
+        ) ?? []
     }
 
     private var canPasteHere: Bool {
@@ -779,6 +817,19 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
             .accessibilityIdentifier("native-ios-files-open-recent")
+        }
+        Section("整理") {
+            Button { presentSavedSearches() } label: {
+                Label("智能文件夹", systemImage: "folder.badge.gearshape")
+            }
+            .disabled(login.owner == nil)
+            .accessibilityIdentifier("native-ios-files-open-saved-searches")
+        }
+        if pathBusy || pathError != nil {
+            Section {
+                if pathBusy { ProgressView("正在验证目标文件夹…") }
+                if let pathError { Text(pathError).foregroundStyle(.orange) }
+            }
         }
     }
 
@@ -945,6 +996,14 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     @ViewBuilder private var filesLoadStatus: some View {
+            if pathBusy {
+                ProgressView("正在验证目标文件夹…")
+                    .accessibilityIdentifier("native-ios-files-path-loading")
+            }
+            if let pathError {
+                Text(pathError).foregroundStyle(.orange)
+                    .accessibilityIdentifier("native-ios-files-path-error")
+            }
             if model.loading && model.entries.isEmpty {
                 HStack { ProgressView(); Text("正在读取当前页…") }
             } else if let error = model.errorMessage {
@@ -1067,7 +1126,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @ViewBuilder private var filesBatchOperations: some View {
             if selecting {
                 Section("批量操作") {
-                    Text("已选 \(selectedIDs.count) 项（最多 200 项，限当前已验证的加载窗口）")
+                    Text("已选 \(selectedIDs.count) 项（最多 200 项，可跨已加载窗口；服务器逐项复核）")
                         .font(.footnote).foregroundStyle(.secondary)
                     if batchExport.busy {
                         ProgressView("正在顺序下载和核对文件…")
@@ -1154,16 +1213,19 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Menu {
                     Button("选择已加载项目（最多 200 项）") {
                         guard canSelectPage else { return }
-                        let remaining = max(
-                            0, XDriveIOSNativeFilesBatchTrashPolicy.maxSelected -
-                                selectedIDs.count
-                        )
-                        selectedIDs.formUnion(model.entries.filter {
-                            !selectedIDs.contains($0.id)
-                        }.prefix(remaining).map(\.id))
+                        for entry in model.entries where !selectedIDs.contains(entry.id) {
+                            if selectedIDs.count >= XDriveIOSNativeFilesBatchTrashPolicy.maxSelected {
+                                break
+                            }
+                            selectedIDs.insert(entry.id)
+                            selectedSnapshots[entry.id] = entry.node
+                        }
                     }
                     .disabled(!canSelectPage)
-                    Button("清空选择") { selectedIDs.removeAll() }
+                    Button("清空选择") {
+                        selectedIDs.removeAll()
+                        selectedSnapshots.removeAll()
+                    }
                         .disabled(selectedIDs.isEmpty)
                     Divider()
                     Button("复制到剪贴板") { captureSelection(.copy) }
@@ -1338,6 +1400,14 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .navigationTitle(isHome ? "浏览" : (folder?.name ?? "搜索结果"))
         .navigationBarTitleDisplayMode(isHome ? .large : .inline)
+        .navigationDestination(isPresented: Binding(
+            get: { pathDestination != nil },
+            set: { if !$0 { pathDestination = nil } }
+        )) {
+            if let destination = pathDestination {
+                XDriveIOSNativeFilesBrowser(login: login, folder: destination)
+            }
+        }
         .navigationDestination(for: XDriveIOSNativeFilesFolder.self) { next in
             XDriveIOSNativeFilesBrowser(login: login, folder: next)
         }
@@ -1350,6 +1420,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                         model.cancelAdjacent()
                         selecting = false
                         selectedIDs.removeAll()
+                        selectedSnapshots.removeAll()
                     }
                     .disabled(batchTrash.busy || batchTarget.busy ||
                               batchExport.busy || !batchExport.prepared.isEmpty)
@@ -1365,6 +1436,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                             model.cancelAdjacent()
                             selecting = true
                             selectedIDs.removeAll()
+                            selectedSnapshots.removeAll()
                         } label: {
                             Label("选择", systemImage: "checkmark.circle")
                         }
@@ -1419,6 +1491,20 @@ struct XDriveIOSNativeFilesBrowser: View {
                               batchExport.busy || !batchExport.prepared.isEmpty ||
                               login.owner == nil || !activeQuery.isEmpty)
                     .accessibilityIdentifier("native-ios-files-quick-multi-upload")
+                    if isGlobalSearch {
+                        Button { presentSavedSearches() } label: {
+                            Label("保存或管理智能文件夹", systemImage: "folder.badge.gearshape")
+                        }
+                        .accessibilityIdentifier("native-ios-files-save-current-search")
+                    }
+                    Button {
+                        showingPathPrompt = true
+                        pathError = nil
+                    } label: {
+                        Label("前往文件夹路径…", systemImage: "folder.badge.questionmark")
+                    }
+                    .disabled(login.owner == nil || pathBusy)
+                    .accessibilityIdentifier("native-ios-files-go-to-path")
                     Button {
                         showingClipboardPasteConfirmation = true
                     } label: {
@@ -1445,6 +1531,15 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private var filesModals: some View {
         filesChrome
+        .alert("前往文件夹", isPresented: $showingPathPrompt) {
+            TextField("例如 /工作/文档", text: $pathDraft)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("取消", role: .cancel) {}
+            Button("打开") { resolveTypedPath() }
+        } message: {
+            Text("从当前账号云端根目录查找，逐级使用服务器精确名称查询。")
+        }
         .confirmationDialog(
             "粘贴剪贴板中的项目到当前文件夹？",
             isPresented: $showingClipboardPasteConfirmation,
@@ -1459,11 +1554,30 @@ struct XDriveIOSNativeFilesBrowser: View {
             batchExport.invalidate()
             selecting = false
             selectedIDs.removeAll()
+            selectedSnapshots.removeAll()
             reload()
         }) {
             XDriveIOSNativeFilesBatchShareSheet(
                 files: batchExport.prepared.map(\.fileURL)
             )
+        }
+        .sheet(isPresented: $showingSavedSearches, onDismiss: {
+            savedSearchOwner = nil
+        }) {
+            if let owner = savedSearchOwner,
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) {
+                NavigationStack {
+                    XDriveIOSNativeFilesSavedSearchesScreen(
+                        login: login, expectedOwner: owner,
+                        proposedQuery: activeQuery,
+                        proposedFilters: searchFilters
+                    ) { saved in
+                        applySavedSearch(saved, expectedOwner: owner)
+                    }
+                }
+            } else {
+                Text("账户已经变化，请关闭智能文件夹。")
+            }
         }
         .sheet(item: $batchTagsIntent, onDismiss: { reload() }) { intent in
             if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
@@ -1491,7 +1605,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                           XDriveIOSNativePhotoOwnerScope.matches(owner, intent.owner),
                           selectedIDs == Set(intent.items.map(\.id)),
                           intent.items.allSatisfy({ selected in
-                            model.entries.contains(where: { $0.node == selected })
+                            selectedSnapshots[selected.id] == selected
                           }) else { return }
                     batchTarget.perform(
                         intent.kind, items: intent.items,
@@ -1500,6 +1614,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     ) {
                         selecting = false
                         selectedIDs.removeAll()
+                        selectedSnapshots.removeAll()
                         reload(resetOffset: true)
                     }
                 }
@@ -1525,6 +1640,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 ) {
                     selecting = false
                     selectedIDs.removeAll()
+                    selectedSnapshots.removeAll()
                     reload(resetOffset: true)
                 }
             }
@@ -1630,6 +1746,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func suspendVisibleRange() {
+        cancelPathLookup()
         guard selectedFile == nil else { return }
         if let saved = rememberedPosition() {
             offset = saved.pageOffset
@@ -1674,6 +1791,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             batchDestinationIntent = nil
             selecting = false
             selectedIDs.removeAll()
+            selectedSnapshots.removeAll()
             showingBatchTrashConfirmation = false
         }
         .onChange(of: login.owner) { _ in
@@ -1683,10 +1801,16 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchShare = false
             batchDestinationIntent = nil
             batchTagsIntent = nil
+            showingSavedSearches = false
+            savedSearchOwner = nil
+            showingPathPrompt = false
+            pathDestination = nil
+            cancelPathLookup()
             showingClipboardPasteConfirmation = false
             clipboard.clear()
             selecting = false
             selectedIDs.removeAll()
+            selectedSnapshots.removeAll()
             showingBatchTrashConfirmation = false
             managementIntent = nil
             versionHistoryIntent = nil
@@ -1712,12 +1836,22 @@ struct XDriveIOSNativeFilesBrowser: View {
             if isHome { loadFavoriteShortcuts() }
         }
         .onChange(of: model.verifiedPage) { now in
-            if !now { selectedIDs.removeAll(); selecting = false }
+            if !now {
+                selectedIDs.removeAll()
+                selectedSnapshots.removeAll()
+                selecting = false
+            }
         }
-        .onChange(of: model.entries.map(\.id)) { visibleIDs in
-            // A sliding Owner-verified four-range window can evict old rows.
-            // Never keep an invisible ID in the next batch write request.
-            selectedIDs.formIntersection(visibleIDs)
+        .onChange(of: model.entries.map(\.id)) { _ in
+            // Eviction is not deselection. Reappearing changed revisions
+            // retire only their own snapshots, never the entire selection.
+            let conflicts = XDriveIOSNativeFilesSelectionPolicy.conflictingIDs(
+                visible: model.entries.map(\.node), snapshots: selectedSnapshots
+            )
+            for id in conflicts {
+                selectedIDs.remove(id)
+                selectedSnapshots.removeValue(forKey: id)
+            }
         }
         .onChange(of: sort) { _ in reload(resetOffset: true) }
         .onChange(of: order) { _ in reload(resetOffset: true) }
@@ -1758,8 +1892,103 @@ struct XDriveIOSNativeFilesBrowser: View {
               model.entries.contains(where: { $0.node == entry.node }) else { return }
         if selectedIDs.contains(entry.id) {
             selectedIDs.remove(entry.id)
+            selectedSnapshots.removeValue(forKey: entry.id)
         } else if selectedIDs.count < XDriveIOSNativeFilesBatchTrashPolicy.maxSelected {
             selectedIDs.insert(entry.id)
+            selectedSnapshots[entry.id] = entry.node
+        }
+    }
+
+    private func cancelPathLookup() {
+        pathTicket = UUID()
+        pathTask?.cancel()
+        pathTask = nil
+        pathBusy = false
+    }
+
+    private func resolveTypedPath() {
+        guard !pathBusy, let expectedOwner = login.owner else { return }
+        guard let parts = XDriveIOSNativeFilesPathPolicy.segments(pathDraft) else {
+            pathError = "文件夹路径无效；最多 32 层、2048 字节。"
+            return
+        }
+        cancelPathLookup()
+        let ticket = pathTicket
+        pathError = nil
+        pathBusy = true
+        pathTask = Task { @MainActor in
+            defer {
+                if pathTicket == ticket {
+                    pathBusy = false
+                    pathTask = nil
+                }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expectedOwner)
+                else { throw XDriveIOSNativeFilesReadError.invalidScope }
+                let reader = XDriveIOSNativeFilesReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                )
+                var destinationID = auth.owner.rootNodeID
+                var destinationName = "xDrive 云端"
+                for name in parts {
+                    try Task.checkCancellation()
+                    guard let child = try await reader.namedDirectory(
+                        parentID: destinationID, name: name
+                    ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                    destinationID = child.id
+                    destinationName = child.name
+                }
+                try Task.checkCancellation()
+                guard pathTicket == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
+                else { return }
+                if destinationID == parentID && !isHome {
+                    pathError = "当前已经位于这个文件夹。"
+                } else {
+                    pathDestination = XDriveIOSNativeFilesFolder(
+                        id: destinationID, name: destinationName
+                    )
+                }
+            } catch is CancellationError {
+            } catch {
+                guard pathTicket == ticket else { return }
+                pathError = "未找到可访问的目标文件夹，请检查路径、权限或网络后重试。"
+            }
+        }
+    }
+
+    private func presentSavedSearches() {
+        guard !selecting, let owner = login.owner,
+              !batchTrash.busy && !batchTarget.busy && !batchExport.busy
+        else { return }
+        savedSearchOwner = owner
+        showingSavedSearches = true
+    }
+
+    private func applySavedSearch(
+        _ saved: XDriveIOSNativeFilesSavedSearch,
+        expectedOwner: XDriveNativeOwnerRoot
+    ) {
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+              XDriveIOSNativeFilesSavedSearchPolicy.valid(saved)
+        else { return }
+        if searchReturnOffset == nil {
+            let anchor = rememberedPosition()
+            searchReturnOffset = anchor?.pageOffset ?? offset
+            searchReturnNodeID = anchor?.nodeID
+        }
+        let restored = saved.filters.native
+        activeQuery = saved.query
+        queryDraft = saved.query
+        // Filter onChange already launches the one Server Range read.
+        // Avoid a second unconditional reload and empty-list flicker.
+        if restored != searchFilters {
+            searchFilters = restored
+        } else {
+            reload(resetOffset: true)
         }
     }
 
@@ -1772,6 +2001,7 @@ struct XDriveIOSNativeFilesBrowser: View {
               ) else { return }
         selecting = false
         selectedIDs.removeAll()
+        selectedSnapshots.removeAll()
     }
 
     private func captureItem(_ entry: XDriveIOSNativeFilesEntry,
@@ -2159,6 +2389,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func reload(resetOffset: Bool = false) {
         selecting = false
         selectedIDs.removeAll()
+        selectedSnapshots.removeAll()
         batchExport.invalidate()
         batchTarget.invalidate()
         batchDestinationIntent = nil
