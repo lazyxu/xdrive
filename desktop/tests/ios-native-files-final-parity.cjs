@@ -157,3 +157,14 @@ test('Select All cancels on navigation, Owner change, sort refresh and manual Do
   assert.match(browser, /catch \{[\s\S]*?selectAllNotice = "目录或权限已变化，保留原选择；请刷新后重试。"/)
   assert.doesNotMatch(browser, /private func selectAllCurrentFolder\(\)[\s\S]*?selectedSnapshots = model\.entries/)
 })
+
+test('read-only batch Share Sheet preserves verified directory and thumbnails', () => {
+  const modal = section('.sheet(isPresented: $showingBatchShare, onDismiss:', '.sheet(isPresented: $showingFileOperations')
+  assert.match(modal, /batchExport\.invalidate\(\)/)
+  assert.match(modal, /selecting = false/)
+  assert.match(modal, /selectedIDs\.removeAll\(\)/)
+  assert.match(modal, /XDriveIOSNativeFilesBatchShareSheet\(/)
+  assert.doesNotMatch(modal, /reload\(\)|model\.invalidate\(\)/)
+  assert.match(browser, /if operationWasAccepted \{[\s\S]*?reload\(\)/)
+  assert.match(browser, /if versionRestoreConfirmed \{[\s\S]*?reload\(\)/)
+})
