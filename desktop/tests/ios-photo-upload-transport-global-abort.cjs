@@ -23,7 +23,10 @@ test('UploadSession errors that affect all originals must abort auto and BG wind
   assert.match(abort, /case \.unauthorizedOrRejected\(_\), \.invalidServerResponse,\s*\.uncertainCommit, \.localStorageUnavailable:\s*return true/)
   assert.match(abort, /case \.invalidLocalFile:\s*\/\/ A staged file/)
   assert.match(run, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
-  assert.match(writer, /guard let current, current\.state == \.prepared else \{/)
+  // The run aborts when an uncertain journal is not still prepared. The writer
+  // independently requires a freshly reloaded, exact prepared resource.
+  assert.match(runner, /guard let current, current\.state == \.prepared else \{/)
+  assert.match(writer, /current\.state == \.prepared,\s*current\.sessionID == nil/)
   assert.match(writer, /throw error/)
 })
 
