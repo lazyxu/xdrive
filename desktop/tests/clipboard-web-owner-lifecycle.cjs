@@ -26,7 +26,7 @@ function loadTS(filename, sourceText, injected = {}, jsx = false) {
   const compiled = ts.transpileModule(sourceText, {
     fileName: filename, reportDiagnostics: true,
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
-      jsx: jsx ? ts.JsxEmit.ReactJSX : undefined },
+      jsx: ts.JsxEmit.ReactJSX },
   })
   assert.deepEqual((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error)
     .map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), [])
