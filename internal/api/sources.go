@@ -325,8 +325,8 @@ func (s *Server) createSource(c *gin.Context) {
 	req.RunMode = strings.TrimSpace(req.RunMode)
 	// iOS Photos device destinations are created only by the narrowly scoped
 	// Owner+native-iPhone endpoint. Generic Source creation cannot spoof one.
-	if req.Kind == meta.SourceKindIOSPhotos {
-		fail(c, http.StatusForbidden, "ios photos target requires native device proof")
+	if req.Kind == meta.SourceKindIOSPhotos || req.Kind == meta.SourceKindAndroidPhotos {
+		fail(c, http.StatusForbidden, "native photos target requires registered device proof")
 		return
 	}
 	if req.SyncMode == "" {
