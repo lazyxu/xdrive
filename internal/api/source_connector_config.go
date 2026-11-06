@@ -122,6 +122,10 @@ func (s *Server) putSourceConnectorConfig(c *gin.Context) {
 		fail(c, statusForLookup(err), "source not found")
 		return
 	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
+		return
+	}
 	if source.Status == meta.SourceStatusArchived {
 		fail(c, http.StatusConflict, "source is archived; restore it before editing connector settings")
 		return
