@@ -588,6 +588,18 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                                     canUseOnlyNewDateFilter = false
                                 }
                             }
+                            // The store independently enforces this consent before
+                            // reserveDue. Stop here as well: no scan, new upload,
+                            // or changed automatic due time before an Owner
+                            // explicitly approves the recovery upload scope.
+                            if activePlan.requiresFullLibraryReconciliation &&
+                               (activePlan.historyRecoveryRequiresConsent == true ||
+                                activePlan.historyRecoveryFullScopeConfirmed != true) {
+                                self.message = "PhotoKit 增量历史不可用：请先在备份设置中确认全库核对；未经确认不会补传旧照片。"
+                                await reporter.finish(status: "cancelled")
+                                self.refresh(owner: selected)
+                                return
+                            }
                             try Task.checkCancellation()
                             guard self.displayEpoch == uiEpoch,
                                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
