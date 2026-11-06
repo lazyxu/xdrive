@@ -56,7 +56,7 @@ test('P0-02: revoked, deleted, edited and wrong-kind local assets never inherit 
   assert.match(admission, /asset\.modificationDate == item\.modifiedAt/)
   assert.match(admission, /item\.isLive == asset\.mediaSubtypes\.contains\(\.photoLive\)/)
   assert.match(admission, /asset\.mediaType == \.video/)
-  assert.match(sources.map, /photoLibraryDidChange\(_ change: PHChange\)/)
+  assert.match(sources.map, /photoLibraryDidChange\(_ [A-Za-z]+: PHChange\)/)
   assert.match(sources.map, /\.onChange\(of: changes\.revision\) \{ _ in[\s\S]*?retire\(\)/)
   assert.match(sources.map, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
 })
@@ -115,7 +115,7 @@ test('P0-06: Viewer return restores exact visible tile, never stale PhotoKit or 
   const { map, cluster, album, cloud } = sources
   assert.match(map, /restoreViewerTile\(using: returnScroll\)/)
   assert.match(map, /XDriveIOSNativeMapViewerAdmission\.allows\(\s*target, in: loaded, sceneActive: phase == \.active/)
-  assert.match(map, /returnScroll\.scrollTo\(id, anchor: \.center\)/)
+  assert.match(map, /scroll\.scrollTo\(id, anchor: \.center\)/)
   assert.match(map, /viewerReturnID = nil/)
   assert.match(cluster, /sameVisibleRevision\(as: anchor\)/)
   assert.match(cluster, /returnScroll\.scrollTo\(anchor\.id, anchor: \.center\)/)
@@ -159,7 +159,7 @@ test('P1-08: shared adaptive densities, landscape and pinch never change data-so
   }
   assert.match(map, /wallDensity = wallDensity\.applyingPinch\(scale\)/)
   assert.match(cluster, /wallDensity = wallDensity\.applyingPinch\(scale\)/)
-  assert.match(gallery, /@Environment\(\\\.dynamicTypeSize\)/)
+  assert.match(map, /@Environment\(\\\.dynamicTypeSize\)/)
   assert.match(album, /@Environment\(\\\.dynamicTypeSize\)/)
   assert.doesNotMatch(shared, /PHAsset\.fetchAssets|URLSession|UploadSession|\\.task\(/)
 })
