@@ -558,6 +558,11 @@ func (r *Runner) effectiveConcurrency(total int) int {
 }
 
 func (r *Runner) handler(kind string) SourceHandler {
+	// Synology remote Pull is disabled for the DSM folder-Push MVP even if
+	// a stale caller accidentally re-registers the dormant handler.
+	if meta.SynologyPullTemporarilyDisabled(kind, meta.SourceDirectionPull) {
+		return nil
+	}
 	if r == nil || r.Handlers == nil {
 		return nil
 	}
