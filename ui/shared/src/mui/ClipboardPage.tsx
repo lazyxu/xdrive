@@ -20,9 +20,9 @@ export type XDriveClipboardDataPort = {
   /** Server origin + authenticated, verified Owner ID. Never contain a token. */
   readonly ownerScopeKey: string
   vault(signal?: AbortSignal): Promise<{ salt: string; iterations: number; kdf: string;
-    check_nonce: string; check_ciphertext: string }>
-  initializeCheck(check: { nonce: string; ciphertext: string }, signal?: AbortSignal): Promise<{
-    salt: string; iterations: number; kdf: string; check_nonce: string; check_ciphertext: string }>
+    check_nonce: string; check_ciphertext: string; aad_scope: string }>
+  initializeCheck(check: { nonce: string; ciphertext: string; scope: string }, signal?: AbortSignal): Promise<{
+    salt: string; iterations: number; kdf: string; check_nonce: string; check_ciphertext: string; aad_scope: string }>
   list(before?: number, signal?: AbortSignal): Promise<{ items: XDriveClipboardItem[]; next_before: number | null }>
   create(item: {
     client_event_id: string; kind: XDriveClipboardKind
@@ -49,6 +49,7 @@ export function XDriveClipboardPage({ port }: { port: XDriveClipboardDataPort })
 function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const [passphrase, setPassphrase] = useState('')
   const [key, setKey] = useState<CryptoKey | null>(null)
+  const [aadScope, setAADScope] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [items, setItems] = useState<DecodedItem[]>([])
   const [nextBefore, setNextBefore] = useState<number | null>(null)
@@ -79,7 +80,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   }, [])
 
   const load = useCallback(async (before?: number) => {
-    if (!key) return
+    if (!key || !aadScope) return
     const sequence = ++generation.current
     readController.current?.abort()
     const controller = new AbortController()
@@ -89,7 +90,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       const page = await port.list(before, controller.signal)
       const decoded = await Promise.all(page.items.map(async record => {
         try {
-          return { record, text: await xDriveClipboardDecrypt(key, port.ownerScopeKey, record) }
+          return { record, text: await xDriveClipboardDecrypt(key, aadScope, record) }
         } catch {
           return { record, text: null }
         }
@@ -105,7 +106,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     } finally {
       if (active.current && sequence === generation.current) setLoading(false)
     }
-  }, [key, port])
+  }, [key, aadScope, port])
 
   useEffect(() => {
     if (!key) return
@@ -136,12 +137,32 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       const nextKey = await xDriveClipboardDeriveKey(passphrase, info.salt)
       const verified = info.check_ciphertext
         ? info
-        : await port.initializeCheck(
-            await xDriveClipboardMakeVaultCheck(nextKey, port.ownerScopeKey), controller.signal)
-      await xDriveClipboardVerifyVaultCheck(nextKey, port.ownerScopeKey, {
+        : await port.initializeCheck({
+            ...await xDriveClipboardMakeVaultCheck(nextKey, port.ownerScopeKey),
+            scope: port.ownerScopeKey,
+          }, controller.signal)
+      let canonicalScope = verified.aad_scope || port.ownerScopeKey
+      await xDriveClipboardVerifyVaultCheck(nextKey, canonicalScope, {
         nonce: verified.check_nonce, ciphertext: verified.check_ciphertext,
       })
+      // Legacy canaries have no AAD scope. Pin it only after successful
+      // local verification; keep the original ciphertext and passphrase.
+      if (!verified.aad_scope) {
+        const pinned = await port.initializeCheck({
+          nonce: verified.check_nonce, ciphertext: verified.check_ciphertext,
+          scope: port.ownerScopeKey,
+        }, controller.signal)
+        // During a rolling Server/Web deployment an older Server may omit
+        // aad_scope. The successfully verified original-origin v1 vault
+        // remains usable; cross-domain support becomes available after
+        // the Server is upgraded and the original browser pins its scope.
+        canonicalScope = pinned.aad_scope || port.ownerScopeKey
+        await xDriveClipboardVerifyVaultCheck(nextKey, canonicalScope, {
+          nonce: pinned.check_nonce, ciphertext: pinned.check_ciphertext,
+        })
+      }
       if (!active.current || controller.signal.aborted) return
+      setAADScope(canonicalScope)
       setKey(nextKey)
       setPassphrase('')
     } catch (error) {
@@ -152,7 +173,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   }
 
   const send = async () => {
-    if (!key || busy) return
+    if (!key || !aadScope || busy) return
     setMessage('')
     try { xDriveClipboardValidateText(draft) } catch (error) {
       setMessage(errorLabel(error)); return
@@ -163,7 +184,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     try {
       if (pending.current?.text !== draft) {
         const client_event_id = crypto.randomUUID()
-        const encrypted = await xDriveClipboardEncrypt(key, port.ownerScopeKey, client_event_id, draft)
+        const encrypted = await xDriveClipboardEncrypt(key, aadScope, client_event_id, draft)
         pending.current = { text: draft, item: { client_event_id, ...encrypted } }
       }
       if (!active.current || controller.signal.aborted) return
@@ -222,6 +243,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     generation.current++
     pending.current = null
     setKey(null)
+    setAADScope(null)
     setItems([])
     setNextBefore(null)
     setDraft('')
