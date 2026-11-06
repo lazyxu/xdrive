@@ -316,13 +316,13 @@ func TestSetupRejectsUserSelectedCloudTarget(t *testing.T) {
 
 func TestSetupSourceNamePreservesExistingName(t *testing.T) {
 	remote := client.Source{ID: 7, Name: "家庭照片"}
-	if got := setupSourceName(remote, ""); got != "家庭照片" {
+	if got := setupSourceName(remote, "", "NAS-01"); got != "家庭照片" {
 		t.Fatalf("preserved name=%q want=家庭照片", got)
 	}
-	if got := setupSourceName(remote, "办公室照片"); got != "办公室照片" {
+	if got := setupSourceName(remote, "办公室照片", "NAS-01"); got != "办公室照片" {
 		t.Fatalf("explicit name=%q want=办公室照片", got)
 	}
-	if got := setupSourceName(client.Source{}, ""); got != "Synology Photos" {
+	if got := setupSourceName(client.Source{}, "", "NAS-01"); got != "NAS-01" {
 		t.Fatalf("new-source default name=%q", got)
 	}
 }
