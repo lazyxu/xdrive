@@ -312,7 +312,7 @@ function XDriveSynologyBackupSourceSetupForHost({
               <Typography role="status" color="success.main">
                 本机 Source {createdID} 已原生授权。
                 {autoResult === 'accepted'
-                  ? ' 已配置每 6 小时增量计划，首次任务已由本机 Agent 接受。只有首轮产生可信检查点后后续计划才会生效；请在上方状态/历史检查逐文件上传结果。'
+                  ? ' 已配置每 6 小时增量计划，首次任务已由本机 Agent 接受。此处尚未验证任何上传收据，任务受理不代表备份完成。只有首轮产生可信检查点后后续计划才会生效；请在上方状态/历史检查逐文件上传结果。'
                   : autoResult === 'needs_attention'
                     ? ' 请先核对当前来源的计划和执行历史，勿盲目重新提交。'
                     : ' 请在上方来源列表检查计划，并手动启动首次备份。'}
