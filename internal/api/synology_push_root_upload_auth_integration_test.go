@@ -59,7 +59,12 @@ func TestSynologyPushRootBindingAndUploadAuthorization(t *testing.T) {
 	rootFingerprint := strings.Repeat("a", 64)
 	bindingPath := fmt.Sprintf("/api/v1/sources/%d/synology-root", source.ID)
 	body := fmt.Sprintf(`{"root_id":%q,"root_fingerprint":%q}`, rootID, rootFingerprint)
-	request(t, router, http.MethodPut, bindingPath, ownerToken, strings.NewReader(body), http.StatusForbidden)
+	// A missing revision fails before credential evaluation; supplying a
+	// revision without device proof must still be denied.
+	request(t, router, http.MethodPut, bindingPath, ownerToken, strings.NewReader(body), http.StatusPreconditionRequired)
+	requestWithHeaders(t, router, http.MethodPut, bindingPath, ownerToken,
+		strings.NewReader(body), http.StatusForbidden,
+		map[string]string{"If-Match": `"1"`})
 	bindHeaders := map[string]string{
 		"X-XDrive-Device-ID":    deviceID,
 		"X-XDrive-Device-Token": deviceToken,
