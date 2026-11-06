@@ -128,6 +128,34 @@ data class NativeAndroidPhotoDestination(
     override fun toString(): String = "NativeAndroidPhotoDestination([redacted])"
 }
 
+
+/** Exact accepted Go SyncRun identity; not a library-wide completion claim. */
+data class NativeAndroidPhotoSourceRun(
+    val id: String,
+    val sourceId: Long,
+    val sourceRevision: Long,
+    val targetNodeId: Long,
+) {
+    init {
+        require(runCatching { java.util.UUID.fromString(id).toString() == id }
+            .getOrDefault(false) && sourceId > 0 && sourceRevision > 0 && targetNodeId > 0)
+    }
+    override fun toString() = "NativeAndroidPhotoSourceRun([redacted])"
+}
+
+/** Only cumulative, receipt-backed counters; no URI, filename or full-inventory assertion. */
+data class NativeAndroidPhotoRunCounts(
+    val scanned: Int = 0,
+    val uploaded: Int = 0,
+    val alreadyVerified: Int = 0,
+    val failed: Int = 0,
+) {
+    init {
+        require(scanned >= 0 && uploaded >= 0 && alreadyVerified >= 0 &&
+            failed >= 0 && uploaded + alreadyVerified <= scanned)
+    }
+}
+
 data class DriveNode(
     val id: Long,
     val parentId: Long? = null,
@@ -421,6 +449,27 @@ interface XDriveService {
         accessToken: String, enrolled: NativeAndroidDeviceEnrollment, name: String,
     ): NativeAndroidPhotoDestination =
         throw ApiException(501, "Android managed photo provisioning unavailable")
+
+    /** Device-bound native SourceRun telemetry for bounded Android batches. */
+    suspend fun beginNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, runId: String, trigger: String,
+    ): NativeAndroidPhotoSourceRun =
+        throw ApiException(501, "Android SourceRun begin unavailable")
+    suspend fun progressNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+        counts: NativeAndroidPhotoRunCounts,
+    ) { throw ApiException(501, "Android SourceRun progress unavailable") }
+    suspend fun heartbeatNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+    ) { throw ApiException(501, "Android SourceRun heartbeat unavailable") }
+    suspend fun finishNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+        counts: NativeAndroidPhotoRunCounts, status: String,
+    ) { throw ApiException(501, "Android SourceRun finish unavailable") }
     /** Exact Owner Notes endpoints. Mocks without Notes support fail closed. */
     suspend fun notesInitialize(accessToken: String) {
         throw ApiException(501, "Owner Notes namespace API unavailable")
@@ -794,6 +843,96 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         } catch (_: IllegalArgumentException) {
             invalidPayload()
         }
+    }
+
+
+    private fun verifyAndroidSourceRunScope(
+        enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination,
+        run: NativeAndroidPhotoSourceRun? = null,
+    ): Long {
+        require(destination.configured && destination.deviceId == enrolled.deviceId &&
+            destination.sourceId != null && destination.sourceRevision != null &&
+            destination.targetNodeId != null && destination.name != null &&
+            destination.targetPath == "同步文件夹/Push/" + destination.name)
+        if (run != null) require(run.sourceId == destination.sourceId &&
+            run.sourceRevision == destination.sourceRevision &&
+            run.targetNodeId == destination.targetNodeId)
+        return requireNotNull(destination.sourceId)
+    }
+
+    private fun nativeAndroidPhotoRunSummary(c: NativeAndroidPhotoRunCounts) =
+        JsonObject(mapOf(
+            "scanned_items" to JsonPrimitive(c.scanned),
+            "scanned_bytes" to JsonPrimitive(0),
+            "new_items" to JsonPrimitive(c.uploaded),
+            "new_bytes" to JsonPrimitive(0),
+            "unchanged_items" to JsonPrimitive(c.alreadyVerified),
+            "unchanged_bytes" to JsonPrimitive(0),
+            "failed_items" to JsonPrimitive(c.failed),
+        ))
+
+    override suspend fun beginNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, runId: String, trigger: String,
+    ): NativeAndroidPhotoSourceRun {
+        val sourceID = verifyAndroidSourceRunScope(enrolled, destination)
+        require(trigger == "manual" || trigger == "scheduled")
+        require(runCatching { java.util.UUID.fromString(runId).toString() == runId }
+            .getOrDefault(false))
+        val payload = request("sources/$sourceID/runs", accessToken,
+            deviceIdentity = enrolled, bodyObject = JsonObject(mapOf(
+                "run_id" to JsonPrimitive(runId), "trigger" to JsonPrimitive(trigger))))
+        if (payload.string("id") != runId || payload.string("status") != "running" ||
+            payload.long("source_id") != sourceID ||
+            payload.long("source_revision") != destination.sourceRevision ||
+            payload.long("target_node_id") != destination.targetNodeId) invalidPayload()
+        return NativeAndroidPhotoSourceRun(
+            runId, sourceID, requireNotNull(destination.sourceRevision),
+            requireNotNull(destination.targetNodeId))
+    }
+
+    override suspend fun progressNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+        counts: NativeAndroidPhotoRunCounts,
+    ) {
+        val sourceID = verifyAndroidSourceRunScope(enrolled, destination, run)
+        request("sources/$sourceID/runs/" + run.id + "/progress", accessToken,
+            deviceIdentity = enrolled,
+            bodyObject = JsonObject(mapOf("summary" to nativeAndroidPhotoRunSummary(counts))),
+            emptyResponse = true)
+    }
+
+    override suspend fun heartbeatNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+    ) {
+        val sourceID = verifyAndroidSourceRunScope(enrolled, destination, run)
+        request("sources/$sourceID/runs/" + run.id + "/heartbeat", accessToken,
+            deviceIdentity = enrolled, bodyObject = JsonObject(emptyMap()), emptyResponse = true)
+    }
+
+    override suspend fun finishNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+        counts: NativeAndroidPhotoRunCounts, status: String,
+    ) {
+        val sourceID = verifyAndroidSourceRunScope(enrolled, destination, run)
+        require(status in setOf("completed", "partial", "failed", "cancelled") &&
+            (status != "completed" || counts.failed == 0))
+        // A bounded Android MediaStore page is never a complete library scan.
+        val payload = request("sources/$sourceID/runs/" + run.id + "/finish", accessToken,
+            deviceIdentity = enrolled,
+            bodyObject = JsonObject(mapOf(
+                "status" to JsonPrimitive(status),
+                "complete_inventory" to JsonPrimitive(false),
+                "summary" to nativeAndroidPhotoRunSummary(counts))),
+        )
+        if (payload.string("id") != run.id || payload.string("status") != status ||
+            payload.long("source_id") != sourceID ||
+            payload.long("source_revision") != run.sourceRevision ||
+            payload.long("target_node_id") != run.targetNodeId) invalidPayload()
     }
 
     private fun notesRow(data: JsonObject): OwnerNoteRow {
@@ -2867,6 +3006,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         val nativeDestinationRequest = path == "android/photos/backup-destination" &&
             ((method == null && values == null) ||
                 (method == "PUT" && values?.keys == setOf("name")))
+        val managedAndroidSourceRun = path.matches(
+            Regex("sources/[1-9][0-9]*/runs(?:/[0-9a-fA-F-]{36}/(?:progress|heartbeat|finish))?")) &&
+            method == null && bodyObject != null
         val managedAndroidInit = path == "android/photos/managed/uploads" &&
             method == null && bodyObject != null
         val managedAndroidResume = path == "android/photos/managed/uploads/resume-lookup" &&
@@ -2879,9 +3021,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         require(deviceIdentity == null ||
             (accessToken != null &&
                 (nativeIdentityRequest || nativeDestinationRequest ||
-                    nativeManagedUploadRequest) &&
+                    nativeManagedUploadRequest || managedAndroidSourceRun) &&
                 query.isEmpty() && ifMatch == null && numberValues.isEmpty() &&
-                (bodyObject == null || nativeManagedUploadRequest) &&
+                (bodyObject == null || nativeManagedUploadRequest || managedAndroidSourceRun) &&
                 (!longRunning || managedAndroidFinalize) && pathTailSegments.isEmpty())) {
             "Device credentials are restricted to native identity, destination and managed originals"
         }
