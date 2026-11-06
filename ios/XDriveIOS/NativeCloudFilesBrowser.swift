@@ -2152,11 +2152,13 @@ struct XDriveIOSNativeFilesBrowser: View {
             Text("仅支持本 App 内长按拖动。服务器会重新核验账号、文件修订和目标目录；移动结果不确定时不自动重试。")
         }
         .sheet(isPresented: $showingBatchShare, onDismiss: {
+            // The iOS Share Sheet only exports already staged originals.
+            // It never mutates Server Nodes: keep verified rows, scroll
+            // position and loaded thumbnail identities on return.
             batchExport.invalidate()
             selecting = false
             selectedIDs.removeAll()
             selectedSnapshots.removeAll()
-            reload()
         }) {
             XDriveIOSNativeFilesBatchShareSheet(
                 files: batchExport.prepared.map(\.fileURL)
