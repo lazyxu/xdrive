@@ -18,6 +18,10 @@ const salt = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('b
 const key = await mod.xDriveClipboardDeriveKey('same long passphrase for both browsers', salt)
 const peer = await mod.xDriveClipboardDeriveKey('same long passphrase for both browsers', salt)
 const wrong = await mod.xDriveClipboardDeriveKey('a completely different passphrase', salt)
+const verifier = await mod.xDriveClipboardMakeVaultCheck(key, 'owner-scope')
+await mod.xDriveClipboardVerifyVaultCheck(peer, 'owner-scope', verifier)
+await assert.rejects(mod.xDriveClipboardVerifyVaultCheck(wrong, 'owner-scope', verifier))
+await assert.rejects(mod.xDriveClipboardVerifyVaultCheck(peer, 'different-owner', verifier))
 const eventID = crypto.randomUUID()
 const owner = 'https://drive.example.test:12'
 const text = 'https://example.com/path?参数=文档'
