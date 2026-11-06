@@ -37,10 +37,16 @@ final class XDriveIOSNativeMapUserLocationController: NSObject, ObservableObject
         guard !pending else { return }
         alert = nil
         guard CLLocationManager.locationServicesEnabled() else {
-            alert = XDriveIOSNativeMapLocationAlert(
-                message: "系统定位服务未开启。请在 iOS 设置中开启定位后重试。")
+            // A prior successful fix must not leave a stale location dot after
+            // system-wide Location Services have been switched off.
+            fail("系统定位服务未开启。请在 iOS 设置中开启定位后重试。")
             return
         }
+        // A new explicit request never reuses the previous successful fix
+        // while permission and accuracy are being checked again.
+        camera = nil
+        requestID = nil
+        showsUserDot = false
         pending = true
         isLocating = true
         requestedFix = false
