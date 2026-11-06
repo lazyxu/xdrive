@@ -465,8 +465,13 @@ func (s *Server) createUploadSession(c *gin.Context) {
 				existing.NodeID != nil {
 				current, lookupErr := s.ownedNode(uid, *existing.NodeID, true)
 				if lookupErr != nil || current.Revision != existing.ExpectedRevision {
-					if abortErr := s.abortUploadSessionData(c.Request.Context(), existing); abortErr != nil {
-						fail(c, http.StatusInternalServerError, "reset stale overwrite upload failed")
+					if abortErr := s.abortUploadSessionAuthorized(c, existing); abortErr != nil {
+						if errors.Is(abortErr, errManagedSourceWriteDenied) || errors.Is(abortErr, errShareUploadDenied) {
+							s.recordUploadAuthorizationFailure(c, "session.resume.abort", existing, abortErr)
+							fail(c, http.StatusForbidden, "upload authority is no longer valid")
+						} else {
+							fail(c, http.StatusConflict, "stale overwrite upload could not be safely aborted")
+						}
 						return
 					}
 					existing.Status = ""
@@ -827,7 +832,11 @@ func (s *Server) getUploadSession(c *gin.Context) {
 		return
 	}
 	if session.Status == meta.UploadStatusActive && time.Now().After(session.ExpiresAt) {
-		_ = s.abortUploadSessionData(c.Request.Context(), session)
+		if err := s.abortUploadSessionAuthorized(c, session); err != nil {
+			s.recordUploadAuthorizationFailure(c, "session.expire_cleanup", session, err)
+			fail(c, http.StatusForbidden, "expired upload cleanup authority is no longer valid")
+			return
+		}
 		fail(c, http.StatusGone, "upload session expired")
 		return
 	}
@@ -869,7 +878,11 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		return
 	}
 	if time.Now().After(session.ExpiresAt) {
-		_ = s.abortUploadSessionData(c.Request.Context(), session)
+		if err := s.abortUploadSessionAuthorized(c, session); err != nil {
+			s.recordUploadAuthorizationFailure(c, "chunk.expire_cleanup", session, err)
+			fail(c, http.StatusForbidden, "expired upload cleanup authority is no longer valid")
+			return
+		}
 		fail(c, http.StatusGone, "upload session expired")
 		return
 	}
@@ -1086,7 +1099,11 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		}
 	}
 	if time.Now().After(session.ExpiresAt) {
-		_ = s.abortUploadSessionData(c.Request.Context(), session)
+		if err := s.abortUploadSessionAuthorized(c, session); err != nil {
+			s.recordUploadAuthorizationFailure(c, "finalize.expire_cleanup", session, err)
+			fail(c, http.StatusForbidden, "expired upload cleanup authority is no longer valid")
+			return
+		}
 		fail(c, http.StatusGone, "upload session expired")
 		return
 	}
