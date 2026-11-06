@@ -346,11 +346,11 @@ func TestSynologySetupDoesNotSilentlyReuseLegacyUnboundSource(t *testing.T) {
 	if err := validateSynologySourceDeviceBinding(legacy, 0, 0, "new-device"); err == nil {
 		t.Fatal("legacy unbound Source was silently reused by name")
 	}
-	if err := validateSynologySourceDeviceBinding(legacy, 42, 0, "new-device"); err != nil {
-		t.Fatalf("explicit configured legacy Source should remain usable without migration: %v", err)
+	if err := validateSynologySourceDeviceBinding(legacy, 42, 0, "new-device"); err == nil {
+		t.Fatal("explicit configured legacy Source bypassed mandatory Device binding")
 	}
-	if err := validateSynologySourceDeviceBinding(legacy, 0, 42, "new-device"); err != nil {
-		t.Fatalf("explicit legacy Source ID should remain usable without migration: %v", err)
+	if err := validateSynologySourceDeviceBinding(legacy, 0, 42, "new-device"); err == nil {
+		t.Fatal("explicit requested legacy Source bypassed mandatory Device binding")
 	}
 	bound := client.Source{ID: 43, Kind: sourceagent.SynologyKind, Direction: meta.SourceDirectionPush, DeviceID: "device-a"}
 	if err := validateSynologySourceDeviceBinding(bound, 43, 0, "device-a"); err != nil {

@@ -91,30 +91,28 @@ func TestMirrorFinishRequiresTwoCompleteSuccessfulInventoriesAndGrace(t *testing
 		http.StatusCreated,
 	)
 
-	createBody := fmt.Sprintf(`{
-		"name":"Mirror Source",
-		"kind":"synology_photos",
-		"direction":"push",
-		"sync_mode":"mirror",
-		"run_mode":"sync",
-		"target_node_id":%d
-	}`, target.ID)
-	createdRes := request(
-		t, router, http.MethodPost, "/api/v1/sources",
-		token, strings.NewReader(createBody), http.StatusCreated,
-	)
-	var source sourceDTO
-	if err := json.Unmarshal(createdRes.Body.Bytes(), &source); err != nil {
-		t.Fatal(err)
-	}
-	if source.SyncMode != meta.SourceSyncModeMirror {
-		t.Fatalf("sync mode=%q want mirror", source.SyncMode)
-	}
-
+	// Legacy, manually targeted Synology Pull Source fixture exercises Mirror
+	// evidence without bypassing the new DSM Push Device/Root enrollment.
+	// Dedicated DSM Push tests cover creation and device authorization.
 	var owner meta.User
 	if err := db.Where("username = ?", "source-mirror-user").First(&owner).Error; err != nil {
 		t.Fatal(err)
 	}
+	record := meta.Source{
+		OwnerID: owner.ID, Name: "Mirror Source", Kind: synologySourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeMirror,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
+		Revision: 1, TargetNodeID: &target.ID,
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	source := toSourceDTO(record)
+
+	if source.SyncMode != meta.SourceSyncModeMirror {
+		t.Fatalf("sync mode=%q want mirror", source.SyncMode)
+	}
+
 	node := meta.Node{
 		ParentID: &target.ID,
 		Name:     "deleted-remotely.jpg",
@@ -292,27 +290,24 @@ func TestMirrorPartialFailedCancelledAndChangedSourceDoNotAdvanceDeletionEvidenc
 		strings.NewReader(`{"name":"Mirror Gate"}`),
 		http.StatusCreated,
 	)
-	createBody := fmt.Sprintf(`{
-		"name":"Mirror Gate Source",
-		"kind":"synology_photos",
-		"direction":"push",
-		"sync_mode":"mirror",
-		"run_mode":"sync",
-		"target_node_id":%d
-	}`, target.ID)
-	createdRes := request(
-		t, router, http.MethodPost, "/api/v1/sources",
-		token, strings.NewReader(createBody), http.StatusCreated,
-	)
-	var source sourceDTO
-	if err := json.Unmarshal(createdRes.Body.Bytes(), &source); err != nil {
-		t.Fatal(err)
-	}
-
+	// Legacy, manually targeted Synology Pull Source fixture exercises Mirror
+	// evidence without bypassing the new DSM Push Device/Root enrollment.
+	// Dedicated DSM Push tests cover creation and device authorization.
 	var owner meta.User
 	if err := db.Where("username = ?", "source-mirror-gate-user").First(&owner).Error; err != nil {
 		t.Fatal(err)
 	}
+	record := meta.Source{
+		OwnerID: owner.ID, Name: "Mirror Gate Source", Kind: synologySourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeMirror,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
+		Revision: 1, TargetNodeID: &target.ID,
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	source := toSourceDTO(record)
+
 	node := meta.Node{
 		ParentID: &target.ID,
 		Name:     "guarded.jpg",
@@ -630,22 +625,23 @@ func TestMirrorConfigChangesResetDeletionEvidence(t *testing.T) {
 		strings.NewReader(`{"name":"Mirror B"}`),
 		http.StatusCreated,
 	)
-	createBody := fmt.Sprintf(`{
-		"name":"Mirror Config Source",
-		"kind":"synology_photos",
-		"direction":"push",
-		"sync_mode":"backup",
-		"run_mode":"sync",
-		"target_node_id":%d
-	}`, targetA.ID)
-	createdRes := request(
-		t, router, http.MethodPost, "/api/v1/sources",
-		token, strings.NewReader(createBody), http.StatusCreated,
-	)
-	var source sourceDTO
-	if err := json.Unmarshal(createdRes.Body.Bytes(), &source); err != nil {
+	// Legacy, manually targeted Synology Pull Source fixture exercises Mirror
+	// evidence without bypassing the new DSM Push Device/Root enrollment.
+	// Dedicated DSM Push tests cover creation and device authorization.
+	var owner meta.User
+	if err := db.Where("username = ?", "source-mirror-config-user").First(&owner).Error; err != nil {
 		t.Fatal(err)
 	}
+	record := meta.Source{
+		OwnerID: owner.ID, Name: "Mirror Config Source", Kind: synologySourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
+		Revision: 1, TargetNodeID: &targetA.ID,
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	source := toSourceDTO(record)
 
 	since := time.Now().UTC().Add(-48 * time.Hour)
 	item := meta.SourceItem{
