@@ -500,7 +500,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 					if err := s.reserveUploadCapacity(c.Request.Context(), tx, existing.ID, requiredReservation); err != nil {
 						return err
 					}
-					return tx.Model(&meta.UploadSession{}).Where("id = ? AND status = ?", existing.ID, meta.UploadStatusActive).Updates(updates).Error
+					if err := tx.Model(&meta.UploadSession{}).Where("id = ? AND status = ?", existing.ID, meta.UploadStatusActive).Updates(updates).Error; err != nil {
+						return err
+					}
+					return recordUploadAuthorizationSuccessTx(tx, c, "session.resume.commit", current)
 				}); err != nil {
 					if errors.Is(err, errManagedSourceWriteDenied) || errors.Is(err, errShareUploadDenied) {
 						fail(c, http.StatusForbidden, "upload authority revoked before resume")
@@ -748,9 +751,9 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			return err
 		}
 		if len(reusable) != 0 {
-			return tx.Create(&reusable).Error
+			if err := tx.Create(&reusable).Error; err != nil { return err }
 		}
-		return nil
+		return recordUploadAuthorizationSuccessTx(tx, c, "session.create", session)
 	}); err != nil {
 		if errors.Is(err, errManagedSourceWriteDenied) {
 			fail(c, http.StatusConflict, err.Error())
@@ -789,7 +792,7 @@ func (s *Server) getUploadSession(c *gin.Context) {
 		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
 		return
 	}
-	if err := s.verifySynologyUploadSession(c, session); err != nil {
+	if err := s.verifyPushUploadSession(c, session); err != nil {
 		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
 		return
 	}
@@ -811,7 +814,7 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
 		return
 	}
-	if err := s.verifySynologyUploadSession(c, session); err != nil {
+	if err := s.verifyPushUploadSession(c, session); err != nil {
 		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
 		return
 	}
@@ -927,7 +930,8 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 				return err
 			}
 		}
-		return s.adjustUploadReservationForPart(tx, current, oldSize, size)
+		if err := s.adjustUploadReservationForPart(tx, current, oldSize, size); err != nil { return err }
+		return recordUploadAuthorizationSuccessTx(tx, c, "chunk.commit", current)
 	})
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), key)
@@ -997,7 +1001,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		fail(c, http.StatusForbidden, "upload is bound to a different SourceRun")
 		return
 	}
-	if err := s.verifySynologyUploadSession(c, session); err != nil {
+	if err := s.verifyPushUploadSession(c, session); err != nil {
 		fail(c, http.StatusForbidden, "Synology Source upload authority is no longer valid")
 		return
 	}
@@ -1329,7 +1333,8 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Where("session_id = ?", currentSession.ID).Delete(&meta.UploadPart{}).Error
+		if err := tx.Where("session_id = ?", currentSession.ID).Delete(&meta.UploadPart{}).Error; err != nil { return err }
+		return recordUploadAuthorizationSuccessTx(tx, c, "finalize.commit", currentSession)
 	})
 	if err != nil {
 		s.deleteUploadFinalizeTemp(c.Request.Context(), newKey)
@@ -1397,7 +1402,12 @@ func (s *Server) abortUploadSession(c *gin.Context) {
 		fail(c, http.StatusConflict, "terminal upload cannot be aborted")
 		return
 	}
-	if err := s.abortUploadSessionData(c.Request.Context(), session); err != nil {
+	if err := s.abortUploadSessionAuthorized(c, session); err != nil {
+		if errors.Is(err, errManagedSourceWriteDenied) || errors.Is(err, errShareUploadDenied) {
+			s.recordUploadAuthorizationFailure(c, "abort.commit", session, err)
+			fail(c, http.StatusForbidden, "upload authority is no longer valid")
+			return
+		}
 		fail(c, http.StatusInternalServerError, "abort upload failed")
 		return
 	}
