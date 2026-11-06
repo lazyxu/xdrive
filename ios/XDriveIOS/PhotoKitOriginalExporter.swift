@@ -121,18 +121,20 @@ private final class PhotoKitRequestGate: @unchecked Sendable {
 /// only when invoked by an explicit user action; caller chooses whether
 /// iCloud originals may be downloaded. No server/Device/Owner is involved.
 enum XDrivePhotoKitOriginalExporter {
-    private static func authorized() -> Bool {
+    private static func authorized(allowLimitedPhotoAccess: Bool) -> Bool {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        return status == .authorized
+        return status == .authorized ||
+            (allowLimitedPhotoAccess && status == .limited)
     }
 
     /// Export one currently authorized PhotoKit asset, with a maximum of
     /// 1 GiB per resource by default. A Live Photo is all-or-nothing:
     /// both still and paired-video originals must be present and fully read.
     static func stage(localIdentifier: String, allowICloudDownload: Bool = false,
-                      maximumBytesPerResource: Int64 = 1_073_741_824) async throws
+                      maximumBytesPerResource: Int64 = 1_073_741_824,
+                      allowLimitedPhotoAccess: Bool = false) async throws
         -> XDriveStagedPhotoKitAsset {
-        guard authorized() else { throw XDrivePhotoKitExportFailure.notAuthorized }
+        guard authorized(allowLimitedPhotoAccess: allowLimitedPhotoAccess) else { throw XDrivePhotoKitExportFailure.notAuthorized }
         guard !localIdentifier.isEmpty,
               let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier],
                                               options: nil).firstObject
@@ -200,7 +202,7 @@ enum XDrivePhotoKitOriginalExporter {
         do {
             for (index, entry) in selected.enumerated() {
                 try Task.checkCancellation()
-                guard authorized(),
+                guard authorized(allowLimitedPhotoAccess: allowLimitedPhotoAccess),
                       PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier],
                                           options: nil).firstObject != nil else {
                     throw XDrivePhotoKitExportFailure.assetNotVisible
@@ -225,7 +227,7 @@ enum XDrivePhotoKitOriginalExporter {
             }
             // A permission edit while iCloud bytes were loading invalidates
             // the entire pair. Never return partial files as a saved Live.
-            guard authorized(),
+            guard authorized(allowLimitedPhotoAccess: allowLimitedPhotoAccess),
                   PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier],
                                       options: nil).firstObject != nil else {
                 throw XDrivePhotoKitExportFailure.assetNotVisible

@@ -148,7 +148,8 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                     allowICloudDownload: allowICloudOriginals,
                     maximumBytesPerResource: stamp.isLive
                         ? XDriveIOSLiveOriginalArchive.maximumPartBytes
-                        : 1_073_741_824
+                        : 1_073_741_824,
+                    allowLimitedPhotoAccess: true
                 )
                 defer { staged.delete() }
                 guard staged.kind == (stamp.isLive ? "live" : stamp.kind),
