@@ -2515,7 +2515,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                 selecting = false
             }
         }
-        .onChange(of: model.entries.map(\.id)) { _ in
+                // Node IDs alone cannot detect a revision/parent change in-place.
+        // Compare the full verified Node snapshots before permitting mutation.
+        .onChange(of: model.entries.map(\.node)) { _ in
             // Eviction is not deselection. Reappearing changed revisions
             // retire only their own snapshots, never the entire selection.
             let conflicts = XDriveIOSNativeFilesSelectionPolicy.conflictingIDs(

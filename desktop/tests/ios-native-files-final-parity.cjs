@@ -175,3 +175,12 @@ test('read-only batch Share Sheet preserves verified directory and thumbnails', 
   assert.match(browser, /if operationWasAccepted \{[\s\S]*?reload\(\)/)
   assert.match(browser, /if versionRestoreConfirmed \{[\s\S]*?reload\(\)/)
 })
+
+test('same Node IDs with changed revisions invalidate selected snapshots before mutation', () => {
+  // An ID-only onChange misses same-ID revision or parent changes during a
+  // successful retained-range refresh. SwiftUI must observe full Node values.
+  assert.match(browser, /\.onChange\(of: model\.entries\.map\(\\\.node\)\)/)
+  assert.doesNotMatch(browser, /\.onChange\(of: model\.entries\.map\(\\\.id\)\)/)
+  assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.conflictingIDs\(\s*visible: model\.entries\.map\(\\\.node\), snapshots: selectedSnapshots/)
+  assert.match(browser, /for id in conflicts \{\s*selectedIDs\.remove\(id\)\s*selectedSnapshots\.removeValue\(forKey: id\)/)
+})
