@@ -21,13 +21,19 @@ struct XDriveIOSNativeFilesBatchShareSheet: UIViewControllerRepresentable {
 final class XDriveIOSNativeFilesBatchExportModel: ObservableObject {
     @Published private(set) var prepared: [XDriveIOSNativeFilesPreparedExport] = []
     @Published private(set) var busy = false
-    @Published private(set) var status: String?
+    @Published private(set) var status: String? {
+        didSet {
+            if let status { activity?.report(status) }
+        }
+    }
+    private var activity: XDriveIOSNativeTransferStore.Ticket?
 
     private var epoch = UUID()
     private var task: Task<Void, Never>?
 
     func invalidate() {
         epoch = UUID()
+        activity = nil
         task?.cancel()
         task = nil
         prepared.forEach { $0.discard() }
@@ -49,7 +55,7 @@ final class XDriveIOSNativeFilesBatchExportModel: ObservableObject {
 
     func prepare(
         _ selected: [XDriveIOSNativeFilesNode], parentID: UInt64,
-        login: XDriveIOSNativeOwnerLoginModel
+        login: XDriveIOSNativeOwnerLoginModel, transfers: XDriveIOSNativeTransferStore? = nil
     ) {
         guard !busy, task == nil, prepared.isEmpty else { return }
         guard XDriveIOSNativeFilesBatchExportPolicy.validSelection(
@@ -64,18 +70,28 @@ final class XDriveIOSNativeFilesBatchExportModel: ObservableObject {
         }
         let ticket = UUID()
         epoch = ticket
+        let activity = transfers?.begin(.download, title: "\(selected.count) 个文件", owner: expected)
+        self.activity = activity
         busy = true
         status = "准备依次读取 \(selected.count) 个文件，暂不估算下载速度。"
         task = Task { @MainActor in
             var staged: [XDriveIOSNativeFilesPreparedExport] = []
             var published = false
+            var failureDetail: String?
             defer {
                 // All partially completed downloads remain private and are
                 // discarded on cancellation, HTTP failure or Owner switch.
                 if !published {
                     staged.forEach { $0.discard() }
                 }
+                let current = epoch == ticket
+                activity?.finishDownload(
+                    verified: current && published,
+                    stopped: !current || Task.isCancelled,
+                    detail: failureDetail
+                )
                 if epoch == ticket {
+                    self.activity = nil
                     task = nil
                     busy = false
                 }
@@ -130,6 +146,7 @@ final class XDriveIOSNativeFilesBatchExportModel: ObservableObject {
                 } else {
                     status = "批量下载失败；已停止并清理临时文件。"
                 }
+                failureDetail = status
             }
         }
     }

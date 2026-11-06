@@ -464,7 +464,12 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                             item.id, currentlyVisibleIDs: overview.items.map(\.id)),
                           overview.items.contains(where: {
                             $0.id == item.id && $0.item_count == item.item_count
-                          }) else { return }
+                          }),
+                          // Retained MapKit pins must match the freshly signed
+                          // facet, not just a reused ID and count.
+                          XDriveIOSNativeOwnerMapSelectionPolicy.acceptsSelectedFacet(
+                            item, currentlyVisible: overview.items
+                          ) else { return }
                     cameraSettleTask?.cancel()
                     cameraSettleTask = nil
                     coverTask?.cancel()
@@ -798,7 +803,14 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                             bounds, current: currentBounds())
                     else { return }
-                    guard page.total_count > 0, let first = page.items.first
+                    // The overview and exact-place Range are different Server
+                    // reads. Do not draw a newer photo's thumbnail beside a
+                    // stale signed count if membership changed between reads.
+                    // Use the first previewable item from the verified 48-slot
+                    // page rather than giving up on an unsupported first item.
+                    guard XDriveIOSNativeOwnerMapSelectionPolicy.acceptsCoverPage(
+                        facet, rangeTotal: page.total_count, offset: page.offset
+                    ), let first = page.items.first(where: { $0.supportsPreview })
                     else { continue }
                     let cover = try await reader.thumbnail(first)
                     try Task.checkCancellation()

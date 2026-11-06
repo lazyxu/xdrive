@@ -29,6 +29,22 @@ struct XDriveIOSNativePhotoMapPolicyChecks {
         precondition(XDriveIOSNativePhotoMapPolicy.validPage(total: 100000, start: 128, next: 192, rows: 64, pins: 53))
         precondition(!XDriveIOSNativePhotoMapPolicy.validPage(total: 100000, start: 0, next: 100000, rows: 100000, pins: 64))
         precondition(!XDriveIOSNativePhotoMapPolicy.validPage(total: 64, start: 0, next: 64, rows: 64, pins: 65))
+        // A terminated PhotoKit page may be empty, but an unfinished
+        // library must make forward progress or the map's while-loop stalls.
+        precondition(XDriveIOSNativePhotoMapPolicy.validPage(
+            total: 0, start: 0, next: 0, rows: 0, pins: 0))
+        precondition(XDriveIOSNativePhotoMapPolicy.validPage(
+            total: 64, start: 64, next: 64, rows: 0, pins: 0))
+        precondition(XDriveIOSNativePhotoMapPolicy.validPage(
+            total: 70, start: 64, next: 70, rows: 6, pins: 4))
+        precondition(!XDriveIOSNativePhotoMapPolicy.validPage(
+            total: 100_000, start: 64, next: 64, rows: 0, pins: 0))
+        precondition(!XDriveIOSNativePhotoMapPolicy.validPage(
+            total: 64, start: 0, next: 0, rows: 0, pins: 0))
+        precondition(!XDriveIOSNativePhotoMapPolicy.validPage(
+            total: 70, start: 64, next: 70, rows: 0, pins: 0))
+        precondition(!XDriveIOSNativePhotoMapPolicy.validPage(
+            total: 64, start: 64, next: 64, rows: 0, pins: 1))
         precondition(XDriveIOSNativePhotoMapPolicy.markerLabel(27) == "当前页此位置27张照片")
         // A late MKAnnotation callback can carry an earlier 64-slot page;
         // even with active permission, it must never resurrect old photos.
@@ -48,6 +64,10 @@ struct XDriveIOSNativePhotoMapPolicyChecks {
             selectedIDs: ["current"], currentPageIDs: ["current", "current"]))
         precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
             selectedIDs: [""], currentPageIDs: [""]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["valid"], currentPageIDs: ["valid", ""]))
+        precondition(XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["valid"], currentPageIDs: ["valid", "other"]))
         precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
             selectedIDs: Array(repeating: "x", count: 65),
             currentPageIDs: ["x"]))

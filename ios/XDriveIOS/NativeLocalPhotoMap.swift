@@ -538,6 +538,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
     @Environment(\.scenePhase) private var phase
     @State private var selected: XDrivePhotoKitScanCandidate?
     @State private var viewerReturnID: String?
+    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AccessibilityFocusState private var focusedTileID: String?
 
     private var previewItems: [XDrivePhotoKitScanCandidate] {
@@ -550,7 +551,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 4)], spacing: 4) {
+                XDriveIOSNativePhotoWallGrid(density: wallDensity) {
                     ForEach(items.prefix(XDriveIOSNativePhotoMapPolicy.pageSize)) { item in
                         Button {
                             guard XDriveIOSNativeMapViewerAdmission.allows(
@@ -562,7 +563,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
                             focusedTileID = nil
                             selected = item
                         } label: {
-                            XDriveIOSLocalPhotoTile(candidate: item)
+                            XDriveIOSNativeSquarePhotoTile(candidate: item)
                         }
                         .buttonStyle(.plain)
                         .disabled(!XDriveIOSNativeMapViewerAdmission.supported(item) ||
@@ -575,9 +576,30 @@ private struct XDriveIOSMapPhotoAlbum: View {
             .navigationTitle("此处照片 · 当前页")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
+                            Button {
+                                wallDensity = option
+                            } label: {
+                                Label(option.title, systemImage: wallDensity == option
+                                    ? "checkmark.circle.fill" : "square.grid.3x3")
+                            }
+                        }
+                    } label: {
+                        Label("缩略图大小", systemImage: "square.grid.3x3")
+                    }
+                    .accessibilityIdentifier("native-ios-map-page-wall-density")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
             }
+            .simultaneousGesture(
+                MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
+                    guard selected == nil, phase == .active else { return }
+                    wallDensity = wallDensity.applyingPinch(scale)
+                }
+            )
             .fullScreenCover(item: $selected, onDismiss: {
                 restoreViewerTile(using: returnScroll)
             }) { initial in
@@ -648,6 +670,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
     @State private var viewer: XDrivePhotoKitScanCandidate?
     @State private var viewerItems: [XDrivePhotoKitScanCandidate] = []
     @State private var viewerReturnID: String?
+    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AccessibilityFocusState private var focusedTileID: String?
     @State private var worker: XDrivePhotoKitBoundedSnapshotScanner?
     @State private var readTask: Task<Void, Never>?
@@ -718,7 +741,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
             focusedTileID = nil
             viewer = item
         } label: {
-            XDriveIOSLocalPhotoTile(candidate: item)
+            XDriveIOSNativeSquarePhotoTile(candidate: item)
         }
         .buttonStyle(.plain)
         .disabled(busy || !XDriveIOSNativeMapViewerAdmission.supported(item))
@@ -753,8 +776,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 4)],
-                              spacing: 4) {
+                    XDriveIOSNativePhotoWallGrid(density: wallDensity) {
                         ForEach(priorWindow) { item in photoTile(item) }
                         ForEach(items) { item in photoTile(item) }
                         // The lazy-grid sentinel is the native infinite-scroll
@@ -799,6 +821,16 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         }
                         Button("重新核对当前位置照片") { loadInitial() }
                             .disabled(busy || viewer != nil || phase != .active)
+                        Section("照片网格") {
+                            ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
+                                Button {
+                                    wallDensity = option
+                                } label: {
+                                    Label(option.title, systemImage: wallDensity == option
+                                        ? "checkmark.circle.fill" : "square.grid.3x3")
+                                }
+                            }
+                        }
                     } label: {
                         Label("位置照片操作", systemImage: "ellipsis.circle")
                     }
@@ -808,6 +840,12 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     Button("完成") { dismiss() }
                 }
             }
+            .simultaneousGesture(
+                MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
+                    guard viewer == nil, !busy, phase == .active else { return }
+                    wallDensity = wallDensity.applyingPinch(scale)
+                }
+            )
             .fullScreenCover(item: $viewer, onDismiss: {
                 restoreViewerTile(using: returnScroll)
             }) { initial in
@@ -1263,7 +1301,13 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                     }) else { return false }
                                     return trusted.count == cell.count &&
                                         trusted.representative.id == cell.representative.id &&
-                                        trusted.key == cell.key
+                                        trusted.key == cell.key &&
+                                        // ID/count alone cannot reauthorize an
+                                        // old MapKit pin after a new GPS scan.
+                                        XDriveIOSNativeLocalMapSpatialPolicy.matchesCurrentCell(
+                                            cell, current: trusted,
+                                            representativeID: { $0.id }
+                                        )
                                   })
                             else { return }
                             if cells.count == 1, let only = cells.first,

@@ -237,12 +237,30 @@ final class XDriveIOSNativeFilesCollectionPageModel: ObservableObject {
         error = nil
     }
 
+    /// Favorited directory NavigationLinks are owned by 'items'. Clearing
+    /// those rows on push can bounce SwiftUI to the old directory.
+    func suspendForNavigation() {
+        epoch = UUID()
+        running?.cancel()
+        running = nil
+        loading = false
+        // Keep the last already verified rows and their exact Owner identity.
+        // Login.owner changes still call invalidate() on the enclosing View.
+    }
+
     func load(_ kind: XDriveIOSNativeFilesCollectionKind,
-              login: XDriveIOSNativeOwnerLoginModel) {
-        invalidate()
+              login: XDriveIOSNativeOwnerLoginModel,
+              preserveVerifiedRows: Bool = false) {
         guard let expected = login.owner else {
+            invalidate()
             error = "请先验证原生服务器账户。"
             return
+        }
+        if preserveVerifiedRows && verified {
+            suspendForNavigation()
+            error = nil
+        } else {
+            invalidate()
         }
         let ticket = epoch
         loading = true

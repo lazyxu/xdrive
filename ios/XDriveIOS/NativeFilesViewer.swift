@@ -108,6 +108,7 @@ struct XDriveIOSNativeFilesViewer: View {
     // Reuse Files' existing verified, signed original-export model. This
     // staged file belongs to exactly this L3 item, never the hidden page.
     @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
+    @Environment(\.xdriveNativeTransfers) private var transfers
     @State private var exportFallbackEligible = false
     @State private var showImageChrome = true
     @State private var showVideoChrome = true
@@ -373,7 +374,7 @@ struct XDriveIOSNativeFilesViewer: View {
             } else {
                 Button {
                     guard authorized, exportFallbackEligible else { return }
-                    exporter.prepare(viewed, login: login)
+                    exporter.prepare(viewed, login: login, transfers: transfers)
                 } label: {
                     Label("下载原件以使用其他 App",
                           systemImage: "square.and.arrow.down")

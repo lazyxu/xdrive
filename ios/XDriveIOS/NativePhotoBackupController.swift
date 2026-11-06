@@ -75,6 +75,12 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     private var manualTargetNodeID: UInt64?
     private var libraryObserver: XDriveIOSForegroundPhotoLibraryObserver?
 
+    func canShowTransferStatus(for owner: XDriveNativeOwnerRoot?) -> Bool {
+        guard let owner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(displayOwner, owner) &&
+            (!busy || XDriveIOSNativePhotoOwnerScope.matches(runningOwner, owner))
+    }
+
     /// Observe changes without enumerating PhotoKit or starting a writer.
     /// The native root owns the observer across tab switches; a late callback
     /// always reads the CURRENT Owner rather than a captured former account.
@@ -151,6 +157,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
 
     func configure(login: XDriveIOSNativeOwnerLoginModel,
                    expectedOwner: XDriveNativeOwnerRoot,
+                   expectedDestination: XDriveIOSPhotoManagedDestination,
                    minutes: Int, allowICloud: Bool,
                    startRule: XDriveIOSPhotoAutoStartRule,
                    enabledAt: Date) async {
@@ -251,6 +258,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             guard displayEpoch == uiEpoch,
                   store.localStopGeneration == stopVersion,
                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                  managed.destination == expectedDestination,
                   UIApplication.shared.applicationState == .active else {
                 throw XDriveIOSNativeSessionError.staleSession
             }
@@ -391,6 +399,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             var beganOriginalWrite = false
             var sourceRunReporter: XDriveIOSPhotoSourceRunReporter?
             do {
+                _ = try XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: selected)
                 let verified = try await login.verifiedAuthorization()
                 try Task.checkCancellation()
                 guard XDriveIOSNativePhotoOwnerScope.matches(verified.owner, selected),
@@ -607,6 +616,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                                   UIApplication.shared.applicationState == .active
                             else { throw XDriveIOSNativeSessionError.staleSession }
                         }
+                        _ = try XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: selected)
                         guard let due = try XDriveIOSPhotoAutoScheduleStore.shared
                             .reserveDue(owner: selected,
                                         sourceID: managed.destination.sourceID,
@@ -766,13 +776,13 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             } catch {
                 if let reporter = sourceRunReporter { await reporter.finish(status: "failed") }
                 var scheduledNetworkRetry = false
+                let networkError = error as? URLError
+                let retryableNetwork = error is XDriveIOSPhotoBackupNetworkError ||
+                    networkError.map(XDriveIOSPhotoAutoSchedulePolicy.retryablePrewriteNetworkFailure) == true
                 if kind == .automatic,
                    let reservedDue = automaticReservedNextDueAt,
                    !beganOriginalWrite, !Task.isCancelled,
-                   let networkError = error as? URLError,
-                   XDriveIOSPhotoAutoSchedulePolicy.retryablePrewriteNetworkFailure(
-                       networkError
-                   ),
+                   retryableNetwork,
                    self.displayEpoch == uiEpoch,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
                    UIApplication.shared.applicationState == .active {
@@ -790,7 +800,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                     self.errorMessage = scheduledNetworkRetry
                         ? "尚未开始原件写入时网络中断：已保留当前扫描段，前台约 5 分钟后可再次检查；仍需重新验证 Owner 与收据。"
-                        : "本轮未完成：请检查当前 Owner、iPhone 设备、受管目标目录、照片权限和加密账本；没有证据的原件不会被当作已备份。"
+                        : Self.backupInterruptionMessage(error)
                 }
             }
             // A successful original may be followed by a PhotoKit scan error,
@@ -820,6 +830,13 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             }
             self.refresh(owner: login.owner)
         }
+    }
+
+    private static func backupInterruptionMessage(_ error: Error) -> String {
+        if error is XDriveIOSPhotoBackupNetworkError {
+            return "等待 Wi-Fi 连接。本轮已停止，结果不确定的上传仍需先核对收据。"
+        }
+        return "本轮未完成：请检查当前 Owner、iPhone 设备、受管目标目录、照片权限和加密账本；没有证据的原件不会被当作已备份。"
     }
 
     /// The independent focused session never modifies a saved interval,

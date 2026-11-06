@@ -432,7 +432,7 @@ test('GPS cell album automatically advances as its lazy-grid sentinel enters the
   assert.match(spatialAlbum, /while rows\.count < 48/);
   assert.match(spatialAlbum, /scanner\.nextLocatedPage\(\)/);
   assert.match(spatialAlbum, /pending\[cursor\]\.candidate/);
-  assert.match(spatialAlbum, /LazyVGrid[\s\S]*?ForEach\(priorWindow\)[\s\S]*?ForEach\(items\)[\s\S]*?if hasNext \{\s*Color\.clear/);
+  assert.match(spatialAlbum, /XDriveIOSNativePhotoWallGrid\(density: wallDensity\)[\s\S]*?ForEach\(priorWindow\)[\s\S]*?ForEach\(items\)[\s\S]*?if hasNext \{\s*Color\.clear/);
   assert.match(spatialAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/);
   assert.match(spatialAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/);
   assert.match(spatialAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, !busy, viewer == nil, hasNext, error == nil/);
@@ -520,4 +520,18 @@ test('album-scoped place wall exposes Show Nearby Photos into the full-library s
   assert.match(map, /onShowNearby: album == nil \? nil : \{[\s\S]*?phase == \.active[\s\S]*?authorizationStatus\(for: \.readWrite\) == \.authorized[\s\S]*?pendingNearbySelection = chosen/)
   assert.match(map, /globalSelection = nil\s*pendingNearbySelection = nil\s*nearbySelection = nil\s*singleViewer = nil/)
   assert.match(map, /selection == nil && globalSelection == nil &&\s*pendingNearbySelection == nil && nearbySelection == nil && singleViewer == nil/)
+})
+
+
+test('PhotoKit map pages always advance until the real terminal cursor and reject blank page identities', () => {
+  const mapPolicy = policy
+  assert.match(mapPolicy, /\(start == total \|\| next > start\)/)
+  assert.match(mapPolicy, /next - start <= pageSize && rows == next - start/)
+  assert.match(mapPolicy, /pins >= 0 && pins <= rows/)
+  assert.match(mapPolicy, /!selectedSet\.contains\(""\) && !pageSet\.contains\(""\)/)
+  assert.match(mapPolicy, /selectedSet\.isSubset\(of: pageSet\)/)
+  // The native map must still verify its snapshot scan before publishing GPS.
+  assert.match(map, /while scanned < total \{[\s\S]*?XDriveIOSNativePhotoMapPolicy\.validPage\(/)
+  assert.match(map, /scanned = next\.page\.nextOffset/)
+  assert.match(map, /guard PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
 })

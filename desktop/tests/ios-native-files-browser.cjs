@@ -80,7 +80,7 @@ test('native Browse home uses a verified cloud location rather than automaticall
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
   assert.match(view, /XDriveIOSNativeFilesTrashScreen\(login: login\)/)
   assert.match(view, /List \{\s*filesHeader\s*if isHome \{\s*filesHome\s*\} else \{/)
-  assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*return\s*\}/)
+  assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*quickAccess\.load\(login: login\)\s*return\s*\}/)
   assert.match(view, /queryDraft = ""\s*activeQuery = ""\s*searchReturnOffset = nil/)
 });
 
@@ -131,10 +131,13 @@ test('Browse home displays only verified favorite folders as native direct navig
   assert.match(home, /native-ios-files-favorite-folder-/)
   assert.match(home, /if favoriteShortcuts\.loading \{/)
   assert.match(home, /Button\("重试"\) \{ loadFavoriteShortcuts\(\) \}/)
-  assert.match(view, /favoriteShortcuts\.load\(\.favorites, login: login\)/)
-  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil/)
+  assert.match(view, /favoriteShortcuts\.load\(\s*\.favorites, login: login, preserveVerifiedRows: sameOwner\s*\)/)
+  assert.match(view, /favoriteShortcuts\.suspendForNavigation\(\)/)
+  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}[\s\S]*?if isHome, let current = login\.owner,[\s\S]*?favoriteShortcuts\.suspendForNavigation\(\)/)
+  assert.match(view, /if !sameOwner \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = owner/)
+  assert.match(view, /else \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil/)
   assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*if isHome \{ loadFavoriteShortcuts\(\) \}/)
-  assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*return/)
+  assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*quickAccess\.load\(login: login\)\s*return/)
   assert.doesNotMatch(home, /XDriveIOSNativeFilesCollectionsTransport\(|URLSession|\/api\/v1\/file-favorites/)
 })
 
@@ -220,7 +223,9 @@ test('native Files search matches PWA source and tag filters, including filter-o
   assert.match(view, /searchOptions\.load\(login: login\)/);
   assert.match(view, /searchOptions\.invalidate\(\)/);
   assert.match(view, /if searchFilters\.hasActiveFilters \{[\s\S]*?reload\(resetOffset: true\)/);
-  assert.match(view, /folderID: folder\?\.id \?\? intent\.file\?\.parent_id \?\?[\s\S]*?intent\.directory\?\.parent_id/);
+  // An inline child is managed in its actual verified parent, not in the outer
+  // Browse folder; root is only a fallback when no selected Node exists.
+  assert.match(view, /folderID: intent\.file\?\.parent_id \?\? intent\.directory\?\.parent_id \?\?[\s\S]*?folder\?\.id \?\? intent\.owner\.rootNodeID/);
   assert.match(source, /if \(filters\.sourceID\) params\.set\('source_id', String\(Math\.max\(1, Math\.trunc\(filters\.sourceID\)\)\)\)/);
   assert.match(source, /if \(filters\.tagID\) params\.set\('tag_id', String\(Math\.max\(1, Math\.trunc\(filters\.tagID\)\)\)\)/);
   assert.match(source, /sources\(\) \{\s*return this\.request<ExternalSource\[]>\('\/api\/v1\/sources'\)/);

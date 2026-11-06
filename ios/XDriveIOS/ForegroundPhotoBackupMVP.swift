@@ -100,6 +100,9 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                 throw XDriveIOSPhotoBackupMVPError.unavailableSource
             }
         }
+        let onlyWiFi = try await XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: owner)
+        // PhotoKit can allow or disallow iCloud access, but cannot pin it to Wi-Fi.
+        let allowICloudOriginals = allowICloudOriginals && !onlyWiFi
         try await authorization.verify(owner: owner)
         try Task.checkCancellation()
 
@@ -374,6 +377,8 @@ struct XDriveIOSForegroundPhotoBackupMVP {
               !owner.instanceID.isEmpty else {
             throw XDriveIOSPhotoBackupMVPError.identityNotVerified
         }
+        let onlyWiFi = try await XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: owner)
+        let allowICloudOriginals = allowICloudOriginals && !onlyWiFi
         try await authorization.verify(owner: owner)
         try Task.checkCancellation()
         var report = XDriveIOSPhotoBackupProgress()
@@ -500,7 +505,8 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         // completed 256-slot cursor after repeated offline failures can
         // strand entire older windows until a future full-library wrap.
         // A disk staging failure is equally global, not a missing original.
-        if error is URLError ||
+        if error is XDriveIOSPhotoBackupNetworkError ||
+           error is URLError ||
            error is XDriveNativeOwnerRootFailure ||
            error is XDrivePhotoSyncLedgerError ||
            error is XDriveIOSPhotoBGVaultFailure {
@@ -570,6 +576,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         try Task.checkCancellation()
         // No iOS-specific media size ceiling. The exporter streams to
         // protected staging and the existing UploadSession sends 8 MiB chunks.
+        _ = try await XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: owner)
         let staged = try await XDrivePhotoKitOriginalExporter.stage(
             localIdentifier: localIdentifier,
             allowICloudDownload: allowICloud,

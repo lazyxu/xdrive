@@ -56,6 +56,15 @@ enum XDriveIOSNativeFilesDatePolicy {
     }
 }
 
+/// Optional authoritative directory-group index returned only by the
+/// offset=0 grouped Server Range. Kept in the canonical DTO because many
+/// independent Foundation-only native policy tests compile this file alone.
+struct XDriveIOSNativeFilesGroupIndex: Decodable, Equatable {
+    let key: String
+    let item_count: Int
+    let start_index: Int
+}
+
 struct XDriveIOSNativeFilesRange: Decodable {
     let items: [XDriveIOSNativeFilesNode]
     let total_count: Int
@@ -63,6 +72,7 @@ struct XDriveIOSNativeFilesRange: Decodable {
     let limit: Int
     let sort: String
     let order: String
+    var groups: [XDriveIOSNativeFilesGroupIndex]? = nil
 }
 
 struct XDriveIOSNativeFilesSearchHit: Decodable {

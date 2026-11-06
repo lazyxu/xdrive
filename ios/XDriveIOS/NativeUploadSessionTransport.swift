@@ -92,12 +92,14 @@ final class XDriveNativeUploadSessionTransport {
     private let origin: URL
     private let authorization: XDriveNativeUploadAuthorization
     private let session: URLSession
+    private let allowsCellularAccess: Bool
 
-    convenience init(origin: URL, accessToken: String) throws {
+    convenience init(origin: URL, accessToken: String, allowsCellularAccess: Bool = true) throws {
         guard !accessToken.isEmpty else {
             throw XDriveNativeUploadError.unauthorizedOrRejected(401)
         }
-        try self.init(origin: origin, authorization: .foregroundBearer(accessToken))
+        try self.init(origin: origin, authorization: .foregroundBearer(accessToken),
+                      allowsCellularAccess: allowsCellularAccess)
     }
 
     /// A dedicated, explicitly user-approved native grant from the isolated
@@ -105,7 +107,8 @@ final class XDriveNativeUploadSessionTransport {
     /// Caller must obtain it from the current Server-proven BG vault, never
     /// accept a hand-built WebView JSON credential.
     convenience init(origin: URL,
-                     approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential)
+                     approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential,
+                     allowsCellularAccess: Bool)
         throws {
         guard let owner = try? approvedBackgroundGrant.ownerScope(),
               approvedBackgroundGrant.matches(owner),
@@ -113,25 +116,31 @@ final class XDriveNativeUploadSessionTransport {
             throw XDriveNativeUploadError.unauthorizedOrRejected(403)
         }
         try self.init(origin: origin,
-                      authorization: .scopedIOSBackground(approvedBackgroundGrant))
+                      authorization: .scopedIOSBackground(approvedBackgroundGrant),
+                      allowsCellularAccess: allowsCellularAccess)
     }
 
     /// Native Owner JWT and exact registered iPhone Source proof; accepted
     /// only on /ios/photos/managed UploadSession aliases, never on /nodes.
-    convenience init(origin: URL, managedForeground authority: XDriveIOSManagedOriginalAuthority)
+    convenience init(origin: URL, managedForeground authority: XDriveIOSManagedOriginalAuthority,
+                     allowsCellularAccess: Bool)
         throws {
         guard authority.matches(authority.owner),
               authority.owner.origin == origin else {
             throw XDriveNativeUploadError.unauthorizedOrRejected(403)
         }
-        try self.init(origin: origin, authorization: .managedIOSPhoto(authority))
+        try self.init(origin: origin, authorization: .managedIOSPhoto(authority),
+                      allowsCellularAccess: allowsCellularAccess)
     }
 
-    private init(origin: URL, authorization: XDriveNativeUploadAuthorization) throws {
+    private init(origin: URL, authorization: XDriveNativeUploadAuthorization,
+                 allowsCellularAccess: Bool) throws {
         let verifiedOrigin = try ServerAddress.parse(origin.absoluteString)
         self.origin = verifiedOrigin
         self.authorization = authorization
+        self.allowsCellularAccess = allowsCellularAccess
         let config = URLSessionConfiguration.ephemeral
+        config.allowsCellularAccess = allowsCellularAccess
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil
@@ -441,6 +450,7 @@ final class XDriveNativeUploadSessionTransport {
         components.fragment = nil
         guard let url = components.url else { throw XDriveNativeUploadError.invalidServerResponse }
         var request = URLRequest(url: url)
+        request.allowsCellularAccess = allowsCellularAccess
         request.httpMethod = method
         request.httpShouldHandleCookies = false
         request.timeoutInterval = method == "POST" && path.hasSuffix("/finalize") ? 600 : 60
