@@ -9,7 +9,7 @@ enum XDriveIOSNativeFilesBatchTargetError: Error {
     case server(Int)
 }
 
-private final class XDriveIOSNativeBatchTargetDenyRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeBatchTargetDenyRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

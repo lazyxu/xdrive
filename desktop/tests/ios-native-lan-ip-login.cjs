@@ -9,22 +9,24 @@ const route = read('ios/XDriveIOS/NativeLANLoginRoute.swift')
 const model = read('ios/XDriveIOS/NativeOwnerLoginModel.swift')
 const ui = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
 const auth = read('ios/XDriveIOS/AuthService.swift')
+const trust = read('ios/XDriveIOS/NativeLANTrust.swift')
 
 test('iOS offers optional private IPv4 without inventing a parallel login identity', () => {
   assert.match(ui, /native-ios-login-lan-ip/)
   assert.match(ui, /text: \$model\.lanIPText/)
   assert.match(ui, /登录前检测一次内网 HTTPS/)
   assert.match(model, /@Published var lanIPText = ""/)
-  assert.match(route, /octets\[0\] == 10/)
-  assert.match(route, /octets\[0\] == 172/)
-  assert.match(route, /octets\[0\] == 192/)
+  assert.match(route, /XDriveIOSLANAuthority\(ip: input/)
+  assert.match(trust, /octets\[0\] == 10/)
+  assert.match(trust, /octets\[0\] == 172/)
+  assert.match(trust, /octets\[0\] == 192/)
   assert.match(route, /url\.host = input/)
   assert.match(route, /return try ServerAddress\.parse\(target\.absoluteString\)/)
   assert.match(auth, /case \.invalidLANIP:/)
 })
 
 test('one anonymous no-redirect HTTPS probe selects a fixed origin before credentials', () => {
-  assert.match(route, /parts\.path = "\/api\/v1\/version"/)
+  assert.match(route, /read\(origin, path: "\/api\/v1\/version"/)
   assert.match(route, /request\.httpMethod = "GET"/)
   assert.match(route, /request\.httpShouldHandleCookies = false/)
   assert.match(route, /config\.httpShouldSetCookies = false/)
@@ -38,6 +40,19 @@ test('one anonymous no-redirect HTTPS probe selects a fixed origin before creden
   assert.doesNotMatch(route, /\.secureConnectionFailed,\s*\.serverCertificateUntrusted/)
   assert.match(route, /throw AuthFailure\.invalidLANProbe/)
   assert.match(route, /throw AuthFailure\.redirectRefused/)
+})
+
+test('every native Server session reuses the scoped TLS delegate', () => {
+  const source = path.join(root, 'ios/XDriveIOS')
+  let sessions = 0
+  for (const name of fs.readdirSync(source).filter(name => name.endsWith('.swift'))) {
+    const swift = read(`ios/XDriveIOS/${name}`)
+    const delegates = [...swift.matchAll(/:\s*NSObject,\s*URLSession(?:Task|Data|Download|Stream)?Delegate/g)]
+    assert.equal(delegates.length, name === 'NativeLANTrust.swift' ? 1 : 0, name)
+    assert.doesNotMatch(swift, /URLSession\.shared|URLSessionConfiguration\.background\(/, name)
+    sessions += [...swift.matchAll(/URLSession\(/g)].length
+  }
+  assert.ok(sessions >= 30)
 })
 
 test('native login reuses chosen HTTPS origin for real login, Owner, refresh and logout', () => {

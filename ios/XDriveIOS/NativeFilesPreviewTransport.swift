@@ -37,7 +37,7 @@ private struct XDriveIOSNativeFilesTextResponse: Decodable {
     let size: Int64
 }
 
-private final class XDriveIOSNativeFilesPreviewRejectRedirect: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeFilesPreviewRejectRedirect: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(
         _ session: URLSession, task: URLSessionTask,
         willPerformHTTPRedirection response: HTTPURLResponse,

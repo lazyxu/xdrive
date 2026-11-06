@@ -9,7 +9,7 @@ private enum XDriveIOSNativeFilesReadError: Error {
     case malformed
 }
 
-private final class XDriveIOSNativeFilesRejectRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeFilesRejectRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

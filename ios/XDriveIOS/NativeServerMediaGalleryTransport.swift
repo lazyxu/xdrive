@@ -115,7 +115,7 @@ enum XDriveIOSNativeMediaStillPreviewFallback: Error {
 }
 
 /// Never follow an authenticated Owner request to another origin.
-private final class XDriveIOSNativeMediaRejectRedirect: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeMediaRejectRedirect: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

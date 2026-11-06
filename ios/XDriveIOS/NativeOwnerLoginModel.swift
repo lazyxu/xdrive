@@ -178,7 +178,8 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     }
 
     private func humanMessage(_ failure: Error) -> String {
-        XDriveIOSNativeOwnerLoginFailurePolicy.message(for: failure)
+        if let pairing = failure as? XDriveIOSLANPairingFailure { return pairing.message }
+        return XDriveIOSNativeOwnerLoginFailurePolicy.message(for: failure)
     }
 
     /// Revalidate the Server Owner and root with an access token obtained
@@ -419,6 +420,29 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         keepSignedIn = true
         restoreAttempted = true
         noticeMessage = "已删除所选服务器和账号的本机资料；其他账号及备份记录不变。"
+    }
+
+    func pairLANHTTPS() async {
+        guard !busy, active == nil else { return }
+        errorMessage = nil
+        noticeMessage = nil
+        let server = serverText
+        let lanIP = lanIPText
+        busy = true
+        defer { busy = false }
+        do {
+            let origin = try ServerAddress.parse(server)
+            let (target, pairing) = try await XDriveIOSNativeLANLoginRoute.verifyPairing(origin: origin, lanIP: lanIP)
+            try Task.checkCancellation()
+            guard serverText == server, lanIPText == lanIP else { return }
+            try XDriveIOSLANPairingStore.save(pairing, for: target)
+            noticeMessage = "已配对 \(target.ip):\(target.port)，现在可以登录。内网根证书 SHA-256：\(pairing.fingerprint)"
+        } catch is CancellationError {
+            return
+        } catch {
+            guard serverText == server, lanIPText == lanIP else { return }
+            errorMessage = humanMessage(error)
+        }
     }
 
     /// Explicit user sign-in, not a PWA Cookie session. A successful HTTP

@@ -67,7 +67,7 @@ struct XDriveNativeUploadCheckpointHooks {
     let beforeFinalize: () async throws -> Void
 }
 
-private final class NativePhotoDenyRedirects: NSObject, URLSessionTaskDelegate {
+private final class NativePhotoDenyRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

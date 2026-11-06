@@ -185,10 +185,16 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if !model.lanIPText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("内网证书信任：管理员 → 系统依赖 → Caddy → HTTPS 证书管理，核对根 CA SHA-256 后下载 CER。iPhone 在“设置 → 通用 → VPN 与设备管理”安装，再在“关于本机 → 证书信任设置”手动完全信任。不要忽略证书警告或自动信任未核实的 CA。")
+                Text("首次使用或 Caddy 根证书更换后，请在可访问域名和内网 IP 的网络中配对。xDrive 会从上方可信域名获取证书并核验 IP，只在此 App 内使用。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-lan-certificate-help")
+                Button("配对或更新内网 HTTPS 证书") {
+                    Task { await model.pairLANHTTPS() }
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.busy || model.serverText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("native-ios-lan-https-pairing")
             }
 
             Text("用户名").font(.subheadline.weight(.medium))

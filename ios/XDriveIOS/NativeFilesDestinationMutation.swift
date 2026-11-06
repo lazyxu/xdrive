@@ -16,7 +16,7 @@ private struct XDriveIOSNativeFilesDestinationWriter {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 
-    private final class DenyRedirects: NSObject, URLSessionTaskDelegate {
+    private final class DenyRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
         func urlSession(_ session: URLSession, task: URLSessionTask,
                         willPerformHTTPRedirection response: HTTPURLResponse,
                         newRequest request: URLRequest,
