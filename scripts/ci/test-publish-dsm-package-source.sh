@@ -85,6 +85,7 @@ chmod +x "$tmp/bin/gh"
 export PATH="$tmp/bin:$PATH" GH_TOKEN=fixture MOCK_GH_STATE="$tmp/remote"
 one="0123456789abcdef0123456789abcdef01234567"
 two="1123456789abcdef0123456789abcdef01234567"
+three="2123456789abcdef0123456789abcdef01234567"
 export MOCK_SNAPSHOT="$one"
 
 spk 0.1.0-9000
@@ -100,21 +101,25 @@ assert data["sha256"] and data["md5"] and data["size"] > 1000
 PY
 bash scripts/ci/publish-dsm-package-source.sh edge "$tmp/release" "$one"
 
-# Older version must not replace a published newer one, even if correctly hashed.
+# A new SHA whose version number goes backwards must never replace the feed.
 spk 0.1.0-8999
-if bash scripts/ci/publish-dsm-package-source.sh edge "$tmp/release" "$one" >/dev/null 2>&1; then
+if MOCK_SNAPSHOT="$three" bash scripts/ci/publish-dsm-package-source.sh edge "$tmp/release" "$three" >/dev/null 2>&1; then
   echo "DSM version rollback unexpectedly admitted" >&2; exit 1
 fi
 
-# An earlier master publisher must not move the edge feed after Snapshot advanced.
+# A Snapshot which changed while this version was published must keep the old feed.
 spk 0.1.0-9001
-MOCK_SNAPSHOT="$two" bash scripts/ci/publish-dsm-package-source.sh edge "$tmp/release" "$one"
+MOCK_SNAPSHOT="$one" bash scripts/ci/publish-dsm-package-source.sh edge "$tmp/release" "$two"
 grep -Fq '"version":"0.1.0-9000"' "$tmp/remote/dsm-edge-feed/catalog.json"
 
-# Stable and edge are different channels; a stable release does not modify edge.
+# The matching new Snapshot may then promote the already verified immutable release.
+MOCK_SNAPSHOT="$two" bash scripts/ci/publish-dsm-package-source.sh edge "$tmp/release" "$two"
+grep -Fq '"version":"0.1.0-9001"' "$tmp/remote/dsm-edge-feed/catalog.json"
+
+# Stable and edge are different channels; stable publication never moves edge.
 bash scripts/ci/publish-dsm-package-source.sh stable "$tmp/release" "$two"
 test -f "$tmp/remote/dsm-stable-feed/catalog.json"
-grep -Fq '"version":"0.1.0-9000"' "$tmp/remote/dsm-edge-feed/catalog.json"
+grep -Fq '"version":"0.1.0-9001"' "$tmp/remote/dsm-edge-feed/catalog.json"
 
 # Mutated package bytes must be rejected even when its version remains constant.
 printf 'tamper' >> "$tmp/release/xdrivenas-armada38x-0.1.0-9001.spk"
