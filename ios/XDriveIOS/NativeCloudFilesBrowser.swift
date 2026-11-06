@@ -2602,7 +2602,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 let reader = XDriveIOSNativeFilesReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 )
-                var nodes = [UInt64: XDriveIOSNativeFilesNode]()
+                guard var accumulator = XDriveIOSNativeFilesSelectAllAccumulator(
+                    parentID: folderID, total: total,
+                    sort: chosenSort, order: chosenOrder
+                ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
                 for start in stride(
                     from: 0, to: total, by: XDriveIOSNativeFilesPagePolicy.pageSize
                 ) {
@@ -2613,21 +2616,14 @@ struct XDriveIOSNativeFilesBrowser: View {
                         foldersFirst: chosenFoldersFirst
                     )
                     try Task.checkCancellation()
-                    guard page.total_count == total,
-                          page.items.count == min(
-                            XDriveIOSNativeFilesPagePolicy.pageSize, total - start
-                          ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
-                    for node in page.items {
-                        guard node.parent_id == folderID, nodes[node.id] == nil
-                        else { throw XDriveIOSNativeFilesReadError.invalidPage }
-                        nodes[node.id] = node
+                    guard accumulator.append(page) else {
+                        throw XDriveIOSNativeFilesReadError.invalidPage
                     }
                 }
+                guard let nodes = accumulator.verifiedSelection() else {
+                    throw XDriveIOSNativeFilesReadError.invalidPage
+                }
                 let ids = Set(nodes.keys)
-                guard ids.count == total,
-                      XDriveIOSNativeFilesSelectionPolicy.validItems(
-                        snapshots: nodes, selectedIDs: ids, parentID: folderID
-                      ) != nil else { throw XDriveIOSNativeFilesReadError.invalidPage }
                 try Task.checkCancellation()
                 guard selectAllEpoch == token, selecting, !model.loading,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),

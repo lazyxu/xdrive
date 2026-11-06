@@ -674,6 +674,18 @@ jobs:
           set -euo pipefail
           node --test desktop/tests/ios-native-files-final-parity.cjs
 
+      - name: Verify native Files exact 200-item Server Select All across pages
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift \
+            ios/XDriveIOS/NativeFilesSelectionPolicy.swift \
+            ios/XDriveIOS/NativeFilesSelectAllPolicy.swift \
+            ios/tests/NativeFilesSelectAllChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-select-all"
+          "$RUNNER_TEMP/xdrive-ios-files-select-all"
+
       - name: Verify native Files Viewer bounded navigation and Owner preview contracts
         run: |
           set -euo pipefail
