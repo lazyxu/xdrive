@@ -119,6 +119,24 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	scopeA := fmt.Sprintf("https://public.example:%d", ownerA.ID)
 	scopeB := fmt.Sprintf("http://localhost:9876:%d", ownerB.ID)
 
+	// The signed SourceRun bearer carries a valid OwnerID but must never
+	// inherit the interactive Owner's Clipboard rights on any verb.
+	sourceBearer, err := auth.New("clipboard-owner-mailbox-test-secret", time.Hour).
+		IssueSourceRunAccess(ownerA.ID, ownerA.SessionVersion, 123, "clipboard-test-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/clipboard/vault"},
+		{http.MethodPut, "/api/v1/clipboard/vault/check"},
+		{http.MethodGet, "/api/v1/clipboard/items"},
+		{http.MethodPost, "/api/v1/clipboard/items"},
+		{http.MethodDelete, "/api/v1/clipboard/items/1"},
+		{http.MethodDelete, "/api/v1/clipboard/items"},
+	} {
+		request(t, router, route.method, route.path, sourceBearer, nil, http.StatusForbidden)
+	}
+
 	// No body or key is accepted from unauthenticated callers.
 	request(t, router, http.MethodGet, "/api/v1/clipboard/items", "", nil, http.StatusUnauthorized)
 	vaultA := request(t, router, http.MethodGet, "/api/v1/clipboard/vault", a, nil, http.StatusOK)
@@ -192,11 +210,55 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	if json.Unmarshal(legacy.Body.Bytes(), &checkDTO) != nil || checkDTO.AADScope != "" {
 		t.Fatal("legacy vault state not reproduced")
 	}
+	// Competing original-origin claims for a pre-AADScope vault must select
+	// exactly one immutable value, even when requests arrive concurrently.
+	// Clients verify the legacy canary before reaching this Server handler.
+	legacyScopes := []string{scopeA, fmt.Sprintf("https://lan-alias.example:%d", ownerA.ID)}
+	const competingClaims = 12
+	var claimWG sync.WaitGroup
+	claimCodes := make([]int, competingClaims)
+	claimScopes := make([]string, competingClaims)
+	for i := 0; i < competingClaims; i++ {
+		claimWG.Add(1)
+		go func(index int) {
+			defer claimWG.Done()
+			scope := legacyScopes[index%len(legacyScopes)]
+			body := fmt.Sprintf(`{"nonce":%q,"ciphertext":%q,"scope":%q}`, nonce, ciphertext, scope)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/clipboard/vault/check", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+a)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			claimCodes[index] = rec.Code
+			var dto struct {
+				Scope string `json:"aad_scope"`
+			}
+			if json.Unmarshal(rec.Body.Bytes(), &dto) == nil {
+				claimScopes[index] = dto.Scope
+			}
+		}(i)
+	}
+	claimWG.Wait()
+	var pinned meta.ClipboardVault
+	if err := db.Where("owner_id = ?", ownerA.ID).First(&pinned).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pinned.CheckCiphertext != ciphertext ||
+		(pinned.AADScope != legacyScopes[0] && pinned.AADScope != legacyScopes[1]) {
+		t.Fatalf("legacy claim failed to pin an immutable AAD scope: %+v", pinned)
+	}
+	for i := range claimCodes {
+		if claimCodes[i] != http.StatusOK || claimScopes[i] != pinned.AADScope {
+			t.Fatalf("legacy claim %d returned status=%d scope=%q, pinned=%q",
+				i, claimCodes[i], claimScopes[i], pinned.AADScope)
+		}
+	}
+	// An additional conflicting request cannot rewrite the winning scope.
 	accepted = request(t, router, http.MethodPut, "/api/v1/clipboard/vault/check", a,
 		strings.NewReader(check), http.StatusOK)
 	if json.Unmarshal(accepted.Body.Bytes(), &checkDTO) != nil ||
-		checkDTO.CheckCiphertext != ciphertext || checkDTO.AADScope != scopeA {
-		t.Fatal("legacy AAD scope claim changed canary or failed")
+		checkDTO.CheckCiphertext != ciphertext || checkDTO.AADScope != pinned.AADScope {
+		t.Fatal("concurrent legacy AAD scope claim changed the immutable canary or winner")
 	}
 	receipt := request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
 		strings.NewReader(payload(firstID, ciphertext)), http.StatusCreated)
@@ -297,4 +359,32 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	if json.Unmarshal(other.Body.Bytes(), &otherList) != nil || len(otherList.Items) != 0 {
 		t.Fatalf("concurrent Owner A writes leaked to Owner B: %s", other.Body.String())
 	}
+
+	// Password-rotation gate, disabled accounts and revoked session versions
+	// must block the real Owner token, not merely reject malformed JSON.
+	if err := db.Model(&meta.User{}).Where("id = ?", ownerB.ID).
+		Update("must_change_password", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	request(t, router, http.MethodGet, "/api/v1/clipboard/vault", b, nil, http.StatusForbidden)
+	if err := db.Model(&meta.User{}).Where("id = ?", ownerB.ID).
+		Update("must_change_password", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	disabledAt := time.Now().UTC()
+	if err := db.Model(&meta.User{}).Where("id = ?", ownerB.ID).
+		Update("disabled_at", &disabledAt).Error; err != nil {
+		t.Fatal(err)
+	}
+	request(t, router, http.MethodGet, "/api/v1/clipboard/items", b, nil, http.StatusForbidden)
+	if err := db.Model(&meta.User{}).Where("id = ?", ownerB.ID).
+		Update("disabled_at", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.User{}).Where("id = ?", ownerB.ID).
+		Update("session_version", ownerB.SessionVersion+1).Error; err != nil {
+		t.Fatal(err)
+	}
+	request(t, router, http.MethodGet, "/api/v1/clipboard/items", b, nil, http.StatusUnauthorized)
+	request(t, router, http.MethodGet, "/api/v1/clipboard/vault", a, nil, http.StatusOK)
 }
