@@ -286,5 +286,5 @@ test('Files Viewer reuses one authenticated request-scoped ephemeral connection 
   assert.doesNotMatch(readMethod, /invalidateAndCancel|let client = URLSession/);
   assert.match(reader, /completionHandler\(nil\)/);
   assert.match(reader, /url, authenticated: false,/);
-  assert.match(reader, /guard let absolute = url, absolute\.scheme == "https"/);
+  assert.match(reader, /guard let absolute = url\.url, absolute\.scheme == "https"/);
 });
