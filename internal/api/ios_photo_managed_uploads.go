@@ -351,6 +351,7 @@ func (s *Server) iosPhotoManagedReceipt(c *gin.Context) {
 		return
 	}
 	verified := false
+	var verifiedSession meta.UploadSession
 	for _, session := range sessions {
 		if session.Name == node.Name && session.RequestedName == node.Name &&
 			session.TotalSize == node.File.Size && session.SHA256 == node.File.SHA256 &&
@@ -358,11 +359,23 @@ func (s *Server) iosPhotoManagedReceipt(c *gin.Context) {
 			(session.ConflictPolicy == meta.UploadConflictPolicyFail ||
 				session.ConflictPolicy == "") {
 			verified = true
+			verifiedSession = session
 			break
 		}
 	}
 	if !verified {
+		s.recordUploadAuthorizationFailure(c, "ios.photo.receipt.read", meta.UploadSession{}, errManagedSourceWriteDenied)
 		fail(c, http.StatusNotFound, "ios photo original receipt unconfirmed")
+		return
+	}
+	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := requireIOSPhotoManagedSessionTx(c.Request.Context(), tx, c, verifiedSession); err != nil {
+			return err
+		}
+		return recordUploadAuthorizationSuccessTx(tx, c, "ios.photo.receipt.read", verifiedSession)
+	}); err != nil {
+		s.recordUploadAuthorizationFailure(c, "ios.photo.receipt.read", verifiedSession, err)
+		fail(c, http.StatusForbidden, "ios photo receipt authority is no longer valid")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
