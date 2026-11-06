@@ -1,8 +1,6 @@
 import type { FormEventHandler } from 'react'
 import {
   Box as MuiBox,
-  Button as MuiButton,
-  CircularProgress,
   Dialog,
   Stack,
   Typography as MuiTypography,
@@ -37,7 +35,6 @@ import {
   externalSourceMirrorSafetyNotice,
   externalSourceMirrorScanNotice,
   yikeConnectorNotice,
-  yikeManagedTargetDisplayLabel,
   yikeRateLimitNotice,
 } from '../external-sources'
 import type {
@@ -80,12 +77,6 @@ export function XDriveSourceCreateDialog({
   nameError,
   spacesError,
   rootsError,
-  targetBrowsingEnabled,
-  targetCrumbs,
-  targetDirectories,
-  targetLoading,
-  defaultTargetLabel,
-  defaultTargetPath,
   cookieHelpVariant,
   testingCredential,
   credentialTest,
@@ -99,7 +90,6 @@ export function XDriveSourceCreateDialog({
   onClearNameError,
   onClearSpacesError,
   onClearRootsError,
-  onLoadTargetDirectory,
   onTestCredential,
 }: {
   open: boolean
@@ -135,12 +125,6 @@ export function XDriveSourceCreateDialog({
   const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
   const option = externalSourceCreateOption(values.preset)
   const profile = externalSourceConnectorProfile(option.kind, option.direction)
-  const selectedTarget = targetCrumbs.at(-1)
-  const selectedTargetLabel = targetBrowsingEnabled
-    ? (targetCrumbs.map((item) => item.name).join(' / ') || defaultTargetLabel)
-    : defaultTargetLabel
-  const selectedTargetPath = targetBrowsingEnabled ? (selectedTarget?.path ?? '') : defaultTargetPath
-
   const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
   return (
     <Dialog
@@ -162,8 +146,8 @@ export function XDriveSourceCreateDialog({
       <XDriveDialogContent dividers>
         <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
           云端目标目录：{option.direction === 'push'
-            ? \`同步文件夹 / Push / \${values.name.trim() || '目录名称'}\`
-            : \`同步文件夹 / Pull / \${(option.kind === 'synology_files' ? 'Synology Files' : option.kind === 'synology_photos' ? 'Synology Photos' : 'Yike Photos')} / \${values.name.trim() || '目录名称'}\`}
+            ? `同步文件夹 / Push / ${values.name.trim() || '目录名称'}`
+            : `同步文件夹 / Pull / ${(option.kind === 'synology_files' ? 'Synology Files' : option.kind === 'synology_photos' ? 'Synology Photos' : 'Yike Photos')} / ${values.name.trim() || '目录名称'}`}
           <br />
           只允许修改最后一级目录名称；同步文件夹、Push/Pull 和连接器目录由 Server 统一创建。
           不提供任意目标目录选择，也不会认领已有普通目录。
