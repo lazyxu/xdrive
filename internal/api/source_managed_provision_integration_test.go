@@ -17,7 +17,7 @@ import (
 
 func TestCreateSynologyPullManagedTargetWithoutClaimingLegacyFolder(t *testing.T) {
 	db, srv, owner, other, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.SyncRun{}); err != nil {
+	if err := db.AutoMigrate(&meta.SyncRun{}, &meta.UploadSession{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name
