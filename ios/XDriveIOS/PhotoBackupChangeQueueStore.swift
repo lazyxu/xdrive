@@ -112,6 +112,32 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         return sqlite3_changes(database) == 1
     }
 
+    /// Replace an unreplayable PhotoKit history checkpoint only after the
+    /// Owner-scoped caller has completed a full current-library scan and
+    /// verified every supported original against the current Server receipt.
+    /// The new token and clearing of stale change rows are one SQLite commit.
+    /// This operation itself proves NOTHING about uploads.
+    func completeFullReconciliation(token: Data, authorization: Int) throws {
+        try validateToken(token)
+        guard authorization > 0 else { throw Failure.invalidInput }
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { try? execute("ROLLBACK") } }
+        let statement = try prepare(
+            "INSERT INTO baseline(id,token,authorization) VALUES(1,?,?) " +
+            "ON CONFLICT(id) DO UPDATE SET token=excluded.token,authorization=excluded.authorization"
+        )
+        defer { sqlite3_finalize(statement) }
+        try bind(token, into: statement, position: 1)
+        guard sqlite3_bind_int64(statement, 2, Int64(authorization)) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        try stepDone(statement)
+        try execute("DELETE FROM entries")
+        try execute("COMMIT")
+        committed = true
+    }
+
     func baseline() throws -> Baseline? {
         let statement = try prepare("SELECT token,authorization FROM baseline WHERE id=1")
         defer { sqlite3_finalize(statement) }
