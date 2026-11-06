@@ -85,8 +85,16 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	// The checked Finalize path must preserve the same scoped separation.
 	session := meta.UploadSession{ID: "120af9d6-9c02-4080-a6ff-2f219b17fda1",
 		OwnerID: owner.ID, ParentID: &child.ID, Name: req.Name,
-		SourceRunID: runID, Status: meta.UploadStatusActive,
-		ConflictPolicy: meta.UploadConflictPolicyFail, TotalSize: req.Size}
+		RequestedName: req.Name, SourceRunID: runID, Status: meta.UploadStatusActive,
+		ConflictPolicy: meta.UploadConflictPolicyFail, TotalSize: req.Size,
+		ChunkSize: defaultUploadChunkSize, ChunkCount: 1, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	// The authorization helper intentionally reloads and locks the durable
+	// session, not the caller's mutable in-memory struct. Model that real SQL
+	// boundary instead of passing a session UUID that does not exist.
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := requireSourceRunOrLocalPushFinalizeTx(ctx, db, scoped, session, child.ID); err != nil {
 		t.Fatalf("valid Pull worker Finalize authorization rejected: %v", err)
 	}
@@ -111,8 +119,12 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	}
 	ordinarySession := meta.UploadSession{
 		ID: "899de10a-62bf-4470-ae8f-a4c62d2a611a",
-		OwnerID: owner.ID, ParentID: &ordinary.ID, Name: req.Name,
+		OwnerID: owner.ID, ParentID: &ordinary.ID, Name: req.Name, RequestedName: req.Name,
 		Status: meta.UploadStatusActive, ConflictPolicy: meta.UploadConflictPolicyFail,
+		ChunkSize: defaultUploadChunkSize, ChunkCount: 1, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	if err := db.Create(&ordinarySession).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := server.requireUploadChunkAuthorityTx(ctx, db, regular, ordinarySession); err != nil {
 		t.Fatalf("ordinary Owner folder cannot upload chunks: %v", err)
