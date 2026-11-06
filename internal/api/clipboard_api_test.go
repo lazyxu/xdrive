@@ -44,6 +44,28 @@ func TestClipboardValidationRejectsPlaintextAndBadShapes(t *testing.T) {
 	}
 }
 
+func TestClipboardAADScopeIsOwnerBoundOrigin(t *testing.T) {
+	for _, good := range []string{
+		"https://drive.example:42", "https://drive.example:8443:42",
+		"http://localhost:5173:42", "https://[::1]:8443:42",
+	} {
+		if !clipboardValidAADScope(good, 42) {
+			t.Fatalf("rejected valid verified Browser scope %q", good)
+		}
+	}
+	for _, bad := range []string{
+		"", "https://drive.example:43", "https://drive.example",
+		"https://drive.example/a:42", "https://drive.example?query=x:42",
+		"https://drive.example#fragment:42", "https://user@drive.example:42",
+		"ftp://drive.example:42", "https://drive.example:42:42",
+		"https://drive.example:42" + strings.Repeat("x", 513),
+	} {
+		if clipboardValidAADScope(bad, 42) {
+			t.Fatalf("accepted invalid or cross-Owner Browser scope %q", bad)
+		}
+	}
+}
+
 func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -85,6 +107,15 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	}).Router()
 	a := createTestUser(t, db, router, "clipboard-owner-a", "clipboard-pass-a")
 	b := createTestUser(t, db, router, "clipboard-owner-b", "clipboard-pass-b")
+	var ownerA, ownerB meta.User
+	if err := db.Where("username = ?", "clipboard-owner-a").First(&ownerA).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("username = ?", "clipboard-owner-b").First(&ownerB).Error; err != nil {
+		t.Fatal(err)
+	}
+	scopeA := fmt.Sprintf("https://public.example:%d", ownerA.ID)
+	scopeB := fmt.Sprintf("http://localhost:9876:%d", ownerB.ID)
 
 	// No body or key is accepted from unauthenticated callers.
 	request(t, router, http.MethodGet, "/api/v1/clipboard/items", "", nil, http.StatusUnauthorized)
@@ -107,27 +138,61 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	}
 	nonce := base64.StdEncoding.EncodeToString(make([]byte, 12))
 	ciphertext := base64.StdEncoding.EncodeToString([]byte("fake ciphertext and auth tag"))
-	check := fmt.Sprintf(`{"nonce":%q,"ciphertext":%q}`, nonce, ciphertext)
+	// Encrypted messages cannot be inserted before the vault verifier exists.
+	firstID := uuid.NewString()
+	payload := func(id, ct string) string {
+		return fmt.Sprintf(`{"client_event_id":%q,"kind":"text/plain","nonce":%q,"ciphertext":%q}`, id, nonce, ct)
+	}
+	request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
+		strings.NewReader(payload(firstID, ciphertext)), http.StatusConflict)
+	check := fmt.Sprintf(`{"nonce":%q,"ciphertext":%q,"scope":%q}`, nonce, ciphertext, scopeA)
 	accepted := request(t, router, http.MethodPut, "/api/v1/clipboard/vault/check", a,
 		strings.NewReader(check), http.StatusOK)
 	var checkDTO struct {
 		CheckCiphertext string `json:"check_ciphertext"`
+		AADScope string `json:"aad_scope"`
 	}
-	if json.Unmarshal(accepted.Body.Bytes(), &checkDTO) != nil || checkDTO.CheckCiphertext != ciphertext {
-		t.Fatal("initial encrypted vault verifier was not stored")
+	if json.Unmarshal(accepted.Body.Bytes(), &checkDTO) != nil ||
+		checkDTO.CheckCiphertext != ciphertext || checkDTO.AADScope != scopeA {
+		t.Fatal("initial encrypted vault verifier and AAD scope were not stored together")
 	}
-	otherProof := fmt.Sprintf(`{"nonce":%q,"ciphertext":%q}`, nonce,
-		base64.StdEncoding.EncodeToString([]byte("another encrypted verifier")))
+	// Another browser reached through a different public/LAN hostname must
+	// receive the SAME first-origin AAD; the Server never rewrites the verifier.
+	alias := request(t, router, http.MethodGet, "/api/v1/clipboard/vault", a, nil, http.StatusOK)
+	if json.Unmarshal(alias.Body.Bytes(), &checkDTO) != nil || checkDTO.AADScope != scopeA {
+		t.Fatal("cross-origin Owner session did not receive pinned original AAD scope")
+	}
+	otherProof := fmt.Sprintf(`{"nonce":%q,"ciphertext":%q,"scope":%q}`, nonce,
+		base64.StdEncoding.EncodeToString([]byte("another encrypted verifier")),
+		fmt.Sprintf("https://alias.example:%d", ownerA.ID))
 	accepted = request(t, router, http.MethodPut, "/api/v1/clipboard/vault/check", a,
 		strings.NewReader(otherProof), http.StatusOK)
-	if json.Unmarshal(accepted.Body.Bytes(), &checkDTO) != nil || checkDTO.CheckCiphertext != ciphertext {
-		t.Fatal("later caller changed the immutable encrypted vault verifier")
+	if json.Unmarshal(accepted.Body.Bytes(), &checkDTO) != nil ||
+		checkDTO.CheckCiphertext != ciphertext || checkDTO.AADScope != scopeA {
+		t.Fatal("later caller changed immutable canary or pinned AAD scope")
 	}
+	// A's scope cannot be set in B's vault; the Owner ID comes only from
+	// the authorized Server bearer and not the submitted JSON suffix.
 	request(t, router, http.MethodPut, "/api/v1/clipboard/vault/check", b,
+		strings.NewReader(check), http.StatusBadRequest)
+	checkB := fmt.Sprintf(`{"nonce":%q,"ciphertext":%q,"scope":%q}`, nonce, ciphertext, scopeB)
+	request(t, router, http.MethodPut, "/api/v1/clipboard/vault/check", b,
+		strings.NewReader(checkB), http.StatusOK)
+
+	// Old PR #3950 vaults were already encrypted with the original browser
+	// origin, but their schema had no AADScope. A locally verified legacy
+	// client may pin it without changing the old encrypted canary.
+	if err := db.Model(&meta.ClipboardVault{}).Where("owner_id = ?", ownerA.ID).
+		Update("aad_scope", "").Error; err != nil { t.Fatal(err) }
+	legacy := request(t, router, http.MethodGet, "/api/v1/clipboard/vault", a, nil, http.StatusOK)
+	if json.Unmarshal(legacy.Body.Bytes(), &checkDTO) != nil || checkDTO.AADScope != "" {
+		t.Fatal("legacy vault state not reproduced")
+	}
+	accepted = request(t, router, http.MethodPut, "/api/v1/clipboard/vault/check", a,
 		strings.NewReader(check), http.StatusOK)
-	firstID := uuid.NewString()
-	payload := func(id, ct string) string {
-		return fmt.Sprintf(`{"client_event_id":%q,"kind":"text/plain","nonce":%q,"ciphertext":%q}`, id, nonce, ct)
+	if json.Unmarshal(accepted.Body.Bytes(), &checkDTO) != nil ||
+		checkDTO.CheckCiphertext != ciphertext || checkDTO.AADScope != scopeA {
+		t.Fatal("legacy AAD scope claim changed canary or failed")
 	}
 	receipt := request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
 		strings.NewReader(payload(firstID, ciphertext)), http.StatusCreated)
