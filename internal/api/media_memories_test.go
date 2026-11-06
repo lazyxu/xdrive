@@ -114,7 +114,7 @@ func TestMediaMemoryTripAntimeridianHomeCells(t *testing.T) {
 
 	cases := []struct {
 		name string
-		day int64
+		day  int64
 		home int64
 		near bool
 	}{
