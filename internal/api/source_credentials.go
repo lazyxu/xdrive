@@ -418,6 +418,10 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 		fail(c, statusForLookup(err), "source not found")
 		return
 	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
+		return
+	}
 	if !sourceUsesStoredCredential(source) {
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
@@ -567,6 +571,10 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 	source, err := s.ownedSource(userID(c), sourceID)
 	if err != nil {
 		fail(c, statusForLookup(err), "source not found")
+		return
+	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		return
 	}
 	if !sourceUsesStoredCredential(source) {
