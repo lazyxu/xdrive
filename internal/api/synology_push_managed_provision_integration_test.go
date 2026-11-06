@@ -148,6 +148,9 @@ func TestCreateSynologyPushRequiresRegisteredDeviceAndProvisionsCanonicalTarget(
 
 func TestSynologyPushManagedTargetRejectsUnclaimedDeviceGroup(t *testing.T) {
 	db, _, owner, _, root := setupFilePropertiesTestDB(t)
+	if err := db.AutoMigrate(&meta.ClientDevice{}); err != nil {
+		t.Fatal(err)
+	}
 	device := meta.ClientDevice{
 		ID: uuid.NewString(), OwnerID: owner.ID, Name: "DSM Conflict", Platform: "synology",
 		CredentialHash: deviceCredentialDigest(strings.Repeat("device-secret-", 4)),
