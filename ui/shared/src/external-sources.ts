@@ -305,21 +305,9 @@ export interface ExternalSourceCreateOption {
   description: string
 }
 
+// Only Yike Pull and local folder Push are newly creatable. The dormant
+// Synology Photos/Files Pull connector profiles remain for historical rows.
 export const externalSourceCreateOptions: ExternalSourceCreateOption[] = [
-  {
-    value: 'synology_pull',
-    kind: 'synology_photos',
-    direction: 'pull',
-    label: '群晖 Photos',
-    description: '由 xDrive Server 通过 DSM / Synology Photos API 定时读取并同步照片。',
-  },
-  {
-    value: 'synology_files_pull',
-    kind: 'synology_files',
-    direction: 'pull',
-    label: '群晖 File Station',
-    description: '由 xDrive Server 通过 DSM / File Station API 同步选定目录中的任意文件和文件夹。',
-  },
   {
     value: 'yike_pull',
     kind: 'yike_photos',
@@ -704,10 +692,23 @@ export function externalSourceRunStatusTone(status: ExternalSourceRunStatus): Ex
   return 'neutral'
 }
 
+export function isSynologyPullTemporarilyDisabled(source: Pick<ExternalSource, 'kind' | 'direction'>) {
+  return source.direction === 'pull' &&
+    (source.kind === 'synology_photos' || source.kind === 'synology_files')
+}
+
+export function isReadOnlySynologySource(source: Pick<ExternalSource, 'kind' | 'direction'>) {
+  return isSynologyPullTemporarilyDisabled(source) ||
+    (source.kind === 'synology_photos' && source.direction === 'push')
+}
+
 export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceState {
   const { source, latestRun, credential } = row
   const connector = externalSourceConnectorProfile(source.kind, source.direction)
   if (source.status === 'archived') return { key: 'archived', tone: 'neutral', label: '已归档' }
+  if (isSynologyPullTemporarilyDisabled(source)) {
+    return { key: 'paused', tone: 'warning', label: 'Synology Pull 暂停提供 · 历史数据保留' }
+  }
   if (source.kind === 'synology_photos' && source.direction === 'push') {
     return { key: 'paused', tone: 'warning', label: '已停用 · 保留历史数据' }
   }
@@ -739,6 +740,9 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
 }
 
 export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalSourceTriggerState {
+  if (isSynologyPullTemporarilyDisabled(row.source)) {
+    return { ready: false, label: 'Synology Photos/Files Pull 暂停提供；请使用 DSM 文件夹 Push 备份。已有数据保留。' }
+  }
   if (row.source.kind === 'synology_photos' && row.source.direction === 'push') {
     return { ready: false, label: 'DSM 相册 Push 已停用，请改用 DSM 文件夹备份；原有数据和历史保留' }
   }
@@ -764,7 +768,7 @@ export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalS
 }
 
 export function externalSourceTriggerActionLabel(row: ExternalSourceRow) {
-  if (row.source.kind === 'synology_photos' && row.source.direction === 'push') return '已停用'
+  if (isReadOnlySynologySource(row.source)) return '已停用'
   if (row.source.kind === 'ios_photos') return 'iPhone 端操作'
   if (row.source.run_requested_at) return '已请求'
   if ((row.latestRun?.failed_items ?? 0) > 0) return '重试失败项'
