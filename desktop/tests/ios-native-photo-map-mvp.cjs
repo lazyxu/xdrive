@@ -200,7 +200,7 @@ test('map filtered overview and 48-photo cell wall share exact short-lived viewp
   assert.match(map, /guard XDriveIOSNativeLocalMapSpatialPolicy\.includes\([\s\S]*?viewport, latitude: located\.latitude,[\s\S]*?longitude: located\.longitude/)
   assert.match(map, /globalSelection = XDriveIOSMapSpatialSelection\([\s\S]*?cells: cells, viewport: globalViewport/)
   assert.match(map, /let viewport: XDriveIOSNativeLocalMapViewport\?/)
-  assert.match(map, /guard Policy\.includes\([\s\S]*?selection\.viewport,[\s\S]*?latitude: asset\.latitude, longitude: asset\.longitude[\s\S]*?Policy\.key\(/)
+  assert.match(map, /guard \(isNearbyExpansion \|\| Policy\.includes\([\s\S]*?selection\.viewport,[\s\S]*?latitude: asset\.latitude, longitude: asset\.longitude[\s\S]*?Policy\.key\(/)
   assert.match(map, /pending = next\.items\.filter \{ asset in/)
   assert.match(map, /guard generation == ticket, mapScope == \.library, phase == \.active/)
   assert.match(map, /globalCells = index\.cells/)
