@@ -75,6 +75,12 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     private var manualTargetNodeID: UInt64?
     private var libraryObserver: XDriveIOSForegroundPhotoLibraryObserver?
 
+    func canShowTransferStatus(for owner: XDriveNativeOwnerRoot?) -> Bool {
+        guard let owner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(displayOwner, owner) &&
+            (!busy || XDriveIOSNativePhotoOwnerScope.matches(runningOwner, owner))
+    }
+
     /// Observe changes without enumerating PhotoKit or starting a writer.
     /// The native root owns the observer across tab switches; a late callback
     /// always reads the CURRENT Owner rather than a captured former account.
