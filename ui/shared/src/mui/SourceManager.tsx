@@ -190,7 +190,6 @@ export function XDriveSourceManager({
   directionFilter,
   initialSourceID,
   focusedRun,
-  defaultTargetNodeID,
   defaultTargetLabel,
   defaultTargetPath,
   targetBrowser,
@@ -273,8 +272,6 @@ export function XDriveSourceManager({
   const createPreset = createValues.preset
   const createOption = externalSourceCreateOption(createPreset)
   const createProfile = externalSourceConnectorProfile(createOption.kind, createOption.direction)
-  const createTarget = createTargetCrumbs.at(-1)
-  const selectedCreateTargetNodeID = targetBrowser ? createTarget?.id : defaultTargetNodeID
 
   const settingsSourceID = setting?.source.id
   const settingsBrowseDirectories = setting?.credential?.configured && settingsSourceID !== undefined
