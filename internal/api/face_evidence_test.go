@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"testing"
 
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
@@ -26,9 +27,14 @@ func seedCurrentFaceEvidence(t *testing.T, db *gorm.DB, faces []meta.PhotoFace) 
 		if err := db.Where("node_id = ?", node.ID).First(&file).Error; err != nil {
 			t.Fatal(err)
 		}
+		fingerprint := mediapkg.AnalysisPreviewFingerprint(node.ID, node.Revision, file.SHA256)
+		if asset.ContentKey != "" {
+			fingerprint = fmt.Sprintf("photo-analysis-%s-v%d-%d", asset.ContentKey,
+				mediapkg.AnalysisPreviewVersion, mediapkg.AnalysisPreviewEdge)
+		}
 		for kind, version := range map[string]string{meta.PhotoAnalysisKindFaceDetection: face.AnalyzerVersion, meta.PhotoAnalysisKindFaceEmbedding: face.EmbeddingVersion} {
 			row := meta.PhotoAnalysisState{AssetID: asset.ID, Kind: kind, AnalyzerVersion: version,
-				State: meta.PhotoAnalysisStateReady, InputFingerprint: mediapkg.AnalysisPreviewFingerprint(node.ID, node.Revision, file.SHA256)}
+				State: meta.PhotoAnalysisStateReady, InputFingerprint: fingerprint}
 			if err := db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "asset_id"}, {Name: "kind"}}, UpdateAll: true}).Create(&row).Error; err != nil {
 				t.Fatal(err)
 			}
