@@ -6,6 +6,9 @@
   "main": "dist/main/index.cjs",
   "description": "xDrive Electron desktop client",
   "license": "Apache-2.0",
+  "overrides": {
+    "electron-to-chromium": "1.5.477"
+  },
   "scripts": {
     "clean": "node scripts/clean.mjs",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",

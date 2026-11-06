@@ -408,7 +408,7 @@ test('first full-library GPS scan displays inert native MapKit while PhotoKit pr
   assert.ok(mapIndex >= 0 && progressIndex > mapIndex,
     'MapKit must stay on-screen during initial scan, with progress beside it')
   assert.match(library, /if globalComplete && globalCells\.isEmpty \{[\s\S]*?\}\s*\/\/ Keep MapKit mounted/)
-  assert.match(library, /items: \[\], globalCells: globalCells,\s*revision: mapRevision, cameraReturn: globalCamera/)
+  assert.match(library, /items: \[\], globalCells: globalComplete \? globalCells : provisionalCells,\s*revision: mapRevision, mapType: mapType, cameraReturn: globalCamera,\s*provisional: !globalComplete && !provisionalCells\.isEmpty/)
   assert.match(localMap, /private var refinedViewportIsCurrent: Bool \{\s*\/\/ Scanned-incomplete cells[\s\S]*?guard globalComplete, !busy else \{ return false \}/)
   assert.match(library, /canSelectCells: refinedViewportIsCurrent/)
   assert.match(library, /guard phase == \.active, !busy, globalComplete,\s*refinedViewportIsCurrent/)

@@ -152,6 +152,65 @@ import Foundation
                 token: Data([7]), authorization: 3
             ))
         }
+        // iCloud-only read without network does not become a permanently
+        // failed or confirmed original. A later explicitly approved foreground
+        // read may requeue only the same baseline and exact revision.
+        let cloudFile = dir.appendingPathComponent("icloud-wait.sqlite3")
+        do {
+            let cloud = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: cloudFile)
+            try expect(try cloud.installBaselineIfAbsent(
+                token: Data([1]), authorization: 3
+            ))
+            _ = try cloud.apply(
+                inserted: ["cloud-only"], updated: [], deleted: [],
+                expectedToken: Data([1]), nextToken: Data([2]),
+                authorization: 3
+            )
+            guard let pending = try cloud.pending().first else {
+                fatalError("missing iCloud candidate")
+            }
+            try expect(try cloud.settle(
+                pending, result: .waitingICloud,
+                expectedBaselineToken: Data([2]), authorization: 3
+            ))
+            try expect(try cloud.counts() == .init(
+                pending: 0, failed: 0, waitingICloud: 1,
+                confirmed: 0, missingLocal: 0
+            ))
+            try expect(try cloud.failed().isEmpty)
+            try expect(try cloud.waitingICloud().first == pending)
+            try expect(try !cloud.retryFailed(
+                pending, expectedBaselineToken: Data([2]), authorization: 3
+            ))
+        }
+        do {
+            let cloud = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: cloudFile)
+            let waiting = try cloud.waitingICloud()
+            guard let candidate = waiting.first, waiting.count == 1 else {
+                fatalError("waiting iCloud row was not durable")
+            }
+            do {
+                _ = try cloud.retryWaitingICloud(
+                    candidate, expectedBaselineToken: Data([9]), authorization: 3
+                )
+                fatalError("expected stale iCloud retry rejection")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.baselineChanged {}
+            try expect(try cloud.counts().waitingICloud == 1)
+            try expect(try cloud.retryWaitingICloud(
+                candidate, expectedBaselineToken: Data([2]), authorization: 3
+            ))
+            try expect(try !cloud.retryWaitingICloud(
+                candidate, expectedBaselineToken: Data([2]), authorization: 3
+            ))
+            try expect(try cloud.settle(
+                candidate, result: .confirmed,
+                expectedBaselineToken: Data([2]), authorization: 3
+            ))
+            try expect(try cloud.counts() == .init(
+                pending: 0, failed: 0, waitingICloud: 0,
+                confirmed: 1, missingLocal: 0
+            ))
+        }
         let isolated = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: dir.appendingPathComponent("owner-b.sqlite3"))
         try expect(try isolated.baseline() == nil)
         try expect(try isolated.pending().isEmpty)

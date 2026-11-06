@@ -22,6 +22,7 @@ import type { XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 import type { XDriveWorkspaceHostAlertsProps } from './WorkspaceHostAlerts'
 import type { XDriveShareCenterPort } from './ShareCenterPage'
 import type { XDriveNotesDataPort } from './NotesPage'
+import type { XDriveClipboardDataPort } from './ClipboardPage'
 import type { XDriveDiagnosticsReadSource } from './DiagnosticsHostController'
 
 /** Authenticated domain ports, not Host-owned JSX or a generic Agent proxy. */
@@ -59,6 +60,7 @@ export type XDriveWorkspaceHostServices = {
   readonly shareCenterPage?: XDriveShareCenterPort
   /** Only an authenticated, Owner-bound Notes API may enable editing. */
   readonly notesPage?: XDriveNotesDataPort
+  readonly clipboardPage?: XDriveClipboardDataPort
   readonly cloudStorage?: XDriveCloudStorageDataSource
   /** Host-owned refresh policy, never inferred from a platform name. */
   readonly cloudStorageRefresh?: { readonly clearOnRefresh?: boolean }

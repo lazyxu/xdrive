@@ -117,6 +117,150 @@ function visibleSetupCopy(tree) {
     ...tree.root.findAllByType('TextField').map(x => String(x.props.value ?? '')),
   ].join(' ')
 }
+test('DSM folder incremental MVP explicitly sets 6h schedule and starts the same owning Agent once', async () => {
+  const calls = []
+  let refreshes = 0
+  const client = {
+    serverConnection: async () => ({
+      configured: true, must_change_password: false, owner_scope: SCOPE,
+    }),
+    createNASBackupSource: async (selection, scope, name) => {
+      calls.push(['create', selection, scope, name])
+      return { source_id: 71, state: 'authorized' }
+    },
+    load: async sourceID => {
+      calls.push(['load', sourceID])
+      return {
+        source_id: sourceID, revision: 3,
+        schedule_type: 'manual', schedule_expression: '', schedule_timezone: '',
+      }
+    },
+    save: async (sourceID, revision, schedule) => {
+      calls.push(['save', sourceID, revision, schedule])
+      return { source_id: sourceID, revision: revision + 1, ...schedule }
+    },
+    run: async sourceID => {
+      calls.push(['run', sourceID])
+      return {
+        source_id: sourceID, state: 'running', running: true,
+        backup_complete: false, retirement_safe: false,
+        current_cas_verified: false, uncertain_files: 0,
+      }
+    },
+  }
+  const tree = await mountSetup(client, () => { refreshes++ })
+  await selectNewSource(tree, 'NAS Documents')
+  assert.equal(checkbox(tree, '创建并授权后，每 6 小时').props.checked, false,
+    'new Source must not implicitly upload without a separate user opt-in')
+  await act(async () => {
+    checkbox(tree, '创建并授权后，每 6 小时').props.onChange({
+      target: { checked: true },
+    })
+  })
+  await act(async () => {
+    const submit = button(tree, '确认创建并绑定本地目录')
+    submit.props.onClick()
+    submit.props.onClick()
+    await Promise.resolve()
+  })
+  assert.deepEqual(calls, [
+    ['create', SELECTION, SCOPE, 'NAS Documents'],
+    ['load', 71],
+    ['save', 71, 3, {
+      schedule_type: 'interval', schedule_expression: '6h', schedule_timezone: '',
+    }],
+    ['run', 71],
+  ], 'verified Root then Source revision/schedule must precede the one Agent run')
+  assert.equal(refreshes, 1)
+  assert.match(visibleSetupCopy(tree), /首次任务已由本机 Agent 接受/)
+  assert.match(visibleSetupCopy(tree), /可信检查点/)
+  await act(async () => tree.unmount())
+})
+
+test('DSM incremental auto setup never retries an uncertain schedule and preserves the authorized Source', async () => {
+  let creates = 0
+  let schedules = 0
+  let runs = 0
+  let refreshes = 0
+  const client = {
+    serverConnection: async () => ({
+      configured: true, must_change_password: false, owner_scope: SCOPE,
+    }),
+    createNASBackupSource: async () => {
+      creates++
+      return { source_id: 72, state: 'authorized' }
+    },
+    load: async () => ({
+      source_id: 72, revision: 3,
+      schedule_type: 'manual', schedule_expression: '', schedule_timezone: '',
+    }),
+    save: async () => {
+      schedules++
+      throw Error('schedule ACK lost after possible commit')
+    },
+    run: async () => { runs++; throw Error('must never start') },
+  }
+  const tree = await mountSetup(client, () => { refreshes++ })
+  await selectNewSource(tree, 'NAS Files')
+  await act(async () => {
+    checkbox(tree, '创建并授权后，每 6 小时').props.onChange({
+      target: { checked: true },
+    })
+  })
+  await act(async () => {
+    button(tree, '确认创建并绑定本地目录').props.onClick()
+    await Promise.resolve()
+  })
+  assert.equal(creates, 1)
+  assert.equal(schedules, 1)
+  assert.equal(runs, 0, 'do not invent a run after an unconfirmed schedule mutation')
+  assert.equal(refreshes, 1, 'root was bound, so the Source remains visible and recoverable')
+  assert.match(visibleSetupCopy(tree), /自动计划或首次备份的结果未确认/)
+  assert.match(visibleSetupCopy(tree), /不要重复创建来源/)
+  await act(async () => { button(tree, '确认创建并绑定本地目录').props.onClick() })
+  assert.equal(creates, 1)
+  await act(async () => tree.unmount())
+})
+
+test('DSM first incremental starts without a redundant schedule revision when 6h is already saved', async () => {
+  let saves = 0
+  let starts = 0
+  const client = {
+    serverConnection: async () => ({
+      configured: true, must_change_password: false, owner_scope: SCOPE,
+    }),
+    createNASBackupSource: async () => ({ source_id: 73, state: 'authorized' }),
+    load: async () => ({
+      source_id: 73, revision: 5,
+      schedule_type: 'interval', schedule_expression: '6h', schedule_timezone: '',
+    }),
+    save: async () => { saves++; throw Error('unchanged schedule must not be rewritten') },
+    run: async () => {
+      starts++
+      return {
+        source_id: 73, state: 'partial', running: false, uncertain_files: 0,
+        backup_complete: false, retirement_safe: false,
+        current_cas_verified: false,
+      }
+    },
+  }
+  const tree = await mountSetup(client, () => {})
+  await selectNewSource(tree, 'NAS Shared')
+  await act(async () => {
+    checkbox(tree, '创建并授权后，每 6 小时').props.onChange({
+      target: { checked: true },
+    })
+  })
+  await act(async () => {
+    button(tree, '确认创建并绑定本地目录').props.onClick()
+    await Promise.resolve()
+  })
+  assert.equal(saves, 0)
+  assert.equal(starts, 1)
+  assert.match(visibleSetupCopy(tree), /首次任务已由本机 Agent 接受/)
+  await act(async () => tree.unmount())
+})
+
 test('DSM Source create is synchronously one-shot; only confirmed bind unlocks a fresh second Source', async () => {
   const pending = []
   const calls = []

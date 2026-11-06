@@ -11,7 +11,7 @@ test('canonical route catalog has exactly one title for each workspace destinati
   const routes = read('ui/shared/src/mui/WorkspaceRoute.ts')
   const titles = read('ui/shared/src/mui/WorkspaceRouteTitles.ts')
   const ids = [
-    'overview', 'files', 'notes', 'gallery', 'shares', 'device-backup', 'remote-pull',
+    'overview', 'files', 'notes', 'clipboard', 'gallery', 'shares', 'device-backup', 'remote-pull',
     'transfers', 'global-tasks', 'local-storage', 'cloud-storage',
     'conflicts', 'diagnostics', 'client-update', 'admin-users', 'admin-audit',
     'admin-storage', 'admin-services', 'admin-update', 'admin-maintenance',
@@ -27,6 +27,7 @@ test('canonical route catalog has exactly one title for each workspace destinati
   }
   assert.equal(labels.get('notes'), '笔记')
   assert.equal(labels.get('remote-pull'), '来源管理')
+  assert.equal(labels.get('clipboard'), '剪贴板')
   assert.match(titles, /xDriveIsWorkspaceAppRoute\(route\)/)
   assert.match(titles, /fallback = 'xDrive'/)
 })
@@ -42,6 +43,8 @@ test('Desktop/DSM and Web/PWA consume canonical titles without a duplicate mobil
   }
   assert.ok(host.includes("xDriveWorkspaceRouteTitle('notes')"),
     'Notes title belongs to the host-gated feature section, not mandatory core routes')
+  assert.ok(host.includes("xDriveWorkspaceRouteTitle('clipboard')"),
+    'Clipboard must be a real feature section only with an authenticated Owner port')
   for (const id of ['overview','conflicts','admin-users','global-tasks','admin-audit','admin-storage','admin-services','admin-update','admin-maintenance','client-update']) {
     assert.ok(host.includes("xDriveWorkspaceRouteTitle('" + id + "')"), id)
   }

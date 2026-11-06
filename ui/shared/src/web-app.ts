@@ -9,6 +9,7 @@ export const XDRIVE_WEB_APP_IDS = [
   'files',
   'gallery',
   'notes',
+  'clipboard',
   'shares',
   'sync-folders', // legacy hashes only; no visible navigation item
   'device-backup',
@@ -101,6 +102,7 @@ export interface XDriveWebAppLaunchMap {
   files: { dir?: number; select?: number }
   gallery: { section?: XDriveWebGallerySection }
   notes: Record<string, never>
+  clipboard: Record<string, never>
   shares: Record<string, never>
   'sync-folders': { source?: number }
   'device-backup': { source?: number }
@@ -229,6 +231,7 @@ export function xDriveParseWebAppHash(hash: string): XDriveWebAppRoute | null {
     case 'cloud-storage':
     case 'shares':
     case 'notes':
+    case 'clipboard':
     case 'admin-audit':
     case 'admin-update':
     case 'admin-maintenance':

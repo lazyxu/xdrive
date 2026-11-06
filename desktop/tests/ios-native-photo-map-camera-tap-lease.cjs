@@ -38,7 +38,7 @@ test('settled currently-scanned region restores valid covers; normal page and wo
   assert.match(map, /XDriveIOSNativeLocalMapSpatialPolicy\.containsViewport\(/)
   assert.match(map, /if globalViewport != nil \{ globalCameraMoving = true \}/)
   assert.match(map, /onCamera: \{ current in[\s\S]*?globalCameraMoving = false[\s\S]*?scheduleAutomaticRefinement\(current\)/)
-  assert.match(map, /items: page\.items, revision: mapRevision, cameraReturn: cameraReturn/)
+  assert.match(map, /items: page\.items, revision: mapRevision, mapType: mapType, cameraReturn: cameraReturn/)
   assert.match(map, /singleViewer = candidate/)
   assert.match(map, /singleViewer = only/)
   assert.match(map, /currentPage\.items\.map\(\\\.candidate\)/)
