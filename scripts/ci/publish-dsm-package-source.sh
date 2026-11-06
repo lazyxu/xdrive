@@ -82,7 +82,7 @@ if ! gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
     gh release create "$tag" "$spk" "$checksum" --repo "$repo" --target "$commit" --prerelease \
       --title "xDrive DSM edge $version" --notes "Immutable verified SPK from $commit"
   else
-    gh release create "$tag" "$spk" "$checksum" --repo "$repo" --target "$commit" \
+    gh release create "$tag" "$spk" "$checksum" --repo "$repo" --target "$commit" --prerelease \
       --title "xDrive DSM stable $version" --notes "Immutable verified SPK from $commit"
   fi
 fi
@@ -125,7 +125,7 @@ PY
   fi
   gh release upload "$feed" "$tmp/catalog.json" --repo "$repo" --clobber
 else
-  gh release create "$feed" "$tmp/catalog.json" --repo "$repo" --target "$commit" \
+  gh release create "$feed" "$tmp/catalog.json" --repo "$repo" --target "$commit" --prerelease \
     --title "xDrive DSM $channel package source" \
     --notes "Package Center catalog metadata; SPK binaries are immutable."
 fi
