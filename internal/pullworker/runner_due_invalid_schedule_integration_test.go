@@ -23,25 +23,39 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 		t.Skip("XD_TEST_DATABASE_URL is not configured")
 	}
 	base, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	schema := "pull_bad_schedule_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if err := base.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil { t.Fatal(err) }
+	if err := base.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = base.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schema)).Error })
 	u, err := url.Parse(dsn)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	q := u.Query()
 	q.Set("search_path", schema)
 	u.RawQuery = q.Encode()
 	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	sqlDB, err := db.DB()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	sqlDB.SetMaxOpenConns(4)
 	sqlDB.SetMaxIdleConns(0)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.Source{}); err != nil { t.Fatal(err) }
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.Source{}); err != nil {
+		t.Fatal(err)
+	}
 	owner := meta.User{Username: "pull-bad-schedule", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
-	if err := db.Create(&owner).Error; err != nil { t.Fatal(err) }
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
 	broken := meta.Source{
 		OwnerID: owner.ID, Name: "Broken schedule", Kind: "synology_files",
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
@@ -55,7 +69,9 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 		ScheduleType: sourceschedule.TypeInterval, ScheduleExpression: "6h",
 	}
 	for _, source := range []*meta.Source{&broken, &healthy} {
-		if err := db.Create(source).Error; err != nil { t.Fatal(err) }
+		if err := db.Create(source).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	badHandler, goodHandler := &fakeHandler{}, &fakeHandler{}
 	runner := &Runner{DB: db, Handlers: map[string]SourceHandler{
@@ -72,8 +88,12 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 			report, badHandler.calls, goodHandler.calls)
 	}
 	var recorded, independent meta.Source
-	if err := db.First(&recorded, broken.ID).Error; err != nil { t.Fatal(err) }
-	if err := db.First(&independent, healthy.ID).Error; err != nil { t.Fatal(err) }
+	if err := db.First(&recorded, broken.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&independent, healthy.ID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if recorded.LastRunAt == nil || !strings.Contains(recorded.LastError, "schedule") {
 		t.Fatalf("bad Source did not retain schedule diagnostics: %+v", recorded)
 	}
@@ -86,7 +106,9 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 		"schedule_timezone": "",
 		"last_run_at": nil,
 		"revision": gorm.Expr("revision + 1"),
-	}).Error; err != nil { t.Fatal(err) }
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	report, err = runner.RunDue(context.Background(), now.Add(time.Minute), 6*time.Hour)
 	if err != nil || report.Completed != 2 || report.Failed != 0 ||
 		badHandler.calls != 1 || goodHandler.calls != 2 {
