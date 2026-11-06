@@ -44,7 +44,7 @@ func TestRetiredSynologyPushArchiveDoesNotWaitForUnresumableSession(t *testing.T
 		SourceRevision: source.Revision, SourceTargetID: target.ID,
 		ParentID: &target.ID, Name: "abandoned.jpg",
 		ConflictPolicy: meta.UploadConflictPolicyFail,
-		TotalSize: 8, ChunkSize: 4 << 20, ChunkCount: 1,
+		TotalSize:      8, ChunkSize: 4 << 20, ChunkCount: 1,
 		Status: meta.UploadStatusActive, ExpiresAt: time.Now().UTC().Add(time.Hour),
 	}
 	if err := db.Create(&session).Error; err != nil {

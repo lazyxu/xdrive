@@ -49,7 +49,7 @@ func TestDormantSynologyPullPreservesHistoryAndRejectsNewExecution(t *testing.T)
 			target := createFilePropertiesDir(t, db, owner.ID, root.ID, "old "+kind)
 			original := createFilePropertiesFile(t, db, owner.ID, target.ID, "original.jpg", 17)
 			source := meta.Source{
-				OwnerID: owner.ID, Name: "old "+kind, Kind: kind,
+				OwnerID: owner.ID, Name: "old " + kind, Kind: kind,
 				Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 				RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
 				Revision: 1, TargetNodeID: &target.ID, TargetManaged: true,
@@ -206,8 +206,8 @@ func TestDormantSynologyPullPreservesHistoryAndRejectsNewExecution(t *testing.T)
 			}
 			if err := db.Where("node_id = ? AND revision = ?", version.NodeID, version.Revision).
 				Take(&keptVersion).Error; err != nil {
-					t.Fatal(err)
-				}
+				t.Fatal(err)
+			}
 			if err := db.Where("id = ?", session.ID).Take(&keptSession).Error; err != nil {
 				t.Fatal(err)
 			}

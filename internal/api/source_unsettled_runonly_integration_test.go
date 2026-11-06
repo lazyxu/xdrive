@@ -52,7 +52,7 @@ func TestSourceArchiveGuardRunOnlyUploadAndForeignSourceIsolation(t *testing.T) 
 		ID: uuid.NewString(), OwnerID: owner.ID, SourceRunID: run.ID,
 		ParentID: &target.ID, Name: "original.bin",
 		ConflictPolicy: meta.UploadConflictPolicyFail,
-		TotalSize: 4, ChunkSize: 4 << 20, ChunkCount: 1,
+		TotalSize:      4, ChunkSize: 4 << 20, ChunkCount: 1,
 		Status: meta.UploadStatusActive, ExpiresAt: now.Add(time.Hour),
 	}
 	if err := db.Create(&session).Error; err != nil {

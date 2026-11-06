@@ -101,11 +101,11 @@ func TestRunDueInvalidScheduleDoesNotStarveIndependentSources(t *testing.T) {
 		t.Fatalf("broken Source changed independent Source state: %+v", independent)
 	}
 	if err := db.Model(&meta.Source{}).Where("id = ?", broken.ID).Updates(map[string]any{
-		"schedule_type": sourceschedule.TypeInterval,
+		"schedule_type":       sourceschedule.TypeInterval,
 		"schedule_expression": "6h",
-		"schedule_timezone": "",
-		"last_run_at": nil,
-		"revision": gorm.Expr("revision + 1"),
+		"schedule_timezone":   "",
+		"last_run_at":         nil,
+		"revision":            gorm.Expr("revision + 1"),
 	}).Error; err != nil {
 		t.Fatal(err)
 	}

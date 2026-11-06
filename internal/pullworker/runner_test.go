@@ -338,8 +338,8 @@ func TestDormantSynologyPullHandlersCannotDispatch(t *testing.T) {
 	runner := &Runner{
 		Handlers: map[string]SourceHandler{
 			"synology_photos": photos,
-			"synology_files": files,
-			"yike_photos": yike,
+			"synology_files":  files,
+			"yike_photos":     yike,
 		},
 		MaxConcurrency: 2,
 	}

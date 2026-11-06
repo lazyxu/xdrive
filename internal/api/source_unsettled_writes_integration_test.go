@@ -58,7 +58,7 @@ func TestSourceArchiveAndDeleteRejectLiveUploadWithoutRunningRun(t *testing.T) {
 				SourceRevision: source.Revision, SourceTargetID: target.ID,
 				ParentID: &target.ID, Name: "unsettled.bin",
 				ConflictPolicy: meta.UploadConflictPolicyFail,
-				TotalSize: 4, ChunkSize: 4096, ChunkCount: 1,
+				TotalSize:      4, ChunkSize: 4096, ChunkCount: 1,
 				Status: meta.UploadStatusActive, ExpiresAt: time.Now().UTC().Add(time.Hour),
 			}
 			if err := db.Create(&session).Error; err != nil {

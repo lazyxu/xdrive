@@ -189,7 +189,7 @@ test('SourceManager delegates the list page to an internal presentation module',
 
   assert.equal(sourceList.includes('DSM 配置'), false,
     'retired DSM Photos Push setup action must not return to the Source list')
-  assert.ok(sourceList.includes("row.source.kind === 'synology_photos' && row.source.direction === 'push'"),
+  assert.ok(sourceList.includes('!isReadOnlySynologySource(row.source)'),
     'historical retired Photos Push must not show an editable Source settings action')
   assert.equal(/adapter\./.test(sourceList), false, 'list page presentation must not call the Source adapter')
   assert.equal(/use(?:State|Effect)\(/.test(sourceList), false, 'list page presentation must not own async/state orchestration')
