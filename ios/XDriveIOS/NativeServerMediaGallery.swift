@@ -1419,10 +1419,10 @@ struct XDriveIOSNativeServerMediaWall: View {
         ScrollViewReader { returnScroll in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                if !compactGallery {
-                    Text(placeID != nil ?
-                        "当前 Owner 原始 GPS 地点的授权 PhotoAsset 分页（非全库）。" :
-                        album == nil ?
+                // Place sheets already identify the signed GPS scope in their
+                // title; transport explanations belong to the full Gallery.
+                if !compactGallery && placeID == nil {
+                    Text(album == nil ?
                         "服务器 PhotoAsset 全库照片墙（非仅 iPhone 备份目录）。" :
                         "已验证的云端相册成员，按服务器分页读取。")
                         .font(.caption).foregroundStyle(.secondary)
@@ -1504,7 +1504,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                                    search: appliedSearch)
                     }
                 }
-                if !compactGallery {
+                if !compactGallery && placeID == nil {
                     Text("连续滚动只读取附近的 48 项验证范围；只有可见图片申请授权缩略图。缩略图缺失不代表原件丢失。")
                         .font(.caption).foregroundStyle(.secondary)
                 }

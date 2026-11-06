@@ -138,3 +138,15 @@ test('Gallery and albums share purely visual selection badges, never batch autho
   assert.doesNotMatch(cluster, /XDriveIOSNativePhotoWallSelectionIndicator\(/)
   assert.doesNotMatch(shared, /PHAsset|PHPhotoLibrary|URLSession|UploadSession|verifiedAuthorization|accessToken|UserDefaults/)
 })
+
+
+test('cloud place sheet keeps Gallery wall but omits transport-only prose', () => {
+  const wall = cloud.slice(cloud.indexOf('struct XDriveIOSNativeServerMediaWall: View'),
+    cloud.indexOf('/// Server collection index is distinct'))
+  assert.match(wall, /if !compactGallery && placeID == nil \{\s*Text\(album == nil/)
+  assert.match(wall, /if !compactGallery && placeID == nil \{\s*Text\("连续滚动只读取附近的 48 项验证范围/)
+  assert.doesNotMatch(wall, /Text\(placeID != nil \?/)
+  assert.match(wall, /XDriveIOSNativeServerVirtualRange\([\s\S]*?placeID: placeID/)
+  assert.match(wall, /model\.load\(login: login, albumID: album\?\.id, placeID: placeID/)
+  assert.match(wall, /pagePlaceID == placeID/)
+})
