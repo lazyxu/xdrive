@@ -108,7 +108,7 @@ func (s *Server) lookupIOSUploadResumeKey(c *gin.Context) {
 		return
 	}
 	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if native, ok := currentIOSPhotoManagedUploadScope(c); ok {
+		if _, ok := currentIOSPhotoManagedUploadScope(c); ok {
 			if err := requireIOSPhotoManagedSessionTx(c.Request.Context(), tx, c, snapshot); err != nil {
 				return err
 			}
