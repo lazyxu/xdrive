@@ -146,7 +146,7 @@ func (s *Server) putClipboardVaultCheck(c *gin.Context) {
 	var req struct {
 		Nonce      string `json:"nonce"`
 		Ciphertext string `json:"ciphertext"`
-		Scope string `json:"scope"`
+		Scope      string `json:"scope"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid vault check"})
