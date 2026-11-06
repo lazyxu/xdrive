@@ -20,6 +20,15 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes
 }
 
+// WebCrypto BufferSource excludes SharedArrayBuffer-backed typed views in
+// recent DOM typings. Copy into a guaranteed ordinary ArrayBuffer instead of
+// hiding the mismatch with an unsafe type assertion.
+function cryptoBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(buffer).set(bytes)
+  return buffer
+}
+
 function secureCrypto(): Crypto {
   if (typeof window !== 'undefined' && !window.isSecureContext) {
     throw new Error('加密剪贴板需要 HTTPS 或 localhost 安全环境。')
@@ -53,10 +62,10 @@ export async function xDriveClipboardDeriveKey(passphrase: string, saltBase64: s
   const salt = base64ToBytes(saltBase64)
   if (salt.length !== 16) throw new Error('剪贴板密钥参数无效。')
   const base = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey'],
+    'raw', cryptoBuffer(new TextEncoder().encode(passphrase)), 'PBKDF2', false, ['deriveKey'],
   )
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: XDRIVE_CLIPBOARD_KDF_ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: cryptoBuffer(salt), iterations: XDRIVE_CLIPBOARD_KDF_ITERATIONS, hash: 'SHA-256' },
     base,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -72,8 +81,8 @@ export async function xDriveClipboardEncrypt(
   const kind = xDriveClipboardKind(text)
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv, additionalData: associatedData(ownerScope, clientEventID, kind) },
-    key, new TextEncoder().encode(text),
+    { name: 'AES-GCM', iv: cryptoBuffer(iv), additionalData: cryptoBuffer(associatedData(ownerScope, clientEventID, kind)) },
+    key, cryptoBuffer(new TextEncoder().encode(text)),
   ))
   return { kind, nonce: bytesToBase64(iv), ciphertext: bytesToBase64(ciphertext) }
 }
@@ -93,8 +102,8 @@ export async function xDriveClipboardDecrypt(
     throw new Error('剪贴板密文大小无效。')
   }
   const plain = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv, additionalData: associatedData(ownerScope, item.client_event_id, item.kind) },
-    key, encrypted,
+    { name: 'AES-GCM', iv: cryptoBuffer(iv), additionalData: cryptoBuffer(associatedData(ownerScope, item.client_event_id, item.kind)) },
+    key, cryptoBuffer(encrypted),
   )
   const text = new TextDecoder('utf-8', { fatal: true }).decode(plain)
   xDriveClipboardValidateText(text)
