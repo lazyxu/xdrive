@@ -71,6 +71,9 @@ func (s *Server) lookupIOSUploadResumeKey(c *gin.Context) {
 			"owner_id = ? AND resume_key = ? AND parent_id = ? AND node_id IS NULL AND "+
 				"name = ? AND requested_name = ? AND total_size = ? AND chunk_size = ? AND sha256 = ? "+
 				"AND (conflict_policy = ? OR conflict_policy = '') "+
+				"AND COALESCE(source_run_id, '') = '' AND share_id IS NULL "+
+				"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = '' "+
+				"AND COALESCE(source_device_id, '') = '' "+
 				"AND status IN ?",
 			userID(c), req.ResumeKey, req.ParentID, req.Name, req.Name, req.Size,
 			req.ChunkSize, req.SHA256, meta.UploadConflictPolicyFail,
