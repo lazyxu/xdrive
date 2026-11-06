@@ -67,7 +67,7 @@ func (s *Server) discardLocalSourceDraft(c *gin.Context) {
 		}
 		// A legacy unclaimed draft must not be reclaimed by a new device
 		// simply because that device has the same account JWT.
-		if source.LocalCreatorDeviceID == nil || *source.LocalCreatorDeviceID != device.ID {
+		if source.DeviceID == nil || *source.DeviceID != device.ID {
 			return errLocalDraftUnauthorized
 		}
 		if source.Revision != expected {
