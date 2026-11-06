@@ -1030,6 +1030,7 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"- job: package-linux-client",
 		"- job: package-windows-client",
 		"stage: release-build",
+		"verify-github-stable-final-gate.go",
 		"expire_in: 14 days",
 		"GLAB_ENABLE_CI_AUTOLOGIN: \"true\"",
 		"image: $XDRIVE_CI_GLAB_IMAGE",
