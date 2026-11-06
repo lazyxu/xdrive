@@ -180,6 +180,21 @@ test('Clipboard React lock prevents late copy success/error from replacing lock 
   await app.unmount()
 })
 
+test('Clipboard React reports an OS copy denial without claiming success', async () => {
+  const item = { id: 9, kind: 'text/plain', client_event_id: 'event-9',
+    nonce: 'nonce', ciphertext: 'copy-me', created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 50000).toISOString() }
+  const app = await mount(makeUI(), port('https://drive.example:4-copy', {
+    list: async () => ({ items: [item], next_before: null }),
+    copyText: async () => { throw new Error('NotAllowedError') },
+  }))
+  await unlock(app)
+  await click(app, '复制到本机')
+  assert.match(app.snapshot(), /NotAllowedError/)
+  assert.doesNotMatch(app.snapshot(), /已复制到本机/)
+  await app.unmount()
+})
+
 test('Clipboard React unknown ACK retry preserves encrypted bytes and EventID', async () => {
   const saved = []
   const app = await mount(makeUI(), port('https://drive.example:5', {
