@@ -45,14 +45,16 @@ func requireSourceTargetRenameQuiescentTx(tx *gorm.DB, source meta.Source, targe
 	if count != 0 {
 		return errSourceTargetRenameActive
 	}
-	if err := tx.Model(&meta.UploadSession{}).
-		Where("owner_id = ? AND status = ? AND (source_id = ? OR source_target_id = ? OR source_run_id IN (SELECT id FROM xd_sync_runs WHERE source_id = ?))",
-			source.OwnerID, "active", source.ID, target.ID, source.ID).
-		Count(&count).Error; err != nil {
-		return err
-	}
-	if count != 0 {
-		return errSourceTargetRenameActive
+	if tx.Migrator().HasTable(&meta.UploadSession{}) {
+		if err := tx.Model(&meta.UploadSession{}).
+			Where("owner_id = ? AND status = ? AND (source_id = ? OR source_target_id = ? OR source_run_id IN (SELECT id FROM xd_sync_runs WHERE source_id = ?))",
+				source.OwnerID, "active", source.ID, target.ID, source.ID).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 0 {
+			return errSourceTargetRenameActive
+		}
 	}
 	if tx.Migrator().HasTable(&meta.LocalPushCommonUploadOperation{}) {
 		if err := tx.Model(&meta.LocalPushCommonUploadOperation{}).
