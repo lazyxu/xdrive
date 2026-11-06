@@ -60,7 +60,8 @@ enum XDriveIOSNativeLocalOriginalSharer {
                     localIdentifier: candidate.id,
                     allowICloudDownload: allowICloudDownload,
                     maximumBytesPerResource:
-                        XDriveIOSNativeLocalPhotoSharePolicy.maximumResourceBytes
+                        XDriveIOSNativeLocalPhotoSharePolicy.maximumResourceBytes,
+                    allowLimitedPhotoAccess: true
                 )
                 defer { staged.delete() }
                 guard ((candidate.kind == "image" && !candidate.isLive &&

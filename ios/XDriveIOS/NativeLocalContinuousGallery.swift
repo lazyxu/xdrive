@@ -158,6 +158,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     @State private var page: XDrivePhotoKitScanPage?
     @State private var precedingCapturedAt: Date?
     @State private var scanner: XDriveIOSNativeGalleryMediaScanner?
+    @Environment(\.scenePhase) private var photoQueueScenePhase
+    @Environment(\.xdriveNativePhotoQueueBadgeOwner) private var backupBadgeOwner
+    @State private var visibleBackupQueueStates: [String: String] = [:]
 
 
     private var placeholderTile: some View {
@@ -193,6 +196,21 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                     XDriveIOSNativeSquarePhotoTile(
                                         candidate: candidate, framing: framing
                                     )
+                                    .overlay(alignment: .topLeading) {
+                                        if let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy
+                                            .badge(for: visibleBackupQueueStates[candidate.id]) {
+                                            Label(badge.title, systemImage: badge.symbol)
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .lineLimit(1)
+                                                .minimumScaleFactor(0.75)
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 3)
+                                                .background(Color.black.opacity(0.7), in: Capsule())
+                                                .padding(3)
+                                                .accessibilityHidden(true)
+                                        }
+                                    }
                                     if selectionMode {
                                         Image(systemName: selectedIDs.contains(candidate.id)
                                             ? "checkmark.circle.fill" : "circle")
@@ -209,6 +227,11 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                     : (candidate.kind == "video" ? "播放视频" : "查看照片")
                             )
                             .buttonStyle(.plain)
+                            .accessibilityValue(
+                                XDriveIOSNativeVisiblePhotoQueueBadgePolicy
+                                    .badge(for: visibleBackupQueueStates[candidate.id])?
+                                    .explanation ?? "当前云端备份状态未核验"
+                            )
                             .contextMenu {
                                 Button("分享本机原件") { onShare(candidate, false) }
                                 Button("从 iCloud 下载原件并分享") {
@@ -256,6 +279,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         .task(id: "\(generation)-\(offset)-\(mediaFilter.rawValue)") {
             page = nil
             precedingCapturedAt = nil
+            visibleBackupQueueStates = [:]
             let reader = XDriveIOSNativeGalleryMediaScanner()
             scanner = reader
             do {
@@ -277,6 +301,28 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 precedingCapturedAt = preceding
                 page = loaded
                 onRead(loaded)
+                // Read at most this mounted 64-item page; never enumerate the
+                // entire PhotoKit library or leak IDs to the Server for a badge.
+                if let owner = backupBadgeOwner,
+                   photoQueueScenePhase == .active,
+                   PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
+                    do {
+                        let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
+                        let states = try await queue.visibleStatuses(
+                            owner: owner, localIdentifiers: loaded.items.map(\.id)
+                        )
+                        try Task.checkCancellation()
+                        if photoQueueScenePhase == .active,
+                           XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
+                           PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
+                            visibleBackupQueueStates = states
+                        }
+                    } catch {
+                        // Missing/corrupt/behind local history never implies
+                        // confirmation; the ordinary Gallery remains readable.
+                        visibleBackupQueueStates = [:]
+                    }
+                }
             } catch is CancellationError {
             } catch {
                 if !Task.isCancelled { onFailure() }
@@ -284,9 +330,15 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             await reader.reset()
             if !Task.isCancelled { scanner = nil }
         }
+        .onChange(of: backupBadgeOwner) { _ in
+            // Owner/opt-in changes must not trigger another PhotoKit scan;
+            // until the current page is re-read, badges are unknown.
+            visibleBackupQueueStates = [:]
+        }
         .onDisappear {
             page = nil
             precedingCapturedAt = nil
+            visibleBackupQueueStates = [:]
             if let scanner { Task { await scanner.reset() } }
             scanner = nil
             onPageHidden(offset)

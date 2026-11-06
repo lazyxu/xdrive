@@ -148,7 +148,8 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                     allowICloudDownload: allowICloudOriginals,
                     maximumBytesPerResource: stamp.isLive
                         ? XDriveIOSLiveOriginalArchive.maximumPartBytes
-                        : 1_073_741_824
+                        : 1_073_741_824,
+                    allowLimitedPhotoAccess: true
                 )
                 defer { staged.delete() }
                 guard staged.kind == (stamp.isLive ? "live" : stamp.kind),
@@ -302,6 +303,23 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                     token: token
                 )
             }
+        }
+    }
+
+    /// Await the same read-only current-original/Node proof used by the
+    /// single-photo UI. An audit never creates an UploadSession or sets a
+    /// local queue entry to confirmed just because verification returned.
+    func verifyAndWait(localIdentifier: String,
+                       login: XDriveIOSNativeOwnerLoginModel,
+                       allowICloudOriginals: Bool) async -> Bool {
+        verify(localIdentifier: localIdentifier, login: login,
+               allowICloudOriginals: allowICloudOriginals)
+        guard let currentWorker = worker else { return false }
+        return await withTaskCancellationHandler {
+            await currentWorker.value
+            return !Task.isCancelled && currentNodeVerified
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.cancel() }
         }
     }
 

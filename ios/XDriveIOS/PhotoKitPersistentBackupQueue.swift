@@ -214,6 +214,31 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         return requeued
     }
 
+    /// Metadata-only, 64-item read for mounted native Gallery pages.
+    /// A local queue status is NOT current Server/Node coverage. With a
+    /// stale PhotoKit baseline, showing even an old "confirmed" state would
+    /// be misleading; return no badges until the replay has caught up.
+    func visibleStatuses(owner: XDriveNativeOwnerRoot,
+                         localIdentifiers: [String]) throws -> [String: String] {
+        guard localIdentifiers.count <= 64 else { throw Failure.invalidReplayLimit }
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline(),
+              baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(baseline.token, as: epoch.token)
+        else { return [:] }
+        var statuses: [String: String] = [:]
+        statuses.reserveCapacity(localIdentifiers.count)
+        for id in localIdentifiers {
+            try Task.checkCancellation()
+            if let row = try store.status(for: id) {
+                statuses[id] = row.state.rawValue
+            }
+        }
+        try verifyAuthorization(stillMatches: epoch)
+        return statuses
+    }
+
     /// Whether every persisted PhotoKit change event has been replayed. The
     /// automatic runner must defer its date-filtered scan while this is false:
     /// an older-dated imported photo may still be waiting behind the event cap.

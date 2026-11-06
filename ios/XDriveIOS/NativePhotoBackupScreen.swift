@@ -933,6 +933,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 Text("只核验当前选择的普通照片或视频；Live Photo 需要同时核验静态图、动态视频和完整 ZIP 清单。此结果仅代表核验时刻，不能据此宣布全部照片已备份。")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            XDriveIOSNativePhotoWholeLibraryAuditSection(login: login)
             Section("可选系统后台原件备份") {
                 Text("前台自动备份与系统 BGProcessing 相互独立。必须先保存并核验受管备份目的地，后台再单独授权当前 iPhone、Owner 和对应 Source/Node；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 \(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
                     .font(.footnote).foregroundStyle(.secondary)
