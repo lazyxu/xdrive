@@ -1356,7 +1356,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
 
     @ViewBuilder
     private func albumDirectorySections(_ snapshot: XDriveLocalPhotoAlbumPage) -> some View {
-        Text(snapshot.total == 0 ? "没有可访问的相簿。" : "\\(snapshot.total) 个相簿")
+        Text(snapshot.total == 0 ? "没有可访问的相簿。" : "\(snapshot.total) 个相簿")
             .font(.caption)
             .foregroundStyle(.secondary)
 
