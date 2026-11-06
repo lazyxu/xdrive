@@ -56,7 +56,7 @@ func requireSourceRunOrLocalPushFinalizeTx(
 // requireUploadSessionReadAuthorityTx protects session metadata and receipt
 // reads. A session UUID is not a bearer credential: the live platform grant
 // must still own the exact Source/Device/Target or operation at read time.
-func requireUploadSessionReadAuthorityTx(
+func (s *Server) requireUploadSessionReadAuthorityTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, session meta.UploadSession,
 ) error {
 	if tx == nil || c == nil || session.ID == "" || session.OwnerID == 0 ||
@@ -124,5 +124,5 @@ func (s *Server) requireUploadChunkAuthorityTx(
 	if session.Status != meta.UploadStatusActive {
 		return errManagedSourceWriteDenied
 	}
-	return requireUploadSessionReadAuthorityTx(ctx, tx, c, session)
+	return s.requireUploadSessionReadAuthorityTx(ctx, tx, c, session)
 }
