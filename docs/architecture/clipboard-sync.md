@@ -1,6 +1,6 @@
 # xDrive Clipboard — cross-device design and Web MVP
 
-Status: Web MVP implementation in progress (2026-11-06). **This document describes a target contract; it does not prove that a browser, device, CI run, or deployed server has passed acceptance.**
+Status: Web MVP source merged in PR #3950 on 2026-11-06. This document describes the current source contract and follow-on hardening; source merge does not, by itself, verify a deployed Server, a physical browser, or an installed client.
 
 ## 1. Product boundary
 
@@ -22,9 +22,9 @@ Clipboard is **not** FileExplorer's existing Copy/Cut/Paste state. The latter us
 
 ## 3. Persistence and transport
 
-- `xd_clipboard_vaults`: unique OwnerID and random Salt. Concurrent initialization uses PostgreSQL ON CONFLICT DO NOTHING then reads the accepted value.
+- `xd_clipboard_vaults`: unique OwnerID, random Salt, immutable encrypted verifier and original `AADScope` (first browser HTTPS/localhost origin + Server-verified Owner ID). Concurrent initialization uses PostgreSQL ON CONFLICT DO NOTHING. The scope is authenticated encryption metadata, never a token or a permission; each later authenticated browser retrieves and uses the first pinned scope, even when accessing the same Server by another hostname.
 - `xd_clipboard_items`: monotonically allocated row ID (stable cursor), OwnerID, ClientEventID (unique for Owner), Kind, Nonce, Ciphertext, ExpiresAt, CreatedAt. No plaintext preview/index.
-- Up to 64 KiB of *plaintext* is allowed by the Web UI; Server also imposes a conservative bound on encrypted wire bytes and validates base64/96-bit nonce/UUID/kind. 50 latest nonexpired rows per Owner retained; expiry is 24 hours server-side, with opportunistic pruning and no claims of exact real-time global GC.
+- Up to 64 KiB of *plaintext* is allowed by the Web UI; Server imposes a conservative bound on encrypted wire bytes and validates base64/96-bit nonce/UUID/kind. A PostgreSQL row lock on the authenticated Owner's vault serializes insertion plus cap pruning, retaining at most 50 newest nonexpired rows even when several browsers send concurrently; the encrypted verifier must already be initialized. Expiry is 24 hours server-side, with opportunistic pruning and no claims of exact real-time global GC.
 - `GET /api/v1/clipboard/vault`: Owner-scoped salt, initialized idempotently. `POST /api/v1/clipboard/items`: write one encrypted item; `GET /api/v1/clipboard/items?before=ID`: 50-row descending keyset page; `DELETE /api/v1/clipboard/items/:id`: remove one; `DELETE /api/v1/clipboard/items`: clear current Owner's history.
 - Idempotency: `(OwnerID, ClientEventID)` uniqueness **while the item is retained**; a retry of a retained identical event returns the original receipt. After expiry or cap eviction, the Web UI must not blindly replay old unknown-ACK requests. **No cross-device target ID in MVP**; all authenticated sessions of the same Owner use the same mailbox.
 - Browser reads while the Clipboard page is visible (foreground refresh), and manually on demand; **no SSE, background clipboard API, notification subscription, or invisible global polling in this MVP**. Backend pagination is bounded, cancellation through AbortSignal, stale response fencing on Owner changes.
@@ -64,3 +64,13 @@ This change is **Web-only** even though its page is registered in the canonical 
 The clipboard password is intentionally distinct from the xDrive login password, is not recoverable from the Server and is not written to Browser persistent storage. Multiple browsers of the same Owner must use an identical password to unlock the immutable encrypted verifier; no implicit reset is allowed. This protects confidentiality but does not protect already-decrypted content from the local Browser or OS.
 
 PR acceptance is source-SHA-specific: successful Web TypeScript/build and crypto regression, genuine PostgreSQL Owner-isolation tests, `gofmt`/Go race and shared Desktop/DSM navigation parity, plus all required Final Gate checks. A Draft PR, successful isolated check, queued job or a merge commit on a development branch is not proof of publication or deployment.
+
+## 8. Public/LAN origin AAD compatibility and concurrent sends
+
+The original Web MVP used `window.location.origin + ':' + verifiedOwnerID` in AES-GCM authenticated associated data. Different HTTP(S) aliases of one Server therefore derived **the same key from salt/passphrase** but produced different AAD, so a second URL could not unlock the original canary.
+
+The patched contract persists `AADScope` with the immutable encrypted verifier on initial `PUT /api/v1/clipboard/vault/check`; subsequent `GET /vault` responses expose the unchanged scope to the same authenticated Owner. Browsers still keep their **local** `ownerScopeKey` (actual origin and verified Owner) for React session separation, but use **only the Server-pinned `aad_scope`** for the encryption canary, sending and history decryption. Server validates that a proposed scope is a canonical HTTP(S) origin plus **its own authenticated OwnerID**; a conflicting or second-origin claim never rewrites an existing nonempty scope or canary.
+
+**Pre-existing vaults:** #3950 persisted a canary but had no `AADScope` column. After a successful client-side AES-GCM verification on the original browser origin, that existing ciphertext/nonce pair may claim the missing AAD scope once using the same authenticated endpoint. No passphrase, key or historical message is rotated; a second browser alias can then decrypt the existing history. Before the first legacy origin pins its scope, another alias still cannot infer the original origin or decrypt the old canary. Do not auto-reset or bypass that verification.
+
+The `POST /clipboard/items` transaction acquires `SELECT ... FOR UPDATE` on the authenticated Owner vault **before** inserting and pruning. This serializes parallel submissions for the same Owner across Go Server instances and rejects uninitialized vault writes; independently authenticated Owners do not serialize each other. Tests must cover legacy pinning, incorrect scope/Owner, two different browser-origin strings and a real PostgreSQL concurrent write burst ending with exactly 50 rows. Any production or real-device behavior not exercised must be reported as **跳过（未验收）**.
