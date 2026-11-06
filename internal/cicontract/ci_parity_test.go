@@ -446,7 +446,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitHubJobNeeds(t, github, "test-windows-rollback-artifact", []string{"package-windows-client"})
 	assertGitHubJobNeeds(t, github, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
 	assertGitHubJobNeeds(t, github, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
-	assertGitHubJobNeeds(t, github, "publish-master", []string{"final-gate", "build-client-core", "build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
+	// Master Snapshot is build/artifact-gated; stable tags still require Final Gate.
+	assertGitHubJobNeeds(t, github, "publish-master", []string{"build-client-core", "build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
 	assertGitHubJobNeeds(t, github, "publish-stable", []string{"final-gate", "photo-ocr-master-smoke"})
 	requireRaw(t, "GitHub split critical test contract", githubRaw,
 		"go-linux-api:",
