@@ -159,8 +159,9 @@ func requireIOSPhotoManagedUploadTx(ctx context.Context, tx *gorm.DB,
 		meta.SourceDirectionPush, scope.deviceID, scope.sourceRevision).Take(&source).Error; err != nil {
 		return errManagedSourceWriteDenied
 	}
-	if !iosPhotoDestinationSource(source) || !source.TargetManaged ||
-		source.TargetNodeID == nil || *source.TargetNodeID != targetID {
+	boundDeviceID, bound := meta.SourceDeviceID(source)
+	if !iosPhotoDestinationSource(source) || !bound || boundDeviceID != scope.deviceID ||
+		!source.TargetManaged || source.TargetNodeID == nil || *source.TargetNodeID != targetID {
 		return errManagedSourceWriteDenied
 	}
 	var device meta.ClientDevice
