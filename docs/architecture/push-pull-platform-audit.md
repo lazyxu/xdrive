@@ -143,3 +143,20 @@ PR #3923 completes the DSM Device, Root and upload authorization closure:
 - Existing Sources with no DeviceID remain on their exact old target and are not migrated or silently rebound.
 
 **Remaining DSM acceptance:** a real DSM NAS run has not been performed and must be reported as **跳过（未验收）**. The standalone source-agent CI currently builds Linux amd64 and arm64 binaries. The legacy ARMv7 SPK remains the separate `xd` / `xdrive-agent` package and does not include `xdrive-source-agent`; ARMv7 source-agent distribution is not yet provided.
+
+## 2026-11-06 Synology MVP scope reduction (later Owner decision)
+
+The 2026-11-05 audit above records the prior desired architecture and is
+preserved as historical design context. The later Owner decision temporarily
+disables **Synology Photos Pull** and **Synology Files Pull** while prioritizing
+one **DSM `local_folder` folder Push** route using `xdrive-agent` and the
+canonical Server UploadSession/CAS writer. The standalone DSM Synology Photos
+Push path is still retired. Connector code remains available for later
+reactivation; existing Source, target, Node, FileVersion, SourceItem,
+SourceCredential, SyncRun and CAS history are not migrated or deleted.
+
+An active historical Synology Pull is *not* an enabled worker: creation,
+configuration, trigger, SyncRun and write authorization are disabled. Owner
+history reads, archival and credential revocation remain available. Yike Pull
+is not disabled by the Synology-specific reduction. No real NAS deployment is
+implied by a committed branch or a passing unit test.
