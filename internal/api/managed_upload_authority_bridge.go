@@ -53,15 +53,13 @@ func requireSourceRunOrLocalPushFinalizeTx(
 	return requireOrdinaryOrBoundLocalPushFinalizeTx(ctx, tx, session, nodeID)
 }
 
-// requireUploadChunkAuthorityTx is invoked by the ACTUAL UploadPart SQL
-// transaction (and by the resumable reservation transaction), after the
-// UploadSession row lock and before any durable part/reservation mutation.
-// Every writer family shares this gate; route middleware is never sufficient.
-func (s *Server) requireUploadChunkAuthorityTx(
+// requireUploadSessionReadAuthorityTx protects session metadata and receipt
+// reads. A session UUID is not a bearer credential: the live platform grant
+// must still own the exact Source/Device/Target or operation at read time.
+func requireUploadSessionReadAuthorityTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, session meta.UploadSession,
 ) error {
-	if tx == nil || c == nil || session.ID == "" ||
-		session.OwnerID == 0 || session.Status != meta.UploadStatusActive ||
+	if tx == nil || c == nil || session.ID == "" || session.OwnerID == 0 ||
 		!sourceRunUploadSessionMatches(c, session) {
 		return errManagedSourceWriteDenied
 	}
@@ -72,12 +70,10 @@ func (s *Server) requireUploadChunkAuthorityTx(
 		return requireSynologyPushUploadSessionTx(ctx, tx, c, session)
 	}
 	if _, photos := currentIOSPhotoManagedUploadScope(c); photos {
-		// Old generic Owner sessions cannot be adopted by a native device.
 		return errManagedSourceWriteDenied
 	}
 
 	// Public Share upload is a distinct revocable grant, never Owner authority.
-	// The public route must have verified the exact share token and password.
 	if session.ShareID != nil {
 		granted, present := c.Get("xdriveShareUploadID")
 		shareID, valid := granted.(uint64)
@@ -112,10 +108,21 @@ func (s *Server) requireUploadChunkAuthorityTx(
 		ConflictPolicy: session.ConflictPolicy,
 	}
 	if strings.HasPrefix(session.ResumeKey, "lp2_") {
-		// Private local Push uploads require an authenticated, durable Operation
-		// even if a managed directory was moved or the Source was revoked.
 		_, err := admittedManagedLocalPushOperationTx(ctx, tx, session.OwnerID, nodeID, req)
 		return err
 	}
 	return requireOrdinarySourceTargetTx(ctx, tx, session.OwnerID, nodeID)
+}
+
+// requireUploadChunkAuthorityTx is invoked by the ACTUAL UploadPart SQL
+// transaction and resumable reservation transaction after the UploadSession
+// row lock. It reuses the same live authority rules as readback, and adds the
+// active-session condition before any durable part/quota mutation.
+func (s *Server) requireUploadChunkAuthorityTx(
+	ctx context.Context, tx *gorm.DB, c *gin.Context, session meta.UploadSession,
+) error {
+	if session.Status != meta.UploadStatusActive {
+		return errManagedSourceWriteDenied
+	}
+	return requireUploadSessionReadAuthorityTx(ctx, tx, c, session)
 }
