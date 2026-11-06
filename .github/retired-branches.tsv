@@ -24,3 +24,6 @@ refactor/files-owner-download-admission-20261029	f07a4eaa7c2b8b48bc9680edfb8c14f
 refactor/files-owner-readonly-lifecycle-combined-20261029	144612b82a718b131e55d861299d8826e4ea2982	exact unchanged source ancestor of accepted combined PR #3213; verified Git compare behind_by=0, no active PR head/base on 2026-10-30
 fix/files-web-outlet-exact-ci-failures-20261030	539466d85edbf9d463e79917ddac971563a10482	exact unchanged source ancestor of accepted combined PR #3213; verified Git compare behind_by=0, no active PR head/base on 2026-10-30
 fix/ios-files-search-filter-test-fixture-20261105	a23a826248efb9203d8af1a9bcdf9fe3d4aaf9ea	duplicate ref of merged PR #3885 exact head SHA; no open PR head/base; implementation retained by merged PR
+# Reviewed orphan ref retirement, 2026-11-06. Only the unchanged, SHA-pinned tips below qualify.
+feat/ios-photo-queue-consumer-20261106	e41a164925647b1267128ffe6a1401a5d0dd4733	Exact alternate ref of accepted merged PR #3928 head e41a1649; all code preserved by master squash ac460d21; head verified identical
+feat/dsm-device-backup-management-parity	12315b55f8daf48f6890fb9dee435aba1eb20c86	DSM backup settings implementation accepted via #3899; stronger managed-target and owner/CSRF path in merged #3904; audited six touched files, three blobs identical and three superseded (notes host, stricter target, formatted tests)
