@@ -512,10 +512,9 @@ WHERE NULLIF(BTRIM(s.device_id), '') IS NULL
 	}
 	// Source names are unique per Owner and direction: Push and Pull are
 	// independent namespaces, while every connector within Pull shares one.
-	if err := db.Exec("DROP INDEX IF EXISTS idx_xd_sources_owner_name").Error; err != nil {
-		return err
-	}
-	if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_direction_name ON xd_sources(owner_id, direction, lower(name))").Error; err != nil {
+	// PostgreSQL DDL must be atomic: a historical case-folded name conflict
+	// must not leave the Server without either the old or the new guard.
+	if err := migrateSourceNameNamespaceIndex(db); err != nil {
 		return err
 	}
 	if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_yike_account ON xd_sources(owner_id, kind, provider_account_id) WHERE kind = 'yike_photos' AND provider_account_id <> ''").Error; err != nil {
