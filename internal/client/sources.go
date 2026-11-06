@@ -1,7 +1,6 @@
 package client
 
 import (
-
 	"bytes"
 	"context"
 	"encoding/json"
@@ -168,8 +167,6 @@ func (c *Client) SourceOverview(ctx context.Context) ([]SourceOverview, error) {
 }
 
 func (c *Client) CreateSource(ctx context.Context, input CreateSourceInput) (Source, error) {
-
-
 	var out Source
 	err := c.json(ctx, http.MethodPost, "/api/v1/sources", input, &out)
 	return out, err

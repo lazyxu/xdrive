@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
 )
 
 func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
