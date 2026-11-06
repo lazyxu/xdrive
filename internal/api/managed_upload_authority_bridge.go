@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // A Pull worker's signed SourceRun grants and a native Local Push device's
@@ -59,8 +60,19 @@ func requireSourceRunOrLocalPushFinalizeTx(
 func (s *Server) requireUploadSessionReadAuthorityTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, session meta.UploadSession,
 ) error {
-	if tx == nil || c == nil || session.ID == "" || session.OwnerID == 0 ||
-		!sourceRunUploadSessionMatches(c, session) {
+	if tx == nil || c == nil || session.ID == "" || session.OwnerID == 0 {
+		return errManagedSourceWriteDenied
+	}
+	// Re-read the durable row in this transaction; never authorize a stale
+	// preflight copy after concurrent abort, finalization or identity changes.
+	var current meta.UploadSession
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("id = ? AND owner_id = ?", session.ID, session.OwnerID).
+		Take(&current).Error; err != nil {
+		return errManagedSourceWriteDenied
+	}
+	session = current
+	if !sourceRunUploadSessionMatches(c, session) {
 		return errManagedSourceWriteDenied
 	}
 	if session.SourceID != 0 {
@@ -121,8 +133,14 @@ func (s *Server) requireUploadSessionReadAuthorityTx(
 func (s *Server) requireUploadChunkAuthorityTx(
 	ctx context.Context, tx *gorm.DB, c *gin.Context, session meta.UploadSession,
 ) error {
-	if session.Status != meta.UploadStatusActive {
+	if tx == nil || c == nil || session.ID == "" || session.OwnerID == 0 {
 		return errManagedSourceWriteDenied
 	}
-	return s.requireUploadSessionReadAuthorityTx(ctx, tx, c, session)
+	var current meta.UploadSession
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND owner_id = ?", session.ID, session.OwnerID).
+		Take(&current).Error; err != nil || current.Status != meta.UploadStatusActive {
+		return errManagedSourceWriteDenied
+	}
+	return s.requireUploadSessionReadAuthorityTx(ctx, tx, c, current)
 }
