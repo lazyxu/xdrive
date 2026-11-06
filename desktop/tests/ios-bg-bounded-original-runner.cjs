@@ -326,3 +326,22 @@ test('approved BG only-new run replays the durable PhotoKit queue before reservi
   assert.equal((task.match(/XDriveIOSForegroundPhotoBackupMVP\(/g) || []).length, 1,
     'the background runner must not spawn an independent upload path')
 })
+
+test('BG runner defers to foreground when only-new history requires full reconciliation', () => {
+  const task = read('BackgroundPhotoTask.swift')
+  const gate = task.slice(
+    task.indexOf('if let plan = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner)'),
+    task.indexOf('let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)')
+  )
+  const helper = task.slice(
+    task.indexOf('private static func resubmitRecoveryOnlyIfStillRequired('),
+    task.indexOf('private static func resubmitOnlyIfStillApproved(')
+  )
+  assert.match(gate, /if plan\.historyRecoveryRequired == true/)
+  assert.match(gate, /resubmitRecoveryOnlyIfStillRequired\(owner: owner\)/)
+  assert.ok(task.indexOf('plan.historyRecoveryRequired == true') < task.indexOf('queue.replay('),
+    'BG must not replay or upload while foreground full-scope recovery is pending')
+  assert.match(helper, /grant\.matches\(owner\)/)
+  assert.match(helper, /plan\.enabled, plan\.historyRecoveryRequired == true/)
+  assert.match(helper, /scheduleApprovedProbe\(afterMinutes: grant\.intervalMinutes\)/)
+})

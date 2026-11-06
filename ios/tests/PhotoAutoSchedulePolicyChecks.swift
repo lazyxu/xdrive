@@ -57,6 +57,42 @@ import Foundation
                               needsReview: false) == 1)
     precondition(p.nextWindow(current: 2, visibleTotal: 600, scanned: 88, uploaded: 20,
                               needsReview: false) == 0)
+    // Expired PhotoKit history can be rebased only after a complete,
+    // receipt-verified pass of every currently authorized window.
+    precondition(p.fullReconciliationWindowComplete(
+      currentWindow: 0, visibleTotal: 600, scanned: 256))
+    precondition(p.fullReconciliationWindowComplete(
+      currentWindow: 2, visibleTotal: 600, scanned: 88))
+    precondition(p.fullReconciliationWindowComplete(
+      currentWindow: 0, visibleTotal: 0, scanned: 0))
+    precondition(!p.fullReconciliationWindowComplete(
+      currentWindow: 0, visibleTotal: 600, scanned: 20))
+    precondition(!p.fullReconciliationWindowComplete(
+      currentWindow: 3, visibleTotal: 600, scanned: 0))
+    precondition(p.fullReconciliationWindowVerified(
+      scanned: 256, verified: 250, unsupported: 6, unavailable: 0,
+      needsReview: 0, skippedBeforeBaseline: 0, queued: 0,
+      stoppedForReview: false))
+    precondition(!p.fullReconciliationWindowVerified(
+      scanned: 256, verified: 255, unsupported: 0, unavailable: 1,
+      needsReview: 0, skippedBeforeBaseline: 0, queued: 0,
+      stoppedForReview: false))
+    precondition(!p.fullReconciliationWindowVerified(
+      scanned: 256, verified: 255, unsupported: 0, unavailable: 0,
+      needsReview: 1, skippedBeforeBaseline: 0, queued: 0,
+      stoppedForReview: true))
+    precondition(!p.fullReconciliationWindowVerified(
+      scanned: 256, verified: 255, unsupported: 0, unavailable: 0,
+      needsReview: 0, skippedBeforeBaseline: 1, queued: 0,
+      stoppedForReview: false))
+    precondition(p.shouldCommitFullReconciliation(
+      windowComplete: true, followingWindow: 0, passClean: true))
+    precondition(!p.shouldCommitFullReconciliation(
+      windowComplete: false, followingWindow: 0, passClean: true))
+    precondition(!p.shouldCommitFullReconciliation(
+      windowComplete: true, followingWindow: 0, passClean: false))
+    precondition(!p.shouldCommitFullReconciliation(
+      windowComplete: true, followingWindow: 1, passClean: true))
     // A capped partial segment or impossible oversized progress never advances.
     precondition(p.nextWindow(current: 0, visibleTotal: 600, scanned: 255, uploaded: 20,
                               needsReview: false) == 0)
