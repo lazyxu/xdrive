@@ -370,7 +370,6 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/sources/:id/trigger", suite: "sources"},
 		{method: "GET", path: "/api/v1/sources/:id/local-binding", suite: "local-source-devices"},
 		{method: "POST", path: "/api/v1/sources/:id/local-binding", suite: "local-source-devices"},
-		{method: "PUT", path: "/api/v1/sources/:id/synology-root", suite: "synology-push"},
 		{method: "DELETE", path: "/api/v1/sources/:id/local-binding", suite: "local-source-devices"},
 		{method: "GET", path: "/api/v1/sources/:id/credential", suite: "sources"},
 		{method: "PUT", path: "/api/v1/sources/:id/credential", suite: "sources"},
