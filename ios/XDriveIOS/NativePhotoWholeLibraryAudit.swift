@@ -54,13 +54,18 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
     private var changeObserver: XDriveIOSNativeWholeAuditChangeObserver?
     private var observerGeneration = UUID()
 
-    func reset() {
-        epoch = UUID()
+    private func stopMonitoringLibrary() {
+        // Also invalidate callbacks already dispatched onto the main queue.
         observerGeneration = UUID()
         if let changeObserver {
             PHPhotoLibrary.shared().unregisterChangeObserver(changeObserver)
         }
         changeObserver = nil
+    }
+
+    func reset() {
+        epoch = UUID()
+        stopMonitoringLibrary()
         job?.cancel()
         job = nil
         activeProof?.cancel()
@@ -288,6 +293,9 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
             } catch {
                 await scanner.reset()
                 if self.epoch == token {
+                    // An aborted audit no longer owns a usable generation.
+                    // Release the PhotoKit listener and fence queued events.
+                    self.stopMonitoringLibrary()
                     // Any stale PhotoKit generation, stale Owner/session or
                     // failed scan invalidates this entire in-memory snapshot.
                     self.owner = nil

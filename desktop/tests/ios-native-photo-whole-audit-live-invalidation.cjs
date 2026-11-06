@@ -26,8 +26,12 @@ test('green library-wide audit stays under live PhotoKit invalidation until scre
 test('stale observer callbacks cannot clear a new Owner audit', () => {
   const reset = source.slice(source.indexOf('    func reset() {'), source.indexOf('    private func monitorLibraryWhileResultIsVisible()'))
   const monitor = source.slice(source.indexOf('    private func monitorLibraryWhileResultIsVisible()'), source.indexOf('    /// One click never reads more than 8 originals'))
-  assert.match(reset, /observerGeneration = UUID\(\)/)
-  assert.match(reset, /unregisterChangeObserver\(changeObserver\)/)
+  const cleanup = source.slice(source.indexOf('    private func stopMonitoringLibrary()'),
+    source.indexOf('    func reset() {'))
+  assert.match(reset, /stopMonitoringLibrary\(\)/)
+  assert.match(cleanup, /observerGeneration = UUID\(\)/)
+  assert.match(cleanup, /unregisterChangeObserver\(changeObserver\)/)
+  assert.match(source, /} catch \{\s*await scanner\.reset\(\)\s*if self\.epoch == token \{[\s\S]*?self\.stopMonitoringLibrary\(\)/)
   assert.match(monitor, /let generation = observerGeneration/)
   assert.match(monitor, /self\.observerGeneration == generation else \{ return \}/)
   assert.match(monitor, /self\.reset\(\)/)
