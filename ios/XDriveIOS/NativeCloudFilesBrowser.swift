@@ -247,6 +247,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     @Published private(set) var total = 0
     @Published private(set) var startOffset = 0
     @Published private(set) var loading = false
+    @Published private(set) var slowLoading = false
     @Published private(set) var loadingAdjacent = false
     @Published private(set) var verifiedPage = false
     @Published private(set) var errorMessage: String?
@@ -256,6 +257,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     private var epoch = UUID()
     private var adjacentTicket = UUID()
     private var job: Task<Void, Never>?
+    private var feedbackJob: Task<Void, Never>?
     private var adjacentJob: Task<Void, Never>?
     // A restored navigation page may only reuse rows from the exact Owner
     // and directory/search scope that the Server previously verified.
@@ -318,6 +320,9 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
         epoch = UUID()
         job?.cancel()
         job = nil
+        feedbackJob?.cancel()
+        feedbackJob = nil
+        slowLoading = false
         cancelAdjacent()
         loading = false
     }
@@ -333,6 +338,9 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
         epoch = UUID()
         job?.cancel()
         job = nil
+        feedbackJob?.cancel()
+        feedbackJob = nil
+        slowLoading = false
         cancelAdjacent()
         verifiedOwner = nil
         verifiedFolderID = nil
@@ -357,16 +365,52 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
               filters: XDriveIOSNativeFilesSearchFilterState,
               sort: String, order: String,
               grouping: String = "none", foldersFirst: Bool = true) {
-        invalidate()
-        guard let expected = login.owner else {
+        let expectedOwner = login.owner
+        // Retain a previously committed page while refreshing only the
+        // presentation (sort/order/group) of the exact same Owner/directory
+        // and search scope. Inputs remain disabled until the first verified
+        // Server range commits. Never show rows from another Owner or query.
+        let sameBrowseScope = expectedOwner.map { current in
+            verifiedPage &&
+                verifiedOwner.map {
+                    XDriveIOSNativePhotoOwnerScope.matches($0, current)
+                } == true &&
+                verifiedFolderID == folderID && verifiedQuery == query &&
+                verifiedFilters == filters
+        } ?? false
+        if sameBrowseScope {
+            epoch = UUID()
+            job?.cancel()
+            job = nil
+            feedbackJob?.cancel()
+            feedbackJob = nil
+            slowLoading = false
+            cancelAdjacent()
+            errorMessage = nil
+            adjacentError = nil
+            loading = false
+        } else {
+            invalidate()
+        }
+        guard let expected = expectedOwner else {
             errorMessage = "请先验证原生服务器账户。"
             return
         }
         let ticket = epoch
         loading = true
+        // Quiet refresh: no transient busy row for fast responses.
+        feedbackJob = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled, let self,
+                  self.epoch == ticket && self.loading else { return }
+            self.slowLoading = true
+        }
         job = Task { @MainActor [weak self] in
             defer {
                 if self?.epoch == ticket {
+                    self?.feedbackJob?.cancel()
+                    self?.feedbackJob = nil
+                    self?.slowLoading = false
                     self?.loading = false
                     self?.job = nil
                 }
@@ -737,6 +781,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var showingFileOperations = false
     @State private var fileOperationsOwner: XDriveNativeOwnerRoot?
     @State private var operationWasAccepted = false
+    @State private var managementWriteConfirmed = false
+    @State private var versionRestoreConfirmed = false
     @State private var showingPathPrompt = false
     @State private var pathDraft = ""
     @State private var pathBusy = false
@@ -869,6 +915,39 @@ struct XDriveIOSNativeFilesBrowser: View {
             $0.node.isDirectory &&
                 XDriveIOSNativeFilesCollectionsPolicy.validItem($0, kind: .favorites)
         }.prefix(8))
+    }
+
+    private func verifiedManagementParentName(
+        for intent: XDriveIOSNativeFilesManagementIntent
+    ) -> String? {
+        guard let node = intent.file ?? intent.directory else {
+            return folder?.id == intent.owner.rootNodeID ? nil : folder?.name
+        }
+        guard let nodeParent = node.parent_id else { return nil }
+        if nodeParent == intent.owner.rootNodeID { return nil }
+        if nodeParent == folder?.id { return folder?.name }
+        // Inline and search results are not necessarily direct children
+        // of the visible directory. Never mislabel the outer folder as
+        // the selected Node's actual parent.
+        return inlineFolders.verifiedParentName(for: node, owner: login.owner)
+    }
+
+    private func openHomeTag(_ tag: XDriveIOSNativeFilesSearchTagOption) {
+        guard isHome, let owner = login.owner,
+              searchOptions.matches(owner),
+              searchOptions.tags.contains(where: { $0.id == tag.id })
+        else { return }
+        if searchReturnOffset == nil {
+            searchReturnOffset = offset
+            searchReturnNodeID = nil
+        }
+        queryDraft = ""
+        activeQuery = ""
+        var filters = XDriveIOSNativeFilesSearchFilterState()
+        filters.tagID = tag.id
+        // The existing filter-change path performs exactly one complete
+        // Server all-files Range; no local page-only filtering.
+        searchFilters = filters
     }
 
     @ViewBuilder private var filesHome: some View {
@@ -1010,6 +1089,36 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
             .accessibilityIdentifier("native-ios-files-open-recent")
+        }
+        Section("标签") {
+            Button {
+                searchOptions.load(login: login)
+            } label: {
+                Label("浏览所有标签", systemImage: "tag")
+            }
+            .disabled(login.owner == nil || searchOptions.loading)
+            .accessibilityIdentifier("native-ios-files-home-load-tags")
+            if hasVerifiedSearchOptionsForOwner {
+                ForEach(searchOptions.tags) { tag in
+                    Button { openHomeTag(tag) } label: {
+                        Label(tag.name, systemImage: "tag.fill")
+                    }
+                    .accessibilityIdentifier("native-ios-files-home-tag-\(tag.id)")
+                }
+                if searchOptions.tags.isEmpty {
+                    Text("尚无标签。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            } else if searchOptions.loading && hasSearchOptionsStateForOwner {
+                ProgressView("正在读取标签…")
+            } else if hasSearchOptionsStateForOwner,
+                      let error = searchOptions.errorMessage {
+                HStack {
+                    Text(error).font(.footnote).foregroundStyle(.secondary)
+                    Spacer(minLength: 4)
+                    Button("重试") { searchOptions.load(login: login) }
+                }
+            }
         }
         Section("整理") {
             Button { presentSavedSearches() } label: {
@@ -1204,6 +1313,12 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             if model.loading && model.entries.isEmpty {
                 HStack { ProgressView(); Text("正在读取当前页…") }
+            } else if model.slowLoading && !model.entries.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("正在更新当前文件列表…").foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("native-ios-files-retained-range-loading")
             } else if let error = model.errorMessage {
                 Text(error).foregroundStyle(.orange)
                 Button("重试当前页") { reload() }
@@ -1999,9 +2114,9 @@ struct XDriveIOSNativeFilesBrowser: View {
         } message: {
             Text("包括选中文件夹的所有子文件。结果不确定时先刷新目录，不能重复提交。")
         }
-        .sheet(item: $locateIntent, onDismiss: {
-            reload()
-        }) { intent in
+        // Locate is read-only: closing it cannot invalidate a verified
+        // directory window or cause a cold thumbnail/refetch cycle.
+        .sheet(item: $locateIntent) { intent in
             NavigationStack {
                 if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
                     XDriveIOSNativeFilesLocateScreen(
@@ -2013,19 +2128,24 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
         }
         .sheet(item: $managementIntent, onDismiss: {
-            reload()
+            if managementWriteConfirmed {
+                managementWriteConfirmed = false
+                reload()
+            }
         }) { intent in
             if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
                 XDriveIOSNativeFilesManagementPanel(
                     login: login, expectedOwner: intent.owner,
                     folderID: intent.file?.parent_id ?? intent.directory?.parent_id ??
                         folder?.id ?? intent.owner.rootNodeID,
-                    folderName: folder?.name,
+                    folderName: verifiedManagementParentName(for: intent),
                     file: intent.file,
                     directory: intent.directory,
                     initialQuickAction: intent.quickAction
                 ) {
-                    // The sheet's onDismiss performs the sole refresh.
+                    // Only a confirmed Server mutation invalidates the page;
+                    // merely opening Properties or Share never does.
+                    managementWriteConfirmed = true
                     managementIntent = nil
                 }
             } else {
@@ -2034,13 +2154,18 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
         }
         .sheet(item: $versionHistoryIntent, onDismiss: {
-            reload()
+            if versionRestoreConfirmed {
+                versionRestoreConfirmed = false
+                reload()
+            }
         }) { intent in
             if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
                 XDriveIOSNativeFilesVersionHistoryScreen(
                     login: login, openedOwner: intent.owner, node: intent.node
                 ) {
-                    // The sheet's onDismiss refreshes once after Server receipt.
+                    // A successful historical restore changes the Node;
+                    // read-only version browsing and download do not.
+                    versionRestoreConfirmed = true
                     versionHistoryIntent = nil
                 }
             } else {
@@ -2179,6 +2304,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingFileOperations = false
             fileOperationsOwner = nil
             operationWasAccepted = false
+            managementWriteConfirmed = false
+            versionRestoreConfirmed = false
             showingPathPrompt = false
             pathDestination = nil
             cancelPathLookup()
