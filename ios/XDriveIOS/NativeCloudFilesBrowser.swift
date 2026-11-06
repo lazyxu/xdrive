@@ -1330,7 +1330,14 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .accessibilityIdentifier("native-ios-files-path-error")
             }
             if model.loading && model.entries.isEmpty {
-                HStack { ProgressView(); Text("正在读取当前页…") }
+                if model.slowLoading {
+                    HStack { ProgressView(); Text("正在读取当前页…") }
+                        .accessibilityIdentifier("native-ios-files-cold-range-loading")
+                } else {
+                    // No transient spinner for a fast first page. Reserve a
+                    // stable quiet slot while the initial read is pending.
+                    Color.clear.frame(height: 44).accessibilityHidden(true)
+                }
             } else if model.slowLoading && !model.entries.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView()
