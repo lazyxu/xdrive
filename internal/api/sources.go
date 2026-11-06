@@ -335,7 +335,20 @@ func (s *Server) createSource(c *gin.Context) {
 	if req.RunMode == "" {
 		req.RunMode = meta.SourceRunModeSync
 	}
-	if !meta.ValidSourceName(req.Name) || meta.ValidateName(req.Name) != nil || !meta.ValidSourceKind(req.Kind) || !meta.ValidSourceDirection(req.Direction) {
+	if !meta.ValidSourceKind(req.Kind) || !meta.ValidSourceDirection(req.Direction) {
+		fail(c, http.StatusBadRequest, "invalid source kind or direction")
+		return
+	}
+	if req.Name == "" {
+		// A Push may omit the final name only when Server can derive it from
+		// the authenticated registered Device. Pull always needs an explicit
+		// or credential-derived final folder name.
+		if req.Direction != meta.SourceDirectionPush ||
+			(req.Kind != meta.SourceKindLocalFolder && req.Kind != synologySourceKind && req.Kind != "android_photos") {
+			fail(c, http.StatusBadRequest, "invalid source name, kind, or direction")
+			return
+		}
+	} else if !meta.ValidSourceName(req.Name) || meta.ValidateName(req.Name) != nil {
 		fail(c, http.StatusBadRequest, "invalid source name, kind, or direction")
 		return
 	}
@@ -469,6 +482,12 @@ func (s *Server) createSource(c *gin.Context) {
 					return errLocalSourceCreateDeviceUnauthorized
 				}
 				devicePtr = &device
+				if source.Name == "" {
+					source.Name = managedTargetSuggestion(device.Name, "设备")
+					if !meta.ValidSourceName(source.Name) || meta.ValidateName(source.Name) != nil {
+						return errInvalidSourceConfig
+					}
+				}
 			}
 			if err := tx.Create(&source).Error; err != nil {
 				return err

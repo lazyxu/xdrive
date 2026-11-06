@@ -168,16 +168,7 @@ func (c *Client) SourceOverview(ctx context.Context) ([]SourceOverview, error) {
 }
 
 func (c *Client) CreateSource(ctx context.Context, input CreateSourceInput) (Source, error) {
-	if strings.TrimSpace(input.Name) == "" && input.Direction == "push" {
-		device, err := c.VerifyLocalDevice(ctx)
-		if err != nil {
-			return Source{}, fmt.Errorf("resolve default Push folder name from registered Device: %w", err)
-		}
-		input.Name = strings.TrimSpace(device.Name)
-		if input.Name == "" {
-			return Source{}, fmt.Errorf("registered Device has no display name; provide a Push folder name")
-		}
-	}
+
 
 	var out Source
 	err := c.json(ctx, http.MethodPost, "/api/v1/sources", input, &out)
