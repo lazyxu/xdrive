@@ -326,6 +326,14 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
                 )
             }
         }
+        // A PhotoKit edit that arrives during the bounded SQLite reads
+        // invalidates *all* visible detail labels. In particular, an old
+        // failed revision must not explain a newly edited original.
+        let after = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard after.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(
+                epoch.serialized, as: after.token
+              ) else { return [:] }
         try verifyAuthorization(stillMatches: epoch)
         return result
     }

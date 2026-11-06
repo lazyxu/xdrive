@@ -24,6 +24,8 @@ test('each failure reason comes from one indexed exact-version Owner-local row',
   assert.match(store, /LEFT JOIN failure_reasons r ON r\.asset_id=e\.asset_id AND r\.revision=e\.revision/)
   assert.match(lookup, /row\.state == \.failed/)
   assert.match(lookup, /XDriveIOSPhotoBackupIssueReason\(rawValue: code\) != nil/)
+  assert.match(lookup, /let after = try XDriveIOSPhotoKitLibraryEpoch\.capture\(\)/)
+  assert.match(lookup, /epoch\.serialized, as: after\.token/)
   assert.match(lookup, /try verifyAuthorization\(stillMatches: epoch\)/)
   assert.doesNotMatch(lookup, /uploadPrepared|confirmReceipt|finalize\(|URLSession\(/)
 })
