@@ -112,6 +112,12 @@ func (s *Server) testSourceCredential(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid source kind")
 		return
 	}
+	// This unbound diagnostic must not probe remote NAS endpoints while both
+	// Synology Pull adapters are dormant. No standalone DSM Photos Push exists.
+	if req.Kind == synologySourceKind || req.Kind == synologyFilesSourceKind {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
+		return
+	}
 	if len(req.Payload) == 0 || len(req.Payload) > maxSourceCredentialPayloadBytes {
 		fail(c, http.StatusBadRequest, "credential payload must be between 1 byte and 64 KiB")
 		return
@@ -271,6 +277,10 @@ func (s *Server) testStoredSourceCredential(c *gin.Context) {
 		fail(c, statusForLookup(err), "source not found")
 		return
 	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
+		return
+	}
 	if !sourceUsesStoredCredential(source) {
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
@@ -419,6 +429,10 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 	source, err := s.ownedSource(userID(c), sourceID)
 	if err != nil {
 		fail(c, statusForLookup(err), "source not found")
+		return
+	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		return
 	}
 	if !sourceUsesStoredCredential(source) {
@@ -576,7 +590,7 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
 	}
-	if source.Status == meta.SourceStatusArchived {
+	if source.Status == meta.SourceStatusArchived && !meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
 		fail(c, http.StatusConflict, "source is archived; restore it before changing credentials")
 		return
 	}
@@ -589,16 +603,21 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 			Take(&live).Error; err != nil {
 			return err
 		}
-		if live.Status == meta.SourceStatusArchived {
+		if live.Status == meta.SourceStatusArchived && !meta.SynologyPullTemporarilyDisabled(live.Kind, live.Direction) {
 			return errSourceArchived
 		}
 		if err := sourcecredential.Delete(c.Request.Context(), tx, source.ID); err != nil {
 			return err
 		}
 		now := time.Now().UTC()
+		nextStatus := meta.SourceStatusPaused
+		if live.Status == meta.SourceStatusArchived {
+			// Revocation must never restore a retired Source.
+			nextStatus = meta.SourceStatusArchived
+		}
 		return tx.Model(&meta.Source{}).Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
 			Updates(map[string]any{
-				"status":           meta.SourceStatusPaused,
+				"status":           nextStatus,
 				"revision":         gorm.Expr("revision + 1"),
 				"run_requested_at": nil,
 				"updated_at":       now,

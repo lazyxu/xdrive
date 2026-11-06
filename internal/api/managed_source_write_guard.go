@@ -131,16 +131,6 @@ func requireOrdinarySourceMutationTx(ctx context.Context, tx *gorm.DB, ownerID, 
 }
 
 func managedSourceWritePreflight(c *gin.Context, db *gorm.DB, ownerID, nodeID uint64, structural bool) bool {
-	if sourceID, proof, ok := currentSynologySourceProof(c); ok {
-		err := db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-			return requireSynologySourceNodeMutationTx(c.Request.Context(), tx, c, ownerID, sourceID, proof, nodeID, structural)
-		})
-		if err != nil {
-			fail(c, http.StatusConflict, errManagedSourceWriteDenied.Error())
-			return true
-		}
-		return false
-	}
 	if _, scoped := currentSourceRunScope(c); scoped {
 		// Execution JWT is only a candidate proof; validate Source/Run and
 		// Node ancestry here, then repeat in the actual write transaction.
@@ -196,6 +186,9 @@ func trustedSourceRunTargetTx(ctx context.Context, tx *gorm.DB, c *gin.Context, 
 		Where("id = ? AND owner_id = ? AND direction = ? AND status = ?",
 			scope.sourceID, uid, meta.SourceDirectionPull, meta.SourceStatusActive).
 		Take(&source).Error; err != nil {
+		return errManagedSourceWriteDenied
+	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
 		return errManagedSourceWriteDenied
 	}
 	if source.TargetNodeID == nil || *source.TargetNodeID == 0 ||
@@ -277,18 +270,12 @@ func requireSourceRunOrOrdinaryTargetTx(ctx context.Context, tx *gorm.DB, c *gin
 	if _, scoped := currentSourceRunScope(c); scoped {
 		return trustedSourceRunTargetTx(ctx, tx, c, uid, parentID, true)
 	}
-	if sourceID, proof, ok := currentSynologySourceProof(c); ok {
-		return requireSynologySourceTargetTx(ctx, tx, c, uid, sourceID, proof, parentID)
-	}
 	return requireOrdinarySourceTargetTx(ctx, tx, uid, parentID)
 }
 
 func requireSourceRunOrOrdinaryMutationTx(ctx context.Context, tx *gorm.DB, c *gin.Context, uid, nodeID uint64) error {
 	if _, scoped := currentSourceRunScope(c); scoped {
 		return trustedSourceRunTargetTx(ctx, tx, c, uid, nodeID, false)
-	}
-	if sourceID, proof, ok := currentSynologySourceProof(c); ok {
-		return requireSynologySourceNodeMutationTx(ctx, tx, c, uid, sourceID, proof, nodeID, true)
 	}
 	return requireOrdinarySourceMutationTx(ctx, tx, uid, nodeID)
 }
@@ -299,4 +286,26 @@ func sourceRunUploadSessionMatches(c *gin.Context, session meta.UploadSession) b
 		return scoped && scope.runID == session.SourceRunID
 	}
 	return !scoped
+}
+
+// A previously admitted worker upload is not an ongoing write capability.
+// Before accepting chunk bytes and again when recording the chunk, prove the
+// current Source, Run, revision, cancellation and managed target. In particular,
+// disabled Synology Pull must not continue staging bytes on an old signed run.
+func trustedSourceRunUploadChunkTx(ctx context.Context, tx *gorm.DB, c *gin.Context, session meta.UploadSession) error {
+	if session.SourceRunID == "" || !sourceRunUploadSessionMatches(c, session) {
+		return errManagedSourceWriteDenied
+	}
+	var nodeID uint64
+	allowRoot := false
+	if session.ParentID != nil {
+		nodeID = *session.ParentID
+		allowRoot = true
+	} else if session.NodeID != nil {
+		nodeID = *session.NodeID
+	}
+	if nodeID == 0 {
+		return errManagedSourceWriteDenied
+	}
+	return trustedSourceRunTargetTx(ctx, tx, c, session.OwnerID, nodeID, allowRoot)
 }
