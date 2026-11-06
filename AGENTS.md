@@ -24,7 +24,7 @@ A later explicit owner decision supersedes older instructions.
 - When a real conflict changes code, run affected tests. Revalidate broadly after a newly observed failure, shared protocol/schema/toolchain change or high-risk cross-component security/integrity edit.
 - Never claim an earlier green SHA tests a different SHA. Satisfy actual GitHub-required checks, reviews and branch rules; never bypass protection or suppress a real failure.
 - Every change, including `AGENTS.md` and CI workflows, must enter `master` through a PR whose exact current HEAD has completed its applicable CI and Final Gate successfully. Never push directly to `master` or treat queued, cancelled or skipped checks as passed.
-- A PR may have several commits. Prefer Squash Merge instead of rewriting tested HEAD only to enforce a one-commit aesthetic.
+- PR commit count is not a CI gate: allow any number of commits and do not add `single-commit` checks or count assertions. Prefer Squash Merge when appropriate; never rewrite a tested HEAD merely to reduce commits.
 - On PRs, fast CI scope is permitted **only** for conservatively whitelisted docs-only, Android-only and narrowly scoped nonsecurity PWA UI changes. Everything unclassified gets complete CI. Preserve a stable required gate that fails closed if scope detection fails.
 - Master pushes and v* stable tags always retain complete build/testing/publishing contracts. Do not cancel required master Snapshot inputs as a PR optimization.
 - On rapid edits, batch local work before pushing; avoid churn that cancels useful already-running CI. Re-run only relevant failed jobs when appropriate.
