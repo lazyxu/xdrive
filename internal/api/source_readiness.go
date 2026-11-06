@@ -55,7 +55,6 @@ func requireSourceReadyForActivation(tx *gorm.DB, source meta.Source) error {
 	return nil
 }
 
-
 // requireSynologyPushSourceReadyForActivation validates persisted enrollment
 // state for Owner-initiated resume. It does not impersonate the NAS: every
 // actual SourceRun and content mutation still requires live Device/Root proof.

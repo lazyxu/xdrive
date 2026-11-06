@@ -417,10 +417,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 				req.SourceID, req.SourceRevision, req.SourceRootID, req.SourceRootFingerprint,
 				strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
 		} else if scopedRun || guest {
-			q = q.Where("COALESCE(source_id, 0) = 0 AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 "+
+			q = q.Where("COALESCE(source_id, 0) = 0 AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 " +
 				"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = ''")
 		} else {
-			q = q.Where("COALESCE(source_id, 0) = 0 AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 "+
+			q = q.Where("COALESCE(source_id, 0) = 0 AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 " +
 				"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = ''")
 		}
 		if req.NodeID != nil {

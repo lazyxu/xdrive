@@ -302,8 +302,6 @@ func (c *Client) Test(ctx context.Context) (AccountInfo, error) {
 	return AccountInfo{Username: c.username, DeviceName: session.DeviceName(ctx)}, nil
 }
 
-
-
 func (c *Client) deviceName(ctx context.Context, auth authData) string {
 	if c == nil || strings.TrimSpace(auth.SID) == "" {
 		return c.baseURLHostname()

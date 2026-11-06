@@ -37,6 +37,15 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/auth/browser/refresh", suite: "auth-browser-cookie"},
 		{method: "POST", path: "/api/v1/auth/browser/logout", suite: "auth-browser-cookie"},
 		{method: "POST", path: "/api/v1/me/change-password/browser", suite: "auth-browser-cookie"},
+		// Each Android managed Source/Target writer is a distinct identity-only
+		// Device grant, not an Owner-root or local Agent write capability.
+		{method: "GET", path: "/api/v1/android/photos/backup-destination", suite: "android-photo-managed-destination"},
+		{method: "PUT", path: "/api/v1/android/photos/backup-destination", suite: "android-photo-managed-destination"},
+		{method: "POST", path: "/api/v1/android/photos/managed/uploads", suite: "android-photo-managed-upload"},
+		{method: "GET", path: "/api/v1/android/photos/managed/uploads/:id", suite: "android-photo-managed-upload"},
+		{method: "PUT", path: "/api/v1/android/photos/managed/uploads/:id/chunks/:index", suite: "android-photo-managed-upload"},
+		{method: "POST", path: "/api/v1/android/photos/managed/uploads/:id/finalize", suite: "android-photo-managed-upload"},
+		{method: "POST", path: "/api/v1/android/photos/managed/uploads/resume-lookup", suite: "android-photo-managed-upload"},
 		// Explicit audit coverage: iOS Photo grants are NOT general bearer tokens.
 		// Dedicated iPhone managed Source/Target routes need their own independent gate.
 		{method: "GET", path: "/api/v1/ios/photos/background-grants", suite: "ios-photo-grant"},

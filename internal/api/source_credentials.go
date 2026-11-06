@@ -246,7 +246,7 @@ func defaultSourceCredentialTester(ctx context.Context, kind string, payload jso
 			return sourceCredentialTestDTO{}, err
 		}
 		return sourceCredentialTestDTO{
-			Valid:       true,
+			Valid:         true,
 			Kind:          kind,
 			AccountName:   strings.TrimSpace(info.Username),
 			SuggestedName: managedTargetSuggestion(info.DeviceName, "Synology NAS"),

@@ -110,10 +110,10 @@ func TestSynologyPushOwnerControlPlaneDoesNotGrantExecution(t *testing.T) {
 		map[string]string{"X-XDrive-Device-ID": deviceID, "X-XDrive-Device-Token": "incorrect"})
 	proof := map[string]string{
 		"X-XDrive-Device-ID": deviceID, "X-XDrive-Device-Token": deviceToken,
-		"X-XDrive-Synology-Source-ID": fmt.Sprint(source.ID),
+		"X-XDrive-Synology-Source-ID":       fmt.Sprint(source.ID),
 		"X-XDrive-Synology-Source-Revision": "4",
-		"X-XDrive-Local-Root-ID": rootID,
-		"X-XDrive-Local-Root-Fingerprint": fingerprint,
+		"X-XDrive-Local-Root-ID":            rootID,
+		"X-XDrive-Local-Root-Fingerprint":   fingerprint,
 	}
 	requestWithHeaders(t, router, http.MethodPost, runPath, ownerToken,
 		strings.NewReader(startBody), http.StatusCreated, proof)

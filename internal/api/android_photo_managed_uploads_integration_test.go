@@ -58,9 +58,9 @@ func TestAndroidPhotoManagedUploadUsesDeviceSourceTargetAndCanonicalCAS(t *testi
 		"/api/v1/android/photos/backup-destination", token,
 		strings.NewReader(`{"name":"Android 原件"}`), http.StatusCreated, proof)
 	var target struct {
-		SourceID uint64 `json:"source_id"`
+		SourceID       uint64 `json:"source_id"`
 		SourceRevision uint64 `json:"source_revision"`
-		TargetNodeID uint64 `json:"target_node_id"`
+		TargetNodeID   uint64 `json:"target_node_id"`
 	}
 	if err := json.Unmarshal(created.Body.Bytes(), &target); err != nil {
 		t.Fatal(err)
@@ -126,9 +126,9 @@ func TestAndroidPhotoManagedUploadUsesDeviceSourceTargetAndCanonicalCAS(t *testi
 		nil, http.StatusOK, proof)
 
 	chunkHeaders := map[string]string{
-		"X-XDrive-Device-ID": device.ID,
+		"X-XDrive-Device-ID":    device.ID,
 		"X-XDrive-Device-Token": secret,
-		"X-Chunk-SHA256": hash,
+		"X-Chunk-SHA256":        hash,
 	}
 	requestWithHeaders(t, router, http.MethodPut, u+"/chunks/0", token,
 		bytes.NewReader([]byte("abc")), http.StatusCreated, chunkHeaders)

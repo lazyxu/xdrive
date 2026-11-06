@@ -188,7 +188,7 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 		}
 	}
 	ordinarySession := meta.UploadSession{
-		ID: "899de10a-62bf-4470-ae8f-a4c62d2a611a",
+		ID:      "899de10a-62bf-4470-ae8f-a4c62d2a611a",
 		OwnerID: owner.ID, ParentID: &ordinary.ID, Name: req.Name, RequestedName: req.Name,
 		Status: meta.UploadStatusActive, ConflictPolicy: meta.UploadConflictPolicyFail,
 		ChunkSize: defaultUploadChunkSize, ChunkCount: 1, ExpiresAt: time.Now().Add(time.Hour),

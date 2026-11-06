@@ -671,13 +671,13 @@ func TestMigrateBackfillsOnlyVerifiedCanonicalPushDeviceID(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]*string{
-		"legacy desktop": ptr(windowsA),
-		"empty desktop": ptr(windowsA),
-		"legacy iphone": ptr(iosID),
-		"wrong platform": nil,
-		"wrong photo platform": nil,
-		"foreign owner": nil,
-		"legacy dsm": nil,
+		"legacy desktop":          ptr(windowsA),
+		"empty desktop":           ptr(windowsA),
+		"legacy iphone":           ptr(iosID),
+		"wrong platform":          nil,
+		"wrong photo platform":    nil,
+		"foreign owner":           nil,
+		"legacy dsm":              nil,
 		"canonical wins conflict": ptr(windowsB),
 	}
 	for _, row := range rows {

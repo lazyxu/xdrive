@@ -41,8 +41,8 @@ func androidPhotoReceiptScopeQuery(q *gorm.DB, c *gin.Context) *gorm.DB {
 			"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = ''",
 			scope.sourceID, scope.sourceRevision, scope.deviceID, scope.targetID)
 	}
-	return q.Where("COALESCE(source_id, 0) = 0 AND COALESCE(source_revision, 0) = 0 "+
-		"AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 "+
+	return q.Where("COALESCE(source_id, 0) = 0 AND COALESCE(source_revision, 0) = 0 " +
+		"AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 " +
 		"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = ''")
 }
 

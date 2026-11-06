@@ -686,8 +686,14 @@ test('shared Yike credential test messages are actionable', () => {
 
 
 test('shared Yike Cookie guide gives the full-header workflow', () => {
-  assert.equal(shared.yikeManagedTargetLabel, '同步文件夹 / 一刻相册 / uid_<百度UID>_<账号名称>')
-  assert.equal(shared.yikeManagedTargetDisplayLabel, '一刻相册 / uid_<百度UID>_<账号名称>')
+  // New Yike Sources own a user-editable leaf under the canonical Pull prefix;
+  // existing UID targets are preserved without retroactive migration.
+  assert.equal(shared.yikeManagedTargetLabel, '同步文件夹 / Pull / Yike Photos / <用户填写的目录名>')
+  assert.equal(shared.yikeManagedTargetDisplayLabel, '同步文件夹/Pull/Yike Photos')
+  assert.equal(shared.externalSourceDisplayTargetPath({
+    kind: 'yike_photos', direction: 'pull',
+    target_path: '/我的文件/同步文件夹/Pull/Yike Photos/Alice',
+  }), '/我的文件/同步文件夹/Pull/Yike Photos/Alice')
   assert.equal(shared.externalSourceDisplayTargetPath({
     kind: 'yike_photos', direction: 'pull',
     target_path: '/我的文件/同步文件夹/一刻相册/uid_123_Alice',
@@ -866,8 +872,8 @@ test('Web and Desktop reuse shared source basic fields', () => {
   assert.equal((desktop.match(/<XDriveSourcePresetField\b/g) || []).length, 1, 'Desktop create should reuse shared Source preset field')
   assert.equal((web.match(/<XDriveSourceNameField\b/g) || []).length, 2, 'Web create/settings should reuse shared Source name field')
   assert.equal((desktop.match(/<XDriveSourceNameField\b/g) || []).length, 2, 'Desktop create/settings should reuse shared Source name field')
-  assert.equal((web.match(/<XDriveSourceRunModeField\b/g) || []).length, 2, 'Web create/settings should reuse shared Source run-mode field')
-  assert.equal((desktop.match(/<XDriveSourceRunModeField\b/g) || []).length, 2, 'Desktop create/settings should reuse shared Source run-mode field')
+  assert.equal((web.match(/<XDriveSourceRunModeField\b/g) || []).length, 3, 'Web DSM Push/generic create and settings reuse one shared Source run-mode field')
+  assert.equal((desktop.match(/<XDriveSourceRunModeField\b/g) || []).length, 3, 'Desktop DSM Push/generic create and settings reuse one shared Source run-mode field')
   assert.equal((web.match(/<XDriveSourceStatusField\b/g) || []).length, 1, 'Web settings should reuse shared Source status field')
   assert.equal((desktop.match(/<XDriveSourceStatusField\b/g) || []).length, 1, 'Desktop settings should reuse shared Source status field')
 
@@ -1012,4 +1018,26 @@ test('Android Photos Sources are visible but cannot be executed by the Server', 
   assert.equal(shared.externalSourceTriggerActionLabel(row), 'Android 端操作')
   assert.equal(shared.externalSourceCardView(row).modeLabel, 'Android Push · 原件备份')
   assert.equal(shared.getExternalSourceState(row).key, 'paused')
+})
+
+test('Android paused native Source preserves real bounded-batch run status', () => {
+  const android = source({ kind: 'android_photos', direction: 'push', status: 'paused' })
+  assert.deepEqual(shared.getExternalSourceState({ source: android }), {
+    key: 'paused', tone: 'neutral', label: '等待 Android 设备开始备份',
+  })
+  assert.deepEqual(shared.getExternalSourceState({
+    source: android, latestRun: { status: 'running' },
+  }), { key: 'running', tone: 'busy', label: 'Android 正在备份' })
+  assert.deepEqual(shared.getExternalSourceState({
+    source: android, latestRun: { status: 'completed' },
+  }), { key: 'ready', tone: 'good', label: '最近一批备份完成' })
+  assert.deepEqual(shared.getExternalSourceState({
+    source: android, latestRun: { status: 'failed' },
+  }), { key: 'error', tone: 'bad', label: '最近一批备份异常' })
+  assert.deepEqual(shared.getExternalSourceState({
+    source: android, latestRun: { status: 'cancelled' },
+  }), { key: 'idle', tone: 'neutral', label: '最近一批已停止' })
+  assert.equal(shared.getExternalSourceTriggerState({
+    source: android, latestRun: { status: 'completed' },
+  }).ready, false, 'Server must not remotely scan Android MediaStore')
 })

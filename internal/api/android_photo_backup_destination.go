@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	errAndroidPhotoDestinationDenied = errors.New("Android photo destination Device/Owner denied")
+	errAndroidPhotoDestinationDenied    = errors.New("Android photo destination Device/Owner denied")
 	errAndroidPhotoDestinationUntrusted = errors.New("Android photo destination Source binding invalid")
 )
 
@@ -143,7 +143,9 @@ func (s *Server) putAndroidPhotoBackupDestination(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
 	dec := json.NewDecoder(c.Request.Body)
 	dec.DisallowUnknownFields()
-	var req struct { Name string `json:"name"` }
+	var req struct {
+		Name string `json:"name"`
+	}
 	if dec.Decode(&req) != nil {
 		fail(c, http.StatusBadRequest, "invalid Android photo destination request")
 		return

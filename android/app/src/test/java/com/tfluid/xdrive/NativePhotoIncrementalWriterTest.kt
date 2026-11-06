@@ -442,9 +442,18 @@ class NativePhotoIncrementalWriterTest {
                 assertEquals(120L, uncertain.destinationTargetNodeId)
                 assertEquals(1, service.managedCalls)
                 assertEquals(0, service.calls)
+                // Source-scoped encrypted intents forbid dropping the target
+                // while retaining the managed Owner identity. Compare to a
+                // separately valid legacy Owner-root intent instead.
+                assertThrows(IllegalArgumentException::class.java) {
+                    uncertain.copy(destinationTargetNodeId = null)
+                }
+                val legacy = uncertain.copy(
+                    owner = uncertain.owner.copy(
+                        managedSourceId = 0L, managedTargetNodeId = 0L),
+                    destinationTargetNodeId = null)
                 assertNotEquals(NativePhotoResumeKey.forIntent(uncertain),
-                    NativePhotoResumeKey.forIntent(
-                        uncertain.copy(destinationTargetNodeId = null)))
+                    NativePhotoResumeKey.forIntent(legacy))
                 assertThrows(IllegalStateException::class.java) {
                     runBlocking {
                         writer.reconcileUncertain(

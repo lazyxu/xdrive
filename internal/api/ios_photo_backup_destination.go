@@ -63,7 +63,7 @@ func iosPhotoDestinationDeviceTx(c *gin.Context, tx *gorm.DB, uid uint64) (meta.
 // from an existing directory name or a device-supplied target_node_id.
 func iosPhotoDestinationBindingTx(tx *gorm.DB, device meta.ClientDevice) (meta.Source, meta.Node, error) {
 	var sources []meta.Source
-	if err := tx.Where("owner_id = ? AND kind = ? AND direction = ? AND device_id = ?", 
+	if err := tx.Where("owner_id = ? AND kind = ? AND direction = ? AND device_id = ?",
 		device.OwnerID, meta.SourceKindIOSPhotos, meta.SourceDirectionPush, device.ID).
 		Order("id ASC").Limit(2).Find(&sources).Error; err != nil {
 		return meta.Source{}, meta.Node{}, err

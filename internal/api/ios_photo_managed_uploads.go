@@ -20,7 +20,7 @@ import (
 const iosPhotoManagedContextKey = "xdriveIOSPhotoManagedUploadScope"
 
 type iosPhotoManagedUploadScope struct {
-	ownerID  uint64
+	ownerID        uint64
 	deviceID       string
 	sourceID       uint64
 	sourceRevision uint64

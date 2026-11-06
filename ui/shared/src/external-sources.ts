@@ -726,12 +726,16 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
   const connector = externalSourceConnectorProfile(source.kind, source.direction)
   if (source.status === 'archived') return { key: 'archived', tone: 'neutral', label: '已归档' }
   if (source.kind === 'android_photos') {
-    if (source.status === 'paused') return { key: 'paused', tone: 'neutral', label: '等待 Android 端配置备份' }
+    // Native MediaStore uploads execute while the Source remains paused to
+    // prohibit Server execution. Never mask a real device-owned SourceRun.
+    // A terminal run proves only one bounded batch, not the whole library.
     if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: 'Android 正在备份' }
-    if (latestRun?.status === 'partial') return { key: 'partial', tone: 'warning', label: '部分项目待处理' }
-    if (latestRun?.status === 'failed' || source.last_error) return { key: 'error', tone: 'bad', label: '最近备份异常' }
-    if (source.last_success_at) return { key: 'ready', tone: 'good', label: '最近一次备份完成' }
-    return { key: 'idle', tone: 'neutral', label: '等待 Android 端备份' }
+    if (latestRun?.status === 'partial') return { key: 'partial', tone: 'warning', label: '最近一批部分完成' }
+    if (latestRun?.status === 'failed' || source.last_error) return { key: 'error', tone: 'bad', label: '最近一批备份异常' }
+    if (latestRun?.status === 'cancelled') return { key: 'idle', tone: 'neutral', label: '最近一批已停止' }
+    if (latestRun?.status === 'completed' || source.last_success_at)
+      return { key: 'ready', tone: 'good', label: '最近一批备份完成' }
+    return { key: 'paused', tone: 'neutral', label: '等待 Android 设备开始备份' }
   }
   if (source.kind === 'ios_photos') {
     if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: 'iPhone 正在备份' }

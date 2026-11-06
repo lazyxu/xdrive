@@ -16,35 +16,41 @@ import (
 
 func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndFlat(t *testing.T) {
 	db, server, owner, foreign, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.SyncRun{}, &meta.UploadSession{}); err != nil {
+	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.SyncRun{}, &meta.UploadSession{}, &meta.LocalSourceBinding{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
 	server.Auth = auth.New("android-photo-device-source-test", time.Hour)
 	router := server.Router()
 	token, err := server.Auth.Issue(owner.ID, owner.SessionVersion)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	foreignToken, err := server.Auth.Issue(foreign.ID, foreign.SessionVersion)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	secret := strings.Repeat("android-source-device-token-", 2)
 	device := meta.ClientDevice{
 		ID: uuid.NewString(), OwnerID: owner.ID, Name: "Pixel 原件",
 		Platform: "android", CredentialHash: deviceCredentialDigest(secret),
 	}
-	if err := db.Create(&device).Error; err != nil { t.Fatal(err) }
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatal(err)
+	}
 	headers := map[string]string{
 		"X-XDrive-Device-ID": device.ID, "X-XDrive-Device-Token": secret,
 	}
 	const endpoint = "/api/v1/android/photos/backup-destination"
 	type response struct {
-		Configured bool `json:"configured"`
-		SourceID uint64 `json:"source_id"`
+		Configured     bool   `json:"configured"`
+		SourceID       uint64 `json:"source_id"`
 		SourceRevision uint64 `json:"source_revision"`
-		DeviceID string `json:"device_id"`
-		Name string `json:"name"`
-		SuggestedName string `json:"suggested_name"`
-		TargetNodeID uint64 `json:"target_node_id"`
-		TargetPath string `json:"target_path"`
+		DeviceID       string `json:"device_id"`
+		Name           string `json:"name"`
+		SuggestedName  string `json:"suggested_name"`
+		TargetNodeID   uint64 `json:"target_node_id"`
+		TargetPath     string `json:"target_path"`
 	}
 	call := func(method, jwt, body string, code int, proof map[string]string) response {
 		t.Helper()
@@ -52,7 +58,9 @@ func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndFlat(t *testing.T) {
 			strings.NewReader(body), code, proof)
 		var out response
 		if code == http.StatusCreated || code == http.StatusOK {
-			if err := json.Unmarshal(got.Body.Bytes(), &out); err != nil { t.Fatal(err) }
+			if err := json.Unmarshal(got.Body.Bytes(), &out); err != nil {
+				t.Fatal(err)
+			}
 			if got.Header().Get("Cache-Control") != "private, no-store" {
 				t.Fatal("Android device Source identity response may not be cached")
 			}
@@ -71,7 +79,9 @@ func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndFlat(t *testing.T) {
 		ID: uuid.NewString(), OwnerID: owner.ID, Name: "Other Pixel",
 		Platform: "android", CredentialHash: deviceCredentialDigest(otherSecret),
 	}
-	if err := db.Create(&otherDevice).Error; err != nil { t.Fatal(err) }
+	if err := db.Create(&otherDevice).Error; err != nil {
+		t.Fatal(err)
+	}
 	otherHeaders := map[string]string{
 		"X-XDrive-Device-ID": otherDevice.ID, "X-XDrive-Device-Token": otherSecret,
 	}
@@ -100,15 +110,16 @@ func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndFlat(t *testing.T) {
 		t.Fatalf("unverified Android Source/Target: %+v", created)
 	}
 	var source meta.Source
-	if err := db.First(&source, created.SourceID).Error; err != nil { t.Fatal(err) }
+	if err := db.First(&source, created.SourceID).Error; err != nil {
+		t.Fatal(err)
+	}
 	boundDeviceID, bound := meta.SourceDeviceID(source)
 	if !bound || boundDeviceID != device.ID || source.Kind != meta.SourceKindAndroidPhotos ||
 		!source.TargetManaged || source.TargetNodeID == nil ||
 		*source.TargetNodeID != created.TargetNodeID || source.Status != meta.SourceStatusPaused {
 		t.Fatalf("Android Source.DeviceID / Target binding invalid: %+v", source)
 	}
-	if second := call(http.MethodGet, token, "", http.StatusOK, otherHeaders);
-		second.Configured || second.DeviceID != otherDevice.ID {
+	if second := call(http.MethodGet, token, "", http.StatusOK, otherHeaders); second.Configured || second.DeviceID != otherDevice.ID {
 		t.Fatalf("another Android Device adopted the first Source: %+v", second)
 	}
 	call(http.MethodPut, token, `{"name":"Pixel 原件"}`, http.StatusConflict, otherHeaders)
@@ -130,14 +141,18 @@ func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndFlat(t *testing.T) {
 	pending := meta.UploadSession{
 		ID: uuid.NewString(), OwnerID: owner.ID, ParentID: &targetID,
 		Name: "original.jpg", RequestedName: "original.jpg",
-		Status: meta.UploadStatusActive,
+		Status:   meta.UploadStatusActive,
 		SourceID: source.ID, SourceRevision: source.Revision,
 		SourceDeviceID: device.ID, SourceTargetID: targetID,
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
-	if err := db.Create(&pending).Error; err != nil { t.Fatal(err) }
+	if err := db.Create(&pending).Error; err != nil {
+		t.Fatal(err)
+	}
 	call(http.MethodPut, token, `{"name":"Android 改名"}`, http.StatusConflict, headers)
-	if err := db.Delete(&pending).Error; err != nil { t.Fatal(err) }
+	if err := db.Delete(&pending).Error; err != nil {
+		t.Fatal(err)
+	}
 	renamed := call(http.MethodPut, token, `{"name":"Android 改名"}`, http.StatusOK, headers)
 	if renamed.SourceID != created.SourceID || renamed.TargetNodeID != created.TargetNodeID ||
 		renamed.SourceRevision != 2 || renamed.TargetPath != "同步文件夹/Push/Android 改名" {

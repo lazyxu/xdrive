@@ -292,13 +292,13 @@ func bindYikeLegacyCreatedTargetTx(ctx context.Context, tx *gorm.DB, source *met
 	}
 	targetID := target.ID
 	updates := map[string]any{
-		"target_node_id": target.ID,
-		"target_managed": true,
+		"target_node_id":      target.ID,
+		"target_managed":      true,
 		"provider_account_id": accountID,
-		"updated_at": time.Now().UTC(),
-		"status": meta.SourceStatusActive,
-		"last_error": "",
-		"revision": gorm.Expr("revision + 1"),
+		"updated_at":          time.Now().UTC(),
+		"status":              meta.SourceStatusActive,
+		"last_error":          "",
+		"revision":            gorm.Expr("revision + 1"),
 	}
 	if err := tx.WithContext(ctx).Model(&meta.Source{}).
 		Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).

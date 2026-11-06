@@ -498,7 +498,9 @@ test('shared SourceManager owns create, settings and connector forms', () => {
   assert.ok(sharedSourceManager.includes('values={createValues}'), 'SourceManager must pass create form state into the create dialog')
   assert.ok(sharedSourceManager.includes('value={values.preset}'), 'shared Source create preset is not bound inside the create dialog')
   assert.equal((sharedSourceManager.match(/<XDriveSourceNameField\b/g) || []).length, 2, 'Source create/settings name fields must stay shared')
-  assert.equal((sharedSourceManager.match(/<XDriveSourceRunModeField\b/g) || []).length, 2, 'Source create/settings run-mode fields must stay shared')
+  // Separate DSM Push and generic connector create branches share the same
+  // field component, plus the settings branch: no duplicate local widgets.
+  assert.equal((sharedSourceManager.match(/<XDriveSourceRunModeField\b/g) || []).length, 3, 'DSM Push/generic create and settings run-mode fields must stay shared')
   assert.equal((sharedSourceManager.match(/<XDriveSourceStatusField\b/g) || []).length, 1, 'Source settings status field must stay shared')
   assert.equal((sharedSourceManager.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'Source create/settings schedule fields must stay shared')
   assert.equal((sharedSourceManager.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length, 2, 'Source create/settings ignore-rules fields must stay shared')
@@ -570,10 +572,12 @@ test('shared SourceManager preserves Yike and Synology connector safety UX', () 
   assert.ok(sharedSourceManager.includes('XDriveYikeCookieHelp'), 'shared Yike Cookie guide is missing')
   assert.ok(sharedSourceManager.includes('yikeConnectorNotice'), 'Yike private-API notice is missing')
   assert.ok(sharedSourceManager.includes('yikeRateLimitNotice'), 'Yike rate-limit notice is missing')
-  assert.ok(sharedSourceManager.includes('yikeManagedTargetDisplayLabel'), 'Yike managed target display label is missing')
+  assert.ok(sharedSourceManager.includes('externalSourceDisplayTargetPath(setting.source)'), 'Yike managed target must display the actual Server path')
   assert.ok(sharedSourceManager.includes('存储子目录'), 'Yike managed target explanation is missing')
-  assert.ok(sharedSourceManager.includes('已自动撤销'), 'Source create rollback feedback is missing')
-  assert.ok(sharedSourceManager.includes('自动回滚也失败'), 'Source rollback failure fallback is missing')
+  // Source + reserved target are committed atomically: a later credential
+  // failure must not claim the name was automatically revoked or recycled.
+  assert.ok(sharedSourceManager.includes('未自动删除或归档'), 'Source create failure must preserve the managed leaf')
+  assert.ok(sharedSourceManager.includes('目标目录及名称已保留'), 'Source create failure must state the reserved target persists')
   assert.ok(sharedSourceManager.includes('label="一刻相册 Cookie"'), 'single Yike Cookie field is missing')
   assert.ok(sharedSourceManager.includes('revealedValue={credentialReveal?.field ==='), 'audited Yike Cookie reveal is missing')
   assert.ok(sharedSourceManager.includes('onHide={onHideCredential}'), 'revealed Cookie must be concealed on demand')

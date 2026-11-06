@@ -89,7 +89,8 @@ test('server binds iOS SourceRun writes to the registered device and managed Sou
   assert.match(executor, /iosPhotoDestinationBindingTx/);
   assert.match(executor, /requireIOSPhotoSourceRunProofTx/);
   assert.match(localAuth, /meta\.SourceKindIOSPhotos/);
-  assert.match(runs, /source\.Kind != meta\.SourceKindIOSPhotos/);
-  assert.match(runs, /source\.Kind == meta\.SourceKindIOSPhotos/);
+  assert.match(runs, /!nativePhotoSourceRunKind\(source\.Kind\)/)
+  assert.match(read('internal/api/android_photo_source_executor.go'), /func nativePhotoSourceRunKind\(/);
+  assert.match(runs, /nativePhotoSourceRunKind\(source\.Kind\)/);
   assert.match(runs, /last_success_at/);
 });

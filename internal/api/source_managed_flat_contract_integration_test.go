@@ -299,9 +299,9 @@ func TestManagedTargetRenameRejectsInFlightUploadAndRun(t *testing.T) {
 		DeviceID: uuid.NewString(), RootID: uuid.NewString(),
 		RootFingerprint: strings.Repeat("b", 64), SourceID: local.ID,
 		SourceRevision: 1, SourceTargetID: targetID,
-		ResumeKey: "lp2_" + strings.Repeat("c", 64),
+		ResumeKey:     "lp2_" + strings.Repeat("c", 64),
 		ContentSHA256: strings.Repeat("a", 64),
-		TotalSize: 1, State: meta.LocalPushCommonUploadReserved,
+		TotalSize:     1, State: meta.LocalPushCommonUploadReserved,
 	}
 	if err := db.Create(&op).Error; err != nil {
 		t.Fatal(err)
