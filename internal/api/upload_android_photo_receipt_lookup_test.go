@@ -188,8 +188,16 @@ func TestAndroidResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testi
 	if err := db.Model(&meta.UploadSession{}).Count(&stillOne).Error; err != nil {
 		t.Fatal(err)
 	}
-	if stillOne != 1 {
-		t.Fatal("read-only finalized lookup created another upload")
+	if stillOne != before {
+		t.Fatalf("read-only finalized lookup changed UploadSession count: before=%d after=%d", before, stillOne)
+	}
+	// The second, Source-owned session remains deliberately out of scope.
+	// A read-only Owner-root receipt may not consume or adopt that row.
+	var retainedSourceBound meta.UploadSession
+	if err := db.Where("id = ? AND source_id = ? AND source_device_id = ?",
+		sourceBound.ID, sourceBound.SourceID, sourceBound.SourceDeviceID).
+		Take(&retainedSourceBound).Error; err != nil {
+		t.Fatalf("read-only Owner-root receipt mutated Source-owned session: %v", err)
 	}
 
 	if err := db.Model(&meta.UploadSession{}).Where("id = ?", stored.ID).

@@ -50,7 +50,9 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 	targetID := root.ID
 	makeBound := func(name string) meta.Source {
 		t.Helper()
-		source := meta.Source{OwnerID: owner.ID, Name: name, Kind: meta.SourceKindLocalFolder, Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused, Revision: 1, TargetNodeID: &targetID}
+		// S01 requires the canonical Source.DeviceID; a legacy binding alone
+		// must never authorize PATCH, private rules, or target mutation.
+		source := meta.Source{OwnerID: owner.ID, Name: name, Kind: meta.SourceKindLocalFolder, Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused, Revision: 1, DeviceID: &deviceA.ID, TargetNodeID: &targetID}
 		if err := db.Create(&source).Error; err != nil {
 			t.Fatal(err)
 		}

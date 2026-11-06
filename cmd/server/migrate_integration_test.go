@@ -250,8 +250,17 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		Status: meta.SourceStatusActive, Revision: 1,
 	}
-	if err := db.Create(&duplicateName).Error; err == nil {
-		t.Fatal("case-insensitive duplicate source name was accepted")
+	// Push and Pull have separate Owner-scoped name namespaces. The
+	// independent Pull source may use the same spelling, but two Push
+	// sources cannot, even across different connector kinds or case.
+	if err := db.Create(&duplicateName).Error; err != nil {
+		t.Fatalf("same Owner name in separate Pull namespace was rejected: %v", err)
+	}
+	duplicatePush := duplicateName
+	duplicatePush.ID = 0
+	duplicatePush.Direction = meta.SourceDirectionPush
+	if err := db.Create(&duplicatePush).Error; err == nil {
+		t.Fatal("case-insensitive duplicate Push source name was accepted")
 	}
 
 	now := time.Now().UTC()

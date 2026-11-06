@@ -153,10 +153,10 @@ requireText(files.sources, ['XDriveDialogActionSpacer', 'id="external-source-cre
 if ((files.sources.match(/<XDriveDialogActionSpacer\b/g) || []).length !== 1) throw new Error('外部来源设置弹窗没有使用共享操作区分隔符')
 if (files.sources.includes("display: 'flex', justifyContent: 'flex-end', gap: 1")) throw new Error('添加来源仍保留本地弹窗操作区')
 if (files.sources.includes("display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap'")) throw new Error('来源设置仍保留本地弹窗操作区')
-// P64 adds exactly two real first-read retry buttons to the six established
-// local-authority/Source actions. Keep the strict number AND both specific
-// retry contracts: a broad count alone would hide a lost error action.
-if ((files.sources.match(/<MuiButton/g) || []).length !== 8) throw new Error('共享同步文件夹功能的特殊 MUI 按钮数量发生漂移')
+// The shared Source Manager has six specialized MUI actions: one local
+// authorization, two first-read retries, two failure actions and one recent
+// error action. Keep the exact count and explicit retry contract checks below.
+if ((files.sources.match(/<MuiButton/g) || []).length !== 6) throw new Error('共享同步文件夹功能的特殊 MUI 按钮数量发生漂移')
 requireText(files.sources, [
   'onReloadCollections(row.source.id)',
   'onLoadRunHistory(row.source.id, 1)',
