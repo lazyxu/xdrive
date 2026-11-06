@@ -102,7 +102,7 @@ enum XDriveIOSLiveOriginalArchive {
         guard manifest.count <= 65_535 else {
             throw XDriveIOSLiveArchiveFailure.archiveFailed
         }
-        content.append(Entry(path: "manifest.json", size: UInt32(manifest.count),
+        content.append(Entry(path: "manifest.json", size: UInt64(manifest.count),
                              checksum: crc32(manifest), source: nil, memory: manifest))
         var attributes: [FileAttributeKey: Any] = [
             .posixPermissions: NSNumber(value: 0o600)
