@@ -1,0 +1,38 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const read = p => fs.readFileSync(path.join(root,p),'utf8')
+
+test('local failure reasons are durable, revision-fenced and never arbitrary server error text', () => {
+  const store = read('ios/XDriveIOS/PhotoBackupChangeQueueStore.swift')
+  const testSwift = read('ios/tests/PhotoBackupChangeQueueStoreChecks.swift')
+  assert.match(store, /CREATE TABLE IF NOT EXISTS failure_reasons/)
+  assert.match(store, /reasonCode: String\? = nil/)
+  assert.match(store, /Self\.allowedFailureCodes\.contains\(reasonCode\)/)
+  assert.match(store, /INSERT INTO failure_reasons\(asset_id,revision,reason\)/)
+  assert.match(store, /e\.asset_id=r\.asset_id AND e\.revision=r\.revision/)
+  assert.match(store, /WHERE e\.state='failed' GROUP BY r\.reason/)
+  assert.match(testSwift, /failure-reasons\.sqlite3/)
+  assert.match(testSwift, /stale baseline retried failure/)
+  assert.match(testSwift, /http-403-secret-body/)
+})
+
+test('iOS Owner scope and current PhotoKit baseline fence all failure summaries', () => {
+  const queue = read('ios/XDriveIOS/PhotoKitPersistentBackupQueue.swift')
+  const runner = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const model = read('ios/XDriveIOS/NativePhotoQueueSummaryModel.swift')
+  const section = read('ios/XDriveIOS/PhotoQueueSummarySection.swift')
+  const getter = queue.slice(queue.indexOf('func failureReasonCounts(owner:'),
+                             queue.indexOf('/// Metadata-only, 64-item read'))
+  assert.match(getter, /verifyOwner\(owner\)/)
+  assert.match(getter, /XDriveIOSPhotoKitLibraryEpoch\.matches\(baseline\.token, as: epoch\.token\)/)
+  assert.match(getter, /verifyAuthorization\(stillMatches: epoch\)/)
+  assert.match(runner, /reasonCode: waitingForICloud[\s\S]*?Self\.issueReason\(after: error\)\.rawValue/)
+  assert.match(runner, /reasonCode: XDriveIOSPhotoBackupIssueReason\.unsupported\.rawValue/)
+  assert.match(model, /failedReasonCounts: \[String: Int\]/)
+  assert.match(section, /native-ios-photo-change-queue-failure-reasons/)
+  assert.doesNotMatch(getter, /URLSession|uploadPreparedOriginal|Server\.shared/)
+})

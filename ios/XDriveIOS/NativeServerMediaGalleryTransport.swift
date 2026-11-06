@@ -18,6 +18,8 @@ struct XDriveIOSNativeMediaItem: Decodable, Identifiable {
         let media_kind: String
         let has_thumbnail: Bool
         let container_kind: String?
+        let captured_at: String?
+        let thumbnail_version: String?
     }
     struct Resource: Decodable, Equatable {
         let kind: String
@@ -29,6 +31,7 @@ struct XDriveIOSNativeMediaItem: Decodable, Identifiable {
     }
     let node: Node
     let metadata: Metadata
+    let asset_id: UInt64?
     let asset_kind: String?
     let live_photo: Bool?
     let resources: [Resource]?
@@ -73,6 +76,8 @@ extension XDriveIOSNativeMediaItem {
         metadata.media_kind == rhs.metadata.media_kind &&
         metadata.has_thumbnail == rhs.metadata.has_thumbnail &&
         metadata.container_kind == rhs.metadata.container_kind &&
+        asset_id == rhs.asset_id &&
+        metadata.thumbnail_version == rhs.metadata.thumbnail_version &&
         asset_kind == rhs.asset_kind &&
         live_photo == rhs.live_photo &&
         resources == rhs.resources
@@ -115,7 +120,7 @@ enum XDriveIOSNativeMediaStillPreviewFallback: Error {
 }
 
 /// Never follow an authenticated Owner request to another origin.
-private final class XDriveIOSNativeMediaRejectRedirect: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeMediaRejectRedirect: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
@@ -165,7 +170,7 @@ struct XDriveIOSNativeMediaGalleryReader {
     }
 
     private func read(_ url: URL, method: String = "GET",
-                      bearer: Bool = true, maximum: Int) async throws -> Data {
+                      bearer: Bool = true, maximum: Int, body: Data? = nil) async throws -> Data {
         let client = session()
         defer { client.invalidateAndCancel() }
         var request = URLRequest(url: url)
@@ -173,6 +178,10 @@ struct XDriveIOSNativeMediaGalleryReader {
         request.httpShouldHandleCookies = false
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         if bearer {
             request.setValue("Bearer " + accessToken, forHTTPHeaderField: "Authorization")
         }
@@ -306,7 +315,65 @@ struct XDriveIOSNativeMediaGalleryReader {
         return albums
     }
 
+    func exactMatches(_ probes: [XDriveIOSNativeExactPhotoProbe]) async throws -> [XDriveIOSNativeExactPhotoMatch] {
+        guard !probes.isEmpty, probes.count <= 8 else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        let url = try endpoint("/api/v1/media/exact-match")
+        let request = try JSONEncoder().encode(["probes": probes])
+        let bytes = try await read(url, method: "POST", maximum: 8192, body: request)
+        let reply = try JSONDecoder().decode(XDriveIOSNativeExactPhotoReply.self, from: bytes)
+        guard reply.matches.count == probes.count, reply.matches.allSatisfy(\.isValid) else {
+            throw XDriveIOSNativeMediaReadFailure.invalidPage
+        }
+        return reply.matches
+    }
+
+    func exactFingerprints(_ refs: [XDriveIOSNativeExactPhotoReference]) async throws -> [XDriveIOSNativeExactPhotoProbe?] {
+        guard !refs.isEmpty, refs.count <= 8 else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        let url = try endpoint("/api/v1/media/exact-match")
+        let body = try JSONEncoder().encode(["references": refs])
+        let bytes = try await read(url, method: "POST", maximum: 8192, body: body)
+        let reply = try JSONDecoder().decode(XDriveIOSNativeExactPhotoFingerprints.self, from: bytes)
+        guard reply.fingerprints.count == refs.count,
+              reply.fingerprints.allSatisfy({ $0 == nil || $0?.fingerprint != nil }) else {
+            throw XDriveIOSNativeMediaReadFailure.invalidPage
+        }
+        return reply.fingerprints
+    }
+
+    func matchedMedia(_ match: XDriveIOSNativeExactPhotoMatch) async throws -> XDriveIOSNativeMediaItem {
+        guard match.state == .matched, let id = match.node_id else {
+            throw XDriveIOSNativeMediaReadFailure.invalidPage
+        }
+        let bytes = try await read(try endpoint("/api/v1/media/items/\(id)"), maximum: 262_144)
+        let item = try JSONDecoder().decode(XDriveIOSNativeMediaItem.self, from: bytes)
+        guard item.id == id, item.asset_id == match.asset_id, item.node.revision == match.revision,
+              item.supportsPreview else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        return item
+    }
+
     func thumbnail(_ item: XDriveIOSNativeMediaItem) async throws -> UIImage {
+        guard let version = item.metadata.thumbnail_version, version.utf8.count <= 32,
+              !version.isEmpty else { return try await downloadThumbnail(item) }
+        let cache = XDriveIOSNativePhotoThumbnailCache.shared
+        let scope = XDriveIOSNativePhotoThumbnailCache.scope(for: owner)
+        let key = XDriveIOSNativePhotoThumbnailCache.key(
+            nodeID: item.id, revision: item.node.revision, thumbnailVersion: version
+        )
+        let ticket = await cache.writeRevision()
+        if let bytes = try? await cache.load(scope: scope, key: key),
+           let image = UIImage(data: bytes) {
+            try Task.checkCancellation()
+            return image
+        }
+        let image = try await downloadThumbnail(item)
+        try Task.checkCancellation()
+        if let jpeg = image.jpegData(compressionQuality: 0.78) {
+            try? await cache.save(jpeg, scope: scope, key: key, expectedRevision: ticket)
+        }
+        return image
+    }
+
+    private func downloadThumbnail(_ item: XDriveIOSNativeMediaItem) async throws -> UIImage {
         guard item.id > 0, item.node.revision > 0, item.supportsPreview else {
             throw XDriveIOSNativeMediaReadFailure.unsupported
         }
@@ -610,7 +677,8 @@ extension XDriveIOSNativeMediaGalleryReader {
               item.metadata.media_kind == "image", item.node.size > 0
         else { throw XDriveIOSNativeMediaReadFailure.unsupported }
         if item.metadata.container_kind?.lowercased() == "livp" &&
-            item.node.name.lowercased().hasSuffix(".livp") {
+            (item.node.name.lowercased().hasSuffix(".livp") ||
+             item.node.name.range(of: "^Live-xios-[a-f0-9]{24}-[a-f0-9]{12}\\.zip$", options: [.regularExpression, .caseInsensitive]) != nil) {
             guard UInt64(item.node.size) <= XDriveIOSLivePreviewArchive.maximumArchiveBytes
             else { throw XDriveIOSNativeMediaReadFailure.tooLarge }
             return .container

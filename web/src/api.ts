@@ -5127,6 +5127,58 @@ export class XDriveApi {
       owned?.release()
     }
   }
+
+  // The Browser Clipboard is Owner-private and E2EE: these endpoints receive
+  // encrypted data only, through the same revocable Owner bearer transport.
+  clipboardVault(signal?: AbortSignal) {
+    return this.request<{ salt: string; iterations: number; kdf: string;
+      check_nonce: string; check_ciphertext: string; aad_scope: string }>(
+      '/api/v1/clipboard/vault', { cache: 'no-store', signal },
+    )
+  }
+
+  clipboardInitializeCheck(check: { nonce: string; ciphertext: string; scope: string }, signal?: AbortSignal) {
+    return this.request<{ salt: string; iterations: number; kdf: string;
+      check_nonce: string; check_ciphertext: string; aad_scope: string }>(
+      '/api/v1/clipboard/vault/check', {
+        method: 'PUT', body: JSON.stringify(check), cache: 'no-store', signal,
+      },
+    )
+  }
+
+  clipboardItems(before?: number, signal?: AbortSignal) {
+    const query = before ? '?before=' + encodeURIComponent(String(before)) : ''
+    return this.request<{
+      items: import('../../ui/shared/src/mui/ClipboardPage').XDriveClipboardItem[]
+      next_before: number | null
+    }>('/api/v1/clipboard/items' + query, { cache: 'no-store', signal })
+  }
+
+  clipboardCreate(item: {
+    client_event_id: string
+    kind: import('../../ui/shared/src/clipboard-crypto').XDriveClipboardKind
+    nonce: string
+    ciphertext: string
+  }, signal?: AbortSignal) {
+    return this.request<import('../../ui/shared/src/mui/ClipboardPage').XDriveClipboardItem>(
+      '/api/v1/clipboard/items', {
+        method: 'POST', body: JSON.stringify(item), cache: 'no-store', signal,
+      },
+    )
+  }
+
+  clipboardRemove(id: number, signal?: AbortSignal) {
+    return this.request<void>('/api/v1/clipboard/items/' + encodeURIComponent(String(id)), {
+      method: 'DELETE', cache: 'no-store', signal,
+    })
+  }
+
+  clipboardClear(signal?: AbortSignal) {
+    return this.request<void>('/api/v1/clipboard/items', {
+      method: 'DELETE', cache: 'no-store', signal,
+    })
+  }
+
 }
 
 type UploadHashScratch = { buffer: ArrayBuffer | null; byob: boolean }

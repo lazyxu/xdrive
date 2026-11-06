@@ -31,3 +31,48 @@ feat/dsm-device-backup-management-parity	12315b55f8daf48f6890fb9dee435aba1eb20c8
 # Verified S01/S09 duplicate aliases, 2026-11-06: exact unchanged tip is an ancestor of open PR #3927 head f8b380e904c41a8f5728ea45fc5b76f401bfbbb5. The canonical development PR is retained until validated and merged.
 feat/push-deviceid-upload-auth-audit-20261106	d02011e3a61c2912a2644f78cb9aa9cbba252889	duplicate exact SHA; ancestor of active S01/S09 integration PR #3927; no open PR head/base uses this alias
 feat/push-s01-s09-unified-device-upload-auth-20261106	d02011e3a61c2912a2644f78cb9aa9cbba252889	duplicate exact SHA; ancestor of active S01/S09 integration PR #3927; no open PR head/base uses this alias
+
+# Reviewed oldest no-PR branches by immutable 2026-10-29/30 tips (2026-11-06 audit).
+feat/ios-bg-ledger-after-first-unlock-20261029	32ad58987a4fa2b6b3889abc38f5c573e43ba03d	obsolete proof-only BG/legacy WebKit prototype: current master retains Owner-Device scoped Keychain grant, Source/Target bound native BG UploadSession+CAS, stronger tests; three old WebKit/PWA entry files intentionally retired by AGENTS native-only decision; do not merge old auth writer
+refactor/files-shared-location-ancestors-20261030	81448e43567d9949e14fdb7d514b8f411a3d9571	exact source tip proven ancestor of accepted merged PR #3246 head 7496e170f72411f79b05c2a9043142dbbd89d118 (compare ahead 34 behind 0); current master retains location/reveal code and tests; never re-merge stale UI
+
+feat/notes-desktop-shared-page-port-20261103	b9f89a9081be6ae5949d2eecdc6cb2dd28d214bb	obsolete Owner-scoped Notes Electron bridge precursor: four of six changed blobs byte-identical to merged #3726 exact HEAD bec77c034e2ee6742104585850280ac354e151a3; remaining Agent client and Notes port replaced by stronger authenticated Owner/revision/bounded adapter in #3726 and current master; no unique runtime feature
+
+feat/admin-offline-update-upload-20261103	c45100b04016edf8d0ea6e38e232ead67b203b33	obsolete raw PUT /update/imports candidate replaced by accepted #3765 and current master POST /update/offline/imports registration plus per-chunk SHA/manifest/finalize, os.Root containment and fixed admission; old UpdateImportsDir and unsafe raw append route deliberately not restored
+
+# Verified map aliases / explicitly declined legacy map path; 2026-11-06.
+dev/ios-map-3936-rebase-source-20261106	4d331a28ae83505ac1ec9b10b690e8ce57abd354	duplicate exact head of active native MapKit PR #3936; canonical source branch remains open and protected
+feat/ios-photo-map-limited-access-20261105	34bd62e70e5c64b0baecc455e739c5871b9eda71	rejected obsolete Limited PhotoKit map path; Full Access-only map design accepted in merged PR #3911 and #3922
+
+# Reviewed 2026-11-06 no-PR branch audit: exact immutable tips only; old source is not reintroduced to master.
+dev/ios-map-filter-parity-rebased-20261106	7df8df90f86e4d09257ae7bfdd7a044b9cc80a58	exact tip ancestor of active #3945 head (ahead 10 behind 0); retain open PR head/base and canonical map implementation
+fix/ios-files-trash-sort-contract-20261104	963c455b49c70a358070ca602df9472a821ba365	merged #3881 and later master contain identical three Swift UI-policy-test blobs; remaining differences are superseded source-regex fixture and outdated gap wording
+fix/web-mobile-empty-dynamic-map-fallback-20261102	b6c3f7268731c40c354a8040f6f38227580f09e0	current master retains same empty-recent Gallery Places route and host wiring across all five touched paths; old branch lacks newer launcher and UI improvements
+feat/notes-dsm-owner-agent-port-20261103	fec10acc70faabf51feb25f29563dff7e72d0682	current master has the same nine Owner Notes operations via stronger capability and receipt validation plus expanded tests; supersedes obsolete DSM IPC prototype
+
+# 2026-11-06 exact-SHA follow-up: retired historical development alias tips; protect live PR #3945.
+dev/ios-map-3936-exact-ci-rebase-20261106	042b67e062a8f89a011112b0ef29cf0d15f8a642	exact head alias of merged PR #3936 (merged 2026-11-06); canonical native MapKit code retained by master; no open PR head/base uses this alias
+dev/ios-map-3945-master-20261106	1d16c7a986612ca72584e4684cc4bc0547b9f789	exact source tip strict ancestor of active #3945 head fd8ef96567b013415eb06c5b52539401df9db8db (compare ahead 1 behind 0); preserve current PR head/base
+
+# Exact-tip 2026-11-06 follow-up to oldest branch audit; dependent on PR #3979, no app code introduced.
+fix/files-owner-read-admission-consolidated-20261030	0ed94690a3e9eaea0aa415ef92c0c1deef3dee5a	accepted merged #3244 explicitly identifies source merge SHA and transplanted its unique Owner root/quota and Search Source validation to green current-master PR; old 38-file branch contains stale pre-transplant UI, all unique functionality retained in accepted code
+feat/notes-desktop-agent-host-20261103	fd89bec3267abfd124b0f571679628bff750e09a	old Notes all-in-one Agent+Desktop+Web prototype was replaced by accepted merged #3724 Go client, #3725 bounded loopback Agent IPC, #3726 guarded Electron and shared Markdown UI; old DesktopNotesPort retired for more strictly Owner-scoped desktopNotesDataPort; no legacy duplicate Notes API
+feat/desktop-offline-update-agent-20261103	502f413e130b5d2a21254e1cddf8d2d1e10f92e2	old server-offline-update capability and raw IPC duplicate explicitly closed unmerged #3791 after complete same-task server-offline-import transport was accepted via merged #3765; later signed-first #3811 validated; preserve only canonical Host transport
+feat/notes-desktop-manual-import-20261104	e1c54810b966695f1aedb0298bbafbc9475482b7	obsolete combined Desktop and DSM Notes manual Markdown/image import prototype: canonical signed Owner-bounded Desktop #3884 and DSM #3886 merged; latest master includes the exact Agent, Go, DSM CGI and shared Notes data ports plus tests; old branch should not overwrite their stricter one-shot/CSRF/image receipt gates
+
+# Audited 2026-11-05 obsolete preflight and iCloud map prototype refs; exact immutable tips only.
+feat/admin-offline-host-preflight-20261105	a4f30d3e81b8bad713d6593ddce0a78d9c2b4904	merged #3896 accepted read-only Host preflight with trusted Admin/Host/Agent/Web transport; current master retains same plan API and all preflight tests with additional runner PID capability, admission and status hardening; do not revert to old Host controller prototype
+fix/ios-photo-map-icloud-covers-20261105	35a35dbd91d9412746c91a2393583f1f8cc7c84e	stale two-file bounded iCloud PhotoKit cover prototype replaced by accepted #3911 and current stronger native Full Access-only map; verified current map retains PHImageManager 128x128 network-enabled bounded rendition, loading placeholder, reused marker cancellation and stale callback fence
+fix/ios-photo-map-icloud-covers-20261105-r1	1769a4678c28797d8af0a863ee8446c5d32ae8d0	stale four-file iCloud map annotation and refinement tests superseded by accepted #3911/#3936 MapKit and current tests; current native code retains same 128x128 network-enabled request, cancellation and placeholder, with stronger Owner/viewport safety
+
+# 2026-11-05 exact-tip iOS background SourceRun and local queue supersession evidence.
+feat/ios-photo-bg-source-run-history-20261105	39212747e5c9578597c1233ce26dd03593629663	old combined foreground/BG SourceRun implementation accepted as narrower authoritative #3918 and merged #3915 Source Manager; current master includes background grant SourceRun, strict Owner Device Source Target transaction tests, same source_runs.go exact blob and stronger guarded Reporter
+feat/ios-photo-local-queue-counts-20261106	7e6cbed7321991fe5c1b8d7b4d3620efda463083	legacy Owner-local PhotoKit SQLite count UI from closed #3924 consolidated and expanded by accepted #3928 durable only-new queue; current tip exactly one post-#3924 test fixture revision, no independent runtime behavior; retain current Owner fenced aggregate count and queue consumer
+
+# Reviewed 2026-11-05/06 iOS durable queue and history-recovery source tips.
+feat/ios-bg-photo-change-queue-20261106	3986aaa2132e93403328ac4d5d9305b9562ba215	obsolete composite iOS BG PhotoKit only-new change queue source superseded by merged #3928 durable owner-scoped queue plus #3929 4-original BG replay and receipt-fenced settlement; current master retains same protected CAS writer, due/cursor and PAUSE rules and stronger subsequent recovery checks
+feat/ios-photo-history-recovery-r1-20261106	c9fe9237e0634356fcad95ea41d32ad3e909680f	stale persistent-history recovery development source superseded by merged #3934 full-library reconciliation explicit consent and durable Owner-bound pause; current master retains historyUnavailable token handling and 256-slot/unknown-ACK fail-closed recovery with more recent tests
+dev/ios-map-filter-3945-parent-20261106	aa6215cef30febc89cc6a34e5fb7e703ee90266f	obsolete pre-rebase native MapKit filter/sheet parent branch: merged #3936 and #3945 preserve its scope-filter behavior, typed PhotoKit filter matrix and map tests; 5 of 12 affected file blobs byte-identical to current master and other 7 have advanced. Do not replay stale backup permission guard or old MapKit source over accepted #3945
+
+# Reconciled accepted #3971 exact-SHA MapKit alias row from canonical master; retain on follow-up merge.
+dev/ios-map-3955-master-20261106	1e58aad412b1be6773d9822eb80cc967a239b8ef	all six changed Git blobs equal merged PR #3955 exact tested head c7528147b96bebd102c501af734808472aee8c14; no unique code; retain immutable source in Git history

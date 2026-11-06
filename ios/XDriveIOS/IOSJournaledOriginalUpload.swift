@@ -75,7 +75,10 @@ struct XDriveIOSJournaledOriginalUpload {
             throw XDrivePhotoSyncLedgerError.invalidTransition
         }
 
-        let transport = try authorization.transport(origin: canonicalOrigin)
+        let onlyWiFi = try await XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: owner)
+        let transport = try authorization.transport(
+            origin: canonicalOrigin, allowsCellularAccess: !onlyWiFi
+        )
         let operationID = current.id
         let hooks = XDriveNativeUploadCheckpointHooks(
             beforeCreate: {

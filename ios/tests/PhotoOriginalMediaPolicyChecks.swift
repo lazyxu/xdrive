@@ -8,13 +8,13 @@ struct XDriveIOSOriginalBackupMediaPolicyChecks {
         precondition(!XDriveIOSOriginalBackupMediaPolicy.eligible(kind: "image", isLive: true))
         precondition(!XDriveIOSOriginalBackupMediaPolicy.eligible(kind: "live", isLive: true))
         precondition(!XDriveIOSOriginalBackupMediaPolicy.eligible(kind: "unknown", isLive: false))
-        precondition(XDriveIOSOriginalBackupMediaPolicy.maxBytes(kind: "image") == 128 * 1_048_576)
-        precondition(XDriveIOSOriginalBackupMediaPolicy.maxBytes(kind: "video") == 4_294_967_296)
-        precondition(XDriveIOSOriginalBackupMediaPolicy.videoLimit == 4_294_967_296)
-        precondition(XDriveIOSOriginalBackupMediaPolicy.backgroundVideoLimit == 1_073_741_824)
-        precondition(XDriveIOSOriginalBackupMediaPolicy.videoLimit >
+        precondition(XDriveIOSOriginalBackupMediaPolicy.maxBytes(kind: "image") == Int64.max)
+        precondition(XDriveIOSOriginalBackupMediaPolicy.maxBytes(kind: "video") == Int64.max)
+        precondition(XDriveIOSOriginalBackupMediaPolicy.videoLimit == Int64.max)
+        precondition(XDriveIOSOriginalBackupMediaPolicy.backgroundVideoLimit == Int64.max)
+        precondition(XDriveIOSOriginalBackupMediaPolicy.videoLimit ==
                      XDriveIOSOriginalBackupMediaPolicy.backgroundVideoLimit)
         precondition(XDriveIOSOriginalBackupMediaPolicy.maxBytes(kind: "live") == nil)
-        print("iOS original still/video bounded media policy: PASS")
+        print("iOS original still/video unbounded media policy: PASS")
     }
 }

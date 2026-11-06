@@ -28,6 +28,25 @@ struct PhotoBackupScanWindowChecks {
             precondition(represented == total, "Skipped assets in \(total)")
         }
 
+        // Synthetic 10k/100k/115k libraries: the production window API
+        // must partition every slot once using constant additional memory.
+        for total in [10_000, 100_000, 115_000] {
+            let windows = XDrivePhotoBackupScanWindow.count(visibleTotal: total)
+            var nextOffset = 0
+            for index in 0..<windows {
+                guard let offset = XDrivePhotoBackupScanWindow.offset(for: index),
+                      offset == nextOffset else {
+                    preconditionFailure("Skipped or duplicated 256-slot window")
+                }
+                let capacity = XDrivePhotoBackupScanWindow.capacity(
+                    visibleTotal: total, offset: offset
+                )
+                precondition(capacity > 0 && capacity <= XDrivePhotoBackupScanWindow.maxItems)
+                nextOffset += capacity
+            }
+            precondition(nextOffset == total)
+        }
+
         precondition(XDrivePhotoBackupScanWindow.offset(for: -1) == nil)
         precondition(XDrivePhotoBackupScanWindow.offset(for: Int.max) == nil)
         precondition(XDrivePhotoBackupScanWindow.capacity(visibleTotal: 300, offset: -1) == 0)

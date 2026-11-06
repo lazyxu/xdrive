@@ -27,7 +27,8 @@ test('Main establishes an ephemeral HTTPS Cookie session before attaching map gu
   const main=read('desktop/src/main/index.cts')
   const web=read('web/src/App.tsx')
   const preload=read('desktop/src/preload/places_embed.cts')
-  assert.match(main,/const desktopPlacesWebPartition = 'xdrive-places-web'/)
+  assert.match(main,/let desktopPlacesWebPartition = 'xdrive-places-web-' \+ randomUUID\(\)/)
+  assert.match(main,/desktopPlacesWebPartition = 'xdrive-places-web-' \+ randomUUID\(\)/)
   assert.match(main,/session\.fromPartition\(desktopPlacesWebPartition,\s*\{cache:false\}\)/)
   assert.match(main,/places\.fetch\(identity\.origin \+ '\/api\/v1\/auth\/browser\/login'/)
   assert.match(main,/credentials: 'include'/)
@@ -47,7 +48,8 @@ test('Main establishes an ephemeral HTTPS Cookie session before attaching map gu
 
 test('Guest sessions are revoked on Desktop Owner/server change and never persisted',()=>{
   const main=read('desktop/src/main/index.cts')
-  assert.match(main,/function closeDesktopPlacesGuests\(\) \{\s*resetDesktopPlacesWebAuth\(\)/)
+  // Revoke pending attach generations before retiring the HTTP Cookie jar.
+  assert.match(main,/function closeDesktopPlacesGuests\(\) \{\s*\+\+desktopPlacesPrepareRevision\s*resetDesktopPlacesWebAuth\(\)/)
   assert.match(main,/desktopPlacesWebGeneration/)
   assert.match(main,/desktopPlacesWebQueue/)
   assert.match(main,/clearStorageData\(\{\s*storages: \['cookies', 'localstorage'\]/)

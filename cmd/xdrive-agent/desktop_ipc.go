@@ -592,6 +592,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/auth/login", h.login)
 	mux.HandleFunc("POST /v1/auth/logout", h.logout)
 	mux.HandleFunc("POST /v1/auth/change-password", h.changePassword)
+	// Only authenticated native Agent/Desktop IPC can obtain a short-lived
+	// one-purpose map grant; it is never exposed by the Renderer preload.
+	mux.HandleFunc("POST /v1/cloud/desktop-map-grant", h.issueDesktopMapGuestGrant)
 	mux.HandleFunc("POST /v1/sync/pause", h.pause)
 	mux.HandleFunc("POST /v1/sync/resume", h.resume)
 	mux.HandleFunc("POST /v1/sync/now", h.syncNow)
@@ -996,6 +999,11 @@ func (h *desktopIPCHandler) viewerDownloadCapabilities() []string {
 		capabilities = append(capabilities, "cloud-notes")
 	}
 	if !h.backupOnly {
+		if _, supported := h.ctrl.(interface {
+			CloudIssueDesktopMapGuestGrant(context.Context) (client.DesktopMapGuestGrant, error)
+		}); supported {
+			capabilities = append(capabilities, "desktop-map-guest-grant")
+		}
 		if _, folders := h.ctrl.(desktopIPCRecentFoldersPort); folders {
 			capabilities = append(capabilities, "file-recent-folders")
 		}

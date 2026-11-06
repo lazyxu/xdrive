@@ -19,6 +19,11 @@ import {
 import type { XDriveBaiduMapDiagnostic } from '../media-gallery-baidu-diagnostics'
 import { XDriveMediaGalleryMapGPSCoverage } from './MediaGalleryMapGPSCoverage'
 import { XDRIVE_DESKTOP_PLACES_GUEST_PROBE, xDriveDesktopPlacesGuestProbeState } from '../desktop-places-embed-admission'
+import {
+  XDRIVE_PLACES_HANDOFF_TIMEOUT_MS, XDRIVE_PLACES_EMBED_PREPARE_TIMEOUT_MS,
+  XDRIVE_PLACES_STATUS_TIMEOUT_MS, xDrivePlacesHandoffTimeValid,
+  xDrivePlacesRequestWithDeadline,
+} from '../media-gallery-places-request-lifecycle'
 
 /** Two user-selected dynamic SDK runtimes. A denied signed release never
  * silently downgrades the isolated Child to the legacy direct prototype. */
@@ -26,7 +31,7 @@ export function XDriveMediaGalleryPlacesMap({
   places, totalCount, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
   listBaiduNativeCells, listBaiduNativeCellItems, loadPhotoCoverThumbnail, loadPhotoCoverPreviewURL, savePhotoCoverVideoPoster, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
   getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeCellPhoto, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
-  onOpenSecureDesktopMap, desktopEmbeddedPlacesURL, onPrepareDesktopPlaces, diagnosticScope, onOpenDiagnostics, onCloseMap,
+  onOpenSecureDesktopMap, desktopEmbeddedPlacesURL, onPrepareDesktopPlaces, onOpenDesktopReauthentication, diagnosticScope, onOpenDiagnostics, onCloseMap,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
   mapPhotoScope = xDriveEmptyBaiduMapPhotoScope, onMapPhotoScopeChange, onMapModeHandoff, mapAlbums = [],
 }: {
@@ -58,7 +63,9 @@ export function XDriveMediaGalleryPlacesMap({
   /** Trusted Agent HTTPS Web Gallery in an Electron guest with no Desktop API. */
   desktopEmbeddedPlacesURL?: string
   /** Prepare this exact Owner/filter scope in Desktop Main before guest attach. */
-  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope) => Promise<boolean>
+  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope) => Promise<string|false>
+  /** Trusted Desktop confirmation -> Agent logout -> native login; never a Web guest challenge. */
+  onOpenDesktopReauthentication?: () => void
   diagnosticScope?: string
   onOpenDiagnostics?: () => void
   /** Close Places using existing authenticated Gallery navigation (Parent only). */
@@ -81,7 +88,7 @@ export function XDriveMediaGalleryPlacesMap({
   const [desktopEmbedError,setDesktopEmbedError] = useState('')
   const embeddedWebviewRef=useRef<HTMLDivElement|null>(null)
   const [embedGuestReady,setEmbedGuestReady] = useState<{key:string}|null>(null)
-  const [embedPrepared,setEmbedPrepared] = useState<{key:string;state:'ready'|'denied'}|null>(null)
+  const [embedPrepared,setEmbedPrepared] = useState<{key:string;state:'ready'|'denied';partition?:string}|null>(null)
   const embedPrepareRef=useRef(onPrepareDesktopPlaces)
   embedPrepareRef.current=onPrepareDesktopPlaces
   const embedScopeRef=useRef(mapPhotoScope)
@@ -92,6 +99,8 @@ export function XDriveMediaGalleryPlacesMap({
     places.find(p => p.id === activePlaceID) ?? places[0]
   const [nearbyRadiusKM, setNearbyRadiusKM] = useState(5)
   const [status, setStatus] = useState<'checking' | 'authorized' | 'blocked' | 'error' | 'unsupported'>('checking')
+  const statusRef=useRef(status)
+  statusRef.current=status
   const [childOrigin, setChildOrigin] = useState('')
   const [childFailed, setChildFailed] = useState(false)
   const [mapReady, setMapReady] = useState(false)
@@ -140,9 +149,19 @@ export function XDriveMediaGalleryPlacesMap({
     if (typeof window === 'undefined') return
     window.addEventListener('popstate', cancelStaleHandoff)
     window.addEventListener('hashchange', cancelStaleHandoff)
+    // An in-flight one-use grant cannot survive a hidden tab, bfcache visit,
+    // OS suspend or a route interrupted by the Viewer. Its late response is
+    // not permission to navigate a resumed/different map document.
+    window.addEventListener('pagehide', cancelStaleHandoff)
+    const hidden=()=>{
+      if(document.visibilityState==='hidden')cancelStaleHandoff()
+    }
+    document.addEventListener('visibilitychange',hidden)
     return () => {
       window.removeEventListener('popstate', cancelStaleHandoff)
       window.removeEventListener('hashchange', cancelStaleHandoff)
+      window.removeEventListener('pagehide', cancelStaleHandoff)
+      document.removeEventListener('visibilitychange',hidden)
     }
   }, [cancelStaleHandoff])
 
@@ -172,12 +191,28 @@ export function XDriveMediaGalleryPlacesMap({
       deny('当前地图筛选范围无效，已阻止打开地图。')
       return
     }
-    void embedPrepareRef.current(scope).then(ok=>{
-      if(!active)return
-      if(ok)setEmbedPrepared({key:embedIdentity,state:'ready'})
+    const controller=new AbortController()
+    let timedOut=false
+    const request=Promise.resolve().then(()=>{
+      if(controller.signal.aborted)throw new Error('cancelled')
+      return embedPrepareRef.current!(scope)
+    })
+    void xDrivePlacesRequestWithDeadline(
+      request,controller.signal,XDRIVE_PLACES_EMBED_PREPARE_TIMEOUT_MS,
+      ()=>{timedOut=true;controller.abort()},
+    ).then(ok=>{
+      if(!active || controller.signal.aborted)return
+      // Main alone mints the verified Owner-bound ephemeral Cookie partition.
+      // Never promote a boolean or a late handoff to guest authority.
+      if(typeof ok==='string' && /^xdrive-places-web-[0-9a-f-]{36}$/.test(ok))
+        setEmbedPrepared({key:embedIdentity,state:'ready',partition:ok})
       else deny('当前账户的 HTTPS Web 地图会话验证失败。')
-    }).catch(()=>deny('HTTPS Web 地图连接准备失败。'))
-    return()=>{active=false}
+    }).catch(()=>{
+      if(active)deny(timedOut
+        ? 'Web 地图会话准备超时，请重新尝试。'
+        : 'HTTPS Web 地图连接准备失败。')
+    })
+    return()=>{active=false;controller.abort()}
   },[desktopOnly,desktopEmbeddedPlacesURL,diagnosticScope,embedIdentity,embedRetry])
   useEffect(()=>{
     if(embedPrepared?.key!==embedIdentity || embedPrepared.state!=='ready')return
@@ -237,12 +272,22 @@ export function XDriveMediaGalleryPlacesMap({
       setEmbedGuestReady(null)
     }
     const loaded=()=>probe()
+    const resumed=()=>{
+      if(!active || document.visibilityState==='hidden')return
+      // Sleeping for twenty seconds is not an unsuccessful navigation.
+      // Restart the visible watchdog without ever showing old guest pixels.
+      if(!mapMounted)navigationStartedAt=Date.now()
+      probe()
+    }
     guest.addEventListener('did-fail-load',fail)
     guest.addEventListener('render-process-gone',crashed)
     guest.addEventListener('did-start-navigation',navigating)
     guest.addEventListener('dom-ready',loaded)
     guest.addEventListener('did-finish-load',loaded)
+    window.addEventListener('pageshow',resumed)
+    document.addEventListener('visibilitychange',resumed)
     const poll=window.setInterval(()=>{
+      if(document.visibilityState==='hidden')return
       if(!mapMounted && Date.now()-navigationStartedAt>20_000) {
         deny('Web 地图没有进入就绪状态。请确认 Server Web snapshot 已更新、Desktop 专用 preload 已加载，然后重试。')
       } else probe()
@@ -256,6 +301,8 @@ export function XDriveMediaGalleryPlacesMap({
       guest.removeEventListener('did-start-navigation',navigating)
       guest.removeEventListener('dom-ready',loaded)
       guest.removeEventListener('did-finish-load',loaded)
+      window.removeEventListener('pageshow',resumed)
+      document.removeEventListener('visibilitychange',resumed)
     }
   },[embedPrepared,embedIdentity])
   // Desktop file never loads third-party JSAPI; Web and PWA default to legacy.
@@ -263,7 +310,10 @@ export function XDriveMediaGalleryPlacesMap({
     typeof window === 'undefined' ? '' : window.location.href,
   )
   const changeMapMode = (next: 'prototype' | 'isolated') => {
-    if (desktopOnly || mapMode === next || modeSwitching || typeof window === 'undefined') return
+    // A second click before React commits modeSwitching must not issue a
+    // second grant or mutate the one-use Owner/scope handoff.
+    if (desktopOnly || mapMode === next || modeSwitching ||
+        handoffAbort.current || typeof window === 'undefined') return
     const scope = xDriveNormalizeBaiduMapPhotoScope(mapPhotoScope)
     if (!scope) {
       setModeWarning('当前照片范围无效，未切换到全图库。')
@@ -284,7 +334,7 @@ export function XDriveMediaGalleryPlacesMap({
       setModeWarning('当前照片范围或地图位置无法安全交接，保持原地图，不会切换到全图库。')
       return
     }
-    handoffAbort.current?.abort()
+    // The guard above already refuses an in-flight handoff.
     const controller = new AbortController()
     handoffAbort.current = controller
     const issuedFence = {
@@ -297,9 +347,27 @@ export function XDriveMediaGalleryPlacesMap({
     }
     setModeSwitching(true)
     setModeWarning('')
-    void onMapModeHandoff(scope, next, controller.signal,
-      cameraRef.current ?? undefined).then(ticket => {
-      if (controller.signal.aborted || handoffAbort.current !== controller) return
+    const issuedAt=Date.now()
+    let timedOut=false
+    const request=Promise.resolve().then(()=>{
+      if(controller.signal.aborted || handoffAbort.current!==controller)
+        throw new Error('cancelled')
+      return onMapModeHandoff(scope, next, controller.signal,
+        cameraRef.current ?? undefined)
+    })
+    void xDrivePlacesRequestWithDeadline(request,controller.signal,
+      XDRIVE_PLACES_HANDOFF_TIMEOUT_MS,()=>{
+        timedOut=true
+        if(handoffAbort.current===controller) {
+          handoffAbort.current=null
+          setModeSwitching(false)
+          setModeWarning('地图状态交接已超时，已保留原相机与筛选；请重试。')
+        }
+        controller.abort()
+      }).then(ticket => {
+      if (controller.signal.aborted || handoffAbort.current !== controller ||
+          !xDrivePlacesHandoffTimeValid(issuedAt,Date.now(),
+            document.visibilityState==='visible')) return
       if (!xDrivePlacesMapHandoffFenceMatches(issuedFence, {
         ...currentHandoffIdentity.current, camera: cameraRef.current,
         routeHref: window.location.href,
@@ -313,7 +381,8 @@ export function XDriveMediaGalleryPlacesMap({
       if (!url) throw new Error('invalid-handoff')
       window.location.replace(url)
     }).catch(() => {
-      if (!controller.signal.aborted && handoffAbort.current === controller)
+      if (!timedOut && !controller.signal.aborted &&
+          handoffAbort.current === controller)
         setModeWarning('地图状态交接失败，已保留当前相机与照片筛选；不会打开全图库。')
     }).finally(() => {
       if (handoffAbort.current === controller) {
@@ -336,6 +405,13 @@ export function XDriveMediaGalleryPlacesMap({
   const cameraRef = useRef<XDriveBaiduNativeCameraSnapshot | null>(
     xDriveValidBaiduNativeCameraSnapshot(initialNativeCamera) ? { ...initialNativeCamera } : null,
   )
+  const cameraOwnerRef=useRef(currentHandoffOwnerScope)
+  if(cameraOwnerRef.current!==currentHandoffOwnerScope){
+    // A reused React map cannot inherit another Owner's BD09 camera.
+    cameraOwnerRef.current=currentHandoffOwnerScope
+    cameraRef.current=xDriveValidBaiduNativeCameraSnapshot(initialNativeCamera)
+      ? {...initialNativeCamera} : null
+  }
   const clearCamera = useCallback(() => {
     // Clearing an SDK camera is itself a new location selection. An already
     // issued one-use handoff must not linger until its async reply arrives.
@@ -386,6 +462,23 @@ export function XDriveMediaGalleryPlacesMap({
     return () => window.clearTimeout(timer)
   }, [diagnosticScope, latestDiagnosis?.recordedAt])
 
+  useEffect(()=>{
+    if(desktopOnly || typeof window==='undefined')return
+    const wake=(event:Event)=>{
+      if(document.visibilityState!=='visible')return
+      // A bfcache return may resume a stale map document. A normal tab
+      // focus keeps the already authorized SDK and camera intact.
+      if((event.type==='pageshow' && (event as PageTransitionEvent).persisted) ||
+          (event.type==='visibilitychange' &&
+            statusRef.current!=='authorized')) setRetry(n=>n+1)
+    }
+    window.addEventListener('pageshow',wake)
+    document.addEventListener('visibilitychange',wake)
+    return()=>{
+      window.removeEventListener('pageshow',wake)
+      document.removeEventListener('visibilitychange',wake)
+    }
+  },[desktopOnly])
   useEffect(() => {
     setChildOrigin('')
     setChildFailed(false)
@@ -399,7 +492,11 @@ export function XDriveMediaGalleryPlacesMap({
       return
     }
     const controller = new AbortController()
-    void getBaiduJSAPI4Status(controller.signal).then(result => {
+    let timedOut=false
+    const request=Promise.resolve().then(()=>getBaiduJSAPI4Status(controller.signal))
+    void xDrivePlacesRequestWithDeadline(request,controller.signal,
+      XDRIVE_PLACES_STATUS_TIMEOUT_MS,()=>{timedOut=true;controller.abort()})
+      .then(result => {
       if (controller.signal.aborted) return
       const child = typeof result?.isolated_child_origin === 'string' &&
         result.isolated_child_origin.startsWith('https://')
@@ -416,7 +513,7 @@ export function XDriveMediaGalleryPlacesMap({
           signed && mapMode === 'isolated' ? 'isolated_origin_unavailable' : 'server_release_blocked')
       }
     }).catch(error => {
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted && !timedOut) return
       setStatus('error')
       if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(
         diagnosticScope, xDriveClassifyBaiduMapRequestFailure('status', error))
@@ -460,13 +557,24 @@ export function XDriveMediaGalleryPlacesMap({
         <Stack direction="row" alignItems="center" justifyContent="space-between"
           sx={{px:1.25,py:0.75,gap:1,flexWrap:'wrap'}}>
           <Typography variant="subtitle2">地点 · Web 共用地图</Typography>
-          {denied ? <Button variant="outlined" size="small"
-            onClick={() => setEmbedRetry(n=>n+1)}>重试 Web 地图</Button> : null}
+          {denied ? <Stack direction="row" spacing={1} sx={{flexWrap:'wrap',gap:1}}>
+            <Button variant="outlined" size="small" onClick={() => setEmbedRetry(n=>n+1)}>
+              重试 Web 地图
+            </Button>
+            {onOpenDesktopReauthentication ? (
+              <Button variant="outlined" size="small" color="warning"
+                data-xdrive-desktop-places-native-reauth
+                onClick={onOpenDesktopReauthentication}>
+                从 Desktop 重新登录
+              </Button>
+            ) : null}
+          </Stack> : null}
         </Stack>
         {ready ? (
           <Box sx={{position:'relative'}}>
-            <Box component={'webview' as 'div'} ref={embeddedWebviewRef}
-              {...{partition:'xdrive-places-web',src:desktopEmbeddedPlacesURL}}
+            <Box component={'webview' as 'div'} key={embedPrepared?.partition}
+              ref={embeddedWebviewRef}
+              {...{partition:embedPrepared?.partition,src:desktopEmbeddedPlacesURL}}
               data-xdrive-desktop-embedded-places
               sx={{display:'flex',width:'100%',
                 height:'max(640px, calc(100dvh - 170px))',
@@ -490,6 +598,12 @@ export function XDriveMediaGalleryPlacesMap({
                 ? desktopEmbedError || '当前账户无法验证地图会话。'
                 : '正在按当前 Desktop 账户验证 HTTPS Web 地图会话…'}
             </Typography>
+            {denied && onOpenDesktopReauthentication ? (
+              <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1}}>
+                如果当前 Server 或 Agent 不支持地图会话自动恢复，可通过可信 Desktop
+                账户登录流程重新验证。确认退出后会中断正在进行的同步或传输；不会在地图中输入密码。
+              </Typography>
+            ) : null}
           </Box>
         )}
         <Typography variant="caption" color="text.secondary"

@@ -1,0 +1,42 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = f => fs.readFileSync(path.resolve(__dirname, '../..', f), 'utf8')
+const browser = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
+const selection = read('ios/XDriveIOS/NativeFilesSelectionPolicy.swift')
+const trash = read('ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift')
+const target = read('ios/XDriveIOS/NativeFilesBatchTarget.swift')
+
+test('Native Files selection snapshots are bounded independently of 256-item row eviction', () => {
+  assert.match(browser, /@State private var selectedSnapshots = \[UInt64: XDriveIOSNativeFilesNode\]\(\)/)
+  assert.match(browser, /private var chosenItems: \[XDriveIOSNativeFilesNode\] \{[\s\S]*?XDriveIOSNativeFilesSelectionPolicy\.validItems\(/)
+  assert.match(selection, /selectedIDs\.count <= XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
+  assert.match(selection, /Set\(snapshots\.keys\) == selectedIDs/)
+  assert.match(selection, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection\(/)
+  assert.match(browser, /for entry in model\.entries where !selectedIDs\.contains\(entry\.id\)/)
+  assert.match(browser, /selectedSnapshots\[entry\.id\] = entry\.node/)
+  assert.doesNotMatch(browser, /selectedIDs\.formIntersection\(visibleIDs\)/)
+  assert.match(trash, /static let maxSelected = 200/)
+})
+
+test('revisited changed revision invalidates only that selected Node, not offscreen pages', () => {
+  assert.match(selection, /static func conflictingIDs\(visible:/)
+  assert.match(selection, /guard let selected = snapshots\[\$0\.id\] else \{ return false \}/)
+  assert.match(selection, /return selected != \$0/)
+  assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.conflictingIDs\(/)
+  assert.match(browser, /selectedIDs\.remove\(id\)/)
+  assert.match(browser, /selectedSnapshots\.removeValue\(forKey: id\)/)
+  assert.match(browser, /selectedSnapshots\[entry\.id\] = entry\.node/)
+})
+
+test('batch destination and trash still validate exact 200 Node/revision snapshots', () => {
+  assert.match(browser, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
+  assert.match(browser, /intent\.items\.allSatisfy\(\{ selected in[\s\S]*?selectedSnapshots\[selected\.id\] == selected/)
+  assert.match(browser, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection\(/)
+  assert.match(target, /XDriveIOSNativeFilesBatchTargetPolicy\.validSelection/)
+  assert.match(browser, /private func reload\(resetOffset: Bool = false\) \{[\s\S]*?selectedSnapshots\.removeAll\(\)/)
+  assert.match(browser, /\.onChange\(of: model\.verifiedPage\) \{ now in[\s\S]*?selectedSnapshots\.removeAll\(\)/)
+  assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?selectedSnapshots\.removeAll\(\)/)
+})

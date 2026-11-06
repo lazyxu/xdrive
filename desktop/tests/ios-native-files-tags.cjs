@@ -15,7 +15,8 @@ test('native Files exposes tag management for the exact file and folder', () => 
   assert.match(source, /nodeIDs: \[directory\.id\]/)
   assert.match(source, /\.accessibilityIdentifier\("native-ios-files-manage-tags"\)/)
   assert.match(source, /\.accessibilityIdentifier\("native-ios-files-manage-folder-tags"\)/)
-  assert.match(source, /private struct XDriveIOSNativeFilesTagPanel: View/)
+  assert.match(source, /struct XDriveIOSNativeFilesTagPanel: View/)
+  assert.match(source, /Reused by single-node management and the native Files batch selection/)
 })
 
 test('native tag transport is HTTPS, non-redirecting and cookie-free', () => {

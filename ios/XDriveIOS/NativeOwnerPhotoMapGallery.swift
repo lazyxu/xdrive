@@ -21,6 +21,9 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     @Binding var localMapCamera: MKCoordinateRegion?
     var onFocusChange: ((Bool) -> Void)?
     var onClose: (() -> Void)? = nil
+    // Shared Gallery media selection applies only to the local PhotoKit map.
+    // Cloud Owner Map remains governed by its signed Server PhotoScope.
+    var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
 
     var body: some View {
         let expectedOwner = login.owner
@@ -39,7 +42,8 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                               ) else { return }
                         localMapCamera = next
                     },
-                    onFocusChange: onFocusChange
+                    onFocusChange: onFocusChange,
+                    mediaFilter: mediaFilter
                 )
             case .cloud:
                 XDriveIOSNativeOwnerPhotoMapScreen(
@@ -164,7 +168,11 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
     let coverImages: [String: UIImage]
     let markersEnabled: Bool
     let revision: UUID
+    let mapType: MKMapType
     let initialCamera: MKCoordinateRegion
+    var focusRequestID: UUID? = nil
+    var focusCamera: MKCoordinateRegion? = nil
+    var showsUserDot = false
     let onCameraWillChange: () -> Void
     let onCamera: (MKCoordinateRegion) -> Void
     let onPlace: (XDriveIOSNativeOwnerMapFacet) -> Void
@@ -182,6 +190,7 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
         // Do not treat the initial, programmatic world-region setup as a
         // user pan. Install the delegate only after setRegion completes.
         map.showsUserLocation = false
+        map.mapType = mapType
         map.register(XDriveIOSOwnerMapPhotoCover.self,
                      forAnnotationViewWithReuseIdentifier: "xdrive-owner-pin")
         map.register(XDriveIOSOwnerMapPhotoCover.self,
@@ -192,6 +201,14 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
+        // Base-layer changes keep the verified Owner bounds and current camera.
+        if map.mapType != mapType {
+            // MapKit may emit camera callbacks while replacing its base layer.
+            // This is not a user pan: preserve the existing verified GPS cells.
+            map.delegate = nil
+            map.mapType = mapType
+            map.delegate = context.coordinator
+        }
         context.coordinator.onCameraWillChange = onCameraWillChange
         context.coordinator.onCamera = onCamera
         context.coordinator.onPlace = onPlace
@@ -200,6 +217,17 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
         context.coordinator.coverImages = coverImages
         context.coordinator.markersEnabled = markersEnabled
         context.coordinator.refreshVisibleCovers(map)
+        if map.showsUserLocation != showsUserDot {
+            map.showsUserLocation = showsUserDot
+        }
+        if let focusID = focusRequestID,
+           context.coordinator.focusRequestID != focusID,
+           let focusCamera {
+            // This is a real camera change. MapKit's native delegate revokes
+            // the previous Owner/Cell lease and requests a fresh scoped scan.
+            context.coordinator.focusRequestID = focusID
+            map.setRegion(focusCamera, animated: true)
+        }
         guard context.coordinator.revision != revision else { return }
         context.coordinator.revision = revision
         map.removeAnnotations(map.annotations.filter {
@@ -222,6 +250,7 @@ private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
 
     final class Coordinator: NSObject, MKMapViewDelegate {
         var revision: UUID?
+        var focusRequestID: UUID?
         var coverImages: [String: UIImage] = [:]
         var markersEnabled = false
         var onCameraWillChange: () -> Void
@@ -369,6 +398,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @State private var singleOwner: XDriveNativeOwnerRoot?
     @State private var singleTask: Task<Void, Never>?
     @State private var focused = false
+    @State private var mapType: MKMapType = .standard
+    @StateObject private var currentLocation = XDriveIOSNativeMapUserLocationController()
     @State private var showingMapHelp = false
     @State private var camera = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
@@ -400,7 +431,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             XDriveIOSOwnerMapSurface(
                 overview: overview, coverImages: coverImages,
                 markersEnabled: mapMarkersEnabled,
-                revision: revision, initialCamera: cameraReturn ?? camera,
+                revision: revision, mapType: mapType,
+                initialCamera: cameraReturn ?? camera,
+                focusRequestID: currentLocation.requestID,
+                focusCamera: currentLocation.camera,
+                showsUserDot: currentLocation.showsUserDot,
                 onCameraWillChange: { revokeCameraAuthorization() },
                 onCamera: { next in
                     camera = next
@@ -429,7 +464,12 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                             item.id, currentlyVisibleIDs: overview.items.map(\.id)),
                           overview.items.contains(where: {
                             $0.id == item.id && $0.item_count == item.item_count
-                          }) else { return }
+                          }),
+                          // Retained MapKit pins must match the freshly signed
+                          // facet, not just a reused ID and count.
+                          XDriveIOSNativeOwnerMapSelectionPolicy.acceptsSelectedFacet(
+                            item, currentlyVisible: overview.items
+                          ) else { return }
                     cameraSettleTask?.cancel()
                     cameraSettleTask = nil
                     coverTask?.cancel()
@@ -511,6 +551,32 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 .accessibilityIdentifier("native-ios-owner-map-actions")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Picker("底图样式", selection: $mapType) {
+                        Text("标准地图").tag(MKMapType.standard)
+                        Text("卫星地图").tag(MKMapType.satellite)
+                    }
+                } label: {
+                    Label("底图样式", systemImage: "square.3.layers.3d")
+                }
+                .accessibilityIdentifier("native-ios-owner-map-basemap")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    currentLocation.locate()
+                } label: {
+                    Label("我的位置", systemImage: "location")
+                }
+                .disabled(currentLocation.isLocating ||
+                          login.owner == nil || phase != .active)
+                .accessibilityIdentifier("native-ios-owner-map-locate")
+                .alert(item: $currentLocation.alert) { issue in
+                    Alert(title: Text("无法获取当前位置"),
+                          message: Text(issue.message),
+                          dismissButton: .default(Text("完成")))
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button(focused ? "显示底部导航" : "专注地图") {
                     focused.toggle()
                     onFocusChange?(focused)
@@ -563,7 +629,18 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             if let cameraReturn { camera = cameraReturn }
             if overview == nil && !busy && phase == .active { reload() }
         }
+        .onChange(of: currentLocation.requestID) { _ in
+            guard phase == .active, login.owner != nil,
+                  let target = currentLocation.camera else { return }
+            // Immediately revoke old Owner camera rights before moving to
+            // the user's position; no PhotoAsset can use stale ACLs.
+            revokeCameraAuthorization()
+            camera = target
+            onCameraChange?(target)
+            scheduleCameraRefresh()
+        }
         .onChange(of: login.owner) { _ in
+            currentLocation.cancel()
             selected = nil
             selectedCluster = nil
             singleViewer = nil
@@ -574,6 +651,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             if new == .active {
                 if singleViewer == nil { reload() }
             } else {
+                currentLocation.cancel()
                 selected = nil
                 selectedCluster = nil
                 singleViewer = nil
@@ -581,6 +659,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             }
         }
         .onDisappear {
+            currentLocation.cancel()
             if selected == nil && selectedCluster == nil && singleViewer == nil {
                 focused = false
                 onFocusChange?(false)
@@ -724,7 +803,14 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                             bounds, current: currentBounds())
                     else { return }
-                    guard page.total_count > 0, let first = page.items.first
+                    // The overview and exact-place Range are different Server
+                    // reads. Do not draw a newer photo's thumbnail beside a
+                    // stale signed count if membership changed between reads.
+                    // Use the first previewable item from the verified 48-slot
+                    // page rather than giving up on an unsupported first item.
+                    guard XDriveIOSNativeOwnerMapSelectionPolicy.acceptsCoverPage(
+                        facet, rangeTotal: page.total_count, offset: page.offset
+                    ), let first = page.items.first(where: { $0.supportsPreview })
                     else { continue }
                     let cover = try await reader.thumbnail(first)
                     try Task.checkCancellation()

@@ -4,7 +4,7 @@ import Foundation
 import Photos
 import UIKit
 
-private struct XDriveIOSNativePhotoProofStamp: Equatable {
+struct XDriveIOSNativePhotoProofStamp: Equatable {
     let id: String
     let kind: String
     let isLive: Bool
@@ -57,6 +57,9 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
     @Published private(set) var message = "请选择一张本机照片或视频进行核验。"
     @Published private(set) var currentNodeVerified = false
     @Published private(set) var verifiedAt: Date?
+    // Set only after the current original SHA and exact live managed Node
+    // were both reverified. A historical ledger receipt cannot set this.
+    private(set) var verifiedManagedDestination: XDriveIOSPhotoManagedDestination?
 
     private var epoch = UUID()
     private var worker: Task<Void, Never>?
@@ -73,6 +76,7 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
         busy = false
         currentNodeVerified = false
         verifiedAt = nil
+        verifiedManagedDestination = nil
         message = "请选择一张本机照片或视频进行核验。"
     }
 
@@ -148,7 +152,8 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                     allowICloudDownload: allowICloudOriginals,
                     maximumBytesPerResource: stamp.isLive
                         ? XDriveIOSLiveOriginalArchive.maximumPartBytes
-                        : 1_073_741_824
+                        : 1_073_741_824,
+                    allowLimitedPhotoAccess: true
                 )
                 defer { staged.delete() }
                 guard staged.kind == (stamp.isLive ? "live" : stamp.kind),
@@ -289,6 +294,7 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                 ) else {
                     throw XDriveIOSNativeCurrentPhotoReceiptError.invalidOriginal
                 }
+                self.verifiedManagedDestination = latestManaged.destination
                 self.currentNodeVerified = true
                 self.verifiedAt = Date()
                 self.message =
@@ -305,10 +311,28 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
         }
     }
 
+    /// Await the same read-only current-original/Node proof used by the
+    /// single-photo UI. An audit never creates an UploadSession or sets a
+    /// local queue entry to confirmed just because verification returned.
+    func verifyAndWait(localIdentifier: String,
+                       login: XDriveIOSNativeOwnerLoginModel,
+                       allowICloudOriginals: Bool) async -> Bool {
+        verify(localIdentifier: localIdentifier, login: login,
+               allowICloudOriginals: allowICloudOriginals)
+        guard let currentWorker = worker else { return false }
+        return await withTaskCancellationHandler {
+            await currentWorker.value
+            return !Task.isCancelled && currentNodeVerified
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.cancel() }
+        }
+    }
+
     private func publishUnverified(_ reason: String, token: UUID) {
         guard epoch == token else { return }
         currentNodeVerified = false
         verifiedAt = nil
+        verifiedManagedDestination = nil
         message = reason
     }
 

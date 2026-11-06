@@ -95,7 +95,7 @@ private struct XDriveIOSNativeManualNoteImportWrite: Encodable {
     let external_id: String?
 }
 
-private final class XDriveIOSNativeNotesNoRedirect: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeNotesNoRedirect: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,

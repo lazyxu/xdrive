@@ -34,6 +34,21 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      - name: Verify persistent unified Gallery fingerprint index
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativePhotoFingerprintStore.swift \
+            ios/tests/NativePhotoFingerprintStoreChecks.swift \
+            -lsqlite3 -o "$RUNNER_TEMP/xdrive-ios-gallery-fingerprints"
+          "$RUNNER_TEMP/xdrive-ios-gallery-fingerprints"
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeUnifiedGalleryPolicy.swift \
+            ios/tests/NativeUnifiedGalleryChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-unified-gallery"
+          "$RUNNER_TEMP/xdrive-ios-unified-gallery"
+          node --test desktop/tests/ios-native-unified-photo-gallery.cjs
+
       - name: Verify cold launch recovery and BG registration safety
         run: |
           set -euo pipefail
@@ -265,17 +280,21 @@ jobs:
         run: |
           set -euo pipefail
           swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeLANTrust.swift \
             ios/XDriveIOS/AuthService.swift \
+            ios/XDriveIOS/NativeLANCertificateBootstrap.swift \
             ios/XDriveIOS/NativeLANLoginRoute.swift \
             ios/tests/NativeLANLoginRouteChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-lan-route-check"
           "$RUNNER_TEMP/xdrive-ios-lan-route-check"
           node --test desktop/tests/ios-native-lan-ip-login.cjs
+          bash ios/tests/check-native-lan-trust.sh "$RUNNER_TEMP"
 
       - name: Reproduce and classify native login TLS, Owner/root and retry errors
         run: |
           set -euo pipefail
           swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeLANTrust.swift \
             ios/XDriveIOS/AuthService.swift \
             ios/XDriveIOS/OwnerRootVerifier.swift \
             ios/XDriveIOS/NativeOwnerSessionStore.swift \
@@ -289,7 +308,9 @@ jobs:
         run: |
           set -euo pipefail
           swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeLANTrust.swift \
             ios/XDriveIOS/AuthService.swift \
+            ios/XDriveIOS/NativeLANCertificateBootstrap.swift \
             ios/XDriveIOS/NativeLANLoginRoute.swift \
             ios/XDriveIOS/NativeOwnerSessionStore.swift \
             ios/XDriveIOS/NativePasswordProfiles.swift \
@@ -421,7 +442,7 @@ jobs:
             ios/tests/NativePhotoWallDensityPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-wall-density-policy"
           "$RUNNER_TEMP/xdrive-ios-wall-density-policy"
-          node --test desktop/tests/ios-native-photo-wall-density.cjs
+          node --test desktop/tests/ios-native-photo-wall-density.cjs desktop/tests/ios-native-photo-wall-shared.cjs
 
       - name: Verify native PhotoKit actual-day group boundaries
         run: |
@@ -531,6 +552,23 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-full-photo-gps-policy-check"
           node --test desktop/tests/ios-native-photo-map-mvp.cjs
 
+      - name: Verify shared Map and Gallery P0/P1 photo wall regressions
+        run: |
+          set -euo pipefail
+          # Exercised Swift policies, not copies or mocks of policy decisions.
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativePhotoMapPolicy.swift \
+            ios/XDriveIOS/NativeLocalPhotoMapSpatialPolicy.swift \
+            ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift \
+            ios/XDriveIOS/NativeOwnerPhotoMapOverview.swift \
+            ios/XDriveIOS/NativeOwnerMapSelectionPolicy.swift \
+            ios/XDriveIOS/NativePhotoWallDensityPolicy.swift \
+            ios/XDriveIOS/NativePhotoDayGroupingPolicy.swift \
+            ios/tests/NativeSharedPlacePhotoWallPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-shared-place-wall-checks"
+          "$RUNNER_TEMP/xdrive-ios-shared-place-wall-checks"
+          node --test desktop/tests/ios-native-shared-place-photo-wall-p0p1.cjs
+
       - name: Verify native Owner WGS84 map overview transport
         run: |
           set -euo pipefail
@@ -571,6 +609,97 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-files-continuous-window"
           "$RUNNER_TEMP/xdrive-ios-files-continuous-window"
           node --test desktop/tests/ios-native-files-continuous-scroll.cjs
+
+      - name: Verify native Files navigation, clipboard, thumbnail and Owner proof lifecycle
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesNavigationPolicy.swift \
+            ios/tests/NativeFilesNavigationChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-navigation"
+          "$RUNNER_TEMP/xdrive-ios-files-navigation"
+          node --test \
+            desktop/tests/ios-native-files-navigation-stability.cjs \
+            desktop/tests/ios-native-files-clipboard.cjs \
+            desktop/tests/ios-native-owner-authorization-flight.cjs
+
+      - name: Verify native Files Saved Searches and PWA Server parity
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesSavedSearchPolicy.swift \
+            ios/tests/NativeFilesSavedSearchChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-saved-search"
+          "$RUNNER_TEMP/xdrive-ios-files-saved-search"
+          node --test desktop/tests/ios-native-files-saved-searches.cjs
+
+      - name: Verify Native Files typed-path navigation and Owner cancellation
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesPathPolicy.swift \
+            ios/tests/NativeFilesPathChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-path"
+          "$RUNNER_TEMP/xdrive-ios-files-path"
+          node --test desktop/tests/ios-native-files-path-navigation.cjs
+
+      - name: Verify native Files cross-window selection and revision snapshots
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift \
+            ios/XDriveIOS/NativeFilesSelectionPolicy.swift \
+            ios/tests/NativeFilesSelectionChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-selection"
+          "$RUNNER_TEMP/xdrive-ios-files-selection"
+          node --test desktop/tests/ios-native-files-cross-window-selection.cjs
+
+      - name: Verify native Files Server grouping and 100k bounded group-index rendering
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesGroupingPolicy.swift \
+            ios/tests/NativeFilesGroupingChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-grouping"
+          "$RUNNER_TEMP/xdrive-ios-files-grouping"
+          node --test desktop/tests/ios-native-files-server-grouping.cjs
+
+      - name: Verify native Files Server operation history and queued Undo/Redo
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesOperationPolicy.swift \
+            ios/tests/NativeFilesOperationChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-operations"
+          "$RUNNER_TEMP/xdrive-ios-files-operations"
+          node --test desktop/tests/ios-native-files-undo-redo.cjs
+
+      - name: Verify native Files inline folder 115k bounded bidirectional paging
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift \
+            ios/XDriveIOS/NativeFilesInlinePolicy.swift \
+            ios/tests/NativeFilesInlineChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-inline"
+          "$RUNNER_TEMP/xdrive-ios-files-inline"
+          node --test desktop/tests/ios-native-files-inline-navigation.cjs
+
+      - name: Verify native Files Quick Access pinned folders and Owner-safe reorder
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesQuickAccessPolicy.swift \
+            ios/tests/NativeFilesQuickAccessChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-quick-access"
+          "$RUNNER_TEMP/xdrive-ios-files-quick-access"
+          node --test desktop/tests/ios-native-files-quick-access.cjs
 
       - name: Verify native Files Viewer bounded navigation and Owner preview contracts
         run: |

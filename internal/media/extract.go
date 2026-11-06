@@ -93,6 +93,17 @@ func Extract(name string, r io.ReadSeeker, size int64) (Result, error) {
 	if r == nil {
 		return result, errors.New("media reader is nil")
 	}
+	if iosLiveOriginalName.MatchString(name) {
+		readerAt, ok := r.(io.ReaderAt)
+		if !ok {
+			return result, errors.New("iOS Live reader does not support random access")
+		}
+		info, err := inspectIOSLiveOriginals(readerAt, size)
+		if err != nil {
+			return result, err
+		}
+		return projectLiveContainer(info), nil
+	}
 	if strings.EqualFold(filepath.Ext(name), ".livp") {
 		readerAt, ok := r.(io.ReaderAt)
 		if !ok {

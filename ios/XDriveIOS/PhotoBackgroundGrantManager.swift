@@ -78,7 +78,7 @@ private struct IOSPhotoGrantRequest: Encodable {
     let device_id: String
 }
 
-private final class XDriveIOSPhotoGrantRejectRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSPhotoGrantRejectRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

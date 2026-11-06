@@ -28,6 +28,12 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
 
     private var active: Session?
     private var generation: UInt64 = 0
+    private struct AuthorizationFlight {
+        let id: UUID
+        let generation: UInt64
+        let task: Task<(owner: XDriveNativeOwnerRoot, accessToken: String), Error>
+    }
+    private var authorizationFlight: AuthorizationFlight?
     private var restoreAttempted = false
     private var retryDraftSnapshot: (server: String, lanIP: String, username: String)?
     // Track deliberate profile selection separately from SwiftUI TextField edits:
@@ -178,12 +184,43 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     }
 
     private func humanMessage(_ failure: Error) -> String {
-        XDriveIOSNativeOwnerLoginFailurePolicy.message(for: failure)
+        if let pairing = failure as? XDriveIOSLANPairingFailure { return pairing.message }
+        return XDriveIOSNativeOwnerLoginFailurePolicy.message(for: failure)
     }
 
-    /// Revalidate the Server Owner and root with an access token obtained
-    /// by native login. This is only for future native features, never JS.
+    /// Coalesce simultaneous Files tiles' Owner/root proof to one real
+    /// verification. Each caller still checks cancellation and the current
+    /// session generation; a changed Owner never inherits an older result.
+    /// Subsequent operations start a fresh verification, not a timed cache.
     func verifiedAuthorization() async throws ->
+        (owner: XDriveNativeOwnerRoot, accessToken: String) {
+        guard active != nil else { throw XDriveIOSNativeSessionError.notSignedIn }
+        let ticket = generation
+        let flight: AuthorizationFlight
+        if let running = authorizationFlight, running.generation == ticket {
+            flight = running
+        } else {
+            flight = AuthorizationFlight(
+                id: UUID(), generation: ticket,
+                task: Task { try await self.verifyAuthorizationDirect() }
+            )
+            authorizationFlight = flight
+        }
+        defer {
+            if authorizationFlight?.id == flight.id { authorizationFlight = nil }
+        }
+        let verified = try await flight.task.value
+        try Task.checkCancellation()
+        guard generation == ticket, let activeOwner = owner,
+              sameScope(verified.owner, activeOwner) else {
+            throw XDriveIOSNativeSessionError.staleSession
+        }
+        return verified
+    }
+
+    /// The only verification implementation; never bypass the HTTPS Owner
+    /// root probe or 401 refresh and durable same-scope checks.
+    private func verifyAuthorizationDirect() async throws ->
         (owner: XDriveNativeOwnerRoot, accessToken: String) {
         guard let snapshot = active else {
             throw XDriveIOSNativeSessionError.notSignedIn
@@ -419,6 +456,29 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         keepSignedIn = true
         restoreAttempted = true
         noticeMessage = "已删除所选服务器和账号的本机资料；其他账号及备份记录不变。"
+    }
+
+    func pairLANHTTPS() async {
+        guard !busy, active == nil else { return }
+        errorMessage = nil
+        noticeMessage = nil
+        let server = serverText
+        let lanIP = lanIPText
+        busy = true
+        defer { busy = false }
+        do {
+            let origin = try ServerAddress.parse(server)
+            let (target, pairing) = try await XDriveIOSNativeLANLoginRoute.verifyPairing(origin: origin, lanIP: lanIP)
+            try Task.checkCancellation()
+            guard serverText == server, lanIPText == lanIP else { return }
+            try XDriveIOSLANPairingStore.save(pairing, for: target)
+            noticeMessage = "已配对 \(target.ip):\(target.port)，现在可以登录。内网根证书 SHA-256：\(pairing.fingerprint)"
+        } catch is CancellationError {
+            return
+        } catch {
+            guard serverText == server, lanIPText == lanIP else { return }
+            errorMessage = humanMessage(error)
+        }
     }
 
     /// Explicit user sign-in, not a PWA Cookie session. A successful HTTP

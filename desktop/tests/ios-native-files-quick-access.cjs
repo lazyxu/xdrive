@@ -1,0 +1,80 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = file => fs.readFileSync(path.resolve(__dirname, '../..', file), 'utf8')
+const view = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
+const client = read('ios/XDriveIOS/NativeFilesQuickAccess.swift')
+const policy = read('ios/XDriveIOS/NativeFilesQuickAccessPolicy.swift')
+const server = read('internal/api/file_quick_access.go')
+const web = read('web/src/api.ts')
+
+test('Native and PWA use the same authoritative 64-Node quick-access endpoints', () => {
+  for (const route of ['/api/v1/file-quick-access', '/api/v1/file-quick-access/order']) {
+    assert.ok(client.includes(route), 'Native route ' + route)
+    assert.ok(web.includes(route), 'Web route ' + route)
+  }
+  assert.match(server, /const fileQuickAccessLimit = 64/)
+  assert.match(policy, /static let maximumItems = 64/)
+  assert.match(client, /method: "PUT"/)
+  assert.match(client, /method: "DELETE"/)
+  assert.match(client, /JSONEncoder\(\)\.encode\(\["node_ids": ids\]\)/)
+  assert.match(client, /next\.map\(\\\.id\) == ids/)
+  assert.match(client, /XDriveIOSNativeFilesQuickAccessPolicy\.validList\(/)
+})
+
+test('home pinned folder group is backed by verified Server Node ID, not stale local favorites', () => {
+  assert.match(view, /@StateObject private var quickAccess = XDriveIOSNativeFilesQuickAccessModel\.shared/)
+  assert.match(view, /DisclosureGroup\("固定的文件夹", isExpanded: \$quickAccessExpanded\)/)
+  assert.match(view, /if quickAccess\.matches\(login\.owner\)/)
+  assert.match(view, /ForEach\(quickAccess\.items\) \{ item in/)
+  assert.match(view, /folderID: item\.node\.id/)
+  assert.match(view, /native-ios-files-pinned-folder-/)
+  assert.match(view, /Button\("上移"\)/)
+  assert.match(view, /Button\("下移"\)/)
+  assert.match(view, /Button\("取消固定", role: \.destructive\)/)
+  assert.match(view, /quickAccess\.reorder\(ids, login: login\)/)
+  assert.match(view, /quickAccess\.load\(login: login\)/)
+  assert.match(client, /static let shared = XDriveIOSNativeFilesQuickAccessModel\(\)/)
+  assert.match(view, /quickAccess\.invalidate\(\)/)
+  assert.match(view, /DisclosureGroup\("收藏夹和常用收藏", isExpanded: \$favoriteFoldersExpanded\)/)
+})
+
+test('real folder context menu toggles Server pinned state; no duplicate writer is created', () => {
+  assert.match(view, /quickAccess\.togglePin\(entry\.node, login: login\)/)
+  assert.match(view, /native-ios-files-toggle-pin-/)
+  assert.match(view, /guard containsVerifiedNode\(entry\.node\) else \{ return \}/)
+  assert.match(client, /func togglePin\(_ folder: XDriveIOSNativeFilesNode,/)
+  assert.match(client, /previous\.contains\(where: \{ \$0\.id == folder\.id \}\)/)
+  assert.match(client, /\? \.unpin\(folder\.id\) : \.pin\(folder\)/)
+})
+
+test('pinned folder transport is HTTPS no Cookie no redirects and guards Owner on mutation', () => {
+  assert.match(client, /let auth = try await login\.verifiedAuthorization\(\)/)
+  assert.match(client, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/)
+  assert.match(client, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
+  assert.match(client, /URLSessionConfiguration\.ephemeral/)
+  assert.match(client, /completionHandler\(nil\)/)
+  assert.match(client, /config\.httpShouldSetCookies = false/)
+  assert.match(client, /config\.urlCache = nil/)
+  assert.match(client, /req\.setValue\("Bearer " \+ accessToken/)
+  assert.match(client, /let next = try await list\(in: client\)/)
+  // Verify real mutation readback and Owner generation, not an incidental
+  // English spelling inside Swift documentation.
+  assert.match(client, /let after = try await client\.perform\(action, previous: before\)/)
+  assert.match(client, /guard let self, self\.epoch == ticket,/)
+  assert.match(client, /self\.items = after/)
+  assert.match(client, /self\.verified = true/)
+  assert.match(client, /快捷目录操作结果未确认，请刷新核对，不要直接重试。/)
+  assert.doesNotMatch(client, /WKWebView|document\.cookie|URLSession\.shared/)
+})
+
+test('refresh home preserves same-Owner verified pinned rows and rejects switched accounts', () => {
+  assert.match(client, /if matches\(expected\) && !force \{ return \}/)
+  assert.match(client, /if let previous = loadedOwner,[\s\S]*?!XDriveIOSNativePhotoOwnerScope\.matches\(previous, expected\)/)
+  assert.match(client, /loadedOwner = nil/)
+  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?quickAccess\.invalidate\(\)/)
+  assert.match(view, /Button\("重新读取"\)/)
+  assert.match(view, /quickAccess\.load\(login: login, force: true\)/)
+})

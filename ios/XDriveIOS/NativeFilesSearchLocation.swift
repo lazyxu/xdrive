@@ -9,7 +9,7 @@ private enum XDriveIOSNativeFilesLocateFailure: Error {
     case server(Int)
 }
 
-private final class XDriveIOSNativeFilesLocateNoRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeFilesLocateNoRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

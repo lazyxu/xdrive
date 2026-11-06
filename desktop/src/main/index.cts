@@ -45,6 +45,9 @@ import {
   verifiedLANRootPEM, type TrustedLANRoot,
 } from './lan_root_auto.cjs'
 import { desktopBuildInfo } from './build_metadata.cjs'
+import {
+  verifyDesktopPlacesLANCertificate, placesGuestIPRequestAllowed,
+} from './places_guest_lan_tls.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
 import {
   trayTransferPresentation,
@@ -341,14 +344,20 @@ const desktopPlacesGuests = new Map<number,{
 }>()
 let desktopPlacesPending:{
   owner:string;origin:string;scope:XDriveDesktopBaiduMapScope
-  expiresAt:number;windowID:number
+  expiresAt:number;windowID:number;partition:string
 }|null=null
+// A superseded preparation, route change or system sleep must never commit
+// an old Owner/scope into the next one-use HTTPS guest attach.
+let desktopPlacesPrepareRevision=0
 // The non-isolated Web map runs in an Electron HTTPS guest, never the local
 // Desktop file:// renderer. Seed its memory-only HttpOnly browser cookie from
 // a verified Desktop sign-in in Main, without exposing passwords or Agent
 // tokens to Web JavaScript or the third-party map SDK.
 type DesktopPlacesWebIdentity = { origin: string; owner: string }
-const desktopPlacesWebPartition = 'xdrive-places-web'
+// A new nonpersistent Chromium Session avoids Electron's cached certificate
+// verdict surviving Owner changes, trust revocations or CA rotation.
+let desktopPlacesWebPartition = 'xdrive-places-web-' + randomUUID()
+const desktopPlacesWebConfiguredPartitions = new Set<string>()
 let desktopPlacesWebGeneration = 0
 let desktopPlacesWebReady: DesktopPlacesWebIdentity | null = null
 let desktopPlacesWebPending: (DesktopPlacesWebIdentity & { promise: Promise<boolean> }) | null = null
@@ -363,10 +372,25 @@ function resetDesktopPlacesWebAuth() {
   desktopPlacesWebPending = null
   // Serialize revocation behind any in-flight cookie login so a stale
   // Set-Cookie cannot restore a previous Owner after sign-out/account switch.
-  const clear = desktopPlacesWebQueue.then(() =>
-    session.fromPartition(desktopPlacesWebPartition, {cache:false}).clearStorageData({
-      storages: ['cookies', 'localstorage'],
-    }))
+  const oldPartition = desktopPlacesWebPartition
+  desktopPlacesWebPartition = 'xdrive-places-web-' + randomUUID()
+  // Reject all old-partition network requests synchronously by generation.
+  // Previous certificate verification decisions may be cached by Chromium:
+  // do NOT reuse that partition with another Owner or trust root.
+  const clear = desktopPlacesWebQueue.then(async () => {
+    const stale = session.fromPartition(oldPartition, {cache:false})
+    // Kill pooled/streaming connections as well as Cookies and DOM storage.
+    // A failed connection shutdown must not skip Cookie removal. The old
+    // partition remains denied even if Electron cannot clear its storage.
+    try { await stale.closeAllConnections() } catch { /* retired partition */ }
+    try {
+      await stale.clearStorageData({
+        storages: ['cookies', 'localstorage'],
+      })
+    } finally {
+      desktopPlacesWebConfiguredPartitions.delete(oldPartition)
+    }
+  })
   desktopPlacesWebQueue = clear.catch(() => {})
 }
 
@@ -376,6 +400,69 @@ function desktopPlacesWebOwnerStillCurrent(identity: DesktopPlacesWebIdentity) {
     status.username === identity.owner &&
     xDriveResolveSecureBaiduMapTarget(status.server)?.origin === identity.origin &&
     status.auth_status !== '登录已过期' && status.auth_status !== '账户已禁用'
+}
+
+// The isolated guest network stack does not inherit the Agent's app-local CA.
+// Only the currently approved IP:port can receive a chain+IP-SAN verified
+// certificate exception; all normal provider hosts use Chromium default TLS.
+function desktopPlacesCurrentLANPin(server: string, owner: string):
+  TrustedLANRoot | undefined {
+  const target=privateLANOrigin(server)
+  if(!target)return undefined
+  const manual=approvedManualLANPin(target.origin)
+  if(manual)return manual
+  return privateLANRoots.find(pin=>pin.server===target.origin &&
+    pin.source==='verified-domain' && pin.username===owner)
+}
+
+function configureDesktopPlacesWebSession(partition:string) {
+  const placesSession=session.fromPartition(partition,{cache:false})
+  if(desktopPlacesWebConfiguredPartitions.has(partition))return placesSession
+  desktopPlacesWebConfiguredPartitions.add(partition)
+  placesSession.setPermissionRequestHandler((_guest,_permission,answer)=>answer(false))
+  placesSession.setPermissionCheckHandler(()=>false)
+  placesSession.webRequest.onBeforeRequest((details,callback)=>{
+    if(partition!==desktopPlacesWebPartition || !agentState.connected ||
+        !agentState.status?.configured || !agentState.status.username){
+      callback({cancel:true});return
+    }
+    const allowed=xDriveResolveSecureBaiduMapTarget(agentState.status.server)?.origin ?? null
+    // A provider script must never use the map Cookie partition to contact
+    // localhost, an alternate private IP or another port.
+    callback({cancel:!placesGuestIPRequestAllowed(details.url,allowed)})
+  })
+  placesSession.setCertificateVerifyProc((request,callback)=>{
+    const status=agentState.status
+    const target=privateLANOrigin(status?.server||'')
+    if(!target || request.hostname!==target.ip){
+      // No global TLS bypass: public Baidu and other standard HTTPS domains.
+      callback(-3);return
+    }
+    if(partition!==desktopPlacesWebPartition || !agentState.connected ||
+        !status?.configured || !status.username ||
+        xDriveResolveSecureBaiduMapTarget(status.server)?.origin!==target.origin ||
+        requiresApprovedLANPin(target.origin) &&
+          !approvedManualLANPin(target.origin)) {
+      callback(-2);return
+    }
+    const owner=status.username
+    const pin=desktopPlacesCurrentLANPin(target.origin,owner)
+    if(!pin){callback(-3);return} // Valid system CA remains Chromium-owned.
+    const generation=desktopPlacesWebGeneration
+    const stillCurrent=()=>{
+      const current=agentState.status
+      const active=desktopPlacesCurrentLANPin(target.origin,owner)
+      return partition===desktopPlacesWebPartition &&
+        generation===desktopPlacesWebGeneration && agentState.connected &&
+        current?.configured===true && current.username===owner &&
+        xDriveResolveSecureBaiduMapTarget(current.server)?.origin===target.origin &&
+        active?.sha256===pin.sha256 && active.root_pem===pin.root_pem &&
+        !privateLANTrustStoreCorrupt && !rejectedManualLANOrigins.has(target.origin)
+    }
+    void verifyDesktopPlacesLANCertificate(request,pin,target.origin,stillCurrent)
+      .then(callback).catch(()=>callback(-2))
+  })
+  return placesSession
 }
 
 function seedDesktopPlacesWebAuth(server: string, owner: string,
@@ -394,6 +481,7 @@ function seedDesktopPlacesWebAuth(server: string, owner: string,
   const pending = desktopPlacesWebQueue.then(async () => {
     if (generation !== desktopPlacesWebGeneration ||
         !desktopPlacesWebOwnerStillCurrent(identity)) return false
+    configureDesktopPlacesWebSession(desktopPlacesWebPartition)
     const places = session.fromPartition(desktopPlacesWebPartition, {cache:false})
     // Chromium's network stack owns TLS validation and the partition Cookie
     // jar. The password is used only for this same-origin HTTPS POST in Main.
@@ -435,15 +523,115 @@ function seedDesktopPlacesWebAuth(server: string, owner: string,
   return pending
 }
 
-async function ensureDesktopPlacesWebAuth(identity: DesktopPlacesWebIdentity):
+/**
+ * Restart-safe native Agent -> one-use Server grant -> isolated Electron
+ * Cookie exchange. Main is the ONLY holder of the grant, and only for this
+ * operation. No native Access/Refresh token is ever read by Main or sent to
+ * the guest's JS, URL, preload or third-party Baidu provider.
+ */
+function seedDesktopPlacesWebAuthFromAgent(identity: DesktopPlacesWebIdentity):
   Promise<boolean> {
-  if (!desktopPlacesWebOwnerStillCurrent(identity)) return false
-  if (sameDesktopPlacesWebIdentity(desktopPlacesWebReady, identity)) return true
+  if (!desktopPlacesWebOwnerStillCurrent(identity)) return Promise.resolve(false)
+  if (sameDesktopPlacesWebIdentity(desktopPlacesWebReady, identity))
+    return Promise.resolve(true)
   if (desktopPlacesWebPending &&
       sameDesktopPlacesWebIdentity(desktopPlacesWebPending, identity))
     return desktopPlacesWebPending.promise
-  // A retained Agent session may outlive a Desktop window. Only a password
-  // the user explicitly chose to remember may be decrypted for that case.
+  if (desktopPlacesWebReady || desktopPlacesWebPending) resetDesktopPlacesWebAuth()
+  const generation = desktopPlacesWebGeneration
+  const pending = desktopPlacesWebQueue.then(async () => {
+    if (generation !== desktopPlacesWebGeneration ||
+        !desktopPlacesWebOwnerStillCurrent(identity)) return false
+    // Agent's own TLS-pinned HTTP client proves its native RefreshToken on
+    // Server. The local IPC returns ONLY a 30s one-use opaque grant.
+    const grant = await requireAgentClient().desktopMapGuestGrant()
+    if (!grant || grant.username !== identity.owner ||
+        typeof grant.ticket !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(grant.ticket) ||
+        !Number.isInteger(grant.expires_in) ||
+        grant.expires_in <= 0 || grant.expires_in > 30) return false
+    if (generation !== desktopPlacesWebGeneration ||
+        !desktopPlacesWebOwnerStillCurrent(identity)) return false
+    configureDesktopPlacesWebSession(desktopPlacesWebPartition)
+    const places = session.fromPartition(desktopPlacesWebPartition, {cache:false})
+    const response = await places.fetch(identity.origin + '/api/v1/auth/desktop-map/redeem', {
+      method: 'POST', credentials: 'include', redirect: 'error',
+      signal: AbortSignal.timeout(12_000),
+      headers: { Origin: identity.origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ticket:grant.ticket}),
+    })
+    if (!response.ok) return false
+    const result: unknown = await response.json()
+    const auth = result as {username?:unknown;browser_session?:unknown;refresh_token?:unknown}|null
+    if (!auth || auth.username !== identity.owner ||
+        auth.browser_session !== true || auth.refresh_token !== '') return false
+    const cookies = await places.cookies.get({
+      url: identity.origin, name: '__Host-xdrive_refresh',
+    })
+    if (!cookies.some(cookie => cookie.httpOnly && cookie.secure)) return false
+    if (generation !== desktopPlacesWebGeneration ||
+        !desktopPlacesWebOwnerStillCurrent(identity)) return false
+    desktopPlacesWebReady = identity
+    return true
+  }).catch(() => false)
+  desktopPlacesWebPending = {...identity, promise:pending}
+  desktopPlacesWebQueue = pending.then(() => {})
+  void pending.then(ok => {
+    if (desktopPlacesWebPending?.promise === pending)
+      desktopPlacesWebPending = null
+    if (!ok && generation === desktopPlacesWebGeneration)
+      resetDesktopPlacesWebAuth()
+  })
+  return pending
+}
+
+/**
+ * Check a previously established guest Cookie against current Server state,
+ * without rotating the refresh token (which would race the mounted WebView).
+ * A remembered identity is not evidence of a still-valid browser session.
+ */
+async function desktopPlacesWebCookieCurrent(identity: DesktopPlacesWebIdentity):
+  Promise<boolean> {
+  try {
+    const places=session.fromPartition(desktopPlacesWebPartition,{cache:false})
+    const response=await places.fetch(identity.origin+'/api/v1/auth/desktop-map/session',{
+      method:'POST',credentials:'include',redirect:'error',cache:'no-store',
+      signal:AbortSignal.timeout(8_000),
+      headers:{Origin:identity.origin,'X-XDrive-Browser-Owner':identity.owner},
+    })
+    if (!response.ok) return false
+    const parsed:unknown=await response.json()
+    const proof=parsed as {
+      username?:unknown;browser_session?:unknown;refresh_token?:unknown
+    }|null
+    return !!proof && proof.username===identity.owner &&
+      proof.browser_session===true && proof.refresh_token===undefined
+  } catch {return false}
+}
+
+async function ensureDesktopPlacesWebAuth(identity: DesktopPlacesWebIdentity):
+  Promise<boolean> {
+  if (!desktopPlacesWebOwnerStillCurrent(identity)) return false
+  if (sameDesktopPlacesWebIdentity(desktopPlacesWebReady, identity)) {
+    const generation=desktopPlacesWebGeneration
+    const valid=await desktopPlacesWebCookieCurrent(identity)
+    if (valid && generation===desktopPlacesWebGeneration &&
+        sameDesktopPlacesWebIdentity(desktopPlacesWebReady,identity) &&
+        desktopPlacesWebOwnerStillCurrent(identity)) return true
+    // Do not let a failed probe wipe a newer Owner/session generation.
+    if (generation===desktopPlacesWebGeneration &&
+        sameDesktopPlacesWebIdentity(desktopPlacesWebReady,identity))
+      resetDesktopPlacesWebAuth()
+  }
+  if (desktopPlacesWebPending &&
+      sameDesktopPlacesWebIdentity(desktopPlacesWebPending, identity))
+    return desktopPlacesWebPending.promise
+  // Prefer the retained native Agent session. This works after restarting
+  // Desktop with "remember password" disabled and never decrypts any password.
+  if (await seedDesktopPlacesWebAuthFromAgent(identity)) return true
+  if (!desktopPlacesWebOwnerStillCurrent(identity)) return false
+  // Compatibility with old Servers/Agents: the existing explicitly saved
+  // encrypted-password route is retained, but never required for new systems.
   if (!securePasswordStorageAvailable()) return false
   const profile = findLoginProfile(loginHistory, identity.origin + '/', identity.owner)
   if (!profile?.remember_password || !profile.encrypted_password) return false
@@ -453,6 +641,7 @@ async function ensureDesktopPlacesWebAuth(identity: DesktopPlacesWebIdentity):
   } catch { return false }
 }
 function closeDesktopPlacesGuests() {
+  ++desktopPlacesPrepareRevision
   resetDesktopPlacesWebAuth()
   desktopPlacesPending=null
   for (const id of desktopPlacesGuests.keys()) {
@@ -893,6 +1082,9 @@ async function savePrivateLANRoot(pin: TrustedLANRoot): Promise<void> {
     rejectedManualLANOrigins.clear()
     for (const origin of blocked) rejectedManualLANOrigins.add(origin)
     privateLANTrustStoreCorrupt = false
+    // Certificate verifier results are cached in Chromium's network service.
+    // An approval/CA change must retire its entire old ephemeral guest Session.
+    closeDesktopPlacesGuests()
   })
   privateLANSaveQueue = save.catch(() => {})
   await save
@@ -1137,6 +1329,7 @@ async function revokePrivateLANServer(
     const remaining = privateLANRoots.filter(pin => pin.server !== target.origin)
     await persistPrivateLANTrustState(remaining, rejectedManualLANOrigins)
     privateLANRoots = remaining
+    closeDesktopPlacesGuests()
   })
   privateLANSaveQueue = save.catch(() => {})
   try {
@@ -1847,15 +2040,14 @@ function createMainWindow(showOnReady = true) {
   // HTTPS guest uses its own ephemeral session; no device-location,
   // clipboard or native permission may be requested by provider scripts.
   // The exact remote URL is separately enforced at will-attach-webview.
-  const placesSession=session.fromPartition(desktopPlacesWebPartition,{cache:false})
-  placesSession.setPermissionRequestHandler((_guest,_permission,answer)=>answer(false))
-  placesSession.setPermissionCheckHandler(()=>false)
+  configureDesktopPlacesWebSession(desktopPlacesWebPartition)
   win.webContents.on('will-attach-webview',(event,preferences,params)=>{
     const expected=desktopPlacesGuestURL(agentState.status?.server)
     const pending=desktopPlacesPending
     if (!agentState.connected || !agentState.status?.username ||
         !expected || params.src!==expected ||
         params.partition!==desktopPlacesWebPartition ||
+        pending?.partition!==desktopPlacesWebPartition ||
         params.preload || params.nodeintegration || params.disablewebsecurity ||
         !pending || pending.windowID!==win.webContents.id ||
         pending.expiresAt<=Date.now() ||
@@ -1879,6 +2071,7 @@ function createMainWindow(showOnReady = true) {
     if (!agentState.connected || !owner || !target || !pending ||
         pending.windowID!==win.webContents.id ||
         pending.expiresAt<=Date.now() ||
+        pending.partition!==desktopPlacesWebPartition ||
         pending.owner!==owner || pending.origin!==target.origin) {
       guest.close();return
     }
@@ -3099,15 +3292,24 @@ function registerIPCHandlers() {
   // Source is the verified local file Renderer, not HTTPS or a map Child.
   // Preparation is one-use per guest attach and bound to this Desktop Owner.
   ipcMain.handle('desktop:prepare-places-embed',async (event,rawScope:unknown)=>{
+    // An untrusted guest or stale IPC sender must NEVER cancel a pending,
+    // currently authorized one-use Owner/scope attach from the local host.
+    // Authenticate the caller BEFORE advancing the preparation generation.
+    if (!mainWindow || mainWindow.isDestroyed() ||
+        event.sender!==mainWindow.webContents ||
+        event.senderFrame!==mainWindow.webContents.mainFrame) {
+      return {ok:false,error:{code:'map_scope_denied',
+        message:'当前 Desktop 地图范围或账户不受信任。'}}
+    }
+    const prepareRevision=++desktopPlacesPrepareRevision
+    // Last trusted Renderer prepare owns the pending one-use admission.
+    // The previous WebView cannot attach an older filtered scope during retry.
+    desktopPlacesPending=null
     const status=agentState.status
     const target=xDriveResolveSecureBaiduMapTarget(status?.server)
     const scope=xDriveParseDesktopBaiduMapScope(rawScope)
-    if (!mainWindow || mainWindow.isDestroyed() ||
-        event.sender!==mainWindow.webContents ||
-        event.senderFrame!==mainWindow.webContents.mainFrame ||
-        !agentState.connected || !status?.configured ||
+    if (!agentState.connected || !status?.configured ||
         !status.username || !target || !scope) {
-      desktopPlacesPending=null
       return {ok:false,error:{code:'map_scope_denied',
         message:'当前 Desktop 地图范围或账户不受信任。'}}
     }
@@ -3118,19 +3320,22 @@ function registerIPCHandlers() {
     const ready=await ensureDesktopPlacesWebAuth({
       origin:target.origin,owner:status.username,
     })
-    if (!ready || !mainWindow || mainWindow.isDestroyed() ||
+    if (!ready || prepareRevision!==desktopPlacesPrepareRevision ||
+        !mainWindow || mainWindow.isDestroyed() ||
         mainWindow.webContents.id!==hostID ||
         !desktopPlacesWebOwnerStillCurrent({origin:target.origin,owner:status.username})) {
-      desktopPlacesPending=null
+      // A late request cannot erase a newer successful Owner/scope receipt.
+      if(prepareRevision===desktopPlacesPrepareRevision)desktopPlacesPending=null
       return {ok:false,error:{code:'map_browser_session_unavailable',
         message:'无法建立当前账户的 Web 地图会话；请检查 HTTPS 连接或重试。'}}
     }
     desktopPlacesPending={
       windowID:hostID,
       owner:status.username,origin:target.origin,scope,
+      partition:desktopPlacesWebPartition,
       expiresAt:Date.now()+60_000,
     }
-    return {ok:true,data:{allowed:true}}
+    return {ok:true,data:{allowed:true,partition:desktopPlacesWebPartition}}
   })
   ipcMain.handle('desktop:places-embed-consume',(event,webUsername:unknown)=>{
     const guest=desktopPlacesGuests.get(event.sender.id)
@@ -9219,7 +9424,15 @@ if (!primaryInstance) {
     }
     restartDesktopMonitors()
     startupCheckpoint('monitors_started')
+    powerMonitor.on('suspend', () => {
+      // Discard unconsumed map attach authority before the OS freezes timers;
+      // never allow a pre-sleep promise to admit a post-resume guest.
+      ++desktopPlacesPrepareRevision
+      desktopPlacesPending=null
+    })
     powerMonitor.on('resume', () => {
+      ++desktopPlacesPrepareRevision
+      desktopPlacesPending=null
       restartDesktopMonitors()
     })
     if (startupDesktopAction) await performDesktopShortcutAction(startupDesktopAction)

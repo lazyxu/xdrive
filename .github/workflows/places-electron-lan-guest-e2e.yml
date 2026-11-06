@@ -1,0 +1,47 @@
+name: Places actual Electron private LAN HTTPS Guest
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/places-electron-lan-guest-e2e.yml'
+      - 'desktop/scripts/places-electron-lan-guest-*.cjs'
+      - 'desktop/src/main/places_guest_lan_tls.cts'
+      - 'desktop/src/main/lan_root_auto.cts'
+      - 'desktop/src/main/index.cts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-electron-lan-guest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare test-only RFC1918 loopback alias and native Electron dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb iproute2 openssl
+          npm --prefix desktop install --no-audit --no-fund
+          npm --prefix desktop run build:main
+          node --check desktop/scripts/places-electron-lan-guest-main.cjs
+          node --check desktop/scripts/places-electron-lan-guest-runner.cjs
+      - name: Actual Electron WebView, Chromium TLS, ephemeral Cookies, denied and revoked LAN trust
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
+          sudo ip addr add 10.233.15.9/32 dev lo
+          trap 'sudo ip addr del 10.233.15.9/32 dev lo || true' EXIT
+          XD_PLACES_TEST_LAN_IP=10.233.15.9 xvfb-run -a \
+            --server-args='-screen 0 1280x800x24' \
+            node desktop/scripts/places-electron-lan-guest-runner.cjs

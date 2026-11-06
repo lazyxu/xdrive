@@ -19,6 +19,18 @@ enum XDriveIOSNativeOwnerMapSelectionPolicy {
         facet.item_count > 0
     }
 
+    /// A current signed Owner map facet can only lend its display count to a
+    /// freshly fetched, exact-place Range with the same count. A photo added
+    /// or removed between the two reads makes its thumbnail ineligible until
+    /// the viewport is refreshed. A cover is presentation, not access proof.
+    static func acceptsCoverPage(
+        _ facet: XDriveIOSNativeOwnerMapFacet, rangeTotal: Int, offset: Int
+    ) -> Bool {
+        canOpenPhotoRange(facet) &&
+            offset == 0 &&
+            rangeTotal == facet.item_count
+    }
+
     /// Never promote an SDK- or annotation-provided identity. Caller checks
     /// membership against the current verified Owner overview at tap time.
     static func acceptsSelectedPlace(
@@ -27,6 +39,28 @@ enum XDriveIOSNativeOwnerMapSelectionPolicy {
         !currentlyVisibleIDs.isEmpty && currentlyVisibleIDs.count <= 64 &&
         Set(currentlyVisibleIDs).count == currentlyVisibleIDs.count &&
         canonicalPlaceID(id) && currentlyVisibleIDs.contains(id)
+    }
+
+    /// MapKit can retain a previously drawn pin after a new signed overview.
+    /// ID and count alone do not authorize the previous cell's coordinates.
+    /// A single-place PhotoAsset Range requires the exact current facet.
+    static func acceptsSelectedFacet(
+        _ chosen: XDriveIOSNativeOwnerMapFacet,
+        currentlyVisible: [XDriveIOSNativeOwnerMapFacet]
+    ) -> Bool {
+        guard !currentlyVisible.isEmpty,
+              currentlyVisible.count <= XDriveIOSNativeOwnerMapOverviewPolicy.maximumCells,
+              canOpenPhotoRange(chosen) else { return false }
+        let visibleIDs = currentlyVisible.map(\.id)
+        guard Set(visibleIDs).count == visibleIDs.count,
+              let signed = currentlyVisible.first(where: { $0.id == chosen.id }),
+              canOpenPhotoRange(signed) else { return false }
+        return chosen.item_count == signed.item_count &&
+               chosen.coordinate_kind == signed.coordinate_kind &&
+               chosen.latitude == signed.latitude &&
+               chosen.longitude == signed.longitude &&
+               chosen.sample_latitude == signed.sample_latitude &&
+               chosen.sample_longitude == signed.sample_longitude
     }
 
     /// Only real, unique canonical place IDs in the CURRENT Owner map overview

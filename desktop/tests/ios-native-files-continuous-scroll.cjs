@@ -11,9 +11,11 @@ const range = read('ios/XDriveIOS/NativeCloudFilesPolicy.swift')
 test('Files uses one lazy continuous list/grid instead of explicit 64-item page controls', () => {
   assert.doesNotMatch(browser, /private var filesPager|Button\("上一页"\)|Button\("下一页"\)/)
   assert.match(browser, /private var filesContinuousStatus: some View/)
-  assert.match(browser, /ForEach\(model\.entries\) \{ entry in[\s\S]*?fileEntryRow\(entry\)[\s\S]*?onAppear \{ requestContinuousNeighbor\(for: entry\.id\) \}/)
+  assert.match(browser, /ForEach\(model\.entries\) \{ entry in[\s\S]*?filesActionRow\(entry\)/)
+  assert.match(browser, /private func filesActionRow\([\s\S]*?fileEntryRow\(entry\)[\s\S]*?onAppear \{ requestContinuousNeighbor\(for: entry\.id\) \}/)
   assert.match(browser, /gridTile\(entry\)[\s\S]*?onAppear \{ requestContinuousNeighbor\(for: entry\.id\) \}/)
-  assert.match(browser, /if viewMode == "grid" \{[\s\S]*?LazyVGrid\(/)
+  assert.match(browser, /if viewMode == "grid" \{[\s\S]*?filesGrid\(model\.entries\)/)
+  assert.match(browser, /private func filesGrid\([\s\S]*?LazyVGrid\(/)
   assert.match(browser, /func loadAdjacent\(_ direction: XDriveIOSNativeFilesContinuousWindowPolicy\.Direction/)
   assert.match(browser, /model\.loadAdjacent\(\s*\.next/)
   assert.match(browser, /model\.loadAdjacent\(\s*\.previous/)
@@ -37,21 +39,25 @@ test('each adjacent range is reauthenticated and cannot append stale or overlapp
 
 test('sliding range preserves Viewer return and bounded selection, and owner/navigation cancellation', () => {
   assert.match(browser, /offset = model\.startOffset \+[\s\S]*?XDriveIOSNativeFilesPagePolicy\.pageSize/)
-  assert.match(browser, /model\.cancelAdjacent\(\)\s*selectedOwner = owner/)
+  assert.match(browser, /model\.cancelAdjacent\(\)\s*inlineFolders\.suspendForNavigation\(\)\s*selectedOwner = owner/)
   assert.match(browser, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
-  assert.match(browser, /selectedIDs\.formUnion\(model\.entries\.filter/)
+  assert.match(browser, /selectedSnapshots\[entry\.id\] = entry\.node/)
   assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in/)
   assert.match(browser, /func invalidate\(\) \{[\s\S]*?cancelAdjacent\(\)/)
   assert.match(browser, /self\.entries = \[\]\s*self\.total = 0\s*self\.verifiedPage = false/)
   assert.match(browser, /\.onDisappear \{ suspendVisibleRange\(\) \}/)
-  assert.match(browser, /private func suspendVisibleRange\(\) \{[\s\S]*?guard selectedFile == nil else \{ return \}[\s\S]*?model\.invalidate\(\)/)
+  assert.match(browser, /private func suspendVisibleRange\(\) \{[\s\S]*?guard selectedFile == nil else \{ return \}[\s\S]*?model\.suspendForNavigation\(\)/)
+  const suspend = browser.slice(browser.indexOf('private func suspendVisibleRange()'), browser.indexOf('var body: some View', browser.indexOf('private func suspendVisibleRange()')))
+  assert.doesNotMatch(suspend, /model\.invalidate\(\)/)
 })
 
 
-test('bounded Files window never retains unloaded selected IDs and batch cap matches existing Server', () => {
-  assert.match(browser, /\.onChange\(of: model\.entries\.map\(\\\.id\)\) \{ visibleIDs in/)
-  assert.match(browser, /selectedIDs\.formIntersection\(visibleIDs\)/)
-  assert.match(browser, /XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected -\s*selectedIDs\.count/)
+test('bounded Files window retains only 200 revision snapshots while Server verifies all writes', () => {
+  assert.match(browser, /\.onChange\(of: model\.entries\.map\(\\\.id\)\) \{ _ in/)
+  assert.doesNotMatch(browser, /selectedIDs\.formIntersection\(visibleIDs\)/)
+  assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(/)
+  assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.conflictingIDs\(/)
+  assert.match(browser, /selectedIDs\.count >= XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
   assert.match(browser, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
   assert.match(window, /static let maximumVisibleItems = 4 \* pageSize/)
   // 4*64 loaded rows, but only 200 selectable for one Server operation.

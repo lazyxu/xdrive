@@ -19,7 +19,7 @@ test('all Owner, Server instance and root changes reset parent navigation state'
   assert.match(source, /\.onChange\(of: ownerScopeKey\)\s*\{\s*_ in[\s\S]*?resetNavigation\(\)\s*\}/);
   const reset = source.match(/private func resetNavigation\(\)\s*\{([\s\S]*?)\n    \}/);
   assert.ok(reset, 'missing parent navigation reset');
-  for (const field of ['gallerySource = .local', 'dynamicFeature = nil',
+  for (const field of ['gallerySource = .unified', 'dynamicFeature = nil',
     'recentDynamic = []', 'tab = .gallery', 'launcherQuery = ""',
     'showRecentPicker = false']) {
     assert.ok(reset[1].includes(field), 'reset missing ' + field);

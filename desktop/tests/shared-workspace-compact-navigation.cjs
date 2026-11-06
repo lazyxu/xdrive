@@ -135,7 +135,7 @@ function createLoader(react = createHookRuntime().react) {
   return load
 }
 
-function productionWebSections(profile, notesPort = undefined) {
+function productionWebSections(profile, notesPort = undefined, clipboardPort = undefined) {
   const filename = path.join(repo, 'web/src/App.tsx')
   const source = fs.readFileSync(filename, 'utf8')
   const sourceFile = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
@@ -146,7 +146,7 @@ function productionWebSections(profile, notesPort = undefined) {
   )
   // The real Web sidebar reads this optional, Owner-authenticated Notes port.
   // An absent port must not fabricate a Notes or administrator entry.
-  const dependencies = { profile, notesPort, xDriveWorkspaceHostSections }
+  const dependencies = { profile, notesPort, clipboardPort, xDriveWorkspaceHostSections }
   const visit = (node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)
       && node.name.text === 'webSidebarSections') initializer = node.initializer
@@ -334,6 +334,21 @@ test('Notes sidebar is present only when an authenticated Owner port exists and 
   assert.equal(administratorKeys.filter(key => key === 'notes').length, 1)
   assert.ok(administratorKeys.includes('admin-users'))
   assert.equal(keys(withOwner.primary).includes('notes'), false)
+})
+
+test('Clipboard section requires the current verified Owner data port and is never an admin grant', () => {
+  const { xDriveCompactWorkspaceNavigation } = createLoader()(modelPath)
+  const build = (profile, clipboardPort) => xDriveCompactWorkspaceNavigation({
+    sections: productionWebSections(profile, undefined, clipboardPort), showLocalStorage: true,
+  }).moreSections.flatMap(section => keys(section.items))
+  const noOwner = build({ role: 'user' }, undefined)
+  assert.equal(noOwner.includes('clipboard'), false)
+  const verified = build({ role: 'user' }, { ownerScopeKey: 'server:owner-a' })
+  assert.equal(verified.filter(k => k === 'clipboard').length, 1)
+  assert.ok(!verified.includes('admin-users'))
+  const admin = build({ role: 'admin' }, { ownerScopeKey: 'server:owner-admin' })
+  assert.equal(admin.filter(k => k === 'clipboard').length, 1)
+  assert.ok(admin.includes('admin-users'))
 })
 
 test('compact destination keys continue to resolve through the existing Web app registry', () => {

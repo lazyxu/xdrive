@@ -5,6 +5,7 @@ enum XDrivePhotoKitExportFailure: Error {
     case notAuthorized
     case assetNotVisible
     case originalResourceMissing
+    case iCloudDownloadRequired
     case incompleteLivePair
     case storageUnavailable
     case resourceTooLarge
@@ -104,7 +105,18 @@ private final class PhotoKitRequestGate: @unchecked Sendable {
         lock.unlock()
 
         if let error {
-            continuation.resume(throwing: error)
+            let photoError = error as NSError
+            if photoError.domain == PHPhotosErrorDomain &&
+               photoError.code == PHPhotosError.networkAccessRequired.rawValue {
+                // Only Apple's explicit network-required outcome is eligible
+                // for an optional later foreground iCloud retry. Never
+                // classify unknown read/write failures as iCloud-only.
+                continuation.resume(
+                    throwing: XDrivePhotoKitExportFailure.iCloudDownloadRequired
+                )
+            } else {
+                continuation.resume(throwing: error)
+            }
         } else if finalCount <= 0 {
             // PhotoKit reported no error but supplied no original bytes.
             // The file handle never failed: this is one missing/inaccessible
@@ -121,57 +133,29 @@ private final class PhotoKitRequestGate: @unchecked Sendable {
 /// only when invoked by an explicit user action; caller chooses whether
 /// iCloud originals may be downloaded. No server/Device/Owner is involved.
 enum XDrivePhotoKitOriginalExporter {
-    private static func authorized() -> Bool {
+    private static func authorized(allowLimitedPhotoAccess: Bool) -> Bool {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        return status == .authorized
+        return status == .authorized ||
+            (allowLimitedPhotoAccess && status == .limited)
     }
 
-    /// Export one currently authorized PhotoKit asset, with a maximum of
-    /// 1 GiB per resource by default. A Live Photo is all-or-nothing:
+    /// Export a currently authorized PhotoKit asset without a backup byte
+    /// ceiling. A Live Photo remains all-or-nothing:
     /// both still and paired-video originals must be present and fully read.
     static func stage(localIdentifier: String, allowICloudDownload: Bool = false,
-                      maximumBytesPerResource: Int64 = 1_073_741_824) async throws
+                      maximumBytesPerResource: Int64 = .max,
+                      allowLimitedPhotoAccess: Bool = false) async throws
         -> XDriveStagedPhotoKitAsset {
-        guard authorized() else { throw XDrivePhotoKitExportFailure.notAuthorized }
+        guard authorized(allowLimitedPhotoAccess: allowLimitedPhotoAccess) else { throw XDrivePhotoKitExportFailure.notAuthorized }
         guard !localIdentifier.isEmpty,
               let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier],
                                               options: nil).firstObject
         else { throw XDrivePhotoKitExportFailure.assetNotVisible }
-        guard maximumBytesPerResource > 0,
-              maximumBytesPerResource <= 4_294_967_296 else {
+        guard maximumBytesPerResource > 0 else {
             throw XDrivePhotoKitExportFailure.resourceTooLarge
         }
 
-        let resources = PHAssetResource.assetResources(for: asset)
-        let selected: [(role: String, resource: PHAssetResource)]
-        let kind: String
-
-        if asset.mediaType == .video {
-            guard let video = resources.first(where: { $0.type == .fullSizeVideo })
-                ?? resources.first(where: { $0.type == .video }) else {
-                throw XDrivePhotoKitExportFailure.originalResourceMissing
-            }
-            kind = "video"
-            selected = [("video", video)]
-        } else if asset.mediaType == .image {
-            guard let still = resources.first(where: { $0.type == .fullSizePhoto })
-                ?? resources.first(where: { $0.type == .photo }) else {
-                throw XDrivePhotoKitExportFailure.originalResourceMissing
-            }
-            if asset.mediaSubtypes.contains(.photoLive) {
-                guard let motion = resources.first(where: { $0.type == .fullSizePairedVideo })
-                    ?? resources.first(where: { $0.type == .pairedVideo }) else {
-                    throw XDrivePhotoKitExportFailure.incompleteLivePair
-                }
-                kind = "live"
-                selected = [("still", still), ("motion", motion)]
-            } else {
-                kind = "image"
-                selected = [("still", still)]
-            }
-        } else {
-            throw XDrivePhotoKitExportFailure.originalResourceMissing
-        }
+        let (kind, selected) = try originalResources(for: asset)
 
         // Reclaim only old exporter-owned UUID directories left by an app
         // crash. The bounded, fail-closed cleanup never touches a current
@@ -200,7 +184,7 @@ enum XDrivePhotoKitOriginalExporter {
         do {
             for (index, entry) in selected.enumerated() {
                 try Task.checkCancellation()
-                guard authorized(),
+                guard authorized(allowLimitedPhotoAccess: allowLimitedPhotoAccess),
                       PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier],
                                           options: nil).firstObject != nil else {
                     throw XDrivePhotoKitExportFailure.assetNotVisible
@@ -225,7 +209,7 @@ enum XDrivePhotoKitOriginalExporter {
             }
             // A permission edit while iCloud bytes were loading invalidates
             // the entire pair. Never return partial files as a saved Live.
-            guard authorized(),
+            guard authorized(allowLimitedPhotoAccess: allowLimitedPhotoAccess),
                   PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier],
                                       options: nil).firstObject != nil else {
                 throw XDrivePhotoKitExportFailure.assetNotVisible
@@ -236,6 +220,33 @@ enum XDrivePhotoKitOriginalExporter {
             try? FileManager.default.removeItem(at: folder)
             throw error
         }
+    }
+
+    /// Canonical original identity shared by backup and read-only Gallery
+    /// hashing, including the same authoritative PhotoKit Live pair.
+    static func originalResources(for asset: PHAsset) throws
+        -> (kind: String, parts: [(role: String, resource: PHAssetResource)]) {
+        let resources = PHAssetResource.assetResources(for: asset)
+        if asset.mediaType == .video {
+            guard let video = resources.first(where: { $0.type == .fullSizeVideo })
+                ?? resources.first(where: { $0.type == .video }) else {
+                throw XDrivePhotoKitExportFailure.originalResourceMissing
+            }
+            return ("video", [("video", video)])
+        }
+        guard asset.mediaType == .image,
+              let still = resources.first(where: { $0.type == .fullSizePhoto })
+                  ?? resources.first(where: { $0.type == .photo }) else {
+            throw XDrivePhotoKitExportFailure.originalResourceMissing
+        }
+        if asset.mediaSubtypes.contains(.photoLive) {
+            guard let motion = resources.first(where: { $0.type == .fullSizePairedVideo })
+                ?? resources.first(where: { $0.type == .pairedVideo }) else {
+                throw XDrivePhotoKitExportFailure.incompleteLivePair
+            }
+            return ("live", [("still", still), ("motion", motion)])
+        }
+        return ("image", [("still", still)])
     }
 
     private static func writeResource(_ resource: PHAssetResource, to url: URL,

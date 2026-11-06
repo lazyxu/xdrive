@@ -101,19 +101,19 @@ enum XDriveIOSOriginalOwnerAuthorization {
         }
     }
 
-    func transport(origin: URL) throws -> XDriveNativeUploadSessionTransport {
+    func transport(origin: URL, allowsCellularAccess: Bool) throws -> XDriveNativeUploadSessionTransport {
         switch self {
         case .webBearer(let token):
             return try XDriveNativeUploadSessionTransport(
-                origin: origin, accessToken: token
+                origin: origin, accessToken: token, allowsCellularAccess: allowsCellularAccess
             )
         case .managedForeground(let authority):
             return try XDriveNativeUploadSessionTransport(
-                origin: origin, managedForeground: authority
+                origin: origin, managedForeground: authority, allowsCellularAccess: allowsCellularAccess
             )
         case .background(let credential):
             return try XDriveNativeUploadSessionTransport(
-                origin: origin, approvedBackgroundGrant: credential
+                origin: origin, approvedBackgroundGrant: credential, allowsCellularAccess: allowsCellularAccess
             )
         }
     }
@@ -151,7 +151,7 @@ private struct XDriveIOSBGOriginalNodeDTO: Decodable {
     let sha256: String
 }
 
-private final class XDriveIOSBGOriginalDenyRedirect: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSBGOriginalDenyRedirect: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

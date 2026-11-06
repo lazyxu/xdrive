@@ -34,6 +34,7 @@ export const XDRIVE_APP_WORKSPACE_ROUTES = [
   'overview',
   ...XDRIVE_CORE_WORKSPACE_KEYS,
   'notes',
+  'clipboard',
   'shares',
   'conflicts',
   'diagnostics',

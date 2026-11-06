@@ -37,7 +37,7 @@ private struct XDriveIOSNativeFilesCreateShareBody: Encodable {
     let password = ""
 }
 
-private final class XDriveIOSNativeFilesShareDenyRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeFilesShareDenyRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

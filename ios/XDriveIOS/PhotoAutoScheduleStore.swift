@@ -139,7 +139,9 @@ final class XDriveIOSPhotoAutoScheduleStore {
     }
 
     func disable(owner: XDriveNativeOwnerRoot) {
-        // Disable immediately, without requiring a network roundtrip.
+        // Invalidate delayed configure() consent before removing this Owner's
+        // plan. Do not change encrypted receipts or independent BG grants.
+        localStopGeneration &+= 1
         UserDefaults.standard.removeObject(forKey: key(for: owner))
     }
 

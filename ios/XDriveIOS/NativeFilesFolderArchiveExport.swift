@@ -28,7 +28,7 @@ private struct XDriveIOSNativeFilesArchiveTicket: Decodable {
     let url: String
 }
 
-private final class XDriveIOSNativeFilesArchiveNoRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeFilesArchiveNoRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
@@ -282,13 +282,19 @@ struct XDriveIOSNativeFilesFolderArchiveReader {
 final class XDriveIOSNativeFilesFolderArchiveModel: ObservableObject {
     @Published private(set) var prepared: XDriveIOSNativeFilesPreparedArchive?
     @Published private(set) var busy = false
-    @Published private(set) var status: String?
+    @Published private(set) var status: String? {
+        didSet {
+            if let status { activity?.report(status) }
+        }
+    }
+    private var activity: XDriveIOSNativeTransferStore.Ticket?
 
     private var epoch = UUID()
     private var task: Task<Void, Never>?
 
     func invalidate() {
         epoch = UUID()
+        activity = nil
         task?.cancel()
         task = nil
         prepared?.discard()
@@ -305,7 +311,8 @@ final class XDriveIOSNativeFilesFolderArchiveModel: ObservableObject {
 
     func prepare(_ folder: XDriveIOSNativeFilesNode,
                  login: XDriveIOSNativeOwnerLoginModel,
-                 expectedOwner: XDriveNativeOwnerRoot) {
+                 expectedOwner: XDriveNativeOwnerRoot,
+                 transfers: XDriveIOSNativeTransferStore? = nil) {
         guard !busy, task == nil, prepared == nil else { return }
         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) else {
             status = "当前服务器或账户已变化，请重新打开文件夹。"
@@ -313,11 +320,21 @@ final class XDriveIOSNativeFilesFolderArchiveModel: ObservableObject {
         }
         let ticket = UUID()
         epoch = ticket
+        let activity = transfers?.begin(.download, title: folder.name + "（ZIP）", owner: expectedOwner)
+        self.activity = activity
         busy = true
         status = "正在请求服务器准备文件夹 ZIP；暂不估算完成时间。"
         task = Task { @MainActor in
+            var failureDetail: String?
             defer {
+                let current = epoch == ticket
+                activity?.finishDownload(
+                    verified: current && prepared != nil,
+                    stopped: !current || Task.isCancelled,
+                    detail: failureDetail
+                )
                 if epoch == ticket {
+                    self.activity = nil
                     task = nil
                     busy = false
                 }
@@ -370,6 +387,7 @@ final class XDriveIOSNativeFilesFolderArchiveModel: ObservableObject {
                 } else {
                     status = "ZIP 下载未完成，可能是网络或服务器暂时不可用。"
                 }
+                failureDetail = status
             }
         }
     }

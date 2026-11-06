@@ -63,7 +63,7 @@ enum XDriveIOSNativeCloudStillFallback: Error {
     case unavailable
 }
 
-private final class XDriveIOSNativeRejectReadRedirect: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSNativeRejectReadRedirect: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
@@ -733,6 +733,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     @State private var previewRequestID = UUID()
     // Reuse the native Files verified-Node exporter, never a second download writer.
     @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
+    @Environment(\.xdriveNativeTransfers) private var transfers
     @State private var still: UIImage?
     @State private var stillIsThumbnailOnly = false
     @State private var player: AVPlayer?
@@ -1142,7 +1143,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                             } else {
                                 Button {
                                     guard let node = exportNode else { return }
-                                    exporter.prepare(node, login: login)
+                                    exporter.prepare(node, login: login, transfers: transfers)
                                 } label: {
                                     Label(exporter.busy ? "正在下载" : "导出原件",
                                           systemImage: "square.and.arrow.up")

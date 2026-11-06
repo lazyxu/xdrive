@@ -47,6 +47,9 @@ function XDriveSynologyBackupSourceSetupForHost({
   const [selectedShare, setSelectedShare] = useState<XDriveSynologyNASShare | null>(null)
   const [name, setName] = useState('')
   const [confirmed, setConfirmed] = useState(false)
+  // Opt-in only: creating a Source never silently begins a NAS transfer.
+  const [enableAutoAfterCreate, setEnableAutoAfterCreate] = useState(false)
+  const [autoResult, setAutoResult] = useState<'none' | 'accepted' | 'needs_attention'>('none')
   const [status, setStatus] = useState<CreateStatus>('idle')
   const [createdID, setCreatedID] = useState<number | null>(null)
   const [showDrafts, setShowDrafts] = useState(false)
@@ -123,22 +126,94 @@ function XDriveSynologyBackupSourceSetupForHost({
     createAttemptedRef.current = true
     const pinnedClient = client
     const pinnedOwnerScope = ownerScope
+    const explicitlyEnableAuto = enableAutoAfterCreate
+    // Keep both explicit negative checks: an old Host or Owner must never
+    // authorize a Source, schedule or upload after the NAS session rotates.
+    const sameOwningHost = () => mountedRef.current &&
+      !(latestScopeRef.current.client !== pinnedClient ||
+        latestScopeRef.current.ownerScope !== pinnedOwnerScope)
     setStatus('creating')
     setCreatedID(null)
+    setAutoResult('none')
     void client.createNASBackupSource(
       selectedShare.selection_id, ownerScope, name,
-    ).then(result => {
+    ).then(async result => {
       if (!mountedRef.current) return
-      if (latestScopeRef.current.client !== pinnedClient ||
-        latestScopeRef.current.ownerScope !== pinnedOwnerScope) {
+      if (!sameOwningHost()) {
         setStatus('uncertain')
         setShowDrafts(true)
         return
       }
       setCreatedID(result.source_id)
-      setStatus(result.state)
-      if (result.state === 'authorized') onCreated()
-      if (result.state === 'needs_inspection') setShowDrafts(true)
+      if (result.state !== 'authorized') {
+        setStatus(result.state)
+        if (result.state === 'needs_inspection') setShowDrafts(true)
+        return
+      }
+      // The native Root grant is independently verified by the owning Agent.
+      // Refresh the existing Source list even if a later schedule write fails.
+      onCreated()
+      if (!explicitlyEnableAuto) {
+        setStatus('authorized')
+        return
+      }
+      // One explicit user action: preserve Source identity, save a 6h plan,
+      // then start the ORIGINAL Agent's existing incremental Source runner.
+      // A lost schedule/run ACK is never retried or represented as success.
+      try {
+        const initial = await pinnedClient.load(result.source_id)
+        if (!sameOwningHost()) {
+          setStatus('uncertain')
+          return
+        }
+        if (initial.source_id !== result.source_id ||
+          !Number.isSafeInteger(initial.revision) || initial.revision <= 0 ||
+          !['', 'manual', 'interval', 'cron'].includes(initial.schedule_type)) {
+          throw new Error('unverified owning Source schedule')
+        }
+        if (initial.schedule_type !== 'interval' ||
+          initial.schedule_expression !== '6h' ||
+          initial.schedule_timezone !== '') {
+          const saved = await pinnedClient.save(result.source_id, initial.revision, {
+            schedule_type: 'interval', schedule_expression: '6h', schedule_timezone: '',
+          })
+          if (!sameOwningHost()) {
+            setStatus('uncertain')
+            return
+          }
+          if (saved.source_id !== result.source_id ||
+            !Number.isSafeInteger(saved.revision) ||
+            saved.revision <= initial.revision ||
+            saved.schedule_type !== 'interval' ||
+            saved.schedule_expression !== '6h' || saved.schedule_timezone !== '') {
+            throw new Error('unverified NAS schedule update')
+          }
+        }
+        if (!sameOwningHost()) {
+          setStatus('uncertain')
+          return
+        }
+        const started = await pinnedClient.run(result.source_id)
+        if (!sameOwningHost()) {
+          setStatus('uncertain')
+          return
+        }
+        if (started.source_id !== result.source_id ||
+          (started.state !== 'running' && started.state !== 'partial') ||
+          started.running !== (started.state === 'running') ||
+          started.uncertain_files !== 0 ||
+          started.backup_complete !== false ||
+          started.retirement_safe !== false ||
+          started.current_cas_verified !== false) {
+          throw new Error('NAS Agent did not confirm its first run')
+        }
+        setAutoResult('accepted')
+      } catch {
+        // Native Source and Root are confirmed, but we cannot infer whether
+        // the schedule or original upload committed after a lost reply.
+        setAutoResult('needs_attention')
+      }
+      if (sameOwningHost()) setStatus('authorized')
     }).catch(() => {
       if (!mountedRef.current) return
       setStatus('uncertain')
@@ -156,6 +231,8 @@ function XDriveSynologyBackupSourceSetupForHost({
     setCreatedID(null)
     resetShareAuthorization()
     setName('')
+    setEnableAutoAfterCreate(false)
+    setAutoResult('none')
     setShowDrafts(false)
     setScopeRevision(value => value + 1)
   }
@@ -169,7 +246,7 @@ function XDriveSynologyBackupSourceSetupForHost({
           <Typography variant="subtitle2" fontWeight={700}>创建 NAS 本机备份来源</Typography>
           <Typography variant="body2" color="text.secondary">
             先由本机 Agent 验证 NAS 共享目录。云端目标由 Server 根据已绑定设备和来源名称自动创建专属目录，
-            不需要选择普通云端文件夹。创建时会登记暂停的 Source 并请求 Agent 原生 Root 授权，不会自动上传。
+            不需要选择普通云端文件夹。创建时先登记 Source 并验证本机 Root；只有明确勾选自动备份选项才会提交首轮上传。
           </Typography>
           <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
             <Button variant="text" size="small"
@@ -197,7 +274,7 @@ function XDriveSynologyBackupSourceSetupForHost({
             <Typography variant="body2">已通过本机预检：{selectedShare.label}</Typography>
           ) : <Typography variant="body2" color="text.secondary">尚未选择并通过本地 NAS 目录预检。</Typography>}
           <Typography variant="body2" color="text.secondary">
-            云端目标：Server 自动创建并独占管理（同步文件夹 / Push / 本设备 / 来源名称）
+            云端目标由 Server 自动创建并独占管理；具体目录以返回的 Source 目标路径为准。
           </Typography>
           <TextField size="small" label="备份来源名称" value={name}
             disabled={status !== 'idle'} inputProps={{ maxLength: 128 }}
@@ -210,6 +287,11 @@ function XDriveSynologyBackupSourceSetupForHost({
               disabled={status !== 'idle'}
               onChange={event => setConfirmed(event.target.checked)} />}
             label="我确认在当前 NAS 上将所选目录授权给当前 xDrive Server Owner 作为备份来源" />
+          <FormControlLabel
+            control={<Checkbox size="small" checked={enableAutoAfterCreate}
+              disabled={status !== 'idle'}
+              onChange={event => setEnableAutoAfterCreate(event.target.checked)} />}
+            label="创建并授权后，每 6 小时自动增量备份，并立即启动首次备份（推荐，需明确勾选）" />
           <Box>
             <Button variant="contained" disabled={status !== 'idle' ||
               scopeStatus !== 'ready' || !selectedShare ||
@@ -219,13 +301,28 @@ function XDriveSynologyBackupSourceSetupForHost({
             </Button>
           </Box>
           {status === 'creating' ? (
-            <Typography role="status">正在通过本机 Agent 创建暂停的 Source 并绑定原生 Root…</Typography>
+            <Typography role="status">
+              {createdID && enableAutoAfterCreate
+                ? '本机目录已授权，正在验证计划并请求首次增量备份…'
+                : '正在通过本机 Agent 创建 Source 并绑定原生 Root…'}
+            </Typography>
           ) : null}
           {status === 'authorized' ? (
             <Stack spacing={1}>
               <Typography role="status" color="success.main">
-                本机 Source {createdID} 已原生授权。可在上方来源列表手动执行首次备份；尚未验证任何上传收据。
+                本机 Source {createdID} 已原生授权。
+                {autoResult === 'accepted'
+                  ? ' 已配置每 6 小时增量计划，首次任务已由本机 Agent 接受。此处尚未验证任何上传收据，任务受理不代表备份完成。只有首轮产生可信检查点后后续计划才会生效；请在上方状态/历史检查逐文件上传结果。'
+                  : autoResult === 'needs_attention'
+                    ? ' 请先核对当前来源的计划和执行历史，勿盲目重新提交。'
+                    : ' 请在上方来源列表检查计划，并手动启动首次备份。'}
               </Typography>
+              {autoResult === 'needs_attention' ? (
+                <Typography role="alert" color="warning.main">
+                  本机目录授权成功，但自动计划或首次备份的结果未确认。请核对该 Source 的计划、状态和历史，
+                  不要重复创建来源或盲目重试不确定的上传操作。
+                </Typography>
+              ) : null}
               <Button variant="outlined" size="small" onClick={configureAnother}>
                 配置另一个 NAS 备份来源
               </Button>

@@ -2177,6 +2177,13 @@ export type AgentMediaBaiduMapCoverage = {
 /** Only a CURRENT signed Server release can name a second HTTPS Origin.
  * Main-only read; never expose through the normal Desktop Renderer preload.
  */
+/** Main-only, single-use native Agent proof. Never expose in Renderer preload. */
+export type AgentDesktopMapGuestGrant = {
+  ticket: string
+  username: string
+  expires_in: number
+}
+
 export type AgentMediaBaiduJSAPI4Release = {
   provider: 'baidu-jsapi-4.0'
   enabled: true
@@ -3097,6 +3104,12 @@ export class AgentIPCClient {
   mediaBaiduJSAPI4Release(signal?: AbortSignal) {
     return this.request<AgentMediaBaiduJSAPI4Release>(
       'GET', '/v1/media/places/baidu-jsapi4-release', undefined, 10_000, signal)
+  }
+
+  /** A native-only one-use browser-session grant. No Renderer IPC handler. */
+  desktopMapGuestGrant(signal?: AbortSignal) {
+    return this.request<AgentDesktopMapGuestGrant>(
+      'POST', '/v1/cloud/desktop-map-grant', undefined, 15_000, signal)
   }
 
   mediaBaiduMapCoverageReasons(signal?: AbortSignal) {

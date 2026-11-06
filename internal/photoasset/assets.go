@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -592,6 +593,14 @@ func desiredFromNode(tx *gorm.DB, node meta.Node, row meta.MediaMetadata) (desir
 		return desiredAsset{}, err
 	}
 	for index, resource := range derived {
+		// MediaDerivedResource.SHA256 identifies its parent archive. Pairing
+		// requires the separately hashed bytes of this exact member range.
+		memberHash := ""
+		if resource.OwnerID == node.OwnerID && resource.NodeRevision == node.Revision &&
+			resource.SHA256 == node.File.SHA256 && row.NodeRevision == node.Revision &&
+			row.SHA256 == node.File.SHA256 && row.DerivedResourceVersion >= media.LIVPDerivedResourceVersion {
+			memberHash = media.LiveContainerMemberSHA256(row.ContainerJSON, resource.Role, resource.ByteOffset, resource.ByteSize)
+		}
 		asset.resources = append(asset.resources, desiredResource{
 			kind:       meta.PhotoResourceKindDerived,
 			nodeID:     node.ID,
@@ -601,7 +610,7 @@ func desiredFromNode(tx *gorm.DB, node meta.Node, row meta.MediaMetadata) (desir
 			mediaKind:  resource.MediaKind,
 			mimeType:   resource.MIMEType,
 			size:       resource.ByteSize,
-			sha256:     resource.SHA256,
+			sha256:     memberHash,
 			byteOffset: resource.ByteOffset,
 		})
 	}

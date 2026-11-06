@@ -100,6 +100,9 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                 throw XDriveIOSPhotoBackupMVPError.unavailableSource
             }
         }
+        let onlyWiFi = try await XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: owner)
+        // PhotoKit can allow or disallow iCloud access, but cannot pin it to Wi-Fi.
+        let allowICloudOriginals = allowICloudOriginals && !onlyWiFi
         try await authorization.verify(owner: owner)
         try Task.checkCancellation()
 
@@ -125,6 +128,16 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             // still passes the exact existing Owner/Device/CAS/receipt writer.
             var queuedIdentifiers = Set<String>()
             if let changeQueue {
+                // Only an explicitly consented managed foreground run may
+                // download iCloud originals. System BG runs are local-only.
+                // At most four distinct network-required revisions are
+                // requeued; ordinary failed rows and unknown ACKs are never
+                // blindly retried.
+                if allowICloudOriginals, case .managedForeground = authorization {
+                    _ = try await changeQueue.retryWaitingICloudCandidates(
+                        owner: owner, limit: 4
+                    )
+                }
                 let queued = try await changeQueue.pendingCandidates(
                     owner: owner, limit: 64
                 )
@@ -143,7 +156,9 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         report.videosNotSupported += 1
                         report.stage = "变更队列中存在不支持的媒体类型"
                         _ = try await changeQueue.settle(
-                            candidate.pending, result: .failed, owner: owner
+                            candidate.pending, result: .failed,
+                            reasonCode: XDriveIOSPhotoBackupIssueReason.unsupported.rawValue,
+                            owner: owner
                         )
                         await publish(report)
                         continue
@@ -186,14 +201,31 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                     } catch {
                         if Self.isTransientConfirmedReadbackFailure(error) ||
                            Self.mustAbortRun(after: error) { throw error }
-                        report.changeQueueFailed += 1
+                        let waitingForICloud: Bool
+                        if !allowICloudOriginals,
+                           let photoError = error as? XDrivePhotoKitExportFailure,
+                           case .iCloudDownloadRequired = photoError {
+                            waitingForICloud = true
+                        } else {
+                            waitingForICloud = false
+                        }
                         report.unavailable += 1
-                        report.stage = "有新增/修改原件暂不可用，已保留失败状态"
-                        // This path is item-local and the shared writer has
-                        // proven no ambiguous Server mutation. Global errors
-                        // and unknown ACKs abort above and remain unresolved.
+                        if waitingForICloud {
+                            report.stage = "原件仅在 iCloud，保留等待前台下载状态"
+                        } else {
+                            report.changeQueueFailed += 1
+                            report.stage = "有新增/修改原件暂不可用，已保留失败状态"
+                        }
+                        // Both states prove no ambiguous Server mutation.
+                        // Later retry requires the same PhotoKit baseline and
+                        // exact queued revision. Unknown ACKs abort above.
+                        let result: XDriveIOSPhotoBackupChangeQueueStore.Settled =
+                            waitingForICloud ? .waitingICloud : .failed
                         _ = try await changeQueue.settle(
-                            candidate.pending, result: .failed, owner: owner
+                            candidate.pending, result: result,
+                            reasonCode: waitingForICloud
+                                ? nil : Self.issueReason(after: error).rawValue,
+                            owner: owner
                         )
                     }
                     await publish(report)
@@ -345,6 +377,8 @@ struct XDriveIOSForegroundPhotoBackupMVP {
               !owner.instanceID.isEmpty else {
             throw XDriveIOSPhotoBackupMVPError.identityNotVerified
         }
+        let onlyWiFi = try await XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: owner)
+        let allowICloudOriginals = allowICloudOriginals && !onlyWiFi
         try await authorization.verify(owner: owner)
         try Task.checkCancellation()
         var report = XDriveIOSPhotoBackupProgress()
@@ -433,6 +467,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             switch source {
             case .assetNotVisible: return .notVisible
             case .originalResourceMissing: return .originalMissing
+            case .iCloudDownloadRequired: return .iCloudDownloadRequired
             case .incompleteLivePair: return .incompleteLivePair
             case .resourceTooLarge: return .resourceTooLarge
             case .notAuthorized, .storageUnavailable: return .unavailable
@@ -447,11 +482,31 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     /// A global authorization/receipt trust loss must not be reclassified
     /// as one unavailable PhotoKit original and scanned past.
     private static func mustAbortRun(after error: Error) -> Bool {
+        // The transport can reject a Device/Owner/Root permission
+        // *before* the persisted "creating" journal transition. In that
+        // case the ledger is still .prepared and the writer propagates
+        // the transport error instead of reporting an uncertain write.
+        // Permission and invalid-Server failures belong to the ENTIRE
+        // run: a per-photo unavailable count would wrongly advance an
+        // automatic/background scan cursor past unbacked-up originals.
+        if let upload = error as? XDriveNativeUploadError {
+            switch upload {
+            case .unauthorizedOrRejected(_), .invalidServerResponse,
+                 .uncertainCommit, .localStorageUnavailable:
+                return true
+            case .invalidLocalFile:
+                // A staged file's source identity/size/hash mismatch is
+                // item-local, provided the journal still proves .prepared.
+                // The writer handles non-prepared records as review first.
+                break
+            }
+        }
         // Network outages are not "one inaccessible photo". Advancing a
         // completed 256-slot cursor after repeated offline failures can
         // strand entire older windows until a future full-library wrap.
         // A disk staging failure is equally global, not a missing original.
-        if error is URLError ||
+        if error is XDriveIOSPhotoBackupNetworkError ||
+           error is URLError ||
            error is XDriveNativeOwnerRootFailure ||
            error is XDrivePhotoSyncLedgerError ||
            error is XDriveIOSPhotoBGVaultFailure {
@@ -519,24 +574,13 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         let binding = try await XDriveIOSForegroundBackupIdentity.shared
             .localScopeAndTag(owner: owner, localIdentifier: localIdentifier)
         try Task.checkCancellation()
-        // The approved BGProcessing writer keeps the legacy 1 GiB video
-        // bound; only an active, JWT-authorized foreground run can export
-        // and stage a video up to 4 GiB. Live remains a separate ZIP bound.
-        let videoMaxBytes: Int64
-        if case .background = authorization {
-            videoMaxBytes = XDriveIOSOriginalBackupMediaPolicy.backgroundVideoLimit
-        } else {
-            videoMaxBytes = XDriveIOSOriginalBackupMediaPolicy.videoLimit
-        }
+        // No iOS-specific media size ceiling. The exporter streams to
+        // protected staging and the existing UploadSession sends 8 MiB chunks.
+        _ = try await XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: owner)
         let staged = try await XDrivePhotoKitOriginalExporter.stage(
             localIdentifier: localIdentifier,
             allowICloudDownload: allowICloud,
-            // Larger uncompressed originals are handled as bounded 8-MiB
-            // UploadSession chunks. Disk staging is still one resource at a time.
-            maximumBytesPerResource: isLive
-                ? XDriveIOSLiveOriginalArchive.maximumPartBytes
-                : isVideo ? videoMaxBytes
-                  : XDriveIOSOriginalBackupMediaPolicy.stillLimit
+            maximumBytesPerResource: .max
         )
         defer { staged.delete() }
         try Task.checkCancellation()

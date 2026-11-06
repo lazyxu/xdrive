@@ -8,10 +8,11 @@ private enum XDriveIOSNativeBottomTab: String {
 }
 
 private enum XDriveIOSNativeGallerySource: String, CaseIterable, Identifiable {
-    case local, albums, cloud, originals, map
+    case unified, local, albums, cloud, originals, map
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .unified: return "全部照片"
         case .local: return "本机照片"
         case .albums: return "相册"
         case .cloud: return "云端图库"
@@ -46,7 +47,7 @@ private enum XDriveIOSNativeDynamicFeature: String, CaseIterable, Identifiable {
         case .diagnostics: return "waveform.path.ecg"
         }
     }
-    var implemented: Bool { self == .backup || self == .notes }
+    var implemented: Bool { self == .backup || self == .notes || self == .transfers }
 }
 
 private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
@@ -90,6 +91,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
     var available: Bool {
         switch self {
         case .local, .albums, .cloud, .originals, .map, .files, .notes, .backup: return true
+        case .transfers: return true
         default: return false
         }
     }
@@ -111,6 +113,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     let signingOut: Bool
     let logoutWarning: String?
     let onSignOut: (XDriveNativeOwnerRoot) -> Void
+    @StateObject private var transfers = XDriveIOSNativeTransferStore()
     @State private var showSignOutConsent = false
     @State private var signOutConsentOwner: XDriveNativeOwnerRoot?
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -118,7 +121,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     @Environment(\.scenePhase) private var phase
     @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
-    @State private var gallerySource: XDriveIOSNativeGallerySource = .local
+    @State private var gallerySource: XDriveIOSNativeGallerySource = .unified
     // Opening a Photos map should include every currently authorized GPS photo,
     // not just the current 64-slot Timeline page; the user can still select
     // the bounded Current Page mode explicitly.
@@ -241,6 +244,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         }
         .id(ownerScopeKey)
+        .environment(\.xdriveNativeTransfers, transfers)
         .environment(\.xdriveNativeLocalMapJump, localMapJump)
         .environment(\.xdriveOpenNativeLocalMap, { jump in
             guard ownerScopeKey == expectedRouteOwnerKey, login.owner != nil,
@@ -310,6 +314,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .onAppear {
             restoreNavigationIfNeeded()
+            transfers.selectOwner(login.owner)
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             backup.refresh(owner: login.owner)
         }
@@ -327,6 +332,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             backup.refresh(owner: login.owner)
         }
         .onChange(of: ownerScopeKey) { _ in
+            transfers.selectOwner(login.owner)
             // TabView .id does not reset this parent's @State. Revoke the old
             // Owner's saved UI route even if switching A -> B -> A in one scene.
             routeRestoreScopeKey = nil
@@ -492,7 +498,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     private var gallerySourceRow: some View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(XDriveIOSNativeGallerySource.allCases.filter { $0 != .map }) { source in
+                    ForEach(XDriveIOSNativeGallerySource.allCases.filter {
+                        $0 != .map && (($0 != .local && $0 != .cloud) || $0 == gallerySource)
+                    }) { source in
                         Button {
                             if source == .map { localMapJump = nil }
                             gallerySource = source
@@ -513,6 +521,16 @@ struct XDriveIOSNativePhotosDashboard: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    Menu {
+                        Button("本机照片") { gallerySource = .local }
+                        Button("云端图库") { gallerySource = .cloud }
+                    } label: {
+                        Label("单独浏览", systemImage: "line.3.horizontal.decrease.circle")
+                            .font(.subheadline)
+                            .frame(minHeight: 44)
+                            .padding(.horizontal, 10)
+                    }
+                    .accessibilityIdentifier("native-ios-gallery-source-menu")
                 }
                 .padding(.horizontal, 12)
             }
@@ -586,10 +604,25 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
             Group {
                 switch gallerySource {
+                case .unified:
+                    XDriveIOSNativeUnifiedPhotoGallery(login: login) { openDynamic(.backup) }
                 case .local:
                     XDriveIOSNativeLocalPhotoTimelineContainer(
                         savedOffset: $localGalleryPageOffset,
                         mediaFilter: $localGalleryMediaFilter
+                    )
+                    .environment(
+                        \.xdriveNativePhotoQueueBadgeOwner,
+                        backup.schedule?.enabled == true &&
+                        backup.schedule?.backupStartRule == .onlyNew
+                            ? login.owner : nil
+                    )
+                    .environment(
+                        \.xdriveNativePhotoQueueBadgeRefresh,
+                        XDriveIOSNativePhotoQueueBadgeRefresh(
+                            busy: backup.busy,
+                            confirmedID: backup.confirmedOriginalUpdate?.id
+                        )
                     )
                 case .albums:
                     XDriveIOSNativePhotoAlbumsScreen(
@@ -624,7 +657,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                                 expectedGeneration: focusGeneration
                             )
                         },
-                        onClose: { openGallery(.local) }
+                        onClose: { openGallery(.local) },
+                        mediaFilter: localGalleryMediaFilter
                     )
                 }
             }
@@ -730,6 +764,12 @@ struct XDriveIOSNativePhotosDashboard: View {
                     guard login.owner != nil else { return }
                     openGallery(.originals)
                 }
+            case .transfers:
+                XDriveIOSNativeTransfersScreen(
+                    transfers: transfers, backup: backup, owner: login.owner,
+                    openFiles: { tab = .files },
+                    openBackup: { openDynamic(.backup) }
+                )
             default:
                 unavailable(
                     title: "\(feature.title)尚未接通",
@@ -756,6 +796,10 @@ struct XDriveIOSNativePhotosDashboard: View {
 
     private var mine: some View {
         Form {
+            Section("本机存储") {
+                NavigationLink("缩略图缓存") { XDriveIOSNativePhotoThumbnailCacheScreen(login: login) }
+                    .disabled(login.owner == nil)
+            }
             Section("当前服务器和账户") {
                 if let owner = login.owner {
                     LabeledContent("服务器", value: owner.origin.host ?? owner.origin.absoluteString)
@@ -785,7 +829,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 Text(granted == .authorized ? "完整照片权限" :
                     granted == .limited ? "部分照片权限" : "照片权限尚未授予或不可用")
                 Button("相册与照片墙") {
-                    gallerySource = .local
+                    gallerySource = .unified
                     tab = .gallery
                 }
             }
@@ -868,7 +912,8 @@ struct XDriveIOSNativePhotosDashboard: View {
 
         // Only known, implemented routes are restored. Child PhotoKit pages
         // re-query their own permission and Owner-signed Server data.
-        gallerySource = XDriveIOSNativeGallerySource(rawValue: snapshot.gallerySource) ?? .local
+        let savedGallery = XDriveIOSNativeGallerySource(rawValue: snapshot.gallerySource)
+        gallerySource = savedGallery == .local || savedGallery == .cloud ? .unified : (savedGallery ?? .unified)
         // Migrate legacy page-only map routes to the full authorized Photos map.
         localMapScope = .library
         // Legacy page offsets are no longer a user-visible map destination.
@@ -903,7 +948,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     private func resetNavigation() {
         galleryFocusGeneration = UUID()
         galleryFocused = false
-        gallerySource = .local
+        gallerySource = .unified
         localMapScope = .library
         localMapPageOffset = 0
         localMapJump = nil

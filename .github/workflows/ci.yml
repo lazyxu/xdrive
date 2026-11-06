@@ -184,19 +184,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  single-commit:
-    if: github.event_name == 'pull_request'
-    needs: pr-scope
-    runs-on: ubuntu-latest
-    steps:
-      - name: Record PR commit count without demanding a rewrite
-        env:
-          PR_COMMITS: ${{ github.event.pull_request.commits }}
-        run: |
-          set -euo pipefail
-          [[ "$PR_COMMITS" =~ ^[1-9][0-9]*$ ]] || exit 1
-          echo "PR has $PR_COMMITS commit(s); Squash Merge may retain a linear master."
-
   # Publisher-only PRs need the exact immutable Share delivery contracts, not
   # Android, Desktop, Go image builds or signed release publication. On master
   # and stable tags both jobs run as part of the complete Final Gate.

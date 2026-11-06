@@ -152,10 +152,118 @@ import Foundation
                 token: Data([7]), authorization: 3
             ))
         }
+        // iCloud-only read without network does not become a permanently
+        // failed or confirmed original. A later explicitly approved foreground
+        // read may requeue only the same baseline and exact revision.
+        let cloudFile = dir.appendingPathComponent("icloud-wait.sqlite3")
+        do {
+            let cloud = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: cloudFile)
+            try expect(try cloud.installBaselineIfAbsent(
+                token: Data([1]), authorization: 3
+            ))
+            _ = try cloud.apply(
+                inserted: ["cloud-only"], updated: [], deleted: [],
+                expectedToken: Data([1]), nextToken: Data([2]),
+                authorization: 3
+            )
+            guard let pending = try cloud.pending().first else {
+                fatalError("missing iCloud candidate")
+            }
+            try expect(try cloud.settle(
+                pending, result: .waitingICloud,
+                expectedBaselineToken: Data([2]), authorization: 3
+            ))
+            try expect(try cloud.counts() == .init(
+                pending: 0, failed: 0, waitingICloud: 1,
+                confirmed: 0, missingLocal: 0
+            ))
+            try expect(try cloud.failed().isEmpty)
+            try expect(try cloud.waitingICloud().first == pending)
+            try expect(try !cloud.retryFailed(
+                pending, expectedBaselineToken: Data([2]), authorization: 3
+            ))
+        }
+        do {
+            let cloud = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: cloudFile)
+            let waiting = try cloud.waitingICloud()
+            guard let candidate = waiting.first, waiting.count == 1 else {
+                fatalError("waiting iCloud row was not durable")
+            }
+            do {
+                _ = try cloud.retryWaitingICloud(
+                    candidate, expectedBaselineToken: Data([9]), authorization: 3
+                )
+                fatalError("expected stale iCloud retry rejection")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.baselineChanged {}
+            try expect(try cloud.counts().waitingICloud == 1)
+            try expect(try cloud.retryWaitingICloud(
+                candidate, expectedBaselineToken: Data([2]), authorization: 3
+            ))
+            try expect(try !cloud.retryWaitingICloud(
+                candidate, expectedBaselineToken: Data([2]), authorization: 3
+            ))
+            try expect(try cloud.settle(
+                candidate, result: .confirmed,
+                expectedBaselineToken: Data([2]), authorization: 3
+            ))
+            try expect(try cloud.counts() == .init(
+                pending: 0, failed: 0, waitingICloud: 0,
+                confirmed: 1, missingLocal: 0
+            ))
+        }
         let isolated = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: dir.appendingPathComponent("owner-b.sqlite3"))
         try expect(try isolated.baseline() == nil)
         try expect(try isolated.pending().isEmpty)
         try expect(try isolated.counts() == .init())
-        print("iOS PhotoKit change queue atomic token+priority+restart+Owner isolation: PASS")
+        // Failure reasons are local-only normalized codes and committed
+        // atomically with the same baseline/revision fence as the queue state.
+        // Reopen the database to prove that diagnostics survive an app restart.
+        let reasonFile = dir.appendingPathComponent("failure-reasons.sqlite3")
+        do {
+            let reasons = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: reasonFile)
+            _ = try reasons.installBaselineIfAbsent(token: Data([10]), authorization: 3)
+            _ = try reasons.apply(inserted: ["reason-video"], updated: [], deleted: [],
+                                  expectedToken: Data([10]), nextToken: Data([11]), authorization: 3)
+            guard let item = try reasons.pending().first else {
+                preconditionFailure("failure test candidate missing")
+            }
+            do {
+                _ = try reasons.settle(item, result: .failed,
+                                       reasonCode: "http-403-secret-body",
+                                       expectedBaselineToken: Data([11]), authorization: 3)
+                preconditionFailure("arbitrary remote error body persisted")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.invalidInput {}
+            try expect(try reasons.status(for: "reason-video")?.state == .pending)
+            try expect(try reasons.settle(item, result: .failed,
+                                           reasonCode: "incompleteLivePair",
+                                           expectedBaselineToken: Data([11]), authorization: 3))
+            try expect(try reasons.status(for: "reason-video")?.failureReasonCode ==
+                       "incompleteLivePair")
+            try expect(try reasons.failureReasonCounts()["incompleteLivePair"] == 1)
+        }
+        do {
+            let reopened = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: reasonFile)
+            try expect(try reopened.status(for: "reason-video")?.failureReasonCode ==
+                       "incompleteLivePair")
+            try expect(try reopened.failureReasonCounts()["incompleteLivePair"] == 1)
+            guard let item = try reopened.failed().first else {
+                preconditionFailure("durable failure missing after reopen")
+            }
+            do {
+                _ = try reopened.retryFailed(item, expectedBaselineToken: Data([99]),
+                                             authorization: 3)
+                preconditionFailure("stale baseline retried failure")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.baselineChanged {}
+            try expect(try reopened.retryFailed(item, expectedBaselineToken: Data([11]),
+                                                authorization: 3))
+            try expect(try reopened.failureReasonCounts().isEmpty)
+            try expect(try reopened.status(for: "reason-video")?.failureReasonCode == nil)
+            _ = try reopened.apply(inserted: [], updated: ["reason-video"], deleted: [],
+                                   expectedToken: Data([11]), nextToken: Data([12]),
+                                   authorization: 3)
+            try expect(try reopened.status(for: "reason-video")?.failureReasonCode == nil)
+            try expect(try reopened.failureReasonCounts().isEmpty)
+        }
+        print("iOS PhotoKit change queue atomic token+priority+restart+Owner isolation+failure codes: PASS")
     }
 }

@@ -17,7 +17,8 @@ const albums = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
 const search = read('ios/XDriveIOS/NativePhotoMetadataSearch.swift')
 
 test('PhotoKit iCloud thumbnail access is enabled by default without caller configuration', () => {
-  assert.ok(loader.includes('settings.isNetworkAccessAllowed = true'))
+  assert.match(loader, /allowICloud: Bool = true/)
+  assert.ok(loader.includes('settings.isNetworkAccessAllowed = allowICloud'))
   assert.ok(loader.includes('PHImageManager.default().requestImage('))
   assert.ok(loader.includes('targetSize: size'))
   assert.ok(loader.includes('settings.resizeMode = .fast'))

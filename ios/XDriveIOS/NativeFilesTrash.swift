@@ -10,7 +10,7 @@ private enum XDriveIOSNativeFilesTrashFailure: Error {
 }
 
 private final class XDriveIOSNativeFilesTrashRejectRedirects:
-    NSObject, URLSessionTaskDelegate {
+    XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

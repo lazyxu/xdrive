@@ -76,7 +76,7 @@ private struct XDriveCreateIOSDeviceRequest: Encodable {
     let client_version: String
 }
 
-private final class XDriveIOSIdentityRejectRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSIdentityRejectRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

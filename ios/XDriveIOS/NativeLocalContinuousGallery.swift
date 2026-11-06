@@ -158,7 +158,45 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     @State private var page: XDrivePhotoKitScanPage?
     @State private var precedingCapturedAt: Date?
     @State private var scanner: XDriveIOSNativeGalleryMediaScanner?
+    @Environment(\.scenePhase) private var photoQueueScenePhase
+    @Environment(\.xdriveNativePhotoQueueBadgeOwner) private var backupBadgeOwner
+    @Environment(\.xdriveNativePhotoQueueBadgeRefresh) private var badgeRefresh
+    @State private var visibleBackupQueueStates: [String: String] = [:]
+    @State private var badgeReadEpoch = UUID()
 
+    /// Refresh ONLY the currently mounted 64-cell page on writer completion,
+    /// foreground return or opt-in changes. Never rescan PhotoKit, allocate a
+    /// library-wide ID list or infer backup completion from a local queue.
+    @MainActor
+    private func refreshVisibleBackupQueueStatuses() async {
+        let token = UUID()
+        badgeReadEpoch = token
+        visibleBackupQueueStates = [:]
+        guard let current = page, let owner = backupBadgeOwner,
+              current.items.count <= 64,
+              photoQueueScenePhase == .active,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+        else { return }
+        let identifiers = current.items.map(\.id)
+        do {
+            let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
+            let states = try await queue.visibleStatuses(
+                owner: owner, localIdentifiers: identifiers
+            )
+            try Task.checkCancellation()
+            guard badgeReadEpoch == token,
+                  photoQueueScenePhase == .active,
+                  XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
+                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                  page?.startOffset == current.startOffset,
+                  page?.items.map(\.id) == identifiers
+            else { return }
+            visibleBackupQueueStates = states
+        } catch {
+            // Unreadable or outdated local queue is UNKNOWN, never success.
+            if badgeReadEpoch == token { visibleBackupQueueStates = [:] }
+        }
+    }
 
     private var placeholderTile: some View {
         RoundedRectangle(cornerRadius: 3)
@@ -182,10 +220,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                             .padding(.top, 4)
                             .accessibilityAddTraits(.isHeader)
                     }
-                    LazyVGrid(columns: [GridItem(.adaptive(
-                        minimum: density.minimumCellWidth,
-                        maximum: density.maximumCellWidth
-                    ), spacing: 2)], spacing: 2) {
+                    XDriveIOSNativePhotoWallGrid(density: density) {
                         ForEach(page.items[section.startIndex..<section.endIndex]) { candidate in
                         if candidate.kind != "unsupported" {
                             Button { onSelect(candidate, page) } label: {
@@ -193,6 +228,21 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                     XDriveIOSNativeSquarePhotoTile(
                                         candidate: candidate, framing: framing
                                     )
+                                    .overlay(alignment: .topLeading) {
+                                        if let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy
+                                            .badge(for: visibleBackupQueueStates[candidate.id]) {
+                                            Label(badge.title, systemImage: badge.symbol)
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .lineLimit(1)
+                                                .minimumScaleFactor(0.75)
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 3)
+                                                .background(Color.black.opacity(0.7), in: Capsule())
+                                                .padding(3)
+                                                .accessibilityHidden(true)
+                                        }
+                                    }
                                     if selectionMode {
                                         Image(systemName: selectedIDs.contains(candidate.id)
                                             ? "checkmark.circle.fill" : "circle")
@@ -209,6 +259,11 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                     : (candidate.kind == "video" ? "播放视频" : "查看照片")
                             )
                             .buttonStyle(.plain)
+                            .accessibilityValue(
+                                XDriveIOSNativeVisiblePhotoQueueBadgePolicy
+                                    .badge(for: visibleBackupQueueStates[candidate.id])?
+                                    .explanation ?? "当前云端备份状态未核验"
+                            )
                             .contextMenu {
                                 Button("分享本机原件") { onShare(candidate, false) }
                                 Button("从 iCloud 下载原件并分享") {
@@ -241,10 +296,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                     .frame(maxWidth: .infinity)
                 // Match the number of real grid cells before PhotoKit finishes.
                 // A one-row spinner would shift the entire scroll offset later.
-                LazyVGrid(columns: [GridItem(.adaptive(
-                        minimum: density.minimumCellWidth,
-                        maximum: density.maximumCellWidth
-                    ), spacing: 2)], spacing: 2) {
+                XDriveIOSNativePhotoWallGrid(density: density) {
                     ForEach(0..<min(64, expectedTotal - offset), id: \.self) { _ in
                         placeholderTile.accessibilityHidden(true)
                     }
@@ -254,8 +306,10 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         .padding(.horizontal, 12)
         .id("page:\(offset)")
         .task(id: "\(generation)-\(offset)-\(mediaFilter.rawValue)") {
+            badgeReadEpoch = UUID()
             page = nil
             precedingCapturedAt = nil
+            visibleBackupQueueStates = [:]
             let reader = XDriveIOSNativeGalleryMediaScanner()
             scanner = reader
             do {
@@ -277,6 +331,33 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 precedingCapturedAt = preceding
                 page = loaded
                 onRead(loaded)
+                // Read at most this mounted 64-item page; never enumerate the
+                // entire PhotoKit library or leak IDs to the Server for a badge.
+                let initialBadgeEpoch = UUID()
+                badgeReadEpoch = initialBadgeEpoch
+                if let owner = backupBadgeOwner,
+                   photoQueueScenePhase == .active,
+                   PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
+                    do {
+                        let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
+                        let states = try await queue.visibleStatuses(
+                            owner: owner, localIdentifiers: loaded.items.map(\.id)
+                        )
+                        try Task.checkCancellation()
+                        if badgeReadEpoch == initialBadgeEpoch,
+                           photoQueueScenePhase == .active,
+                           XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
+                           PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
+                            visibleBackupQueueStates = states
+                        }
+                    } catch {
+                        // Missing/corrupt/behind local history never implies
+                        // confirmation; the ordinary Gallery remains readable.
+                        if badgeReadEpoch == initialBadgeEpoch {
+                            visibleBackupQueueStates = [:]
+                        }
+                    }
+                }
             } catch is CancellationError {
             } catch {
                 if !Task.isCancelled { onFailure() }
@@ -284,9 +365,29 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             await reader.reset()
             if !Task.isCancelled { scanner = nil }
         }
+        .onChange(of: backupBadgeOwner) { _ in
+            badgeReadEpoch = UUID()
+            visibleBackupQueueStates = [:]
+            Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
+        }
+        .onChange(of: badgeRefresh) { _ in
+            // A successful original or completion of an auto window refreshes
+            // only already-mounted SQLite metadata; the scan ID is unchanged.
+            Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
+        }
+        .onChange(of: photoQueueScenePhase) { state in
+            if state == .active {
+                Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
+            } else {
+                badgeReadEpoch = UUID()
+                visibleBackupQueueStates = [:]
+            }
+        }
         .onDisappear {
             page = nil
             precedingCapturedAt = nil
+            visibleBackupQueueStates = [:]
+            badgeReadEpoch = UUID()
             if let scanner { Task { await scanner.reset() } }
             scanner = nil
             onPageHidden(offset)
@@ -659,7 +760,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             mapJump = nil
                         },
                         cameraOnEntry: mapCamera,
-                        onLibraryCameraChange: { next in mapCamera = next }
+                        onLibraryCameraChange: { next in mapCamera = next },
+                        mediaFilter: mediaFilter
                     )
                     .environment(\.xdriveNativeLocalMapJump, mapJump)
                 }

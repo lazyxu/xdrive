@@ -68,7 +68,8 @@ test('CLI and DSM keep distinct but HTTPS-only user login boundaries', () => {
 test('iOS simplifies route selection without TLS or Owner identity bypass', () => {
   const route = read('ios/XDriveIOS/NativeLANLoginRoute.swift')
   const login = read('ios/XDriveIOS/NativeOwnerLoginModel.swift')
-  assert.match(route, /let \(data, response\) = try await session\.data\(for: request\)/)
+  assert.match(route, /let \(bytes, response\) = try await session\.bytes\(for: request\)/)
+  assert.match(route, /guard data\.count < maxBytes/)
   assert.match(route, /throw AuthFailure\.invalidLANProbe/)
   assert.match(route, /return origin/)
   assert.doesNotMatch(route, /serverTrust|SecTrust|allowsInsecureHTTPLoads/)

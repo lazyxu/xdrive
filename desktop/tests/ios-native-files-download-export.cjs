@@ -28,7 +28,7 @@ test('native Files download accepts only exact Owner signed ticket, actual bytes
 test('native File management exports only via OS ShareLink and releases scoped temporary bytes', () => {
   assert.match(panel, /ShareLink\(item: staged\.fileURL\)/)
   assert.match(panel, /需在系统界面选择保存位置/)
-  assert.match(panel, /exporter\.prepare\(file, login: login\)/)
+  assert.match(panel, /exporter\.prepare\(file, login: login, transfers: transfers\)/)
   assert.match(panel, /exporter\.invalidate\(\)/)
   assert.match(exportFile, /prepared\?\.discard\(\)/)
   assert.match(exportFile, /login\.verifiedAuthorization\(\)/)
@@ -51,7 +51,7 @@ test('1 GiB foreground single-file export has a real free-space preflight and un
 })
 
 test('single-file download shows URLSession real received bytes, not fake timer or Save-to-Files completion', () => {
-  assert.match(exportFile, /NSObject, URLSessionDownloadDelegate/)
+  assert.match(exportFile, /XDriveIOSServerTLSDelegate, URLSessionDownloadDelegate/)
   assert.match(exportFile, /didWriteData bytesWritten: Int64, totalBytesWritten: Int64/)
   assert.match(exportFile, /onProgress\(totalBytesWritten, totalBytesExpectedToWrite\)/)
   assert.match(exportFile, /didFinishDownloadingTo location: URL/)

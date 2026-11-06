@@ -55,7 +55,7 @@ private struct XDriveIOSUploadReconcileSession: Decodable {
     let result: Node?
 }
 
-private final class XDriveIOSReconcileRejectRedirects: NSObject, URLSessionTaskDelegate {
+private final class XDriveIOSReconcileRejectRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

@@ -348,6 +348,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
     var loadedRange: XDriveIOSNativeMediaRange? = nil
     var openedOwner: XDriveNativeOwnerRoot? = nil
     var onNavigate: ((XDriveIOSNativeMediaItem) -> Bool)? = nil
+    var onUnifiedNavigate: ((Int) -> Void)? = nil
     // Only iOS MapKit place-union Viewer opts into crossing a real place.
     // Ordinary cloud Gallery leaves this optional callback nil.
     var canCrossMapPlace: ((
@@ -519,6 +520,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
 
     private func navigateLoaded(_ direction: Int) {
         guard ownerAuthorized, !rangeCrossing, !photosRestoreBusy else { return }
+        if let onUnifiedNavigate { onUnifiedNavigate(direction); return }
         if neighbor(direction) != nil {
             guard let next = neighbor(direction), onNavigate?(next) == true
             else { return }
@@ -1286,9 +1288,7 @@ private struct XDriveIOSNativeServerVirtualRange: View {
     @AccessibilityFocusState private var focusedTileID: UInt64?
 
     private var placeholders: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(
-            minimum: density.minimumCellWidth, maximum: density.maximumCellWidth
-        ), spacing: 2)], spacing: 2) {
+        XDriveIOSNativePhotoWallGrid(density: density) {
             ForEach(0..<min(48, max(0, expectedTotal - offset)), id: \.self) { _ in
                 RoundedRectangle(cornerRadius: 3)
                     .fill(Color(uiColor: .secondarySystemGroupedBackground))
@@ -1302,9 +1302,7 @@ private struct XDriveIOSNativeServerVirtualRange: View {
         VStack(spacing: 4) {
             if let verified = model.page,
                verified.offset == offset, verified.total_count == expectedTotal {
-                LazyVGrid(columns: [GridItem(.adaptive(
-                    minimum: density.minimumCellWidth, maximum: density.maximumCellWidth
-                ), spacing: 2)], spacing: 2) {
+                XDriveIOSNativePhotoWallGrid(density: density) {
                     ForEach(verified.items) { item in
                         Button { onSelect(item, model) } label: {
                             XDriveIOSNativeMediaWallTile(

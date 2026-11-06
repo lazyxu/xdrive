@@ -64,6 +64,8 @@ const services = {
   galleryPage: { source: {} },
   shareCenterPage: { listPage() {}, getShareLink() {}, updateShare() {}, revokeShare() {} },
   notesPage: { ownerScopeKey: 'verified-test-owner', listNotes() {}, readNote() {} },
+  clipboardPage: { ownerScopeKey: 'verified-test-owner', vault() {}, initializeCheck() {},
+    list() {}, create() {}, remove() {}, clear() {}, copyText() {} },
   remotePullPage: { source: {} },
   deviceBackupPage: { source: {} },
   conflictsPage: { conflicts: [] },
@@ -85,6 +87,7 @@ const expected = {
   gallery: 'XDriveMediaGalleryPage',
   shares: 'XDriveShareCenterPage',
   notes: 'XDriveNotesPage',
+  clipboard: 'XDriveClipboardPage',
   'device-backup': 'XDriveDeviceBackupPage',
   'remote-pull': 'XDriveSourceManager',
   transfers: 'XDriveTaskCenterPage',
@@ -134,6 +137,19 @@ test('Notes requires an actual authenticated Host port on Desktop and DSM', () =
     const real = render(host(platform), 'notes')
     assert.equal(real.type, 'XDriveNotesPage')
     assert.strictEqual(real.props.port, services.notesPage)
+  }
+})
+
+test('Clipboard requires an actual authenticated Host port on Desktop and DSM', () => {
+  for (const platform of ['desktop', 'synology']) {
+    const denied = { ...host(platform), services: { ...services, clipboardPage: undefined } }
+    const missing = render(denied, 'clipboard')
+    assert.equal(missing.type, 'XDriveStatePanel')
+    assert.match(missing.props.message, /unsupported clipboard/)
+    const admitted = render(host(platform), 'clipboard')
+    assert.equal(admitted.type, 'XDriveClipboardPage')
+    assert.strictEqual(admitted.props.port, services.clipboardPage)
+    assert.equal(route.xDriveWorkspaceNavigationAllowed('clipboard', false), true)
   }
 })
 

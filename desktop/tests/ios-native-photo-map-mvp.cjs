@@ -46,7 +46,7 @@ test('only a fresh authorized PhotoKit 64-slot scan supplies local map pins', ()
 })
 
 test('a presented cluster keeps PhotoKit change observation until dismissal', () => {
-  assert.match(map, /\.onDisappear \{\s*\/\/ A presented cluster sheet/)
+  assert.match(map, /\.onDisappear \{\s*currentLocation\.cancel\(\)\s*\/\/ A presented cluster sheet/)
   assert.match(map, /if selection == nil && globalSelection == nil &&\s*pendingNearbySelection == nil && nearbySelection == nil && singleViewer == nil \{\s*changes\.stop\(\)/)
   assert.match(map, /\} else \{ suspendForSheet\(\) \}/)
   assert.match(map, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?let returningCamera = globalCamera[\s\S]*?onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else \{ return \}/)
@@ -122,7 +122,7 @@ test('full-library GPS map opts in to a transient bounded PhotoKit snapshot', ()
   assert.doesNotMatch(map, /Picker\("本机地图扫描范围"/)
   assert.match(map, /case page, library/)
   assert.match(map, /if !globalComplete && !busy \{[\s\S]*?Button\(album == nil \? "扫描已授权图库位置" : "扫描此相册位置"\) \{\s*scanFullLibrary\(\)\s*\}/)
-  assert.match(map, /private func scanFullLibrary\([\s\S]*?viewport: XDriveIOSNativeLocalMapViewport\? = nil[\s\S]*?worker\.start\(atOffset: 0, album: album\)/)
+  assert.match(map, /private func scanFullLibrary\([\s\S]*?viewport: XDriveIOSNativeLocalMapViewport\? = nil[\s\S]*?worker\.startMap\(\s*atOffset: 0, album: album, mediaFilter: mediaFilter\s*\)/)
   assert.match(map, /while scanned < total \{[\s\S]*?worker\.nextLocatedPage\(\)/)
   assert.match(map, /XDriveIOSNativePhotoMapPolicy\.validPage\([\s\S]*?next\.page\.startOffset == scanned/)
   assert.match(map, /index\.add\(latitude: located\.latitude,[\s\S]*?representative: located\)/)
@@ -342,7 +342,7 @@ test('verified single-photo MapKit cover opens L3 native Viewer without location
   assert.match(map, /@State private var singleViewer: XDrivePhotoKitScanCandidate\?/)
   assert.match(map, /if cells\.count == 1, let only = cells\.first,\s*only\.count == 1/)
   assert.match(map, /only\.representative\.candidate[\s\S]*?XDriveIOSNativeMapViewerAdmission\.allows\([\s\S]*?singleViewer = candidate/)
-  assert.match(map, /else \{\s*globalSelection = XDriveIOSMapSpatialSelection\(\s*cells: cells, viewport: globalViewport\)/)
+  assert.match(map, /else \{\s*globalSelection = XDriveIOSMapSpatialSelection\(\s*cells: cells, viewport: globalViewport,\s*mediaFilter: mediaFilter\)/)
   assert.match(map, /if selected\.count == 1, let only = selected\.first,[\s\S]*?singleViewer = only/)
   assert.match(map, /in: currentPage\.items\.map\(\\\.candidate\)/)
   assert.match(map, /\.fullScreenCover\(item: \$singleViewer, onDismiss:/)
@@ -408,7 +408,7 @@ test('first full-library GPS scan displays inert native MapKit while PhotoKit pr
   assert.ok(mapIndex >= 0 && progressIndex > mapIndex,
     'MapKit must stay on-screen during initial scan, with progress beside it')
   assert.match(library, /if globalComplete && globalCells\.isEmpty \{[\s\S]*?\}\s*\/\/ Keep MapKit mounted/)
-  assert.match(library, /items: \[\], globalCells: globalCells,\s*revision: mapRevision, cameraReturn: globalCamera/)
+  assert.match(library, /items: \[\], globalCells: globalComplete \? globalCells : provisionalCells,\s*revision: mapRevision, mapType: mapType, cameraReturn: globalCamera,\s*focusRequestID: currentLocation\.requestID,\s*focusCamera: currentLocation\.camera,\s*showsUserDot: currentLocation\.showsUserDot,\s*provisional: !globalComplete && !provisionalCells\.isEmpty/)
   assert.match(localMap, /private var refinedViewportIsCurrent: Bool \{\s*\/\/ Scanned-incomplete cells[\s\S]*?guard globalComplete, !busy else \{ return false \}/)
   assert.match(library, /canSelectCells: refinedViewportIsCurrent/)
   assert.match(library, /guard phase == \.active, !busy, globalComplete,\s*refinedViewportIsCurrent/)
@@ -432,7 +432,7 @@ test('GPS cell album automatically advances as its lazy-grid sentinel enters the
   assert.match(spatialAlbum, /while rows\.count < 48/);
   assert.match(spatialAlbum, /scanner\.nextLocatedPage\(\)/);
   assert.match(spatialAlbum, /pending\[cursor\]\.candidate/);
-  assert.match(spatialAlbum, /LazyVGrid[\s\S]*?ForEach\(priorWindow\)[\s\S]*?ForEach\(items\)[\s\S]*?if hasNext \{\s*Color\.clear/);
+  assert.match(spatialAlbum, /XDriveIOSNativePhotoWallGrid\(density: wallDensity\)[\s\S]*?ForEach\(priorWindow\)[\s\S]*?ForEach\(items\)[\s\S]*?if hasNext \{\s*Color\.clear/);
   assert.match(spatialAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/);
   assert.match(spatialAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/);
   assert.match(spatialAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, !busy, viewer == nil, hasNext, error == nil/);
@@ -465,9 +465,9 @@ test('native Photos album exposes Show Map only with Full Photo Library access',
   assert.match(albumBrowser, /private func restoreAfterViewer\(\)[\s\S]*?pendingAlbumMapJump[\s\S]*?mapAlbumScope = nil[\s\S]*?albumMapJump = jump[\s\S]*?showingAlbumMap = true/)
   assert.match(map, /var album: XDriveLocalPhotoAlbumSummary\? = nil/)
   assert.match(map, /if album == nil && onFocusChange != nil \{\s*ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?native-ios-map-focus-toggle/)
-  assert.match(map, /worker\.start\(atOffset: 0, album: album\)/)
-  assert.match(map, /\.fullScreenCover\(item: \$globalSelection, onDismiss: \{[\s\S]*?\}\) \{ chosen in[\s\S]*?XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: album,/)
-  assert.match(map, /scanner\.start\(atOffset: 0, album: album\)/)
+  assert.match(map, /worker\.startMap\(\s*atOffset: 0, album: album, mediaFilter: mediaFilter\s*\)/)
+  assert.match(map, /\.sheet\(item: \$globalSelection, onDismiss: \{[\s\S]*?\}\) \{ chosen in[\s\S]*?XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: album,/)
+  assert.match(map, /scanner\.startMap\(\s*atOffset: 0, album: album, mediaFilter: selection\.mediaFilter\s*\)/)
   assert.match(map, /album == nil \?\s*"此授权图库没有可显示位置的照片或视频。" :\s*"此相册没有可显示位置的照片或视频。"/)
 })
 
@@ -499,7 +499,7 @@ test('native local Gallery opens the full-library map from its filter menu witho
   assert.match(localWall, /Button\("重置筛选"\) \{ mediaFilter = \.all \}/)
   assert.match(localWall, /\.environment\(\\\.xdriveOpenNativeLocalMap, \{ jump in\s*pendingViewerMapJump = jump/)
   assert.match(localWall, /private func restoreAfterViewer\(\)[\s\S]*?pendingViewerMapJump[\s\S]*?mapJump = jump[\s\S]*?showingMap = true/)
-  assert.match(dashboard, /ForEach\(XDriveIOSNativeGallerySource\.allCases\.filter \{ \$0 != \.map \}/)
+  assert.match(dashboard, /ForEach\(XDriveIOSNativeGallerySource\.allCases\.filter \{\s*\$0 != \.map &&/)
   assert.match(dashboard, /onClose: \{ openGallery\(\.local\) \}/)
   assert.match(mapGallery, /var onClose: \(\(\) -> Void\)\? = nil/)
   assert.match(mapGallery, /if source == \.cloud[\s\S]*?Button\("完成"\) \{ onClose\?\(\) \}/)
@@ -512,7 +512,7 @@ test('album-scoped place wall exposes Show Nearby Photos into the full-library s
   assert.match(map, /Button\("显示附近照片"\) \{\s*onShowNearby\?\(\)\s*dismiss\(\)/)
   assert.match(map, /@State private var pendingNearbySelection: XDriveIOSMapSpatialSelection\?/)
   assert.match(map, /@State private var nearbySelection: XDriveIOSMapSpatialSelection\?/)
-  assert.match(map, /fullScreenCover\(item: \$globalSelection, onDismiss: \{[\s\S]*?pendingNearbySelection[\s\S]*?nearbySelection = pending/)
+  assert.match(map, /sheet\(item: \$globalSelection, onDismiss: \{[\s\S]*?pendingNearbySelection[\s\S]*?nearbySelection = pending/)
   assert.match(map, /pendingNearbySelection = chosen/)
   assert.match(map, /authorizationStatus\(for: \.readWrite\) == \.authorized[\s\S]*?onLibraryCameraChange\?\(nil\)[\s\S]*?clearReturnCamera\(\)[\s\S]*?invalidate\(\)/)
   assert.match(map, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: nil, isNearbyExpansion: true\s*\)/)
@@ -520,4 +520,18 @@ test('album-scoped place wall exposes Show Nearby Photos into the full-library s
   assert.match(map, /onShowNearby: album == nil \? nil : \{[\s\S]*?phase == \.active[\s\S]*?authorizationStatus\(for: \.readWrite\) == \.authorized[\s\S]*?pendingNearbySelection = chosen/)
   assert.match(map, /globalSelection = nil\s*pendingNearbySelection = nil\s*nearbySelection = nil\s*singleViewer = nil/)
   assert.match(map, /selection == nil && globalSelection == nil &&\s*pendingNearbySelection == nil && nearbySelection == nil && singleViewer == nil/)
+})
+
+
+test('PhotoKit map pages always advance until the real terminal cursor and reject blank page identities', () => {
+  const mapPolicy = policy
+  assert.match(mapPolicy, /\(start == total \|\| next > start\)/)
+  assert.match(mapPolicy, /next - start <= pageSize && rows == next - start/)
+  assert.match(mapPolicy, /pins >= 0 && pins <= rows/)
+  assert.match(mapPolicy, /!selectedSet\.contains\(""\) && !pageSet\.contains\(""\)/)
+  assert.match(mapPolicy, /selectedSet\.isSubset\(of: pageSet\)/)
+  // The native map must still verify its snapshot scan before publishing GPS.
+  assert.match(map, /while scanned < total \{[\s\S]*?XDriveIOSNativePhotoMapPolicy\.validPage\(/)
+  assert.match(map, /scanned = next\.page\.nextOffset/)
+  assert.match(map, /guard PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
 })

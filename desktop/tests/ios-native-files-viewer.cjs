@@ -20,12 +20,19 @@ test('one native Files modal opens from the current real page and reanchors afte
   assert.match(browser, /XDriveIOSNativeFilesViewerPolicy\.maximumLoadedRows/);
   assert.match(browser, /Array\(siblings\[start\.\.<min\(start \+ maximum, siblings\.count\)\]\)/);
   assert.match(browser, /onNavigate: \{ next in[\s\S]*?selectedFile\?\.id == initial\.id/);
-  assert.match(browser, /model\.entries\.contains\(where: \{ \$0\.node == next \}\)/);
+  assert.match(browser, /containsVerifiedNode\(next\)/);
   assert.match(browser, /lastViewedFile = next/);
   assert.match(browser, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/);
-  assert.match(browser, /private func suspendVisibleRange\(\) \{\s*guard selectedFile == nil else \{ return \}/);
+  assert.match(browser, /private func suspendVisibleRange\(\) \{\s*cancelPathLookup\(\)\s*inlineFolders\.suspendForNavigation\(\)\s*guard selectedFile == nil else \{ return \}/);
   assert.match(browser, /if let saved = rememberedPosition\(\) \{\s*offset = saved\.pageOffset\s*pendingNavigationReturnNodeID = saved\.nodeID/);
-  assert.match(browser, /model\.invalidate\(\)\s*\}\s*var body: some View/);
+  // A parent NavigationLink must remain alive while its child is pushed.
+  // Cancellation is still mandatory; clearing the verified source rows here
+  // caused the observed immediate pop/flicker on folder taps.
+  const suspend = browser.slice(browser.indexOf('private func suspendVisibleRange()'),
+    browser.indexOf('var body: some View', browser.indexOf('private func suspendVisibleRange()')));
+  assert.match(suspend, /model\.suspendForNavigation\(\)/);
+  assert.doesNotMatch(suspend, /model\.invalidate\(\)/);
+  assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?model\.invalidate\(\)/);
   assert.match(browser, /\.onDisappear \{ suspendVisibleRange\(\) \}/);
 });
 
@@ -137,7 +144,7 @@ test('unsupported, oversized, undecodable and failed-player Files previews expos
   assert.match(modal, /case \.malformed:[\s\S]*?exportFallbackEligible = true/);
   assert.match(modal, /failure = "媒体播放失败，请重试当前文件。"\s*exportFallbackEligible = true/);
   assert.match(modal, /staged\.nodeID == viewed\.id && staged\.revision == viewed\.revision/);
-  assert.match(modal, /exporter\.prepare\(viewed, login: login\)/);
+  assert.match(modal, /exporter\.prepare\(viewed, login: login, transfers: transfers\)/);
   assert.match(modal, /ShareLink\(item: staged\.fileURL\)/);
   assert.match(modal, /exporter\.invalidate\(\)[\s\S]*?exportFallbackEligible = false/);
   assert.match(modal, /accessibilityIdentifier\("native-ios-files-viewer-error-scroll"\)/);
@@ -255,4 +262,29 @@ test('shared Photos video seek preview is bounded and never resumes a retired pl
   assert.match(video, /\.onDisappear \{ abortScrub\(\) \}/);
   assert.match(video, /\.disabled\(!canControl \|\| seeking\)/);
   assert.doesNotMatch(video, /onEditingChanged: \{ editing in\s*seeking = editing/);
+});
+
+test('Files Viewer reuses one authenticated request-scoped ephemeral connection pool', () => {
+  const transport = reader.slice(reader.indexOf('struct XDriveIOSNativeFilesPreviewReader {'),
+    reader.indexOf('    private func endpoint(', reader.indexOf('struct XDriveIOSNativeFilesPreviewReader {')));
+  const readMethod = reader.slice(reader.indexOf('    private func read('),
+    reader.indexOf('    private func verifyNode(', reader.indexOf('    private func read(')));
+  assert.equal((reader.match(/URLSession\(/g) || []).length, 1,
+    'one shared transport, not a new TLS session for each Node proof/ticket/media read');
+  assert.match(transport, /private static let session: URLSession/);
+  assert.match(transport, /URLSessionConfiguration\.ephemeral/);
+  assert.match(transport, /config\.httpShouldSetCookies = false/);
+  assert.match(transport, /config\.httpCookieAcceptPolicy = \.never/);
+  assert.match(transport, /config\.urlCache = nil/);
+  assert.match(transport, /config\.requestCachePolicy = \.reloadIgnoringLocalCacheData/);
+  assert.match(transport, /delegate: XDriveIOSNativeFilesPreviewRejectRedirect\(\)/);
+  assert.match(readMethod, /var request = URLRequest\(url: url\)/);
+  assert.match(readMethod, /request\.setValue\("no-store", forHTTPHeaderField: "Cache-Control"\)/);
+  assert.match(readMethod, /if authenticated \{[\s\S]*?request\.setValue\("Bearer " \+ accessToken, forHTTPHeaderField: "Authorization"\)/);
+  assert.match(readMethod, /let \(data, response\) = try await Self\.session\.data\(for: request\)/);
+  assert.match(readMethod, /try Task\.checkCancellation\(\)/);
+  assert.doesNotMatch(readMethod, /invalidateAndCancel|let client = URLSession/);
+  assert.match(reader, /completionHandler\(nil\)/);
+  assert.match(reader, /url, authenticated: false,/);
+  assert.match(reader, /guard let absolute = url\.url, absolute\.scheme == "https"/);
 });

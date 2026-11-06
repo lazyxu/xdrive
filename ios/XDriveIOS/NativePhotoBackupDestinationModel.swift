@@ -30,7 +30,7 @@ private enum XDriveIOSPhotoManagedDestinationFailure: Error {
 }
 
 private final class XDriveIOSPhotoManagedDestinationDenyRedirect:
-    NSObject, URLSessionTaskDelegate {
+    XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
@@ -190,8 +190,7 @@ final class XDriveIOSNativePhotoBackupDestinationModel: ObservableObject {
                 guard self.generation == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
                 else { return }
-                self.needsDeviceRegistration = false
-                self.message = "此 iPhone 身份已注册。请刷新并保存备份文件夹名称。"
+                self.refresh(login: login)
             } catch is CancellationError {
             } catch {
                 guard self.generation == ticket,

@@ -132,6 +132,7 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
     @discardableResult
     func settle(_ candidate: XDriveIOSPhotoBackupChangeQueueStore.Pending,
                 result: XDriveIOSPhotoBackupChangeQueueStore.Settled,
+                reasonCode: String? = nil,
                 owner: XDriveNativeOwnerRoot) throws -> Bool {
         try verifyOwner(owner)
         let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
@@ -144,7 +145,7 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
               ) else { throw Failure.unauthorizedOrChanged }
         try verifyAuthorization(stillMatches: epoch)
         return try store.settle(
-            candidate, result: result,
+            candidate, result: result, reasonCode: reasonCode,
             expectedBaselineToken: baseline.token,
             authorization: epoch.authorization
         )
@@ -181,6 +182,76 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         return requeued
     }
 
+
+    /// Recover only explicit PhotoKit network-access-required rows, at most
+    /// four per foreground pass. The caller must already have current
+    /// Owner/Device proof and a user-approved iCloud download policy.
+    /// Background calls never reach this path.
+    func retryWaitingICloudCandidates(owner: XDriveNativeOwnerRoot,
+                                      limit: Int = 4) throws -> Int {
+        guard (1...4).contains(limit) else { throw Failure.invalidReplayLimit }
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline() else {
+            throw Failure.requiresExplicitBaseline
+        }
+        guard baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(
+                baseline.token, as: epoch.token
+              ) else { throw Failure.unauthorizedOrChanged }
+        let waiting = try store.waitingICloud(limit: limit)
+        var requeued = 0
+        for candidate in waiting {
+            try Task.checkCancellation()
+            try verifyAuthorization(stillMatches: epoch)
+            if try store.retryWaitingICloud(
+                candidate, expectedBaselineToken: baseline.token,
+                authorization: epoch.authorization
+            ) {
+                requeued += 1
+            }
+        }
+        try verifyAuthorization(stillMatches: epoch)
+        return requeued
+    }
+
+    /// Aggregate current Owner-only failure categories; no IDs cross this API.
+    func failureReasonCounts(owner: XDriveNativeOwnerRoot) throws -> [String: Int] {
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline(),
+              baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(baseline.token, as: epoch.token)
+        else { return [:] }
+        let result = try store.failureReasonCounts()
+        try verifyAuthorization(stillMatches: epoch)
+        return result
+    }
+
+    /// Metadata-only, 64-item read for mounted native Gallery pages.
+    /// A local queue status is NOT current Server/Node coverage. With a
+    /// stale PhotoKit baseline, showing even an old "confirmed" state would
+    /// be misleading; return no badges until the replay has caught up.
+    func visibleStatuses(owner: XDriveNativeOwnerRoot,
+                         localIdentifiers: [String]) throws -> [String: String] {
+        guard localIdentifiers.count <= 64 else { throw Failure.invalidReplayLimit }
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline(),
+              baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(baseline.token, as: epoch.token)
+        else { return [:] }
+        var statuses: [String: String] = [:]
+        statuses.reserveCapacity(localIdentifiers.count)
+        for id in localIdentifiers {
+            try Task.checkCancellation()
+            if let row = try store.status(for: id) {
+                statuses[id] = row.state.rawValue
+            }
+        }
+        try verifyAuthorization(stillMatches: epoch)
+        return statuses
+    }
 
     /// Whether every persisted PhotoKit change event has been replayed. The
     /// automatic runner must defer its date-filtered scan while this is false:

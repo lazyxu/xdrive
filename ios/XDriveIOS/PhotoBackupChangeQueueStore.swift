@@ -35,6 +35,9 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
     enum Settled: String {
         case confirmed
         case failed
+        // PhotoKit explicitly reported that a local-only BG read needs
+        // iCloud network access. No original or remote write was committed.
+        case waitingICloud
     }
 
     /// Read-only per-item queue state; not the full-library cloud completion.
@@ -42,11 +45,14 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         case pending
         case confirmed
         case failed
+        case waitingICloud
         case missingLocal
     }
     struct ItemStatus: Equatable {
         let revision: Int64
         let state: ItemState
+        // Normalized local-only failure code; never cloud coverage evidence.
+        var failureReasonCode: String? = nil
     }
 
     /// Counts only locally captured PhotoKit *changes*, not all visible media
@@ -54,9 +60,16 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
     struct Counts: Equatable {
         var pending = 0
         var failed = 0
+        var waitingICloud = 0
         var confirmed = 0
         var missingLocal = 0
     }
+
+    private static let allowedFailureCodes: Set<String> = [
+        "notVisible", "originalMissing", "iCloudDownloadRequired",
+        "incompleteLivePair", "resourceTooLarge", "sourceChanged",
+        "unsupported", "unavailable",
+    ]
 
     private var database: OpaquePointer?
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -83,6 +96,9 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             try execute("CREATE TABLE IF NOT EXISTS sequence (id INTEGER PRIMARY KEY CHECK(id=1), value INTEGER NOT NULL)")
             try execute("INSERT OR IGNORE INTO sequence (id,value) VALUES (1,0)")
             try execute("CREATE TABLE IF NOT EXISTS entries (asset_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0), priority INTEGER NOT NULL, queue_order INTEGER NOT NULL, state TEXT NOT NULL)")
+            // A separate table preserves the existing Owner-scoped queue
+            // schema. Reasons are valid only for an exact failed revision.
+            try execute("CREATE TABLE IF NOT EXISTS failure_reasons (asset_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0), reason TEXT NOT NULL)")
             try execute("CREATE INDEX IF NOT EXISTS entries_pending_order ON entries (state, priority DESC, queue_order DESC)")
             // Ignore a newly created database until iOS protection permits
             // reading its baseline and backing PhotoKit bytes again.
@@ -244,6 +260,7 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             switch state {
             case .pending: totals.pending = count
             case .failed: totals.failed = count
+            case .waitingICloud: totals.waitingICloud = count
             case .confirmed: totals.confirmed = count
             case .missingLocal: totals.missingLocal = count
             }
@@ -299,11 +316,17 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
     /// persistent changes are waiting to be replayed.
     @discardableResult
     func settle(_ candidate: Pending, result: Settled,
+                reasonCode: String? = nil,
                 expectedBaselineToken: Data,
                 authorization: Int) throws -> Bool {
         try validateIdentifier(candidate.localIdentifier)
         try validateToken(expectedBaselineToken)
         guard candidate.revision > 0, authorization > 0 else {
+            throw Failure.invalidInput
+        }
+        if let reasonCode,
+           (result.rawValue != Settled.failed.rawValue ||
+            !Self.allowedFailureCodes.contains(reasonCode)) {
             throw Failure.invalidInput
         }
         try execute("BEGIN IMMEDIATE")
@@ -325,6 +348,20 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         }
         try stepDone(statement)
         let changed = sqlite3_changes(database) == 1
+        if changed, let reasonCode {
+            // The reason shares the baseline/revision compare-and-swap
+            // transaction with the failed outcome, never an uncertain ACK.
+            let reasonStatement = try prepare(
+                "INSERT INTO failure_reasons(asset_id,revision,reason) VALUES(?,?,?) ON CONFLICT(asset_id) DO UPDATE SET revision=excluded.revision,reason=excluded.reason"
+            )
+            defer { sqlite3_finalize(reasonStatement) }
+            try bind(candidate.localIdentifier, into: reasonStatement, position: 1)
+            guard sqlite3_bind_int64(reasonStatement, 2, candidate.revision) == SQLITE_OK else {
+                throw Failure.database(sqlite3_errcode(database))
+            }
+            try bind(reasonCode, into: reasonStatement, position: 3)
+            try stepDone(reasonStatement)
+        }
         try execute("COMMIT")
         committed = true
         return changed
@@ -393,10 +430,97 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         return changed
     }
 
+    /// Bounded iCloud wait queue, separate from ordinary item-local failures.
+    /// Only a foreground writer with explicit iCloud download permission may
+    /// ask the Owner-fenced queue actor to move these rows to pending.
+    func waitingICloud(limit: Int = 4) throws -> [Pending] {
+        guard (1...4).contains(limit) else { throw Failure.invalidInput }
+        let statement = try prepare(
+            "SELECT asset_id,revision,priority FROM entries WHERE state='waitingICloud' ORDER BY priority DESC,queue_order DESC LIMIT ?"
+        )
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_bind_int(statement, 1, Int32(limit)) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        var rows: [Pending] = []
+        rows.reserveCapacity(limit)
+        while true {
+            let code = sqlite3_step(statement)
+            if code == SQLITE_DONE { return rows }
+            guard code == SQLITE_ROW, let raw = sqlite3_column_text(statement, 0) else {
+                throw Failure.database(code)
+            }
+            rows.append(Pending(
+                localIdentifier: String(cString: raw),
+                revision: sqlite3_column_int64(statement, 1),
+                priority: Int(sqlite3_column_int(statement, 2))
+            ))
+        }
+    }
+
+    /// Atomic exact-token/authorization/revision retry after explicit
+    /// foreground iCloud consent. An older callback cannot requeue edits,
+    /// unknown-ACK cases or anything not in the waitingICloud state.
+    @discardableResult
+    func retryWaitingICloud(_ candidate: Pending,
+                            expectedBaselineToken: Data,
+                            authorization: Int) throws -> Bool {
+        try validateIdentifier(candidate.localIdentifier)
+        try validateToken(expectedBaselineToken)
+        guard candidate.revision > 0, authorization > 0 else {
+            throw Failure.invalidInput
+        }
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { try? execute("ROLLBACK") } }
+        guard let current = try baseline(),
+              current.authorization == authorization,
+              current.token == expectedBaselineToken else {
+            throw Failure.baselineChanged
+        }
+        let statement = try prepare(
+            "UPDATE entries SET state='pending' WHERE asset_id=? AND revision=? AND state='waitingICloud'"
+        )
+        defer { sqlite3_finalize(statement) }
+        try bind(candidate.localIdentifier, into: statement, position: 1)
+        guard sqlite3_bind_int64(statement, 2, candidate.revision) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        try stepDone(statement)
+        let changed = sqlite3_changes(database) == 1
+        try execute("COMMIT")
+        committed = true
+        return changed
+    }
+
+    /// SQL aggregates only normalized codes; never loads the library's IDs.
+    func failureReasonCounts() throws -> [String: Int] {
+        let query = "SELECT r.reason,COUNT(*) FROM failure_reasons r JOIN entries e ON e.asset_id=r.asset_id AND e.revision=r.revision WHERE e.state='failed' GROUP BY r.reason"
+        let statement = try prepare(query)
+        defer { sqlite3_finalize(statement) }
+        var counts: [String: Int] = [:]
+        while true {
+            let code = sqlite3_step(statement)
+            if code == SQLITE_DONE { return counts }
+            guard code == SQLITE_ROW,
+                  let raw = sqlite3_column_text(statement, 0),
+                  sqlite3_column_int64(statement, 1) >= 0 else {
+                throw Failure.database(code == SQLITE_ROW ? SQLITE_MISMATCH : code)
+            }
+            let reason = String(cString: raw)
+            guard Self.allowedFailureCodes.contains(reason) else {
+                throw Failure.invalidInput
+            }
+            counts[reason] = Int(sqlite3_column_int64(statement, 1))
+        }
+    }
+
     /// One indexed state read for a visible PhotoKit item, not a 100k ID map.
     func status(for localIdentifier: String) throws -> ItemStatus? {
         try validateIdentifier(localIdentifier)
-        let statement = try prepare("SELECT revision,state FROM entries WHERE asset_id=?")
+        let statement = try prepare(
+            "SELECT e.revision,e.state,r.reason FROM entries e LEFT JOIN failure_reasons r ON r.asset_id=e.asset_id AND r.revision=e.revision WHERE e.asset_id=?"
+        )
         defer { sqlite3_finalize(statement) }
         try bind(localIdentifier, into: statement, position: 1)
         let code = sqlite3_step(statement)
@@ -406,7 +530,12 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
               let state = ItemState(rawValue: String(cString: raw)) else {
             throw Failure.database(code == SQLITE_ROW ? SQLITE_MISMATCH : code)
         }
-        return ItemStatus(revision: sqlite3_column_int64(statement, 0), state: state)
+        let reason = state.rawValue == "failed"
+            ? sqlite3_column_text(statement, 2).map { String(cString: $0) } : nil
+        return ItemStatus(
+            revision: sqlite3_column_int64(statement, 0), state: state,
+            failureReasonCode: reason
+        )
     }
 
     private func validateToken(_ bytes: Data) throws {

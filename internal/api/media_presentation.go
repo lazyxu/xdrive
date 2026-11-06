@@ -7,6 +7,7 @@ import (
 )
 
 type mediaAssetPresentation struct {
+	ID          uint64
 	Kind        string
 	Favorite    bool
 	Tags        []string
@@ -42,7 +43,7 @@ func (s *Server) photoAssetPresentations(
 	for _, asset := range assets {
 		assetIDs = append(assetIDs, asset.ID)
 		primaryByAsset[asset.ID] = asset.PrimaryNodeID
-		out[asset.PrimaryNodeID] = mediaAssetPresentation{Kind: asset.Kind}
+		out[asset.PrimaryNodeID] = mediaAssetPresentation{ID: asset.ID, Kind: asset.Kind}
 	}
 
 	var assetMetadata []meta.PhotoMetadata

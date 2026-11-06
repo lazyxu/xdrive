@@ -78,6 +78,7 @@ enum XDriveIOSBackgroundPhotoTask {
             }
             do {
                 try Task.checkCancellation()
+                let network = XDriveIOSPhotoBackupNetworkPolicy.shared
                 // The grant proves current Owner, independent Device secret,
                 // Root, Server instance, expiry and revocation. No Web token.
                 let approved = try await XDriveIOSApprovedPhotoBGVault.shared
@@ -99,8 +100,9 @@ enum XDriveIOSBackgroundPhotoTask {
                     return
                 }
                 let access = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                guard access == .authorized || access == .limited else { return }
+                guard access == .authorized else { return }
                 let owner = try approved.ownerScope()
+                _ = try network.requireWiFiIfNeeded(for: owner)
                 guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
                     // A foreground upload consumed this one OS request.
                     // Keep an explicitly approved future OS window, without
@@ -162,21 +164,59 @@ enum XDriveIOSBackgroundPhotoTask {
                         incrementalQueue = queue
                         newOnlySince = plan.newOnlySince
                     } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
-                        .requiresExplicitBaseline {
-                        // Legacy plans lack an authenticated baseline. Scan
-                        // all authorized dates, using exact Server receipts
-                        // to deduplicate instead of inventing a new token.
+                        .unauthorizedOrChanged {
+                        // A PhotoKit edit can advance the library generation
+                        // while its durable change records are being replayed.
+                        // SQLite already committed each completed record and
+                        // its token atomically. A later OS-approved pass may
+                        // safely replay the remaining changes; never reserve
+                        // a due window or fall back to a date-filtered scan.
+                        try Task.checkCancellation()
+                        guard approved.matches(owner) else {
+                            throw XDriveIOSPhotoBGVaultFailure.invalidProof
+                        }
+                        guard PHPhotoLibrary.authorizationStatus(
+                            for: .readWrite
+                        ) == .authorized else {
+                            // Authorization may have changed during the
+                            // replay: do not retry with a narrower library.
+                            guard let recovery =
+                                try XDriveIOSPhotoAutoScheduleStore.shared
+                                    .requireFullLibraryReconciliation(owner: owner),
+                                recovery.requiresFullLibraryReconciliation else {
+                                throw XDriveIOSPhotoBGVaultFailure.invalidProof
+                            }
+                            await resubmitRecoveryOnlyIfStillRequired(owner: owner)
+                            return
+                        }
+                        await resubmitOnlyIfStillApproved()
+                        return
                     } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
-                        .invalidArchivedToken {
-                        // Unreadable historical baseline: fail open only to
-                        // conservative full-date discovery, never to a
-                        // capture-date-only filter that could lose imports.
+                        .requiresExplicitBaseline,
+                        XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                        .invalidArchivedToken,
+                        XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                        .historyUnavailable,
+                        XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                        .authorizationChanged {
+                        // Only-new consent never authorizes a full-date scan.
+                        // Reuse the foreground's durable recovery/consent gate.
+                        // Preserve the BG due window; do not reserve or write.
+                        guard approved.matches(owner),
+                              let recovery = try XDriveIOSPhotoAutoScheduleStore.shared
+                                  .requireFullLibraryReconciliation(owner: owner),
+                              recovery.requiresFullLibraryReconciliation else {
+                            throw XDriveIOSPhotoBGVaultFailure.invalidProof
+                        }
+                        await resubmitRecoveryOnlyIfStillRequired(owner: owner)
+                        return
                     }
                     try Task.checkCancellation()
                     guard approved.matches(owner) else {
                         throw XDriveIOSPhotoBGVaultFailure.corrupt
                     }
                 }
+                _ = try network.requireWiFiIfNeeded(for: owner)
                 guard let window = try XDriveIOSBGOriginalWindowStore.shared
                         .reserveDue(owner: owner, approved: approved),
                       let offset = XDrivePhotoBackupScanWindow.offset(
@@ -292,6 +332,7 @@ enum XDriveIOSBackgroundPhotoTask {
     /// strand a valid user-approved backup. Never resubmit when a network
     /// write might have begun or the Server rejected the grant.
     private static func retryablePreflightNetworkFailure(_ error: Error) -> Bool {
+        if error is XDriveIOSPhotoBackupNetworkError { return true }
         if let grant = error as? XDriveIOSPhotoBGVaultFailure,
            case .transientServerStatus(let code) = grant {
             return code == 408 || code == 429 || (500...599).contains(code)

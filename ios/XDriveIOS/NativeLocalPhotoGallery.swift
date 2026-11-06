@@ -19,7 +19,8 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
     /// Visible list thumbnails may fetch their resized iCloud rendition by default.
     /// This remains a bounded requestImage call, never a Viewer/original request.
     func load(_ id: String, size: CGSize,
-              contentMode: PHImageContentMode = .aspectFill) {
+              contentMode: PHImageContentMode = .aspectFill,
+              allowICloud: Bool = true) {
         cancel()
         let token = epoch
         guard [.authorized, .limited].contains(
@@ -28,7 +29,7 @@ final class XDriveIOSPhotoImageLoader: ObservableObject {
             withLocalIdentifiers: [id], options: nil
         ).firstObject else { return }
         let settings = PHImageRequestOptions()
-        settings.isNetworkAccessAllowed = true
+        settings.isNetworkAccessAllowed = allowICloud
         settings.deliveryMode = .opportunistic
         settings.resizeMode = .fast
         isLoading = true
@@ -373,6 +374,9 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     /// A bounded copy of the currently authorized PhotoKit page, never full-library.
     var loadedItems: [XDrivePhotoKitScanCandidate] = []
     var onViewed: ((XDrivePhotoKitScanCandidate) -> Void)? = nil
+    /// The merged Gallery owns navigation across both storage sources.
+    var onUnifiedNavigate: ((Int) -> Void)? = nil
+    var onOriginalUnavailable: ((String) -> Void)? = nil
     // These optional callbacks are supplied only by the continuous wall.
     // Legacy 64-item Gallery Viewer behavior stays unchanged.
     var loadedPage: XDrivePhotoKitScanPage? = nil
@@ -732,6 +736,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
 
     private func showNeighbor(_ direction: Int) {
         guard currentPageAuthorized, !crossing, !photoActionBusy else { return }
+        if let onUnifiedNavigate { onUnifiedNavigate(direction); return }
         if let next = neighbor(direction) {
             show(next)
             return
@@ -1062,6 +1067,10 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         }
         .onChange(of: model.message) { message in
             if message != nil { showChrome = true }
+            if message != nil && currentPageAuthorized { onOriginalUnavailable?(viewed.id) }
+        }
+        .onChange(of: model.needsICloudFetch) { missing in
+            if missing && currentPageAuthorized { onOriginalUnavailable?(viewed.id) }
         }
         .onAppear { changes.start() }
         .task(id: viewed.id) {

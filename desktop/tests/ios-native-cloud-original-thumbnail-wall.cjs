@@ -291,7 +291,7 @@ test('cloud backed-up original Viewer exports via the existing verified native F
   assert.match(viewer, /parent_id: owner\.rootNodeID/)
   assert.match(viewer, /viewed\.size <= 512 \* 1_048_576/)
   assert.match(viewer, /XDriveIOSBackgroundOriginalNamePolicy\.valid\(viewed\.name\)/)
-  assert.match(viewer, /exporter\.prepare\(node, login: login\)/)
+  assert.match(viewer, /exporter\.prepare\(node, login: login, transfers: transfers\)/)
   assert.match(viewer, /ShareLink\(item: file\.fileURL\)/)
   assert.match(viewer, /native-ios-original-export-status/)
   assert.match(viewer, /native-ios-original-export/)
