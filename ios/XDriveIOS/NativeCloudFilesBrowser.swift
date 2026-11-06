@@ -119,22 +119,67 @@ struct XDriveIOSNativeFilesReader {
     }
 
     func children(parentID: UInt64, offset: Int,
-                  sort: String, order: String) async throws -> XDriveIOSNativeFilesRange {
+                  sort: String, order: String,
+                  grouping: String = "none",
+                  foldersFirst: Bool = true) async throws -> XDriveIOSNativeFilesRange {
         guard parentID > 0,
               XDriveIOSNativeFilesPagePolicy.validOffset(offset),
-              XDriveIOSNativeFilesPagePolicy.validOrder(sort: sort, order: order)
+              XDriveIOSNativeFilesPagePolicy.validOrder(sort: sort, order: order),
+              XDriveIOSNativeFilesGroupingPolicy.validGrouping(grouping)
         else { throw XDriveIOSNativeFilesReadError.invalidPage }
-        let url = try endpoint("/api/v1/nodes/\(parentID)/children", query: [
+        var queryItems = [
             URLQueryItem(name: "offset", value: String(offset)),
             URLQueryItem(name: "limit", value: String(XDriveIOSNativeFilesPagePolicy.pageSize)),
             URLQueryItem(name: "sort", value: sort),
             URLQueryItem(name: "order", value: order)
-        ])
+        ]
+        if grouping != "none" {
+            queryItems.append(URLQueryItem(name: "group", value: grouping))
+        }
+        if !foldersFirst {
+            queryItems.append(URLQueryItem(name: "folders_first", value: "false"))
+        }
+        let url = try endpoint("/api/v1/nodes/\(parentID)/children", query: queryItems)
         let page: XDriveIOSNativeFilesRange = try await get(url)
         guard XDriveIOSNativeFilesPagePolicy.validChildren(
             page, parentID: parentID, offset: offset, sort: sort, order: order
         ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        if grouping != "none" && offset == 0 {
+            // Server omits an empty group array for a genuinely empty
+            // directory. Nonempty directories must return authoritative
+            // indexes; never infer them from the first 64 Nodes.
+            let groups = page.groups ?? []
+            guard (page.groups != nil || page.total_count == 0),
+                  XDriveIOSNativeFilesGroupingPolicy.validIndexes(
+                    groups, total: page.total_count
+                  ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        }
         return page
+    }
+
+    /// A middle page carries no group indexes. Ask Go for exactly one
+    /// authenticated first-page row, retaining the whole-folder index only.
+    func groupIndexProbe(parentID: UInt64, sort: String, order: String,
+                         grouping: String, foldersFirst: Bool) async throws
+        -> (total: Int, indexes: [XDriveIOSNativeFilesGroupIndex]) {
+        guard parentID > 0, grouping != "none",
+              XDriveIOSNativeFilesGroupingPolicy.validGrouping(grouping),
+              XDriveIOSNativeFilesPagePolicy.validOrder(
+                sort: sort, order: order
+              ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        let url = try endpoint("/api/v1/nodes/\(parentID)/children", query: [
+            URLQueryItem(name: "offset", value: "0"),
+            URLQueryItem(name: "limit", value: "1"),
+            URLQueryItem(name: "sort", value: sort),
+            URLQueryItem(name: "order", value: order),
+            URLQueryItem(name: "group", value: grouping),
+            URLQueryItem(name: "folders_first", value: foldersFirst ? "true" : "false")
+        ])
+        let page: XDriveIOSNativeFilesRange = try await get(url)
+        guard XDriveIOSNativeFilesGroupingPolicy.validFirstPageProbe(
+            page, parentID: parentID, sort: sort, order: order
+        ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        return (page.total_count, page.groups ?? [])
     }
 
     func search(_ query: String, offset: Int,
@@ -190,6 +235,12 @@ private struct XDriveIOSNativeFilesEntry: Identifiable {
     var id: UInt64 { node.id }
 }
 
+private struct XDriveIOSNativeFilesVisibleGroup: Identifiable {
+    let id: String
+    let heading: String?
+    var entries: [XDriveIOSNativeFilesEntry]
+}
+
 @MainActor
 private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     @Published private(set) var entries: [XDriveIOSNativeFilesEntry] = []
@@ -200,6 +251,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     @Published private(set) var verifiedPage = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var adjacentError: String?
+    @Published private(set) var groupIndexes: [XDriveIOSNativeFilesGroupIndex] = []
 
     private var epoch = UUID()
     private var adjacentTicket = UUID()
@@ -213,10 +265,42 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     private var verifiedFilters: XDriveIOSNativeFilesSearchFilterState?
     private var verifiedSort: String?
     private var verifiedOrder: String?
+    private var verifiedGrouping: String?
+    private var verifiedFoldersFirst: Bool?
+
+    /// Real global group boundaries are supplied by Go, never inferred from
+    /// only the current 256 SwiftUI rows.
+    var visibleGroups: [XDriveIOSNativeFilesVisibleGroup] {
+        guard !entries.isEmpty else { return [] }
+        guard let grouping = verifiedGrouping, grouping != "none",
+              !groupIndexes.isEmpty else {
+            return [XDriveIOSNativeFilesVisibleGroup(
+                id: "all", heading: nil, entries: entries
+            )]
+        }
+        var result: [XDriveIOSNativeFilesVisibleGroup] = []
+        for (index, entry) in entries.enumerated() {
+            guard let g = XDriveIOSNativeFilesGroupingPolicy.group(
+                at: startOffset + index, indexes: groupIndexes
+            ) else { return [] }
+            let key = g.key + ":" + String(g.start_index)
+            if let last = result.indices.last, result[last].id == key {
+                result[last].entries.append(entry)
+            } else {
+                let label = XDriveIOSNativeFilesGroupingPolicy.title(g, grouping: grouping)
+                result.append(XDriveIOSNativeFilesVisibleGroup(
+                    id: key, heading: label + " · " + String(g.item_count),
+                    entries: [entry]
+                ))
+            }
+        }
+        return result
+    }
 
     func canResume(owner: XDriveNativeOwnerRoot?, folderID: UInt64,
                    query: String, filters: XDriveIOSNativeFilesSearchFilterState,
-                   sort: String, order: String) -> Bool {
+                   sort: String, order: String,
+                   grouping: String = "none", foldersFirst: Bool = true) -> Bool {
         guard let owner, let verifiedOwner else { return false }
         return XDriveIOSNativeFilesNavigationPolicy.canResume(
             verified: verifiedPage, loading: loading,
@@ -224,7 +308,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
             sameFolder: verifiedFolderID == folderID,
             sameQuery: verifiedQuery == query, sameFilters: verifiedFilters == filters,
             sameSort: verifiedSort == sort, sameOrder: verifiedOrder == order
-        )
+        ) && verifiedGrouping == grouping && verifiedFoldersFirst == foldersFirst
     }
 
     /// Removing NavigationLink source rows while a SwiftUI push is in
@@ -256,6 +340,9 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
         verifiedFilters = nil
         verifiedSort = nil
         verifiedOrder = nil
+        verifiedGrouping = nil
+        verifiedFoldersFirst = nil
+        groupIndexes = []
         entries = []
         total = 0
         startOffset = 0
@@ -268,7 +355,8 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     func load(login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
               offset: Int, query: String,
               filters: XDriveIOSNativeFilesSearchFilterState,
-              sort: String, order: String) {
+              sort: String, order: String,
+              grouping: String = "none", foldersFirst: Bool = true) {
         invalidate()
         guard let expected = login.owner else {
             errorMessage = "请先验证原生服务器账户。"
@@ -295,12 +383,28 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 )
                 let found: [XDriveIOSNativeFilesEntry]
                 let count: Int
+                var fetchedGroups: [XDriveIOSNativeFilesGroupIndex] = []
                 if query.isEmpty && !filters.hasActiveFilters {
                     let page = try await reader.children(
-                        parentID: folderID, offset: offset, sort: sort, order: order
+                        parentID: folderID, offset: offset, sort: sort, order: order,
+                        grouping: grouping, foldersFirst: foldersFirst
                     )
                     found = page.items.map { XDriveIOSNativeFilesEntry(node: $0, path: nil) }
                     count = page.total_count
+                    if grouping != "none" {
+                        if offset == 0 {
+                            fetchedGroups = page.groups ?? []
+                        } else {
+                            let probe = try await reader.groupIndexProbe(
+                                parentID: folderID, sort: sort, order: order,
+                                grouping: grouping, foldersFirst: foldersFirst
+                            )
+                            guard probe.total == count else {
+                                throw XDriveIOSNativeFilesReadError.invalidPage
+                            }
+                            fetchedGroups = probe.indexes
+                        }
+                    }
                 } else {
                     let page = try await reader.search(
                         query, offset: offset, sort: sort, order: order, filters: filters
@@ -314,7 +418,9 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 guard self?.epoch == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
-                self?.entries = found
+                // Publish grouping metadata before rows so one SwiftUI
+                // transaction cannot briefly present a flat layout while a
+                // grouped first Range is committed.
                 self?.total = count
                 self?.startOffset = offset
                 self?.verifiedOwner = expected
@@ -323,6 +429,10 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 self?.verifiedFilters = filters
                 self?.verifiedSort = sort
                 self?.verifiedOrder = order
+                self?.verifiedGrouping = grouping
+                self?.verifiedFoldersFirst = foldersFirst
+                self?.groupIndexes = fetchedGroups
+                self?.entries = found
                 self?.verifiedPage = true
                 self?.errorMessage = nil
             } catch is CancellationError {
@@ -355,7 +465,8 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     func loadAdjacent(_ direction: XDriveIOSNativeFilesContinuousWindowPolicy.Direction,
                       login: XDriveIOSNativeOwnerLoginModel, folderID: UInt64,
                       query: String, filters: XDriveIOSNativeFilesSearchFilterState,
-                      sort: String, order: String) {
+                      sort: String, order: String,
+                      grouping: String = "none", foldersFirst: Bool = true) {
         guard !loading, !loadingAdjacent, verifiedPage, adjacentError == nil,
               let expected = login.owner else { return }
         let oldEntries = entries
@@ -390,13 +501,18 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 let found: [XDriveIOSNativeFilesEntry]
                 let returnedTotal: Int
                 let returnedOffset: Int
+                var incomingGroupIndexes: [XDriveIOSNativeFilesGroupIndex]? = nil
                 if query.isEmpty && !filters.hasActiveFilters {
                     let page = try await reader.children(
-                        parentID: folderID, offset: requestOffset, sort: sort, order: order
+                        parentID: folderID, offset: requestOffset, sort: sort, order: order,
+                        grouping: grouping, foldersFirst: foldersFirst
                     )
                     found = page.items.map { XDriveIOSNativeFilesEntry(node: $0, path: nil) }
                     returnedTotal = page.total_count
                     returnedOffset = page.offset
+                    if grouping != "none" && requestOffset == 0 {
+                        incomingGroupIndexes = page.groups
+                    }
                 } else {
                     let page = try await reader.search(
                         query, offset: requestOffset, sort: sort, order: order, filters: filters
@@ -413,8 +529,14 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                       self.startOffset == oldStart,
                       self.total == oldTotal,
                       self.entries.map(\.id) == oldIDs,
+                      self.verifiedGrouping == grouping,
+                      self.verifiedFoldersFirst == foldersFirst,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
+                if let incomingGroupIndexes,
+                   incomingGroupIndexes != self.groupIndexes {
+                    throw XDriveIOSNativeFilesReadError.invalidPage
+                }
                 guard let plan = XDriveIOSNativeFilesContinuousWindowPolicy.mergePlan(
                     direction: direction, startOffset: oldStart,
                     currentIDs: oldIDs, incomingIDs: found.map(\.id),
@@ -596,7 +718,13 @@ struct XDriveIOSNativeFilesBrowser: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
+    @StateObject private var inlineFolders = XDriveIOSNativeFilesInlineFolderStore()
     @StateObject private var favoriteShortcuts = XDriveIOSNativeFilesCollectionPageModel()
+    @StateObject private var quickAccess = XDriveIOSNativeFilesQuickAccessModel.shared
+    @AppStorage("xdrive.ios.files.home.quick-access-expanded.v1")
+    private var quickAccessExpanded = true
+    @AppStorage("xdrive.ios.files.home.favorites-expanded.v1")
+    private var favoriteFoldersExpanded = true
     @StateObject private var searchOptions = XDriveIOSNativeFilesSearchOptionsModel()
     @State private var favoriteShortcutsOwner: XDriveNativeOwnerRoot?
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
@@ -606,6 +734,9 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var showingClipboardPasteConfirmation = false
     @State private var showingSavedSearches = false
     @State private var savedSearchOwner: XDriveNativeOwnerRoot?
+    @State private var showingFileOperations = false
+    @State private var fileOperationsOwner: XDriveNativeOwnerRoot?
+    @State private var operationWasAccepted = false
     @State private var showingPathPrompt = false
     @State private var pathDraft = ""
     @State private var pathBusy = false
@@ -633,6 +764,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var sort = "name"
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
     @State private var order = "asc"
+    @State private var grouping = "none"
+    @State private var foldersFirst = true
     @State private var searchError: String?
     @State private var selectedFile: XDriveIOSNativeFilesEntry?
     @State private var managementIntent: XDriveIOSNativeFilesManagementIntent?
@@ -769,14 +902,15 @@ struct XDriveIOSNativeFilesBrowser: View {
             .accessibilityIdentifier("native-ios-files-open-trash")
         }
         Section("个人收藏") {
-            NavigationLink {
-                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
-            } label: {
-                Label("收藏夹", systemImage: "star")
-            }
-            .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
-            .accessibilityIdentifier("native-ios-files-open-favorites")
-            ForEach(verifiedFavoriteFolders) { item in
+            DisclosureGroup("收藏夹和常用收藏", isExpanded: $favoriteFoldersExpanded) {
+                NavigationLink {
+                    XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
+                } label: {
+                    Label("收藏夹", systemImage: "star")
+                }
+                .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
+                .accessibilityIdentifier("native-ios-files-open-favorites")
+                ForEach(verifiedFavoriteFolders) { item in
                 NavigationLink {
                     XDriveIOSNativeFilesBrowser(
                         login: login, folderID: item.node.id,
@@ -798,14 +932,73 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 .accessibilityIdentifier("native-ios-files-favorite-folder-\(item.id)")
             }
-            if favoriteShortcuts.loading {
-                ProgressView("正在读取收藏文件夹…")
-            } else if let error = favoriteShortcuts.error, login.owner != nil {
-                HStack {
-                    Text(error).font(.footnote).foregroundStyle(.secondary)
-                    Spacer(minLength: 4)
-                    Button("重试") { loadFavoriteShortcuts() }
-                        .accessibilityIdentifier("native-ios-files-favorite-retry")
+                if favoriteShortcuts.loading {
+                    ProgressView("正在读取收藏文件夹…")
+                } else if let error = favoriteShortcuts.error, login.owner != nil {
+                    HStack {
+                        Text(error).font(.footnote).foregroundStyle(.secondary)
+                        Spacer(minLength: 4)
+                        Button("重试") { loadFavoriteShortcuts() }
+                            .accessibilityIdentifier("native-ios-files-favorite-retry")
+                    }
+                }
+            }
+        }
+        Section("快捷目录") {
+            DisclosureGroup("固定的文件夹", isExpanded: $quickAccessExpanded) {
+                if quickAccess.matches(login.owner) {
+                    ForEach(quickAccess.items) { item in
+                        HStack(spacing: 8) {
+                            NavigationLink {
+                                XDriveIOSNativeFilesBrowser(
+                                    login: login, folderID: item.node.id,
+                                    folderName: item.node.name
+                                )
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Label(item.node.name, systemImage: "pin.fill")
+                                        .lineLimit(1)
+                                    Text(item.path)
+                                        .font(.caption).foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .accessibilityIdentifier("native-ios-files-pinned-folder-\(item.id)")
+                            Menu {
+                                Button("上移") {
+                                    reorderQuickAccess(item, delta: -1)
+                                }
+                                Button("下移") {
+                                    reorderQuickAccess(item, delta: 1)
+                                }
+                                Button("取消固定", role: .destructive) {
+                                    quickAccess.unpin(item.id, login: login)
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .disabled(quickAccess.busy || quickAccess.loading)
+                            .accessibilityIdentifier("native-ios-files-pinned-more-\(item.id)")
+                        }
+                    }
+                    if quickAccess.items.isEmpty {
+                        Text("还没有固定文件夹。打开云端目录，长按文件夹即可固定。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                if quickAccess.loading {
+                    ProgressView("正在验证快捷目录…")
+                }
+                if let status = quickAccess.status {
+                    HStack {
+                        Text(status).font(.footnote).foregroundStyle(.secondary)
+                        Spacer(minLength: 2)
+                        Button("重新读取") {
+                            quickAccess.load(login: login, force: true)
+                        }
+                        .disabled(quickAccess.loading || quickAccess.busy)
+                    }
                 }
             }
         }
@@ -824,6 +1017,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             .disabled(login.owner == nil)
             .accessibilityIdentifier("native-ios-files-open-saved-searches")
+            Button { presentFileOperations() } label: {
+                Label("操作历史及撤销", systemImage: "arrow.uturn.backward.circle")
+            }
+            .disabled(login.owner == nil)
+            .accessibilityIdentifier("native-ios-files-open-operations")
         }
         if pathBusy || pathError != nil {
             Section {
@@ -1031,12 +1229,34 @@ struct XDriveIOSNativeFilesBrowser: View {
             .disabled(!canSelectPage)
             .accessibilityIdentifier("native-ios-files-select-\(entry.id)")
         } else if entry.node.isDirectory {
-            NavigationLink(value: XDriveIOSNativeFilesFolder(
-                id: entry.node.id, name: entry.node.name
-            )) {
-                row(entry)
+            // Disclosure is a sibling of NavigationLink: tapping the 44-pt
+            // chevron expands in place; tapping the row still navigates into
+            // the folder. A nested Button inside the Link caused misroutes.
+            HStack(spacing: 0) {
+                if !isGlobalSearch && viewMode == "list" &&
+                   inlineFolders.allowsDisclosure(entry.node, owner: login.owner) {
+                    Button {
+                        toggleInline(entry)
+                    } label: {
+                        Image(systemName: inlineFolders.branch(
+                            for: entry.node, owner: login.owner
+                        ) == nil ? "chevron.right" : "chevron.down")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(inlineFolders.branch(
+                        for: entry.node, owner: login.owner
+                    ) == nil ? "展开 " + entry.node.name : "收起 " + entry.node.name)
+                    .accessibilityIdentifier("native-ios-files-disclose-\(entry.node.id)")
+                }
+                NavigationLink(value: XDriveIOSNativeFilesFolder(
+                    id: entry.node.id, name: entry.node.name
+                )) {
+                    row(entry)
+                }
+                .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
             }
-            .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
             .contextMenu {
                 nativeQuickActions(for: entry)
                 Button {
@@ -1113,12 +1333,14 @@ struct XDriveIOSNativeFilesBrowser: View {
         if index >= model.entries.count - threshold {
             model.loadAdjacent(
                 .next, login: login, folderID: parentID,
-                query: activeQuery, filters: searchFilters, sort: sort, order: order
+                query: activeQuery, filters: searchFilters, sort: sort, order: order,
+                grouping: grouping, foldersFirst: foldersFirst
             )
         } else if index < threshold {
             model.loadAdjacent(
                 .previous, login: login, folderID: parentID,
-                query: activeQuery, filters: searchFilters, sort: sort, order: order
+                query: activeQuery, filters: searchFilters, sort: sort, order: order,
+                grouping: grouping, foldersFirst: foldersFirst
             )
         }
     }
@@ -1276,6 +1498,105 @@ struct XDriveIOSNativeFilesBrowser: View {
         )
     }
 
+    private func toggleInline(_ entry: XDriveIOSNativeFilesEntry) {
+        guard !selecting, !isGlobalSearch, viewMode == "list",
+              !model.loading, model.verifiedPage, login.owner != nil,
+              entry.node.isDirectory,
+              model.entries.contains(where: { $0.node == entry.node }) ||
+                  inlineFolders.containsVerified(entry.node, owner: login.owner)
+        else { return }
+        inlineFolders.toggle(entry.node, login: login)
+    }
+
+    @ViewBuilder private func inlineBranchRows(
+        for root: XDriveIOSNativeFilesNode
+    ) -> some View {
+        if !selecting && !isGlobalSearch && viewMode == "list" &&
+           root.isDirectory {
+            ForEach(inlineFolders.visibleRows(for: root, owner: login.owner)) { inline in
+                if let node = inline.node {
+                    fileEntryRow(XDriveIOSNativeFilesEntry(node: node, path: nil))
+                        .padding(.leading, CGFloat(min(inline.depth, 3)) * 16)
+                        .onAppear {
+                            inlineFolders.loadNeighborIfNeeded(
+                                folderID: inline.folderID,
+                                visibleNodeID: node.id, login: login
+                            )
+                        }
+                } else if inline.retryable {
+                    HStack {
+                        Text(inline.message ?? "子文件夹读取失败")
+                            .foregroundStyle(.orange)
+                        Spacer()
+                        Button("重试展开") {
+                            inlineFolders.retry(inline.folderID, login: login)
+                        }
+                    }
+                    .padding(.leading, CGFloat(min(inline.depth, 3)) * 16)
+                    .accessibilityIdentifier("native-ios-files-inline-retry")
+                } else if inline.message == "空文件夹" {
+                    Text("空文件夹")
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, CGFloat(min(inline.depth, 3)) * 16)
+                        .accessibilityIdentifier("native-ios-files-inline-empty")
+                } else {
+                    ProgressView(inline.message ?? "正在展开文件夹…")
+                        .padding(.leading, CGFloat(min(inline.depth, 3)) * 16)
+                        .accessibilityIdentifier("native-ios-files-inline-loading")
+                }
+            }
+        }
+    }
+
+    /// One shared native action row for grouped and flat lists. Both paths
+    /// must keep the same Server Owner/Node checks and confirmation dialogs.
+    private func filesActionRow(_ entry: XDriveIOSNativeFilesEntry) -> some View {
+        fileEntryRow(entry)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                if !selecting && model.verifiedPage && !model.loading {
+                    Button {
+                        openManagement(for: entry.node)
+                    } label: {
+                        Label("更多", systemImage: "ellipsis")
+                    }
+                    .tint(.gray)
+                    Button {
+                        openManagement(for: entry.node, quickAction: .shareLink)
+                    } label: {
+                        Label("分享链接", systemImage: "link")
+                    }
+                    .tint(.blue)
+                    Button(role: .destructive) {
+                        // The native sheet still asks for destructive confirmation.
+                        openManagement(for: entry.node, quickAction: .trash)
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                }
+            }
+            .onAppear { requestContinuousNeighbor(for: entry.id) }
+    }
+
+    /// A grouped grid uses the very same entry surface as a flat grid.
+    /// Server index groups remain outside this bounded 64–256 tile renderer.
+    private func filesGrid(_ items: [XDriveIOSNativeFilesEntry]) -> some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 128, maximum: 184), spacing: 10)],
+            spacing: 10
+        ) {
+            ForEach(items) { entry in
+                gridTile(entry)
+                    .id(entry.id)
+                    .onAppear { requestContinuousNeighbor(for: entry.id) }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .listRowInsets(EdgeInsets())
+        .listRowSeparator(.hidden)
+        .accessibilityIdentifier("native-ios-files-grid")
+    }
+
     private var filesList: some View {
         List {
             filesHeader
@@ -1283,53 +1604,47 @@ struct XDriveIOSNativeFilesBrowser: View {
                 filesHome
             } else {
                 filesLoadStatus
+                if let notice = inlineFolders.status {
+                    Text(notice).foregroundStyle(.orange)
+                        .accessibilityIdentifier("native-ios-files-inline-limit")
+                }
                 if viewMode == "grid" {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 128, maximum: 184), spacing: 10)],
-                        spacing: 10
-                    ) {
-                        ForEach(model.entries) { entry in
-                            gridTile(entry)
-                                .id(entry.id)
-                                .onAppear { requestContinuousNeighbor(for: entry.id) }
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .accessibilityIdentifier("native-ios-files-grid")
-                } else {
-                    ForEach(model.entries) { entry in
-                        fileEntryRow(entry)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                if !selecting && model.verifiedPage && !model.loading {
-                                    Button {
-                                        openManagement(for: entry.node)
-                                    } label: {
-                                        Label("更多", systemImage: "ellipsis")
-                                    }
-                                    .tint(.gray)
-                                    Button {
-                                        openManagement(
-                                            for: entry.node, quickAction: .shareLink
-                                        )
-                                    } label: {
-                                        Label("分享链接", systemImage: "link")
-                                    }
-                                    .tint(.blue)
-                                    Button(role: .destructive) {
-                                        // The management screen still asks for
-                                        // explicit destructive confirmation.
-                                        openManagement(
-                                            for: entry.node, quickAction: .trash
-                                        )
-                                    } label: {
-                                        Label("删除", systemImage: "trash")
-                                    }
+                    if grouping != "none" && !isGlobalSearch {
+                        ForEach(model.visibleGroups) { group in
+                            Section {
+                                filesGrid(group.entries)
+                            } header: {
+                                if let heading = group.heading {
+                                    Text(heading)
+                                        .font(.subheadline.weight(.semibold))
+                                        .accessibilityAddTraits(.isHeader)
                                 }
                             }
-                            .onAppear { requestContinuousNeighbor(for: entry.id) }
+                        }
+                    } else {
+                        filesGrid(model.entries)
+                    }
+                } else {
+                    if grouping != "none" && !isGlobalSearch {
+                        ForEach(model.visibleGroups) { group in
+                            Section {
+                                ForEach(group.entries) { entry in
+                                    filesActionRow(entry)
+                                    inlineBranchRows(for: entry.node)
+                                }
+                            } header: {
+                                if let heading = group.heading {
+                                    Text(heading)
+                                        .font(.subheadline.weight(.semibold))
+                                        .accessibilityAddTraits(.isHeader)
+                                }
+                            }
+                        }
+                    } else {
+                        ForEach(model.entries) { entry in
+                            filesActionRow(entry)
+                            inlineBranchRows(for: entry.node)
+                        }
                     }
                 }
                 filesContinuousStatus
@@ -1460,6 +1775,17 @@ struct XDriveIOSNativeFilesBrowser: View {
                         Text("降序").tag("desc")
                     }
                     .disabled(selecting || model.loading)
+                    Picker("分组", selection: $grouping) {
+                        Text("不分组").tag("none")
+                        Text("按类型").tag("type")
+                        Text("按修改日期").tag("modified")
+                        Text("按大小").tag("size")
+                    }
+                    .disabled(isHome || isGlobalSearch || selecting || model.loading)
+                    .accessibilityIdentifier("native-ios-files-grouping")
+                    Toggle("文件夹优先", isOn: $foldersFirst)
+                        .disabled(isHome || isGlobalSearch || selecting || model.loading)
+                        .accessibilityIdentifier("native-ios-files-folders-first")
                     Divider()
                     Button {
                         openManagement(for: nil, quickAction: .createFolder)
@@ -1505,6 +1831,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .disabled(login.owner == nil || pathBusy)
                     .accessibilityIdentifier("native-ios-files-go-to-path")
+                    Button { presentFileOperations() } label: {
+                        Label("文件操作历史／撤销／重做",
+                              systemImage: "arrow.uturn.backward.circle")
+                    }
+                    .disabled(selecting || model.loading || login.owner == nil)
+                    .accessibilityIdentifier("native-ios-files-operations")
                     Button {
                         showingClipboardPasteConfirmation = true
                     } label: {
@@ -1560,6 +1892,26 @@ struct XDriveIOSNativeFilesBrowser: View {
             XDriveIOSNativeFilesBatchShareSheet(
                 files: batchExport.prepared.map(\.fileURL)
             )
+        }
+        .sheet(isPresented: $showingFileOperations, onDismiss: {
+            fileOperationsOwner = nil
+            if operationWasAccepted {
+                operationWasAccepted = false
+                reload()
+            }
+        }) {
+            if let owner = fileOperationsOwner,
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) {
+                NavigationStack {
+                    XDriveIOSNativeFilesOperationHistoryScreen(
+                        login: login, expectedOwner: owner
+                    ) {
+                        operationWasAccepted = true
+                    }
+                }
+            } else {
+                Text("账户已经变化，请关闭操作历史。")
+            }
         }
         .sheet(isPresented: $showingSavedSearches, onDismiss: {
             savedSearchOwner = nil
@@ -1666,8 +2018,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
                 XDriveIOSNativeFilesManagementPanel(
                     login: login, expectedOwner: intent.owner,
-                    folderID: folder?.id ?? intent.file?.parent_id ??
-                        intent.directory?.parent_id ?? intent.owner.rootNodeID,
+                    folderID: intent.file?.parent_id ?? intent.directory?.parent_id ??
+                        folder?.id ?? intent.owner.rootNodeID,
                     folderName: folder?.name,
                     file: intent.file,
                     directory: intent.directory,
@@ -1697,15 +2049,26 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .fullScreenCover(item: $selectedFile, onDismiss: {
             selectedOwner = nil
-            // Resume on the bounded Server range containing the last opened
-            // file, not silently at the first range of a large directory.
-            if let viewed = lastViewedFile,
-               let index = model.entries.firstIndex(where: { $0.id == viewed.id }) {
-                offset = model.startOffset +
-                    (index / XDriveIOSNativeFilesPagePolicy.pageSize) *
-                    XDriveIOSNativeFilesPagePolicy.pageSize
+            // Viewer is read-only. Returning to a still-valid Owner/scope
+            // must not clear all rows and thumbnails or flash an empty List.
+            if let folderID = parentID,
+               model.canResume(
+                owner: login.owner, folderID: folderID,
+                query: activeQuery, filters: searchFilters,
+                sort: sort, order: order,
+                grouping: grouping, foldersFirst: foldersFirst
+               ) {
+                lastViewedFile = nil
+                returnOwner = nil
+            } else {
+                if let viewed = lastViewedFile,
+                   let index = model.entries.firstIndex(where: { $0.id == viewed.id }) {
+                    offset = model.startOffset +
+                        (index / XDriveIOSNativeFilesPagePolicy.pageSize) *
+                        XDriveIOSNativeFilesPagePolicy.pageSize
+                }
+                reload()
             }
-            reload()
         }) { initial in
             if let openedOwner = selectedOwner {
                 XDriveIOSNativeFilesViewer(
@@ -1719,7 +2082,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                               XDriveIOSNativePhotoOwnerScope.matches(
                                   login.owner, openedOwner
                               ),
-                              model.entries.contains(where: { $0.node == next })
+                              containsVerifiedNode(next)
                         else { return false }
                         lastViewedFile = next
                         return true
@@ -1747,6 +2110,7 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func suspendVisibleRange() {
         cancelPathLookup()
+        inlineFolders.suspendForNavigation()
         guard selectedFile == nil else { return }
         if let saved = rememberedPosition() {
             offset = saved.pageOffset
@@ -1770,7 +2134,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                       model.canResume(
                         owner: login.owner, folderID: folderID,
                         query: activeQuery, filters: searchFilters,
-                        sort: sort, order: order
+                        sort: sort, order: order,
+                        grouping: grouping, foldersFirst: foldersFirst
                       ) {
                 pendingNavigationReturnNodeID = nil
             } else {
@@ -1803,6 +2168,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             batchTagsIntent = nil
             showingSavedSearches = false
             savedSearchOwner = nil
+            quickAccess.invalidate()
+            inlineFolders.invalidate()
+            showingFileOperations = false
+            fileOperationsOwner = nil
+            operationWasAccepted = false
             showingPathPrompt = false
             pathDestination = nil
             cancelPathLookup()
@@ -1855,6 +2225,15 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onChange(of: sort) { _ in reload(resetOffset: true) }
         .onChange(of: order) { _ in reload(resetOffset: true) }
+        .onChange(of: viewMode) { next in
+            if next == "grid" { inlineFolders.invalidate() }
+        }
+        .onChange(of: grouping) { _ in
+            if !isHome && !isGlobalSearch { reload(resetOffset: true) }
+        }
+        .onChange(of: foldersFirst) { _ in
+            if !isHome && !isGlobalSearch { reload(resetOffset: true) }
+        }
         .onChange(of: model.loading) { loading in
             guard !loading, selectedFile == nil else { return }
             if let returnID = pendingNavigationReturnNodeID {
@@ -1960,6 +2339,14 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
+    private func presentFileOperations() {
+        guard !selecting, let owner = login.owner,
+              !batchTrash.busy && !batchTarget.busy && !batchExport.busy
+        else { return }
+        fileOperationsOwner = owner
+        showingFileOperations = true
+    }
+
     private func presentSavedSearches() {
         guard !selecting, let owner = login.owner,
               !batchTrash.busy && !batchTarget.busy && !batchExport.busy
@@ -2006,9 +2393,9 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func captureItem(_ entry: XDriveIOSNativeFilesEntry,
                              kind: XDriveIOSNativeFilesDestinationKind) {
-        guard !selecting, !isGlobalSearch, !model.loading, model.verifiedPage,
-              let owner = login.owner, let sourceParentID = parentID,
-              model.entries.contains(where: { $0.node == entry.node }) else { return }
+        guard !selecting, !isGlobalSearch,
+              let owner = login.owner, let sourceParentID = entry.node.parent_id,
+              containsVerifiedNode(entry.node) else { return }
         _ = clipboard.capture(
             kind, items: [entry.node], sourceParentID: sourceParentID, owner: owner
         )
@@ -2047,9 +2434,19 @@ struct XDriveIOSNativeFilesBrowser: View {
     /// The existing native Viewer only accepts 64 same-parent file targets.
     /// Center its immutable window on the selected file instead of passing
     /// an unbounded continuously loaded file list into L3.
+    private func containsVerifiedNode(_ node: XDriveIOSNativeFilesNode) -> Bool {
+        model.verifiedPage && !model.loading && (
+            model.entries.contains(where: { $0.node == node }) ||
+            inlineFolders.containsVerified(node, owner: login.owner)
+        )
+    }
+
     private func viewerWindow(for selected: XDriveIOSNativeFilesNode)
         -> [XDriveIOSNativeFilesNode] {
-        let siblings = model.entries.map(\.node).filter {
+        let source = model.entries.contains(where: { $0.node == selected })
+            ? model.entries.map(\.node)
+            : inlineFolders.siblings(of: selected, owner: login.owner) ?? []
+        let siblings = source.filter {
             $0.type == "file" && $0.parent_id == selected.parent_id
         }
         guard let index = siblings.firstIndex(of: selected) else { return [selected] }
@@ -2059,10 +2456,10 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func openViewer(_ entry: XDriveIOSNativeFilesEntry) {
-        guard !model.loading, model.verifiedPage,
-              let owner = login.owner,
-              model.entries.contains(where: { $0.node == entry.node }) else { return }
+        guard let owner = login.owner,
+              containsVerifiedNode(entry.node) else { return }
         model.cancelAdjacent()
+        inlineFolders.suspendForNavigation()
         selectedOwner = owner
         returnOwner = owner
         lastViewedFile = entry.node
@@ -2220,7 +2617,7 @@ struct XDriveIOSNativeFilesBrowser: View {
               !batchTrash.busy, !batchTarget.busy, !batchExport.busy,
               batchExport.prepared.isEmpty,
               node.type == "file", let owner = login.owner,
-              model.entries.contains(where: { $0.node == node }) else { return }
+              containsVerifiedNode(node) else { return }
         versionHistoryIntent = XDriveIOSNativeFilesVersionIntent(
             owner: owner, node: node
         )
@@ -2237,6 +2634,21 @@ struct XDriveIOSNativeFilesBrowser: View {
             } label: {
                 Label("预览", systemImage: "eye")
             }
+        }
+        if entry.node.isDirectory && !isGlobalSearch {
+            Button {
+                guard containsVerifiedNode(entry.node) else { return }
+                quickAccess.togglePin(entry.node, login: login)
+            } label: {
+                Label(
+                    quickAccess.matches(login.owner) &&
+                    quickAccess.items.contains(where: { $0.id == entry.node.id })
+                        ? "取消固定到快捷目录" : "固定到快捷目录",
+                    systemImage: "pin"
+                )
+            }
+            .disabled(quickAccess.busy || quickAccess.loading)
+            .accessibilityIdentifier("native-ios-files-toggle-pin-\(entry.node.id)")
         }
         Button {
             captureItem(entry, kind: .copy)
@@ -2296,7 +2708,7 @@ struct XDriveIOSNativeFilesBrowser: View {
               let owner = login.owner,
               node != nil || activeQuery.isEmpty else { return }
         if let node {
-            guard model.entries.contains(where: { $0.node == node }) else { return }
+            guard containsVerifiedNode(node) else { return }
         }
         if let node, let index = model.entries.firstIndex(where: { $0.node == node }) {
             offset = model.startOffset +
@@ -2378,6 +2790,19 @@ struct XDriveIOSNativeFilesBrowser: View {
         reload()
     }
 
+    private func reorderQuickAccess(
+        _ item: XDriveIOSNativeFilesQuickAccessItem, delta: Int
+    ) {
+        guard quickAccess.matches(login.owner), !quickAccess.loading,
+              !quickAccess.busy,
+              let index = quickAccess.items.firstIndex(where: { $0.id == item.id }),
+              index + delta >= 0,
+              index + delta < quickAccess.items.count else { return }
+        var ids = quickAccess.items.map(\.id)
+        ids.swapAt(index, index + delta)
+        quickAccess.reorder(ids, login: login)
+    }
+
     private func loadFavoriteShortcuts() {
         favoriteShortcuts.invalidate()
         favoriteShortcutsOwner = nil
@@ -2387,6 +2812,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func reload(resetOffset: Bool = false) {
+        inlineFolders.invalidate()
         selecting = false
         selectedIDs.removeAll()
         selectedSnapshots.removeAll()
@@ -2401,6 +2827,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         if isHome {
             model.invalidate()
             loadFavoriteShortcuts()
+            quickAccess.load(login: login)
             return
         }
         favoriteShortcuts.invalidate()
@@ -2410,6 +2837,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             return
         }
         model.load(login: login, folderID: parentID, offset: offset,
-                   query: activeQuery, filters: searchFilters, sort: sort, order: order)
+                   query: activeQuery, filters: searchFilters, sort: sort, order: order,
+                   grouping: grouping, foldersFirst: foldersFirst)
     }
 }

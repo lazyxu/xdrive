@@ -20,10 +20,10 @@ test('one native Files modal opens from the current real page and reanchors afte
   assert.match(browser, /XDriveIOSNativeFilesViewerPolicy\.maximumLoadedRows/);
   assert.match(browser, /Array\(siblings\[start\.\.<min\(start \+ maximum, siblings\.count\)\]\)/);
   assert.match(browser, /onNavigate: \{ next in[\s\S]*?selectedFile\?\.id == initial\.id/);
-  assert.match(browser, /model\.entries\.contains\(where: \{ \$0\.node == next \}\)/);
+  assert.match(browser, /containsVerifiedNode\(next\)/);
   assert.match(browser, /lastViewedFile = next/);
   assert.match(browser, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/);
-  assert.match(browser, /private func suspendVisibleRange\(\) \{\s*cancelPathLookup\(\)\s*guard selectedFile == nil else \{ return \}/);
+  assert.match(browser, /private func suspendVisibleRange\(\) \{\s*cancelPathLookup\(\)\s*inlineFolders\.suspendForNavigation\(\)\s*guard selectedFile == nil else \{ return \}/);
   assert.match(browser, /if let saved = rememberedPosition\(\) \{\s*offset = saved\.pageOffset\s*pendingNavigationReturnNodeID = saved\.nodeID/);
   // A parent NavigationLink must remain alive while its child is pushed.
   // Cancellation is still mandatory; clearing the verified source rows here
