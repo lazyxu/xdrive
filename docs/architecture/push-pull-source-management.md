@@ -177,3 +177,30 @@ iOS Photos 使用统一的 `Source(kind=ios_photos, direction=push, sync_mode=ba
 - 只上传聚合计数：扫描、确认新增、云端原件已核验、待处理/不可用。PhotoKit localIdentifier、文件名、位置、原始媒体字节和逐项私有账本不进入 SourceItem 或 SyncRun。
 - Source Manager 展示统一目标目录、最近运行状态和分页运行历史；不提供 Server 端 Run Now、通用来源设置、虚构的相册集合或逐文件错误快照。继续备份、权限和自动计划仍在绑定的 iPhone 上管理。
 
+
+## 2026-11-06 Owner override: Synology folder Push MVP
+
+This decision supersedes the earlier roadmap assumption that Synology Photos
+Pull and Synology Files Pull should be enabled in the first MVP. Until the
+Owner explicitly re-enables them:
+
+- **Enabled Synology backup path:** DSM folder-based `local_folder` Push through
+  the owning `xdrive-agent`, the common UploadSession/chunks/finalize/CAS
+  protocol, and its existing Root/Device/Source/Target authorization. Photos
+  on the NAS may be included as ordinary directories. The dedicated DSM
+  `synology_photos` Push/source-agent implementation remains retired.
+- **Disabled:** `synology_photos/pull` and `synology_files/pull`. Do not
+  advertise their create presets, accept new Sources, activate or execute old
+  Sources, bind a new SyncRun, or grant worker writes. Do not register their
+  handlers in the production Pull dispatcher.
+- **Historical data:** keep both connectors' code and schemas, Owner-visible
+  historical Source/Node/SourceItem/SyncRun/CAS data and existing credentials
+  intact. Owner can read history, archive an old Source and revoke credentials;
+  generic DELETE and restore must not silently erase or restart that Source.
+- **Unrelated connectors:** Yike Photos Pull and native/local device Push
+  remain governed by their existing contracts. This is a temporary capability
+  decision, not a database migration or a request to delete previously
+  synchronized data.
+
+This is a development-branch policy until its exact HEAD passes required
+Go/PostgreSQL, shared UI, build and Final Gate CI, and the relevant PR is merged.
