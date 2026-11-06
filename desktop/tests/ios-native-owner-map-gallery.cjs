@@ -99,16 +99,22 @@ test('Owner cloud MapKit uses native 64px photo covers from current place-filter
   assert.match(policy, /\.prefix\(maximumPhotoCovers\)/)
   assert.match(map, /reader\.page\(offset: 0, placeID: facet\.id\)/)
   assert.match(map, /reader\.thumbnail\(first\)/)
-  assert.match(map, /coverImages\[facet\.id\] = cover/)
+  assert.match(map, /coverImages\[placeID\] = image/)
   assert.match(map, /epoch == ticket[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
   assert.match(map, /coverTask\?\.cancel\(\)/)
   assert.match(map, /coverImages = \[:\]/)
   assert.doesNotMatch(map, /PHPhotoLibrary|BaiduMap|URLSession\(|UserDefaults\.|UploadSession/)
 })
 
-test('cloud photo cover revalidates Owner after Range before thumbnail and stops on revocation', () => {
-  assert.match(map, /reader\.page\(offset: 0, placeID: facet\.id\)[\s\S]*?Task\.checkCancellation\(\)[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)[\s\S]*?reader\.thumbnail\(first\)/)
-  assert.match(map, /catch let failure as XDriveIOSNativeMediaReadFailure \{[\s\S]*?case \.response\(let status\)[\s\S]*?status == 401 \|\| status == 403[\s\S]*?invalidate\(\)/)
+test('cloud photo cover verifies exact Range before thumbnail and publishes only on current Owner camera', () => {
+  const worker = map.slice(map.indexOf('private struct XDriveIOSOwnerMapCoverRead:'),
+    map.indexOf('enum XDriveIOSNativePhotoMapSource:'))
+  const covers = map.slice(map.indexOf('private func loadCurrentOwnerCovers('),
+    map.indexOf('private func revokeCameraAuthorization()'))
+  assert.match(worker, /reader\.page\(offset: 0, placeID: facet\.id\)[\s\S]*?Task\.checkCancellation\(\)[\s\S]*?acceptsCoverPage\([\s\S]*?reader\.thumbnail\(first\)[\s\S]*?Task\.checkCancellation\(\)/)
+  assert.match(covers, /for await completed in group \{[\s\S]*?epoch == ticket[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\([\s\S]*?login\.owner, expected[\s\S]*?isSameViewport\([\s\S]*?switch completed[\s\S]*?coverImages\[placeID\] = image/)
+  assert.match(worker, /case \.response\(let status\) = failure, status == 401 \|\| status == 403[\s\S]*?return \.revoked/)
+  assert.match(covers, /case \.revoked:[\s\S]*?group\.cancelAll\(\)[\s\S]*?invalidate\(\)[\s\S]*?error =/)
 })
 
 test('current exact Owner map place opens one draggable native Gallery album sheet, not a fixed photo strip', () => {
@@ -147,7 +153,7 @@ test('cloud MapKit cluster cover prefers an available verified member thumbnail 
   const relevant = map.slice(refreshed, map.indexOf('func mapView(_ mapView: MKMapView, didSelect view:', viewed))
   assert.equal((relevant.match(/members\.compactMap \{ coverImages\[\$0\.facet\.id\] \}\.first/g) || []).length, 2)
   assert.doesNotMatch(relevant, /members\.first\.flatMap/)
-  assert.match(map, /for facet in XDriveIOSNativeOwnerMapSelectionPolicy[\s\S]*?\.prioritizedPhotoCovers\(result\.items\)/)
+  assert.match(map, /\.prioritizedPhotoCovers\(result\.items\)[\s\S]*?for facet in facets\[start\.\.<end\]/)
   assert.match(policy, /\.prefix\(maximumPhotoCovers\)/)
 })
 
@@ -323,15 +329,35 @@ test('Owner MapKit single-pin tap admits only the current signed facet, not an o
 
 
 test('Owner map photo covers require unchanged signed place count before thumbnail', () => {
+  const worker = map.slice(map.indexOf('private struct XDriveIOSOwnerMapCoverRead:'),
+    map.indexOf('enum XDriveIOSNativePhotoMapSource:'))
   const start = map.indexOf('private func loadCurrentOwnerCovers(')
   const end = map.indexOf('private func revokeCameraAuthorization()', start)
   assert.ok(start >= 0 && end > start)
   const covers = map.slice(start, end)
-  assert.match(covers, /reader\.page\(offset: 0, placeID: facet\.id\)/)
-  assert.match(covers, /guard XDriveIOSNativeOwnerMapSelectionPolicy\.acceptsCoverPage\(\s*facet, rangeTotal: page\.total_count, offset: page\.offset\s*\), let first = page\.items\.first\(where: \{ \$0\.supportsPreview \}\)/)
-  assert.ok(covers.indexOf('acceptsCoverPage(') < covers.indexOf('reader.thumbnail(first)'))
+  assert.match(worker, /reader\.page\(offset: 0, placeID: facet\.id\)/)
+  assert.match(worker, /guard XDriveIOSNativeOwnerMapSelectionPolicy\.acceptsCoverPage\(\s*facet, rangeTotal: page\.total_count, offset: page\.offset\s*\), let first = page\.items\.first\(where: \{ \$0\.supportsPreview \}\)/)
+  assert.ok(worker.indexOf('acceptsCoverPage(') < worker.indexOf('reader.thumbnail(first)'))
   assert.match(covers, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
   assert.match(covers, /XDriveIOSNativeOwnerMapSelectionPolicy\.isSameViewport\(/)
   assert.match(policy, /static func acceptsCoverPage\(/)
   assert.match(policy, /canOpenPhotoRange\(facet\)[\s\S]*?offset == 0[\s\S]*?rangeTotal == facet\.item_count/)
+})
+
+test('Owner map cover reads are structured, capped at three and revoke all siblings on any 401 or 403', () => {
+  const start = map.indexOf('private func loadCurrentOwnerCovers(')
+  const end = map.indexOf('private func revokeCameraAuthorization()', start)
+  const covers = map.slice(start, end)
+  assert.match(covers, /let maximumConcurrentCovers = 3/)
+  assert.match(covers, /stride\(from: 0, to: facets\.count, by: maximumConcurrentCovers\)/)
+  assert.match(covers, /end = min\(facets\.count, start \+ maximumConcurrentCovers\)/)
+  assert.match(covers, /withTaskGroup\(of: XDriveIOSOwnerMapCoverOutcome\.self\)/)
+  assert.match(covers, /group\.addTask \{ await request\.perform\(\) \}/)
+  assert.match(covers, /for await completed in group/)
+  assert.match(covers, /!Task\.isCancelled, epoch == ticket/)
+  assert.match(covers, /selected == nil, selectedCluster == nil/)
+  assert.match(covers, /singleViewer == nil, singleTask == nil, phase == \.active/)
+  assert.match(covers, /case \.revoked:[\s\S]*?group\.cancelAll\(\)[\s\S]*?invalidate\(\)/)
+  assert.match(covers, /case \.unavailable:[\s\S]*?Missing derivative is NOT a missing original/)
+  assert.doesNotMatch(covers, /cover_node_id|offset: 0, placeID: nil|UploadSession/)
 })
