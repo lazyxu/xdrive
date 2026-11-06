@@ -84,8 +84,10 @@ struct XDriveIOSLivePreviewArchiveChecks {
         let legacyURL = directory.appendingPathComponent("legacy.zip")
         try legacyBytes.write(to: legacyURL)
         let legacy = try XDriveIOSLivePreviewArchive.extract(legacyURL, in: directory)
-        precondition(try Data(contentsOf: legacy.stillURL) == Data([2, 4, 6]))
-        precondition(try Data(contentsOf: legacy.motionURL) == Data([7, 9, 11, 13]))
+        let restoredLegacyStill = try Data(contentsOf: legacy.stillURL)
+        let restoredLegacyMotion = try Data(contentsOf: legacy.motionURL)
+        precondition(restoredLegacyStill == Data([2, 4, 6]))
+        precondition(restoredLegacyMotion == Data([7, 9, 11, 13]))
         legacy.discard()
         var legacyCRC = legacyBytes
         legacyCRC[30 + "media/still.heic".utf8.count] ^= 1
