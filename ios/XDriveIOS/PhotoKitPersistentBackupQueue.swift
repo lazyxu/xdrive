@@ -24,6 +24,14 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         var events = 0
     }
 
+    /// UI-only, Owner-local PhotoKit change metadata. No Server receipt
+    /// is implied by a queued/confirmed label, and no original identifiers
+    /// or raw Server errors are exposed to badge policy.
+    struct VisibleItemStatus: Equatable, Sendable {
+        let state: String
+        let failureReasonCode: String?
+    }
+
     struct Candidate: Equatable {
         let pending: XDriveIOSPhotoBackupChangeQueueStore.Pending
         let kind: String
@@ -283,6 +291,43 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         }
         try verifyAuthorization(stillMatches: epoch)
         return statuses
+    }
+
+    /// Read one mounted Gallery page plus normalized per-item failure reasons.
+    /// The exact Owner, PhotoKit token and authorization gate match
+    /// visibleStatuses; a stale generation returns no labels, never green.
+    func visibleStatusDetails(
+        owner: XDriveNativeOwnerRoot, localIdentifiers: [String]
+    ) throws -> [String: VisibleItemStatus] {
+        guard localIdentifiers.count <= 64 else { throw Failure.invalidReplayLimit }
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline(),
+              baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(baseline.token, as: epoch.token)
+        else { return [:] }
+        var result: [String: VisibleItemStatus] = [:]
+        result.reserveCapacity(localIdentifiers.count)
+        for id in localIdentifiers {
+            try Task.checkCancellation()
+            if let row = try store.status(for: id) {
+                // SQLite joins the reason to the exact failed revision.
+                // Malformed/unknown codes are never shown as raw text.
+                let knownReason: String?
+                if row.state == .failed, let code = row.failureReasonCode,
+                   XDriveIOSPhotoBackupIssueReason(rawValue: code) != nil {
+                    knownReason = code
+                } else {
+                    knownReason = nil
+                }
+                result[id] = VisibleItemStatus(
+                    state: row.state.rawValue,
+                    failureReasonCode: knownReason
+                )
+            }
+        }
+        try verifyAuthorization(stillMatches: epoch)
+        return result
     }
 
     /// Whether every persisted PhotoKit change event has been replayed. The
