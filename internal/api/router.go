@@ -233,6 +233,13 @@ func (s *Server) Router() *gin.Engine {
 	// Authenticated browser password rotation gets a new HttpOnly cookie,
 	// without exposing the new durable refresh token in JSON.
 	authed.POST("/me/change-password/browser", s.changePassword)
+	// Owner-only short-lived E2EE Web mailbox. No SourceRun, public share or
+	// native Photo grant can use these authenticated routes.
+	authed.GET("/clipboard/vault", s.clipboardVault)
+	authed.GET("/clipboard/items", s.listClipboardItems)
+	authed.POST("/clipboard/items", s.createClipboardItem)
+	authed.DELETE("/clipboard/items/:id", s.deleteClipboardItem)
+	authed.DELETE("/clipboard/items", s.clearClipboardItems)
 	authed.GET("/search", s.searchNodes)
 	authed.GET("/changes", s.listNodeChanges)
 	authed.POST("/notes/namespace", s.initializeNotesNamespace)
