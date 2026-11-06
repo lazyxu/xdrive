@@ -11,9 +11,11 @@ const range = read('ios/XDriveIOS/NativeCloudFilesPolicy.swift')
 test('Files uses one lazy continuous list/grid instead of explicit 64-item page controls', () => {
   assert.doesNotMatch(browser, /private var filesPager|Button\("上一页"\)|Button\("下一页"\)/)
   assert.match(browser, /private var filesContinuousStatus: some View/)
-  assert.match(browser, /ForEach\(model\.entries\) \{ entry in[\s\S]*?fileEntryRow\(entry\)[\s\S]*?onAppear \{ requestContinuousNeighbor\(for: entry\.id\) \}/)
+  assert.match(browser, /ForEach\(model\.entries\) \{ entry in[\s\S]*?filesActionRow\(entry\)/)
+  assert.match(browser, /private func filesActionRow\([\s\S]*?fileEntryRow\(entry\)[\s\S]*?onAppear \{ requestContinuousNeighbor\(for: entry\.id\) \}/)
   assert.match(browser, /gridTile\(entry\)[\s\S]*?onAppear \{ requestContinuousNeighbor\(for: entry\.id\) \}/)
-  assert.match(browser, /if viewMode == "grid" \{[\s\S]*?LazyVGrid\(/)
+  assert.match(browser, /if viewMode == "grid" \{[\s\S]*?filesGrid\(model\.entries\)/)
+  assert.match(browser, /private func filesGrid\([\s\S]*?LazyVGrid\(/)
   assert.match(browser, /func loadAdjacent\(_ direction: XDriveIOSNativeFilesContinuousWindowPolicy\.Direction/)
   assert.match(browser, /model\.loadAdjacent\(\s*\.next/)
   assert.match(browser, /model\.loadAdjacent\(\s*\.previous/)
@@ -37,7 +39,7 @@ test('each adjacent range is reauthenticated and cannot append stale or overlapp
 
 test('sliding range preserves Viewer return and bounded selection, and owner/navigation cancellation', () => {
   assert.match(browser, /offset = model\.startOffset \+[\s\S]*?XDriveIOSNativeFilesPagePolicy\.pageSize/)
-  assert.match(browser, /model\.cancelAdjacent\(\)\s*selectedOwner = owner/)
+  assert.match(browser, /model\.cancelAdjacent\(\)\s*inlineFolders\.suspendForNavigation\(\)\s*selectedOwner = owner/)
   assert.match(browser, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
   assert.match(browser, /selectedSnapshots\[entry\.id\] = entry\.node/)
   assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in/)
