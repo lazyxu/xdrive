@@ -62,6 +62,19 @@ func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndFlat(t *testing.T) {
 
 	call(http.MethodGet, token, "", http.StatusForbidden, nil)
 	call(http.MethodPut, foreignToken, `{"name":"Foreign"}`, http.StatusForbidden, headers)
+	call(http.MethodGet, token, "", http.StatusForbidden, map[string]string{
+		"X-XDrive-Device-ID": device.ID, "X-XDrive-Device-Token": "wrong",
+	})
+	// Same Owner is not sufficient to adopt another handset's Source.
+	otherSecret := strings.Repeat("second-native-android-token-", 2)
+	otherDevice := meta.ClientDevice{
+		ID: uuid.NewString(), OwnerID: owner.ID, Name: "Other Pixel",
+		Platform: "android", CredentialHash: deviceCredentialDigest(otherSecret),
+	}
+	if err := db.Create(&otherDevice).Error; err != nil { t.Fatal(err) }
+	otherHeaders := map[string]string{
+		"X-XDrive-Device-ID": otherDevice.ID, "X-XDrive-Device-Token": otherSecret,
+	}
 	unconfigured := call(http.MethodGet, token, "", http.StatusOK, headers)
 	if unconfigured.Configured || unconfigured.DeviceID != device.ID ||
 		unconfigured.SuggestedName != device.Name {
@@ -94,6 +107,11 @@ func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndFlat(t *testing.T) {
 		*source.TargetNodeID != created.TargetNodeID || source.Status != meta.SourceStatusPaused {
 		t.Fatalf("Android Source.DeviceID / Target binding invalid: %+v", source)
 	}
+	if second := call(http.MethodGet, token, "", http.StatusOK, otherHeaders);
+		second.Configured || second.DeviceID != otherDevice.ID {
+		t.Fatalf("another Android Device adopted the first Source: %+v", second)
+	}
+	call(http.MethodPut, token, `{"name":"Pixel 原件"}`, http.StatusConflict, otherHeaders)
 	for _, again := range []response{
 		call(http.MethodGet, token, "", http.StatusOK, headers),
 		call(http.MethodPut, token, `{"name":"Pixel 原件"}`, http.StatusOK, headers),
