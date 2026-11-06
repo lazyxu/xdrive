@@ -370,6 +370,7 @@ build-source-agent:
     paths:
       - release/source-agent/xdrive-source-agent-linux-amd64
       - release/source-agent/xdrive-source-agent-linux-arm64
+      - release/source-agent/xdrive-source-agent-linux-armv7
 
 package-linux-client:
   # Preserve only master snapshot publication prerequisites across frequent pushes.

@@ -122,40 +122,61 @@ func TestBaiduJSAPILoaderQuotaAcrossIndependentPostgresConnections(t *testing.T)
 	}
 
 	// Two replica handles reserve concurrently. Row locks and one
-	// transaction must never oversubscribe either scope.
-	reset()
+	// transaction must never oversubscribe either scope within one DB minute.
+	// A real database minute rollover legitimately resets quota. Retry only a
+	// rollover sample rather than treating that reset as a concurrency bypass.
 	parallelCaps := baiduJSAPILoaderQuotaLimits{OwnerRequests: 6, FleetRequests: 8}
-	var admitted atomic.Int64
-	var unexpected atomic.Int64
-	var group sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		group.Add(1)
-		go func(i int) {
-			defer group.Done()
-			connection := db
-			if i%2 == 1 {
-				connection = peer
-			}
-			owner := uint64(21 + i%2)
-			err := reserveBaiduJSAPILoaderQuotaWithLimits(ctx, connection, owner, parallelCaps)
-			switch {
-			case err == nil:
-				admitted.Add(1)
-			case errors.Is(err, errBaiduJSAPIQuotaDenied):
-			default:
-				unexpected.Add(1)
-			}
-		}(i)
+	stableMinute := false
+	for attempt := 0; attempt < 3; attempt++ {
+		reset()
+		var beforeMinute int64
+		if err := db.Raw("SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) / 60)::bigint").Scan(&beforeMinute).Error; err != nil {
+			t.Fatal(err)
+		}
+		var admitted atomic.Int64
+		var unexpected atomic.Int64
+		var group sync.WaitGroup
+		for i := 0; i < 20; i++ {
+			group.Add(1)
+			go func(i int) {
+				defer group.Done()
+				connection := db
+				if i%2 == 1 {
+					connection = peer
+				}
+				owner := uint64(21 + i%2)
+				err := reserveBaiduJSAPILoaderQuotaWithLimits(ctx, connection, owner, parallelCaps)
+				switch {
+				case err == nil:
+					admitted.Add(1)
+				case errors.Is(err, errBaiduJSAPIQuotaDenied):
+				default:
+					unexpected.Add(1)
+				}
+			}(i)
+		}
+		group.Wait()
+		var afterMinute int64
+		if err := peer.Raw("SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) / 60)::bigint").Scan(&afterMinute).Error; err != nil {
+			t.Fatal(err)
+		}
+		if beforeMinute != afterMinute {
+			continue // valid quota reset at the minute boundary; retest within one window
+		}
+		if unexpected.Load() != 0 || admitted.Load() != 8 {
+			t.Fatalf("quota not atomic within one DB minute: admitted=%d unexpected=%d", admitted.Load(), unexpected.Load())
+		}
+		ownerA, ownerB, global := read(21), read(22), read(0)
+		if ownerA.Requests > 6 || ownerB.Requests > 6 ||
+			ownerA.Requests+ownerB.Requests != 8 || global.Requests != 8 ||
+			global.ReservedBytes != 8*charge {
+			t.Fatalf("parallel counter drift: a=%#v b=%#v global=%#v", ownerA, ownerB, global)
+		}
+		stableMinute = true
+		break
 	}
-	group.Wait()
-	if unexpected.Load() != 0 || admitted.Load() != 8 {
-		t.Fatalf("quota not atomic: admitted=%d unexpected=%d", admitted.Load(), unexpected.Load())
-	}
-	ownerA, ownerB, global := read(21), read(22), read(0)
-	if ownerA.Requests > 6 || ownerB.Requests > 6 ||
-		ownerA.Requests+ownerB.Requests != 8 || global.Requests != 8 ||
-		global.ReservedBytes != 8*charge {
-		t.Fatalf("parallel counter drift: a=%#v b=%#v global=%#v", ownerA, ownerB, global)
+	if !stableMinute {
+		t.Fatal("database minute rolled over during every concurrency sample")
 	}
 
 	// DB minute change permits a reset; a future-window corruption never

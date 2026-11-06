@@ -126,6 +126,57 @@ enum XDriveIOSBackgroundPhotoTask {
                     // finishes trusted Owner receipt review and consents.
                     return
                 }
+                // An explicitly enabled "only new" foreground plan has a
+                // durable PhotoKit change queue. The independently authorized
+                // BGProcessing task must consume its same replayed revisions
+                // before a capture-date-filtered positional scan. No second
+                // uploader, authorization shortcut or queue-success receipt.
+                var incrementalQueue: XDriveIOSPhotoKitPersistentBackupQueue?
+                var newOnlySince: Date?
+                if let plan = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner),
+                   plan.enabled, plan.backupStartRule == .onlyNew {
+                    // A BG grant cannot silently bypass this Owner's separate
+                    // receipt-review pause, even when the last journal read
+                    // currently reports zero outstanding entries.
+                    if plan.pausedForReview {
+                        try XDriveIOSBGOriginalWindowStore.shared.pause(owner: owner)
+                        return
+                    }
+                    if plan.historyRecoveryRequired == true {
+                        // Only the foreground Owner flow may obtain explicit
+                        // full-scope consent and reconcile the expired history.
+                        // BG must not bypass that consent or race the full pass.
+                        await resubmitRecoveryOnlyIfStillRequired(owner: owner)
+                        return
+                    }
+                    let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
+                    do {
+                        _ = try await queue.replay(owner: owner, maximumEvents: 4)
+                        guard try await queue.isCaughtUp(owner: owner) else {
+                            // Preserve the due/cursor reservation until all
+                            // bounded PhotoKit history is durable. An imported
+                            // old-dated asset must never escape this run.
+                            await resubmitOnlyIfStillApproved()
+                            return
+                        }
+                        incrementalQueue = queue
+                        newOnlySince = plan.newOnlySince
+                    } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                        .requiresExplicitBaseline {
+                        // Legacy plans lack an authenticated baseline. Scan
+                        // all authorized dates, using exact Server receipts
+                        // to deduplicate instead of inventing a new token.
+                    } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                        .invalidArchivedToken {
+                        // Unreadable historical baseline: fail open only to
+                        // conservative full-date discovery, never to a
+                        // capture-date-only filter that could lose imports.
+                    }
+                    try Task.checkCancellation()
+                    guard approved.matches(owner) else {
+                        throw XDriveIOSPhotoBGVaultFailure.corrupt
+                    }
+                }
                 guard let window = try XDriveIOSBGOriginalWindowStore.shared
                         .reserveDue(owner: owner, approved: approved),
                       let offset = XDrivePhotoBackupScanWindow.offset(
@@ -165,6 +216,8 @@ enum XDriveIOSBackgroundPhotoTask {
                         XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun,
                         XDriveIOSForegroundPhotoBackupMVP.maxNewOriginalsPerRun
                     ),
+                    newOnlySince: newOnlySince,
+                    changeQueue: incrementalQueue,
                     onPotentialWrite: { beganOriginalWrite = true }
                 ) { _ in
                     // No inactive WebView progress or long-lived credentials.
@@ -262,6 +315,23 @@ enum XDriveIOSBackgroundPhotoTask {
             return true
         default:
             return false
+        }
+    }
+
+    @MainActor
+    private static func resubmitRecoveryOnlyIfStillRequired(
+        owner: XDriveNativeOwnerRoot
+    ) async {
+        do {
+            guard let grant = try await XDriveIOSApprovedPhotoBGVault.shared.current(),
+                  grant.matches(owner),
+                  let plan = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner),
+                  plan.enabled, plan.historyRecoveryRequired == true else { return }
+            // Keep the OS request alive while the foreground flow waits for
+            // explicit scope consent or finishes its full-library pass.
+            try scheduleApprovedProbe(afterMinutes: grant.intervalMinutes)
+        } catch {
+            // No stale grant, disabled plan or guessed retry.
         }
     }
 

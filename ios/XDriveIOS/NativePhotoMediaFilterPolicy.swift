@@ -103,9 +103,37 @@ struct XDriveIOSNativePhotoMediaFilter: Hashable, CaseIterable, Identifiable, Ra
     }
 
     var emptyMessage: String {
-        isAll
-            ? "当前已授权图库中没有可浏览的照片或视频。"
-            : "当前已授权图库中没有\(title)内容。"
+        if isAll {
+            return "当前已授权图库中没有可浏览的照片或视频。"
+        }
+        if requiresFavorite && (requiresLive || requiresScreenshot) {
+            return "当前已授权图库中没有符合收藏及媒体类型筛选条件的照片。"
+        }
+        if requiresFavorite {
+            if fetchKind == "image" {
+                return "当前已授权图库中没有收藏照片。"
+            }
+            if fetchKind == "video" {
+                return "当前已授权图库中没有收藏视频。"
+            }
+            return "当前已授权图库中没有收藏照片或视频。"
+        }
+        if requiresLive && requiresScreenshot {
+            return "当前已授权图库中没有符合实况和截屏筛选条件的照片。"
+        }
+        if requiresLive {
+            return "当前已授权图库中没有实况照片。"
+        }
+        if requiresScreenshot {
+            return "当前已授权图库中没有截屏。"
+        }
+        if fetchKind == "image" {
+            return "当前已授权图库中没有照片。"
+        }
+        if fetchKind == "video" {
+            return "当前已授权图库中没有视频。"
+        }
+        return "当前已授权图库中没有符合筛选条件的媒体。"
     }
 
     func isEnabled(_ criterion: XDriveIOSNativePhotoMediaFilterCriterion) -> Bool {

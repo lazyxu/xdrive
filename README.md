@@ -1040,6 +1040,7 @@ xDriveSetup-amd64.exe
 xdrive-linux-amd64.deb
 xdrive-source-agent-linux-amd64
 xdrive-source-agent-linux-arm64
+xdrive-source-agent-linux-armv7
 xdrive-server-install.sh
 server-backup.sh
 server-backup-scheduled.sh

@@ -47,8 +47,9 @@ test('auto refinement keeps the old inert MapKit camera while a bounded PhotoKit
   assert.match(map, /guard phase == \.active, !busy, globalComplete/)
   assert.match(map, /private func suspendForSheet\(\) \{\s*autoRefineTask\?\.cancel\(\)/)
   assert.match(map, /if target == nil \|\|[\s\S]*?map\.setRegion\(cameraReturn, animated: false\)/)
-  assert.match(map, /Button\("细化当前视窗的定位照片"\)/)
-  assert.match(map, /Button\("还原已授权全库概览"\)/)
+  assert.match(map, /scheduleAutomaticRefinement\(current\)/)
+  assert.match(map, /Button\(album == nil \? "重新扫描已授权图库位置" : "重新扫描此相册位置"\) \{/)
+  assert.doesNotMatch(map, /Button\("细化当前视窗的定位照片"\)|Button\("还原已授权全库概览"\)/)
   // Network access is allowed only for a visible 128px PhotoKit map
   // rendition. Automatic camera refinement itself never fetches image bytes.
   assert.match(mapCover, /options\.isNetworkAccessAllowed = true/)

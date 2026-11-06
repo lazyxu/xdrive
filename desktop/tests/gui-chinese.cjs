@@ -287,7 +287,7 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
     'CloudOutlinedIcon',
     'PhotoLibraryRoundedIcon',
     'BackupRoundedIcon',
-    'CloudDownloadRoundedIcon',
+    'SyncAltRoundedIcon',
     'AssignmentOutlinedIcon',
     'StorageRoundedIcon',
     'CloudRoundedIcon',

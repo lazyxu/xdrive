@@ -59,7 +59,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     @Published private(set) var message = "未启动相册备份"
     @Published private(set) var errorMessage: String?
 
-    private enum RunKind { case manual, automatic, focused }
+    private enum RunKind { case manual, automatic, focused, single }
     private var running: Task<Void, Never>?
     private var runningOwner: XDriveNativeOwnerRoot?
     // The native login model and backup controller survive tab switches.
@@ -82,7 +82,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         guard libraryObserver == nil else { return }
         let observer = XDriveIOSForegroundPhotoLibraryObserver { [weak self, weak login] in
             guard let self, let login, let owner = login.owner,
-                  [.authorized, .limited].contains(
+                  [.authorized].contains(
                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
                   ) else { return }
             guard (try? XDriveIOSPhotoAutoScheduleStore.shared
@@ -167,7 +167,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         let uiEpoch = displayEpoch
         let store = XDriveIOSPhotoAutoScheduleStore.shared
         let stopVersion = store.localStopGeneration
-        guard [.authorized, .limited].contains(
+        guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "请先在本机相册页面授权访问照片。"
@@ -238,7 +238,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   store.localStopGeneration == stopVersion,
                   displayEpoch == uiEpoch,
                   UIApplication.shared.applicationState == .active,
-                  [.authorized, .limited].contains(
+                  [.authorized].contains(
                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
                   ) else {
                 throw XDriveIOSNativeSessionError.staleSession
@@ -293,7 +293,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         // PhotoKit access may be revoked while the native consent sheet is
         // open. The shared writer's guard must not fail silently or leave an
         // earlier successful upload report looking like this attempt.
-        guard [.authorized, .limited].contains(
+        guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             if !busy { progress = nil }
@@ -301,6 +301,31 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             return
         }
         start(login: login, kind: .manual, allowICloud: allowICloud)
+    }
+
+
+    /// Upload one explicitly selected PhotoKit original ahead of the batch
+    /// cursor. The selected Owner is captured by the native confirmation UI;
+    /// the shared run gate and existing CAS receipt writer still apply.
+    func startSingle(login: XDriveIOSNativeOwnerLoginModel,
+                     expectedOwner: XDriveNativeOwnerRoot,
+                     localIdentifier: String, allowICloud: Bool) {
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+              !localIdentifier.isEmpty, localIdentifier.utf8.count <= 1024,
+              !localIdentifier.contains("\u{0}") else {
+            errorMessage = "服务器、账户或所选照片已变化；未启动优先备份。"
+            return
+        }
+        guard [.authorized].contains(
+            PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        ) else {
+            errorMessage = "照片访问权限已变化，无法优先备份所选原件。"
+            return
+        }
+        start(
+            login: login, kind: .single, allowICloud: allowICloud,
+            singleLocalIdentifier: localIdentifier
+        )
     }
 
     /// A Synology-style concentrated first pass, deliberately foreground
@@ -312,7 +337,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             errorMessage = "集中备份确认后服务器或账户已改变，未上传原件。"
             return
         }
-        guard [.authorized, .limited].contains(
+        guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "照片读取权限已变化，无法开始集中备份。"
@@ -330,10 +355,11 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     }
 
     private func start(login: XDriveIOSNativeOwnerLoginModel,
-                       kind: RunKind, allowICloud: Bool) {
+                       kind: RunKind, allowICloud: Bool,
+                       singleLocalIdentifier: String? = nil) {
         guard !busy, running == nil, let selected = login.owner,
               UIApplication.shared.applicationState == .active,
-              [.authorized, .limited].contains(
+              [.authorized].contains(
                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
               ) else { return }
         // Acquire BEFORE reserveDue, shared with legacy Web manual/auto and
@@ -385,12 +411,11 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     throw XDriveIOSNativeSessionError.staleSession
                 }
                 if olderPending > 0 {
-                    if kind == .automatic {
-                        // Persist a durable pause, not a consumed next window.
-                        // A later explicit receipt review can safely resume.
-                        self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared
-                            .pauseForPendingReceipts(owner: selected)
-                    }
+                    // Any foreground original entry point must pause an
+                    // already-enabled automatic plan when the global receipt
+                    // gate finds an unknown write. Do not wait for a later tick.
+                    self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                        .pauseForPendingReceipts(owner: selected)
                     self.errorMessage = "当前账户已有 \(olderPending) 项不确定原件收据；请先只读核对，本轮未上传新原件。"
                     return
                 }
@@ -411,8 +436,52 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     trigger: kind == .automatic ? "scheduled" : "manual"
                 )
                 sourceRunReporter = reporter
-                await reporter.begin()
-                if kind == .focused {
+
+                if kind == .single {
+                    guard let localIdentifier = singleLocalIdentifier else {
+                        throw XDriveIOSPhotoBackupMVPError.identityNotVerified
+                    }
+                    await reporter.begin()
+                    let result = try await XDriveIOSForegroundPhotoBackupMVP(
+                        owner: selected, managedForeground: managed,
+                        onSourceProgress: { value in
+                            reporter.enqueueUpdate(value)
+                        }
+                    ).runSingle(
+                        localIdentifier: localIdentifier,
+                        allowICloudOriginals: allowICloud,
+                        onPotentialWrite: { beganOriginalWrite = true }
+                    ) { [weak self] value in
+                        guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
+                              self?.displayEpoch == uiEpoch,
+                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
+                        else { return }
+                        self?.progress = value
+                    }
+                    try Task.checkCancellation()
+                    guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                          self.displayEpoch == uiEpoch else {
+                        throw XDriveIOSNativeSessionError.staleSession
+                    }
+                    self.progress = result
+                    if result.stoppedForReview || result.needsReview > 0 {
+                        // An unknown ACK from a one-photo priority action must
+                        // pause the current Owner's foreground schedule now,
+                        // not wait for the next timer tick to rediscover it.
+                        if let paused = try XDriveIOSPhotoAutoScheduleStore.shared
+                            .pauseForPendingReceipts(owner: selected) {
+                            self.schedule = paused
+                        }
+                    }
+                    self.message = "单张优先备份：新增 \(result.uploaded)，已验证 \(result.verifiedAlready)，待核对 \(result.needsReview)，不可用 \(result.unavailable)。"
+                    if result.stoppedForReview || result.needsReview > 0 {
+                        self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                            .pauseForPendingReceipts(owner: selected)
+                        self.errorMessage = "单张优先备份结果不确定；当前账户的自动备份已暂停，请先核对上传收据。"
+                    }
+                    await reporter.finish(status: "completed")
+                } else if kind == .focused {
+                    await reporter.begin()
                     try await self.runFocused(
                         login: login, owner: selected, uiEpoch: uiEpoch,
                         allowICloud: allowICloud,
@@ -426,26 +495,111 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     let cloud: Bool
                     let newOnlySince: Date?
                     let manualStartEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?
+                    var incrementalQueue: XDriveIOSPhotoKitPersistentBackupQueue?
+                    var canUseOnlyNewDateFilter = true
                     if kind == .automatic {
-                        // Durably capture bounded PhotoKit changes BEFORE
-                        // reserving the old 256-slot scanner window. The
-                        // queued IDs are not yet upload candidates here:
-                        // only the existing original writer can prove an ACK.
-                        if let activePlan = XDriveIOSPhotoAutoScheduleStore.shared
+                        // Durably replay a bounded PhotoKit change batch before
+                        // reserving the positional scan window. The same queue
+                        // is then consumed by the existing CAS original writer.
+                        if kind == .automatic,
+                           var activePlan = XDriveIOSPhotoAutoScheduleStore.shared
                             .status(owner: selected),
                            activePlan.backupStartRule == .onlyNew {
-                            let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
-                                owner: selected
-                            )
-                            do {
-                                _ = try await changeQueue.replay(
-                                    owner: selected, maximumEvents: 2
+                            // If the process stopped after the full scan but
+                            // before its SQLite rebase, finish only the exact
+                            // token/authorization generation that was scanned.
+                            if activePlan.historyRecoveryReadyToCommit == true,
+                               let expectedToken = activePlan.libraryChangeEpoch,
+                               let expectedAuthorization = activePlan.libraryAuthorizationRaw {
+                                let recoveryQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                                    owner: selected
                                 )
-                            } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
-                                .requiresExplicitBaseline {
-                                // Legacy new-only plans predate this queue.
-                                // Keep their existing full-window metadata scan;
-                                // never install a newer token automatically.
+                                do {
+                                    try await recoveryQueue.completeFullLibraryReconciliation(
+                                        owner: selected, expectedToken: expectedToken,
+                                        expectedAuthorization: expectedAuthorization
+                                    )
+                                    guard let finished = try XDriveIOSPhotoAutoScheduleStore.shared
+                                        .finishFullLibraryReconciliation(
+                                            owner: selected, expectedToken: expectedToken,
+                                            expectedAuthorization: expectedAuthorization
+                                        ) else {
+                                        throw XDriveIOSPhotoAutoScheduleError.persistenceUnavailable
+                                    }
+                                    activePlan = finished
+                                    self.schedule = finished
+                                } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                                    .unauthorizedOrChanged {
+                                    // The library changed after the last full
+                                    // scan. Re-run under the same explicit scope
+                                    // consent; do not ask again unless permission expands.
+                                    activePlan = try XDriveIOSPhotoAutoScheduleStore.shared
+                                        .restartFullLibraryReconciliation(owner: selected) ?? activePlan
+                                    self.schedule = activePlan
+                                } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                                    .authorizationChanged {
+                                    // Full/Limited authorization changed after
+                                    // consent. Require a fresh scope decision.
+                                    activePlan = try XDriveIOSPhotoAutoScheduleStore.shared
+                                        .requireFullLibraryReconciliation(owner: selected) ?? activePlan
+                                    self.schedule = activePlan
+                                }
+                            }
+                            if activePlan.requiresFullLibraryReconciliation {
+                                // History was expired/unavailable. Reconcile
+                                // the entire current authorized snapshot with
+                                // the shared receipt verifier; never apply the
+                                // only-new capture-date filter or stale queue.
+                                incrementalQueue = nil
+                                canUseOnlyNewDateFilter = false
+                            } else {
+                                let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                                    owner: selected
+                                )
+                                incrementalQueue = changeQueue
+                                do {
+                                    _ = try await changeQueue.replay(
+                                        owner: selected, maximumEvents: 4
+                                    )
+                                    guard try await changeQueue.isCaughtUp(owner: selected) else {
+                                        // Do not let the date-filtered positional
+                                        // scan pass an old-dated import while its
+                                        // persistent PhotoKit event is still behind
+                                        // the bounded replay cursor. Keep this due
+                                        // window unreserved; the foreground timer
+                                        // will replay the next bounded batch.
+                                        self.message = "PhotoKit 增量变更仍在分批回放；本轮暂不扫描，避免漏掉拍摄日期较早的新导入照片。"
+                                        await reporter.finish(status: "cancelled")
+                                        self.refresh(owner: selected)
+                                        return
+                                    }
+                                } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
+                                    .requiresExplicitBaseline,
+                                    XDriveIOSPhotoKitPersistentBackupQueue.Failure.invalidArchivedToken,
+                                    XDriveIOSPhotoKitPersistentBackupQueue.Failure.historyUnavailable,
+                                    XDriveIOSPhotoKitPersistentBackupQueue.Failure.authorizationChanged {
+                                    // A missing, expired, incomplete or
+                                    // generation-mismatched history cannot
+                                    // justify date filtering. Persist a pause;
+                                    // the user must consent before full-scope writes.
+                                    activePlan = try XDriveIOSPhotoAutoScheduleStore.shared
+                                        .requireFullLibraryReconciliation(owner: selected) ?? activePlan
+                                    self.schedule = activePlan
+                                    incrementalQueue = nil
+                                    canUseOnlyNewDateFilter = false
+                                }
+                            }
+                            // The store independently enforces this consent before
+                            // reserveDue. Stop here as well: no scan, new upload,
+                            // or changed automatic due time before an Owner
+                            // explicitly approves the recovery upload scope.
+                            if activePlan.requiresFullLibraryReconciliation &&
+                               (activePlan.historyRecoveryRequiresConsent == true ||
+                                activePlan.historyRecoveryFullScopeConfirmed != true) {
+                                self.message = "PhotoKit 增量历史不可用：请先在备份设置中确认全库核对；未经确认不会补传旧照片。"
+                                await reporter.finish(status: "cancelled")
+                                self.refresh(owner: selected)
+                                return
                             }
                             try Task.checkCancellation()
                             guard self.displayEpoch == uiEpoch,
@@ -464,8 +618,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         automaticReservedNextDueAt = due.nextDueAt
                         window = due.windowIndex
                         cloud = due.allowICloudOriginals
-                        newOnlySince = due.backupStartRule == .onlyNew
-                            ? due.newOnlySince : nil
+                        newOnlySince = due.backupStartRule == .onlyNew &&
+                            canUseOnlyNewDateFilter ? due.newOnlySince : nil
                         manualStartEpoch = nil
                     } else {
                         // Manual and automatic passes share the same 256-slot
@@ -509,6 +663,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     self.message = kind == .automatic
                         ? "自动增量备份正在检查第 \(window + 1) 段…"
                         : "手动备份正在检查第 \(window + 1) 段…"
+                    await reporter.begin()
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, managedForeground: managed,
                         onSourceProgress: { value in
@@ -516,6 +671,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         }
                     ).run(allowICloudOriginals: cloud, startOffset: offset,
                           newOnlySince: newOnlySince,
+                          changeQueue: incrementalQueue,
                           onPotentialWrite: { beganOriginalWrite = true }) { [weak self] value in
                         guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
                               self?.displayEpoch == uiEpoch,
@@ -530,12 +686,33 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     }
                     self.progress = result
                     if kind == .automatic {
-                        self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared.recordResult(
+                        let recorded = try XDriveIOSPhotoAutoScheduleStore.shared.recordResult(
                             owner: selected,
                             sourceID: managed.destination.sourceID,
                             targetNodeID: managed.destination.targetNodeID,
                             progress: result
                         )
+                        self.schedule = recorded
+                        if let recovery = recorded,
+                           recovery.historyRecoveryReadyToCommit == true,
+                           let expectedToken = recovery.libraryChangeEpoch,
+                           let expectedAuthorization = recovery.libraryAuthorizationRaw {
+                            let recoveryQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                                owner: selected
+                            )
+                            try await recoveryQueue.completeFullLibraryReconciliation(
+                                owner: selected, expectedToken: expectedToken,
+                                expectedAuthorization: expectedAuthorization
+                            )
+                            guard let finished = try XDriveIOSPhotoAutoScheduleStore.shared
+                                .finishFullLibraryReconciliation(
+                                    owner: selected, expectedToken: expectedToken,
+                                    expectedAuthorization: expectedAuthorization
+                                ) else {
+                                throw XDriveIOSPhotoAutoScheduleError.persistenceUnavailable
+                            }
+                            self.schedule = finished
+                        }
                     } else if let initial = manualStartEpoch {
                         // Never advance a manual cursor if PhotoKit changed while
                         // an original was staged/uploaded. Repeat a partial
@@ -559,8 +736,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         self.manualAuthorizationRaw = completed.authorization
                     }
                     self.message = "本轮确认新增 \(result.uploaded)，已验证存在 \(result.verifiedAlready)，待核对 \(result.needsReview)，不可用 \(result.unavailable)。"
-                    if result.stoppedForReview {
-                        self.errorMessage = "发现结果不确定的上传收据：本轮已暂停，不会盲目重传。"
+                    if result.stoppedForReview || result.needsReview > 0 {
+                        self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                            .pauseForPendingReceipts(owner: selected)
+                        self.errorMessage = "发现结果不确定的上传收据：当前账户的自动备份已暂停，不会盲目重传。"
                     }
                     await reporter.finish(status: "completed")
                 }

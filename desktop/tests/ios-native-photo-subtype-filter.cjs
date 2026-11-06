@@ -62,4 +62,7 @@ test('gallery exposes simultaneous filter toggles and resets its complete cursor
   assert.match(wall, /mediaFilter\.rawValue/)
   assert.match(wall, /Text\(mediaFilter\.emptyMessage\)/)
   assert.doesNotMatch(wall, /Picker\("媒体类型"/)
+  assert.match(wall, /Section\("地图"\)[\s\S]*?Label\("显示地图", systemImage: "map"\)/)
+  assert.match(wall, /permission != \.authorized/)
+
 })

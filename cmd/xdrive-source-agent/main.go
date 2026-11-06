@@ -537,6 +537,22 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	lockDir, err := sourceagentconfig.Dir()
+	if err != nil {
+		return err
+	}
+	unlock, acquired, err := lockSourceAgentRun(lockDir)
+	if err != nil {
+		return fmt.Errorf("acquire source-agent run lock: %w", err)
+	}
+	if !acquired {
+		if *dueOnly {
+			fmt.Println("source-agent already running; scheduled tick skipped")
+			return nil
+		}
+		return fmt.Errorf("source-agent is already running for this configuration")
+	}
+	defer unlock()
 	if cfg.MustChangePassword {
 		return fmt.Errorf("password change is required before run")
 	}

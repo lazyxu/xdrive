@@ -1129,6 +1129,7 @@ jobs:
           path: |
             release/source-agent/xdrive-source-agent-linux-amd64
             release/source-agent/xdrive-source-agent-linux-arm64
+            release/source-agent/xdrive-source-agent-linux-armv7
           if-no-files-found: error
           retention-days: 14
 

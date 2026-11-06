@@ -276,6 +276,7 @@ export interface ExternalSourceState {
     | 'credential_missing'
     | 'ready'
     | 'partial'
+    | 'cancelled'
     | 'idle'
   tone: ExternalSourceStateTone
   label: string
@@ -736,7 +737,7 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
     if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: 'iPhone 正在备份' }
     if (latestRun?.status === 'partial') return { key: 'partial', tone: 'warning', label: '部分项目待处理' }
     if (latestRun?.status === 'failed' || source.last_error) return { key: 'error', tone: 'bad', label: '最近备份异常' }
-    if (latestRun?.status === 'cancelled') return { key: 'idle', tone: 'neutral', label: '最近一次备份已停止' }
+    if (latestRun?.status === 'cancelled') return { key: 'cancelled', tone: 'neutral', label: '最近一次备份已取消' }
     if (source.last_success_at) return { key: 'ready', tone: 'good', label: '最近一次备份完成' }
     return { key: 'idle', tone: 'neutral', label: '等待 iPhone 备份' }
   }
@@ -888,7 +889,8 @@ function externalSourceRunTriggerLabel(trigger: string) {
   return trigger || '未知'
 }
 
-export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSourceRunDetailView {
+export function externalSourceRunDetailView(run: ExternalSourceRun, sourceKind?: string): ExternalSourceRunDetailView {
+  const isIOSPhotos = sourceKind === 'ios_photos'
   const accountingV1 = typeof run.stats_version === 'number' && run.stats_version >= 1
   const activeBytes = Math.max(0, Math.min(run.active_transfer_bytes || 0, run.active_transfer_total_bytes || 0))
   const plannedBytes = Math.max(0, run.planned_transfer_bytes || 0)
@@ -906,19 +908,33 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
           ? '正在取消…'
           : run.mode === 'sync' && run.planned_transfer_items > 0
             ? `已处理 ${processedItems.toLocaleString('zh-CN')} / 已发现 ${run.planned_transfer_items.toLocaleString('zh-CN')} 项 · ${formatBytes(processedBytes)} / ${formatBytes(plannedBytes)} · 已扫描 ${run.scanned_items.toLocaleString('zh-CN')} 项`
-            : `已扫描 ${run.scanned_items.toLocaleString('zh-CN')} 项`,
+            : isIOSPhotos
+              ? `iPhone 已扫描 ${run.scanned_items.toLocaleString('zh-CN')} 项`
+              : `已扫描 ${run.scanned_items.toLocaleString('zh-CN')} 项`,
         activePath: run.active_transfer_path || undefined,
         cancelling: Boolean(run.cancel_requested_at),
       }
     : undefined
 
   return {
-    statusLabel: run.status === 'running' && run.cancel_requested_at
-      ? '正在取消…'
-      : externalSourceRunStatusLabel(run.status),
+    statusLabel: isIOSPhotos
+      ? ({
+          running: 'iPhone 正在备份',
+          completed: '本批次已完成',
+          partial: '部分项目待处理',
+          failed: '备份失败',
+          cancelled: '本次备份已取消',
+        } satisfies Record<ExternalSourceRunStatus, string>)[run.status]
+      : run.status === 'running' && run.cancel_requested_at
+        ? '正在取消…'
+        : externalSourceRunStatusLabel(run.status),
     statusTone: externalSourceRunStatusTone(run.status),
-    modeLabel: run.mode === 'sync' ? '同步' : '扫描',
-    triggerLabel: externalSourceRunTriggerLabel(run.trigger),
+    modeLabel: isIOSPhotos ? 'iPhone 原件备份' : run.mode === 'sync' ? '同步' : '扫描',
+    triggerLabel: isIOSPhotos
+      ? run.trigger === 'scheduled' ? 'iPhone 自动计划'
+        : run.trigger === 'manual' ? 'iPhone 手动启动'
+          : externalSourceRunTriggerLabel(run.trigger)
+      : externalSourceRunTriggerLabel(run.trigger),
     startedAt: run.started_at,
     finishedAt: run.finished_at,
     durationLabel: externalSourceRunDurationLabel(run),
@@ -935,17 +951,17 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
     error: run.error || undefined,
     progress,
     metrics: [
-      { key: 'scanned', label: '扫描', items: run.scanned_items, bytes: run.scanned_bytes },
-      { key: 'synced', label: '已同步', items: run.synced_file_items === undefined || run.synced_directory_items === undefined
-        ? undefined : run.synced_file_items + run.synced_directory_items, bytes: run.synced_bytes },
+      { key: 'scanned', label: isIOSPhotos ? '已扫描' : '扫描', items: run.scanned_items, bytes: isIOSPhotos ? undefined : run.scanned_bytes },
+      { key: 'synced', label: isIOSPhotos ? '云端已确认备份' : '已同步', items: run.synced_file_items === undefined || run.synced_directory_items === undefined
+        ? undefined : run.synced_file_items + run.synced_directory_items, bytes: isIOSPhotos ? undefined : run.synced_bytes },
       { key: 'ignored', label: '忽略', items: run.ignored_items, bytes: run.ignored_bytes },
-      { key: 'new', label: '新增', items: run.new_items, bytes: run.new_bytes },
+      { key: 'new', label: isIOSPhotos ? '新增上传' : '新增', items: run.new_items, bytes: isIOSPhotos ? undefined : run.new_bytes },
       { key: 'changed', label: '变更', items: run.changed_items, bytes: run.changed_bytes },
       { key: 'moved', label: '发现移动', items: run.moved_items },
       ...(!accountingV1 ? [] : [
         { key: 'confirmed_moved' as const, label: '确认完成移动', items: run.confirmed_moved_items ?? 0 },
       ]),
-      { key: 'unchanged', label: '未变化', items: run.unchanged_items, bytes: run.unchanged_bytes },
+      { key: 'unchanged', label: isIOSPhotos ? '云端已核验' : '未变化', items: run.unchanged_items, bytes: isIOSPhotos ? undefined : run.unchanged_bytes },
       { key: 'missing', label: '缺失', items: run.missing_items, bytes: run.missing_bytes },
       { key: 'planned_transfer', label: '计划传输', items: run.planned_transfer_items, bytes: run.planned_transfer_bytes },
       { key: 'created', label: '创建', items: run.created_items },
@@ -967,8 +983,8 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
       ...(run.sync_mode === 'mirror' || (run.deleted_items ?? 0) > 0
         ? [{ key: 'deleted' as const, label: '移入回收站', items: run.deleted_items ?? 0 }]
         : []),
-      { key: 'transferred', label: '已确认传输', items: run.transferred_items, bytes: run.transferred_bytes },
-      { key: 'failed', label: '失败', items: run.failed_items },
+      { key: 'transferred', label: '已确认传输', items: run.transferred_items, bytes: isIOSPhotos ? undefined : run.transferred_bytes },
+      { key: 'failed', label: isIOSPhotos ? '待处理' : '失败', items: run.failed_items },
     ],
   }
 }

@@ -117,6 +117,48 @@ enum XDriveIOSPhotoAutoSchedulePolicy {
         return (current + 1) % count
     }
 
+    /// A recovery pass may rebase PhotoKit history only after every slot
+    /// in the current authorized snapshot has been visited. A 20-upload cap
+    /// leaves the window incomplete and must cause the same window to repeat.
+    static func fullReconciliationWindowComplete(
+        currentWindow: Int, visibleTotal: Int, scanned: Int
+    ) -> Bool {
+        guard currentWindow >= 0, visibleTotal >= 0, scanned >= 0 else {
+            return false
+        }
+        if visibleTotal == 0 {
+            return currentWindow == 0 && scanned == 0
+        }
+        guard currentWindow <= Int.max / windowSize else { return false }
+        let offset = currentWindow * windowSize
+        guard offset < visibleTotal else { return false }
+        let capacity = min(windowSize, visibleTotal - offset)
+        return scanned == capacity
+    }
+
+    /// Only supported Photo/Video/Live slots with a current verified receipt
+    /// may count as reconciled. Unsupported media are explicit policy skips;
+    /// item-local failures, unknown ACKs and filtered slots keep recovery open.
+    static func fullReconciliationWindowVerified(
+        scanned: Int, verified: Int, unsupported: Int,
+        unavailable: Int, needsReview: Int, skippedBeforeBaseline: Int,
+        queued: Int, stoppedForReview: Bool
+    ) -> Bool {
+        guard scanned >= 0, verified >= 0, unsupported >= 0,
+              unavailable >= 0, needsReview >= 0,
+              skippedBeforeBaseline >= 0, queued >= 0 else { return false }
+        return verified + unsupported == scanned &&
+            unavailable == 0 && needsReview == 0 &&
+            skippedBeforeBaseline == 0 && queued == 0 &&
+            !stoppedForReview
+    }
+
+    static func shouldCommitFullReconciliation(
+        windowComplete: Bool, followingWindow: Int, passClean: Bool
+    ) -> Bool {
+        windowComplete && followingWindow == 0 && passClean
+    }
+
     static func nextDue(after now: Date, intervalMinutes: Int) -> Date? {
         guard accepts(minutes: intervalMinutes) else { return nil }
         return now.addingTimeInterval(TimeInterval(intervalMinutes * 60))

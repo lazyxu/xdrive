@@ -46,8 +46,16 @@ test('recordResult also fences PhotoKit edits between scan and persisted checkpo
   const functionBody = store.slice(start, end)
   assert.match(functionBody, /let epoch = try XDriveIOSPhotoKitLibraryEpoch\.capture\(\)/)
   assert.match(functionBody, /XDrivePhotoCursorEpochPolicy\.canResume\(/)
-  assert.match(functionBody, /state\.windowIndex = unchanged/)
-  assert.match(functionBody, /\) : 0/)
+  const windowFence = functionBody.slice(
+    functionBody.indexOf('let followingWindow = unchanged'),
+    functionBody.indexOf('var recoveryPassRestarted')
+  )
+  assert.match(windowFence, /let followingWindow = unchanged\s*\?\s*XDriveIOSPhotoAutoSchedulePolicy\.nextWindow\(/)
+  assert.match(windowFence, /needsReview: pending/)
+  assert.match(windowFence, /\)\s*:\s*0/)
+  assert.match(windowFence, /state\.windowIndex = followingWindow/)
+  assert.ok(windowFence.indexOf('let followingWindow = unchanged') < windowFence.indexOf('state.windowIndex = followingWindow'))
+  assert.ok(functionBody.indexOf('state.windowIndex = followingWindow') < functionBody.indexOf('try persist(state, owner: owner)'))
   assert.match(functionBody, /state\.libraryChangeEpoch = epoch\.serialized/)
   assert.doesNotMatch(functionBody, /progress\.uploaded == 0.*state\.windowIndex/)
   assert.match(policy, /previousAuthorization == currentAuthorization/)

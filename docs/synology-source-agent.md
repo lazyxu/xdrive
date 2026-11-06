@@ -21,11 +21,14 @@ The agent supports both **scan** and **sync** modes:
 
 ## Install
 
-Published snapshots and stable releases contain two directly downloadable, pure-Go binaries:
+Source-agent builds provide three pure-Go Linux targets. An ARMv7 release asset is
+required for 32-bit DSM systems and is validated for `GOARCH=arm`, `GOARM=7`
+in the artifact test. Physical NAS execution is a separate acceptance check.
 
 ```text
 xdrive-source-agent-linux-amd64
 xdrive-source-agent-linux-arm64
+xdrive-source-agent-linux-armv7
 ```
 
 Check the NAS architecture:
@@ -34,7 +37,10 @@ Check the NAS architecture:
 uname -m
 ```
 
-Use `xdrive-source-agent-linux-amd64` for `x86_64` DSM systems and `xdrive-source-agent-linux-arm64` for `aarch64` / `arm64` systems.
+Use `xdrive-source-agent-linux-amd64` for `x86_64`, `xdrive-source-agent-linux-arm64`
+for `aarch64` / `arm64`, and `xdrive-source-agent-linux-armv7` for
+`armv7l` / 32-bit ARMv7 DSM systems. Verify the downloaded release SHA-256
+checksum before installation. Do not install the ARMv7 artifact on ARMv5/ARMv6 devices.
 
 Example installation:
 
@@ -194,7 +200,15 @@ export XD_SOURCE_AGENT_CONFIG_DIR=/volume1/@appdata/xdrive-source-agent
 /volume1/tools/xdrive-source-agent run --due --interval 6h
 ```
 
-The one-minute task is a lightweight control-plane check. It performs a real Photos traversal only when either:
+The one-minute task is a lightweight control-plane check. Each invocation
+holds an advisory, process-scoped Linux lock inside the configured source-agent
+directory. If a previous scan is still running, a subsequent `run --due`
+tick exits successfully without opening or updating identity state. Explicit
+`run` without `--due` returns an already-running error instead. The lock
+is released automatically when a process exits or crashes; do not delete
+the persistent lock file as part of normal operation.
+
+This scheduled task performs a real Photos traversal only when either:
 
 - that Source's configured interval/cron schedule is due; or
 - xDrive has a pending manual run request from the Web/Desktop UI.

@@ -13,10 +13,12 @@ const authScope = read('ios/XDriveIOS/NativePhotoOwnerScope.swift')
 test('only Server-confirmed original receipts refresh the cloud wall, even after a late scan failure', () => {
   const runner = controller.slice(controller.indexOf('    private func start('))
   const backup = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
-  const callback = runner.indexOf('self?.progress = value')
+  const batchRun = runner.indexOf('.run(allowICloudOriginals: cloud')
+  const callback = runner.indexOf('self?.progress = value', batchRun)
   const verified = runner.indexOf('guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),', callback)
-  const finalProgress = runner.indexOf('self.progress = result')
-  const persist = runner.indexOf('self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared.recordResult(')
+  const finalProgress = runner.indexOf('self.progress = result', verified)
+  const persist = runner.indexOf('let recorded = try XDriveIOSPhotoAutoScheduleStore.shared.recordResult(')
+  const saved = runner.indexOf('self.schedule = recorded', persist)
   const cancelled = runner.indexOf('} catch is CancellationError {')
   const failed = runner.indexOf('} catch {', cancelled)
   const notify = runner.indexOf('if let current = self.progress, current.uploaded > 0,')
@@ -31,7 +33,9 @@ test('only Server-confirmed original receipts refresh the cloud wall, even after
     /self\?\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
   assert.match(runner.slice(verified, finalProgress),
     /guard XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\),\s*self\.displayEpoch == uiEpoch else \{\s*throw XDriveIOSNativeSessionError\.staleSession/)
-  assert.ok(persist > finalProgress && cancelled > persist && failed > cancelled)
+  assert.ok(persist > finalProgress && saved > persist && cancelled > saved && failed > cancelled)
+  assert.match(runner.slice(persist, cancelled),
+    /self\.schedule = recorded[\s\S]*?completeFullLibraryReconciliation\([\s\S]*?finishFullLibraryReconciliation\(/)
   assert.ok(notify > failed && refresh > notify,
     'a successful original must refresh even if PhotoKit scanning or schedule persistence later throws')
   assert.match(backup, /case \.uploaded:\s*report\.uploaded \+= 1/)

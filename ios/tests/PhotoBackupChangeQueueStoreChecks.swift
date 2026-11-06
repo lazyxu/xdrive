@@ -22,6 +22,7 @@ import Foundation
             precondition(delta == .init(inserted: 2, updated: 1, deleted: 0))
             let first = try store.pending()
             precondition(first.count == 3)
+            try expect(try store.counts() == .init(pending: 3, failed: 0, confirmed: 0, missingLocal: 0))
             precondition(first[0].priority == 2 && first[1].priority == 2)
             precondition(first[2].localIdentifier == "old")
             try expect(try store.baseline()?.token == newest)
@@ -46,6 +47,7 @@ import Foundation
                                 expectedToken: newest, nextToken: later, authorization: 3)
             let pending = try store.pending()
             precondition(pending.count == 2)
+            try expect(try store.counts() == .init(pending: 2, failed: 0, confirmed: 0, missingLocal: 1))
             precondition(pending.first?.localIdentifier == "later")
             precondition(pending.last?.localIdentifier == "old" && pending.last?.revision == 2)
             try expect(try store.baseline()?.token == later)
@@ -63,8 +65,20 @@ import Foundation
             guard let old = initial.first(where: { $0.localIdentifier == "old" }) else {
                 fatalError("expected original pending old revision")
             }
-            try expect(try store.settle(old, result: .confirmed))
+            do {
+                _ = try store.settle(
+                    old, result: .confirmed,
+                    expectedBaselineToken: Data([99]), authorization: 3
+                )
+                fatalError("expected stale baseline guard")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.baselineChanged {}
+            try expect(try store.status(for: "old")?.state == .pending)
+            try expect(try store.settle(
+                old, result: .confirmed,
+                expectedBaselineToken: later, authorization: 3
+            ))
             try expect(try store.status(for: "old")?.state == .confirmed)
+            try expect(try store.counts() == .init(pending: 1, failed: 0, confirmed: 1, missingLocal: 1))
             try expect(try !store.settle(old, result: .confirmed))
             _ = try store.apply(inserted: [], updated: ["old"], deleted: [],
                                 expectedToken: later, nextToken: Data([5]), authorization: 3)
@@ -74,12 +88,27 @@ import Foundation
             }
             precondition(newer.revision > old.revision)
             try expect(try store.status(for: "old")?.state == .pending)
+            try expect(try store.counts() == .init(pending: 2, failed: 0, confirmed: 0, missingLocal: 1))
             try expect(try !store.settle(old, result: .confirmed))
             try expect(try store.settle(newer, result: .failed))
             try expect(try store.status(for: "old")?.state == .failed)
+            try expect(try store.counts() == .init(pending: 1, failed: 1, confirmed: 0, missingLocal: 1))
             try expect(try !store.settle(newer, result: .failed))
-            try expect(try store.retryFailed(newer))
-            try expect(try !store.retryFailed(newer))
+            let failedRows = try store.failed()
+            precondition(failedRows.count == 1 && failedRows[0] == newer)
+            do {
+                _ = try store.retryFailed(
+                    newer, expectedBaselineToken: Data([99]), authorization: 3
+                )
+                fatalError("expected stale retry baseline guard")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.baselineChanged {}
+            try expect(try store.retryFailed(
+                newer, expectedBaselineToken: Data([5]), authorization: 3
+            ))
+            try expect(try !store.retryFailed(
+                newer, expectedBaselineToken: Data([5]), authorization: 3
+            ))
+            try expect(try store.counts() == .init(pending: 2, failed: 0, confirmed: 0, missingLocal: 1))
             let again = try store.pending()
             precondition(again.contains(where: { $0.localIdentifier == "old" && $0.revision == newer.revision }))
             _ = try store.apply(inserted: [], updated: [], deleted: ["old"],
@@ -87,12 +116,46 @@ import Foundation
             let remainingAfterDeletion = try store.pending()
             precondition(!remainingAfterDeletion.contains(where: { $0.localIdentifier == "old" }))
             try expect(try store.status(for: "old")?.state == .missingLocal)
+            try expect(try store.counts() == .init(pending: 1, failed: 0, confirmed: 0, missingLocal: 2))
             try expect(try store.status(for: "not-here") == nil)
             try expect(try !store.settle(newer, result: .confirmed))
+        }
+        // A full authorized-library reconciliation atomically installs a
+        // fresh token and discards stale queue rows only after receipt proof.
+        do {
+            let store = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: url)
+            try expect(try store.counts() == .init(
+                pending: 1, failed: 0, confirmed: 0, missingLocal: 2
+            ))
+            try store.completeFullReconciliation(
+                token: Data([7]), authorization: 3
+            )
+            try expect(try store.baseline()?.token == Data([7]))
+            try expect(try store.baseline()?.authorization == 3)
+            try expect(try store.counts() == .init())
+            try expect(try store.pending().isEmpty)
+            try expect(try store.failed().isEmpty)
+            try expect(try store.status(for: "old") == nil)
+            try expect(try store.hasCompletedFullReconciliation(
+                token: Data([7]), authorization: 3
+            ))
+            try expect(try !store.hasCompletedFullReconciliation(
+                token: Data([6]), authorization: 3
+            ))
+        }
+        do {
+            let reopened = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: url)
+            try expect(try reopened.baseline()?.token == Data([7]))
+            try expect(try reopened.baseline()?.authorization == 3)
+            try expect(try reopened.counts() == .init())
+            try expect(try reopened.hasCompletedFullReconciliation(
+                token: Data([7]), authorization: 3
+            ))
         }
         let isolated = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: dir.appendingPathComponent("owner-b.sqlite3"))
         try expect(try isolated.baseline() == nil)
         try expect(try isolated.pending().isEmpty)
+        try expect(try isolated.counts() == .init())
         print("iOS PhotoKit change queue atomic token+priority+restart+Owner isolation: PASS")
     }
 }

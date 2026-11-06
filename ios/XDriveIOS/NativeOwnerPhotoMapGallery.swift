@@ -20,6 +20,7 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     @Binding var cloudMapCamera: MKCoordinateRegion?
     @Binding var localMapCamera: MKCoordinateRegion?
     var onFocusChange: ((Bool) -> Void)?
+    var onClose: (() -> Void)? = nil
 
     var body: some View {
         let expectedOwner = login.owner
@@ -29,6 +30,7 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                 XDriveIOSNativeLocalPhotoMapScreen(
                     mapScope: $localMapScope,
                     offset: $localMapPageOffset,
+                    onClose: onClose,
                     cameraOnEntry: localMapCamera,
                     onLibraryCameraChange: { next in
                         guard source == .local, let expectedOwner,
@@ -53,9 +55,15 @@ struct XDriveIOSNativePhotoMapsScreen: View {
             }
         }
         .toolbar {
-            // Native navigation menu replaces a permanent source picker row.
-            // A selected source remains owned by the Gallery parent.
-            ToolbarItem(placement: .navigationBarLeading) {
+            // Local MapKit supplies its own Done item. The cloud Owner map
+            // shares this route and receives the same native dismissal action.
+            if source == .cloud {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("完成") { onClose?() }
+                        .accessibilityIdentifier("native-ios-map-close")
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Picker("地图照片来源", selection: $source) {
                         ForEach(XDriveIOSNativePhotoMapSource.allCases, id: \.self) { item in
