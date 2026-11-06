@@ -10,14 +10,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// L01-A is intentionally fail-closed: ordinary local folders must not become
-// active until the device-binding and native execution protocol is implemented.
-// Synology and pull connector activation behavior remains unchanged.
-var (
-	errLocalFolderNotReady = errors.New("local folder device binding and executor unavailable")
-	errSynologyPushNotReady = errors.New("Synology Photos Push requires an enrolled Device and verified Root binding")
-	errSynologyPushBackupOnly = errors.New("Synology Photos Push supports backup mode only")
-)
+// Local-folder activation remains fail-closed without a proven executor.
+// DSM Push additionally requires a live Device, Root and managed target.
+var errLocalFolderNotReady = errors.New("local folder device binding and executor unavailable")
+var errSynologyPushNotReady = errors.New("Synology Photos Push requires an enrolled Device and verified Root binding")
+var errSynologyPushBackupOnly = errors.New("Synology Photos Push supports backup mode only")
 
 func requireSourceReadyForActivation(tx *gorm.DB, source meta.Source) error {
 	if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPush {
