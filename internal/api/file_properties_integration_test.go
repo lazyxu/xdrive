@@ -64,6 +64,7 @@ func setupFilePropertiesTestDB(t *testing.T) (*gorm.DB, *Server, meta.User, meta
 
 	if err := db.AutoMigrate(
 		&meta.User{},
+		&meta.AuditEvent{},
 		&meta.LocalPushQuotaHold{},
 		&meta.Node{},
 		&meta.File{},
