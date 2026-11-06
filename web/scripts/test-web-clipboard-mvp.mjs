@@ -90,5 +90,5 @@ assert.match(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx'), /case 'clipboard
 assert.match(read('ui/shared/src/web-app.ts'), /case 'clipboard':/)
 assert.match(read('internal/api/router.go'), /authed\.POST\("\/clipboard\/items"/)
 assert.match(read('internal/api/clipboard.go'), /clause\.Locking\{Strength: "UPDATE"\}/)
-assert.match(read('internal/meta/clipboard.go'), /AADScope string/)
+assert.match(read('internal/meta/clipboard.go'), /\bAADScope\s+string\b/)
 console.log('Web Clipboard MVP: E2EE roundtrip/Owner AAD/rejections and route boundaries passed')
