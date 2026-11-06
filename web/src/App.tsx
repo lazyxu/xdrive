@@ -1,6 +1,7 @@
 import { xDriveAcquireViewerForeground, xDriveEnterForegroundPage } from '../../ui/shared/src/mui/ViewerForegroundPriority'
 import { xDriveClearBaiduMapDiagnostic } from '../../ui/shared/src/media-gallery-baidu-diagnostics'
 import { xDriveNormalizeBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
+import { xDriveDesktopPlacesEmbedIntent } from '../../ui/shared/src/desktop-places-embed-admission'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../../ui/shared/src/media-gallery-baidu-native-camera-session'
 import type { XDriveBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
 import { xDriveClearBaiduConversionSession } from '../../ui/shared/src/media-gallery-baidu-jsapi4-markers'
@@ -250,7 +251,10 @@ type ConfirmAction = {
 }
 
 function initialSession(): AuthSession {
-  if (xDriveTrustedDesktopPlacesBridge())
+  // A map-only guest can NEVER recover an unrelated ordinary Web Owner from
+  // localStorage if its trusted Desktop preload is missing or out of date.
+  if (typeof window !== 'undefined' &&
+      xDriveDesktopPlacesEmbedIntent(window.location.search))
     return {accessToken:'', refreshToken:'', accessExpiresAt:0, browserSession:true}
   // Legacy localStorage credentials from an HTTP Origin may not be restored
   // after HTTPS-only cutover. Remove them before any authenticated request.
@@ -375,10 +379,13 @@ function App({
   const [logoutInProgress, setLogoutInProgress] = useState(false)
   const [cookieBootPending, setCookieBootPending] = useState(() =>
     typeof window !== 'undefined' && window.location.protocol === 'https:' &&
-    (Boolean(xDriveTrustedDesktopPlacesBridge()) ||
-      (xDriveBrowserStorageRead(REMEMBER_LOGIN_KEY) !== 'false' &&
-        xDriveBrowserStorageRead(COOKIE_MODE_KEY) === 'cookie') ||
-      (xDriveBrowserStorageRead(COOKIE_LOGOUT_PENDING_KEY) ?? '').startsWith('1')))
+    // An embedded map must bootstrap only through its verified Main bridge.
+    // Never fall back to a remembered Web Cookie/username when it is absent.
+    (xDriveDesktopPlacesEmbedIntent(window.location.search)
+      ? Boolean(xDriveTrustedDesktopPlacesBridge())
+      : ((xDriveBrowserStorageRead(REMEMBER_LOGIN_KEY) !== 'false' &&
+          xDriveBrowserStorageRead(COOKIE_MODE_KEY) === 'cookie') ||
+        (xDriveBrowserStorageRead(COOKIE_LOGOUT_PENDING_KEY) ?? '').startsWith('1'))))
   const transferApiRef = useRef<XDriveApi | null>(null)
   const authEpochRef = useRef(0)
   const transferLifetimeRef = useRef(0)
@@ -692,6 +699,23 @@ function App({
     }).finally(() => setLogoutInProgress(false))
   }
 
+  // Reserve the embedded-Places route BEFORE public/offline/regular login UI.
+  // A stale HTTPS Web snapshot or missing preload is a visible map failure,
+  // never an invitation to enter credentials inside a Desktop WebView.
+  if (xDriveDesktopPlacesEmbedIntent(window.location.search) &&
+      !xDriveTrustedDesktopPlacesBridge()) {
+    return (
+      <XDriveAuthShell viewport decorated spacing="compact">
+        <XDriveAuthPanel size="compact">
+          <Box role="alert" data-xdrive-desktop-places-auth-denied>
+            <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="large"
+              subtitle="Desktop 地图身份桥接不可用。请更新 Server Web 页面与 Desktop 客户端，然后重试地图。" />
+          </Box>
+        </XDriveAuthPanel>
+      </XDriveAuthShell>
+    )
+  }
+
   if (publicShareToken) {
     return <PublicShareView key={publicShareToken} token={publicShareToken} />
   }
@@ -730,11 +754,13 @@ function App({
     return (
       <XDriveAuthShell viewport decorated spacing="compact">
         <XDriveAuthPanel size="compact">
-          <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="large"
-            subtitle={authNotice || '正在等待 Desktop 地图会话验证…'} />
-          <Button onClick={() => window.location.reload()}>
-            重试地图会话
-          </Button>
+          <Box role="alert" data-xdrive-desktop-places-auth-denied>
+            <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="large"
+              subtitle={authNotice || '正在等待 Desktop 地图会话验证…'} />
+            <Button onClick={() => window.location.reload()}>
+              重试地图会话
+            </Button>
+          </Box>
         </XDriveAuthPanel>
       </XDriveAuthShell>
     )
@@ -1032,8 +1058,7 @@ function FileManager({
   const [mobilePageActionsTarget, setMobilePageActionsTarget] = useState<HTMLDivElement | null>(null)
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
-  const placesEmbedRequested=new URLSearchParams(window.location.search)
-    .get('desktop_places_embed')==='1'
+  const placesEmbedRequested=xDriveDesktopPlacesEmbedIntent(window.location.search)
   const placesEmbedBridge=(window as Window & {xdrivePlacesEmbedBridge?:{
     expectedOwner:()=>Promise<string|null>
     consume:(username:string)=>Promise<{
@@ -2942,18 +2967,18 @@ function FileManager({
   // (non-isolated) Baidu SDK. Desktop privileges never enter this guest.
   // A different Web login is refused before any Owner photo/map mounts.
   if (placesEmbedRequested && !placesEmbedBridge) return (
-    <Box role="alert" sx={{p:2}}>
+    <Box role="alert" data-xdrive-desktop-places-auth-denied sx={{p:2}}>
       当前页面没有可信 Desktop 地图身份接口，不会展示任何账户的照片。
     </Box>
   )
   if (placesEmbedRequested && placesEmbedBridge) {
     if(placesEmbedStatus==='denied') return (
-      <Box role="alert" sx={{p:2}}>
+      <Box role="alert" data-xdrive-desktop-places-auth-denied sx={{p:2}}>
         Desktop 地图身份校验失败；请返回 Desktop 的图库重新打开地点。
       </Box>
     )
     if(profileReadFailed) return (
-      <Box role="alert" sx={{p:2}}>
+      <Box role="alert" data-xdrive-desktop-places-auth-denied sx={{p:2}}>
         Web 地图当前账户验证失败，请重新登录或重试。
         <Button variant="outlined" sx={{ml:1}}
           onClick={() => window.location.reload()}>重试</Button>
