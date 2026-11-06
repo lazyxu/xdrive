@@ -160,8 +160,43 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     @State private var scanner: XDriveIOSNativeGalleryMediaScanner?
     @Environment(\.scenePhase) private var photoQueueScenePhase
     @Environment(\.xdriveNativePhotoQueueBadgeOwner) private var backupBadgeOwner
+    @Environment(\.xdriveNativePhotoQueueBadgeRefresh) private var badgeRefresh
     @State private var visibleBackupQueueStates: [String: String] = [:]
+    @State private var badgeReadEpoch = UUID()
 
+    /// Refresh ONLY the currently mounted 64-cell page on writer completion,
+    /// foreground return or opt-in changes. Never rescan PhotoKit, allocate a
+    /// library-wide ID list or infer backup completion from a local queue.
+    @MainActor
+    private func refreshVisibleBackupQueueStatuses() async {
+        let token = UUID()
+        badgeReadEpoch = token
+        visibleBackupQueueStates = [:]
+        guard let current = page, let owner = backupBadgeOwner,
+              current.items.count <= 64,
+              photoQueueScenePhase == .active,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+        else { return }
+        let identifiers = current.items.map(\.id)
+        do {
+            let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
+            let states = try await queue.visibleStatuses(
+                owner: owner, localIdentifiers: identifiers
+            )
+            try Task.checkCancellation()
+            guard badgeReadEpoch == token,
+                  photoQueueScenePhase == .active,
+                  XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
+                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                  page?.startOffset == current.startOffset,
+                  page?.items.map(\.id) == identifiers
+            else { return }
+            visibleBackupQueueStates = states
+        } catch {
+            // Unreadable or outdated local queue is UNKNOWN, never success.
+            if badgeReadEpoch == token { visibleBackupQueueStates = [:] }
+        }
+    }
 
     private var placeholderTile: some View {
         RoundedRectangle(cornerRadius: 3)
@@ -277,6 +312,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         .padding(.horizontal, 12)
         .id("page:\(offset)")
         .task(id: "\(generation)-\(offset)-\(mediaFilter.rawValue)") {
+            badgeReadEpoch = UUID()
             page = nil
             precedingCapturedAt = nil
             visibleBackupQueueStates = [:]
@@ -303,6 +339,8 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 onRead(loaded)
                 // Read at most this mounted 64-item page; never enumerate the
                 // entire PhotoKit library or leak IDs to the Server for a badge.
+                let initialBadgeEpoch = UUID()
+                badgeReadEpoch = initialBadgeEpoch
                 if let owner = backupBadgeOwner,
                    photoQueueScenePhase == .active,
                    PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
@@ -312,7 +350,8 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                             owner: owner, localIdentifiers: loaded.items.map(\.id)
                         )
                         try Task.checkCancellation()
-                        if photoQueueScenePhase == .active,
+                        if badgeReadEpoch == initialBadgeEpoch,
+                           photoQueueScenePhase == .active,
                            XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
                            PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
                             visibleBackupQueueStates = states
@@ -320,7 +359,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                     } catch {
                         // Missing/corrupt/behind local history never implies
                         // confirmation; the ordinary Gallery remains readable.
-                        visibleBackupQueueStates = [:]
+                        if badgeReadEpoch == initialBadgeEpoch {
+                            visibleBackupQueueStates = [:]
+                        }
                     }
                 }
             } catch is CancellationError {
@@ -331,11 +372,25 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             if !Task.isCancelled { scanner = nil }
         }
         .onChange(of: backupBadgeOwner) { _ in
-            // Owner/opt-in changes must not trigger another PhotoKit scan;
-            // until the current page is re-read, badges are unknown.
+            badgeReadEpoch = UUID()
             visibleBackupQueueStates = [:]
+            Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
+        }
+        .onChange(of: badgeRefresh) { _ in
+            // A successful original or completion of an auto window refreshes
+            // only already-mounted SQLite metadata; the scan ID is unchanged.
+            Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
+        }
+        .onChange(of: photoQueueScenePhase) { state in
+            if state == .active {
+                Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
+            } else {
+                badgeReadEpoch = UUID()
+                visibleBackupQueueStates = [:]
+            }
         }
         .onDisappear {
+            badgeReadEpoch = UUID()
             page = nil
             precedingCapturedAt = nil
             visibleBackupQueueStates = [:]
