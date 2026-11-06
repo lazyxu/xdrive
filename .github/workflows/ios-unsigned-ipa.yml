@@ -537,6 +537,23 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-full-photo-gps-policy-check"
           node --test desktop/tests/ios-native-photo-map-mvp.cjs
 
+      - name: Verify shared Map and Gallery P0/P1 photo wall regressions
+        run: |
+          set -euo pipefail
+          # Exercised Swift policies, not copies or mocks of policy decisions.
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativePhotoMapPolicy.swift \
+            ios/XDriveIOS/NativeLocalPhotoMapSpatialPolicy.swift \
+            ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift \
+            ios/XDriveIOS/NativeOwnerPhotoMapOverview.swift \
+            ios/XDriveIOS/NativeOwnerMapSelectionPolicy.swift \
+            ios/XDriveIOS/NativePhotoWallDensityPolicy.swift \
+            ios/XDriveIOS/NativePhotoDayGroupingPolicy.swift \
+            ios/tests/NativeSharedPlacePhotoWallPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-shared-place-wall-checks"
+          "$RUNNER_TEMP/xdrive-ios-shared-place-wall-checks"
+          node --test desktop/tests/ios-native-shared-place-photo-wall-p0p1.cjs
+
       - name: Verify native Owner WGS84 map overview transport
         run: |
           set -euo pipefail
