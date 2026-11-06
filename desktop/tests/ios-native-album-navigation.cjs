@@ -52,7 +52,7 @@ const wall = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift');
 // remains whole-authorized-library scoped while the viewer uses the one
 // continuous 64-slot wall and its verified return anchor.
 assert.match(timeline, /struct XDriveIOSNativeLocalPhotoTimelineScreen: View/);
-assert.match(timeline, /XDriveIOSNativeLocalPhotoTimelineContainer\(savedOffset: \$savedOffset\)/);
+assert.match(timeline, /XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$savedOffset,\s*mediaFilter: \$mediaFilter\s*\)/);
 assert.doesNotMatch(timeline, /Button\("上一页"\)|Button\("下一页"\)|XDriveIOSNativeTimelineReader/);
 assert.match(policy, /case year, month, day/);
 assert.match(policy, /var firstPageOffset: Int \{ \(firstSlot \/ 64\) \* 64 \}/);

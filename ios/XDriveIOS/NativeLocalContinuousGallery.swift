@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import MapKit
 import Photos
 import SwiftUI
 import UIKit
@@ -350,6 +351,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var dragTileFrames: [String: CGRect] = [:]
     @State private var dragPreviousSlot: Int?
     @State private var dragVisitedIDs: Set<String> = []
+    @State private var showingMap = false
+    @State private var mapCamera: MKCoordinateRegion?
+    @State private var mapJump: XDriveIOSNativeLocalMapJump?
+    @State private var pendingViewerMapJump: XDriveIOSNativeLocalMapJump?
     @State private var showingAlbumPicker = false
     @State private var albumPickerCandidates: [XDrivePhotoKitScanCandidate] = []
     @State private var confirmingDelete = false
@@ -458,6 +463,18 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             Divider()
                             Button("重置筛选") { mediaFilter = .all }
                                 .disabled(mediaFilter.isAll)
+                            Section("地图") {
+                                Button {
+                                    showingMap = true
+                                } label: {
+                                    Label("显示地图", systemImage: "map")
+                                }
+                                .disabled(
+                                    permission != .authorized || phase != .active ||
+                                    selectionMode || selected != nil || actionBusy || shareBusy
+                                )
+                                .accessibilityIdentifier("native-ios-local-wall-show-map")
+                            }
                         } label: {
                             Label(
                                 mediaFilter.isAll ? "筛选" : "筛选 · \(mediaFilter.title)",
@@ -467,6 +484,13 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                         .accessibilityLabel("媒体筛选：\(mediaFilter.title)")
                         .padding(.horizontal, 12)
                         .accessibilityIdentifier("native-ios-local-gallery-media-filter")
+                        if permission == .limited {
+                            Label("地图需要完整照片访问权限；有限访问不会生成部分地图。",
+                                  systemImage: "lock.shield")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                        }
                         if selectionMode {
                             Text("按住照片并拖动，可连续选择已加载的照片。")
                                 .font(.caption)
@@ -622,6 +646,24 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                     requestedOffset = nil
                 }
             }
+            // Present over the existing wall instead of replacing its Gallery
+            // route. The PhotoKit filter, loaded scroll anchor and Viewer state
+            // remain owned by this still-mounted screen when the map is closed.
+            .fullScreenCover(isPresented: $showingMap) {
+                NavigationStack {
+                    XDriveIOSNativeLocalPhotoMapScreen(
+                        mapScope: .constant(.library),
+                        offset: .constant(0),
+                        onClose: {
+                            showingMap = false
+                            mapJump = nil
+                        },
+                        cameraOnEntry: mapCamera,
+                        onLibraryCameraChange: { next in mapCamera = next }
+                    )
+                    .environment(\.xdriveNativeLocalMapJump, mapJump)
+                }
+            }
         }
         .navigationTitle("本机照片")
         .sheet(isPresented: $showingAlbumPicker) {
@@ -697,6 +739,11 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                     returnModified = next.modifiedAt
                 }
             )
+            // The local Viewer uses this wall's cover instead of replacing the
+            // Gallery route, so its exact return tile/filter survive map browsing.
+            .environment(\.xdriveOpenNativeLocalMap, { jump in
+                pendingViewerMapJump = jump
+            })
         }
         .onAppear {
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -996,8 +1043,19 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     }
 
     private func restoreAfterViewer() {
-        if phase == .active && authorized { reload() }
-        else { clearReturn(); invalidate(with: nil) }
+        guard phase == .active && authorized else {
+            pendingViewerMapJump = nil
+            mapJump = nil
+            clearReturn()
+            invalidate(with: nil)
+            return
+        }
+        reload()
+        if let jump = pendingViewerMapJump {
+            pendingViewerMapJump = nil
+            mapJump = jump
+            showingMap = true
+        }
     }
 
     private func clearReturn() {

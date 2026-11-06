@@ -83,6 +83,22 @@ struct NativePhotoMediaFilterChecks {
         precondition(liveAndScreenshot.requiresLive && liveAndScreenshot.requiresScreenshot)
         precondition(liveAndScreenshot.fetchKind == "image")
 
+        precondition(all.emptyMessage == "当前已授权图库中没有可浏览的照片或视频。")
+        precondition(photos.emptyMessage == "当前已授权图库中没有照片。")
+        precondition(videos.emptyMessage == "当前已授权图库中没有视频。")
+        precondition(favorites.emptyMessage == "当前已授权图库中没有收藏照片或视频。")
+        precondition(live.emptyMessage == "当前已授权图库中没有实况照片。")
+        precondition(screenshots.emptyMessage == "当前已授权图库中没有截屏。")
+        precondition(favoriteLive.emptyMessage == "当前已授权图库中没有符合收藏及媒体类型筛选条件的照片。")
+        precondition(liveAndScreenshot.emptyMessage == "当前已授权图库中没有符合实况和截屏筛选条件的照片。")
+        let favoritePhotos = all
+            .setting(.videos, enabled: false)
+            .setting(.favorites, enabled: true)
+        precondition(favoritePhotos.emptyMessage == "当前已授权图库中没有收藏照片。")
+        let favoriteVideos = all
+            .setting(.photos, enabled: false)
+            .setting(.favorites, enabled: true)
+        precondition(favoriteVideos.emptyMessage == "当前已授权图库中没有收藏视频。")
         print("iOS PhotoKit combined media filter policy: PASS")
     }
 }
