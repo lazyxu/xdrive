@@ -1,0 +1,70 @@
+name: GitLab master fast-forward (manual, fail-closed)
+
+# Never auto-push to GitLab. An owner reviews the exact GitHub master SHA,
+# GitLab mirror HEAD ancestry, and the result of a dry run first.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_master_sha:
+        description: 'Full 40-character GitHub master SHA to sync (must equal event SHA and live master)'
+        required: true
+        type: string
+      apply:
+        description: 'After a successful dry run, push by normal fast-forward (never force)'
+        required: true
+        type: boolean
+        default: false
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/gitlab-master-fast-forward.yml'
+      - 'scripts/ci/ff-github-master-to-gitlab.sh'
+      - 'scripts/ci/test-gitlab-master-fast-forward.py'
+      - 'docs/ci/gitlab-master-fast-forward.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xdrive-gitlab-master-fast-forward-${{ github.event_name == 'workflow_dispatch' && 'manual' || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Validate mirror sync script in local bare Git repositories
+        run: |
+          bash -n scripts/ci/ff-github-master-to-gitlab.sh
+          python3 scripts/ci/test-gitlab-master-fast-forward.py -v
+
+  sync:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'lazyxu/xdrive' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    # Only manually approved runs on trusted master receive the GitLab token.
+    environment: gitlab-master-ff
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/heads/master
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the mirror fast-forward algorithm offline first
+        run: |
+          bash -n scripts/ci/ff-github-master-to-gitlab.sh
+          python3 scripts/ci/test-gitlab-master-fast-forward.py -q
+      - name: Check exact ancestry and optionally fast-forward GitLab master
+        env:
+          XDRIVE_EXPECTED_GITHUB_SHA: ${{ inputs.expected_master_sha }}
+          XDRIVE_GITLAB_MIRROR_APPLY: ${{ inputs.apply && 'true' || 'false' }}
+          XDRIVE_GITLAB_MIRROR_URL: ${{ vars.XDRIVE_GITLAB_MIRROR_URL }}
+          XDRIVE_GITLAB_MIRROR_PUSH_TOKEN: ${{ secrets.XDRIVE_GITLAB_MIRROR_PUSH_TOKEN }}
+        shell: bash
+        run: bash scripts/ci/ff-github-master-to-gitlab.sh
