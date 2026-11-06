@@ -44,7 +44,7 @@ func provisionManagedSourceTargetTx(
 			expectedPlatform = "ios"
 		case synologySourceKind:
 			expectedPlatform = "synology"
-		case "android_photos":
+		case meta.SourceKindAndroidPhotos:
 			expectedPlatform = "android"
 		default:
 			return meta.Node{}, errInvalidSourceConfig
