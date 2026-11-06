@@ -116,6 +116,13 @@ The DSM Photos credential is stored locally on the NAS through the same source-a
 
 Setup records the Linux filesystem identity of each configured root. Every run verifies that identity before scanning; if a root disappears, is replaced, or the final path becomes a symlink, the run fails with `complete_inventory=false` rather than inferring that the entire source was deleted.
 
+`setup` and `run` share the same private Linux process lock. If a scan or upload
+is active, `setup` refuses to modify the Personal/Shared roots or Source until
+the active run finishes. This also prevents changing the configured roots while
+the identity journal and server receipts are being updated. A skipped `run --due`
+tick is safe; do not delete the persistent `run.lock` to force a new run.
+
+
 Setup creates or reuses an xDrive Source with:
 
 - `kind=synology_photos`
