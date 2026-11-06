@@ -74,6 +74,13 @@ func TestAndroidResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testi
 	if received.Result != nil {
 		t.Fatal("an unfinalized session returned a finalized file receipt")
 	}
+	var firstAudit meta.AuditEvent
+	if err := db.Where("action = ?", uploadAuthorizationAuditAction).Take(&firstAudit).Error; err != nil ||
+		firstAudit.Result != "success" ||
+		!strings.Contains(firstAudit.Metadata, `"writer":"android_photo"`) ||
+		strings.Contains(firstAudit.Metadata, key) {
+		t.Fatalf("Android receipt audit missing or leaked resume key: %+v %v", firstAudit, err)
+	}
 	// A replayed read-only recovery cannot allocate a second UploadSession.
 	var before int64
 	if err := db.Model(&meta.UploadSession{}).Count(&before).Error; err != nil {
