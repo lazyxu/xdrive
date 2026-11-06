@@ -81,7 +81,27 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 				return err
 			}
 			if running != 0 {
-				return errSourceRunActive
+				if !isRetiredSynologyPhotosPush(updated) {
+					return errSourceRunActive
+				}
+				// Retired DSM Photos Push cannot finish orphaned old runs.
+				// Only these runs are cancelled in the Source-locked transaction;
+				// original files, identity, stats and CAS remain untouched.
+				cancelledAt := time.Now().UTC()
+				if err := tx.Model(&meta.SyncRun{}).
+					Where("source_id = ? AND status = ?", updated.ID, meta.SyncRunStatusRunning).
+					Updates(map[string]any{
+						"status":                meta.SyncRunStatusCancelled,
+						"cancel_requested_at":   cancelledAt,
+						"finished_at":           cancelledAt,
+						"error":                 gorm.Expr("CASE WHEN COALESCE(\"error\", '') = '' THEN ? ELSE \"error\" END", "DSM Photos Push retired before run completed"),
+						"active_transfer_path":  "",
+						"active_transfer_bytes": 0,
+						"active_transfer_total": 0,
+						"updated_at":            cancelledAt,
+					}).Error; err != nil {
+					return err
+				}
 			}
 		} else if updated.Status != meta.SourceStatusArchived {
 			return errSourceNotArchived

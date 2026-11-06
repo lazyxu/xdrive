@@ -111,6 +111,21 @@ func TestRetiredSynologyPhotosPushPreservesHistoryAndCannotWrite(t *testing.T) {
 		t.Fatalf("retired Photos Push finalize gained write authority: %v", err)
 	}
 
+	// Retirement must terminally cancel only the currently running legacy Run,
+	// without marking a complete inventory or discarding its verified totals.
+	historicalRun := meta.SyncRun{
+		ID: "ae4c0482-28a3-4f3b-8f11-e112e38c0cb9",
+		SourceID: source.ID, SourceRevision: source.Revision,
+		Trigger: meta.SyncRunTriggerScheduled, Status: meta.SyncRunStatusRunning,
+		StartedAt: time.Now().UTC().Add(-time.Minute),
+		CheckpointBefore: "opaque-pre-retirement", ScannedItems: 3,
+		SyncedBytes: 16, ActiveTransferPath: "Shared/incomplete.jpg",
+		ActiveTransferBytes: 4, ActiveTransferTotal: 64,
+	}
+	if err := db.Create(&historicalRun).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	// Owner can archive *only* this retired Source. Never hard-delete the
 	// Source or Target, and never reactivate it through the restore endpoint.
 	requestWithHeaders(t, router, http.MethodPost, url+"/archive",
@@ -130,6 +145,18 @@ func TestRetiredSynologyPhotosPushPreservesHistoryAndCannotWrite(t *testing.T) {
 		ownerJWT, nil, http.StatusGone, map[string]string{"If-Match": `"2"`})
 	request(t, router, http.MethodGet, url, ownerJWT, nil, http.StatusOK)
 
+	var cancelledRun meta.SyncRun
+	if err := db.Where("id = ? AND source_id = ?", historicalRun.ID, source.ID).
+		Take(&cancelledRun).Error; err != nil {
+		t.Fatal(err)
+	}
+	if cancelledRun.Status != meta.SyncRunStatusCancelled ||
+		cancelledRun.CancelRequestedAt == nil || cancelledRun.FinishedAt == nil ||
+		cancelledRun.CheckpointBefore != historicalRun.CheckpointBefore ||
+		cancelledRun.ScannedItems != 3 || cancelledRun.SyncedBytes != 16 ||
+		cancelledRun.ActiveTransferPath != "" || cancelledRun.ActiveTransferBytes != 0 {
+		t.Fatalf("legacy running Source was not safely cancelled: %+v", cancelledRun)
+	}
 	var storedSource meta.Source
 	if err := db.Where("id = ?", source.ID).Take(&storedSource).Error; err != nil {
 		t.Fatal(err)
