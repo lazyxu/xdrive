@@ -41,3 +41,7 @@ dev/ios-map-filter-parity-rebased-20261106	7df8df90f86e4d09257ae7bfdd7a044b9cc80
 fix/ios-files-trash-sort-contract-20261104	963c455b49c70a358070ca602df9472a821ba365	merged #3881 and later master contain identical three Swift UI-policy-test blobs; remaining differences are superseded source-regex fixture and outdated gap wording
 fix/web-mobile-empty-dynamic-map-fallback-20261102	b6c3f7268731c40c354a8040f6f38227580f09e0	current master retains same empty-recent Gallery Places route and host wiring across all five touched paths; old branch lacks newer launcher and UI improvements
 feat/notes-dsm-owner-agent-port-20261103	fec10acc70faabf51feb25f29563dff7e72d0682	current master has the same nine Owner Notes operations via stronger capability and receipt validation plus expanded tests; supersedes obsolete DSM IPC prototype
+
+# 2026-11-06 exact-SHA follow-up: retired historical development alias tips; protect live PR #3945.
+dev/ios-map-3936-exact-ci-rebase-20261106	042b67e062a8f89a011112b0ef29cf0d15f8a642	exact head alias of merged PR #3936 (merged 2026-11-06); canonical native MapKit code retained by master; no open PR head/base uses this alias
+dev/ios-map-3945-master-20261106	1d16c7a986612ca72584e4684cc4bc0547b9f789	exact source tip strict ancestor of active #3945 head fd8ef96567b013415eb06c5b52539401df9db8db (compare ahead 1 behind 0); preserve current PR head/base
