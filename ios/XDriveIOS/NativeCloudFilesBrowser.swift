@@ -551,6 +551,12 @@ private struct XDriveIOSNativeFilesVersionIntent: Identifiable {
     let node: XDriveIOSNativeFilesNode
 }
 
+private struct XDriveIOSNativeFilesBatchTagsIntent: Identifiable {
+    let id = UUID()
+    let owner: XDriveNativeOwnerRoot
+    let nodeIDs: [UInt64]
+}
+
 private struct XDriveIOSNativeFilesFolder: Hashable {
     let id: UInt64
     let name: String
@@ -569,6 +575,9 @@ struct XDriveIOSNativeFilesBrowser: View {
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
     @StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel()
     @StateObject private var batchExport = XDriveIOSNativeFilesBatchExportModel()
+    @ObservedObject private var clipboard = XDriveIOSNativeFilesClipboard.shared
+    @State private var showingClipboardPasteConfirmation = false
+    @State private var batchTagsIntent: XDriveIOSNativeFilesBatchTagsIntent?
     @State private var showingBatchShare = false
     @State private var batchDestinationIntent: XDriveIOSNativeFilesBatchDestinationIntent?
     @State private var selecting = false
@@ -659,6 +668,12 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private var chosenItems: [XDriveIOSNativeFilesNode] {
         model.entries.filter { selectedIDs.contains($0.id) }.map(\.node)
+    }
+
+    private var canPasteHere: Bool {
+        !isHome && !isGlobalSearch && !model.loading && model.verifiedPage &&
+            !selecting && !batchTarget.busy && !batchTrash.busy &&
+            clipboard.canPaste(to: parentID, owner: login.owner)
     }
 
     /// Native Files Browse starts at locations and shortcuts, not inside an
@@ -1146,6 +1161,16 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Button("清空选择") { selectedIDs.removeAll() }
                         .disabled(selectedIDs.isEmpty)
                     Divider()
+                    Button("复制到剪贴板") { captureSelection(.copy) }
+                        .disabled(!canSelectPage || selectedIDs.isEmpty)
+                        .accessibilityIdentifier("native-ios-files-batch-clipboard-copy")
+                    Button("剪切到剪贴板") { captureSelection(.move) }
+                        .disabled(!canSelectPage || selectedIDs.isEmpty)
+                        .accessibilityIdentifier("native-ios-files-batch-clipboard-cut")
+                    Button("为已选项目设置标签") { openBatchTags() }
+                        .disabled(!canSelectPage || selectedIDs.isEmpty)
+                        .accessibilityIdentifier("native-ios-files-batch-tags")
+                    Divider()
                     Button("已选项批量下载并导出") {
                         prepareSelectedExport()
                     }
@@ -1390,6 +1415,13 @@ struct XDriveIOSNativeFilesBrowser: View {
                               login.owner == nil || !activeQuery.isEmpty)
                     .accessibilityIdentifier("native-ios-files-quick-multi-upload")
                     Button {
+                        showingClipboardPasteConfirmation = true
+                    } label: {
+                        Label("粘贴", systemImage: "doc.on.clipboard")
+                    }
+                    .disabled(!canPasteHere)
+                    .accessibilityIdentifier("native-ios-files-paste")
+                    Button {
                         reload()
                     } label: {
                         Label("刷新", systemImage: "arrow.clockwise")
@@ -1408,6 +1440,16 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private var filesModals: some View {
         filesChrome
+        .confirmationDialog(
+            "粘贴剪贴板中的项目到当前文件夹？",
+            isPresented: $showingClipboardPasteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("确认粘贴") { pasteClipboard() }
+                .disabled(!canPasteHere)
+        } message: {
+            Text("移动会改变原文件所在位置；服务器会核对源文件版本和目标目录，结果不确定时不会自动重试。")
+        }
         .sheet(isPresented: $showingBatchShare, onDismiss: {
             batchExport.invalidate()
             selecting = false
@@ -1417,6 +1459,19 @@ struct XDriveIOSNativeFilesBrowser: View {
             XDriveIOSNativeFilesBatchShareSheet(
                 files: batchExport.prepared.map(\.fileURL)
             )
+        }
+        .sheet(item: $batchTagsIntent, onDismiss: { reload() }) { intent in
+            if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
+                NavigationStack {
+                    XDriveIOSNativeFilesTagPanel(
+                        login: login, expectedOwner: intent.owner,
+                        nodeIDs: intent.nodeIDs,
+                        selectionLabel: "已选择的文件和文件夹"
+                    )
+                }
+            } else {
+                Text("账户已变化，请重新选择标签管理范围。")
+            }
         }
         .sheet(item: $batchDestinationIntent) { intent in
             if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
@@ -1622,6 +1677,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             batchExport.invalidate()
             showingBatchShare = false
             batchDestinationIntent = nil
+            batchTagsIntent = nil
+            showingClipboardPasteConfirmation = false
+            clipboard.clear()
             selecting = false
             selectedIDs.removeAll()
             showingBatchTrashConfirmation = false
@@ -1697,6 +1755,57 @@ struct XDriveIOSNativeFilesBrowser: View {
             selectedIDs.remove(entry.id)
         } else if selectedIDs.count < XDriveIOSNativeFilesBatchTrashPolicy.maxSelected {
             selectedIDs.insert(entry.id)
+        }
+    }
+
+    private func captureSelection(_ kind: XDriveIOSNativeFilesDestinationKind) {
+        guard canSelectPage, let owner = login.owner, let sourceParentID = parentID,
+              selectedIDs == Set(chosenItems.map(\.id)),
+              clipboard.capture(
+                kind, items: chosenItems, sourceParentID: sourceParentID,
+                owner: owner
+              ) else { return }
+        selecting = false
+        selectedIDs.removeAll()
+    }
+
+    private func captureItem(_ entry: XDriveIOSNativeFilesEntry,
+                             kind: XDriveIOSNativeFilesDestinationKind) {
+        guard !selecting, !isGlobalSearch, !model.loading, model.verifiedPage,
+              let owner = login.owner, let sourceParentID = parentID,
+              model.entries.contains(where: { $0.node == entry.node }) else { return }
+        _ = clipboard.capture(
+            kind, items: [entry.node], sourceParentID: sourceParentID, owner: owner
+        )
+    }
+
+    private func openBatchTags() {
+        guard canSelectPage, let owner = login.owner, let sourceParentID = parentID,
+              selectedIDs == Set(chosenItems.map(\.id)),
+              XDriveIOSNativeFilesBatchTrashPolicy.validSelection(
+                chosenItems, parentID: sourceParentID
+              ) else { return }
+        batchTagsIntent = XDriveIOSNativeFilesBatchTagsIntent(
+            owner: owner, nodeIDs: chosenItems.map(\.id)
+        )
+    }
+
+    private func pasteClipboard() {
+        guard canPasteHere, let owner = login.owner, let folderID = parentID,
+              let snapshot = clipboard.snapshot(for: owner),
+              XDriveIOSNativeFilesBatchTargetPolicy.validSelection(
+                snapshot.items, sourceParentID: snapshot.sourceParentID,
+                destinationID: folderID, kind: snapshot.kind
+              ) else { return }
+        batchTarget.perform(
+            snapshot.kind, items: snapshot.items,
+            sourceParentID: snapshot.sourceParentID,
+            destination: XDriveIOSNativeFilesDestination(
+                id: folderID, name: folder?.name ?? "云端根目录"
+            ), login: login
+        ) {
+            if snapshot.kind == .move { clipboard.clear() }
+            reload(resetOffset: true)
         }
     }
 
@@ -1894,6 +2003,18 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Label("预览", systemImage: "eye")
             }
         }
+        Button {
+            captureItem(entry, kind: .copy)
+        } label: {
+            Label("复制", systemImage: "doc.on.clipboard")
+        }
+        .accessibilityIdentifier("native-ios-files-clipboard-copy")
+        Button {
+            captureItem(entry, kind: .move)
+        } label: {
+            Label("剪切", systemImage: "scissors")
+        }
+        .accessibilityIdentifier("native-ios-files-clipboard-cut")
         Button {
             openManagement(for: entry.node, quickAction: .copy)
         } label: {
