@@ -255,6 +255,20 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
                     requestedOwner: requestedOwner, login: login
                 )
                 await scanner.reset()
+                // Actor cleanup is an await point: an Owner change, UI
+                // dismissal or PhotoKit notification can cancel this run
+                // while the scanner releases resources. Never republish a
+                // green result from the retired task after that suspension.
+                try Task.checkCancellation()
+                guard self.epoch == token,
+                      XDriveIOSNativePhotoOwnerScope.matches(
+                          login.owner, requestedOwner
+                      ),
+                      UIApplication.shared.applicationState == .active
+                else { throw XDriveIOSNativePhotoWholeAuditError.changedScope }
+                try self.verifyGeneration(
+                    requestedOwner: requestedOwner, login: login
+                )
                 if XDriveIOSNativePhotoWholeLibraryAuditPolicy.complete(
                     checked: self.checked, total: count,
                     currentlyVerified: self.currentVerified,
