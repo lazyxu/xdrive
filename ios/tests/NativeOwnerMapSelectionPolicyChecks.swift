@@ -30,6 +30,49 @@ struct NativeOwnerMapSelectionPolicyChecks {
             currentlyVisibleIDs: ["place:1:3"]))
         precondition(!policy.acceptsSelectedPlace("place:1:2",
             currentlyVisibleIDs: ["place:1:2","place:1:2"]))
+        // Old MapKit annotations can keep their ID/count after a new signed
+        // Owner overview changes geographic data. Never promote those pins.
+        let currentSingle = facet("place:3500:13900")
+        precondition(policy.acceptsSelectedFacet(
+            currentSingle, currentlyVisible: [currentSingle]))
+        precondition(!policy.acceptsSelectedFacet(
+            facet("place:3500:13901"), currentlyVisible: [currentSingle]))
+        precondition(!policy.acceptsSelectedFacet(
+            facet("place:3500:13900", count: 4),
+            currentlyVisible: [currentSingle]))
+        precondition(!policy.acceptsSelectedFacet(
+            facet("place:3500:13900", kind: "map_region_sample"),
+            currentlyVisible: [currentSingle]))
+        let movedOldPin = XDriveIOSNativeOwnerMapFacet(
+            id: currentSingle.id, name: currentSingle.name,
+            latitude: 36, longitude: currentSingle.longitude,
+            item_count: currentSingle.item_count,
+            cover_node_id: currentSingle.cover_node_id,
+            sample_latitude: currentSingle.sample_latitude,
+            sample_longitude: currentSingle.sample_longitude,
+            coordinate_kind: currentSingle.coordinate_kind)
+        precondition(!policy.acceptsSelectedFacet(
+            movedOldPin, currentlyVisible: [currentSingle]))
+        let changedSample = XDriveIOSNativeOwnerMapFacet(
+            id: currentSingle.id, name: currentSingle.name,
+            latitude: currentSingle.latitude,
+            longitude: currentSingle.longitude,
+            item_count: currentSingle.item_count,
+            cover_node_id: currentSingle.cover_node_id,
+            sample_latitude: 36,
+            sample_longitude: currentSingle.sample_longitude,
+            coordinate_kind: currentSingle.coordinate_kind)
+        precondition(!policy.acceptsSelectedFacet(
+            changedSample, currentlyVisible: [currentSingle]))
+        precondition(!policy.acceptsSelectedFacet(
+            currentSingle, currentlyVisible: [currentSingle, currentSingle]))
+        precondition(!policy.acceptsSelectedFacet(
+            currentSingle, currentlyVisible: []))
+        precondition(!policy.acceptsSelectedFacet(
+            currentSingle, currentlyVisible: (0..<65).map {
+                facet("place:10:\($0)")
+            }))
+
         let cloudPicked = [
             facet("place:3500:13900", count: 2),
             facet("place:3500:13901", count: 4)

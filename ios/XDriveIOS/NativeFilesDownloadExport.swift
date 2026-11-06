@@ -220,7 +220,12 @@ struct XDriveIOSNativeFilesExportReader {
 final class XDriveIOSNativeFilesExportModel: ObservableObject {
     @Published private(set) var prepared: XDriveIOSNativeFilesPreparedExport?
     @Published private(set) var busy = false
-    @Published private(set) var status: String?
+    @Published private(set) var status: String? {
+        didSet {
+            if let status { activity?.report(status) }
+        }
+    }
+    private var activity: XDriveIOSNativeTransferStore.Ticket?
 
     private var epoch = UUID()
     private var task: Task<Void, Never>?
@@ -228,6 +233,7 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
 
     func invalidate() {
         epoch = UUID()
+        activity = nil
         lastProgressPercent = -1
         task?.cancel()
         task = nil
@@ -246,18 +252,29 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
     }
 
     func prepare(_ node: XDriveIOSNativeFilesNode,
-                 login: XDriveIOSNativeOwnerLoginModel) {
+                 login: XDriveIOSNativeOwnerLoginModel,
+                 transfers: XDriveIOSNativeTransferStore? = nil) {
         invalidate()
         guard let expected = login.owner else {
             status = "请重新验证当前服务器账户。"
             return
         }
         let ticket = epoch
+        let activity = transfers?.begin(.download, title: node.name, owner: expected)
+        self.activity = activity
         busy = true
         status = "正在下载原文件；即将显示接收的真实字节进度。"
         task = Task { @MainActor in
+            var failureDetail: String?
             defer {
+                let current = epoch == ticket
+                activity?.finishDownload(
+                    verified: current && prepared != nil,
+                    stopped: !current || Task.isCancelled,
+                    detail: failureDetail
+                )
                 if epoch == ticket {
+                    self.activity = nil
                     busy = false
                     task = nil
                 }
@@ -327,6 +344,7 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
                 } else {
                     status = "下载未完成，请检查网络后重试。"
                 }
+                failureDetail = status
             }
         }
     }

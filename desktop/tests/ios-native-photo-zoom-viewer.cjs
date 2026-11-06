@@ -101,7 +101,7 @@ test('cloud PhotoAsset first ticket uses the frozen presenting Owner rather than
   assert.match(files, /if authorized && exportFallbackEligible/)
   assert.match(files, /staged\.nodeID == viewed\.id && staged\.revision == viewed\.revision/)
   assert.match(files, /ShareLink\(item: staged\.fileURL\)/)
-  assert.match(files, /exporter\.prepare\(viewed, login: login\)/)
+  assert.match(files, /exporter\.prepare\(viewed, login: login, transfers: transfers\)/)
   assert.match(files, /exporter\.invalidate\(\)[\s\S]*?exportFallbackEligible = false/)
 })
 

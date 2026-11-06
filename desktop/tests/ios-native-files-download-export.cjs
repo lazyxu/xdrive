@@ -28,7 +28,7 @@ test('native Files download accepts only exact Owner signed ticket, actual bytes
 test('native File management exports only via OS ShareLink and releases scoped temporary bytes', () => {
   assert.match(panel, /ShareLink\(item: staged\.fileURL\)/)
   assert.match(panel, /需在系统界面选择保存位置/)
-  assert.match(panel, /exporter\.prepare\(file, login: login\)/)
+  assert.match(panel, /exporter\.prepare\(file, login: login, transfers: transfers\)/)
   assert.match(panel, /exporter\.invalidate\(\)/)
   assert.match(exportFile, /prepared\?\.discard\(\)/)
   assert.match(exportFile, /login\.verifiedAuthorization\(\)/)

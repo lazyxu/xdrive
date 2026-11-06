@@ -472,6 +472,25 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     /// A global authorization/receipt trust loss must not be reclassified
     /// as one unavailable PhotoKit original and scanned past.
     private static func mustAbortRun(after error: Error) -> Bool {
+        // The transport can reject a Device/Owner/Root permission
+        // *before* the persisted "creating" journal transition. In that
+        // case the ledger is still .prepared and the writer propagates
+        // the transport error instead of reporting an uncertain write.
+        // Permission and invalid-Server failures belong to the ENTIRE
+        // run: a per-photo unavailable count would wrongly advance an
+        // automatic/background scan cursor past unbacked-up originals.
+        if let upload = error as? XDriveNativeUploadError {
+            switch upload {
+            case .unauthorizedOrRejected(_), .invalidServerResponse,
+                 .uncertainCommit, .localStorageUnavailable:
+                return true
+            case .invalidLocalFile:
+                // A staged file's source identity/size/hash mismatch is
+                // item-local, provided the journal still proves .prepared.
+                // The writer handles non-prepared records as review first.
+                break
+            }
+        }
         // Network outages are not "one inaccessible photo". Advancing a
         // completed 256-slot cursor after repeated offline failures can
         // strand entire older windows until a future full-library wrap.
