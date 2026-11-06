@@ -49,6 +49,7 @@ func TestLocalFolderCancelRequiresOwningDeviceAndCurrentRootProof(t *testing.T) 
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
 		Revision: 1, TargetNodeID: &targetID,
+		DeviceID: &device.ID, LocalCreatorDeviceID: &device.ID,
 	}
 	// Synthetic active rows isolate the cancellation authorization boundary;
 	// public local_folder activation/BeginSourceRun remain hard-denied.
