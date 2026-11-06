@@ -2935,6 +2935,7 @@ function registerIPCHandlers() {
     version: app.getVersion(),
     platform: process.platform,
     arch: process.arch,
+    device_name: os.hostname(),
   }))
   ipcMain.handle('desktop:get-startup', () => ({ start_at_login: desktopPreferences.start_at_login }))
   ipcMain.handle('desktop:get-preferences', () => publicDesktopPreferences())

@@ -138,7 +138,7 @@ import type {
 export {}
 
 declare global {
-  type DesktopInfo = BuildInfo & { platform: string; arch: string }
+  type DesktopInfo = BuildInfo & { platform: string; arch: string; device_name?: string }
   type DesktopStartup = { start_at_login: boolean }
   type DesktopPreferences = { appearance: 'system' | 'light' | 'dark'; start_at_login: boolean; close_to_tray: boolean }
   type DesktopConnectionRoute = { mode: 'auto' | 'lan' | 'public'; lan_ip: string; public_ip: string }

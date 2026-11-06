@@ -58,3 +58,13 @@ test('Source Manager shows only an editable last segment and keeps failed drafts
   assert.match(manager, /new TextEncoder\(\)\.encode\(normalizedName\)\.length/)
   assert.match(preset, /option\.value !== 'synology_push'/)
 })
+
+
+test('Desktop first-use Push name is suggested locally without enrollment side effects', () => {
+  const main = read('desktop', 'src', 'main', 'index.cts')
+  const adapter = read('desktop', 'src', 'renderer', 'sourceManagerAdapter.ts')
+  assert.match(main, /device_name:\s*os\.hostname\(\)/)
+  assert.match(adapter, /getDeviceBackupLocalDevice\(\)/)
+  assert.match(adapter, /getInfo\(\)/)
+  assert.doesNotMatch(adapter, /registerClientDevice\(/)
+})
