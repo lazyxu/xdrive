@@ -69,7 +69,7 @@ func TestPhotoAssetStalePrunePerformance100K(t *testing.T) {
 	sqlDB.SetMaxIdleConns(4)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(
-		&meta.User{}, &meta.Node{}, &meta.PhotoAsset{},
+		&meta.User{}, &meta.Node{}, &meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 	); err != nil {

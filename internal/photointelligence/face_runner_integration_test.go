@@ -89,7 +89,7 @@ func TestFaceRunnerPersistsAndInvalidatesDerivedFaces(t *testing.T) {
 		&meta.Node{},
 		&meta.File{},
 		&meta.MediaMetadata{},
-		&meta.PhotoAsset{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoAnalysisState{},
 		&meta.PhotoFace{},
 	); err != nil {

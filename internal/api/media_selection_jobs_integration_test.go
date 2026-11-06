@@ -56,7 +56,7 @@ func newDurableSelectionJobDB(t *testing.T) *gorm.DB {
 	}
 	sqlDB.SetMaxOpenConns(3)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.PhotoAsset{},
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoMetadata{}, &meta.MediaSelectionJob{}, &meta.MediaSelectionJobItem{}); err != nil {
 		t.Fatal(err)
 	}

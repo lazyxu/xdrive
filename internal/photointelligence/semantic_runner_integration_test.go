@@ -68,7 +68,7 @@ func TestSemanticRunnerPersistsReadyEmbedding(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
-		&meta.PhotoAsset{}, &meta.PhotoAnalysisState{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoAnalysisState{},
 		&meta.PhotoSemanticEmbedding{},
 	); err != nil {
 		t.Fatal(err)

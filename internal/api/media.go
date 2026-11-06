@@ -104,6 +104,7 @@ type mediaResourceDTO struct {
 }
 
 type mediaItemDTO struct {
+	ContentKey       string                    `json:"content_key,omitempty"`
 	Node             nodeDTO                   `json:"node"`
 	Metadata         mediaMetadataDTO          `json:"metadata"`
 	AssetID          uint64                    `json:"asset_id,omitempty"`
@@ -306,6 +307,10 @@ func (s *Server) getMediaItem(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "resolve photo asset failed")
 		return
 	}
+	if expected := c.Param("contentKey"); expected != "" && presentation.ContentKey != expected {
+		fail(c, http.StatusNotFound, "photo content changed")
+		return
+	}
 	ocr, err := s.mediaOCRDetails(c.Request.Context(), node.OwnerID, node, metadata)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "read OCR result failed")
@@ -313,6 +318,7 @@ func (s *Server) getMediaItem(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, mediaItemDTO{
+		ContentKey:       presentation.ContentKey,
 		Node:             toNodeDTO(node),
 		Metadata:         toMediaMetadataDTO(metadata),
 		AssetID:          presentation.ID,
@@ -564,8 +570,9 @@ func (s *Server) mediaItemsBaseQuery(
 			uid,
 		).
 		Joins(
-			"JOIN xd_nodes AS n ON n.id = xd_media_metadata.node_id AND n.deleted_at IS NULL",
+			"JOIN xd_nodes AS n ON n.id = xd_media_metadata.node_id AND n.owner_id = pa.owner_id AND n.deleted_at IS NULL",
 		).
+		Where(photoasset.CurrentContentBindingSQL("pa")).
 		Joins("JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
 		Where(
 			"xd_media_metadata.owner_id = ? AND xd_media_metadata.media_kind IN ?",
@@ -709,6 +716,7 @@ func (s *Server) materializeMediaItems(
 				memberIDs = options.foldIndex.members(row.NodeID)
 			}
 			out = append(out, mediaItemDTO{
+				ContentKey:    presentation.ContentKey,
 				FoldMemberIDs: memberIDs,
 				Node:          toNodeDTO(node),
 				Metadata:      toMediaMetadataDTO(row),

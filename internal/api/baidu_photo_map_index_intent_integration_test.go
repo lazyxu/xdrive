@@ -90,7 +90,7 @@ func TestBaiduPhotoMapIndexIntentAcrossPostgresReplicas(t *testing.T) {
 	}
 	db, peer := newDB(), newDB()
 	if err := db.AutoMigrate(
-		&meta.User{}, &meta.Node{}, &meta.MediaMetadata{}, &meta.PhotoAsset{},
+		&meta.User{}, &meta.Node{}, &meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{},
 		&meta.BaiduPhotoMapIndexIntent{},
 	); err != nil {

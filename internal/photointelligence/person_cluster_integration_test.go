@@ -48,7 +48,7 @@ func TestPersonClusterRunnerRebuildLifecycle(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{},
 		&meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
-		&meta.PhotoAsset{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoAnalysisState{},
 		&meta.PhotoFace{},
 		&meta.PhotoPersonCluster{},

@@ -59,10 +59,8 @@ func (s *Server) setMediaFavorite(c *gin.Context) {
 		return
 	}
 
-	var asset meta.PhotoAsset
-	if err := s.DB.WithContext(c.Request.Context()).
-		Where("owner_id = ? AND primary_node_id = ?", node.OwnerID, node.ID).
-		First(&asset).Error; err != nil {
+	asset, err := mediaAssetForNode(c.Request.Context(), s.DB, node.OwnerID, node.ID, c.Param("contentKey"))
+	if err != nil {
 		fail(c, http.StatusNotFound, "photo asset not found")
 		return
 	}

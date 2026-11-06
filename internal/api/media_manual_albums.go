@@ -323,13 +323,14 @@ func (s *Server) addMediaAlbumItems(c *gin.Context) {
 		return
 	}
 	var input struct {
-		NodeIDs []uint64 `json:"node_ids"`
+		NodeIDs     []uint64 `json:"node_ids"`
+		ContentKeys []string `json:"content_keys"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		fail(c, http.StatusBadRequest, "invalid request")
 		return
 	}
-	nodeIDs, err := normalizeMediaAlbumNodeIDs(input.NodeIDs)
+	nodeIDs, contentKeys, err := normalizeMediaContentSelection(input.NodeIDs, input.ContentKeys, mediaAlbumMaxBatchItems)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
@@ -362,16 +363,9 @@ func (s *Server) addMediaAlbumItems(c *gin.Context) {
 			return errRevisionConflict
 		}
 
-		var assets []meta.PhotoAsset
-		if err := tx.Where(
-			"owner_id = ? AND primary_node_id IN ?",
-			userID(c),
-			nodeIDs,
-		).Find(&assets).Error; err != nil {
+		assets, err := mediaAssetsForSelection(c.Request.Context(), tx, userID(c), nodeIDs, contentKeys)
+		if err != nil {
 			return err
-		}
-		if len(assets) != len(nodeIDs) {
-			return fmt.Errorf("one or more media nodes are not logical Gallery assets")
 		}
 		assetIDs := make([]uint64, 0, len(assets))
 		for _, asset := range assets {

@@ -65,7 +65,7 @@ func TestSmartRunnerPersistsSearchEvidence(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
-		&meta.PhotoAsset{}, &meta.PhotoAnalysisState{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoAnalysisState{},
 		&meta.PhotoVisualLabel{}, &meta.PhotoOCRText{},
 	); err != nil {
 		t.Fatal(err)

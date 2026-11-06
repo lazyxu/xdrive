@@ -38,7 +38,7 @@ func TestPhotoAssetOwnerReconcilePerformance100K(t *testing.T) {
 		&meta.AuditEvent{}, &meta.Source{}, &meta.SourceItem{},
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
-		&meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{},
+		&meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 	); err != nil {

@@ -27,6 +27,13 @@ type desiredAsset struct {
 	primaryID uint64
 	metadata  meta.MediaMetadata
 	resources []desiredResource
+	identity  ContentIdentity
+	origins   []desiredOrigin
+}
+
+type desiredOrigin struct {
+	primaryID uint64
+	resources []desiredResource
 }
 
 type desiredResource struct {
@@ -48,6 +55,11 @@ func ReconcileOwner(ctx context.Context, db *gorm.DB, ownerID uint64) (Report, e
 		return report, fmt.Errorf("photo asset reconciler is not configured")
 	}
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Serialize projection upgrades for this Owner, including duplicate
+		// annotation handoff. Different Owners never share mutable photo rows.
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", fmt.Sprintf("photo-content-owner:%d", ownerID)).Error; err != nil {
+			return err
+		}
 		assets, nodeToAsset, err := reconcileAssetsDB(tx, ownerID)
 		if err != nil {
 			return err
@@ -99,16 +111,6 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 		Find(&metadata).Error; err != nil {
 		return nil, nil, err
 	}
-	if len(metadata) == 0 {
-		if err := tx.Where("owner_id = ?", ownerID).Delete(&meta.PhotoAsset{}).Error; err != nil {
-			return nil, nil, err
-		}
-		if err := deleteDerivedCollections(tx, ownerID); err != nil {
-			return nil, nil, err
-		}
-		return nil, map[uint64]uint64{}, nil
-	}
-
 	nodeIDs := make([]uint64, 0, len(metadata))
 	metadataByNode := make(map[uint64]meta.MediaMetadata, len(metadata))
 	for _, row := range metadata {
@@ -193,12 +195,11 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 		desired = append(desired, asset)
 	}
 	sort.Slice(desired, func(i, j int) bool { return desired[i].primaryID < desired[j].primaryID })
-
-	desiredPrimary := make(map[uint64]struct{}, len(desired))
-	for _, asset := range desired {
-		desiredPrimary[asset.primaryID] = struct{}{}
+	desired, err = groupDesiredContent(desired, nodeByID, metadataByNode)
+	if err != nil {
+		return nil, nil, err
 	}
-	byPrimary, err := loadAndPruneStalePhotoAssets(tx, ownerID, desiredPrimary)
+	byPrimary, err := prepareContentAssets(tx, ownerID, desired)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -235,17 +236,16 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 			}
 		}
 		for _, want := range batch {
+			if want.identity.Key != "" {
+				want.evidence = want.identity.Key
+			}
 			current, exists := byPrimary[want.primaryID]
-			if exists && current.Kind == want.kind && current.EvidenceKey == want.evidence {
+			if exists && current.PrimaryNodeID == want.primaryID && current.Kind == want.kind && current.EvidenceKey == want.evidence {
 				oldMetadata, metadataExists := metadataByAsset[current.ID]
 				if metadataExists &&
 					photoAssetTechnicalMetadataEqual(oldMetadata, want.metadata) &&
 					photoAssetResourceRowsEqual(resourceByAsset[current.ID], want.resources) {
-					for _, resource := range want.resources {
-						if resource.kind == meta.PhotoResourceKindNode {
-							nodeToAsset[resource.nodeID] = current.ID
-						}
-					}
+					mapContentOccurrences(nodeToAsset, current.ID, want)
 					continue
 				}
 			}
@@ -253,18 +253,21 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 			if exists {
 				if err := tx.Model(&meta.PhotoAsset{}).Where("id = ?", asset.ID).
 					Updates(map[string]any{
-						"kind":         want.kind,
-						"evidence_key": want.evidence,
-						"updated_at":   now,
+						"kind":            want.kind,
+						"evidence_key":    want.evidence,
+						"primary_node_id": want.primaryID,
+						"updated_at":      now,
 					}).Error; err != nil {
 					return nil, nil, err
 				}
 				asset.Kind = want.kind
 				asset.EvidenceKey = want.evidence
+				asset.PrimaryNodeID = want.primaryID
 			} else {
 				asset = meta.PhotoAsset{
 					OwnerID: ownerID, PrimaryNodeID: want.primaryID,
 					Kind: want.kind, EvidenceKey: want.evidence,
+					ContentKey: want.identity.Key, ContentManifest: want.identity.Manifest,
 					CreatedAt: now, UpdatedAt: now,
 				}
 				if err := tx.Create(&asset).Error; err != nil {
@@ -272,6 +275,7 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 				}
 				byPrimary[want.primaryID] = asset
 			}
+			mapContentOccurrences(nodeToAsset, asset.ID, want)
 
 			if err := tx.Where("asset_id = ?", asset.ID).Delete(&meta.PhotoResource{}).Error; err != nil {
 				return nil, nil, err
@@ -324,7 +328,20 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 			}
 		}
 	}
+	if err := persistContentOccurrences(tx, ownerID, desired, nodeToAsset, now); err != nil {
+		return nil, nil, err
+	}
 	return desired, nodeToAsset, nil
+}
+
+func mapContentOccurrences(out map[uint64]uint64, assetID uint64, want desiredAsset) {
+	for _, origin := range want.origins {
+		for _, resource := range origin.resources {
+			if resource.kind == meta.PhotoResourceKindNode {
+				out[resource.nodeID] = assetID
+			}
+		}
+	}
 }
 
 // photoAssetTechnicalMetadataEqual deliberately ignores user annotations,

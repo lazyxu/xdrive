@@ -49,19 +49,7 @@ func (s *Server) mediaBatchAssets(
 	uid uint64,
 	nodeIDs []uint64,
 ) ([]meta.PhotoAsset, error) {
-	var assets []meta.PhotoAsset
-	if err := s.DB.WithContext(ctx).
-		Table("xd_photo_assets AS pa").
-		Select("pa.*").
-		Joins("JOIN xd_nodes AS n ON n.id = pa.primary_node_id AND n.deleted_at IS NULL").
-		Where("pa.owner_id = ? AND pa.primary_node_id IN ?", uid, nodeIDs).
-		Find(&assets).Error; err != nil {
-		return nil, err
-	}
-	if len(assets) != len(nodeIDs) {
-		return nil, gorm.ErrRecordNotFound
-	}
-	return assets, nil
+	return mediaAssetsForSelection(ctx, s.DB, uid, nodeIDs, nil)
 }
 
 func photoAssetIDs(assets []meta.PhotoAsset) []uint64 {
@@ -74,19 +62,20 @@ func photoAssetIDs(assets []meta.PhotoAsset) []uint64 {
 
 func (s *Server) setMediaFavoriteBatch(c *gin.Context) {
 	var input struct {
-		NodeIDs  []uint64 `json:"node_ids"`
-		Favorite *bool    `json:"favorite"`
+		NodeIDs     []uint64 `json:"node_ids"`
+		ContentKeys []string `json:"content_keys"`
+		Favorite    *bool    `json:"favorite"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil || input.Favorite == nil {
 		fail(c, http.StatusBadRequest, "node_ids and favorite are required")
 		return
 	}
-	nodeIDs, err := normalizeMediaBatchNodeIDs(input.NodeIDs)
+	nodeIDs, contentKeys, err := normalizeMediaContentSelection(input.NodeIDs, input.ContentKeys, mediaBatchMaxItems)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	assets, err := s.mediaBatchAssets(c.Request.Context(), userID(c), nodeIDs)
+	assets, err := mediaAssetsForSelection(c.Request.Context(), s.DB, userID(c), nodeIDs, contentKeys)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			fail(c, http.StatusNotFound, "one or more media items were not found")
@@ -116,14 +105,15 @@ func (s *Server) setMediaFavoriteBatch(c *gin.Context) {
 
 func (s *Server) addMediaTagsBatch(c *gin.Context) {
 	var input struct {
-		NodeIDs []uint64 `json:"node_ids"`
-		Tags    []string `json:"tags"`
+		NodeIDs     []uint64 `json:"node_ids"`
+		ContentKeys []string `json:"content_keys"`
+		Tags        []string `json:"tags"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil || input.Tags == nil {
 		fail(c, http.StatusBadRequest, "node_ids and tags are required")
 		return
 	}
-	nodeIDs, err := normalizeMediaBatchNodeIDs(input.NodeIDs)
+	nodeIDs, contentKeys, err := normalizeMediaContentSelection(input.NodeIDs, input.ContentKeys, mediaBatchMaxItems)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
@@ -137,7 +127,7 @@ func (s *Server) addMediaTagsBatch(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "at least one tag is required")
 		return
 	}
-	assets, err := s.mediaBatchAssets(c.Request.Context(), userID(c), nodeIDs)
+	assets, err := mediaAssetsForSelection(c.Request.Context(), s.DB, userID(c), nodeIDs, contentKeys)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			fail(c, http.StatusNotFound, "one or more media items were not found")

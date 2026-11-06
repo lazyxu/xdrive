@@ -107,7 +107,7 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.PhotoEditRecipe{}, &meta.PhotoAlbumFolder{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 		&meta.PhotoAnalysisState{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{},

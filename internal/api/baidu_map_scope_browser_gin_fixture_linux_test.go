@@ -107,7 +107,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		// Mirror those empty production tables in this disposable fixture.
 		&meta.Source{}, &meta.SourceItem{},
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
-		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoCollectionAsset{},
 		// GET /media/items/:id includes Owner-fenced OCR state, even when
 		// this fixture has no analysis results. Real tables must exist so a

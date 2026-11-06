@@ -58,7 +58,7 @@ func TestMediaMemoriesRecentAndOnThisDayProjectionMatchesDetailRange(t *testing.
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{},
 		&meta.MediaMetadata{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoMetadata{}, &meta.PhotoResource{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoEditRecipe{}, &meta.PhotoMetadata{}, &meta.PhotoResource{},
 		&meta.PhotoPlaceLabel{},
 	); err != nil {
 		t.Fatal(err)

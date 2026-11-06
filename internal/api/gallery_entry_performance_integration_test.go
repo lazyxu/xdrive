@@ -50,7 +50,7 @@ func TestGalleryEntryEndpointsPerformance100K(t *testing.T) {
 		&meta.SourceItem{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{},
 		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoPlaceLabel{},
-		&meta.PhotoAsset{}, &meta.PhotoMetadata{}, &meta.PhotoResource{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoMetadata{}, &meta.PhotoResource{},
 		&meta.PhotoEditRecipe{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 	); err != nil {
 		t.Fatal(err)

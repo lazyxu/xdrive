@@ -56,7 +56,7 @@ func TestMediaGalleryIndexStatusOwnerScopeAndIncompleteEvidence(t *testing.T) {
 	sqlDB.SetMaxIdleConns(1)
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{},
-		&meta.MediaMetadata{}, &meta.PhotoAsset{},
+		&meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 	); err != nil {
 		t.Fatal(err)
 	}

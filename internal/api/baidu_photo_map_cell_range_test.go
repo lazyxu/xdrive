@@ -159,7 +159,7 @@ func TestBaiduCellRangeOriginalGalleryScopeAndRevocation(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{},
 		&meta.MediaMetadata{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoResource{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoEditRecipe{}, &meta.PhotoResource{},
 		&meta.PhotoMetadata{}, &meta.BaiduPhotoMapConsent{},
 		&meta.BaiduPhotoMapPosition{},
 	); err != nil {

@@ -92,7 +92,7 @@ func TestBaiduMapCoverageReasonsReadOnlyOwnerAndRevisionPostgres(t *testing.T) {
 	sqlDB.SetMaxIdleConns(0)
 	defer sqlDB.Close()
 	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.MediaMetadata{},
-		&meta.PhotoAsset{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{}); err != nil {
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{}); err != nil {
 		t.Fatal(err)
 	}
 	owner := meta.User{Username: "map-reasons-owner", PasswordHash: "unused",

@@ -4,10 +4,12 @@ import (
 	"context"
 
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photoasset"
 )
 
 type mediaAssetPresentation struct {
 	ID          uint64
+	ContentKey  string
 	Kind        string
 	Favorite    bool
 	Tags        []string
@@ -34,6 +36,35 @@ func (s *Server) photoAssetPresentations(
 		Find(&assets).Error; err != nil {
 		return nil, err
 	}
+	type occurrenceAlias struct{ NodeID, CanonicalNodeID uint64 }
+	var aliases []occurrenceAlias
+	if len(assets) < len(primaryNodeIDs) {
+		if err := s.DB.WithContext(ctx).Table("xd_photo_asset_occurrences AS po").
+			Select("po.primary_node_id AS node_id, pa.primary_node_id AS canonical_node_id").
+			Joins("JOIN xd_photo_assets pa ON pa.id = po.asset_id AND pa.owner_id = po.owner_id").
+			Where("po.owner_id = ? AND po.primary_node_id IN ? AND po.primary_node_id <> pa.primary_node_id", uid, primaryNodeIDs).
+			Where(photoasset.CurrentOccurrenceBindingSQL("po")).Where(photoasset.CurrentContentBindingSQL("pa")).Scan(&aliases).Error; err != nil {
+			return nil, err
+		}
+		seen := make(map[uint64]bool)
+		for _, asset := range assets {
+			seen[asset.PrimaryNodeID] = true
+		}
+		var extraIDs []uint64
+		for _, alias := range aliases {
+			if !seen[alias.CanonicalNodeID] {
+				seen[alias.CanonicalNodeID] = true
+				extraIDs = append(extraIDs, alias.CanonicalNodeID)
+			}
+		}
+		if len(extraIDs) != 0 {
+			var extra []meta.PhotoAsset
+			if err := s.DB.WithContext(ctx).Where("owner_id = ? AND primary_node_id IN ?", uid, extraIDs).Find(&extra).Error; err != nil {
+				return nil, err
+			}
+			assets = append(assets, extra...)
+		}
+	}
 	if len(assets) == 0 {
 		return out, nil
 	}
@@ -43,7 +74,7 @@ func (s *Server) photoAssetPresentations(
 	for _, asset := range assets {
 		assetIDs = append(assetIDs, asset.ID)
 		primaryByAsset[asset.ID] = asset.PrimaryNodeID
-		out[asset.PrimaryNodeID] = mediaAssetPresentation{ID: asset.ID, Kind: asset.Kind}
+		out[asset.PrimaryNodeID] = mediaAssetPresentation{ID: asset.ID, Kind: asset.Kind, ContentKey: asset.ContentKey}
 	}
 
 	var assetMetadata []meta.PhotoMetadata
@@ -123,6 +154,20 @@ func (s *Server) photoAssetPresentations(
 			Size:      resource.Size,
 		})
 		out[primaryNodeID] = presentation
+	}
+	for _, alias := range aliases {
+		if value, ok := out[alias.CanonicalNodeID]; ok {
+			out[alias.NodeID] = value
+		}
+	}
+	requested := make(map[uint64]bool, len(primaryNodeIDs))
+	for _, id := range primaryNodeIDs {
+		requested[id] = true
+	}
+	for id := range out {
+		if !requested[id] {
+			delete(out, id)
+		}
 	}
 	return out, nil
 }

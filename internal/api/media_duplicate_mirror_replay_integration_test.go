@@ -30,7 +30,7 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 	sqlDB.SetMaxOpenConns(2)
 	sqlDB.SetMaxIdleConns(1)
 	if err := db.AutoMigrate(
-		&meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoResource{},
+		&meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoResource{},
 		&meta.PhotoMetadata{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.ClientDevice{},
