@@ -3,7 +3,7 @@ const assert=require('node:assert/strict')
 const {randomUUID}=require('node:crypto')
 const {app,BrowserWindow,session}=require('electron')
 const {privateLANOrigin,verifiedLANRootPEM}=require('../dist/main/lan_root_auto.cjs')
-const {placesGuestIPRequestAllowed,verifyDesktopPlacesLANCertificate}=
+const {readTrustedPlacesLANPeerFingerprint,placesGuestIPRequestAllowed,verifyDesktopPlacesLANCertificate}=
   require('../dist/main/places_guest_lan_tls.cjs')
 app.disableHardwareAcceleration()
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))
@@ -40,18 +40,30 @@ async function check(){
     source:'user-approved-lan',root_pem:input.ca,sha256:ca.sha256}
   const partition='xdrive-places-web-'+randomUUID()
   const isolated=session.fromPartition(partition,{cache:false})
-  let current=true,verifications=0,blocked=0
+  let current=true,verifications=0,blocked=0,allowedRequests=0
+  const tlsDecisions=[]
+  const observedCertCodes=[]
   isolated.setPermissionRequestHandler((_guest,_permission,callback)=>callback(false))
   isolated.setPermissionCheckHandler(()=>false)
   isolated.webRequest.onBeforeRequest((details,callback)=>{
     const allowed=current&&placesGuestIPRequestAllowed(details.url,origin)
     if(!allowed)blocked++
+    else allowedRequests++
     callback({cancel:!allowed})
   })
   isolated.setCertificateVerifyProc((request,callback)=>{
     verifications++
+    // Record only numeric TLS verification codes and hostname match. Never
+    // log certificate bytes, signed URLs or the Owner's browser secret.
+    observedCertCodes.push({
+      errorCode:request.errorCode,
+      hostnameMatched:request.hostname===target.ip,
+      pemPresent:typeof request.certificate?.data==='string',
+    })
     void verifyDesktopPlacesLANCertificate(request,pin,origin,()=>current)
-      .then(callback,()=>callback(-2))
+      .then(code=>{tlsDecisions.push(code);callback(code)},()=>{
+        tlsDecisions.push(-2);callback(-2)
+      })
   })
   // Actual Electron network service redeems the *real Agent/PG* ticket and
   // receives a real server-issued HttpOnly browser refresh Cookie.
@@ -59,7 +71,23 @@ async function check(){
   const opts={method:'POST',credentials:'include',redirect:'error',cache:'no-store',
     headers:{Origin:origin,'Content-Type':'application/json'},
     body:JSON.stringify({ticket:input.ticket})}
-  const redeemed=await deadline(isolated.fetch(endpoint,opts),20000,'one-use native exchange')
+  const nativePeer=await readTrustedPlacesLANPeerFingerprint(
+    target.ip,target.port,input.ca)
+  assert.ok(nativePeer,'strict Node TLS/CA/IP-SAN preflight could not verify synthetic HTTPS server')
+  // The real Electron network service must accept the *same* peer that the
+  // native pin validation accepts. No TLS bypass or substitute Node POST.
+  let redeemed
+  try{
+    redeemed=await deadline(isolated.fetch(endpoint,opts),20000,'one-use native exchange')
+  }catch(error){
+    throw Error('real Electron session.fetch redemption failed: '+
+      String(error?.code||error?.message||'network')+
+      ' allowed='+allowedRequests+' blocked='+blocked+
+      ' certChecks='+verifications+
+      ' certErrors='+JSON.stringify(observedCertCodes.slice(0,5))+
+      ' certDecisions='+JSON.stringify(tlsDecisions.slice(0,5))+
+      ' strictNodePeer=true')
+  }
   assert.equal(redeemed.status,200)
   const receipt=await redeemed.json()
   assert.equal(receipt.username,input.owner)
