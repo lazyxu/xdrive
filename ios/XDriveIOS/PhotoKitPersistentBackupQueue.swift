@@ -12,6 +12,7 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         case unauthorizedOrChanged
         case requiresExplicitBaseline
         case invalidArchivedToken
+        case historyUnavailable
         case invalidReplayLimit
     }
 
@@ -236,38 +237,69 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         ) else { throw Failure.invalidArchivedToken }
         // Apple's fetch result is a Sequence of change records; do not flatten
         // 100k asset identifiers into a new unbounded in-memory Swift array.
-        let changes = try PHPhotoLibrary.shared().fetchPersistentChanges(since: token)
+        let changes: PHPersistentChangeFetchResult
+        do {
+            changes = try PHPhotoLibrary.shared().fetchPersistentChanges(since: token)
+        } catch PHPhotosError.persistentChangeTokenExpired,
+                PHPhotosError.persistentChangeDetailsUnavailable {
+            throw Failure.historyUnavailable
+        }
         var previousToken = original.token
         var progress = Replay()
         for change in changes {
-            try Task.checkCancellation()
-            try verifyAuthorization(stillMatches: epoch)
-            let details = try change.changeDetails(for: .asset)
-            let nextToken = try NSKeyedArchiver.archivedData(
-                withRootObject: change.changeToken, requiringSecureCoding: true
-            )
-            // Only a verified, unchanged authorized library generation may
-            // write the next token. The SQLite store transaction ensures a
-            // crash never moves it ahead of queued IDs.
-            try verifyAuthorization(stillMatches: epoch)
-            let applied = try store.apply(
-                inserted: details.insertedLocalIdentifiers,
-                updated: details.updatedLocalIdentifiers,
-                deleted: details.deletedLocalIdentifiers,
-                expectedToken: previousToken, nextToken: nextToken,
-                authorization: epoch.authorization
-            )
-            previousToken = nextToken
-            progress.inserted += applied.inserted
-            progress.updated += applied.updated
-            progress.deleted += applied.deleted
-            progress.events += 1
-            // The saved per-record token is the next replay checkpoint.
-            // Never traverse an unbounded change history in one auto tick.
-            if progress.events >= maximumEvents { break }
+            do {
+                try Task.checkCancellation()
+                try verifyAuthorization(stillMatches: epoch)
+                let details = try change.changeDetails(for: .asset)
+                let nextToken = try NSKeyedArchiver.archivedData(
+                    withRootObject: change.changeToken, requiringSecureCoding: true
+                )
+                // Only a verified, unchanged authorized library generation may
+                // write the next token. The SQLite store transaction ensures a
+                // crash never moves it ahead of queued IDs.
+                try verifyAuthorization(stillMatches: epoch)
+                let applied = try store.apply(
+                    inserted: details.insertedLocalIdentifiers,
+                    updated: details.updatedLocalIdentifiers,
+                    deleted: details.deletedLocalIdentifiers,
+                    expectedToken: previousToken, nextToken: nextToken,
+                    authorization: epoch.authorization
+                )
+                previousToken = nextToken
+                progress.inserted += applied.inserted
+                progress.updated += applied.updated
+                progress.deleted += applied.deleted
+                progress.events += 1
+                // The saved per-record token is the next replay checkpoint.
+                // Never traverse an unbounded change history in one auto tick.
+                if progress.events >= maximumEvents { break }
+            } catch PHPhotosError.persistentChangeDetailsUnavailable {
+                throw Failure.historyUnavailable
+            }
         }
         try verifyAuthorization(stillMatches: epoch)
         return progress
+    }
+
+    /// Commit a new PhotoKit history checkpoint only after the caller has
+    /// completed a clean full-library pass and every supported original was
+    /// checked through the shared receipt verifier. The current PhotoKit
+    /// generation must still be exactly the one that was scanned.
+    func completeFullLibraryReconciliation(
+        owner: XDriveNativeOwnerRoot,
+        expectedToken: Data,
+        expectedAuthorization: Int
+    ) throws {
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard epoch.authorization == expectedAuthorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(
+                expectedToken, as: epoch.token
+              ) else { throw Failure.unauthorizedOrChanged }
+        try store.completeFullReconciliation(
+            token: epoch.serialized, authorization: epoch.authorization
+        )
+        try verifyAuthorization(stillMatches: epoch)
     }
 
     private func verifyOwner(_ owner: XDriveNativeOwnerRoot) throws {
