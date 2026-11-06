@@ -109,6 +109,7 @@ read_snapshot() {
   return 1
 }
 
+echo "[xDrive] release phase=probe-existing-snapshot"
 read_snapshot || exit 1
 old_release_exists="$snapshot_exists"
 old_description=""
@@ -190,6 +191,7 @@ echo "[xDrive] all $# GitLab package files SHA-256 verified"
 # Create the initial floating Release only after complete package verification.
 # Subsequent runs keep the old Release and update each existing asset link.
 if [ "$old_release_exists" = 0 ]; then
+  echo "[xDrive] release phase=create-initial-snapshot"
   # Use the Releases REST endpoint directly: glab release create may perform
   # additional implicit tag/release calls that cannot be distinguished from a
   # transient 500. The minimal, asset-free POST is read back before use.
@@ -272,6 +274,7 @@ trap on_exit 0
 # Links are paginated (20 by default). Read every page both before mutation
 # and before promotion; a failed later page must abort, never yield a partial
 # inventory that creates duplicate names or falsely reports missing assets.
+echo "[xDrive] release phase=stage-verified-links"
 existing_links="$(glab_api_jq '.[] | "\(.name)\t\(.id)\t\(.url)"' --paginate "$release_endpoint/assets/links")"
 for name in "$@"; do
   url="${CI_API_V4_URL%/}/$package_endpoint/$name"
@@ -312,6 +315,7 @@ if [ "$current_description" != "$old_description" ]; then
   exit 1
 fi
 # Publish the verified commit marker LAST, after all Package SHA-256s and URLs.
+echo "[xDrive] release phase=commit-verified-marker"
 glab api --method PUT "$release_endpoint" -f "name=$release_name" -f "description=$release_notes" >/dev/null
 committed=1
 read_snapshot || exit 1
