@@ -53,7 +53,10 @@ test('sliding range preserves Viewer return and bounded selection, and owner/nav
 
 
 test('bounded Files window retains only 200 revision snapshots while Server verifies all writes', () => {
-  assert.match(browser, /\.onChange\(of: model\.entries\.map\(\\\.id\)\) \{ _ in/)
+  // The observer must see changed Node/revision/parent even when IDs remain
+  // unchanged across a successful same-scope refresh.
+  assert.match(browser, /\.onChange\(of: model\.entries\.map\(\\\.node\)\) \{ _ in/)
+  assert.doesNotMatch(browser, /\.onChange\(of: model\.entries\.map\(\\\.id\)\) \{ _ in/)
   assert.doesNotMatch(browser, /selectedIDs\.formIntersection\(visibleIDs\)/)
   assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(/)
   assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.conflictingIDs\(/)
