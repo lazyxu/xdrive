@@ -70,7 +70,12 @@ test('filtered Desktop HTTPS maps do not silently widen to all-library positions
   const map=read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
   const web=read('web/src/App.tsx')
   assert.match(map,/xDriveNormalizeBaiduMapPhotoScope\(embedScopeRef.current\)/)
-  assert.match(map,/void embedPrepareRef.current\(scope\)\.then\(ok=>/)
+  // The production prepare path is deadline- and cancellation-fenced;
+  // never reintroduce an unbounded .then() on an Owner-scoped grant.
+  assert.match(map,/return embedPrepareRef\.current!\(scope\)/)
+  assert.match(map,/void xDrivePlacesRequestWithDeadline\(/)
+  assert.match(map,/request,controller\.signal,XDRIVE_PLACES_EMBED_PREPARE_TIMEOUT_MS/)
+  assert.match(map,/if\(!active \|\| controller\.signal\.aborted\)return/)
   assert.match(map,/setEmbedPrepared\(\{key:embedIdentity,state:'denied'\}\)/)
   assert.match(web,/initialMapPhotoScope=\{placesEmbedRequested \? placesEmbedScope/)
   assert.match(web,/placesEmbedStatus!=='ready' \|\| !placesEmbedScope/)

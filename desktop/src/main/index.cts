@@ -346,6 +346,9 @@ let desktopPlacesPending:{
   owner:string;origin:string;scope:XDriveDesktopBaiduMapScope
   expiresAt:number;windowID:number;partition:string
 }|null=null
+// A superseded preparation, route change or system sleep must never commit
+// an old Owner/scope into the next one-use HTTPS guest attach.
+let desktopPlacesPrepareRevision=0
 // The non-isolated Web map runs in an Electron HTTPS guest, never the local
 // Desktop file:// renderer. Seed its memory-only HttpOnly browser cookie from
 // a verified Desktop sign-in in Main, without exposing passwords or Agent
@@ -638,6 +641,7 @@ async function ensureDesktopPlacesWebAuth(identity: DesktopPlacesWebIdentity):
   } catch { return false }
 }
 function closeDesktopPlacesGuests() {
+  ++desktopPlacesPrepareRevision
   resetDesktopPlacesWebAuth()
   desktopPlacesPending=null
   for (const id of desktopPlacesGuests.keys()) {
@@ -3287,15 +3291,24 @@ function registerIPCHandlers() {
   // Source is the verified local file Renderer, not HTTPS or a map Child.
   // Preparation is one-use per guest attach and bound to this Desktop Owner.
   ipcMain.handle('desktop:prepare-places-embed',async (event,rawScope:unknown)=>{
+    // An untrusted guest or stale IPC sender must NEVER cancel a pending,
+    // currently authorized one-use Owner/scope attach from the local host.
+    // Authenticate the caller BEFORE advancing the preparation generation.
+    if (!mainWindow || mainWindow.isDestroyed() ||
+        event.sender!==mainWindow.webContents ||
+        event.senderFrame!==mainWindow.webContents.mainFrame) {
+      return {ok:false,error:{code:'map_scope_denied',
+        message:'当前 Desktop 地图范围或账户不受信任。'}}
+    }
+    const prepareRevision=++desktopPlacesPrepareRevision
+    // Last trusted Renderer prepare owns the pending one-use admission.
+    // The previous WebView cannot attach an older filtered scope during retry.
+    desktopPlacesPending=null
     const status=agentState.status
     const target=xDriveResolveSecureBaiduMapTarget(status?.server)
     const scope=xDriveParseDesktopBaiduMapScope(rawScope)
-    if (!mainWindow || mainWindow.isDestroyed() ||
-        event.sender!==mainWindow.webContents ||
-        event.senderFrame!==mainWindow.webContents.mainFrame ||
-        !agentState.connected || !status?.configured ||
+    if (!agentState.connected || !status?.configured ||
         !status.username || !target || !scope) {
-      desktopPlacesPending=null
       return {ok:false,error:{code:'map_scope_denied',
         message:'当前 Desktop 地图范围或账户不受信任。'}}
     }
@@ -3306,10 +3319,12 @@ function registerIPCHandlers() {
     const ready=await ensureDesktopPlacesWebAuth({
       origin:target.origin,owner:status.username,
     })
-    if (!ready || !mainWindow || mainWindow.isDestroyed() ||
+    if (!ready || prepareRevision!==desktopPlacesPrepareRevision ||
+        !mainWindow || mainWindow.isDestroyed() ||
         mainWindow.webContents.id!==hostID ||
         !desktopPlacesWebOwnerStillCurrent({origin:target.origin,owner:status.username})) {
-      desktopPlacesPending=null
+      // A late request cannot erase a newer successful Owner/scope receipt.
+      if(prepareRevision===desktopPlacesPrepareRevision)desktopPlacesPending=null
       return {ok:false,error:{code:'map_browser_session_unavailable',
         message:'无法建立当前账户的 Web 地图会话；请检查 HTTPS 连接或重试。'}}
     }
@@ -9378,7 +9393,15 @@ if (!primaryInstance) {
     }
     restartDesktopMonitors()
     startupCheckpoint('monitors_started')
+    powerMonitor.on('suspend', () => {
+      // Discard unconsumed map attach authority before the OS freezes timers;
+      // never allow a pre-sleep promise to admit a post-resume guest.
+      ++desktopPlacesPrepareRevision
+      desktopPlacesPending=null
+    })
     powerMonitor.on('resume', () => {
+      ++desktopPlacesPrepareRevision
+      desktopPlacesPending=null
       restartDesktopMonitors()
     })
     if (startupDesktopAction) await performDesktopShortcutAction(startupDesktopAction)

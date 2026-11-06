@@ -30,6 +30,10 @@ import {
   xDriveEmptyBaiduMapPhotoScope,
 } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-scope'
+import {
+  xDriveReadBaiduMapVisualScope, xDriveRememberBaiduMapVisualScope,
+  xDriveBaiduMapViewerReturnScopeMatches,
+} from '../media-gallery-baidu-map-visual-state'
 import { xDriveGalleryMapEntryScope } from '../media-gallery-baidu-map-entry'
 import { xDriveResolveBaiduOwnerPhotoFocusCamera } from '../media-gallery-baidu-photo-focus-camera'
 import type { XDrivePhotoFocusOwnerState } from '../media-gallery-baidu-photo-focus-camera'
@@ -799,14 +803,20 @@ export function XDriveMediaGalleryPage({
     owner:string;value:XDriveBaiduMapPhotoScope
   }>(()=>({owner:preferenceScope,
     value:(initialMapPhotoScope ? xDriveCopyBaiduMapPhotoScope(initialMapPhotoScope) : null) ??
+      xDriveReadBaiduMapVisualScope(preferenceScope) ??
       xDriveReadBaiduCellReturn(preferenceScope)?.photoScope ??
       xDriveEmptyBaiduMapPhotoScope}))
   const mapPhotoScope = baiduPhotoScopeOwner.owner===preferenceScope
     ? baiduPhotoScopeOwner.value
-    : (xDriveReadBaiduCellReturn(preferenceScope)?.photoScope ??
+    : (xDriveReadBaiduMapVisualScope(preferenceScope) ??
+        xDriveReadBaiduCellReturn(preferenceScope)?.photoScope ??
         xDriveEmptyBaiduMapPhotoScope)
   const mapPhotoScopeRef = useRef(mapPhotoScope)
   mapPhotoScopeRef.current=mapPhotoScope
+  // An already-queued callback from another Owner must never write into the
+  // new Owner's map filters or return-intent session.
+  const mapPhotoScopeCurrentOwnerRef = useRef(preferenceScope)
+  mapPhotoScopeCurrentOwnerRef.current=preferenceScope
   // Persisted in-memory only after Owner Range authorization, not from SDK.
   const [baiduCellOwner, setBaiduCellOwner] = useState<{
     scope: string; selection?: MediaBaiduNativeCellSelection
@@ -1015,6 +1025,7 @@ export function XDriveMediaGalleryPage({
   const nativeCellOpenAbort = useRef<AbortController | null>(null)
   const galleryPhotoFocusAbort = useRef<AbortController | null>(null)
   const changeBaiduMapPhotoScope=useCallback((input:XDriveBaiduMapPhotoScope)=>{
+    if (mapPhotoScopeCurrentOwnerRef.current!==preferenceScope) return
     const next=xDriveCopyBaiduMapPhotoScope(input)
     if (!next || xDriveBaiduMapPhotoScopeKey(next)===
         xDriveBaiduMapPhotoScopeKey(mapPhotoScopeRef.current))return
@@ -1025,8 +1036,15 @@ export function XDriveMediaGalleryPage({
     xDriveClearBaiduViewportReturn(preferenceScope)
     setBaiduCellOwner({scope:preferenceScope,selection:undefined})
     mapPhotoScopeRef.current=next
+    // Memory-only visual return hint, not authentication or Cell membership.
+    // Viewer/Back remounts can preserve filters without widening to all photos.
+    xDriveRememberBaiduMapVisualScope(preferenceScope,next)
     setBaiduPhotoScopeOwner({owner:preferenceScope,value:next})
   },[preferenceScope])
+  useEffect(()=>{
+    if (section==='places' && mapPhotoScopeCurrentOwnerRef.current===preferenceScope)
+      xDriveRememberBaiduMapVisualScope(preferenceScope,mapPhotoScope)
+  },[section,preferenceScope,mapPhotoScope])
   useEffect(() => () => {
     firstContentRangeAbort.current?.abort()
     firstContentRangeAbort.current = null
@@ -2634,7 +2652,9 @@ export function XDriveMediaGalleryPage({
     xDriveClearBaiduViewportViewerReturn(preferenceScope)
     const approved=xDriveCopyBaiduMapPhotoScope(
       returning?.photoScope ?? fromMap ?? mapPhotoScopeRef.current)
-    if(!approved || (!returning && fromMap &&
+    if(!approved || (returning &&
+      !xDriveBaiduMapViewerReturnScopeMatches(mapPhotoScopeRef.current,approved)) ||
+      (!returning && fromMap &&
       xDriveBaiduMapPhotoScopeKey(fromMap)!==
         xDriveBaiduMapPhotoScopeKey(mapPhotoScopeRef.current)))return
     const sort = returning?.sort ?? {
@@ -2823,7 +2843,9 @@ export function XDriveMediaGalleryPage({
     const bounds={...raw}
     const approved=xDriveCopyBaiduMapPhotoScope(
       returning?.photoScope ?? fromMap ?? mapPhotoScopeRef.current)
-    if(!approved || (!returning && fromMap &&
+    if(!approved || (returning &&
+      !xDriveBaiduMapViewerReturnScopeMatches(mapPhotoScopeRef.current,approved)) ||
+      (!returning && fromMap &&
       xDriveBaiduMapPhotoScopeKey(fromMap)!==
         xDriveBaiduMapPhotoScopeKey(mapPhotoScopeRef.current)))return
     const sort=returning?.sort ?? {

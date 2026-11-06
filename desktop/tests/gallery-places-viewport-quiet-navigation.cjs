@@ -29,6 +29,19 @@ const admissionModule = {exports:{}}
 new Function('module','exports',compiledAdmission)(
   admissionModule,admissionModule.exports)
 const realDesktopPlacesAdmission = admissionModule.exports
+// Compile and exercise the SAME deadline/cancellation helper used by the
+// runtime map rather than silently substituting an inert request stub.
+const lifecycleFile=path.join(root,'ui/shared/src/media-gallery-places-request-lifecycle.ts')
+const lifecycleCompiled=ts.transpileModule(fs.readFileSync(lifecycleFile,'utf8'),{
+  fileName:lifecycleFile,reportDiagnostics:true,
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+})
+assert.deepEqual((lifecycleCompiled.diagnostics||[])
+  .filter(x=>x.category===ts.DiagnosticCategory.Error),[])
+const lifecycleModule={exports:{}}
+new Function('module','exports',lifecycleCompiled.outputText)(
+  lifecycleModule,lifecycleModule.exports)
+const realPlacesLifecycle=lifecycleModule.exports
 
 function loadSharedMap() {
   const output = ts.transpileModule(original, { compilerOptions: {
@@ -59,8 +72,8 @@ function loadSharedMap() {
       xDriveValidBaiduNativeCameraSnapshot: camera => Boolean(camera &&
         camera.coordinate_space === 'bd09ll' && Number.isFinite(camera.latitude) &&
         Math.abs(camera.latitude) <= 85 && Number.isFinite(camera.longitude) &&
-        Math.abs(camera.longitude) <= 180 && Number.isInteger(camera.zoom) &&
-        camera.zoom >= 3 && camera.zoom <= 18),
+        Math.abs(camera.longitude) <= 180 && Number.isFinite(camera.zoom) &&
+        camera.zoom >= 3 && camera.zoom <= 21),
     },
     '../media-gallery-baidu-diagnostics': {
       xDriveRecordBaiduMapDiagnostic: () => {},
@@ -77,6 +90,7 @@ function loadSharedMap() {
     // Keep the real sandboxed guest admission state classifier available when
     // compiling the shared map component in this React test harness.
     '../desktop-places-embed-admission': realDesktopPlacesAdmission,
+    '../media-gallery-places-request-lifecycle': realPlacesLifecycle,
     './MediaGalleryBaiduPrototypeMap': {
       XDriveMediaGalleryBaiduPrototypeMap: props =>
         React.createElement('old-prototype', props),
@@ -96,10 +110,26 @@ function loadSharedMap() {
   mod._compile(output, mapFile)
   return mod.exports.XDriveMediaGalleryPlacesMap
 }
+function fakeEventTarget(){
+  const listeners=new Map()
+  return {
+    addEventListener(type,listener){
+      let active=listeners.get(type)
+      if(!active){active=new Set();listeners.set(type,active)}
+      active.add(listener)
+    },
+    removeEventListener(type,listener){listeners.get(type)?.delete(listener)},
+    dispatchEvent(event){
+      for(const listener of [...(listeners.get(event.type)||[])])listener(event)
+      return true
+    },
+  }
+}
 global.window = {
   location: { href: 'https://gallery.example.test/gallery', replace(href) { this.href = href } },
-  addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout,
+  ...fakeEventTarget(), setTimeout, clearTimeout, setInterval, clearInterval,
 }
+global.document={...fakeEventTarget(),visibilityState:'visible'}
 const PlacesMap = loadSharedMap()
 const place = { id:'place:40:-120', name:'GPS Photo Place',
   sample_latitude:40, sample_longitude:-120 }
@@ -405,6 +435,102 @@ test('camera gesture and camera clear cancel in-flight ticket in either SDK Host
     assert.equal(issuedSignal.aborted,true,from+' '+action)
     await act(async()=>{completeTicket(token);await Promise.resolve();await Promise.resolve()})
     assert.equal(global.window.location.href,before)
+    await act(async()=>view.unmount())
+  }
+})
+
+
+test('P1-08 mounted map: double-click coalesces a grant, OS hide aborts it and late reply never redirects',async()=>{
+  global.window.location.href='https://gallery.example.test/gallery'
+  global.document.visibilityState='visible'
+  const initial=global.window.location.href
+  const scope={albumKey:'manual:Family',filters:{
+    sort_by:'added',sort_dir:'asc',favorite:true,asset_kind:'video',
+    captured_from:'2026-01-01',captured_to:'2026-11-06',time_zone:'Asia/Tokyo',
+  }}
+  const camera={coordinate_space:'bd09ll',latitude:39.91,longitude:116.37,zoom:12.5}
+  const token='a'.repeat(64)
+  let issued=0,resolveOld,oldSignal
+  const delayed=new Promise(resolve=>{resolveOld=resolve})
+  const view=await render({
+    mapPhotoScope:scope,diagnosticScope:'owner:Alice',
+    initialNativeCamera:camera,
+    onMapModeHandoff:(actual,next,signal,actualCamera)=>{
+      issued++
+      assert.deepEqual(actual,scope)
+      assert.equal(next,'isolated')
+      assert.deepEqual(actualCamera,camera)
+      oldSignal=signal
+      return delayed
+    },
+  })
+  try{
+    const button=view.root.findAll(node=>
+      node.props['data-xdrive-map-mode-isolated']!==undefined)[0]
+    await act(async()=>{
+      // Real event handlers may run before the first React state commit.
+      button.props.onClick()
+      button.props.onClick()
+      await Promise.resolve()
+    })
+    assert.equal(issued,1,'only one Server one-use ticket can be in flight')
+    assert.ok(oldSignal&&!oldSignal.aborted)
+    await act(async()=>{
+      global.document.visibilityState='hidden'
+      global.document.dispatchEvent({type:'visibilitychange'})
+      await Promise.resolve()
+    })
+    assert.equal(oldSignal.aborted,true,'hidden OS state must cancel the pending grant')
+    await act(async()=>{
+      resolveOld(token)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    assert.equal(global.window.location.href,initial)
+    assert.equal(new URL(initial).searchParams.has('places_map_handoff'),false)
+    // A resumed visible tab must allow a NEW explicit tap, not revive the
+    // old one-use grant. Its original filtered state and BD09 camera remain.
+    await act(async()=>{
+      global.document.visibilityState='visible'
+      global.document.dispatchEvent({type:'visibilitychange'})
+    })
+    assert.equal(global.window.location.href,initial)
+  } finally{
+    global.document.visibilityState='visible'
+    await act(async()=>view.unmount())
+  }
+})
+
+test('P1-09 mounted map: pagehide/Viewer ABA navigation invalidates in-flight camera and album handoff',async()=>{
+  global.document.visibilityState='visible'
+  const token='b'.repeat(64)
+  const original='https://gallery.example.test/#/app/gallery?section=places'
+  global.window.location.href=original
+  const scope={albumKey:'manual:Album',filters:{sort_by:'captured',sort_dir:'desc',favorite:false}}
+  let resolveTicket,issuedSignal
+  const pending=new Promise(resolve=>{resolveTicket=resolve})
+  const view=await render({
+    mapPhotoScope:scope,diagnosticScope:'owner:Alice',
+    onMapModeHandoff:(_scope,_target,signal)=>{issuedSignal=signal;return pending},
+  })
+  try{
+    const button=view.root.findAll(node=>node.props[
+      'data-xdrive-map-mode-isolated']!==undefined)[0]
+    await act(async()=>{button.props.onClick();await Promise.resolve()})
+    assert.equal(issuedSignal.aborted,false)
+    await act(async()=>{
+      global.window.location.href='https://gallery.example.test/#/app/viewer/photo'
+      global.window.dispatchEvent({type:'popstate'})
+      global.window.location.href=original
+      global.window.dispatchEvent({type:'popstate'})
+      global.window.dispatchEvent({type:'pagehide'})
+      await Promise.resolve()
+    })
+    assert.equal(issuedSignal.aborted,true)
+    await act(async()=>{resolveTicket(token);await Promise.resolve();await Promise.resolve()})
+    assert.equal(global.window.location.href,original)
+    assert.equal(new URL(original).searchParams.has('places_map_handoff'),false)
+  } finally{
     await act(async()=>view.unmount())
   }
 })
