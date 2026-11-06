@@ -41,14 +41,29 @@ struct XDriveIOSLivePreviewArchiveChecks {
             let after = Set(try manager.contentsOfDirectory(atPath: directory.path))
             precondition(before == after, "Left staging on invalid ZIP: \(name)")
         }
+        // ZIP64 local extras sit between the filename and actual data.
+        // Mutate the data byte, not the ZIP64 metadata, to exercise CRC.
+        let firstNameCount = Int(original[26]) | (Int(original[27]) << 8)
+        let firstExtraCount = Int(original[28]) | (Int(original[29]) << 8)
+        precondition(firstExtraCount == 20, "writer must use local ZIP64 size extras")
+        let firstExtra = 30 + firstNameCount
+        let firstPayload = firstExtra + firstExtraCount
+        precondition(firstPayload < original.count)
         var crcTampered = original
-        crcTampered[48] ^= 0x80
+        crcTampered[firstPayload] ^= 0x80
         try mustReject(crcTampered, name: "data-crc")
         try mustReject(Data(original.dropLast(22)), name: "missing-eocd")
         var zipBomb = original
-        // Uncompressed size header advertises 0x7FFFFFFF, impossible for source.
-        for i in 22..<26 { zipBomb[i] = 0x7f }
+        // Inflate authoritative ZIP64 size beyond the actual file.
+        zipBomb[firstExtra + 4 + 7] = 0x7f
         try mustReject(zipBomb, name: "oversized")
+        let locatorSignature = Data([0x50, 0x4b, 0x06, 0x07])
+        guard let locator = original.range(of: locatorSignature) else {
+            preconditionFailure("Missing ZIP64 locator")
+        }
+        var wrongLocator = original
+        wrongLocator[locator.lowerBound + 8] ^= 0x80
+        try mustReject(wrongLocator, name: "zip64-locator-offset")
         var escaped = original
         // The first entry name at offset 30 may not escape the private stage.
         escaped.replaceSubrange(30..<35, with: Data("../..".utf8))
@@ -58,6 +73,23 @@ struct XDriveIOSLivePreviewArchiveChecks {
             wrongManifest[range.lowerBound] = UInt8(ascii: "y")
             try mustReject(wrongManifest, name: "manifest")
         } else { preconditionFailure("Missing ZIP manifest") }
-        print("Live preview bounded STORE ZIP, CRC, manifest and clean failure: PASS")
+        // Previously uploaded Live archives used the product's strict
+        // three-entry ZIP32 STORE format. ZIP64 support must not break them.
+        let legacyFixture = """
+        UEsDBBQAAAgAAAAAIQBNbcpxAwAAAAMAAAAQAAAAbWVkaWEvc3RpbGwuaGVpYwIEBlBLAwQUAAAIAAAAACEAXHkHLgQAAAAEAAAAEAAAAG1lZGlhL21vdGlvbi5tb3YHCQsNUEsDBBQAAAgAAAAAIQDsw9DaDgEAAA4BAAANAAAAbWFuaWZlc3QuanNvbnsiZm9ybWF0IjoieGRyaXZlLWxpdmUtb3JpZ2luYWxzIiwidmVyc2lvbiI6MSwicmVzb3VyY2VzIjpbeyJyb2xlIjoic3RpbGwiLCJwYXRoIjoibWVkaWEvc3RpbGwuaGVpYyIsIm9yaWdpbmFsRmlsZW5hbWUiOiJMRUdBQ1kuSEVJQyIsImJ5dGVzIjozLCJjcmMzMiI6IjcxY2E2ZDRkIn0seyJyb2xlIjoibW90aW9uIiwicGF0aCI6Im1lZGlhL21vdGlvbi5tb3YiLCJvcmlnaW5hbEZpbGVuYW1lIjoiTEVHQUNZLk1PViIsImJ5dGVzIjo0LCJjcmMzMiI6IjJlMDc3OTVjIn1dfVBLAQIUABQAAAgAAAAAIQBNbcpxAwAAAAMAAAAQAAAAAAAAAAAAAAAAAAAAAABtZWRpYS9zdGlsbC5oZWljUEsBAhQAFAAACAAAAAAhAFx5By4EAAAABAAAABAAAAAAAAAAAAAAAAAAMQAAAG1lZGlhL21vdGlvbi5tb3ZQSwECFAAUAAAIAAAAACEA7MPQ2g4BAAAOAQAADQAAAAAAAAAAAAAAAABjAAAAbWFuaWZlc3QuanNvblBLBQYAAAAAAwADALcAAACcAQAAAAA=
+        """
+        guard let legacyBytes = Data(base64Encoded: legacyFixture) else {
+            preconditionFailure("Broken legacy ZIP32 fixture")
+        }
+        let legacyURL = directory.appendingPathComponent("legacy.zip")
+        try legacyBytes.write(to: legacyURL)
+        let legacy = try XDriveIOSLivePreviewArchive.extract(legacyURL, in: directory)
+        precondition(try Data(contentsOf: legacy.stillURL) == Data([2, 4, 6]))
+        precondition(try Data(contentsOf: legacy.motionURL) == Data([7, 9, 11, 13]))
+        legacy.discard()
+        var legacyCRC = legacyBytes
+        legacyCRC[30 + "media/still.heic".utf8.count] ^= 1
+        try mustReject(legacyCRC, name: "legacy-data-crc")
+        print("Live preview strict ZIP32/ZIP64 STORE, CRC, manifest and clean failure: PASS")
     }
 }
