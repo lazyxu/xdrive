@@ -314,10 +314,9 @@ if [ "$current_description" != "$old_description" ]; then
   echo "GitLab Release changed during link update; refusing promotion" >&2
   exit 1
 fi
-# Retire ONLY obsolete DSM Synology Photos Push Source Agent download links.
-# New package digests and required release links have already been verified.
-# Keep immutable old package bytes and unrelated/manual links untouched.
-# Record rollback before the first deletion; failure never advances the tag.
+# Retire only obsolete DSM Photos Push Source Agent download links.
+# The immutable package and all unrelated/manual links remain untouched.
+# All new artifact digests and required links were verified above.
 for obsolete_name in xdrive-source-agent-linux-amd64 xdrive-source-agent-linux-arm64 xdrive-source-agent-linux-armv7; do
   obsolete_row="$(printf '%s\n' "$active_links" | awk -F '\t' -v n="$obsolete_name" '$1 == n {print $0}')"
   obsolete_count="$(printf '%s\n' "$obsolete_row" | awk 'NF {n++} END {print n+0}')"
@@ -328,18 +327,7 @@ for obsolete_name in xdrive-source-agent-linux-amd64 xdrive-source-agent-linux-a
   [ "$obsolete_count" -eq 1 ] || continue
   obsolete_id="$(printf '%s\n' "$obsolete_row" | awk -F '\t' '{print $2}')"
   obsolete_url="$(printf '%s\n' "$obsolete_row" | awk -F '\t' '{print $3}')"
-  printf '%s' "$obsolete_id" | grep -Eq '^[0-9]+
-glab api --method PUT "$release_endpoint" -f "name=$release_name" -f "description=$release_notes" >/dev/null
-committed=1
-read_snapshot || exit 1
-[ "$snapshot_exists" = 1 ] || { echo "[xDrive] snapshot disappeared while updating links" >&2; exit 1; }
-current_description="$(printf '%s\n' "$snapshot_json" | jq -r '.description')"
-[ "$current_description" = "$release_notes" ] || {
-  echo "GitLab Release commit-marker read-back disagrees; inspect publication" >&2
-  exit 1
-}
-echo "Published GitLab snapshot $CI_COMMIT_SHA (verified assets, release links, commit marker)."
- || {
+  printf '%s' "$obsolete_id" | grep -Eq '^[0-9]+$' || {
     echo "invalid retired Release link ID: $obsolete_name" >&2
     exit 1
   }
@@ -347,10 +335,11 @@ echo "Published GitLab snapshot $CI_COMMIT_SHA (verified assets, release links, 
     http://*/"$obsolete_name"|https://*/"$obsolete_name") ;;
     *) echo "unrecognized retired Release link URL: $obsolete_name" >&2; exit 1 ;;
   esac
+  # If deleting or final verification fails, the exit trap recreates the link
+  # before any commit-marker change, preserving the previous public release.
   printf 'recreate\t%s\t%s\n' "$obsolete_name" "$obsolete_url" >> "$rollback_file"
   glab api --method DELETE "$release_endpoint/assets/links/$obsolete_id" >/dev/null
 done
-# Fetch all pages again: a delayed or failed deletion must fail closed.
 final_links="$(glab_api_jq '.[] | "\(.name)\t\(.id)\t\(.url)"' --paginate "$release_endpoint/assets/links")"
 for obsolete_name in xdrive-source-agent-linux-amd64 xdrive-source-agent-linux-arm64 xdrive-source-agent-linux-armv7; do
   if printf '%s\n' "$final_links" | awk -F '\t' -v n="$obsolete_name" '$1 == n {found=1} END {exit !found}'; then
