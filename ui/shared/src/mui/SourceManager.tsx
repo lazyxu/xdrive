@@ -693,6 +693,7 @@ export function XDriveSourceManager({
   const createSource = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const values = createValues
+    const option = externalSourceCreateOption(values.preset)
     let normalizedName = values.name.trim()
     const allowServerDeviceDefault = option.direction === 'push' && Boolean(adapter.suggestedPushName)
     const nameError = !normalizedName && !allowServerDeviceDefault
