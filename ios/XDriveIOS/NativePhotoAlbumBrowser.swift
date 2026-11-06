@@ -1180,6 +1180,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
     // Parent-owned route hint, never a PhotoKit album ID.
     @Binding var savedOffset: Int
     @State private var timelineOffset = 0
+    @State private var timelineMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var pendingRestoreOffset: Int?
     // Only the presently visible last collection may request the next range.
     // A former last item cannot resume a read after the list was appended.
@@ -1338,7 +1339,8 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
     private var albumTimelineEntry: some View {
         NavigationLink {
             XDriveIOSNativeLocalPhotoTimelineContainer(
-                savedOffset: $timelineOffset
+                savedOffset: $timelineOffset,
+                mediaFilter: $timelineMediaFilter
             )
         } label: {
             Label("按年、月、日浏览全部照片", systemImage: "calendar")
