@@ -19,7 +19,7 @@ import (
 // on Desktop local_folder Source/Root APIs.
 func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 	db, server, owner, other, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.Share{}, &meta.SyncRun{}); err != nil {
+	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.Share{}, &meta.SyncRun{}, &meta.UploadSession{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
