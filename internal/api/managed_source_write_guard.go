@@ -211,8 +211,15 @@ func trustedSourceRunTargetTx(ctx context.Context, tx *gorm.DB, c *gin.Context, 
 		return errManagedSourceWriteDenied
 	}
 	if source.Kind == yikeSourceKind {
-		if _, ok := managedYikeTargetAccountID(target.Name); !ok {
-			return errManagedSourceWriteDenied
+		// New Yike Sources own their exact user-named leaf and store the
+		// verified account identity in Source.ProviderAccountID. A legacy
+		// Source still needs the old uid_* proof; names alone grant nothing.
+		isNewManagedLeaf := source.TargetManaged && source.ProviderAccountID != "" &&
+			target.Name == source.Name
+		if !isNewManagedLeaf {
+			if _, ok := managedYikeTargetAccountID(target.Name); !ok {
+				return errManagedSourceWriteDenied
+			}
 		}
 	}
 	if _, err := managedSourceTargetAncestorIDsTx(tx, source, target); err != nil {

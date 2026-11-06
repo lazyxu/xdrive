@@ -287,15 +287,8 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 }
 
 func bindYikeLegacyCreatedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Source, target meta.Node, accountID string) error {
-	var duplicateCount int64
-	if err := tx.WithContext(ctx).Model(&meta.Source{}).
-		Where("owner_id = ? AND id <> ? AND kind = ? AND provider_account_id = ?",
-			source.OwnerID, source.ID, yikeSourceKind, accountID).
-		Count(&duplicateCount).Error; err != nil {
+	if err := requireYikeAccountNotClaimedTx(ctx, tx, *source, accountID); err != nil {
 		return err
-	}
-	if duplicateCount != 0 {
-		return errYikeAccountAlreadyConfigured
 	}
 	targetID := target.ID
 	updates := map[string]any{
@@ -330,15 +323,8 @@ func bindYikeProviderAccountTx(ctx context.Context, tx *gorm.DB, source *meta.So
 	if source.ProviderAccountID != "" && source.ProviderAccountID != accountID {
 		return errYikeAccountMismatch
 	}
-	var duplicateCount int64
-	if err := tx.WithContext(ctx).Model(&meta.Source{}).
-		Where("owner_id = ? AND id <> ? AND kind = ? AND provider_account_id = ?",
-			source.OwnerID, source.ID, yikeSourceKind, accountID).
-		Count(&duplicateCount).Error; err != nil {
+	if err := requireYikeAccountNotClaimedTx(ctx, tx, *source, accountID); err != nil {
 		return err
-	}
-	if duplicateCount != 0 {
-		return errYikeAccountAlreadyConfigured
 	}
 	updates := map[string]any{}
 	if source.ProviderAccountID != accountID {
@@ -370,6 +356,36 @@ func bindYikeProviderAccountTx(ctx context.Context, tx *gorm.DB, source *meta.So
 		source.Status = meta.SourceStatusActive
 	}
 	source.Revision++
+	return nil
+}
+
+// A pre-S10 Source may still encode its remote UID in the old target leaf
+// instead of ProviderAccountID. Include both representations when preventing
+// two Sources from binding the same remote account; archived Sources count.
+func requireYikeAccountNotClaimedTx(
+	ctx context.Context, tx *gorm.DB, source meta.Source, accountID string,
+) error {
+	var others []struct {
+		ProviderAccountID string
+		LeafName          string
+	}
+	if err := tx.WithContext(ctx).Table("xd_sources AS s").
+		Select("s.provider_account_id, COALESCE(n.name, '') AS leaf_name").
+		Joins("LEFT JOIN xd_nodes AS n ON n.id = s.target_node_id AND n.owner_id = s.owner_id").
+		Where("s.owner_id = ? AND s.id <> ? AND s.kind = ?",
+			source.OwnerID, source.ID, yikeSourceKind).
+		Scan(&others).Error; err != nil {
+		return err
+	}
+	for _, other := range others {
+		if other.ProviderAccountID == accountID {
+			return errYikeAccountAlreadyConfigured
+		}
+		if legacyID, ok := managedYikeTargetAccountID(other.LeafName); ok &&
+			strconv.FormatInt(legacyID, 10) == accountID {
+			return errYikeAccountAlreadyConfigured
+		}
+	}
 	return nil
 }
 
