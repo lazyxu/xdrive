@@ -224,7 +224,9 @@ func TestNonLocalSourceRunCancellationKeepsOwnerJWTBehavior(t *testing.T) {
 		t.Fatal(err)
 	}
 	dsmURL := fmt.Sprintf("/api/v1/sources/%d/runs/%s/cancel", dsm.ID, dsmRun.ID)
-	request(t, router, http.MethodPost, dsmURL, token, nil, http.StatusForbidden)
+	// A retired DSM Photos Push is permanently unavailable (410), not a live
+	// device-bound Source merely missing Owner authority (403).
+	request(t, router, http.MethodPost, dsmURL, token, nil, http.StatusGone)
 	var savedDSM meta.SyncRun
 	if err := db.Where("id = ?", dsmRun.ID).First(&savedDSM).Error; err != nil {
 		t.Fatal(err)

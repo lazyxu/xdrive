@@ -29,6 +29,10 @@ for source in "${sources[@]}"; do
   mkdir -p "$fixture/$(dirname "$source")"
   cp "$ROOT/$source" "$fixture/$source"
 done
+# The GitLab packaging job provides a staging directory before the release
+# generator runs. Reproduce that contract in the isolated fixture too; the
+# generator must still create and validate every staged asset itself.
+mkdir -p "$fixture/release"
 
 sha="0123456789abcdef0123456789abcdef01234567"
 (
