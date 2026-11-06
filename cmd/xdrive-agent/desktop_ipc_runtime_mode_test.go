@@ -42,7 +42,7 @@ func TestDesktopIPCRuntimeModeCapabilityAndEndpointFence(t *testing.T) {
 				}
 				seen[capability] = true
 			}
-			for _, required := range []string{"device-backup-local-common-batch", "device-backup-local-schedule", "status"} {
+			for _, required := range []string{"device-backup-local-common-batch", "device-backup-local-schedule", "device-backup-local-archive-restore", "status"} {
 				if !seen[required] {
 					t.Fatalf("%s is missing owning Backup capability %q", tc.mode, required)
 				}
@@ -144,6 +144,9 @@ func TestBackupOnlyStrictRouteAllowlist(t *testing.T) {
 		{http.MethodGet, "/v1/device-backups"},
 		{http.MethodGet, "/v1/device-backups/folders"},
 		{http.MethodDelete, "/v1/device-backups/local-bound"},
+		{http.MethodGet, "/v1/device-backups/local-archive-status"},
+		{http.MethodPost, "/v1/device-backups/local-archive"},
+		{http.MethodPost, "/v1/device-backups/local-restore"},
 	} {
 		if fullAgentOnlyRequest(request.method, request.path) {
 			t.Fatalf("original owning Backup IPC blocked: %s %s", request.method, request.path)

@@ -79,6 +79,9 @@ func restrictBackupOnlyEndpoints(backupOnly bool, next http.Handler) http.Handle
 // instead of inheriting backup-only access from a path prefix.
 var backupOnlyAllowedIPCRoutes = map[string]struct{}{
 	"DELETE /v1/device-backups/local-bound":                     {},
+	"GET /v1/device-backups/local-archive-status":               {},
+	"POST /v1/device-backups/local-archive":                     {},
+	"POST /v1/device-backups/local-restore":                     {},
 	"GET /v1/cloud/quota":                                       {},
 	"GET /v1/cloud/root":                                        {},
 	"GET /v1/cloud/owner-search":                                {},

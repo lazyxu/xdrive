@@ -523,6 +523,7 @@ export type AgentLocalBoundBackupSettings = {
   source_id: number
   name: string
   revision: number
+  status?: 'active' | 'paused' | 'archived'
   sync_mode: 'backup' | 'mirror'
   target_node_id?: number
   target_path?: string
@@ -704,6 +705,7 @@ export type AgentLocalBackupPreview = {
 
 export type AgentLocalBoundBackupRemoval = {
   source_id: number
+  status?: 'removed' | 'archived'
   local_grant_removed: boolean
 }
 
@@ -3853,6 +3855,23 @@ export class AgentIPCClient {
   localBoundBackupSettings(sourceID: number) {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentLocalBoundBackupSettings>('GET', `/v1/device-backups/local-source?${query.toString()}`)
+  }
+
+  localBoundBackupArchiveSettings(sourceID: number) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentLocalBoundBackupSettings>('GET', `/v1/device-backups/local-archive-status?${query.toString()}`)
+  }
+
+  archiveLocalBoundBackup(sourceID: number, revision: number) {
+    return this.request<AgentLocalBoundBackupSettings>('POST', '/v1/device-backups/local-archive', {
+      source_id: sourceID, revision,
+    })
+  }
+
+  restoreLocalBoundBackup(sourceID: number, revision: number) {
+    return this.request<AgentLocalBoundBackupSettings>('POST', '/v1/device-backups/local-restore', {
+      source_id: sourceID, revision,
+    })
   }
 
   renameLocalBoundBackup(sourceID: number, revision: number, name: string) {

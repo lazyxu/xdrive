@@ -164,7 +164,7 @@ func desktopIPCHelloCapabilities() []string {
 		capabilities = append(capabilities, "sync-activity-history")
 	}
 	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
-		capabilities = append(capabilities, "local-folder-root-grants", "device-backup-local-drafts", "device-backup-local-config", "device-backup-local-target", "device-backup-local-mode", "device-backup-local-rules", "device-backup-local-schedule", "device-backup-local-preview", "device-backup-local-snapshot", "device-backup-local-first-file", "device-backup-local-first-file-status", "device-backup-local-common-batch", "device-backup-local-common-recovery-review", "device-backup-local-delta", "device-backup-local-evidence", "device-backup-local-evidence-summary", "device-backup-local-evidence-preflight", "device-backup-local-remove")
+		capabilities = append(capabilities, "local-folder-root-grants", "device-backup-local-drafts", "device-backup-local-config", "device-backup-local-target", "device-backup-local-mode", "device-backup-local-rules", "device-backup-local-schedule", "device-backup-local-preview", "device-backup-local-snapshot", "device-backup-local-first-file", "device-backup-local-first-file-status", "device-backup-local-common-batch", "device-backup-local-common-recovery-review", "device-backup-local-delta", "device-backup-local-evidence", "device-backup-local-evidence-summary", "device-backup-local-evidence-preflight", "device-backup-local-remove", "device-backup-local-archive-restore")
 	}
 	if openWithSupportedPlatform() {
 		capabilities = append(capabilities, "open-with")
@@ -901,6 +901,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/device-backups/local-evidence-summary", h.localBoundBackupEvidenceSummary)
 	mux.HandleFunc("GET /v1/device-backups/local-evidence-preflight", h.localBoundBackupEvidencePreflight)
 	mux.HandleFunc("PATCH /v1/device-backups/local-schedule", h.setLocalBoundBackupSchedule)
+	mux.HandleFunc("GET /v1/device-backups/local-archive-status", h.localBoundBackupArchiveSettings)
+	mux.HandleFunc("POST /v1/device-backups/local-archive", h.archiveLocalBoundBackup)
+	mux.HandleFunc("POST /v1/device-backups/local-restore", h.restoreLocalBoundBackup)
 	mux.HandleFunc("DELETE /v1/device-backups/local-bound", h.removeLocalBoundBackup)
 	mux.HandleFunc("GET /v1/device-backups/runs", h.deviceBackupRuns)
 	mux.HandleFunc("POST /v1/device-backups/local-cli-preflight", h.preflightLocalBackupCLI)
