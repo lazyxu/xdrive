@@ -95,7 +95,49 @@ func (s *Server) clipboardVault(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard vault unavailable"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"salt": vault.Salt, "kdf": "PBKDF2-SHA256", "iterations": 310000})
+	c.JSON(http.StatusOK, clipboardVaultDTO(vault))
+}
+
+
+func clipboardVaultDTO(vault meta.ClipboardVault) gin.H {
+	return gin.H{
+		"salt": vault.Salt, "kdf": "PBKDF2-SHA256", "iterations": 310000,
+		"check_nonce": vault.CheckNonce, "check_ciphertext": vault.CheckCiphertext,
+	}
+}
+
+// First Browser sets an encrypted canary once; later Browsers must locally
+// verify the same passphrase before they can write new encrypted messages.
+func (s *Server) putClipboardVaultCheck(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	uid := userID(c)
+	if uid == 0 { c.AbortWithStatus(http.StatusUnauthorized); return }
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+	var req struct {
+		Nonce string `json:"nonce"`
+		Ciphertext string `json:"ciphertext"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid vault check"}); return
+	}
+	if len(req.Ciphertext) > 256 || validateClipboardWrite(clipboardWriteRequest{
+		ClientEventID: "00000000-0000-4000-8000-000000000001",
+		Kind: "text/plain", Nonce: req.Nonce, Ciphertext: req.Ciphertext,
+	}) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid vault check"}); return
+	}
+	res := s.DB.WithContext(c.Request.Context()).Model(&meta.ClipboardVault{}).
+		Where("owner_id = ? AND check_ciphertext = ''", uid).
+		Updates(map[string]interface{}{"check_nonce": req.Nonce, "check_ciphertext": req.Ciphertext})
+	if res.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard vault unavailable"}); return
+	}
+	var accepted meta.ClipboardVault
+	if err := s.DB.WithContext(c.Request.Context()).
+		Where("owner_id = ?", uid).First(&accepted).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "clipboard vault not initialized"}); return
+	}
+	c.JSON(http.StatusOK, clipboardVaultDTO(accepted))
 }
 
 func clipboardSameItem(existing meta.ClipboardItem, request clipboardWriteRequest) bool {
