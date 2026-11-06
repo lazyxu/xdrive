@@ -20,7 +20,6 @@ import type {
   XDriveSourceRunFailurePage,
   XDriveSourceRunSkipPage,
 } from './SourceManagerDetailsDialog'
-import { XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from './SynologyDsmGuideDialog'
 import {
   externalSourceConnectorProfile,
   externalSourceCreateOption,
@@ -28,6 +27,7 @@ import {
   externalSourceCredentialTestErrorLabel,
   externalSourceDefaults,
   externalSourceDisplayName,
+  isReadOnlySynologySource,
   normalizeSynologyFileRoots,
   normalizeSynologyPhotoSpaces,
   synologyFileRootsValidationError,
@@ -145,7 +145,7 @@ function sourceActionErrorMessage(error: unknown, fallback: string) {
   )
 }
 
-function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synology_pull'): XDriveSourceCreateValues {
+function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'yike_pull'): XDriveSourceCreateValues {
   const option = externalSourceCreateOption(preset)
   const defaults = externalSourceDefaults(option.kind, option.direction)
   return {
@@ -195,10 +195,10 @@ export function XDriveSourceManager({
   onError,
 }: XDriveSourceManagerProps) {
   const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
-  // Only an enrolled owning Agent can create Push. DSM Push is created
-  // through the NAS source-agent; generic Web/Owner sessions create Pull.
+  // Device-backed Push uses the owning Agent; browser-only Source Manager
+  // defaults to the supported Yike Pull rather than a retired Synology route.
   const defaultCreatePreset: ExternalSourceCreatePreset =
-    directionFilter === 'pull' ? 'synology_pull' : adapter.authorizeLocalFolder ? 'local_push' : 'synology_pull'
+    directionFilter === 'pull' ? 'yike_pull' : adapter.authorizeLocalFolder ? 'local_push' : 'yike_pull'
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
   const [showArchived, setShowArchived] = useState(false)
   const [restoringSourceID, setRestoringSourceID] = useState<number | null>(null)
@@ -253,8 +253,6 @@ export function XDriveSourceManager({
   const [settingsCredentialTestError, setSettingsCredentialTestError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [deletingSourceID, setDeletingSourceID] = useState<number | null>(null)
-  const [guideSource, setGuideSource] = useState<Pick<ExternalSource, 'id' | 'name' | 'run_mode'> | null>(null)
-  const [guideUsername, setGuideUsername] = useState<string | undefined>()
   const [errorDialog, setErrorDialog] = useState<XDriveSourceErrorDialogState | null>(null)
   const [feedback, setFeedback] = useState('')
   const [clearCookieConfirmOpen, setClearCookieConfirmOpen] = useState(false)
@@ -539,17 +537,6 @@ export function XDriveSourceManager({
     }
   }, [selected, historyPage, loadRunHistory])
 
-  const openSynologyGuide = (source: Pick<ExternalSource, 'id' | 'name' | 'run_mode'>) => {
-    setGuideSource(source)
-    if (!adapter.me) {
-      setGuideUsername(undefined)
-      return
-    }
-    void adapter.me()
-      .then((me) => setGuideUsername(me.username))
-      .catch(() => setGuideUsername(undefined))
-  }
-
   const openCreate = async () => {
     createNameEditedRef.current = false
     setCreateValues(initialCreateSourceValues(defaultCreatePreset))
@@ -683,15 +670,6 @@ export function XDriveSourceManager({
     setCreateSpacesError(spacesError)
     setCreateRootsError(rootsError)
     if (nameError || spacesError || rootsError) return
-    if (option.kind === 'synology_photos' && option.direction === 'push') {
-      // Browser Owner tokens cannot create DSM Push Sources: NAS setup must
-      // enroll the Device, bind the Root and obtain the managed target.
-      setCreateOpen(false)
-      setCreateNameError('')
-      setFeedback('在 NAS 运行 DSM 配置指南的 setup 命令；注册完成后刷新此来源列表。')
-      openSynologyGuide({ id: 0, name: normalizedName, run_mode: values.run_mode })
-      return
-    }
     const credentialPayload = profile.credential ? createCredentialPayload() : null
     if (profile.credential && !credentialPayload) {
       setErrorDialog({
@@ -818,9 +796,6 @@ export function XDriveSourceManager({
     await load()
     setCreating(false)
 
-    if (profile.manualTriggerExecutor === 'source_agent') {
-      openSynologyGuide(created)
-    }
   }
 
 
@@ -840,10 +815,7 @@ export function XDriveSourceManager({
     setTriggeringSourceID(row.source.id)
     try {
       await adapter.triggerSource(row.source.id)
-      const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
-      setFeedback(profile.manualTriggerExecutor === 'source_agent'
-        ? '已请求立即扫描，等待群晖 source-agent 下一次任务检查'
-        : '已请求立即扫描，服务器后台拉取任务已唤醒；定时检查仅作为兜底')
+      setFeedback('已请求立即扫描，服务器后台拉取任务已唤醒；定时检查仅作为兜底')
       await load()
     } catch (error) {
       showActionError('立即扫描失败', error, '无法提交立即扫描请求，请稍后重试。')
@@ -899,7 +871,7 @@ export function XDriveSourceManager({
   }
 
   const openSettings = (row: ExternalSourceRow) => {
-    if (savingSettings || row.source.status === 'archived') return
+    if (savingSettings || row.source.status === 'archived' || isReadOnlySynologySource(row.source)) return
     ++settingsSessionRef.current
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     setSetting(row)
@@ -1235,7 +1207,8 @@ export function XDriveSourceManager({
   }
 
   const restoreSource = async (row: ExternalSourceRow) => {
-    const allowed = adapter.canRestoreSource?.(row) ?? row.source.kind !== 'local_folder'
+    const allowed = !isReadOnlySynologySource(row.source) &&
+      (adapter.canRestoreSource?.(row) ?? row.source.kind !== 'local_folder')
     if (!adapter.restoreSource || !allowed) return
     setRestoringSourceID(row.source.id)
     try {
@@ -1440,7 +1413,8 @@ export function XDriveSourceManager({
         showArchived={showArchived}
         onToggleArchived={() => setShowArchived((current) => !current)}
         restoringSourceID={restoringSourceID}
-        canRestoreSource={(row) => adapter.canRestoreSource?.(row) ?? Boolean(adapter.restoreSource && row.source.kind !== 'local_folder')}
+        canRestoreSource={(row) => !isReadOnlySynologySource(row.source) &&
+          (adapter.canRestoreSource?.(row) ?? Boolean(adapter.restoreSource && row.source.kind !== 'local_folder'))}
         onRestoreSource={(row) => { void restoreSource(row) }}
         loading={loading}
         hasLoaded={hasLoaded}
@@ -1455,7 +1429,6 @@ export function XDriveSourceManager({
           message: row.source.last_error || '未提供具体错误信息',
         })}
         onOpenDetails={openDetails}
-        onOpenSynologyGuide={(row) => openSynologyGuide(row.source)}
         onTriggerNow={triggerNow}
         onCancelRun={cancelRun}
         onOpenSettings={openSettings}
@@ -1632,13 +1605,6 @@ export function XDriveSourceManager({
         onClose={() => setFeedback('')}
       />
 
-      <SynologyDsmGuideDialog
-        open={!!guideSource}
-        source={guideSource}
-        serverURL={window.location.origin}
-        username={guideUsername}
-        onClose={() => setGuideSource(null)}
-      />
     </>
   )
 }
