@@ -223,7 +223,9 @@ test('native Files search matches PWA source and tag filters, including filter-o
   assert.match(view, /searchOptions\.load\(login: login\)/);
   assert.match(view, /searchOptions\.invalidate\(\)/);
   assert.match(view, /if searchFilters\.hasActiveFilters \{[\s\S]*?reload\(resetOffset: true\)/);
-  assert.match(view, /folderID: folder\?\.id \?\? intent\.file\?\.parent_id \?\?[\s\S]*?intent\.directory\?\.parent_id/);
+  // An inline child is managed in its actual verified parent, not in the outer
+  // Browse folder; root is only a fallback when no selected Node exists.
+  assert.match(view, /folderID: intent\.file\?\.parent_id \?\? intent\.directory\?\.parent_id \?\?[\s\S]*?folder\?\.id \?\? intent\.owner\.rootNodeID/);
   assert.match(source, /if \(filters\.sourceID\) params\.set\('source_id', String\(Math\.max\(1, Math\.trunc\(filters\.sourceID\)\)\)\)/);
   assert.match(source, /if \(filters\.tagID\) params\.set\('tag_id', String\(Math\.max\(1, Math\.trunc\(filters\.tagID\)\)\)\)/);
   assert.match(source, /sources\(\) \{\s*return this\.request<ExternalSource\[]>\('\/api\/v1\/sources'\)/);
