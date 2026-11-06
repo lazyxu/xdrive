@@ -128,6 +128,25 @@ try {
   else delete globalThis.window
 }
 
+// Fail closed when crypto.subtle or secure randomness is unavailable.
+// The fallback may never send plaintext or silently invent encryption.
+const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+try {
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true, value: { getRandomValues: () => new Uint8Array(16) },
+  })
+  await assert.rejects(mod.xDriveClipboardDeriveKey('same long passphrase for both browsers', salt),
+    /不支持安全加密/, 'PBKDF2 must refuse missing crypto.subtle')
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true, value: { subtle: webcrypto.subtle },
+  })
+  await assert.rejects(mod.xDriveClipboardEncrypt(key, owner, crypto.randomUUID?.() ?? 'id', 'secret'),
+    /不支持安全加密/, 'encryption must refuse missing secure randomness')
+} finally {
+  if (originalCrypto) Object.defineProperty(globalThis, 'crypto', originalCrypto)
+  else delete globalThis.crypto
+}
+
 const ui = read('ui/shared/src/mui/ClipboardPage.tsx')
 const transpiledUI = ts.transpileModule(ui, {
   fileName: 'ClipboardPage.tsx', reportDiagnostics: true,
