@@ -341,10 +341,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
     @State private var reader: XDriveIOSNativeAlbumPageReader?
 
     private var placeholder: some View {
-        RoundedRectangle(cornerRadius: 3)
-            .fill(Color(uiColor: .secondarySystemGroupedBackground))
-            .aspectRatio(1, contentMode: .fit)
-            .accessibilityHidden(true)
+        XDriveIOSNativePhotoWallPlaceholderTile()
     }
 
     var body: some View {
@@ -358,10 +355,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
                 )
                 ForEach(daySections) { section in
                     if !section.continuesPreviousPage {
-                        Text(section.title)
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityAddTraits(.isHeader)
+                        XDriveIOSNativePhotoWallDayHeader(title: section.title)
                     }
                     XDriveIOSNativePhotoWallGrid(density: density) {
                         ForEach(page.items[section.startIndex..<section.endIndex]) { item in
@@ -506,14 +500,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer(minLength: 4)
                         Menu {
-                            ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
-                                Button {
-                                    density = option
-                                } label: {
-                                    Label(option.title, systemImage: density == option
-                                        ? "checkmark.circle.fill" : "square.grid.3x3")
-                                }
-                            }
+                            xdrivePhotoWallDensityButtons($density)
                             Section("拍摄时间顺序") {
                                 ForEach(XDriveIOSNativeAlbumSortOrder.allCases) { option in
                                     Button {
