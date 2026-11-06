@@ -546,9 +546,9 @@ func TestEveryProtectedAPIEndpointRequiresBearerToken(t *testing.T) {
 		// Dedicated browser auth uses an HttpOnly refresh cookie and strict
 		// same-origin HTTPS admission, NOT a Bearer header. The negative
 		// origin/CSRF and cookie-only checks live in auth_browser_cookie_test.
-		"POST /api/v1/auth/browser/login":                    {},
-		"POST /api/v1/auth/browser/refresh":                  {},
-		"POST /api/v1/auth/browser/logout":                   {},
+		"POST /api/v1/auth/browser/login":   {},
+		"POST /api/v1/auth/browser/refresh": {},
+		"POST /api/v1/auth/browser/logout":  {},
 		// Only this one-use map Cookie exchange is exempt from Bearer. The
 		// issue route REQUIRES Bearer plus a current native RefreshToken proof.
 		// Verify exact Origin, Host, replay and revocation separately.
