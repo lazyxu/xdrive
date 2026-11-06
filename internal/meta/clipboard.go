@@ -10,7 +10,7 @@ type ClipboardVault struct {
 	CheckNonce      string `gorm:"size:24"`
 	CheckCiphertext string `gorm:"size:256"`
 	// First verified Browser's v1 AAD scope, bound once for LAN/public aliases.
-	AADScope string `gorm:"size:512;not null;default:''"`
+	AADScope        string `gorm:"size:512;not null;default:''"`
 	CreatedAt       time.Time
 }
 
