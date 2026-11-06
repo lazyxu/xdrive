@@ -115,6 +115,9 @@ func sourceRunContinueError(run meta.SyncRun) error {
 // so a concurrent Source PATCH cannot slip between this check and the write.
 // Terminal historical finish remains a separate, already fenced contract.
 func sourceRunContinueForCurrentSource(source meta.Source, run meta.SyncRun) error {
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		return errSynologyPullDisabled
+	}
 	if err := sourceRunContinueError(run); err != nil {
 		return err
 	}
@@ -211,6 +214,9 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 			return err
 		}
 
+		if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+			return errSynologyPullDisabled
+		}
 		// A stale/manual database status change must not bypass the local Source
 		// activation gate before a verified device-bound execution protocol exists.
 		if source.Kind == meta.SourceKindLocalFolder {
@@ -1168,6 +1174,9 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
+		if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+			return errSynologyPullDisabled
+		}
 		var run meta.SyncRun
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
@@ -1531,6 +1540,8 @@ func writeSourceRunError(c *gin.Context, err error) {
 	case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized),
 		errors.Is(err, errIOSPhotoSourceRunUnauthorized):
 		fail(c, http.StatusForbidden, "source executor device binding was revoked or changed")
+	case errors.Is(err, errSynologyPullDisabled):
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 	case errors.Is(err, errLocalFolderNotReady):
 		fail(c, http.StatusConflict, "local folder has no authorized device-bound executor")
 	case errors.Is(err, errSourcePaused):
