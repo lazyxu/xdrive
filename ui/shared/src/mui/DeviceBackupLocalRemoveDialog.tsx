@@ -55,9 +55,11 @@ export function XDriveDeviceBackupLocalRemoveDialog({
     try {
       const result = await actions.remove(sourceID, settings.revision)
       if (result.source_id !== sourceID) throw new Error('Agent 响应的 Source ID 不匹配')
-      onFinished(result.local_grant_removed
-        ? '已移除本机空白备份配置；本地原始文件及云端数据均保留'
-        : 'Server 配置已移除，但本机授权记录未清理，请检查 Agent 日志')
+      onFinished(result.status === 'archived'
+        ? '本机备份已归档；Root 授权、原始文件、云端数据和历史均保留'
+        : result.local_grant_removed
+          ? '已移除本机空白备份配置；本地原始文件及云端数据均保留'
+          : 'Server 配置已移除，但本机授权记录未清理，请检查 Agent 日志')
     } catch (failure) {
       setError('移除失败或响应不确定：' +
         (failure instanceof Error ? failure.message : String(failure)) +
