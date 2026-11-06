@@ -18,7 +18,6 @@ const uploadAuthorizationAuditAction = "upload.authorization"
 // durable audit insert as an invalid client credential.
 func uploadAuthorizationDenied(err error) bool {
 	return errors.Is(err, errManagedSourceWriteDenied) ||
-		errors.Is(err, errSynologyPushAuthority) ||
 		errors.Is(err, errShareUploadDenied) ||
 		errors.Is(err, errShareUploadBusy) ||
 		errors.Is(err, errLocalPushCommonUploadUnavailable)
@@ -143,7 +142,6 @@ func (s *Server) recordUploadAuthorizationOperationFailure(
 func (s *Server) recordUploadAuthorizationFailure(c *gin.Context, phase string, session meta.UploadSession, err error) {
 	if s == nil || s.DB == nil || c == nil || err == nil ||
 		(!errors.Is(err, errManagedSourceWriteDenied) &&
-			!errors.Is(err, errSynologyPushAuthority) &&
 			!errors.Is(err, errShareUploadDenied) &&
 			!errors.Is(err, errLocalPushCommonUploadUnavailable)) {
 		return
