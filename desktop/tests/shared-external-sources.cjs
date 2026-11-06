@@ -139,7 +139,7 @@ test('shared external-source state ordering is connector neutral', () => {
       source: source({ kind: 'synology_photos', direction: 'pull' }),
       credential: { configured: false },
     }),
-    { key: 'credential_missing', tone: 'warning', label: 'DSM 凭据未配置' },
+    { key: 'paused', tone: 'warning', label: 'Synology Pull 暂停提供 · 历史数据保留' },
   )
 })
 
@@ -183,7 +183,7 @@ test('shared external-source trigger gating matches connector execution model', 
     }),
     {
       ready: false,
-      label: '请先配置 DSM 凭据',
+      label: 'Synology Photos/Files Pull 暂停提供；请使用 DSM 文件夹 Push 备份。已有数据保留。',
     },
   )
 
@@ -307,13 +307,13 @@ test('run history separates confirmed sync and saved bytes from skipped and canc
 
 test('shared trigger action label promotes retries without hiding pending state', () => {
   assert.equal(shared.externalSourceTriggerActionLabel({ source: source() }), '已停用')
-  assert.equal(shared.externalSourceTriggerActionLabel({ source: source({ direction: 'pull' }) }), '立即扫描')
+  assert.equal(shared.externalSourceTriggerActionLabel({ source: source({ direction: 'pull' }) }), '已停用')
   assert.equal(shared.externalSourceTriggerActionLabel({
-    source: source({ direction: 'pull' }),
+    source: source({ kind: 'yike_photos', direction: 'pull' }),
     latestRun: { failed_items: 3 },
   }), '重试失败项')
   assert.equal(shared.externalSourceTriggerActionLabel({
-    source: source({ direction: 'pull', run_requested_at: '2026-09-26T01:00:00Z' }),
+    source: source({ kind: 'yike_photos', direction: 'pull', run_requested_at: '2026-09-26T01:00:00Z' }),
     latestRun: { failed_items: 3 },
   }), '已请求')
 })
@@ -573,13 +573,11 @@ test('shared create presets distinguish Synology Photos, File Station, and Yike 
   assert.deepEqual(
     shared.externalSourceCreateOptions.map((item) => [item.value, item.kind, item.direction]),
     [
-      ['synology_pull', 'synology_photos', 'pull'],
-      ['synology_files_pull', 'synology_files', 'pull'],
       ['yike_pull', 'yike_photos', 'pull'],
       ['local_push', 'local_folder', 'push'],
     ],
   )
-  assert.equal(shared.externalSourceCreateOption('synology_pull').label, '群晖 Photos')
+  assert.equal(shared.externalSourceCreateOption('synology_pull').label, '一刻相册')
   assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'push'), 'synology_pull')
   assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'pull'), 'synology_pull')
   assert.equal(shared.externalSourceCreatePresetFor('synology_files', 'pull'), 'synology_files_pull')
@@ -590,6 +588,22 @@ test('shared create presets distinguish Synology Photos, File Station, and Yike 
   assert.equal(localDefaults.scheduleType, 'manual')
   assert.equal(localDefaults.runMode, 'sync')
   assert.equal(shared.externalSourceConnectorProfile('local_folder', 'push').manualTriggerExecutor, 'local_agent')
+})
+
+test('Synology Pull stays read-only without hiding historical rows', () => {
+  for (const kind of ['synology_photos', 'synology_files']) {
+    const historic = source({ kind, direction: 'pull', status: 'active' })
+    assert.equal(shared.isSynologyPullTemporarilyDisabled(historic), true)
+    assert.equal(shared.isReadOnlySynologySource(historic), true)
+    assert.equal(shared.externalSourceTriggerActionLabel({ source: historic }), '已停用')
+    assert.equal(shared.getExternalSourceTriggerState({
+      source: historic, credential: { configured: true },
+    }).ready, false)
+    assert.match(shared.getExternalSourceState({ source: historic }).label, /暂停提供/)
+  }
+  assert.equal(shared.isSynologyPullTemporarilyDisabled(source({ kind: 'local_folder' })), false)
+  assert.equal(shared.isSynologyPullTemporarilyDisabled(source({ kind: 'yike_photos', direction: 'pull' })), false)
+  assert.equal(shared.externalSourceCreateOptions.some((item) => item.kind.startsWith('synology_')), false)
 })
 
 test('shared Synology space normalization is deterministic', () => {
