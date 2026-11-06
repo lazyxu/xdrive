@@ -799,6 +799,12 @@ func (s *Server) requireAuth() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session_revoked"})
 			return
 		}
+		if claims.DesktopMapNativeRefreshID != 0 &&
+			!desktopMapNativeSessionActive(s.DB.WithContext(c.Request.Context()),
+				uid, claims.DesktopMapNativeRefreshID, time.Now().UTC(), false) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "desktop_map_native_session_revoked"})
+			return
+		}
 		path := c.Request.URL.Path
 		if user.MustChangePassword && path != "/api/v1/me" && path != "/api/v1/me/change-password" && path != "/api/v1/me/change-password/browser" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "password_change_required"})
