@@ -122,4 +122,29 @@ class AndroidPhotoBackupIntentStoreTest {
             store().read().single().phase)
     }
 
+
+@Test fun managedSourceIdentityPersistsAndOldRootJournalCannotAdoptNewTarget() {
+        val newOwner = owner.copy(managedSourceId = 19, managedTargetNodeId = 120)
+        val name = "xdrive-photo-" + "a".repeat(20) + "-" + "b".repeat(20) + ".jpg"
+        val intent = ledger().plan(newOwner, key, "d".repeat(64),
+            NativePhotoBackupResource.STILL, hash, 4096L, name,
+            destinationTargetNodeId = 120)
+        ledger().beginAttempt(newOwner, intent.id, hash, 4096L)
+        val persisted = store().read().single()
+        assertEquals(newOwner, persisted.owner)
+        assertEquals(19L, persisted.owner.managedSourceId)
+        assertEquals(120L, persisted.owner.managedTargetNodeId)
+        assertEquals(120L, persisted.destinationTargetNodeId)
+        assertTrue(ledger().inspect(owner).isEmpty())
+        assertThrows(IllegalArgumentException::class.java) {
+            persisted.copy(destinationTargetNodeId = 121)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            newOwner.copy(managedTargetNodeId = 0)
+        }
+        val sealed = context.getSharedPreferences(pref, Context.MODE_PRIVATE)
+            .getString("sealed-v1", null)!!
+        assertFalse(sealed.contains(newOwner.serverOrigin))
+        assertFalse(sealed.contains(name))
+    }
 }

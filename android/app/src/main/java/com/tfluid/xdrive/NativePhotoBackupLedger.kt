@@ -20,8 +20,14 @@ internal data class NativePhotoBackupOwner(
     val rootNodeId: Long,
     val rootRevision: Long,
     val deviceId: String,
+    /** Zero values retain the historical Owner-root identity. Managed sources
+     * use BOTH stable IDs, never a mutable name or Source revision. */
+    val managedSourceId: Long = 0L,
+    val managedTargetNodeId: Long = 0L,
 ) {
     init {
+        require((managedSourceId == 0L && managedTargetNodeId == 0L) ||
+            (managedSourceId > 0L && managedTargetNodeId > 0L))
         require(serverOrigin.startsWith("https://") &&
             ServerAddress.parse(serverOrigin).url == serverOrigin) {
             "Photo backup requires canonical HTTPS origin"
@@ -103,6 +109,9 @@ internal data class NativePhotoBackupIntent(
         require(destinationName == null || validDriveNodeName(destinationName))
         require(destinationTargetNodeId == null ||
             (destinationTargetNodeId > 0 && destinationName != null))
+        if (owner.managedSourceId > 0L) {
+            require(destinationTargetNodeId == owner.managedTargetNodeId)
+        }
         require((verifiedNodeId == null) == (verifiedNodeRevision == null))
         if (phase == NativePhotoBackupPhase.VERIFIED) {
             require(verifiedNodeId != null && verifiedNodeId > 0 &&

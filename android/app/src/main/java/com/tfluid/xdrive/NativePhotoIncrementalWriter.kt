@@ -152,6 +152,8 @@ internal class NativePhotoIncrementalWriter(
         val owner = NativePhotoBackupOwner(
             scope.origin, scope.serverInstanceId, scope.ownerId, scope.username,
             scope.rootId, scope.rootRevision, verifiedDeviceId,
+            managedSourceId = managedDestination?.sourceId ?: 0L,
+            managedTargetNodeId = managedTargetId ?: 0L,
         )
         currentCoroutineContext().ensureActive()
         check(currentSession()) { "Native photo Owner session changed" }
@@ -160,10 +162,14 @@ internal class NativePhotoIncrementalWriter(
         // from the *same stable Owner/device* must remain blocking even if
         // the current directory revision is different.
         compactConfirmedReceipts()
-        val relevant = journal.read().filter { sameStableOwner(it.owner, owner) }
-        check(relevant.none { it.requiresReadOnlyReconciliation }) {
+        // Outstanding legacy Owner-root uploads also block a new managed
+        // Source until the exact old receipt is reconciled. Completed old
+        // receipts do NOT imply that the new Source target contains bytes.
+        val physicalRows = journal.read().filter { samePhysicalOwner(it.owner, owner) }
+        check(physicalRows.none { it.requiresReadOnlyReconciliation }) {
             "An uncertain native original needs read-only Owner reconciliation"
         }
+        val relevant = physicalRows.filter { sameStableOwner(it.owner, owner) }
         val prior = relevant.firstOrNull {
             it.assetKey == source.assetKey && it.versionKey == source.versionKey &&
                 it.resource == source.resource
@@ -271,11 +277,13 @@ internal class NativePhotoIncrementalWriter(
             maxChecks in 1..NativePhotoBackupLedger.MAX_ENTRIES)
         val owner = NativePhotoBackupOwner(
             scope.origin, scope.serverInstanceId, scope.ownerId,
-            scope.username, scope.rootId, scope.rootRevision, verifiedDeviceId)
+            scope.username, scope.rootId, scope.rootRevision, verifiedDeviceId,
+            managedSourceId = managedDestination?.sourceId ?: 0L,
+            managedTargetNodeId = managedDestination?.targetNodeId ?: 0L)
         currentCoroutineContext().ensureActive()
         check(currentSession()) { "Photo Owner session changed before receipt review" }
         val waiting = journal.read().filter {
-            sameStableOwner(it.owner, owner) && it.requiresReadOnlyReconciliation
+            samePhysicalOwner(it.owner, owner) && it.requiresReadOnlyReconciliation
         }
         check(waiting.size <= maxChecks) { "Too many unknown photo receipts to inspect" }
         var recovered = 0
@@ -323,7 +331,7 @@ internal class NativePhotoIncrementalWriter(
         compactConfirmedReceipts()
         // An ACTIVE or missing record is never permission for a new POST.
         check(journal.read().none {
-            sameStableOwner(it.owner, owner) && it.requiresReadOnlyReconciliation
+            samePhysicalOwner(it.owner, owner) && it.requiresReadOnlyReconciliation
         }) { "Native original upload still needs explicit receipt review" }
         return recovered
     }
@@ -346,4 +354,11 @@ internal class NativePhotoIncrementalWriter(
 
     private fun sameStableOwner(a: NativePhotoBackupOwner, b: NativePhotoBackupOwner): Boolean =
         a.copy(rootRevision = b.rootRevision) == b
+
+    /** Legacy unknown attempts must still block the same physical Device when
+     * setting up a new managed Source. Distinct completed Source receipts must
+     * NEVER be treated as verified under a different Target. */
+    private fun samePhysicalOwner(a: NativePhotoBackupOwner, b: NativePhotoBackupOwner): Boolean =
+        a.copy(rootRevision = b.rootRevision, managedSourceId = b.managedSourceId,
+            managedTargetNodeId = b.managedTargetNodeId) == b
 }

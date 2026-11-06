@@ -170,10 +170,17 @@ internal class AndroidPhotoVerifiedIndex(
         // No root revision: directory revisions may change whenever new
         // children are created. Owner, instance, root ID and Device are stable.
         require(ServerAddress.parse(owner.serverOrigin).url == owner.serverOrigin)
-        val scope = listOf(
+        val legacyFields = listOf(
             owner.serverOrigin, owner.instanceId, owner.ownerId.toString(),
             owner.username, owner.rootNodeId.toString(), owner.deviceId,
-        ).joinToString("\u0000")
+        )
+        // Keep existing verified-only legacy receipts in their original
+        // namespace. Source+Target scoped receipts never satisfy a different
+        // Source or a new directory, even for identical asset/hash metadata.
+        val managedFields = if (owner.managedSourceId > 0L)
+            listOf(owner.managedSourceId.toString(), owner.managedTargetNodeId.toString())
+            else emptyList()
+        val scope = (legacyFields + managedFields).joinToString("\u0000")
         return MessageDigest.getInstance("SHA-256")
             .digest(scope.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }

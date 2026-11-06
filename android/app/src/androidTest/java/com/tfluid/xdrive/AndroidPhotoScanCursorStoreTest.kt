@@ -66,4 +66,17 @@ class AndroidPhotoScanCursorStoreTest {
         assertThrows(IllegalStateException::class.java) { cursor().readFor(owner) }
         assertEquals("{malformed", prefs.getString("scan-v1", null))
     }
+
+@Test fun managedSourceAndTargetCannotReuseLegacyOrAnotherSourceCursor() {
+        cursor().advanceVerified(owner, 0, 90)
+        val newSource = owner.copy(managedSourceId = 19, managedTargetNodeId = 120)
+        assertEquals(0L, cursor().readFor(newSource))
+        cursor().advanceVerified(newSource, 0, 25)
+        assertEquals(25L, cursor().readFor(newSource.copy(rootRevision = 200)))
+        assertEquals(0L, cursor().readFor(newSource.copy(managedSourceId = 20)))
+        assertEquals(0L, cursor().readFor(newSource.copy(managedTargetNodeId = 121)))
+        assertEquals(0L, cursor().readFor(owner))
+        cursor().finishSweep(newSource, 25)
+        assertEquals(0L, cursor().readFor(newSource))
+    }
 }

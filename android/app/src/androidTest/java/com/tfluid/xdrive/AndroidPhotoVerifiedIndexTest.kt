@@ -107,4 +107,29 @@ class AndroidPhotoVerifiedIndexTest {
                     NativePhotoBackupResource.STILL, hash, 4096L))
         }
     }
+
+@Test fun legacyRootReceiptDoesNotProveNewManagedTargetAndTargetsAreIsolated() {
+        val sourceA = owner.copy(managedSourceId = 19, managedTargetNodeId = 120)
+        val sourceB = owner.copy(managedSourceId = 20, managedTargetNodeId = 121)
+        index().use { db ->
+            db.recordVerified(intent())
+            assertNotNull(db.findVerified(owner, key, version,
+                NativePhotoBackupResource.STILL, hash, 4096L))
+            assertNull(db.findVerified(sourceA, key, version,
+                NativePhotoBackupResource.STILL, hash, 4096L))
+            db.recordVerified(intent(ownerScope = sourceA, nodeId = 80).copy(
+                destinationName = "xdrive-photo-" + "a".repeat(20) + "-" +
+                    "b".repeat(20) + ".jpg",
+                destinationTargetNodeId = 120))
+            assertEquals(NativePhotoIndexedReceipt(80, 7),
+                db.findVerified(sourceA, key, version,
+                    NativePhotoBackupResource.STILL, hash, 4096L))
+            assertNull(db.findVerified(sourceB, key, version,
+                NativePhotoBackupResource.STILL, hash, 4096L))
+            assertEquals(NativePhotoIndexedReceipt(42, 7),
+                db.findVerified(owner, key, version,
+                    NativePhotoBackupResource.STILL, hash, 4096L))
+            assertEquals(2L, db.totalIndexed())
+        }
+    }
 }

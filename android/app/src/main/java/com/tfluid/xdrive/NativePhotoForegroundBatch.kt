@@ -85,7 +85,9 @@ internal class NativePhotoForegroundBatch(
         }
         val scope = NativePhotoBackupOwner(
             initial.origin, initial.serverInstanceId, initial.ownerId,
-            initial.username, initial.rootId, initial.rootRevision, device.deviceId)
+            initial.username, initial.rootId, initial.rootRevision, device.deviceId,
+            managedSourceId = requireNotNull(managedDestination.sourceId),
+            managedTargetNodeId = requireNotNull(managedDestination.targetNodeId))
         val cursor = AndroidPhotoScanCursorStore(app)
         val durableAfter = cursor.readFor(scope)
         check(startAfterId == 0L || startAfterId == durableAfter) {

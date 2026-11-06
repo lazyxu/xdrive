@@ -140,3 +140,7 @@ The implementation is a development branch, not master acceptance. New Push path
 在 S10–S18 开发分支上，Android 的 Owner+Device 专属 `GET/PUT /android/photos/backup-destination` 已按 iOS 的窄权限模式接入：首次由 Server 事务创建 `android_photos` Source 和 `同步文件夹/Push/<Source.Name>`，返回真实 SourceID、SourceRevision、TargetNodeID；重命名复用统一空闲判定和 Node 原子改名。Android Kotlin 客户端仅允许上述目标接口携带设备密钥，并严格比对 DeviceID、SourceID/Revision、TargetNodeID 和规范路径；Web/Desktop/DSM 的共享 Source Manager 能识别 Android 行，但不提供服务端“立即扫描”。已补服务端 PostgreSQL、原生 HTTP 契约及共享 UI 测试。
 
 **禁止误判为可用：** 当前 Android 原件写入、Finalize、未知 ACK 恢复仍使用旧 Owner-root UploadSession，不带 `android_photos` 的 Source/Device/Target 元组；不能把它们视为新目标的成功备份。尚需原生专属 UploadSession 和每次实际 CAS 写事务的权限复核，SourceID+TargetNodeID 绑定的持久化 intent/verified receipt，SourceRun 统计与历史，以及旧 Owner-root intent 的 fail-closed 兼容与真实 Android 设备验收。**不迁移任何既有 Source/目录/收据。**
+
+### Android 原生增量备份的 Source/Target 游标与回执隔离（开发分支，待 CI）
+
+新的 Android 备份在建立已验证的 `android_photos` 目标后，使用稳定的 SourceID 和 TargetNodeID 隔离 MediaStore 扫描游标、SQLite verified-only 回执与加密原件意图。新 Source/Target 初次读取的游标为零，不能把原 Owner-root 或另一 Target 的历史回执当作新目标成功；Root Revision 和 Source Revision 的变化不改变这两个稳定 ID。旧 Owner-root 记录保留原有哈希命名空间和格式。历史 UNKNOWN_ACK 仍必须先完成旧目录的精确只读核对才能开始新写入，不能无条件清理或迁移。补充 Android SQLite、Keystore 和游标 instrumentation 契约测试；它们需要 Android 工具链 CI/真机验证，提交不代表已通过。
