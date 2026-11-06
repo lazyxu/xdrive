@@ -398,7 +398,9 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			q = q.Where("share_id IS NULL")
 		}
 		if scopedRun {
-			q = q.Where("source_run_id = ?", scope.runID)
+			q = q.Where("source_run_id = ? AND COALESCE(source_id, 0) = 0 AND "+
+				"COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 AND "+
+				"COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = ''", scope.runID)
 		} else {
 			q = q.Where("COALESCE(source_run_id, '') = ''")
 		}
@@ -411,8 +413,12 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			q = q.Where("source_id = ? AND source_revision = ? AND source_root_id = ? AND source_root_fingerprint = ? AND source_device_id = ?",
 				req.SourceID, req.SourceRevision, req.SourceRootID, req.SourceRootFingerprint,
 				strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
+		} else if scopedRun || guest {
+			q = q.Where("COALESCE(source_id, 0) = 0 AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 "+
+				"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = ''")
 		} else {
-			q = q.Where("COALESCE(source_id, 0) = 0")
+			q = q.Where("COALESCE(source_id, 0) = 0 AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0 "+
+				"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = ''")
 		}
 		if req.NodeID != nil {
 			q = q.Where("node_id = ? AND expected_revision = ?", *req.NodeID, req.ExpectedRevision)
@@ -432,9 +438,22 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			q = q.Where("expected_md5 = ? OR expected_md5 = ''", req.MD5)
 		}
 		if err := q.Order("created_at DESC").First(&existing).Error; err == nil {
-			if err := s.verifyPushUploadSession(c, existing); err != nil {
+			if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+				if err := s.requireUploadSessionReadAuthorityTx(c.Request.Context(), tx, c, existing); err != nil {
+					return err
+				}
+				return recordUploadAuthorizationSuccessTx(tx, c, "session.resume", existing)
+			}); err != nil {
 				s.recordUploadAuthorizationFailure(c, "session.resume", existing, err)
-				fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
+				if errors.Is(err, errShareUploadDenied) || errors.Is(err, errShareUploadBusy) {
+					writePublicShareUploadError(c, err)
+				} else if errors.Is(err, errManagedSourceWriteDenied) ||
+					errors.Is(err, errSynologyPushAuthority) ||
+					errors.Is(err, errLocalPushCommonUploadUnavailable) {
+					fail(c, http.StatusForbidden, "Source upload authority is no longer valid")
+				} else {
+					fail(c, http.StatusInternalServerError, "upload resume authorization audit failed")
+				}
 				return
 			}
 			if existing.Status == meta.UploadStatusFinalized || existing.Status == meta.UploadStatusSkipped {
