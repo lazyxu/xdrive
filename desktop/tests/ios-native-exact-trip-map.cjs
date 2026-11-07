@@ -123,3 +123,12 @@ test('bounded dateline camera has executable Foundation policy in IPA workflow',
   assert.match(workflow, /ios\/tests\/NativeExactTripMapCameraPolicyChecks\.swift/)
   assert.match(workflow, /node --test desktop\/tests\/ios-native-exact-trip-map\.cjs/)
 })
+
+test('trip map fails closed on 64-place overflow and distinguishes stale trip from Owner revocation', () => {
+  const response = map.slice(map.indexOf('catch let failure as XDriveIOSNativeMediaReadFailure'));
+  assert.match(response, /case 401, 403:[\s\S]*?invalidate\(\)/);
+  assert.match(response, /case 404:[\s\S]*?旅行已变化/);
+  assert.match(response, /case 409:[\s\S]*?最多 64 个地点/);
+  assert.match(response, /self\.error = "当前旅行地点过多或成员正在变化/);
+  assert.doesNotMatch(response, /reader\.mapOverview\(|reader\.page\(offset:|allPhotos\(/);
+});
