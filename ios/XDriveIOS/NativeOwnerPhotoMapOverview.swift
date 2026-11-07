@@ -23,6 +23,7 @@ struct XDriveIOSNativeOwnerMapFacet: Decodable, Identifiable {
 struct XDriveIOSNativeOwnerMapOverview: Decodable {
     let items: [XDriveIOSNativeOwnerMapFacet]
     let total_photo_count: Int
+    let trip_photo_count: Int?
     let aggregated: Bool
 }
 
