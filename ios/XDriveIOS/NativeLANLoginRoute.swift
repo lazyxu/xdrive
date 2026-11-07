@@ -170,48 +170,46 @@ enum XDriveIOSNativeLANLoginRoute {
         let verifier = XDriveIOSLANProbeRejectRedirects(mode: mode)
         let session = URLSession(configuration: config, delegate: verifier, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
-        let bytes: URLSession.AsyncBytes
-        let response: URLResponse
         do {
-            (bytes, response) = try await session.bytes(for: request)
+            let (bytes, response) = try await session.bytes(for: request)
+            try Task.checkCancellation()
+            guard let http = response as? HTTPURLResponse else {
+                if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
+                throw AuthFailure.invalidLANProbe
+            }
+            if (300..<400).contains(http.statusCode) {
+                if pairing { throw XDriveIOSLANPairingFailure.ipVersionRedirect }
+                throw AuthFailure.redirectRefused
+            }
+            if http.statusCode != 200 {
+                if pairing { throw XDriveIOSLANPairingFailure.ipVersionStatus(http.statusCode) }
+                throw AuthFailure.invalidLANProbe
+            }
+            guard http.url == url, http.mimeType == mimeType,
+                  http.expectedContentLength <= Int64(maxBytes) else {
+                if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
+                throw AuthFailure.invalidLANProbe
+            }
+            var data = Data()
+            for try await byte in bytes {
+                guard data.count < maxBytes else {
+                    if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
+                    throw AuthFailure.invalidLANProbe
+                }
+                data.append(byte)
+            }
+            return data
         } catch {
             try Task.checkCancellation()
-            // URLSession may surface an explicit authentication-challenge
-            // rejection as NSURLErrorCancelled (-999), rather than the
-            // certificate-specific error. Record only the trust callback's
-            // disposition, not untrusted message text or certificate bytes.
+            // URLSession may surface an authentication-challenge rejection
+            // as NSURLErrorCancelled (-999), rather than a certificate code.
+            // Only a recorded trust rejection is diagnosed as IP TLS failure.
             if verifier.rejectedServerTrust {
                 if pairing { throw XDriveIOSLANPairingFailure.ipCertificateInvalid }
                 throw URLError(.serverCertificateUntrusted)
             }
             throw error
         }
-        try Task.checkCancellation()
-        guard let http = response as? HTTPURLResponse else {
-            throw AuthFailure.invalidLANProbe
-        }
-        if (300..<400).contains(http.statusCode) {
-            if pairing { throw XDriveIOSLANPairingFailure.ipVersionRedirect }
-            throw AuthFailure.redirectRefused
-        }
-        if http.statusCode != 200 {
-            if pairing { throw XDriveIOSLANPairingFailure.ipVersionStatus(http.statusCode) }
-            throw AuthFailure.invalidLANProbe
-        }
-        guard http.url == url, http.mimeType == mimeType,
-              http.expectedContentLength <= Int64(maxBytes) else {
-            if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
-            throw AuthFailure.invalidLANProbe
-        }
-        var data = Data()
-        for try await byte in bytes {
-            guard data.count < maxBytes else {
-                if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
-                throw AuthFailure.invalidLANProbe
-            }
-            data.append(byte)
-        }
-        return data
     }
 }
 
@@ -231,10 +229,10 @@ private final class XDriveIOSLANProbeRejectRedirects: XDriveIOSServerTLSDelegate
                              completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         super.urlSession(session, didReceive: challenge) { [weak self] disposition, credential in
             if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust &&
-                disposition == .cancelAuthenticationChallenge {
-                self?.stateLock.lock()
-                self?.trustWasRejected = true
-                self?.stateLock.unlock()
+                disposition == .cancelAuthenticationChallenge, let self {
+                self.stateLock.lock()
+                self.trustWasRejected = true
+                self.stateLock.unlock()
             }
             completionHandler(disposition, credential)
         }
