@@ -133,10 +133,34 @@ struct XDriveIOSNativeClipboardScreen: View {
         }
         .task(id: unlocked) {
             guard unlocked else { return }
+            // Owner GET remains a foreground fallback for missing SSE events,
+            // network failures, expired auth, and old Server deployments.
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
                 if Task.isCancelled { break }
                 await refresh()
+            }
+        }
+        .task(id: unlocked) {
+            guard unlocked else { return }
+            let generation = sessionGeneration
+            var after: UInt64 = 0 // Per-unlock, not persisted to disk/Keychain.
+            while !Task.isCancelled && sessionGeneration == generation && key != nil {
+                do {
+                    let client = try await authorizedClient(for: generation)
+                    after = try await client.watchChanges(after: after) {
+                        guard !Task.isCancelled, sessionGeneration == generation,
+                              ownerAtUnlock == client.owner, key != nil else { return }
+                        await refresh() // SSE never carries message ciphertext.
+                    }
+                } catch {
+                    if Task.isCancelled || sessionGeneration != generation { break }
+                    // SSE is optional: the 15-second visible GET keeps working.
+                }
+                guard !Task.isCancelled, sessionGeneration == generation,
+                      key != nil else { break }
+                await refresh() // Full GET compensation after every disconnect.
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
         }
         .onChange(of: login.owner) { _ in lock() }
