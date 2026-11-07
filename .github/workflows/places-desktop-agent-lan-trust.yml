@@ -1,0 +1,54 @@
+name: Places Desktop current Agent private LAN CA recovery
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/places-desktop-agent-lan-trust.yml'
+      - 'cmd/xdrive-agent/controller_desktop_map_lan_trust.go'
+      - 'cmd/xdrive-agent/desktop_ipc_desktop_map_lan_trust*.go'
+      - 'cmd/xdrive-agent/desktop_ipc.go'
+      - 'desktop/src/main/agent_client.cts'
+      - 'desktop/src/main/index.cts'
+      - 'desktop/tests/gallery-places-agent-only-lan-trust.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-agent-lan-trust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact head, Go formatting and test source syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test -z "$(gofmt -l cmd/xdrive-agent/controller_desktop_map_lan_trust.go cmd/xdrive-agent/desktop_ipc_desktop_map_lan_trust.go cmd/xdrive-agent/desktop_ipc_desktop_map_lan_trust_test.go)"
+          node --check desktop/tests/gallery-places-agent-only-lan-trust.cjs
+      - name: Verify real native Agent loopback, Owner and public CA authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./cmd/xdrive-agent -run 'TestDesktopMapLANTrust' -count=1 -timeout=10m
+      - name: Build real Desktop Main and execute source-derived CA admission tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix desktop install --no-audit --no-fund
+          npm --prefix desktop run build:main
+          node --test desktop/tests/gallery-places-agent-only-lan-trust.cjs \
+            desktop/tests/gallery-places-browser-cookie-reprobe.cjs \
+            desktop/tests/lan-trust-lifecycle.cjs
