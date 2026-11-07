@@ -302,6 +302,17 @@ async function armRealWebGuestNativeRevocation(expectedOwner){
     headers:{Authorization:'Bearer '+bearer},
   })
   if((await read()).status!==200)throw Error('map bearer not live before Agent logout')
+  // Cancel a genuine in-flight protected HTTP request. A settled late result
+  // must not mutate the same Owner's current map, even before native logout.
+  const cancel=new AbortController()
+  const pending=fetch('/api/v1/media/places/baidu-jsapi/cells?'+
+    'west=100&south=20&east=125&north=40&sort_by=captured&sort_dir=desc',{
+    credentials:'same-origin',redirect:'error',cache:'no-store',
+    headers:{Authorization:'Bearer '+bearer},signal:cancel.signal})
+  cancel.abort()
+  let aborted=false
+  try{await pending}catch(error){aborted=error?.name==='AbortError'}
+  if(!aborted)throw Error('stale in-flight Owner Cells request was not aborted')
   // Boolean-only test signal; neither JWT nor private Owner IDs leave closure.
   window.__xdrivePlacesNativeRevocationReady=true
   await new Promise(resolve=>window.addEventListener(
@@ -388,13 +399,9 @@ async function run(win){
     const attached=await until(async()=>{
       return guest&&!guest.isDestroyed()?guest:null
     },30000,'actual Main-attached HTTPS WebView')
-    stage='production-Desktop-F12-real-WebView-DevTools'
-    win.webContents.focus()
-    win.webContents.sendInputEvent({type:'keyDown',keyCode:'F12'})
-    await until(()=>attached.isDevToolsOpened(),8000,
-      'F12 must inspect real HTTPS Places WebView, not parent Electron shell')
-    assert.equal(win.webContents.isDevToolsOpened(),false)
-    attached.closeDevTools()
+    // The real HTTPS Guest may attach before the window has been shown or
+    // its document can receive keyboard events. Check F12 only after the
+    // authenticated Web root is actually mounted, never via a fake IPC.
     stage='production-Web-Owner-Places-root'
     const state=await until(()=>attached.executeJavaScript(
       '('+inspectRealWebGuest.toString()+')()'),
@@ -409,6 +416,31 @@ async function run(win){
     assert.equal(state.mapMode,'prototype','default map unexpectedly forced isolation')
     assert.equal(state.modeConsistent,true,'initial Web SDK mode and navigation differ')
     assert.equal(state.hasModeControls,true,'production Web shared map controls absent')
+    stage='production-Desktop-F12-real-WebView-DevTools'
+    if(!win.isVisible())win.show()
+    win.focus()
+    win.webContents.focus()
+    win.webContents.sendInputEvent({type:'keyDown',keyCode:'F12'})
+    let f12Opened=false
+    try{await until(()=>attached.isDevToolsOpened(),2500,'Parent F12 Guest DevTools');f12Opened=true}
+    catch{/* The focused sandboxed guest may own input in Chromium. */}
+    if(!f12Opened){
+      attached.focus()
+      attached.sendInputEvent({type:'keyDown',keyCode:'F12'})
+      try{await until(()=>attached.isDevToolsOpened(),8000,'Guest F12 DevTools');f12Opened=true}
+      catch(error){
+        throw Error('real F12 did not open map DevTools; '+JSON.stringify({
+          windowVisible:win.isVisible(),windowFocused:win.isFocused(),
+          parentFocused:win.webContents.isFocused(),
+          guestFocused:attached.isFocused(),parentTools:win.webContents.isDevToolsOpened(),
+          guestTools:attached.isDevToolsOpened(),guestDestroyed:attached.isDestroyed(),
+        })+'; '+String(error?.message||error))
+      }
+    }
+    assert.equal(f12Opened,true)
+    assert.equal(win.webContents.isDevToolsOpened(),false,
+      'F12 must not open Parent DevTools instead of the map Guest')
+    attached.closeDevTools()
     stage='production-Web-Owner-scoped-Gin-Cells-Viewer-and-map-route-fence'
     const media=await attached.executeJavaScript(
       '('+inspectRealWebGuestOwnerDataPath.toString()+')('+JSON.stringify(owner)+')')
@@ -452,6 +484,15 @@ async function run(win){
       }
       await select('isolated')
       await select('prototype')
+      // The production browser must remain authorized for the same exact
+      // filtered /cells, protected JPEG Viewer and route fence after two
+      // genuine document navigations. UI mode alone is insufficient.
+      const afterModes=await attached.executeJavaScript(
+        '('+inspectRealWebGuestOwnerDataPath.toString()+')('+JSON.stringify(owner)+')')
+      for(const name of ['ownerCells','favorites','family','familyFavorites',
+        'emptyDate','viewerRange','thumbnailBytesValid','viewerBytesValid','mapRouteOnly'])
+        assert.equal(afterModes[name],media[name],
+          'Owner scoped media changed across SDK mode: '+name)
       realWebModeRoundTrip=true
     }
     let legacyServerFailedClosed=false

@@ -216,7 +216,16 @@ async function main(){
             error=>{throw error}),
         ])
         await ipc.logout()
-        fs.writeFileSync(logoutDone,'logout',{mode:0o600})
+        // Change real Agent Owner while the old map Guest is mounted and its
+        // old map JWT is still held only inside a test-local closure. The
+        // old Owner must not recover through the new session.
+        const foreign=await ipc.login({
+          server:fixture.url,username:'production-map-foreign',
+          password:'OnlySyntheticForeign-2026!',trusted_lan_root_pem:tls.ca,
+        })
+        assert.equal(foreign.configured,true)
+        assert.equal(foreign.username,'production-map-foreign')
+        fs.writeFileSync(logoutDone,'logout-and-owner-switch',{mode:0o600})
       }
       results.push(await running)
       if(boot===1){
@@ -235,7 +244,8 @@ async function main(){
       actualSignedOwnerCells:true,scopedAlbumFavoritesAndDate:true,
       actualViewerMetadata:true,mapBearerRouteFence:true,
       actualOwnerJPEGDerivatives:true,
-      actualAgentLogoutDuringWebView:true,retiredOldOwnerGuest:true,
+      actualAgentLogoutDuringWebView:true,realAgentOwnerSwitch:true,
+      canceledInFlightOwnerRequest:true,retiredOldOwnerGuest:true,
       // No manual test, provider SDK, installed Windows or production server.
       physicalSystemTested:false,
     }))
