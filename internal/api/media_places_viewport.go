@@ -137,16 +137,18 @@ func mediaPlacesWithinViewport(query *gorm.DB, bounds mediaPlaceViewportBounds) 
 // image bytes or a 100k-item JS/DOM collection are materialized.
 func queryMediaPlacesViewport(
 	ctx context.Context, db *gorm.DB, ownerID uint64,
-	bounds mediaPlaceViewportBounds, limit, offset int,
+	bounds mediaPlaceViewportBounds, limit, offset int, optional ...*mediaCaptureBounds,
 ) (mediaPlacesViewportDTO, error) {
+	var scope *mediaCaptureBounds
+	if len(optional) > 0 { scope = optional[0] }
 	if ctx == nil || ctx.Err() != nil || db == nil || ownerID == 0 ||
 		limit < 1 || limit > mediaPlaceViewportMaxLimit ||
 		offset < 0 || offset > mediaPlacePageMaxOffset ||
-		!bounds.valid() {
+		!bounds.valid() || len(optional) > 1 || (scope != nil && !scope.valid()) {
 		return mediaPlacesViewportDTO{}, fmt.Errorf("invalid media viewport")
 	}
 	latCell, lonCell := mediaPlaceCellExpressions()
-	grouped := mediaPlacesWithinViewport(mediaPlacesBaseQuery(ctx, db, ownerID), bounds).
+	grouped := mediaPlacesWithinViewport(mediaMapCaptureFilter(mediaPlacesBaseQuery(ctx, db, ownerID), scope), bounds).
 		Select(latCell + " AS latitude_cell, " + lonCell + " AS longitude_cell").
 		Group(latCell + ", " + lonCell)
 	var totalCount int64
@@ -155,11 +157,11 @@ func queryMediaPlacesViewport(
 		return mediaPlacesViewportDTO{}, err
 	}
 	var totalPhotoCount int64
-	if err := mediaPlacesWithinViewport(mediaPlacesBaseQuery(ctx, db, ownerID), bounds).
+	if err := mediaPlacesWithinViewport(mediaMapCaptureFilter(mediaPlacesBaseQuery(ctx, db, ownerID), scope), bounds).
 		Distinct("pa.id").Count(&totalPhotoCount).Error; err != nil {
 		return mediaPlacesViewportDTO{}, err
 	}
-	items, err := queryMediaPlacesWindowScoped(ctx, db, ownerID, limit, offset, &bounds)
+	items, err := queryMediaPlacesWindowScoped(ctx, db, ownerID, limit, offset, &bounds, scope)
 	if err != nil {
 		return mediaPlacesViewportDTO{}, err
 	}
