@@ -245,6 +245,9 @@ func (s *Server) Router() *gin.Engine {
 	// native Photo grant can use these authenticated routes.
 	authed.GET("/clipboard/vault", s.clipboardVault)
 	authed.PUT("/clipboard/vault/check", s.putClipboardVaultCheck)
+	authed.GET("/clipboard/devices", s.listClipboardDevices)
+	authed.PUT("/clipboard/devices/self", s.enrollClipboardDeviceKey)
+	authed.POST("/clipboard/devices/:id/revoke", s.revokeClipboardDeviceKey)
 	authed.GET("/clipboard/items", s.listClipboardItems)
 	authed.GET("/clipboard/events", s.streamClipboardEvents)
 	authed.POST("/clipboard/items", s.createClipboardItem)

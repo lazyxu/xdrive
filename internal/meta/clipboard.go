@@ -22,7 +22,11 @@ type ClipboardItem struct {
 	ID            uint64    `gorm:"primaryKey"`
 	OwnerID       uint64    `gorm:"not null;index:idx_clipboard_owner_id,priority:1;uniqueIndex:idx_clipboard_event,priority:1"`
 	ClientEventID string    `gorm:"size:36;not null;uniqueIndex:idx_clipboard_event,priority:2"`
-	Kind          string    `gorm:"size:20;not null"`
+	Kind          string    `gorm:"size:48;not null"`
+	TargetDeviceID string `gorm:"size:36;not null;default:'';index"`
+	EphemeralKey string `gorm:"size:44;not null;default:''"`
+	WrappedKey string `gorm:"size:80;not null;default:''"`
+	NodeID *uint64 `gorm:"index"`
 	Nonce         string    `gorm:"size:24;not null"`
 	Ciphertext    string    `gorm:"type:text;not null"`
 	ExpiresAt     time.Time `gorm:"not null;index"`
@@ -38,7 +42,20 @@ type ClipboardChange struct {
 	ID        uint64    `gorm:"primaryKey"`
 	OwnerID   uint64    `gorm:"not null;index:idx_clipboard_change_owner,priority:1"`
 	Kind      string    `gorm:"size:12;not null"`
+	TargetDeviceID string `gorm:"size:36;not null;default:''"`
 	CreatedAt time.Time `gorm:"not null;index:idx_clipboard_change_owner,priority:2"`
 }
 
 func (ClipboardChange) TableName() string { return "xd_clipboard_changes" }
+
+// Separate Owner/device Clipboard capability; not an arbitrary Source/Root
+// entitlement. The Server stores public Curve25519 material only.
+type ClipboardDeviceKey struct {
+  OwnerID uint64 `gorm:"primaryKey"`
+  DeviceID string `gorm:"size:36;primaryKey"`
+  PublicKey string `gorm:"size:44;not null"`
+  CreatedAt time.Time
+  UpdatedAt time.Time
+  RevokedAt *time.Time `gorm:"index"`
+}
+func (ClipboardDeviceKey) TableName() string { return "xd_clipboard_device_keys" }
