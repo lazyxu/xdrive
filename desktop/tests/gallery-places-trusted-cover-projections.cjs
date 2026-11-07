@@ -298,3 +298,25 @@ test('signed Owner clusters occluded by iOS chrome or overlap remain discoverabl
   assert.match(shared,/xDriveMountBaiduIsolatedFrame/)
   assert.doesNotMatch(shared,/data-xdrive-places-photo-collection-strip/)
 })
+
+test('worldwide bootstrap photo count is not a current-camera SDK marker in either Host', () => {
+  const parent=fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+  const inline=fs.readFileSync(path.join(root,
+    'ui/shared/src/media-gallery-baidu-inline-map-host.ts'),'utf8')
+  const frame=fs.readFileSync(path.join(root,
+    'ui/shared/src/media-gallery-baidu-isolated-frame-host.ts'),'utf8')
+  const child=fs.readFileSync(path.join(root,
+    'deploy/baidu-isolated-child/child.js'),'utf8')
+  assert.match(parent,/frame\.replaceAuthorizedCells\(cells,liveCamera\)/)
+  assert.match(inline,/cameraScoped = currentCamera/)
+  assert.match(inline,/!cameraScoped \|\| coveredSelections\.size > 0/)
+  assert.match(inline,/display:'none', visibility:'hidden', pointerEvents:'none'/)
+  assert.match(frame,/bootstrapLabelSuppressed = !cameraScoped && reduced\.length > 0/)
+  assert.match(frame,/postBootstrapSuppression\(\)/)
+  assert.match(frame,/if \(bootstrapLabelSuppressed && Array\.isArray\(selections\)/)
+  assert.match(frame,/xDriveCreateBaiduIsolatedPhotoCoversMessage\(boundary,keys,keys\)/)
+  assert.match(child,/binding\.label\.setStyle\(\{display:'none',visibility:'hidden',pointerEvents:'none'\}\)/)
+  assert.match(child,/if \(!active \|\| !exact\(data,\s*\['version','generation','nonce','kind','keys'\]\)/)
+  assert.doesNotMatch(frame+parent,/new OwnerUploadSession|\.originalGPS|\.EXIF/)
+})
