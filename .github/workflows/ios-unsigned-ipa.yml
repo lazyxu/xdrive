@@ -135,6 +135,21 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-photo-issues"
           node --test desktop/tests/ios-native-photo-backup-window-progress.cjs
 
+      - name: Verify crash-durable Owner-local PhotoKit queue SQLite
+        run: |
+          set -euo pipefail
+          # Native Swift/SQLite state transitions, not merely source regexes.
+          # This executes both the 70-item out-of-window selected retry and
+          # obsolete failure-reason transaction cleanup on the exact PR HEAD.
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/PhotoBackupChangeQueueStore.swift \
+            ios/tests/PhotoBackupChangeQueueStoreChecks.swift \
+            -lsqlite3 -o "$RUNNER_TEMP/xdrive-ios-photo-queue-sqlite"
+          "$RUNNER_TEMP/xdrive-ios-photo-queue-sqlite"
+          node --test \
+            desktop/tests/ios-photo-persistent-failure-reasons.cjs \
+            desktop/tests/ios-photo-single-failed-retry.cjs
+
       - name: Verify V2 PhotoKit journal shard routing
         run: |
           set -euo pipefail
