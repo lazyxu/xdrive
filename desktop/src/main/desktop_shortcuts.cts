@@ -40,6 +40,20 @@ export function desktopShortcutActionFromInput(input: DesktopKeyboardInput): Des
   return null
 }
 
+/** F12 inspects the authenticated map guest (or Desktop if no guest).
+ * Ctrl/Cmd+Shift+I always inspects the local Desktop shell.
+ * No remote debugging port, privileged IPC or automatic diagnostics upload.
+ */
+export function desktopDevToolsTargetFromInput(
+  input: DesktopKeyboardInput,
+): 'places' | 'desktop' | null {
+  if ((input.type && input.type !== 'keyDown') || input.isAutoRepeat || input.alt) return null
+  if (!input.control && !input.meta && !input.shift && input.key === 'F12') return 'places'
+  if ((input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i')
+    return 'desktop'
+  return null
+}
+
 export function desktopShortcutShowsWindow(action: DesktopShortcutAction | null) {
   return action === 'transfers' || action === 'settings'
 }

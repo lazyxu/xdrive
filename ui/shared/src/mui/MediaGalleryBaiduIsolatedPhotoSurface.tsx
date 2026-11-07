@@ -974,6 +974,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   }
   return (
     <Box component="section" data-xdrive-baidu-isolated-photo-map
+      data-xdrive-places-sdk-phase={phase}
       sx={{px:edgeToEdge ? 0 : {xs:1.25,sm:1.5},pb:edgeToEdge ? 0 : 1.5,minWidth:0}}>
       <Box data-xdrive-places-cluster-overview role="region" aria-label="定位照片聚集地图"
         data-xdrive-places-ios-map-canvas={edgeToEdge ? '1' : undefined}
