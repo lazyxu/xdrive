@@ -6,6 +6,7 @@ import UIKit
 /// polls the iOS system pasteboard, persists its E2EE key or launches WebKit.
 struct XDriveIOSNativeClipboardScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    @Environment(\.scenePhase) private var scenePhase
     @State private var passphrase = ""
     @State private var key: SymmetricKey?
     @State private var aadScope = ""
@@ -131,36 +132,42 @@ struct XDriveIOSNativeClipboardScreen: View {
         } message: {
             Text("只删除当前 Owner 的 Server 密文历史，不能撤销。")
         }
-        .task(id: unlocked) {
-            guard unlocked else { return }
-            // Owner GET remains a foreground fallback for missing SSE events,
-            // network failures, expired auth, and old Server deployments.
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 15_000_000_000)
-                if Task.isCancelled { break }
+        // The polling task and SSE stream are both strictly foreground.
+        // Returning to an active scene triggers an immediate current-Owner GET.
+        .task(id: unlocked && scenePhase == .active) {
+            guard unlocked, scenePhase == .active else { return }
+            await refresh()
+            while !Task.isCancelled && scenePhase == .active {
+                do { try await Task.sleep(nanoseconds: 15_000_000_000) }
+                catch { break }
+                guard !Task.isCancelled, scenePhase == .active else { break }
                 await refresh()
             }
         }
-        .task(id: unlocked) {
-            guard unlocked else { return }
+        .task(id: unlocked && scenePhase == .active) {
+            guard unlocked, scenePhase == .active else { return }
             let generation = sessionGeneration
-            var after: UInt64 = 0 // Per-unlock, not persisted to disk/Keychain.
-            while !Task.isCancelled && sessionGeneration == generation && key != nil {
+            var after: UInt64 = 0 // Never persist or reuse across Owners.
+            while !Task.isCancelled && scenePhase == .active &&
+                  sessionGeneration == generation && key != nil {
                 do {
                     let client = try await authorizedClient(for: generation)
                     after = try await client.watchChanges(after: after) {
-                        guard !Task.isCancelled, sessionGeneration == generation,
+                        guard !Task.isCancelled, scenePhase == .active,
+                              sessionGeneration == generation,
                               ownerAtUnlock == client.owner, key != nil else { return }
-                        await refresh() // SSE never carries message ciphertext.
+                        await refresh() // Stream contains only invalidations.
                     }
                 } catch {
-                    if Task.isCancelled || sessionGeneration != generation { break }
-                    // SSE is optional: the 15-second visible GET keeps working.
+                    if Task.isCancelled || scenePhase != .active ||
+                        sessionGeneration != generation { break }
+                    // Older Server/no SSE: 15-second foreground GET remains.
                 }
-                guard !Task.isCancelled, sessionGeneration == generation,
-                      key != nil else { break }
-                await refresh() // Full GET compensation after every disconnect.
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled, scenePhase == .active,
+                      sessionGeneration == generation, key != nil else { break }
+                await refresh() // Full GET after disconnect/cursor eviction.
+                do { try await Task.sleep(nanoseconds: 3_000_000_000) }
+                catch { break }
             }
         }
         .onChange(of: login.owner) { _ in lock() }
