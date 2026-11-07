@@ -36,5 +36,14 @@ func (s *Server) verifiedMapBootstrapIdentity(ctx context.Context, bearer string
 	if err != nil || !baidumapjsapi.AccessAfterRevocation(access.IssuedAt, now, epoch.RevokedAfter) {
 		return auth.MapAccess{}, meta.BaiduJSAPIMapEpoch{}, denied
 	}
+	// /cells, /cell-items and other map routes call this helper AGAIN after
+	// their protected SQL reads. Without a second native RefreshToken check,
+	// a concurrent Agent logout between requireAuth and response could still
+	// return an old Owner map range even though all new requests are revoked.
+	if access.DesktopMapNativeRefreshID != 0 &&
+		!desktopMapNativeSessionActive(s.DB.WithContext(ctx), access.UserID,
+			access.DesktopMapNativeRefreshID, now, false) {
+		return auth.MapAccess{}, meta.BaiduJSAPIMapEpoch{}, denied
+	}
 	return access, epoch, nil
 }
