@@ -421,6 +421,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     // Transient same-Owner camera only, never serialized as GPS history.
     var cameraReturn: MKCoordinateRegion? = nil
     var onCameraChange: ((MKCoordinateRegion) -> Void)? = nil
+    var inheritedCaptureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var overview: XDriveIOSNativeOwnerMapOverview?
@@ -444,11 +445,25 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @State private var singleTask: Task<Void, Never>?
     @State private var focused = false
     @State private var mapType: MKMapType = .standard
+    @State private var captureOverride: XDriveIOSNativePhotoMapCaptureRange?
+    @State private var usingCaptureOverride = false
+    @State private var datePickerOpen = false
+    @State private var requestedCaptureDay = Date()
     @StateObject private var currentLocation = XDriveIOSNativeMapUserLocationController()
     @State private var showingMapHelp = false
     @State private var camera = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
         span: MKCoordinateSpan(latitudeDelta: 160, longitudeDelta: 360))
+
+    private var activeCaptureRange: XDriveIOSNativePhotoMapCaptureRange? {
+        usingCaptureOverride ? captureOverride : inheritedCaptureRange
+    }
+
+    private func setCaptureRange(_ range: XDriveIOSNativePhotoMapCaptureRange?) {
+        usingCaptureOverride = true
+        captureOverride = range
+        // onChange below cancels all previously authorized Owner map requests.
+    }
 
     private var mapMarkersEnabled: Bool {
         guard phase == .active, !busy, login.owner != nil,
@@ -543,7 +558,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     coverTask?.cancel()
                     coverTask = nil
                     selectedCluster = XDriveIOSOwnerMapChosenCluster(
-                        places: facets, owner: expected)
+                        places: facets, owner: expected,
+                        captureRange: activeCaptureRange)
                 },
                 onAggregate: {
                     error = "聚合区域已放大；相机稳定后自动刷新，必要时可手动刷新。"
@@ -567,6 +583,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
+            if let activeCaptureRange {
+                Text("当前照片日期：\(activeCaptureRange.label)")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-owner-map-capture-range")
+            }
             if busy { ProgressView("核对当前 Owner 地图位置…") }
             if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
@@ -582,7 +603,53 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         } message: {
             Text("当前地图仅展示已经验证的 Server Owner 位置代表项。地图移动后旧封面暂不可操作；相机稳定后重新核对。只有实际授权地点才可打开当前 Owner 的 48 项 PhotoAsset 分页与 Viewer；聚合区域不是照片访问凭证。")
         }
+        .sheet(isPresented: $datePickerOpen) {
+            NavigationStack {
+                Form {
+                    DatePicker("拍摄日期", selection: $requestedCaptureDay,
+                               displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                }
+                .navigationTitle("选择云端地图日期")
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("显示当天") {
+                            setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.day(
+                                requestedCaptureDay))
+                            datePickerOpen = false
+                        }
+                    }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { datePickerOpen = false }
+                    }
+                }
+            }
+        }
         .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Button("全部日期") { setCaptureRange(nil) }
+                    Button("最近 7 天") {
+                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
+                    }
+                    Button("最近 30 天") {
+                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
+                    }
+                    Section("按年份") {
+                        ForEach((max(1, Calendar.current.component(.year, from: Date()) - 20)...
+                            Calendar.current.component(.year, from: Date())).reversed(),
+                            id: \.self) { year in
+                            Button("\(year) 年") {
+                                setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(year))
+                            }
+                        }
+                    }
+                    Button("按指定日期") { datePickerOpen = true }
+                } label: {
+                    Label("地图日期", systemImage: "calendar")
+                }
+                .accessibilityIdentifier("native-ios-owner-map-capture-menu")
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     // Keep explicit retry/refresh accessible without occupying
@@ -652,7 +719,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         }) { place in
             NavigationStack {
                 XDriveIOSNativeServerMediaWall(
-                    login: login, album: nil, placeID: place.id)
+                    login: login, album: nil, placeID: place.id,
+                    captureRange: activeCaptureRange)
             }
             // One native map album sheet: medium preview grows into the same
             // verified 48-item PhotoAsset wall, without a fixed photo strip.
@@ -694,6 +762,10 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             camera = target
             onCameraChange?(target)
             scheduleCameraRefresh()
+        }
+        .onChange(of: activeCaptureRange) { _ in
+            if phase == .active { invalidate(); reload() }
+            else { invalidate() }
         }
         .onChange(of: login.owner) { _ in
             currentLocation.cancel()
@@ -763,7 +835,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     owner: auth.owner, accessToken: auth.accessToken)
                 // MapKit annotations are not access credentials. A fresh
                 // Owner-scoped single-place Range must prove the L3 item.
-                let result = try await reader.page(offset: 0, placeID: facet.id)
+                let result = try await reader.page(
+                    offset: 0, placeID: facet.id, captureRange: activeCaptureRange)
                 try Task.checkCancellation()
                 guard epoch == ticket, phase == .active,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
@@ -987,7 +1060,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 else { return }
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken)
-                let result = try await reader.mapOverview(bounds: bounds, detail: true)
+                let result = try await reader.mapOverview(
+                    bounds: bounds, detail: true, captureRange: activeCaptureRange)
                 try Task.checkCancellation()
                 guard epoch == ticket, phase == .active,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
