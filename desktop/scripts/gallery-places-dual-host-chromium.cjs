@@ -3542,20 +3542,18 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
     // must retain Owner authority while bounded user-driven next pages append.
     await big.click()
     await dialog.waitFor({state:'visible'})
-    await page.waitForFunction(()=>document.querySelectorAll(
-      '[data-xdrive-places-photo-drawer-item]').length===48)
+    await dialog.getByText('已显示 48 / 142 张',{exact:true}).waitFor()
     const loadMore=page.locator('[data-xdrive-places-photo-drawer-load-more]')
     await loadMore.click()
-    await page.waitForFunction(()=>document.querySelectorAll(
-      '[data-xdrive-places-photo-drawer-item]').length===96)
+    await dialog.getByText('已显示 96 / 142 张',{exact:true}).waitFor()
     await loadMore.click()
-    await page.waitForFunction(()=>document.querySelectorAll(
-      '[data-xdrive-places-photo-drawer-item]').length===142)
+    await dialog.getByText('此地点全部照片',{exact:true}).waitFor()
     const paged=await page.evaluate(()=>{
       const verified=window.__mapProbe.photoPreviewRanges.filter(p=>p.total===142)
       const tiles=Array.from(document.querySelectorAll(
         '[data-xdrive-places-photo-drawer-item]'))
       return {verified,tiles:tiles.length,
+        virtual:Boolean(document.querySelector('[data-xdrive-places-photo-drawer-items] [data-xdrive-media-gallery-virtual-grid]')),
         unique:new Set(tiles.map(t=>t.getAttribute(
           'data-xdrive-places-photo-drawer-item'))).size,
         more:document.querySelectorAll(
@@ -3570,7 +3568,8 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       paged.verified.every((p,i)=>p.limit===48&&p.offset===i*48&&
         p.items===[48,48,46][i]) && errors.length===0)
     record(mode+': full 142-photo dialog never mixes Cell tiles or old bottom strip',
-      paged.tiles===142&&paged.unique===142&&paged.more===0&&
+      paged.virtual&&paged.tiles>0&&paged.tiles<142&&
+      paged.unique===paged.tiles&&paged.more===0&&
       paged.error===0&&paged.fixedStrip===0&&errors.length===0)
     // The 142nd thumbnail must actually open the Owner-authenticated Viewer.
     // Re-entering this Cell cannot rely on the first 48-item page.
@@ -3587,7 +3586,7 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
         return {expanded:document.querySelector(
           '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded'),
           display:style.display,overflowY:style.overflowY,
-          gridColumns:style.gridTemplateColumns.split(' ').length,
+          virtual:Boolean(el.querySelector('[data-xdrive-media-gallery-virtual-grid]')),
           tileCount:el.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
           scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,
           scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,
@@ -3595,7 +3594,8 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
           parentHeight:Math.round(parent?.getBoundingClientRect().height||0)}
       })
     const vertical=scrollGeometry.expanded==='true' &&
-      scrollGeometry.display==='grid' &&
+      scrollGeometry.display==='block' && scrollGeometry.virtual &&
+      scrollGeometry.tileCount>0 && scrollGeometry.tileCount<142 &&
       scrollGeometry.overflowY==='auto' &&
       scrollGeometry.scrollHeight>scrollGeometry.clientHeight+40
     record(mode+': 142-photo Gallery modal has real expanded vertical overflow '+
@@ -3605,6 +3605,13 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
         el.scrollTop=el.scrollHeight
         return el.scrollTop
       })
+    // The 142nd item is only mounted when its virtual row enters view.
+    await page.waitForFunction(() => {
+      const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const tiles=list?.querySelectorAll('[data-xdrive-places-photo-drawer-item]')
+      return Boolean(tiles?.length && Number(tiles[tiles.length-1].getAttribute(
+        'data-xdrive-media-index'))===141)
+    })
     await page.locator('[data-xdrive-places-photo-drawer-item]').last().click()
     await page.locator('#fixture-viewer').waitFor({state:'visible'})
     const opened=await page.evaluate(()=>window.__mapProbe.photoOpens.at(-1))
@@ -3618,8 +3625,11 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       opened?.loadedCount===142&&errors.length===0)
     await page.locator('#fixture-viewer-back').click()
     await dialog.waitFor({state:'visible'})
-    await page.waitForFunction(()=>document.querySelectorAll(
-      '[data-xdrive-places-photo-drawer-item]').length===142)
+    await dialog.getByText('此地点全部照片',{exact:true}).waitFor()
+    await page.waitForFunction(()=>{
+      const tiles=document.querySelectorAll('[data-xdrive-places-photo-drawer-item]')
+      return tiles.length>0 && tiles.length<142
+    })
     const didRestore=await page.waitForFunction(expected=>{
       const node=document.querySelector('[data-xdrive-places-photo-drawer-items]')
       return node && Math.abs(node.scrollTop-expected)<6
@@ -3649,7 +3659,8 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       const pages=p.photoPreviewRanges.slice(previous.previews)
         .filter(x=>x.total===142)
       if(p.queries.length<=previous.queries||!list||
-          list.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length!==142||
+          !drawer.textContent?.includes('此地点全部照片')||
+          !list.querySelector('[data-xdrive-media-gallery-virtual-grid]')||
           pages.length<3)return false
       const maxScroll=Math.max(0,list.scrollHeight-list.clientHeight)
       const target=Math.min(previous.scrollTop,maxScroll)
@@ -3677,8 +3688,8 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       }
     },beforeRotation)
     const rotationPass=restoredAfterRotate&&rotation.reauthorized&&rotation.oldDetached&&
-      rotation.total===170&&rotation.nodes.length===142&&
-      new Set(rotation.nodes).size===142&&rotation.pages.length===3&&
+      rotation.total===170&&rotation.nodes.length>0&&rotation.nodes.length<142&&
+      new Set(rotation.nodes).size===rotation.nodes.length&&rotation.pages.length===3&&
       rotation.pages.every((p,i)=>p.offset===i*48&&p.limit===48&&
         p.items===[48,48,46][i])&&
       Math.abs(rotation.scrollTop-rotation.target)<6&&
