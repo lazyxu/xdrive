@@ -54,6 +54,8 @@ test('retry atomically removes stale reason; next failed attempt cannot inherit 
   assert.match(retry, /if changed \{[\s\S]*?DELETE FROM failure_reasons WHERE asset_id=\? AND revision=\?/)
   assert.match(retry, /try execute\("COMMIT"\)/)
   assert.match(assertion, /A second item-local failure of the same queued revision/)
+  assert.match(assertion, /70 failed revisions must include a non-head item/)
+  assert.match(assertion, /selected-beyond-64.sqlite3/)
   assert.match(assertion, /reopened\.status\(for: "reason-video"\)\?\.failureReasonCode == nil/)
   assert.doesNotMatch(method, /URLSession|NodeReceipt|ServerResponse|pendingCount/)
 })
