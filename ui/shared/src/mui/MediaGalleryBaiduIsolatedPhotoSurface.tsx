@@ -624,7 +624,11 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           cells.push({latitude:cell.latitude,longitude:cell.longitude,
             count:cell.photo_count,selection})
         }
-        if(!frame.replaceAuthorizedCells(cells)) throw new Error('map_cells_unavailable')
+        // Initial worldwide /cells is only a camera-fitting overview; its
+        // totals (e.g. 1,198) are NOT the live camera photo count (e.g. 397).
+        // Both Hosts suppress bootstrap numeric Labels until an accepted
+        // camera-scoped response replaces them.
+        if(!frame.replaceAuthorizedCells(cells,liveCamera)) throw new Error('map_cells_unavailable')
         if(approved.key!==filterRef.current.key || run!==generation)return false
         acceptedScope.current={key:approved.key,scope:verifiedScope}
         acceptedCells.current=cells.map(item=>item.selection)
