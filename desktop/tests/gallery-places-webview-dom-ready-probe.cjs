@@ -81,5 +81,8 @@ test('black-screen regression: React root alone must never expose an empty WebVi
   assert.equal(decode('unavailable'),'unavailable')
   assert.match(sdkSurface,/data-xdrive-places-sdk-phase=\{phase\}/)
   assert.match(component,/state==='unavailable'/)
+  assert.match(component,/const failGuest=/)
+  assert.match(component,/const failed=ready && Boolean\(desktopEmbedError\)/)
+  assert.match(component,/role=\{failed\?'alert':'status'\}/)
   assert.match(component,/按 F12 查看地图 Console 和 Network/)
 })
