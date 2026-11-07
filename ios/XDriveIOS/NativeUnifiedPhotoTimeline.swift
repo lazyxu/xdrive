@@ -255,8 +255,18 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
                 while window.count < limit && visited < Self.searchLimit {
                     try Task.checkCancellation()
                     if local.isEmpty && !cursor.localEnd {
-                        local = try await scanner.nextPage().items[...]
-                        cursor.localEnd = local.isEmpty
+                        do {
+                            local = try await scanner.nextPage().items[...]
+                            cursor.localEnd = local.isEmpty
+                        } catch is CancellationError {
+                            throw CancellationError()
+                        } catch {
+                            // Permission/source changed after start(): stop
+                            // this local cursor, not the Owner cloud page.
+                            cursor.localEnd = true
+                            local = []
+                            notice = "本机照片读取已中断；云端照片仍可浏览。"
+                        }
                     }
                     if cloud.isEmpty && !cursor.cloudEnd, let reader {
                         do {
@@ -290,10 +300,23 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
                     }
                     visited += 1
                 }
-                guard !window.isEmpty else { break }
+                guard current(ticket, login: login, owner: expected) else { return }
+                if !localWindowStillAuthorized(permission: permission, epoch: localEpoch) {
+                    // A revoked PhotoKit authorization must never publish a
+                    // transient local preview already read in this window.
+                    cursor.localEnd = true
+                    local = []
+                    visible.removeAll { $0.local != nil }
+                    window.removeAll {
+                        if case .local = $0 { return true }
+                        return false
+                    }
+                }
+                guard !window.isEmpty else {
+                    if cursor.finished { break }
+                    continue
+                }
                 var resolved = window.map(\.provisional)
-                guard current(ticket, login: login, owner: expected),
-                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission else { return }
                 if filter == nil && query == .init() { rows = visible + resolved }
                 if canMatch, let reader {
                     do {
@@ -314,10 +337,12 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
                     }
                 }
                 if !canMatch { resolved = resolved.map { $0.unresolved(.cloudUnavailable) } }
-                guard current(ticket, login: login, owner: expected),
-                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission else { return }
-                if let localEpoch, !XDriveIOSNativePhotoFingerprintIndex.isCurrent(localEpoch.serialized) {
-                    throw XDrivePhotoKitScanFailure.snapshotChanged
+                guard current(ticket, login: login, owner: expected) else { return }
+                if !localWindowStillAuthorized(permission: permission, epoch: localEpoch) {
+                    cursor.localEnd = true
+                    local = []
+                    visible.removeAll { $0.local != nil }
+                    resolved.removeAll { $0.local != nil }
                 }
                 visible.append(contentsOf: resolved.filter {
                     (filter == nil || $0.presence == filter) && $0.matches(query)
@@ -486,6 +511,13 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
             for (ref, probe) in zip(batch, reply) { values[ref.node_id] = probe }
         }
         return values
+    }
+
+    private func localWindowStillAuthorized(permission: PHAuthorizationStatus,
+                                           epoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?) -> Bool {
+        guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission else { return false }
+        if let epoch { return XDriveIOSNativePhotoFingerprintIndex.isCurrent(epoch.serialized) }
+        return true
     }
 
     private func current(_ ticket: UUID, login: XDriveIOSNativeOwnerLoginModel, owner: XDriveNativeOwnerRoot) -> Bool {
