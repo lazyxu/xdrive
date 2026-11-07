@@ -119,6 +119,7 @@ internal data class NativeHomeNavigation(
             copy(selected = NativeHomeTab.FILES)
         NativeHomeShortcut.TRANSFERS -> openDynamic(NativeDynamicFeature.TRANSFERS)
         NativeHomeShortcut.NOTES -> openDynamic(NativeDynamicFeature.NOTES)
+        NativeHomeShortcut.CLIPBOARD -> openDynamic(NativeDynamicFeature.CLIPBOARD)
         }
         return routed.copy(
             recentShortcuts = (listOf(shortcut) + recentShortcuts.filterNot {
