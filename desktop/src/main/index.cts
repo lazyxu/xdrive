@@ -39,6 +39,8 @@ import { probeDesktopServer as probeDesktopServerWithChromium } from './server_p
 import { DesktopLoginIntents } from './login_intents.cjs'
 import { ConnectionRouteError, fetchWithConnectionIP, hasConnectionRoute, parseConnectionRoute,
   selectConnectionRoute, type ConnectionRoute } from './connection_route.cjs'
+import { createDesktopPlacesPinnedRoute, desktopPlacesSelectedRoute,
+  type DesktopPlacesPinnedRoute } from './places_guest_connection_route.cjs'
 import {
   enrollLANRootViaTrustedDomain, fetchWithPinnedLANRoot, inspectPrivateLANFirstUse,
   privateLANOrigin, probeWithTrustedLANRoot, trustedDomainCandidates,
@@ -362,6 +364,54 @@ let desktopPlacesWebGeneration = 0
 let desktopPlacesWebReady: DesktopPlacesWebIdentity | null = null
 let desktopPlacesWebPending: (DesktopPlacesWebIdentity & { promise: Promise<boolean> }) | null = null
 let desktopPlacesWebQueue: Promise<void> = Promise.resolve()
+let desktopPlacesNetworkRoute: {
+  partition: string; owner: string; origin: string; ip: string
+  route: DesktopPlacesPinnedRoute
+} | null = null
+
+// Authenticated per-partition routing: Chromium retains the original HTTPS
+// Origin, SNI, SAN and HttpOnly Cookie. Only this Server goes through the
+// 127.0.0.1-bound, exact CONNECT tunnel; public SDK traffic remains DIRECT.
+async function ensureDesktopPlacesNetworkRoute(
+  identity: DesktopPlacesWebIdentity, generation: number,
+): Promise<boolean> {
+  const status = agentState.status
+  const selectedIP = status?.connection_ip?.trim() || ''
+  if (!selectedIP) return desktopPlacesNetworkRoute === null
+  const target = desktopPlacesSelectedRoute(identity.origin, selectedIP)
+  if (!target || !desktopPlacesWebOwnerStillCurrent(identity) ||
+    generation !== desktopPlacesWebGeneration) return false
+  const prior = desktopPlacesNetworkRoute
+  if (prior) return prior.partition === desktopPlacesWebPartition &&
+    prior.owner === identity.owner && prior.origin === identity.origin &&
+    prior.ip === selectedIP && prior.route.isActive()
+  const partition = desktopPlacesWebPartition
+  const valid = () => partition === desktopPlacesWebPartition &&
+    generation === desktopPlacesWebGeneration &&
+    desktopPlacesWebOwnerStillCurrent(identity) &&
+    agentState.status?.connection_ip === selectedIP
+  let route: DesktopPlacesPinnedRoute
+  try {
+    route = await createDesktopPlacesPinnedRoute(identity.origin, selectedIP, valid)
+  } catch { return false }
+  try {
+    const guest = session.fromPartition(partition, {cache:false})
+    await guest.setProxy({mode:'pac_script',pacScript:route.pacURL})
+    // A missing/unavailable PAC must never silently switch to DIRECT.
+    const actual = await guest.resolveProxy(identity.origin + '/api/v1/version')
+    const provider = await guest.resolveProxy('https://api.map.baidu.com/')
+    if (!valid() || actual !== route.proxyDirective || provider !== 'DIRECT')
+      throw new Error('per-origin map route not effective')
+    desktopPlacesNetworkRoute = {
+      partition, owner: identity.owner, origin: identity.origin,
+      ip: selectedIP, route,
+    }
+    return true
+  } catch {
+    route.close()
+    return false
+  }
+}
 // Main-only and strictly scoped to the live native Owner; never persisted or
 // exposed to Renderer. Explicit Desktop CA revocation always wins.
 let desktopPlacesAgentLANPin: {owner: string; pin: TrustedLANRoot} | null = null
@@ -371,6 +421,9 @@ const sameDesktopPlacesWebIdentity = (left: DesktopPlacesWebIdentity | null,
 
 function resetDesktopPlacesWebAuth() {
   desktopPlacesAgentLANPin = null
+  const retiringRoute = desktopPlacesNetworkRoute
+  desktopPlacesNetworkRoute = null
+  retiringRoute?.route.close()
   ++desktopPlacesWebGeneration
   desktopPlacesWebReady = null
   desktopPlacesWebPending = null
@@ -478,7 +531,34 @@ function configureDesktopPlacesWebSession(partition:string) {
     const allowed=xDriveResolveSecureBaiduMapTarget(agentState.status.server)?.origin ?? null
     // A provider script must never use the map Cookie partition to contact
     // localhost, an alternate private IP or another port.
-    callback({cancel:!placesGuestIPRequestAllowed(details.url,allowed)})
+    if (!placesGuestIPRequestAllowed(details.url,allowed)) {
+      callback({cancel:true});return
+    }
+    const selectedIP=agentState.status?.connection_ip?.trim() || ''
+    if (!selectedIP) {
+      callback({cancel:desktopPlacesNetworkRoute!==null});return
+    }
+    const target=desktopPlacesSelectedRoute(allowed,selectedIP)
+    const active=desktopPlacesNetworkRoute
+    if (!target || !active || active.partition!==partition ||
+      active.owner!==agentState.status.username ||
+      active.origin!==target.origin || active.ip!==selectedIP ||
+      !active.route.isActive()) {
+      callback({cancel:true});return
+    }
+    let requestOrigin=''
+    try { requestOrigin=new URL(details.url).origin } catch {
+      callback({cancel:true});return
+    }
+    if (requestOrigin!==target.origin) {
+      callback({cancel:false});return // public provider retains DIRECT TLS
+    }
+    void placesSession.resolveProxy(details.url).then(proxy=>{
+      callback({cancel:partition!==desktopPlacesWebPartition ||
+        !active.route.isActive() ||
+        agentState.status?.connection_ip!==selectedIP ||
+        proxy!==active.route.proxyDirective})
+    }).catch(()=>callback({cancel:true}))
   })
   placesSession.setCertificateVerifyProc((request,callback)=>{
     const status=agentState.status
@@ -534,6 +614,9 @@ function seedDesktopPlacesWebAuth(server: string, owner: string,
     if(generation!==desktopPlacesWebGeneration ||
       !desktopPlacesWebOwnerStillCurrent(identity))return false
     configureDesktopPlacesWebSession(desktopPlacesWebPartition)
+    if (!await ensureDesktopPlacesNetworkRoute(identity,generation)) return false
+    if (generation!==desktopPlacesWebGeneration ||
+      !desktopPlacesWebOwnerStillCurrent(identity)) return false
     const places = session.fromPartition(desktopPlacesWebPartition, {cache:false})
     // Chromium's network stack owns TLS validation and the partition Cookie
     // jar. The password is used only for this same-origin HTTPS POST in Main.
@@ -608,6 +691,9 @@ function seedDesktopPlacesWebAuthFromAgent(identity: DesktopPlacesWebIdentity):
     if (generation !== desktopPlacesWebGeneration ||
         !desktopPlacesWebOwnerStillCurrent(identity)) return false
     configureDesktopPlacesWebSession(desktopPlacesWebPartition)
+    if (!await ensureDesktopPlacesNetworkRoute(identity,generation)) return false
+    if (generation!==desktopPlacesWebGeneration ||
+      !desktopPlacesWebOwnerStillCurrent(identity)) return false
     const places = session.fromPartition(desktopPlacesWebPartition, {cache:false})
     const response = await places.fetch(identity.origin + '/api/v1/auth/desktop-map/redeem', {
       method: 'POST', credentials: 'include', redirect: 'error',
