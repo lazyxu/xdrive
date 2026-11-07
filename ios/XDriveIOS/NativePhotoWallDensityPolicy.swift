@@ -85,4 +85,11 @@ enum XDriveIOSNativePhotoWallWindowPolicy {
                                          scopeActive: Bool) -> Bool {
         scopeActive && anchor.map { verifiedIDs.contains($0) } == true
     }
+
+    static func canRestore<T>(_ anchor: T?, in verifiedItems: [T],
+                              scopeActive: Bool,
+                              matches: (T, T) -> Bool) -> Bool {
+        guard scopeActive, let anchor else { return false }
+        return verifiedItems.contains { matches($0, anchor) }
+    }
 }
