@@ -149,6 +149,9 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
             .onChange(of: backupBadgeOwner) { _ in
                 Task { await readVisibleQueueBadges() }
             }
+            .onChange(of: onlyNewSince) { _ in
+                Task { await readVisibleQueueBadges() }
+            }
             .task(id: "\(visible):\(displayActive):\(retry)") {
                 guard visible, displayActive, wall.failure == nil,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else {
@@ -227,8 +230,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                             .accessibilityLabel("\(row.isLive ? "实况照片" : row.isVideo ? "视频" : "照片")，\(row.presence.title)")
                             .contextMenu {
                                 Button("来源与核对详情") { pairing(row) }
-                                if let local = row.local, let priorityAction,
-                                   backupBadgeOwner != nil {
+                                if let local = row.local, let priorityAction {
                                     Button(queueBadges[local.id]?.state == "failed"
                                         ? "核对并重试失败原件" : "优先备份此原件") {
                                         priorityAction(
