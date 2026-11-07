@@ -23,8 +23,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 // Opt-in real production Web App and real Gin Owner/Cells HTTP test fixture.
@@ -159,6 +161,39 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 		Auth:       auth.New("production-map-test-only-no-real-user", 15*time.Minute),
 		RefreshTTL: time.Hour,
 	}
+	// The real Owner /cells and signed Web map routes require a managed
+	// release. Create only synthetic test keys here; no provider AK, live
+	// Baidu API, production user account or external network is used.
+	keys, err := connectorsecret.NewKeyring(1, map[uint32]string{
+		1: strings.Repeat("de", 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.ConnectorSecrets = keys
+	keyVersion, encryptedAK, err := keys.Seal(
+		baiduJSAPISecretAADID, baiduJSAPISecretKind,
+		[]byte("SYNTHETIC_PRODUCTION_MAP_E2E_AK_NO_PROVIDER"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.AdminServiceSecret{
+		Name: baiduJSAPISecretName, Enabled: true, Revision: 1,
+		KeyVersion: keyVersion, Ciphertext: encryptedAK,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := server.EnsureBaiduJSAPI4InternalKeys(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	priorCommit := version.Commit
+	version.Commit = strings.Repeat("d", 40)
+	defer func() { version.Commit = priorCommit }()
+	if err := server.RefreshBaiduJSAPI4ManagedRelease(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer server.ClearBaiduJSAPI4OperatorRelease()
 	gin.SetMode(gin.TestMode)
 	router := server.Router()
 	frontend := http.FileServer(http.Dir(dist))
