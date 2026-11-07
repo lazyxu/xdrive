@@ -126,9 +126,11 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 // verified retained prior Range, never a stale photo ID.
                 if let anchor = autoScrollReturn {
                     if activeOwner,
-                       priorWindow?.items.contains(where: {
-                           $0.sameVisibleRevision(as: anchor)
-                       }) == true {
+                       XDriveIOSNativePhotoWallWindowPolicy.canRestore(
+                           anchor, in: priorWindow?.items ?? [],
+                           scopeActive: activeOwner,
+                           matches: { $0.sameVisibleRevision(as: $1) }
+                       ) {
                         returnScroll.scrollTo(anchor.id, anchor: .bottom)
                     }
                     autoScrollReturn = nil
@@ -137,9 +139,11 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 // An unavailable, deleted or modified Node is never scrolled
                 // to using a stale visible ID from the old Viewer.
                 guard let anchor = viewerReturn, activeOwner,
-                      page?.items.contains(where: {
-                          $0.sameVisibleRevision(as: anchor)
-                      }) == true else {
+                      XDriveIOSNativePhotoWallWindowPolicy.canRestore(
+                          anchor, in: page?.items ?? [],
+                          scopeActive: activeOwner,
+                          matches: { $0.sameVisibleRevision(as: $1) }
+                      ) else {
                     viewerReturn = nil
                     return
                 }
