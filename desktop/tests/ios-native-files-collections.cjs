@@ -105,7 +105,7 @@ test('Recent and Favorites locate both list and grid items in the real Owner fol
   assert.match(screen, /\.sheet\(item: \$locateIntent, onDismiss: \{\s*locateOwner = nil[\s\S]*?if !model\.matches\(login\.owner, kind: kind\) \{ reload\(\) \}/)
   assert.match(screen, /XDriveIOSNativeFilesLocateScreen\(\s*login: login, selected: selected\.node,/)
   assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, openedOwner\)/)
-  assert.match(screen, /if selectedFile == nil && locateIntent == nil && managementIntent == nil/)
+  assert.match(screen, /if !viewerRefreshPending && selectedFile == nil &&\s*locateIntent == nil && managementIntent == nil \{[\s\S]*?model\.suspendForNavigation\(\)/)
   assert.match(screen, /locateIntent = nil\s*locateOwner = nil\s*managementIntent = nil\s*filterQuery = ""\s*showingClearRecentConfirmation = false\s*model\.invalidate\(\)\s*favorites\.invalidate\(\)\s*recentClear\.invalidate\(\)/)
   // Root-originated results must open the cloud root itself, not Browse home.
   assert.match(location, /login: login, folderID: openedOwner\.rootNodeID,/)
