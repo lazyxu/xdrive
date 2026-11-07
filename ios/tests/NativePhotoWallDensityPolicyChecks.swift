@@ -48,6 +48,13 @@ struct NativePhotoWallDensityPolicyChecks {
         precondition(Window.canRestore(4, in: [2, 4, 6], scopeActive: true))
         precondition(!Window.canRestore(3, in: [2, 4, 6], scopeActive: true))
         precondition(!Window.canRestore(4, in: [2, 4, 6], scopeActive: false))
+        let revisions = [(id: 1, revision: 5), (id: 2, revision: 3)]
+        precondition(Window.canRestore((id: 2, revision: 3),
+            in: revisions, scopeActive: true,
+            matches: { $0.id == $1.id && $0.revision == $1.revision }))
+        precondition(!Window.canRestore((id: 2, revision: 4),
+            in: revisions, scopeActive: true,
+            matches: { $0.id == $1.id && $0.revision == $1.revision }))
         print("native local PhotoKit square wall density and framing: PASS")
     }
 }
