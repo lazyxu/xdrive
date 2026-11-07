@@ -34,7 +34,7 @@ test('iOS subscription only runs while unlocked, has 15s GET fallback and reconn
   assert.match(swiftPage, /@Environment\(\\\.scenePhase\) private var scenePhase/)
   assert.match(swiftPage, /sessionGeneration == generation/)
   assert.match(swiftPage, /client\.watchChanges\(after: after\)/)
-  assert.match(swiftPage, /await refresh\(\) \/\/ Full GET compensation/)
+  assert.match(swiftPage, /await refresh\(\) \/\/ Full GET after disconnect/)
   assert.match(swiftPage, /15_000_000_000/)
   assert.match(swiftPage, /3_000_000_000/)
   assert.match(swiftPage, /\.onDisappear \{ lock\(\) \}/)
