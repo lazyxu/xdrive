@@ -27,9 +27,9 @@ test('read-only metrics may never silently promote unsuccessful originals', () =
   assert.match(policy, /for value in \[uploaded, verifiedAlready, unavailable, needsReview, unsupported\]/)
   assert.match(policy, /value <= unclassified/)
   assert.match(policy, /confirmed: uploaded \+ verifiedAlready/)
-  assert.match(screen, /needsReview: result\.needsReview/)
-  assert.match(screen, /unavailable: result\.unavailable/)
-  assert.match(screen, /unsupported: result\.videosNotSupported/)
+  assert.match(screen, /needsReview: result\.windowNeedsReview/)
+  assert.match(screen, /unavailable: result\.windowUnavailable/)
+  assert.match(screen, /unsupported: result\.windowUnsupported/)
   assert.match(screen, /window\.remaining/)
   assert.match(writer, /report\.uploaded \+= 1/)
   assert.match(writer, /report\.verifiedAlready \+= 1/)
@@ -61,7 +61,7 @@ test('bounded per-item failure explanation never marks failed originals as backe
   assert.match(issueSummary, /case sourceChanged/)
   assert.match(writer, /var issues = XDriveIOSPhotoBackupIssueSummary\(\)/)
   assert.match(writer, /report\.issues\.append\([\s\S]*?reason: \.unsupported/)
-  assert.match(writer, /report\.unavailable \+= 1\s*report\.issues\.append\([\s\S]*?reason: Self\.issueReason\(after: error\)/)
+  assert.match(writer, /report\.unavailable \+= 1\s*report\.windowUnavailable \+= 1\s*report\.issues\.append\([\s\S]*?reason: Self\.issueReason\(after: error\)/)
   assert.match(writer, /XDrivePhotoKitExportFailure/)
   assert.match(writer, /XDriveIOSPhotoIntentPreparationError/)
   assert.match(screen, /if result\.issues\.total > 0 \{/)
@@ -73,4 +73,36 @@ test('bounded per-item failure explanation never marks failed originals as backe
   assert.doesNotMatch(writer.slice(writer.indexOf('    private static func issueReason('),
                                writer.indexOf('    /// A global authorization/receipt trust loss')),
                       /uploadPrepared|confirmReceipt|beginCreate/)
+})
+
+test('incremental queue receipts never consume unread current-window slots', () => {
+  // A queued original may be uploaded while scanned=0. The read policy
+  // must see only slot outcomes, not the queue-inclusive SourceRun totals.
+  const scanStart = writer.indexOf('scanning: while report.scanned < windowCapacity')
+  const scanEnd = writer.indexOf('/// Explicit one-photo priority upload.')
+  const queueStart = writer.indexOf('if let changeQueue {')
+  assert.ok(queueStart > 0 && scanStart > queueStart && scanEnd > scanStart)
+  const queue = writer.slice(queueStart, scanStart)
+  const scan = writer.slice(scanStart, scanEnd)
+  for (const label of [
+    'windowUploaded', 'windowVerifiedAlready', 'windowUnavailable',
+    'windowNeedsReview', 'windowUnsupported'
+  ]) {
+    assert.match(writer, new RegExp('var ' + label + ' = 0'))
+    assert.doesNotMatch(queue, new RegExp('report\\.' + label + ' \\+= 1'))
+  }
+  for (const [total, slot] of [
+    ['uploaded', 'windowUploaded'],
+    ['verifiedAlready', 'windowVerifiedAlready'],
+    ['unavailable', 'windowUnavailable'],
+    ['needsReview', 'windowNeedsReview'],
+    ['videosNotSupported', 'windowUnsupported']
+  ]) {
+    const countTotal = (scan.match(new RegExp('report\\.' + total + ' \\+= 1', 'g')) || []).length
+    const countSlot = (scan.match(new RegExp('report\\.' + slot + ' \\+= 1', 'g')) || []).length
+    assert.ok(countTotal > 0, total + ' must be counted in the scan')
+    assert.equal(countSlot, countTotal, slot + ' must track only positional scan results')
+    assert.match(screen, new RegExp('result\\.' + slot))
+  }
+  assert.match(screen, /不含增量优先队列/)
 })
