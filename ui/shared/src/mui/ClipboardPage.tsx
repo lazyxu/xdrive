@@ -342,12 +342,12 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                   onClick={() => { void pasteFromBrowser() }}>
                   从系统剪贴板读取
                 </Button>
-                {retryExpired && pending.current?.text === draft ? (
-                  <Button variant="outlined" color="warning" onClick={() => {
+                {retryExpired && pending.current ? (
+                  <Button variant="outlined" color="warning" disabled={busy} onClick={() => {
                     pending.current = null
                     setRetryExpired(false)
                     setMessage('已放弃旧回执。请先核对历史，再决定是否重新发送。')
-                  }}>放弃过期重试</Button>
+                  }}>{pending.current.text === draft ? '放弃过期重试' : '放弃待确认回执'}</Button>
                 ) : null}
               </Stack>
             </Stack>
