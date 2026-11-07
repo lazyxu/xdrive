@@ -782,3 +782,48 @@ test('DSM previous Host in-flight Source ACK cannot contaminate next Host or blo
     await act(async () => tree.unmount())
   }
 })
+
+test('DSM Source setup distinguishes offline owning Agent from unconfigured Server Owner', async () => {
+  const offline = await mountSetup({
+    serverConnection: async () => { throw Error('DSM backup request rejected (HTTP 503) [agent-unavailable]') },
+  }, () => {})
+  assert.match(visibleSetupCopy(offline), /无法连接本机 xdrive-agent/)
+  assert.doesNotMatch(visibleSetupCopy(offline), /请先在共享设置中登录当前 Server Owner/)
+  assert.equal(button(offline, '确认创建并绑定本地目录').props.disabled, true)
+  await act(async () => offline.unmount())
+
+  const unconfigured = await mountSetup({
+    serverConnection: async () => ({
+      configured: false, must_change_password: false, owner_scope: '',
+    }),
+  }, () => {})
+  assert.match(visibleSetupCopy(unconfigured), /尚未配置 xDrive Server 登录/)
+  assert.equal(button(unconfigured, '确认创建并绑定本地目录').props.disabled, true)
+  await act(async () => unconfigured.unmount())
+})
+
+test('DSM local share check distinguishes Agent outage from actual NAS scan failure', async () => {
+  const Inventory = load('SynologyNASShareInventory').XDriveSynologyNASShareInventory
+  for (const [reason, expected] of [
+    ['agent-unavailable', /尚不能判定目录权限/],
+    ['nas-inventory-unavailable', /共享目录枚举失败/],
+  ]) {
+    let tree
+    await act(async () => {
+      tree = Renderer.create(React.createElement(Inventory, {
+        client: { nasShares: async () => {
+          throw Error('DSM backup request rejected (HTTP 503) [' + reason + ']')
+        } },
+      }))
+    })
+    await act(async () => {
+      const trigger = tree.root.findAllByType('Button').find(x =>
+        x.props.children === '检查可读共享目录')
+      assert.ok(trigger)
+      trigger.props.onClick()
+      await Promise.resolve()
+    })
+    assert.match(visibleSetupCopy(tree), expected)
+    await act(async () => tree.unmount())
+  }
+})

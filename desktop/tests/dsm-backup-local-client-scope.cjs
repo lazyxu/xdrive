@@ -330,3 +330,19 @@ test('DSM first-use 403 gives NAS-only principal setup steps without contaminati
     ['Approved NAS folder'])
   await act(async () => tree.unmount())
 })
+
+test('DSM Backup overview reports owning Agent failure without claiming NAS share ACL', async () => {
+  const client = {
+    list: async () => { throw Error('DSM backup request rejected (HTTP 503) [agent-unavailable]') },
+  }
+  let tree
+  await act(async () => {
+    tree = Renderer.create(React.createElement(Panel, { client }))
+    await Promise.resolve()
+  })
+  const text = renderedDSMText(tree.toJSON())
+  assert.match(text, /CGI 无法连接 xdrive-agent/)
+  assert.match(text, /不是共享目录读取权限的证明/)
+  assert.doesNotMatch(text, /xd backup synology-ui authorize --dsm-user/)
+  await act(async () => tree.unmount())
+})

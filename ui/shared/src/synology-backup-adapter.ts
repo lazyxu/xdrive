@@ -812,7 +812,14 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
           response.status === 422 && response.headers.get('X-XDrive-Login-No-Commit') === '1') {
         throw new XDriveDSMLoginNoCommitError()
       }
-      throw new Error(`DSM backup request rejected (HTTP ${response.status})`)
+      // Only these fixed, non-sensitive DSM CGI diagnostics are accepted.
+      // Never render arbitrary Agent or CGI response bodies in a browser.
+      const diagnostic = response.status === 503
+        ? response.headers.get('X-XDrive-DSM-Failure') : null
+      const reason = diagnostic && [
+        'agent-unavailable', 'server-connection-unavailable', 'nas-inventory-unavailable',
+      ].includes(diagnostic) ? ` [${diagnostic}]` : ''
+      throw new Error(`DSM backup request rejected (HTTP ${response.status})${reason}`)
     }
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/json')) {
       throw new Error('Invalid DSM local adapter response')

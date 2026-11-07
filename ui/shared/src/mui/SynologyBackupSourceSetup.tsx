@@ -42,6 +42,7 @@ function XDriveSynologyBackupSourceSetupForHost({
 }) {
   const [ownerScope, setOwnerScope] = useState('')
   const [scopeStatus, setScopeStatus] = useState<'checking' | 'ready' | 'unavailable'>('checking')
+  const [scopeFailure, setScopeFailure] = useState('')
   const [scopeRevision, setScopeRevision] = useState(0)
   const [shareRevision, setShareRevision] = useState(0)
   const [selectedShare, setSelectedShare] = useState<XDriveSynologyNASShare | null>(null)
@@ -70,20 +71,44 @@ function XDriveSynologyBackupSourceSetupForHost({
     const controller = new AbortController()
     setOwnerScope('')
     setScopeStatus('checking')
+    setScopeFailure('')
     setSelectedShare(null)
     setConfirmed(false)
     setShowDrafts(false)
     void client.serverConnection(controller.signal).then(info => {
       if (controller.signal.aborted) return
-      if (!info.configured || info.must_change_password ||
-        !/^[0-9a-f]{64}$/.test(info.owner_scope)) {
+      if (!info.configured) {
+        setScopeFailure('本机 Agent 尚未配置 xDrive Server 登录，请先在共享设置中登录当前 Server Owner。')
+        setScopeStatus('unavailable')
+        return
+      }
+      if (info.must_change_password) {
+        setScopeFailure('当前 Server 账户要求先修改密码，请完成账户验证后重新登录。')
+        setScopeStatus('unavailable')
+        return
+      }
+      if (!/^[0-9a-f]{64}$/.test(info.owner_scope)) {
+        setScopeFailure('当前 DSM 会话对应的 Server Owner 身份无效，请重新验证登录。')
         setScopeStatus('unavailable')
         return
       }
       setOwnerScope(info.owner_scope)
       setScopeStatus('ready')
-    }).catch(() => {
-      if (!controller.signal.aborted) setScopeStatus('unavailable')
+    }).catch((failure: unknown) => {
+      if (controller.signal.aborted) return
+      const detail = failure instanceof Error ? failure.message : ''
+      if (detail.includes('HTTP 503) [agent-unavailable]')) {
+        setScopeFailure('DSM CGI 无法连接本机 xdrive-agent。请先检查 DSM 套件服务和 Agent 日志；这不代表 Server 登录凭据错误。')
+      } else if (detail.includes('HTTP 503) [server-connection-unavailable]')) {
+        setScopeFailure('Agent 已连接，但读取 Server 登录状态失败，请检查 Agent 状态与本机凭据存储。')
+      } else if (detail.includes('HTTP 401)')) {
+        setScopeFailure('当前 DSM 登录会话已失效，请重新登录 DSM。')
+      } else if (detail.includes('HTTP 403)')) {
+        setScopeFailure('当前 DSM 用户未获得 xdrivenas 套件界面授权，请先由 NAS 管理员完成首次授权。')
+      } else {
+        setScopeFailure('无法读取本机 Agent 的 Server 登录状态；请检查 DSM CGI/Agent 和套件版本。')
+      }
+      setScopeStatus('unavailable')
     })
     return () => controller.abort()
   }, [client, scopeRevision])
@@ -267,7 +292,7 @@ function XDriveSynologyBackupSourceSetupForHost({
             <Typography role="status">正在检查当前 Agent 的 Server Owner…</Typography>
           ) : scopeStatus === 'unavailable' ? (
             <Typography role="alert" color="text.secondary">
-              当前 Server Owner 身份未验证，请先在共享设置里登录。无法创建新的 NAS Source。
+              {scopeFailure || '当前 Server Owner 身份未验证，无法创建新的 NAS Source。'}
             </Typography>
           ) : null}
           {selectedShare ? (

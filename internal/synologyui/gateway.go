@@ -459,6 +459,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	agent, err := g.Connect(ctx) // Same-user protected discovery; never spawn a new Agent.
 	if err != nil {
+		// A fixed diagnostic reason helps the browser distinguish an offline
+		// Agent from NAS share ACL or Server login problems. No IPC error,
+		// local path, session identity or discovery token is exposed.
+		w.Header().Set("X-XDrive-DSM-Failure", "agent-unavailable")
 		http.Error(w, "owning Agent unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -499,6 +503,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/server-connection" {
 			status, err := login.ServerConnection(ctx)
 			if err != nil {
+				w.Header().Set("X-XDrive-DSM-Failure", "server-connection-unavailable")
 				http.Error(w, "DSM Server connection unavailable", http.StatusServiceUnavailable)
 				return
 			}
@@ -704,6 +709,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		choices, err := enumerateNASShareChoices(ctx, root, key, username, r.Header.Get("Cookie"), r.Host)
 		if err != nil {
+			w.Header().Set("X-XDrive-DSM-Failure", "nas-inventory-unavailable")
 			http.Error(w, "NAS share inventory unavailable", http.StatusServiceUnavailable)
 			return
 		}
