@@ -2175,7 +2175,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Button {
                         openManagement(for: nil, quickAction: .uploadMultiple)
                     } label: {
-                        Label("上传多个文件（最多 8 项）", systemImage: "square.stack.3d.up")
+                        Label("上传多个文件（最多 64 项）", systemImage: "square.stack.3d.up")
                     }
                     .disabled(model.loading || !model.verifiedPage || selecting ||
                               batchTrash.busy || batchTarget.busy ||
