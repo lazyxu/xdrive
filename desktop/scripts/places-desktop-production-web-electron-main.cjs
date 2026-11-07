@@ -165,6 +165,7 @@ function inspectRealWebGuest(){
   return {ready:true,denied:false,login:false,
     hasGallery:!!root.querySelector('[data-xdrive-places-index]'),
     mapMode:mode?.getAttribute('data-xdrive-places-map-mode')||'',
+    hasModeControls:!!root.querySelector('[data-xdrive-map-mode-prototype]') && !!root.querySelector('[data-xdrive-map-mode-isolated]'),
     guestBridge:typeof window.xdrivePlacesEmbedBridge,
     hasNativeAgent:typeof window.xdriveDesktop,
     url:location.origin}
@@ -375,6 +376,7 @@ async function run(win){
     assert.equal(state.url,origin)
     assert.equal(state.hasGallery,true)
     assert.notEqual(state.mapMode,'isolated','default map unexpectedly forced isolation')
+    assert.equal(state.hasModeControls,true,'production Web shared map controls absent')
     stage='production-Web-Owner-scoped-Gin-Cells-Viewer-and-map-route-fence'
     const media=await attached.executeJavaScript(
       '('+inspectRealWebGuestOwnerDataPath.toString()+')('+JSON.stringify(owner)+')')
