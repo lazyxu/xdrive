@@ -421,6 +421,14 @@ declare global {
   type AgentStorageCacheCleanupKind = StorageCacheCleanupKind
   type AgentCloudVersion = FileVersion
   type AgentCloudShare = FileShare
+  type AgentClipboardVault = { owner_id: number; salt: string; kdf: string; iterations: number;
+    check_nonce: string; check_ciphertext: string; aad_scope: string }
+  type AgentClipboardCheck = { nonce: string; ciphertext: string; scope: string }
+  type AgentClipboardWrite = {
+    client_event_id: string; kind: 'text/plain' | 'text/uri-list'; nonce: string; ciphertext: string
+  }
+  type AgentClipboardItem = AgentClipboardWrite & { id: number; created_at: string; expires_at: string }
+  type AgentClipboardPage = { items: AgentClipboardItem[]; next_before: number | null }
   type AgentNotesSource = 'mine' | 'ios_notes'
   type AgentNotesNamespace = {
     system_node_id: number
