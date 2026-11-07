@@ -46,12 +46,38 @@ PUBLISH_PHASES = frozenset({
   | {f'share-package-{component}' for component in offline.COMPONENTS})
 
 
+# A private Share grant check must never print the exception, URL or credential.
+# Only allowlisted local diagnoses can appear in master CI logs.
+SHARE_GRANT_DIAGNOSES = frozenset({
+    'password-required', 'upload-grant-required',
+    'authorization-or-link', 'transport-unavailable', 'unknown',
+})
+
+
+def share_grant_diagnosis(error):
+    if isinstance(error, MirrorError):
+        detail = str(error)
+        if detail == 'Share password is required; configure the secret':
+            return 'password-required'
+        if detail == 'Target is not a writable folder share (enable view_upload)':
+            return 'upload-grant-required'
+        if re.fullmatch(r'Share API GET failed with HTTP (?:401|403|404|410)', detail):
+            return 'authorization-or-link'
+        if re.fullmatch(r'Share API GET failed after bounded retries \([^)]+\)', detail):
+            return 'transport-unavailable'
+    return 'unknown'
+
+
 class MirrorPhaseError(MirrorError):
-    def __init__(self, phase):
+    def __init__(self, phase, diagnosis=None):
         if phase not in PUBLISH_PHASES:
             raise ValueError('Unknown mirror stage')
+        if diagnosis is not None and (phase != 'share-grant' or
+                                      diagnosis not in SHARE_GRANT_DIAGNOSES):
+            raise ValueError('Unknown Share diagnostic category')
         super().__init__('Server mirror publication stage failed')
         self.phase = phase
+        self.diagnosis = diagnosis
 
 
 @contextmanager
@@ -64,7 +90,8 @@ def mirror_phase(phase):
     except (MirrorError, OSError, ValueError, KeyError, TypeError) as error:
         if isinstance(error, MirrorPhaseError):
             raise
-        raise MirrorPhaseError(phase) from error
+        diagnosis = share_grant_diagnosis(error) if phase == 'share-grant' else None
+        raise MirrorPhaseError(phase, diagnosis) from error
 
 
 def check_file(path, size, digest):
@@ -696,9 +723,12 @@ def main():
     except (MirrorError, OSError, ValueError, KeyError, TypeError) as error:
         # Only locally controlled codes are logged; exceptions may contain URLs
         # or credentials from an external process or private Share request.
-        code = (error.phase if isinstance(error, MirrorPhaseError)
-                else error.code if isinstance(error, PublicationError) and error.code in PublicationError.CODES
-                else 'verification')
+        if isinstance(error, MirrorPhaseError):
+            code = error.phase + (':' + error.diagnosis if error.diagnosis else '')
+        elif isinstance(error, PublicationError) and error.code in PublicationError.CODES:
+            code = error.code
+        else:
+            code = 'verification'
         print(f'Server release verification failed [{code}]; no publication may be assumed', file=sys.stderr)
         return 1
 
