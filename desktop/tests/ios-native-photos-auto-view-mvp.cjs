@@ -268,7 +268,14 @@ test('native local and album photo walls free short landscape grid space while r
     assert.match(screen, /@AccessibilityFocusState private var accessibilityFocusedTileID: String\?/, name)
     assert.match(screen, /\.onChange\(of: pageRenderRevision\)/, name)
     assert.match(screen, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/, name)
-    assert.match(screen, /if selected != nil \{ suspendForViewer\(\) \}/, name)
+    if (name === 'album') {
+      // Album MapKit cover is another transient child; preserve the verified
+      // page and scroll checkpoint, but invalidate on a genuine route exit.
+      assert.match(screen, /if selected != nil \\|\\| showingAlbumMap \\{ suspendForViewer\\(\\) \\}/, name)
+      assert.match(screen, /else \\{ libraryMonitor\\.stop\\(\\); invalidate\\(\\) \\}/, name)
+    } else {
+      assert.match(screen, /if selected != nil \\{ suspendForViewer\\(\\) \\}/, name)
+    }
     assert.doesNotMatch(screen, /\.id\(compactGallery\)|onChange\(of: compactGallery\)|UploadSession|URLSession/, name)
   }
   assert.match(localWall, /if authorization == \.limited \|\| !compactGallery/)
