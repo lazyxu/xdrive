@@ -104,6 +104,8 @@ async function bootElectron(boot,env,bootstrap){
     assert.equal(row.exactFamilyFavorites,2)
     assert.equal(row.exactViewerRange,9)
     assert.equal(row.viewerMetadata,true)
+    assert.equal(row.thumbnailBytesValid,true)
+    assert.equal(row.viewerBytesValid,true)
     assert.equal(row.noUnrelatedMapBearerAccess,true)
     if(boot===1)assert.equal(row.realWebModeRoundTrip,true)
     if(boot===1)assert.equal(row.browserLogoutRecovered,true)
@@ -217,6 +219,7 @@ async function main(){
       noSecondLogin:true,OwnerExact:true,syntheticPhotoFixture:true,
       actualSignedOwnerCells:true,scopedAlbumFavoritesAndDate:true,
       actualViewerMetadata:true,mapBearerRouteFence:true,
+      actualOwnerJPEGDerivatives:true,
       actualAgentLogoutDuringWebView:true,retiredOldOwnerGuest:true,
       // No manual test, provider SDK, installed Windows or production server.
       physicalSystemTested:false,
