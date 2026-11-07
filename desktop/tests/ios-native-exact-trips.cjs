@@ -179,3 +179,14 @@ test('accepted Owner map covers and TLS transport cannot regress when adding nat
   assert.match(reader, /func exactTripPage\(/);
   assert.doesNotMatch(covers, /URLSession\(configuration:|UploadSession|WKWebView/);
 });
+
+test('native Swift catches write the View message, never the immutable caught Error', () => {
+  const catches = [...ui.matchAll(/\}\s*catch\s*\{/g)];
+  assert.ok(catches.length >= 3);
+  const after = catches.map(match => ui.slice(match.index + match[0].length, match.index + match[0].length + 420));
+  assert.ok(after.some(x => x.includes('self.error = "该旅行照片成员已变化')));
+  assert.ok(after.some(x => x.includes('self.error = "照片已变化')));
+  for (const snippet of after) {
+    assert.doesNotMatch(snippet, /(?<!self\.)\berror\s*=\s*"/);
+  }
+});
