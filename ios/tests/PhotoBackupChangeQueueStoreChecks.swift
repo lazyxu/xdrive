@@ -318,6 +318,24 @@ import SQLite3
                     expectedBaselineToken: after, authorization: 3
                 ))
             }
+            // A task-list UI must page durable entries without materializing
+            // all identifiers, leaking raw error strings or shifting order.
+            let firstPage = try large.page(state: .failed, offset: 0, limit: 32)
+            let secondPage = try large.page(state: .failed, offset: 32, limit: 32)
+            let tailPage = try large.page(state: .failed, offset: 64, limit: 32)
+            precondition(firstPage.count == 32 && secondPage.count == 32 &&
+                         tailPage.count == 6)
+            precondition(Set((firstPage + secondPage + tailPage).map(\.localIdentifier)).count == 70)
+            precondition(firstPage.allSatisfy { $0.state == .failed && $0.revision == 1 })
+            precondition(try large.page(state: .waitingICloud).isEmpty)
+            do {
+                _ = try large.page(offset: -1)
+                fatalError("negative UI cursor admitted")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.invalidInput {}
+            do {
+                _ = try large.page(limit: 65)
+                fatalError("unbounded UI page admitted")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.invalidInput {}
             let head = try large.failed(limit: 64)
             try expect(head.count == 64)
             let included = Set(head.map(\.localIdentifier))
