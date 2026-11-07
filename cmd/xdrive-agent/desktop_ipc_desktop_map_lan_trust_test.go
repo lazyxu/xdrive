@@ -28,10 +28,10 @@ func desktopMapLANTestCA(t *testing.T) string {
 	now := time.Now()
 	cert := &x509.Certificate{
 		SerialNumber: big.NewInt(101),
-		Subject: pkix.Name{CommonName: "xDrive test-only private LAN CA"},
-		NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour),
+		Subject:      pkix.Name{CommonName: "xDrive test-only private LAN CA"},
+		NotBefore:    now.Add(-time.Minute), NotAfter: now.Add(time.Hour),
 		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
-		IsCA: true, BasicConstraintsValid: true,
+		IsCA:     true, BasicConstraintsValid: true,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, cert, cert, &key.PublicKey, key)
 	if err != nil {
@@ -85,9 +85,9 @@ func TestDesktopMapLANTrustPublicCAOnlyLoopbackAndOwnerScoped(t *testing.T) {
 	request("local-agent-token", "192.0.2.5:35678", endpoint, "", nil, http.StatusForbidden)
 	request("local-agent-token", local, endpoint+"?owner=foreign", "", nil, http.StatusForbidden)
 	request("local-agent-token", local, endpoint, "invalid-body", nil, http.StatusForbidden)
-	request("local-agent-token", local, endpoint, "", map[string]string{"Cookie":"private=1"}, http.StatusForbidden)
-	request("local-agent-token", local, endpoint, "", map[string]string{"Origin":"https://evil.invalid"}, http.StatusForbidden)
-	request("local-agent-token", local, endpoint, "", map[string]string{"Sec-Fetch-Site":"cross-site"}, http.StatusForbidden)
+	request("local-agent-token", local, endpoint, "", map[string]string{"Cookie": "private=1"}, http.StatusForbidden)
+	request("local-agent-token", local, endpoint, "", map[string]string{"Origin": "https://evil.invalid"}, http.StatusForbidden)
+	request("local-agent-token", local, endpoint, "", map[string]string{"Sec-Fetch-Site": "cross-site"}, http.StatusForbidden)
 	if stub.calls != 0 {
 		t.Fatal("untrusted request reached native public CA authority")
 	}
