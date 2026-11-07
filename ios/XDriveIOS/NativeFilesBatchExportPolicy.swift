@@ -1,8 +1,8 @@
 import Foundation
 
-/// Native Files MVP multi-export uses ONLY the current verified directory
-/// page. It stages 2-8 originals sequentially through the existing signed
-/// single-file export reader, bounded by 512 MiB across the entire batch.
+/// Native Files batch export consumes only revision-verified same-parent
+/// selections. It stages 2-32 originals sequentially through the existing
+/// signed single-file exporter: 2 GiB aggregate, 1 GiB per file.
 enum XDriveIOSNativeFilesBatchExportPolicy {
     static let maximumFiles = 32
     static let maximumAggregateBytes: Int64 = 2 * 1_073_741_824

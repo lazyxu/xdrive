@@ -1,6 +1,6 @@
 import Foundation
 
-/// First native Files multi-pick MVP: at most eight documents, uploaded
+/// Files multi-pick: at most 64 documents, uploaded
 /// sequentially through the existing single Original UploadSession writer.
 /// Case-insensitive duplicate names would collide on Server; reject the
 /// selection BEFORE uploading any item rather than skipping or overwriting.

@@ -2084,7 +2084,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if selecting {
                     Button("完成") {
-                        guard !batchTrash.busy, !batchTarget.busy,
+                        guard !batchTrash.busy, !batchTarget.busy, !chunked.busy,
                               !batchExport.busy, batchExport.prepared.isEmpty else { return }
                         cancelSelectAllRead()
                         model.cancelAdjacent()
@@ -2092,7 +2092,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                         selectedIDs.removeAll()
                         selectedSnapshots.removeAll()
                     }
-                    .disabled(batchTrash.busy || batchTarget.busy ||
+                    .disabled(batchTrash.busy || batchTarget.busy || chunked.busy ||
                               batchExport.busy || !batchExport.prepared.isEmpty)
                     .accessibilityIdentifier("native-ios-files-selection-done")
                 }

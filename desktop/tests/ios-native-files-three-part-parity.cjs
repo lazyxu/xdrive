@@ -47,6 +47,8 @@ test('2048 selected immutable Nodes split into exact 200-node server receipts', 
   assert.match(browser, /if chosenItems\.count > XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
   assert.match(browser, /if intent\.items\.count > XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
   assert.match(browser, /native-ios-files-chunked-cancel/)
+  assert.match(browser, /guard !batchTrash\.busy, !batchTarget\.busy, !chunked\.busy/)
+  assert.match(browser, /\.disabled\(batchTrash\.busy \|\| batchTarget\.busy \|\| chunked\.busy/)
 })
 
 test('bounded original upload, share-sheet export and multi-window native Viewer', () => {
