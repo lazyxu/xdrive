@@ -196,7 +196,7 @@ export function XDriveSourceDetailsDialog({
                       选择本机目录并授权
                     </MuiButton>
                   ) : (
-                    <MuiTypography variant="caption">请在对应的 Desktop 客户端完成本机目录授权。</MuiTypography>
+                    <MuiTypography variant="caption">请在该来源绑定设备的文件夹备份入口完成本地目录授权。</MuiTypography>
                   )}
                 </Stack>
               </XDriveStatusAlert>
