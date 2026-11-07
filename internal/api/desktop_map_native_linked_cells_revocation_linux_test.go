@@ -27,7 +27,6 @@ import (
 // No production handler, middleware or global test hook is modified.
 type desktopMapInFlightNativeLogoutKey struct{}
 
-
 // Real PostgreSQL and real production Gin endpoints. This is the missing
 // intersection of the existing native-linked browser JWT test (which used
 // /me) and ordinary Owner BD09 Cell Range tests (which used unlinked JWTs).
