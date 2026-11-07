@@ -16,7 +16,7 @@ const between = (source, start, end) => {
 };
 
 test('Files collection grid retains individual tile AX identities', () => {
-  assert.match(collection, /listRowSeparator\(\.hidden\)\s*\.accessibilityElement\(children: \.contain\)\s*\.accessibilityIdentifier\("native-ios-files-collection-grid"\)/);
+  assert.match(collection, /listRowSeparator\(\.hidden\)\s*(?:\/\/[^\n]*\n\s*)?\.accessibilityElement\(children: \.contain\)\s*\.accessibilityIdentifier\("native-ios-files-collection-grid"\)/);
   assert.match(collection, /accessibilityIdentifier\("native-ios-files-collection-open-\\\(item\.id\)"\)/);
 });
 test('Opening Files Viewer arms a single return refresh before presentation', () => {
