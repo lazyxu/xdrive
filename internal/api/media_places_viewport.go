@@ -24,10 +24,10 @@ const (
 )
 
 type mediaPlaceViewportBounds struct {
-	West  float64
-	South float64
-	East  float64
-	North float64
+	West  float64 `json:"west"`
+	South float64 `json:"south"`
+	East  float64 `json:"east"`
+	North float64 `json:"north"`
 }
 
 // Validate trusted internal calls too: NaN and infinity bypass ordinary
