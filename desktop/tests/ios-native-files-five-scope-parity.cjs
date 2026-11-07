@@ -60,3 +60,16 @@ test('P0 crash regression is an executable real Simulator test', () => {
   assert.match(xctest, /testFilesFirstOpenAndSixGalleryReturnsDoNotExit/)
   assert.match(xctest, /testFilesRecentBrowseFavoritesRepeatedWithoutCrash/)
 })
+
+
+test('release-c83 runtime fallback taps observed AX labels, never guessed screen coordinates', () => {
+  const testSource = src('ios/UITests/XDriveIOSNavigationRuntimeUITests.swift')
+  assert.match(testSource, /private func legacyControl\(/)
+  assert.match(testSource, /app\.buttons\.matching\(identifier: "native-ios-five-slot-bar"\)/)
+  assert.match(testSource, /app\.buttons\.matching\(identifier: "native-ios-files-quick-rail"\)/)
+  assert.match(testSource, /"files": "文件"/)
+  assert.match(testSource, /"recent": "最近", "browse": "浏览", "favorites": "收藏"/)
+  assert.match(testSource, /legacy\.waitForExistence\(timeout: 5\)/)
+  assert.match(testSource, /app\.state, \.runningForeground/)
+  assert.doesNotMatch(testSource, /normalizedCoordinate|coordinate\(withNormalizedOffset:/)
+})
