@@ -291,7 +291,15 @@ internal fun NativeHomeDynamic(
     onOpenDefaultMap: () -> Unit,
     onChooseDynamic: () -> Unit = {},
     notesController: DriveController? = null,
+    incomingClipboardText: String? = null,
+    onIncomingClipboardConsumed: () -> Unit = {},
 ) {
+    if (navigation.dynamicFeature == NativeDynamicFeature.CLIPBOARD) {
+        if (notesController != null) NativeClipboardScreen(notesController,
+            incomingClipboardText, onIncomingClipboardConsumed)
+        else Text("当前 Owner 尚未接通原生剪贴板")
+        return
+    }
     if (navigation.dynamicFeature == NativeDynamicFeature.NOTES) {
         if (notesController != null) NativeNotesScreen(notesController)
         else Text("当前 Owner 尚未接通原生笔记")
