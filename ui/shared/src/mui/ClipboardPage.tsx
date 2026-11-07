@@ -21,7 +21,7 @@ export type XDriveClipboardDataPort = {
   /** Server origin + authenticated, verified Owner ID. Never contain a token. */
   readonly ownerScopeKey: string
   vault(signal?: AbortSignal): Promise<{ salt: string; iterations: number; kdf: string;
-    check_nonce: string; check_ciphertext: string; aad_scope: string }>
+    check_nonce: string; check_ciphertext: string; aad_scope: string; owner_id?: number }>
   initializeCheck(check: { nonce: string; ciphertext: string; scope: string }, signal?: AbortSignal): Promise<{
     salt: string; iterations: number; kdf: string; check_nonce: string; check_ciphertext: string; aad_scope: string }>
   list(before?: number, signal?: AbortSignal): Promise<{ items: XDriveClipboardItem[]; next_before: number | null }>
