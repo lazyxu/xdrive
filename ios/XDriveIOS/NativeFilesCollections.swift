@@ -224,6 +224,7 @@ final class XDriveIOSNativeFilesCollectionPageModel: ObservableObject {
     @Published private(set) var loading = false
     @Published private(set) var verified = false
     @Published private(set) var error: String?
+    private var loadedOwner: XDriveNativeOwnerRoot?
     private var epoch = UUID()
     private var running: Task<Void, Never>?
 
@@ -231,10 +232,16 @@ final class XDriveIOSNativeFilesCollectionPageModel: ObservableObject {
         epoch = UUID()
         running?.cancel()
         running = nil
+        loadedOwner = nil
         items = []
         loading = false
         verified = false
         error = nil
+    }
+
+    func matches(_ owner: XDriveNativeOwnerRoot?) -> Bool {
+        guard verified, let owner, let loadedOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(owner, loadedOwner)
     }
 
     /// Favorited directory NavigationLinks are owned by 'items'. Clearing
@@ -256,7 +263,7 @@ final class XDriveIOSNativeFilesCollectionPageModel: ObservableObject {
             error = "请先验证原生服务器账户。"
             return
         }
-        if preserveVerifiedRows && verified {
+        if preserveVerifiedRows && matches(expected) {
             suspendForNavigation()
             error = nil
         } else {
@@ -284,6 +291,7 @@ final class XDriveIOSNativeFilesCollectionPageModel: ObservableObject {
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
                 items = fetched
+                loadedOwner = expected
                 verified = true
                 error = nil
             } catch is CancellationError {
@@ -504,6 +512,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     /// Recent and Favorites are bounded Owner projections, not an index of all
     /// Server files. Filter locally; do not create a second search endpoint.
     private var filteredItems: [XDriveIOSNativeFilesCollectionItem] {
+        // A -> B Owner switch may render before onChange invalidates the model.
+        guard model.matches(login.owner) else { return [] }
         let query = filterQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return model.items }
         return model.items.filter {
@@ -515,7 +525,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     var body: some View {
         ScrollViewReader { returnScroll in
             List {
-                if model.loading {
+                if model.loading && !model.matches(login.owner) {
                     HStack { ProgressView(); Text("正在读取云端文件…") }
                 } else if let error = model.error {
                     Text(error).foregroundStyle(.orange)
@@ -676,7 +686,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .sheet(item: $locateIntent, onDismiss: {
                 locateOwner = nil
-                reload()
+                // The route only looked up a Node location; no write occurred.
+                if !model.matches(login.owner) { reload() }
             }) { selected in
                 NavigationStack {
                     if let openedOwner = locateOwner,
@@ -693,7 +704,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .fullScreenCover(item: $selectedFile, onDismiss: {
                 selectedOwner = nil
-                reload()
+                // Recent may have changed after a confirmed Viewer read.
+                // Revalidate silently without tearing down the visible rows.
+                reload(preserveVerifiedRows: true)
             }) { initial in
                 if let openedOwner = selectedOwner {
                     XDriveIOSNativeFilesViewer(
@@ -717,10 +730,13 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     Text("当前服务器或账户已变化，请关闭 Viewer。")
                 }
             }
-            .onAppear { reload() }
+            .onAppear {
+                if !model.matches(login.owner) { reload() }
+            }
             .onDisappear {
                 if selectedFile == nil && locateIntent == nil && managementIntent == nil {
-                    model.invalidate()
+                    // NavigationLink child must not lose its source identity.
+                    model.suspendForNavigation()
                     favorites.invalidate()
                     recentClear.invalidate()
                     showingClearRecentConfirmation = false
@@ -946,8 +962,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
         return neighbors.contains(selected.node) ? neighbors : [selected.node]
     }
 
-    private func reload() {
+    private func reload(preserveVerifiedRows: Bool = false) {
         guard !favorites.busy, !recentClear.busy else { return }
-        model.load(kind, login: login)
+        model.load(kind, login: login, preserveVerifiedRows: preserveVerifiedRows)
     }
 }
