@@ -391,6 +391,25 @@ interface XDriveService {
     suspend fun verifyNativeAndroidDevice(
         accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
     ): Unit = throw ApiException(501, "Android device identity verification unavailable")
+    /** Native Clipboard never borrows Photo, SourceRun or Files credentials.
+     * Existing test stubs default to unsupported rather than falsely succeeding.
+     */
+    suspend fun clipboardVault(accessToken: String): OwnerClipboardVault =
+        throw ApiException(501,"Owner Clipboard vault unavailable")
+    suspend fun clipboardCheck(accessToken: String, nonce: String,
+        ciphertext: String, scope: String): OwnerClipboardVault =
+        throw ApiException(501,"Owner Clipboard verifier unavailable")
+    suspend fun clipboardList(accessToken: String, before: Long? = null): OwnerClipboardPage =
+        throw ApiException(501,"Owner Clipboard list unavailable")
+    suspend fun clipboardCreate(accessToken: String, item: XDriveClipboardCrypto.Wire): OwnerClipboardItem =
+        throw ApiException(501,"Owner Clipboard send unavailable")
+    suspend fun clipboardDelete(accessToken: String, id: Long) {
+        throw ApiException(501,"Owner Clipboard delete unavailable")
+    }
+    suspend fun clipboardClear(accessToken: String) {
+        throw ApiException(501,"Owner Clipboard clear unavailable")
+    }
+
     /** Exact Owner Notes endpoints. Mocks without Notes support fail closed. */
     suspend fun notesInitialize(accessToken: String) {
         throw ApiException(501, "Owner Notes namespace API unavailable")
