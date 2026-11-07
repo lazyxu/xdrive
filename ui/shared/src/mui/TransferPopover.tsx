@@ -23,6 +23,7 @@ import {
   xDriveNetworkTransferSummary,
   xDriveNetworkTransferTasks,
   xDriveTransferRootID,
+  xDriveTransferRevealDestination,
   xDriveTransferTerminal,
   xDriveTransferTree,
   xDriveTransferTreeActive,
@@ -129,6 +130,17 @@ function TransferPopoverSession({
   const setOpen = (value: boolean) => {
     setInternalOpen(value)
     onOpenChange?.(value)
+  }
+  const revealDestination = (task: XDriveTransferTask) => xDriveTransferRevealDestination(task, {
+    cloud: !disabled && Boolean(onShowInCloud),
+    local: !disabled && Boolean(onShowInLocal),
+  })
+  const openTask = (task: XDriveTransferTask) => {
+    const destination = revealDestination(task)
+    if (!destination) return
+    setOpen(false)
+    if (destination === 'local') onShowInLocal?.(task)
+    else onShowInCloud?.(task)
   }
   const rateLabel = (value: XDriveTransferDirectionSummary) => (
     `${formatBytes(value.bytesPerSecond)}/s${value.serverReported ? '（含服务端发送速度）' : ''}`
@@ -281,11 +293,7 @@ function TransferPopoverSession({
                   key={node.task.id}
                   onContextMenu={(event) => {
                     const task = node.task
-                    const canShowCloud = Boolean(onShowInCloud) && (
-                      (typeof task.cloud_parent_id === 'number' && Number.isSafeInteger(task.cloud_parent_id) && task.cloud_parent_id > 0) ||
-                      (typeof task.cloud_node_id === 'number' && Number.isSafeInteger(task.cloud_node_id) && task.cloud_node_id > 0))
-                    const canShowLocal = Boolean(onShowInLocal) && task.local_revealable === true
-                    if ((!canShowCloud && !canShowLocal) || disabled) return
+                    if (!revealDestination(task)) return
                     event.preventDefault()
                     setContextMenu({ task, mouseX: event.clientX, mouseY: event.clientY })
                   }}
@@ -296,6 +304,8 @@ function TransferPopoverSession({
                   now={now}
                   retryDisabled={retryDisabled || disabled}
                   retryingID={retryingID}
+                  onOpenTask={openTask}
+                  canOpenTask={(task) => revealDestination(task) !== null}
                   onRetry={onRetry ? (id) => {
                     closeButtonRef.current?.focus()
                     onRetry(id)
