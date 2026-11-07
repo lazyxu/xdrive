@@ -131,6 +131,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let framing: XDriveIOSNativePhotoWallFraming
     let selectionMode: Bool
     let selectedIDs: Set<String>
+    let retainWhileCovered: Bool
     let accessibilityFocus: AccessibilityFocusState<String?>.Binding
     let onSelect: (XDrivePhotoKitScanCandidate, XDrivePhotoKitScanPage) -> Void
     let onShare: (XDrivePhotoKitScanCandidate, Bool) -> Void
@@ -139,6 +140,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let onFailure: () -> Void
     @State private var page: XDrivePhotoKitScanPage?
     @State private var precedingCapturedAt: Date?
+    @State private var retainedGeneration: UUID?
     @State private var scanner: XDriveIOSNativeGalleryMediaScanner?
     @Environment(\.scenePhase) private var photoQueueScenePhase
     @Environment(\.xdriveNativePhotoQueueBadgeOwner) private var backupBadgeOwner
@@ -288,6 +290,17 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         .padding(.horizontal, 12)
         .id("page:\(offset)")
         .task(id: "\(generation)-\(offset)-\(mediaFilter.rawValue)") {
+            if let cached = page, retainedGeneration == generation,
+               cached.startOffset == offset,
+               cached.totalAccessibleAssets == expectedTotal,
+               [.authorized, .limited].contains(
+                   PHPhotoLibrary.authorizationStatus(for: .readWrite)
+               ) {
+                onRead(cached)
+                await refreshVisibleBackupQueueStatuses()
+                return
+            }
+            retainedGeneration = nil
             badgeReadEpoch = UUID()
             page = nil
             precedingCapturedAt = nil
@@ -312,6 +325,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 }
                 precedingCapturedAt = preceding
                 page = loaded
+                retainedGeneration = generation
                 onRead(loaded)
                 // Read at most this mounted 64-item page; never enumerate the
                 // entire PhotoKit library or leak IDs to the Server for a badge.
@@ -368,8 +382,11 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             }
         }
         .onDisappear {
-            page = nil
-            precedingCapturedAt = nil
+            if !retainWhileCovered {
+                page = nil
+                precedingCapturedAt = nil
+                retainedGeneration = nil
+            }
             visibleBackupQueueStates = [:]
             badgeReadEpoch = UUID()
             if let scanner { Task { await scanner.reset() } }
@@ -633,6 +650,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                     mediaFilter: mediaFilter, density: density,
                                     framing: framing, selectionMode: selectionMode,
                                     selectedIDs: Set(selectedCandidates.keys),
+                                    retainWhileCovered: selected != nil || showingMap,
                                     accessibilityFocus: $accessibilityFocusedTileID,
                                     onSelect: { asset, page in
                                         if selectionMode { toggleSelection(asset) }
