@@ -14,6 +14,7 @@ import (
 // These DTOs only contain ciphertext and immutable Owner vault metadata.
 // Clipboard is never authorized by a Device, SourceRun or share bearer.
 type ClipboardVault struct {
+    OwnerID uint64 `json:"owner_id"`
     Salt string `json:"salt"`
     KDF string `json:"kdf"`
     Iterations int `json:"iterations"`
