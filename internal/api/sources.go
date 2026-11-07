@@ -132,10 +132,10 @@ func toSourceDTO(source meta.Source) sourceDTO {
 		LastError: source.LastError, RunRequestedAt: source.RunRequestedAt,
 		CreatedAt: source.CreatedAt, UpdatedAt: source.UpdatedAt,
 	}
-	if source.DeviceID != nil {
-		dto.DeviceID = *source.DeviceID
-	} else if source.LocalCreatorDeviceID != nil {
-		dto.DeviceID = *source.LocalCreatorDeviceID
+	// Only the connector-neutral, server-verified DeviceID is published.
+	// Legacy creator metadata must not masquerade as an enrolled Push binding.
+	if deviceID, bound := meta.SourceDeviceID(source); bound {
+		dto.DeviceID = deviceID
 	}
 	if isLocalFolderPush(source) {
 		dto.IgnoreRules = ""
@@ -300,6 +300,7 @@ func (s *Server) listSourceOverview(c *gin.Context) {
 }
 
 var errLocalSourceCreateDeviceUnauthorized = errors.New("local source creation requires the owning device")
+var errNativePhotoSourceMutationUnauthorized = errors.New("native photos Source mutations require the registered device")
 
 func (s *Server) createSource(c *gin.Context) {
 	var req struct {
@@ -325,8 +326,8 @@ func (s *Server) createSource(c *gin.Context) {
 	req.RunMode = strings.TrimSpace(req.RunMode)
 	// iOS Photos device destinations are created only by the narrowly scoped
 	// Owner+native-iPhone endpoint. Generic Source creation cannot spoof one.
-	if req.Kind == meta.SourceKindIOSPhotos {
-		fail(c, http.StatusForbidden, "ios photos target requires native device proof")
+	if req.Kind == meta.SourceKindIOSPhotos || req.Kind == meta.SourceKindAndroidPhotos {
+		fail(c, http.StatusForbidden, "native photos target requires registered device proof")
 		return
 	}
 	if req.SyncMode == "" {
@@ -335,7 +336,30 @@ func (s *Server) createSource(c *gin.Context) {
 	if req.RunMode == "" {
 		req.RunMode = meta.SourceRunModeSync
 	}
-	if !meta.ValidSourceName(req.Name) || meta.ValidateName(req.Name) != nil || !meta.ValidSourceKind(req.Kind) || !meta.ValidSourceDirection(req.Direction) {
+	if !meta.ValidSourceKind(req.Kind) || !meta.ValidSourceDirection(req.Direction) {
+		fail(c, http.StatusBadRequest, "invalid source kind or direction")
+		return
+	}
+	// Latest Owner decision: DSM folder Push is the sole enabled Synology backup.
+	// Retain historical Sources and Pull connector code, not their write rights.
+	if meta.SynologyPullTemporarilyDisabled(req.Kind, req.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
+		return
+	}
+	if req.Kind == synologySourceKind && req.Direction == meta.SourceDirectionPush {
+		fail(c, http.StatusGone, "Synology Photos Push is retired; use DSM folder backup")
+		return
+	}
+	if req.Name == "" {
+		// A Push may omit the final name only when Server can derive it from
+		// the authenticated registered Device. Pull always needs an explicit
+		// or credential-derived final folder name.
+		if req.Direction != meta.SourceDirectionPush ||
+			(req.Kind != meta.SourceKindLocalFolder && req.Kind != synologySourceKind && req.Kind != "android_photos") {
+			fail(c, http.StatusBadRequest, "invalid source name, kind, or direction")
+			return
+		}
+	} else if !meta.ValidSourceName(req.Name) || meta.ValidateName(req.Name) != nil {
 		fail(c, http.StatusBadRequest, "invalid source name, kind, or direction")
 		return
 	}
@@ -358,6 +382,10 @@ func (s *Server) createSource(c *gin.Context) {
 	}
 	isLocalFolder := req.Kind == meta.SourceKindLocalFolder
 	isSynologyPush := req.Kind == synologySourceKind && req.Direction == meta.SourceDirectionPush
+	if isSynologyPush && req.SyncMode != meta.SourceSyncModeBackup {
+		fail(c, http.StatusBadRequest, "Synology Photos Push supports backup mode only")
+		return
+	}
 	var creatorDeviceID string
 	if (isLocalFolder || isSynologyPush) && req.Direction == meta.SourceDirectionPush {
 		parsed, err := uuid.Parse(strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
@@ -378,29 +406,12 @@ func (s *Server) createSource(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "Synology File Station only supports pull direction")
 		return
 	}
-	if isYike {
-		if req.Direction != meta.SourceDirectionPull {
-			fail(c, http.StatusBadRequest, "Yike Photos only supports pull direction")
-			return
-		}
+	managedPush := isLocalFolder || isSynologyPush
+	managedPull := isYike || isSynologyPull
+	if managedPush || managedPull {
 		if req.TargetNodeID != 0 {
-			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
+			fail(c, http.StatusBadRequest, "managed Push/Pull target is server-provisioned; target_node_id is not accepted")
 			return
-		}
-	} else if isSynologyPush {
-		if req.TargetNodeID != 0 {
-			fail(c, http.StatusBadRequest, "Synology Photos Push target is managed automatically")
-			return
-		}
-	} else if isSynologyPull || isLocalFolder {
-		// Older clients may still submit a selected Owner directory; validate
-		// its ownership for compatibility, but never adopt that directory as
-		// a new managed Pull or device-bound Push target.
-		if req.TargetNodeID != 0 {
-			if _, err := s.ownedDirectory(userID(c), req.TargetNodeID); err != nil {
-				fail(c, http.StatusBadRequest, "target directory not found")
-				return
-			}
 		}
 	} else {
 		if req.TargetNodeID == 0 {
@@ -418,9 +429,9 @@ func (s *Server) createSource(c *gin.Context) {
 	}
 	var target *uint64
 	status := meta.SourceStatusActive
-	if isYike {
-		// The managed target is bound atomically after the Cookie is validated and
-		// the Yike account UID/name are known.
+	if managedPull {
+		// Pull Sources stay paused until their provider credential is validated,
+		// but their final destination is provisioned at Source creation time.
 		status = meta.SourceStatusPaused
 	} else {
 		if isSynologyPull {
@@ -438,7 +449,7 @@ func (s *Server) createSource(c *gin.Context) {
 			// and verified its local Personal/Shared filesystem roots.
 			status = meta.SourceStatusPaused
 		}
-		if !isSynologyPull && !isLocalFolder && !isSynologyPush {
+		if !managedPull && !managedPush {
 			value := req.TargetNodeID
 			target = &value
 		}
@@ -449,43 +460,54 @@ func (s *Server) createSource(c *gin.Context) {
 		ScheduleType: schedule.Type, ScheduleExpression: schedule.Expression, ScheduleTimezone: schedule.Timezone,
 		Revision: 1, TargetNodeID: target, IgnoreRules: req.IgnoreRules,
 	}
-	// Lock enrollment before inserting this Source so a concurrent revoke
-	// cannot authorize an orphan unbound Source with a stale credential.
+	// All Source creation paths lock the Owner first. Managed provisioning,
+	// Source-name uniqueness and ancestor-overlap checks then share one
+	// transaction and cannot race another new Source for the same Owner.
 	var createErr error
-	if isLocalFolder || isSynologyPush {
+	if managedPush {
 		source.DeviceID = &creatorDeviceID
 		if isLocalFolder {
 			source.LocalCreatorDeviceID = &creatorDeviceID
 		}
+	}
+	if managedPush || managedPull {
 		createErr = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-			var device meta.ClientDevice
+			var lockedOwner meta.User
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("id = ? AND owner_id = ?", creatorDeviceID, userID(c)).
-				Take(&device).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return errLocalSourceCreateDeviceUnauthorized
-				}
+				Where("id = ?", source.OwnerID).Take(&lockedOwner).Error; err != nil {
 				return err
 			}
-			if isLocalFolder {
-				if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+			var device meta.ClientDevice
+			var devicePtr *meta.ClientDevice
+			if managedPush {
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("id = ? AND owner_id = ?", creatorDeviceID, userID(c)).
+					Take(&device).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return errLocalSourceCreateDeviceUnauthorized
+					}
+					return err
+				}
+				if isLocalFolder {
+					if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+						return errLocalSourceCreateDeviceUnauthorized
+					}
+				} else if device.Platform != "synology" ||
+					!clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
 					return errLocalSourceCreateDeviceUnauthorized
 				}
-			} else if device.Platform != "synology" ||
-				!clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
-				return errLocalSourceCreateDeviceUnauthorized
+				devicePtr = &device
+				if source.Name == "" {
+					source.Name = managedTargetSuggestion(device.Name, "设备")
+					if !meta.ValidSourceName(source.Name) || meta.ValidateName(source.Name) != nil {
+						return errInvalidSourceConfig
+					}
+				}
 			}
 			if err := tx.Create(&source).Error; err != nil {
 				return err
 			}
-			// Device identity comes from the device lock and credential, not
-			// the UI's target picker or an unauthenticated display name.
-			var managed meta.Node
-			if isLocalFolder {
-				managed, err = createLocalPushManagedTargetTx(c.Request.Context(), tx, source, device)
-			} else {
-				managed, err = createSynologyPushManagedTargetTx(c.Request.Context(), tx, source, device)
-			}
+			managed, err := provisionManagedSourceTargetTx(c.Request.Context(), tx, source, devicePtr)
 			if err != nil {
 				return err
 			}
@@ -502,32 +524,15 @@ func (s *Server) createSource(c *gin.Context) {
 			source.TargetManaged = true
 			return nil
 		})
-	} else if isSynologyPull {
-		// A new Pull Source owns its newly-created leaf; older manual target
-		// selections are ignored. Source + Node creation must commit together.
-		createErr = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-			if err := tx.Create(&source).Error; err != nil {
-				return err
-			}
-			managed, err := createSynologyPullManagedTargetTx(c.Request.Context(), tx, source)
-			if err != nil {
-				return err
-			}
-			updated := tx.Model(&meta.Source{}).
-				Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
-				Updates(map[string]any{"target_node_id": managed.ID, "target_managed": true})
-			if updated.Error != nil {
-				return updated.Error
-			}
-			if updated.RowsAffected != 1 {
-				return errSourceManagedDirectoryOccupied
-			}
-			source.TargetNodeID = &managed.ID
-			source.TargetManaged = true
-			return nil
-		})
 	} else {
-		createErr = s.DB.WithContext(c.Request.Context()).Create(&source).Error
+		createErr = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+			var lockedOwner meta.User
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ?", source.OwnerID).Take(&lockedOwner).Error; err != nil {
+				return err
+			}
+			return tx.Create(&source).Error
+		})
 	}
 	if createErr != nil {
 		switch {
@@ -535,6 +540,8 @@ func (s *Server) createSource(c *gin.Context) {
 			fail(c, http.StatusConflict, "managed source target name/path is occupied")
 		case errors.Is(createErr, errSourceManagedAncestorInUse):
 			fail(c, http.StatusConflict, "managed source hierarchy overlaps an existing Source")
+		case errors.Is(createErr, errSourceManagedDeviceMismatch):
+			fail(c, http.StatusForbidden, "registered Push device does not match this Source")
 		case errors.Is(createErr, errLocalSourceCreateDeviceUnauthorized):
 			fail(c, http.StatusForbidden, "owning device credential invalid or revoked")
 		case isDuplicate(createErr):
@@ -606,8 +613,13 @@ func (s *Server) updateSource(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&current).Error; err != nil {
 			return err
 		}
-		if current.Kind == meta.SourceKindIOSPhotos {
-			return errLocalSourceExecutorTransactionUnauthorized
+		if current.Kind == meta.SourceKindIOSPhotos || current.Kind == meta.SourceKindAndroidPhotos {
+			// The Owner can see native Sources, but generic PATCH may not
+			// mutate their Source revision, managed target or schedule.
+			return errNativePhotoSourceMutationUnauthorized
+		}
+		if meta.SynologyPullTemporarilyDisabled(current.Kind, current.Direction) {
+			return errSynologyPullDisabled
 		}
 		currentRevision = current.Revision
 		if current.Revision != expected {
@@ -625,7 +637,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			}
 			var count int64
 			if err := tx.Model(&meta.Source{}).
-				Where("owner_id = ? AND id <> ? AND lower(name) = lower(?)", userID(c), id, name).
+				Where("owner_id = ? AND direction = ? AND id <> ? AND lower(name) = lower(?)",
+					userID(c), current.Direction, id, name).
 				Count(&count).Error; err != nil {
 				return err
 			}
@@ -646,6 +659,10 @@ func (s *Server) updateSource(c *gin.Context) {
 			mode := strings.TrimSpace(*req.SyncMode)
 			if !meta.ValidSourceSyncMode(mode) {
 				return errInvalidSourceConfig
+			}
+			if current.Kind == synologySourceKind && current.Direction == meta.SourceDirectionPush &&
+				mode != meta.SourceSyncModeBackup {
+				return errSynologyPushBackupOnly
 			}
 			if mode != current.SyncMode {
 				resetMirrorEvidence = true
@@ -755,14 +772,18 @@ func (s *Server) updateSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
+		case errors.Is(err, errNativePhotoSourceMutationUnauthorized):
+			fail(c, http.StatusForbidden, "native photos Source requires its registered device")
 		case errors.Is(err, errSourceArchived):
 			fail(c, http.StatusConflict, "source is archived; restore it before editing")
+		case errors.Is(err, errSynologyPullDisabled):
+			fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		case errors.Is(err, errSourceTargetNameConflict):
 			fail(c, http.StatusConflict, "managed target folder name already exists")
 		case errors.Is(err, errSourceTargetMigrationRequired):
 			fail(c, http.StatusConflict, "source target migration required before rename")
 		case errors.Is(err, errSourceTargetRenameActive):
-			fail(c, http.StatusConflict, "source has an active run; retry after it finishes")
+			fail(c, http.StatusConflict, "source has an active run or unsettled upload; retry after it finishes")
 		case errors.Is(err, errSourceNameTaken), isDuplicate(err):
 			fail(c, http.StatusConflict, "source name already exists")
 		case errors.Is(err, errLocalFolderNotReady):
@@ -771,6 +792,10 @@ func (s *Server) updateSource(c *gin.Context) {
 			fail(c, http.StatusConflict, "source credential must be configured before activation")
 		case errors.Is(err, errSourceConnectorConfigRequired):
 			fail(c, http.StatusConflict, "source connector config must be configured before activation")
+		case errors.Is(err, errSynologyPushNotReady):
+			fail(c, http.StatusConflict, "Synology Photos Push requires a current Device and verified Root binding")
+		case errors.Is(err, errSynologyPushBackupOnly):
+			fail(c, http.StatusBadRequest, "Synology Photos Push supports backup mode only")
 		case errors.Is(err, errManagedSourceTarget):
 			fail(c, http.StatusBadRequest, "managed source target cannot be changed manually")
 		case errors.Is(err, errInvalidSourceTarget):
@@ -805,6 +830,14 @@ func (s *Server) triggerSource(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
+		if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+			return errSynologyPullDisabled
+		}
+		if source.Kind == meta.SourceKindIOSPhotos || source.Kind == meta.SourceKindAndroidPhotos {
+			// A Server/Owner Run-Now request must never wake a native
+			// Photos executor, even if a Source was erroneously activated.
+			return errNativePhotoSourceMutationUnauthorized
+		}
 		if source.Kind == meta.SourceKindLocalFolder {
 			// No local Source trigger is executable until the native Agent
 			// planner, upload and commit protocol has been verified end-to-end.
@@ -829,6 +862,10 @@ func (s *Server) triggerSource(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, errNativePhotoSourceMutationUnauthorized) {
+			fail(c, http.StatusForbidden, "native photos Source requires its registered device")
+			return
+		}
 		writeSourceRunError(c, err)
 		return
 	}
@@ -986,8 +1023,11 @@ func (s *Server) deleteSource(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Kind == meta.SourceKindIOSPhotos {
-			return errLocalSourceExecutorTransactionUnauthorized
+		if source.Kind == meta.SourceKindIOSPhotos || source.Kind == meta.SourceKindAndroidPhotos {
+			return errNativePhotoSourceMutationUnauthorized
+		}
+		if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+			return errSynologyPullDisabled
 		}
 		currentRevision = source.Revision
 		if source.Revision != expected {
@@ -1004,6 +1044,11 @@ func (s *Server) deleteSource(c *gin.Context) {
 		}
 		if activeRuns != 0 {
 			return errSourceRunActive
+		}
+		// A Source can have a live UploadSession, staging or quota hold even
+		// after its SyncRun ended. DELETE must not revoke its reconciliation key.
+		if err := requireSourceNoUnsettledWritesTx(tx, source); err != nil {
+			return err
 		}
 		archive, err := sourceDeleteRequiresArchiveTx(tx, source)
 		if err != nil {
@@ -1032,14 +1077,20 @@ func (s *Server) deleteSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errSourceRunActive):
 			fail(c, http.StatusConflict, "source already has an active run")
+		case errors.Is(err, errSourceUnsettledWrites):
+			fail(c, http.StatusConflict, "source has unsettled uploads; finish or cancel before removal")
 		case errors.Is(err, errSourceArchived):
 			fail(c, http.StatusConflict, "archived source must be restored before removal")
 		case errors.Is(err, errLocalSourceRemovalWouldDropHistory):
 			fail(c, http.StatusConflict, "local backup must be archived before hard deletion")
 		case errors.Is(err, errSourceHistoryRequiresArchive):
 			fail(c, http.StatusConflict, "source has retained sync history; archive it before hard deletion")
+		case errors.Is(err, errSynologyPullDisabled):
+			fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
+		case errors.Is(err, errNativePhotoSourceMutationUnauthorized):
+			fail(c, http.StatusForbidden, "native photos Source requires its registered device")
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "source not found")
 		default:

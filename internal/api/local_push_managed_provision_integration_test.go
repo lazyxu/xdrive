@@ -69,18 +69,15 @@ func TestLocalPushAutoManagedTargetAndDraftCancellation(t *testing.T) {
 		return dto
 	}
 
-	create("无效密钥", oldFolder.ID, deviceA, secretB, http.StatusForbidden)
+	create("无效密钥", 0, deviceA, secretB, http.StatusForbidden)
 	create("不能接管其他用户", root.ID+999999999, deviceA, secretA, http.StatusBadRequest)
-	sourceA := create("本机照片", oldFolder.ID, deviceA, secretA, http.StatusCreated)
-	groupNameA, err := managedPushDeviceFolderName(deviceA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := "同步文件夹/Push/" + groupNameA + "/本机照片"
+	create("不可认领普通目录", oldFolder.ID, deviceA, secretA, http.StatusBadRequest)
+	sourceA := create("本机照片", 0, deviceA, secretA, http.StatusCreated)
+	expected := "同步文件夹/Push/本机照片"
 	if sourceA.TargetNodeID == nil || *sourceA.TargetNodeID == oldFolder.ID ||
 		sourceA.TargetPath != expected || sourceA.Status != meta.SourceStatusPaused ||
 		sourceA.Revision != 1 {
-		t.Fatalf("new Push did not get exclusive device cloud path: %+v", sourceA)
+		t.Fatalf("new Push did not get a flat managed cloud path: %+v", sourceA)
 	}
 	var sourceStored meta.Source
 	if err := db.First(&sourceStored, sourceA.ID).Error; err != nil {
@@ -109,7 +106,7 @@ func TestLocalPushAutoManagedTargetAndDraftCancellation(t *testing.T) {
 	}
 	if firstTarget.ID == secondTarget.ID || firstTarget.ParentID == nil ||
 		secondTarget.ParentID == nil || *firstTarget.ParentID != *secondTarget.ParentID {
-		t.Fatalf("same device did not reuse its verified group: %v / %v", firstTarget, secondTarget)
+		t.Fatalf("flat Push targets must be siblings: %v / %v", firstTarget, secondTarget)
 	}
 
 	// A direct read-only Share must not be severed by silent draft cleanup.
@@ -140,24 +137,27 @@ func TestLocalPushAutoManagedTargetAndDraftCancellation(t *testing.T) {
 		t.Fatalf("recreated Source claimed cancelled Node ID: %+v", retry)
 	}
 
-	// Two enrolled devices with the same user-visible name must be distinct.
+	// Two enrolled devices with the same display name keep independent
+	// Source.DeviceID even though their targets share one flat Push parent.
 	sourceB := create("第二台机器照片", 0, deviceB, secretB, http.StatusCreated)
 	var secondDeviceTarget meta.Node
 	if err := db.First(&secondDeviceTarget, *sourceB.TargetNodeID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if *secondDeviceTarget.ParentID == *firstTarget.ParentID {
-		t.Fatal("two devices with same display name shared one target group")
+	if secondDeviceTarget.ID == firstTarget.ID || secondDeviceTarget.ParentID == nil ||
+		firstTarget.ParentID == nil || *secondDeviceTarget.ParentID != *firstTarget.ParentID {
+		t.Fatal("different devices must share only the fixed Push parent, never a target Node")
 	}
 	hb := headers(deviceB, secretB)
 	hb["If-Match"] = `"1"`
 	requestWithHeaders(t, router, http.MethodDelete,
 		fmt.Sprintf("/api/v1/sources/%d/local-draft", sourceB.ID), token, nil,
 		http.StatusNoContent, hb)
-	// Last cancelled draft on this device removes its empty device group.
-	var orphanGroup meta.Node
-	if err := db.First(&orphanGroup, *secondDeviceTarget.ParentID).Error; err != gorm.ErrRecordNotFound {
-		t.Fatalf("orphan device group remained: %+v err=%v", orphanGroup, err)
+	// Cancelling a pristine Source deletes its leaf, NEVER the fixed Push namespace.
+	var pushParent meta.Node
+	if err := db.First(&pushParent, *secondDeviceTarget.ParentID).Error; err != nil ||
+		pushParent.Name != "Push" {
+		t.Fatalf("fixed Push parent was removed after draft cancellation: %+v err=%v", pushParent, err)
 	}
 	create("第二台机器照片", 0, deviceB, secretB, http.StatusCreated)
 
@@ -176,7 +176,7 @@ func TestLocalPushAutoManagedTargetAndDraftCancellation(t *testing.T) {
 	create("错误跨用户目标", otherRoot.ID, deviceA, secretA, http.StatusBadRequest)
 }
 
-func TestLocalPushAutoTargetRejectsUnownedDeviceGroup(t *testing.T) {
+func TestLocalPushAutoTargetRejectsExistingOrdinaryLeaf(t *testing.T) {
 	db, server, owner, _, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(&meta.ClientDevice{}); err != nil {
 		t.Fatal(err)
@@ -198,13 +198,9 @@ func TestLocalPushAutoTargetRejectsUnownedDeviceGroup(t *testing.T) {
 	if err := db.Create(&device).Error; err != nil {
 		t.Fatal(err)
 	}
-	groupName, err := managedPushDeviceFolderName(device)
-	if err != nil {
-		t.Fatal(err)
-	}
 	umbrella := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
 	push := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, "Push")
-	occupied := createFilePropertiesDir(t, db, owner.ID, push.ID, groupName)
+	occupied := createFilePropertiesDir(t, db, owner.ID, push.ID, "Not claimed")
 	body := `{"name":"Not claimed","kind":"local_folder","direction":"push","schedule_type":"manual"}`
 	headers := map[string]string{
 		"X-XDrive-Device-ID": device.ID, "X-XDrive-Device-Token": secret,
@@ -212,14 +208,14 @@ func TestLocalPushAutoTargetRejectsUnownedDeviceGroup(t *testing.T) {
 	result := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources",
 		ownerJWT, strings.NewReader(body), http.StatusConflict, headers)
 	if !strings.Contains(result.Body.String(), "managed source target") {
-		t.Fatalf("missing explicit occupied group conflict: %s", result.Body.String())
+		t.Fatalf("missing explicit occupied leaf conflict: %s", result.Body.String())
 	}
 	var after meta.Node
 	if err := db.First(&after, occupied.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	if after.ParentID == nil || *after.ParentID != push.ID || after.Revision != occupied.Revision {
-		t.Fatalf("user-owned device group was modified: %+v", after)
+		t.Fatalf("user-owned ordinary leaf was modified: %+v", after)
 	}
 	var sources int64
 	if err := db.Model(&meta.Source{}).Where("owner_id = ?", owner.ID).Count(&sources).Error; err != nil {

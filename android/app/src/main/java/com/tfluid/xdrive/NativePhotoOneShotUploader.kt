@@ -1,6 +1,8 @@
 package com.tfluid.xdrive
 
 import com.tfluid.xdrive.core.DriveNode
+import com.tfluid.xdrive.core.NativeAndroidDeviceEnrollment
+import com.tfluid.xdrive.core.NativeAndroidPhotoDestination
 import com.tfluid.xdrive.core.NativePhotoBackupScope
 import com.tfluid.xdrive.core.XDriveService
 import com.tfluid.xdrive.core.validDriveNodeName
@@ -14,6 +16,53 @@ import kotlinx.coroutines.ensureActive
  * Go UploadSession/chunk/finalize flow; an uncertain ACK must not be retried.
  */
 internal object NativePhotoOneShotUploader {
+    /**
+     * One Android Photo original through the verified managed Source/Target
+     * alias. The ordinary Owner root remains a proof of identity only, never
+     * the destination or a fallback if this capability is unavailable.
+     */
+    suspend fun uploadManaged(
+        service: XDriveService,
+        token: String,
+        owner: NativePhotoBackupScope,
+        verifiedRoot: DriveNode,
+        device: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination,
+        name: String,
+        original: NativePhotoStagedOriginal,
+        resumeKey: String,
+        currentSession: () -> Boolean,
+        onProgress: (Long) -> Unit = {},
+    ): DriveNode {
+        require(token.isNotBlank() && validDriveNodeName(name) && original.bytes > 0)
+        check(verifiedRoot.id == owner.rootId &&
+            verifiedRoot.revision == owner.rootRevision &&
+            verifiedRoot.isDirectory && verifiedRoot.parentId == null)
+        check(destination.configured && destination.deviceId == device.deviceId &&
+            destination.targetNodeId != null && destination.sourceId != null &&
+            destination.sourceRevision != null && destination.name != null &&
+            destination.targetPath == "同步文件夹/Push/" + destination.name)
+        currentCoroutineContext().ensureActive()
+        check(currentSession() && original.verifyBeforeWrite()) {
+            "Photo original or Owner changed before managed upload"
+        }
+        val progress: (Long) -> Unit = { confirmed ->
+            if (!currentSession()) throw CancellationException("Managed original Owner changed")
+            onProgress(confirmed)
+        }
+        val result = service.uploadManagedAndroidPhotoOriginal(
+            token, device, destination, name, original.bytes,
+            original.sha256, resumeKey, original::openVerifiedSource, progress)
+        currentCoroutineContext().ensureActive()
+        check(currentSession() && result.id > 0 &&
+            result.parentId == destination.targetNodeId &&
+            result.type == "file" && result.name == name &&
+            result.size == original.bytes && result.revision > 0) {
+            "Managed Android original returned an invalid Source/Node receipt"
+        }
+        return result
+    }
+
     suspend fun upload(
         service: XDriveService,
         token: String,

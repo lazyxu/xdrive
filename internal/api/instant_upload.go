@@ -111,7 +111,10 @@ func (s *Server) tryInstantUploadSession(
 					session.Status = meta.UploadStatusSkipped
 					session.InstantCAS = false
 					session.ResultNodeID = &conflict.ID
-					return tx.Create(&session).Error
+					if err := tx.Create(&session).Error; err != nil {
+						return err
+					}
+					return recordUploadAuthorizationSystemTx(tx, "instant.skip", session)
 				case meta.UploadConflictPolicyKeepBoth:
 					requested := session.RequestedName
 					if requested == "" {
@@ -195,7 +198,10 @@ func (s *Server) tryInstantUploadSession(
 		}
 
 		session.ResultNodeID = &resultID
-		return tx.Create(&session).Error
+		if err := tx.Create(&session).Error; err != nil {
+			return err
+		}
+		return recordUploadAuthorizationSystemTx(tx, "instant.commit", session)
 	})
 	if errors.Is(err, errInstantUploadUnavailable) {
 		return meta.UploadSession{}, currentRevision, false, nil

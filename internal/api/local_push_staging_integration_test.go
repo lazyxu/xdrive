@@ -68,7 +68,7 @@ func TestLocalPushStagingOwnDeviceActualBytesNeverCommitSource(t *testing.T) {
 		OwnerID: owner.ID, Name: "Private staging source",
 		Kind: meta.SourceKindLocalFolder, Direction: meta.SourceDirectionPush,
 		SyncMode: meta.SourceSyncModeBackup, Status: meta.SourceStatusPaused,
-		Revision: 7, TargetNodeID: &target.ID,
+		Revision: 7, TargetNodeID: &target.ID, DeviceID: &device.ID, LocalCreatorDeviceID: &device.ID,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)

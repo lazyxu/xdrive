@@ -330,3 +330,32 @@ func TestRunnerSerializesSharedAccountWithoutBlockingOtherAccounts(t *testing.T)
 		t.Fatalf("max global concurrency=%d want=2", got)
 	}
 }
+
+func TestDormantSynologyPullHandlersCannotDispatch(t *testing.T) {
+	photos := &fakeHandler{}
+	files := &fakeHandler{}
+	yike := &fakeHandler{}
+	runner := &Runner{
+		Handlers: map[string]SourceHandler{
+			"synology_photos": photos,
+			"synology_files":  files,
+			"yike_photos":     yike,
+		},
+		MaxConcurrency: 2,
+	}
+	report, err := runner.runSources(context.Background(), []meta.Source{
+		{ID: 11, OwnerID: 1, Kind: "synology_photos", Direction: meta.SourceDirectionPull},
+		{ID: 12, OwnerID: 1, Kind: "synology_files", Direction: meta.SourceDirectionPull},
+		{ID: 13, OwnerID: 1, Kind: "yike_photos", Direction: meta.SourceDirectionPull},
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if photos.calls != 0 || files.calls != 0 || yike.calls != 1 {
+		t.Fatalf("disabled Pull handlers dispatched: photos=%d files=%d yike=%d",
+			photos.calls, files.calls, yike.calls)
+	}
+	if report.Eligible != 1 || report.Completed != 1 || report.Failed != 0 {
+		t.Fatalf("dormant handlers affected active connector report: %+v", report)
+	}
+}

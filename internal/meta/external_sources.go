@@ -13,6 +13,9 @@ const (
 	// SourceKindIOSPhotos represents a device-authenticated, server-owned
 	// iPhone Photos backup target. Never grant it Desktop local-folder rights.
 	SourceKindIOSPhotos = "ios_photos"
+	// Android Photos must be created only by its native Device-bound endpoint.
+	// The generic Owner Source API must not claim an arbitrary Owner folder.
+	SourceKindAndroidPhotos = "android_photos"
 
 	SourceDirectionPush = "push"
 	SourceDirectionPull = "pull"
@@ -65,6 +68,7 @@ type Source struct {
 	Revision           uint64     `gorm:"not null;default:1"`
 	TargetNodeID       *uint64    `gorm:"index"`
 	TargetManaged      bool       `gorm:"not null;default:false"` // set only by verified server-owned target provisioning/migration
+	ProviderAccountID  string     `gorm:"size:128"`               // private stable remote account identity; never a directory name
 	IgnoreRules        string     `gorm:"type:text"`
 	Checkpoint         string     `gorm:"type:text"`
 	LastRunAt          *time.Time `gorm:"index"`
@@ -88,6 +92,26 @@ type Source struct {
 }
 
 func (Source) TableName() string { return "xd_sources" }
+
+// SourceDeviceID returns the verified canonical Device binding for a Push
+// Source. LocalCreatorDeviceID is migration input only; it never grants
+// authority when DeviceID is absent. Conflicting legacy metadata fails closed.
+func SourceDeviceID(source Source) (string, bool) {
+	if source.DeviceID == nil {
+		return "", false
+	}
+	deviceID := strings.TrimSpace(*source.DeviceID)
+	if deviceID == "" {
+		return "", false
+	}
+	if source.LocalCreatorDeviceID != nil {
+		legacyID := strings.TrimSpace(*source.LocalCreatorDeviceID)
+		if legacyID != "" && legacyID != deviceID {
+			return "", false
+		}
+	}
+	return deviceID, true
+}
 
 // SourceItem preserves the stable identity of one external item independently
 // from its path or content. NodeID is deliberately nullable: deleting an xDrive

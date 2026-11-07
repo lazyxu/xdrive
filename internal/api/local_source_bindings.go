@@ -88,6 +88,12 @@ func (s *Server) bindLocalSource(c *gin.Context) {
 			return err
 		}
 		currentRevision = source.Revision
+		// The canonical DeviceID is authoritative; the historical creator
+		// alias can only agree with it and can never grant a fallback binding.
+		boundDeviceID, bound := meta.SourceDeviceID(source)
+		if !bound || boundDeviceID != device.ID {
+			return errLocalBindingDeviceInvalid
+		}
 		if source.Revision != expected {
 			return errRevisionConflict
 		}
@@ -110,11 +116,6 @@ func (s *Server) bindLocalSource(c *gin.Context) {
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
-		}
-		// Existing legacy bindings may be replayed above, but an unbound
-		// Source cannot be claimed by an arbitrary same-account Desktop.
-		if source.LocalCreatorDeviceID == nil || *source.LocalCreatorDeviceID != device.ID {
-			return errLocalBindingDeviceInvalid
 		}
 		now := time.Now().UTC()
 		binding := meta.LocalSourceBinding{

@@ -17,6 +17,8 @@ import (
 // DELETE archives every configured or previously-used Source so its provider
 // identity, target binding, and synchronization history remain recoverable.
 // Only a pristine, unbound draft can be hard-deleted.
+// Use enabled Yike Pull for the generic lifecycle; disabled Synology Pull
+// DELETE is independently verified as HTTP 410 in its dedicated regression.
 func TestSourceDeleteArchivesRetainedStateAndHardDeletesPristineDraft(t *testing.T) {
 	db, server, owner, _, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(
@@ -41,7 +43,7 @@ func TestSourceDeleteArchivesRetainedStateAndHardDeletesPristineDraft(t *testing
 		t.Run(scenario, func(t *testing.T) {
 			src := meta.Source{
 				OwnerID: owner.ID, Name: "delete-" + scenario,
-				Kind: "synology_files", Direction: meta.SourceDirectionPull,
+				Kind: yikeSourceKind, Direction: meta.SourceDirectionPull,
 				SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeScan,
 				Status: meta.SourceStatusPaused, Revision: 1,
 			}

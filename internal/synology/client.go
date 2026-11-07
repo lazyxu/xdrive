@@ -62,7 +62,8 @@ func AccountConcurrencyKey(credential Credential) string {
 }
 
 type AccountInfo struct {
-	Username string
+	Username   string
+	DeviceName string
 }
 
 type Client struct {
@@ -298,7 +299,67 @@ func (c *Client) Test(ctx context.Context) (AccountInfo, error) {
 	if _, err := session.ListItemsPage(ctx, space, 0, 1); err != nil {
 		return AccountInfo{}, fmt.Errorf("verify Synology Photos session: %w", err)
 	}
-	return AccountInfo{Username: c.username}, nil
+	return AccountInfo{Username: c.username, DeviceName: session.DeviceName(ctx)}, nil
+}
+
+func (c *Client) deviceName(ctx context.Context, auth authData) string {
+	if c == nil || strings.TrimSpace(auth.SID) == "" {
+		return c.baseURLHostname()
+	}
+	// SYNO.Core.System is administrator-gated on some DSM releases. It is
+	// optional: credential validation must continue to work for non-admin
+	// accounts, which fall back to the hostname in the configured DSM URL.
+	candidates := []struct {
+		api     string
+		version int
+		method  string
+	}{
+		{api: "SYNO.Core.System", version: 3, method: "info"},
+		{api: "SYNO.DSM.Info", version: 2, method: "getinfo"},
+	}
+	for _, candidate := range candidates {
+		values := url.Values{}
+		values.Set("api", candidate.api)
+		values.Set("version", strconv.Itoa(candidate.version))
+		values.Set("method", candidate.method)
+		values.Set("_sid", auth.SID)
+		endpoint, err := c.webAPIEndpoint("entry.cgi")
+		if err != nil {
+			continue
+		}
+		var envelope apiEnvelope
+		if err := c.doJSON(ctx, http.MethodGet, endpoint+"?"+values.Encode(), nil, &envelope); err != nil || !envelope.Success {
+			continue
+		}
+		if name := synologyDeviceNameFromData(envelope.Data); name != "" {
+			return name
+		}
+	}
+	return c.baseURLHostname()
+}
+
+func (c *Client) baseURLHostname() string {
+	if c == nil {
+		return "Synology NAS"
+	}
+	parsed, err := url.Parse(c.baseURL)
+	if err != nil || strings.TrimSpace(parsed.Hostname()) == "" {
+		return "Synology NAS"
+	}
+	return parsed.Hostname()
+}
+
+func synologyDeviceNameFromData(data json.RawMessage) string {
+	var values map[string]any
+	if json.Unmarshal(data, &values) != nil {
+		return ""
+	}
+	for _, key := range []string{"hostname", "server_name", "serverName", "system_name", "systemName", "device_name", "deviceName", "netbios_name", "netbios", "name"} {
+		if value, ok := values[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (c *Client) apiInfo(ctx context.Context) (map[string]apiInfo, error) {

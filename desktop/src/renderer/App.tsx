@@ -760,6 +760,27 @@ export default function App({
     }
   }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
 
+  const localBackupArchive = useMemo(() => {
+    if (!agent.hello?.capabilities.includes('device-backup-local-archive-restore')) return undefined
+    return {
+      load: async (sourceID: number) => {
+        const result = await window.xdriveDesktop.agent.getDeviceBackupLocalArchiveSettings(sourceID)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+      archive: async (sourceID: number, revision: number) => {
+        const result = await window.xdriveDesktop.agent.archiveDeviceBackupLocalSource(sourceID, revision)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+      restore: async (sourceID: number, revision: number) => {
+        const result = await window.xdriveDesktop.agent.restoreDeviceBackupLocalSource(sourceID, revision)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+    }
+  }, [agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
+
   const configured = !!status?.configured
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
   const loginReady = xDriveLoginCredentialsReady({
@@ -3141,6 +3162,7 @@ export default function App({
     localEvidenceSummary: localBackupEvidenceSummary,
     localEvidencePreflight: localBackupEvidencePreflight,
     localRemove: localBackupRemove,
+    localArchive: localBackupArchive,
   },
       remotePullPage: {
     focusedRun: sourceRunFocus &&

@@ -1,5 +1,18 @@
 # Unified Push/Pull — platform implementation audit
 
+> **2026-11-06 / 2026-11-07 integration decision:** DSM's separate
+> `xdrive-source-agent` and the dedicated Synology Photos Push connector
+> are retired. Only the owning DSM `local_folder` Push agent is enabled.
+> Synology Photos Pull and Synology Files Pull are temporarily dormant; their
+> source, credential, run, target, UploadSession and CAS history is retained.
+> Yike Pull and device-scoped Desktop, iOS and Android Push remain enabled.
+> These rules supersede older DSM Source Agent descriptions below.
+> Native Local Push archive/paused restore requires the owning Device and
+> verified Root proof, never an Owner session alone.
+> New Push targets are flat `同步文件夹/Push/<SourceName>`, and legacy
+> target directories are not migrated.
+
+
 **Audit date:** 2026-11-05  
 **Authority:** [Unified Push/Pull Source Management Architecture](./push-pull-source-management.md)  
 **Scope:** new-source MVP only. Old target paths and old data migration are explicitly excluded.
@@ -13,7 +26,7 @@ This is a source-code audit, not a deployment or physical-device acceptance repo
 | Local Folder Push | #3757 provisions a device-bound paused local_folder Source and managed target. Owning Agent has Root binding, durable Operations, shared CAS uploader and automatic scheduling. | New target prefix must be Push/; generalize Source Device binding name; expose the same Source lifecycle/history in the unified manager. |
 | Desktop Push | Desktop owns the local Agent and native Root UI. | All create/configure/run actions must operate on the same Source ID; remove any parallel Desktop-only source state. |
 | xd Push | CLI is a thin client of the same owning Agent; CLI-only package and bootstrap exist (#2585). This change removes `--target-id` from new setup and validates the Server-returned managed target before local Root binding. | Keep Desktop and xd on one Agent/Device/Source and Runner; no separate CLI target picker or cloud directory creator. |
-| DSM Photos Push | xdrive-source-agent scans Personal/Shared roots, optionally enriches Synology Photos IDs, supports scan/sync, Source runs, cancellation and resumable uploads. PR #3923 completes S02–S04: identity-only Synology ClientDevice/token, generic Source.DeviceID, server-owned Push target, persisted Personal/Shared Root-set fingerprint, and Device/Source/Root/Target checks on run, upload chunks and Finalize. | Real DSM NAS acceptance remains outstanding; source-agent is distributed separately for Linux amd64/arm64, not inside the legacy ARMv7 SPK. |
+| DSM Photos Push (retired) | Historical Source and Node/CAS records remain Owner-readable. DSM folder Push now uses the original device/Root-bound xdrive-agent and shared CAS writer. | Do not recreate the standalone Photos Push agent or grant legacy SourceID upload authority. |
 | iOS Photos Push | #3830 provides ios_photos Source, registered identity, managed target, foreground/BG managed UploadSession routes, destination-bound cursors and encrypted original receipts. | New target prefix must be Push/; unify Source status/history projection and management entry; real iPhone validation remains outstanding. |
 | Android Photos Push | MediaStore staging, encrypted intent/receipt ledger, identity-only enrollment, WorkManager opt-in, bounded upload and exact read-only ACK lookup exist. | No android_photos Source/managed target; upload and receipt lookup remain Owner-root scoped; add Device-bound Source, exact Target upload/finalize/receipt, Source-bound cursor and unified history. |
 | Yike Photos Pull | Server Worker, encrypted Cookie, scan/sync, incremental planner, SourceItems/collections, streaming resumable upload and per-account limits. | Target uses a Yike-specific path, not Pull/Yike Photos/SourceName; provision new targets under Pull/ and show in the same manager. |
@@ -41,11 +54,11 @@ The work is therefore **not** to create three new worker services. The remaining
 
 | Source | Current new-source target layout | Required new-source layout |
 |---|---|---|
-| Local Folder / iOS Push | 同步文件夹/设备备份/<device>/<source> | 同步文件夹/Push/<device>/<source> |
+| Local Folder / iOS Push | 旧 Device 分组目录 | 同步文件夹/Push/<用户填写的目录名> |
 | Synology Pull | 同步文件夹/远程拉取/<connector>/<source> | 同步文件夹/Pull/<connector>/<source> |
 | Yike Pull | 同步文件夹/一刻相册/<account identity> | 同步文件夹/Pull/Yike Photos/<source> |
-| DSM Photos Push | 同步文件夹/Push/<DSM device>/<source> | 同步文件夹/Push/<DSM device>/<source> |
-| Android Photos Push | Owner root | 同步文件夹/Push/<Android device>/<source> |
+| DSM Photos Push | 已有设备分组目录 | 同步文件夹/Push/<用户填写的目录名> |
+| Android Photos Push | Owner root（原生 Source 尚未接入） | 同步文件夹/Push/<用户填写的目录名>（待原生接入） |
 
 These are changes to **new provisioning only**. Do not move or rename old targets, old Nodes, old receipts or old Source records in this project.
 
@@ -53,7 +66,7 @@ These are changes to **new provisioning only**. Do not move or rename old target
 
 ### P0 — shared Server contract
 
-1. Introduce one server-side managed target provisioner for Push and Pull. It creates the canonical root/group/connector/leaf and Source atomically, sets TargetManaged, returns the actual path and stable TargetNodeID, and rejects conflicts/overlap.
+1. Introduce one server-side managed target provisioner for Push and Pull. It creates the canonical root/connector/leaf and Source atomically, sets TargetManaged, returns the actual path and stable TargetNodeID, and rejects conflicts/overlap.
 2. Generalize the Push Source Device binding. Current LocalCreatorDeviceID is local-folder-specific by name; new Push types must have one connector-neutral DeviceID binding.
 3. Keep platform capability separate from Device identity. A valid Device token alone must not grant local Root, PhotoKit, MediaStore or arbitrary Files access.
 4. Ensure managed-subtree write guards apply equally to every new Push/Pull target and every upload route.
@@ -122,7 +135,7 @@ PR #3923 completes the DSM Device, Root and upload authorization closure:
 
 - Register `synology` as an identity-only ClientDevice platform. Its credential is explicitly excluded from the generic Desktop Agent credential gate.
 - Store the independent DSM Device token in the source-agent secret store; config.json contains only DeviceID and the opaque credential reference.
-- New Synology Photos Push creation requires registered Device proof, rejects caller-selected target Nodes, and creates `同步文件夹/Push/<device>/<source>` transactionally.
+- New Synology Photos Push creation requires registered Device proof, rejects caller-selected target Nodes, and creates `同步文件夹/Push/<用户填写的目录名>` transactionally.
 - Source stores the generic `DeviceID`, exact managed `TargetNodeID`, and `TargetManaged` provenance.
 - The server persists the aggregate Personal/Shared Root-set ID and fingerprint in the Source binding. The source-agent independently verifies the local filesystem roots before scanning.
 - Every Source mutation/run and every upload admission, chunk write and Finalize rechecks Owner, Device platform/token/revocation, Source ID/revision, Root ID/fingerprint and the exact managed Target/descendant.
@@ -130,3 +143,17 @@ PR #3923 completes the DSM Device, Root and upload authorization closure:
 - Existing Sources with no DeviceID remain on their exact old target and are not migrated or silently rebound.
 
 **Remaining DSM acceptance:** a real DSM NAS run has not been performed and must be reported as **跳过（未验收）**. The standalone source-agent CI currently builds Linux amd64 and arm64 binaries. The legacy ARMv7 SPK remains the separate `xd` / `xdrive-agent` package and does not include `xdrive-source-agent`; ARMv7 source-agent distribution is not yet provided.
+
+### Accepted S10–S18 implementation note (2026-11-06)
+
+The implementation is a development branch, not master acceptance. New Push paths are flat and Owner+Direction names must be unique across connector kinds (including archived Sources). Yike account identity is separate from the leaf; new Yike targets are provisioned immediately. The scope does not migrate old Sources, paths or receipts. Android native Photos Source enrollment and Source-bound uploader are separate unfinished work, not certified by this path contract.
+
+### Android Photos 的阶段性交付（尚未端到端验收）
+
+在 S10–S18 开发分支上，Android 的 Owner+Device 专属 `GET/PUT /android/photos/backup-destination` 已按 iOS 的窄权限模式接入：首次由 Server 事务创建 `android_photos` Source 和 `同步文件夹/Push/<Source.Name>`，返回真实 SourceID、SourceRevision、TargetNodeID；重命名复用统一空闲判定和 Node 原子改名。Android Kotlin 客户端仅允许上述目标接口携带设备密钥，并严格比对 DeviceID、SourceID/Revision、TargetNodeID 和规范路径；Web/Desktop/DSM 的共享 Source Manager 能识别 Android 行，但不提供服务端“立即扫描”。已补服务端 PostgreSQL、原生 HTTP 契约及共享 UI 测试。
+
+**禁止误判为可用：** 当前 Android 原件写入、Finalize、未知 ACK 恢复仍使用旧 Owner-root UploadSession，不带 `android_photos` 的 Source/Device/Target 元组；不能把它们视为新目标的成功备份。尚需原生专属 UploadSession 和每次实际 CAS 写事务的权限复核，SourceID+TargetNodeID 绑定的持久化 intent/verified receipt，SourceRun 统计与历史，以及旧 Owner-root intent 的 fail-closed 兼容与真实 Android 设备验收。**不迁移任何既有 Source/目录/收据。**
+
+### Android 原生增量备份的 Source/Target 游标与回执隔离（开发分支，待 CI）
+
+新的 Android 备份在建立已验证的 `android_photos` 目标后，使用稳定的 SourceID 和 TargetNodeID 隔离 MediaStore 扫描游标、SQLite verified-only 回执与加密原件意图。新 Source/Target 初次读取的游标为零，不能把原 Owner-root 或另一 Target 的历史回执当作新目标成功；Root Revision 和 Source Revision 的变化不改变这两个稳定 ID。旧 Owner-root 记录保留原有哈希命名空间和格式。历史 UNKNOWN_ACK 仍必须先完成旧目录的精确只读核对才能开始新写入，不能无条件清理或迁移。补充 Android SQLite、Keystore 和游标 instrumentation 契约测试；它们需要 Android 工具链 CI/真机验证，提交不代表已通过。

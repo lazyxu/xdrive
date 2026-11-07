@@ -1,6 +1,8 @@
 package com.tfluid.xdrive
 
 import com.tfluid.xdrive.core.AuthSession
+import com.tfluid.xdrive.core.NativeAndroidDeviceEnrollment
+import com.tfluid.xdrive.core.NativeAndroidPhotoDestination
 import com.tfluid.xdrive.core.DriveNode
 import com.tfluid.xdrive.core.NativePhotoBackupScope
 import com.tfluid.xdrive.core.NodeRange
@@ -64,6 +66,8 @@ class NativePhotoIncrementalWriterTest {
         var resumeKeyUsed: String? = null
         var recoveredNode: DriveNode? = null
         var lookups = 0
+        var managedCalls = 0
+        var managedLookups = 0
         override suspend fun login(username: String, password: String): AuthSession =
             error("not used")
         override suspend fun refresh(refreshToken: String): AuthSession =
@@ -86,6 +90,34 @@ class NativePhotoIncrementalWriterTest {
             assertTrue(resumeKey.matches(Regex("and_[0-9a-f]{64}")))
             resumeKeyUsed = resumeKey
             return uploadFile(accessToken, parent, name, size, openSource, onProgress)
+        }
+        override suspend fun uploadManagedAndroidPhotoOriginal(
+            accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+            destination: NativeAndroidPhotoDestination,
+            name: String, size: Long, originalSha256: String, resumeKey: String,
+            openSource: () -> InputStream, onProgress: (Long) -> Unit,
+        ): DriveNode {
+            check(accessToken == "owner-token" && destination.configured &&
+                enrolled.deviceId == destination.deviceId && destination.targetNodeId == 120L)
+            resumeKeyUsed = resumeKey
+            val actual = openSource().use { it.readBytes() }
+            check(actual.size.toLong() == size && originalSha256.matches(Regex("[0-9a-f]{64}")))
+            managedCalls++
+            onProgress(size)
+            if (timeoutAfterSend) throw IOException("Lost managed original ACK")
+            return DriveNode(500 + managedCalls.toLong(), destination.targetNodeId,
+                name, "file", size, revision = 1)
+        }
+        override suspend fun inspectManagedAndroidPhotoUpload(
+            accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+            destination: NativeAndroidPhotoDestination,
+            name: String, size: Long, originalSha256: String, resumeKey: String,
+        ): DriveNode? {
+            check(accessToken == "owner-token" && destination.configured &&
+                enrolled.deviceId == destination.deviceId && destination.targetNodeId == 120L)
+            check(resumeKey == resumeKeyUsed)
+            managedLookups++
+            return recoveredNode
         }
         override suspend fun inspectNativePhotoUpload(
             accessToken: String, parentId: Long, name: String, size: Long,
@@ -383,6 +415,66 @@ class NativePhotoIncrementalWriterTest {
         }
     }
 
+
+    @Test fun managedOriginalKeepsTargetIdentityAcrossLostAckAndRejectsAnotherTarget(): Unit =
+        runBlocking {
+            val journal = Journal()
+            val index = Index()
+            val service = UploadService().apply { timeoutAfterSend = true }
+            val writer = NativePhotoIncrementalWriter(journal, index)
+            val enrolled = NativeAndroidDeviceEnrollment(
+                deviceId, "A".repeat(43), "Pixel", "1")
+            val destination = NativeAndroidPhotoDestination(
+                configured = true, deviceId = deviceId, name = "Pixel Backup",
+                sourceId = 19, sourceRevision = 1, targetNodeId = 120,
+                targetPath = "同步文件夹/Push/Pixel Backup")
+            staged().use { original ->
+                val item = source(original)
+                assertThrows(IOException::class.java) {
+                    runBlocking {
+                        writer.uploadOne(service, "owner-token", scope,
+                            deviceId, root, item, original, { true },
+                            managedDevice = enrolled, managedDestination = destination)
+                    }
+                }
+                val uncertain = journal.rows.single()
+                assertEquals(NativePhotoBackupPhase.UNKNOWN_ACK, uncertain.phase)
+                assertEquals(120L, uncertain.destinationTargetNodeId)
+                assertEquals(1, service.managedCalls)
+                assertEquals(0, service.calls)
+                // Source-scoped encrypted intents forbid dropping the target
+                // while retaining the managed Owner identity. Compare to a
+                // separately valid legacy Owner-root intent instead.
+                assertThrows(IllegalArgumentException::class.java) {
+                    uncertain.copy(destinationTargetNodeId = null)
+                }
+                val legacy = uncertain.copy(
+                    owner = uncertain.owner.copy(
+                        managedSourceId = 0L, managedTargetNodeId = 0L),
+                    destinationTargetNodeId = null)
+                assertNotEquals(NativePhotoResumeKey.forIntent(uncertain),
+                    NativePhotoResumeKey.forIntent(legacy))
+                assertThrows(IllegalStateException::class.java) {
+                    runBlocking {
+                        writer.reconcileUncertain(
+                            service, "owner-token", scope, deviceId, { true },
+                            managedDevice = enrolled,
+                            managedDestination = destination.copy(targetNodeId = 121))
+                    }
+                }
+                assertEquals(0, service.managedLookups)
+                assertEquals(NativePhotoBackupPhase.UNKNOWN_ACK, journal.rows.single().phase)
+                service.recoveredNode = DriveNode(501, 120, item.destinationName,
+                    "file", original.bytes, revision = 1)
+                assertEquals(1, writer.reconcileUncertain(
+                    service, "owner-token", scope, deviceId, { true },
+                    managedDevice = enrolled, managedDestination = destination))
+                assertEquals(1, service.managedCalls)
+                assertEquals(1, service.managedLookups)
+                assertTrue(journal.rows.isEmpty())
+            }
+        }
+
     @Test fun sameIntentKeySurvivesRootRevisionButChangesWithOwnerAndAsset() {
         staged().use { original ->
             val source = source(original)
@@ -404,4 +496,38 @@ class NativePhotoIncrementalWriterTest {
         }
     }
 
+
+@Test fun legacyRootOriginalMustBeReuploadedUnderNewManagedSource(): Unit = runBlocking {
+        val journal = Journal()
+        val index = Index()
+        val service = UploadService()
+        val writer = NativePhotoIncrementalWriter(journal, index)
+        val device = NativeAndroidDeviceEnrollment(deviceId, "A".repeat(43), "Pixel", "1")
+        val managed = NativeAndroidPhotoDestination(
+            configured = true, deviceId = deviceId, name = "Pixel Backup",
+            sourceId = 19, sourceRevision = 1, targetNodeId = 120,
+            targetPath = "同步文件夹/Push/Pixel Backup")
+        staged().use { original ->
+            val item = source(original)
+            assertEquals(NativePhotoIncrementalOutcome.UPLOADED,
+                writer.uploadOne(service, "owner-token", scope,
+                    deviceId, root, item, original, { true }))
+            assertEquals(1, service.calls)
+            assertEquals(0, service.managedCalls)
+            // The historical Owner-root receipt is NOT evidence of a file
+            // under the newly provisioned, separately owned managed Target.
+            assertEquals(NativePhotoIncrementalOutcome.UPLOADED,
+                writer.uploadOne(service, "owner-token", scope, deviceId, root,
+                    item, original, { true },
+                    managedDevice = device, managedDestination = managed))
+            assertEquals(1, service.calls)
+            assertEquals(1, service.managedCalls)
+            // The exact new Source/Target receipt can now safely skip.
+            assertEquals(NativePhotoIncrementalOutcome.ALREADY_VERIFIED,
+                writer.uploadOne(service, "owner-token", scope, deviceId, root,
+                    item, original, { true },
+                    managedDevice = device, managedDestination = managed))
+            assertEquals(1, service.managedCalls)
+        }
+    }
 }

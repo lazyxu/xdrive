@@ -32,7 +32,6 @@ export { default as XDriveGlobalStorageStatsPage } from './GlobalStorageStatsPag
 export * from './DialogTitle'
 export * from './DialogContent'
 export * from './DialogActions'
-export * from './SynologyDsmGuideDialog'
 export * from './DeviceBackupFolderSummary'
 export * from './DeviceBackupFolderAccordion'
 export * from './DeviceBackupLocalPrimaryActions'

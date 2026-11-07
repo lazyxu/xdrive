@@ -12,71 +12,97 @@ import (
 )
 
 // The Agent alone resolves the OS secret and locally verified Root grant.
-func (c *agentController) localBoundBackupConfig(ctx context.Context, sourceID uint64) (client.Source, client.LocalBoundSourceProof, *client.Client, error) {
+// localBoundBackupAuthorization verifies the current account, enrolled device,
+// and native Root grant without constraining the Source lifecycle state. It is
+// used by the archive/restore flow, which must also be able to inspect an
+// archived Source while preserving the original Root grant.
+func (c *agentController) localBoundBackupAuthorization(
+	ctx context.Context,
+	sourceID uint64,
+) (client.Source, client.LocalBoundSourceProof, *client.Client, userconfig.Config, error) {
 	var empty client.Source
 	var noProof client.LocalBoundSourceProof
+	var noConfig userconfig.Config
 	if sourceID == 0 {
-		return empty, noProof, nil, errors.New("invalid local backup Source")
+		return empty, noProof, nil, noConfig, errors.New("invalid local backup Source")
 	}
 	cli, cfg, err := c.cloudClient()
 	if err != nil {
-		return empty, noProof, nil, err
+		return empty, noProof, nil, noConfig, err
 	}
 	if cfg.SessionInvalid || cfg.Server == "" || cfg.Username == "" || cfg.SessionID == "" {
-		return empty, noProof, nil, errors.New("login required for local backup settings")
+		return empty, noProof, nil, noConfig, errors.New("login required for local backup settings")
 	}
 	configDir, err := userconfig.Dir()
 	if err != nil {
-		return empty, noProof, nil, err
+		return empty, noProof, nil, noConfig, err
 	}
 	deviceID, err := localpush.LoadDeviceRegistration(configDir, cfg.Server, cfg.Username)
 	if err != nil {
-		return empty, noProof, nil, err
+		return empty, noProof, nil, noConfig, err
 	}
 	token, err := localpush.LoadDeviceToken(configDir, cfg.Server, cfg.Username, deviceID)
 	if err != nil {
-		return empty, noProof, nil, err
+		return empty, noProof, nil, noConfig, err
 	}
 	bound, err := cli.LocalSourceBindingWithToken(ctx, sourceID, token)
 	if err != nil {
-		return empty, noProof, nil, err
+		return empty, noProof, nil, noConfig, err
 	}
 	if bound.SourceID != sourceID || bound.DeviceID != deviceID || bound.RootID == "" ||
 		bound.Status != "awaiting_executor" {
-		return empty, noProof, nil, errors.New("Source is not bound to this authorized device")
+		return empty, noProof, nil, noConfig, errors.New("Source is not bound to this authorized device")
 	}
 	// This call revalidates the Root against the current native filesystem.
 	grant, err := localpush.LoadRootGrant(configDir, cfg.Server, cfg.Username, bound.RootID)
 	if err != nil {
-		return empty, noProof, nil, err
+		return empty, noProof, nil, noConfig, err
 	}
 	if grant.SourceID != sourceID || grant.DeviceID != deviceID || grant.RootID != bound.RootID {
-		return empty, noProof, nil, errors.New("local Root identity does not match binding")
+		return empty, noProof, nil, noConfig, errors.New("local Root identity does not match binding")
 	}
 	source, err := cli.Source(ctx, sourceID)
 	if err != nil {
-		return empty, noProof, nil, err
+		return empty, noProof, nil, noConfig, err
 	}
 	if source.Kind != meta.SourceKindLocalFolder || source.Direction != meta.SourceDirectionPush ||
-		source.Status != meta.SourceStatusPaused || source.Revision == 0 {
-		return empty, noProof, nil, errors.New("only paused local Push Source can be edited")
+		(source.Status != meta.SourceStatusActive && source.Status != meta.SourceStatusPaused &&
+			source.Status != meta.SourceStatusArchived) || source.Revision == 0 {
+		return empty, noProof, nil, noConfig, errors.New("Source is not an eligible local Push backup")
 	}
 	latest, err := userconfig.Load()
 	if err != nil {
-		return empty, noProof, nil, err
+		return empty, noProof, nil, noConfig, err
 	}
 	if latest.SessionID != cfg.SessionID || latest.Server != cfg.Server || latest.Username != cfg.Username {
-		return empty, noProof, nil, errors.New("account changed during local Root verification")
+		return empty, noProof, nil, noConfig, errors.New("account changed during local Root verification")
 	}
 	return source, client.LocalBoundSourceProof{
 		DeviceID: deviceID, DeviceToken: token,
 		RootID: grant.RootID, RootFingerprint: grant.Fingerprint,
-	}, cli, nil
+	}, cli, cfg, nil
+}
+
+// Ordinary settings mutations remain restricted to paused Sources. The
+// archive/restore lifecycle has its own explicitly proof-bound operations.
+func (c *agentController) localBoundBackupConfig(
+	ctx context.Context,
+	sourceID uint64,
+) (client.Source, client.LocalBoundSourceProof, *client.Client, error) {
+	source, proof, cli, _, err := c.localBoundBackupAuthorization(ctx, sourceID)
+	if err != nil {
+		return client.Source{}, client.LocalBoundSourceProof{}, nil, err
+	}
+	if source.Status != meta.SourceStatusPaused {
+		return client.Source{}, client.LocalBoundSourceProof{}, nil, errors.New("only paused local Push Source can be edited")
+	}
+	return source, proof, cli, nil
 }
 
 func localBoundBackupSettingsDTO(source client.Source) client.LocalBoundBackupSettings {
 	return client.LocalBoundBackupSettings{
 		SourceID: source.ID, Name: source.Name, Revision: source.Revision,
+		Status:       source.Status,
 		SyncMode:     source.SyncMode,
 		TargetNodeID: source.TargetNodeID, TargetManaged: source.TargetManaged, TargetPath: source.TargetPath,
 	}

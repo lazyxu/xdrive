@@ -185,12 +185,19 @@ export function XDriveSourceSettingsDialog({
                 value={values.run_mode}
                 onChange={(value) => onChange({ run_mode: value })}
               />
-              <XDriveSourceSyncModeField
-                label={setting.source.direction === 'pull' ? '数据保留策略' : '同步策略'}
-                value={values.sync_mode}
-                onChange={(value) => onChange({ sync_mode: value })}
-              />
-              {values.sync_mode === 'mirror' ? (
+              {setting.source.kind === 'synology_photos' && setting.source.direction === 'push' ? (
+                <XDriveStatusAlert tone="neutral">
+                  DSM Photos Push 固定为备份模式；删除 NAS 中的照片不会删除 xDrive 中的备份。
+                  Device 和本地 Root 授权仍由 NAS source-agent 管理。
+                </XDriveStatusAlert>
+              ) : (
+                <XDriveSourceSyncModeField
+                  label={setting.source.direction === 'pull' ? '数据保留策略' : '同步策略'}
+                  value={values.sync_mode}
+                  onChange={(value) => onChange({ sync_mode: value })}
+                />
+              )}
+              {!(setting.source.kind === 'synology_photos' && setting.source.direction === 'push') && values.sync_mode === 'mirror' ? (
                 <XDriveStatusAlert tone="warning">
                   <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>镜像到回收站</MuiTypography>
                   <MuiTypography variant="body2">{externalSourceMirrorSafetyNotice}</MuiTypography>

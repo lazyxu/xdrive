@@ -51,7 +51,7 @@ func TestOwningLocalIdentityLookupIsBoundedReadOnlyAndRevocationFenced(t *testin
 		OwnerID: owner.ID, Name: "Own local source", Kind: meta.SourceKindLocalFolder,
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused,
-		Revision: 7, TargetNodeID: &target.ID,
+		Revision: 7, DeviceID: &deviceA.ID, TargetNodeID: &target.ID,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)

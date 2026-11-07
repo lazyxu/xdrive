@@ -75,7 +75,8 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(yikeCreate.Body.Bytes(), &yikeManaged); err != nil {
 		t.Fatal(err)
 	}
-	if yikeManaged.TargetNodeID != nil || yikeManaged.TargetPath != "" ||
+	if yikeManaged.TargetNodeID == nil || *yikeManaged.TargetNodeID == 0 ||
+		!yikeManaged.TargetManaged || yikeManaged.TargetPath != "同步文件夹/Pull/Yike Photos/Yike managed" ||
 		yikeManaged.Status != meta.SourceStatusPaused || yikeManaged.Revision != 1 ||
 		yikeManaged.ScheduleType != "manual" || yikeManaged.ScheduleExpression != "" || yikeManaged.ScheduleTimezone != "" {
 		t.Fatalf("unexpected managed Yike source: %+v", yikeManaged)
@@ -89,60 +90,29 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", yikeManaged.ID), tokenA,
 		nil, http.StatusNoContent, map[string]string{"If-Match": `"1"`})
 
-	// File Station Pull is a generic file source. It starts paused and cannot
-	// become active until both an encrypted DSM credential record and a valid
-	// non-empty root configuration exist.
+	// Both remote Synology Pull modes are disabled during DSM folder-Push MVP.
+	// The response is explicit and must not create Source or target records.
 	filePush := fmt.Sprintf(`{"name":"Files push invalid","kind":"synology_files","direction":"push","sync_mode":"backup","run_mode":"scan","target_node_id":%d}`, targetA.ID)
 	request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(filePush), http.StatusBadRequest)
-
-	fileCreateBody := fmt.Sprintf(`{"name":"Synology Files","kind":"synology_files","direction":"pull","sync_mode":"backup","run_mode":"sync","target_node_id":%d}`, targetA.ID)
-	fileCreate := request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(fileCreateBody), http.StatusCreated)
-	var fileSource sourceDTO
-	if err := json.Unmarshal(fileCreate.Body.Bytes(), &fileSource); err != nil {
+	for _, kind := range []string{"synology_photos", "synology_files"} {
+		body := fmt.Sprintf(`{"name":"Disabled %s","kind":%q,"direction":"pull","sync_mode":"backup","run_mode":"sync","target_node_id":%d}`, kind, kind, targetA.ID)
+		request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(body), http.StatusGone)
+	}
+	var disabledSourceCount int64
+	if err := db.Model(&meta.Source{}).Where("kind IN ? AND direction = ?",
+		[]string{"synology_photos", "synology_files"}, meta.SourceDirectionPull).
+		Count(&disabledSourceCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if fileSource.Status != meta.SourceStatusPaused || fileSource.Revision != 1 ||
-		fileSource.TargetNodeID == nil || *fileSource.TargetNodeID == targetA.ID ||
-		fileSource.TargetPath != "同步文件夹/Pull/Synology Files/Synology Files" {
-		t.Fatalf("File Station source should start paused with an exclusive managed target: %+v", fileSource)
+	if disabledSourceCount != 0 {
+		t.Fatalf("disabled Synology Pull inserted Sources: %d", disabledSourceCount)
 	}
-	filePath := fmt.Sprintf("/api/v1/sources/%d", fileSource.ID)
-	requestWithHeaders(t, router, http.MethodPatch, filePath, tokenA,
-		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
-		map[string]string{"If-Match": `"1"`})
-
-	if err := db.Create(&meta.SourceCredential{
-		SourceID: fileSource.ID, Ciphertext: []byte("test-only"), KeyVersion: 1,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	requestWithHeaders(t, router, http.MethodPatch, filePath, tokenA,
-		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
-		map[string]string{"If-Match": `"1"`})
-
-	if err := db.Create(&meta.SourceConnectorConfig{
-		SourceID: fileSource.ID, Payload: `{"roots":["/documents"]}`, Revision: 1,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	activatedFiles := requestWithHeaders(t, router, http.MethodPatch, filePath, tokenA,
-		strings.NewReader(`{"status":"active"}`), http.StatusOK,
-		map[string]string{"If-Match": `"1"`})
-	var activeFileSource sourceDTO
-	if err := json.Unmarshal(activatedFiles.Body.Bytes(), &activeFileSource); err != nil {
-		t.Fatal(err)
-	}
-	if activeFileSource.Status != meta.SourceStatusActive || activeFileSource.Revision != 2 {
-		t.Fatalf("File Station source did not activate after readiness: %+v", activeFileSource)
-	}
-	requestWithHeaders(t, router, http.MethodDelete, filePath, tokenA,
-		nil, http.StatusNoContent, map[string]string{"If-Match": `"2"`})
 
 	// L01-A: the universal local-folder connector is server-recognized but
 	// deliberately fail-closed until an agent-bound root and executor exist.
 	localPull := fmt.Sprintf(`{"name":"Local invalid pull","kind":"local_folder","direction":"pull","target_node_id":%d}`, targetA.ID)
 	request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(localPull), http.StatusBadRequest)
-	localCreateBody := fmt.Sprintf(`{"name":"Local Desktop Files","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual","target_node_id":%d}`, targetA.ID)
+	localCreateBody := `{"name":"Local Desktop Files","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual"}`
 	request(t, router, http.MethodPost, "/api/v1/sources", tokenA,
 		strings.NewReader(localCreateBody), http.StatusForbidden)
 	deviceResp := request(t, router, http.MethodPost, "/api/v1/devices", tokenA,
@@ -152,6 +122,14 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(deviceResp.Body.Bytes(), &enrollment); err != nil {
 		t.Fatal(err)
 	}
+	// A valid registered Device is not allowed to choose or adopt a target
+	// directory. This must be rejected without creating any Source.
+	localTargetOverride := fmt.Sprintf(`{"name":"Local Desktop Files","kind":"local_folder","direction":"push","target_node_id":%d}`, targetA.ID)
+	requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", tokenA,
+		strings.NewReader(localTargetOverride), http.StatusBadRequest, map[string]string{
+			"X-XDrive-Device-ID":    enrollment.Device.ID,
+			"X-XDrive-Device-Token": enrollment.DeviceToken,
+		})
 	localCreate := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", tokenA,
 		strings.NewReader(localCreateBody), http.StatusCreated, map[string]string{
 			"X-XDrive-Device-ID":    enrollment.Device.ID,
@@ -161,11 +139,10 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(localCreate.Body.Bytes(), &localCreated); err != nil {
 		t.Fatal(err)
 	}
-	deviceFolder := "Source test Desktop_" + strings.ReplaceAll(enrollment.Device.ID, "-", "")[:12]
 	if localCreated.ID == 0 || localCreated.Kind != meta.SourceKindLocalFolder ||
 		localCreated.Direction != meta.SourceDirectionPush || localCreated.Status != meta.SourceStatusPaused ||
 		localCreated.Revision != 1 || localCreated.TargetNodeID == nil || *localCreated.TargetNodeID == targetA.ID ||
-		localCreated.TargetPath != "同步文件夹/Push/"+deviceFolder+"/Local Desktop Files" {
+		!localCreated.TargetManaged || localCreated.TargetPath != "同步文件夹/Push/Local Desktop Files" {
 		t.Fatalf("local folder must start paused in a dedicated server-managed target: %+v", localCreated)
 	}
 	var localStored meta.Source

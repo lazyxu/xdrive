@@ -52,7 +52,6 @@ class FinalGateContract(unittest.TestCase):
         publish_needs = publish.split("    needs:\n", 1)[1].split("\n    permissions:", 1)[0]
         self.assertEqual(re.findall(r"(?m)^      - ([a-z0-9-]+)$", publish_needs), [
             "build-client-core",
-            "build-source-agent",
             "package-linux-client",
             "package-windows-client",
             "server-image",
@@ -60,6 +59,7 @@ class FinalGateContract(unittest.TestCase):
             "photo-face-image",
             "media-worker-image",
         ])
+        self.assertNotIn("      - build-source-agent\n", publish_needs)
         self.assertIn("uses: ./.github/workflows/release.yml", publish)
         # Stable tags and offline promotion must retain exact Final Gate.
         offline = WORKFLOW[WORKFLOW.index("  publish-content-addressed-offline:"):WORKFLOW.index("  publish-stable:")]

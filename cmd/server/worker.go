@@ -19,10 +19,6 @@ import (
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/pullworker"
 	"github.com/lazyxu/xdrive/internal/sourcewake"
-	"github.com/lazyxu/xdrive/internal/synologyfilesworker"
-	"github.com/lazyxu/xdrive/internal/synologyfilesync"
-	"github.com/lazyxu/xdrive/internal/synologysync"
-	"github.com/lazyxu/xdrive/internal/synologyworker"
 	"github.com/lazyxu/xdrive/internal/yikesync"
 	"github.com/lazyxu/xdrive/internal/yikeworker"
 	"gorm.io/driver/postgres"
@@ -99,26 +95,12 @@ func runWorker(args []string) error {
 		JWTSecret: cfg.JWTSecret,
 		Logger:    slog.Default(),
 	}
-	synologyRunner := &synologyworker.Runner{
-		DB:        db,
-		Keyring:   keyring,
-		ServerURL: serverURL,
-		JWTSecret: cfg.JWTSecret,
-		Logger:    slog.Default(),
-	}
-	synologyFilesRunner := &synologyfilesworker.Runner{
-		DB:        db,
-		Keyring:   keyring,
-		ServerURL: serverURL,
-		JWTSecret: cfg.JWTSecret,
-		Logger:    slog.Default(),
-	}
+	// The Synology Photos/Files Pull implementations remain in the repo,
+	// but their worker handlers are not registered during folder-Push MVP.
 	runner := &pullworker.Runner{
 		DB: db,
 		Handlers: map[string]pullworker.SourceHandler{
-			yikesync.SourceKind:         yikeRunner,
-			synologysync.SourceKind:     synologyRunner,
-			synologyfilesync.SourceKind: synologyFilesRunner,
+			yikesync.SourceKind: yikeRunner,
 		},
 		Logger:         slog.Default(),
 		Scheduler:      backgroundScheduler,

@@ -19,7 +19,7 @@ import (
 // on Desktop local_folder Source/Root APIs.
 func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 	db, server, owner, other, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.Share{}, &meta.SyncRun{}); err != nil {
+	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.Share{}, &meta.SyncRun{}, &meta.UploadSession{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
@@ -100,22 +100,67 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 		result.DeviceID != device.ID || result.Name != "我的照片" {
 		t.Fatalf("server did not create an exact managed destination: %+v", result)
 	}
-	expectedGroup, err := managedPushDeviceFolderName(device)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expectedPath := "同步文件夹/Push/" + expectedGroup + "/我的照片"
+	expectedPath := "同步文件夹/Push/我的照片"
 	if result.TargetPath != expectedPath {
 		t.Fatalf("server-managed target path mismatch: got %q want %q", result.TargetPath, expectedPath)
 	}
+	// A valid Owner login alone must not rename, delete, archive or Run-Now
+	// the device-scoped iPhone Source through generic Source APIs.
+	sourceURL := fmt.Sprintf("/api/v1/sources/%d", result.SourceID)
+	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerToken,
+		strings.NewReader(`{"name":"Owner spoof"}`), http.StatusForbidden,
+		map[string]string{"If-Match": `"1"`})
+	requestWithHeaders(t, router, http.MethodDelete, sourceURL, ownerToken,
+		nil, http.StatusForbidden, map[string]string{"If-Match": `"1"`})
+	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/trigger", ownerToken,
+		nil, http.StatusForbidden, nil)
+	// Generic archive/restore must not change a phone-owned Source.
+	// Reject both Owner-only requests and an attempt to pass native Device
+	// credentials to a generic management route.
+	for _, suffix := range []string{"/archive", "/restore"} {
+		requestWithHeaders(t, router, http.MethodPost, sourceURL+suffix, ownerToken,
+			nil, http.StatusForbidden, map[string]string{"If-Match": `"1"`})
+	}
+	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/archive", ownerToken,
+		nil, http.StatusForbidden, map[string]string{
+			"If-Match": `"1"`, "X-XDrive-Device-ID": device.ID,
+			"X-XDrive-Device-Token": secret,
+		})
 	var stored meta.Source
 	if err := db.First(&stored, result.SourceID).Error; err != nil {
 		t.Fatal(err)
 	}
+	if stored.Status != meta.SourceStatusPaused || stored.Revision != 1 || stored.Name != "我的照片" {
+		t.Fatalf("generic management changed native Source: %+v", stored)
+	}
 	if !stored.TargetManaged || !iosPhotoDestinationSource(stored) ||
-		stored.LocalCreatorDeviceID == nil || *stored.LocalCreatorDeviceID != device.ID ||
+		stored.DeviceID == nil || *stored.DeviceID != device.ID ||
 		stored.TargetNodeID == nil || *stored.TargetNodeID != result.TargetNodeID {
 		t.Fatalf("Source must own exact managed Node: %+v", stored)
+	}
+	// Generic Owner-only run cancellation must not interrupt the local
+	// PhotoKit backup. Preserve the Source and durable running record.
+	runID := uuid.NewString()
+	activeRun := meta.SyncRun{
+		ID: runID, SourceID: stored.ID, SourceRevision: stored.Revision,
+		Mode: meta.SourceRunModeSync, Trigger: meta.SyncRunTriggerManual,
+		Status: meta.SyncRunStatusRunning, TargetNodeID: stored.TargetNodeID,
+		StartedAt: time.Now().UTC(),
+	}
+	if err := db.Create(&activeRun).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/sources/%d/runs/%s/cancel", stored.ID, runID),
+		ownerToken, nil, http.StatusForbidden, nil)
+	var unchangedRun meta.SyncRun
+	if err := db.First(&unchangedRun, "id = ?", runID).Error; err != nil ||
+		unchangedRun.CancelRequestedAt != nil {
+		t.Fatalf("Owner-only cancellation changed iOS run: %+v err=%v", unchangedRun, err)
+	}
+	if err := db.Model(&meta.SyncRun{}).Where("id = ?", runID).
+		Update("status", meta.SyncRunStatusCancelled).Error; err != nil {
+		t.Fatal(err)
 	}
 	// Current read and idempotent repeated PUT never allocate a second
 	// Source or Node when the exact one already exists.
@@ -134,8 +179,8 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 	}
 	renamed := read(http.MethodPut, ownerToken, `{"name":"新版照片"}`, http.StatusOK, headers)
 	if renamed.TargetNodeID != result.TargetNodeID || renamed.SourceID != result.SourceID ||
-		renamed.TargetPath != "同步文件夹/Push/"+expectedGroup+"/新版照片" {
-		t.Fatalf("5B rename replaced Source/Node IDs or used a fake path: %+v", renamed)
+		renamed.TargetPath != "同步文件夹/Push/新版照片" {
+		t.Fatalf("rename changed Source/Node IDs or used a fake path: %+v", renamed)
 	}
 	var node meta.Node
 	if err := db.First(&node, renamed.TargetNodeID).Error; err != nil {

@@ -39,6 +39,7 @@ type sourceCredentialTestDTO struct {
 	Kind              string `json:"kind"`
 	AccountExternalID string `json:"account_external_id,omitempty"`
 	AccountName       string `json:"account_name,omitempty"`
+	SuggestedName     string `json:"suggested_name,omitempty"`
 }
 
 type sourceCredentialTester func(context.Context, string, json.RawMessage) (sourceCredentialTestDTO, error)
@@ -109,6 +110,12 @@ func (s *Server) testSourceCredential(c *gin.Context) {
 	req.Kind = strings.TrimSpace(req.Kind)
 	if !meta.ValidSourceKind(req.Kind) {
 		fail(c, http.StatusBadRequest, "invalid source kind")
+		return
+	}
+	// This unbound diagnostic must not probe remote NAS endpoints while both
+	// Synology Pull adapters are dormant. No standalone DSM Photos Push exists.
+	if req.Kind == synologySourceKind || req.Kind == synologyFilesSourceKind {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		return
 	}
 	if len(req.Payload) == 0 || len(req.Payload) > maxSourceCredentialPayloadBytes {
@@ -223,6 +230,7 @@ func defaultSourceCredentialTester(ctx context.Context, kind string, payload jso
 			Valid: true, Kind: kind,
 			AccountExternalID: strings.TrimSpace(info.YouaID),
 			AccountName:       strings.TrimSpace(info.Nickname),
+			SuggestedName:     managedTargetSuggestion(info.Nickname, "一刻相册"),
 		}, nil
 	case synologySourceKind, synologyFilesSourceKind:
 		var credential synology.Credential
@@ -244,9 +252,10 @@ func defaultSourceCredentialTester(ctx context.Context, kind string, payload jso
 			return sourceCredentialTestDTO{}, err
 		}
 		return sourceCredentialTestDTO{
-			Valid:       true,
-			Kind:        kind,
-			AccountName: strings.TrimSpace(info.Username),
+			Valid:         true,
+			Kind:          kind,
+			AccountName:   strings.TrimSpace(info.Username),
+			SuggestedName: managedTargetSuggestion(info.DeviceName, "Synology NAS"),
 		}, nil
 	default:
 		return sourceCredentialTestDTO{}, errUnsupportedSourceCredentialTest
@@ -266,6 +275,10 @@ func (s *Server) testStoredSourceCredential(c *gin.Context) {
 	source, err := s.ownedSource(userID(c), sourceID)
 	if err != nil {
 		fail(c, statusForLookup(err), "source not found")
+		return
+	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		return
 	}
 	if !sourceUsesStoredCredential(source) {
@@ -416,6 +429,10 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 	source, err := s.ownedSource(userID(c), sourceID)
 	if err != nil {
 		fail(c, statusForLookup(err), "source not found")
+		return
+	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		return
 	}
 	if !sourceUsesStoredCredential(source) {
@@ -573,7 +590,7 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
 	}
-	if source.Status == meta.SourceStatusArchived {
+	if source.Status == meta.SourceStatusArchived && !meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
 		fail(c, http.StatusConflict, "source is archived; restore it before changing credentials")
 		return
 	}
@@ -586,16 +603,21 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 			Take(&live).Error; err != nil {
 			return err
 		}
-		if live.Status == meta.SourceStatusArchived {
+		if live.Status == meta.SourceStatusArchived && !meta.SynologyPullTemporarilyDisabled(live.Kind, live.Direction) {
 			return errSourceArchived
 		}
 		if err := sourcecredential.Delete(c.Request.Context(), tx, source.ID); err != nil {
 			return err
 		}
 		now := time.Now().UTC()
+		nextStatus := meta.SourceStatusPaused
+		if live.Status == meta.SourceStatusArchived {
+			// Revocation must never restore a retired Source.
+			nextStatus = meta.SourceStatusArchived
+		}
 		return tx.Model(&meta.Source{}).Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
 			Updates(map[string]any{
-				"status":           meta.SourceStatusPaused,
+				"status":           nextStatus,
 				"revision":         gorm.Expr("revision + 1"),
 				"run_requested_at": nil,
 				"updated_at":       now,

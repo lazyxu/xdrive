@@ -30,6 +30,8 @@ import { XDriveDeviceBackupLocalEvidenceSummaryDialog } from './DeviceBackupLoca
 import { XDriveDeviceBackupLocalEvidencePreflightDialog } from './DeviceBackupLocalEvidencePreflightDialog'
 import { XDriveDeviceBackupLocalRemoveDialog } from './DeviceBackupLocalRemoveDialog'
 import type { XDriveLocalBackupRemoveActions } from './DeviceBackupLocalRemoveDialog'
+import { XDriveDeviceBackupLocalArchiveDialog } from './DeviceBackupLocalArchiveDialog'
+import type { XDriveLocalBackupArchiveActions, XDriveLocalBackupArchiveMode } from './DeviceBackupLocalArchiveDialog'
 import type { XDriveLocalBackupTargetActions } from './DeviceBackupLocalTargetDialog'
 import type { XDriveLocalBackupModeActions } from './DeviceBackupLocalModeDialog'
 import type { XDriveLocalBackupRulesActions } from './DeviceBackupLocalRulesDialog'
@@ -120,6 +122,7 @@ function XDriveDeviceBackupServerPage({
   localEvidenceSummary,
   localEvidencePreflight,
   localRemove,
+  localArchive,
 }: {
   source?: XDriveDeviceBackupDataSource
   initialSourceID?: number
@@ -140,6 +143,7 @@ function XDriveDeviceBackupServerPage({
   localEvidenceSummary?: XDriveLocalBackupEvidenceSummaryActions
   localEvidencePreflight?: XDriveLocalBackupEvidencePreflightActions
   localRemove?: XDriveLocalBackupRemoveActions
+  localArchive?: XDriveLocalBackupArchiveActions
 }) {
   const [refreshID, refresh] = useState(0)
   // The render-scoped epoch invalidates requests on A→B→A account,
@@ -163,6 +167,9 @@ function XDriveDeviceBackupServerPage({
   const [evidenceSummaryTarget, setEvidenceSummaryTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [evidencePreflightTarget, setEvidencePreflightTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
+  const [archiveTarget, setArchiveTarget] = useState<{
+    source?: XDriveDeviceBackupDataSource; id: number; mode: XDriveLocalBackupArchiveMode
+  } | null>(null)
   const [localMessage, setLocalMessage] = useState('')
   // Late wizard completions must never publish messages into a different
   // account/server's Device Backup page.
@@ -184,6 +191,7 @@ function XDriveDeviceBackupServerPage({
     setEvidenceSummaryTarget(null)
     setEvidencePreflightTarget(null)
     setRemoveTarget(null)
+    setArchiveTarget(null)
     setLocalMessage('')
   }, [source])
   // The data source identity is the account/server boundary. Never display
@@ -560,20 +568,22 @@ function XDriveDeviceBackupServerPage({
                   currentLocalDevice,
                   backupMode: folder.sync_mode === 'backup',
                   supported: {
-                    run: Boolean(localCommonBatch),
-                    schedule: Boolean(localSchedule),
-                    rename: Boolean(localSettings),
-                    target: Boolean(localTarget && targetBrowser),
-                    mode: Boolean(localMode),
-                    rules: Boolean(localRules),
-                    preview: Boolean(localPreview),
-                    snapshot: Boolean(localSnapshot),
-                    firstFile: Boolean(localFirstFile),
-                    delta: Boolean(localDelta),
-                    evidence: Boolean(localEvidence),
-                    evidenceSummary: Boolean(localEvidenceSummary),
-                    evidencePreflight: Boolean(localEvidencePreflight),
-                    remove: Boolean(localRemove),
+                    run: folder.status !== 'archived' && Boolean(localCommonBatch),
+                    schedule: folder.status !== 'archived' && Boolean(localSchedule),
+                    rename: folder.status !== 'archived' && Boolean(localSettings),
+                    target: folder.status !== 'archived' && Boolean(localTarget && targetBrowser),
+                    mode: folder.status !== 'archived' && Boolean(localMode),
+                    rules: folder.status !== 'archived' && Boolean(localRules),
+                    preview: folder.status !== 'archived' && Boolean(localPreview),
+                    snapshot: folder.status !== 'archived' && Boolean(localSnapshot),
+                    firstFile: folder.status !== 'archived' && Boolean(localFirstFile),
+                    delta: folder.status !== 'archived' && Boolean(localDelta),
+                    evidence: folder.status !== 'archived' && Boolean(localEvidence),
+                    evidenceSummary: folder.status !== 'archived' && Boolean(localEvidenceSummary),
+                    evidencePreflight: folder.status !== 'archived' && Boolean(localEvidencePreflight),
+                    remove: folder.status === 'paused' && Boolean(localRemove),
+                    archive: folder.status !== 'archived' && Boolean(localArchive),
+                    restore: folder.status === 'archived' && Boolean(localArchive),
                   },
                 })
                 const history = histories[folder.source_id]
@@ -657,6 +667,19 @@ function XDriveDeviceBackupServerPage({
                           <Button size="small" variant="outlined"
                             onClick={() => setEvidencePreflightTarget({ source, id: folder.source_id })}>
                             本机内容一致性预检（不上传）
+                          </Button>
+                        ) : null}
+                        {localActions.archive ? (
+                          <Button size="small" variant="outlined" color="warning"
+                            disabled={folder.latest_run?.status === 'running'}
+                            onClick={() => setArchiveTarget({ source, id: folder.source_id, mode: 'archive' })}>
+                            归档本机备份
+                          </Button>
+                        ) : null}
+                        {localActions.restore ? (
+                          <Button size="small" variant="outlined" color="primary"
+                            onClick={() => setArchiveTarget({ source, id: folder.source_id, mode: 'restore' })}>
+                            恢复（保持暂停）
                           </Button>
                         ) : null}
                         {localActions.remove ? (
@@ -907,6 +930,22 @@ function XDriveDeviceBackupServerPage({
           onFinished={(message) => {
             if (activeSourceRef.current !== source) return
             setRemoveTarget(null)
+            setLocalMessage(message)
+            refresh((n) => n + 1)
+          }}
+        />
+      ) : null}
+      {archiveTarget && archiveTarget.source === source && source && localArchive &&
+        verifiedLocalDeviceID && localOwnsFolder(archiveTarget.id) ? (
+        <XDriveDeviceBackupLocalArchiveDialog
+          key={`${archiveTarget.id}:${archiveTarget.mode}`}
+          sourceID={archiveTarget.id}
+          mode={archiveTarget.mode}
+          actions={localArchive}
+          onClose={() => setArchiveTarget(null)}
+          onFinished={(message) => {
+            if (activeSourceRef.current !== source) return
+            setArchiveTarget(null)
             setLocalMessage(message)
             refresh((n) => n + 1)
           }}

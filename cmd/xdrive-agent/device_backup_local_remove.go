@@ -28,13 +28,25 @@ func (c *agentController) CloudRemoveLocalBoundBackup(ctx context.Context, sourc
 	if err != nil {
 		return client.LocalBoundBackupRemoval{}, err
 	}
-	if err := cli.RemoveLocalBoundSource(ctx, sourceID, revision, proof); err != nil {
+	removed, err := cli.RemoveLocalBoundSource(ctx, sourceID, revision, proof)
+	if err != nil {
 		// A network timeout is ambiguous; never delete the Root grant.
 		return client.LocalBoundBackupRemoval{}, err
 	}
-	// Local grant cleanup is attempted only after confirmed Server deletion.
-	// RemoveRootGrant removes only a private JSON record, not the directory.
-	result := client.LocalBoundBackupRemoval{SourceID: sourceID}
+	// A Server that archives configured Sources returns the retained Source
+	// DTO (200). Keep the Root grant so the owner can later restore this exact
+	// Source from the owning-device archive UI.
+	if removed.ID != 0 {
+		if removed.ID != sourceID || removed.Status != "archived" {
+			return client.LocalBoundBackupRemoval{}, errors.New("unexpected Source lifecycle response; local Root grant retained")
+		}
+		return client.LocalBoundBackupRemoval{
+			SourceID: sourceID, Status: "archived", LocalGrantRemoved: false,
+		}, nil
+	}
+	// Only a confirmed 204 hard-delete of a pristine local draft permits
+	// removing the OS-private Root grant. The local directory is never deleted.
+	result := client.LocalBoundBackupRemoval{SourceID: sourceID, Status: "removed"}
 	configDir, err := userconfig.Dir()
 	if err == nil {
 		result.LocalGrantRemoved = localpush.RemoveRootGrant(

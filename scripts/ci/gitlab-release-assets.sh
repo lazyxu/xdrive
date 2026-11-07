@@ -5,16 +5,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 source scripts/ci/gitlab-release-version.sh
 
-for arch in amd64 arm64; do
-  source_agent="release/source-agent/xdrive-source-agent-linux-$arch"
-  test -f "$source_agent" || {
-    echo "CI-produced source-agent artifact is missing: $source_agent" >&2
-    exit 1
-  }
-  cp "$source_agent" "release/xdrive-source-agent-linux-$arch"
-  chmod +x "release/xdrive-source-agent-linux-$arch"
-done
-
 # Bind every fetched deployment asset to the exact CI source commit.
 # This Release installer must never be treated as an unverified raw bootstrap.
 deploy_hash_manifest="$(mktemp)"
@@ -57,4 +47,4 @@ cp scripts/xdrive-server-host.sh release/xdrive-server
 chmod +x release/server-backup.sh release/server-backup-scheduled.sh release/server-restore.sh release/server-verify.sh release/server-doctor.sh release/server-migrate-user.sh release/xdrive-server
 chmod +x release/server-control.sh release/caddy-env-config.py release/caddy-admission.py
 
-echo "Collected GitLab source-agent and server deployment assets for $XDRIVE_RELEASE_TAG"
+echo "Collected GitLab server deployment assets for $XDRIVE_RELEASE_TAG"

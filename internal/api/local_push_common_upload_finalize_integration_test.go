@@ -68,7 +68,8 @@ func TestLocalPushCommonUploadImmutableOriginalReceiptTx(t *testing.T) {
 	}
 	source := meta.Source{OwnerID: user.ID, Name: "Local", Kind: meta.SourceKindLocalFolder,
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
-		Status: meta.SourceStatusPaused, Revision: 7, TargetNodeID: &root.ID}
+		Status: meta.SourceStatusPaused, Revision: 7, TargetNodeID: &root.ID,
+		DeviceID: &device.ID}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -140,6 +141,9 @@ func TestLocalPushCommonUploadImmutableOriginalReceiptTx(t *testing.T) {
 		},
 		"wrong Source revision": func(tx *gorm.DB) error {
 			return tx.Model(&meta.Source{}).Where("id = ?", source.ID).Update("revision", source.Revision+1).Error
+		},
+		"Source DeviceID rebound": func(tx *gorm.DB) error {
+			return tx.Model(&meta.Source{}).Where("id = ?", source.ID).Update("device_id", uuid.NewString()).Error
 		},
 		"wrong Root fingerprint": func(tx *gorm.DB) error {
 			return tx.Model(&meta.LocalSourceBinding{}).Where("source_id = ?", source.ID).Update("root_fingerprint", strings.Repeat("e", 64)).Error

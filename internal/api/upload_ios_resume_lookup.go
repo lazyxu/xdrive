@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // The iOS encrypted intent ledger stores a deterministic HMAC-derived
@@ -66,17 +67,27 @@ func (s *Server) lookupIOSUploadResumeKey(c *gin.Context) {
 	// length must agree. No cross-owner, overwrite, skipped, Source/Root
 	// or renamed-session recovery is allowed from this endpoint.
 	var rows []meta.UploadSession
-	err := s.DB.WithContext(c.Request.Context()).
+	q := s.DB.WithContext(c.Request.Context()).
 		Where(
 			"owner_id = ? AND resume_key = ? AND parent_id = ? AND node_id IS NULL AND "+
 				"name = ? AND requested_name = ? AND total_size = ? AND chunk_size = ? AND sha256 = ? "+
 				"AND (conflict_policy = ? OR conflict_policy = '') "+
+				"AND COALESCE(source_run_id, '') = '' AND share_id IS NULL "+
+				"AND COALESCE(source_root_id, '') = '' AND COALESCE(source_root_fingerprint, '') = '' "+
 				"AND status IN ?",
 			userID(c), req.ResumeKey, req.ParentID, req.Name, req.Name, req.Size,
 			req.ChunkSize, req.SHA256, meta.UploadConflictPolicyFail,
 			[]string{meta.UploadStatusActive, meta.UploadStatusFinalized},
-		).
-		Order("created_at DESC, id DESC").Limit(2).Find(&rows).Error
+		)
+	// A native iPhone receipt is scoped to its currently verified Source and
+	// owning Device, not merely a same-Owner resumable HMAC key.
+	if native, ok := currentIOSPhotoManagedUploadScope(c); ok {
+		q = q.Where("source_id = ? AND source_revision = ? AND source_device_id = ? AND source_target_id = ?",
+			native.sourceID, native.sourceRevision, native.deviceID, native.targetID)
+	} else {
+		q = q.Where("COALESCE(source_id, 0) = 0 AND COALESCE(source_device_id, '') = '' AND COALESCE(source_target_id, 0) = 0")
+	}
+	err := q.Order("created_at DESC, id DESC").Limit(2).Find(&rows).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		fail(c, http.StatusInternalServerError, "upload reconciliation lookup failed")
 		return
@@ -84,10 +95,12 @@ func (s *Server) lookupIOSUploadResumeKey(c *gin.Context) {
 	if len(rows) == 0 {
 		// No durable proof of a committed upload. The client must not infer
 		// it can safely resend a create POST with a fresh resume key.
+		s.recordUploadAuthorizationFailure(c, "ios.photo.resume_lookup", meta.UploadSession{}, errManagedSourceWriteDenied)
 		fail(c, http.StatusNotFound, "matching upload session not found")
 		return
 	}
 	if len(rows) != 1 {
+		s.recordUploadAuthorizationFailure(c, "ios.photo.resume_lookup", rows[0], errManagedSourceWriteDenied)
 		fail(c, http.StatusConflict, "ambiguous upload session identity")
 		return
 	}
@@ -95,7 +108,28 @@ func (s *Server) lookupIOSUploadResumeKey(c *gin.Context) {
 	if !snapshot.ExpiresAt.After(time.Now()) {
 		// Do not call the existing GET handler's abort/cleanup path here:
 		// unknown intent lookup must remain genuinely side-effect-free.
+		s.recordUploadAuthorizationFailure(c, "ios.photo.resume_lookup", snapshot, errManagedSourceWriteDenied)
 		fail(c, http.StatusGone, "matching upload session expired")
+		return
+	}
+	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var current meta.UploadSession
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("id = ? AND owner_id = ?", snapshot.ID, userID(c)).Take(&current).Error; err != nil {
+			return errManagedSourceWriteDenied
+		}
+		snapshot = current
+		if err := s.requireUploadSessionReadAuthorityTx(c.Request.Context(), tx, c, current); err != nil {
+			return err
+		}
+		return recordUploadAuthorizationSuccessAsTx(tx, c, "ios.photo.resume_lookup", "ios_photo", current)
+	}); err != nil {
+		s.recordUploadAuthorizationFailure(c, "ios.photo.resume_lookup", snapshot, err)
+		if uploadAuthorizationDenied(err) {
+			fail(c, http.StatusForbidden, "upload receipt authority is no longer valid")
+		} else {
+			fail(c, http.StatusInternalServerError, "iOS receipt authorization audit failed")
+		}
 		return
 	}
 	s.writeUploadSession(c, snapshot, http.StatusOK)

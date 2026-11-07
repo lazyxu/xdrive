@@ -11,6 +11,18 @@ import type {
 function desktopSourceManagerPort(localFolderSupported: boolean): XDriveSourceManagerPort {
   const agent = window.xdriveDesktop.agent
   return {
+    suggestedPushName: localFolderSupported ? async () => {
+      // An unenrolled Desktop still has a useful local device name for
+      // display; it never acquires Source/Root authority by reading it.
+      try {
+        const device = await resolveXDriveSourceManagerTransport(agent.getDeviceBackupLocalDevice())
+        if (device.name?.trim()) return device.name.trim()
+      } catch {
+        // Identity registration is independent of this read-only suggestion.
+      }
+      const info = await window.xdriveDesktop.getInfo()
+      return info.device_name?.trim() ?? ''
+    } : undefined,
     sources: (_signal, includeArchived) => agent.getSources(includeArchived),
     sourceCredentialStatus: (sourceID) => agent.getSourceCredential(sourceID),
     createSource: (input) => agent.createSource(input),

@@ -90,6 +90,7 @@ export interface XDriveLocalBoundBackupSettings {
   source_id: number
   name: string
   revision: number
+  status?: 'active' | 'paused' | 'archived'
   sync_mode: 'backup' | 'mirror'
   target_node_id?: number
   target_managed?: boolean
@@ -300,5 +301,6 @@ export interface XDriveLocalBackupEvidencePreflight {
 // Owning-Agent only. Never expose local Root identity or path.
 export interface XDriveLocalBoundBackupRemoval {
   source_id: number
+  status?: 'removed' | 'archived'
   local_grant_removed: boolean
 }

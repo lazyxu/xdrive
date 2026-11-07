@@ -40,6 +40,7 @@ export function XDriveSourcePresetField({
     >
       {externalSourceCreateOptions.filter((option) =>
         (!directionFilter || option.direction === directionFilter) &&
+        // The typed presets already exclude retired Synology Push.
         (allowLocalPush || option.kind !== 'local_folder')
       ).map((option) => (
         <MenuItem key={option.value} value={option.value} sx={{ gap: 1 }}>

@@ -18,7 +18,9 @@ class NativePhotoAutoConsentUiTest {
     @get:Rule val compose = createComposeRule()
     private val ready = DriveState(
         screen = Screen.GALLERY, nativeUiSessionId = 8,
-        nativePhotoDeviceVerified = true)
+        nativePhotoDeviceVerified = true,
+        nativePhotoTargetConfigured = true,
+        nativePhotoTargetName = "Pixel Backup")
 
     @Test fun selectedMediaOnlyAndUnregisteredDeviceCannotEnableAuto() {
         var enabled = 0

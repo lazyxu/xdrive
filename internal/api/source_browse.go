@@ -53,6 +53,17 @@ func (s *Server) browseSourceDirectories(c *gin.Context) {
 		fail(c, statusForLookup(err), "source not found")
 		return
 	}
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		fail(c, http.StatusGone, errSynologyPullDisabled.Error())
+		return
+	}
+	s.browseSourceDirectoriesForSource(c, source)
+}
+
+// browseSourceDirectoriesForSource preserves the dormant FileStation connector
+// implementation for focused tests and future re-enablement. Only the public
+// handler above may call it after Owner and capability checks.
+func (s *Server) browseSourceDirectoriesForSource(c *gin.Context, source meta.Source) {
 	if source.Kind != synologyFilesSourceKind || source.Direction != meta.SourceDirectionPull {
 		fail(c, http.StatusBadRequest, "source_browse_unsupported")
 		return

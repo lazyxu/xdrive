@@ -63,7 +63,7 @@ func iosPhotoDestinationDeviceTx(c *gin.Context, tx *gorm.DB, uid uint64) (meta.
 // from an existing directory name or a device-supplied target_node_id.
 func iosPhotoDestinationBindingTx(tx *gorm.DB, device meta.ClientDevice) (meta.Source, meta.Node, error) {
 	var sources []meta.Source
-	if err := tx.Where("owner_id = ? AND kind = ? AND direction = ? AND local_creator_device_id = ?",
+	if err := tx.Where("owner_id = ? AND kind = ? AND direction = ? AND device_id = ?",
 		device.OwnerID, meta.SourceKindIOSPhotos, meta.SourceDirectionPush, device.ID).
 		Order("id ASC").Limit(2).Find(&sources).Error; err != nil {
 		return meta.Source{}, meta.Node{}, err
@@ -75,10 +75,10 @@ func iosPhotoDestinationBindingTx(tx *gorm.DB, device meta.ClientDevice) (meta.S
 		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
 	}
 	source := sources[0]
+	boundDeviceID, bound := meta.SourceDeviceID(source)
 	if !iosPhotoDestinationSource(source) || !source.TargetManaged ||
 		source.TargetNodeID == nil || *source.TargetNodeID == 0 ||
-		source.LocalCreatorDeviceID == nil || *source.LocalCreatorDeviceID != device.ID ||
-		!meta.ValidSourceName(source.Name) {
+		!bound || boundDeviceID != device.ID || !meta.ValidSourceName(source.Name) {
 		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
 	}
 	var target meta.Node
@@ -87,16 +87,6 @@ func iosPhotoDestinationBindingTx(tx *gorm.DB, device meta.ClientDevice) (meta.S
 		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
 	}
 	if target.Name != source.Name || target.ParentID == nil {
-		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
-	}
-	groupName, err := managedPushDeviceFolderName(device)
-	if err != nil {
-		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
-	}
-	var group meta.Node
-	if err := tx.Where("id = ? AND owner_id = ? AND name = ? AND type = ? AND deleted_at IS NULL",
-		*target.ParentID, device.OwnerID, groupName, meta.NodeTypeDir).
-		Take(&group).Error; err != nil {
 		return meta.Source{}, meta.Node{}, errIOSPhotoDestinationUntrusted
 	}
 	if _, err := managedSourceTargetAncestorIDsTx(tx, source, target); err != nil {

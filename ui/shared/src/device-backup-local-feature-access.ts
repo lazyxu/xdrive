@@ -10,7 +10,7 @@
 export type XDriveLocalBackupFeatureAction =
   | 'run' | 'schedule' | 'rename' | 'target' | 'mode' | 'rules'
   | 'preview' | 'snapshot' | 'firstFile' | 'delta' | 'evidence'
-  | 'evidenceSummary' | 'evidencePreflight' | 'remove'
+  | 'evidenceSummary' | 'evidencePreflight' | 'remove' | 'archive' | 'restore'
 
 export type XDriveLocalBackupFeatureAccess =
   Readonly<Record<XDriveLocalBackupFeatureAction, boolean>>
@@ -42,5 +42,7 @@ export function xDriveLocalBackupFeatureAccess({
     evidenceSummary: current && supported.evidenceSummary,
     evidencePreflight: current && supported.evidencePreflight,
     remove: current && supported.remove,
+    archive: current && supported.archive,
+    restore: current && supported.restore,
   }
 }
