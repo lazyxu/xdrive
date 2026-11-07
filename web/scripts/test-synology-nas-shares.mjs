@@ -4,6 +4,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
+import ts from 'typescript'
+import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 const base = new URL('../../', import.meta.url)
 const read = p => fs.readFileSync(new URL(p, base), 'utf8')
@@ -62,3 +64,75 @@ assert.match(cgi, /"nas-shares"/)
 assert.match(gateway, /r\.URL\.Path == "\/v1\/nas-shares"/)
 assert.match(workflow, /node web\/scripts\/test-synology-nas-shares\.mjs/)
 console.log('DSM NAS share inventory uses one authenticated local Agent and no browser path/Root grants.')
+
+// One shared status-only diagnostic for local Backup, Source setup and share
+// inventory. Execute real TypeScript with Node; no API, Cookie or NAS required.
+const authSource = stripTypeScriptTypes(read(
+  'ui/shared/src/synology-dsm-auth-diagnostics.ts'),{mode:'strip'})
+const auth = await import('data:text/javascript,'+encodeURIComponent(authSource))
+// Execute the real DSM adapter in the same require-free VM used by the
+// existing storage, quota and Owner tests. Runtime imports would crash in
+// the production specialty suite before any DSM bundle could be built.
+const compiledAdapter = ts.transpileModule(adapter,{
+  fileName:'synology-backup-adapter.ts',
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+})
+// TypeScript legitimately lowers EXISTING lazy dynamic imports within method
+// bodies to require(). Those functions are never called in this VM fixture.
+// Only a new static diagnostic import would break module initialization.
+assert.doesNotMatch(compiledAdapter.outputText,
+  /require\(['"]\.\/synology-dsm-auth-diagnostics['"]\)/,
+  'DSM transport gained a static diagnostics dependency outside its VM host')
+const sandboxExports={}
+const adapterSandbox={exports:sandboxExports,module:{exports:sandboxExports},URL,TextEncoder}
+vm.runInNewContext(compiledAdapter.outputText,adapterSandbox,{timeout:1000})
+const code = sandboxExports.xDriveDSMSafeFailureCode
+assert.equal(typeof code,'function')
+const hint = auth.xDriveDSMAuthenticationFailureMessage
+for(const [status,allowed] of [
+  [401,['dsm-session-rejected']],
+  [403,['dsm-principal-unapproved','dsm-authority-unavailable',
+    'dsm-csrf-rejected','dsm-request-invalid']],
+  [503,['dsm-auth-environment','dsm-auth-timeout','dsm-auth-helper-failed',
+    'dsm-auth-response-invalid','dsm-auth-unavailable','agent-unavailable',
+    'nas-inventory-unavailable','server-connection-unavailable']],
+]){
+  for(const reason of allowed) assert.equal(code(status,reason),reason)
+}
+for(const [http,wrong] of [
+  [401,'dsm-auth-timeout'],[503,'dsm-session-rejected'],
+  [403,'agent-unavailable'],[200,'dsm-auth-helper-failed']]){
+  assert.equal(code(http,wrong),'','cross-status diagnostic was accepted')
+}
+for(const raw of ['../../etc/passwd','dsm-auth-helper-failed\nCookie:secret',
+  'dsm-session-rejected ','private-NAS-root','']) {
+  assert.equal(code(503,raw),'','untrusted CGI reason reached user')
+}
+assert.equal(code(503,null),'')
+for(const [http,reason,expected] of [
+  [401,'dsm-session-rejected','会话未登录'],
+  [503,'dsm-auth-timeout','校验超时'],
+  [503,'dsm-auth-helper-failed','程序执行失败'],
+  [503,'dsm-auth-environment','环境不完整'],
+  [503,'dsm-auth-response-invalid','无法安全识别'],
+  [503,'dsm-auth-unavailable','程序异常'],
+  [403,'dsm-principal-unapproved','套件界面授权'],
+  [403,'dsm-authority-unavailable','授权配置缺失'],
+  [403,'dsm-csrf-rejected','CSRF 校验失败'],
+  [403,'dsm-request-invalid','请求格式或内容长度']]){
+  const message=hint(new Error(`DSM backup request rejected (HTTP ${http}) [${reason}]`))
+  assert.ok(message?.includes(expected),'unsafe/missing DSM auth diagnosis '+reason)
+  assert.match(message,/HTTP (401|403|503)/)
+}
+assert.match(hint(new Error('DSM backup request rejected (HTTP 401)')),/没有可信/)
+assert.match(hint(new Error('DSM backup request rejected (HTTP 403)')),/未能证明/)
+const secret='private Cookie=token/volume1/private'
+assert.equal(hint(new Error(secret)),null,'raw native error cannot become UI text')
+for(const component of [panel,setup,browser]){
+  assert.match(component,/xDriveDSMAuthenticationFailureMessage\(failure\)/)
+}
+assert.match(panel,/dsm-principal-unapproved/)
+assert.doesNotMatch(panel,/setPrincipalDenied\(detail === 'DSM backup request rejected \(HTTP 403\)'\)/)
+assert.match(adapter,/xDriveDSMSafeFailureCode\(/)
+assert.doesNotMatch(authSource,/document\.cookie|localStorage|sessionStorage|fetch\(/)
+console.log('DSM native auth outage vs. real session rejection diagnostics are safe and consistent.')

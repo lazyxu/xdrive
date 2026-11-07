@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { xDriveDSMAuthenticationFailureMessage } from '../synology-dsm-auth-diagnostics'
 import { Box, Button, Checkbox, FormControlLabel, Stack, TextField, Typography } from '@mui/material'
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
 import type { XDriveSynologyNASShare } from '../synology-nas-share-inventory'
@@ -97,14 +98,13 @@ function XDriveSynologyBackupSourceSetupForHost({
     }).catch((failure: unknown) => {
       if (controller.signal.aborted) return
       const detail = failure instanceof Error ? failure.message : ''
-      if (detail.includes('HTTP 503) [agent-unavailable]')) {
+      const authFailure = xDriveDSMAuthenticationFailureMessage(failure)
+      if (authFailure) {
+        setScopeFailure(authFailure)
+      } else if (detail.includes('HTTP 503) [agent-unavailable]')) {
         setScopeFailure('DSM CGI 无法连接本机 xdrive-agent。请先检查 DSM 套件服务和 Agent 日志；这不代表 Server 登录凭据错误。')
       } else if (detail.includes('HTTP 503) [server-connection-unavailable]')) {
         setScopeFailure('Agent 已连接，但读取 Server 登录状态失败，请检查 Agent 状态与本机凭据存储。')
-      } else if (detail.includes('HTTP 401)')) {
-        setScopeFailure('当前 DSM 登录会话已失效，请重新登录 DSM。')
-      } else if (detail.includes('HTTP 403)')) {
-        setScopeFailure('当前 DSM 用户未获得 xdrivenas 套件界面授权，请先由 NAS 管理员完成首次授权。')
       } else {
         setScopeFailure('无法读取本机 Agent 的 Server 登录状态；请检查 DSM CGI/Agent 和套件版本。')
       }

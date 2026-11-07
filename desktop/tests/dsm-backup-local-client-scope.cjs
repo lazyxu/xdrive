@@ -11,6 +11,22 @@ const React = require('react')
 const Renderer = require('react-test-renderer')
 const { act } = Renderer
 
+// The UI imports the actual zero-dependency diagnostics presenter. Mount its
+// real compiled module instead of hiding unexpected imports behind a generic
+// require stub; Owner/session error messages remain under test.
+const dsmAuthFile = path.resolve(__dirname,
+  '../../ui/shared/src/synology-dsm-auth-diagnostics.ts')
+const dsmAuthCompiled = ts.transpileModule(fs.readFileSync(dsmAuthFile, 'utf8'), {
+  fileName: dsmAuthFile,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+})
+const dsmAuthModule = { exports: {} }
+new Function('module', 'exports', 'require', dsmAuthCompiled.outputText)(
+  dsmAuthModule, dsmAuthModule.exports, id => {
+    throw Error('unexpected runtime dependency in DSM diagnostics: ' + id)
+  },
+)
+
 const renders = { folders: [], dialogs: [], notices: [] }
 function stub(name) {
   return function Stub({ children, ...props }) {
@@ -30,6 +46,7 @@ const imports = {
   'react/jsx-runtime': require('react/jsx-runtime'),
   '@mui/material': MUI,
   '@mui/icons-material/RefreshRounded': { default: stub('refresh-icon') },
+  '../synology-dsm-auth-diagnostics': dsmAuthModule.exports,
   './DeviceBackupFolderAccordion': { XDriveDeviceBackupFolderAccordion: stub('folder-accordion') },
   './DeviceBackupLocalPrimaryActions': { XDriveDeviceBackupLocalPrimaryActions: stub('local-actions') },
   './DeviceBackupDeviceCard': { XDriveDeviceBackupDeviceCard: stub('device-card') },
