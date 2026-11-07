@@ -79,7 +79,8 @@ test('a tail that appeared during an in-flight album read resumes after completi
   assert.match(directory, /visibleTailAlbumID == page\.items\.last\?\.id else \{ return \}/)
   assert.match(directory, /load\(offset: page\.items\.count\)/)
   assert.match(directory, /private func invalidate\(\) \{[\s\S]*?pendingRestoreOffset = nil\s*visibleTailAlbumID = nil/)
-  assert.match(directory, /isVisible = false\s*visibleTailAlbumID = nil\s*libraryMonitor\.stop\(\)/)
+  assert.match(directory, /\.onDisappear \{\s*isVisible = false\s*visibleTailAlbumID = nil[\s\S]*?suspendForNavigation\(\)/)
+  assert.match(directory, /if state == \.active \{[\s\S]*?\} else \{\s*libraryMonitor\.stop\(\)\s*invalidate\(\)/)
   assert.doesNotMatch(directory, /Button\("上一页"\)|Button\("下一页"\)/)
 })
 
