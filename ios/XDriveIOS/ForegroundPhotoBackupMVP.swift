@@ -343,7 +343,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         // remain local per-item failures, never confirmed.
                         // Unknown Server ACK remains a distinct review pause.
                         report.unavailable += 1
-                            report.windowUnavailable += 1
+                        report.windowUnavailable += 1
                         report.issues.append(
                             position: startOffset + report.scanned,
                             mediaKind: isLive ? "live" : candidate.kind,
