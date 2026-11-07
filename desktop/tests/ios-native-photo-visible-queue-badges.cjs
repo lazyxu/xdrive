@@ -12,8 +12,10 @@ const wall = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
 const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 const store = read('ios/XDriveIOS/PhotoBackupChangeQueueStore.swift')
 
-test('native Timeline only shows real Owner-local change states for opted-in only-new backup', () => {
-  assert.match(dashboard, /backup\.schedule\?\.enabled == true &&\s*backup\.schedule\?\.backupStartRule == \.onlyNew\s*\? login\.owner : nil/)
+test('native Timeline shows bounded Owner-local status in enabled full and only-new plans', () => {
+  assert.match(dashboard, /backup\.schedule\?\.enabled == true \? login\.owner : nil/)
+  assert.match(dashboard, /xdriveNativePhotoOnlyNewSince/)
+  assert.match(wall, /queue\.isCaughtUp\(owner: owner\)/)
   assert.match(wall, /@Environment\(\\\.xdriveNativePhotoQueueBadgeOwner\) private var backupBadgeOwner/)
   assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(backupBadgeOwner, owner\)/)
   assert.match(wall, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
