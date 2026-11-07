@@ -106,4 +106,69 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         }
         XCTAssertEqual(app.state, .runningForeground)
     }
+
+    // Source-specific regressions were hidden by AX container identifiers
+    // even though the actual buttons were visible and the app stayed running.
+    func testNativeFiveTabsHaveDistinctAccessibilityTargets() {
+        let app = launch()
+        for name in ["launcher", "dynamic", "gallery", "files", "mine"] {
+            let identifier = "native-ios-tab-\(name)"
+            XCTAssertTrue(find(identifier, in: app).exists,
+                          "Custom tab must expose its own accessibility ID: \(name)")
+        }
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testFilesRailHasThreeIndependentNavigationTargets() {
+        let app = launch()
+        select("native-ios-tab-files", in: app)
+        for name in ["recent", "browse", "favorites"] {
+            XCTAssertTrue(find("native-ios-files-section-\(name)", in: app).exists)
+        }
+        for name in ["recent", "browse", "favorites", "browse"] {
+            select("native-ios-files-section-\(name)", in: app)
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+        }
+    }
+
+    func testGallerySourceSwitchAndReturnKeepsToolbarMounted() {
+        let app = launch()
+        for source in ["albums", "unified", "originals", "unified"] {
+            select("native-ios-gallery-source-\(source)", in: app)
+            XCTAssertTrue(find("native-ios-tab-gallery", in: app).exists)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        XCTAssertTrue(find("native-ios-gallery-open-filters", in: app).exists,
+                      "Unified Gallery must remount its filter controls on return")
+    }
+
+    func testGalleryFilterCancelRestoresSameTab() {
+        let app = launch()
+        select("native-ios-gallery-open-filters", in: app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15),
+                      "Native Gallery filter sheet did not present")
+        cancel.tap()
+        XCTAssertTrue(find("native-ios-gallery-open-filters", in: app).exists)
+        XCTAssertTrue(find("native-ios-tab-gallery", in: app).exists)
+    }
+
+    func testGalleryPeopleChildOpensWithoutDestroyingParentTab() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-gallery-people", in: app)
+        XCTAssertTrue(find("native-ios-gallery-people-page", in: app).exists)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testFilesSearchEntryKeepsNativeBrowserAlive() {
+        let app = launch()
+        select("native-ios-tab-files", in: app)
+        let search = app.searchFields["搜索全部文件"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15),
+                      "Files native searchable field not available")
+        search.tap()
+        search.typeText("ab")
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
 }
