@@ -238,12 +238,19 @@ async function inspectRealWebGuestOwnerDataPath(expectedOwner){
   if(!photo || !photo.node || photo.node.id!==selected.node.id)
     throw Error('real Viewer metadata escaped the exact Owner Node')
   const thumbnail=await request('/api/v1/media/items/'+selected.node.id+'/thumbnail')
-  const viewer=await request('/api/v1/media/items/'+selected.node.id+'/viewer-preview')
-  if([401,403,500,502,503].includes(thumbnail.status) ||
-      [401,403,500,502,503].includes(viewer.status))
-    throw Error('real Viewer derivative request failed authorization or Server')
-  // Derivatives can be 404 before the background thumbnail/preview worker
-  // runs; the test reports that truth rather than fabricating image bytes.
+  const viewer=await request('/api/v1/media/items/'+selected.node.id+
+    '/viewer-preview?format=jpeg')
+  const isJPEG=async(response)=>{
+    if(response.status!==200 ||
+        !response.headers.get('content-type')?.startsWith('image/jpeg'))return false
+    const data=new Uint8Array(await response.arrayBuffer())
+    return data.length>=64 && data[0]===255 && data[1]===216 &&
+      data[data.length-2]===255 && data[data.length-1]===217
+  }
+  const thumbnailBytesValid=await isJPEG(thumbnail)
+  const viewerBytesValid=await isJPEG(viewer)
+  if(!thumbnailBytesValid || !viewerBytesValid)
+    throw Error('real Owner thumbnail or Viewer JPEG payload invalid')
   const unrelated=await Promise.all([
     request('/api/v1/nodes'),
     request('/api/v1/notes'),
@@ -257,7 +264,8 @@ async function inspectRealWebGuestOwnerDataPath(expectedOwner){
     family:family.total_count,familyFavorites:familyFavorites.total_count,
     emptyDate:emptyDate.total_count,viewerRange:page.total_count,
     viewerMetadata:true,thumbnailStatus:thumbnail.status,
-    viewerStatus:viewer.status,mapRouteOnly:true,
+    viewerStatus:viewer.status,thumbnailBytesValid,viewerBytesValid,
+    mapRouteOnly:true,
   }
 }
 
@@ -388,6 +396,8 @@ async function run(win){
     assert.equal(media.emptyDate,0)
     assert.equal(media.viewerRange,9)
     assert.equal(media.viewerMetadata,true)
+    assert.equal(media.thumbnailBytesValid,true)
+    assert.equal(media.viewerBytesValid,true)
     assert.equal(media.mapRouteOnly,true)
     const preload=await win.webContents.executeJavaScript(
       'Boolean(window.xdriveDesktop?.agent && document.querySelector("[data-xdrive-places-index]"))')
@@ -522,6 +532,7 @@ async function run(win){
       exactViewerRange:media.viewerRange,viewerMetadata:media.viewerMetadata,
       noUnrelatedMapBearerAccess:media.mapRouteOnly,
       thumbnailStatus:media.thumbnailStatus,viewerStatus:media.viewerStatus,
+      thumbnailBytesValid:media.thumbnailBytesValid,viewerBytesValid:media.viewerBytesValid,
       realWebModeRoundTrip,legacyServerFailedClosed,browserLogoutRecovered,
       nativeLogoutBlockedOldMap,oldMapHiddenAfterLogout
     }))
