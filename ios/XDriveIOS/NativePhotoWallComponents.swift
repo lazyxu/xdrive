@@ -171,6 +171,40 @@ struct XDriveIOSNativePhotoWallMediaBadge: View {
     }
 }
 
+/// The only square tile *presentation* shared by local PhotoKit, signed Owner
+/// ranges, place clusters and the reconciled timeline. It accepts rendered
+/// pixels, never a photo ID, Reader, Owner scope, or authorization callback.
+/// Source-specific tasks and foreground cancellation remain in each caller.
+struct XDriveIOSNativePhotoWallTileShell<Content: View>: View {
+    let isVideo: Bool
+    let isLive: Bool
+    let verifiedDuration: String?
+    let badgeAlignment: Alignment
+    private let content: Content
+
+    init(isVideo: Bool, isLive: Bool, verifiedDuration: String? = nil,
+         badgeAlignment: Alignment = .bottomTrailing,
+         @ViewBuilder content: () -> Content) {
+        self.isVideo = isVideo
+        self.isLive = isLive
+        self.verifiedDuration = verifiedDuration
+        self.badgeAlignment = badgeAlignment
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .aspectRatio(1, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .overlay(alignment: badgeAlignment) {
+                XDriveIOSNativePhotoWallMediaBadge(
+                    isVideo: isVideo, isLive: isLive,
+                    verifiedDuration: verifiedDuration
+                )
+            }
+    }
+}
+
 /// Selection indicator only. The page remains responsible for membership,
 /// batch-action rights, accessibility text and selection lifecycle.
 struct XDriveIOSNativePhotoWallSelectionIndicator: View {

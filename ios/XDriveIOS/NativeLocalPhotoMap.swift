@@ -1033,9 +1033,11 @@ private struct XDriveIOSMapSpatialAlbum: View {
     }
 
     private func advanceIfVisible() {
-        guard scrollFootVisible, !busy, viewer == nil, hasNext, error == nil else {
-            return
-        }
+        guard XDriveIOSNativePhotoWallWindowPolicy.shouldAdvance(
+            footVisible: scrollFootVisible, hasNext: hasNext, busy: busy,
+            failed: error != nil, viewerOpen: viewer != nil,
+            scopeActive: phase == .active
+        ) else { return }
         loadNext()
     }
 

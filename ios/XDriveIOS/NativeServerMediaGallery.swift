@@ -293,8 +293,9 @@ private struct XDriveIOSNativeMediaWallTile: View {
     @State private var image: UIImage?
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            GeometryReader { square in
+        XDriveIOSNativePhotoWallTileShell(isVideo: item.isVideo, isLive: item.isLive) {
+            ZStack(alignment: .bottomTrailing) {
+                GeometryReader { square in
                 Group {
                     if let image {
                         Image(uiImage: image).resizable().scaledToFill()
@@ -309,9 +310,6 @@ private struct XDriveIOSNativeMediaWallTile: View {
                 .frame(width: square.size.width, height: square.size.height)
                 .clipped()
             }
-            XDriveIOSNativePhotoWallMediaBadge(
-                isVideo: item.isVideo, isLive: item.isLive
-            )
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 3))

@@ -68,3 +68,21 @@ enum XDriveIOSNativePhotoWallFraming: String, CaseIterable, Identifiable {
         }
     }
 }
+
+
+/// Shared state-only auto-advance gate. No platform permissions, PhotoKit scan,
+/// signed Owner range or Viewer is ever started by the shared presentation.
+enum XDriveIOSNativePhotoWallWindowPolicy {
+    static func shouldAdvance(footVisible: Bool, hasNext: Bool, busy: Bool,
+                              failed: Bool, viewerOpen: Bool,
+                              scopeActive: Bool) -> Bool {
+        footVisible && hasNext && !busy && !failed && !viewerOpen && scopeActive
+    }
+
+    /// Only an anchor in the caller's *current verified* window may be restored.
+    /// Older windows are re-fetched by the caller before becoming eligible.
+    static func canRestore<T: Equatable>(_ anchor: T?, in verifiedIDs: [T],
+                                         scopeActive: Bool) -> Bool {
+        scopeActive && anchor.map { verifiedIDs.contains($0) } == true
+    }
+}

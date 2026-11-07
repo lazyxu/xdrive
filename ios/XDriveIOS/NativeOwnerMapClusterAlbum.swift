@@ -426,8 +426,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             viewerReturn = item
             viewing = item
         } label: {
-            GeometryReader { tile in
-                ZStack(alignment: .bottomTrailing) {
+            XDriveIOSNativePhotoWallTileShell(isVideo: item.isVideo, isLive: item.isLive) {
+                GeometryReader { tile in
+                    ZStack(alignment: .bottomTrailing) {
                     Rectangle().fill(Color(uiColor: .tertiarySystemFill))
                     if let image = coverImages[item.id] {
                         Image(uiImage: image)
@@ -441,12 +442,10 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                             .frame(width: tile.size.width,
                                    height: tile.size.height)
                     }
-                    XDriveIOSNativePhotoWallMediaBadge(
-                        isVideo: item.isVideo, isLive: item.isLive
-                    )
                 }
             }
             .aspectRatio(1, contentMode: .fit)
+            }
         }
         .buttonStyle(.plain)
         .id(item.id)
@@ -511,8 +510,12 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         // A slow or missing cover must never block continuous scrolling:
         // load() cancels the old coverTask, rechecks the departing signed
         // Range, and keeps at most two verified 48-item windows visible.
-        guard scrollFootVisible, activeOwner, !busy,
-              viewing == nil, page != nil, error == nil, let next else { return }
+        guard XDriveIOSNativePhotoWallWindowPolicy.shouldAdvance(
+            footVisible: scrollFootVisible,
+            hasNext: page != nil && next != nil, busy: busy,
+            failed: error != nil, viewerOpen: viewing != nil,
+            scopeActive: activeOwner
+        ), let next else { return }
         scrollFootVisible = false
         load(next, history: earlier + [cursor], autoAdvance: true)
     }
