@@ -242,10 +242,10 @@ final class XDriveIOSNativeFilesCollectionPageModel: ObservableObject {
     }
 
     func matches(_ owner: XDriveNativeOwnerRoot?,
-                 kind: XDriveIOSNativeFilesCollectionKind? = nil) -> Bool {
-        guard verified, let owner, let loadedOwner else { return false }
-        return (kind == nil || loadedKind == kind) &&
-            XDriveIOSNativePhotoOwnerScope.matches(owner, loadedOwner)
+                 kind: XDriveIOSNativeFilesCollectionKind) -> Bool {
+        guard verified, let owner, let loadedOwner,
+              loadedKind == kind else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(owner, loadedOwner)
     }
 
     /// Favorited directory NavigationLinks are owned by 'items'. Clearing
@@ -294,9 +294,11 @@ final class XDriveIOSNativeFilesCollectionPageModel: ObservableObject {
                 guard epoch == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
-                items = fetched
+                // Publish scope identity before the rows, so a SwiftUI
+                // observer cannot render a new collection under an old kind.
                 loadedOwner = expected
                 loadedKind = kind
+                items = fetched
                 verified = true
                 error = nil
             } catch is CancellationError {
@@ -530,8 +532,16 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     var body: some View {
         ScrollViewReader { returnScroll in
             List {
-                if model.loading && !model.matches(login.owner, kind: kind) {
-                    HStack { ProgressView(); Text("正在读取云端文件…") }
+                if !model.matches(login.owner, kind: kind) {
+                    if model.loading {
+                        HStack { ProgressView(); Text("正在读取云端文件…") }
+                    } else if let error = model.error {
+                        Text(error).foregroundStyle(.orange)
+                        Button("重试") { reload() }
+                            .accessibilityIdentifier("native-ios-files-collection-retry")
+                    } else {
+                        ProgressView("正在核验当前文件列表…")
+                    }
                 } else if let error = model.error {
                     Text(error).foregroundStyle(.orange)
                     Button("重试") { reload() }
