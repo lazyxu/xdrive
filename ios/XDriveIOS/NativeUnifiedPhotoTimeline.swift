@@ -402,8 +402,13 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
         return page.compactMap { item in
             switch item {
             case .local(let candidate):
-                guard let key = localProbes[candidate.id]?.fingerprint, let match = matches[key] else {
-                    return item.provisional.unresolved(.localUnavailable)
+                guard let key = localProbes[candidate.id]?.fingerprint else {
+                    // An intentionally un-hashed original is *not* an
+                    // unreadable original. Leave source equality unknown.
+                    return item.provisional.unresolved(.libraryIncomplete)
+                }
+                guard let match = matches[key] else {
+                    return item.provisional.unresolved(.cloudIdentity)
                 }
                 if match.state == .unmatched {
                     return .init(local: candidate, cloud: nil, match: nil,
@@ -419,7 +424,10 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
                 return item.provisional.unresolved(.cloudIdentity)
             case .cloud(let photo, let date):
                 guard let key = cloudProbes[photo.id]?.fingerprint, let ids = localIDs[key] else {
-                    return item.provisional.unresolved(.libraryIncomplete)
+                    // Cloud is visible even without PhotoKit permission or
+                    // a complete current-device inventory; neither is proof
+                    // that an original is absent on the device.
+                    return item.provisional.unresolved(lease == nil ? .permission : .libraryIncomplete)
                 }
                 if ids.count == 1, let id = ids.first,
                    XDriveIOSNativePhotoProofStamp.current(id) != nil, matches[key]?.matches(photo) == true {
