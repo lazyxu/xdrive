@@ -416,6 +416,8 @@ func (s *Server) Router() *gin.Engine {
 	// B2: Owner GPS calendar-cell trips, separate from legacy date-only Memories.
 	authed.GET("/media/trips", s.listMediaExactTrips)
 	authed.GET("/media/trips/:tripID/items", s.listMediaExactTripItems)
+	// Trip-only GPS cells; never the whole-Owner places overview.
+	authed.GET("/media/trips/:tripID/map", s.listMediaExactTripMap)
 	authed.GET("/media/duplicate-organize/plan", s.mediaDuplicateOrganizePlan)
 	authed.POST("/media/duplicate-organize/apply", s.applyMediaDuplicateOrganize)
 	authed.GET("/media/duplicates", s.listMediaDuplicateGroups)
