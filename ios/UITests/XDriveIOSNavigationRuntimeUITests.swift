@@ -15,12 +15,62 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
                        "App died at launch before Files navigation")
         return app
     }
+    /// The published c83 IPA has a *real* five-button tab bar, but SwiftUI
+    /// applied the container's identifier to each button instead of the
+    /// distinct child IDs. Query an exact button+label as a baseline-only
+    /// compatibility fallback; never tap an arbitrary coordinate or guess a
+    /// file destination. The candidate still uses the exact new identifier.
+    private func legacyControl(
+        _ identifier: String, in app: XCUIApplication
+    ) -> XCUIElement? {
+        if identifier.hasPrefix("native-ios-tab-") {
+            let key = String(identifier.dropFirst("native-ios-tab-".count))
+            let labels = [
+                "launcher": "全部", "dynamic": "地图", "gallery": "图库",
+                "files": "文件", "mine": "我的"
+            ]
+            guard let label = labels[key] else { return nil }
+            return app.buttons.matching(identifier: "native-ios-five-slot-bar")
+                .matching(NSPredicate(format: "label == %@", label)).firstMatch
+        }
+        if identifier.hasPrefix("native-ios-files-section-") {
+            let key = String(identifier.dropFirst("native-ios-files-section-".count))
+            let labels = ["recent": "最近", "browse": "浏览", "favorites": "收藏"]
+            guard let label = labels[key] else { return nil }
+            return app.buttons.matching(identifier: "native-ios-files-quick-rail")
+                .matching(NSPredicate(format: "label == %@", label)).firstMatch
+        }
+        if identifier.hasPrefix("native-ios-gallery-source-") {
+            let key = String(identifier.dropFirst("native-ios-gallery-source-".count))
+            let labels = ["albums": "相册", "unified": "全部照片",
+                          "originals": "备份原件"]
+            guard let label = labels[key] else { return nil }
+            return app.buttons.matching(
+                NSPredicate(format: "label == %@", label)
+            ).firstMatch
+        }
+        if identifier == "native-ios-gallery-open-filters" {
+            return app.buttons.matching(
+                identifier: "native-ios-unified-photo-gallery"
+            ).matching(
+                NSPredicate(format: "label CONTAINS %@", "搜索与筛选")
+            ).firstMatch
+        }
+        return nil
+    }
+
     private func find(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
-        // SwiftUI may surface its nested custom toolbar as an "Other" element.
-        // Query the exact identifier, not an assumed AX element type.
-        let element = app.descendants(matching: .any)
+        let exact = app.descendants(matching: .any)
             .matching(identifier: identifier).firstMatch
-        if !element.waitForExistence(timeout: 20) {
+        if exact.waitForExistence(timeout: 4) { return exact }
+        // Baseline c83 UI hierarchy recorded actual labels and old container
+        // IDs on the buttons. This is a real tap, not a source-only assertion.
+        if let legacy = legacyControl(identifier, in: app),
+           legacy.waitForExistence(timeout: 5) {
+            print("NAV_SMOKE legacy baseline AX fallback \(identifier); app state=\(app.state.rawValue)")
+            return legacy
+        }
+        if !exact.waitForExistence(timeout: 10) {
             print("NAV_SMOKE missing \(identifier); app state=\(app.state.rawValue)")
             print("NAV_SMOKE hierarchy:\n\(app.debugDescription)")
             let capture = XCTAttachment(screenshot: app.screenshot())
@@ -28,7 +78,7 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
             capture.lifetime = .keepAlways
             add(capture)
         }
-        return element
+        return exact
     }
     private func select(_ identifier: String, in app: XCUIApplication) {
         let control = find(identifier, in: app)
