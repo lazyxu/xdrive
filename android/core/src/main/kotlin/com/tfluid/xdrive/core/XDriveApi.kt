@@ -437,8 +437,16 @@ data class OwnerClipboardItem(
     val id: Long, val clientEventID: String, val kind: String,
     val nonce: String, val ciphertext: String,
     val createdAt: String, val expiresAt: String,
+    val targetDeviceID: String? = null, val ephemeralKey: String? = null,
+    val wrappedKey: String? = null, val nodeID: Long = 0L,
 ) {
     val wire get() = XDriveClipboardCrypto.Wire(clientEventID,kind,nonce,ciphertext)
+    fun targetedWire(): XDriveClipboardTargetCrypto.Wire? {
+        val target = targetDeviceID?.takeIf { it.isNotBlank() } ?: return null
+        return XDriveClipboardTargetCrypto.Wire(clientEventID, target, kind,
+            nonce, ciphertext, requireNotNull(ephemeralKey),
+            requireNotNull(wrappedKey), nodeID)
+    }
 }
 data class OwnerClipboardPage(val items: List<OwnerClipboardItem>,val nextBefore: Long?)
 
@@ -502,6 +510,13 @@ interface XDriveService {
         throw ApiException(501,"Owner Clipboard verifier unavailable")
     suspend fun clipboardList(accessToken: String, before: Long? = null): OwnerClipboardPage =
         throw ApiException(501,"Owner Clipboard list unavailable")
+    /** Requires interactive Owner bearer + independently registered installation proof. */
+    suspend fun clipboardListForDevice(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, before: Long? = null,
+    ): OwnerClipboardPage = throw ApiException(501,"Clipboard device mailbox unavailable")
+    suspend fun clipboardEnrollRecipient(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, publicKey: String,
+    ) { throw ApiException(501,"Clipboard device enrollment unavailable") }
     suspend fun clipboardCreate(accessToken: String, item: XDriveClipboardCrypto.Wire): OwnerClipboardItem =
         throw ApiException(501,"Owner Clipboard send unavailable")
     suspend fun clipboardDelete(accessToken: String, id: Long) {
@@ -516,6 +531,10 @@ interface XDriveService {
     suspend fun clipboardWatch(accessToken: String, after: Long,
         onChange: suspend () -> Unit): Long =
         throw ApiException(501,"Owner Clipboard SSE unavailable")
+    suspend fun clipboardWatchForDevice(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, after: Long,
+        onChange: suspend () -> Unit,
+    ): Long = throw ApiException(501,"Clipboard device SSE unavailable")
 
     /** Exact Owner Notes endpoints. Mocks without Notes support fail closed. */
     suspend fun notesInitialize(accessToken: String) {
@@ -1038,11 +1057,32 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             ciphertext = value.string("ciphertext"),
             createdAt = value.string("created_at"),
             expiresAt = value.string("expires_at"),
+            targetDeviceID = (value["target_device_id"] as? JsonPrimitive)?.contentOrNull
+                ?.takeIf { it.isNotBlank() },
+            ephemeralKey = (value["ephemeral_key"] as? JsonPrimitive)?.contentOrNull
+                ?.takeIf { it.isNotBlank() },
+            wrappedKey = (value["wrapped_key"] as? JsonPrimitive)?.contentOrNull
+                ?.takeIf { it.isNotBlank() },
+            nodeID = (value["node_id"] as? JsonPrimitive)?.longOrNull ?: 0L,
         )
-        if (item.id <= 0 || item.kind !in setOf("text/plain","text/uri-list") ||
+        if (item.id <= 0 ||
             runCatching { java.util.UUID.fromString(item.clientEventID) }.isFailure ||
             runCatching { java.util.Base64.getDecoder().decode(item.nonce).size }.getOrDefault(0) != 12 ||
             item.ciphertext.length !in 24..90000) invalidPayload()
+        if (item.targetDeviceID == null) {
+            if (item.kind !in setOf("text/plain", "text/uri-list") ||
+                item.ephemeralKey != null || item.wrappedKey != null || item.nodeID != 0L) invalidPayload()
+        } else {
+            if (runCatching {
+                java.util.UUID.fromString(item.targetDeviceID).toString() == item.targetDeviceID
+            }.getOrDefault(false) != true) invalidPayload()
+            if (item.kind !in setOf("text/plain", "text/uri-list",
+                    "image/x-xdrive-node-ref", "application/x-xdrive-node-ref") ||
+                (item.nodeID > 0L) != item.kind.endsWith("-node-ref") ||
+                runCatching { java.util.Base64.getDecoder().decode(item.ephemeralKey).size }.getOrDefault(0) != 32 ||
+                runCatching { java.util.Base64.getDecoder().decode(item.wrappedKey).size }.getOrDefault(0) != 60)
+                invalidPayload()
+        }
         return item
     }
 
@@ -1055,10 +1095,20 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             values=mapOf("nonce" to nonce,"ciphertext" to ciphertext,"scope" to scope))
         return clipboardVaultRow(value)
     }
-    override suspend fun clipboardList(accessToken: String,before: Long?): OwnerClipboardPage {
+    override suspend fun clipboardList(accessToken: String,before: Long?): OwnerClipboardPage =
+        clipboardListScoped(accessToken, before, null)
+
+    override suspend fun clipboardListForDevice(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, before: Long?,
+    ): OwnerClipboardPage = clipboardListScoped(accessToken, before, enrolled)
+
+    private suspend fun clipboardListScoped(
+        accessToken: String, before: Long?, enrolled: NativeAndroidDeviceEnrollment?,
+    ): OwnerClipboardPage {
         require(before == null || before > 0)
         val data = request("clipboard/items",accessToken,
-            query = if (before == null) emptyMap() else mapOf("before" to before.toString()))
+            query = if (before == null) emptyMap() else mapOf("before" to before.toString()),
+            deviceIdentity = enrolled)
         val raw = data["items"] as? JsonArray ?: invalidPayload()
         if (raw.size > 50) invalidPayload()
         val items = raw.map { clipboardItemRow(it as? JsonObject ?: invalidPayload()) }
@@ -1067,6 +1117,17 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             null else data.long("next_before").takeIf { it > 0 } ?: invalidPayload()
         return OwnerClipboardPage(items,next)
     }
+    override suspend fun clipboardEnrollRecipient(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, publicKey: String,
+    ) {
+        require(runCatching { java.util.Base64.getDecoder().decode(publicKey).size == 32 }
+            .getOrDefault(false))
+        val receipt = request("clipboard/devices/self", accessToken, method = "PUT",
+            values = mapOf("public_key" to publicKey), deviceIdentity = enrolled)
+        if (receipt.string("device_id") != enrolled.deviceId ||
+            receipt.string("public_key") != publicKey) invalidPayload()
+    }
+
     override suspend fun clipboardCreate(
         accessToken: String,item: XDriveClipboardCrypto.Wire): OwnerClipboardItem {
         require(item.ciphertext.length in 24..90000 && item.nonce.length == 16 &&
@@ -1091,17 +1152,30 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
      * clipboard text, credentials or a long-lived device subscription.
      */
     override suspend fun clipboardWatch(accessToken: String, after: Long,
-        onChange: suspend () -> Unit): Long = withContext(Dispatchers.IO) {
+        onChange: suspend () -> Unit): Long = clipboardWatchScoped(accessToken, null, after, onChange)
+
+    override suspend fun clipboardWatchForDevice(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, after: Long,
+        onChange: suspend () -> Unit,
+    ): Long = clipboardWatchScoped(accessToken, enrolled, after, onChange)
+
+    private suspend fun clipboardWatchScoped(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment?, after: Long,
+        onChange: suspend () -> Unit,
+    ): Long = withContext(Dispatchers.IO) {
         require(after >= 0L && validToken(accessToken))
         val url = address.url.toHttpUrlOrNull()!!.newBuilder()
             .addPathSegments("api/v1/clipboard/events")
             .addQueryParameter("after", after.toString()).build()
-        val request = Request.Builder().url(url)
+        val builder = Request.Builder().url(url)
             .header("Authorization", "Bearer $accessToken")
             .header("Accept", "text/event-stream")
             .header("Cache-Control", "no-store")
-            .build()
-        val call = http.newCall(request)
+        if (enrolled != null) {
+            builder.header("X-XDrive-Device-ID", enrolled.deviceId)
+                .header("X-XDrive-Device-Token", enrolled.deviceToken)
+        }
+        val call = http.newCall(builder.build())
         val dispose = currentCoroutineContext()[Job]?.invokeOnCompletion { call.cancel() }
         try {
             call.execute().use { response ->
@@ -3262,6 +3336,10 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         // uploads, a redirect, source mutation or an arbitrary caller URL.
         val nativeIdentityRequest = path == "devices/self" && method == null &&
             values == null
+        val clipboardDeviceEnrollment = path == "clipboard/devices/self" &&
+            method == "PUT" && values?.keys == setOf("public_key")
+        val clipboardDeviceRead = path == "clipboard/items" && method == null &&
+            values == null && (query.isEmpty() || query.keys == setOf("before"))
         val nativeDestinationRequest = path == "android/photos/backup-destination" &&
             ((method == null && values == null) ||
                 (method == "PUT" && values?.keys == setOf("name")))
@@ -3280,8 +3358,10 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         require(deviceIdentity == null ||
             (accessToken != null &&
                 (nativeIdentityRequest || nativeDestinationRequest ||
+                    clipboardDeviceEnrollment || clipboardDeviceRead ||
                     nativeManagedUploadRequest || managedAndroidSourceRun) &&
-                query.isEmpty() && ifMatch == null && numberValues.isEmpty() &&
+                (query.isEmpty() || clipboardDeviceRead) &&
+                ifMatch == null && numberValues.isEmpty() &&
                 (bodyObject == null || nativeManagedUploadRequest || managedAndroidSourceRun) &&
                 (!longRunning || managedAndroidFinalize) && pathTailSegments.isEmpty())) {
             "Device credentials are restricted to native identity, destination and managed originals"
