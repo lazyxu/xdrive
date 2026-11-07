@@ -150,3 +150,31 @@ test('cloud place sheet keeps Gallery wall but omits transport-only prose', () =
   assert.match(wall, /model\.load\(login: login, albumID: album\?\.id, placeID: placeID/)
   assert.match(cloud, /pagePlaceID == placeID/)
 })
+
+test('local, Owner place and unified Gallery share an inert video/Live badge without merging source permissions', () => {
+  const unified = read('ios/XDriveIOS/NativeUnifiedPhotoGallery.swift')
+  const localTile = local.slice(local.indexOf('struct XDriveIOSNativeSquarePhotoTile: View'),
+    local.indexOf('/// Metadata-only virtual page.'))
+  const cloudTile = cloud.slice(cloud.indexOf('private struct XDriveIOSNativeMediaWallTile: View'),
+    cloud.indexOf('/// Fullscreen media View.'))
+
+  assert.match(shared, /struct XDriveIOSNativePhotoWallMediaBadge: View/)
+  assert.match(shared, /let isVideo: Bool/)
+  assert.match(shared, /let isLive: Bool/)
+  assert.match(shared, /var verifiedDuration: String\? = nil/)
+  assert.match(shared, /if isVideo \{[\s\S]*?if let verifiedDuration \{\s*Text\(verifiedDuration\)\.monospacedDigit\(\)/)
+  assert.match(shared, /Image\(systemName: "play.fill"\)/)
+  assert.match(shared, /else if isLive \{\s*Image\(systemName: "livephoto"\)/)
+  assert.match(shared, /\.accessibilityHidden\(true\)/)
+  assert.match(localTile, /XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: candidate\.kind == "video",\s*isLive: candidate\.isLive,\s*verifiedDuration: durationLabel/)
+  assert.match(localTile, /PHAsset\.fetchAssets\([\s\S]*?asset\.creationDate == candidate\.capturedAt,[\s\S]*?asset\.modificationDate == candidate\.modifiedAt/)
+  assert.match(localTile, /seconds: asset\.duration/)
+  assert.match(cloudTile, /XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: item\.isVideo, isLive: item\.isLive/)
+  assert.match(cloudTile, /model\.thumbnail\(item, login: login\)/)
+  assert.match(cluster, /XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: item\.isVideo, isLive: item\.isLive/)
+  assert.match(unified, /\.overlay\(alignment: \.bottomTrailing\) \{\s*XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: row\.isVideo, isLive: row\.isLive/)
+  assert.match(unified, /\.overlay\(alignment: \.bottomLeading\) \{\s*Label\(row\.presence\.title, systemImage: row\.presence\.symbol\)/)
+  assert.match(unified, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
+  assert.doesNotMatch(shared, /PHAsset|PHPhotoLibrary|URLSession|UploadSession|accessToken|verifiedAuthorization|Keychain/)
+  assert.doesNotMatch(cloudTile, /PHAsset|allowICloud:/)
+})

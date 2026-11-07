@@ -309,10 +309,9 @@ private struct XDriveIOSNativeMediaWallTile: View {
                 .frame(width: square.size.width, height: square.size.height)
                 .clipped()
             }
-            if item.isVideo || item.isLive {
-                Image(systemName: item.isVideo ? "play.circle.fill" : "livephoto")
-                    .foregroundStyle(.white).padding(6).shadow(radius: 2)
-            }
+            XDriveIOSNativePhotoWallMediaBadge(
+                isVideo: item.isVideo, isLive: item.isLive
+            )
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 3))
