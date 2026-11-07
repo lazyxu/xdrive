@@ -6,11 +6,11 @@ const path = require('node:path')
 
 const root = path.resolve(__dirname, '../..')
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8')
-const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+const gallery = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
 
 test('P0-L14 dense Gallery and grouped Timeline pass the same Live Photo still Scheduler', () => {
   const start = gallery.indexOf('function MediaTileGrid({')
-  const end = gallery.indexOf('\nfunction mediaGalleryScrollParent(', start)
+  const end = gallery.indexOf('\nexport function mediaGalleryScrollParent(', start)
   assert.ok(start > -1 && end > start, 'shared dense presentation must remain')
   const dense = gallery.slice(start, end)
   assert.match(dense, /thumbnailScheduler: XDriveMediaThumbnailScheduler/)
@@ -36,7 +36,7 @@ test('P0-L14 the page retains all dense groups together and releases abandoned w
   assert.match(owner, /items\.filter\(\(item\) => item\.metadata\.has_thumbnail\)\.map\(\(item\) => item\.node\.id\)/)
   assert.match(owner, /thumbnailScheduler\.setRetention\(/)
   const denseStart = gallery.indexOf('function MediaTileGrid({')
-  const denseEnd = gallery.indexOf('\nfunction mediaGalleryScrollParent(', denseStart)
+  const denseEnd = gallery.indexOf('\nexport function mediaGalleryScrollParent(', denseStart)
   assert.doesNotMatch(gallery.slice(denseStart, denseEnd), /setRetention\(/,
     'one dense date group must not cancel sibling requests')
   assert.match(gallery, /thumbnailScheduler\.setRetention\(retainedNodeIDs\)/,
