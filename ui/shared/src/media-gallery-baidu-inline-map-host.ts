@@ -62,7 +62,7 @@ export type XDriveBaiduInlineMapOptions<T> =
 
 export interface XDriveBaiduInlineMapHost<T> {
   beginAuthorizedInlineSession(signal: AbortSignal): Promise<boolean>
-  replaceAuthorizedCells(cells: readonly XDriveTrustedIsolatedMapCell<T>[]): boolean
+  replaceAuthorizedCells(cells: readonly XDriveTrustedIsolatedMapCell<T>[], cameraScoped?: boolean): boolean
   setPhotoCoverSelections(selections: readonly T[]): boolean
   /** Read current SDK camera; never authorize an Owner resource. */
   requestCurrentViewport(): boolean
@@ -110,6 +110,9 @@ export function xDriveMountBaiduInlineMap<T>(
   let gestureCells: readonly XDriveTrustedIsolatedMapCell<T>[] = []
   let gestureFrame: number | null = null
   let coveredSelections = new Set<T>()
+  // The first worldwide /cells response is only for camera fitting. Its
+  // aggregate totals must never become visible camera-specific labels.
+  let cameraScoped = false
   let pendingViewport: ReturnType<typeof setTimeout> | null = null
   let missingSDKEndTimer: ReturnType<typeof setTimeout> | null = null
   let missingSDKEndEpoch = 0
@@ -134,6 +137,10 @@ export function xDriveMountBaiduInlineMap<T>(
   const clearLabels = () => {
     for (const {label, click} of labels) {
       try { label.removeEventListener('click', click) } catch { /* teardown */ }
+      // Some asynchronous JSAPI builds can paint a queued Label after
+      // removeOverlay. Hide it synchronously before removing the SDK object.
+      try { label.setStyle({ display:'none', visibility:'hidden', pointerEvents:'none' }) }
+      catch { /* old SDK: still try the official removal API */ }
       try { map?.removeOverlay(label) } catch { /* teardown */ }
     }
     labels = []
@@ -152,6 +159,7 @@ export function xDriveMountBaiduInlineMap<T>(
     if (cells.length>0)gestureCells=cells
     cells = []
     coveredSelections.clear()
+    cameraScoped = false
     clearProjection()
     options.onCancel?.()
     projectGesture()
@@ -216,7 +224,7 @@ export function xDriveMountBaiduInlineMap<T>(
         // whole visible marker layer. Do not mix unselected native numeric
         // Labels under its photo cards. The complete Cell list and signed
         // full-camera Range remain available through the trusted Parent.
-        if (coveredSelections.size > 0) continue
+        if (!cameraScoped || coveredSelections.size > 0) continue
         const position = new sdk.Point(cell.longitude,cell.latitude)
         const label = new sdk.Label(cell.count > 1
           ? '▣ ' + cell.count.toLocaleString('zh-CN') + '张' : '▣', {
@@ -555,18 +563,21 @@ export function xDriveMountBaiduInlineMap<T>(
       if (!ok) { options.onMapFailure?.(); dispose() }
       return ok
     },
-    replaceAuthorizedCells(next) {
+    replaceAuthorizedCells(next, currentCamera = true) {
       if (!alive || !Array.isArray(next) || next.length > maxCells ||
+          typeof currentCamera !== 'boolean' ||
           next.some(cell=>!validCell(cell))) {
         cells = []
         clearGesture()
         coveredSelections.clear()
+        cameraScoped = false
         generation++
         clearLabels()
         clearProjection()
         return false
       }
       generation++
+      cameraScoped = currentCamera
       cells = [...next]
       if (next.length>0) {
         awaitingSDKEnd = false
