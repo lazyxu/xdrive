@@ -109,6 +109,10 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             // schema. Reasons are valid only for an exact failed revision.
             try execute("CREATE TABLE IF NOT EXISTS failure_reasons (asset_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0), reason TEXT NOT NULL)")
             try execute("CREATE INDEX IF NOT EXISTS entries_pending_order ON entries (state, priority DESC, queue_order DESC)")
+            // UI-only task paging follows an index rather than sorting every
+            // row in large 10k/100k PhotoKit change histories.
+            try execute("CREATE INDEX IF NOT EXISTS entries_display_order ON entries (queue_order DESC, asset_id ASC)")
+            try execute("CREATE INDEX IF NOT EXISTS entries_state_display_order ON entries (state, queue_order DESC, asset_id ASC)")
             // Ignore a newly created database until iOS protection permits
             // reading its baseline and backing PhotoKit bytes again.
             try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete],
