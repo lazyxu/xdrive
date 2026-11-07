@@ -14,6 +14,20 @@ export type AgentHello = {
   capabilities: string[]
 }
 
+export type AgentClipboardVault = {
+  owner_id: number; salt: string; kdf: string; iterations: number
+  check_nonce: string; check_ciphertext: string; aad_scope: string
+}
+export type AgentClipboardCheck = { nonce: string; ciphertext: string; scope: string }
+export type AgentClipboardWrite = {
+  client_event_id: string; kind: 'text/plain' | 'text/uri-list'
+  nonce: string; ciphertext: string
+}
+export type AgentClipboardItem = AgentClipboardWrite & {
+  id: number; created_at: string; expires_at: string
+}
+export type AgentClipboardPage = { items: AgentClipboardItem[]; next_before: number | null }
+
 export type AgentNotesSource = 'mine' | 'ios_notes'
 export type AgentNotesNamespace = {
   system_node_id: number
