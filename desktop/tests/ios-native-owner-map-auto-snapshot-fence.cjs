@@ -17,7 +17,7 @@ test('map cluster auto-append re-verifies its previous exact Owner place Range b
   assert.match(load, /departingPage\.total_count ==\s*selection\.places\[departingCursor\.placeIndex\]\.item_count/)
   assert.match(load, /let priorFacet = selection\.places\[departingCursor\.placeIndex\]/)
   assert.match(load, /XDriveIOSNativeOwnerMapSelectionPolicy\.canOpenPhotoRange\(priorFacet\)/)
-  assert.match(load, /let currentOldPage = try await reader\.page\(\s*offset: departingCursor\.offset, placeID: priorFacet\.id\)/)
+  assert.match(load, /let currentOldPage = try await reader\.page\(\s*offset: departingCursor\.offset, placeID: priorFacet\.id, captureRange: selection\.captureRange\)/)
   assert.match(load, /currentOldPage\.sameVisibleSnapshot\(as: departingPage\)/)
   assert.match(load, /page\?\.sameVisibleSnapshot\(as: departingPage\) == true/)
   assert.match(load, /XDriveIOSNativePhotoOwnerScope\.matches\(\s*login\.owner, selection\.owner/)

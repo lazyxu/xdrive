@@ -58,7 +58,7 @@ test('cross-range requests retain exact album/place/search Owner without backgro
   assert.match(wall, /onCrossedRange: \{ next, verifiedRange in/)
   assert.match(model, /func acceptVerifiedViewerRange\(/)
   assert.match(model, /pageAlbumID == albumID, pagePlaceID == placeID/)
-  assert.match(model, /pageSearch == search, !busy/)
+  assert.match(model, /pageSearch == search, pageCaptureRange == captureRange, !busy/)
   assert.match(model, /existing\.sameVisibleSnapshot\(as: previous\)/)
   assert.match(model, /page = next/)
   assert.doesNotMatch(wall, /UploadSession|CASWriter|PhotoSyncEncryptedLedger|PHAssetChangeRequest/)

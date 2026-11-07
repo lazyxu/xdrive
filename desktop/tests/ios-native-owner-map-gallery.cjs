@@ -16,7 +16,7 @@ test('cloud Gallery navigates to WGS84 native MapKit under fresh verified Owner'
   assert.match(wall, /native-ios-server-gallery-map/)
   assert.match(map, /MKMapView\(\)/)
   assert.match(map, /login\.verifiedAuthorization\(\)/)
-  assert.match(map, /reader\.mapOverview\(bounds: bounds, detail: true\)/)
+  assert.match(map, /reader\.mapOverview\(\s*bounds: bounds, detail: true, captureRange: activeCaptureRange\)/)
   assert.match(map, /self\.error = "当前 Owner 地图范围或权限已失效/)
   assert.match(map, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/)
   assert.match(map, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
@@ -41,7 +41,7 @@ test('only real canonical GPS places in the currently trusted map page open a fr
   assert.match(reader, /URLQueryItem\(name: "range", value: "true"\)/)
   assert.match(reader, /URLQueryItem\(name: "limit", value: String\(Self\.pageSize\)\)/)
   assert.match(policy, /facet\.coordinate_kind != "map_region_sample"/)
-  assert.match(map, /mapView\.setRegion\(MKCoordinateRegion\(/)
+  assert.match(map, /mapView\.setRegion\(region, animated: true\)/)
 })
 
 test('MapKit gesture revokes previous Owner camera before repaint but keeps inert photo markers', () => {
@@ -85,7 +85,7 @@ test('MapKit refreshes settled current WGS84 camera with one fenced Owner reques
   assert.match(map, /private func scheduleCameraRefresh\(\) \{[\s\S]*?cameraSettleTask\?\.cancel\(\)[\s\S]*?Task\.sleep\(nanoseconds: 500_000_000\)[\s\S]*?epoch == ticket[\s\S]*?reload\(\)/)
   assert.match(map, /private func revokeCameraAuthorization\(\) \{[\s\S]*?cameraGesturePending = true[\s\S]*?requestedBounds = nil/)
   assert.match(map, /private func invalidate\(\) \{[\s\S]*?cameraSettleTask\?\.cancel\(\)/)
-  assert.match(map, /private func reload\(\) \{[\s\S]*?requestedBounds = bounds[\s\S]*?reader\.mapOverview\(bounds: bounds, detail: true\)/)
+  assert.match(map, /private func reload\(\) \{[\s\S]*?requestedBounds = bounds[\s\S]*?reader\.mapOverview\(\s*bounds: bounds, detail: true, captureRange: activeCaptureRange\)/)
   assert.doesNotMatch(map, /BMap\.|URLSession\(|UserDefaults\.|UploadSession/)
 })
 

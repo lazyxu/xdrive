@@ -47,7 +47,7 @@ test('tapping an older displayed page reinstates its exact Owner cursor and view
 test('automatic paging uses the exact Owner and per-place validation of the manual route', () => {
   assert.match(album, /login\.verifiedAuthorization\(\)/)
   assert.match(album, /XDriveIOSNativePhotoOwnerScope\.matches\(\s*auth\.owner, selection\.owner/)
-  assert.match(album, /reader\.page\(\s*offset: target\.offset, placeID: facet\.id\)/)
+  assert.match(album, /reader\.page\(\s*offset: target\.offset, placeID: facet\.id, captureRange: selection\.captureRange\)/)
   assert.match(album, /fetched\.total_count == facet\.item_count/)
   assert.match(album, /fetched\.offset == target\.offset/)
   assert.match(album, /if after < fetched\.total_count/)
@@ -84,7 +84,7 @@ test('cloud map album returns to last verified Viewer Node and never restores a 
 
 test('Owner map rejects sparse, unaligned or duplicate exact place Ranges before advancing its cursor', () => {
   assert.match(album, /target\.offset % XDriveIOSNativePhotoAssetRangeCursorPolicy\.pageSize == 0/)
-  assert.match(album, /reader\.page\(\s*offset: target\.offset, placeID: facet\.id\)/)
+  assert.match(album, /reader\.page\(\s*offset: target\.offset, placeID: facet\.id, captureRange: selection\.captureRange\)/)
   assert.match(album, /fetched\.total_count == facet\.item_count/)
   assert.match(album, /fetched\.offset == target\.offset/)
   assert.match(album, /fetched\.limit == XDriveIOSNativePhotoAssetRangeCursorPolicy\.pageSize/)
