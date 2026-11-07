@@ -398,12 +398,32 @@ struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
                 if XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(point.facet) {
                     onPlace(point.facet)
                 } else {
-                    let current = mapView.region.span
-                    let smaller = MKCoordinateSpan(
-                        latitudeDelta: max(0.01, current.latitudeDelta * 0.35),
-                        longitudeDelta: max(0.01, current.longitudeDelta * 0.35))
-                    mapView.setRegion(MKCoordinateRegion(
-                        center: point.coordinate, span: smaller), animated: true)
+                    let region: MKCoordinateRegion
+                    if let rectangle = point.facet.display_bounds,
+                       XDriveIOSNativeOwnerMapOverviewPolicy.validBounds(rectangle) {
+                        // The entire display bucket, not only its representative
+                        // photo, must survive a drilldown. This rectangle is
+                        // never a PhotoAsset credential or Range selector.
+                        let lonSpan = rectangle.west < rectangle.east
+                            ? rectangle.east - rectangle.west
+                            : rectangle.east + 360 - rectangle.west
+                        let longitude = rectangle.west + lonSpan / 2
+                        region = MKCoordinateRegion(
+                            center: CLLocationCoordinate2D(
+                                latitude: (rectangle.south + rectangle.north) / 2,
+                                longitude: longitude > 180 ? longitude - 360 : longitude),
+                            span: MKCoordinateSpan(
+                                latitudeDelta: max(0.002, (rectangle.north - rectangle.south) * 1.10),
+                                longitudeDelta: max(0.002, lonSpan * 1.10)))
+                    } else {
+                        let current = mapView.region.span
+                        region = MKCoordinateRegion(
+                            center: point.coordinate,
+                            span: MKCoordinateSpan(
+                                latitudeDelta: max(0.002, current.latitudeDelta * 0.35),
+                                longitudeDelta: max(0.002, current.longitudeDelta * 0.35)))
+                    }
+                    mapView.setRegion(region, animated: true)
                     onAggregate()
                 }
             }
