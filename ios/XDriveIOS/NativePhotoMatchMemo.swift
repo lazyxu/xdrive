@@ -29,6 +29,13 @@ actor XDriveIOSNativePhotoFingerprintIndex {
     private var lease: Lease?
     private var store: XDriveIOSNativePhotoFingerprintStore?
     private var scanning: UUID?
+    private var scanWaiters: [CheckedContinuation<Void, Never>] = []
+
+    private func wakeScanWaiters() {
+        let waiters = scanWaiters
+        scanWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
 
     func bind(scope: String, library: Data) throws -> Lease {
         guard Self.isCurrent(library) else { throw XDrivePhotoKitScanFailure.snapshotChanged }
@@ -174,9 +181,20 @@ actor XDriveIOSNativePhotoFingerprintIndex {
             await progress(saved)
             return
         }
-        guard scanning == nil else { return }
+        if scanning != nil {
+            // A new SwiftUI task can start before the previous task's PhotoKit
+            // cancellation unwinds. Never quietly abandon the successor:
+            // wait for the previous bounded scan, then recheck its coverage.
+            await withCheckedContinuation { scanWaiters.append($0) }
+            try Task.checkCancellation()
+            try await scan(lease: expected, retryUnavailable: retryUnavailable, progress: progress)
+            return
+        }
         scanning = expected.ticket
-        defer { if scanning == expected.ticket { scanning = nil } }
+        defer {
+            if scanning == expected.ticket { scanning = nil }
+            wakeScanWaiters()
+        }
 
         if retryUnavailable, saved != nil {
             _ = try database(expected).prepareUnavailableRetry()
