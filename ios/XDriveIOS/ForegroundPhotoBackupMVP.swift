@@ -172,6 +172,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                             reasonCode: XDriveIOSPhotoBackupIssueReason.unsupported.rawValue,
                             owner: owner
                         )
+                        report.activeLocalIdentifier = nil
                         await publish(report)
                         continue
                     }
@@ -240,6 +241,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                             owner: owner
                         )
                     }
+                    report.activeLocalIdentifier = nil
                     await publish(report)
                     if report.stoppedForReview { break }
                 }
