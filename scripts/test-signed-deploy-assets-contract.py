@@ -14,6 +14,7 @@ assets = [
     "scripts/server-doctor.sh",
     "scripts/server-migrate-user.sh",
     "scripts/server-control.sh",
+    "scripts/release_bundle.py",
     "scripts/caddy-env-config.py",
     "scripts/caddy-admission.py",
     "scripts/xdrive-server-host.sh",

@@ -181,7 +181,7 @@ jobs:
             source_ref="$GITHUB_REF_NAME"
             image_tag="$GITHUB_REF_NAME"
             release_channel="stable"
-            release_commit=""
+            release_commit="$GITHUB_SHA"
           else
             source_ref="$GITHUB_SHA"
             image_tag="sha-${GITHUB_SHA::12}"
@@ -201,6 +201,7 @@ jobs:
             scripts/server-doctor.sh \
             scripts/server-migrate-user.sh \
             scripts/server-control.sh \
+            scripts/release_bundle.py \
             scripts/caddy-env-config.py \
             scripts/caddy-admission.py \
             scripts/xdrive-share-update.py \
@@ -223,10 +224,10 @@ jobs:
           cp deploy/docker-compose.yml release/docker-compose.yml
           cp deploy/.env.example release/xdrive.env.example
           cp scripts/server-backup.sh scripts/server-backup-scheduled.sh scripts/server-restore.sh scripts/server-verify.sh scripts/server-doctor.sh scripts/server-migrate-user.sh scripts/xdrive-share-update.py release/
-          cp scripts/server-control.sh scripts/caddy-env-config.py scripts/caddy-admission.py release/
+          cp scripts/server-control.sh scripts/caddy-env-config.py scripts/caddy-admission.py scripts/release_bundle.py release/
           cp scripts/xdrive-server-host.sh release/xdrive-server
           chmod +x release/server-backup.sh release/server-backup-scheduled.sh release/server-restore.sh release/server-verify.sh release/server-doctor.sh release/server-migrate-user.sh release/xdrive-server
-          chmod +x release/server-control.sh release/caddy-env-config.py release/caddy-admission.py
+          chmod +x release/server-control.sh release/caddy-env-config.py release/caddy-admission.py release/release_bundle.py
       - uses: actions/upload-artifact@v4
         with:
           name: server-deploy
@@ -310,6 +311,18 @@ jobs:
             echo "standalone Desktop installer must not be published" >&2
             exit 1
           fi
+      - name: Collect published optional same-commit iOS/Android packages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/collect-optional-native-release.sh "$GITHUB_SHA" release
+      - name: Generate immutable full-commit Release Bundle manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          channel=master
+          [[ "$GITHUB_REF" != refs/tags/v* ]] || channel=stable
+          python3 scripts/ci/generate-release-bundle.py release "$GITHUB_SHA" "$channel"
       - name: Generate checksums
         shell: bash
         run: |
@@ -323,6 +336,8 @@ jobs:
             xdrivenas-armada38x-*.spk \
             xdrivenas-armada38x-*.spk.sha256 \
             xdrive-server-install.sh \
+            release-bundle.json \
+            release_bundle.py \
             xdrive-caddy-image.tar.gz \
             xdrive-caddy-image.id \
             server-backup.sh \
@@ -346,6 +361,7 @@ jobs:
           subject-path: |
             release/xdrive-server-install.sh
             release/SHA256SUMS.txt
+            release/release-bundle.json
       - name: Publish independent release provenance bundle
         shell: bash
         env:
@@ -369,6 +385,7 @@ jobs:
           )
           gh attestation verify release/xdrive-server-install.sh "${verify_args[@]}"
           gh attestation verify release/SHA256SUMS.txt "${verify_args[@]}"
+          gh attestation verify release/release-bundle.json "${verify_args[@]}"
       # Only the trusted release bundle receives an elevated App token.
       # Fail closed until a numeric App ID and its matching PEM are configured.
       - name: Validate optional Snapshot publisher identity
@@ -427,6 +444,12 @@ jobs:
               exit 1
               ;;
           esac
+      - name: Publish verified immutable commit Release Bundle
+        if: github.ref != 'refs/heads/master' || steps.snapshot_eligibility.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.ref == 'refs/heads/master' && steps.snapshot_app_token.outputs.token || github.token }}
+        run: bash scripts/ci/publish-release-bundle.sh "$GITHUB_SHA" release
       - name: Probe snapshot Git ref authorization before release mutation
         if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'
         shell: bash

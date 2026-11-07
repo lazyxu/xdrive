@@ -18,6 +18,7 @@ sha256sum \
   scripts/server-doctor.sh \
   scripts/server-migrate-user.sh \
   scripts/server-control.sh \
+  scripts/release_bundle.py \
   scripts/caddy-env-config.py \
   scripts/caddy-admission.py \
   scripts/xdrive-share-update.py \
@@ -42,9 +43,9 @@ fi
 cp deploy/docker-compose.yml release/docker-compose.yml
 cp deploy/.env.example release/xdrive.env.example
 cp scripts/server-backup.sh scripts/server-backup-scheduled.sh scripts/server-restore.sh scripts/server-verify.sh scripts/server-doctor.sh scripts/server-migrate-user.sh scripts/xdrive-share-update.py release/
-cp scripts/server-control.sh scripts/caddy-env-config.py scripts/caddy-admission.py release/
+cp scripts/server-control.sh scripts/caddy-env-config.py scripts/caddy-admission.py scripts/release_bundle.py release/
 cp scripts/xdrive-server-host.sh release/xdrive-server
 chmod +x release/server-backup.sh release/server-backup-scheduled.sh release/server-restore.sh release/server-verify.sh release/server-doctor.sh release/server-migrate-user.sh release/xdrive-server
-chmod +x release/server-control.sh release/caddy-env-config.py release/caddy-admission.py
+chmod +x release/server-control.sh release/caddy-env-config.py release/caddy-admission.py release/release_bundle.py
 
 echo "Collected GitLab server deployment assets for $XDRIVE_RELEASE_TAG"

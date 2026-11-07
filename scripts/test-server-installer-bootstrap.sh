@@ -66,7 +66,7 @@ emit() {
 }
 
 if [[ "${TEST_TAMPER_STAGE_SCRIPT:-0}" == 1 &&
-      "$url" == */scripts/server-control.sh ]]; then
+      "$url" == */scripts/server-control.sh || "$url" == */scripts/release_bundle.py ]]; then
   emit '#!/usr/bin/env bash
 exit 99
 '
@@ -124,6 +124,7 @@ printf "%s\n" "$dir"
   */0123456789abcdef0123456789abcdef01234567/scripts/server-verify.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/server-doctor.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/server-control.sh|\
+  */0123456789abcdef0123456789abcdef01234567/scripts/release_bundle.py|\
   */0123456789abcdef0123456789abcdef01234567/scripts/caddy-admission.py|\
   */0123456789abcdef0123456789abcdef01234567/scripts/caddy-env-config.py|\
   */0123456789abcdef0123456789abcdef01234567/scripts/xdrive-share-update.py|\
@@ -266,7 +267,7 @@ signed_manifest="$TMP/staged-source.sha256"
   sha256sum "$TMP/config-ok/config/docker-compose.yml" | awk '{ print $1 "  deploy/docker-compose.yml" }'
   for source_script in server-backup.sh server-backup-scheduled.sh server-restore.sh \
     server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh \
-    caddy-env-config.py caddy-admission.py xdrive-share-update.py xdrive-server-host.sh; do
+    caddy-env-config.py caddy-admission.py xdrive-share-update.py xdrive-server-host.sh release_bundle.py; do
     staged_name="$source_script"
     [[ "$source_script" == xdrive-server-host.sh ]] && staged_name=xdrive-server
     sha256sum "$TMP/config-ok/bin/$staged_name" | awk -v path="scripts/$source_script" '{ print $1 "  " path }'

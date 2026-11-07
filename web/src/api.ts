@@ -1636,6 +1636,18 @@ export class XDriveApi {
   adminServerUpdate() {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update')
   }
+  releaseBundleStatus() {
+    return this.request<import('../../ui/shared/src/release-bundles').XDriveReleaseBundleState>(
+      '/api/v1/release-bundles/current', { cache: 'no-store' },
+    )
+  }
+
+  adminRetryReleaseBundle() {
+    return this.request<{ state: string }>('/api/v1/admin/release-bundles/retry', {
+      method: 'POST', body: '{}', cache: 'no-store',
+    })
+  }
+
 
   adminOfflineImportList() {
     return this.request<{ items: import('../../ui/shared/src/offline-update').XDriveOfflineImportSummary[] }>(

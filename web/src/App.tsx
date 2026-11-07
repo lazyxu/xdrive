@@ -2159,6 +2159,10 @@ function FileManager({
     startUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
       api.adminStartServerUpdate(source, channel, backupFileData),
   }), [api])
+  const releaseBundlePort = useMemo(() => ({
+    getState: () => api.releaseBundleStatus(),
+    retry: () => api.adminRetryReleaseBundle(),
+  }), [api])
 
   const serviceDependenciesPort = useMemo(() => ({
     operationScope: profile?.id ? `web:${window.location.origin}:${profile.id}` : '',
@@ -2815,6 +2819,7 @@ function FileManager({
       } : undefined,
       adminUpdate: serverAdminVerified ? {
         updatePort: maintenanceUpdatePort,
+        releaseBundlePort,
         offlinePort: offlineImportPort,
         buildInfo: [{ title: 'Server 构建信息', info: serverBuild }],
         unavailableLabel: 'Web/API',
@@ -2875,7 +2880,7 @@ function FileManager({
       mediaSelectionJobPort, filesOperationFocus, taskCenterFocus, setAppView,
       api, profile?.id, focusedAdminUserID, refreshQuota,
       adminServicesLocation, focusedAdminStorageSection, serviceDependenciesPort,
-      maintenanceUpdatePort, maintenanceBackupPort, offlineImportPort, serverBuild?.channel,
+      maintenanceUpdatePort, releaseBundlePort, maintenanceBackupPort, offlineImportPort, serverBuild?.channel,
       openGlobalTaskCenter, runStorageMaintenance],
   )
 
