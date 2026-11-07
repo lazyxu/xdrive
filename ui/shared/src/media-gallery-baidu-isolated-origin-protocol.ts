@@ -54,10 +54,13 @@ export type XDriveBaiduParentCameraMessage = Readonly<{
   kind: 'restore-camera'
   camera: XDriveBaiduIsolatedCamera
 }>
-/** Cosmetic, current-Cell presentation lease: a nonempty verified Parent photo
- * selection hides the Child's competing native numeric Labels as a whole.
- * An empty selection restores native fallback Labels. Keys are anonymous,
- * bounded and never authorize media bytes, an Owner grant or a Range. */
+/** Cosmetic, current-Cell presentation lease: verified Parent photo
+ * buttons hide competing native numeric Labels. The same anonymous-key
+ * message also suppresses initial WORLDWIDE camera-fitting counts before
+ * the first current-camera /cells response (no photo buttons yet).
+ * An empty selection restores current-camera fallback Labels; bootstrap
+ * never becomes a media authorization. Keys remain bounded, ephemeral,
+ * and cannot authorize media bytes, Owner grants or a Range. */
 export type XDriveBaiduParentPhotoCoversMessage = Readonly<{
   version: 1
   generation: number
@@ -287,8 +290,9 @@ export function xDriveCreateBaiduIsolatedCameraMessage(
   } catch { return null }
 }
 
-/** Only exact current anonymous Cell keys can be hidden by a rendered photo
- * button. Camera/Owner changes rotate keys and invalidate stale proposals. */
+/** Only exact current anonymous Cell keys can be visually suppressed by
+ * trusted photo buttons or during worldwide camera bootstrap. Camera/Owner
+ * changes rotate keys and invalidate stale proposals. */
 export function xDriveCreateBaiduIsolatedPhotoCoversMessage(
   boundary: XDriveBaiduIsolationBoundary,
   proposedKeys: readonly unknown[],
