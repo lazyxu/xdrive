@@ -66,7 +66,7 @@ test('album viewer return revalidates the same album and last confirmed offset',
   assert.match(wall, /savedOffset = loadedPage\.startOffset/)
   assert.match(wall, /let anchor = XDriveIOSNativePhotoVirtualPagePolicy\.normalizedAnchor\(/)
   assert.match(wall, /returnScroll\.scrollTo\("album-page:/)
-  assert.match(wall, /if selected != nil \{ suspendForViewer\(\) \}/)
+  assert.match(wall, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
   assert.match(wall, /\.onChange\(of: libraryMonitor\.revision\)/)
   const phase = wall.slice(wall.indexOf('.onChange(of: phase)'),
     wall.indexOf('.onDisappear', wall.indexOf('.onChange(of: phase)')))
