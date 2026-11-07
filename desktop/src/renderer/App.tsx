@@ -406,6 +406,31 @@ export default function App({
       notesOwnerScope, () => notesActiveScopeRef.current === notesOwnerScope,
       notesImagesEnabled)
     : undefined, [notesOwnerScope, notesImagesEnabled])
+  // Clipboard shares the authenticated Agent, but not Notes' mutable page
+  // state or FileExplorer Copy/Cut/Paste. Owner/Agent changes force remount.
+  const clipboardEnabled = Boolean(agent.connected && status?.configured &&
+    !status?.must_change_password && status?.username && status?.server &&
+    status.server.startsWith('https://') &&
+    status.auth_status !== '需要重新登录' &&
+    agent.hello?.capabilities.includes('cloud-clipboard'))
+  const clipboardIdentity = clipboardEnabled
+    ? [status?.server, status?.username, String(agent.hello?.pid ?? 0)].join('|') : ''
+  const clipboardEpoch = useRef({ identity: '', generation: 0 })
+  if (clipboardEpoch.current.identity !== clipboardIdentity) {
+    clipboardEpoch.current = {
+      identity: clipboardIdentity, generation: clipboardEpoch.current.generation + 1,
+    }
+  }
+  const clipboardOwnerScope = clipboardIdentity
+    ? clipboardIdentity + ':' + clipboardEpoch.current.generation : ''
+  const clipboardCurrentScopeRef = useRef(clipboardOwnerScope)
+  clipboardCurrentScopeRef.current = clipboardOwnerScope
+  const desktopClipboardPort = useMemo(() => clipboardOwnerScope && status?.server
+    ? createDesktopClipboardDataPort(window.xdriveDesktop.agent,
+      clipboardOwnerScope, status.server,
+      () => clipboardCurrentScopeRef.current === clipboardOwnerScope)
+    : undefined, [clipboardOwnerScope, status?.server])
+
   const baiduDiagnosticScope = `desktop:${status?.server ?? ''}:${status?.username ?? ''}`
   // Desktop file: owns no provider SDK; only clear this process-local
   // bounded hint when identity changes or the renderer goes away.
