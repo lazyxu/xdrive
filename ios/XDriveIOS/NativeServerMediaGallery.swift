@@ -1442,6 +1442,7 @@ struct XDriveIOSNativeServerMediaWall: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let album: XDriveIOSNativeMediaAlbum?
     var placeID: String? = nil
+    var captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
     // Focus visibility belongs to the owning native five-tab shell.
     var onFocusChange: ((Bool) -> Void)? = nil
     @StateObject private var model = XDriveIOSNativeMediaWallModel()
@@ -1500,7 +1501,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                         Button("清除") {
                             searchDraft = ""
                             appliedSearch = ""
-                            model.load(login: login, albumID: album?.id, placeID: placeID, search: "")
+                            model.load(login: login, albumID: album?.id, placeID: placeID, search: "", captureRange: captureRange)
                         }
                         .disabled(model.busy)
                     }
@@ -1530,7 +1531,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                             let offset = number * 48
                             XDriveIOSNativeServerVirtualRange(
                                 login: login, albumID: album?.id, placeID: placeID,
-                                search: appliedSearch,
+                                search: appliedSearch, captureRange: captureRange,
                                 offset: offset, expectedTotal: page.total_count,
                                 density: wallDensity, viewerActive: selected != nil,
                                 returnFocusID: pendingReturnID,
@@ -1555,7 +1556,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                         self.continuousFailure = nil
                         recentRangeIDs.removeAll()
                         model.load(login: login, albumID: album?.id, placeID: placeID,
-                                   offset: 0, search: appliedSearch)
+                                   offset: 0, search: appliedSearch, captureRange: captureRange)
                     }
                 }
                 if model.busy {
@@ -1568,7 +1569,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                     ) {
                         model.load(login: login, albumID: album?.id, placeID: placeID,
                                    offset: model.failedOffset ?? model.page?.offset ?? 0,
-                                   search: appliedSearch)
+                                   search: appliedSearch, captureRange: captureRange)
                     }
                 }
                 if !compactGallery && placeID == nil {
@@ -1746,14 +1747,14 @@ struct XDriveIOSNativeServerMediaWall: View {
                     // the same members before an adjacent Range is accepted.
                     let reread = try await reader.page(
                         offset: previous.offset, albumID: album?.id,
-                        placeID: placeID, search: appliedSearch
+                        placeID: placeID, search: appliedSearch, captureRange: captureRange
                     )
                     guard previous.sameVisibleSnapshot(as: reread) else {
                         throw XDriveIOSNativeMediaReadFailure.invalidPage
                     }
                     let next = try await reader.page(
                         offset: targetOffset, albumID: album?.id,
-                        placeID: placeID, search: appliedSearch
+                        placeID: placeID, search: appliedSearch, captureRange: captureRange
                     )
                     try Task.checkCancellation()
                     guard next.total_count == previous.total_count,
@@ -1781,7 +1782,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                           model.acceptVerifiedViewerRange(
                             verifiedRange, after: previous, login: login,
                             albumID: album?.id, placeID: placeID,
-                            search: appliedSearch
+                            search: appliedSearch, captureRange: captureRange
                           ) else { return false }
                     viewerLoadedItems = verifiedRange.items
                     viewerLoadedRange = verifiedRange
@@ -1793,9 +1794,20 @@ struct XDriveIOSNativeServerMediaWall: View {
                 }
             )
         }
+        .onChange(of: captureRange) { _ in
+            recentRangeIDs.removeAll()
+            viewerLoadedItems = []
+            viewerLoadedRange = nil
+            selected = nil
+            model.invalidate()
+            if phase == .active {
+                model.load(login: login, albumID: album?.id, placeID: placeID,
+                           offset: 0, search: appliedSearch, captureRange: captureRange)
+            }
+        }
         .onAppear {
             if model.page == nil, !model.busy {
-                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch)
+                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch, captureRange: captureRange)
             }
         }
         .onChange(of: login.owner) { _ in
@@ -1816,7 +1828,7 @@ struct XDriveIOSNativeServerMediaWall: View {
             selected = nil
             model.invalidate()
             if login.owner != nil && phase == .active {
-                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch)
+                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch, captureRange: captureRange)
             }
         }
         .onChange(of: phase) { state in
@@ -1838,7 +1850,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                 selected = nil
                 model.invalidate()
             } else if model.page == nil {
-                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch)
+                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch, captureRange: captureRange)
             }
         }
         .onDisappear {
@@ -1877,7 +1889,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         guard phase == .active, selected == nil,
               model.adoptVisibleRange(
                 from: source, login: login, albumID: album?.id,
-                placeID: placeID, search: appliedSearch
+                placeID: placeID, search: appliedSearch, captureRange: captureRange
               ), let verified = model.page,
               verified.items.contains(where: {
                 $0.sameVisibleRevision(as: item)
@@ -1950,7 +1962,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         lastOpenedRevision = nil
         lastOpenedOwner = nil
         accessibilityFocusedMediaID = nil
-        model.load(login: login, albumID: album?.id, placeID: placeID, offset: 0, search: query)
+        model.load(login: login, albumID: album?.id, placeID: placeID, offset: 0, search: query, captureRange: captureRange)
     }
 }
 
