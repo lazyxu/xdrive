@@ -1,7 +1,8 @@
 'use strict'
-const {app}=require('electron')
+const {app,webContents:electronWebContents}=require('electron')
 const assert=require('node:assert/strict')
 const {execFileSync}=require('node:child_process')
+const {desktopDevToolsTargetFromInput}=require('../dist/main/desktop_shortcuts.cjs')
 const origin=process.env.XD_DESKTOP_PLACES_PRODUCTION_ORIGIN
 const owner=process.env.XD_DESKTOP_PLACES_PRODUCTION_OWNER
 assert.ok(origin&&origin.startsWith('https://10.233.15.19:'))
@@ -422,13 +423,24 @@ async function run(win){
     // on Xvfb. Use the real X11 focused window and XTest key delivery, then
     // require the production before-input-event path to open Guest DevTools.
     // Test instrumentation observes only key class / Guest vs Parent counts.
-    const f12Events={parent:0,guest:0}
-    const parentInput=(_event,input)=>{
-      if(input?.type==='keyDown' && input.key==='F12') f12Events.parent++
+    const f12Events={parent:0,guest:0,parentAccepted:0,guestAccepted:0,
+      ctrl:false,alt:false,meta:false,shift:false,autoRepeat:false}
+    const recordF12=(target,input)=>{
+      if(input?.type!=='keyDown' || input.key!=='F12')return
+      f12Events[target]++
+      if(desktopDevToolsTargetFromInput(input)==='places')
+        f12Events[target+'Accepted']++
+      for(const key of ['ctrl','alt','meta','shift','autoRepeat'])
+        f12Events[key]=f12Events[key]||Boolean(
+          input[key==='ctrl'?'control':key==='autoRepeat'?'isAutoRepeat':key])
     }
-    const guestInput=(_event,input)=>{
-      if(input?.type==='keyDown' && input.key==='F12') f12Events.guest++
-    }
+    const parentInput=(_event,input)=>recordF12('parent',input)
+    const guestInput=(_event,input)=>recordF12('guest',input)
+    let guestOpenedEvents=0,parentOpenedEvents=0
+    const onGuestOpened=()=>{guestOpenedEvents++}
+    const onParentOpened=()=>{parentOpenedEvents++}
+    attached.on('devtools-opened',onGuestOpened)
+    win.webContents.on('devtools-opened',onParentOpened)
     win.webContents.on('before-input-event',parentInput)
     attached.on('before-input-event',guestInput)
     try{
@@ -446,24 +458,50 @@ async function run(win){
         {timeout:5000,stdio:'ignore'})
       execFileSync('xdotool',['key','--clearmodifiers','F12'],
         {timeout:5000,stdio:'ignore'})
-      await until(()=>attached.isDevToolsOpened(),10000,
-        'real X11 F12 must open authenticated map Guest DevTools')
+      await until(()=>attached.isDevToolsOpened() || guestOpenedEvents>0,
+        10000,'real X11 F12 must open authenticated map Guest DevTools')
       assert.ok(f12Events.parent+f12Events.guest>0,
         'F12 was not received by the production Parent/Guest handler')
       assert.equal(win.webContents.isDevToolsOpened(),false,
         'F12 must not open Parent DevTools instead of map Guest')
       attached.closeDevTools()
     }catch(error){
+      // Diagnose an actual shortcut failure without claiming the direct
+      // call proves F12. This distinction tells whether the defect is
+      // shortcut targeting or Chromium DevTools startup on the Xvfb runner.
+      const otherGuestTools=electronWebContents.getAllWebContents()
+        .filter(w=>w.getType()==='webview' &&
+          !w.isDestroyed() && w.id!==attached.id && w.isDevToolsOpened()).length
+      let manualGuestOpened=false
+      if(!attached.isDestroyed()){
+        try{
+          attached.openDevTools({mode:'detach',activate:false})
+          await until(()=>attached.isDevToolsOpened(),2500,
+            'direct guest DevTools diagnostic')
+          manualGuestOpened=true
+          attached.closeDevTools()
+        }catch{}
+      }
       throw Error('native F12 map diagnostic failed; '+JSON.stringify({
         windowVisible:win.isVisible(),windowFocused:win.isFocused(),
         parentInputCount:f12Events.parent,guestInputCount:f12Events.guest,
+        parentAccepted:f12Events.parentAccepted,
+        guestAccepted:f12Events.guestAccepted,
+        inputModifiers:{ctrl:f12Events.ctrl,alt:f12Events.alt,
+          meta:f12Events.meta,shift:f12Events.shift,
+          autoRepeat:f12Events.autoRepeat},
+        parentOpenedEvents,guestOpenedEvents,otherGuestTools,
+        directGuestTools:manualGuestOpened,
         parentTools:win.webContents.isDevToolsOpened(),
         guestTools:attached.isDevToolsOpened(),guestDestroyed:attached.isDestroyed(),
       })+'; '+String(error?.message||error))
     }finally{
       win.webContents.removeListener('before-input-event',parentInput)
-      if(!attached.isDestroyed())
+      win.webContents.removeListener('devtools-opened',onParentOpened)
+      if(!attached.isDestroyed()){
         attached.removeListener('before-input-event',guestInput)
+        attached.removeListener('devtools-opened',onGuestOpened)
+      }
     }
     stage='production-Web-Owner-scoped-Gin-Cells-Viewer-and-map-route-fence'
     const media=await attached.executeJavaScript(

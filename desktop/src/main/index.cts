@@ -64,6 +64,7 @@ import {
   desktopShortcutActionFromArgs,
   desktopShortcutActionFromInput,
   desktopDevToolsTargetFromInput,
+  desktopDevToolsMapGuestChoice,
   desktopShortcutShowsWindow,
   windowsUserTasks,
   type DesktopShortcutAction,
@@ -2176,21 +2177,31 @@ function createMainWindow(showOnReady = true) {
   win.on('unresponsive', () => lifecycleLog?.record('window_unresponsive'))
   // The map is an isolated HTTPS WebView, not the file:// Desktop renderer.
   // F12 must inspect the guest to expose its Console and Network failures.
-  const openDesktopDevTools = (target:'places'|'desktop') => {
-    const guestID = target==='places'
-      ? [...desktopPlacesGuests.keys()].find(id => {
-          const guest=electronWebContents.fromId(id)
-          return !!guest && !guest.isDestroyed()
-        }) : undefined
-    const guest=guestID===undefined ? undefined : electronWebContents.fromId(guestID)
-    const contents=guest && !guest.isDestroyed() ? guest : win.webContents
+  const openDesktopDevTools = (target:'places'|'desktop', sourceGuestID?:number) => {
+    const currentOrigin=xDriveResolveSecureBaiduMapTarget(
+      agentState.status?.server)?.origin
+    const eligible=target==='places'
+      ? [...desktopPlacesGuests.entries()].flatMap(([id,guest])=>{
+          const contents=electronWebContents.fromId(id)
+          return contents && !contents.isDestroyed()
+            ? [{id,owner:guest.owner,origin:guest.origin}] : []
+        }) : []
+    const selected=desktopDevToolsMapGuestChoice(eligible,
+      agentState.status?.username,currentOrigin,sourceGuestID)
+    const guest=selected===null ? null : electronWebContents.fromId(selected)
+    const contents=target==='places' && guest && !guest.isDestroyed()
+      ? guest : win.webContents
+    const effective=contents===win.webContents?'desktop':'places'
+    // Report actual opened events, not merely successful invocation; a
+    // detached Chromium DevTools window can be denied asynchronously.
+    const opened=()=>lifecycleLog?.record('devtools_opened',{target:effective})
+    contents.once('devtools-opened',opened)
     try {
       contents.openDevTools({mode:'detach',activate:true})
-      lifecycleLog?.record('devtools_opened', {
-        target: contents===win.webContents ? 'desktop' : 'places',
-      })
+      lifecycleLog?.record('devtools_requested',{target:effective})
     } catch {
-      lifecycleLog?.record('devtools_open_failed', {target})
+      contents.removeListener('devtools-opened',opened)
+      lifecycleLog?.record('devtools_open_failed',{target:effective})
     }
   }
   win.webContents.on('before-input-event', (event, input) => {
@@ -2255,7 +2266,7 @@ function createMainWindow(showOnReady = true) {
       const target=desktopDevToolsTargetFromInput(input)
       if(!target)return
       event.preventDefault()
-      openDesktopDevTools(target)
+      openDesktopDevTools(target,guest.id)
     })
     guest.on('did-fail-load',(_event,errorCode,_description,_url,isMainFrame)=>{
       if(isMainFrame && errorCode!==-3)
