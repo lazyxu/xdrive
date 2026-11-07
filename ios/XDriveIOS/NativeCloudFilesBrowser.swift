@@ -655,6 +655,15 @@ private final class XDriveIOSNativeFilesSearchOptionsModel: ObservableObject {
         errorMessage = nil
     }
 
+    func suspendForNavigation() {
+        epoch = UUID()
+        job?.cancel()
+        job = nil
+        loading = false
+        // Keep verified options only for the same Owner. A changed Owner
+        // still calls invalidate(), discarding the old projection.
+    }
+
     func belongs(to owner: XDriveNativeOwnerRoot?) -> Bool {
         guard let owner, let loadedOwner else { return false }
         return XDriveIOSNativePhotoOwnerScope.matches(owner, loadedOwner)
@@ -2621,7 +2630,14 @@ struct XDriveIOSNativeFilesBrowser: View {
             // SwiftUI NavigationLinks and scroll position. Do not refetch on
             // every stack pop; explicit refresh and Owner change still do.
             if isHome {
-                reload()
+                if !favoriteShortcuts.matches(login.owner) ||
+                    !quickAccess.matches(login.owner) {
+                    reload()
+                } else {
+                    // On return, silently revalidate Favorites that may have
+                    // changed in a child without removing source links.
+                    loadFavoriteShortcuts()
+                }
             } else if let folderID = parentID,
                       model.canResume(
                         owner: login.owner, folderID: folderID,
@@ -2640,7 +2656,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
             chunked.invalidate()
-            searchOptions.invalidate()
+            searchOptions.suspendForNavigation()
             if isHome, let current = login.owner,
                let retained = favoriteShortcutsOwner,
                XDriveIOSNativePhotoOwnerScope.matches(current, retained) {

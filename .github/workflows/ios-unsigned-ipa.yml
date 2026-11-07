@@ -75,6 +75,8 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-unified-gallery"
           "$RUNNER_TEMP/xdrive-ios-unified-gallery"
           node --test desktop/tests/ios-native-unified-photo-gallery.cjs
+          # Navigation regressions guard bounded Gallery/Files native returns.
+          node --test desktop/tests/ios-native-navigation-continuity.cjs
 
       - name: Verify cold launch recovery and BG registration safety
         run: |

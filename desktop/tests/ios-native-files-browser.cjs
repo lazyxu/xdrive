@@ -235,3 +235,23 @@ test('native Files search matches PWA source and tag filters, including filter-o
   assert.match(web, /useXDriveFileExplorerOwnerSourceOptions/);
   assert.match(web, /tagOptions=\{organization\.tagOptions\}/);
 });
+
+test('native Files child navigation retains verified source/tag filters without re-fetch flash', () => {
+  const start = view.indexOf('private final class XDriveIOSNativeFilesSearchOptionsModel');
+  const end = view.indexOf('private struct XDriveIOSNativeFilesBatchDestinationIntent');
+  assert.ok(start >= 0 && end > start);
+  const filterModel = view.slice(start, end);
+  const suspension = filterModel.slice(
+    filterModel.indexOf('func suspendForNavigation()'),
+    filterModel.indexOf('func belongs(to owner:')
+  );
+  assert.match(suspension, /epoch = UUID\(\)/);
+  assert.match(suspension, /job\?\.cancel\(\)/);
+  assert.doesNotMatch(suspension, /sources = \[\]|tags = \[\]|loadedOwner = nil|verified = false/);
+  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}\s*\.onDisappear \{\s*(?:chunked\.invalidate\(\)\s*)?searchOptions\.suspendForNavigation\(\)/);
+  // A genuine Owner/root change still clears options, and the visible filter
+  // list checks the exact Owner before rendering cached suggestions.
+  assert.match(filterModel, /func invalidate\(\) \{[\s\S]*?loadedOwner = nil[\s\S]*?sources = \[\][\s\S]*?tags = \[\]/);
+  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?searchOptions\.invalidate\(\)/);
+  assert.match(view, /searchOptions\.matches\(login\.owner\)/);
+})

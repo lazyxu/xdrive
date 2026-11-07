@@ -28,7 +28,7 @@ test('local PhotoKit Gallery always mounts continuous lazy virtual pages without
   assert.match(source, /let count = try await reader\.start\(atOffset: offset, mediaFilter: mediaFilter\)/)
   assert.match(source, /loaded\.startOffset == offset/)
   assert.match(source, /count == expectedTotal/)
-  assert.match(source, /\.onDisappear \{\s*page = nil/)
+  assert.match(source, /\.onDisappear \{\s*if !retainWhileCovered \{\s*page = nil/)
   assert.doesNotMatch(source, /\[PHAsset\]|\[String: PHAsset\]|fetchAssets\(withLocalIdentifiers: \w+\.map/)
   assert.match(policy, /static let pageSize = 64/)
 })
@@ -143,7 +143,7 @@ test('native media selector queries the entire authorized PhotoKit snapshot', ()
 
 test('native Photos filter empty-state message reflects selected whole-library source', () => {
   assert.match(source, /Text\("本机已授权\\\(mediaFilter\.title\) · 按日分组"\)/)
-  assert.match(source, /XDriveIOSNativePhotoWallStatusMessage\(message: mediaFilter\.emptyMessage\)/)
+  assert.match(source, /Text\(mediaFilter\.emptyMessage\)/)
   assert.match(filterPolicy, /var emptyMessage: String/)
 })
 

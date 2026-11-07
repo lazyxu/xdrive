@@ -69,12 +69,14 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     let query: XDriveIOSNativeUnifiedGalleryQuery
     let density: XDriveIOSNativePhotoWallDensity
     let displayActive: Bool
+    let retainWhileCovered: Bool
     let open: (XDriveIOSNativeUnifiedGalleryPage, Int) -> Void
     let loaded: () -> Void
     let pairing: (XDriveIOSNativeUnifiedPhoto) -> Void
     @StateObject private var model = XDriveIOSNativeUnifiedPhotoTimeline()
     @State private var visible = false
     @State private var retry = UUID()
+    @State private var acceptedGeneration: UUID?
 
     var body: some View {
         content
@@ -85,15 +87,43 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                 if model.completed { wall.measure(page: page.id, height: Double(height)) }
             }
             .onAppear { visible = true }
-            .onDisappear { visible = false; model.reset() }
+            .onDisappear {
+                visible = false
+                if !retainWhileCovered {
+                    acceptedGeneration = nil
+                    model.reset()
+                }
+            }
             .task(id: "\(visible):\(displayActive):\(retry)") {
                 guard visible, displayActive, wall.failure == nil,
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { model.reset(); return }
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else {
+                    if !retainWhileCovered {
+                        acceptedGeneration = nil
+                        model.reset()
+                    }
+                    return
+                }
                 let ticket = wall.generation
+                // Keep only an exact previously verified 48-row range on
+                // child/Viewer return; ordinary scroll eviction still drops it.
+                if acceptedGeneration == ticket, model.completed,
+                   model.belongs(to: login.owner) {
+                    loaded()
+                    return
+                }
                 await model.load(from: page.start, filter: filter, login: login, query: query, library: wall.library)
                 guard !Task.isCancelled, visible, displayActive, wall.generation == ticket,
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { model.reset(); return }
-                if wall.accept(model, page: page.id) { loaded() }
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else {
+                    if !retainWhileCovered {
+                        acceptedGeneration = nil
+                        model.reset()
+                    }
+                    return
+                }
+                if wall.accept(model, page: page.id) {
+                    acceptedGeneration = ticket
+                    loaded()
+                }
             }
     }
 
@@ -127,32 +157,22 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                     }
                 }
                 if model.rows.isEmpty {
-                    XDriveIOSNativePhotoWallStatusMessage(
-                        message: model.next == nil ? "已浏览到底，没有更多符合条件的照片" : "正在查找符合条件的照片…",
-                        minHeight: 36
-                    )
+                    Text(model.next == nil ? "已浏览到底，没有更多符合条件的照片" : "正在查找符合条件的照片…")
+                        .font(.footnote).foregroundStyle(.secondary).frame(minHeight: 36)
                 }
                 if !model.completed {
-                    XDriveIOSNativePhotoWallLoadingMessage(
-                        message: "正在加载当前页面与来源状态…",
-                        accessibilityID: "native-ios-gallery-visible-proof"
-                    )
+                    ProgressView("正在加载当前页面与来源状态…")
+                        .font(.footnote).accessibilityIdentifier("native-ios-gallery-visible-proof")
                 }
-                if let message = model.notice {
-                    XDriveIOSNativePhotoWallStatusMessage(message: message)
-                }
+                if let message = model.notice { Text(message).font(.footnote).foregroundStyle(.secondary) }
             }
         } else {
             VStack(spacing: 8) {
                 if let message = model.notice {
-                    XDriveIOSNativePhotoWallRetryMessage(
-                        message: message,
-                        buttonTitle: "重新读取",
-                        canRetry: visible && displayActive && wall.failure == nil &&
-                            XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
-                    ) { retry = UUID() }
+                    Text(message).font(.footnote)
+                    Button("重新读取") { retry = UUID() }
                 } else if visible && displayActive {
-                    XDriveIOSNativePhotoWallLoadingMessage(message: "正在读取照片与缩略图…")
+                    ProgressView("正在读取照片与缩略图…")
                 }
             }
             .frame(maxWidth: .infinity, minHeight: page.height)
