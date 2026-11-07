@@ -20,6 +20,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @StateObject private var receipts = XDriveIOSNativePhotoReceiptReviewController()
     @StateObject private var background = XDriveIOSNativeBackgroundPhotoControls()
     @StateObject private var coverage = XDriveIOSNativePhotoCoverageModel()
+    @StateObject private var overviewQueue = XDriveIOSNativePhotoQueueSummaryModel()
     @StateObject private var originalProof = XDriveIOSNativeCurrentPhotoReceiptModel()
     @StateObject private var destination = XDriveIOSNativePhotoBackupDestinationModel()
     @State private var page = Page.overview
@@ -417,6 +418,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             selectedOriginalToVerify = nil
             coverage.cancel()
             receipts.cancel()
+            overviewQueue.cancel()
             background.invalidateRead()
             showBackgroundEnableConsent = false
             showBackgroundDisableConsent = false
@@ -440,6 +442,16 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         }
     }
 
+    private func refreshOverviewQueueIfEligible() {
+        guard phase == .active, controller.schedule?.enabled == true,
+              controller.schedule?.backupStartRule == .onlyNew,
+              !controller.busy else {
+            overviewQueue.cancel()
+            return
+        }
+        overviewQueue.refresh(login: login)
+    }
+
     private func applyLaunchAction() {
         // A shortcut navigates only; Focused still requires separate consent.
         switch launchAction {
@@ -456,7 +468,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         .sheet(isPresented: $showTaskList) {
             XDriveIOSNativePhotoBackupTaskList(login: login, controller: controller)
         }
-        .onAppear { applyLaunchAction() }
+        .onAppear {
+            applyLaunchAction()
+            refreshOverviewQueueIfEligible()
+        }
         .onChange(of: launchNonce) { _ in applyLaunchAction() }
         .onChange(of: receipts.mode) { mode in
             if mode == .idle {
@@ -469,6 +484,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 ((controller.progress?.needsReview ?? 0) > 0 || controller.errorMessage != nil) {
                 receipts.refresh(login: login)
             }
+            if !busy { refreshOverviewQueueIfEligible() }
         }
         .onChange(of: receipts.confirmedReadback) { readback in
             guard let readback else { return }
@@ -548,6 +564,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             interval = 60
             syncSavedAutomaticSettings()
             receipts.refresh(login: login)
+            refreshOverviewQueueIfEligible()
         }
     }
 
@@ -607,6 +624,14 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 if let progress = controller.progress {
                     Text("本轮已扫描 \(progress.scanned) 项 · 新增 \(progress.uploaded) · 已核验 \(progress.verifiedAlready) · 待核对 \(progress.needsReview) · 不可用 \(progress.unavailable)")
                         .font(.footnote).monospacedDigit()
+                }
+                if let queue = overviewQueue.counts,
+                   controller.schedule?.backupStartRule == .onlyNew {
+                    Text("本机变更队列：待处理 \(queue.pending) · 等待 iCloud \(queue.waitingICloud) · 失败 \(queue.failed) · 曾确认 \(queue.confirmed)")
+                        .font(.footnote).monospacedDigit()
+                        .accessibilityIdentifier("native-ios-photos-overview-change-queue")
+                    Text("队列仅覆盖启用后的本机 PhotoKit 变更，不等于整库云端备份覆盖率。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if let snapshot = coverage.snapshot {
                     Text("本机授权图库 \(snapshot.currentAuthorizedMedia) 项；服务器原件覆盖率需逐项核验")
