@@ -208,6 +208,9 @@ struct XDriveIOSNativeExactTripWall: View {
     let expectedOwner: XDriveNativeOwnerRoot
     let trip: XDriveIOSNativeExactTrip
     let timeZone: String
+    // A true trip MapKit facet narrows, never replaces, the verified v2
+    // member predicate. Its count is checked independently on every page.
+    var place: XDriveIOSNativeOwnerMapFacet? = nil
     @Environment(\.scenePhase) private var phase
     @State private var epoch = UUID()
     @State private var task: Task<Void, Never>?
@@ -224,6 +227,8 @@ struct XDriveIOSNativeExactTripWall: View {
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
     @State private var scrollFootVisible = false
 
+    private var expectedCount: Int { place?.item_count ?? trip.item_count }
+
     private var activeOwner: Bool {
         phase == .active &&
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
@@ -233,7 +238,9 @@ struct XDriveIOSNativeExactTripWall: View {
         ScrollViewReader { scroll in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    Text("当前旅行真实 GPS 地点成员 · \(trip.item_count) 张")
+                    Text(place == nil
+                        ? "当前旅行真实 GPS 地点成员 · \(trip.item_count) 张"
+                        : "当前旅行此位置的已核对照片 · \(expectedCount) 张")
                         .font(.caption).foregroundStyle(.secondary)
                     XDriveIOSNativePhotoWallGrid(density: density) {
                         if let previousPage {
@@ -281,6 +288,19 @@ struct XDriveIOSNativeExactTripWall: View {
         .navigationTitle(trip.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if place == nil {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    NavigationLink {
+                        XDriveIOSNativeExactTripMapScreen(
+                            login: login, expectedOwner: expectedOwner,
+                            trip: trip, timeZone: timeZone)
+                    } label: {
+                        Label("显示旅行地图", systemImage: "map")
+                    }
+                    .disabled(!activeOwner || busy || opening || selected != nil)
+                    .accessibilityIdentifier("native-ios-trip-show-exact-map")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
@@ -345,14 +365,14 @@ struct XDriveIOSNativeExactTripWall: View {
                     // match before crossing; never treat a date range as
                     // proof of the next page.
                     let reread = try await reader.exactTripPage(
-                        trip, offset: previous.offset, timeZone: timeZone)
+                        trip, offset: previous.offset, timeZone: timeZone, place: place)
                     try Task.checkCancellation()
                     guard reread.sameVisibleSnapshot(as: previous),
                           activeOwner, selected?.id == initial.id,
                           viewerPage?.sameVisibleSnapshot(as: previous) == true
                     else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
                     let next = try await reader.exactTripPage(
-                        trip, offset: targetOffset, timeZone: timeZone)
+                        trip, offset: targetOffset, timeZone: timeZone, place: place)
                     try Task.checkCancellation()
                     guard activeOwner, selected?.id == initial.id,
                           XDriveIOSNativePhotoOwnerScope.matches(
@@ -370,7 +390,7 @@ struct XDriveIOSNativeExactTripWall: View {
                     guard activeOwner, selected?.id == initial.id,
                           let previous = viewerPage,
                           next.supportsPreview,
-                          verifiedRange.total_count == trip.item_count,
+                          verifiedRange.total_count == expectedCount,
                           verifiedRange.items.contains(where: {
                               $0.sameVisibleRevision(as: next)
                           }),
@@ -468,7 +488,7 @@ struct XDriveIOSNativeExactTripWall: View {
                     guard let departing, departing.offset + departing.items.count == offset
                     else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
                     let reread = try await reader.exactTripPage(
-                        trip, offset: departing.offset, timeZone: timeZone)
+                        trip, offset: departing.offset, timeZone: timeZone, place: place)
                     try Task.checkCancellation()
                     guard epoch == ticket, activeOwner,
                           page?.sameVisibleSnapshot(as: departing) == true,
@@ -476,7 +496,7 @@ struct XDriveIOSNativeExactTripWall: View {
                     else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
                 }
                 let next = try await reader.exactTripPage(
-                    trip, offset: offset, timeZone: timeZone)
+                    trip, offset: offset, timeZone: timeZone, place: place)
                 try Task.checkCancellation()
                 guard epoch == ticket, activeOwner,
                       XDriveIOSNativePhotoOwnerScope.matches(
@@ -527,7 +547,7 @@ struct XDriveIOSNativeExactTripWall: View {
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken)
                 let reread = try await reader.exactTripPage(
-                    trip, offset: origin.offset, timeZone: timeZone)
+                    trip, offset: origin.offset, timeZone: timeZone, place: place)
                 try Task.checkCancellation()
                 guard epoch == ticket, activeOwner,
                       (page?.sameVisibleSnapshot(as: origin) == true ||

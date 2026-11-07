@@ -304,30 +304,68 @@ struct XDriveIOSNativeMediaGalleryReader {
         return trips
     }
 
+    /// Only current v2 trip GPS cells, never the all-Owner map overview.
+    /// Both counts and MapKit pin identities must match the trip DTO.
+    func exactTripMap(
+        _ trip: XDriveIOSNativeExactTrip, timeZone: String
+    ) async throws -> XDriveIOSNativeOwnerMapOverview {
+        guard XDriveIOSNativeExactTripPolicy.validTrip(trip),
+              XDriveIOSNativeExactTripPolicy.validTimeZone(timeZone)
+        else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+        let url = try endpoint("/api/v1/media/trips/\(trip.id)/map", query: [
+            URLQueryItem(name: "time_zone", value: timeZone)
+        ])
+        let bytes = try await read(
+            url, maximum: XDriveIOSNativeOwnerMapOverviewPolicy.maximumBytes)
+        let result = try JSONDecoder().decode(
+            XDriveIOSNativeOwnerMapOverview.self, from: bytes)
+        guard !result.aggregated,
+              result.total_photo_count == trip.item_count,
+              XDriveIOSNativeOwnerMapOverviewPolicy.valid(result),
+              result.items.allSatisfy({
+                XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange($0)
+              })
+        else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        return result
+    }
+
     /// The exact current trip membership is resolved afresh server-side.
     /// A changed total, stale v2 ID, changed Owner or unauthorized current
     /// item must fail closed; no all-Owner date-range fallback is permitted.
     func exactTripPage(
-        _ trip: XDriveIOSNativeExactTrip, offset: Int, timeZone: String
+        _ trip: XDriveIOSNativeExactTrip, offset: Int, timeZone: String,
+        place: XDriveIOSNativeOwnerMapFacet? = nil
     ) async throws -> XDriveIOSNativeMediaRange {
+        let expectedTotal = place?.item_count ?? trip.item_count
         guard XDriveIOSNativeExactTripPolicy.validTrip(trip),
               XDriveIOSNativeExactTripPolicy.validTimeZone(timeZone),
+              (place == nil || (
+                  XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(place!) &&
+                  expectedTotal > 0 && expectedTotal <= trip.item_count
+              )),
               offset >= 0,
               offset % Self.pageSize == 0,
-              offset <= trip.item_count
+              offset < expectedTotal
         else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
-        let url = try endpoint("/api/v1/media/trips/\(trip.id)/items", query: [
+        var parameters = [
             URLQueryItem(name: "time_zone", value: timeZone),
             URLQueryItem(name: "range", value: "true"),
             URLQueryItem(name: "limit", value: String(Self.pageSize)),
             URLQueryItem(name: "offset", value: String(offset))
-        ])
+        ]
+        if let place {
+            // Place must be part of a *trip* call. A regular global place
+            // endpoint cannot satisfy this scope or supply its expected count.
+            parameters.append(URLQueryItem(name: "place", value: place.id))
+        }
+        let url = try endpoint(
+            "/api/v1/media/trips/\(trip.id)/items", query: parameters)
         let bytes = try await read(url, maximum: 2 * 1_048_576)
         let page = try JSONDecoder().decode(XDriveIOSNativeMediaRange.self, from: bytes)
         guard XDriveIOSNativeExactTripPolicy.validWindow(
             requestedOffset: offset, responseOffset: page.offset,
             responseLimit: page.limit, responseTotal: page.total_count,
-            itemIDs: page.items.map(\.id), expectedTotal: trip.item_count
+            itemIDs: page.items.map(\.id), expectedTotal: expectedTotal
         ), page.items.allSatisfy({
             $0.node.revision > 0 && $0.node.size >= 0 &&
             $0.node.type == "file"

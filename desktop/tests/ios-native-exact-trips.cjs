@@ -41,12 +41,13 @@ test('native same-Owner Reader uses existing HTTPS session for trip list and exa
   assert.match(trips, /read\(url, maximum: 128 \* 1_024\)/)
   assert.match(trips, /XDriveIOSNativeExactTripPolicy\.validTrips\(trips\)/)
   assert.match(trips, /func exactTripPage\(/)
-  assert.match(trips, /endpoint\("\/api\/v1\/media\/trips\/\\\(trip\.id\)\/items"/)
+  assert.match(trips, /endpoint\(\s*"\/api\/v1\/media\/trips\/\\\(trip\.id\)\/items"/)
   assert.match(trips, /URLQueryItem\(name: "range", value: "true"\)/)
   assert.match(trips, /URLQueryItem\(name: "limit", value: String\(Self\.pageSize\)\)/)
   assert.match(trips, /JSONDecoder\(\)\.decode\(XDriveIOSNativeMediaRange\.self/)
   assert.match(trips, /XDriveIOSNativeExactTripPolicy\.validWindow\(/)
-  assert.match(trips, /itemIDs: page\.items\.map\(\\\.id\), expectedTotal: trip\.item_count/)
+  assert.match(trips, /let expectedTotal = place\?\.item_count \?\? trip\.item_count/)
+  assert.match(trips, /itemIDs: page\.items\.map\(\\\.id\), expectedTotal: expectedTotal/)
   assert.match(reader, /private func session\(\) -> URLSession \{[\s\S]*?XDriveIOSNativeMediaRejectRedirect\(\)/)
   assert.match(reader, /private func endpoint\(/)
   assert.match(reader, /let \(stream, response\) = try await client\.bytes\(for: request\)/)
@@ -136,7 +137,7 @@ test('trip Viewer crosses adjacent Owner ranges only after re-reading current ex
   assert.match(crossing, /next\.total_count == previous\.total_count/);
   assert.match(crossing, /next\.offset == targetOffset/);
   assert.match(crossing, /Set\(previous\.items\.map\(\\\.id\)\)\.isDisjoint\(/);
-  assert.match(approved, /verifiedRange\.total_count == trip\.item_count/);
+  assert.match(approved, /verifiedRange\.total_count == expectedCount/);
   assert.match(approved, /verifiedRange\.items\.contains\(where: \{\s*\$0\.sameVisibleRevision\(as: next\)/);
   assert.match(approved, /viewerPage = verifiedRange[\s\S]*?viewerReturnID = next\.id/);
   assert.doesNotMatch(crossing, /reader\.page\(offset:|media\/memories|Date\(\)\.addingTimeInterval/);
