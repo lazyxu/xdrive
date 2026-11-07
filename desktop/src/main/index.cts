@@ -362,11 +362,15 @@ let desktopPlacesWebGeneration = 0
 let desktopPlacesWebReady: DesktopPlacesWebIdentity | null = null
 let desktopPlacesWebPending: (DesktopPlacesWebIdentity & { promise: Promise<boolean> }) | null = null
 let desktopPlacesWebQueue: Promise<void> = Promise.resolve()
+// Main-only and strictly scoped to the live native Owner; never persisted or
+// exposed to Renderer. Explicit Desktop CA revocation always wins.
+let desktopPlacesAgentLANPin: {owner: string; pin: TrustedLANRoot} | null = null
 const sameDesktopPlacesWebIdentity = (left: DesktopPlacesWebIdentity | null,
   right: DesktopPlacesWebIdentity): boolean =>
   left?.origin === right.origin && left.owner === right.owner
 
 function resetDesktopPlacesWebAuth() {
+  desktopPlacesAgentLANPin = null
   ++desktopPlacesWebGeneration
   desktopPlacesWebReady = null
   desktopPlacesWebPending = null
@@ -411,8 +415,53 @@ function desktopPlacesCurrentLANPin(server: string, owner: string):
   if(!target)return undefined
   const manual=approvedManualLANPin(target.origin)
   if(manual)return manual
-  return privateLANRoots.find(pin=>pin.server===target.origin &&
+  const saved=privateLANRoots.find(pin=>pin.server===target.origin &&
     pin.source==='verified-domain' && pin.username===owner)
+  if(saved)return saved
+  const native=desktopPlacesAgentLANPin
+  return native?.owner===owner && native.pin.server===target.origin
+    ? native.pin : undefined
+}
+
+// On Desktop restart, the Go Agent may retain an explicitly pinned private
+// CA while Desktop has no saved password, domain profile or standalone CA.
+// Retrieve *only the public CA* via authenticated loopback Main→Agent IPC.
+// The TLS peer is independently checked against the exact private IP SAN
+// before this process can use the CA in its ephemeral Chromium partition.
+async function ensureDesktopPlacesAgentLANPin(identity: DesktopPlacesWebIdentity):
+  Promise<boolean> {
+  const target=privateLANOrigin(identity.origin)
+  if(!target)return true // public/domain TLS stays Chromium-owned
+  if(privateLANTrustStoreCorrupt ||
+    rejectedManualLANOrigins.has(target.origin))return false
+  if(desktopPlacesCurrentLANPin(target.origin,identity.owner))return true
+  if(!desktopPlacesWebOwnerStillCurrent(identity))return false
+  let proof: {available:boolean;server?:string;username?:string;root_pem?:string}
+  try{
+    proof=await requireAgentClient().desktopMapLANTrust()
+  }catch(error){
+    // Older Agents lack this read-only native trust API. Preserve system-CA
+    // compatibility, never downgrade an explicit saved Desktop pin.
+    return error instanceof AgentIPCError && error.status===404
+  }
+  if(!desktopPlacesWebOwnerStillCurrent(identity) ||
+    privateLANTrustStoreCorrupt || rejectedManualLANOrigins.has(target.origin))
+    return false
+  if(proof?.available===false)return true // native uses system CA
+  if(proof?.available!==true || proof.server!==target.origin ||
+    proof.username!==identity.owner || typeof proof.root_pem!=='string')
+    return false
+  const root=verifiedLANRootPEM(proof.root_pem)
+  if(!root)return false
+  const verified=await probeWithTrustedLANRoot(target.origin,root.pem)
+  if(!verified || !desktopPlacesWebOwnerStillCurrent(identity) ||
+    privateLANTrustStoreCorrupt || rejectedManualLANOrigins.has(target.origin))
+    return false
+  desktopPlacesAgentLANPin={owner:identity.owner,pin:{
+    server:target.origin,username:'',domain:'',
+    root_pem:root.pem,sha256:root.sha256,source:'user-approved-lan',
+  }}
+  return true
 }
 
 function configureDesktopPlacesWebSession(partition:string) {
@@ -481,6 +530,9 @@ function seedDesktopPlacesWebAuth(server: string, owner: string,
   const pending = desktopPlacesWebQueue.then(async () => {
     if (generation !== desktopPlacesWebGeneration ||
         !desktopPlacesWebOwnerStillCurrent(identity)) return false
+    if(!await ensureDesktopPlacesAgentLANPin(identity))return false
+    if(generation!==desktopPlacesWebGeneration ||
+      !desktopPlacesWebOwnerStillCurrent(identity))return false
     configureDesktopPlacesWebSession(desktopPlacesWebPartition)
     const places = session.fromPartition(desktopPlacesWebPartition, {cache:false})
     // Chromium's network stack owns TLS validation and the partition Cookie
@@ -550,6 +602,9 @@ function seedDesktopPlacesWebAuthFromAgent(identity: DesktopPlacesWebIdentity):
         !/^[a-f0-9]{64}$/.test(grant.ticket) ||
         !Number.isInteger(grant.expires_in) ||
         grant.expires_in <= 0 || grant.expires_in > 30) return false
+    if (generation !== desktopPlacesWebGeneration ||
+        !desktopPlacesWebOwnerStillCurrent(identity)) return false
+    if(!await ensureDesktopPlacesAgentLANPin(identity))return false
     if (generation !== desktopPlacesWebGeneration ||
         !desktopPlacesWebOwnerStillCurrent(identity)) return false
     configureDesktopPlacesWebSession(desktopPlacesWebPartition)
