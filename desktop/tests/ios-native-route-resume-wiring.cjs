@@ -137,7 +137,8 @@ test('native local album directory resumes 32-slot anchor through the continuous
   assert.match(list, /Set\(previous\.items\.map\(\\\.collectionIdentifier\)\)\.isDisjoint/);
   assert.match(list, /savedOffset = requestedOffset/);
   assert.match(list, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == permission/);
-  assert.match(list, /libraryMonitor\.start\(\)\s*reload\(\)/);
+  assert.match(list, /let currentPage = page != nil && !loading && error == nil &&/)
+  assert.match(list, /libraryMonitor\.start\(\)\s*if !currentPage \{ reload\(\) \}/);
   assert.match(list, /private func invalidate\(\) \{[\s\S]*?pendingRestoreOffset = nil/);
   assert.doesNotMatch(list, /Button\("上一页"\)|Button\("下一页"\)/);
   assert.doesNotMatch(routes, /localIdentifier|collectionIdentifier|PHAsset|accessToken|latitude|longitude/);

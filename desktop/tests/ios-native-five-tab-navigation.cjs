@@ -43,7 +43,7 @@ test('Gallery owns local, albums, cloud and map subroutes; media uses native ful
   assert.match(cloud, /if selected == nil \{\s*refreshAfterViewer = false\s*model\.invalidate\(\)/);
   assert.match(cloud, /\.onChange\(of: login.owner\)/);
   assert.match(local, /if value != \.active \{[\s\S]*?invalidate\(with: nil\)/);
-  assert.match(albums, /if selected != nil \{ suspendForViewer\(\) \}/);
+  assert.match(albums, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/);
   assert.match(albums, /libraryMonitor.stop\(\); invalidate\(\)/);
 });
 test('Owner scope and unsupported native routes never claim production parity', () => {
