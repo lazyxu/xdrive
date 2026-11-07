@@ -65,22 +65,47 @@ func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
 	if yike.TargetPath != "同步文件夹/Pull/Yike Photos/相同名称" {
 		t.Fatalf("Yike must own the final, user-editable leaf immediately: %+v", yike)
 	}
+	// The disabled Synology Pull endpoints must refuse even a name that is
+	// already occupied. Keep a separate historical Source to verify that its
+	// managed target and Owner-scoped name remain reserved without re-enabling
+	// remote workers or changing legacy bytes.
 	create(token, `{"name":"相同名称","kind":"synology_photos","direction":"pull"}`,
-		http.StatusConflict, nil)
+		http.StatusGone, nil)
 	create(token, `{"name":"相同名称","kind":"synology_files","direction":"pull"}`,
-		http.StatusConflict, nil)
-
-	syno := create(token, `{"name":"NAS-文件","kind":"synology_files","direction":"pull"}`,
-		http.StatusCreated, nil)
-	if syno.TargetPath != "同步文件夹/Pull/Synology Files/NAS-文件" {
-		t.Fatalf("Synology Files path=%q", syno.TargetPath)
+		http.StatusGone, nil)
+	create(token, `{"name":"NAS-文件","kind":"synology_files","direction":"pull"}`,
+		http.StatusGone, nil)
+	historical := meta.Source{
+		OwnerID: owner.ID, Name: "NAS-文件", Kind: synologyFilesSourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusArchived, Revision: 1,
 	}
-	create(token, `{"name":"nas-文件","kind":"synology_photos","direction":"pull"}`,
+	var historicalTarget meta.Node
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&historical).Error; err != nil {
+			return err
+		}
+		var err error
+		historicalTarget, err = createSynologyPullManagedTargetTx(context.Background(), tx, historical)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&meta.Source{}).Where("id = ?", historical.ID).
+			Updates(map[string]any{"target_node_id": historicalTarget.ID, "target_managed": true}).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if historicalTarget.Name != "NAS-文件" {
+		t.Fatalf("historical Synology target lost original leaf: %+v", historicalTarget)
+	}
+	create(token, `{"name":"nas-文件","kind":"yike_photos","direction":"pull"}`,
 		http.StatusConflict, nil)
+	create(token, `{"name":"nas-文件","kind":"synology_photos","direction":"pull"}`,
+		http.StatusGone, nil)
 
-	secret := strings.Repeat("verified-dsm-device-token-", 2)
+	secret := strings.Repeat("verified-linux-device-token-", 2)
 	device := meta.ClientDevice{
-		ID: uuid.NewString(), OwnerID: owner.ID, Name: "相同名称", Platform: "synology",
+		ID: uuid.NewString(), OwnerID: owner.ID, Name: "相同名称", Platform: "linux",
 		CredentialHash: deviceCredentialDigest(secret),
 	}
 	if err := db.Create(&device).Error; err != nil {
@@ -89,15 +114,15 @@ func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
 	headers := map[string]string{
 		"X-XDrive-Device-ID": device.ID, "X-XDrive-Device-Token": secret,
 	}
-	push := create(token, `{"name":"相同名称","kind":"synology_photos","direction":"push"}`,
+	push := create(token, `{"name":"相同名称","kind":"local_folder","direction":"push"}`,
 		http.StatusCreated, headers)
 	if push.TargetPath != "同步文件夹/Push/相同名称" || push.DeviceID != device.ID ||
 		*push.TargetNodeID == *yike.TargetNodeID {
 		t.Fatalf("Push/Pull must be separate namespaces and nodes: push=%+v pull=%+v", push, yike)
 	}
-	create(token, `{"name":"相同名称","kind":"synology_photos","direction":"push"}`,
+	create(token, `{"name":"相同名称","kind":"local_folder","direction":"push"}`,
 		http.StatusConflict, headers)
-	create(token, `{"name":"相同名称-测试","kind":"synology_photos","direction":"push","target_node_id":123}`,
+	create(token, `{"name":"相同名称-测试","kind":"local_folder","direction":"push","target_node_id":123}`,
 		http.StatusBadRequest, headers)
 
 	var pushLeaf meta.Node
@@ -115,7 +140,7 @@ func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
 		t.Fatalf("Push leaf has an unexpected extra DeviceID ancestor: %+v", pushParent)
 	}
 	ordinary := createFilePropertiesDir(t, db, owner.ID, pushParent.ID, "已有普通目录")
-	create(token, `{"name":"已有普通目录","kind":"synology_photos","direction":"push"}`,
+	create(token, `{"name":"已有普通目录","kind":"local_folder","direction":"push"}`,
 		http.StatusConflict, headers)
 	var unchanged meta.Node
 	if err := db.First(&unchanged, ordinary.ID).Error; err != nil ||
@@ -160,11 +185,15 @@ func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
 
 	// Archived Sources still reserve names, while a different Owner may use
 	// the same name in its own private namespace.
-	if err := db.Model(&meta.Source{}).Where("id = ?", syno.ID).
-		Update("status", meta.SourceStatusArchived).Error; err != nil {
+	var archived meta.Source
+	if err := db.First(&archived, historical.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	create(token, `{"name":"NAS-文件","kind":"synology_photos","direction":"pull"}`,
+	if archived.Status != meta.SourceStatusArchived || archived.TargetNodeID == nil ||
+		*archived.TargetNodeID != historicalTarget.ID {
+		t.Fatalf("dormant Synology history lost its target: %+v", archived)
+	}
+	create(token, `{"name":"NAS-文件","kind":"yike_photos","direction":"pull"}`,
 		http.StatusConflict, nil)
 	otherRoot := meta.Node{OwnerID: other.ID, Name: "", Type: meta.NodeTypeDir, Revision: 1}
 	if err := db.Create(&otherRoot).Error; err != nil {
@@ -174,9 +203,9 @@ func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherSource := create(otherToken, `{"name":"NAS-文件","kind":"synology_photos","direction":"pull"}`,
+	otherSource := create(otherToken, `{"name":"NAS-文件","kind":"yike_photos","direction":"pull"}`,
 		http.StatusCreated, nil)
-	if otherSource.TargetNodeID == nil || *otherSource.TargetNodeID == *syno.TargetNodeID {
+	if otherSource.TargetNodeID == nil || *otherSource.TargetNodeID == historicalTarget.ID {
 		t.Fatal("cross-Owner target isolation failed")
 	}
 
@@ -189,7 +218,7 @@ func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
 	if err := db.Create(&ancestor).Error; err != nil {
 		t.Fatal(err)
 	}
-	create(token, `{"name":"另一台NAS","kind":"synology_photos","direction":"push"}`,
+	create(token, `{"name":"另一台NAS","kind":"local_folder","direction":"push"}`,
 		http.StatusConflict, headers)
 	_ = root
 }
@@ -207,7 +236,7 @@ func TestManagedTargetRenameRejectsInFlightUploadAndRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := request(t, router, http.MethodPost, "/api/v1/sources", token,
-		strings.NewReader(`{"name":"重命名前","kind":"synology_files","direction":"pull"}`),
+		strings.NewReader(`{"name":"重命名前","kind":"yike_photos","direction":"pull"}`),
 		http.StatusCreated)
 	var source sourceDTO
 	if err := json.Unmarshal(res.Body.Bytes(), &source); err != nil {

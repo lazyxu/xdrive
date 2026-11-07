@@ -91,15 +91,15 @@ func TestMirrorFinishRequiresTwoCompleteSuccessfulInventoriesAndGrace(t *testing
 		http.StatusCreated,
 	)
 
-	// Legacy, manually targeted Synology Pull Source fixture exercises Mirror
-	// evidence without bypassing the new DSM Push Device/Root enrollment.
-	// Dedicated DSM Push tests cover creation and device authorization.
+	// An existing, manually targeted Yike Pull Source exercises the live
+	// Mirror run/evidence path without re-enabling dormant Synology Pull.
+	// DSM Push Device/Root authorization is covered by dedicated tests.
 	var owner meta.User
 	if err := db.Where("username = ?", "source-mirror-user").First(&owner).Error; err != nil {
 		t.Fatal(err)
 	}
 	record := meta.Source{
-		OwnerID: owner.ID, Name: "Mirror Source", Kind: synologySourceKind,
+		OwnerID: owner.ID, Name: "Mirror Source", Kind: yikeSourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeMirror,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
 		Revision: 1, TargetNodeID: &target.ID,
@@ -290,15 +290,15 @@ func TestMirrorPartialFailedCancelledAndChangedSourceDoNotAdvanceDeletionEvidenc
 		strings.NewReader(`{"name":"Mirror Gate"}`),
 		http.StatusCreated,
 	)
-	// Legacy, manually targeted Synology Pull Source fixture exercises Mirror
-	// evidence without bypassing the new DSM Push Device/Root enrollment.
-	// Dedicated DSM Push tests cover creation and device authorization.
+	// An existing, manually targeted Yike Pull Source exercises the live
+	// Mirror run/evidence path without re-enabling dormant Synology Pull.
+	// DSM Push Device/Root authorization is covered by dedicated tests.
 	var owner meta.User
 	if err := db.Where("username = ?", "source-mirror-gate-user").First(&owner).Error; err != nil {
 		t.Fatal(err)
 	}
 	record := meta.Source{
-		OwnerID: owner.ID, Name: "Mirror Gate Source", Kind: synologySourceKind,
+		OwnerID: owner.ID, Name: "Mirror Gate Source", Kind: yikeSourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeMirror,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
 		Revision: 1, TargetNodeID: &target.ID,
@@ -625,15 +625,15 @@ func TestMirrorConfigChangesResetDeletionEvidence(t *testing.T) {
 		strings.NewReader(`{"name":"Mirror B"}`),
 		http.StatusCreated,
 	)
-	// Legacy, manually targeted Synology Pull Source fixture exercises Mirror
-	// evidence without bypassing the new DSM Push Device/Root enrollment.
-	// Dedicated DSM Push tests cover creation and device authorization.
+	// An existing, manually targeted Yike Pull Source exercises the live
+	// Mirror run/evidence path without re-enabling dormant Synology Pull.
+	// DSM Push Device/Root authorization is covered by dedicated tests.
 	var owner meta.User
 	if err := db.Where("username = ?", "source-mirror-config-user").First(&owner).Error; err != nil {
 		t.Fatal(err)
 	}
 	record := meta.Source{
-		OwnerID: owner.ID, Name: "Mirror Config Source", Kind: synologySourceKind,
+		OwnerID: owner.ID, Name: "Mirror Config Source", Kind: yikeSourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
 		Revision: 1, TargetNodeID: &targetA.ID,
@@ -708,7 +708,28 @@ func TestMirrorConfigChangesResetDeletionEvidence(t *testing.T) {
 	source = update(source.Revision, `{"ignore_rules":"*.tmp\n"}`)
 	assertReset("ignore_rules")
 
+	// Managed Yike destinations may not be retargeted by PATCH. A rejected
+	// change must preserve both Source revision/target and deletion evidence.
 	setMatureEvidence()
-	source = update(source.Revision, fmt.Sprintf(`{"target_node_id":%d}`, targetB.ID))
-	assertReset("target_node_id")
+	requestWithHeaders(t, router, http.MethodPatch,
+		fmt.Sprintf("/api/v1/sources/%d", source.ID), token,
+		strings.NewReader(fmt.Sprintf(`{"target_node_id":%d}`, targetB.ID)),
+		http.StatusBadRequest,
+		map[string]string{"If-Match": fmt.Sprintf("%q", fmt.Sprint(source.Revision))})
+	var unchanged meta.Source
+	if err := db.First(&unchanged, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Revision != source.Revision || unchanged.TargetNodeID == nil ||
+		*unchanged.TargetNodeID != targetA.ID {
+		t.Fatalf("rejected Yike retarget modified Source: %+v", unchanged)
+	}
+	var retained meta.SourceItem
+	if err := db.First(&retained, item.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if retained.MirrorMissingFullScans != sourcepkg.MirrorMissingRequiredFullScans ||
+		retained.MirrorMissingSince == nil {
+		t.Fatalf("rejected Yike retarget reset Mirror evidence: %+v", retained)
+	}
 }
