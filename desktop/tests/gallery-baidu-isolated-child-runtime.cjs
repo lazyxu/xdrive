@@ -458,8 +458,12 @@ test('isolated Child stages worldwide label suppression before SDK readiness and
     true,{sdkDelayedRemove:true})
   const globalCell={key:'1'.repeat(32),latitude:30,longitude:119,count:1198}
   const cameraCell={key:'2'.repeat(32),latitude:31,longitude:120,count:397}
+  // A map-only Session and photo-cover lease must have their exact envelope.
+  // Spreading the bootstrap "cells: []" fixture into those messages would
+  // fail the production Child's strict shape guard and never start the SDK.
+  const envelope={version:init.version,generation:init.generation,nonce:init.nonce}
   const send=(kind,more={})=>f.sendObject(f.parent,'https://gallery.example.net',{
-    ...init,kind,...more})
+    ...envelope,kind,...more})
   const visible=()=>f.labels.filter(label=>label.style?.display!=='none')
   send('cells',{cells:[]})
   send('cells',{cells:[globalCell]})
