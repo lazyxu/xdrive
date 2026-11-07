@@ -118,7 +118,10 @@ internal fun nativePhotoBackupCanConfirm(
 fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
     initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {},
     onDownload: ((DriveNode) -> Unit)? = null,
-    onUpload: (() -> Unit)? = null, galleryFirstOnLogin: Boolean = true) {
+    onUpload: (() -> Unit)? = null, galleryFirstOnLogin: Boolean = true,
+    incomingClipboardText: NativeIncomingClipboardText? = null,
+    onIncomingClipboardConsumed: () -> Unit = {},
+) {
     val state by controller.state.collectAsStateWithLifecycle()
     val androidContext = LocalContext.current
     // Private selection is scoped to this authenticated login epoch; no URI
