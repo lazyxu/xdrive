@@ -139,6 +139,7 @@ async function main(){
   try{
     const tls=certificate(dir)
     const ready=path.join(dir,'ready.json'),stopFile=path.join(dir,'stop')
+    const legacyMarker=path.join(dir,'old-server-map-grant-missing')
     server=launch('go',['test','-run','^TestDesktopPlacesProductionWebRestartFixture$',
       '-count=1','-timeout=8m','-v','./internal/api'],{
       ...process.env,XD_DESKTOP_PLACES_PRODUCTION_E2E:'1',
@@ -148,6 +149,7 @@ async function main(){
       XD_DESKTOP_PLACES_STOP_FILE:stopFile,
       XD_DESKTOP_PLACES_CERT_FILE:tls.cert,
       XD_DESKTOP_PLACES_KEY_FILE:tls.key,
+      XD_DESKTOP_PLACES_LEGACY_MARKER:legacyMarker,
     })
     const fixture=await until(()=>{
       if(server.child.exitCode!==null)throw Error('real Gin/PostgreSQL fixture failed')
@@ -184,6 +186,7 @@ async function main(){
         XD_DESKTOP_PLACES_PRODUCTION_OWNER:fixture.owner,
         XD_DESKTOP_PLACES_LOGOUT_READY:logoutReady,
         XD_DESKTOP_PLACES_LOGOUT_DONE:logoutDone,
+        XD_DESKTOP_PLACES_LEGACY_MARKER:legacyMarker,
       },bootstrap)
       if(boot===2){
         // Keep the genuine production Electron Main and WebView running while
