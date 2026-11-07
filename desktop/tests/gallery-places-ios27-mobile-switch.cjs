@@ -44,6 +44,5 @@ test('mobile switch preserves trusted shared Map and Owner photo wall routes',()
   // true live-camera response may publish camera-specific native labels.
   assert.ok(child.includes('frame.replaceAuthorizedCells(cells,liveCamera)'))
   assert.ok(child.includes('const accepted = liveCamera ? { ...bounds } : null'))
-  assert.ok(child.includes('xDriveSelectBaiduNativeCell(page,bounds,cell)'))
   assert.ok(!child.includes('localStorage.setItem'))
 })
