@@ -293,7 +293,15 @@ struct XDriveIOSNativePhotosDashboard: View {
         })
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showThumbnailCacheFromBackup) {
-            NavigationStack { XDriveIOSNativePhotoThumbnailCacheScreen(login: login) }
+            NavigationStack {
+                XDriveIOSNativePhotoThumbnailCacheScreen(login: login)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("完成") { showThumbnailCacheFromBackup = false }
+                                .accessibilityIdentifier("native-ios-backup-cache-sheet-close")
+                        }
+                    }
+            }
         }
         .sheet(isPresented: $showingLocalPhotoSearch) {
             XDriveIOSNativePhotoSearchScreen()
