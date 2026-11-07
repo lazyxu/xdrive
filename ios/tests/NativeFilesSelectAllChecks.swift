@@ -32,8 +32,8 @@ struct XDriveIOSNativeFilesSelectAllChecks {
     static func main() {
         require(Policy(parentID: 7, total: 0, sort: "name", order: "asc") == nil,
                 "empty directory has no selection transaction")
-        require(Policy(parentID: 7, total: 201, sort: "name", order: "asc") == nil,
-                "cannot exceed 200 selected nodes")
+        require(Policy(parentID: 7, total: 2_049, sort: "name", order: "asc") == nil,
+                "cannot exceed 2048 selected snapshots")
         require(Policy(parentID: 7, total: 100_000, sort: "name", order: "asc") == nil,
                 "100k listing is never materialized by Select All")
         require(Policy(parentID: 0, total: 64, sort: "name", order: "asc") == nil,
@@ -67,6 +67,15 @@ struct XDriveIOSNativeFilesSelectAllChecks {
                 all.verifiedSelection()?[200]?.id == 200,
                 "selection carries immutable verified Node snapshots")
         require(!all.append(page(192, 8, total: 200)), "no fifth page after completion")
+
+        // A larger selection is still bounded; each eventual Go write remains 200.
+        var larger = Policy(parentID: 7, total: 512, sort: "name", order: "asc")!
+        for offset in stride(from: 0, to: 512, by: 64) {
+            require(larger.append(page(offset, 64, total: 512)),
+                    "verified 64-row larger-selection page")
+        }
+        require(larger.verifiedSelection()?.count == 512,
+                "512-node selection spans eight pages without dense 100k reads")
 
         var one = Policy(parentID: 7, total: 1, sort: "updated", order: "desc")!
         require(!one.append(page(0, 1, total: 1)), "wrong sort/order rejected")

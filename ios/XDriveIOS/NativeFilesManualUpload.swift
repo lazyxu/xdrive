@@ -318,7 +318,7 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
             return
         }
         guard XDriveIOSNativeFilesUploadBatchPolicy.validSelection(files) else {
-            status = "一次最多选择 8 个不同文件名的有效文件，未提交任何上传。"
+            status = "一次最多选择 64 个不同文件名的有效文件，未提交任何上传。"
             return
         }
         // Keep one exclusive run for the entire batch, not once per item:
