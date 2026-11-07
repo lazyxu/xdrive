@@ -18,6 +18,9 @@ struct XDriveIOSNativeClipboardScreen: View {
     @State private var confirmClear = false
     @State private var pending: Pending?
     @State private var retryNeedsAbandon = false
+    // A manual Lock, Owner change or screen exit invalidates every async task,
+    // including an in-flight unlock for the same Owner.
+    @State private var sessionGeneration: UInt64 = 0
 
     private struct Decrypted: Identifiable {
         let source: XDriveIOSClipboardItem
@@ -136,15 +139,16 @@ struct XDriveIOSNativeClipboardScreen: View {
                 await refresh()
             }
         }
-        .onChange(of: login.owner) { newOwner in
-            if newOwner != ownerAtUnlock && ownerAtUnlock != nil { lock() }
-        }
+        .onChange(of: login.owner) { _ in lock() }
         .onDisappear { lock() }
     }
 
     @MainActor
-    private func authorizedClient() async throws -> XDriveIOSNativeClipboardClient {
+    private func authorizedClient(for generation: UInt64) async throws -> XDriveIOSNativeClipboardClient {
         let proof = try await login.verifiedAuthorization()
+        guard sessionGeneration == generation, login.owner == proof.owner else {
+            throw XDriveIOSClipboardCrypto.Failure.invalidOwner
+        }
         if let lockedOwner = ownerAtUnlock, proof.owner != lockedOwner {
             lock()
             throw XDriveIOSClipboardCrypto.Failure.invalidOwner
@@ -155,18 +159,21 @@ struct XDriveIOSNativeClipboardScreen: View {
     @MainActor
     private func unlock() async {
         if busy || key != nil { return }
+        let generation = sessionGeneration
         busy = true
         message = nil
-        defer { busy = false }
+        defer { if sessionGeneration == generation { busy = false } }
         do {
-            let client = try await authorizedClient()
+            let client = try await authorizedClient(for: generation)
             let vault = try await client.vault()
+            guard sessionGeneration == generation else { return }
             let derived = try XDriveIOSClipboardCrypto.key(passphrase, salt: vault.salt)
             var scope = vault.aad_scope
             if vault.check_ciphertext.isEmpty {
                 scope = client.newVaultScope
                 let canary = try XDriveIOSClipboardCrypto.check(key: derived, scope: scope)
                 let pinned = try await client.check(canary, scope: scope)
+                guard sessionGeneration == generation else { return }
                 scope = pinned.aad_scope
                 try XDriveIOSClipboardCrypto.verify(key: derived, scope: scope,
                     nonce: pinned.check_nonce, ciphertext: pinned.check_ciphertext)
@@ -178,46 +185,53 @@ struct XDriveIOSNativeClipboardScreen: View {
                 try XDriveIOSClipboardCrypto.verify(key: derived, scope: scope,
                     nonce: vault.check_nonce, ciphertext: vault.check_ciphertext)
             }
-            guard login.owner == client.owner else { throw XDriveIOSClipboardCrypto.Failure.invalidOwner }
+            guard sessionGeneration == generation, login.owner == client.owner else {
+                throw XDriveIOSClipboardCrypto.Failure.invalidOwner
+            }
             ownerAtUnlock = client.owner
             aadScope = scope
             key = derived
             passphrase = ""
             await refresh()
         } catch {
-            message = error.localizedDescription
+            if sessionGeneration == generation { message = error.localizedDescription }
         }
     }
 
     @MainActor
     private func refresh() async {
         guard let localKey = key, !currentScope.isEmpty, !loading else { return }
+        let generation = sessionGeneration
+        let scope = currentScope
         loading = true
-        defer { loading = false }
+        defer { if sessionGeneration == generation { loading = false } }
         do {
-            let client = try await authorizedClient()
+            let client = try await authorizedClient(for: generation)
             let result = try await client.list()
             let decoded = result.items.map { item in
                 Decrypted(source: item, text: try? XDriveIOSClipboardCrypto.decrypt(
-                    item.encrypted, key: localKey, scope: currentScope))
+                    item.encrypted, key: localKey, scope: scope))
             }
             try Task.checkCancellation()
-            guard ownerAtUnlock == client.owner, key != nil else { return }
+            guard sessionGeneration == generation, ownerAtUnlock == client.owner,
+                  key != nil else { return }
             items = decoded
         } catch {
-            message = error.localizedDescription
+            if sessionGeneration == generation { message = error.localizedDescription }
         }
     }
 
     @MainActor
     private func send() async {
         guard !busy, let localKey = key, !aadScope.isEmpty else { return }
+        let generation = sessionGeneration
+        let textAtStart = draft
         busy = true
-        defer { busy = false }
+        defer { if sessionGeneration == generation { busy = false } }
         do {
             let candidate: XDriveIOSClipboardCrypto.Encrypted
             if let previous = pending {
-                guard previous.sourceText == draft else {
+                guard previous.sourceText == textAtStart else {
                     retryNeedsAbandon = true
                     message = "上一条消息的 Server 回执未知。请先核对历史或明确放弃回执。"
                     return
@@ -231,44 +245,66 @@ struct XDriveIOSNativeClipboardScreen: View {
                 candidate = previous.wire
             } else {
                 candidate = try XDriveIOSClipboardCrypto.encrypt(
-                    draft, key: localKey, scope: aadScope)
-                pending = Pending(sourceText: draft, createdAt: Date(), wire: candidate)
+                    textAtStart, key: localKey, scope: aadScope)
+                pending = Pending(sourceText: textAtStart, createdAt: Date(), wire: candidate)
             }
-            let client = try await authorizedClient()
+            let client = try await authorizedClient(for: generation)
+            guard sessionGeneration == generation else { return }
             _ = try await client.send(candidate)
-            guard ownerAtUnlock == client.owner else { return }
+            guard sessionGeneration == generation, ownerAtUnlock == client.owner,
+                  key != nil else { return }
             pending = nil
-            draft = ""
+            if draft == textAtStart { draft = "" } // Do not erase a newer edit.
             message = "已加密发送到当前账号。"
             await refresh()
         } catch {
-            message = "发送回执未知；保留相同事件 ID。\(error.localizedDescription)"
+            if sessionGeneration == generation {
+                message = "发送回执未知；保留相同事件 ID。\(error.localizedDescription)"
+            }
         }
     }
+
     @MainActor
     private func delete(_ id: UInt64) async {
-        guard !busy else { return }
+        guard !busy, key != nil else { return }
+        let generation = sessionGeneration
         busy = true
-        defer { busy = false }
+        defer { if sessionGeneration == generation { busy = false } }
         do {
-            try await authorizedClient().delete(id)
+            let client = try await authorizedClient(for: generation)
+            guard sessionGeneration == generation else { return }
+            try await client.delete(id)
+            guard sessionGeneration == generation, ownerAtUnlock == client.owner,
+                  key != nil else { return }
             message = "已删除消息。"
             items.removeAll { $0.id == id }
-        } catch { message = error.localizedDescription }
+        } catch {
+            if sessionGeneration == generation { message = error.localizedDescription }
+        }
     }
+
     @MainActor
     private func clear() async {
-        guard !busy else { return }
+        guard !busy, key != nil else { return }
+        let generation = sessionGeneration
         busy = true
-        defer { busy = false }
+        defer { if sessionGeneration == generation { busy = false } }
         do {
-            try await authorizedClient().clear()
+            let client = try await authorizedClient(for: generation)
+            guard sessionGeneration == generation else { return }
+            try await client.clear()
+            guard sessionGeneration == generation, ownerAtUnlock == client.owner,
+                  key != nil else { return }
             items = []
             message = "已清空本账号历史。"
-        } catch { message = error.localizedDescription }
+        } catch {
+            if sessionGeneration == generation { message = error.localizedDescription }
+        }
     }
+
     @MainActor
     private func lock() {
+        sessionGeneration &+= 1
         key = nil
         aadScope = ""
         passphrase = ""
@@ -277,5 +313,9 @@ struct XDriveIOSNativeClipboardScreen: View {
         pending = nil
         retryNeedsAbandon = false
         ownerAtUnlock = nil
+        loading = false
+        busy = false
+        confirmClear = false
+        message = nil
     }
 }

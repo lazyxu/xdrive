@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -277,6 +279,56 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 		Count(&changeCount).Error; err != nil || changeCount != 1 {
 		t.Fatalf("first create must append one Owner event, idempotent retry none: %v count=%d", err, changeCount)
 	}
+
+	// Real HTTP/SSE framing: a stream for A begins with an encrypted-content-free
+	// sync hint and the committed Owner A change ID; it must never carry the
+	// message's nonce or ciphertext. Keep the HTTP context bounded so the
+	// handler's 20s reconnect timer cannot stall CI.
+	streamServer := httptest.NewServer(router)
+	defer streamServer.Close()
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			streamServer.URL+"/api/v1/clipboard/events?after=0", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+a)
+		req.Header.Set("Accept", "text/event-stream")
+		response, err := streamServer.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK ||
+			!strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
+			t.Fatalf("Owner SSE stream rejected: status=%d type=%q",
+				response.StatusCode, response.Header.Get("Content-Type"))
+		}
+		scanner := bufio.NewScanner(response.Body)
+		var frames strings.Builder
+		for scanner.Scan() {
+			frames.WriteString(scanner.Text())
+			frames.WriteByte('\n')
+			if strings.Contains(frames.String(), "event: change") &&
+				strings.Contains(frames.String(), "id: ") {
+				break
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			t.Fatalf("Owner SSE did not produce a change cursor: %v", err)
+		}
+		wire := frames.String()
+		if !strings.Contains(wire, "event: sync") ||
+			!strings.Contains(wire, "event: change") ||
+			!strings.Contains(wire, "id: ") ||
+			strings.Contains(wire, nonce) || strings.Contains(wire, ciphertext) {
+			t.Fatalf("Owner SSE did not carry only invalidation cursors: %q", wire)
+		}
+		cancel()
+		_ = response.Body.Close() // Disconnect immediately, not at test teardown.
+	}
 	request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
 		strings.NewReader(payload(firstID, base64.StdEncoding.EncodeToString([]byte("different secure data")))),
 		http.StatusConflict)
@@ -412,4 +464,53 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	}
 	request(t, router, http.MethodGet, "/api/v1/clipboard/items", b, nil, http.StatusUnauthorized)
 	request(t, router, http.MethodGet, "/api/v1/clipboard/vault", a, nil, http.StatusOK)
+
+	// Revocation during a live SSE connection must close it without waiting for
+	// the 20-second maximum duration or sending any new Owner data.
+	var lastChangeID uint64
+	if err := db.Raw("SELECT COALESCE(MAX(id), 0) FROM xd_clipboard_changes WHERE owner_id = ?",
+		ownerA.ID).Scan(&lastChangeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			fmt.Sprintf("%s/api/v1/clipboard/events?after=%d", streamServer.URL, lastChangeID), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+a)
+		response, err := streamServer.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("Owner SSE stream before revocation returned %d", response.StatusCode)
+		}
+		scanner := bufio.NewScanner(response.Body)
+		sawSync := false
+		for scanner.Scan() {
+			if scanner.Text() == "event: sync" {
+				sawSync = true
+				break
+			}
+		}
+		if err := scanner.Err(); err != nil || !sawSync {
+			t.Fatalf("Owner SSE handshake failed (sync=%v): %v", sawSync, err)
+		}
+		if err := db.Model(&meta.User{}).Where("id = ?", ownerA.ID).
+			Update("session_version", ownerA.SessionVersion+1).Error; err != nil {
+			t.Fatal(err)
+		}
+		for scanner.Scan() {
+			if strings.HasPrefix(scanner.Text(), "event: change") {
+				t.Fatal("revoked Owner SSE stream emitted an additional change")
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			t.Fatalf("revoked Owner SSE did not close promptly: %v", err)
+		}
+	}
 }
