@@ -1005,6 +1005,9 @@ func (h *desktopIPCHandler) viewerDownloadCapabilities() []string {
 	if _, notes := h.ctrl.(desktopIPCNotesPort); notes {
 		capabilities = append(capabilities, "cloud-notes")
 	}
+    if _, clipboard := h.ctrl.(desktopIPCClipboardPort); clipboard {
+        capabilities = append(capabilities, "cloud-clipboard")
+    }
 	if !h.backupOnly {
 		if _, supported := h.ctrl.(interface {
 			CloudIssueDesktopMapGuestGrant(context.Context) (client.DesktopMapGuestGrant, error)
