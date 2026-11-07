@@ -5650,15 +5650,17 @@ export function MediaTile({
         >
           {(item.fold_member_ids?.length ?? 0) > 1 ? (
             <Chip
-              clickable={!compactTouch}
-              component={compactTouch ? 'span' : 'button'}
+              // The Places tile is itself a native button: never nest an
+              // interactive button or initiate Gallery's fold action inside it.
+              clickable={!compactTouch && !placesDrawer}
+              component={compactTouch || placesDrawer ? 'span' : 'button'}
               size="small"
               label={`${item.fold_member_ids!.length} 份`}
               aria-label={`展开 ${item.fold_member_ids!.length} 份完整资源一致的副本`}
               data-xdrive-media-fold-expand={item.node.id}
               onClick={(event: ReactMouseEvent<HTMLElement>) => event.stopPropagation()}
               sx={{
-                pointerEvents: compactTouch ? 'none' : 'auto', bgcolor: 'rgba(0,0,0,.75)',
+                pointerEvents: compactTouch || placesDrawer ? 'none' : 'auto', bgcolor: 'rgba(0,0,0,.75)',
                 color: '#fff', fontWeight: 700, maxWidth: '100%',
               }}
             />
