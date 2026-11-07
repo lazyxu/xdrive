@@ -66,7 +66,7 @@ func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t
 	source := meta.Source{
 		OwnerID: owner.ID, Name: "Quarantined", Kind: meta.SourceKindLocalFolder,
 		Direction: meta.SourceDirectionPush, Status: meta.SourceStatusPaused,
-		Revision: 7, SyncMode: meta.SourceSyncModeBackup,
+		Revision: 7, DeviceID: &deviceA.ID, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, TargetNodeID: &target.ID,
 	}
 	if err := db.Create(&source).Error; err != nil {

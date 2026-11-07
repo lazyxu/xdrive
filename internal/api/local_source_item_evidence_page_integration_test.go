@@ -47,7 +47,7 @@ func TestOwningLocalEvidencePageKeysetAndPermissionIsolation(t *testing.T) {
 	target := createFilePropertiesDir(t, db, owner.ID, root.ID, "Private backups")
 	source := meta.Source{OwnerID: owner.ID, Name: "Advisory only",
 		Kind: meta.SourceKindLocalFolder, Direction: meta.SourceDirectionPush,
-		Status: meta.SourceStatusPaused, Revision: 7,
+		Status: meta.SourceStatusPaused, Revision: 7, DeviceID: &deviceA.ID,
 		SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
 		TargetNodeID: &target.ID}
 	if err := db.Create(&source).Error; err != nil {
