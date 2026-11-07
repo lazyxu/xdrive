@@ -228,8 +228,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
         }
         if let message = wall.failure ?? timeline.notice {
-            Label(message, systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary)
-            Button("重新读取") { reset() }
+            XDriveIOSNativePhotoWallRetryMessage(
+                message: message, buttonTitle: "重新读取",
+                canRetry: selected == nil && phase == .active,
+                systemImage: "info.circle"
+            ) { reset() }
         }
         if let status = timeline.coverage, !status.finished {
             ProgressView("正在核对本机原件 \(status.checked) / \(status.total)",
