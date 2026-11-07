@@ -7,6 +7,7 @@ import {
 import type { XDriveWorkspaceHostAdapter } from '@xdrive/ui/mui'
 import { createXDriveSynologyOwnerGallerySource } from '../../ui/shared/src/mui/SynologyOwnerGallerySource'
 import { xDriveSynologyReadOwnerLoginDiagnostics } from '../../ui/shared/src/synology-owner-diagnostics'
+import { createXDriveDSMClipboardPort } from './synologyClipboardPort'
 
 /**
  * DSM-only authenticated transport adapter for the shared xDrive application.
@@ -20,6 +21,7 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter & { reado
     platform: 'synology',
     services: {
       localBackupClient: local,
+      clipboardPage: createXDriveDSMClipboardPort(local),
       ownerBackupReadFallback: true,
       // Only the verified same-origin DSM CGI methods are enabled. The shared
       // Desktop Files command bar remains visible; no generic NAS-path upload or unrestricted Agent write.
