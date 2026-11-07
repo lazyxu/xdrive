@@ -134,6 +134,7 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 		add(owner.ID, root.ID, fmt.Sprintf("home-%d-b.jpg", day), day, homeLat, homeLon)
 	}
 	included := map[uint64]bool{}
+	awayNearbyLatitude := ptr(10.125)
 	excluded := map[uint64]bool{}
 	var firstAway uint64
 	for day := 4; day <= 5; day++ {
@@ -142,7 +143,12 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 			firstAway = first
 		}
 		included[first] = true
-		included[add(owner.ID, root.ID, fmt.Sprintf("trip-%d-b.jpg", day), day, awayLat, awayLon)] = true
+		latitudeForSecond := awayLat
+		if day == 5 {
+			// Same 0.2-degree trip day, separate real 0.01-degree map place.
+			latitudeForSecond = awayNearbyLatitude
+		}
+		included[add(owner.ID, root.ID, fmt.Sprintf("trip-%d-b.jpg", day), day, latitudeForSecond, awayLon)] = true
 		excluded[add(owner.ID, root.ID, fmt.Sprintf("same-day-home-%d.jpg", day), day, homeLat, homeLon)] = true
 		excluded[add(owner.ID, root.ID, fmt.Sprintf("unlocated-%d.jpg", day), day, nil, nil)] = true
 	}
@@ -201,6 +207,73 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 		t.Fatalf("missing expected trip members: %+v", included)
 	}
 
+	// The map and its tapped place read must intersect the SAME trip GPS
+	// members: no same-day home, foreign Owner, unlocated or other-city photo.
+	overview, err := server.queryMediaExactTripMap(ctx, owner.ID, segment, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.Aggregated || overview.TotalPhotoCount != 4 ||
+		len(overview.Items) != 2 {
+		t.Fatalf("trip GPS map=%+v, expected two true place cells totaling 4", overview)
+	}
+	placeCounts := map[string]int64{
+		"place:1010:1010": 3,
+		"place:1012:1010": 1,
+	}
+	for _, facet := range overview.Items {
+		want, exists := placeCounts[facet.ID]
+		if !exists || facet.ItemCount != want ||
+			facet.CoordinateKind != "grid_cell_center" {
+			t.Fatalf("wrong trip GPS map facet: %+v", facet)
+		}
+		cell, ok := parseMediaPlaceKey(facet.ID)
+		if !ok {
+			t.Fatalf("invalid map cell key=%q", facet.ID)
+		}
+		q, err := server.mediaExactTripQuery(ctx, owner.ID, segment, "UTC")
+		if err != nil {
+			t.Fatal(err)
+		}
+		q = mediaExactTripPlaceCellQuery(q, cell)
+		var count int64
+		if err := q.Session(&gorm.Session{}).
+			Distinct("xd_media_metadata.node_id").Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != facet.ItemCount {
+			t.Fatalf("place %s count=%d, map count=%d", facet.ID, count, facet.ItemCount)
+		}
+		placePage, err := server.materializeMediaItems(ctx, owner.ID, q, 48, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if int64(len(placePage)) != count {
+			t.Fatalf("map place %s Range returned %d want %d", facet.ID, len(placePage), count)
+		}
+		for _, item := range placePage {
+			if excluded[item.Node.ID] {
+				t.Fatalf("unauthorized trip GPS member in facet %s: %+v", facet.ID, item)
+			}
+		}
+	}
+	// Home places exist in the same date interval, but cannot be selected
+	// through trip-specific map place=... even when the caller knows the ID.
+	homeQuery, err := server.mediaExactTripQuery(ctx, owner.ID, segment, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	homeQuery = mediaExactTripPlaceCellQuery(homeQuery, mediaPlaceCell{
+		Latitude: 120, Longitude: 120,
+	})
+	var homeCount int64
+	if err := homeQuery.Distinct("xd_media_metadata.node_id").Count(&homeCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if homeCount != 0 {
+		t.Fatalf("home photos leaked into exact trip place: %d", homeCount)
+	}
+
 	foreignSegments, err := queryMediaExactTripSegments(ctx, db, other.ID, "UTC")
 	if err != nil {
 		t.Fatal(err)
@@ -209,6 +282,17 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 		if mediaExactTripID(current, "UTC") == id {
 			t.Fatal("foreign Owner resolved another Owner trip")
 		}
+	}
+	// A very large same-trip location set may not be silently truncated
+	// to a plausible-looking top-64 MapKit result with a wrong total.
+	for i := 0; i < 70; i++ {
+		lat := 10.025 + float64(i%10)*0.0125
+		lon := 10.025 + float64(i/10)*0.0125
+		add(owner.ID, root.ID, fmt.Sprintf("trip-map-many-%d.jpg", i), 5, &lat, &lon)
+	}
+	if overflow, err := server.queryMediaExactTripMap(
+		ctx, owner.ID, segment, "UTC"); err == nil {
+		t.Fatalf("oversized exact trip map incorrectly returned %d cells", len(overflow.Items))
 	}
 	// A GPS edit that makes home dominant on a former trip day must revoke
 	// the old exact segment rather than silently falling back to date range.

@@ -210,11 +210,6 @@ func (s *Server) listMediaExactTripItems(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	id := c.Param("tripID")
-	if !strings.HasPrefix(id, mediaExactTripIDPrefix) || len(id) != 54 {
-		fail(c, http.StatusNotFound, "exact trip not found")
-		return
-	}
 	limit, offset, ok := mediaListWindow(c)
 	if !ok {
 		return
@@ -224,30 +219,36 @@ func (s *Server) listMediaExactTripItems(c *gin.Context) {
 		return
 	}
 	ownerID := userID(c)
-	segments, err := queryMediaExactTripSegments(
-		c.Request.Context(), s.DB, ownerID, zone)
+	segment, found, err := s.resolveMediaExactTrip(
+		c.Request.Context(), ownerID, zone, c.Param("tripID"))
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "get exact trip failed")
 		return
 	}
-	var chosen *mediaMemoryTripSegment
-	for i := range segments {
-		if mediaExactTripID(segments[i], zone) == id {
-			chosen = &segments[i]
-			break
-		}
-	}
-	if chosen == nil {
-		// A geographic edit, Owner change or changed local day membership
-		// can invalidate the old trip route. Never fall back to date-only.
+	if !found {
+		// Never fall back to the v1 calendar-only memory query.
 		fail(c, http.StatusNotFound, "exact trip changed; reload trips")
 		return
 	}
 	query, err := s.mediaExactTripQuery(
-		c.Request.Context(), ownerID, *chosen, zone)
+		c.Request.Context(), ownerID, segment, zone)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "get exact trip failed")
 		return
+	}
+	// A map pin is not authority. Apply this canonical WGS84 cell *after*
+	// the Owner+trip:v2 predicate, and use it unchanged for Count and Range.
+	if values, present := c.Request.URL.Query()["place"]; present {
+		if len(values) != 1 {
+			fail(c, http.StatusBadRequest, "exact trip place must be unique")
+			return
+		}
+		cell, valid := parseMediaPlaceKey(values[0])
+		if !valid || values[0] != mediaPlaceKey(cell) {
+			fail(c, http.StatusBadRequest, "invalid exact trip place")
+			return
+		}
+		query = mediaExactTripPlaceCellQuery(query, cell)
 	}
 	var count int64
 	if err := query.Session(&gorm.Session{}).
