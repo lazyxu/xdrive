@@ -168,7 +168,7 @@ test('P1-09: videos, Live badges and date groups match Gallery; map cannot acqui
   const { map, cluster, gallery, album, shared } = sources
   const tile = fragment(gallery, 'struct XDriveIOSNativeSquarePhotoTile: View',
     '/// Metadata-only virtual page.')
-  assert.match(tile, /XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: candidate\.kind == "video",\s*isLive: candidate\.isLive,\s*verifiedDuration: durationLabel/)
+  assert.match(tile, /XDriveIOSNativePhotoWallTileShell\(\s*isVideo: candidate\.kind == "video", isLive: candidate\.isLive,\s*verifiedDuration: durationLabel/)
   assert.match(shared, /if isVideo \{[\s\S]*?if let verifiedDuration \{\s*Text\(verifiedDuration\)\.monospacedDigit\(\)/)
   assert.match(tile, /PHAsset\.fetchAssets\(\s*withLocalIdentifiers: \[candidate\.id\], options: nil/)
   assert.match(tile, /asset\.creationDate == candidate\.capturedAt/)
@@ -182,7 +182,7 @@ test('P1-09: videos, Live badges and date groups match Gallery; map cannot acqui
   assert.match(album, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
   assert.match(album, /@State private var selectionMode = false/)
   assert.match(album, /selectedCandidates: \[String: XDrivePhotoKitScanCandidate\]/)
-  assert.match(cluster, /XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: item\.isVideo, isLive: item\.isLive/)
+  assert.match(cluster, /XDriveIOSNativePhotoWallTileShell\(isVideo: item\.isVideo, isLive: item\.isLive/)
   assert.match(shared, /\.accessibilityHidden\(true\)/)
   assert.doesNotMatch(shared, /PHAsset|PHPhotoLibrary|URLSession|UploadSession/)
   const place = fragment(map, 'private struct XDriveIOSMapSpatialAlbum: View', '/// One native map route')
