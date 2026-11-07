@@ -641,6 +641,7 @@ private struct XDriveIOSMapSpatialSelection: Identifiable {
     let viewport: XDriveIOSNativeLocalMapViewport?
     // Freeze the same Gallery filter as the verified map Cell count.
     let mediaFilter: XDriveIOSNativePhotoMediaFilter
+    let captureRange: XDriveIOSNativePhotoMapCaptureRange?
 }
 
 /// On-demand bounded local-only cell paging. Re-scan the lazy PhotoKit
@@ -987,7 +988,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
         readTask = Task { @MainActor in
             do {
                 let total = try await scanner.startMap(
-                    atOffset: 0, album: album, mediaFilter: selection.mediaFilter
+                    atOffset: 0, album: album, mediaFilter: selection.mediaFilter,
+                    captureRange: selection.captureRange
                 )
                 let result = try await readWindow(
                     scanner: scanner, pending: [], pendingIndex: 0,
@@ -1136,6 +1138,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     var onFocusChange: ((Bool) -> Void)?
     // The local map is a projection of the calling Gallery's exact media scope.
     var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
+    var inheritedCaptureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
@@ -1153,6 +1156,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var gpsFindPagesScanned = 0
     @State private var focused = false
     @State private var mapType: MKMapType = .standard
+    @State private var captureOverride: XDriveIOSNativePhotoMapCaptureRange?
+    @State private var usingCaptureOverride = false
+    @State private var datePickerOpen = false
+    @State private var requestedCaptureDay = Date()
     @State private var error: String?
     @State private var selection: XDriveIOSMapPhotoSelection?
     @State private var singleViewer: XDrivePhotoKitScanCandidate?
@@ -1179,6 +1186,15 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var globalCameraMoving = false
     @State private var autoRefineTask: Task<Void, Never>?
     @State private var handledMapJumpID: UUID?
+
+    private var activeCaptureRange: XDriveIOSNativePhotoMapCaptureRange? {
+        usingCaptureOverride ? captureOverride : inheritedCaptureRange
+    }
+
+    private func setCaptureRange(_ range: XDriveIOSNativePhotoMapCaptureRange?) {
+        usingCaptureOverride = true
+        captureOverride = range
+    }
 
     private var refinedViewportIsCurrent: Bool {
         // Scanned-incomplete cells must never become tappable, even before
@@ -1308,7 +1324,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                             } else {
                                 globalSelection = XDriveIOSMapSpatialSelection(
                                     cells: cells, viewport: globalViewport,
-                                    mediaFilter: mediaFilter)
+                                    mediaFilter: mediaFilter,
+                                    captureRange: activeCaptureRange)
                             }
                         },
                         onCamera: { current in
@@ -1432,6 +1449,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             } else if busy {
                 ProgressView("读取授权照片位置…")
             }
+            if let activeCaptureRange {
+                Text("位置时间范围：\(activeCaptureRange.label)")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-local-map-capture-range")
+            }
             if let error { Text(error).foregroundStyle(.secondary).font(.footnote) }
             if mapScope == .page {
                 Button("刷新当前页") { refresh(at: offset) }
@@ -1474,6 +1496,30 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
+                    Button("全部日期") { setCaptureRange(nil) }
+                    Button("最近 7 天") {
+                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
+                    }
+                    Button("最近 30 天") {
+                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
+                    }
+                    Section("按年份") {
+                        ForEach((max(1, Calendar.current.component(.year, from: Date()) - 20)...
+                            Calendar.current.component(.year, from: Date())).reversed(),
+                            id: \.self) { year in
+                            Button("\(year) 年") {
+                                setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(year))
+                            }
+                        }
+                    }
+                    Button("按指定日期") { datePickerOpen = true }
+                } label: {
+                    Label("地图日期", systemImage: "calendar")
+                }
+                .accessibilityIdentifier("native-ios-local-map-capture-menu")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
                     Picker("底图样式", selection: $mapType) {
                         Text("标准地图").tag(MKMapType.standard)
                         Text("卫星地图").tag(MKMapType.satellite)
@@ -1501,6 +1547,34 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         onFocusChange?(focused)
                     }
                     .accessibilityIdentifier("native-ios-map-focus-toggle")
+                }
+            }
+        }
+        .sheet(isPresented: $datePickerOpen) {
+            NavigationStack {
+                Form {
+                    DatePicker("拍摄日期", selection: $requestedCaptureDay,
+                               displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                    Button("显示选择日期所在年份") {
+                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(
+                            Calendar.current.component(.year, from: requestedCaptureDay)))
+                        datePickerOpen = false
+                    }
+                    .accessibilityIdentifier("native-ios-map-selected-year")
+                }
+                .navigationTitle("选择地图日期")
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("显示当天") {
+                            setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.day(
+                                requestedCaptureDay))
+                            datePickerOpen = false
+                        }
+                    }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { datePickerOpen = false }
+                    }
                 }
             }
         }
@@ -1625,6 +1699,13 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             if globalViewport != nil { globalCameraMoving = true }
             globalCamera = target
             onLibraryCameraChange?(target)
+        }
+        .onChange(of: activeCaptureRange) { _ in
+            onLibraryCameraChange?(nil)
+            clearReturnCamera()
+            if phase == .active && mapScope == .library { scanFullLibrary() }
+            else if phase == .active { refresh(at: 0) }
+            else { invalidate() }
         }
         .onChange(of: mediaFilter) { _ in
             // A changed Gallery filter invalidates all previous Cell members
@@ -1820,7 +1901,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         task = Task { @MainActor in
             do {
                 let total = try await worker.startMap(
-                    atOffset: 0, album: album, mediaFilter: mediaFilter
+                    atOffset: 0, album: album, mediaFilter: mediaFilter,
+                    captureRange: activeCaptureRange
                 )
                 var index = XDriveIOSNativeLocalMapSpatialIndex<XDrivePhotoKitLocatedCandidate>()
                 var scanned = 0
@@ -1932,7 +2014,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         task = Task { @MainActor in
             do {
                 _ = try await worker.startMap(
-                    atOffset: max(0, requested), mediaFilter: mediaFilter
+                    atOffset: max(0, requested), mediaFilter: mediaFilter,
+                    captureRange: activeCaptureRange
                 )
                 var next = try await worker.nextLocatedPage()
                 var pagesRead = 1

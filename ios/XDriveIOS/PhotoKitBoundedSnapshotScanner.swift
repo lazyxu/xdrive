@@ -102,7 +102,12 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
     /// A partially authorized PhotoKit library must never produce a map.
     func startMap(atOffset requestedOffset: Int = 0,
                   album: XDriveLocalPhotoAlbumSummary? = nil,
-                  mediaFilter: XDriveIOSNativePhotoMediaFilter) throws -> Int {
+                  mediaFilter: XDriveIOSNativePhotoMediaFilter,
+                  captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil) throws -> Int {
+        guard captureRange == nil || captureRange!.valid else {
+            reset()
+            throw XDrivePhotoKitScanFailure.snapshotChanged
+        }
         guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else {
             // Never retain an earlier scan after Full Access has been revoked.
             reset()
@@ -111,14 +116,16 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         return try startConfigured(atOffset: requestedOffset,
                                    requireStableResume: false,
                                    album: album, mediaFilter: mediaFilter,
-                                   requireFullLibrary: true)
+                                   requireFullLibrary: true,
+                                   captureRange: captureRange)
     }
 
     private func startConfigured(atOffset requestedOffset: Int,
                                  requireStableResume: Bool,
                                  album: XDriveLocalPhotoAlbumSummary?,
                                  mediaFilter: XDriveIOSNativePhotoMediaFilter,
-                                 requireFullLibrary: Bool = false) throws -> Int {
+                                 requireFullLibrary: Bool = false,
+                                 captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil) throws -> Int {
         reset()
         guard requestedOffset >= 0 else {
             throw XDrivePhotoKitScanFailure.invalidOffset
@@ -148,6 +155,23 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         // Map and Gallery use the same AND predicates. All-media scans retain
         // the original unfiltered backup PHFetchResult and cursor ordering.
         mediaFilter.applyPredicates(to: options)
+        if let captureRange {
+            guard requireFullLibrary && captureRange.valid else {
+                reset()
+                throw XDrivePhotoKitScanFailure.snapshotChanged
+            }
+            // This exact predicate is shared by the GPS overview scan and
+            // the selected Cell's 48-item re-scan. Unknown dates are excluded.
+            let timePredicate = NSPredicate(
+                format: "creationDate >= %@ AND creationDate < %@",
+                captureRange.from as NSDate, captureRange.to as NSDate)
+            if let existing = options.predicate {
+                options.predicate = NSCompoundPredicate(
+                    andPredicateWithSubpredicates: [existing, timePredicate])
+            } else {
+                options.predicate = timePredicate
+            }
+        }
         let snapshot: PHFetchResult<PHAsset>
         if let album {
             guard let collection = PHAssetCollection.fetchAssetCollections(
