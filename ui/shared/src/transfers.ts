@@ -67,6 +67,22 @@ export type XDriveTransferTask = {
   completed_at?: string
 }
 
+/**
+ * Reveal only locations backed by a verified cloud identity or by the owning
+ * Desktop Agent. Never turn an untrusted filename into a destination path.
+ */
+export function xDriveTransferRevealDestination(
+  task: Pick<XDriveTransferTask, 'direction' | 'cloud_parent_id' | 'cloud_node_id' | 'local_revealable'>,
+  available: { cloud: boolean; local: boolean },
+): 'cloud' | 'local' | null {
+  const validCloudID = (value: number | undefined) =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+  const cloud = available.cloud && (validCloudID(task.cloud_node_id) || validCloudID(task.cloud_parent_id))
+  const local = available.local && task.local_revealable === true
+  if (task.direction === 'upload') return cloud ? 'cloud' : local ? 'local' : null
+  return local ? 'local' : cloud ? 'cloud' : null
+}
+
 export type XDriveTransferTreeNode = {
   task: XDriveTransferTask
   children: XDriveTransferTreeNode[]

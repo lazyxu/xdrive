@@ -34,6 +34,10 @@ enum XDriveIOSLANPairingFailure: Error {
     case invalidAuthority, rootUnavailable, invalidRoot, differentDomain, keychain
     case localNetworkDenied, connectionTimedOut
     case connectionUnavailable(Int32), domainCertificateInvalid(Int32)
+    // Stage-specific IP verification errors. A failed /version response is
+    // never evidence that Caddy served the wrong CA or IP SAN.
+    case ipCertificateInvalid, ipConnectionTimedOut, ipConnectionUnavailable(Int)
+    case ipVersionRedirect, ipVersionStatus(Int), ipVersionInvalid
 
     var message: String {
         switch self {
@@ -43,7 +47,13 @@ enum XDriveIOSLANPairingFailure: Error {
         case .connectionTimedOut: return "连接内网 HTTPS 超时。请核对内网 IP、端口和 Wi-Fi；若刚允许本地网络访问，请再点一次配对。"
         case .connectionUnavailable(let code): return "无法建立内网连接（网络错误 \(code)）。请核对 IP、端口和 Wi-Fi 是否可互通。"
         case .domainCertificateInvalid(let code): return "域名 HTTPS 握手或证书校验失败（TLS \(code)）。请检查手机系统时间和服务器域名证书链。"
-        case .invalidRoot: return "域名提供的证书无法验证该内网地址。请核对 Caddy 的 IP 和证书。"
+        case .invalidRoot: return "第 2 步失败：域名 HTTPS 返回的 Caddy 根证书不是有效的单张自签证书。"
+        case .ipCertificateInvalid: return "第 3 步失败：内网 IP HTTPS 的证书链、有效期或 IP SAN 未通过 App 指定根 CA 的严格校验。"
+        case .ipConnectionTimedOut: return "第 3 步失败：内网 IP HTTPS 探测超时。请检查 Wi-Fi、IP、HTTPS 端口及 iOS 本地网络权限。"
+        case .ipConnectionUnavailable(let code): return "第 3 步失败：内网 IP HTTPS 连接异常（系统代码 \(code)）。请检查 IP、端口和网络。"
+        case .ipVersionRedirect: return "第 4 步失败：内网版本接口发生 HTTP 跳转；xDrive 不允许在配对时自动跳转到其他入口。"
+        case .ipVersionStatus(let status): return "第 4 步失败：内网版本接口返回 HTTP \(status)，而非预期的 200。"
+        case .ipVersionInvalid: return "第 4 步失败：内网 /api/v1/version 没有返回有效的 xDrive 版本 JSON；这不一定是证书错误。"
         case .differentDomain: return "该内网地址已绑定另一个 HTTPS 域名。请使用原域名或为新服务器配置不同的内网入口。"
         case .keychain: return "无法读取或保存内网证书配对，请解锁设备后重试。"
         }
@@ -199,10 +209,13 @@ class XDriveIOSServerTLSDelegate: NSObject, URLSessionDelegate, @unchecked Senda
               SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, target.ip as CFString)) == errSecSuccess,
               SecTrustSetAnchorCertificates(trust, [root] as CFArray) == errSecSuccess,
               SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
-              SecTrustSetNetworkFetchAllowed(trust, false) == errSecSuccess,
-              SecTrustEvaluateWithError(trust, nil),
-              let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
-              chain.count >= 2, let anchor = chain.last else { return false }
-        return SecCertificateCopyData(anchor) as Data == rootDER
+              SecTrustSetNetworkFetchAllowed(trust, false) == errSecSuccess else { return false }
+        // The only allowed trust anchor is exactly the DER certificate from
+        // the authenticated-domain bootstrap, with SSL host policy for the
+        // literal IP. SecTrustEvaluateWithError verifies chain, time, and SAN.
+        // Do not additionally require SecTrustCopyCertificateChain's LAST
+        // item to be the anchor: Apple's returned chain shape may omit an
+        // externally supplied trust anchor, even when evaluation succeeded.
+        return SecTrustEvaluateWithError(trust, nil)
     }
 }

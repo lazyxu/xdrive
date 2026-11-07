@@ -4,6 +4,7 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import {
   Box,
+  ButtonBase,
   Collapse,
   IconButton,
   LinearProgress,
@@ -53,6 +54,41 @@ function transferTime(value?: string) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
+function TransferTaskTitle({
+  name, title, variant, fontWeight, onOpen,
+}: {
+  name: string
+  title: string
+  variant: 'body2' | 'subtitle2'
+  fontWeight: number
+  onOpen?: () => void
+}) {
+  const label = (
+    <Typography component="span" variant={variant} fontWeight={fontWeight}
+      noWrap title={title} sx={{ display: 'block', minWidth: 0, maxWidth: '100%' }}>
+      {name}
+    </Typography>
+  )
+  if (!onOpen) return label
+  return (
+    <Tooltip title="点击定位文件位置">
+      <ButtonBase
+        type="button"
+        aria-label={`定位文件：${name}`}
+        onClick={onOpen}
+        sx={{
+          minWidth: 0, maxWidth: '100%', borderRadius: 0.5, textAlign: 'left',
+          justifyContent: 'flex-start', color: 'text.primary',
+          '&:hover': { color: 'primary.main', textDecoration: 'underline' },
+          '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+        }}
+      >
+        {label}
+      </ButtonBase>
+    </Tooltip>
+  )
+}
+
 function transferStateLabel(item: XDriveTransferTask) {
   return item.speed_source === 'server' && item.state === 'completed'
     ? '服务端已发送'
@@ -72,6 +108,8 @@ function TransferLeafItem({
   retryDisabled,
   retryLoading,
   onRetry,
+  onOpenTask,
+  canOpenTask,
 }: {
   item: XDriveTransferTask
   compact?: boolean
@@ -79,6 +117,8 @@ function TransferLeafItem({
   retryDisabled: boolean
   retryLoading: boolean
   onRetry?: (id: string) => void
+  onOpenTask?: (task: XDriveTransferTask) => void
+  canOpenTask?: (task: XDriveTransferTask) => boolean
 }) {
   const percent = xDriveTransferPercent(item)
   const active = xDriveTransferActive(item)
@@ -97,9 +137,13 @@ function TransferLeafItem({
         <Stack direction="row" spacing={1} alignItems="center">
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
-              <Typography variant="body2" fontWeight={650} noWrap sx={{ minWidth: 0, maxWidth: '100%' }} title={item.relative_path || item.path || item.file_name}>
-                {item.relative_path || item.file_name || item.path || item.id}
-              </Typography>
+              <TransferTaskTitle
+                name={item.relative_path || item.file_name || item.path || item.id}
+                title={item.relative_path || item.path || item.file_name}
+                variant="body2"
+                fontWeight={650}
+                onOpen={onOpenTask && canOpenTask?.(item) !== false ? () => onOpenTask(item) : undefined}
+              />
               <XDriveStatusBadge tone={transferTone(item.state)} label={transferStateLabel(item)} />
               <Typography variant="caption" color="text.secondary">
                 {xDriveTransferKindLabel(item.kind || item.direction)}
@@ -145,6 +189,12 @@ function TransferLeafItem({
           <Typography variant="caption" color="text.secondary">
             已耗时 {formatXDriveTransferDuration(item.elapsed_ms)}
           </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {item.direction === 'upload' ? '上传时间' : item.direction === 'download' ? '下载时间' : '传输时间'} {transferTime(item.started_at)}
+          </Typography>
+          {item.completed_at ? (
+            <Typography variant="caption" color="text.secondary">完成时间 {transferTime(item.completed_at)}</Typography>
+          ) : null}
           {eta !== undefined ? (
             <Typography variant="caption" color="text.secondary">
               剩余约 {formatXDriveTransferDuration(eta)}
@@ -161,9 +211,13 @@ function TransferLeafItem({
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }} sx={{ px: 1.75, py: 1.5 }}>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-            <Typography variant="subtitle2" fontWeight={700} noWrap title={item.path || item.file_name}>
-              {item.file_name || item.path || item.id}
-            </Typography>
+            <TransferTaskTitle
+              name={item.file_name || item.path || item.id}
+              title={item.path || item.file_name}
+              variant="subtitle2"
+              fontWeight={700}
+              onOpen={onOpenTask && canOpenTask?.(item) !== false ? () => onOpenTask(item) : undefined}
+            />
             <XDriveStatusBadge tone={transferTone(item.state)} label={transferStateLabel(item)} />
             <Typography variant="caption" color="text.secondary">
               {xDriveTransferKindLabel(item.kind || item.direction)}
@@ -229,6 +283,8 @@ function TransferGroupItem({
   retryDisabled,
   retryingID,
   onRetry,
+  onOpenTask,
+  canOpenTask,
 }: {
   node: XDriveTransferTreeNode
   depth?: number
@@ -237,6 +293,8 @@ function TransferGroupItem({
   retryDisabled: boolean
   retryingID: string
   onRetry?: (id: string) => void
+  onOpenTask?: (task: XDriveTransferTask) => void
+  canOpenTask?: (task: XDriveTransferTask) => boolean
 }) {
   const item = node.task
   const [expanded, setExpanded] = useState(() => !compact && xDriveTransferActive(item))
@@ -285,9 +343,13 @@ function TransferGroupItem({
         </Tooltip>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-            <Typography variant={depth === 0 ? 'subtitle2' : 'body2'} fontWeight={700} noWrap sx={{ minWidth: 0, maxWidth: '100%' }} title={item.path || item.file_name}>
-              {item.file_name || item.path || item.id}
-            </Typography>
+            <TransferTaskTitle
+              name={item.file_name || item.path || item.id}
+              title={item.path || item.file_name}
+              variant={depth === 0 ? 'subtitle2' : 'body2'}
+              fontWeight={700}
+              onOpen={onOpenTask && canOpenTask?.(item) !== false ? () => onOpenTask(item) : undefined}
+            />
             <XDriveStatusBadge tone={transferTone(item.state)} label={transferStateLabel(item)} />
             <Typography variant="caption" color="text.secondary">
               {xDriveTransferKindLabel(item.kind || item.direction)} · 文件夹任务
@@ -357,6 +419,12 @@ function TransferGroupItem({
               {active ? speedLabel : speed.serverReported ? '平均服务端发送速度' : '平均速度'} {formatBytes(active ? instantSpeed : Math.max(0, averageSpeed || 0))}/s
             </Typography>
             <Typography variant="caption" color="text.secondary">已耗时 {formatXDriveTransferDuration(item.elapsed_ms)}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {item.direction === 'upload' ? '上传时间' : item.direction === 'download' ? '下载时间' : '传输时间'} {transferTime(item.started_at)}
+            </Typography>
+            {item.completed_at ? (
+              <Typography variant="caption" color="text.secondary">完成时间 {transferTime(item.completed_at)}</Typography>
+            ) : null}
             {eta !== undefined ? (
               <Typography variant="caption" color="text.secondary">剩余约 {formatXDriveTransferDuration(eta)}</Typography>
             ) : null}
@@ -391,6 +459,8 @@ function TransferGroupItem({
                     retryDisabled={retryDisabled}
                     retryingID={retryingID}
                     onRetry={onRetry}
+                    onOpenTask={onOpenTask}
+                    canOpenTask={canOpenTask}
                   />
                 ) : (
                   <TransferLeafItem
@@ -401,6 +471,8 @@ function TransferGroupItem({
                     retryDisabled={retryDisabled}
                     retryLoading={retryingID === child.task.id}
                     onRetry={onRetry}
+                    onOpenTask={onOpenTask}
+                    canOpenTask={canOpenTask}
                   />
                 )
               ))}
@@ -419,6 +491,8 @@ export function XDriveTransferTreeItem({
   retryDisabled,
   retryingID,
   onRetry,
+  onOpenTask,
+  canOpenTask,
 }: {
   node: XDriveTransferTreeNode
   compact?: boolean
@@ -426,6 +500,8 @@ export function XDriveTransferTreeItem({
   retryDisabled: boolean
   retryingID: string
   onRetry?: (id: string) => void
+  onOpenTask?: (task: XDriveTransferTask) => void
+  canOpenTask?: (task: XDriveTransferTask) => boolean
 }) {
   if (xDriveTransferIsGroup(node.task)) {
     return (
@@ -436,6 +512,8 @@ export function XDriveTransferTreeItem({
         retryDisabled={retryDisabled}
         retryingID={retryingID}
         onRetry={onRetry}
+        onOpenTask={onOpenTask}
+        canOpenTask={canOpenTask}
       />
     )
   }
@@ -447,6 +525,8 @@ export function XDriveTransferTreeItem({
       retryDisabled={retryDisabled}
       retryLoading={retryingID === node.task.id}
       onRetry={onRetry}
+      onOpenTask={onOpenTask}
+      canOpenTask={canOpenTask}
     />
   )
 }
