@@ -56,7 +56,7 @@ export interface XDriveBaiduIsolatedFrameOptions<T> {
 export interface XDriveBaiduIsolatedFrameHost<T> {
   readonly element: HTMLIFrameElement
   /** Replace all current authorized cells, never append to old Owner cells. */
-  replaceAuthorizedCells(cells: readonly XDriveTrustedIsolatedMapCell<T>[]): boolean
+  replaceAuthorizedCells(cells: readonly XDriveTrustedIsolatedMapCell<T>[], cameraScoped?: boolean): boolean
   /** Only current Owner selections with visible React photo buttons;
    * the Child receives random keys, never private image/Node/Owner data. */
   setPhotoCoverSelections(selections: readonly T[]): boolean
@@ -153,6 +153,9 @@ export function xDriveMountBaiduIsolatedFrame<T>(
   let mapReady = false
   let boundary: XDriveBaiduIsolationBoundary | null = null
   let published: XDriveBaiduParentCellsMessage | null = null
+  // Bootstrap /cells are for fitting the camera, not current-view counts.
+  // Reuse existing anonymous photo-covers suppression: no protocol change.
+  let bootstrapLabelSuppressed = false
   let ownerSelection = new Map<string, T>()
   // Retained only as a bounded VISUAL key→selection map across a gesture.
   // A cancellation clears ownerSelection immediately, so neither click
@@ -179,6 +182,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     clearProjected()
     boundary = null
     published = null
+    bootstrapLabelSuppressed = false
     ownerSelection.clear()
     gestureSelection.clear()
     gestureCounts.clear()
@@ -192,6 +196,16 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     try { iframe.contentWindow.postMessage(message, boundary.childOrigin) }
     catch { detach() }
   }
+  const postBootstrapSuppression = () => {
+    if (!alive || !ready || !bootstrapLabelSuppressed ||
+        !boundary || !published || !iframe.contentWindow ||
+        published.cells.length === 0) return
+    const keys = published.cells.map(cell => cell.key)
+    const message = xDriveCreateBaiduIsolatedPhotoCoversMessage(boundary,keys,keys)
+    if (!message) { detach(); return }
+    try { iframe.contentWindow.postMessage(message,boundary.childOrigin) }
+    catch { detach() }
+  }
   const onLoad = () => {
     if (!alive || !boundary) return
     // Reload MUST rotate the challenge, not merely clear selections: a child
@@ -202,6 +216,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     boundary = { ...boundary, generation: freshGeneration, nonce: freshNonce }
     ready = false
     mapReady = false
+    bootstrapLabelSuppressed = false
     clearPendingViewport()
     clearProjected()
     published = xDriveCreateBaiduIsolatedCellsMessage(boundary, [])
@@ -219,7 +234,10 @@ export function xDriveMountBaiduIsolatedFrame<T>(
       // Replayed ready packets must never mint another one-use map ticket.
       if (ready) return
       ready = true
-      if (published) post(published)
+      if (published) {
+        post(published)
+        postBootstrapSuppression()
+      }
       options.onReady?.()
     } else if (event.kind === 'map-ready') {
       if (ready && !mapReady) { mapReady = true; options.onMapReady?.() }
@@ -323,11 +341,13 @@ export function xDriveMountBaiduIsolatedFrame<T>(
           return true
         } catch { detach(); return false }
       },
-      replaceAuthorizedCells(cells) {
-        if (!alive || !boundary || !Array.isArray(cells) || cells.length > maxCells) {
+      replaceAuthorizedCells(cells, cameraScoped = true) {
+        if (!alive || !boundary || typeof cameraScoped !== 'boolean' ||
+            !Array.isArray(cells) || cells.length > maxCells) {
           if (alive && boundary) {
             clearProjected()
             ownerSelection.clear()
+            bootstrapLabelSuppressed = false
             published = xDriveCreateBaiduIsolatedCellsMessage(boundary, [])
             if (ready && published) post(published)
           }
@@ -345,6 +365,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
         const message = xDriveCreateBaiduIsolatedCellsMessage(boundary, reduced)
         if (!message) {
           ownerSelection.clear()
+          bootstrapLabelSuppressed = false
           published = xDriveCreateBaiduIsolatedCellsMessage(boundary, [])
           if (ready && published) post(published)
           return false
@@ -356,10 +377,18 @@ export function xDriveMountBaiduIsolatedFrame<T>(
         }
         ownerSelection = next
         published = message
-        if (ready) post(message)
+        bootstrapLabelSuppressed = !cameraScoped && reduced.length > 0
+        if (ready) {
+          post(message)
+          postBootstrapSuppression()
+        }
         return true
       },
       setPhotoCoverSelections(selections) {
+        // No React cover is painted during initial worldwide fitting, and an
+        // empty transient Parent render must not resurrect its global labels.
+        if (bootstrapLabelSuppressed && Array.isArray(selections) &&
+            selections.length === 0) return true
         if (!alive || !ready || !mapReady || !boundary || !published ||
             !iframe.contentWindow || !Array.isArray(selections) ||
             selections.length > XDRIVE_BAIDU_ISOLATED_MAX_PHOTO_COVERS) return false

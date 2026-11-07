@@ -175,7 +175,10 @@ test('A3h shared Web/Mobile/Desktop secure HTTPS map uses Gallery pool + Owner R
   assert.match(places,/XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
   assert.match(places,/loadThumbnail=\{loadPhotoCoverThumbnail\}/)
   assert.match(isolated,/xDriveSelectBaiduNativeCell\(page,bounds,cell\)/)
-  assert.match(isolated,/frame\.replaceAuthorizedCells\(cells\)/)
+  // World-wide /cells can fit the camera but cannot make a 1,198-count
+  // marker appear in a verified 397-count current viewport.
+  assert.match(isolated,/frame\.replaceAuthorizedCells\(cells,liveCamera\)/)
+  assert.match(isolated,/const accepted = liveCamera \? \{ \.\.\.bounds \} : null/)
   assert.match(isolated,/XDriveMediaGalleryCoverThumbnail/)
   assert.match(isolated,/data-xdrive-places-trusted-photo-cover-pins/)
   // Private thumbnails are rendered ONLY in Gallery Parent, and never sent
