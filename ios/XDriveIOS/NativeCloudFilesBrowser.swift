@@ -981,6 +981,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     /// a path or reuse another account's stale favorite directory.
     private var verifiedFavoriteFolders: [XDriveIOSNativeFilesCollectionItem] {
         guard isHome, favoriteShortcuts.verified,
+              favoriteShortcuts.matches(login.owner, kind: .favorites),
               let expected = favoriteShortcutsOwner,
               XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
             return []

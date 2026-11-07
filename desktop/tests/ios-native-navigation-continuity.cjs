@@ -246,7 +246,7 @@ const scenarios = [
     "checks": [
       {
         "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)",
+        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)",
         "flags": ""
       }
     ]
@@ -396,7 +396,7 @@ const scenarios = [
     "checks": [
       {
         "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)\\s*\\} else \\{[\\s\\S]*?loadFavoriteShortcuts\\(\\)",
+        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)\\s*\\} else \\{[\\s\\S]*?loadFavoriteShortcuts\\(\\)",
         "flags": ""
       }
     ]
@@ -421,7 +421,7 @@ const scenarios = [
       },
       {
         "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\)",
+        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\)",
         "flags": ""
       }
     ]
@@ -682,6 +682,26 @@ const scenarios = [
       {
         "file": "c",
         "pattern": "if !model\\.matches\\(login\\.owner, kind: kind\\) \\{\\s*if model\\.loading[\\s\\S]*?ProgressView\\(\"正在核验当前文件列表…\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "56 Files Home Favorites compiler call carries explicit cache kind",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\)",
+        "flags": ""
+      },
+      {
+        "file": "f",
+        "pattern": "guard isHome, favoriteShortcuts\\.verified,\\s*favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\)",
+        "flags": ""
+      },
+      {
+        "file": "c",
+        "pattern": "func matches\\(_ owner: XDriveNativeOwnerRoot\\?,\\s*kind: XDriveIOSNativeFilesCollectionKind\\) -> Bool",
         "flags": ""
       }
     ]

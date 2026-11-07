@@ -255,3 +255,11 @@ test('native Files child navigation retains verified source/tag filters without 
   assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?searchOptions\.invalidate\(\)/);
   assert.match(view, /searchOptions\.matches\(login\.owner\)/);
 })
+
+test('Files Home Favorites cache call must pass explicit projection kind to compile', () => {
+  const collectionModel = read('ios/XDriveIOS/NativeFilesCollections.swift')
+  assert.match(collectionModel, /func matches\(_ owner: XDriveNativeOwnerRoot\?,\s*kind: XDriveIOSNativeFilesCollectionKind\) -> Bool/)
+  assert.match(view, /favoriteShortcuts\.matches\(login\.owner, kind: \.favorites\)/)
+  assert.match(view, /guard isHome, favoriteShortcuts\.verified,\s*favoriteShortcuts\.matches\(login\.owner, kind: \.favorites\)/)
+  assert.doesNotMatch(view, /favoriteShortcuts\.matches\(login\.owner\)/)
+})
