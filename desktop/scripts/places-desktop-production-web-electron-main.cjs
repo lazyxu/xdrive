@@ -37,6 +37,26 @@ function clickPlaces(){
   target.click()
   return true
 }
+function diagnoseNativeMapAdmission(){
+  const map=document.querySelector('[data-xdrive-gallery-places-map]')
+  const panel=document.querySelector('[data-xdrive-desktop-places-shared-web]')
+  const failed=document.querySelector('[data-xdrive-desktop-map-unavailable]')
+  const alert=panel?.querySelector('[role="alert"]')
+  const waiting=panel?.querySelector('[role="status"]')
+  const content=alert?.textContent||waiting?.textContent||''
+  return {
+    placesIndex:!!document.querySelector('[data-xdrive-places-index]'),
+    map:!!map,sharedWeb:!!panel,unavailable:!!failed,
+    webview:!!document.querySelector('[data-xdrive-desktop-embedded-places]'),
+    denied:!!alert,waiting:!!waiting,
+    nativeReauth:!!document.querySelector('[data-xdrive-desktop-places-native-reauth]'),
+    // Only known stable UI categories: never log the Owner's DOM, ID or URL.
+    category:content.includes('超时')?'timeout':
+      content.includes('验证失败')?'auth_denied':
+      content.includes('连接准备失败')?'https_prepare':
+      content.includes('正在按当前 Desktop')?'preparing':'other',
+  }
+}
 function inspectRealWebGuest(){
   const root=document.querySelector('[data-xdrive-desktop-places-web-page]')
   const denied=document.querySelector('[data-xdrive-desktop-places-auth-denied]')
@@ -80,9 +100,15 @@ async function run(win){
     await until(()=>win.webContents.executeJavaScript(
       'Boolean(document.querySelector("[data-xdrive-places-index]"))'
     ),30000,'real Gallery Places page')
-    await until(()=>win.webContents.executeJavaScript(
-      'Boolean(document.querySelector("[data-xdrive-desktop-embedded-places]"))'
-    ),30000,'native production map WebView host')
+    try{
+      await until(()=>win.webContents.executeJavaScript(
+        'Boolean(document.querySelector("[data-xdrive-desktop-embedded-places]"))'
+      ),30000,'native production map WebView host')
+    }catch(error){
+      const diagnostic=await win.webContents.executeJavaScript(
+        '('+diagnoseNativeMapAdmission.toString()+')()').catch(()=>({unavailable:true}))
+      throw Error('map admission '+JSON.stringify(diagnostic)+'; '+String(error?.message||error))
+    }
     stage='production-Desktop-HTTPS-WebView-attach'
     const attached=await until(async()=>{
       return guest&&!guest.isDestroyed()?guest:null
