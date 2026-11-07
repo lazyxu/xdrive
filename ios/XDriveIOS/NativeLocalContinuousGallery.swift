@@ -866,9 +866,17 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             actionBusy = false
             selectedCandidates.removeAll()
             selectionMode = false
-            invalidate(with: nil)
-            monitor?.stop()
-            monitor = nil
+            if selected != nil || showingMap {
+                // A full-screen native child temporarily covers the Gallery.
+                // Cancel obsolete scanning, but do not zero the verified
+                // virtual-page count and flash an empty wall on Map return.
+                // Keep PhotoKit changes observed while the cover is active.
+                suspendForCoveredNavigation()
+            } else {
+                invalidate(with: nil)
+                monitor?.stop()
+                monitor = nil
+            }
         }
     }
 
@@ -1142,6 +1150,14 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         returnDate = nil
         returnModified = nil
         returnPageOffset = nil
+    }
+
+    private func suspendForCoveredNavigation() {
+        scanTask?.cancel()
+        scanTask = nil
+        loading = false
+        // Do not reset generation/total: a real PhotoKit or scene invalidation
+        // still goes through invalidate(with:), and Viewer return rechecks.
     }
 
     private func reload() {
