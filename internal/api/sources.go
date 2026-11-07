@@ -300,6 +300,7 @@ func (s *Server) listSourceOverview(c *gin.Context) {
 }
 
 var errLocalSourceCreateDeviceUnauthorized = errors.New("local source creation requires the owning device")
+var errNativePhotoSourceMutationUnauthorized = errors.New("native photos Source mutations require the registered device")
 
 func (s *Server) createSource(c *gin.Context) {
 	var req struct {
@@ -612,8 +613,10 @@ func (s *Server) updateSource(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&current).Error; err != nil {
 			return err
 		}
-		if current.Kind == meta.SourceKindIOSPhotos {
-			return errLocalSourceExecutorTransactionUnauthorized
+		if current.Kind == meta.SourceKindIOSPhotos || current.Kind == meta.SourceKindAndroidPhotos {
+			// The Owner can see native Sources, but generic PATCH may not
+			// mutate their Source revision, managed target or schedule.
+			return errNativePhotoSourceMutationUnauthorized
 		}
 		if meta.SynologyPullTemporarilyDisabled(current.Kind, current.Direction) {
 			return errSynologyPullDisabled
@@ -769,6 +772,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
+		case errors.Is(err, errNativePhotoSourceMutationUnauthorized):
+			fail(c, http.StatusForbidden, "native photos Source requires its registered device")
 		case errors.Is(err, errSourceArchived):
 			fail(c, http.StatusConflict, "source is archived; restore it before editing")
 		case errors.Is(err, errSynologyPullDisabled):
@@ -828,6 +833,11 @@ func (s *Server) triggerSource(c *gin.Context) {
 		if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
 			return errSynologyPullDisabled
 		}
+		if source.Kind == meta.SourceKindIOSPhotos || source.Kind == meta.SourceKindAndroidPhotos {
+			// A Server/Owner Run-Now request must never wake a native
+			// Photos executor, even if a Source was erroneously activated.
+			return errNativePhotoSourceMutationUnauthorized
+		}
 		if source.Kind == meta.SourceKindLocalFolder {
 			// No local Source trigger is executable until the native Agent
 			// planner, upload and commit protocol has been verified end-to-end.
@@ -852,6 +862,10 @@ func (s *Server) triggerSource(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, errNativePhotoSourceMutationUnauthorized) {
+			fail(c, http.StatusForbidden, "native photos Source requires its registered device")
+			return
+		}
 		writeSourceRunError(c, err)
 		return
 	}
@@ -1009,8 +1023,8 @@ func (s *Server) deleteSource(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Kind == meta.SourceKindIOSPhotos {
-			return errLocalSourceExecutorTransactionUnauthorized
+		if source.Kind == meta.SourceKindIOSPhotos || source.Kind == meta.SourceKindAndroidPhotos {
+			return errNativePhotoSourceMutationUnauthorized
 		}
 		if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
 			return errSynologyPullDisabled
@@ -1075,6 +1089,8 @@ func (s *Server) deleteSource(c *gin.Context) {
 			fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
+		case errors.Is(err, errNativePhotoSourceMutationUnauthorized):
+			fail(c, http.StatusForbidden, "native photos Source requires its registered device")
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "source not found")
 		default:

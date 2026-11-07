@@ -104,6 +104,16 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 	if result.TargetPath != expectedPath {
 		t.Fatalf("server-managed target path mismatch: got %q want %q", result.TargetPath, expectedPath)
 	}
+	// A valid Owner login alone must not rename, delete, archive or Run-Now
+	// the device-scoped iPhone Source through generic Source APIs.
+	sourceURL := fmt.Sprintf("/api/v1/sources/%d", result.SourceID)
+	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerToken,
+		strings.NewReader(`{"name":"Owner spoof"}`), http.StatusForbidden,
+		map[string]string{"If-Match": `"1"`})
+	requestWithHeaders(t, router, http.MethodDelete, sourceURL, ownerToken,
+		nil, http.StatusForbidden, map[string]string{"If-Match": `"1"`})
+	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/trigger", ownerToken,
+		nil, http.StatusForbidden, nil)
 	var stored meta.Source
 	if err := db.First(&stored, result.SourceID).Error; err != nil {
 		t.Fatal(err)

@@ -109,9 +109,22 @@ func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndGrouped(t *testing.T) {
 		created.TargetNodeID == root.ID || created.TargetPath != "同步文件夹/Push/"+managedPushDeviceFolderName(device)+"/Pixel 原件" {
 		t.Fatalf("unverified Android Source/Target: %+v", created)
 	}
+	// Owner JWT is only a readable identity. Generic Source PATCH/DELETE/
+	// Trigger must not mutate or execute a native Source without native proof.
+	sourceURL := fmt.Sprintf("/api/v1/sources/%d", created.SourceID)
+	requestWithHeaders(t, router, http.MethodPatch, sourceURL, token,
+		strings.NewReader(`{"name":"Owner spoof"}`), http.StatusForbidden,
+		map[string]string{"If-Match": `"1"`})
+	requestWithHeaders(t, router, http.MethodDelete, sourceURL, token,
+		nil, http.StatusForbidden, map[string]string{"If-Match": `"1"`})
+	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/trigger", token,
+		nil, http.StatusForbidden, nil)
 	var source meta.Source
 	if err := db.First(&source, created.SourceID).Error; err != nil {
 		t.Fatal(err)
+	}
+	if source.Name != "Pixel 原件" || source.Revision != 1 {
+		t.Fatalf("Owner-only generic mutation changed native Source: %+v", source)
 	}
 	boundDeviceID, bound := meta.SourceDeviceID(source)
 	if !bound || boundDeviceID != device.ID || source.Kind != meta.SourceKindAndroidPhotos ||
