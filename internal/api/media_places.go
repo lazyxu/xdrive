@@ -240,8 +240,13 @@ func queryMediaPlacesWindow(ctx context.Context, db *gorm.DB, ownerID uint64, li
 // ordinary Places paging and an A3 bounded Owner viewport.
 func queryMediaPlacesWindowScoped(
 	ctx context.Context, db *gorm.DB, ownerID uint64, limit, offset int,
-	bounds *mediaPlaceViewportBounds,
+	bounds *mediaPlaceViewportBounds, optional ...*mediaCaptureBounds,
 ) ([]mediaPlaceDTO, error) {
+	var scope *mediaCaptureBounds
+	if len(optional) > 0 { scope = optional[0] }
+	if len(optional) > 1 || (scope != nil && !scope.valid()) {
+		return nil, fmt.Errorf("invalid map capture scope")
+	}
 	if db == nil || ownerID == 0 {
 		return nil, fmt.Errorf("media place query is not configured")
 	}
@@ -270,7 +275,7 @@ func queryMediaPlacesWindowScoped(
 		Resolver        string
 	}
 	var rows []row
-	query := mediaPlacesBaseQuery(ctx, db, ownerID)
+	query := mediaMapCaptureFilter(mediaPlacesBaseQuery(ctx, db, ownerID), scope)
 	if bounds != nil {
 		query = mediaPlacesWithinViewport(query, *bounds)
 	}
