@@ -687,15 +687,19 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 .onAppear { savedOffset = offset }
                             }
                         } else if loading {
-                            ProgressView("正在读取已授权图库…")
+                            XDriveIOSNativePhotoWallLoadingMessage(message: "正在读取已授权图库…")
                                 .frame(maxWidth: .infinity).padding()
                         } else if failure == nil {
-                            Text(mediaFilter.emptyMessage)
-                                .foregroundStyle(.secondary).padding(12)
+                            XDriveIOSNativePhotoWallStatusMessage(message: mediaFilter.emptyMessage)
+                                .padding(12)
                         }
                         if let failure {
-                            Text(failure).foregroundStyle(.secondary).padding(.horizontal, 12)
-                            Button("重新读取") { reload() }.buttonStyle(.bordered).padding(12)
+                            XDriveIOSNativePhotoWallRetryMessage(
+                                message: failure, buttonTitle: "重新读取",
+                                canRetry: authorized && phase == .active && selected == nil &&
+                                    !actionBusy && !shareBusy
+                            ) { reload() }
+                                .padding(12)
                         }
                     }
                 }
