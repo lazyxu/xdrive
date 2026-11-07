@@ -89,3 +89,36 @@ test('continuous unified wall releases offscreen rows and viewer crosses mixed p
   assert.match(read('NativeLocalPhotoGallery'), /onOriginalUnavailable\?\(viewed\.id\)/)
   assert.match(read('NativeServerMediaGallery'), /if let onUnifiedNavigate \{ onUnifiedNavigate\(direction\); return \}/)
 })
+
+
+test('unified Gallery uses the canonical adaptive photo grid and bounded density policy', () => {
+  const ui = read('NativeUnifiedPhotoGallery')
+  const wall = read('NativeUnifiedPhotoWall')
+  const shared = read('NativePhotoWallComponents')
+  const density = read('NativePhotoWallDensityPolicy')
+
+  assert.match(shared, /struct XDriveIOSNativePhotoWallGrid<Content: View>: View/)
+  assert.match(shared, /LazyVGrid\(columns: \[GridItem\(\.adaptive\(/)
+  assert.match(shared, /minimum: density\.minimumCellWidth/)
+  assert.match(shared, /maximum: density\.maximumCellWidth/)
+  assert.match(density, /case compact, standard, large/)
+  assert.match(ui, /@State private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
+  assert.match(ui, /xdrivePhotoWallDensityButtons\(\$wallDensity\)/)
+  assert.match(ui, /native-ios-unified-wall-density/)
+  assert.match(ui, /MagnificationGesture\(minimumScaleDelta: 0\.14\)\.onEnded/)
+  assert.match(ui, /guard selected == nil, phase == \.active, !showFilters else \{ return \}/)
+  assert.match(ui, /wallDensity = wallDensity\.applyingPinch\(scale\)/)
+  assert.match(ui, /filter: sourceFilter, query: query, density: wallDensity,[\s\S]*?displayActive: selected == nil && phase == \.active/)
+  assert.match(wall, /let density: XDriveIOSNativePhotoWallDensity/)
+  assert.match(wall, /XDriveIOSNativePhotoWallDayHeader\(title: day\?\.formatted\(date: \.abbreviated, time: \.omitted\) \?\? "拍摄日期未知"\)/)
+  assert.match(wall, /XDriveIOSNativePhotoWallGrid\(density: density\) \{[\s\S]*?ForEach\(groups\[day\] \?\? \[\]\)/)
+  assert.doesNotMatch(wall, /LazyVGrid\(|GridItem\(/)
+  // Other Gallery/places surfaces retain their own existing master contract tests.
+  // A purely visual density change must not alter source cursors, Owner membership,
+  // page identity, thumbnail admission or the exact Viewer return anchor.
+  assert.match(wall, /@State private var retry = UUID\(\)/)
+  assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
+  assert.match(wall, /\.onDisappear \{ visible = false; model\.reset\(\) \}/)
+  assert.match(ui, /scroll\.scrollTo\(anchor, anchor: \.center\)/)
+  assert.doesNotMatch(ui, /\.onChange\(of: wallDensity\)[\s\S]*?wall\.reset\(\)/)
+})
