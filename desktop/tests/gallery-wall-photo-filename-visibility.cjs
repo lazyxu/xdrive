@@ -18,12 +18,16 @@ test('Gallery image wall keeps photos square without visual filename overlays', 
   assert.match(tile, /data-xdrive-media-live-indicator/, 'live-photo badge stays visible')
 })
 
-test('Places photo drawer shows only square thumbnails while retaining accessible names', () => {
-  const source = read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
-  assert.match(source, /aria-label=\{\x60查看 \$\{item\.node\.name\}/)
-  assert.match(source, /alt=\{item\.node\.name\}/)
-  assert.match(source, /gridAutoRows:expanded\?'minmax\(108px, max-content\)'/)
-  const tile = source.slice(source.indexOf('data-xdrive-places-photo-drawer-item='), source.indexOf('data-xdrive-places-photo-drawer-load-more'))
-  assert.doesNotMatch(tile, /\{item\.node\.name\}\s*<\/Typography>/)
-  assert.match(tile, /aspectRatio:'1'/, 'square photos still anchor the grid layout')
+test('Places photo drawer renders the canonical square, accessible Gallery tile', () => {
+  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const drawer = read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+  const tile = gallery.slice(gallery.indexOf('export function MediaTile({'),
+    gallery.indexOf('function MediaTileGrid({'))
+  assert.ok(tile.includes("aspectRatio: '1 / 1'"))
+  assert.match(tile, /aria-label=\\{\\`\\$\\{item\\.node\\.name\\}/)
+  assert.match(tile, /alt=\\{item\\.node\\.name\\}/)
+  assert.match(tile, /data-xdrive-places-photo-drawer-item=\\{placesDrawer/)
+  assert.match(drawer, /<MediaVirtualTileGrid/)
+  assert.match(drawer, /<MediaTile/)
+  assert.doesNotMatch(tile, /\\{item\\.node\\.name\\}\\s*<\\/Typography>/)
 })
