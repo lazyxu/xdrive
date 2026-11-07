@@ -108,7 +108,7 @@ func (s *Server) clipboardVault(c *gin.Context) {
 
 func clipboardVaultDTO(vault meta.ClipboardVault) gin.H {
 	return gin.H{
-		"salt": vault.Salt, "kdf": "PBKDF2-SHA256", "iterations": 310000,
+		"salt": vault.Salt, "owner_id": vault.OwnerID, "kdf": "PBKDF2-SHA256", "iterations": 310000,
 		"check_nonce": vault.CheckNonce, "check_ciphertext": vault.CheckCiphertext,
 		"aad_scope": vault.AADScope,
 	}
