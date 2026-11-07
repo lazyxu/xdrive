@@ -141,7 +141,7 @@ struct XDriveIOSNativeExactTripMapScreen: View {
             if busy { ProgressView("核对本次旅行的地点…") }
             if let error {
                 Text(error).font(.footnote).foregroundStyle(.secondary)
-                Button("重试旅行地图") { reload() }
+                Button("重试旅行地图") { reload(preservingCamera: true) }
                     .disabled(busy || !activeOwner)
             }
         }
@@ -159,11 +159,11 @@ struct XDriveIOSNativeExactTripMapScreen: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("刷新") { reload() }.disabled(busy || !activeOwner)
+                Button("刷新") { reload(preservingCamera: true) }.disabled(busy || !activeOwner)
             }
         }
         .sheet(item: $selectedPlace, onDismiss: {
-            if activeOwner { reload() } else { invalidate() }
+            if activeOwner { reload(preservingCamera: true) } else { invalidate() }
         }) { facet in
             NavigationStack {
                 XDriveIOSNativeExactTripWall(
@@ -174,7 +174,7 @@ struct XDriveIOSNativeExactTripMapScreen: View {
             .presentationDragIndicator(.visible)
         }
         .sheet(item: $selectedCluster, onDismiss: {
-            if activeOwner { reload() } else { invalidate() }
+            if activeOwner { reload(preservingCamera: true) } else { invalidate() }
         }) { cluster in
             NavigationStack {
                 List(cluster.facets) { facet in
@@ -238,7 +238,9 @@ struct XDriveIOSNativeExactTripMapScreen: View {
         error = nil
     }
 
-    private func reload() {
+    private func reload(preservingCamera: Bool = false) {
+        // Keep the user's camera after a photo sheet or manual refresh.
+        // Revoke every old pin/cover while the current trip scope revalidates.
         invalidate()
         guard activeOwner, XDriveIOSNativeExactTripPolicy.validTrip(trip),
               XDriveIOSNativeExactTripPolicy.validTimeZone(timeZone)
@@ -274,13 +276,15 @@ struct XDriveIOSNativeExactTripMapScreen: View {
                 }
                 guard let frame = XDriveIOSNativeExactTripMapCameraPolicy.fit(positions)
                 else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
-                fittedCamera = MKCoordinateRegion(
-                    center: CLLocationCoordinate2D(
-                        latitude: frame.latitude, longitude: frame.longitude),
-                    span: MKCoordinateSpan(
-                        latitudeDelta: frame.latitudeSpan,
-                        longitudeDelta: frame.longitudeSpan))
-                fitRequestID = UUID()
+                if !preservingCamera {
+                    fittedCamera = MKCoordinateRegion(
+                        center: CLLocationCoordinate2D(
+                            latitude: frame.latitude, longitude: frame.longitude),
+                        span: MKCoordinateSpan(
+                            latitudeDelta: frame.latitudeSpan,
+                            longitudeDelta: frame.longitudeSpan))
+                    fitRequestID = UUID()
+                }
                 busy = false
                 loadCovers(result, reader: reader, ticket: ticket)
             } catch is CancellationError {
