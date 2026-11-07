@@ -110,6 +110,16 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 	if err := db.Where("username = ?", "production-map-foreign").Take(&foreign).Error; err != nil {
 		t.Fatal(err)
 	}
+	// These synthetic test users bypass normal map-session initialization.
+	// The real /cells route MUST still reject a missing/revoked map epoch.
+	// Match the existing PostgreSQL Owner-map fixture by provisioning a
+	// revocable nonzero epoch for each isolated test account, never in prod.
+	for _, person := range []meta.User{owner, foreign} {
+		epoch, initErr := ensureBaiduMapEpochTx(context.Background(), db, person.ID)
+		if initErr != nil || epoch.OwnerID != person.ID || epoch.Epoch == 0 {
+			t.Fatalf("synthetic Owner map epoch initialization failed: %v", initErr)
+		}
+	}
 	original := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	original.Set(0, 0, color.RGBA{R: 11, G: 68, B: 176, A: 255})
 	var encoded bytes.Buffer
