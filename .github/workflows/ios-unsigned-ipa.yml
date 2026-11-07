@@ -62,6 +62,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-clipboard-sse"
           node --test desktop/tests/native-clipboard-sse-contract.cjs
 
+      - name: Verify iOS explicit Clipboard Share Extension input and privacy boundary
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/ClipboardShareExtension/ClipboardSharePolicy.swift \
+            ios/tests/ClipboardSharePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-clipboard-share"
+          "$RUNNER_TEMP/xdrive-ios-clipboard-share"
+          node --test desktop/tests/ios-native-clipboard-share-extension.cjs
+
       - name: Verify immutable photo and person selectors
         run: |
           set -euo pipefail
