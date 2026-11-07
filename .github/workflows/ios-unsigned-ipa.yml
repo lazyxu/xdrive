@@ -52,6 +52,16 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      - name: Verify native Clipboard SSE framing and Owner lifecycle contracts
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeClipboardSSECursor.swift \
+            ios/tests/ClipboardSSECursorChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-clipboard-sse"
+          "$RUNNER_TEMP/xdrive-ios-clipboard-sse"
+          node --test desktop/tests/native-clipboard-sse-contract.cjs
+
       - name: Verify immutable photo and person selectors
         run: |
           set -euo pipefail
