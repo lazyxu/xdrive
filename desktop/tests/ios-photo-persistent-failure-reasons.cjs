@@ -36,3 +36,28 @@ test('iOS Owner scope and current PhotoKit baseline fence all failure summaries'
   assert.match(section, /native-ios-photo-change-queue-failure-reasons/)
   assert.doesNotMatch(getter, /URLSession|uploadPreparedOriginal|Server\.shared/)
 })
+
+test('PhotoKit edits, deletes and explicit full reconciliation retire raw stale diagnostics atomically', () => {
+  const store = read('ios/XDriveIOS/PhotoBackupChangeQueueStore.swift')
+  const tests = read('ios/tests/PhotoBackupChangeQueueStoreChecks.swift')
+  const full = store.slice(store.indexOf('func completeFullReconciliation('),
+    store.indexOf('func hasCompletedFullReconciliation('))
+  const apply = store.slice(store.indexOf('func apply(inserted:'),
+    store.indexOf('func counts()'))
+  const upsert = store.slice(store.indexOf('private func upsert('),
+    store.indexOf('private func prepare(_ sql:'))
+  assert.match(full, /BEGIN IMMEDIATE/)
+  assert.match(full, /DELETE FROM entries[\s\S]*?DELETE FROM failure_reasons/)
+  assert.match(full, /try execute\("COMMIT"\)/)
+  assert.match(apply, /BEGIN IMMEDIATE/)
+  assert.match(upsert, /private func discardFailureReason\(for id: String\)/)
+  assert.match(upsert, /DELETE FROM failure_reasons WHERE asset_id=\?/)
+  assert.equal((upsert.match(/try discardFailureReason\(for: id\)/g) || []).length, 2)
+  assert.match(tests, /import SQLite3/)
+  assert.match(tests, /SELECT COUNT\(\*\) FROM failure_reasons/)
+  assert.match(tests, /failure-reasons-lifecycle\.sqlite3/)
+  assert.match(tests, /rawFailureReasonRows\(at: lifecycleFile\) == 3/)
+  assert.match(tests, /rawFailureReasonRows\(at: lifecycleFile\) == 1/)
+  assert.match(tests, /rawFailureReasonRows\(at: lifecycleFile\) == 0/)
+  assert.doesNotMatch(apply + upsert, /URLSession|uploadPrepared|NodeReceipt/)
+})

@@ -1,9 +1,29 @@
 import Foundation
+import SQLite3
 
 @main struct XDriveIOSPhotoBackupChangeQueueStoreChecks {
     static func expect(_ check: @autoclosure () throws -> Bool) rethrows {
         let succeeded = try check()
         precondition(succeeded)
+    }
+
+    /// Inspect the real on-disk table, not the filtered failureReasonCounts
+    /// join (whose result would hide stale/orphaned entries).
+    private static func rawFailureReasonRows(at file: URL) -> Int {
+        var database: OpaquePointer?
+        precondition(sqlite3_open_v2(
+            file.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil
+        ) == SQLITE_OK)
+        guard let database else { preconditionFailure("unable to read queue diagnostics") }
+        defer { _ = sqlite3_close_v2(database) }
+        var query: OpaquePointer?
+        precondition(sqlite3_prepare_v2(
+            database, "SELECT COUNT(*) FROM failure_reasons", -1, &query, nil
+        ) == SQLITE_OK)
+        guard let query else { preconditionFailure("missing diagnostics query") }
+        defer { _ = sqlite3_finalize(query) }
+        precondition(sqlite3_step(query) == SQLITE_ROW)
+        return Int(sqlite3_column_int64(query, 0))
     }
 
     static func main() throws {
@@ -322,6 +342,51 @@ import Foundation
                 confirmed: 0, missingLocal: 0
             ))
             try expect(try large.failed(limit: 64).count == 64)
+        }
+        // Persisted diagnostic rows must be retired with the same PhotoKit
+        // edit/delete transaction, and atomically cleared by a full recovery.
+        // Historical counts hide orphans; inspect the actual encrypted-at-rest
+        // Owner-local SQLite table to catch storage/privacy retention.
+        let lifecycleFile = dir.appendingPathComponent("failure-reasons-lifecycle.sqlite3")
+        do {
+            let lifecycle = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: lifecycleFile)
+            let initial = Data([31]), recorded = Data([32]), changed = Data([33])
+            try expect(try lifecycle.installBaselineIfAbsent(
+                token: initial, authorization: 3
+            ))
+            _ = try lifecycle.apply(
+                inserted: ["edited-original", "deleted-original", "untouched-original"],
+                updated: [], deleted: [],
+                expectedToken: initial, nextToken: recorded, authorization: 3
+            )
+            for id in ["edited-original", "deleted-original", "untouched-original"] {
+                let status = try lifecycle.status(for: id)
+                guard let revision = status?.revision else {
+                    preconditionFailure("missing lifecycle candidate")
+                }
+                try expect(try lifecycle.settle(
+                    .init(localIdentifier: id, revision: revision, priority: 0),
+                    result: .failed, reasonCode: "originalMissing",
+                    expectedBaselineToken: recorded, authorization: 3
+                ))
+            }
+            try expect(rawFailureReasonRows(at: lifecycleFile) == 3)
+            _ = try lifecycle.apply(
+                inserted: [], updated: ["edited-original"],
+                deleted: ["deleted-original"],
+                expectedToken: recorded, nextToken: changed, authorization: 3
+            )
+            try expect(try lifecycle.status(for: "edited-original")?.state == .pending)
+            try expect(try lifecycle.status(for: "deleted-original")?.state == .missingLocal)
+            try expect(try lifecycle.status(for: "untouched-original")?.failureReasonCode
+                       == "originalMissing")
+            try expect(rawFailureReasonRows(at: lifecycleFile) == 1)
+            try lifecycle.completeFullReconciliation(
+                token: Data([34]), authorization: 3
+            )
+            try expect(rawFailureReasonRows(at: lifecycleFile) == 0)
+            try expect(try lifecycle.counts() == .init())
+            try expect(try lifecycle.baseline()?.token == Data([34]))
         }
         print("iOS PhotoKit change queue atomic token+priority+restart+Owner isolation+failure codes: PASS")
     }

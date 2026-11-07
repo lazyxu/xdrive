@@ -151,6 +151,11 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         }
         try stepDone(statement)
         try execute("DELETE FROM entries")
+        // Old asset IDs and normalized failure diagnostics no longer belong
+        // to any generation after an explicitly consented full recovery.
+        // Clear them atomically with the new token and queue reset, not at
+        // database open or via an unbounded foreground rescan.
+        try execute("DELETE FROM failure_reasons")
         let marker = try prepare(
             "INSERT INTO reconciliation(id,token,authorization) VALUES(1,?,?) " +
             "ON CONFLICT(id) DO UPDATE SET token=excluded.token,authorization=excluded.authorization"
@@ -575,6 +580,9 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             throw Failure.database(sqlite3_errcode(database))
         }
         try stepDone(statement)
+        // Any newly observed edit replaces the historical failure cause.
+        // This stays in apply()'s exact-token BEGIN IMMEDIATE transaction.
+        try discardFailureReason(for: id)
     }
 
     private func markMissing(id: String) throws {
@@ -582,6 +590,18 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         // Keep the record and receipt history. Deleting a local original must
         // NEVER send a delete to the Server or count it as uploaded.
         let statement = try prepare("UPDATE entries SET state='missingLocal' WHERE asset_id=?")
+        defer { sqlite3_finalize(statement) }
+        try bind(id, into: statement, position: 1)
+        try stepDone(statement)
+        // A missing local original is not an active failed revision. Keep
+        // the queue tombstone, not a stale diagnostic/PhotoKit identifier.
+        try discardFailureReason(for: id)
+    }
+
+    /// Indexed per-asset cleanup only for IDs changed in the same PhotoKit
+    /// transaction; never scan the full SQLite failure history on startup.
+    private func discardFailureReason(for id: String) throws {
+        let statement = try prepare("DELETE FROM failure_reasons WHERE asset_id=?")
         defer { sqlite3_finalize(statement) }
         try bind(id, into: statement, position: 1)
         try stepDone(statement)
