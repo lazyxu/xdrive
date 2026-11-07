@@ -194,10 +194,19 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 			}
 		}
 	}
+	// Reserve the exact test HTTPS origin BEFORE signing the managed map
+	// release. The signed scope binds this host:port and must match the
+	// socket actually served by Gin below, not an unconfigured origin.
+	listener, err := net.Listen("tcp", net.JoinHostPort(ip, "0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
 	server := &Server{DB: db, Store: local,
 		Auth:       auth.New("production-map-test-only-no-real-user", 15*time.Minute),
 		RefreshTTL: time.Hour,
 	}
+	server.AllowedOrigin = "https://" + listener.Addr().String()
 	// The real Owner /cells and signed Web map routes require a managed
 	// release. Create only synthetic test keys here; no provider AK, live
 	// Baidu API, production user account or external network is used.
@@ -257,18 +266,15 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 		}
 		frontend.ServeHTTP(w, r)
 	})
-	listener, err := net.Listen("tcp", net.JoinHostPort(ip, "0"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	tlsServer := httptest.NewUnstartedServer(handler)
 	_ = tlsServer.Listener.Close()
 	tlsServer.Listener = listener
 	tlsServer.TLS = &tls.Config{Certificates: []tls.Certificate{leaf}, MinVersion: tls.VersionTLS12}
 	tlsServer.StartTLS()
 	defer tlsServer.Close()
-	if !strings.HasPrefix(tlsServer.URL, "https://"+ip+":") {
-		t.Fatal("real production Web fixture escaped dedicated RFC1918 socket")
+	if !strings.HasPrefix(tlsServer.URL, "https://"+ip+":") ||
+		tlsServer.URL != server.AllowedOrigin {
+		t.Fatal("signed map origin does not match dedicated RFC1918 HTTPS socket")
 	}
 	// Readiness contains NO password, bearer token, Root CA or PhotoAsset ID.
 	payload, err := json.Marshal(map[string]any{
