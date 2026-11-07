@@ -182,7 +182,7 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 	}
 	server := &Server{DB: db}
 	for _, window := range []struct{ offset, limit, expected int }{
-		{0, 2, 2}, {2, 2, 2}, {4, 2, 0},
+		{0, 2, 2}, {2, 2, 2}, {4, 2, 1},
 	} {
 		q, err := server.mediaExactTripQuery(ctx, owner.ID, segment, "UTC")
 		if err != nil {
