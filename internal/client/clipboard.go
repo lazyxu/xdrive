@@ -59,7 +59,7 @@ func validClipboardWrite(value ClipboardWrite) bool {
         !strings.ContainsAny(value.Nonce+value.Ciphertext, "\r\n")
 }
 func validClipboardVault(v ClipboardVault) bool {
-    return v.KDF == "PBKDF2-SHA256" && v.Iterations == 310000 &&
+    return v.OwnerID > 0 && v.KDF == "PBKDF2-SHA256" && v.Iterations == 310000 &&
         len(v.Salt) == 24 && (v.CheckCiphertext == "" || v.CheckNonce != "")
 }
 func validClipboardItem(v ClipboardItem) bool {
