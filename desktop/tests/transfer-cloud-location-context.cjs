@@ -12,8 +12,11 @@ test('shared transfer context menu only navigates using stored cloud IDs, not lo
   assert.match(model, /cloud_node_id\?: number/)
   assert.match(pop, /onContextMenu=\{\(event\) =>/)
   assert.match(pop, /event\.preventDefault\(\)/)
-  assert.match(pop, /Number\.isSafeInteger\(task\.cloud_parent_id\)/)
-  assert.match(pop, /Number\.isSafeInteger\(task\.cloud_node_id\)/)
+  // Popover routes every action through the shared identity validator; do not
+  // require duplicated (and potentially inconsistent) checks in its JSX.
+  assert.match(model, /Number\.isSafeInteger\(value\) && value > 0/)
+  assert.match(pop, /xDriveTransferRevealDestination\(task,/)
+  assert.match(pop, /if \(!revealDestination\(task\)\) return/)
   assert.match(pop, /在云端文件管理器中显示/)
   assert.doesNotMatch(pop, /onShowInCloud\?\.\(\s*contextMenu\.task\.path/)
 })
@@ -44,7 +47,11 @@ test('Desktop Agent records cloud location IDs and Desktop resolves via authenti
   assert.match(model, /ClientRequestID\s+string\s+`json:"client_request_id,omitempty"`/,
     'correlation remains an opaque transfer receipt, never a local path')
   assert.match(desktop, /window\.xdriveDesktop\.agent\.getNodeLocation\(locatorID\)/)
-  assert.match(desktop, /revealCloudNodeInDirectory\(dir, nodeID, ancestry\)/)
+  // Resolve the current Node location, rather than trusting the saved parent
+  // after a file move; the returned ancestor/Node identity must be used.
+  assert.match(desktop, /const locatorID = fileID \?\? parentID/)
+  assert.match(desktop, /const dir = fileID \? location\.parent_id : locatorID/)
+  assert.match(desktop, /revealCloudNodeInDirectory\(dir, fileID \? location\.node_id : undefined, ancestry\)/)
   assert.match(desktop, /await loadCloudDirectory\(parentID, ancestry\)/)
   assert.match(desktop, /setCloudRevealTarget\(\{/)
 })
