@@ -129,6 +129,17 @@ struct XDriveIOSNativePhotoMapCaptureRange: Equatable {
         return Self.day(value, calendar: calendar)
     }
 
+    static func month(_ year: Int, _ month: Int,
+                      calendar: Calendar = .current) -> Self? {
+        guard (1...9998).contains(year), (1...12).contains(month),
+              let start = calendar.date(from: DateComponents(
+                year: year, month: month, day: 1)),
+              let end = calendar.date(byAdding: .month, value: 1, to: start)
+        else { return nil }
+        let range = Self(from: start, to: end, label: "\(year)年\(month)月")
+        return range.valid ? range : nil
+    }
+
     static func year(_ year: Int, calendar: Calendar = .current) -> Self? {
         guard (1...9998).contains(year),
               let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)),
