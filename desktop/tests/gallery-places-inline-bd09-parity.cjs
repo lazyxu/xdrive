@@ -41,7 +41,11 @@ test('inline SDK host cannot intentionally send WGS84 or private media to the pr
   assert.match(inline, /getPrototypeConfig/)
   assert.match(inline, /getSignedStatus/)
   assert.doesNotMatch(inline, /mintMapOnlySession/)
-  assert.match(inline, /replaceAuthorizedCells\(next\)/)
+  // Both the worldwide camera-fit overview and the current signed viewport
+  // use the same host, but only the latter may paint numeric SDK labels.
+  assert.match(inline, /replaceAuthorizedCells\(next, currentCamera = true\)/)
+  assert.match(inline, /cameraScoped = currentCamera/)
+  assert.match(inline, /!cameraScoped \|\| coveredSelections\.size > 0/)
   assert.match(inline, /xDriveValidBaiduNativeCameraSnapshot/)
   assert.doesNotMatch(inline, /\.translate\(|listPlacesMapOverview\(|mintMapOnlySession|\/media\/items/)
   assert.doesNotMatch(inline, /PhotoAsset|Bearer|JWT|image_url|mediaURL/)
