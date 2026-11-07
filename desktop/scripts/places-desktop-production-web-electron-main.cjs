@@ -260,6 +260,31 @@ async function inspectRealWebGuestOwnerDataPath(expectedOwner){
   }
 }
 
+/** Keeps the map JWT only in a guest-local closure across real Agent logout. */
+async function armRealWebGuestNativeRevocation(expectedOwner){
+  const receipt=await fetch('/api/v1/auth/browser/refresh',{
+    method:'POST',redirect:'error',credentials:'same-origin',cache:'no-store',
+    headers:{'X-XDrive-Browser-Owner':expectedOwner},
+  })
+  if(receipt.status!==200)throw Error('cannot arm protected guest revoke probe')
+  const issued=await receipt.json()
+  if(issued.username!==expectedOwner || !issued.browser_session ||
+      !issued.access_token)throw Error('revocation probe Owner mismatch')
+  const bearer=issued.access_token
+  const read=()=>fetch('/api/v1/media/places/baidu-jsapi/cells?'+
+    'west=100&south=20&east=125&north=40&sort_by=captured&sort_dir=desc',{
+    credentials:'same-origin',cache:'no-store',redirect:'error',
+    headers:{Authorization:'Bearer '+bearer},
+  })
+  if((await read()).status!==200)throw Error('map bearer not live before Agent logout')
+  // Boolean-only test signal; neither JWT nor private Owner IDs leave closure.
+  window.__xdrivePlacesNativeRevocationReady=true
+  await new Promise(resolve=>window.addEventListener(
+    'xdrive-test-native-agent-logged-out',resolve,{once:true}))
+  const response=await read()
+  return {revoked:response.status===401 || response.status===403}
+}
+
 let launched=false
 async function run(win){
   let stage='production-desktop-init'
@@ -365,6 +390,47 @@ async function run(win){
     const preload=await win.webContents.executeJavaScript(
       'Boolean(window.xdriveDesktop?.agent && document.querySelector("[data-xdrive-places-index]"))')
     assert.equal(preload,true)
+    let nativeLogoutBlockedOldMap=false
+    let oldMapHiddenAfterLogout=false
+    if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===2){
+      stage='production-Desktop-live-Agent-logout-while-WebView-mounted'
+      const readyFile=process.env.XD_DESKTOP_PLACES_LOGOUT_READY
+      const doneFile=process.env.XD_DESKTOP_PLACES_LOGOUT_DONE
+      assert.ok(readyFile && doneFile,'test-only logout coordination absent')
+      const fs=require('node:fs')
+      const inFlight=attached.executeJavaScript(
+        '('+armRealWebGuestNativeRevocation.toString()+')('+JSON.stringify(owner)+')')
+      await until(async()=>{
+        if(attached.isDestroyed())return false
+        return attached.executeJavaScript(
+          'window.__xdrivePlacesNativeRevocationReady===true')
+      },12000,'live browser bearer ready before native logout')
+      fs.writeFileSync(readyFile,'ready',{mode:0o600})
+      await until(()=>fs.existsSync(doneFile),40000,'real Go Agent logout')
+      if(!attached.isDestroyed()){
+        try{await attached.executeJavaScript(
+          'window.dispatchEvent(new Event("xdrive-test-native-agent-logged-out"))')
+        }catch{}
+      }
+      const response=await Promise.race([
+        inFlight.then(x=>x).catch(()=>({guestClosed:true})),
+        wait(9000).then(()=>({guestClosed:attached.isDestroyed()})),
+      ])
+      nativeLogoutBlockedOldMap=response.revoked===true || (
+        response.guestClosed===true && attached.isDestroyed())
+      assert.equal(nativeLogoutBlockedOldMap,true,
+        'native logout left already-minted Web map bearer usable')
+      const guestStillVisible=async()=>{
+        if(win.isDestroyed()||win.webContents.isDestroyed())return false
+        return win.webContents.executeJavaScript(
+          '(() => {const guest=document.querySelector("[data-xdrive-desktop-embedded-places]");'+
+          'return !!guest && getComputedStyle(guest).visibility!=="hidden" &&'+
+          'getComputedStyle(guest).display!=="none"})()').catch(()=>false)
+      }
+      await until(async()=> !(await guestStillVisible()),
+        15000,'old Owner map WebView must retire or hide after logout')
+      oldMapHiddenAfterLogout=true
+    }
     console.log('XDRIVE_PLACES_PRODUCTION_RESTART '+JSON.stringify({
       passed:true,productionMain:true,productionPreload:true,
       productionRenderer:true,actualWebVite:true,actualGinPostgreSQL:true,
@@ -376,7 +442,7 @@ async function run(win){
       exactFamily:media.family,exactFamilyFavorites:media.familyFavorites,
       exactViewerRange:media.viewerRange,viewerMetadata:media.viewerMetadata,
       noUnrelatedMapBearerAccess:media.mapRouteOnly,
-      thumbnailStatus:media.thumbnailStatus,viewerStatus:media.viewerStatus
+      thumbnailStatus:media.thumbnailStatus,viewerStatus:media.viewerStatus,nativeLogoutBlockedOldMap,oldMapHiddenAfterLogout
     }))
     app.exit(0)
   }catch(error){
