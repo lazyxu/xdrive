@@ -26,6 +26,7 @@ test('1: gallery backup entry shares task, Focused, settings, audit and cache na
     assert.ok(dashboard.includes('Button("' + label + '")'))
   }
   assert.match(dashboard, /Menu \{ backupMenuItems \}/)
+  assert.match(dashboard, /native-ios-backup-cache-sheet-close/)
   assert.match(dashboard, /launchAction: backupLaunchAction, launchNonce: backupLaunchNonce/)
   assert.match(backup, /case \.focused: openDetails\(\.progress\)/)
   assert.match(backup, /case \.queue: showTaskList = true/)
