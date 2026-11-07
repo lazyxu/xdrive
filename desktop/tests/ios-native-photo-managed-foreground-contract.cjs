@@ -104,3 +104,27 @@ test('manual PhotoKit position cannot cross Source or target Node changes', () =
   assert.match(manual, /self\.manualSourceID = managed\.destination\.sourceID/);
   assert.match(manual, /self\.manualTargetNodeID = managed\.destination\.targetNodeID/);
 });
+
+
+test('managed destination validator accepts new flat Push and only bounded legacy layouts', () => {
+  const pathPolicy = read('ios/XDriveIOS/NativePhotoBackupDestinationNamePolicy.swift');
+  const fixture = read('ios/tests/NativePhotoBackupDestinationNamePolicyChecks.swift');
+  const proof = model.slice(model.indexOf('private func verifiedBinding('),
+    model.indexOf('private func request(', model.indexOf('private func verifiedBinding(')));
+  assert.match(proof, /dto\.device_id == device\.deviceID/);
+  assert.match(proof, /targetID != owner\.rootNodeID/);
+  assert.match(proof, /XDriveIOSPhotoBackupDestinationPathPolicy\.accepts\(/);
+  assert.match(proof, /path: path, name: name, deviceID: device\.deviceID/);
+  assert.doesNotMatch(proof, /path\.hasPrefix\("同步文件夹\/设备备份\/"\)/);
+  assert.match(pathPolicy, /enum XDriveIOSPhotoBackupDestinationPathPolicy/);
+  assert.match(pathPolicy, /let deviceUUID = UUID\(uuidString: deviceID\)/);
+  assert.match(pathPolicy, /case 3:[\s\S]*?segments\[1\] == "Push"/);
+  assert.match(pathPolicy, /case 4:/);
+  assert.match(pathPolicy, /group\.hasSuffix\(suffix\)/);
+  assert.match(pathPolicy, /default:[\s\S]*?return false/);
+  assert.match(fixture, /同步文件夹\/Push\/家庭相册/);
+  assert.match(fixture, /同步文件夹\/Push\/我的iPhone_550e8400e29b\/家庭相册/);
+  assert.match(fixture, /同步文件夹\/设备备份\/旧设备\/家庭相册/);
+  assert.match(fixture, /同步文件夹\/Push\/\.\.\/家庭相册/);
+  assert.match(fixture, /otherDevice/);
+});
