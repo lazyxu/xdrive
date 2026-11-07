@@ -1,4 +1,5 @@
 import AVKit
+import MapKit
 import Combine
 import Photos
 import SwiftUI
@@ -387,6 +388,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @State private var showsStaticStill = false
     @State private var showChrome = true
     @State private var showingMediaInfo = false
+    @State private var showingPhotoLocation = false
 
     // Explicit native Photos restore belongs to this one L3 Viewer and its
     // presenting Owner. It never runs from Gallery thumbnails or background.
@@ -448,10 +450,23 @@ struct XDriveIOSNativeServerMediaPreview: View {
             pixelWidth: width,
             pixelHeight: height,
             duration: validDuration,
-            locationStatus: "云端 PhotoAsset 当前未提供拍摄位置元数据。",
+            locationStatus: verifiedPhotoCoordinate.map {
+                "GPS：\(String(format: "%.6f", $0.latitude)), \(String(format: "%.6f", $0.longitude))"
+            } ?? "此云端照片没有有效 GPS 位置。",
             resources: mediaInfoResources,
             liveFiles: liveResources
         )
+    }
+
+    // GPS is already part of the authenticated Owner media DTO. It may
+    // be absent; never invent a location from a bucket/grid centroid.
+    private var verifiedPhotoCoordinate: CLLocationCoordinate2D? {
+        guard ownerAuthorized, let latitude = viewed.metadata.latitude,
+              let longitude = viewed.metadata.longitude,
+              XDriveIOSNativePhotoMapPolicy.validCoordinate(
+                latitude: latitude, longitude: longitude)
+        else { return nil }
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 
     private var ownerAuthorized: Bool {
@@ -844,6 +859,12 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         Menu {
                             Button("照片信息") { showingMediaInfo = true }
                                 .accessibilityIdentifier("native-ios-photoasset-viewer-info")
+                            if verifiedPhotoCoordinate != nil {
+                                Button("在地图查看附近照片") {
+                                    showingPhotoLocation = true
+                                }
+                                .accessibilityIdentifier("native-ios-photoasset-viewer-location-map")
+                            }
                             Divider()
                             // Keep a secondary save command for short landscape
                             // layouts without duplicating a top-level toolbar button.
@@ -952,6 +973,25 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                 name: viewed.node.name, size: viewed.node.size)))
                 }
             }
+            .sheet(isPresented: $showingPhotoLocation) {
+                if ownerAuthorized, let location = verifiedPhotoCoordinate {
+                    NavigationStack {
+                        // Reuse the Owner MapKit Reader, signed place Ranges,
+                        // nearby viewer and current Owner cancellation rules.
+                        XDriveIOSNativeOwnerPhotoMapScreen(
+                            login: login,
+                            cameraReturn: MKCoordinateRegion(
+                                center: location,
+                                span: MKCoordinateSpan(
+                                    latitudeDelta: 0.12, longitudeDelta: 0.12)))
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                Button("关闭") { showingPhotoLocation = false }
+                            }
+                        }
+                    }
+                }
+            }
             .alert("保存到 iOS 照片", isPresented: $photosRestoreNoticePresented) {
                 Button("完成", role: .cancel) {}
             } message: {
@@ -963,6 +1003,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
         .onChange(of: viewed.id) { _ in
             showChrome = true
             showingMediaInfo = false
+            showingPhotoLocation = false
         }
         .onChange(of: failure) { message in
             if message != nil { showChrome = true }
