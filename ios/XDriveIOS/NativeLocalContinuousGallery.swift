@@ -458,7 +458,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var mapJump: XDriveIOSNativeLocalMapJump?
     // The PhotoKit calendar's authorized day is a transient map entry scope,
     // not an index of media IDs or a persistent location history.
-    @State private var calendarMapRange: XDriveIOSNativePhotoMapCaptureRange?
+    @Binding var calendarMapRange: XDriveIOSNativePhotoMapCaptureRange?
     @State private var pendingViewerMapJump: XDriveIOSNativeLocalMapJump?
     @State private var showingAlbumPicker = false
     @State private var albumPickerCandidates: [XDrivePhotoKitScanCandidate] = []

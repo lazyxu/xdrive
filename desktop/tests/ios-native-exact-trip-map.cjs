@@ -31,7 +31,7 @@ test('bounded trip map count and each location count use the same exact v2 SQL p
   assert.match(mapAPI, /s\.mediaExactTripQuery\(ctx, ownerID, segment, zone\)/)
   assert.match(mapAPI, /Distinct\("xd_media_metadata\.node_id"\)\.Count\(&expected\)/)
   assert.match(mapAPI, /COUNT\(DISTINCT xd_media_metadata\.node_id\) AS item_count/)
-  assert.match(mapAPI, /Group\(latCell\+", "\+lonCell\)/)
+  assert.match(mapAPI, /Group\(latCell \+ ", " \+ lonCell\)/)
   assert.match(mapAPI, /Limit\(mediaExactTripMapMaxPlaces \+ 1\)/)
   assert.match(mapAPI, /len\(rows\) <= mediaExactTripMapMaxPlaces/)
   assert.match(mapAPI, /out\.TotalPhotoCount != expected/)
