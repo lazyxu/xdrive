@@ -31,7 +31,7 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
     Point:function Point(lng,lat){this.lng=lng;this.lat=lat},
     Label:function Label(value){
       this.text=value;this.click=null
-      this.setStyle=()=>{}
+      this.setStyle=value=>{this.style=value}
       this.addEventListener=(name,cb)=>{if(name==='click')this.click=cb}
       this.removeEventListener=(name)=>{if(name==='click')this.click=null}
     },
@@ -40,6 +40,7 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
       this.addEventListener=(name,listener)=>nativeEvents.set(name,listener)
       this.addOverlay=label=>{labels.push(label)}
       this.removeOverlay=label=>{
+        if(options.sdkDelayedRemove)return
         const i=labels.indexOf(label)
         if(i>=0)labels.splice(i,1)
       }
@@ -450,4 +451,33 @@ test('isolated JSAPI4 Child publishes and restores genuine fractional BD09 zoom 
     assert.equal(f.moves.length,n)
   }
   f.events.get('pagehide')()
+})
+
+test('isolated Child stages worldwide label suppression before SDK readiness and retires delayed 1198 overlays', async () => {
+  const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',
+    true,{sdkDelayedRemove:true})
+  const globalCell={key:'1'.repeat(32),latitude:30,longitude:119,count:1198}
+  const cameraCell={key:'2'.repeat(32),latitude:31,longitude:120,count:397}
+  const send=(kind,more={})=>f.sendObject(f.parent,'https://gallery.example.net',{
+    ...init,kind,...more})
+  const visible=()=>f.labels.filter(label=>label.style?.display!=='none')
+  send('cells',{cells:[]})
+  send('cells',{cells:[globalCell]})
+  send('photo-covers',{keys:[globalCell.key]})
+  send('map-session',{ticket:'b'.repeat(64)})
+  await waitForChild(()=>f.sent.some(e=>e.message.kind==='map-ready'),'SDK ready')
+  assert.equal(visible().length,0,
+    'worldwide 1,198 is camera-fitting metadata, never a live SDK count label')
+  send('cells',{cells:[cameraCell]})
+  assert.equal(visible().length,1)
+  assert.match(visible()[0].text,/397张/)
+  const activeCameraLabel=visible()[0]
+  send('photo-covers',{keys:[cameraCell.key]})
+  assert.equal(activeCameraLabel.style.display,'none',
+    'SDK delayed removeOverlay cannot resurrect a stale white marker')
+  assert.equal(visible().length,0)
+  send('photo-covers',{keys:[globalCell.key]})
+  assert.equal(visible().length,0,
+    'an old anonymous worldwide key cannot restore hidden camera labels')
+  f.events.get('pagehide')?.()
 })
