@@ -110,6 +110,35 @@ struct XDriveIOSNativePhotoMapPolicyChecks {
             foundPins: 0, finished: false, pagesRead: -1))
         precondition(XDriveIOSNativePhotoMapPolicy.maxSeekGPSPages *
             XDriveIOSNativePhotoMapPolicy.pageSize == 1024)
-        print("native iOS PhotoKit map policy: PASS")
+        // Same absolute instants must drive PhotoKit and Owner map/photo Ranges.
+        // London advances the clock in spring and repeats an hour in autumn.
+        var london = Calendar(identifier: .gregorian)
+        london.timeZone = TimeZone(identifier: "Europe/London")!
+        let spring = XDriveIOSNativePhotoMapCaptureRange.dayKey(
+            "2026-3-29", calendar: london)!
+        let autumn = XDriveIOSNativePhotoMapCaptureRange.dayKey(
+            "2026-10-25", calendar: london)!
+        precondition(spring.valid && autumn.valid)
+        precondition(spring.to.timeIntervalSince(spring.from) == 23 * 3600)
+        precondition(autumn.to.timeIntervalSince(autumn.from) == 25 * 3600)
+        precondition(spring.contains(spring.from))
+        precondition(!spring.contains(spring.to))
+        precondition(!spring.contains(nil))
+        precondition(!autumn.contains(spring.from))
+        precondition(XDriveIOSNativePhotoMapCaptureRange.year(
+            2026, calendar: london)!.contains(autumn.from))
+        precondition(XDriveIOSNativePhotoMapCaptureRange.year(
+            2025, calendar: london)!.contains(autumn.from) == false)
+        precondition(XDriveIOSNativePhotoMapCaptureRange.dayKey(
+            "2026-2-30", calendar: london) == nil)
+        precondition(XDriveIOSNativePhotoMapCaptureRange.dayKey(
+            "unknown", calendar: london) == nil)
+        precondition(XDriveIOSNativePhotoMapCaptureRange.recentDays(
+            366, now: autumn.from, calendar: london) != nil)
+        precondition(XDriveIOSNativePhotoMapCaptureRange.recentDays(
+            367, now: autumn.from, calendar: london) == nil)
+        precondition(spring.fromRFC3339.hasSuffix("Z"))
+        precondition(spring.toRFC3339.hasSuffix("Z"))
+                print("native iOS PhotoKit map policy: PASS")
     }
 }
