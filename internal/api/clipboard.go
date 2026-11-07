@@ -407,17 +407,23 @@ func (s *Server) deleteClipboardItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid clipboard item ID"})
 		return
 	}
-	res := s.DB.WithContext(c.Request.Context()).
-		Where("owner_id = ? AND id = ?", uid, id).Delete(&meta.ClipboardItem{})
-	if res.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard store unavailable"})
-		return
-	}
-	if res.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "clipboard item not found"})
-		return
-	}
-	c.Status(http.StatusNoContent)
+	var deleted bool
+    err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+        var vault meta.ClipboardVault
+        if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+            Where("owner_id = ?", uid).First(&vault).Error; err != nil { return err }
+        result := tx.Where("owner_id = ? AND id = ?", uid, id).Delete(&meta.ClipboardItem{})
+        if result.Error != nil { return result.Error }
+        if result.RowsAffected == 0 { return nil }
+        deleted = true
+        return appendClipboardChangeTx(tx, uid, "delete")
+    })
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard store unavailable"})
+        return
+    }
+    if !deleted { c.JSON(http.StatusNotFound, gin.H{"error": "clipboard item not found"}); return }
+    c.Status(http.StatusNoContent)
 }
 
 func (s *Server) clearClipboardItems(c *gin.Context) {
