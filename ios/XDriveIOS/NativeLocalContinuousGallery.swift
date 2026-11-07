@@ -73,7 +73,7 @@ struct XDriveIOSNativeSquarePhotoTile: View {
                 .clipped()
             }
         }
-        .aspectRatio(1, contentMode: .fit)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 3))
         .task(id: "\(candidate.id)-\(framing.rawValue)") {
             durationLabel = nil
