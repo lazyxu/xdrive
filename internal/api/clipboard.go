@@ -313,7 +313,7 @@ func (s *Server) createClipboardItem(c *gin.Context) {
 		}
 		// Retain only the 50 newest live items from this Owner. This is a
 		// metadata-only mailbox and must not touch Nodes, uploads or CAS.
-		return tx.Exec(`
+		if err := tx.Exec(`
 DELETE FROM xd_clipboard_items
 WHERE owner_id = ?
   AND (expires_at <= ?
@@ -324,8 +324,8 @@ WHERE owner_id = ?
            ORDER BY id DESC LIMIT ?
          ) AS recent
        ))`,
-			uid, now, uid, now, clipboardPageSize).Error
-        // Existing duplicate receipts are handled outside this transaction.
+            uid, now, uid, now, clipboardPageSize).Error; err != nil { return err }
+        return appendClipboardChangeTx(tx, uid, "create")
 	})
 	if err != nil {
 		if errors.Is(err, errClipboardVaultNotReady) || errors.Is(err, gorm.ErrRecordNotFound) {
