@@ -210,12 +210,15 @@ func (s *Server) queryMediaExactTripMapViewport(
 			math.Abs(r.SampleLatitude) > 90 || math.Abs(r.SampleLongitude) > 180 {
 			return mediaExactTripMapDTO{}, fmt.Errorf("invalid exact trip aggregate cell")
 		}
+		region, ok := mediaMapOverviewBucketBounds(fitted, r.BucketRow, r.BucketCol)
+		if !ok { return mediaExactTripMapDTO{}, fmt.Errorf("invalid trip display region") }
 		out.Items = append(out.Items, mediaPlaceDTO{
 			ID: fmt.Sprintf("trip-region:%d:%d", r.BucketRow, r.BucketCol),
 			Name: fmt.Sprintf("旅行照片区域 %d-%d", r.BucketRow+1, r.BucketCol+1),
 			Latitude: r.SampleLatitude, Longitude: r.SampleLongitude,
 			SampleLatitude: r.SampleLatitude, SampleLongitude: r.SampleLongitude,
-			CoordinateKind: "map_region_sample", ItemCount: r.ItemCount,
+			CoordinateKind: "map_region_sample", DisplayBounds: &region,
+			ItemCount: r.ItemCount,
 			CoverNodeID: r.CoverNodeID,
 		})
 		out.TotalPhotoCount += r.ItemCount
