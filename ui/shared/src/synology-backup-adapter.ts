@@ -1,4 +1,5 @@
 import type { XDriveSynologyNASShare } from './synology-nas-share-inventory'
+import { xDriveDSMSafeFailureCode } from './synology-dsm-auth-diagnostics'
 import type { XDriveDiagnosticReport } from './mui/DiagnosticsPage'
 import type { XDriveNoteSummary, XDriveNoteDetail, XDriveNoteVersion, XDriveNoteSource } from './mui/NotesPage'
 import type { XDriveFileTextPreview } from './file-preview'
@@ -762,7 +763,8 @@ function validateLocalBackupRemoval(raw: unknown, sourceID: number): XDriveLocal
   return value
 }
 
-/** Only an authenticated CGI rejection with explicit pre-commit proof. */
+// Only an authenticated CGI rejection with explicit pre-commit proof.
+
 export class XDriveDSMLoginNoCommitError extends Error {
   constructor() { super('DSM Server credentials rejected without Owner commit') }
 }
@@ -834,13 +836,11 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
           response.status === 422 && response.headers.get('X-XDrive-Login-No-Commit') === '1') {
         throw new XDriveDSMLoginNoCommitError()
       }
-      // Only these fixed, non-sensitive DSM CGI diagnostics are accepted.
-      // Never render arbitrary Agent or CGI response bodies in a browser.
-      const diagnostic = response.status === 503
-        ? response.headers.get('X-XDrive-DSM-Failure') : null
-      const reason = diagnostic && [
-        'agent-unavailable', 'server-connection-unavailable', 'nas-inventory-unavailable',
-      ].includes(diagnostic) ? ` [${diagnostic}]` : ''
+      // Fail-closed status-specific allowlist: never print untrusted headers,
+      // response bodies, identity, Agent details or URLs to the DSM browser.
+      const diagnostic = xDriveDSMSafeFailureCode(
+        response.status, response.headers.get('X-XDrive-DSM-Failure'))
+      const reason = diagnostic ? ` [${diagnostic}]` : ''
       throw new Error(`DSM backup request rejected (HTTP ${response.status})${reason}`)
     }
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/json')) {

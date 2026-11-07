@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { xDriveDSMAuthenticationFailureMessage } from '../synology-dsm-auth-diagnostics'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import type {
@@ -151,16 +152,15 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
       if (active) setSources(items)
     }).catch((failure: unknown) => {
       if (!active) return
-      // Keep all other failure classes (including 401/503) on the existing
-      // neutral error path. A 403 is only a possible first-install hint.
+      // Only a specifically verified principal denial may show admin
+      // authorization steps; a generic 403 may be unrelated CSRF rejection.
       const detail = failure instanceof Error ? failure.message : ''
-      setPrincipalDenied(detail === 'DSM backup request rejected (HTTP 403)')
-      if (detail.includes('HTTP 503) [agent-unavailable]')) {
+      const authFailure = xDriveDSMAuthenticationFailureMessage(failure)
+      setPrincipalDenied(detail.includes('HTTP 403) [dsm-principal-unapproved]'))
+      if (authFailure) {
+        setError('本机备份暂不可用：' + authFailure)
+      } else if (detail.includes('HTTP 503) [agent-unavailable]')) {
         setError('本机备份暂不可用：DSM CGI 无法连接 xdrive-agent。请在 DSM 套件中心检查 xdrivenas 是否正在运行，并检查 Agent 启动日志；这不是共享目录读取权限的证明。')
-      } else if (detail.includes('HTTP 401)')) {
-        setError('本机备份暂不可用：DSM 登录会话已失效。请重新登录 DSM 后刷新本页。')
-      } else if (detail.includes('HTTP 403)')) {
-        setError('本机备份暂不可用：当前 DSM 用户未通过套件界面授权；请按下方 NAS 首次授权说明检查。')
       } else if (detail.includes('HTTP 503)')) {
         setError('本机备份暂不可用：DSM 本机服务返回 HTTP 503。请检查 Agent/CGI 状态；暂不能据此判断 NAS 目录权限。')
       } else {
