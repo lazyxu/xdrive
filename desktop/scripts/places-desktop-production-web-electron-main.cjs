@@ -392,6 +392,27 @@ async function run(win){
     const preload=await win.webContents.executeJavaScript(
       'Boolean(window.xdriveDesktop?.agent && document.querySelector("[data-xdrive-places-index]"))')
     assert.equal(preload,true)
+    let realWebModeRoundTrip=false
+    if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===1){
+      stage='production-Web-prototype-isolated-prototype-mode-round-trip'
+      const select=async(mode)=>{
+        const moved=await attached.executeJavaScript(
+          '(() => {const b=document.querySelector("[data-xdrive-map-mode-'+mode+']");'+
+          'if(!b||b.disabled)return false;b.click();return true})()')
+        assert.equal(moved,true,'real Web mode control missing')
+        await until(async()=>{
+          try {
+            const value=await attached.executeJavaScript(
+              '('+inspectRealWebGuest.toString()+')()')
+            return value?.ready && value?.mapMode===mode &&
+              !value.login && !value.denied && value.url===origin
+          }catch{return false}
+        },50000,'same-Owner real production Web map mode '+mode)
+      }
+      await select('isolated')
+      await select('prototype')
+      realWebModeRoundTrip=true
+    }
     let nativeLogoutBlockedOldMap=false
     let oldMapHiddenAfterLogout=false
     if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===2){
@@ -444,7 +465,8 @@ async function run(win){
       exactFamily:media.family,exactFamilyFavorites:media.familyFavorites,
       exactViewerRange:media.viewerRange,viewerMetadata:media.viewerMetadata,
       noUnrelatedMapBearerAccess:media.mapRouteOnly,
-      thumbnailStatus:media.thumbnailStatus,viewerStatus:media.viewerStatus,nativeLogoutBlockedOldMap,oldMapHiddenAfterLogout
+      thumbnailStatus:media.thumbnailStatus,viewerStatus:media.viewerStatus,
+      realWebModeRoundTrip,nativeLogoutBlockedOldMap,oldMapHiddenAfterLogout
     }))
     app.exit(0)
   }catch(error){
