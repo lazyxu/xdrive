@@ -1,22 +1,6 @@
 /** Fixed CGI error labels only. Never accept a response body, username,
  * cookie, URI, Agent path, request header or arbitrary upstream diagnostic.
  */
-const dsmReasonByStatus: Readonly<Record<number, readonly string[]>> = {
-  401: ['dsm-session-rejected'],
-  403: ['dsm-principal-unapproved', 'dsm-authority-unavailable',
-    'dsm-csrf-rejected', 'dsm-request-invalid'],
-  503: [
-    'agent-unavailable', 'server-connection-unavailable', 'nas-inventory-unavailable',
-    'dsm-auth-environment', 'dsm-auth-timeout', 'dsm-auth-helper-failed',
-    'dsm-auth-response-invalid', 'dsm-auth-unavailable',
-  ],
-}
-
-export function xDriveDSMSafeFailureCode(status: number, header: string | null): string {
-  if (!header || !dsmReasonByStatus[status]?.includes(header)) return ''
-  return header
-}
-
 /** Shared DSM Backup, Source setup and NAS inventory diagnostics.
  * This is presentation only, never a fallback identity or Root permission.
  */

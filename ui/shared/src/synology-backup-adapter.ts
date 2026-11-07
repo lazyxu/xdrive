@@ -1,5 +1,4 @@
 import type { XDriveSynologyNASShare } from './synology-nas-share-inventory'
-import { xDriveDSMSafeFailureCode } from './synology-dsm-auth-diagnostics'
 import type { XDriveDiagnosticReport } from './mui/DiagnosticsPage'
 import type { XDriveNoteSummary, XDriveNoteDetail, XDriveNoteVersion, XDriveNoteSource } from './mui/NotesPage'
 import type { XDriveFileTextPreview } from './file-preview'
@@ -766,6 +765,25 @@ function validateLocalBackupRemoval(raw: unknown, sourceID: number): XDriveLocal
 /** Only an authenticated CGI rejection with explicit pre-commit proof. */
 export class XDriveDSMLoginNoCommitError extends Error {
   constructor() { super('DSM Server credentials rejected without Owner commit') }
+}
+
+// Transport-only allowlist lives in this zero-runtime-import adapter: many
+// existing DSM source/Owner tests load it with TypeScript+vm, intentionally
+// without a CommonJS require or any Node privileges.
+const dsmReasonByStatus: Readonly<Record<number, readonly string[]>> = {
+  401: ['dsm-session-rejected'],
+  403: ['dsm-principal-unapproved', 'dsm-authority-unavailable',
+    'dsm-csrf-rejected', 'dsm-request-invalid'],
+  503: [
+    'agent-unavailable', 'server-connection-unavailable', 'nas-inventory-unavailable',
+    'dsm-auth-environment', 'dsm-auth-timeout', 'dsm-auth-helper-failed',
+    'dsm-auth-response-invalid', 'dsm-auth-unavailable',
+  ],
+}
+
+export function xDriveDSMSafeFailureCode(status: number, header: string | null): string {
+  if (!header || !dsmReasonByStatus[status]?.includes(header)) return ''
+  return header
 }
 
 // Transport only. A DSM CGI backend authenticates every request and delegates

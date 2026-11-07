@@ -4,6 +4,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
+import ts from 'typescript'
+import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 const base = new URL('../../', import.meta.url)
 const read = p => fs.readFileSync(new URL(p, base), 'utf8')
@@ -68,7 +70,20 @@ console.log('DSM NAS share inventory uses one authenticated local Agent and no b
 const authSource = stripTypeScriptTypes(read(
   'ui/shared/src/synology-dsm-auth-diagnostics.ts'),{mode:'strip'})
 const auth = await import('data:text/javascript,'+encodeURIComponent(authSource))
-const code = auth.xDriveDSMSafeFailureCode
+// Execute the real DSM adapter in the same require-free VM used by the
+// existing storage, quota and Owner tests. Runtime imports would crash in
+// the production specialty suite before any DSM bundle could be built.
+const compiledAdapter = ts.transpileModule(adapter,{
+  fileName:'synology-backup-adapter.ts',
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+})
+assert.doesNotMatch(compiledAdapter.outputText,/require\(['"]\.\//,
+  'DSM transport gained a runtime module dependency outside its VM host')
+const sandboxExports={}
+const adapterSandbox={exports:sandboxExports,module:{exports:sandboxExports},URL,TextEncoder}
+vm.runInNewContext(compiledAdapter.outputText,adapterSandbox,{timeout:1000})
+const code = sandboxExports.xDriveDSMSafeFailureCode
+assert.equal(typeof code,'function')
 const hint = auth.xDriveDSMAuthenticationFailureMessage
 for(const [status,allowed] of [
   [401,['dsm-session-rejected']],
