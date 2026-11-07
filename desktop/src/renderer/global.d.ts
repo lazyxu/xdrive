@@ -1170,6 +1170,12 @@ declare global {
         cloudVersions: (nodeID: number) => Promise<DesktopResult<AgentCloudVersion[]>>
         cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudShares: (nodeID: number) => Promise<DesktopResult<AgentCloudShare[]>>
+        cloudClipboardVault: () => Promise<DesktopResult<AgentClipboardVault>>
+        cloudClipboardCheck: (value: AgentClipboardCheck) => Promise<DesktopResult<AgentClipboardVault>>
+        cloudClipboardList: (before: number) => Promise<DesktopResult<AgentClipboardPage>>
+        cloudClipboardCreate: (value: AgentClipboardWrite) => Promise<DesktopResult<AgentClipboardItem>>
+        cloudClipboardDelete: (id: number) => Promise<DesktopResult<void>>
+        cloudClipboardClear: () => Promise<DesktopResult<void>>
         cloudNotesInitialize: () => Promise<DesktopResult<AgentNotesNamespace>>
         cloudNotesList: (source: AgentNotesSource, query: string, offset: number) => Promise<DesktopResult<AgentNotesPage>>
         cloudNotesRead: (id: string) => Promise<DesktopResult<AgentNotesDetail>>
