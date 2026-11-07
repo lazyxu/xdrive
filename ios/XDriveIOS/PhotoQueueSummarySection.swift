@@ -98,6 +98,37 @@ struct XDriveIOSPhotoQueueSummarySection: View {
 }
 
 
+/// A visible-only 56px thumbnail, never a full-resolution PhotoKit export.
+/// An iCloud-only item stays a neutral placeholder until explicitly reviewed.
+private struct XDriveIOSNativePhotoTaskThumbnail: View {
+    let localIdentifier: String
+    @StateObject private var loader = XDriveIOSPhotoImageLoader()
+
+    var body: some View {
+        Group {
+            if let image = loader.image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Rectangle()
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                    .overlay {
+                        Image(systemName: loader.isLoading ? "clock" : "photo")
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+        .frame(width: 56, height: 56)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .task(id: localIdentifier) {
+            loader.load(localIdentifier, size: CGSize(width: 128, height: 128),
+                        allowICloud: false)
+        }
+        .onDisappear { loader.cancel() }
+    }
+}
+
 /// Shared native task-sheet for the Gallery and Backup screen. Change-queue
 /// pages are exact-revision SQLite metadata; Library pages are read-only
 /// PhotoKit windows. Neither mode can label an unverified Node as backed up.
@@ -136,7 +167,7 @@ struct XDriveIOSNativePhotoBackupTaskList: View {
                             ForEach(XDriveIOSNativePhotoTaskListModel.Filter.allCases) { option in
                                 Button(option.title) { filter = option }
                                     .buttonStyle(.bordered)
-                                    .tint(filter == option ? .accentColor : .secondary)
+                                    .tint(filter == option ? Color.accentColor : Color.gray)
                             }
                         }
                         .padding(.horizontal, 12)
@@ -165,9 +196,13 @@ struct XDriveIOSNativePhotoBackupTaskList: View {
                 List {
                     ForEach(model.rows) { item in
                         HStack(alignment: .center, spacing: 10) {
-                            Image(systemName: item.typeLabel == "视频" ? "video" :
-                                  item.typeLabel == "实况照片" ? "livephoto" : "photo")
-                                .frame(width: 30)
+                            if item.localAvailable {
+                                XDriveIOSNativePhotoTaskThumbnail(localIdentifier: item.id)
+                            } else {
+                                Image(systemName: "photo.badge.exclamationmark")
+                                    .frame(width: 56, height: 56)
+                                    .foregroundStyle(.secondary)
+                            }
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.typeLabel)
                                 if let date = item.date {
@@ -181,7 +216,7 @@ struct XDriveIOSNativePhotoBackupTaskList: View {
                                 ) {
                                     Label(badge.title, systemImage: badge.symbol)
                                         .font(.caption)
-                                        .accessibilityHint(badge.explanation)
+                                        .accessibilityHint(Text(badge.explanation))
                                 } else if item.state == "missingLocal" {
                                     Label("本机已删除", systemImage: "trash")
                                         .font(.caption)
