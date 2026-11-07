@@ -176,13 +176,13 @@ class DownloadTests(unittest.TestCase):
             self.assertEqual(fetch_models.download_urls(other), [other])
 
     def test_opencv_zoo_models_prefer_hf_mirror_with_pinned_origin_fallback(self):
-        url = fetch_models.ZOO_MEDIA + "/models/text_recognition_crnn/text_recognition_CRNN_CN_2021nov.onnx"
+        url = fetch_models.ZOO_MEDIA + "/models/text_detection_ppocr/text_detection_cn_ppocrv3_2023may.onnx"
         with mock.patch.dict(os.environ, {"HF_ENDPOINT": "https://hf-mirror.example/"}):
             self.assertEqual(fetch_models.download_urls(url), [
                 "https://hf-mirror.example/opencv/opencv_zoo/resolve/main/models/"
-                "text_recognition_crnn/text_recognition_CRNN_CN_2021nov.onnx", url,
+                "text_detection_ppocr/text_detection_cn_ppocrv3_2023may.onnx", url,
             ])
-            original_license = fetch_models.ZOO_RAW + "/models/text_recognition_crnn/LICENSE"
+            original_license = fetch_models.ZOO_RAW + "/models/text_detection_ppocr/LICENSE"
             self.assertEqual(fetch_models.download_urls(original_license), [original_license])
 
     def test_trickling_mirror_exceeds_wall_budget_and_falls_back(self):
@@ -272,14 +272,15 @@ class ModelBundleTests(unittest.TestCase):
         self.enterContext(mock.patch.object(fetch_models, "FILES", [fixture_model]))
         self.enterContext(mock.patch.object(fetch_models, "LICENSES", [fixture_license]))
         self.enterContext(mock.patch.object(fetch_models, "IMAGENET_LABELS_SHA256", hashlib.sha256(labels).hexdigest()))
-        self.enterContext(mock.patch.object(fetch_models, "CRNN_CHARSET_SHA256", hashlib.sha256(charset).hexdigest()))
-        for name, data in {"model.onnx": model, "imagenet1k_labels.txt": labels, "crnn_cn_charset.txt": charset}.items():
+        self.enterContext(mock.patch.object(fetch_models, "PPOCR_CHARSET_SHA256", hashlib.sha256(charset).hexdigest()))
+        for name, data in {"model.onnx": model, "imagenet1k_labels.txt": labels, "ppocrv5_rec_charset.json": charset}.items():
             (self.model_dir / name).write_bytes(data)
         (self.license_dir / "LICENSE.txt").write_bytes(license_text)
         provenance = (
             "Pinned models used by xDrive Photo Intelligence\n"
             "repository: https://github.com/opencv/opencv_zoo\n"
             f"opencv_zoo_commit: {fetch_models.OPENCV_ZOO_COMMIT}\n"
+            f"ppocr_rec_commit: {fetch_models.PPOCR_REC_COMMIT}\n"
             f"siglip_onnx_commit: {fetch_models.SIGLIP_ONNX_COMMIT}\n"
             f"siglip_tokenizer_commit: {fetch_models.SIGLIP_TOKENIZER_COMMIT}\n\n"
             f"model.onnx\nsha256: {fixture_model['sha256']}\nsize: {len(model)}\n"
@@ -288,7 +289,7 @@ class ModelBundleTests(unittest.TestCase):
         args = [str(self.model_dir), str(self.license_dir), "--verify-only"]
         with mock.patch.object(fetch_models.urllib.request, "urlopen", side_effect=AssertionError("offline verifier tried network")):
             self.assertEqual(fetch_models.main(args), 0)
-            for path in [self.model_dir / "model.onnx", self.model_dir / "imagenet1k_labels.txt", self.model_dir / "crnn_cn_charset.txt", self.license_dir / "LICENSE.txt", self.license_dir / "OPENCV_ZOO_SOURCE.txt"]:
+            for path in [self.model_dir / "model.onnx", self.model_dir / "imagenet1k_labels.txt", self.model_dir / "ppocrv5_rec_charset.json", self.license_dir / "LICENSE.txt", self.license_dir / "OPENCV_ZOO_SOURCE.txt"]:
                 original = path.read_bytes()
                 path.write_bytes(b"corrupt cached bytes")
                 with self.subTest(path=path.name), self.assertRaises(RuntimeError):

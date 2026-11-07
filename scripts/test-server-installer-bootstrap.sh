@@ -196,6 +196,15 @@ fi
 grep -q "XD_HTTPS_PORT=8443" "$TMP/config-ok/config/.env"
 grep -q '^XD_LAN_HTTPS_IP=192.168.2.4$' "$TMP/config-ok/config/.env"
 grep -q '^XD_WEB_BIND=127.0.0.1$' "$TMP/config-ok/config/.env"
+# Dormant model clients must be ready before a future audited enable. No
+# profile/container is started by provisioning these private credentials.
+grep -q '^COMPOSE_PROFILES=$' "$TMP/config-ok/config/.env"
+grep -q '^XD_PHOTO_FACE_MEMORY_LIMIT=2g$' "$TMP/config-ok/config/.env"
+grep -Fxq 'XD_PHOTO_FACE_ANALYZER_SOCKET=/run/xdrive-photo-face/photo-face.sock' "$TMP/config-ok/config/.env"
+grep -Eq '^XD_PHOTO_FACE_ANALYZER_TOKEN=[0-9a-f]{64}$' "$TMP/config-ok/config/.env"
+grep -Eq '^XD_PHOTO_HOST_APPLY_TOKEN=[0-9a-f]{64}$' "$TMP/config-ok/config/.env"
+test "$(grep '^XD_PHOTO_FACE_ANALYZER_TOKEN=' "$TMP/config-ok/config/.env" | cut -d= -f2-)" != \
+  "$(grep '^XD_PHOTO_HOST_APPLY_TOKEN=' "$TMP/config-ok/config/.env" | cut -d= -f2-)"
 
 # A noninteractive fresh host without a trusted/private identity must NOT
 # silently fall back to plaintext HTTP login merely to pass a bootstrap test.

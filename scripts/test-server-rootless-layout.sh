@@ -123,7 +123,11 @@ grep -Fq "XD_CADDY_DATA_DIR=$ROOTLESS_HOME/data/caddy/data" "$ENV"
 grep -Fq "XD_CADDY_CONFIG_DIR=$ROOTLESS_HOME/data/caddy/config" "$ENV"
 grep -Fq "XD_PHOTO_FACE_RUNTIME_DIR=$ROOTLESS_HOME/state/photo-face" "$ENV"
 grep -q '^COMPOSE_PROFILES=$' "$ENV"
-grep -q '^XD_PHOTO_FACE_ANALYZER_SOCKET=$' "$ENV"
+# Installer preconfigures private model-client credentials without activating
+# the optional photo-intelligence runtime. Keep the disabled profile check.
+grep -q '^XD_PHOTO_FACE_ANALYZER_SOCKET=/run/xdrive-photo-face/photo-face.sock$' "$ENV"
+grep -Eq '^XD_PHOTO_FACE_ANALYZER_TOKEN=[0-9a-f]{64}$' "$ENV"
+grep -Eq '^XD_PHOTO_HOST_APPLY_TOKEN=[0-9a-f]{64}$' "$ENV"
 test -d "$ROOTLESS_HOME/state/photo-face"
 
 for dir in config bin data backups/snapshots backups/pre-upgrade backups/pre-restore logs state; do

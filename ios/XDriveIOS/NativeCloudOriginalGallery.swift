@@ -1223,7 +1223,11 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             .toolbar(showChrome ? .visible : .hidden, for: .navigationBar)
             .sheet(isPresented: $showingMediaInfo) {
                 if currentOwnerAuthorized {
-                    XDriveIOSNativeViewerInfoSheet(details: mediaInfoDetails)
+                    XDriveIOSNativeViewerInfoSheet(details: mediaInfoDetails,
+                        ocr: viewed.isVideo ? nil : XDriveIOSNativeCloudOCRView(
+                            login: login, owner: presentingOwner,
+                            target: .init(id: viewed.id, revision: viewed.revision,
+                                name: viewed.name, size: viewed.size)))
                 }
             }
             .alert("保存到 iOS 照片", isPresented: $showsPhotoRestoreNotice) {
