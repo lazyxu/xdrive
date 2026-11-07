@@ -75,13 +75,13 @@ func (s *Server) queryMediaExactTripMap(
 	}
 	latCell, lonCell := mediaExactTripPlaceExpressions()
 	type row struct {
-		LatitudeCell   int64      `gorm:"column:latitude_cell"`
-		LongitudeCell  int64      `gorm:"column:longitude_cell"`
-		SampleLatitude float64    `gorm:"column:sample_latitude"`
-		SampleLongitude float64   `gorm:"column:sample_longitude"`
-		ItemCount      int64      `gorm:"column:item_count"`
-		CoverNodeID    *uint64    `gorm:"column:cover_node_id"`
-		UpdatedAt      *time.Time `gorm:"column:updated_at"`
+		LatitudeCell    int64      `gorm:"column:latitude_cell"`
+		LongitudeCell   int64      `gorm:"column:longitude_cell"`
+		SampleLatitude  float64    `gorm:"column:sample_latitude"`
+		SampleLongitude float64    `gorm:"column:sample_longitude"`
+		ItemCount       int64      `gorm:"column:item_count"`
+		CoverNodeID     *uint64    `gorm:"column:cover_node_id"`
+		UpdatedAt       *time.Time `gorm:"column:updated_at"`
 	}
 	var rows []row
 	err = query.Session(&gorm.Session{}).
