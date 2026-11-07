@@ -300,7 +300,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const loadDrawerMore = () => {
     const state=activeDrawer, approved=acceptedScope.current
     if (!state || state.phase!=='ready' || state.loadingMore ||
-        state.items.length>=state.total || drawerFetch.current ||
+        state.loadedDepth>=state.total || drawerFetch.current ||
         !approved || approved.key!==filterRef.current.key ||
         !hasAcceptedCell(state.selection)) return
     const preview=previewPort.current
@@ -361,7 +361,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // Owner Cell page; SDK map data never authorizes media or thumbnails.
   const loadDrawerWindow = (visibleStart:number,visibleEnd:number) => {
     const state=activeDrawer,approved=acceptedScope.current
-    if (!state || state.phase!=='ready' || state.loadingMore ||
+    if (!state || state.phase!=='ready' || state.loadingMore || state.pageError ||
         drawerFetch.current || !approved ||
         approved.key!==filterRef.current.key ||
         !hasAcceptedCell(state.selection)) return
