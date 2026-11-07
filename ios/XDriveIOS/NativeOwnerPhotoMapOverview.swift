@@ -25,6 +25,16 @@ struct XDriveIOSNativeOwnerMapOverview: Decodable {
     let total_photo_count: Int
     let trip_photo_count: Int?
     let aggregated: Bool
+
+    // Keep non-trip DTO construction source-compatible while trip responses
+    // carry an independently authenticated full-trip count.
+    init(items: [XDriveIOSNativeOwnerMapFacet], total_photo_count: Int,
+         aggregated: Bool, trip_photo_count: Int? = nil) {
+        self.items = items
+        self.total_photo_count = total_photo_count
+        self.trip_photo_count = trip_photo_count
+        self.aggregated = aggregated
+    }
 }
 
 /// Never mistake an aggregate cell center for the representative photo's GPS.
