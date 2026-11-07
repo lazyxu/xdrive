@@ -75,7 +75,8 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(yikeCreate.Body.Bytes(), &yikeManaged); err != nil {
 		t.Fatal(err)
 	}
-	if yikeManaged.TargetNodeID != nil || yikeManaged.TargetPath != "" ||
+	if yikeManaged.TargetNodeID == nil || *yikeManaged.TargetNodeID == 0 ||
+		!yikeManaged.TargetManaged || yikeManaged.TargetPath != "同步文件夹/Pull/Yike Photos/Yike managed" ||
 		yikeManaged.Status != meta.SourceStatusPaused || yikeManaged.Revision != 1 ||
 		yikeManaged.ScheduleType != "manual" || yikeManaged.ScheduleExpression != "" || yikeManaged.ScheduleTimezone != "" {
 		t.Fatalf("unexpected managed Yike source: %+v", yikeManaged)
@@ -130,11 +131,10 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(localCreate.Body.Bytes(), &localCreated); err != nil {
 		t.Fatal(err)
 	}
-	deviceFolder := "Source test Desktop_" + strings.ReplaceAll(enrollment.Device.ID, "-", "")[:12]
 	if localCreated.ID == 0 || localCreated.Kind != meta.SourceKindLocalFolder ||
 		localCreated.Direction != meta.SourceDirectionPush || localCreated.Status != meta.SourceStatusPaused ||
 		localCreated.Revision != 1 || localCreated.TargetNodeID == nil || *localCreated.TargetNodeID == targetA.ID ||
-		localCreated.TargetPath != "同步文件夹/Push/"+deviceFolder+"/Local Desktop Files" {
+		!localCreated.TargetManaged || localCreated.TargetPath != "同步文件夹/Push/Local Desktop Files" {
 		t.Fatalf("local folder must start paused in a dedicated server-managed target: %+v", localCreated)
 	}
 	var localStored meta.Source

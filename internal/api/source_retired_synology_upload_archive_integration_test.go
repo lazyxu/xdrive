@@ -66,7 +66,7 @@ func TestRetiredSynologyPushArchiveDoesNotWaitForUnresumableSession(t *testing.T
 	if err := db.First(&kept, original.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.First(&oldSession, session.ID).Error; err != nil {
+	if err := db.Where("id = ?", session.ID).First(&oldSession).Error; err != nil {
 		t.Fatal(err)
 	}
 	if after.Status != meta.SourceStatusArchived || after.Revision != 2 ||
