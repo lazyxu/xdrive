@@ -3811,7 +3811,6 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func reload(resetOffset: Bool = false) {
         cancelSelectAllRead()
-        cancelArrangementReanchor()
         selectAllNotice = nil
         clearInternalDrag()
         pendingDrop = nil
@@ -3821,6 +3820,9 @@ struct XDriveIOSNativeFilesBrowser: View {
         selectedSnapshots.removeAll()
         batchExport.invalidate()
         batchTarget.invalidate()
+        // Keep pre-existing selection/transfer retirement atomic before
+        // cancelling the new asynchronous arrangement-position read.
+        cancelArrangementReanchor()
         batchDestinationIntent = nil
         if resetOffset {
             offset = 0
