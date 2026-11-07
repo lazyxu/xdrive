@@ -62,7 +62,9 @@ test('native safe-area editing toolbar retains bounded explicit export and clean
   assert.match(browser, /Button\("删除临时下载文件"\)/)
   assert.match(browser, /native-ios-files-batch-toolbar/)
   assert.match(browser, /native-ios-files-batch-more/)
-  assert.match(browser, /if !batchExport\.prepared\.isEmpty \{\s*Button \{\s*showingBatchShare = true/)
+  // The new direct-action dock groups export and cleanup within one HStack.
+  // Require the same gated staged-original share action, not the old layout.
+  assert.match(browser, /if !batchExport\.prepared\.isEmpty \{\s*HStack\(spacing: 16\) \{\s*Button \{\s*showingBatchShare = true/)
   assert.match(browser, /Label\("导出", systemImage: "square\.and\.arrow\.up"\)/)
   assert.match(browser, /native-ios-files-batch-share-toolbar/)
   assert.match(browser, /native-ios-files-batch-discard-toolbar/)
