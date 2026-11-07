@@ -413,6 +413,7 @@ async function run(win){
       await select('prototype')
       realWebModeRoundTrip=true
     }
+    let legacyServerFailedClosed=false
     let browserLogoutRecovered=false
     if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===1){
       stage='production-Desktop-recover-after-browser-Cookie-revocation'
@@ -431,12 +432,25 @@ async function run(win){
       const noNestedLogin=await win.webContents.executeJavaScript(
         '!Boolean(document.querySelector("#web-login-username"))')
       assert.equal(noNestedLogin,true,'unexpected nested Web login')
-      const retry=await win.webContents.executeJavaScript(
+      const clickTrustedRetry=()=>win.webContents.executeJavaScript(
         '(() => {const p=document.querySelector("[data-xdrive-desktop-places-shared-web]");'+
         'const b=[...(p?.querySelectorAll("button")||[])].find(x=>'+
         'x.textContent?.includes("重试 Web 地图"));'+
         'if(!b)return false;b.click();return true})()')
-      assert.equal(retry,true,'native-safe map retry unavailable')
+      const fs=require('node:fs')
+      const legacyMarker=process.env.XD_DESKTOP_PLACES_LEGACY_MARKER
+      assert.ok(legacyMarker,'old-Server test marker missing')
+      fs.writeFileSync(legacyMarker,'old-server',{mode:0o600})
+      assert.equal(await clickTrustedRetry(),true,
+        'native-safe map retry unavailable for legacy Server')
+      await until(async()=>{
+        try{return await win.webContents.executeJavaScript(
+          'Boolean(document.querySelector("[data-xdrive-desktop-places-native-reauth]"))'
+        )}catch{return false}
+      },30000,'old Server must show trusted Desktop fallback')
+      fs.rmSync(legacyMarker,{force:true})
+      legacyServerFailedClosed=true
+      assert.equal(await clickTrustedRetry(),true,'map retry after Server capability restored missing')
       const recovered=await until(async()=>{
         if(!guest||guest.isDestroyed())return null
         try{
@@ -502,7 +516,8 @@ async function run(win){
       exactViewerRange:media.viewerRange,viewerMetadata:media.viewerMetadata,
       noUnrelatedMapBearerAccess:media.mapRouteOnly,
       thumbnailStatus:media.thumbnailStatus,viewerStatus:media.viewerStatus,
-      realWebModeRoundTrip,browserLogoutRecovered,nativeLogoutBlockedOldMap,oldMapHiddenAfterLogout
+      realWebModeRoundTrip,legacyServerFailedClosed,browserLogoutRecovered,
+      nativeLogoutBlockedOldMap,oldMapHiddenAfterLogout
     }))
     app.exit(0)
   }catch(error){
