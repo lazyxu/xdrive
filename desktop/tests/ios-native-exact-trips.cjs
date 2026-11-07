@@ -7,6 +7,7 @@ const read = file => fs.readFileSync(path.resolve(__dirname, '../..', file), 'ut
 const policy = read('ios/XDriveIOS/NativeExactTripPolicy.swift')
 const reader = read('ios/XDriveIOS/NativeServerMediaGalleryTransport.swift')
 const server = read('internal/api/media_trip_exact.go')
+const multicity = read('internal/api/media_trip_exact_multicity.go')
 const route = read('internal/api/router.go')
 const workflow = read('.github/workflows/ios-unsigned-ipa.yml')
 const ui = read('ios/XDriveIOS/NativeExactTripGallery.swift')
@@ -61,7 +62,7 @@ test('Server v2 trip list, current Owner range and route use one exact GPS-cell 
   assert.match(server, /s\.mediaItemsBaseQuery\(ctx, ownerID, mediaQueryOptions\{\}, ""\)/)
   assert.match(server, /mediaExactTripAwayPredicate\(/)
   assert.match(server, /verifyMediaExactTripMembership\(/)
-  assert.match(server, /CASE WHEN xd_media_metadata\.longitude = 180 THEN -180/)
+  assert.match(multicity, /CASE WHEN xd_media_metadata\.longitude = 180 THEN -180/)
   assert.match(server, /mediaMemoryLocalMidnight\(value, location\)/)
   assert.match(server, /mediaMemoryLocalMidnight\(value\.AddDate\(0, 0, 1\), location\)/)
   // The current-Owner resolver is shared between trip map and photo Range.
