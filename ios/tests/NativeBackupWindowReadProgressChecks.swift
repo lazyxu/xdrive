@@ -27,6 +27,21 @@ struct NativeBackupWindowReadProgressChecks {
         precondition(active?.unsupported == 1)
         precondition(active?.fractionScanned == 20.0 / 256.0)
 
+        // Auto-incremental work may confirm a queued original before the
+        // positional scanner has read even one slot. The queue-inclusive
+        // counters must NOT be passed into this read-only window validator.
+        let queueAheadWindow = Policy.current(
+            totalVisible: 300, startOffset: 0, scanned: 0,
+            uploaded: 0, verifiedAlready: 0, unavailable: 0,
+            needsReview: 0, unsupported: 0
+        )
+        precondition(queueAheadWindow?.fractionScanned == 0)
+        precondition(Policy.current(
+            totalVisible: 300, startOffset: 0, scanned: 0,
+            uploaded: 1, verifiedAlready: 0, unavailable: 0,
+            needsReview: 0, unsupported: 0
+        ) == nil)
+
         // Last authorized range is smaller, and 100% READ is not 100%
         // BACKED UP when an iCloud-only original is inaccessible.
         let last = Policy.current(
