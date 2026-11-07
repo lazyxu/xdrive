@@ -413,6 +413,42 @@ async function run(win){
       await select('prototype')
       realWebModeRoundTrip=true
     }
+    let browserLogoutRecovered=false
+    if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===1){
+      stage='production-Desktop-recover-after-browser-Cookie-revocation'
+      const status=await attached.executeJavaScript(
+        '(async()=>{const r=await fetch("/api/v1/auth/browser/logout",'+
+        '{method:"POST",credentials:"same-origin",redirect:"error",'+
+        'headers:{"X-XDrive-Browser-Owner":"production-map-owner"}});'+
+        'return r.status})()')
+      assert.ok(status>=200&&status<300,'browser Cookie revocation failed')
+      await attached.reload()
+      await until(async()=>{
+        try{return await win.webContents.executeJavaScript(
+          'Boolean(document.querySelector("[data-xdrive-desktop-places-native-reauth]"))'
+        )}catch{return false}
+      },45000,'expired map Cookie must offer trusted Desktop reauthentication')
+      const noNestedLogin=await win.webContents.executeJavaScript(
+        '!Boolean(document.querySelector("#web-login-username"))')
+      assert.equal(noNestedLogin,true,'unexpected nested Web login')
+      const retry=await win.webContents.executeJavaScript(
+        '(() => {const p=document.querySelector("[data-xdrive-desktop-places-shared-web]");'+
+        'const b=[...(p?.querySelectorAll("button")||[])].find(x=>'+
+        'x.textContent?.includes("重试 Web 地图"));'+
+        'if(!b)return false;b.click();return true})()')
+      assert.equal(retry,true,'native-safe map retry unavailable')
+      const recovered=await until(async()=>{
+        if(!guest||guest.isDestroyed())return null
+        try{
+          const v=await guest.executeJavaScript(
+            '('+inspectRealWebGuest.toString()+')()')
+          return v?.ready&&!v.denied&&!v.login&&v.url===origin?v:null
+        }catch{return null}
+      },70000,'same Owner native Agent map session regrant')
+      assert.equal(recovered.guestBridge,'object')
+      assert.equal(recovered.hasNativeAgent,'undefined')
+      browserLogoutRecovered=true
+    }
     let nativeLogoutBlockedOldMap=false
     let oldMapHiddenAfterLogout=false
     if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===2){
@@ -466,7 +502,7 @@ async function run(win){
       exactViewerRange:media.viewerRange,viewerMetadata:media.viewerMetadata,
       noUnrelatedMapBearerAccess:media.mapRouteOnly,
       thumbnailStatus:media.thumbnailStatus,viewerStatus:media.viewerStatus,
-      realWebModeRoundTrip,nativeLogoutBlockedOldMap,oldMapHiddenAfterLogout
+      realWebModeRoundTrip,browserLogoutRecovered,nativeLogoutBlockedOldMap,oldMapHiddenAfterLogout
     }))
     app.exit(0)
   }catch(error){
