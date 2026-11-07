@@ -1556,6 +1556,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     DatePicker("拍摄日期", selection: $requestedCaptureDay,
                                displayedComponents: .date)
                         .datePickerStyle(.graphical)
+                    Button("显示选择日期所在年份") {
+                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(
+                            Calendar.current.component(.year, from: requestedCaptureDay)))
+                        datePickerOpen = false
+                    }
+                    .accessibilityIdentifier("native-ios-map-selected-year")
                 }
                 .navigationTitle("选择地图日期")
                 .toolbar {
