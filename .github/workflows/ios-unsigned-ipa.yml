@@ -119,6 +119,17 @@ jobs:
           set -euo pipefail
           node --test desktop/tests/ios-native-notes-route.cjs
 
+      # Compile and run real production CryptoKit/CommonCrypto, not just a
+      # source-text assertion. Keep the non-secret fixture identical to Web and JVM.
+      - name: Verify iOS Clipboard PBKDF2 and AES-GCM Web interoperability
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeClipboardCrypto.swift \
+            ios/tests/NativeClipboardCryptoChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-clipboard-interop"
+          "$RUNNER_TEMP/xdrive-ios-clipboard-interop"
+
       - name: Verify bounded iOS PhotoKit scan-window math
         run: |
           set -euo pipefail
