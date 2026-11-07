@@ -58,6 +58,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   listOwnerCells,
   listOwnerCellItems,
   loadThumbnail,
+  photoTileMinWidth = 108,
   loadPreviewURL,
   saveVideoPoster,
   edgeToEdge = false,
@@ -87,6 +88,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     limit: number, offset: number, sort: XDriveBaiduCellRangeSort,
     signal: AbortSignal) => Promise<import('../models').MediaItemRange>
   loadThumbnail?: MediaThumbnailLoader
+  photoTileMinWidth?: number
   loadPreviewURL?: import('./MediaGallery').MediaPreviewURLLoader
   saveVideoPoster?: import('./MediaGallery').MediaVideoPosterSaver
   edgeToEdge?: boolean
@@ -1212,6 +1214,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             loadingMore={activeDrawer.loadingMore} pageError={activeDrawer.pageError}
             initialPresentation={activeDrawer.returnPresentation}
             loadThumbnail={loadThumbnail}
+            photoTileMinWidth={photoTileMinWidth}
             onClose={() => { pendingResizeDrawer.current=null;closeDrawer() }}
             onExpand={expanded => setDrawer(current => current
               ? {...current,expanded} : current)}
