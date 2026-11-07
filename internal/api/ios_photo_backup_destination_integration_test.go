@@ -100,7 +100,7 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 		result.DeviceID != device.ID || result.Name != "我的照片" {
 		t.Fatalf("server did not create an exact managed destination: %+v", result)
 	}
-	expectedPath := "同步文件夹/Push/我的照片"
+	expectedPath := "同步文件夹/Push/" + managedPushDeviceFolderName(device) + "/我的照片"
 	if result.TargetPath != expectedPath {
 		t.Fatalf("server-managed target path mismatch: got %q want %q", result.TargetPath, expectedPath)
 	}
@@ -130,7 +130,7 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 	}
 	renamed := read(http.MethodPut, ownerToken, `{"name":"新版照片"}`, http.StatusOK, headers)
 	if renamed.TargetNodeID != result.TargetNodeID || renamed.SourceID != result.SourceID ||
-		renamed.TargetPath != "同步文件夹/Push/新版照片" {
+		renamed.TargetPath != "同步文件夹/Push/"+managedPushDeviceFolderName(device)+"/新版照片" {
 		t.Fatalf("rename changed Source/Node IDs or used a fake path: %+v", renamed)
 	}
 	var node meta.Node

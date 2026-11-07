@@ -12,7 +12,7 @@ class NativePhotoManagedDestinationTest {
         "00000000-0000-4000-8000-000000000111", "A".repeat(43), "Pixel", "0.1")
     private val endpoint = "/api/v1/android/photos/backup-destination"
     private val unconfigured = """{"configured":false,"device_id":"00000000-0000-4000-8000-000000000111","suggested_name":"Pixel"}"""
-    private val configured = """{"configured":true,"device_id":"00000000-0000-4000-8000-000000000111","source_id":19,"source_revision":2,"name":"Android 相册","target_node_id":120,"target_path":"同步文件夹/Push/Android 相册"}"""
+    private val configured = """{"configured":true,"device_id":"00000000-0000-4000-8000-000000000111","source_id":19,"source_revision":2,"name":"Android 相册","target_node_id":120,"target_path":"同步文件夹/Push/Pixel_00000000-0000-4000-8000-000000000111/Android 相册"}"""
 
     @Test fun currentDeviceOnlyCanReadAndExplicitlyConfigure(): Unit = runBlocking {
         MockWebServer().use { server ->
@@ -38,7 +38,7 @@ class NativePhotoManagedDestinationTest {
                 assertEquals(19L, added.sourceId)
                 assertEquals(2L, added.sourceRevision)
                 assertEquals(120L, added.targetNodeId)
-                assertEquals("同步文件夹/Push/Android 相册", added.targetPath)
+                assertEquals("同步文件夹/Push/Pixel_00000000-0000-4000-8000-000000000111/Android 相册", added.targetPath)
                 val put = server.takeRequest()
                 assertEquals("PUT", put.method)
                 assertEquals(endpoint, put.path)
@@ -58,7 +58,7 @@ class NativePhotoManagedDestinationTest {
     @Test fun failedOrForgedResponseCannotAuthorizeAnotherOwnerOrRoot(): Unit = runBlocking {
         val invalid = listOf(
             unconfigured.replace(device.deviceId, "00000000-0000-4000-8000-000000000112"),
-            configured.replace("同步文件夹/Push/Android 相册", "用户根目录/Android 相册"),
+            configured.replace("同步文件夹/Push/Pixel_00000000-0000-4000-8000-000000000111/Android 相册", "用户根目录/Android 相册"),
             configured.replace("120", "0"),
             configured.replace("19", "0"),
             configured.replace("true", "false"),

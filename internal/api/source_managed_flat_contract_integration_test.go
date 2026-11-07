@@ -17,7 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
+func TestManagedTargetDeviceGroupedPushPullNamespacesAndProviderIdentity(t *testing.T) {
 	db, server, owner, other, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.SyncRun{}); err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
 	}
 	push := create(token, `{"name":"相同名称","kind":"local_folder","direction":"push"}`,
 		http.StatusCreated, headers)
-	if push.TargetPath != "同步文件夹/Push/相同名称" || push.DeviceID != device.ID ||
+	if push.TargetPath != "同步文件夹/Push/"+managedPushDeviceFolderName(device)+"/相同名称" || push.DeviceID != device.ID ||
 		*push.TargetNodeID == *yike.TargetNodeID {
 		t.Fatalf("Push/Pull must be separate namespaces and nodes: push=%+v pull=%+v", push, yike)
 	}
@@ -130,14 +130,19 @@ func TestManagedTargetFlatPushPullNamespacesAndProviderIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if pushLeaf.ParentID == nil {
-		t.Fatal("flat Push leaf has no parent")
+		t.Fatal("device-grouped Push leaf has no parent")
 	}
 	var pushParent meta.Node
 	if err := db.First(&pushParent, *pushLeaf.ParentID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if pushParent.Name != "Push" {
-		t.Fatalf("Push leaf has an unexpected extra DeviceID ancestor: %+v", pushParent)
+	if pushParent.Name != managedPushDeviceFolderName(device) || pushParent.ParentID == nil {
+		t.Fatalf("Push leaf was not placed below its pinned Device ID ancestor: %+v", pushParent)
+	}
+	var fixedPush meta.Node
+	if err := db.First(&fixedPush, *pushParent.ParentID).Error; err != nil ||
+		fixedPush.Name != "Push" {
+		t.Fatalf("Push device group is outside the managed namespace: %+v err=%v", fixedPush, err)
 	}
 	ordinary := createFilePropertiesDir(t, db, owner.ID, pushParent.ID, "已有普通目录")
 	create(token, `{"name":"已有普通目录","kind":"local_folder","direction":"push"}`,

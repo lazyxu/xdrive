@@ -167,7 +167,7 @@ internal fun NativePhotoBatchControls(
                             .testTag("native-photo-batch-register-device"),
                     ) { Text("登记或核验本机备份设备") }
                     Text(if (state.nativePhotoTargetConfigured)
-                        "托管备份目录：同步文件夹/Push/" + state.nativePhotoTargetName
+                        "托管备份来源：" + state.nativePhotoTargetName + "（设备专属目录）"
                         else "托管备份目录尚未配置；不允许向账户根目录增量备份。",
                         modifier = Modifier.testTag("native-photo-managed-target-status"))
                     OutlinedButton(

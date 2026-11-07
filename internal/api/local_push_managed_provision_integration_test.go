@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -73,11 +74,11 @@ func TestLocalPushAutoManagedTargetAndDraftCancellation(t *testing.T) {
 	create("不能接管其他用户", root.ID+999999999, deviceA, secretA, http.StatusBadRequest)
 	create("不可认领普通目录", oldFolder.ID, deviceA, secretA, http.StatusBadRequest)
 	sourceA := create("本机照片", 0, deviceA, secretA, http.StatusCreated)
-	expected := "同步文件夹/Push/本机照片"
+	expected := "同步文件夹/Push/" + managedPushDeviceFolderName(deviceA) + "/本机照片"
 	if sourceA.TargetNodeID == nil || *sourceA.TargetNodeID == oldFolder.ID ||
 		sourceA.TargetPath != expected || sourceA.Status != meta.SourceStatusPaused ||
 		sourceA.Revision != 1 {
-		t.Fatalf("new Push did not get a flat managed cloud path: %+v", sourceA)
+		t.Fatalf("new Push did not get a device-scoped managed cloud path: %+v", sourceA)
 	}
 	var sourceStored meta.Source
 	if err := db.First(&sourceStored, sourceA.ID).Error; err != nil {
@@ -106,7 +107,7 @@ func TestLocalPushAutoManagedTargetAndDraftCancellation(t *testing.T) {
 	}
 	if firstTarget.ID == secondTarget.ID || firstTarget.ParentID == nil ||
 		secondTarget.ParentID == nil || *firstTarget.ParentID != *secondTarget.ParentID {
-		t.Fatalf("flat Push targets must be siblings: %v / %v", firstTarget, secondTarget)
+		t.Fatalf("same-device Push targets must be siblings: %v / %v", firstTarget, secondTarget)
 	}
 
 	// A direct read-only Share must not be severed by silent draft cleanup.
@@ -138,24 +139,50 @@ func TestLocalPushAutoManagedTargetAndDraftCancellation(t *testing.T) {
 	}
 
 	// Two enrolled devices with the same display name keep independent
-	// Source.DeviceID even though their targets share one flat Push parent.
+	// Server-pinned groups even when their visible labels collide.
 	sourceB := create("第二台机器照片", 0, deviceB, secretB, http.StatusCreated)
 	var secondDeviceTarget meta.Node
 	if err := db.First(&secondDeviceTarget, *sourceB.TargetNodeID).Error; err != nil {
 		t.Fatal(err)
 	}
 	if secondDeviceTarget.ID == firstTarget.ID || secondDeviceTarget.ParentID == nil ||
-		firstTarget.ParentID == nil || *secondDeviceTarget.ParentID != *firstTarget.ParentID {
-		t.Fatal("different devices must share only the fixed Push parent, never a target Node")
+		firstTarget.ParentID == nil || *secondDeviceTarget.ParentID == *firstTarget.ParentID {
+		t.Fatal("different devices must use distinct pinned device-group Nodes")
 	}
 	hb := headers(deviceB, secretB)
 	hb["If-Match"] = `"1"`
 	requestWithHeaders(t, router, http.MethodDelete,
 		fmt.Sprintf("/api/v1/sources/%d/local-draft", sourceB.ID), token, nil,
 		http.StatusNoContent, hb)
-	// Cancelling a pristine Source deletes its leaf, NEVER the fixed Push namespace.
+	// Cancelling a pristine Source removes only its leaf. Its pinned device
+	// ancestor survives to serve new Sources from the same device.
+	var pinnedGroup meta.Node
+	if err := db.First(&pinnedGroup, *secondDeviceTarget.ParentID).Error; err != nil ||
+		pinnedGroup.Name != managedPushDeviceFolderName(deviceB) ||
+		pinnedGroup.ParentID == nil {
+		t.Fatalf("pinned device group removed after draft cancellation: %+v err=%v", pinnedGroup, err)
+	}
+	var storedDeviceB meta.ClientDevice
+	if err := db.First(&storedDeviceB, deviceB.ID).Error; err != nil ||
+		storedDeviceB.ManagedPushNodeID == nil ||
+		*storedDeviceB.ManagedPushNodeID != pinnedGroup.ID {
+		t.Fatalf("Device lost server-pinned group after cancellation: %+v err=%v", storedDeviceB, err)
+	}
+	// The group must be protected even when its only Source draft is gone.
+	inside, err := managedSourceNodeInTargetDB(context.Background(), db, owner.ID, pinnedGroup.ID)
+	if err != nil || !inside {
+		t.Fatalf("Owner could write into pinned empty device group: inside=%v err=%v", inside, err)
+	}
+	structural, err := managedSourceTargetInSubtreeDB(context.Background(), db, owner.ID, pinnedGroup.ID)
+	if err != nil || !structural {
+		t.Fatalf("Owner could move pinned empty device group: protected=%v err=%v", structural, err)
+	}
+	bulk, err := managedSourceTargetInIDsDB(context.Background(), db, owner.ID, []uint64{pinnedGroup.ID})
+	if err != nil || !bulk {
+		t.Fatalf("bulk deletion overlooked pinned empty device group: protected=%v err=%v", bulk, err)
+	}
 	var pushParent meta.Node
-	if err := db.First(&pushParent, *secondDeviceTarget.ParentID).Error; err != nil ||
+	if err := db.First(&pushParent, *pinnedGroup.ParentID).Error; err != nil ||
 		pushParent.Name != "Push" {
 		t.Fatalf("fixed Push parent was removed after draft cancellation: %+v err=%v", pushParent, err)
 	}
@@ -200,7 +227,7 @@ func TestLocalPushAutoTargetRejectsExistingOrdinaryLeaf(t *testing.T) {
 	}
 	umbrella := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
 	push := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, "Push")
-	occupied := createFilePropertiesDir(t, db, owner.ID, push.ID, "Not claimed")
+	occupied := createFilePropertiesDir(t, db, owner.ID, push.ID, managedPushDeviceFolderName(device))
 	body := `{"name":"Not claimed","kind":"local_folder","direction":"push","schedule_type":"manual"}`
 	headers := map[string]string{
 		"X-XDrive-Device-ID": device.ID, "X-XDrive-Device-Token": secret,

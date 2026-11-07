@@ -9,7 +9,7 @@
 > These rules supersede older DSM Source Agent descriptions below.
 > Native Local Push archive/paused restore requires the owning Device and
 > verified Root proof, never an Owner session alone.
-> New Push targets are flat `同步文件夹/Push/<SourceName>`, and legacy
+> New Push targets are grouped `同步文件夹/Push/<DeviceName>_<DeviceID>/<SourceName>`, and legacy
 > target directories are not migrated.
 
 
@@ -54,11 +54,11 @@ The work is therefore **not** to create three new worker services. The remaining
 
 | Source | Current new-source target layout | Required new-source layout |
 |---|---|---|
-| Local Folder / iOS Push | 旧 Device 分组目录 | 同步文件夹/Push/<用户填写的目录名> |
+| Local Folder / iOS Push | 旧 Device 分组目录 | 同步文件夹/Push/<DeviceName>_<DeviceID>/<用户填写的目录名> |
 | Synology Pull | 同步文件夹/远程拉取/<connector>/<source> | 同步文件夹/Pull/<connector>/<source> |
 | Yike Pull | 同步文件夹/一刻相册/<account identity> | 同步文件夹/Pull/Yike Photos/<source> |
-| DSM Photos Push | 已有设备分组目录 | 同步文件夹/Push/<用户填写的目录名> |
-| Android Photos Push | Owner root（原生 Source 尚未接入） | 同步文件夹/Push/<用户填写的目录名>（待原生接入） |
+| DSM Photos Push | 已有设备分组目录 | 同步文件夹/Push/<DeviceName>_<DeviceID>/<用户填写的目录名> |
+| Android Photos Push | Owner root（原生 Source 尚未接入） | 同步文件夹/Push/<DeviceName>_<DeviceID>/<用户填写的目录名>（待原生接入） |
 
 These are changes to **new provisioning only**. Do not move or rename old targets, old Nodes, old receipts or old Source records in this project.
 
@@ -135,7 +135,7 @@ PR #3923 completes the DSM Device, Root and upload authorization closure:
 
 - Register `synology` as an identity-only ClientDevice platform. Its credential is explicitly excluded from the generic Desktop Agent credential gate.
 - Store the independent DSM Device token in the source-agent secret store; config.json contains only DeviceID and the opaque credential reference.
-- New Synology Photos Push creation requires registered Device proof, rejects caller-selected target Nodes, and creates `同步文件夹/Push/<用户填写的目录名>` transactionally.
+- New Synology Photos Push creation requires registered Device proof, rejects caller-selected target Nodes, and creates `同步文件夹/Push/<DeviceName>_<DeviceID>/<用户填写的目录名>` transactionally.
 - Source stores the generic `DeviceID`, exact managed `TargetNodeID`, and `TargetManaged` provenance.
 - The server persists the aggregate Personal/Shared Root-set ID and fingerprint in the Source binding. The source-agent independently verifies the local filesystem roots before scanning.
 - Every Source mutation/run and every upload admission, chunk write and Finalize rechecks Owner, Device platform/token/revocation, Source ID/revision, Root ID/fingerprint and the exact managed Target/descendant.
@@ -150,7 +150,7 @@ The implementation is a development branch, not master acceptance. New Push path
 
 ### Android Photos 的阶段性交付（尚未端到端验收）
 
-在 S10–S18 开发分支上，Android 的 Owner+Device 专属 `GET/PUT /android/photos/backup-destination` 已按 iOS 的窄权限模式接入：首次由 Server 事务创建 `android_photos` Source 和 `同步文件夹/Push/<Source.Name>`，返回真实 SourceID、SourceRevision、TargetNodeID；重命名复用统一空闲判定和 Node 原子改名。Android Kotlin 客户端仅允许上述目标接口携带设备密钥，并严格比对 DeviceID、SourceID/Revision、TargetNodeID 和规范路径；Web/Desktop/DSM 的共享 Source Manager 能识别 Android 行，但不提供服务端“立即扫描”。已补服务端 PostgreSQL、原生 HTTP 契约及共享 UI 测试。
+在 S10–S18 开发分支上，Android 的 Owner+Device 专属 `GET/PUT /android/photos/backup-destination` 已按 iOS 的窄权限模式接入：首次由 Server 事务创建 `android_photos` Source 和 `同步文件夹/Push/<DeviceName>_<DeviceID>/<Source.Name>`，返回真实 SourceID、SourceRevision、TargetNodeID；重命名复用统一空闲判定和 Node 原子改名。Android Kotlin 客户端仅允许上述目标接口携带设备密钥，并严格比对 DeviceID、SourceID/Revision、TargetNodeID 和规范路径；Web/Desktop/DSM 的共享 Source Manager 能识别 Android 行，但不提供服务端“立即扫描”。已补服务端 PostgreSQL、原生 HTTP 契约及共享 UI 测试。
 
 **禁止误判为可用：** 当前 Android 原件写入、Finalize、未知 ACK 恢复仍使用旧 Owner-root UploadSession，不带 `android_photos` 的 Source/Device/Target 元组；不能把它们视为新目标的成功备份。尚需原生专属 UploadSession 和每次实际 CAS 写事务的权限复核，SourceID+TargetNodeID 绑定的持久化 intent/verified receipt，SourceRun 统计与历史，以及旧 Owner-root intent 的 fail-closed 兼容与真实 Android 设备验收。**不迁移任何既有 Source/目录/收据。**
 

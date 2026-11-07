@@ -14,7 +14,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
-func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndFlat(t *testing.T) {
+func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndGrouped(t *testing.T) {
 	db, server, owner, foreign, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.SyncRun{}, &meta.UploadSession{}, &meta.LocalSourceBinding{}); err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndFlat(t *testing.T) {
 	created := call(http.MethodPut, token, `{"name":"Pixel 原件"}`, http.StatusCreated, headers)
 	if !created.Configured || created.SourceID == 0 || created.SourceRevision != 1 ||
 		created.DeviceID != device.ID || created.TargetNodeID == 0 ||
-		created.TargetNodeID == root.ID || created.TargetPath != "同步文件夹/Push/Pixel 原件" {
+		created.TargetNodeID == root.ID || created.TargetPath != "同步文件夹/Push/"+managedPushDeviceFolderName(device)+"/Pixel 原件" {
 		t.Fatalf("unverified Android Source/Target: %+v", created)
 	}
 	var source meta.Source
@@ -155,7 +155,7 @@ func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndFlat(t *testing.T) {
 	}
 	renamed := call(http.MethodPut, token, `{"name":"Android 改名"}`, http.StatusOK, headers)
 	if renamed.SourceID != created.SourceID || renamed.TargetNodeID != created.TargetNodeID ||
-		renamed.SourceRevision != 2 || renamed.TargetPath != "同步文件夹/Push/Android 改名" {
+		renamed.SourceRevision != 2 || renamed.TargetPath != "同步文件夹/Push/"+managedPushDeviceFolderName(device)+"/Android 改名" {
 		t.Fatalf("rename broke identity or wrong target path: %+v", renamed)
 	}
 	// Revocation can never silently select another Source or continue writes.

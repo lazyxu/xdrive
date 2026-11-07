@@ -15,6 +15,8 @@ type ClientDevice struct {
 	UpdatedAt      time.Time `gorm:"not null"`
 	LastSeenAt     *time.Time
 	HeartbeatAt    *time.Time
+	// Server-pinned node is not inferred from a device display name.
+	ManagedPushNodeID *uint64 `json:"-" gorm:"index"`
 	RevokedAt      *time.Time `gorm:"index"`
 }
 

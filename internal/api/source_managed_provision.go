@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
@@ -100,6 +101,18 @@ func provisionManagedSourceTargetTx(
 		ancestorIDs = append(ancestorIDs, parent.ID)
 	}
 
+	if source.Direction == meta.SourceDirectionPush {
+		// The device's display name is descriptive; its full UUID and
+		// server-pinned group Node ID are the only stable group identity.
+		// Never adopt a pre-existing ordinary folder with the same name.
+		group, err := ensureManagedPushDeviceGroupTx(ctx, tx, source.OwnerID, parent, *device)
+		if err != nil {
+			return meta.Node{}, err
+		}
+		parent = group
+		ancestorIDs = append(ancestorIDs, group.ID)
+	}
+
 	// A legacy or manually configured Source may target one of the fixed
 	// ancestors. Never create a nested managed Source below another Source.
 	var overlapping int64
@@ -158,9 +171,75 @@ func provisionManagedSourceTargetTx(
 	return target, nil
 }
 
-// Local Folder and iOS Photos use the same flat Push namespace. DeviceID is
-// the authorization identity; the device's display name is only the default
-// value of Source.Name and is never represented as a directory ancestor.
+// managedPushDeviceFolderName is only a display label. Never authorize by name.
+func managedPushDeviceFolderName(device meta.ClientDevice) string {
+	return managedTargetSuggestion(device.Name, "设备") + "_" + device.ID
+}
+
+// ensureManagedPushDeviceGroupTx is called with the Owner and Device row
+// already locked. The group is created with the first Source, or reused
+// solely by the stable server-pinned Node ID.
+func ensureManagedPushDeviceGroupTx(
+	ctx context.Context, tx *gorm.DB, ownerID uint64, pushRoot meta.Node, device meta.ClientDevice,
+) (meta.Node, error) {
+	if device.OwnerID != ownerID || device.ID == "" || device.RevokedAt != nil {
+		return meta.Node{}, errSourceManagedDeviceMismatch
+	}
+	if device.ManagedPushNodeID != nil {
+		var existing meta.Node
+		if err := tx.WithContext(ctx).Where(
+			"id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+			*device.ManagedPushNodeID, ownerID, meta.NodeTypeDir,
+		).Take(&existing).Error; err != nil {
+			return meta.Node{}, errSourceManagedDirectoryOccupied
+		}
+		if existing.ParentID == nil || *existing.ParentID != pushRoot.ID ||
+			!strings.HasSuffix(existing.Name, "_"+device.ID) {
+			return meta.Node{}, errSourceManagedDeviceMismatch
+		}
+		return existing, nil
+	}
+	name := managedPushDeviceFolderName(device)
+	if meta.ValidateName(name) != nil {
+		return meta.Node{}, errInvalidSourceConfig
+	}
+	var occupied meta.Node
+	err := tx.WithContext(ctx).Where(
+		"owner_id = ? AND parent_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL",
+		ownerID, pushRoot.ID, name,
+	).Take(&occupied).Error
+	if err == nil {
+		return meta.Node{}, errSourceManagedDirectoryOccupied
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return meta.Node{}, err
+	}
+	parentID := pushRoot.ID
+	group := meta.Node{
+		OwnerID: ownerID, ParentID: &parentID, Name: name,
+		Type: meta.NodeTypeDir, Revision: 1,
+	}
+	if err := tx.WithContext(ctx).Create(&group).Error; err != nil {
+		if isDuplicate(err) {
+			return meta.Node{}, errSourceManagedDirectoryOccupied
+		}
+		return meta.Node{}, err
+	}
+	updated := tx.WithContext(ctx).Model(&meta.ClientDevice{}).
+		Where("id = ? AND owner_id = ? AND revoked_at IS NULL AND managed_push_node_id IS NULL",
+			device.ID, ownerID).
+		Update("managed_push_node_id", group.ID)
+	if updated.Error != nil {
+		return meta.Node{}, updated.Error
+	}
+	if updated.RowsAffected != 1 {
+		return meta.Node{}, errSourceManagedDeviceMismatch
+	}
+	return group, nil
+}
+
+// Local Folder and iOS Photos use the same device-grouped Push namespace.
+// Stable Device ID and group Node ID bind the ancestor across Sources.
 func createLocalPushManagedTargetTx(
 	ctx context.Context, tx *gorm.DB, source meta.Source, device meta.ClientDevice,
 ) (meta.Node, error) {
@@ -171,9 +250,9 @@ func createLocalPushManagedTargetTx(
 	return provisionManagedSourceTargetTx(ctx, tx, source, &device)
 }
 
-// DSM Push uses the same flat Push/<SourceName> namespace as every other
-// device-backed Push Source. DeviceID and the persisted DSM Root proof carry
-// identity and authorization; no device-named directory is created.
+// Historical DSM Push remains a compatibility path; the DSM MVP uses
+// local_folder in its owning Agent. Any new device-scoped Push Source uses
+// Push/<DeviceName>_<DeviceID>/<SourceName> without name-based authority.
 func createSynologyPushManagedTargetTx(
 	ctx context.Context, tx *gorm.DB, source meta.Source, device meta.ClientDevice,
 ) (meta.Node, error) {

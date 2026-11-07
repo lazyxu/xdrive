@@ -41,7 +41,7 @@ internal object NativePhotoOneShotUploader {
         check(destination.configured && destination.deviceId == device.deviceId &&
             destination.targetNodeId != null && destination.sourceId != null &&
             destination.sourceRevision != null && destination.name != null &&
-            destination.targetPath == "同步文件夹/Push/" + destination.name)
+            destination.acceptsServerManagedPath()
         currentCoroutineContext().ensureActive()
         check(currentSession() && original.verifyBeforeWrite()) {
             "Photo original or Owner changed before managed upload"
