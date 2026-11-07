@@ -77,3 +77,76 @@ enum XDriveIOSNativePhotoMapPolicy {
         "当前页此位置\(max(0, min(pageSize, count)))张照片"
     }
 }
+
+
+/// A transient capture-time predicate shared by native PhotoKit and the Owner
+/// map + signed 48-item Range. Always use *absolute* instants for the wire;
+/// Calendar supplies each local midnight, including DST/non-24-hour days.
+/// Missing capture dates never enter a bounded map selection.
+struct XDriveIOSNativePhotoMapCaptureRange: Equatable {
+    let from: Date
+    let to: Date
+    let label: String
+
+    var valid: Bool {
+        from.timeIntervalSince1970.isFinite &&
+        to.timeIntervalSince1970.isFinite &&
+        from < to && to.timeIntervalSince(from) <= 370 * 86_400 &&
+        !label.isEmpty && label.utf8.count <= 80
+    }
+
+    func contains(_ capturedAt: Date?) -> Bool {
+        guard valid, let capturedAt else { return false }
+        return from <= capturedAt && capturedAt < to
+    }
+
+    var fromRFC3339: String { ISO8601DateFormatter().string(from: from) }
+    var toRFC3339: String { ISO8601DateFormatter().string(from: to) }
+
+    static func day(_ day: Date, calendar: Calendar = .current) -> Self? {
+        let start = calendar.startOfDay(for: day)
+        guard let end = calendar.date(byAdding: .day, value: 1, to: start)
+        else { return nil }
+        let parts = calendar.dateComponents([.year, .month, .day], from: day)
+        guard let year = parts.year, let month = parts.month, let day = parts.day
+        else { return nil }
+        let result = Self(from: start, to: end,
+                          label: "\(year)年\(month)月\(day)日")
+        return result.valid ? result : nil
+    }
+
+    static func dayKey(_ key: String, calendar: Calendar = .current) -> Self? {
+        let fields = key.split(separator: "-", omittingEmptySubsequences: false)
+        guard fields.count == 3, let year = Int(fields[0]),
+              let month = Int(fields[1]), let day = Int(fields[2]),
+              (1...9999).contains(year), (1...12).contains(month),
+              (1...31).contains(day),
+              let value = calendar.date(from: DateComponents(
+                year: year, month: month, day: day)),
+              calendar.dateComponents([.year, .month, .day], from: value) ==
+                DateComponents(year: year, month: month, day: day)
+        else { return nil }
+        return Self.day(value, calendar: calendar)
+    }
+
+    static func year(_ year: Int, calendar: Calendar = .current) -> Self? {
+        guard (1...9998).contains(year),
+              let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)),
+              let end = calendar.date(byAdding: .year, value: 1, to: start)
+        else { return nil }
+        let range = Self(from: start, to: end, label: "\(year)年")
+        return range.valid ? range : nil
+    }
+
+    static func recentDays(_ count: Int, now: Date = Date(),
+                           calendar: Calendar = .current) -> Self? {
+        guard (1...366).contains(count),
+              let start = calendar.date(byAdding: .day, value: -(count - 1),
+                                        to: calendar.startOfDay(for: now)),
+              let end = calendar.date(byAdding: .day, value: 1,
+                                      to: calendar.startOfDay(for: now))
+        else { return nil }
+        let range = Self(from: start, to: end, label: "最近\(count)天")
+        return range.valid ? range : nil
+    }
+}
