@@ -1,0 +1,72 @@
+name: Places real Go Agent Gin PostgreSQL to Electron WebView
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/places-desktop-real-agent-electron-e2e.yml'
+      - 'internal/api/desktop_map_real_agent_https_fixture_linux_test.go'
+      - 'desktop/scripts/places-desktop-real-agent-electron-*.cjs'
+      - 'cmd/xdrive-agent/controller_desktop_map_guest_grant.go'
+      - 'cmd/xdrive-agent/desktop_ipc_desktop_map_guest_grant.go'
+      - 'internal/api/auth_desktop_map_*.go'
+      - 'desktop/src/main/places_guest_lan_tls.cts'
+      - 'desktop/src/main/agent_client.cts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-native-agent-gin-pg-electron:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_DESKTOP_MAP_E2E_AGENT_BINARY: ${{ github.workspace }}/desktop/places-e2e-agent
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build real Go Agent and actual Desktop TLS/IPC modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb iproute2 openssl
+          npm --prefix desktop install --no-audit --no-fund
+          npm --prefix desktop run build:main
+          go build -o "$XD_DESKTOP_MAP_E2E_AGENT_BINARY" ./cmd/xdrive-agent
+          node --check desktop/scripts/places-desktop-real-agent-electron-main.cjs
+          node --check desktop/scripts/places-desktop-real-agent-electron-runner.cjs
+          test -z "$(gofmt -l internal/api/desktop_map_real_agent_https_fixture_linux_test.go)"
+      - name: Agent survives two real Electron HTTPS Browser Cookie exchanges
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
+          sudo ip addr add 10.233.15.12/32 dev lo
+          trap 'sudo ip addr del 10.233.15.12/32 dev lo || true' EXIT
+          xvfb-run -a --server-args='-screen 0 1280x800x24' \
+            node desktop/scripts/places-desktop-real-agent-electron-runner.cjs
