@@ -5135,6 +5135,59 @@ export class XDriveApi {
     }
   }
 
+  private clipboardEventCursor = 0
+
+  // Only an Owner bearer can open this short-lived Server SSE stream.
+  // Browser EventSource cannot send a Bearer token; use a bounded fetch reader.
+  async clipboardWatchChanges(onChange: () => void, signal: AbortSignal): Promise<void> {
+    await this.ensureFresh(signal)
+    signal.throwIfAborted()
+    const run = () => fetch(`${API_BASE}/api/v1/clipboard/events?after=${this.clipboardEventCursor}`, {
+      method: 'GET', redirect: 'error', cache: 'no-store',
+      credentials: 'same-origin', signal,
+      headers: {
+        Accept: 'text/event-stream',
+        ...(this.session.accessToken ? { Authorization: 'Bearer ' + this.session.accessToken } : {}),
+      },
+    })
+    let response = await run()
+    if (response.status === 401 && (this.session.refreshToken || this.session.browserSession)) {
+      await this.refresh(true, signal)
+      response = await run()
+    }
+    if (!response.ok || !response.body || !response.headers.get('content-type')?.includes('text/event-stream')) {
+      throw new Error('剪贴板事件通知不可用，继续使用前台刷新。')
+    }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let pending = ''
+    try {
+      while (!signal.aborted) {
+        const next = await reader.read()
+        if (next.done) break
+        pending += decoder.decode(next.value, { stream: true }).replace(/\r\n/g, '\n')
+        if (pending.length > 8192) throw new Error('剪贴板通知帧超过安全上限。')
+        let boundary = pending.indexOf('\n\n')
+        while (boundary >= 0) {
+          const frame = pending.slice(0, boundary)
+          pending = pending.slice(boundary + 2)
+          const kind = /^event: (sync|change)$/m.exec(frame)?.[1]
+          const cursor = /^id: ([0-9]+)$/m.exec(frame)?.[1]
+          if (cursor) {
+            const id = Number(cursor)
+            if (!Number.isSafeInteger(id) || id < 0) throw new Error('无效的通知游标。')
+            this.clipboardEventCursor = Math.max(this.clipboardEventCursor, id)
+          }
+          if (kind === 'sync' || kind === 'change') onChange()
+          boundary = pending.indexOf('\n\n')
+        }
+      }
+    } finally {
+      await reader.cancel().catch(() => {})
+      reader.releaseLock()
+    }
+  }
+
   // The Browser Clipboard is Owner-private and E2EE: these endpoints receive
   // encrypted data only, through the same revocable Owner bearer transport.
   clipboardVault(signal?: AbortSignal) {
