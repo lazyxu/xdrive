@@ -38,7 +38,7 @@ export type XDriveClipboardDataPort = {
     salt: string; iterations: number; kdf: string; check_nonce: string; check_ciphertext: string; aad_scope: string }>
   list(before?: number, signal?: AbortSignal): Promise<{ items: XDriveClipboardItem[]; next_before: number | null }>
   create(item: {
-    client_event_id: string; kind: XDriveClipboardKind
+    client_event_id: string; kind: XDriveClipboardTargetWire['kind']
     nonce: string; ciphertext: string
     target_device_id?: string; ephemeral_key?: string; wrapped_key?: string
     node_id?: number
@@ -315,7 +315,10 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
           !actionFence.current.isCurrent(actionToken)) return
       pending.current = null
       setDraft(current => observedText === undefined && !isRef && current === textAtStart ? '' : current)
-      setMessage(observedText === undefined ? '已加密发送至当前账号的剪贴板历史。' : '已自动加密发送剪贴板变化。')
+      setMessage(observedText !== undefined
+        ? '已自动加密发送剪贴板变化。'
+        : selectedTarget ? '已加密投递至所选设备；只有目标设备可解密。'
+          : '已加密发送至当前账号的剪贴板历史。')
       void load()
     } catch (error) {
       if (active.current && !controller.signal.aborted &&
