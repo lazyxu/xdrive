@@ -37,7 +37,9 @@ All newly provisioned Source targets live below one root:
 我的文件/
 └── 同步文件夹/
     ├── Push/
-    │   └── <UserEditableName>/
+    │   └── <DeviceName>_<DeviceID>/
+    │       ├── <SourceName>/
+    │       └── <SourceName>/
     └── Pull/
         ├── Yike Photos/<SourceName>/
         ├── Synology Photos/<SourceName>/
@@ -47,7 +49,7 @@ All newly provisioned Source targets live below one root:
 Rules:
 
 1. 同步文件夹/Push and 同步文件夹/Pull are the only roots for new Push/Pull destinations.
-2. Device name is a suggested editable Push leaf, not an authorization key. Stable Server-issued Device UUID and Source.DeviceID carry the real identity; there is no device-group directory.
+2. The Server creates and pins one device-group Node per verified Device ID; its display-name portion is sanitized, never an authorization key. The editable leaf is the Source name. No ordinary same-named device folder can be adopted.
 3. Pull connector directory names are fixed product identifiers. Synology Pull suggests its remote NAS name; Yike Pull suggests the remote account nickname. Only the final leaf can be edited.
 4. The Source leaf is the validated Source name. All Push kinds of one Owner share a unique, case-insensitive name namespace; all Pull connectors share a second namespace. Archived Sources still reserve their names. Source and Node renames are one revision-checked Server transaction.
 5. Server creates the final path and leaf in the Source provisioning transaction, including a new Yike Source before credentials are attached. Clients cannot submit a target_node_id, cloud parent ID or absolute cloud path.
