@@ -29,7 +29,7 @@ test('stale asynchronous badge results never cross Owners, pages or inactive sce
   assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(backupBadgeOwner, owner\)/)
   assert.match(wall, /\.onChange\(of: backupBadgeOwner\) \{ _ in[\s\S]*?badgeReadEpoch = UUID\(\)/)
   assert.match(wall, /\.onChange\(of: photoQueueScenePhase\) \{ state in/)
-  assert.match(wall, /\.onDisappear \{\s*if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil[\s\S]*?retainedGeneration = nil\s*\}[\s\S]*?visibleBackupQueueStates = \[:\]\s*badgeReadEpoch = UUID\(\)/)
+  assert.match(wall, /\.onDisappear \{\s*if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil[\s\S]*?retainedGeneration = nil\s*\}[\s\S]*?queueHistoryCurrent = false\s*visibleBackupQueueStates = \[:\]\s*badgeReadEpoch = UUID\(\)/)
   assert.match(wall, /badgeReadEpoch = UUID\(\)\s*if let scanner \{ Task \{ await scanner\.reset\(\) \} \}\s*scanner = nil/)
   assert.match(wall, /visibleBackupQueueStates = \[:\]/)
   assert.doesNotMatch(wall, /UploadSessionTransport|uploadPrepared\(|\.finalize\(|deleteNode\(/)
