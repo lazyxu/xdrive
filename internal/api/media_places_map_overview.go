@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -14,6 +15,69 @@ import (
 
 // Native map frames contain at most 64 real Owner GPS representatives.
 // Baidu, not xDrive, still owns the actual on-screen clustering/projection.
+// Calendar collection filters do not grant media access. The same bounded
+// capture-time predicate is applied to map Count, exact cells, covers and
+// every selected Owner photo Range.
+type mediaCaptureBounds struct {
+	From time.Time
+	To time.Time
+}
+
+func (s *mediaCaptureBounds) valid() bool {
+	return s != nil && !s.From.IsZero() && !s.To.IsZero() &&
+		s.From.Before(s.To) && s.To.Sub(s.From) <= 370*24*time.Hour
+}
+
+func mediaMapCaptureFilter(query *gorm.DB, scope *mediaCaptureBounds) *gorm.DB {
+	if scope == nil {
+		return query
+	}
+	return query.Where("xd_media_metadata.captured_at >= ? AND xd_media_metadata.captured_at < ?",
+		scope.From, scope.To)
+}
+
+func parseMediaMapOverviewScopedQuery(raw string) (
+	mediaPlaceViewportBounds, bool, *mediaCaptureBounds, error,
+) {
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return mediaPlaceViewportBounds{}, false, nil, err
+	}
+	zoneValues := values["time_zone"]
+	zone := "UTC"
+	if len(zoneValues) > 1 {
+		return mediaPlaceViewportBounds{}, false, nil, fmt.Errorf("duplicate zone")
+	}
+	if len(zoneValues) == 1 {
+		zone = zoneValues[0]
+	}
+	values.Del("time_zone")
+	fromValues, toValues := values["captured_from"], values["captured_to"]
+	if len(fromValues) > 1 || len(toValues) > 1 ||
+		(len(fromValues) == 0) != (len(toValues) == 0) {
+		return mediaPlaceViewportBounds{}, false, nil, fmt.Errorf("invalid date range")
+	}
+	values.Del("captured_from")
+	values.Del("captured_to")
+	bounds, detail, err := parseMediaMapOverviewQuery(values.Encode())
+	if err != nil {
+		return bounds, detail, nil, err
+	}
+	if len(fromValues) == 0 {
+		if len(zoneValues) == 1 {
+			if _, _, err := mediaIANAZone(zone); err != nil { return bounds, detail, nil, err }
+		}
+		return bounds, detail, nil, nil
+	}
+	from, err := mediaCapturedBoundary(fromValues[0], zone)
+	if err != nil { return bounds, detail, nil, err }
+	to, err := mediaCapturedBoundary(toValues[0], zone)
+	if err != nil { return bounds, detail, nil, err }
+	scope := &mediaCaptureBounds{From: from, To: to}
+	if !scope.valid() { return bounds, detail, nil, fmt.Errorf("invalid capture window") }
+	return bounds, detail, scope, nil
+}
+
 const mediaMapOverviewAxis = 8
 const mediaMapOverviewMaxPoints = mediaMapOverviewAxis * mediaMapOverviewAxis
 
@@ -163,13 +227,16 @@ func mediaMapOverviewBuckets(bounds mediaPlaceViewportBounds) (string, string) {
 
 func queryMediaPlacesMapOverview(
 	ctx context.Context, db *gorm.DB, ownerID uint64,
-	bounds mediaPlaceViewportBounds, detail bool,
+	bounds mediaPlaceViewportBounds, detail bool, optional ...*mediaCaptureBounds,
 ) (mediaPlacesMapOverviewDTO, error) {
-	if ctx == nil || ctx.Err() != nil || db == nil || ownerID == 0 || !bounds.valid() {
+	var scope *mediaCaptureBounds
+	if len(optional) > 0 { scope = optional[0] }
+	if len(optional) > 1 || (scope != nil && !scope.valid()) ||
+		ctx == nil || ctx.Err() != nil || db == nil || ownerID == 0 || !bounds.valid() {
 		return mediaPlacesMapOverviewDTO{}, fmt.Errorf("invalid map overview")
 	}
 	if detail {
-		page, err := queryMediaPlacesViewport(ctx, db, ownerID, bounds, mediaMapOverviewMaxPoints, 0)
+		page, err := queryMediaPlacesViewport(ctx, db, ownerID, bounds, mediaMapOverviewMaxPoints, 0, scope)
 		if err != nil {
 			return mediaPlacesMapOverviewDTO{}, err
 		}
@@ -186,7 +253,8 @@ func queryMediaPlacesMapOverview(
 	// valid-WGS84 and viewport predicates as the following grouped photo query.
 	// No top-N cutoff, sample download, loose Owner authorization or client
 	// loop can influence the actual geographic display envelope.
-	if err := mediaPlacesWithinViewport(mediaPlacesBaseQuery(ctx, db, ownerID), bounds).
+	if err := mediaPlacesWithinViewport(
+		mediaMapCaptureFilter(mediaPlacesBaseQuery(ctx, db, ownerID), scope), bounds).
 		Select("MIN(xd_media_metadata.latitude) AS min_latitude, " +
 			"MAX(xd_media_metadata.latitude) AS max_latitude, " +
 			"MIN(xd_media_metadata.longitude) AS min_longitude, " +
@@ -218,7 +286,8 @@ func queryMediaPlacesMapOverview(
 			"(CASE WHEN longitude < %s THEN longitude + 360 ELSE longitude END)",
 			strconv.FormatFloat(fitted.West, 'f', -1, 64))
 	}
-	ownerMedia := mediaPlacesWithinViewport(mediaPlacesBaseQuery(ctx, db, ownerID), bounds).
+	ownerMedia := mediaPlacesWithinViewport(
+		mediaMapCaptureFilter(mediaPlacesBaseQuery(ctx, db, ownerID), scope), bounds).
 		Select("xd_media_metadata.latitude AS latitude, " +
 			"xd_media_metadata.longitude AS longitude, " +
 			"pa.primary_node_id AS node_id, " +
@@ -349,7 +418,7 @@ func (s *Server) listMediaPlacesMapOverview(c *gin.Context) {
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("Referrer-Policy", "no-referrer")
 	c.Header("X-Content-Type-Options", "nosniff")
-	bounds, detail, err := parseMediaMapOverviewQuery(c.Request.URL.RawQuery)
+	bounds, detail, scope, err := parseMediaMapOverviewScopedQuery(c.Request.URL.RawQuery)
 	if err != nil {
 		fail(c, http.StatusBadRequest, "invalid map overview")
 		return
@@ -360,7 +429,7 @@ func (s *Server) listMediaPlacesMapOverview(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), mediaPlaceViewportQueryTimeout)
 	defer cancel()
-	result, err := queryMediaPlacesMapOverview(ctx, s.DB, userID(c), bounds, detail)
+	result, err := queryMediaPlacesMapOverview(ctx, s.DB, userID(c), bounds, detail, scope)
 	if err != nil {
 		if ctx.Err() != nil {
 			fail(c, http.StatusGatewayTimeout, "map overview query cancelled or timed out")
