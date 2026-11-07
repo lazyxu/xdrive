@@ -61,7 +61,7 @@ test('bounded per-item failure explanation never marks failed originals as backe
   assert.match(issueSummary, /case sourceChanged/)
   assert.match(writer, /var issues = XDriveIOSPhotoBackupIssueSummary\(\)/)
   assert.match(writer, /report\.issues\.append\([\s\S]*?reason: \.unsupported/)
-  assert.match(writer, /report\.unavailable \+= 1\s*report\.issues\.append\([\s\S]*?reason: Self\.issueReason\(after: error\)/)
+  assert.match(writer, /report\.unavailable \+= 1\s*report\.windowUnavailable \+= 1\s*report\.issues\.append\([\s\S]*?reason: Self\.issueReason\(after: error\)/)
   assert.match(writer, /XDrivePhotoKitExportFailure/)
   assert.match(writer, /XDriveIOSPhotoIntentPreparationError/)
   assert.match(screen, /if result\.issues\.total > 0 \{/)
