@@ -22,7 +22,7 @@ const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift')
 
 test('1: gallery backup entry shares task, Focused, settings, audit and cache navigation', () => {
   for (const label of ['查看备份任务队列', '集中备份（需确认）',
-    '备份设置', '逐项核验当前云端原件', '管理缩略图缓存']) {
+    '备份设置', '逐项核验当前云端原件', '释放本机缓存空间（不删除照片原件）']) {
     assert.ok(dashboard.includes('Button("' + label + '")'))
   }
   assert.match(dashboard, /Menu \{ backupMenuItems \}/)
