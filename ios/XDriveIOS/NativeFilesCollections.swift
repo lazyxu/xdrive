@@ -513,6 +513,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var locateOwner: XDriveNativeOwnerRoot?
     @State private var managementIntent: XDriveIOSNativeFilesCollectionManageIntent?
     @State private var filterQuery = ""
+    @State private var isVisible = false
     // Match Browse's chosen presentation when switching between Files subroutes.
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
 
@@ -719,9 +720,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .fullScreenCover(item: $selectedFile, onDismiss: {
                 selectedOwner = nil
-                // Recent may have changed after a confirmed Viewer read.
-                // Revalidate silently without tearing down the visible rows.
-                reload(preserveVerifiedRows: true)
+                // If onAppear already started a quiet read, avoid a duplicate
+                // GET on the same Viewer dismissal.
+                if !model.loading { reload(preserveVerifiedRows: true) }
             }) { initial in
                 if let openedOwner = selectedOwner {
                     XDriveIOSNativeFilesViewer(
@@ -746,6 +747,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
             }
             .onAppear {
+                isVisible = true
                 guard phase == .active else { return }
                 if !model.matches(login.owner, kind: kind) {
                     if !model.loading { reload() }
@@ -758,12 +760,25 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
             }
             .onDisappear {
+                isVisible = false
                 if selectedFile == nil && locateIntent == nil && managementIntent == nil {
                     // NavigationLink child must not lose its source identity.
                     model.suspendForNavigation()
                     favorites.invalidate()
                     recentClear.invalidate()
                     showingClearRecentConfirmation = false
+                }
+            }
+            .onChange(of: phase) { state in
+                if state != .active {
+                    // Cancel in-flight metadata reads during scene suspension,
+                    // but do not drop a child NavigationLink's verified source.
+                    model.suspendForNavigation()
+                } else if isVisible && !model.loading {
+                    // A screen that appeared while inactive must still load
+                    // when foregrounded. Revalidate an old same-scope page
+                    // silently, never revive a previous Owner or collection.
+                    reload(preserveVerifiedRows: model.matches(login.owner, kind: kind))
                 }
             }
             .onChange(of: kind) { _ in
