@@ -215,6 +215,13 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 		other.AccessToken, "", ""); got.Code == http.StatusOK {
 		t.Fatal("foreign Owner claimed source Owner Cell descriptor")
 	}
+	// An independently authenticated Owner can read the map BEFORE Agent logout.
+	// Later map revocation is Owner-wide by design; it must not be confused
+	// with revoking this unrelated session's general-purpose Access JWT.
+	if page, code := readCells(independent.AccessToken, ""); code != http.StatusOK ||
+		page.TotalCount != 9 {
+		t.Fatal("independent Owner map session was not live before Agent logout")
+	}
 	// Confirm native logout invalidates an ALREADY-MINTED browser bearer on
 	// the real protected photo routes, not merely /me or cookie renewal.
 	logout := request(http.MethodPost, "/api/v1/auth/logout", "",
@@ -241,9 +248,12 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 	}
 	// An independently authenticated session for the same Owner is not part
 	// of this revoked Agent's browser lineage; foreign Owner also survives.
-	if page, code := readCells(independent.AccessToken, ""); code != http.StatusOK ||
-		page.TotalCount != 9 {
-		t.Fatal("Agent logout accidentally revoked an independent Owner session")
+	if got := request(http.MethodGet, "/api/v1/me", independent.AccessToken, "", "");
+		got.Code != http.StatusOK {
+		t.Fatalf("Agent logout revoked an independent Owner login: HTTP %d", got.Code)
+	}
+	if _, code := readCells(independent.AccessToken, ""); code != http.StatusForbidden {
+		t.Fatalf("Agent logout left a stale same-Owner map bearer usable: HTTP %d", code)
 	}
 	if page, code := readCells(other.AccessToken, ""); code != http.StatusOK ||
 		page.TotalCount != 1 {
