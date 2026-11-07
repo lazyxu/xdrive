@@ -161,11 +161,23 @@ function inspectRealWebGuest(){
   const login=document.querySelector('#web-login-username, #web-login-password')
   if(denied||login)return {denied:true,login:!!login}
   if(!root)return null
+  // The data-xdrive-places-map-mode marker has NO value. The actual
+  // selected SDK mode is expressed by mutually exclusive aria-pressed
+  // buttons, and must agree with the current HTTPS document query.
   const mode=root.querySelector('[data-xdrive-places-map-mode]')
+  const normal=mode?.querySelector('[data-xdrive-map-mode-prototype]')
+  const isolated=mode?.querySelector('[data-xdrive-map-mode-isolated]')
+  const normalPressed=normal?.getAttribute('aria-pressed')==='true'
+  const isolatedPressed=isolated?.getAttribute('aria-pressed')==='true'
+  const mapMode=normalPressed!==isolatedPressed
+    ? normalPressed?'prototype':'isolated' : ''
+  const queryMode=new URLSearchParams(location.search).get('places_map_mode')
+  const urlMode=queryMode===null || queryMode==='prototype'
+    ? 'prototype' : queryMode==='isolated'?'isolated':'invalid'
   return {ready:true,denied:false,login:false,
     hasGallery:!!root.querySelector('[data-xdrive-places-index]'),
-    mapMode:mode?.getAttribute('data-xdrive-places-map-mode')||'',
-    hasModeControls:!!root.querySelector('[data-xdrive-map-mode-prototype]') && !!root.querySelector('[data-xdrive-map-mode-isolated]'),
+    mapMode,urlMode,modeConsistent:mapMode!==''&&mapMode===urlMode,
+    hasModeControls:!!normal&&!!isolated,
     guestBridge:typeof window.xdrivePlacesEmbedBridge,
     hasNativeAgent:typeof window.xdriveDesktop,
     url:location.origin}
@@ -383,7 +395,8 @@ async function run(win){
     assert.equal(state.hasNativeAgent,'undefined')
     assert.equal(state.url,origin)
     assert.equal(state.hasGallery,true)
-    assert.notEqual(state.mapMode,'isolated','default map unexpectedly forced isolation')
+    assert.equal(state.mapMode,'prototype','default map unexpectedly forced isolation')
+    assert.equal(state.modeConsistent,true,'initial Web SDK mode and navigation differ')
     assert.equal(state.hasModeControls,true,'production Web shared map controls absent')
     stage='production-Web-Owner-scoped-Gin-Cells-Viewer-and-map-route-fence'
     const media=await attached.executeJavaScript(
@@ -421,6 +434,7 @@ async function run(win){
             const value=await attached.executeJavaScript(
               '('+inspectRealWebGuest.toString()+')()')
             return value?.ready && value?.mapMode===mode &&
+              value?.urlMode===mode && value?.modeConsistent===true &&
               !value.login && !value.denied && value.url===origin
           }catch{return false}
         },50000,'same-Owner real production Web map mode '+mode)
