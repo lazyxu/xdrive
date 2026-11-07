@@ -83,6 +83,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     @Environment(\.xdriveNativePhotoQueueBadgeOwner) private var backupBadgeOwner
     @Environment(\.xdriveNativePhotoProcessingID) private var activeProcessingID
     @Environment(\.xdriveNativePhotoOnlyNewSince) private var onlyNewSince
+    @Environment(\.xdriveNativePhotoQueueBadgeRefresh) private var badgeRefresh
     @Environment(\.xdriveNativePhotoPriorityAction) private var priorityAction
 
     private func displayedBackupState(for row: XDriveIOSNativeUnifiedPhoto) -> String {
@@ -147,6 +148,11 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                 }
             }
             .onChange(of: backupBadgeOwner) { _ in
+                Task { await readVisibleQueueBadges() }
+            }
+            .onChange(of: badgeRefresh) { _ in
+                // Refresh only this mounted 48-row page after a shared writer
+                // completes. Preserve Gallery generation and scroll anchor.
                 Task { await readVisibleQueueBadges() }
             }
             .onChange(of: onlyNewSince) { _ in
