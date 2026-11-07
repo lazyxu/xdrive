@@ -115,13 +115,16 @@ func (s *Server) queryMediaExactTripMap(
 		}
 		lat, lon := mediaPlaceCenter(cell)
 		overview.Items = append(overview.Items, mediaPlaceDTO{
-			ID: mediaPlaceKey(cell),
-			Name: mediaPlaceName(cell),
-			Latitude: lat, Longitude: lon,
-			SampleLatitude: r.SampleLatitude, SampleLongitude: r.SampleLongitude,
-			CoordinateKind: "grid_cell_center",
-			ItemCount: r.ItemCount, CoverNodeID: r.CoverNodeID,
-			UpdatedAt: r.UpdatedAt,
+			ID:              mediaPlaceKey(cell),
+			Name:            mediaPlaceName(cell),
+			Latitude:        lat,
+			Longitude:       lon,
+			SampleLatitude:  r.SampleLatitude,
+			SampleLongitude: r.SampleLongitude,
+			CoordinateKind:  "grid_cell_center",
+			ItemCount:       r.ItemCount,
+			CoverNodeID:     r.CoverNodeID,
+			UpdatedAt:       r.UpdatedAt,
 		})
 		overview.TotalPhotoCount += r.ItemCount
 	}
