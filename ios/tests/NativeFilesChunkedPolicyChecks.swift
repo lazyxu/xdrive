@@ -36,10 +36,10 @@ struct XDriveIOSNativeFilesChunkedPolicyChecks {
               "never materialize 100k selection into a foreground batch")
         check(P.groups(twoHundredOne + [node(1)], parentID: 7) == nil,
               "duplicate Node rejected before any POST")
-        check(P.groups(twoHundredOne.dropLast() + [node(201, parent: 9)],
+        check(P.groups(Array(twoHundredOne.dropLast()) + [node(201, parent: 9)],
                        parentID: 7) == nil,
               "cross-parent selection rejected")
-        check(P.groups(twoHundredOne.dropLast() + [node(201, revision: 0)],
+        check(P.groups(Array(twoHundredOne.dropLast()) + [node(201, revision: 0)],
                        parentID: 7) == nil,
               "stale revision rejected")
         check(P.groups(twoHundredOne, parentID: 0) == nil,
