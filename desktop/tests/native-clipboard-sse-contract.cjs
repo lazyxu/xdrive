@@ -30,7 +30,8 @@ test('iOS SSE uses verified Owner HTTPS bearer and cancellable ephemeral URLSess
 })
 
 test('iOS subscription only runs while unlocked, has 15s GET fallback and reconnect GET', () => {
-  assert.match(swiftPage, /\.task\(id: unlocked\)/)
+  assert.match(swiftPage, /\.task\(id: unlocked && scenePhase == \.active\)/)
+  assert.match(swiftPage, /@Environment\(\\\.scenePhase\) private var scenePhase/)
   assert.match(swiftPage, /sessionGeneration == generation/)
   assert.match(swiftPage, /client\.watchChanges\(after: after\)/)
   assert.match(swiftPage, /await refresh\(\) \/\/ Full GET compensation/)
@@ -58,6 +59,7 @@ test('Android SSE stays on the same pinned Owner transport with cancellable fram
 
 test('Android SSE locks with Owner and never replaces polling / authoritative GET', () => {
   assert.match(androidPage, /controller\.clipboardWatch\(after\)/)
+  assert.match(androidPage, /lifecycleOwner\.lifecycle\.repeatOnLifecycle\(Lifecycle\.State\.STARTED\)/)
   assert.match(androidPage, /while \(stillSession\(snapshot\) && key != null\)/)
   assert.match(androidPage, /if \(stillSession\(snapshot\) && key != null\) refresh\(\)/)
   assert.match(androidPage, /refresh\(\) \/\/ Disconnect\/cursor eviction/)
