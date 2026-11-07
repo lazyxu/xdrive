@@ -98,7 +98,7 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{},
 		&meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{},
 		&meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{},
-		&meta.AuditEvent{}, &meta.ClipboardVault{}, &meta.ClipboardItem{},
+		&meta.AuditEvent{}, &meta.ClipboardVault{}, &meta.ClipboardItem{}, &meta.ClipboardChange{},
 	); err != nil {
 		t.Fatal(err)
 	}
