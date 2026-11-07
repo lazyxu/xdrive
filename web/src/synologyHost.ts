@@ -20,7 +20,6 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter & { reado
     platform: 'synology',
     services: {
       localBackupClient: local,
-      clipboardPage: createXDriveDSMClipboardPort(local),
       ownerBackupReadFallback: true,
       // Only the verified same-origin DSM CGI methods are enabled. The shared
       // Desktop Files command bar remains visible; no generic NAS-path upload or unrestricted Agent write.
