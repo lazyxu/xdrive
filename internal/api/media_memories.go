@@ -68,8 +68,12 @@ type mediaMemoryTripDay struct {
 }
 
 type mediaMemoryTripSegment struct {
-	Days      []mediaMemoryTripDay
-	ItemCount int64
+	Days              []mediaMemoryTripDay
+	ItemCount         int64
+	HomeLatitudeCell  int64
+	HomeLongitudeCell int64
+	MemberFingerprint string
+	ExactVerified     bool
 }
 
 func mediaMemoryDate(value time.Time) time.Time {
