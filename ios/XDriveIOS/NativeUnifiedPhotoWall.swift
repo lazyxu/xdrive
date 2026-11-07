@@ -79,13 +79,29 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     @State private var acceptedGeneration: UUID?
     @State private var queueBadges: [String: XDriveIOSPhotoKitPersistentBackupQueue.VisibleItemStatus] = [:]
     @State private var badgeReadEpoch = UUID()
+    @State private var queueHistoryCurrent = false
     @Environment(\.xdriveNativePhotoQueueBadgeOwner) private var backupBadgeOwner
     @Environment(\.xdriveNativePhotoProcessingID) private var activeProcessingID
+    @Environment(\.xdriveNativePhotoOnlyNewSince) private var onlyNewSince
     @Environment(\.xdriveNativePhotoPriorityAction) private var priorityAction
+
+    private func displayedBackupState(for row: XDriveIOSNativeUnifiedPhoto) -> String {
+        guard let local = row.local else { return "unverified" }
+        if activeProcessingID == local.id { return "processing" }
+        if let stored = queueBadges[local.id]?.state { return stored }
+        guard queueHistoryCurrent, let since = onlyNewSince else { return "unverified" }
+        switch XDriveIOSPhotoAutoSchedulePolicy.newOnlyCandidate(
+            capturedAt: local.capturedAt, modifiedAt: local.modifiedAt, since: since
+        ) {
+        case .olderThanStart: return "excluded"
+        default: return "unverified"
+        }
+    }
 
     private func readVisibleQueueBadges() async {
         let epoch = UUID()
         badgeReadEpoch = epoch
+        queueHistoryCurrent = false
         // The unified wall holds at most 48 current rows; only read local IDs.
         let ids = model.rows.compactMap { $0.local?.id }
         guard ids.count <= 48, visible, displayActive,
@@ -99,11 +115,13 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
             let fetched = try await queue.visibleStatusDetails(
                 owner: owner, localIdentifiers: ids
             )
+            let isCurrent = try await queue.isCaughtUp(owner: owner)
             try Task.checkCancellation()
             guard badgeReadEpoch == epoch, visible, displayActive,
                   XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
                   model.rows.compactMap({ $0.local?.id }) == ids else { return }
             queueBadges = fetched
+            queueHistoryCurrent = isCurrent
         } catch {
             if badgeReadEpoch == epoch { queueBadges = [:] }
         }
@@ -123,6 +141,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                 if !retainWhileCovered {
                     acceptedGeneration = nil
                     queueBadges = [:]
+                    queueHistoryCurrent = false
                     badgeReadEpoch = UUID()
                     model.reset()
                 }
@@ -190,8 +209,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                                     )
                                     if let local = row.local, backupBadgeOwner != nil,
                                        let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy.badge(
-                                        for: activeProcessingID == local.id ? "processing" :
-                                            (queueBadges[local.id]?.state ?? "unverified"),
+                                        for: displayedBackupState(for: row),
                                         failureReasonCode: queueBadges[local.id]?.failureReasonCode
                                        ) {
                                         Label(badge.title, systemImage: badge.symbol)
