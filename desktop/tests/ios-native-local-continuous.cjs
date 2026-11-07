@@ -143,7 +143,7 @@ test('native media selector queries the entire authorized PhotoKit snapshot', ()
 
 test('native Photos filter empty-state message reflects selected whole-library source', () => {
   assert.match(source, /Text\("本机已授权\\\(mediaFilter\.title\) · 按日分组"\)/)
-  assert.match(source, /Text\(mediaFilter\.emptyMessage\)/)
+  assert.match(source, /XDriveIOSNativePhotoWallStatusMessage\(message: mediaFilter\.emptyMessage\)/)
   assert.match(filterPolicy, /var emptyMessage: String/)
 })
 

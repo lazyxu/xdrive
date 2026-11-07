@@ -614,10 +614,15 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                         }
                     }
                 }
-                if loading { ProgressView("读取相册内容…") }
+                if loading {
+                    XDriveIOSNativePhotoWallLoadingMessage(message: "读取相册内容…")
+                }
                 if let error {
-                    Text(error).foregroundStyle(.red)
-                    Button("重新读取") { savedOffset = 0; reload() }
+                    XDriveIOSNativePhotoWallRetryMessage(
+                        message: error, buttonTitle: "重新读取",
+                        canRetry: !loading && !albumActionBusy && !albumShareBusy &&
+                            selected == nil && phase == .active
+                    ) { savedOffset = 0; reload() }
                 }
                 if !compactGallery {
                     Text("仅操作当前授权相簿的媒体；原件分享需明确点击，不上传或持久保存相簿成员标识。")

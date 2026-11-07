@@ -127,22 +127,32 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                     }
                 }
                 if model.rows.isEmpty {
-                    Text(model.next == nil ? "已浏览到底，没有更多符合条件的照片" : "正在查找符合条件的照片…")
-                        .font(.footnote).foregroundStyle(.secondary).frame(minHeight: 36)
+                    XDriveIOSNativePhotoWallStatusMessage(
+                        message: model.next == nil ? "已浏览到底，没有更多符合条件的照片" : "正在查找符合条件的照片…",
+                        minHeight: 36
+                    )
                 }
                 if !model.completed {
-                    ProgressView("正在加载当前页面与来源状态…")
-                        .font(.footnote).accessibilityIdentifier("native-ios-gallery-visible-proof")
+                    XDriveIOSNativePhotoWallLoadingMessage(
+                        message: "正在加载当前页面与来源状态…",
+                        accessibilityID: "native-ios-gallery-visible-proof"
+                    )
                 }
-                if let message = model.notice { Text(message).font(.footnote).foregroundStyle(.secondary) }
+                if let message = model.notice {
+                    XDriveIOSNativePhotoWallStatusMessage(message: message)
+                }
             }
         } else {
             VStack(spacing: 8) {
                 if let message = model.notice {
-                    Text(message).font(.footnote)
-                    Button("重新读取") { retry = UUID() }
+                    XDriveIOSNativePhotoWallRetryMessage(
+                        message: message,
+                        buttonTitle: "重新读取",
+                        canRetry: visible && displayActive && wall.failure == nil &&
+                            XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+                    ) { retry = UUID() }
                 } else if visible && displayActive {
-                    ProgressView("正在读取照片与缩略图…")
+                    XDriveIOSNativePhotoWallLoadingMessage(message: "正在读取照片与缩略图…")
                 }
             }
             .frame(maxWidth: .infinity, minHeight: page.height)

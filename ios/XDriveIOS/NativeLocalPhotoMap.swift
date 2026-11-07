@@ -754,7 +754,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         busy ? "正在读取位置照片" :
                         (hasNext ? "可继续向下滚动浏览" : "已显示全部可访问照片")
                     )
-                if busy { ProgressView("正在读取位置照片…") }
+                if busy { XDriveIOSNativePhotoWallLoadingMessage(message: "正在读取位置照片…") }
                 if let error {
                     XDriveIOSNativePhotoWallRetryMessage(
                         message: error, buttonTitle: "重试读取照片",
@@ -765,8 +765,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     }
                 }
                 if !busy && items.isEmpty && priorWindow.isEmpty && error == nil {
-                    Text("此位置没有可访问的照片或视频。")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    XDriveIOSNativePhotoWallStatusMessage(message: "此位置没有可访问的照片或视频。")
                 }
                 ScrollView {
                     XDriveIOSNativePhotoWallGrid(density: wallDensity) {
