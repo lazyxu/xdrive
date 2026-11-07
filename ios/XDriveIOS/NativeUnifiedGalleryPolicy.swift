@@ -76,11 +76,11 @@ enum XDriveIOSNativePhotoPairingReason: String, Identifiable {
     var id: Self { self }
     var explanation: String {
         switch self {
-        case .checking: return "正在核对完整原件的 SHA-256。"
+        case .checking: return "本机与云端的原件身份尚未确认，照片仍可正常浏览。"
         case .localUnavailable: return "本机原件暂不可读，可能仅保存在 iCloud。可在查看器中获取原件后重新核对。"
         case .duplicate: return "存在多个内容相同的候选，暂时分别保留，避免合并错照片。"
         case .permission: return "本机照片访问权限不完整，无法确认云端照片是否也在本机。"
-        case .libraryIncomplete: return "本机原件索引尚未覆盖这类媒体，完成核对后会自动更新。"
+        case .libraryIncomplete: return "目前没有足够的本机原件证据；可正常浏览，备份时校验原件，或手动开始核验。"
         case .cloudUnavailable: return "云端暂不可用或不支持精确核对。重新连接后可重试。"
         case .cloudIdentity: return "云端原件身份尚未就绪或已经变化，需要服务器完成媒体分析后重新核对。"
         }
