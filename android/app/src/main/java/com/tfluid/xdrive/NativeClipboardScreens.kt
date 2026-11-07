@@ -15,7 +15,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.tfluid.xdrive.core.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +39,7 @@ internal fun NativeClipboardScreen(
 ) {
     val state by controller.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val clipboard = remember(context) {
         context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     }
@@ -102,37 +106,42 @@ internal fun NativeClipboardScreen(
             if (stillSession(snapshot)) refreshing = false
         }
     }
-    LaunchedEffect(epoch, key) {
+    // Inactive/background activities must not keep either a polling job or
+    // the Owner SSE socket alive. Resume always reconciles full GET first.
+    LaunchedEffect(epoch, key, lifecycleOwner) {
         if (key == null) return@LaunchedEffect
         val snapshot = actionFence.capture()
-        // The 15s foreground GET remains the fallback for older deployments,
-        // permission changes, a short network outage, or missed SSE cursors.
-        while (stillSession(snapshot) && key != null) {
-            delay(15_000)
-            if (!stillSession(snapshot) || key == null) break
-            refresh()
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (stillSession(snapshot) && key != null) refresh()
+            while (stillSession(snapshot) && key != null) {
+                delay(15_000)
+                if (!stillSession(snapshot) || key == null) break
+                refresh()
+            }
         }
     }
-    LaunchedEffect(epoch, key) {
+    LaunchedEffect(epoch, key, lifecycleOwner) {
         if (key == null) return@LaunchedEffect
         val snapshot = actionFence.capture()
-        var after = 0L // Per-unlock cursor: never persist it across Owners.
-        while (stillSession(snapshot) && key != null) {
-            try {
-                after = controller.clipboardWatch(after) {
-                    withContext(Dispatchers.Main.immediate) {
-                        if (stillSession(snapshot) && key != null) refresh()
+        var after = 0L // Only in-memory for the current unlock/Owner epoch.
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (stillSession(snapshot) && key != null) refresh()
+            while (stillSession(snapshot) && key != null) {
+                try {
+                    after = controller.clipboardWatch(after) {
+                        withContext(Dispatchers.Main.immediate) {
+                            if (stillSession(snapshot) && key != null) refresh()
+                        }
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // Unsupported/failed SSE never disables the 15s fallback.
                 }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                // SSE is a latency optimization, not the source of truth.
-                // The independent 15s foreground GET remains active.
+                if (!stillSession(snapshot) || key == null) break
+                refresh() // Full GET after disconnect, cursor eviction or outage.
+                delay(3_000)
             }
-            if (!stillSession(snapshot) || key == null) break
-            refresh() // Disconnect/cursor eviction is repaired via full GET.
-            delay(3_000) // Bound reconnect churn and reverify Owner bearer.
         }
     }
     LaunchedEffect(epoch, incomingText) {
