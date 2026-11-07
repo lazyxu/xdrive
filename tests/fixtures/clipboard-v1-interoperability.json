@@ -1,0 +1,30 @@
+{
+  "protocol": "xdrive-clipboard-v1",
+  "kdf": "PBKDF2-SHA256",
+  "iterations": 310000,
+  "salt": "AAECAwQFBgcICQoLDA0ODw==",
+  "passphrase": "xDrive cross-platform test 2026!",
+  "aad_scope": "https://clipboard.example.test:42",
+  "owner_id": 42,
+  "key_hex": "f859ab57d42b666950c02f8cb1be409d33c4e5ef41108ff2a2fc979884b35a65",
+  "items": [
+    {
+      "client_event_id": "843c9d15-1011-4a5b-a8d6-393995c9b8ad",
+      "kind": "text/plain",
+      "nonce": "AAECAwQFBgcICQoL",
+      "ciphertext": "IgzZe24sn5HJ8UZIdJFp36N60C1flWPsyBwpXa6U2HQy47AmFZ7qXEQtX33UzI6IZFHfbvsbdAAATDyJT7DaUceUPs9PAOXcDkGXY4b/M3ZJtcpb",
+      "plaintext": "中文 Clipboard — iOS · Android · Desktop · DSM\n第二行 🌐"
+    },
+    {
+      "client_event_id": "1a44b191-36b3-4ef8-adc3-9f6ae2084df1",
+      "kind": "text/uri-list",
+      "nonce": "DA0ODxAREhMUFRYX",
+      "ciphertext": "N2HsIS+C87irkgMZ4j2Q0agCr4OMbsmkOxdDthVprcOzXEvBgjk2PGjb3lPm5mdV",
+      "plaintext": "https://example.org/path?q=hello"
+    }
+  ],
+  "vault_check": {
+    "nonce": "8ODQwLCgkIBwYFBA",
+    "ciphertext": "qOw85Hz0ilewRguONOrXWuJxRLeKUOJJ+hntOlwMn3bpt1yByOjwipg="
+  }
+}

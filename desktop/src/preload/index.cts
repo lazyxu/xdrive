@@ -1004,6 +1004,14 @@ const agent = Object.freeze({
   cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) =>
     ipcRenderer.invoke('agent:cloud-restore-version', nodeID, revision, versionID),
   cloudShares: (nodeID: number) => ipcRenderer.invoke('agent:cloud-shares', nodeID),
+  cloudClipboardVault: () => ipcRenderer.invoke('agent:cloud-clipboard-vault'),
+  cloudClipboardCheck: (value: { nonce: string; ciphertext: string; scope: string }) =>
+    ipcRenderer.invoke('agent:cloud-clipboard-check', value),
+  cloudClipboardList: (before: number) => ipcRenderer.invoke('agent:cloud-clipboard-list', before),
+  cloudClipboardCreate: (value: { client_event_id: string; kind: string; nonce: string; ciphertext: string }) =>
+    ipcRenderer.invoke('agent:cloud-clipboard-create', value),
+  cloudClipboardDelete: (id: number) => ipcRenderer.invoke('agent:cloud-clipboard-delete', id),
+  cloudClipboardClear: () => ipcRenderer.invoke('agent:cloud-clipboard-clear'),
   cloudNotesInitialize: () => ipcRenderer.invoke('agent:cloud-notes-initialize'),
   cloudNotesList: (source: 'mine' | 'ios_notes', query = '', offset = 0) =>
     ipcRenderer.invoke('agent:cloud-notes-list', source, query, offset),
@@ -1129,6 +1137,7 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   startNativeDragOut: (relativePath: string) =>
     ipcRenderer.send('desktop:start-native-drag-out', relativePath),
   copyText: (text: string) => clipboard.writeText(text),
+  readClipboardText: () => clipboard.readText(),
   hide: () => ipcRenderer.send('desktop:hide'),
   quit: () => ipcRenderer.send('desktop:quit'),
   onNavigate: (callback: (view: string | { kind: 'source-run'; sourceID: number; runID: string; server: string; username: string }) => void) => {
