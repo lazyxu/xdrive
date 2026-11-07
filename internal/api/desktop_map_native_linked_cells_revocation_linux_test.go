@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,7 +20,13 @@ import (
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/version"
+	"gorm.io/gorm"
 )
+
+// Only the opt-in request carries this marker into its PostgreSQL reads.
+// No production handler, middleware or global test hook is modified.
+type desktopMapInFlightNativeLogoutKey struct{}
+
 
 // Real PostgreSQL and real production Gin endpoints. This is the missing
 // intersection of the existing native-linked browser JWT test (which used
@@ -222,6 +229,93 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 		page.TotalCount != 9 {
 		t.Fatal("independent Owner map session was not live before Agent logout")
 	}
+	// A separate native Agent session proves the in-flight race: let the
+	// mapped /cells handler finish its protected SQL while the original
+	// token is live, pause its LAST Owner/epoch verification and revoke the
+	// bound native RefreshToken before the HTTP response can be written.
+	// Only a post-query native-lineage reread can deny that old result.
+	raceNative, err := s.issueSession(db, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raceIssued := request(http.MethodPost, "/api/v1/auth/desktop-map/issue",
+		raceNative.AccessToken,
+		jsonBody("native_refresh_token", raceNative.RefreshToken), "")
+	if raceIssued.Code != http.StatusOK {
+		t.Fatalf("race native map grant HTTP %d", raceIssued.Code)
+	}
+	var raceGrant struct {
+		Ticket string `json:"ticket"`
+	}
+	if err := json.Unmarshal(raceIssued.Body.Bytes(), &raceGrant); err != nil ||
+		len(raceGrant.Ticket) != 64 {
+		t.Fatal("race native map grant missing")
+	}
+	raceRedeem := request(http.MethodPost, "/api/v1/auth/desktop-map/redeem",
+		"", jsonBody("ticket", raceGrant.Ticket), origin)
+	if raceRedeem.Code != http.StatusOK {
+		t.Fatalf("race map browser redemption HTTP %d", raceRedeem.Code)
+	}
+	var raceBrowser authResponse
+	if err := json.Unmarshal(raceRedeem.Body.Bytes(), &raceBrowser); err != nil ||
+		raceBrowser.AccessToken == "" {
+		t.Fatal("race map browser JWT missing")
+	}
+	var epochChecks atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	const nativeRaceHook = "test:hold_map_epoch_post_query_for_native_logout"
+	if err := db.Callback().Query().After("gorm:query").Register(
+		nativeRaceHook, func(tx *gorm.DB) {
+			if tx.Statement.Context.Value(desktopMapInFlightNativeLogoutKey{}) != true ||
+				tx.Statement.Table != "xd_baidu_jsapi_map_epochs" {
+				return
+			}
+			if epochChecks.Add(1) == 2 {
+				close(entered)
+				<-release
+			}
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Callback().Query().Remove(nativeRaceHook) }()
+	raceRequest := httptest.NewRequest(http.MethodGet, origin+cellsRoute, nil).
+		WithContext(context.WithValue(context.Background(),
+			desktopMapInFlightNativeLogoutKey{}, true))
+	raceRequest.Header.Set("Authorization", "Bearer "+raceBrowser.AccessToken)
+	responses := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, raceRequest)
+		responses <- w
+	}()
+	select {
+	case <-entered:
+	case <-time.After(12 * time.Second):
+		close(release)
+		t.Fatal("real Gin /cells did not reach post-query epoch recheck")
+	}
+	terminal := db.Model(&meta.RefreshToken{}).
+		Where("token_hash = ?", auth.HashRefreshToken(raceNative.RefreshToken)).
+		Update("revoked_at", time.Now().UTC())
+	if terminal.Error != nil || terminal.RowsAffected != 1 {
+		close(release)
+		t.Fatal("could not atomically revoke native RefreshToken while map query is in flight")
+	}
+	close(release)
+	select {
+	case result := <-responses:
+		if result.Code != http.StatusForbidden {
+			t.Fatalf("in-flight native logout exposed old map Cells: HTTP %d", result.Code)
+		}
+	case <-time.After(12 * time.Second):
+		t.Fatal("revoked in-flight map request did not return")
+	}
+	if epochChecks.Load() != 2 {
+		t.Fatalf("expected initial and post-query Owner epoch checks, got %d", epochChecks.Load())
+	}
+
 	// Confirm native logout invalidates an ALREADY-MINTED browser bearer on
 	// the real protected photo routes, not merely /me or cookie renewal.
 	logout := request(http.MethodPost, "/api/v1/auth/logout", "",
