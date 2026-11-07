@@ -37,7 +37,13 @@ function clickPlaces(){
   target.click()
   return true
 }
-function diagnoseNativeMapAdmission(){
+async function diagnoseNativeMapAdmission(){
+  const section=document.querySelector('[data-xdrive-gallery-section][aria-current="page"]')
+    ?.getAttribute('data-xdrive-gallery-section')||''
+  const known=['library','memories','people','places','albums','favorites',
+    'media-types','cleanup','trash'].includes(section)?section:'unknown'
+  const state=await window.xdriveDesktop?.agent?.getState?.().catch(()=>null)
+  const current=state?.data?.status||state?.status||{}
   const map=document.querySelector('[data-xdrive-gallery-places-map]')
   const panel=document.querySelector('[data-xdrive-desktop-places-shared-web]')
   const failed=document.querySelector('[data-xdrive-desktop-map-unavailable]')
@@ -45,6 +51,12 @@ function diagnoseNativeMapAdmission(){
   const waiting=panel?.querySelector('[role="status"]')
   const content=alert?.textContent||waiting?.textContent||''
   return {
+    desktopNav:!!document.querySelector('nav[aria-label="桌面版功能区"]'),
+    galleryNav:!!document.querySelector('[data-xdrive-gallery-section="places"]'),
+    gallerySection:known,
+    loginForm:!!document.querySelector('input[type="password"]'),
+    agentConnected:state?.data?.connected===true||state?.connected===true,
+    agentConfigured:current.configured===true,
     placesIndex:!!document.querySelector('[data-xdrive-places-index]'),
     map:!!map,sharedWeb:!!panel,unavailable:!!failed,
     webview:!!document.querySelector('[data-xdrive-desktop-embedded-places]'),
