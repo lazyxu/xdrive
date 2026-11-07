@@ -85,10 +85,18 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
               SHA-256：{artifact.sha256}
             </Typography>
             <Stack direction="row" spacing={2} flexWrap="wrap">
-              {sources.map((url, index) => {
-                const label = url.startsWith('/api/') ? '本机服务器' : url.includes('gitlab') ? 'GitLab' : 'GitHub'
+              {artifact.cached && port.downloadCached ? (
+                <XDriveActionButton onClick={() => {
+                  const transfer = port.downloadCached?.(artifact.filename)
+                  if (transfer) void transfer.catch(() => {
+                    setError('本机安装包下载失败，可改用 GitLab 或 GitHub。')
+                  })
+                }}>本机服务器下载（优先）</XDriveActionButton>
+              ) : null}
+              {sources.filter((url) => !url.startsWith('/api/')).map((url, index) => {
+                const label = url.includes('gitlab') ? 'GitLab' : 'GitHub'
                 return <Link key={url} href={url} target="_blank" rel="noopener noreferrer" fontSize="small">
-                  {label}{index === 0 ? '（优先）' : ''}
+                  {label}{index === 0 && !artifact.cached ? '（优先）' : ''}
                 </Link>
               })}
             </Stack>

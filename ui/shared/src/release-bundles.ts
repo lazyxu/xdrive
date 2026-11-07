@@ -21,6 +21,7 @@ export interface XDriveReleaseBundleState {
 export interface XDriveReleaseBundlePort {
   getState: () => Promise<XDriveReleaseBundleState>
   retry: () => Promise<unknown>
+  downloadCached?: (filename: string) => Promise<void>
 }
 
 /** Ordered URLs are advisory sources, never permission to install unverified bytes.

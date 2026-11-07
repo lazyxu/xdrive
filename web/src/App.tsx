@@ -2162,6 +2162,7 @@ function FileManager({
   const releaseBundlePort = useMemo(() => ({
     getState: () => api.releaseBundleStatus(),
     retry: () => api.adminRetryReleaseBundle(),
+    downloadCached: (filename: string) => api.downloadCachedReleaseBundleArtifact(filename),
   }), [api])
 
   const serviceDependenciesPort = useMemo(() => ({

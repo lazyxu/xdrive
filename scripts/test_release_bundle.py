@@ -2,6 +2,7 @@
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
+import fcntl
 import json
 from pathlib import Path
 import tempfile
@@ -74,6 +75,40 @@ class BundleCacheTests(unittest.TestCase):
         self.manifest["artifacts"][0]["sha256"] = "0" * 64
         self.assertEqual(self.sync(), 1)
         self.assertEqual(json.loads((self.cache / "current.json").read_text())["commit"], "a" * 40)
+
+
+    def test_server_install_lock_out_ranks_client_download(self):
+        from release_bundle import _install_busy
+        lock = self.root / "install.lock"
+        with lock.open("a+b") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.assertTrue(_install_busy(lock))
+            fcntl.flock(held, fcntl.LOCK_UN)
+        self.assertFalse(_install_busy(lock))
+
+    def test_gitlab_failure_falls_back_to_verified_github(self):
+        url = f"http://127.0.0.1:{self.http.server_port}/"
+        self.manifest["artifacts"][0]["sources"]["gitlab"] = url + "missing.ipa"
+        self.manifest["artifacts"][0]["sources"]["github"] = url + "pkg.ipa"
+        self.assertEqual(self.sync(), 0)
+        self.assertEqual(
+            (self.cache / "packages" / ("a" * 40) / "pkg.ipa").read_bytes(), self.data,
+        )
+
+    def test_reject_changed_immutable_manifest(self):
+        self.assertEqual(self.sync(), 0)
+        self.manifest["channel"] = "stable"
+        with self.assertRaises(ValueError):
+            self.sync()
+
+    def test_published_permissions_allow_read_only_server(self):
+        self.assertEqual(self.sync(), 0)
+        root = self.cache / "packages"
+        sha = root / ("a" * 40)
+        package = sha / "pkg.ipa"
+        self.assertEqual(root.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(sha.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(package.stat().st_mode & 0o777, 0o644)
 
     def test_external_origins_rejected(self):
         self.manifest["artifacts"][0]["sources"]["github"] = "https://evil.example/pkg.ipa"

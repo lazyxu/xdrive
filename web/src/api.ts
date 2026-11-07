@@ -1648,6 +1648,18 @@ export class XDriveApi {
     })
   }
 
+  async downloadCachedReleaseBundleArtifact(filename: string) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$/.test(filename)) {
+      throw new Error('无效的安装包名称')
+    }
+    const sink = await xDriveOpenWebDownloadSink(filename)
+    if (sink.kind === 'cancelled') return
+    await this.downloadAuthenticated(
+      `/api/v1/release-bundles/current/artifacts/${encodeURIComponent(filename)}`,
+      filename, {}, true, sink,
+    )
+  }
+
 
   adminOfflineImportList() {
     return this.request<{ items: import('../../ui/shared/src/offline-update').XDriveOfflineImportSummary[] }>(
