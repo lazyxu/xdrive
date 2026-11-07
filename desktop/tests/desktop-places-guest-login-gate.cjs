@@ -87,7 +87,9 @@ test('actual guest DOM must be a map-only page, never HTTP 200 login or Owner-de
 test('Desktop hides unverified guest, detects late login transitions and keeps shared map modes', () => {
   const map = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
   const mode = read('ui/shared/src/media-gallery-places-map-mode.ts')
-  assert.match(map, /guest\.executeJavaScript\(XDRIVE_DESKTOP_PLACES_GUEST_PROBE\)/)
+  // The real WebView may throw synchronously before DOM-ready. The guarded
+  // helper is exercised by gallery-places-webview-dom-ready-probe.cjs.
+  assert.match(map, /xDriveStartDesktopPlacesGuestProbe\(\s*guest\s*,\s*XDRIVE_DESKTOP_PLACES_GUEST_PROBE\s*\)/)
   assert.match(map, /if\(state==='login'\)/)
   assert.match(map, /else if\(state==='denied'\)/)
   assert.match(map, /visibility:guestReady\?'visible':'hidden'/)
