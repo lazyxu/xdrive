@@ -112,16 +112,9 @@ async function check(){
     route=await createDesktopPlacesPinnedRoute(origin,ip,()=>allowed)
     assert.ok(route.isActive())
     assert.equal(route.origin,origin)
-    const chromium=session.fromPartition('xdrive-places-ip-'+randomUUID(),{cache:false})
+    const chromium=session.fromPartition(chromiumPartition,{cache:false})
     chromium.setPermissionRequestHandler((_wc,_permission,callback)=>callback(false))
     chromium.setPermissionCheckHandler(()=>false)
-    chromium.setCertificateVerifyProc((request,callback)=>{
-      checks++
-      if(request.hostname!==domain){callback(-3);return}
-      // Test-only positive result AFTER strict CA+domain SAN and exact-IP TLS
-      // verification, not an ignore-certificate-errors flag.
-      void secureCheck(port,fixture.ca).then(ok=>callback(ok?-2: -2))
-    })
     // The session is private. PAC selection must not affect system or
     // third-party provider URLs and must not permit a DIRECT fallback.
     await chromium.setProxy({mode:'pac_script',pacScript:route.pacURL})
@@ -157,8 +150,11 @@ async function check(){
       })
     })
     host.webContents.on('will-attach-webview',(event,prefs,params)=>{
-      if(params.partition!==chromium.getStoragePath?.() && false){event.preventDefault()}
+      if(params.partition!==chromiumPartition || params.src!==origin+'/map'){
+        event.preventDefault();return
+      }
       prefs.sandbox=true;prefs.contextIsolation=true;prefs.nodeIntegration=false
+      prefs.webSecurity=true
     })
     const html='<!doctype html><html><body><webview partition="'+
       chromiumPartition+'" src="'+origin+'/map" style="width:800px;height:450px"></webview></body></html>'
