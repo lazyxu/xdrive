@@ -98,6 +98,13 @@ async function bootElectron(boot,env,bootstrap){
     assert.equal(row.actualWebVite,true)
     assert.equal(row.realGuest,true)
     assert.equal(row.noNestedLogin,true)
+    assert.equal(row.exactOwnerCells,9)
+    assert.equal(row.exactFavorites,3)
+    assert.equal(row.exactFamily,3)
+    assert.equal(row.exactFamilyFavorites,2)
+    assert.equal(row.exactViewerRange,9)
+    assert.equal(row.viewerMetadata,true)
+    assert.equal(row.noUnrelatedMapBearerAccess,true)
     return row
   }finally{
     await stop(proc)
@@ -180,6 +187,8 @@ async function main(){
       productionMapGuest:true,restarts:results.length,
       AgentSessionRetained:true,savedDesktopPassword:false,
       noSecondLogin:true,OwnerExact:true,syntheticPhotoFixture:true,
+      actualSignedOwnerCells:true,scopedAlbumFavoritesAndDate:true,
+      actualViewerMetadata:true,mapBearerRouteFence:true,
       // No manual test, provider SDK, installed Windows or production server.
       physicalSystemTested:false,
     }))
