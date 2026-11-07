@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '../..')
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 
 test('Gallery image wall keeps photos square without visual filename overlays', () => {
-  const source = read('ui/shared/src/mui/MediaGallery.tsx')
+  const source = read('ui/shared/src/mui/MediaGallerySharedTiles.tsx')
   const tile = source.slice(source.indexOf('function MediaTile({'), source.indexOf('function MediaTileGrid({'))
   assert.ok(tile.includes("aspectRatio: '1 / 1'"))
   assert.doesNotMatch(tile, /className="media-name"|hover \.media-name|focus-visible \.media-name/)
@@ -19,7 +19,7 @@ test('Gallery image wall keeps photos square without visual filename overlays', 
 })
 
 test('Places photo drawer renders the canonical square, accessible Gallery tile', () => {
-  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const gallery = read('ui/shared/src/mui/MediaGallerySharedTiles.tsx')
   const drawer = read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
   const tile = gallery.slice(gallery.indexOf('export function MediaTile({'),
     gallery.indexOf('function MediaTileGrid({'))
