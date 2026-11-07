@@ -93,7 +93,12 @@ func verifyMediaExactTripMembership(
 		Fingerprint int64
 	}
 	var rows []daySummary
-	query := (&Server{DB: db}).mediaItemsBaseQuery(ctx, ownerID, mediaQueryOptions{}, "").
+	base, err := (&Server{DB: db}).mediaItemsBaseQuery(
+		ctx, ownerID, mediaQueryOptions{}, "")
+	if err != nil {
+		return nil, err
+	}
+	query := base.
 		Where("xd_media_metadata.index_state = ? AND xd_media_metadata.captured_at IS NOT NULL AND " +
 			mediaPlaceValidGPSPredicate, meta.MediaIndexStateReady).
 		Where(dayExpr+" IN ?", keys).Where(awaySQL, awayArgs...).
