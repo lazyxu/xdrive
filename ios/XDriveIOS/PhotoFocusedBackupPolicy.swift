@@ -61,11 +61,16 @@ enum XDriveIOSPhotoFocusedBackupPolicy {
     }
 
     static func afterWindow(index: Int, visibleTotal: Int, scanned: Int,
-                            uploaded: Int, needsReview: Bool) -> Step {
+                            uploaded: Int, needsReview: Bool,
+                            queuedUploaded: Int = 0) -> Step {
         guard index >= 0, visibleTotal >= 0, scanned >= 0,
               uploaded >= 0,
               uploaded <= XDriveIOSPhotoAutoSchedulePolicy.maxNewFiles,
-              uploaded <= scanned,
+              queuedUploaded >= 0, queuedUploaded <= uploaded,
+              // This Focused pass may consume PhotoKit priority revisions
+              // before it reads any positional slot. Only non-queue uploads
+              // are bounded by scanned slots; total writes remain capped.
+              uploaded - queuedUploaded <= scanned,
               let offset = XDrivePhotoBackupScanWindow.offset(for: index)
         else { return .invalidProgress }
 
