@@ -6,6 +6,7 @@ import UIKit
 /// polls the iOS system pasteboard, persists its E2EE key or launches WebKit.
 struct XDriveIOSNativeClipboardScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    @Environment(\.scenePhase) private var scenePhase
     @State private var passphrase = ""
     @State private var key: SymmetricKey?
     @State private var aadScope = ""
@@ -131,11 +132,16 @@ struct XDriveIOSNativeClipboardScreen: View {
         } message: {
             Text("只删除当前 Owner 的 Server 密文历史，不能撤销。")
         }
-        .task(id: unlocked) {
-            guard unlocked else { return }
+        // Never poll while the app is inactive or backgrounded. After
+        // returning to foreground, reconcile current Owner state immediately.
+        .task(id: unlocked && scenePhase == .active) {
+            guard unlocked, scenePhase == .active else { return }
+            await refresh()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 15_000_000_000)
-                if Task.isCancelled { break }
+                do {
+                    try await Task.sleep(nanoseconds: 15_000_000_000)
+                } catch { break }
+                guard !Task.isCancelled, scenePhase == .active else { break }
                 await refresh()
             }
         }

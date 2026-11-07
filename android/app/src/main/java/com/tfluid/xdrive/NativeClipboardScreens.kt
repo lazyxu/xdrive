@@ -15,7 +15,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.tfluid.xdrive.core.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +39,7 @@ internal fun NativeClipboardScreen(
 ) {
     val state by controller.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val clipboard = remember(context) {
         context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     }
@@ -102,12 +106,17 @@ internal fun NativeClipboardScreen(
             if (stillSession(snapshot)) refreshing = false
         }
     }
-    LaunchedEffect(epoch, key) {
+    // A mounted Compose screen remains alive when Android backgrounds the
+    // app; STOPPED cancels its polling job, STARTED resumes with a fresh GET.
+    LaunchedEffect(epoch, key, lifecycleOwner) {
         if (key == null) return@LaunchedEffect
-        while (stillOwner() && key != null) {
-            delay(15_000)
-            if (!stillOwner() || key == null) break
-            refresh()
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (stillOwner() && key != null) refresh()
+            while (stillOwner() && key != null) {
+                delay(15_000)
+                if (!stillOwner() || key == null) break
+                refresh()
+            }
         }
     }
     LaunchedEffect(epoch, incomingText) {

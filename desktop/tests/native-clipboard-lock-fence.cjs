@@ -53,6 +53,23 @@ test('Android native page locks out delayed requests and preserves new drafts', 
   assert.doesNotMatch(android, /finally\s*\{\s*busy\s*=\s*false\s*\}/)
 })
 
+test('iOS native Clipboard stops polling while scene is backgrounded', () => {
+  assert.match(swift, /@Environment\(\\\.scenePhase\) private var scenePhase/)
+  assert.match(swift, /\.task\(id: unlocked && scenePhase == \.active\)/)
+  assert.match(swift, /guard unlocked, scenePhase == \.active else \{ return \}/)
+  assert.match(swift, /await refresh\(\)[\s\S]*?try await Task\.sleep\(nanoseconds: 15_000_000_000\)/)
+  assert.match(swift, /guard !Task\.isCancelled, scenePhase == \.active else \{ break \}/)
+  assert.doesNotMatch(swift, /try\? await Task\.sleep\(nanoseconds: 15_000_000_000\)/)
+})
+
+test('Android native Clipboard only polls while Lifecycle is STARTED', () => {
+  assert.match(android, /val lifecycleOwner = LocalLifecycleOwner\.current/)
+  assert.match(android, /lifecycleOwner\.lifecycle\.repeatOnLifecycle\(Lifecycle\.State\.STARTED\)/)
+  assert.match(android, /if \(stillOwner\(\) && key != null\) refresh\(\)/)
+  assert.match(android, /delay\(15_000\)/)
+  assert.doesNotMatch(android, /LaunchedEffect\(epoch, key\) \{/)
+})
+
 test('Android session fence has executable JVM race cases, not just a source assertion', () => {
   assert.match(androidFence, /fun invalidate\(\) \{\s*generation \+= 1L/)
   assert.match(androidFence, /fun accepts\(snapshot: Long\): Boolean = generation == snapshot/)

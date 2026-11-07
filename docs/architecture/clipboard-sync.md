@@ -1,6 +1,6 @@
 # xDrive Clipboard — cross-device design and Web MVP
 
-Status: Web MVP merged in #3950 with hardening through #4046; six-platform native/Host/E2EE and Owner-scoped SSE source merged in #4068 (master commit `c83bcf3bd00dc817c9214386efe0743093ad0fc8`, complete CI and Final Gate passed). Follow-up #4079 contains the separate Native Lock/Owner lifecycle and SSE revocation tests, directly based on master, **not merged or accepted until its own exact-head CI/Final Gate succeeds**. A source merge does not prove production deployment or physical-device verification.
+Status: Web MVP merged in #3950 with hardening through #4046; six-platform native/Host/E2EE and Owner-scoped SSE source merged in #4068 (master commit `c83bcf3bd00dc817c9214386efe0743093ad0fc8`, complete CI and Final Gate passed). Follow-up #4079 merged to master as commit `4b59ca80e52ebeb8998199f09d2900e62fa240ae` after its independent exact-head CI, iOS IPA, Android Gradle and Final Gate passed; it adds Native Lock/Owner lifecycle fences and real SSE revocation tests. A source merge does not prove production deployment or physical-device verification.
 
 ## 1. Product boundary
 
@@ -8,7 +8,7 @@ Clipboard is **not** FileExplorer's existing Copy/Cut/Paste state. The latter us
 
 **Web MVP (this work):** same-Owner Web/PWA and mobile browser manual text/URL send, optional user-gesture read of the local clipboard, encrypted recent history, decrypt/copy back to the OS clipboard, delete one, clear all, bounded paging, and foreground refresh. No automatic system clipboard monitoring, device pairing, per-device delivery, background execution, image/file payloads, universal copy/paste or native Agent/DSM claims.
 
-**Later:** registered-device-enrolled per-device authorization and E2EE group-key wrapping, targeted fan-out, SSE notification with durable cursor, Desktop Windows/macOS/Linux OS listener, native iOS/Android Share Extension/intent, image/object TTL store and verified Owner Node references. Mobile background clipboard monitoring is **not a promised capability**. Use WebClipboard only with user gestures, including HTTP-LAN/browser clipboard API failures.
+**Later:** registered-device-enrolled per-device authorization and E2EE group-key wrapping, targeted fan-out, optional native SSE consumers, Desktop Windows/macOS/Linux OS listener, an iOS Clipboard Share Extension, image/object TTL store and verified Owner Node references. Mobile background clipboard monitoring is **not a promised capability**. Use WebClipboard only with user gestures, including HTTP-LAN/browser clipboard API failures.
 
 ## 2. Ownership and security
 
@@ -77,7 +77,7 @@ The `POST /clipboard/items` transaction acquires `SELECT ... FOR UPDATE` on the 
 
 ## 9. Six-platform integration and native lifecycle follow-up
 
-**Merge-status checkpoint (2026-11-07):** #4068 merged to master with exact tested head `6efdcb48c399763fc3955c1ec3a755b275987ac9` and squash commit `c83bcf3bd00dc817c9214386efe0743093ad0fc8`. The six-platform code listed below is in master source, not a claim of production release or physical-device acceptance. Its predecessor source PRs #4055 / #4065 are closed; #4067 was only staging. #4079 is now a separate seven-file incremental Draft targeting master, never a reason to rewrite the accepted #4068 history.
+**Merge-status checkpoint (2026-11-07):** #4068 merged to master with exact tested head `6efdcb48c399763fc3955c1ec3a755b275987ac9` and squash commit `c83bcf3bd00dc817c9214386efe0743093ad0fc8`. The six-platform code listed below is in master source, not a claim of production release or physical-device acceptance. Its predecessor source PRs #4055 / #4065 are closed; #4067 was only staging. #4079's seven-file incremental lifecycle/SSE test follow-up also merged to master, without rewriting the accepted #4068 history.
 
 | Client or capability | Candidate implementation | Boundary |
 | --- | --- | --- |
@@ -86,9 +86,9 @@ The `POST /clipboard/items` transaction acquires `SELECT ... FOR UPDATE` on the 
 | DSM | `internal/synologyui/owner_clipboard.go`, `web/src/synologyClipboardPort.ts` | Canonical shared React UI, authenticated CGI and Owner scope; **browser** OS clipboard, never NAS OS clipboard |
 | iOS Native | `ios/XDriveIOS/NativeClipboardClient.swift`, `ios/XDriveIOS/NativeClipboardScreen.swift` | SwiftUI user-triggered paste/copy/send, verified HTTPS Owner and Web v1 crypto; no separate Clipboard Share Extension target in #4068 |
 | Android Native | `NativeClipboardScreens.kt`, `XDriveClipboardCrypto.kt` | Compose manual paste/copy/send plus `ACTION_SEND` text draft; no background observer |
-| SSE | `internal/api/clipboard.go`, `web/src/api.ts::clipboardWatchChanges` | Server returns only Owner-scoped `sync/change` cursors; stream expires after 20 seconds with renewed authentication; Browser GET is authoritative and 15s foreground polling remains. Native clients currently use foreground polling, not native SSE subscriptions |
+| SSE | `internal/api/clipboard.go`, `web/src/api.ts::clipboardWatchChanges` | Server returns only Owner-scoped `sync/change` cursors; stream expires after 20 seconds with renewed authentication; Browser GET is authoritative and 15s foreground polling remains. Native clients poll every 15 seconds only while their scene/activity is foreground-visible (with an immediate GET on resume), not native SSE subscriptions |
 | Interoperability | `tests/fixtures/clipboard-v1-interoperability.json` and Web/Android crypto tests | PBKDF2-SHA256, AES-256-GCM, pinned AAD, Unicode/URI, EventID and tamper rejection; passwords and keys never persist as plaintext |
 
-**#4079's proposed lifecycle protection:** a same-Owner manual Lock, Owner change, or page disposal must invalidate asynchronous unlock/read/send/delete/clear completions even if the network delivers a valid late ACK. The iOS generation and Android `XDriveClipboardSessionFence` are reviewed in source and Android has executable JVM test cases. These are **not** substitutes for PR-specific iOS IPA, Android Gradle, full CI and Final Gate on the final HEAD. An already-committed message may remain on the Server even when its reply is ignored after Lock; do not misreport such a send as undone.
+**Merged #4079 lifecycle protection:** a same-Owner manual Lock, Owner change, or page disposal must invalidate asynchronous unlock/read/send/delete/clear completions even if the network delivers a valid late ACK. The iOS generation and Android `XDriveClipboardSessionFence` are reviewed in source and Android has executable JVM test cases. Its own iOS IPA, Android Gradle, full CI and Final Gate passed on the final HEAD; source-level contracts alone would not have been sufficient. An already-committed message may remain on the Server even when its reply is ignored after Lock; do not misreport such a send as undone.
 
 **Still not implemented in this integration:** optional Desktop background OS-clipboard watching with feedback suppression, explicit device-targeted key wrapping and delivery, image/file Clipboard TTL objects and node references, iOS Clipboard Share Extension, and optional Native SSE readers. Android `ACTION_SEND` must not be mislabeled as an iOS Share Extension. All such work needs separate Owner-scope and failure-mode tests; it must not compromise the successful manual text mailbox or create an alternative CAS writer.
