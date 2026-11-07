@@ -264,6 +264,10 @@ struct XDriveIOSNativePhotosDashboard: View {
                      backup.schedule?.enabled == true ? login.owner : nil)
         .environment(\.xdriveNativePhotoProcessingID,
                      backup.busy ? backup.progress?.activeLocalIdentifier : nil)
+        .environment(\.xdriveNativePhotoOnlyNewSince,
+                     backup.schedule?.enabled == true &&
+                     backup.schedule?.backupStartRule == .onlyNew
+                        ? backup.schedule?.newOnlySince : nil)
         .environment(\.xdriveNativePhotoPriorityAction, { id, failed in
             requestPriorityBackup(id: id, failed: failed)
         })
@@ -570,7 +574,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         guard let owner = login.owner, phase == .active,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
               !backup.busy, !id.isEmpty, id.utf8.count <= 1024,
-              !id.contains("\\u{0}") else { return }
+              !id.contains("\u{0}") else { return }
         priorityItemID = id
         priorityItemOwner = owner
         priorityIsRetry = failed
