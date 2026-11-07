@@ -279,8 +279,6 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/media/memories/:memoryID/items", suite: "media"},
 		{method: "GET", path: "/api/v1/media/trips", suite: "media"},
 		{method: "GET", path: "/api/v1/media/trips/:tripID/items", suite: "media"},
-		{method: "GET", path: "/api/v1/media/trips", suite: "media"},
-		{method: "GET", path: "/api/v1/media/trips/:tripID/items", suite: "media"},
 		{method: "GET", path: "/api/v1/media/duplicate-organize/plan", suite: "media"},
 		{method: "POST", path: "/api/v1/media/duplicate-organize/apply", suite: "media"},
 		{method: "GET", path: "/api/v1/media/duplicates", suite: "media"},
