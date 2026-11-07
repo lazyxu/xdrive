@@ -67,10 +67,25 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 		&meta.PhotoCollectionAsset{}, &meta.PhotoAnalysisState{}, &meta.PhotoOCRText{},
 		&meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{},
 		&meta.LocalPushQuotaHold{}, &meta.NodeChange{}, &meta.BackgroundOwnerCancellation{},
+		// The authentic production Renderer concurrently mounts file-operation,
+		// people, album, and location-label surfaces before the Places guest.
+		// Missing tables are a broken *test schema*, not failed map admission.
+		&meta.FileOperation{}, &meta.FileRecentAccess{}, &meta.FileRecentFolderAccess{},
+		&meta.FileFavorite{}, &meta.FileQuickAccess{}, &meta.FileSavedSearch{},
+		&meta.FileTag{}, &meta.FileNodeTag{}, &meta.UploadSession{}, &meta.UploadPart{},
+		&meta.SyncRun{}, &meta.ArchivePrepareRun{}, &meta.PhotoIntelligenceReanalyzeIntent{},
+		&meta.PhotoFace{}, &meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{},
+		&meta.PhotoPersonClusterState{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
+		&meta.PhotoPersonSuggestionReview{}, &meta.PhotoPlaceLabel{},
+		&meta.PhotoVisualLabel{}, &meta.PhotoSemanticEmbedding{},
+		&meta.PhotoAlbumFolder{}, &meta.PhotoCreativeGeneration{},
+		&meta.MediaSelectionJob{}, &meta.MediaSelectionJobItem{},
+		&meta.ViewerQualityPreference{}, &meta.AdminViewerQualitySetting{},
+		&meta.NotesNamespace{}, &meta.Note{},
 	); err != nil {
 		t.Fatal(err)
 	}
-	for _, who := range []struct {name, password string}{
+	for _, who := range []struct{ name, password string }{
 		{"production-map-owner", "OnlySyntheticAgent-2026!"},
 		{"production-map-foreign", "OnlySyntheticForeign-2026!"},
 	} {
@@ -141,7 +156,7 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 		}
 	}
 	server := &Server{DB: db, Store: local,
-		Auth: auth.New("production-map-test-only-no-real-user", 15*time.Minute),
+		Auth:       auth.New("production-map-test-only-no-real-user", 15*time.Minute),
 		RefreshTTL: time.Hour,
 	}
 	gin.SetMode(gin.TestMode)
