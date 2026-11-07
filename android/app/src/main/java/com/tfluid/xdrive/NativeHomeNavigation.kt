@@ -31,6 +31,7 @@ internal enum class NativeHomeShortcut {
     TRASH,
     TRANSFERS,
     NOTES,
+    CLIPBOARD,
 }
 
 internal enum class NativeGallerySource { CLOUD, LOCAL, ALBUMS, MAP }
