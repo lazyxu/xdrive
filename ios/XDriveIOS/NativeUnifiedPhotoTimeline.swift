@@ -185,14 +185,12 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
             return
         }
         libraryArchive = localEpoch?.serialized
+        // Do not open/replay the local SHA index ahead of the Owner cloud
+        // page. PhotoKit change replay and SQLite are optional reconciliation,
+        // never the primary Gallery navigation or cloud API precondition.
         let index = XDriveIOSNativePhotoFingerprintIndex.shared
-        let lease: XDriveIOSNativePhotoFingerprintIndex.Lease?
-        if let localEpoch {
-            lease = try? await index.bind(scope: XDriveIOSNativePhotoThumbnailCache.scope(for: expected),
-                                          library: localEpoch.serialized)
-        } else {
-            lease = nil
-        }
+        var lease: XDriveIOSNativePhotoFingerprintIndex.Lease?
+        var attemptedIndexBinding = false
 
         let auth = try? await login.verifiedAuthorization()
         guard current(ticket, login: login, owner: expected) else { return }
@@ -267,6 +265,15 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
                 if filter == nil && query == .init() { rows = visible + resolved }
                 if canMatch, let reader {
                     do {
+                        if !attemptedIndexBinding {
+                            attemptedIndexBinding = true
+                            if let localEpoch {
+                                lease = try? await index.bind(
+                                    scope: XDriveIOSNativePhotoThumbnailCache.scope(for: expected),
+                                    library: localEpoch.serialized
+                                )
+                            }
+                        }
                         resolved = try await reconcile(window, reader: reader, lease: lease, query: query)
                     } catch is CancellationError {
                         throw CancellationError()
