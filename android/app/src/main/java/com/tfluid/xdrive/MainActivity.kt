@@ -55,6 +55,12 @@ internal class NativeCreateDocument : ActivityResultContract<NativeExportDocumen
         else null
 }
 
+/** Transient text-only OS share; never auto-transmitted or retained after an
+ * Owner session change. Files keep their existing SAF share protocol. */
+internal data class NativeIncomingClipboardText(
+    val text: String, val server: String, val username: String, val epoch: Long,
+)
+
 class MainActivity : ComponentActivity() {
     private val model by viewModels<DriveViewModel>()
     // Transient Activity memory only: never saved to Bundle, prefs, URI grant
