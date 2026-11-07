@@ -109,9 +109,9 @@ func TestDesktopMapLANTrustPublicCAOnlyLoopbackAndOwnerScoped(t *testing.T) {
 	if strings.Contains(missing.Body.String(), "root_pem") {
 		t.Fatal("unavailable native pin disclosed a certificate")
 	}
-	stub.receipt = desktopMapLANTrustReceipt{Available: true, Server: "https://example.invalid", Username: "owner",RootPEM: ca}
+	stub.receipt = desktopMapLANTrustReceipt{Available: true, Server: "https://example.invalid", Username: "owner", RootPEM: ca}
 	request("local-agent-token", local, endpoint, "", nil, http.StatusBadGateway)
-	stub.receipt = desktopMapLANTrustReceipt{Available:true,Server: origin, Username: "",RootPEM: ca}
+	stub.receipt = desktopMapLANTrustReceipt{Available: true, Server: origin, Username: "", RootPEM: ca}
 	request("local-agent-token", local, endpoint, "", nil, http.StatusBadGateway)
 
 	backup := newDesktopIPCHandler(stub, "local-agent-token", nil, true)
