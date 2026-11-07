@@ -857,6 +857,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var pathTicket = UUID()
     @State private var pathTask: Task<Void, Never>?
     @State private var batchTagsIntent: XDriveIOSNativeFilesBatchTagsIntent?
+    @State private var showingTagManager = false
+    @State private var tagManagerOwner: XDriveNativeOwnerRoot?
     @State private var showingBatchShare = false
     @State private var batchDestinationIntent: XDriveIOSNativeFilesBatchDestinationIntent?
     @State private var selecting = false
@@ -1166,6 +1168,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             .accessibilityIdentifier("native-ios-files-open-recent")
         }
         Section("标签") {
+            Button { openTagManager() } label: {
+                Label("管理标签", systemImage: "tag.circle")
+            }
+            .disabled(login.owner == nil)
+            .accessibilityIdentifier("native-ios-files-home-manage-tags")
             Button {
                 searchOptions.load(login: login)
             } label: {
@@ -2269,6 +2276,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .disabled(login.owner == nil || pathBusy)
                     .accessibilityIdentifier("native-ios-files-go-to-path")
+                    Button { openTagManager() } label: {
+                        Label("管理标签", systemImage: "tag.circle")
+                    }
+                    .disabled(login.owner == nil || selecting)
+                    .accessibilityIdentifier("native-ios-files-toolbar-manage-tags")
                     Button { presentFileOperations() } label: {
                         Label("文件操作历史／撤销／重做",
                               systemImage: "arrow.uturn.backward.circle")
@@ -2471,6 +2483,22 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
             } else {
                 Text("账户已经变化，请关闭智能文件夹。")
+            }
+        }
+        .sheet(isPresented: $showingTagManager, onDismiss: {
+            tagManagerOwner = nil
+            if login.owner != nil { searchOptions.load(login: login) }
+        }) {
+            if let owner = tagManagerOwner,
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) {
+                NavigationStack {
+                    XDriveIOSNativeFilesTagPanel(
+                        login: login, expectedOwner: owner,
+                        nodeIDs: [], selectionLabel: "管理所有标签"
+                    )
+                }
+            } else {
+                Text("账户已变化，请关闭后重新打开标签管理。")
             }
         }
         .sheet(item: $batchTagsIntent, onDismiss: { reload() }) { intent in
@@ -2796,6 +2824,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             managementIntent = nil
             versionHistoryIntent = nil
             locateIntent = nil
+            showingTagManager = false
+            tagManagerOwner = nil
             selectedFile = nil
             selectedOwner = nil
             returnOwner = nil
@@ -3102,6 +3132,14 @@ struct XDriveIOSNativeFilesBrowser: View {
         _ = clipboard.capture(
             kind, items: [entry.node], sourceParentID: sourceParentID, owner: owner
         )
+    }
+
+    private func openTagManager() {
+        guard let owner = login.owner, !selecting,
+              !batchTarget.busy, !batchTrash.busy,
+              !chunked.busy else { return }
+        tagManagerOwner = owner
+        showingTagManager = true
     }
 
     private func openBatchTags() {
