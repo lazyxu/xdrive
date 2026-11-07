@@ -5529,6 +5529,12 @@ export function MediaTile({
       sx={{
         position: 'relative',
         overflow: 'hidden',
+        // Native Places buttons must not inherit browser padding/borders:
+        // their thumbnail geometry matches Gallery's exact square tile.
+        ...(placesDrawer ? {
+          display: 'block', width: '100%', p: 0, appearance: 'none' as const,
+          textAlign: 'left' as const, touchAction: 'manipulation',
+        } : {}),
         aspectRatio: '1 / 1',
         cursor: 'pointer',
         bgcolor: 'action.hover',
