@@ -2752,9 +2752,9 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func suspendVisibleRange() {
-        cancelArrangementReanchor()
         cancelPathLookup()
         cancelSelectAllRead()
+        cancelArrangementReanchor()
         clearInternalDrag()
         pendingDrop = nil
         inlineFolders.suspendForNavigation()
@@ -3810,8 +3810,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func reload(resetOffset: Bool = false) {
-        cancelArrangementReanchor()
         cancelSelectAllRead()
+        cancelArrangementReanchor()
         selectAllNotice = nil
         clearInternalDrag()
         pendingDrop = nil
