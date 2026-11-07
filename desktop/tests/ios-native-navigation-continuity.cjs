@@ -431,7 +431,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.onAppear \\{\\s*guard phase == \\.active else \\{ return \\}[\\s\\S]*?reload\\(preserveVerifiedRows: true\\)",
+        "pattern": "\\.onAppear \\{\\s*isVisible = true\\s*guard phase == \\.active else \\{ return \\}[\\s\\S]*?reload\\(preserveVerifiedRows: true\\)",
         "flags": ""
       }
     ]
@@ -591,7 +591,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.onAppear \\{\\s*guard phase == \\.active else \\{ return \\}",
+        "pattern": "\\.onAppear \\{\\s*isVisible = true\\s*guard phase == \\.active else \\{ return \\}",
         "flags": ""
       }
     ]
@@ -602,6 +602,86 @@ const scenarios = [
       {
         "file": "c",
         "pattern": "guard epoch == ticket,\\s*XDriveIOSNativePhotoOwnerScope\\.matches\\(login\\.owner, expected\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "49 Files Recent inactive appear waits for foreground",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "\\.onAppear \\{\\s*isVisible = true\\s*guard phase == \\.active else \\{ return \\}",
+        "flags": ""
+      },
+      {
+        "file": "c",
+        "pattern": "\\.onChange\\(of: phase\\) \\{ state in[\\s\\S]*?else if isVisible && !model\\.loading",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "50 Files Favorites background cancels pending Owner reads",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "\\.onChange\\(of: phase\\) \\{ state in\\s*if state != \\.active \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "51 Files foreground revalidates exact Owner and kind",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "reload\\(preserveVerifiedRows: model\\.matches\\(login\\.owner, kind: kind\\)\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "52 Files child folder is hidden until returning to source",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "\\.onDisappear \\{\\s*isVisible = false[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "c",
+        "pattern": "else if isVisible && !model\\.loading",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "53 Files Viewer return avoids duplicate GET when refresh in progress",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "\\.fullScreenCover\\(item: \\$selectedFile, onDismiss: \\{[\\s\\S]*?if !model\\.loading \\{ reload\\(preserveVerifiedRows: true\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "54 Files obsolete async result is fenced by request epoch",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "guard epoch == ticket,[\\s\\S]*?XDriveIOSNativePhotoOwnerScope\\.matches\\(login\\.owner, expected\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "55 Files wrong-kind state shows neutral loading placeholder",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if !model\\.matches\\(login\\.owner, kind: kind\\) \\{\\s*if model\\.loading[\\s\\S]*?ProgressView\\(\"正在核验当前文件列表…\"\\)",
         "flags": ""
       }
     ]
