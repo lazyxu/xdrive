@@ -93,6 +93,23 @@ class MainActivity : ComponentActivity() {
     private fun receiveIncomingShare(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) return
         if (shareBusy) return
+        // Receiving text only fills the visible native Clipboard draft.
+        // Never call Server or read a file stream from an unsolicited intent.
+        if (intent.type == "text/plain" && !intent.hasExtra(Intent.EXTRA_STREAM)) {
+            val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+            val state = model.controller.state.value
+            if (!text.isNullOrBlank() &&
+                text.toByteArray(Charsets.UTF_8).size <= 65_536 &&
+                state.nativeUiSessionId > 0 && state.server.isNotBlank() &&
+                state.username.isNotBlank()) {
+                sharedClipboardText = NativeIncomingClipboardText(text,
+                    state.server,state.username,state.nativeUiSessionId)
+            } else {
+                Toast.makeText(this,"请先登录后再分享不超过 64 KiB 的文本。",
+                    Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         val uri = nativeSingleShareCandidate(intent)
         if (uri == null) {
             Toast.makeText(this, "只支持有读取授权的单个共享文件。", Toast.LENGTH_LONG).show()
