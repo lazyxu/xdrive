@@ -851,7 +851,10 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             }
         }
         .onDisappear {
-            if selected != nil { suspendForViewer() }
+            // The album MapKit cover and the Viewer are transient child pages.
+            // Preserve the verified count/page/scroll anchor while either is
+            // shown; PhotoKit monitor and scene invalidation remain active.
+            if selected != nil || showingAlbumMap { suspendForViewer() }
             else { libraryMonitor.stop(); invalidate() }
         }
     }
