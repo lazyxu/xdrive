@@ -132,6 +132,9 @@ func (s *Server) admitBoundLocalPushCommonUpload(
 				return deny
 			}
 			selected = existing
+			if err := recordUploadAuthorizationOperationSuccessTx(tx, c, "local_push.operation.admit", existing); err != nil {
+				return err
+			}
 			return c.Request.Context().Err()
 		}
 		if !errors.Is(read, gorm.ErrRecordNotFound) {
@@ -169,9 +172,13 @@ func (s *Server) admitBoundLocalPushCommonUpload(
 			return deny
 		}
 		selected = row
+		if err := recordUploadAuthorizationOperationSuccessTx(tx, c, "local_push.operation.admit", row); err != nil {
+			return err
+		}
 		return c.Request.Context().Err()
 	})
 	if err != nil {
+		s.recordUploadAuthorizationOperationFailure(c, "local_push.operation.admit", sourceID, revision, proof, err)
 		return zero, deny
 	}
 	return selected, nil
@@ -257,6 +264,9 @@ func (s *Server) bindBoundLocalPushCommonUpload(
 			}
 			if *op.UploadSessionID == session.ID {
 				bound = op
+				if err := recordUploadAuthorizationOperationSuccessTx(tx, c, "local_push.upload_session.bind", op); err != nil {
+					return err
+				}
 				return c.Request.Context().Err()
 			}
 			// The ordinary /uploads Session expires independently of the
@@ -314,6 +324,9 @@ func (s *Server) bindBoundLocalPushCommonUpload(
 			}
 			op.UploadSessionID = &session.ID
 			bound = op
+			if err := recordUploadAuthorizationOperationSuccessTx(tx, c, "local_push.upload_session.rebind", op); err != nil {
+				return err
+			}
 			return c.Request.Context().Err()
 		}
 		if op.UploadSessionID != nil {
@@ -347,9 +360,13 @@ func (s *Server) bindBoundLocalPushCommonUpload(
 		op.State = meta.LocalPushCommonUploadBound
 		op.UploadSessionID = &session.ID
 		bound = op
+		if err := recordUploadAuthorizationOperationSuccessTx(tx, c, "local_push.upload_session.bind", op); err != nil {
+			return err
+		}
 		return c.Request.Context().Err()
 	})
 	if err != nil {
+		s.recordUploadAuthorizationOperationFailure(c, "local_push.upload_session.bind", sourceID, revision, proof, err)
 		return zero, deny
 	}
 	return bound, nil

@@ -50,6 +50,17 @@ func TestAndroidResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testi
 	if err := db.Create(&stored).Error; err != nil {
 		t.Fatal(err)
 	}
+	// A matching resume key and Owner are not enough to let the Android
+	// receipt endpoint adopt a different native Source-bound writer session.
+	sourceBound := stored
+	sourceBound.ID = uuid.NewString()
+	sourceBound.SourceID = 42
+	sourceBound.SourceRevision = 1
+	sourceBound.SourceDeviceID = "another-native-device"
+	sourceBound.SourceTargetID = root.ID
+	if err := db.Create(&sourceBound).Error; err != nil {
+		t.Fatal(err)
+	}
 	body := func(k, file, hash string, bytes int64) string {
 		return fmt.Sprintf(
 			`{"resume_key":%q,"parent_id":%d,"name":%q,"size":%d,"chunk_size":%d,"sha256":%q}`,
@@ -74,6 +85,13 @@ func TestAndroidResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testi
 	if received.Result != nil {
 		t.Fatal("an unfinalized session returned a finalized file receipt")
 	}
+	var firstAudit meta.AuditEvent
+	if err := db.Where("action = ?", uploadAuthorizationAuditAction).Take(&firstAudit).Error; err != nil ||
+		firstAudit.Result != "success" ||
+		!strings.Contains(firstAudit.Metadata, `"writer":"android_photo"`) ||
+		strings.Contains(firstAudit.Metadata, key) {
+		t.Fatalf("Android receipt audit missing or leaked resume key: %+v %v", firstAudit, err)
+	}
 	// A replayed read-only recovery cannot allocate a second UploadSession.
 	var before int64
 	if err := db.Model(&meta.UploadSession{}).Count(&before).Error; err != nil {
@@ -85,9 +103,25 @@ func TestAndroidResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testi
 	if err := db.Model(&meta.UploadSession{}).Count(&after).Error; err != nil {
 		t.Fatal(err)
 	}
-	if before != 1 || after != before {
-		t.Fatal("read-only session lookup mutated the upload table")
+	if before != 2 || after != before {
+		t.Fatal("read-only session lookup mutated the upload table or adopted a Source-bound session")
 	}
+
+	// A legacy row with SourceID cleared but SourceRevision retained cannot
+	// be adopted as an ordinary Android Owner-original receipt. Once the
+	// stray identity is removed, the exact prior receipt remains readable.
+	if err := db.Model(&meta.UploadSession{}).Where("id = ?", stored.ID).
+		Update("source_revision", uint64(7)).Error; err != nil {
+		t.Fatal(err)
+	}
+	request(t, router, http.MethodPost, url, token,
+		strings.NewReader(body(key, stored.Name, sha, size)), http.StatusNotFound)
+	if err := db.Model(&meta.UploadSession{}).Where("id = ?", stored.ID).
+		Update("source_revision", uint64(0)).Error; err != nil {
+		t.Fatal(err)
+	}
+	request(t, router, http.MethodPost, url, token,
+		strings.NewReader(body(key, stored.Name, sha, size)), http.StatusOK)
 
 	// Strong HMAC identity, full hash, size and file destination MUST match.
 	for _, requestBody := range []string{
@@ -154,8 +188,16 @@ func TestAndroidResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testi
 	if err := db.Model(&meta.UploadSession{}).Count(&stillOne).Error; err != nil {
 		t.Fatal(err)
 	}
-	if stillOne != 1 {
-		t.Fatal("read-only finalized lookup created another upload")
+	if stillOne != before {
+		t.Fatalf("read-only finalized lookup changed UploadSession count: before=%d after=%d", before, stillOne)
+	}
+	// The second, Source-owned session remains deliberately out of scope.
+	// A read-only Owner-root receipt may not consume or adopt that row.
+	var retainedSourceBound meta.UploadSession
+	if err := db.Where("id = ? AND source_id = ? AND source_device_id = ?",
+		sourceBound.ID, sourceBound.SourceID, sourceBound.SourceDeviceID).
+		Take(&retainedSourceBound).Error; err != nil {
+		t.Fatalf("read-only Owner-root receipt mutated Source-owned session: %v", err)
 	}
 
 	if err := db.Model(&meta.UploadSession{}).Where("id = ?", stored.ID).

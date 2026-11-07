@@ -19,7 +19,7 @@ import (
 // on Desktop local_folder Source/Root APIs.
 func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 	db, server, owner, other, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.Share{}, &meta.SyncRun{}); err != nil {
+	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.Share{}, &meta.SyncRun{}, &meta.UploadSession{}); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
@@ -100,11 +100,7 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 		result.DeviceID != device.ID || result.Name != "我的照片" {
 		t.Fatalf("server did not create an exact managed destination: %+v", result)
 	}
-	expectedGroup, err := managedPushDeviceFolderName(device)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expectedPath := "同步文件夹/Push/" + expectedGroup + "/我的照片"
+	expectedPath := "同步文件夹/Push/我的照片"
 	if result.TargetPath != expectedPath {
 		t.Fatalf("server-managed target path mismatch: got %q want %q", result.TargetPath, expectedPath)
 	}
@@ -113,7 +109,7 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !stored.TargetManaged || !iosPhotoDestinationSource(stored) ||
-		stored.LocalCreatorDeviceID == nil || *stored.LocalCreatorDeviceID != device.ID ||
+		stored.DeviceID == nil || *stored.DeviceID != device.ID ||
 		stored.TargetNodeID == nil || *stored.TargetNodeID != result.TargetNodeID {
 		t.Fatalf("Source must own exact managed Node: %+v", stored)
 	}
@@ -134,8 +130,8 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 	}
 	renamed := read(http.MethodPut, ownerToken, `{"name":"新版照片"}`, http.StatusOK, headers)
 	if renamed.TargetNodeID != result.TargetNodeID || renamed.SourceID != result.SourceID ||
-		renamed.TargetPath != "同步文件夹/Push/"+expectedGroup+"/新版照片" {
-		t.Fatalf("5B rename replaced Source/Node IDs or used a fake path: %+v", renamed)
+		renamed.TargetPath != "同步文件夹/Push/新版照片" {
+		t.Fatalf("rename changed Source/Node IDs or used a fake path: %+v", renamed)
 	}
 	var node meta.Node
 	if err := db.First(&node, renamed.TargetNodeID).Error; err != nil {

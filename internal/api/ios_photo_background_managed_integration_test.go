@@ -294,6 +294,8 @@ func TestIOSPhotoBackgroundScopedTransactionCannotOutliveGrant(t *testing.T) {
 	}
 	session := meta.UploadSession{
 		ID: uuid.NewString(), OwnerID: owner.ID,
+		SourceID: dest.SourceID, SourceRevision: scoped.sourceRevision,
+		SourceDeviceID: device.ID, SourceTargetID: dest.TargetNodeID,
 		ParentID: &dest.TargetNodeID, Name: name, RequestedName: name,
 		ConflictPolicy: meta.UploadConflictPolicyFail,
 		TotalSize:      input.Size, ChunkSize: input.ChunkSize,

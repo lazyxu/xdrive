@@ -56,6 +56,11 @@ func (s *Server) requireSourceRunExecutor() gin.HandlerFunc {
 				c.Abort()
 				return
 			}
+		} else if source.Kind == meta.SourceKindAndroidPhotos {
+			if !s.checkAndroidPhotoSourceRunExecutor(c, id) {
+				c.Abort()
+				return
+			}
 		}
 		c.Next()
 	}

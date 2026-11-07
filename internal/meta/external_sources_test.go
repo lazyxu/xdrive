@@ -88,3 +88,24 @@ func TestExternalSourceItemAndRunStates(t *testing.T) {
 		t.Fatal("unknown sync state was accepted")
 	}
 }
+
+func TestSourceDeviceIDRequiresCanonicalVerifiedBinding(t *testing.T) {
+	canonical := "device-canonical"
+	legacy := "device-legacy"
+	if got, ok := SourceDeviceID(Source{DeviceID: &canonical}); !ok || got != canonical {
+		t.Fatalf("canonical DeviceID rejected: %q %v", got, ok)
+	}
+	if got, ok := SourceDeviceID(Source{DeviceID: &canonical, LocalCreatorDeviceID: &canonical}); !ok || got != canonical {
+		t.Fatalf("matching compatibility alias rejected: %q %v", got, ok)
+	}
+	if got, ok := SourceDeviceID(Source{LocalCreatorDeviceID: &legacy}); ok || got != "" {
+		t.Fatalf("legacy creator alias granted authority: %q %v", got, ok)
+	}
+	if got, ok := SourceDeviceID(Source{DeviceID: &canonical, LocalCreatorDeviceID: &legacy}); ok || got != "" {
+		t.Fatalf("conflicting legacy alias did not fail closed: %q %v", got, ok)
+	}
+	empty := " "
+	if got, ok := SourceDeviceID(Source{DeviceID: &empty}); ok || got != "" {
+		t.Fatalf("empty canonical DeviceID granted authority: %q %v", got, ok)
+	}
+}

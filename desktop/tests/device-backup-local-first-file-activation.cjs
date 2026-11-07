@@ -29,7 +29,7 @@ test('true first-file upload is gated by the owning Desktop and dedicated authen
   assert.ok(desktop.includes('localFirstFile: localBackupFirstFile'))
   assert.ok(view.includes("backupMode: folder.sync_mode === 'backup'"))
   assert.ok(view.includes('verifiedLocalDeviceID === device.id && !device.revoked'))
-  assert.ok(view.includes('firstFile: Boolean(localFirstFile)'))
+  assert.match(view, /firstFile: folder\.status !== 'archived' && Boolean\(localFirstFile\)/)
   assert.ok(view.includes('localActions.firstFile ?'))
   assert.ok(view.includes('localOwnsFolder(firstFileTarget.id)'))
   assert.equal(web.includes('localFirstFile='), false, 'Web and Mobile Web must not get the writer')

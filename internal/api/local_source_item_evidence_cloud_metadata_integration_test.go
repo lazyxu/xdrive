@@ -66,7 +66,7 @@ func TestLocalEvidenceCloudMetadataMatchesOnlyCurrentReadyCASRecords(t *testing.
 		Kind: meta.SourceKindLocalFolder, Direction: meta.SourceDirectionPush,
 		Status: meta.SourceStatusPaused, Revision: 7,
 		SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
-		TargetNodeID: &target.ID,
+		TargetNodeID: &target.ID, DeviceID: &devA.ID, LocalCreatorDeviceID: &devA.ID,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)

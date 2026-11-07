@@ -163,7 +163,7 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 	// exact byte copies live in different folders or accounts. Include a
 	// foreign-owned, incorrectly linked SourceItem to enforce owner isolation.
 	sourceA := meta.Source{
-		OwnerID: owners[0].ID, Name: "Synology A", Kind: "synology_files",
+		OwnerID: owners[0].ID, Name: "Yike A", Kind: "yike_photos",
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1,
 	}
@@ -616,19 +616,35 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 		t.Fatalf("newly synced independent asset count=%d want=4", ownedAssets)
 	}
 
-	// Even after the user explicitly trashes the newly imported source copy,
-	// the same remote Backup identity remains authoritative on the provider.
-	// The next real SourceRun must plan a new independent Node, not revive the
-	// trashed Node, mutate the unrelated keeper, or reuse it merely by SHA.
+	// Managed-source nodes must reject ordinary Files deletion. Historical
+	// Nodes already in Trash remain a valid replay state: seed that legacy
+	// snapshot *only in this test*, then check real SourceRun reimport.
 	trashPath := fmt.Sprintf("/api/v1/nodes/%d", incoming.node.ID)
 	trashRequest := httptest.NewRequest(http.MethodDelete, trashPath, nil)
 	trashRequest.Header.Set("Authorization", "Bearer "+token)
 	trashRequest.Header.Set("If-Match", "1")
 	trashResponse := httptest.NewRecorder()
 	router.ServeHTTP(trashResponse, trashRequest)
-	if trashResponse.Code != http.StatusNoContent {
-		t.Fatalf("real Node-to-Trash request status=%d body=%s",
+	if trashResponse.Code != http.StatusConflict {
+		t.Fatalf("managed Source Node deletion was not fenced: status=%d body=%s",
 			trashResponse.Code, trashResponse.Body.String())
+	}
+	var stillLive meta.Node
+	if err := db.First(&stillLive, incoming.node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stillLive.DeletedAt != nil || stillLive.TrashRootID != nil {
+		t.Fatalf("denied Files deletion mutated managed original: %+v", stillLive)
+	}
+	legacyDeletedAt := time.Now().UTC()
+	seeded := db.Model(&meta.Node{}).
+		Where("id = ? AND deleted_at IS NULL", incoming.node.ID).
+		Updates(map[string]any{
+			"deleted_at": legacyDeletedAt, "trash_root_id": incoming.node.ID,
+		})
+	if seeded.Error != nil || seeded.RowsAffected != 1 {
+		t.Fatalf("could not seed historical pre-fence Trash state: error=%v rows=%d",
+			seeded.Error, seeded.RowsAffected)
 	}
 	var trashedCopy meta.Node
 	if err := db.First(&trashedCopy, incoming.node.ID).Error; err != nil {

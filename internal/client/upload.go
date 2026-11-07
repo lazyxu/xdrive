@@ -128,14 +128,6 @@ func (c *Client) UploadConflictPreflightBatch(
 
 func (c *Client) StartUpload(ctx context.Context, init UploadInit) (UploadSession, error) {
 	var out UploadSession
-	c.synologySourceMu.RLock()
-	if init.SourceID == 0 && c.synologySourceID != 0 {
-		init.SourceID = c.synologySourceID
-		init.SourceRevision = c.synologySourceRevision
-		init.SourceRootID = c.synologyRootID
-		init.SourceRootFingerprint = c.synologyRootFingerprint
-	}
-	c.synologySourceMu.RUnlock()
 	err := c.json(ctx, http.MethodPost, "/api/v1/uploads", init, &out)
 	return out, err
 }

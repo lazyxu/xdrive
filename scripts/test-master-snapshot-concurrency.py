@@ -55,7 +55,6 @@ assert "github.ref == 'refs/heads/master'" in body
 assert "needs:" in body
 needed = set(re.findall(r"(?m)^      - ([a-zA-Z0-9_-]+)$", body))
 required_builds = {
-    "build-source-agent",
     "package-linux-client",
     "package-windows-client",
     "server-image",

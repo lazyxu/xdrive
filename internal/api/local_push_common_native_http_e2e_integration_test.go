@@ -88,7 +88,7 @@ func TestLocalPushCommonNativeHTTPPhysicalOriginalReplay(t *testing.T) {
 				Direction: meta.SourceDirectionPush,
 				SyncMode:  meta.SourceSyncModeBackup,
 				Status:    meta.SourceStatusPaused, Revision: 7,
-				TargetNodeID: &parent.ID,
+				TargetNodeID: &parent.ID, DeviceID: &device.ID, TargetManaged: true,
 			}
 			if err := db.Create(&source).Error; err != nil {
 				t.Fatal(err)

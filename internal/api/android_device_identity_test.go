@@ -93,8 +93,13 @@ func TestAndroidIdentityOnlyCannotClaimLocalSourceOrCrossOwner(t *testing.T) {
 		`{"name":"Android local-folder escalation","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual","target_node_id":%d}`,
 		target.ID,
 	)
+	// The generic Source schema rejects client-supplied targets before
+	// privilege checks. Even without that malformed target, the identity-only
+	// Android Device must never gain a Desktop Agent's local Root grant.
 	requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", ownerToken,
-		strings.NewReader(localFolder), http.StatusForbidden, headers)
+		strings.NewReader(localFolder), http.StatusBadRequest, headers)
+	requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", ownerToken,
+		strings.NewReader(`{"name":"Android local-folder escalation","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual"}`), http.StatusForbidden, headers)
 
 	request(t, router, http.MethodPost, "/api/v1/devices/"+enrolled.Device.ID+"/revoke",
 		ownerToken, nil, http.StatusNoContent)

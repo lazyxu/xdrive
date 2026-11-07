@@ -20,7 +20,10 @@ test('Only the owning Agent may expose paused local backup drafts for recovery',
 
   assert.match(router, /GET\("\/device-backups\/local-drafts", s\.listOwningLocalSourceDrafts\)/)
   assert.match(server, /clientDeviceCredentialMatches\(device, c\.GetHeader\("X-XDrive-Device-Token"\)\)/)
-  assert.match(server, /local_creator_device_id = \?/)
+  // Canonical Source.DeviceID grants this private draft listing; legacy
+  // creator metadata can only reject a conflicting claim, never grant access.
+  assert.match(server, /owner_id = \? AND device_id = \? AND kind = \? AND direction = \?/)
+  assert.match(server, /local_creator_device_id = device_id/)
   assert.match(server, /NOT EXISTS \(SELECT 1 FROM xd_local_source_bindings/)
   assert.match(server, /Where\("id > \?", afterID\)/)
   for (const sensitive of ['root_fingerprint', 'active_transfer_path', 'last_error', 'ignore_rules', 'checkpoint']) {

@@ -10,14 +10,20 @@ import java.security.MessageDigest
  */
 internal object NativePhotoResumeKey {
     fun forIntent(intent: NativePhotoBackupIntent): String {
+        // Old Owner-root journals must produce their historical v1 key for
+        // read-only reconciliation. A managed target includes its immutable
+        // Node ID in a distinct v2 namespace, preventing target confusion.
+        val mode = if (intent.destinationTargetNodeId == null)
+            "xdrive:android:photo-upload:v1" else "xdrive:android:photo-upload-managed:v2"
         val parts = listOf(
-            "xdrive:android:photo-upload:v1", intent.id,
+            mode, intent.id,
             intent.owner.serverOrigin, intent.owner.instanceId,
             intent.owner.ownerId.toString(), intent.owner.username,
             intent.owner.rootNodeId.toString(), intent.owner.deviceId,
             intent.assetKey, intent.versionKey, intent.resource.name,
             intent.originalSha256, intent.sizeBytes.toString(),
-        )
+        ) + (intent.destinationTargetNodeId?.let { listOf(it.toString()) }
+            ?: emptyList())
         // Length prefixes prevent ambiguous field boundaries without a key
         // derivation secret or a new at-rest encryption layer.
         val digest = MessageDigest.getInstance("SHA-256")

@@ -29,6 +29,7 @@ const dependencies={
   './StatusAlert':{XDriveStatusAlert:'status-alert'},
   './WorkspaceSurface':{XDriveWorkspaceSurface:'workspace-surface'},
   '../external-sources':{
+    isReadOnlySynologySource:()=>true,
     externalSourceCardView:()=>({
       connector:{label:'Synology Photos'},modeLabel:'备份',
       state:{tone:'good',label:'可用'},

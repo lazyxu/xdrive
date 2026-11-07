@@ -500,6 +500,15 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/ios/photos/managed/receipts/nodes/:id", s.iosPhotoManagedReceipt)
 	authed.GET("/ios/photos/backup-destination", s.getIOSPhotoBackupDestination)
 	authed.PUT("/ios/photos/backup-destination", s.putIOSPhotoBackupDestination)
+	authed.GET("/android/photos/backup-destination", s.getAndroidPhotoBackupDestination)
+	authed.PUT("/android/photos/backup-destination", s.putAndroidPhotoBackupDestination)
+	// Native MediaStore originals reuse the canonical CAS/UploadSession writer,
+	// but every route requires an exact current Android Device + Source scope.
+	authed.POST("/android/photos/managed/uploads", s.androidPhotoManagedCreateUpload)
+	authed.GET("/android/photos/managed/uploads/:id", s.androidPhotoManagedGetUpload)
+	authed.PUT("/android/photos/managed/uploads/:id/chunks/:index", s.androidPhotoManagedPutChunk)
+	authed.POST("/android/photos/managed/uploads/:id/finalize", s.androidPhotoManagedFinalizeUpload)
+	authed.POST("/android/photos/managed/uploads/resume-lookup", s.androidPhotoManagedResumeLookup)
 	authed.POST("/ios/photos/background-grants", s.createIOSPhotoBackgroundGrant)
 	authed.GET("/ios/photos/background-grants", s.listIOSPhotoBackgroundGrants)
 	authed.POST("/ios/photos/background-grants/:id/revoke", s.revokeIOSPhotoBackgroundGrant)
@@ -572,18 +581,17 @@ func (s *Server) Router() *gin.Engine {
 	}
 	authed.PUT("/sources/:id/local-staging/:stageID/content", s.requireLocalSourceExecutor(), s.putLocalPushStageBytes)
 	authed.DELETE("/sources/:id/local-staging/:stageID", s.requireLocalSourceExecutor(), s.cancelLocalPushStage)
-	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
-	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
+	authed.PATCH("/sources/:id", s.requireSourceOwnerOrExecutor(), s.updateSource)
+	authed.DELETE("/sources/:id", s.requireSourceOwnerOrExecutor(), s.deleteSource)
 	// M10: reversible archive/paused restore, distinct from cloud-only cleanup.
-	authed.POST("/sources/:id/archive", s.requireLocalSourceExecutor(), s.archiveSource)
-	authed.POST("/sources/:id/restore", s.requireLocalSourceExecutor(), s.restoreArchivedSource)
+	authed.POST("/sources/:id/archive", s.requireSourceOwnerOrExecutor(), s.archiveSource)
+	authed.POST("/sources/:id/restore", s.requireSourceOwnerOrExecutor(), s.restoreArchivedSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
 	authed.DELETE("/sources/:id/local-draft", s.discardLocalSourceDraft)
-	authed.POST("/sources/:id/trigger", s.requireLocalSourceExecutor(), s.triggerSource)
+	authed.POST("/sources/:id/trigger", s.requireSourceOwnerOrExecutor(), s.triggerSource)
 	authed.GET("/sources/:id/local-binding", s.getLocalSourceBinding)
 	authed.POST("/sources/:id/local-binding", s.bindLocalSource)
 	// DSM identity-only Device binds its aggregate Personal/Shared Root-set fingerprint.
-	authed.PUT("/sources/:id/synology-root", s.bindSynologySourceRoot)
 	authed.DELETE("/sources/:id/local-binding", s.requireLocalSourceExecutor(), s.unbindLocalSource)
 	authed.GET("/sources/:id/credential", s.getSourceCredentialStatus)
 	authed.PUT("/sources/:id/credential", s.putSourceCredential)
@@ -607,7 +615,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/runs/:runID/commit", s.requireSourceRunExecutor(), s.commitSourceRun)
 	authed.POST("/sources/:id/runs/:runID/failures", s.requireSourceRunExecutor(), s.failSourceRunItems)
 	authed.POST("/sources/:id/runs/:runID/progress", s.requireSourceRunExecutor(), s.progressSourceRun)
-	authed.POST("/sources/:id/runs/:runID/cancel", s.requireSourceRunExecutor(), s.cancelSourceRun)
+	authed.POST("/sources/:id/runs/:runID/cancel", s.requireSourceOwnerOrExecutor(), s.cancelSourceRun)
 	authed.POST("/sources/:id/runs/:runID/heartbeat", s.requireSourceRunExecutor(), s.heartbeatSourceRun)
 	authed.POST("/sources/:id/runs/:runID/finish", s.requireSourceRunExecutor(), s.finishSourceRun)
 

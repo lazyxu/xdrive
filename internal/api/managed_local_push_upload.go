@@ -116,8 +116,10 @@ func admittedManagedLocalPushOperationTx(
 		op.SourceID, uid, op.SourceRevision).Take(&source).Error; err != nil {
 		return op, deny
 	}
+	boundDeviceID, bound := meta.SourceDeviceID(source)
 	if source.Kind != meta.SourceKindLocalFolder ||
 		source.Direction != meta.SourceDirectionPush ||
+		!bound || boundDeviceID != op.DeviceID ||
 		source.SyncMode != meta.SourceSyncModeBackup ||
 		source.Status != meta.SourceStatusPaused || !source.TargetManaged ||
 		source.TargetNodeID == nil || *source.TargetNodeID != op.SourceTargetID {

@@ -19,7 +19,8 @@ const mod = { exports: {} }
 new Function('module', 'exports', output.outputText)(mod, mod.exports)
 const access = mod.exports.xDriveLocalBackupFeatureAccess
 const keys = ['run','schedule','rename','target','mode','rules','preview','snapshot',
-  'firstFile','delta','evidence','evidenceSummary','evidencePreflight','remove']
+  'firstFile','delta','evidence','evidenceSummary','evidencePreflight','remove',
+  'archive','restore']
 const supported = Object.fromEntries(keys.map(k => [k, true]))
 
 test('local agent-owned Backup has all supported controls, but never two backup writers', () => {

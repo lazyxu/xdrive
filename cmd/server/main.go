@@ -357,6 +357,25 @@ func migrate(db *gorm.DB) error {
 	if err := photoasset.InstallContentIdentitySchema(db); err != nil {
 		return err
 	}
+	// S01: preserve verified historic local/iPhone Push ownership when the
+	// connector-neutral device_id column is introduced. The legacy creator
+	// column is migration input only, never authorization or an Owner fallback.
+	// Require the registered Device to have the same Owner and native platform;
+	// inconsistent or absent claims remain unbound (fail closed).
+	if err := db.Exec(`
+UPDATE xd_sources AS s
+SET device_id = d.id
+FROM xd_client_devices AS d
+WHERE NULLIF(BTRIM(s.device_id), '') IS NULL
+  AND s.local_creator_device_id = d.id
+  AND s.owner_id = d.owner_id
+  AND s.direction = 'push'
+  AND (
+    (s.kind = 'local_folder' AND d.platform IN ('windows', 'linux', 'darwin'))
+    OR (s.kind = 'ios_photos' AND d.platform = 'ios')
+  )`).Error; err != nil {
+		return fmt.Errorf("backfill verified Push Source DeviceID: %w", err)
+	}
 	if err := installNodeParentOwnershipFence(db); err != nil {
 		return err
 	}
@@ -495,7 +514,14 @@ func migrate(db *gorm.DB) error {
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_xd_files_size_node ON xd_files(size, node_id)`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_name ON xd_sources(owner_id, lower(name))`).Error; err != nil {
+	// Source names are unique per Owner and direction: Push and Pull are
+	// independent namespaces, while every connector within Pull shares one.
+	// PostgreSQL DDL must be atomic: a historical case-folded name conflict
+	// must not leave the Server without either the old or the new guard.
+	if err := migrateSourceNameNamespaceIndex(db); err != nil {
+		return err
+	}
+	if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_yike_account ON xd_sources(owner_id, kind, provider_account_id) WHERE kind = 'yike_photos' AND provider_account_id <> ''").Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
@@ -536,9 +562,10 @@ func migrate(db *gorm.DB) error {
 	`).Error; err != nil {
 		return err
 	}
-	if err := migrateLegacyYikeTargets(db); err != nil {
-		return fmt.Errorf("migrate legacy Yike targets: %w", err)
-	}
+	// S10–S18: startup must not relocate any pre-existing Yike Source,
+	// Node subtree, Share or CAS receipt. Legacy target paths remain valid.
+	// Historical migration helpers are retained for their isolated tests, but
+	// are not executed on Server startup under the new-source-only contract.
 	if err := meta.InstallNodeChangeJournal(db); err != nil {
 		return err
 	}

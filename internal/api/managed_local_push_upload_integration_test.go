@@ -35,7 +35,7 @@ func TestManagedLocalPushUploadRequiresDurableDeviceOperation(t *testing.T) {
 		Kind: meta.SourceKindLocalFolder, Direction: meta.SourceDirectionPush,
 		SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
 		Status: meta.SourceStatusPaused, Revision: 1, TargetNodeID: &managed.ID,
-		TargetManaged: true, LocalCreatorDeviceID: &device.ID,
+		TargetManaged: true, DeviceID: &device.ID, LocalCreatorDeviceID: &device.ID,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)

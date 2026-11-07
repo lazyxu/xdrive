@@ -20,8 +20,14 @@ internal data class NativePhotoBackupOwner(
     val rootNodeId: Long,
     val rootRevision: Long,
     val deviceId: String,
+    /** Zero values retain the historical Owner-root identity. Managed sources
+     * use BOTH stable IDs, never a mutable name or Source revision. */
+    val managedSourceId: Long = 0L,
+    val managedTargetNodeId: Long = 0L,
 ) {
     init {
+        require((managedSourceId == 0L && managedTargetNodeId == 0L) ||
+            (managedSourceId > 0L && managedTargetNodeId > 0L))
         require(serverOrigin.startsWith("https://") &&
             ServerAddress.parse(serverOrigin).url == serverOrigin) {
             "Photo backup requires canonical HTTPS origin"
@@ -91,6 +97,9 @@ internal data class NativePhotoBackupIntent(
     val destinationName: String? = null,
     val verifiedNodeId: Long? = null,
     val verifiedNodeRevision: Long? = null,
+    /** Server-created managed target, never the Owner root. Kept after the
+     * established constructor parameters for older positional fixtures. */
+    val destinationTargetNodeId: Long? = null,
 ) {
     init {
         require(runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false))
@@ -98,6 +107,11 @@ internal data class NativePhotoBackupIntent(
             nativeBackupHex(originalSha256))
         require(sizeBytes > 0 && createdAtMillis > 0)
         require(destinationName == null || validDriveNodeName(destinationName))
+        require(destinationTargetNodeId == null ||
+            (destinationTargetNodeId > 0 && destinationName != null))
+        if (owner.managedSourceId > 0L) {
+            require(destinationTargetNodeId == owner.managedTargetNodeId)
+        }
         require((verifiedNodeId == null) == (verifiedNodeRevision == null))
         if (phase == NativePhotoBackupPhase.VERIFIED) {
             require(verifiedNodeId != null && verifiedNodeId > 0 &&
@@ -145,6 +159,7 @@ internal class NativePhotoBackupLedger(
         originalSha256: String,
         sizeBytes: Long,
         destinationName: String? = null,
+        destinationTargetNodeId: Long? = null,
     ): NativePhotoBackupIntent {
         val previous = validated()
         require(nativeBackupHex(assetKey) && nativeBackupHex(versionKey) &&
@@ -157,7 +172,8 @@ internal class NativePhotoBackupLedger(
             // One asset/resource/version cannot change content under our feet.
             check(existing.originalSha256 == originalSha256 &&
                 existing.sizeBytes == sizeBytes &&
-                (destinationName == null || existing.destinationName == destinationName)) {
+                (destinationName == null || existing.destinationName == destinationName) &&
+                existing.destinationTargetNodeId == destinationTargetNodeId) {
                 "Original changed: new verified version required"
             }
             return existing
@@ -166,7 +182,7 @@ internal class NativePhotoBackupLedger(
         val intent = NativePhotoBackupIntent(
             nextId(), owner, assetKey, versionKey, resource, originalSha256,
             sizeBytes, NativePhotoBackupPhase.PLANNED, now(),
-            destinationName = destinationName)
+            destinationName = destinationName, destinationTargetNodeId = destinationTargetNodeId)
         check(previous.none { it.id == intent.id })
         store.write(previous + intent)
         return intent

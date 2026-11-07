@@ -67,7 +67,8 @@ func (s *Server) discardLocalSourceDraft(c *gin.Context) {
 		}
 		// A legacy unclaimed draft must not be reclaimed by a new device
 		// simply because that device has the same account JWT.
-		if source.LocalCreatorDeviceID == nil || *source.LocalCreatorDeviceID != device.ID {
+		boundDeviceID, bound := meta.SourceDeviceID(source)
+		if !bound || boundDeviceID != device.ID {
 			return errLocalDraftUnauthorized
 		}
 		if source.Revision != expected {
@@ -199,6 +200,11 @@ func discardPristineLocalManagedTargetTx(ctx context.Context, tx *gorm.DB, sourc
 				*target.ParentID, source.OwnerID, meta.NodeTypeDir).
 			Take(&group).Error; err != nil {
 			return err
+		}
+		// Flat managed Push targets have no per-device ancestor to prune.
+		// The fixed Push namespace must survive even the last draft deletion.
+		if group.Name == "Push" {
+			return nil
 		}
 		var childCount int64
 		if err := tx.Model(&meta.Node{}).Where("parent_id = ?", group.ID).Count(&childCount).Error; err != nil {

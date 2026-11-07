@@ -25,9 +25,9 @@ promote = body.index('gh api --method PATCH "repos/$repo/git/refs/tags/snapshot"
 assert upload < verified < promote, "tag must only change after remote digest proof"
 assert '[[' + ' "$current_tag" == "$previous_snapshot" ]]' in body
 assert "python3 scripts/test-snapshot-publish-guards.py" in ci
-# Regression: DSM ARMv7 Source Agent became a third real CI artifact.
-# The publisher must not reject that valid binary or omit it from release
-# checksum coverage. These checks retain the exact-file and no-symlink gates.
+# Regression: standalone Source Agent was retired from the release contract.
+# Preserve the exact installer/SPK/Backup CLI and checksum admission gates,
+# while rejecting stale expectations for the deleted Source Agent binaries.
 client_verification = release.split(
     "      - name: Verify exact client artifact contract\n", 1
 )[1].split("\n  server-images:\n", 1)[0]
@@ -38,16 +38,42 @@ checksum_step = release.split(
     "      - name: Generate checksums\n", 1
 )[1].split("\n      # Sigstore", 1)[0]
 
-assert client_verification.count("for arch in amd64 arm64 armv7; do") == 1
-assert 'binary="source-agent/xdrive-source-agent-linux-$arch"' in client_verification
-assert '[[ -f "$binary" && -s "$binary" && ! -L "$binary" ]]' in client_verification
-assert 'find source-agent -mindepth 1 -maxdepth 1' in client_verification
-assert '[[' + ' "$source_count" == "3" ]]' in client_verification
-assert bundle_verification.count("for arch in amd64 arm64 armv7; do") == 1
-assert 'binary="release/xdrive-source-agent-linux-$arch"' in bundle_verification
-assert '[[ -f "$binary" && -s "$binary" && ! -L "$binary" ]]' in bundle_verification
-for arch in ("amd64", "arm64", "armv7"):
-    assert f"xdrive-source-agent-linux-{arch} \\" in checksum_step
+for contract in (
+    'test -f exact/xdrive-linux-amd64.deb',
+    'test -f exact/xDriveSetup-amd64.exe',
+    '[[' + ' "$count" == "2" ]]',
+    'test -s backup-cli/xdrive-backup-linux-amd64.tar.gz',
+    'test -s backup-cli/xdrive-backup-windows-amd64.zip',
+    '[[' + ' "$cli_count" == "2" ]]',
+    'bash scripts/ci/verify-synology-spk-release.sh synology --require-mui',
+):
+    assert contract in client_verification, contract
+for contract in (
+    'test -f release/xdrive-linux-amd64.deb',
+    'test -f release/xDriveSetup-amd64.exe',
+    'test -s release/xdrive-backup-linux-amd64.tar.gz',
+    'test -s release/xdrive-backup-windows-amd64.zip',
+    'bash scripts/ci/verify-synology-spk-release.sh release --require-mui',
+    'bash scripts/ci/verify-release-archive-allowlist.sh release',
+):
+    assert contract in bundle_verification, contract
+for retired in ('source-agent/', 'xdrive-source-agent-linux-'):
+    assert retired not in client_verification
+    assert retired not in bundle_verification
+    assert retired not in checksum_step
+for artifact in (
+    'xdrive-linux-amd64.deb',
+    'xDriveSetup-amd64.exe',
+    'xdrive-backup-linux-amd64.tar.gz',
+    'xdrive-backup-windows-amd64.zip',
+    'xdrivenas-armada38x-*.spk',
+    'xdrivenas-armada38x-*.spk.sha256',
+    'xdrive-server-install.sh',
+    'xdrive-caddy-image.tar.gz',
+    'xdrive-caddy-image.id',
+):
+    assert artifact in checksum_step, artifact
+assert '> SHA256SUMS.txt' in checksum_step
 notify_marker = "      - name: Notify bounded queued-CI prune after verified Snapshot publication\n"
 assert release.count(notify_marker) == 1
 notify = release.split(notify_marker, 1)[1].split("\n      - name:", 1)[0]

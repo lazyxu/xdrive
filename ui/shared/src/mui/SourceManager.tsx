@@ -20,7 +20,6 @@ import type {
   XDriveSourceRunFailurePage,
   XDriveSourceRunSkipPage,
 } from './SourceManagerDetailsDialog'
-import { XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from './SynologyDsmGuideDialog'
 import {
   externalSourceConnectorProfile,
   externalSourceCreateOption,
@@ -28,6 +27,7 @@ import {
   externalSourceCredentialTestErrorLabel,
   externalSourceDefaults,
   externalSourceDisplayName,
+  isReadOnlySynologySource,
   normalizeSynologyFileRoots,
   normalizeSynologyPhotoSpaces,
   synologyFileRootsValidationError,
@@ -57,6 +57,7 @@ import type {
 export interface XDriveSourceManagerAdapter {
   authorizeLocalFolder?(sourceID: number): Promise<{ cancelled: boolean; grant?: { root_id: string; path: string; status: string } }>
   me?(): Promise<{ username: string }>
+  suggestedPushName?(): Promise<string>
   sourceOverview(signal?: AbortSignal, includeArchived?: boolean): Promise<ExternalSourceOverview[]>
   restoreSource?(sourceID: number, revision: number): Promise<ExternalSource>
   canRestoreSource?(row: ExternalSourceRow): boolean
@@ -144,7 +145,7 @@ function sourceActionErrorMessage(error: unknown, fallback: string) {
   )
 }
 
-function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synology_push'): XDriveSourceCreateValues {
+function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'yike_pull'): XDriveSourceCreateValues {
   const option = externalSourceCreateOption(preset)
   const defaults = externalSourceDefaults(option.kind, option.direction)
   return {
@@ -189,15 +190,14 @@ export function XDriveSourceManager({
   directionFilter,
   initialSourceID,
   focusedRun,
-  defaultTargetNodeID,
-  defaultTargetLabel,
-  defaultTargetPath,
-  targetBrowser,
   cookieHelpVariant = 'accordion',
   onSelectedSourceChange,
   onError,
 }: XDriveSourceManagerProps) {
   const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
+  // Only the owning Agent can configure local-folder Push. Remote Sources use Yike Pull.
+  const defaultCreatePreset: ExternalSourceCreatePreset =
+    directionFilter === 'pull' ? 'yike_pull' : adapter.authorizeLocalFolder ? 'local_push' : 'yike_pull'
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
   const [showArchived, setShowArchived] = useState(false)
   const [restoringSourceID, setRestoringSourceID] = useState<number | null>(null)
@@ -238,9 +238,7 @@ export function XDriveSourceManager({
   const [settingsSpacesError, setSettingsSpacesError] = useState('')
   const [settingsRootsError, setSettingsRootsError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
-  const [createTargetCrumbs, setCreateTargetCrumbs] = useState<XDriveSourceTargetNode[]>([])
-  const [createTargetDirectories, setCreateTargetDirectories] = useState<XDriveSourceTargetNode[]>([])
-  const [createTargetLoading, setCreateTargetLoading] = useState(false)
+  const createNameEditedRef = useRef(false)
   const [creating, setCreating] = useState(false)
   const [triggeringSourceID, setTriggeringSourceID] = useState<number | null>(null)
   const [cancellingRunID, setCancellingRunID] = useState<string | null>(null)
@@ -254,8 +252,6 @@ export function XDriveSourceManager({
   const [settingsCredentialTestError, setSettingsCredentialTestError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [deletingSourceID, setDeletingSourceID] = useState<number | null>(null)
-  const [guideSource, setGuideSource] = useState<ExternalSource | null>(null)
-  const [guideUsername, setGuideUsername] = useState<string | undefined>()
   const [errorDialog, setErrorDialog] = useState<XDriveSourceErrorDialogState | null>(null)
   const [feedback, setFeedback] = useState('')
   const [clearCookieConfirmOpen, setClearCookieConfirmOpen] = useState(false)
@@ -264,15 +260,13 @@ export function XDriveSourceManager({
   const [settingsConnectorLoading, setSettingsConnectorLoading] = useState(false)
   const [settingsConnectorError, setSettingsConnectorError] = useState('')
   const settingsSessionRef = useRef(0)
-  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(() => initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(() => initialCreateSourceValues(defaultCreatePreset))
   const [createNameError, setCreateNameError] = useState('')
   const [createSpacesError, setCreateSpacesError] = useState('')
   const [createRootsError, setCreateRootsError] = useState('')
   const createPreset = createValues.preset
   const createOption = externalSourceCreateOption(createPreset)
   const createProfile = externalSourceConnectorProfile(createOption.kind, createOption.direction)
-  const createTarget = createTargetCrumbs.at(-1)
-  const selectedCreateTargetNodeID = targetBrowser ? createTarget?.id : defaultTargetNodeID
 
   const settingsSourceID = setting?.source.id
   const settingsBrowseDirectories = setting?.credential?.configured && settingsSourceID !== undefined
@@ -542,53 +536,22 @@ export function XDriveSourceManager({
     }
   }, [selected, historyPage, loadRunHistory])
 
-  const openSynologyGuide = (source: ExternalSource) => {
-    setGuideSource(source)
-    if (!adapter.me) {
-      setGuideUsername(undefined)
-      return
-    }
-    void adapter.me()
-      .then((me) => setGuideUsername(me.username))
-      .catch(() => setGuideUsername(undefined))
-  }
-
-  const loadCreateTargetDirectory = async (
-    node: XDriveSourceTargetNode,
-    crumbs: XDriveSourceTargetNode[],
-  ) => {
-    if (!targetBrowser) return
-    setCreateTargetLoading(true)
-    try {
-      const children = await targetBrowser.children(node.id)
-      setCreateTargetCrumbs(crumbs)
-      setCreateTargetDirectories(children)
-    } catch (error) {
-      onError(error)
-    } finally {
-      setCreateTargetLoading(false)
-    }
-  }
-
   const openCreate = async () => {
-    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+    createNameEditedRef.current = false
+    setCreateValues(initialCreateSourceValues(defaultCreatePreset))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
     setCreateCredentialTest(null)
     setCreateCredentialTestError('')
-    setCreateTargetCrumbs([])
-    setCreateTargetDirectories([])
     setCreateOpen(true)
-    if (!targetBrowser) return
-    setCreateTargetLoading(true)
-    try {
-      const root = await targetBrowser.root()
-      await loadCreateTargetDirectory(root, [root])
-    } catch (error) {
-      onError(error)
-    } finally {
-      setCreateTargetLoading(false)
+    if (directionFilter !== 'pull' && adapter.suggestedPushName) {
+      void adapter.suggestedPushName().then((name) => {
+        const suggestion = name.trim()
+        if (suggestion && !createNameEditedRef.current) {
+          setCreateValues((current) => ({ ...current, name: suggestion }))
+        }
+      }).catch(() => undefined)
     }
   }
 
@@ -596,10 +559,11 @@ export function XDriveSourceManager({
     const option = externalSourceCreateOption(preset)
     if (directionFilter === 'pull' && option.direction !== 'pull') return
     const defaults = externalSourceDefaults(option.kind, option.direction)
+    createNameEditedRef.current = false
     setCreateValues((current) => ({
       ...current,
       preset,
-      name: defaults.name,
+      name: option.direction === 'push' && adapter.suggestedPushName ? '' : defaults.name,
       sync_mode: 'backup',
       run_mode: defaults.runMode,
       schedule_type: defaults.scheduleType,
@@ -618,6 +582,14 @@ export function XDriveSourceManager({
     setCreateRootsError('')
     setCreateCredentialTest(null)
     setCreateCredentialTestError('')
+    if (option.direction === 'push' && adapter.suggestedPushName) {
+      void adapter.suggestedPushName().then((name) => {
+        const suggestion = name.trim()
+        if (suggestion && !createNameEditedRef.current) {
+          setCreateValues((current) => ({ ...current, name: suggestion }))
+        }
+      }).catch(() => undefined)
+    }
   }
 
   const createCredentialPayload = () => {
@@ -653,6 +625,9 @@ export function XDriveSourceManager({
     try {
       const result = await adapter.testSourceCredential(createOption.kind, payload)
       setCreateCredentialTest(result)
+      if (!createNameEditedRef.current && result.suggested_name?.trim()) {
+        setCreateValues((current) => ({ ...current, name: result.suggested_name!.trim() }))
+      }
       return result
     } catch (error) {
       setCreateCredentialTest(null)
@@ -669,10 +644,16 @@ export function XDriveSourceManager({
   const createSource = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const values = createValues
-    const normalizedName = values.name.trim()
-    const nameError = !normalizedName ? `请填写${sourceNoun}名称` : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
-    setCreateNameError(nameError)
+
     const option = externalSourceCreateOption(values.preset)
+    let normalizedName = values.name.trim()
+    const allowServerDeviceDefault = option.direction === 'push' &&
+      option.kind !== 'synology_photos' && Boolean(adapter.suggestedPushName)
+    const nameError = !normalizedName && !allowServerDeviceDefault
+      ? `请填写${sourceNoun}名称`
+      : new TextEncoder().encode(normalizedName).length > 128 ? `${sourceNoun}名称不能超过 128 字节` : ''
+    setCreateNameError(nameError)
+
     const profile = externalSourceConnectorProfile(option.kind, option.direction)
     if (directionFilter === 'pull' && option.direction !== 'pull') {
       setErrorDialog({ title: '无法添加拉取来源', message: '此页面只能添加远程拉取来源。' })
@@ -688,8 +669,8 @@ export function XDriveSourceManager({
     setCreateSpacesError(spacesError)
     setCreateRootsError(rootsError)
     if (nameError || spacesError || rootsError) return
-    if (option.direction !== 'pull' && option.kind !== 'local_folder' && !selectedCreateTargetNodeID) {
-      setErrorDialog({ title: `无法添加${sourceNoun}`, message: '当前目标文件夹尚未加载，请稍后重试。' })
+    if (option.kind === 'synology_photos' && option.direction === 'push') {
+      setErrorDialog({ title: '来源已停用', message: 'DSM 相册 Push 已停用；请使用 DSM 文件夹 Push。历史数据保留。' })
       return
     }
     const credentialPayload = profile.credential ? createCredentialPayload() : null
@@ -711,6 +692,9 @@ export function XDriveSourceManager({
         setCreating(false)
         return
       }
+      if (!createNameEditedRef.current && tested.suggested_name?.trim()) {
+        normalizedName = tested.suggested_name.trim()
+      }
     }
 
     let created: ExternalSource
@@ -724,7 +708,7 @@ export function XDriveSourceManager({
         schedule_type: values.schedule_type,
         schedule_expression: values.schedule_type === 'manual' ? '' : values.schedule_expression.trim(),
         schedule_timezone: values.schedule_type === 'cron' ? values.schedule_timezone.trim() : '',
-        target_node_id: option.direction === 'pull' || option.kind === 'local_folder' ? 0 : (selectedCreateTargetNodeID ?? 0),
+        target_node_id: 0,
         ignore_rules: values.ignore_rules ?? '',
       })
     } catch (error) {
@@ -749,23 +733,18 @@ export function XDriveSourceManager({
       }
     } catch (error) {
       const credentialLabel = externalSourceCredentialLabel(profile)
-      try {
-        await adapter.deleteSource(created.id, created.revision)
-        setErrorDialog({
-          title: profile.credential === 'synology_dsm' ? '群晖连接配置失败' : 'Cookie 保存失败',
-          message: `刚创建的${profile.label}${sourceNoun}已自动撤销，请检查配置后重试。`,
-          detail: sourceActionErrorMessage(error, `保存${credentialLabel}失败`),
-        })
-        await load()
-        setCreating(false)
-        return
-      } catch (rollbackError) {
-        setErrorDialog({
-          title: `${sourceNoun}创建未完成`,
-          message: `${sourceNoun}已创建，但${credentialLabel}或连接配置保存失败且自动回滚也失败。请进入“设置”修复或删除该来源。`,
-          detail: `配置：${sourceActionErrorMessage(error, '保存失败')}；回滚：${sourceActionErrorMessage(rollbackError, '回滚失败')}`,
-        })
-      }
+      // S10: Source and empty managed Node have already committed together.
+      // DELETE archives the Source and reserves its leaf; do not claim that
+      // an automatic rollback removed a still-reserved name.
+      setErrorDialog({
+        title: `${sourceNoun}设置尚未完成`,
+        message: `受管来源「${created.name}」（Source #${created.id}）已创建，目标目录及名称已保留。未自动删除或归档。请在 Source Manager 的设置中完成${credentialLabel}和连接配置。`,
+        detail: sourceActionErrorMessage(error, `保存${credentialLabel}失败`),
+      })
+      setCreateOpen(false)
+      await load()
+      setCreating(false)
+      return
     }
 
     let localAuthorization: 'bound' | 'cancelled' | 'error' | null = null
@@ -780,7 +759,7 @@ export function XDriveSourceManager({
             await adapter.deleteSource(created.id, created.revision)
             setFeedback('已取消创建；本机未绑定的来源草稿已安全清理')
             setCreateOpen(false)
-            setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+            setCreateValues(initialCreateSourceValues(defaultCreatePreset))
             setCreateNameError('')
             setCreateSpacesError('')
             setCreateRootsError('')
@@ -813,16 +792,13 @@ export function XDriveSourceManager({
       ? '群晖 File Station 拉取来源已添加；将同步所选目录中的所有文件和文件夹'
       : `${sourceNoun}已添加`)
     setCreateOpen(false)
-    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+    setCreateValues(initialCreateSourceValues(defaultCreatePreset))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
     await load()
     setCreating(false)
 
-    if (profile.manualTriggerExecutor === 'source_agent') {
-      openSynologyGuide(created)
-    }
   }
 
 
@@ -842,10 +818,7 @@ export function XDriveSourceManager({
     setTriggeringSourceID(row.source.id)
     try {
       await adapter.triggerSource(row.source.id)
-      const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
-      setFeedback(profile.manualTriggerExecutor === 'source_agent'
-        ? '已请求立即扫描，等待群晖 source-agent 下一次任务检查'
-        : '已请求立即扫描，服务器后台拉取任务已唤醒；定时检查仅作为兜底')
+      setFeedback('已请求立即扫描，服务器后台拉取任务已唤醒；定时检查仅作为兜底')
       await load()
     } catch (error) {
       showActionError('立即扫描失败', error, '无法提交立即扫描请求，请稍后重试。')
@@ -901,7 +874,7 @@ export function XDriveSourceManager({
   }
 
   const openSettings = (row: ExternalSourceRow) => {
-    if (savingSettings || row.source.status === 'archived') return
+    if (savingSettings || row.source.status === 'archived' || isReadOnlySynologySource(row.source)) return
     ++settingsSessionRef.current
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     setSetting(row)
@@ -910,7 +883,7 @@ export function XDriveSourceManager({
     setSettingsConnectorError('')
     setSettingsValues({
       name: externalSourceDisplayName(row.source),
-      sync_mode: row.source.sync_mode,
+      sync_mode: row.source.kind === 'synology_photos' && row.source.direction === 'push' ? 'backup' : row.source.sync_mode,
       run_mode: row.source.run_mode,
       status: row.source.status === 'active' ? 'active' : 'paused',
       schedule_type: row.source.schedule_type ?? 'interval',
@@ -1055,9 +1028,10 @@ export function XDriveSourceManager({
     const nameToPersist = normalizedName === externalSourceDisplayName(setting.source)
       ? setting.source.name
       : normalizedName
-    const nameError = !normalizedName ? `请填写${sourceNoun}名称` : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
+    const nameError = !normalizedName ? `请填写${sourceNoun}名称` : new TextEncoder().encode(normalizedName).length > 128 ? `${sourceNoun}名称不能超过 128 字节` : ''
     const isSynologyFiles = setting.source.kind === 'synology_files'
     const isLocalFolder = setting.source.kind === 'local_folder'
+    const isSynologyPush = setting.source.kind === 'synology_photos' && setting.source.direction === 'push'
     const desiredRoots = normalizeSynologyFileRoots(values.roots ?? [])
     const spacesError = setting.source.kind === 'synology_photos' && profile.credential === 'synology_dsm' && !(values.spaces?.length)
       ? '至少选择一个照片空间'
@@ -1118,7 +1092,7 @@ export function XDriveSourceManager({
       )
       let updatedSource = await adapter.updateSource(setting.source.id, setting.source.revision, {
         name: nameToPersist,
-        sync_mode: isLocalFolder ? 'backup' : values.sync_mode,
+        sync_mode: isLocalFolder || isSynologyPush ? 'backup' : values.sync_mode,
         run_mode: isLocalFolder ? 'sync' : values.run_mode,
         status: isLocalFolder
           ? 'paused'
@@ -1236,7 +1210,8 @@ export function XDriveSourceManager({
   }
 
   const restoreSource = async (row: ExternalSourceRow) => {
-    const allowed = adapter.canRestoreSource?.(row) ?? row.source.kind !== 'local_folder'
+    const allowed = !isReadOnlySynologySource(row.source) &&
+      (adapter.canRestoreSource?.(row) ?? row.source.kind !== 'local_folder')
     if (!adapter.restoreSource || !allowed) return
     setRestoringSourceID(row.source.id)
     try {
@@ -1441,7 +1416,8 @@ export function XDriveSourceManager({
         showArchived={showArchived}
         onToggleArchived={() => setShowArchived((current) => !current)}
         restoringSourceID={restoringSourceID}
-        canRestoreSource={(row) => adapter.canRestoreSource?.(row) ?? Boolean(adapter.restoreSource && row.source.kind !== 'local_folder')}
+        canRestoreSource={(row) => !isReadOnlySynologySource(row.source) &&
+          (adapter.canRestoreSource?.(row) ?? Boolean(adapter.restoreSource && row.source.kind !== 'local_folder'))}
         onRestoreSource={(row) => { void restoreSource(row) }}
         loading={loading}
         hasLoaded={hasLoaded}
@@ -1456,7 +1432,6 @@ export function XDriveSourceManager({
           message: row.source.last_error || '未提供具体错误信息',
         })}
         onOpenDetails={openDetails}
-        onOpenSynologyGuide={(row) => openSynologyGuide(row.source)}
         onTriggerNow={triggerNow}
         onCancelRun={cancelRun}
         onOpenSettings={openSettings}
@@ -1512,12 +1487,6 @@ export function XDriveSourceManager({
         nameError={createNameError}
         spacesError={createSpacesError}
         rootsError={createRootsError}
-        targetBrowsingEnabled={Boolean(targetBrowser)}
-        targetCrumbs={createTargetCrumbs}
-        targetDirectories={createTargetDirectories}
-        targetLoading={createTargetLoading}
-        defaultTargetLabel={defaultTargetLabel}
-        defaultTargetPath={defaultTargetPath}
         cookieHelpVariant={cookieHelpVariant}
         testingCredential={testingCreateCredential}
         credentialTest={createCredentialTest}
@@ -1525,11 +1494,11 @@ export function XDriveSourceManager({
         onRequestClose={() => {
           if (creating) return
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+          setCreateValues(initialCreateSourceValues(defaultCreatePreset))
         }}
         onCancel={() => {
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+          setCreateValues(initialCreateSourceValues(defaultCreatePreset))
           setCreateNameError('')
           setCreateSpacesError('')
           setCreateRootsError('')
@@ -1538,7 +1507,9 @@ export function XDriveSourceManager({
           void createSource(event)
         }}
         onPresetChange={changeCreatePreset}
+        onNameEdit={() => { createNameEditedRef.current = true }}
         onChange={(patch) => {
+          if (Object.prototype.hasOwnProperty.call(patch, 'name')) createNameEditedRef.current = true
           setCreateValues((current) => ({ ...current, ...patch }))
         }}
         onCredentialChange={(patch) => {
@@ -1549,9 +1520,6 @@ export function XDriveSourceManager({
         onClearNameError={() => setCreateNameError('')}
         onClearSpacesError={() => setCreateSpacesError('')}
         onClearRootsError={() => setCreateRootsError('')}
-        onLoadTargetDirectory={(node, crumbs) => {
-          void loadCreateTargetDirectory(node, crumbs)
-        }}
         onTestCredential={() => {
           void testCreateCredential()
         }}
@@ -1640,13 +1608,6 @@ export function XDriveSourceManager({
         onClose={() => setFeedback('')}
       />
 
-      <SynologyDsmGuideDialog
-        open={!!guideSource}
-        source={guideSource}
-        serverURL={window.location.origin}
-        username={guideUsername}
-        onClose={() => setGuideSource(null)}
-      />
     </>
   )
 }

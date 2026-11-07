@@ -53,7 +53,7 @@ func TestLocalQuarantinedSameDirectoryDestinationRequiresLiveCloudLayout(t *test
 		OwnerID: owner.ID, Name: "Same-parent test", Kind: meta.SourceKindLocalFolder,
 		Direction: meta.SourceDirectionPush, Status: meta.SourceStatusPaused,
 		Revision: 7, SyncMode: meta.SourceSyncModeBackup,
-		RunMode: meta.SourceRunModeSync, TargetNodeID: &target.ID,
+		RunMode: meta.SourceRunModeSync, TargetNodeID: &target.ID, DeviceID: &device.ID, LocalCreatorDeviceID: &device.ID,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)

@@ -138,7 +138,7 @@ import type {
 export {}
 
 declare global {
-  type DesktopInfo = BuildInfo & { platform: string; arch: string }
+  type DesktopInfo = BuildInfo & { platform: string; arch: string; device_name?: string }
   type DesktopStartup = { start_at_login: boolean }
   type DesktopPreferences = { appearance: 'system' | 'light' | 'dark'; start_at_login: boolean; close_to_tray: boolean }
   type DesktopConnectionRoute = { mode: 'auto' | 'lan' | 'public'; lan_ip: string; public_ip: string }
@@ -856,7 +856,7 @@ declare global {
         getDeviceBackups: (requestID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupsPage: (limit?: number, afterDeviceID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupFoldersPage: (deviceID: string, limit?: number, afterSourceID?: number) => Promise<DesktopResult<XDriveDeviceBackupFolderPage>>
-        getDeviceBackupLocalDevice: () => Promise<DesktopResult<{ device_id: string }>>
+        getDeviceBackupLocalDevice: () => Promise<DesktopResult<{ device_id: string; name: string }>>
         getDeviceBackupLocalDrafts: (limit?: number, afterID?: number) => Promise<DesktopResult<XDriveLocalSourceDraftPage>>
         getDeviceBackupLocalSource: (sourceID: number) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
         renameDeviceBackupLocalSource: (sourceID: number, revision: number, name: string) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
@@ -891,6 +891,9 @@ declare global {
         getDeviceBackupLocalEvidencePreflight: (sourceID: number, afterEvidenceID: number, requestID: string) => Promise<DesktopResult<XDriveLocalBackupEvidencePreflight>>
         cancelDeviceBackupLocalEvidencePreflight: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
         removeDeviceBackupLocalSource: (sourceID: number, revision: number) => Promise<DesktopResult<XDriveLocalBoundBackupRemoval>>
+        getDeviceBackupLocalArchiveSettings: (sourceID: number) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
+        archiveDeviceBackupLocalSource: (sourceID: number, revision: number) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
+        restoreDeviceBackupLocalSource: (sourceID: number, revision: number) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
         getDeviceBackupRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<XDriveDeviceBackupRunPage>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceRunFailures: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunFailure[]>>

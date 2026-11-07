@@ -63,6 +63,7 @@ func makeLocalPushExistingCASTestFixture(t *testing.T) localPushExistingCASTestF
 		Kind: meta.SourceKindLocalFolder, Direction: meta.SourceDirectionPush,
 		SyncMode: meta.SourceSyncModeBackup, Status: meta.SourceStatusPaused,
 		Revision: 7, TargetNodeID: &target.ID,
+		DeviceID: &device.ID, // S01 canonical owning-device binding
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)

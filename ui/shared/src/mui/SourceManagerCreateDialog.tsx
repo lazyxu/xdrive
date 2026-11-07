@@ -1,8 +1,6 @@
 import type { FormEventHandler } from 'react'
 import {
   Box as MuiBox,
-  Button as MuiButton,
-  CircularProgress,
   Dialog,
   Stack,
   Typography as MuiTypography,
@@ -37,7 +35,6 @@ import {
   externalSourceMirrorSafetyNotice,
   externalSourceMirrorScanNotice,
   yikeConnectorNotice,
-  yikeManagedTargetDisplayLabel,
   yikeRateLimitNotice,
 } from '../external-sources'
 import type {
@@ -65,12 +62,6 @@ export type XDriveSourceCreateValues = {
   roots?: string[]
 }
 
-type SourceTargetNode = {
-  id: number
-  name: string
-  path?: string
-}
-
 export function XDriveSourceCreateDialog({
   open,
   creating,
@@ -80,12 +71,6 @@ export function XDriveSourceCreateDialog({
   nameError,
   spacesError,
   rootsError,
-  targetBrowsingEnabled,
-  targetCrumbs,
-  targetDirectories,
-  targetLoading,
-  defaultTargetLabel,
-  defaultTargetPath,
   cookieHelpVariant,
   testingCredential,
   credentialTest,
@@ -95,11 +80,11 @@ export function XDriveSourceCreateDialog({
   onSubmit,
   onPresetChange,
   onChange,
+  onNameEdit,
   onCredentialChange,
   onClearNameError,
   onClearSpacesError,
   onClearRootsError,
-  onLoadTargetDirectory,
   onTestCredential,
 }: {
   open: boolean
@@ -110,12 +95,6 @@ export function XDriveSourceCreateDialog({
   nameError: string
   spacesError: string
   rootsError: string
-  targetBrowsingEnabled: boolean
-  targetCrumbs: SourceTargetNode[]
-  targetDirectories: SourceTargetNode[]
-  targetLoading: boolean
-  defaultTargetLabel: string
-  defaultTargetPath: string
   cookieHelpVariant: 'accordion' | 'dialog'
   testingCredential: boolean
   credentialTest: ExternalSourceCredentialTestResult | null
@@ -125,22 +104,16 @@ export function XDriveSourceCreateDialog({
   onSubmit: FormEventHandler<HTMLFormElement>
   onPresetChange: (preset: ExternalSourceCreatePreset) => void
   onChange: (patch: Partial<XDriveSourceCreateValues>) => void
+  onNameEdit?: () => void
   onCredentialChange: (patch: Partial<XDriveSourceCreateValues>) => void
   onClearNameError: () => void
   onClearSpacesError: () => void
   onClearRootsError: () => void
-  onLoadTargetDirectory: (node: SourceTargetNode, crumbs: SourceTargetNode[]) => void
   onTestCredential: () => void
 }) {
   const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
   const option = externalSourceCreateOption(values.preset)
   const profile = externalSourceConnectorProfile(option.kind, option.direction)
-  const selectedTarget = targetCrumbs.at(-1)
-  const selectedTargetLabel = targetBrowsingEnabled
-    ? (targetCrumbs.map((item) => item.name).join(' / ') || defaultTargetLabel)
-    : defaultTargetLabel
-  const selectedTargetPath = targetBrowsingEnabled ? (selectedTarget?.path ?? '') : defaultTargetPath
-
   const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
   return (
     <Dialog
@@ -155,82 +128,22 @@ export function XDriveSourceCreateDialog({
       slotProps={{ paper: dialogPaper }}
     >
       <XDriveDialogTitle
-        title={`添加${sourceNoun}`}
+        title={option.kind === 'synology_photos' && option.direction === 'push' ? '配置 DSM Photos Push' : `添加${sourceNoun}`}
         onClose={onRequestClose}
         closeDisabled={creating}
       />
       <XDriveDialogContent dividers>
-        {option.kind === 'yike_photos' ? (
-          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            存储子目录：{yikeManagedTargetDisplayLabel}。连接成功后由服务器在既有固定根目录下按百度 UID 和账号名称创建；底层文件仍使用 xDrive CAS 存储。
-          </XDriveStatusAlert>
-        ) : option.kind === 'local_folder' ? (
-          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            云端目标由服务器自动创建：设备备份 / 当前授权设备 / {values.name.trim() || '来源名称'}。
-            不占用已有普通目录。Desktop 仍需通过原生选择器单独授权本机 Root，授权完成前保持暂停。
-          </XDriveStatusAlert>
-        ) : option.direction === 'pull' ? (
-          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            目标目录由服务器自动创建：远程拉取 / {option.kind === 'synology_files' ? 'Synology Files' : 'Synology Photos'} / {values.name.trim() || '来源名称'}。
-            无需选择云端文件夹；不会占用已有的普通目录。服务器需能访问下面填写的 DSM 地址。
-          </XDriveStatusAlert>
-        ) : targetBrowsingEnabled ? (
-          <MuiBox sx={{ mb: 2, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
-            <Stack
-              direction={{ xs: 'column', sm: 'row' }}
-              spacing={1}
-              alignItems={{ sm: 'center' }}
-              justifyContent="space-between"
-            >
-              <MuiBox>
-                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标文件夹</MuiTypography>
-                <MuiTypography variant="body2" color="text.secondary">
-                  当前选择：{selectedTargetLabel || '正在加载…'}
-                </MuiTypography>
-              </MuiBox>
-              {targetLoading ? <CircularProgress size={18} /> : null}
-            </Stack>
-            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
-              {targetCrumbs.map((crumb, index) => (
-                <MuiButton
-                  key={crumb.id}
-                  size="small"
-                  variant={index === targetCrumbs.length - 1 ? 'contained' : 'text'}
-                  disabled={targetLoading || index === targetCrumbs.length - 1}
-                  onClick={() => onLoadTargetDirectory(crumb, targetCrumbs.slice(0, index + 1))}
-                >
-                  {crumb.name}
-                </MuiButton>
-              ))}
-            </Stack>
-            <Stack spacing={0.75} sx={{ mt: 1 }}>
-              {targetDirectories.length === 0 && !targetLoading ? (
-                <MuiTypography variant="caption" color="text.secondary">
-                  当前目录下没有子文件夹，可直接使用当前目录。
-                </MuiTypography>
-              ) : targetDirectories.map((directory) => (
-                <MuiButton
-                  key={directory.id}
-                  variant="outlined"
-                  size="small"
-                  disabled={targetLoading}
-                  onClick={() => onLoadTargetDirectory(directory, [...targetCrumbs, directory])}
-                  sx={{ justifyContent: 'space-between' }}
-                >
-                  <span>{directory.name}</span>
-                  <span>进入文件夹 ›</span>
-                </MuiButton>
-              ))}
-            </Stack>
-          </MuiBox>
-        ) : (
-          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标目录使用当前文件夹</MuiTypography>
-            <MuiTypography variant="body2">
-              当前目标：{selectedTargetLabel}{selectedTargetPath ? `（${selectedTargetPath}）` : '（我的文件根目录）'}
-            </MuiTypography>
-          </XDriveStatusAlert>
-        )}
+        <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
+          {option.kind === 'synology_photos' && option.direction === 'push'
+            ? 'DSM Push 必须由 NAS 端 Source Agent 注册设备及授权本地 Root。下方只生成配置命令，不会在浏览器中创建未绑定设备的来源。'
+            : '云端目标目录：'}
+          {option.direction === 'push'
+            ? `同步文件夹 / Push / ${values.name.trim() || '目录名称'}`
+            : `同步文件夹 / Pull / ${(option.kind === 'synology_files' ? 'Synology Files' : option.kind === 'synology_photos' ? 'Synology Photos' : 'Yike Photos')} / ${values.name.trim() || '目录名称'}`}
+          <br />
+          只允许修改最后一级目录名称；同步文件夹、Push/Pull 和连接器目录由 Server 统一创建。
+          不提供任意目标目录选择，也不会认领已有普通目录。
+        </XDriveStatusAlert>
 
         <MuiBox id="external-source-create-form" component="form" onSubmit={onSubmit}>
           <Stack spacing={2}>
@@ -241,10 +154,12 @@ export function XDriveSourceCreateDialog({
               onChange={onPresetChange}
             />
             <XDriveSourceNameField
+              label="目标文件夹名称"
               value={values.name}
               error={Boolean(nameError)}
-              helperText={nameError || ' '}
+              helperText={nameError || '仅填写最后一级目录名称；Push/Pull 前缀由 Server 固定管理。'}
               onChange={(value) => {
+                onNameEdit?.()
                 onChange({ name: value })
                 if (nameError) onClearNameError()
               }}
@@ -254,6 +169,18 @@ export function XDriveSourceCreateDialog({
                 本机文件夹会先在云端创建暂停的来源，随后由 Desktop 原生目录选择器完成本机 Root 授权。
                 扫描、上传与自动同步执行器尚未启用，当前不会传输或删除任何文件。
               </XDriveStatusAlert>
+            ) : option.kind === 'synology_photos' && option.direction === 'push' ? (
+              <>
+                <XDriveSourceRunModeField
+                  label="初始运行模式"
+                  value={values.run_mode}
+                  scanLabel="仅扫描（推荐先使用）"
+                  onChange={(value) => onChange({ run_mode: value })}
+                />
+                <XDriveStatusAlert tone="neutral">
+                  DSM Photos Push 仅支持备份模式。NAS 中删除照片不会自动删除云端备份；完成 NAS setup 后可管理计划和忽略规则。
+                </XDriveStatusAlert>
+              </>
             ) : (
               <>
             <XDriveSourceRunModeField
@@ -277,7 +204,7 @@ export function XDriveSourceCreateDialog({
             ) : null}
               </>
             )}
-            {option.kind !== 'local_folder' ? <XDriveSourceScheduleFields
+            {option.kind !== 'local_folder' && !(option.kind === 'synology_photos' && option.direction === 'push') ? <XDriveSourceScheduleFields
               wideAt="md"
               scheduleType={values.schedule_type}
               expression={values.schedule_expression}
@@ -286,11 +213,13 @@ export function XDriveSourceCreateDialog({
               onExpressionChange={(value) => onChange({ schedule_expression: value })}
               onTimezoneChange={(value) => onChange({ schedule_timezone: value })}
             /> : null}
-            <XDriveSourceIgnoreRulesField
-              value={values.ignore_rules ?? ''}
-              onChange={(value) => onChange({ ignore_rules: value })}
-              monospace
-            />
+            {!(option.kind === 'synology_photos' && option.direction === 'push') ? (
+              <XDriveSourceIgnoreRulesField
+                value={values.ignore_rules ?? ''}
+                onChange={(value) => onChange({ ignore_rules: value })}
+                monospace
+              />
+            ) : null}
 
             {profile.credential === 'cookie' ? (
               <>
@@ -394,7 +323,7 @@ export function XDriveSourceCreateDialog({
           loading={creating}
           loadingLabel="正在添加…"
         >
-          添加{sourceNoun}
+          {option.kind === 'synology_photos' && option.direction === 'push' ? '打开 DSM 配置指南' : `添加${sourceNoun}`}
         </XDriveActionButton>
       </XDriveDialogActions>
     </Dialog>

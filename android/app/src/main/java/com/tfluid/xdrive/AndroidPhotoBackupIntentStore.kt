@@ -51,8 +51,13 @@ internal class AndroidPhotoBackupIntentStore(
                 val row = rows.getJSONObject(i)
                 // Old 17-field rows are intentionally accepted, but have
                 // no exact destination and cannot be guessed/replayed.
-                require(row.length() == 17 || row.length() == 18 &&
-                    row.has("destination_name"))
+                require(row.length() == 17 ||
+                    row.length() == 18 && row.has("destination_name") ||
+                    row.length() == 19 && row.has("destination_name") &&
+                        row.has("destination_target_node_id") ||
+                    row.length() == 21 && row.has("destination_name") &&
+                        row.has("destination_target_node_id") &&
+                        row.has("managed_source_id") && row.has("managed_target_node_id"))
                 NativePhotoBackupIntent(
                     id = row.getString("id"),
                     owner = NativePhotoBackupOwner(
@@ -63,6 +68,10 @@ internal class AndroidPhotoBackupIntentStore(
                         rootNodeId = row.getLong("root_id"),
                         rootRevision = row.getLong("root_revision"),
                         deviceId = row.getString("device"),
+                        managedSourceId = if (row.has("managed_source_id"))
+                            row.getLong("managed_source_id") else 0L,
+                        managedTargetNodeId = if (row.has("managed_target_node_id"))
+                            row.getLong("managed_target_node_id") else 0L,
                     ),
                     assetKey = row.getString("asset_key"),
                     versionKey = row.getString("version_key"),
@@ -74,6 +83,8 @@ internal class AndroidPhotoBackupIntentStore(
                     destinationName = if (row.has("destination_name") &&
                         !row.isNull("destination_name"))
                         row.getString("destination_name") else null,
+                    destinationTargetNodeId = if (row.has("destination_target_node_id"))
+                        row.getLong("destination_target_node_id") else null,
                     verifiedNodeId = if (row.isNull("node_id")) null else row.getLong("node_id"),
                     verifiedNodeRevision = if (row.isNull("node_revision")) null
                         else row.getLong("node_revision"),
@@ -135,6 +146,12 @@ internal class AndroidPhotoBackupIntentStore(
                     .apply {
                         if (entry.destinationName != null)
                             put("destination_name", entry.destinationName)
+                        if (entry.destinationTargetNodeId != null)
+                            put("destination_target_node_id", entry.destinationTargetNodeId)
+                        if (entry.owner.managedSourceId > 0L) {
+                            put("managed_source_id", entry.owner.managedSourceId)
+                            put("managed_target_node_id", entry.owner.managedTargetNodeId)
+                        }
                     })
             }
             clear = JSONObject().put("version", 1).put("entries", rows)
