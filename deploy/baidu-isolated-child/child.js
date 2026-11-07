@@ -73,6 +73,11 @@
   const clearLabels = () => {
     for (const binding of labelBindings) {
       try { binding.label.removeEventListener('click',binding.click) } catch {}
+      // Some SDK releases paint a queued numeric Label even after removal.
+      // Hide before removing so an old worldwide count cannot flash back
+      // over current-camera photo covers.
+      try { binding.label.setStyle({display:'none',visibility:'hidden',pointerEvents:'none'}) }
+      catch {}
       try { map && map.removeOverlay(binding.label) } catch {}
     }
     labelBindings = []
@@ -523,7 +528,10 @@
     } else if(data.kind==='photo-covers') {
       // Cosmetic suppression only. The Child receives ephemeral current
       // Cell keys, never Owner identifiers, thumbnails or photo metadata.
-      if (!active || !map || !exact(data,
+      // Bootstrap photo-covers can arrive BEFORE the SDK finishes loading.
+      // Stage only current anonymous keys; renderCells() will respect them
+      // when the map is created. No Owner/media data reaches this Child.
+      if (!active || !exact(data,
           ['version','generation','nonce','kind','keys']) ||
           data.generation!==generation || data.nonce!==nonce ||
           !Array.isArray(data.keys) || data.keys.length>MAX_PHOTO_COVERS) return
