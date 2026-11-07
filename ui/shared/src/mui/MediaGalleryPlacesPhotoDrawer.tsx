@@ -13,11 +13,14 @@ import { XDriveMediaThumbnailScheduler } from './MediaGalleryThumbnailScheduler'
 
 /** Trusted Parent-only photo sheet; no Baidu SDK data or media URLs cross the Child. */
 export function XDriveMediaGalleryPlacesPhotoDrawer({
-  items, total, phase, expanded, loadingMore, pageError, loadThumbnail, photoTileMinWidth = 108, onExpand,
-  onClose, onRetry, onRefreshMap, onLoadMore, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
+  items, total, windowStart = 0, loadedDepth = items.length,
+  phase, expanded, loadingMore, pageError, loadThumbnail, photoTileMinWidth = 108, onExpand,
+  onClose, onRetry, onRefreshMap, onLoadMore, onWindowRange, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
 }: {
   items: MediaItem[]
   total: number
+  windowStart?: number
+  loadedDepth?: number
   phase: 'loading' | 'ready' | 'error'
   expanded: boolean
   loadingMore: boolean
@@ -29,6 +32,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   onRetry: () => void
   onRefreshMap: () => void
   onLoadMore: () => void
+  onWindowRange?: (startIndex: number, endIndex: number) => void
   onOpenPhoto: (item: MediaItem, presentation: XDrivePlacesDrawerPresentation) => void
   onOpenAll: () => void
   /** Same signed Owner camera viewport as the map's original camera wall. */
@@ -71,11 +75,15 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   // full Gallery viewport engine virtualizes *mounted tiles*; existing
   // Parent pagination/abort/freshness guards continue to own all I/O.
   const collection = useMemo<XDriveMediaGalleryVirtualCollection>(() => ({
-    itemCount: items.length,
-    loadedItems: new Map(items.map((item, index) => [index, item])),
-    itemAt: index => items[index],
-    onRangeChange: () => undefined,
-  }), [items])
+    itemCount: loadedDepth,
+    loadedItems: new Map(items.map((item, index) => [windowStart + index, item])),
+    itemAt: index => items[index - windowStart],
+    onRangeChange: (start, end) => {
+      if (phase === 'ready' && (start < windowStart ||
+          (end >= windowStart + items.length && end < loadedDepth)))
+        onWindowRange?.(start,end)
+    },
+  }), [items, windowStart, loadedDepth, phase, onWindowRange])
   const tileItem = (target: EventTarget | null) => {
     const tile = target instanceof Element
       ? target.closest('[data-xdrive-places-photo-drawer-item]') : null
@@ -93,7 +101,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     const node = listRef.current
     if (!node || appliedReturn.current === node) return
     const target=Math.min(initialPresentation?.loadedCount ?? 0,total)
-    if (items.length < target && !pageError) return
+    if (loadedDepth < target && !pageError) return
     if (!initialPresentation) { appliedReturn.current=node; return }
     // The prior attempt restored during Dialog's focus/Enter lifecycle; MUI
     // subsequently focused the first tile and scrolled the gallery to top.
@@ -124,21 +132,21 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       if (first !== undefined) view?.cancelAnimationFrame(first)
       if (second !== undefined) view?.cancelAnimationFrame(second)
     }
-  }, [phase, expanded, initialPresentation, items.length, total, pageError, portalEntered])
+  }, [phase, expanded, initialPresentation, loadedDepth, total, pageError, portalEntered])
   useEffect(() => {
     if (phase !== 'ready' || !initialPresentation || loadingMore || pageError ||
-        items.length>=total ||
-        (initialPresentation.loadedCount ?? 0)<=items.length) return
+        loadedDepth>=total ||
+        (initialPresentation.loadedCount ?? 0)<=loadedDepth) return
     // User previously visited these pages. Only restore their bounded count
     // through NEW authenticated /cell-items, never reuse old media bytes.
     onLoadMore()
-  }, [phase, initialPresentation, loadingMore, pageError, items.length, total, onLoadMore])
+  }, [phase, initialPresentation, loadingMore, pageError, loadedDepth, total, onLoadMore])
   const position = (): XDrivePlacesDrawerPresentation => {
     const bounded = (n: number) => Number.isFinite(n)
       ? Math.max(0, Math.min(10_000, Math.floor(n))) : 0
     return {expanded, scrollTop: bounded(listRef.current?.scrollTop ?? 0),
       scrollLeft: bounded(listRef.current?.scrollLeft ?? 0),
-      loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,items.length)}
+      loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,loadedDepth)}
   }
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md" disableScrollLock
@@ -260,7 +268,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
           <Box ref={listRef} data-xdrive-places-photo-drawer-items
             onScroll={event => {
               const list=event.currentTarget
-              if (expanded && !loadingMore && !pageError && items.length < total &&
+              if (expanded && !loadingMore && !pageError && loadedDepth < total &&
                   list.scrollHeight-list.scrollTop-list.clientHeight < 180) onLoadMore()
             }}
             onPointerDownCapture={event => {
@@ -368,12 +376,12 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
           <Stack direction="row" alignItems="center" justifyContent="space-between"
             spacing={1} sx={{px:1.25,pb:1,pt:0.25,flexShrink:0,flexWrap:'wrap',rowGap:0.25}}>
             <Typography variant="caption" color="text.secondary">
-              {items.length < total
-                ? `已显示 ${items.length.toLocaleString('zh-CN')} / ${total.toLocaleString('zh-CN')} 张`
+              {loadedDepth < total
+                ? `已显示 ${loadedDepth.toLocaleString('zh-CN')} / ${total.toLocaleString('zh-CN')} 张`
                 : '此地点全部照片'}
             </Typography>
             <Stack direction="row" alignItems="center" spacing={0.25}>
-              {items.length < total ? (
+              {loadedDepth < total ? (
                 <Button data-xdrive-places-photo-drawer-load-more
                   variant="outlined" onClick={onLoadMore} disabled={loadingMore}
                   aria-label="继续加载此地点的照片"
@@ -396,7 +404,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               </Button>
             </Stack>
           </Stack>
-          {pageError && items.length < total ? (
+          {pageError && loadedDepth < total ? (
             <Typography variant="caption" role="alert"
               data-xdrive-places-photo-drawer-page-error
               sx={{px:1.25,pb:1,color:'error.main'}}>
