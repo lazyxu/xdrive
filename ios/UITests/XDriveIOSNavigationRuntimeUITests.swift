@@ -11,20 +11,37 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
             app.launchArguments.append("-xdrive-ui-navigation-synthetic-owner")
         }
         app.launch()
+        XCTAssertEqual(app.state, .runningForeground,
+                       "App died at launch before Files navigation")
         return app
     }
+    private func find(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        // SwiftUI may surface its nested custom toolbar as an "Other" element.
+        // Query the exact identifier, not an assumed AX element type.
+        let element = app.descendants(matching: .any)
+            .matching(identifier: identifier).firstMatch
+        if !element.waitForExistence(timeout: 20) {
+            print("NAV_SMOKE missing \(identifier); app state=\(app.state.rawValue)")
+            print("NAV_SMOKE hierarchy:\n\(app.debugDescription)")
+            let capture = XCTAttachment(screenshot: app.screenshot())
+            capture.name = "missing-\(identifier)"
+            capture.lifetime = .keepAlways
+            add(capture)
+        }
+        return element
+    }
     private func select(_ identifier: String, in app: XCUIApplication) {
-        let control = app.buttons[identifier]
-        XCTAssertTrue(control.waitForExistence(timeout: 20), "Missing \(identifier)")
+        let control = find(identifier, in: app)
+        XCTAssertTrue(control.exists, "Missing \(identifier)")
         control.tap()
         XCTAssertEqual(app.state, .runningForeground, "App exited at \(identifier)")
     }
     func testFilesFirstOpenAndSixGalleryReturnsDoNotExit() {
         let app = launch()
-        XCTAssertTrue(app.buttons["native-ios-tab-gallery"].waitForExistence(timeout: 25))
+        XCTAssertTrue(find("native-ios-tab-gallery", in: app).exists)
         for index in 0..<6 {
             select("native-ios-tab-files", in: app)
-            XCTAssertTrue(app.buttons["native-ios-files-section-browse"].waitForExistence(timeout: 20),
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists,
                           "Files screen did not mount at transition \(index)")
             select("native-ios-tab-gallery", in: app)
         }
@@ -39,7 +56,7 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         for _ in 0..<3 {
             for section in ["recent", "browse", "favorites", "browse"] {
                 select("native-ios-files-section-\(section)", in: app)
-                XCTAssertTrue(app.buttons["native-ios-files-section-browse"].waitForExistence(timeout: 15))
+                XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
             }
         }
         XCTAssertEqual(app.state, .runningForeground)
@@ -47,7 +64,7 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     func testSyntheticOwnerFilesRootDoesNotCrashOnAuthFailure() {
         let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)
-        let root = app.buttons["native-ios-files-open-root-location"]
+        let root = find("native-ios-files-open-root-location", in: app)
         XCTAssertTrue(root.waitForExistence(timeout: 25),
                       "Synthetic Owner Files root link did not appear")
         root.tap()
@@ -68,7 +85,7 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke", "-xdrive-ui-files-direct"]
         app.launch()
-        XCTAssertTrue(app.buttons["native-ios-files-section-browse"]
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app)
             .waitForExistence(timeout: 25), "Native Files root failed to mount")
         XCTAssertEqual(app.state, .runningForeground)
     }
@@ -77,7 +94,7 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         app.launchArguments = ["-xdrive-ui-navigation-smoke", "-xdrive-ui-files-direct",
                                "-xdrive-ui-navigation-synthetic-owner"]
         app.launch()
-        XCTAssertTrue(app.buttons["native-ios-files-open-root-location"]
+        XCTAssertTrue(find("native-ios-files-open-root-location", in: app)
             .waitForExistence(timeout: 25),
             "Native Files root did not mount for synthetic Owner")
         XCTAssertEqual(app.state, .runningForeground)
