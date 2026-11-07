@@ -197,8 +197,18 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := server.Router()
 	frontend := http.FileServer(http.Dir(dist))
+	legacyMarker := os.Getenv("XD_DESKTOP_PLACES_LEGACY_MARKER")
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
+			// Test-only old Server capability: no Desktop map grant endpoint,
+			// while ordinary Owner APIs and native Agent login remain real.
+			if legacyMarker != "" && r.Method == http.MethodPost &&
+				r.URL.Path == "/api/v1/auth/desktop-map/issue" {
+				if _, err := os.Stat(legacyMarker); err == nil {
+					http.NotFound(w, r)
+					return
+				}
+			}
 			router.ServeHTTP(w, r)
 			return
 		}
