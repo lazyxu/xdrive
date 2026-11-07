@@ -174,13 +174,14 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
         throw new Error('Server 剪贴板加密版本不兼容。')
       }
       const nextKey = await xDriveClipboardDeriveKey(passphrase, info.salt)
+      const claimScope = port.claimScope ? port.claimScope(info) : port.ownerScopeKey
       const verified = info.check_ciphertext
         ? info
         : await port.initializeCheck({
-            ...await xDriveClipboardMakeVaultCheck(nextKey, port.ownerScopeKey),
-            scope: port.ownerScopeKey,
+            ...await xDriveClipboardMakeVaultCheck(nextKey, claimScope),
+            scope: claimScope,
           }, controller.signal)
-      let canonicalScope = verified.aad_scope || port.ownerScopeKey
+      let canonicalScope = verified.aad_scope || claimScope
       await xDriveClipboardVerifyVaultCheck(nextKey, canonicalScope, {
         nonce: verified.check_nonce, ciphertext: verified.check_ciphertext,
       })
