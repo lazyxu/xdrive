@@ -169,6 +169,97 @@ function inspectRealWebGuest(){
     hasNativeAgent:typeof window.xdriveDesktop,
     url:location.origin}
 }
+
+/**
+ * Executes in the *real* production HTTPS WebView, using its pre-existing
+ * HttpOnly browser session and the genuine Gin/PostgreSQL Owner endpoints.
+ * Only synthetic counts and HTTP status classes return to Electron Main;
+ * no AccessJWT, native refresh credential or raw photo metadata is logged.
+ * The Web View/React UI is still mounted and authenticated before this runs.
+ */
+async function inspectRealWebGuestOwnerDataPath(expectedOwner){
+  const tokenReply=await fetch('/api/v1/auth/browser/refresh',{
+    method:'POST',redirect:'error',credentials:'same-origin',cache:'no-store',
+    headers:{'X-XDrive-Browser-Owner':expectedOwner},
+  })
+  if(!tokenReply.ok)throw Error('map guest Cookie refresh rejected '+tokenReply.status)
+  const receipt=await tokenReply.json()
+  if(receipt.username!==expectedOwner || receipt.browser_session!==true ||
+      typeof receipt.access_token!=='string' || receipt.access_token.length<30)
+    throw Error('map guest browser JWT Owner mismatch')
+  const bearer=receipt.access_token
+  const request=async(path,method='GET')=>fetch(path,{
+    method,credentials:'same-origin',redirect:'error',cache:'no-store',
+    headers:{Authorization:'Bearer '+bearer},
+  })
+  const bounds='west=100&south=20&east=125&north=40&sort_by=captured&sort_dir=desc'
+  const base='/api/v1/media/places/baidu-jsapi/cells?'+bounds
+  const readCells=async(suffix)=> {
+    const response=await request(base+suffix)
+    if(response.status!==200)throw Error('protected Owner cells HTTP '+response.status)
+    const data=await response.json()
+    if(data.coordinate_space!=='bd09ll' || !Array.isArray(data.cells))
+      throw Error('invalid real BD09 cell response')
+    return data
+  }
+  const [all,favorites,family,familyFavorites,emptyDate]=await Promise.all([
+    readCells(''),readCells('&favorite=true'),
+    readCells('&album=manual%3AFamily'),
+    readCells('&album=manual%3AFamily&favorite=true'),
+    readCells('&captured_from=2099-01-01'),
+  ])
+  if(all.total_count!==9 || favorites.total_count!==3 ||
+      family.total_count!==3 || familyFavorites.total_count!==2 ||
+      emptyDate.total_count!==0)
+    throw Error('real Owner-scoped album/favorite/date counts differ from fixture')
+  if(all.cells.length!==1 || favorites.cells.length!==1 ||
+      family.cells.length!==1 || familyFavorites.cells.length!==1)
+    throw Error('real Owner Cells did not preserve bounded descriptor')
+  const cell=all.cells[0]
+  const query=new URLSearchParams(bounds)
+  for(const [key,value] of Object.entries({
+    cell_x:cell.cell_x,cell_y:cell.cell_y,asset_id:cell.asset_id,
+    node_id:cell.node_id,node_revision:cell.node_revision,
+    photo_count:cell.photo_count,offset:0,limit:10,range:true,
+  }))query.set(key,String(value))
+  const items=await request('/api/v1/media/places/baidu-jsapi/cell-items?'+query)
+  if(items.status!==200)throw Error('real Owner Cell-to-Viewer range HTTP '+items.status)
+  const page=await items.json()
+  if(page.total_count!==9 || !Array.isArray(page.items) ||
+      page.items.length===0 || page.items.length>9)
+    throw Error('real Owner Cell-to-Viewer range is not exact')
+  const selected=page.items.find(item=>item?.node?.id===cell.node_id) || page.items[0]
+  if(!Number.isSafeInteger(selected?.node?.id) || selected.node.id<=0)
+    throw Error('Viewer range has no Owner-verified Node')
+  const metadata=await request('/api/v1/media/items/'+selected.node.id)
+  if(metadata.status!==200)throw Error('real Owner Viewer metadata HTTP '+metadata.status)
+  const photo=await metadata.json()
+  if(!photo || !photo.node || photo.node.id!==selected.node.id)
+    throw Error('real Viewer metadata escaped the exact Owner Node')
+  const thumbnail=await request('/api/v1/media/items/'+selected.node.id+'/thumbnail')
+  const viewer=await request('/api/v1/media/items/'+selected.node.id+'/viewer-preview')
+  if([401,403,500,502,503].includes(thumbnail.status) ||
+      [401,403,500,502,503].includes(viewer.status))
+    throw Error('real Viewer derivative request failed authorization or Server')
+  // Derivatives can be 404 before the background thumbnail/preview worker
+  // runs; the test reports that truth rather than fabricating image bytes.
+  const unrelated=await Promise.all([
+    request('/api/v1/nodes'),
+    request('/api/v1/notes'),
+    request('/api/v1/admin/users'),
+    request('/api/v1/media/albums','POST'),
+  ])
+  if(unrelated.some(response=>response.status!==403))
+    throw Error('map browser bearer escaped its dedicated route allowlist')
+  return {
+    ok:true,ownerCells:all.total_count,favorites:favorites.total_count,
+    family:family.total_count,familyFavorites:familyFavorites.total_count,
+    emptyDate:emptyDate.total_count,viewerRange:page.total_count,
+    viewerMetadata:true,thumbnailStatus:thumbnail.status,
+    viewerStatus:viewer.status,mapRouteOnly:true,
+  }
+}
+
 let launched=false
 async function run(win){
   let stage='production-desktop-init'
@@ -259,6 +350,18 @@ async function run(win){
     assert.equal(state.url,origin)
     assert.equal(state.hasGallery,true)
     assert.notEqual(state.mapMode,'isolated','default map unexpectedly forced isolation')
+    stage='production-Web-Owner-scoped-Gin-Cells-Viewer-and-map-route-fence'
+    const media=await attached.executeJavaScript(
+      '('+inspectRealWebGuestOwnerDataPath.toString()+')('+JSON.stringify(owner)+')')
+    assert.equal(media.ok,true)
+    assert.equal(media.ownerCells,9)
+    assert.equal(media.favorites,3)
+    assert.equal(media.family,3)
+    assert.equal(media.familyFavorites,2)
+    assert.equal(media.emptyDate,0)
+    assert.equal(media.viewerRange,9)
+    assert.equal(media.viewerMetadata,true)
+    assert.equal(media.mapRouteOnly,true)
     const preload=await win.webContents.executeJavaScript(
       'Boolean(window.xdriveDesktop?.agent && document.querySelector("[data-xdrive-places-index]"))')
     assert.equal(preload,true)
@@ -268,7 +371,12 @@ async function run(win){
       currentOwner:owner,realGuest:true,secureOrigin:true,
       embeddedOnly:true,noNestedLogin:true,syntheticPhotosOnly:true,
       phase:Number(process.env.XD_DESKTOP_PLACES_BOOT||'0'),
-      guestLoads,mapMode:state.mapMode
+      guestLoads,mapMode:state.mapMode,
+      exactOwnerCells:media.ownerCells,exactFavorites:media.favorites,
+      exactFamily:media.family,exactFamilyFavorites:media.familyFavorites,
+      exactViewerRange:media.viewerRange,viewerMetadata:media.viewerMetadata,
+      noUnrelatedMapBearerAccess:media.mapRouteOnly,
+      thumbnailStatus:media.thumbnailStatus,viewerStatus:media.viewerStatus
     }))
     app.exit(0)
   }catch(error){
