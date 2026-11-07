@@ -1216,6 +1216,8 @@ jobs:
           bash scripts/test-media-worker-control.sh
           bash -n scripts/test-caddy-host-status.sh
           bash scripts/test-caddy-host-status.sh
+          bash -n scripts/test-caddy-observer-groups.sh
+          sudo -n env TMPDIR="$RUNNER_TEMP" bash scripts/test-caddy-observer-groups.sh
           python3 scripts/test-caddy-https-host-plan.py
           bash -n scripts/test-caddy-rescue-profile.sh
           bash scripts/test-caddy-rescue-profile.sh

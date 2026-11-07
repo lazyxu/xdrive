@@ -932,6 +932,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY='' \
+            XDRIVE_SOURCE_COMMIT="$(git rev-parse HEAD)" \
             build
 
       - name: Validate app and package SideStore compatible IPA
@@ -944,6 +945,8 @@ jobs:
           test ! -e "$app/embedded.mobileprovision"
           actual=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
           test "$actual" = 'com.lazyxu.xdrive.ios'
+          compiled_source=$(/usr/libexec/PlistBuddy -c 'Print XDriveSourceCommit' "$app/Info.plist")
+          test "$compiled_source" = "$(git rev-parse HEAD)"
           /usr/libexec/PlistBuddy -c 'Print NSLocalNetworkUsageDescription' "$app/Info.plist" | grep -Fq 'xDrive'
           # Test the actual compiled device app, not only the XcodeGen YAML.
           APP_PLIST="$app/Info.plist" python3 - <<'PY'

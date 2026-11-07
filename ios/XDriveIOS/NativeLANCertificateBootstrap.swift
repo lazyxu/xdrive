@@ -10,6 +10,22 @@ enum XDriveIOSLANCertificateBootstrap {
     static let maximumCertificate = 8192
     private static let delimiter = Data("\r\n\r\n".utf8)
 
+    /// Fixed categories and numeric OS codes only: never expose an underlying
+    /// error's URL, request headers, credentials or arbitrary description.
+    static func transportFailure(_ error: NWError?, localNetworkDenied: Bool = false) -> XDriveIOSLANPairingFailure {
+        if localNetworkDenied { return .localNetworkDenied }
+        guard let error else { return .connectionTimedOut }
+        switch error {
+        case .tls(let status): return .domainCertificateInvalid(status)
+        case .posix(.ETIMEDOUT): return .connectionTimedOut
+        case .posix(let code): return .connectionUnavailable(code.rawValue)
+        case .dns(let code):
+            // kDNSServiceErr_PolicyDenied, also used by local network privacy.
+            return code == -65570 ? .localNetworkDenied : .connectionUnavailable(code)
+        @unknown default: return .connectionUnavailable(0)
+        }
+    }
+
     static func fetch(origin: URL, target: XDriveIOSLANAuthority) async throws -> Data {
         guard XDriveIOSLANPairing.publicDomain(origin) != nil, let host = origin.host,
               (origin.port ?? 443) == target.port, let address = IPv4Address(target.ip),
@@ -74,6 +90,7 @@ enum XDriveIOSLANCertificateBootstrap {
         private var cancelled = false
         private var sent = false
         private var response = Data()
+        private var waitingError: NWError?
 
         init(host: String, address: IPv4Address, port: NWEndpoint.Port) {
             let tls = NWProtocolTLS.Options()
@@ -105,7 +122,11 @@ enum XDriveIOSLANCertificateBootstrap {
                         self.connection.stateUpdateHandler = { [weak self] state in self?.observe(state) }
                         self.connection.start(queue: self.queue)
                         self.queue.asyncAfter(deadline: .now() + 8) { [weak self] in
-                            self?.finish(.failure(XDriveIOSLANPairingFailure.rootUnavailable))
+                            guard let self else { return }
+                            self.finish(.failure(XDriveIOSLANCertificateBootstrap.transportFailure(
+                                self.waitingError,
+                                localNetworkDenied: self.connection.currentPath?.unsatisfiedReason == .localNetworkDenied
+                            )))
                         }
                     }
                 }
@@ -119,14 +140,24 @@ enum XDriveIOSLANCertificateBootstrap {
 
         private func observe(_ state: NWConnection.State) {
             switch state {
+            case .waiting(let error):
+                // Keep the same connection while the user answers iOS's first
+                // permission prompt; do not misreport it as a bad certificate.
+                waitingError = error
+            case .preparing:
+                waitingError = nil
             case .ready where !sent:
+                waitingError = nil
                 sent = true
                 connection.send(content: request, completion: .contentProcessed { [weak self] error in
-                    if let error { self?.finish(.failure(error)) }
+                    if let error { self?.finish(.failure(XDriveIOSLANCertificateBootstrap.transportFailure(error))) }
                     else { self?.receive() }
                 })
-            case .failed(let error): finish(.failure(error))
-            case .cancelled: finish(.failure(XDriveIOSLANPairingFailure.rootUnavailable))
+            case .failed(let error):
+                finish(.failure(XDriveIOSLANCertificateBootstrap.transportFailure(
+                    error, localNetworkDenied: connection.currentPath?.unsatisfiedReason == .localNetworkDenied
+                )))
+            case .cancelled: finish(.failure(CancellationError()))
             default: break
             }
         }
@@ -136,7 +167,7 @@ enum XDriveIOSLANCertificateBootstrap {
             connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, ended, error in
                 guard let self, self.pending != nil else { return }
                 do {
-                    if let error { throw error }
+                    if let error { throw XDriveIOSLANCertificateBootstrap.transportFailure(error) }
                     if let data { self.response.append(data) }
                     if let pem = try XDriveIOSLANCertificateBootstrap.certificate(in: self.response) {
                         self.finish(.success(pem))

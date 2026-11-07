@@ -32,11 +32,17 @@ struct XDriveIOSLANAuthority: Equatable, Sendable {
 
 enum XDriveIOSLANPairingFailure: Error {
     case invalidAuthority, rootUnavailable, invalidRoot, differentDomain, keychain
+    case localNetworkDenied, connectionTimedOut
+    case connectionUnavailable(Int32), domainCertificateInvalid(Int32)
 
     var message: String {
         switch self {
         case .invalidAuthority: return "请填写有效的 HTTPS 域名和私网 IPv4 地址。"
-        case .rootUnavailable: return "无法通过内网读取 Caddy 证书。请检查内网 IP 和端口是否可达，以及 Caddy 的域名证书。"
+        case .rootUnavailable: return "内网已连接，但 Caddy 证书下载响应不正确。请检查服务器的内网证书下载入口。"
+        case .localNetworkDenied: return "iOS 阻止了本地网络访问。请在设置 → 隐私与安全性 → 本地网络中允许 xDrive，再重试配对。"
+        case .connectionTimedOut: return "连接内网 HTTPS 超时。请核对内网 IP、端口和 Wi-Fi；若刚允许本地网络访问，请再点一次配对。"
+        case .connectionUnavailable(let code): return "无法建立内网连接（网络错误 \(code)）。请核对 IP、端口和 Wi-Fi 是否可互通。"
+        case .domainCertificateInvalid(let code): return "域名 HTTPS 握手或证书校验失败（TLS \(code)）。请检查手机系统时间和服务器域名证书链。"
         case .invalidRoot: return "域名提供的证书无法验证该内网地址。请核对 Caddy 的 IP 和证书。"
         case .differentDomain: return "该内网地址已绑定另一个 HTTPS 域名。请使用原域名或为新服务器配置不同的内网入口。"
         case .keychain: return "无法读取或保存内网证书配对，请解锁设备后重试。"
