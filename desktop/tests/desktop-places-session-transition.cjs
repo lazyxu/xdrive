@@ -194,3 +194,16 @@ test('real publishAgentState closes both map windows on selected IP change',()=>
   run({connected:true,status:{...previous.status,connection_ip:'192.168.7.9'}})
   assert.deepEqual(calls,['close-guest','close-secure'])
 })
+
+test('successful explicit re-login retires old HTTPS map before seeding same Owner',()=>{
+  const start=main.indexOf("ipcMain.handle('agent:login',")
+  const stop=main.indexOf("ipcMain.handle('agent:logout',",start)
+  assert.ok(start>=0&&stop>start)
+  const flow=main.slice(start,stop)
+  const accepted=flow.indexOf('if (result.ok) {')
+  const close=flow.indexOf('closeDesktopPlacesGuests()',accepted)
+  const secure=flow.indexOf('closeSecureBaiduMapWindow()',accepted)
+  const seed=flow.indexOf('void seedDesktopPlacesWebAuth(server, username, password)',accepted)
+  assert.ok(accepted>=0&&close>accepted&&secure>accepted&&seed>close&&seed>secure,
+    'same-Owner HTTPS CA/re-login cannot reuse an old guest partition or Cookie')
+})
