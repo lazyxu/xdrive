@@ -168,7 +168,7 @@ test('trip navigation keeps its verified Owner list while the child wall is push
 });
 
 test('accepted Owner map covers and TLS transport cannot regress when adding native trips', () => {
-  const covers = map.slice(map.indexOf('private func loadCurrentOwnerCovers()'));
+  const covers = map.slice(map.indexOf('private func loadCurrentOwnerCovers('));
   assert.match(covers, /let maximumConcurrentCovers = 3/);
   assert.match(covers, /withTaskGroup\(of: XDriveIOSOwnerMapCoverOutcome\.self\)/);
   assert.match(covers, /case \.revoked:[\s\S]*?group\.cancelAll\(\)/);
