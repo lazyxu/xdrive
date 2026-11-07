@@ -5413,6 +5413,8 @@ type MediaSelectionModifiers = {
 type MediaTileProps = {
   item: MediaItem
   logicalIndex: number
+  /** The trusted Places drawer uses the exact Gallery tile, not a second photo-card renderer. */
+  placesDrawer?: boolean
   selectionMode: boolean
   selectedForAction: boolean
   recommendedForCleanup?: boolean
@@ -5433,9 +5435,10 @@ type MediaTileProps = {
   onToggleFavorite: (item: MediaItem) => void
 }
 
-function MediaTile({
+export function MediaTile({
   item,
   logicalIndex,
+  placesDrawer = false,
   selectionMode,
   selectedForAction,
   recommendedForCleanup = false,
@@ -5482,9 +5485,11 @@ function MediaTile({
   return (
     <Paper
       variant="outlined"
+      {...(placesDrawer ? { component: 'button', type: 'button' as const } : {})}
       data-xdrive-media-tile
       data-xdrive-media-index={logicalIndex}
       data-xdrive-media-node-id={item.node.id}
+      data-xdrive-places-photo-drawer-item={placesDrawer ? item.node.id : undefined}
       role="button"
       aria-label={`${item.node.name}，${livePhoto ? '实况照片' : video ? '视频' : '照片'}`}
       tabIndex={0}
@@ -5503,6 +5508,13 @@ function MediaTile({
       }}
       onDoubleClick={(event) => event.preventDefault()}
       onKeyDown={(event) => {
+        if (placesDrawer && (event.key === 'Enter' || event.key === ' ')) {
+          // A native button can also synthesize click on Enter/Space.
+          // Prevent default so the signed Owner Viewer opens only once.
+          event.preventDefault()
+          onPreview(item)
+          return
+        }
         if (event.key === ' ' || (selectionMode && event.key === 'Enter')) {
           event.preventDefault()
           onSelect(item, logicalIndex, {
@@ -5881,9 +5893,10 @@ type MediaGalleryReturnViewport = {
 
 // This is a bounded pixel/window snapshot of ONE visible virtual collection,
 // not a retained photo array. It is consumed only across Mobile Collections.
-function MediaVirtualTileGrid({
+export function MediaVirtualTileGrid({
   collection,
   minTileWidth,
+  placesDrawer = false,
   minColumns,
   referenceColumnWidth,
   baselineColumns,
@@ -5908,6 +5921,7 @@ function MediaVirtualTileGrid({
 }: {
   collection: XDriveMediaGalleryVirtualCollection
   minTileWidth: number
+  placesDrawer?: boolean
   minColumns?: number
   referenceColumnWidth?: number
   baselineColumns?: number
@@ -6148,6 +6162,7 @@ function MediaVirtualTileGrid({
           key={photoContentIdentity(item)}
           item={item}
           logicalIndex={index}
+          placesDrawer={placesDrawer}
           selectionMode={selectionMode}
           selectedForAction={selectedContentKeys.has(photoContentIdentity(item))}
           recommendedForCleanup={item.node.id === recommendedNodeID}
