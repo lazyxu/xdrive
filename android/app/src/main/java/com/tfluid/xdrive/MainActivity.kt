@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
     // Transient Activity memory only: never saved to Bundle, prefs, URI grant
     // history or an Owner-unscoped task queue. Cold restarts cannot auto-upload.
     private var sharedFile by mutableStateOf<NativeIncomingShare?>(null)
+    private var sharedClipboardText by mutableStateOf<NativeIncomingClipboardText?>(null)
     private var shareBusy by mutableStateOf(false)
     private var shareError by mutableStateOf<String?>(null)
     // A SAF result is usable only by the exact picker that launched it, not
