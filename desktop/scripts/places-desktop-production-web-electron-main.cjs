@@ -396,9 +396,15 @@ async function run(win){
     if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===1){
       stage='production-Web-prototype-isolated-prototype-mode-round-trip'
       const select=async(mode)=>{
-        const moved=await attached.executeJavaScript(
-          '(() => {const b=document.querySelector("[data-xdrive-map-mode-'+mode+']");'+
-          'if(!b||b.disabled)return false;b.click();return true})()')
+        // location.replace may abort executeJavaScript's reply even when
+        // Chromium performed the click. The following exact-mode wait is
+        // mandatory and does not treat an arbitrary JS error as success.
+        let moved=true
+        try{
+          moved=await attached.executeJavaScript(
+            '(() => {const b=document.querySelector("[data-xdrive-map-mode-'+mode+']");'+
+            'if(!b||b.disabled)return false;b.click();return true})()')
+        }catch{}
         assert.equal(moved,true,'real Web mode control missing')
         await until(async()=>{
           try {
