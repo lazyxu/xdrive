@@ -69,6 +69,7 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     // Shared Gallery media selection applies only to the local PhotoKit map.
     // Cloud Owner Map remains governed by its signed Server PhotoScope.
     var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
+    var inheritedCaptureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
 
     var body: some View {
         let expectedOwner = login.owner
@@ -88,7 +89,8 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                         localMapCamera = next
                     },
                     onFocusChange: onFocusChange,
-                    mediaFilter: mediaFilter
+                    mediaFilter: mediaFilter,
+                    inheritedCaptureRange: inheritedCaptureRange
                 )
             case .cloud:
                 XDriveIOSNativeOwnerPhotoMapScreen(
@@ -100,7 +102,8 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                                 login.owner, expectedOwner
                               ) else { return }
                         cloudMapCamera = next
-                    })
+                    },
+                    inheritedCaptureRange: inheritedCaptureRange)
             }
         }
         .toolbar {
