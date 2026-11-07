@@ -132,3 +132,15 @@ test('trip map fails closed on 64-place overflow and distinguishes stale trip fr
   assert.match(response, /self\.error = "当前旅行地点过多或成员正在变化/);
   assert.doesNotMatch(response, /reader\.mapOverview\(|reader\.page\(offset:|allPhotos\(/);
 });
+
+test('trip map keeps camera on sheet dismissal and refresh while revoking stale pins', () => {
+  assert.match(map, /private func reload\(preservingCamera: Bool = false\)/)
+  const closures = [...map.matchAll(/\.sheet\(item: \$selected(?:Place|Cluster), onDismiss: \{/g)]
+  assert.equal(closures.length, 2)
+  assert.match(map, /if activeOwner \{ reload\(preservingCamera: true\) \} else \{ invalidate\(\) \}/)
+  assert.match(map, /Button\("刷新"\) \{ reload\(preservingCamera: true\) \}/)
+  assert.match(map, /Button\("重试旅行地图"\) \{ reload\(preservingCamera: true\) \}/)
+  assert.match(map, /private func reload\([\s\S]*?invalidate\(\)[\s\S]*?reader\.exactTripMap\(/)
+  assert.match(map, /if !preservingCamera \{[\s\S]*?fittedCamera = MKCoordinateRegion\([\s\S]*?fitRequestID = UUID\(\)/)
+  assert.match(map, /coverImages = \[:\][\s\S]*?selectedPlace = nil[\s\S]*?selectedCluster = nil/)
+});
