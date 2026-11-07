@@ -44,7 +44,13 @@ for (const [name, view, tile] of [['PhotoKit full wall', local, 'candidate'], ['
     assert.match(view, /scroll\.scrollTo\(target, anchor: \.center\)[\s\S]*?accessibilityFocusedTileID = target/);
     assert.match(view, /private func clearViewerTileAnchor\(\) \{[\s\S]*?accessibilityFocusedTileID = nil/);
     assert.match(view, /clearViewerTileAnchor\(\)/);
-    assert.match(view, /if selected != nil \{ suspendForViewer\(\) \}/);
+    if (name === 'PhotoKit album wall') {
+      // Both MapKit and Viewer are authorized transient child pages.
+      assert.match(view, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
+      assert.match(view, /else \{ libraryMonitor\.stop\(\); invalidate\(\) \}/)
+    } else {
+      assert.match(view, /if selected != nil \{ suspendForViewer\(\) \}/)
+    }
     assert.match(view, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
     assert.doesNotMatch(view, /UserDefaults|@AppStorage|WKWebView/);
   });
@@ -149,6 +155,7 @@ test('PhotoKit album L3 Viewer navigates only a verified 64-item page at a time 
   assert.match(contents, /\} else \{\s*pendingAlbumMapJump = nil[\s\S]*?clearViewerTileAnchor\(\)\s*invalidate\(\)/)
   assert.match(contents, /private func restoreViewerTile\(using scroll: ScrollViewProxy\)[\s\S]*?XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
   assert.match(contents, /onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?clearViewerTileAnchor\(\)[\s\S]*?invalidate\(\)/)
-  assert.match(contents, /if selected != nil \{ suspendForViewer\(\) \}/)
+  assert.match(contents, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
+  assert.match(contents, /else \{ libraryMonitor\.stop\(\); invalidate\(\) \}/)
   assert.doesNotMatch(contents, /UserDefaults|@AppStorage|CloudKit|UploadSession|isNetworkAccessAllowed = true/)
 });
