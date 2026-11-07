@@ -193,14 +193,14 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	// dedicated uid_* managed target. The Owner root is ordinary data and must
 	// never be adopted or used as a Source target.
 	source := meta.Source{
-		OwnerID:      userA.ID,
-		Name:         "Yike Photos",
-		Kind:         "yike_photos",
-		Direction:    meta.SourceDirectionPull,
-		SyncMode:     meta.SourceSyncModeBackup,
-		RunMode:      meta.SourceRunModeSync,
-		Status:       meta.SourceStatusActive,
-		Revision:     1,
+		OwnerID:   userA.ID,
+		Name:      "Yike Photos",
+		Kind:      "yike_photos",
+		Direction: meta.SourceDirectionPull,
+		SyncMode:  meta.SourceSyncModeBackup,
+		RunMode:   meta.SourceRunModeSync,
+		Status:    meta.SourceStatusActive,
+		Revision:  1,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
