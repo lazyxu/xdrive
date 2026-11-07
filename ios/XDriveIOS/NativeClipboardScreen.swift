@@ -156,7 +156,10 @@ struct XDriveIOSNativeClipboardScreen: View {
                 await refresh()
             }
         }
-        .task(id: unlocked && scenePhase == .active) {
+        // Include device enrollment in the subscription identity. Before
+        // enrollment this stream has broadcast-only scope; after opt-in it
+        // must close and reopen with a freshly verified device proof.
+        .task(id: "\(unlocked && scenePhase == .active):\(recipientProof?.deviceID ?? "")") {
             guard unlocked, scenePhase == .active else { return }
             let generation = sessionGeneration
             var after: UInt64 = 0 // Never persist or reuse across Owners.
@@ -181,6 +184,11 @@ struct XDriveIOSNativeClipboardScreen: View {
                 do { try await Task.sleep(nanoseconds: 3_000_000_000) }
                 catch { break }
             }
+        }
+        .onChange(of: recipientProof?.deviceID) { _ in
+            // The 15-second GET fallback never waits for the next tick after
+            // a new Owner-scoped device capability is enrolled or revoked.
+            Task { await refresh() }
         }
         .onChange(of: login.owner) { _ in lock() }
         .onDisappear { lock() }
