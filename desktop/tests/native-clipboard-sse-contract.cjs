@@ -52,9 +52,17 @@ test('Android SSE stays on the same pinned Owner transport with cancellable fram
   assert.match(androidAPI, /cursor\.acceptLine\(line\)/)
   assert.match(androidController, /withNotesOwner \{ service, token -> service\.clipboardWatch\(token, after, onChange\) \}/)
   assert.match(androidParser, /require\(value == "\{\}"\)/)
-  assert.doesNotMatch(androidAPI.slice(androidAPI.indexOf('override suspend fun clipboardWatch('),
-    androidAPI.indexOf('override suspend fun notesInitialize(',androidAPI.indexOf('override suspend fun clipboardWatch('))),
-    /X-XDrive-Device-Token|SourceRun|clipboard\.setPrimaryClip/)
+  const watch = androidAPI.slice(androidAPI.indexOf('override suspend fun clipboardWatch('),
+    androidAPI.indexOf('override suspend fun notesInitialize(', androidAPI.indexOf('override suspend fun clipboardWatch(')))
+  // v1 must be plain current-Owner bearer (no device privilege). v2 must
+  // additionally carry the independently registered device proof.
+  assert.match(watch, /clipboardWatchScoped\(accessToken, null, after, onChange\)/)
+  assert.match(watch, /clipboardWatchForDevice\(/)
+  assert.match(watch, /clipboardWatchScoped\(accessToken, enrolled, after, onChange\)/)
+  assert.match(watch, /if \(enrolled != null\)/)
+  assert.match(watch, /builder\.header\("X-XDrive-Device-ID", enrolled\.deviceId\)/)
+  assert.match(watch, /\.header\("X-XDrive-Device-Token", enrolled\.deviceToken\)/)
+  assert.doesNotMatch(watch, /SourceRun|clipboard\.setPrimaryClip/)
 })
 
 test('Android SSE locks with Owner and never replaces polling / authoritative GET', () => {
