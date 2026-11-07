@@ -11,6 +11,22 @@ const Renderer = require('react-test-renderer')
 const { act } = Renderer
 
 const root = path.resolve(__dirname, '../..')
+// The UI imports the actual zero-dependency diagnostics presenter. Mount its
+// real compiled module instead of hiding unexpected imports behind a generic
+// require stub; Owner/session error messages remain under test.
+const dsmAuthFile = path.resolve(__dirname,
+  '../../ui/shared/src/synology-dsm-auth-diagnostics.ts')
+const dsmAuthCompiled = ts.transpileModule(fs.readFileSync(dsmAuthFile, 'utf8'), {
+  fileName: dsmAuthFile,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+})
+const dsmAuthModule = { exports: {} }
+new Function('module', 'exports', 'require', dsmAuthCompiled.outputText)(
+  dsmAuthModule, dsmAuthModule.exports, id => {
+    throw Error('unexpected runtime dependency in DSM diagnostics: ' + id)
+  },
+)
+
 const SCOPE = 'a'.repeat(64)
 const OTHER_SCOPE = 'b'.repeat(64)
 const SELECTION = 'c'.repeat(64)
@@ -49,6 +65,7 @@ function load(name, extra = {}) {
   const imports = {
     react: React, 'react/jsx-runtime': require('react/jsx-runtime'),
     '@mui/material': mui,
+    '../synology-dsm-auth-diagnostics': dsmAuthModule.exports,
     './SynologyNASShareInventory': { XDriveSynologyNASShareInventory: shareInventory },
     './SynologyNativeDraftReview': { XDriveSynologyNativeDraftReview: draftPlaceholder },
     ...extra,

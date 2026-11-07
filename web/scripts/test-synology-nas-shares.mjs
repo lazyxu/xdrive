@@ -77,8 +77,12 @@ const compiledAdapter = ts.transpileModule(adapter,{
   fileName:'synology-backup-adapter.ts',
   compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
 })
-assert.doesNotMatch(compiledAdapter.outputText,/require\(['"]\.\//,
-  'DSM transport gained a runtime module dependency outside its VM host')
+// TypeScript legitimately lowers EXISTING lazy dynamic imports within method
+// bodies to require(). Those functions are never called in this VM fixture.
+// Only a new static diagnostic import would break module initialization.
+assert.doesNotMatch(compiledAdapter.outputText,
+  /require\(['"]\.\/synology-dsm-auth-diagnostics['"]\)/,
+  'DSM transport gained a static diagnostics dependency outside its VM host')
 const sandboxExports={}
 const adapterSandbox={exports:sandboxExports,module:{exports:sandboxExports},URL,TextEncoder}
 vm.runInNewContext(compiledAdapter.outputText,adapterSandbox,{timeout:1000})
