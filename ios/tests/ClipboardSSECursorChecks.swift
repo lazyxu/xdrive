@@ -3,6 +3,8 @@ import Foundation
 /// Executable pure-Swift protocol checks; can run without UIKit or an iPhone:
 /// swiftc XDriveIOS/NativeClipboardSSECursor.swift tests/ClipboardSSECursorChecks.swift -o /tmp/clipboard-sse-check
 @main struct ClipboardSSECursorChecks {
+    private static func require(_ condition: Bool) { precondition(condition) }
+
     static func feed(_ cursor: inout XDriveIOSClipboardSSECursor,
                      _ lines: [String]) throws -> Bool {
         var result = false
@@ -18,22 +20,22 @@ import Foundation
 
     static func main() throws {
         var first = XDriveIOSClipboardSSECursor()
-        precondition(try feed(&first, ["retry: 2000", "event: sync", "data: {}", ""]))
+        require(try feed(&first, ["retry: 2000", "event: sync", "data: {}", ""]))
         precondition(first.cursor == 0)
-        precondition(try feed(&first, ["id: 31", "event: change", "data: {}", ""]))
+        require(try feed(&first, ["id: 31", "event: change", "data: {}", ""]))
         precondition(first.cursor == 31)
-        precondition(!(try feed(&first, [": ping", "id: 31", "event: change", "data: {}", ""])))
+        require(!(try feed(&first, [": ping", "id: 31", "event: change", "data: {}", ""])))
         precondition(first.cursor == 31)
 
         // A partial frame never signals; reconnect must keep the last committed ID.
         _ = try first.acceptLine("id: 32")
         _ = try first.acceptLine("event: change")
         var resumed = XDriveIOSClipboardSSECursor(after: first.cursor)
-        precondition(try feed(&resumed, ["event: sync", "data: {}", ""]))
-        precondition(try feed(&resumed, ["id: 32", "event: change", "data: {}", ""]))
+        require(try feed(&resumed, ["event: sync", "data: {}", ""]))
+        require(try feed(&resumed, ["id: 32", "event: change", "data: {}", ""]))
         precondition(resumed.cursor == 32)
-        precondition(!(try feed(&resumed, ["event: change", "data: {}", ""])))
-        precondition(!(try feed(&resumed, ["event: sync", ""])))
+        require(!(try feed(&resumed, ["event: change", "data: {}", ""])))
+        require(!(try feed(&resumed, ["event: sync", ""])))
 
         for invalid in ["id: 0", "id: -1", "id: 18446744073709551616",
                         "event: secret", "data: secret", "data: {\"ciphertext\":\"leak\"}",
