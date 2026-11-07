@@ -190,7 +190,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       if (!verified.aad_scope) {
         const pinned = await port.initializeCheck({
           nonce: verified.check_nonce, ciphertext: verified.check_ciphertext,
-          scope: port.ownerScopeKey,
+          scope: claimScope,
         }, controller.signal)
         // During a rolling Server/Web deployment an older Server may omit
         // aad_scope. The successfully verified original-origin v1 vault
