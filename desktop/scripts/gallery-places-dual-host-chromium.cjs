@@ -1688,7 +1688,16 @@ async function testFullGalleryPage(browser,mode,port){
     await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
     await page.locator('[data-xdrive-places-photo-drawer-nearby]').waitFor({state:'visible'})
     await page.locator('[data-xdrive-places-photo-drawer-nearby]').click()
-    await page.locator('[data-xdrive-media-tile]').first().waitFor({state:'visible'})
+    // The drawer now uses Gallery's actual MediaTile. A tile alone is no
+    // longer evidence that navigation completed: it may belong to the old
+    // Cell dialog. Require a NEW authenticated Owner Camera Range instead.
+    await page.waitForFunction(previous => {
+      const state=window.__mapProbe
+      const reads=state.galleryPageReads.filter(read=>read.kind==='viewport')
+      return reads.length>previous && reads.at(-1)?.total===3 &&
+        state.galleryPageErrors.length===0
+    },priorCameraReads)
+    await page.locator('[data-xdrive-media-gallery-virtual-grid]').first().waitFor({state:'visible'})
     const nearby=await page.evaluate(()=>({
       reads:window.__mapProbe.galleryPageReads.filter(read=>read.kind==='viewport'),
       errors:window.__mapProbe.galleryPageErrors,
@@ -3445,8 +3454,11 @@ async function testPhotoCellAlbumDialog28(browser,mode,port){
     await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
     const dialog=page.getByRole('dialog',{name:'此地点的照片'})
     await dialog.waitFor({state:'visible'})
-    await page.waitForFunction(()=>document.querySelectorAll(
-      '[data-xdrive-places-photo-drawer-item]').length===28)
+    // Full Owner Count and a genuinely visible virtual tile are the gate.
+    // Not all loaded photo cards may be present in the DOM at once.
+    await dialog.getByText('28 张照片和视频',{exact:true}).waitFor()
+    await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor({state:'visible'})
+    await dialog.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor({state:'visible'})
     const state=await page.evaluate(()=>{
       const region=document.querySelector('[data-xdrive-places-photo-drawer]')
       const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
@@ -3531,8 +3543,11 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
     await small.click()
     const dialog=page.getByRole('dialog',{name:'此地点的照片'})
     await dialog.waitFor({state:'visible'})
-    await page.waitForFunction(()=>document.querySelectorAll(
-      '[data-xdrive-places-photo-drawer-item]').length===28)
+    // Full Owner Count and a genuinely visible virtual tile are the gate.
+    // Not all loaded photo cards may be present in the DOM at once.
+    await dialog.getByText('28 张照片和视频',{exact:true}).waitFor()
+    await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor({state:'visible'})
+    await dialog.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor({state:'visible'})
     const authorized=await page.evaluate(()=>
       window.__mapProbe.photoPreviewRanges.at(-1))
     record(mode+': screenshot 28-cell opens exact signed 28-item Gallery dialog',
