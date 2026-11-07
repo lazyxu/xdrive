@@ -3452,7 +3452,9 @@ async function testPhotoCellAlbumDialog28(browser,mode,port){
       const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
       const dialog=document.querySelector('[role="dialog"]')
       const rect=dialog?.getBoundingClientRect()
-      return {role:dialog?.getAttribute('role'),tiles:list?.children.length,
+      return {role:dialog?.getAttribute('role'),
+        tiles:list?.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
+        virtual:Boolean(list?.querySelector('[data-xdrive-media-gallery-virtual-grid]')),
         grid:list?getComputedStyle(list).display:'',
         width:rect?.width,left:rect?.left,right:rect?.right,
         inside:rect?.left>=0&&rect?.right<=innerWidth+1,
@@ -3463,7 +3465,7 @@ async function testPhotoCellAlbumDialog28(browser,mode,port){
       }
     })
     record(mode+': 28 photos open full Gallery grid modal with signed Range',
-      state.role==='dialog'&&state.tiles===28&&state.grid==='grid'&&
+      state.role==='dialog'&&state.virtual&&state.tiles>0&&state.tiles<=28&&state.grid==='block'&&
       state.inside&&state.total.includes('28 张照片和视频')&&
       state.preview?.total===28&&state.preview?.items===28&&
       state.preview?.limit===48&&state.strip===0&&errors.length===0)
