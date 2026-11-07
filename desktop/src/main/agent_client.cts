@@ -5004,6 +5004,30 @@ export class AgentIPCClient {
     return this.request<AgentCloudShare[]>('GET', `/v1/cloud/shares?${query.toString()}`)
   }
 
+  cloudClipboardVault() {
+    return this.request<AgentClipboardVault>('GET', '/v1/cloud/clipboard/vault')
+  }
+  cloudClipboardCheck(value: AgentClipboardCheck) {
+    return this.request<AgentClipboardVault>('PUT', '/v1/cloud/clipboard/check',
+      value, 30_000, undefined, false)
+  }
+  cloudClipboardList(before = 0) {
+    const query = before > 0 ? '?before=' + encodeURIComponent(String(before)) : ''
+    return this.request<AgentClipboardPage>('GET', '/v1/cloud/clipboard/items' + query)
+  }
+  cloudClipboardCreate(value: AgentClipboardWrite) {
+    return this.request<AgentClipboardItem>('POST', '/v1/cloud/clipboard/items',
+      value, 30_000, undefined, false)
+  }
+  cloudClipboardDelete(id: number) {
+    return this.request<void>('DELETE', '/v1/cloud/clipboard/items/' +
+      encodeURIComponent(String(id)), undefined, 30_000, undefined, false)
+  }
+  cloudClipboardClear() {
+    return this.request<void>('DELETE', '/v1/cloud/clipboard/items',
+      undefined, 30_000, undefined, false)
+  }
+
   cloudNotesInitialize() {
     return this.request<AgentNotesNamespace>('POST', '/v1/cloud/notes/namespace', {})
   }
