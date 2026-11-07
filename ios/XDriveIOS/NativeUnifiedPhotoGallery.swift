@@ -33,6 +33,7 @@ private final class XDriveIOSUnifiedPhotoObserver: NSObject, ObservableObject, P
 struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let openBackup: () -> Void
+    let priorityBackup: (String) -> Void
     @StateObject private var timeline = XDriveIOSNativeUnifiedPhotoTimeline()
     @StateObject private var wall = XDriveIOSNativeUnifiedPhotoWall()
     @StateObject private var photoObserver = XDriveIOSUnifiedPhotoObserver()
@@ -107,7 +108,10 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
             .sheet(isPresented: $showFilters) { filterEditor }
             .sheet(item: $pairing) { row in
-                XDriveIOSNativePhotoPairingDetails(row: row, retry: { reset() }, backup: openBackup)
+                XDriveIOSNativePhotoPairingDetails(
+                    row: row, retry: { reset() }, backup: openBackup,
+                    priorityBackup: priorityBackup
+                )
             }
             .fullScreenCover(item: $selected) { selection in
                 XDriveIOSNativeUnifiedPhotoViewer(login: login, wall: wall, selection: selection,
@@ -309,6 +313,7 @@ struct XDriveIOSNativePhotoPairingDetails: View {
     let row: XDriveIOSNativeUnifiedPhoto
     let retry: () -> Void
     var backup: (() -> Void)? = nil
+    var priorityBackup: ((String) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
@@ -323,6 +328,12 @@ struct XDriveIOSNativePhotoPairingDetails: View {
                         Text("当前云端图库没有相同完整原件。")
                     } else {
                         Text("已核对当前可访问的本机图库，没有发现相同完整原件。")
+                    }
+                }
+                if let priorityBackup, let local = row.local {
+                    Button("优先核验或备份此原件") {
+                        dismiss()
+                        priorityBackup(local.id)
                     }
                 }
                 if let backup, row.presence == .localOnly {
