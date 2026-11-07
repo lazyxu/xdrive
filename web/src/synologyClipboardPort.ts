@@ -29,10 +29,7 @@ export function createXDriveDSMClipboardPort(
   }
   const checked = async <T,>(run: (scope: string) => Promise<T>, signal?: AbortSignal) => {
     const now = await current(signal)
-    if (!ownerScope) {
-      ownerScope = now.owner_scope
-      server = now.server!
-    }
+    if (!server) server = now.server!
     const result = await run(ownerScope)
     await current(signal)
     return result
