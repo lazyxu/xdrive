@@ -129,7 +129,7 @@ test('P0-06: Viewer return restores exact visible tile, never stale PhotoKit or 
 test('P1-07: continuous scroll, reserved placeholders and request cancellation stay bounded', () => {
   const { map, cluster, cloud, gallery } = sources
   assert.match(map, /if hasNext \{\s*Color\.clear[\s\S]*?scrollFootVisible = true[\s\S]*?advanceIfVisible\(\)/)
-  assert.match(map, /private func advanceIfVisible\(\) \{[\s\S]*?guard scrollFootVisible, !busy, viewer == nil, hasNext, error == nil/)
+  assert.match(map, /private func advanceIfVisible\(\) \{[\s\S]*?guard XDriveIOSNativePhotoWallWindowPolicy\.shouldAdvance\(\s*footVisible: scrollFootVisible, hasNext: hasNext, busy: busy,[\s\S]*?failed: error != nil, viewerOpen: viewer != nil,[\s\S]*?scopeActive: phase == \.active/)
   assert.match(map, /readTask\?\.cancel\(\)/)
   assert.match(map, /await scanner\.reset\(\)/)
   assert.match(map, /priorWindow = departingItems/)
