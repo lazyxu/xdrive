@@ -1,0 +1,48 @@
+'use strict'
+const test=require('node:test')
+const assert=require('node:assert/strict')
+const fs=require('node:fs')
+const path=require('node:path')
+const vm=require('node:vm')
+const ts=require('typescript')
+
+const root=path.resolve(__dirname,'../..')
+const source=fs.readFileSync(
+  path.join(root,'ui/shared/src/desktop-places-embed-admission.ts'),'utf8')
+const component=fs.readFileSync(
+  path.join(root,'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'),'utf8')
+const compiled=ts.transpileModule(source,{
+  fileName:'desktop-places-embed-admission.ts',
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+})
+assert.deepEqual((compiled.diagnostics||[]).filter(x=>
+  x.category===ts.DiagnosticCategory.Error),[])
+const sandbox={exports:{},module:{exports:{}},URLSearchParams,Promise}
+vm.runInNewContext(compiled.outputText,sandbox)
+const {xDriveStartDesktopPlacesGuestProbe:start,
+  XDRIVE_DESKTOP_PLACES_GUEST_PROBE:script,
+  xDriveDesktopPlacesGuestProbeState:decode}=sandbox.exports
+
+test('real guest helper contains pre-dom-ready synchronous exception without unmounting React',async()=>{
+  let mounted=false,attempts=0
+  const guest={executeJavaScript:(query)=>{
+    assert.equal(query,script)
+    attempts++
+    if(!mounted)throw Error('The WebView must be attached to the DOM and the dom-ready event emitted before this method can be called.')
+    return Promise.resolve('ready')
+  }}
+  assert.equal(start(guest,script),null)
+  assert.equal(attempts,1)
+  mounted=true
+  assert.equal(decode(await start(guest,script)),'ready')
+  assert.equal(attempts,2)
+})
+test('pending guest never authenticates or leaks native data',async()=>{
+  assert.equal(start(null,script),null)
+  assert.equal(start({},script),null)
+  const navigation={executeJavaScript:()=>Promise.reject(Error('navigation in progress'))}
+  await assert.rejects(start(navigation,script),/navigation/)
+  assert.equal(decode('unknown'),'pending')
+  assert.match(component,/xDriveStartDesktopPlacesGuestProbe\(\s*guest,XDRIVE_DESKTOP_PLACES_GUEST_PROBE\)/)
+  assert.doesNotMatch(source,/native_refresh_token|desktopMapGuestGrant|Authorization: Bearer/)
+})

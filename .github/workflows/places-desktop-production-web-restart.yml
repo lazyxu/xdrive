@@ -12,6 +12,8 @@ on:
       - 'desktop/src/renderer/App.tsx'
       - 'web/src/App.tsx'
       - 'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'
+      - 'ui/shared/src/desktop-places-embed-admission.ts'
+      - 'desktop/tests/gallery-places-webview-dom-ready-probe.cjs'
   workflow_dispatch:
 
 permissions:
@@ -59,6 +61,7 @@ jobs:
           npm --prefix web run build
           npm --prefix desktop install --no-audit --no-fund
           npm --prefix desktop run build
+          node --test desktop/tests/gallery-places-webview-dom-ready-probe.cjs
           go build -o "$XD_DESKTOP_PLACES_AGENT_BINARY" ./cmd/xdrive-agent
           node --check desktop/scripts/places-desktop-production-web-electron-main.cjs
           node --check desktop/scripts/places-desktop-production-web-runner.cjs
