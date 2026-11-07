@@ -163,3 +163,34 @@ test('CA rotation demands fresh verified pin and rejects foreign Owner receipt',
   assert.equal(await f.admit(id),false)
   assert.equal(f.pin(origin,owner),undefined)
 })
+
+test('real publishAgentState closes both map windows on selected IP change',()=>{
+  const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&
+    n.name?.text==='publishAgentState')
+  assert.ok(fn,'must exercise current Main publication path')
+  const compiledPublish=ts.transpileModule(fn.getText(ast),{
+    fileName:'publish-agent-state.cts',
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}})
+  const previous={connected:true,status:{configured:true,username:owner,
+    server:origin,connection_ip:'192.168.7.8',auth_status:'已登录'}}
+  const calls=[]
+  const env={
+    initial:previous,JSON,
+    desktopPlacesGuests:new Map([[9,true]]),
+    desktopPlacesPending:null,desktopPlacesWebReady:null,desktopPlacesWebPending:null,
+    secureBaiduMapWindow:{},
+    closeDesktopPlacesGuests:()=>calls.push('close-guest'),
+    closeSecureBaiduMapWindow:()=>calls.push('close-secure'),
+    resetSourceRunNotificationState:()=>calls.push('reset-source'),
+    notifyAgentTransition:()=>{},rebuildTrayMenu:()=>{},
+    updateTaskbarOverlay:()=>{},updateTaskbarProgress:()=>{},
+    mainWindow:null,
+  }
+  const run=new Function(...Object.keys(env),[
+    'let agentState=initial',
+    compiledPublish.outputText,
+    'return next=>{publishAgentState(next);return agentState}',
+  ].join('\n'))(...Object.values(env))
+  run({connected:true,status:{...previous.status,connection_ip:'192.168.7.9'}})
+  assert.deepEqual(calls,['close-guest','close-secure'])
+})
