@@ -1776,7 +1776,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var filesSelectionToolbar: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("已选 \\(selectedIDs.count)")
+                Text("已选 \(selectedIDs.count)")
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-files-selection-count")
