@@ -20,11 +20,11 @@ test('native Timeline only shows real Owner-local change states for opted-in onl
 })
 
 test('only mounted 64-item PhotoKit page IDs are read and queue never uploads media', () => {
-  assert.match(wall, /visibleStatuses\(\s*owner: owner, localIdentifiers: loaded\.items\.map\(\\\.id\)/)
+  assert.match(wall, /visibleStatusDetails\(\s*owner: owner, localIdentifiers: loaded\.items\.map\(\\\.id\)/)
   assert.match(wall, /visibleBackupQueueStates = \[:\]/)
   assert.match(wall, /\.task\(id: "\\\(generation\)-\\\(offset\)-\\\(mediaFilter\.rawValue\)"\)/)
   assert.match(wall, /\.onChange\(of: backupBadgeOwner\) \{ _ in[\s\S]*?visibleBackupQueueStates = \[:\]/)
-  assert.match(wall, /let states = try await queue\.visibleStatuses\(/)
+  assert.match(wall, /let states = try await queue\.visibleStatusDetails\(/)
   assert.match(queue, /guard localIdentifiers\.count <= 64 else/)
   assert.match(queue, /let baseline = try store\.baseline\(\)/)
   assert.match(queue, /baseline\.authorization == epoch\.authorization/)
@@ -32,7 +32,7 @@ test('only mounted 64-item PhotoKit page IDs are read and queue never uploads me
   assert.match(queue, /store\.status\(for: id\)/)
   assert.match(queue, /try verifyAuthorization\(stillMatches: epoch\)/)
   assert.match(store, /SELECT e\.revision,e\.state,r\.reason FROM entries e LEFT JOIN failure_reasons r ON r\.asset_id=e\.asset_id AND r\.revision=e\.revision WHERE e\.asset_id=\?/)
-  const method = queue.slice(queue.indexOf('    func visibleStatuses('), queue.indexOf('    /// Whether every persisted PhotoKit change event'))
+  const method = queue.slice(queue.indexOf('    func visibleStatusDetails('), queue.indexOf('    /// Whether every persisted PhotoKit change event'))
   assert.ok(method.length > 0)
   assert.doesNotMatch(method, /UploadSession|uploadPrepared|finalize|deleteNode|URLSession/)
 })

@@ -11,7 +11,9 @@ struct XDriveIOSNativeVisiblePhotoQueueBadge: Equatable {
 }
 
 enum XDriveIOSNativeVisiblePhotoQueueBadgePolicy {
-    static func badge(for state: String?) -> XDriveIOSNativeVisiblePhotoQueueBadge? {
+    static func badge(for state: String?,
+                      failureReasonCode: String? = nil)
+        -> XDriveIOSNativeVisiblePhotoQueueBadge? {
         switch state {
         case "pending":
             return .init(title: "待传", symbol: "clock",
@@ -20,8 +22,17 @@ enum XDriveIOSNativeVisiblePhotoQueueBadgePolicy {
             return .init(title: "iCloud", symbol: "icloud",
                          explanation: "正在等待获得 iCloud 原件，尚未备份")
         case "failed":
+            // The persisted reason is an allowlisted, exact-revision local
+            // diagnosis, never raw HTTP error text or a claim of failed
+            // Server mutation. Unknown codes fall back to generic status.
+            let known = failureReasonCode.flatMap {
+                XDriveIOSPhotoBackupIssueReason(rawValue: $0)
+            }
+            let explanation = known.map {
+                "原件处理失败：\($0.displayText)。当前版本尚未备份，核验后重试"
+            } ?? "原件处理失败，需核验后重试"
             return .init(title: "失败", symbol: "exclamationmark.triangle",
-                         explanation: "原件处理失败，需核验后重试")
+                         explanation: explanation)
         case "confirmed":
             return .init(title: "曾确认", symbol: "checkmark.circle",
                          explanation: "该次变更曾通过云端收据核验，当前云端原件仍需重新核验")

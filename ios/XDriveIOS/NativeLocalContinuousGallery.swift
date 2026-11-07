@@ -161,7 +161,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     @Environment(\.scenePhase) private var photoQueueScenePhase
     @Environment(\.xdriveNativePhotoQueueBadgeOwner) private var backupBadgeOwner
     @Environment(\.xdriveNativePhotoQueueBadgeRefresh) private var badgeRefresh
-    @State private var visibleBackupQueueStates: [String: String] = [:]
+    @State private var visibleBackupQueueStates: [String: XDriveIOSPhotoKitPersistentBackupQueue.VisibleItemStatus] = [:]
     @State private var badgeReadEpoch = UUID()
 
     /// Refresh ONLY the currently mounted 64-cell page on writer completion,
@@ -180,7 +180,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         let identifiers = current.items.map(\.id)
         do {
             let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
-            let states = try await queue.visibleStatuses(
+            let states = try await queue.visibleStatusDetails(
                 owner: owner, localIdentifiers: identifiers
             )
             try Task.checkCancellation()
@@ -226,7 +226,10 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                     )
                                     .overlay(alignment: .topLeading) {
                                         if let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy
-                                            .badge(for: visibleBackupQueueStates[candidate.id]) {
+                                            .badge(
+                                                for: visibleBackupQueueStates[candidate.id]?.state,
+                                                failureReasonCode: visibleBackupQueueStates[candidate.id]?.failureReasonCode
+                                            ) {
                                             Label(badge.title, systemImage: badge.symbol)
                                                 .font(.system(size: 9, weight: .semibold))
                                                 .lineLimit(1)
@@ -255,7 +258,10 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                             .buttonStyle(.plain)
                             .accessibilityValue(
                                 XDriveIOSNativeVisiblePhotoQueueBadgePolicy
-                                    .badge(for: visibleBackupQueueStates[candidate.id])?
+                                    .badge(
+                                                for: visibleBackupQueueStates[candidate.id]?.state,
+                                                failureReasonCode: visibleBackupQueueStates[candidate.id]?.failureReasonCode
+                                            )?
                                     .explanation ?? "当前云端备份状态未核验"
                             )
                             .contextMenu {
@@ -334,14 +340,16 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                    PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
                     do {
                         let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
-                        let states = try await queue.visibleStatuses(
+                        let states = try await queue.visibleStatusDetails(
                             owner: owner, localIdentifiers: loaded.items.map(\.id)
                         )
                         try Task.checkCancellation()
                         if badgeReadEpoch == initialBadgeEpoch,
                            photoQueueScenePhase == .active,
                            XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
-                           PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
+                           PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                           page?.startOffset == loaded.startOffset,
+                           page?.items.map(\.id) == loaded.items.map(\.id) {
                             visibleBackupQueueStates = states
                         }
                     } catch {

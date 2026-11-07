@@ -24,6 +24,14 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         var events = 0
     }
 
+    /// UI-only, Owner-local PhotoKit change metadata. No Server receipt
+    /// is implied by a queued/confirmed label, and no original identifiers
+    /// or raw Server errors are exposed to badge policy.
+    struct VisibleItemStatus: Equatable, Sendable {
+        let state: String
+        let failureReasonCode: String?
+    }
+
     struct Candidate: Equatable {
         let pending: XDriveIOSPhotoBackupChangeQueueStore.Pending
         let kind: String
@@ -124,6 +132,38 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
                     asset.mediaSubtypes.contains(.photoLive)
             )
         }
+    }
+
+    /// Read the explicitly selected PhotoKit revision with an indexed lookup.
+    /// An item beyond the first 64 auto-queue candidates must still be found.
+    /// This creates no upload receipt and never rebases missing history.
+    func pendingForSingle(
+        owner: XDriveNativeOwnerRoot, localIdentifier: String
+    ) throws -> XDriveIOSPhotoBackupChangeQueueStore.Pending? {
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline() else { return nil }
+        guard baseline.authorization == epoch.authorization else {
+            throw Failure.unauthorizedOrChanged
+        }
+        guard XDriveIOSPhotoKitLibraryEpoch.matches(
+            baseline.token, as: epoch.token
+        ) else {
+            // A PhotoKit change is not yet replayed: leave its revision pending.
+            return nil
+        }
+        guard let status = try store.status(for: localIdentifier),
+              status.state == .pending else { return nil }
+        let fetched = PHAsset.fetchAssets(
+            withLocalIdentifiers: [localIdentifier], options: nil
+        )
+        guard fetched.firstObject != nil else { return nil }
+        try verifyAuthorization(stillMatches: epoch)
+        // Priority is ignored by the exact-ID, exact-revision CAS settlement.
+        return XDriveIOSPhotoBackupChangeQueueStore.Pending(
+            localIdentifier: localIdentifier,
+            revision: status.revision, priority: 0
+        )
     }
 
     /// Settle one exact queued revision only after the caller's shared
@@ -251,6 +291,51 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         }
         try verifyAuthorization(stillMatches: epoch)
         return statuses
+    }
+
+    /// Read one mounted Gallery page plus normalized per-item failure reasons.
+    /// The exact Owner, PhotoKit token and authorization gate match
+    /// visibleStatuses; a stale generation returns no labels, never green.
+    func visibleStatusDetails(
+        owner: XDriveNativeOwnerRoot, localIdentifiers: [String]
+    ) throws -> [String: VisibleItemStatus] {
+        guard localIdentifiers.count <= 64 else { throw Failure.invalidReplayLimit }
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline(),
+              baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(baseline.token, as: epoch.token)
+        else { return [:] }
+        var result: [String: VisibleItemStatus] = [:]
+        result.reserveCapacity(localIdentifiers.count)
+        for id in localIdentifiers {
+            try Task.checkCancellation()
+            if let row = try store.status(for: id) {
+                // SQLite joins the reason to the exact failed revision.
+                // Malformed/unknown codes are never shown as raw text.
+                let knownReason: String?
+                if row.state == .failed, let code = row.failureReasonCode,
+                   XDriveIOSPhotoBackupIssueReason(rawValue: code) != nil {
+                    knownReason = code
+                } else {
+                    knownReason = nil
+                }
+                result[id] = VisibleItemStatus(
+                    state: row.state.rawValue,
+                    failureReasonCode: knownReason
+                )
+            }
+        }
+        // A PhotoKit edit that arrives during the bounded SQLite reads
+        // invalidates *all* visible detail labels. In particular, an old
+        // failed revision must not explain a newly edited original.
+        let after = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard after.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(
+                epoch.serialized, as: after.token
+              ) else { return [:] }
+        try verifyAuthorization(stillMatches: epoch)
+        return result
     }
 
     /// Whether every persisted PhotoKit change event has been replayed. The
