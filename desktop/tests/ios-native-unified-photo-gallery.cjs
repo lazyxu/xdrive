@@ -144,7 +144,7 @@ test('incremental PhotoKit index never repeats a full SHA pass for a bounded cha
   assert.match(store, /unknown == 0, hashes == readable/)
   assert.match(store, /func startFullInventory\(\)/)
   assert.match(wall, /model\.completed \|\| \(!model\.rows\.isEmpty && filter == nil && query == \.init\(\)\)/)
-  assert.match(wall, /正在核对当前可见照片来源/)
+  assert.match(wall, /正在加载当前页面与来源状态/)
   assert.doesNotMatch(index + store, /isNetworkAccessAllowed = true|performChanges\(/)
 })
 
@@ -159,6 +159,7 @@ test('iOS cloud-first Gallery never starts original-byte scans on view, refresh 
   assert.match(ui, /Button\("手动核对所有本机原件（耗时）"\)/)
   assert.match(ui, /if indexRequest == request \{ explicitOriginalAudit = false \}/)
   assert.match(ui, /if selected == nil \{[\s\S]*?explicitOriginalAudit = false[\s\S]*?indexRequest = UUID\(\)/)
+  assert.match(ui, /\.onChange\(of: selected\?\.id\) \{ _ in[\s\S]*?explicitOriginalAudit = false/)
   assert.match(ui, /\.refreshable \{ reset\(\) \}/)
   assert.doesNotMatch(ui, /\.refreshable \{ reset\(retryUnavailable: true\) \}/)
   assert.match(timeline, /let auth = try\? await login\.verifiedAuthorization\(\)/)
@@ -166,10 +167,21 @@ test('iOS cloud-first Gallery never starts original-byte scans on view, refresh 
   assert.doesNotMatch(timeline, /XDriveIOSNativeExactPhotoProbe\.read\(/)
   assert.doesNotMatch(timeline, /await index\.remember\(/)
   assert.match(timeline, /cursor\.localEnd = true[\s\S]*?本机照片暂不可访问；云端照片仍可浏览/)
+  assert.match(timeline, /staleLocalWindow[\s\S]*?cursor\.localEnd = true/)
+  assert.match(timeline, /cloud = try await cloudWindow\(reader, cursor: &cursor\)[\s\S]*?rows = Array\(cloud\.prefix\(Self\.pageSize\)\.map\(\\\.provisional\)\)/)
+  assert.ok(timeline.indexOf('cloud = try await cloudWindow(reader, cursor: &cursor)') <
+            timeline.indexOf('localTotal = try await scanner.start'),
+    'cloud page must be admitted before PhotoKit snapshot starts')
+  assert.match(timeline, /cloudReadFailed = true[\s\S]*?cursor\.cloudEnd = true/)
+  assert.match(timeline, /&& !cloudReadFailed/)
+
   assert.match(timeline, /let needsCloudProof = checkedLocal != nil \|\| !localProbes\.isEmpty/)
   assert.match(wall, /!model\.rows\.isEmpty && filter == nil && query == \.init\(\)/)
   assert.match(dashboard, /case \.cloud:\s*XDriveIOSNativeServerMediaWall\(/)
   assert.match(ui, /“仅云端”仅显示已确认本机没有相同原件/)
+  const policy = read('NativeUnifiedGalleryPolicy')
+  assert.match(policy, /原件身份尚未确认，照片仍可正常浏览/)
+  assert.match(policy, /备份时校验原件，或手动开始核验/)
   assert.match(timeline, /checkedLocal\?\.provesAbsence\(for: probe\.kind\) == true && ids\.isEmpty/)
 })
 
