@@ -63,7 +63,6 @@ assert.match(gateway, /r\.URL\.Path == "\/v1\/nas-shares"/)
 assert.match(workflow, /node web\/scripts\/test-synology-nas-shares\.mjs/)
 console.log('DSM NAS share inventory uses one authenticated local Agent and no browser path/Root grants.')
 
- 
 // One shared status-only diagnostic for local Backup, Source setup and share
 // inventory. Execute real TypeScript with Node; no API, Cookie or NAS required.
 const authSource = stripTypeScriptTypes(read(
@@ -73,7 +72,7 @@ const code = auth.xDriveDSMSafeFailureCode
 const hint = auth.xDriveDSMAuthenticationFailureMessage
 for(const [status,allowed] of [
   [401,['dsm-session-rejected']],
-  [403,['dsm-principal-unapproved','dsm-csrf-rejected']],
+  [403,['dsm-principal-unapproved','dsm-authority-unavailable','dsm-csrf-rejected']],
   [503,['dsm-auth-environment','dsm-auth-timeout','dsm-auth-helper-failed',
     'dsm-auth-response-invalid','dsm-auth-unavailable','agent-unavailable',
     'nas-inventory-unavailable','server-connection-unavailable']],
@@ -98,6 +97,7 @@ for(const [http,reason,expected] of [
   [503,'dsm-auth-response-invalid','无法安全识别'],
   [503,'dsm-auth-unavailable','程序异常'],
   [403,'dsm-principal-unapproved','套件界面授权'],
+  [403,'dsm-authority-unavailable','授权配置缺失'],
   [403,'dsm-csrf-rejected','CSRF 校验失败']]){
   const message=hint(new Error(`DSM backup request rejected (HTTP ${http}) [${reason}]`))
   assert.ok(message?.includes(expected),'unsafe/missing DSM auth diagnosis '+reason)

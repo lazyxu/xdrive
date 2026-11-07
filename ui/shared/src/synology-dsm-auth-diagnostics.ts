@@ -3,7 +3,7 @@
  */
 const dsmReasonByStatus: Readonly<Record<number, readonly string[]>> = {
   401: ['dsm-session-rejected'],
-  403: ['dsm-principal-unapproved', 'dsm-csrf-rejected'],
+  403: ['dsm-principal-unapproved', 'dsm-authority-unavailable', 'dsm-csrf-rejected'],
   503: [
     'agent-unavailable', 'server-connection-unavailable', 'nas-inventory-unavailable',
     'dsm-auth-environment', 'dsm-auth-timeout', 'dsm-auth-helper-failed',
@@ -37,6 +37,8 @@ export function xDriveDSMAuthenticationFailureMessage(failure: unknown): string 
     return 'DSM 身份验证程序异常（HTTP 503 · dsm-auth-unavailable）。请检查 DSM 原生认证与 CGI 日志；尚不能判定会话过期。'
   if (status(403, 'dsm-principal-unapproved'))
     return '当前 DSM 用户尚未通过 xdrivenas 套件界面授权（HTTP 403 · dsm-principal-unapproved）。请核对 NAS 本机首次授权。'
+  if (status(403, 'dsm-authority-unavailable'))
+    return 'DSM 套件授权配置缺失或不可安全读取（HTTP 403 · dsm-authority-unavailable）。请检查 NAS 上的套件授权文件及权限；当前不会自动重建授权。'
   if (status(403, 'dsm-csrf-rejected'))
     return 'DSM 请求的 Origin 或 CSRF 校验失败（HTTP 403 · dsm-csrf-rejected）。请保持同一 HTTPS 地址及端口，刷新 DSM 后重试；没有执行任何备份写入。'
   if (detail.includes('HTTP 401)'))

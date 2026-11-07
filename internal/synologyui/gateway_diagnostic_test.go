@@ -174,6 +174,14 @@ func TestDSMPrincipalAndCSRFHaveDifferentForbiddenDiagnosticCodes(t *testing.T) 
 		t.Fatal("unapproved DSM user did not receive fixed principal reason")
 	}
 	g.Authenticate = func(context.Context) (string, error) { return "dsmadmin", nil }
+	originalDir := g.ConfigDir
+	g.ConfigDir = t.TempDir() // Missing authority file is not a wrong DSM login.
+	unavailable := request(g, http.MethodGet, "/v1/bootstrap", "", "")
+	if unavailable.Code != http.StatusForbidden ||
+		unavailable.Header().Get("X-XDrive-DSM-Failure") != "dsm-authority-unavailable" {
+		t.Fatal("missing authorization file incorrectly classified as rejected DSM principal")
+	}
+	g.ConfigDir = originalDir
 	csrf := request(g, http.MethodPost, "/v1/run?source_id=42",
 		"https://attacker.invalid", "wrong")
 	if csrf.Code != http.StatusForbidden ||

@@ -763,8 +763,7 @@ function validateLocalBackupRemoval(raw: unknown, sourceID: number): XDriveLocal
   return value
 }
 
-// Only an authenticated CGI rejection with explicit pre-commit proof.
-
+/** Only an authenticated CGI rejection with explicit pre-commit proof. */
 export class XDriveDSMLoginNoCommitError extends Error {
   constructor() { super('DSM Server credentials rejected without Owner commit') }
 }

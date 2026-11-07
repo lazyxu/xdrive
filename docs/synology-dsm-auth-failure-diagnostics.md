@@ -46,6 +46,9 @@ contacts `xdrive-agent` and never authorizes a Source/Root mutation.
 - `403 dsm-principal-unapproved`: native DSM username is not in the
   package-owned explicit authorization file. Perform the documented one-time
   NAS administrator authorization, not a browser-side auto-grant.
+- `403 dsm-authority-unavailable`: installed package's authority file is
+  missing, corrupt or unsafe to read. Inspect package configuration permissions;
+  the browser cannot automatically create authority.
 - `403 dsm-csrf-rejected`: same-origin/CSRF proof invalid; refresh from the
   original DSM origin. No backup command is executed.
 - `503 agent-unavailable`: DSM auth passed but the package Agent is not

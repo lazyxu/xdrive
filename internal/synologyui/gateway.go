@@ -460,7 +460,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a, key, err := loadAuthority(g.ConfigDir)
-	if err != nil || subtle.ConstantTimeCompare([]byte(username), []byte(a.DSMUser)) != 1 {
+	if err != nil {
+		// Missing/corrupt authorization configuration does not prove that
+		// the authenticated DSM principal is unapproved.
+		w.Header().Set("X-XDrive-DSM-Failure", "dsm-authority-unavailable")
+		http.Error(w, "DSM package authority unavailable", http.StatusForbidden)
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(username), []byte(a.DSMUser)) != 1 {
 		w.Header().Set("X-XDrive-DSM-Failure", "dsm-principal-unapproved")
 		http.Error(w, "DSM user not permitted", http.StatusForbidden)
 		return
