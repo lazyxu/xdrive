@@ -1,14 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Box, Button, CircularProgress, Dialog, IconButton, Stack, Typography } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
-import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import type { MediaItem } from '../models'
 import { XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT } from '../media-gallery-places-photo-drawer'
 import type { XDrivePlacesDrawerPresentation } from '../media-gallery-places-photo-drawer'
-import type { MediaThumbnailLoader } from './MediaGallery'
-import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
+import { MediaTile, MediaVirtualTileGrid } from './MediaGallery'
+import type { MediaThumbnailLoader, XDriveMediaGalleryVirtualCollection } from './MediaGallery'
+import { XDriveMediaThumbnailScheduler } from './MediaGalleryThumbnailScheduler'
 
 /** Trusted Parent-only photo sheet; no Baidu SDK data or media URLs cross the Child. */
 export function XDriveMediaGalleryPlacesPhotoDrawer({
@@ -50,6 +50,37 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   // after the first two animation frames. Use the real transition completion
   // as an additional gate, without weakening the fresh Owner Cell page gate.
   const [portalEntered, setPortalEntered] = useState(false)
+  // The exact same bounded thumbnail scheduler and MediaTile renderer as
+  // Gallery; StrictMode remount creates a fresh, non-disposed session.
+  const [thumbnailSession, setThumbnailSession] = useState<{
+    owner: MediaThumbnailLoader
+    scheduler: XDriveMediaThumbnailScheduler
+  } | null>(null)
+  useEffect(() => {
+    const scheduler = new XDriveMediaThumbnailScheduler(loadThumbnail)
+    setThumbnailSession({ owner: loadThumbnail, scheduler })
+    return () => scheduler.dispose()
+  }, [loadThumbnail])
+  const thumbnailScheduler = thumbnailSession?.owner === loadThumbnail
+    ? thumbnailSession.scheduler : null
+  // Only Owner-validated /cell-items pages enter this collection. The
+  // full Gallery viewport engine virtualizes *mounted tiles*; existing
+  // Parent pagination/abort/freshness guards continue to own all I/O.
+  const collection = useMemo<XDriveMediaGalleryVirtualCollection>(() => ({
+    itemCount: items.length,
+    loadedItems: new Map(items.map((item, index) => [index, item])),
+    itemAt: index => items[index],
+    onRangeChange: () => undefined,
+  }), [items])
+  const tileItem = (target: EventTarget | null) => {
+    const tile = target instanceof Element
+      ? target.closest('[data-xdrive-places-photo-drawer-item]') : null
+    if (!tile || !listRef.current?.contains(tile)) return null
+    const id = Number(tile.getAttribute('data-xdrive-places-photo-drawer-item'))
+    return Number.isSafeInteger(id) && id > 0
+      ? items.find(item => item.node.id === id) ?? null : null
+  }
+  const openTile = (item: MediaItem) => onOpenPhoto(item, position())
   // Restore only when this trusted Parent Dialog actually finished entering
   // and a NEW authenticated Owner Cell Range has populated its grid. Never
   // replay old image bytes, reset the camera, or borrow SDK Child state.
@@ -228,101 +259,104 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               if (expanded && !loadingMore && !pageError && items.length < total &&
                   list.scrollHeight-list.scrollTop-list.clientHeight < 180) onLoadMore()
             }}
+            onPointerDownCapture={event => {
+              if (event.pointerType === 'mouse') { touchActivated.current=null; return }
+              if (event.pointerType !== 'touch') return
+              const item = tileItem(event.target)
+              if (!item) return
+              if (!event.isPrimary) {
+                const former=photoTouch.current
+                if (former) touchActivated.current={nodeID:former.nodeID,at:event.timeStamp}
+                photoTouch.current=null
+                return
+              }
+              photoTouch.current = {pointerId:event.pointerId,nodeID:item.node.id,
+                startX:event.clientX,startY:event.clientY,startAt:event.timeStamp,moved:false}
+            }}
+            onPointerMoveCapture={event => {
+              const tap=photoTouch.current
+              if (!tap || tap.pointerId!==event.pointerId) return
+              if (Math.hypot(event.clientX-tap.startX,event.clientY-tap.startY)>12)
+                tap.moved=true
+            }}
+            onPointerCancelCapture={event => {
+              const tap=photoTouch.current
+              if (!tap || tap.pointerId!==event.pointerId) return
+              // Browser-generated compatibility clicks following cancellation
+              // cannot authorize a new private Viewer read.
+              touchActivated.current={nodeID:tap.nodeID,at:event.timeStamp}
+              photoTouch.current=null
+            }}
+            onPointerUpCapture={event => {
+              const tap=photoTouch.current
+              if (!tap || tap.pointerId!==event.pointerId) return
+              photoTouch.current=null
+              const item=tileItem(event.target)
+              touchActivated.current={nodeID:tap.nodeID,at:event.timeStamp}
+              if (!item || item.node.id!==tap.nodeID || tap.moved ||
+                  Math.hypot(event.clientX-tap.startX,event.clientY-tap.startY)>12 ||
+                  event.timeStamp-tap.startAt>700) return
+              // Genuine short touch opens once even if the browser omits click.
+              onOpenPhoto(item,position())
+            }}
+            onClickCapture={event => {
+              const handled=touchActivated.current
+              const item=tileItem(event.target)
+              if (event.detail>0 && handled && item?.node.id===handled.nodeID &&
+                  event.timeStamp>=handled.at &&
+                  event.timeStamp-handled.at<900) {
+                touchActivated.current=null
+                event.preventDefault()
+                event.stopPropagation()
+              }
+            }}
             sx={{px:1.25,py:0.75,overflowX:expanded?'hidden':'auto',
               overflowY:expanded?'auto':'hidden',minHeight:0,minWidth:0,
-              // Chromium may shift scrollTop by the viewport-height delta on
-              // rotation before Parent captures the signed reauthorization hint.
-              // Keep the user's pre-rotation visual anchor; fresh Owner pages
-              // are still required before any tile can be opened again.
+              // The virtual host, not this scroll port, owns Gallery grid
+              // layout and its O(visible rows) DOM window.
               overflowAnchor:'none',
               flex:expanded?'1 1 auto':'0 1 auto',
-              display:expanded?'grid':'flex',gap:1,
-              gridTemplateColumns:expanded?'repeat(auto-fill, minmax(108px, 1fr))':undefined,
-              // Grid's implicit auto tracks can collapse under the bounded
-              // MUI Dialog's flex height: 142 real tiles then fit into only
-              // ~460px and the grid has NO vertical overflow. A real minimum
-              // tile track restores scrolling without changing Owner paging.
-              gridAutoRows:expanded?'minmax(108px, max-content)':undefined,
               overscrollBehavior:'contain',touchAction:'auto'}}>
-            {items.map(item => (
-              <Box key={item.node.id} component="button" type="button"
-                data-xdrive-places-photo-drawer-item={item.node.id}
-                aria-label={`查看 ${item.node.name}`}
-                onPointerDown={event => {
-                  if (event.pointerType !== 'touch') {
-                    // A real mouse press is not the prior touch's compatibility click.
-                    if (event.pointerType === 'mouse') touchActivated.current=null
-                    return
-                  }
-                  if (!event.isPrimary) {
-                    // A second contact cancels the first tap without granting access.
-                    const former=photoTouch.current
-                    if (former) touchActivated.current={nodeID:former.nodeID,at:event.timeStamp}
-                    photoTouch.current=null
-                    return
-                  }
-                  photoTouch.current = {pointerId:event.pointerId,nodeID:item.node.id,
-                    startX:event.clientX,startY:event.clientY,startAt:event.timeStamp,
-                    moved:false}
-                }}
-                onPointerMove={event => {
-                  const tap=photoTouch.current
-                  if (!tap || tap.pointerId!==event.pointerId) return
-                  if (Math.hypot(event.clientX-tap.startX,event.clientY-tap.startY)>12)
-                    tap.moved=true
-                }}
-                onPointerCancel={event => {
-                  const tap=photoTouch.current
-                  if (!tap || tap.pointerId!==event.pointerId) return
-                  // Browser-generated clicks following a cancelled scroll/contact
-                  // must never open a private Viewer.
-                  touchActivated.current={nodeID:tap.nodeID,at:event.timeStamp}
-                  photoTouch.current=null
-                }}
-                onPointerUp={event => {
-                  const tap=photoTouch.current
-                  if (!tap || tap.pointerId!==event.pointerId) return
-                  photoTouch.current=null
-                  if (event.pointerType!=='touch' || tap.nodeID!==item.node.id) return
-                  // Consume any subsequent compatibility click, including after
-                  // an invalid long press or drag. Only a valid short primary
-                  // touch is allowed to activate the authorized Owner range.
-                  touchActivated.current={nodeID:item.node.id,at:event.timeStamp}
-                  if (tap.moved ||
-                      Math.hypot(event.clientX-tap.startX,event.clientY-tap.startY)>12 ||
-                      event.timeStamp-tap.startAt>700) return
-                  onOpenPhoto(item,position())
-                }}
-                onClick={event => {
-                  const handled=touchActivated.current
-                  if (event.detail>0 && handled?.nodeID===item.node.id &&
-                      event.timeStamp>=handled.at &&
-                      event.timeStamp-handled.at<900) {
-                    // Native compatibility click follows the handled touch.
-                    // Do not issue a second Viewer authorization /cell-items.
-                    touchActivated.current=null
-                    return
-                  }
-                  onOpenPhoto(item,position())
-                }}
-                sx={{appearance:'none',touchAction:'manipulation',p:0,flex:expanded?undefined:'0 0 92px',
-                  width:expanded?'100%':92,minWidth:0,
-                  border:'1px solid',borderColor:'divider',borderRadius:1.5,
-                  bgcolor:'action.hover',textAlign:'left',overflow:'hidden',
-                  cursor:'pointer',color:'text.primary',
-                  '&:focus-visible':{outline:'3px solid',
-                    outlineColor:'primary.main',outlineOffset:2}}}>
-                <Box sx={{width:'100%',aspectRatio:'1',overflow:'hidden'}}>
-                  <XDriveMediaGalleryCoverThumbnail
-                    nodeID={item.node.id} revision={item.node.revision}
-                    alt={item.node.name} loadThumbnail={loadThumbnail}
-                    fallback={<Box sx={{height:'100%',display:'grid',
-                      placeItems:'center',color:'text.secondary'}}>
-                      <PhotoLibraryOutlinedIcon fontSize="small"/>
-                    </Box>}/>
-                </Box>
-              </Box>
-            ))}
+            {thumbnailScheduler ? expanded ? (
+              <MediaVirtualTileGrid
+                placesDrawer
+                collection={collection}
+                minTileWidth={108}
+                selectionMode={false}
+                selectedContentKeys={new Set<string>()}
+                onSelect={() => undefined}
+                loadThumbnail={loadThumbnail}
+                thumbnailScheduler={thumbnailScheduler}
+                onOpen={openTile}
+                onPreview={openTile}
+                onToggleFavorite={() => undefined}
+              />
+            ) : (
+              // The collapsed grip is a *preview*, not a second full list.
+              // Its tiles still use Gallery's exact MediaTile component.
+              <Stack direction="row" spacing={1} sx={{width:'max-content'}}>
+                {items.slice(0,8).map((item,index) => (
+                  <Box key={item.node.id} sx={{width:92,flex:'0 0 92px'}}>
+                    <MediaTile
+                      placesDrawer
+                      item={item}
+                      logicalIndex={index}
+                      selectionMode={false}
+                      selectedForAction={false}
+                      onSelect={() => undefined}
+                      loadThumbnail={loadThumbnail}
+                      thumbnailScheduler={thumbnailScheduler}
+                      onOpen={openTile}
+                      onPreview={openTile}
+                      onToggleFavorite={() => undefined}
+                    />
+                  </Box>
+                ))}
+              </Stack>
+            ) : (
+              <Box data-xdrive-places-photo-grid-initializing
+                sx={{minHeight:108,bgcolor:'action.hover'}} />
+            )}
           </Box>
           <Stack direction="row" alignItems="center" justifyContent="space-between"
             spacing={1} sx={{px:1.25,pb:1,pt:0.25,flexShrink:0,flexWrap:'wrap',rowGap:0.25}}>
