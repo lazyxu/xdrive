@@ -104,10 +104,33 @@ internal fun NativeClipboardScreen(
     }
     LaunchedEffect(epoch, key) {
         if (key == null) return@LaunchedEffect
-        while (stillOwner() && key != null) {
+        val snapshot = actionFence.capture()
+        // The 15s foreground GET remains the fallback for older deployments,
+        // permission changes, a short network outage, or missed SSE cursors.
+        while (stillSession(snapshot) && key != null) {
             delay(15_000)
-            if (!stillOwner() || key == null) break
+            if (!stillSession(snapshot) || key == null) break
             refresh()
+        }
+    }
+    LaunchedEffect(epoch, key) {
+        if (key == null) return@LaunchedEffect
+        val snapshot = actionFence.capture()
+        var after = 0L // Per-unlock cursor: never persist it across Owners.
+        while (stillSession(snapshot) && key != null) {
+            try {
+                after = controller.clipboardWatch(after) {
+                    if (stillSession(snapshot) && key != null) refresh()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // SSE is a latency optimization, not the source of truth.
+                // The independent 15s foreground GET remains active.
+            }
+            if (!stillSession(snapshot) || key == null) break
+            refresh() // Disconnect/cursor eviction is repaired via full GET.
+            delay(3_000) // Bound reconnect churn and reverify Owner bearer.
         }
     }
     LaunchedEffect(epoch, incomingText) {
