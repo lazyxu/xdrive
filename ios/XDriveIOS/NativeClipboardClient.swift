@@ -31,10 +31,13 @@ enum XDriveIOSClipboardCrypto {
     }
 
     static func key(_ password: String, salt: String) throws -> SymmetricKey {
-        guard password.count >= 12 && password.count <= 256,
+        guard password.utf16.count >= 12 && password.utf16.count <= 256,
               let saltBytes = Data(base64Encoded: salt),
               saltBytes.count == 16 else { throw Failure.invalidKey }
         var output = [UInt8](repeating: 0, count: 32)
+        // Read this before withUnsafeMutableBufferPointer to satisfy Swift's
+        // exclusive access rules and keep CommonCrypto's 256-bit output fixed.
+        let derivedCount = output.count
         let utf8 = Array(password.utf8CString)
         let status = utf8.withUnsafeBufferPointer { pass in
             saltBytes.withUnsafeBytes { rawSalt in
@@ -43,7 +46,7 @@ enum XDriveIOSClipboardCrypto {
                         pass.baseAddress, utf8.count - 1,
                         rawSalt.bindMemory(to: UInt8.self).baseAddress, saltBytes.count,
                         CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), 310_000,
-                        derived.baseAddress, output.count)
+                        derived.baseAddress, derivedCount)
                 }
             }
         }
@@ -53,7 +56,7 @@ enum XDriveIOSClipboardCrypto {
 
     static func kind(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.range(of: #"^https?://\\S+$"#, options: .regularExpression) != nil
+        return trimmed.range(of: #"^https?://\S+$"#, options: .regularExpression) != nil
             ? "text/uri-list" : "text/plain"
     }
     private static func aad(_ scope: String, _ eventID: String, _ kind: String) -> Data {
