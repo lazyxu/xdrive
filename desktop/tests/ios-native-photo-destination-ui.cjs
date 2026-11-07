@@ -52,7 +52,7 @@ test('config read never silently enrolls the iPhone or uses a JS/browser credent
 test('only server response supplies actual target/source ID, local path cannot become authority', () => {
   assert.match(model, /dto\.device_id == device\.deviceID/);
   assert.match(model, /targetID != owner\.rootNodeID/);
-  assert.match(model, /path\.hasPrefix\("同步文件夹\/设备备份\/"\)/);
+  assert.match(model, /XDriveIOSPhotoBackupDestinationPathPolicy\.accepts\(\s*path:\s*path,\s*name:\s*name,\s*deviceID:\s*device\.deviceID\s*\)/);
   assert.match(model, /XDriveIOSPhotoBackupDestinationNamePolicy\.normalized/);
   assert.match(server, /createLocalPushManagedTargetTx/);
   assert.match(server, /managedSourceTargetAncestorIDsTx/);
