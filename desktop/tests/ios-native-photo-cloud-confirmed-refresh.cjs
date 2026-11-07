@@ -145,7 +145,7 @@ test('confirmed original temporary readback outage retains cursor instead of an 
     confirmed.lastIndexOf('return .requiresReview'))
   assert.match(scanning, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
   assert.match(scanning, /await scanner\.reset\(\)\s*throw error/)
-  assert.match(scanning, /case \.requiresReview:\s*report\.needsReview \+= 1\s*report\.stoppedForReview = true/)
+  assert.match(scanning, /case \.requiresReview:\s*report\.needsReview \+= 1\s*report\.windowNeedsReview \+= 1\s*report\.stoppedForReview = true/)
   assert.match(classification, /error is URLError/)
   assert.match(classification, /case \.serverRejected\(let code\) = readback/)
   assert.match(classification, /case \.serverStatus\(let code\) = owner/)
