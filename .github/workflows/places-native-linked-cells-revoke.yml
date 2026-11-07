@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/places-native-linked-cells-revoke.yml'
       - 'internal/api/desktop_map_native_linked_cells_revocation_linux_test.go'
+      - 'internal/api/baidu_jsapi_map_access.go'
+      - 'internal/auth/map_access*.go'
       - 'internal/api/auth_desktop_map_*.go'
       - 'internal/api/baidu_photo_map_*.go'
   workflow_dispatch:
@@ -46,5 +48,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
-          test -z "$(gofmt -l internal/api/desktop_map_native_linked_cells_revocation_linux_test.go)"
+          files=(internal/auth/map_access.go internal/auth/map_access_test.go internal/api/baidu_jsapi_map_access.go internal/api/desktop_map_native_linked_cells_revocation_linux_test.go)
+          unformatted="$(gofmt -l "${files[@]}")"
+          if [[ -n "$unformatted" ]]; then
+            printf 'Unformatted Go sources:\n%s\n' "$unformatted"
+            while IFS= read -r file; do
+              test -n "$file" && gofmt -d "$file"
+            done <<< "$unformatted"
+            exit 1
+          fi
+          go test ./internal/auth -run '^TestMapAccessStrictSignedIssuedAt$' -count=1
           go test ./internal/api -run '^TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout$' -count=1 -timeout=12m

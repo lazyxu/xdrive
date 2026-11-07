@@ -7,6 +7,9 @@ const read = name => fs.readFileSync(path.resolve(__dirname, '../..', name), 'ut
 const browser = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
 const window = read('ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift')
 const range = read('ios/XDriveIOS/NativeCloudFilesPolicy.swift')
+const selection = read('ios/XDriveIOS/NativeFilesSelectionPolicy.swift')
+const trashPolicy = read('ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift')
+const serverBatch = read('internal/api/batch_nodes.go')
 
 test('Files uses one lazy continuous list/grid instead of explicit 64-item page controls', () => {
   assert.doesNotMatch(browser, /private var filesPager|Button\("上一页"\)|Button\("下一页"\)/)
@@ -40,7 +43,7 @@ test('each adjacent range is reauthenticated and cannot append stale or overlapp
 test('sliding range preserves Viewer return and bounded selection, and owner/navigation cancellation', () => {
   assert.match(browser, /offset = model\.startOffset \+[\s\S]*?XDriveIOSNativeFilesPagePolicy\.pageSize/)
   assert.match(browser, /model\.cancelAdjacent\(\)\s*inlineFolders\.suspendForNavigation\(\)\s*selectedOwner = owner/)
-  assert.match(browser, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
+  assert.match(browser, /selectedIDs\.count < XDriveIOSNativeFilesSelectionPolicy\.maximumSelectedSnapshots/)
   assert.match(browser, /selectedSnapshots\[entry\.id\] = entry\.node/)
   assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in/)
   assert.match(browser, /func invalidate\(\) \{[\s\S]*?cancelAdjacent\(\)/)
@@ -52,7 +55,7 @@ test('sliding range preserves Viewer return and bounded selection, and owner/nav
 })
 
 
-test('bounded Files window retains only 200 revision snapshots while Server verifies all writes', () => {
+test('bounded Files window retains 2048 revision snapshots while Server atomically verifies 200 per request', () => {
   // The observer must see changed Node/revision/parent even when IDs remain
   // unchanged across a successful same-scope refresh.
   assert.match(browser, /\.onChange\(of: model\.entries\.map\(\\\.node\)\) \{ _ in/)
@@ -60,10 +63,14 @@ test('bounded Files window retains only 200 revision snapshots while Server veri
   assert.doesNotMatch(browser, /selectedIDs\.formIntersection\(visibleIDs\)/)
   assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(/)
   assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.conflictingIDs\(/)
-  assert.match(browser, /selectedIDs\.count >= XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
-  assert.match(browser, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
+  assert.match(browser, /selectedIDs\.count >= XDriveIOSNativeFilesSelectionPolicy\.maximumSelectedSnapshots/)
+  assert.match(browser, /selectedIDs\.count < XDriveIOSNativeFilesSelectionPolicy\.maximumSelectedSnapshots/)
   assert.match(window, /static let maximumVisibleItems = 4 \* pageSize/)
-  // 4*64 loaded rows, but only 200 selectable for one Server operation.
+  // 4*64 visible rows and 2048 selection snapshots are separate concepts.
+  // Go's single atomic write remains strictly capped at 200 Node IDs.
+  assert.match(selection, /static let maximumSelectedSnapshots = 2_048/)
+  assert.match(trashPolicy, /static let maxSelected = 200/)
+  assert.match(serverBatch, /const maxNodeBatchItems = 200/)
   assert.doesNotMatch(browser, /XDriveIOSNativeFilesPagePolicy\.pageSize - selectedIDs\.count/)
 })
 

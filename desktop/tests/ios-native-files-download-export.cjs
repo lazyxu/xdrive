@@ -36,7 +36,7 @@ test('native File management exports only via OS ShareLink and releases scoped t
   assert.doesNotMatch(exportFile, /WKWebView\s*\(|document\.cookie/)
 })
 
-test('1 GiB foreground single-file export has a real free-space preflight and unchanged batch cap', () => {
+test('1 GiB foreground single-file export preserves disk preflight and updated batch limit', () => {
   assert.match(capacity, /maximumSingleFileBytes: Int64 = 1_073_741_824/)
   assert.match(capacity, /freeSpaceReserveBytes: Int64 = 128 \* 1_048_576/)
   assert.match(capacity, /size <= availableFreeBytes - freeSpaceReserveBytes/)
@@ -45,7 +45,7 @@ test('1 GiB foreground single-file export has a real free-space preflight and un
   assert.match(exportFile, /case \.insufficientDiskSpace:/)
   assert.match(exportFile, /本机暂存空间不足/)
   assert.match(exportFile, /config\.timeoutIntervalForResource = 1800/)
-  assert.match(batch, /maximumAggregateBytes: Int64 = 512 \* 1_048_576/)
+  assert.match(batch, /maximumAggregateBytes: Int64 = 2 \* 1_073_741_824/)
   assert.match(panel, /单文件导出最大 1 GiB/)
   assert.doesNotMatch(exportFile, /URLSession\.shared|Data\(contentsOf:|WKWebView/)
 })

@@ -13,7 +13,7 @@ struct XDriveIOSNativeFilesSelectAllAccumulator {
 
     init?(parentID: UInt64, total: Int, sort: String, order: String) {
         guard parentID > 0, total > 0,
-              total <= XDriveIOSNativeFilesBatchTrashPolicy.maxSelected,
+              total <= XDriveIOSNativeFilesSelectionPolicy.maximumSelectedSnapshots,
               XDriveIOSNativeFilesPagePolicy.validOrder(sort: sort, order: order)
         else { return nil }
         self.parentID = parentID

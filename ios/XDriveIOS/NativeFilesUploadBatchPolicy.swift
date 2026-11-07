@@ -1,11 +1,11 @@
 import Foundation
 
-/// First native Files multi-pick MVP: at most eight documents, uploaded
+/// Files multi-pick: at most 64 documents, uploaded
 /// sequentially through the existing single Original UploadSession writer.
 /// Case-insensitive duplicate names would collide on Server; reject the
 /// selection BEFORE uploading any item rather than skipping or overwriting.
 enum XDriveIOSNativeFilesUploadBatchPolicy {
-    static let maximumFiles = 8
+    static let maximumFiles = 64
     // Foreground Files originals use the existing 8 MiB chunked Server writer.
     // Only a single picked file is staged at a time, even in an eight-file batch.
     static let maximumStagedFileBytes: Int64 = 1_073_741_824
@@ -45,10 +45,10 @@ enum XDriveIOSNativeFilesUploadBatchPolicy {
 /// subtree before any directory POST or UploadSession can start. These are
 /// transfer caps, not a background uploader or an implicit overwrite policy.
 enum XDriveIOSNativeFilesFolderUploadPolicy {
-    static let maximumFiles = 64
-    static let maximumDirectories = 32  // Includes the picked root folder.
+    static let maximumFiles = 128
+    static let maximumDirectories = 64  // Includes the picked root folder.
     static let maximumDepth = 8          // Includes the picked root folder.
-    static let maximumTotalBytes: Int64 = 256 * 1_048_576
+    static let maximumTotalBytes: Int64 = 512 * 1_048_576
 
     static func validComponent(_ name: String) -> Bool {
         XDriveIOSNativeFilesFolderNamePolicy.normalized(name) == name &&

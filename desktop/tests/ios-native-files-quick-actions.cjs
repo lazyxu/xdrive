@@ -72,7 +72,7 @@ test('status overlay is not an in-list row and disabled state explains Owner/bus
 })
 
 test('Owner switch and navigation revoke active row shortcuts, without losing read-only Viewer retention', () => {
-  assert.match(page, /\.onChange\(of: login\.owner\) \{ _ in\s*quickMutation\.invalidate\(\)[\s\S]*?quickDestinationWriter\.invalidate\(\)[\s\S]*?quickFavorite\.invalidate\(\)/)
+  assert.match(page, /\.onChange\(of: login\.owner\) \{ _ in\s*chunked\.invalidate\(\)\s*quickMutation\.invalidate\(\)[\s\S]*?quickDestinationWriter\.invalidate\(\)[\s\S]*?quickFavorite\.invalidate\(\)/)
   assert.match(page, /if rowDestinationIntent == nil \{\s*quickMutation\.invalidate\(\)/)
   assert.match(page, /\.fullScreenCover\(item: \$selectedFile, onDismiss: \{[\s\S]*?model\.canResume\(/)
   assert.match(page, /\.sheet\(item: \$locateIntent\) \{ intent in/)

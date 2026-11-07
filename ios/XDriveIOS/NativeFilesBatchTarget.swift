@@ -30,7 +30,7 @@ private struct XDriveIOSNativeBatchTargetRequest: Encodable {
 
 /// One existing Go transaction for one verified 64-item Files page; not 64
 /// independent best-effort mutations. Never retry a lost POST acknowledgment.
-private struct XDriveIOSNativeFilesBatchTargetWriter {
+struct XDriveIOSNativeFilesBatchTargetWriter {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 

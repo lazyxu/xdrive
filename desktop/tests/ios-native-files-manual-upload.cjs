@@ -74,7 +74,7 @@ test('native Files folder picker scans the full subtree before any remote POST, 
   assert.match(upload, /possiblySubmitted = true/)
   assert.match(upload, /不要自动重传/)
   assert.match(policy, /enum XDriveIOSNativeFilesFolderUploadPolicy/)
-  assert.match(policy, /maximumFiles = 64/)
-  assert.match(policy, /maximumDirectories = 32/)
-  assert.match(policy, /maximumTotalBytes: Int64 = 256 \* 1_048_576/)
+  assert.match(policy, /static let maximumFiles = 128/)
+  assert.match(policy, /static let maximumDirectories = 64/)
+  assert.match(policy, /maximumTotalBytes: Int64 = 512 \* 1_048_576/)
 });

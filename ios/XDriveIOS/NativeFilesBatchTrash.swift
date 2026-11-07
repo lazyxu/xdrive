@@ -26,7 +26,7 @@ private struct XDriveIOSNativeFilesBatchTrashRequest: Encodable {
     let items: [XDriveIOSNativeFilesBatchTrashRef]
 }
 
-private struct XDriveIOSNativeFilesBatchTrashWriter {
+struct XDriveIOSNativeFilesBatchTrashWriter {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 

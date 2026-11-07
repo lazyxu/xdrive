@@ -1492,18 +1492,24 @@ struct XDriveIOSNativeServerMediaWall: View {
                     }
                 }
                 if let continuousFailure {
-                    Text(continuousFailure).foregroundStyle(.secondary)
-                    Button("重新读取云端图库") {
+                    XDriveIOSNativePhotoWallRetryMessage(
+                        message: continuousFailure, buttonTitle: "重新读取云端图库",
+                        canRetry: !model.busy && selected == nil && phase == .active
+                    ) {
                         self.continuousFailure = nil
                         recentRangeIDs.removeAll()
                         model.load(login: login, albumID: album?.id, placeID: placeID,
                                    offset: 0, search: appliedSearch)
                     }
                 }
-                if model.busy { ProgressView("读取云端图库…") }
+                if model.busy {
+                    XDriveIOSNativePhotoWallLoadingMessage(message: "读取云端图库…")
+                }
                 if let message = model.error {
-                    Text(message).foregroundStyle(.red)
-                    Button("重试读取") {
+                    XDriveIOSNativePhotoWallRetryMessage(
+                        message: message, buttonTitle: "重试读取",
+                        canRetry: !model.busy && selected == nil && phase == .active
+                    ) {
                         model.load(login: login, albumID: album?.id, placeID: placeID,
                                    offset: model.failedOffset ?? model.page?.offset ?? 0,
                                    search: appliedSearch)

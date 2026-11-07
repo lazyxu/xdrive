@@ -1,13 +1,13 @@
 import Foundation
 
-/// Only verified files within the active Owner's bounded directory page may
-/// become native Viewer targets. No implicit cross-page/full-library scan.
+/// Only verified files within the active Owner's bounded four-page sliding
+/// directory window may become native Viewer targets. No full-library scan.
 enum XDriveIOSNativeFilesViewerKind: String {
     case image, video, pdf, audio, text, unsupported
 }
 
 enum XDriveIOSNativeFilesViewerPolicy {
-    static let maximumLoadedRows = 64
+    static let maximumLoadedRows = 4 * 64
     static let maximumImageBytes: Int64 = 32 * 1_048_576
     static let maximumPDFBytes: Int64 = 64 * 1_048_576
 

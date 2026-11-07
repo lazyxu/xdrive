@@ -130,7 +130,7 @@ test('large windows keep bidirectional virtual paging and Owner-limited thumbnai
 
 test('Select All reads every authoritative 64-item Server page using the bounded accumulator', () => {
   assert.match(browser, /private func selectAllCurrentFolder\(\)/)
-  assert.match(browser, /model\.total <= XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
+  assert.match(browser, /model\.total <= XDriveIOSNativeFilesSelectionPolicy\.maximumSelectedSnapshots/)
   assert.match(browser, /for start in stride\(\s*from: 0, to: total, by: XDriveIOSNativeFilesPagePolicy\.pageSize/)
   assert.match(browser, /let page = try await reader\.children\(\s*parentID: folderID, offset: start/)
   assert.match(browser, /guard var accumulator = XDriveIOSNativeFilesSelectAllAccumulator\(/)
@@ -138,7 +138,7 @@ test('Select All reads every authoritative 64-item Server page using the bounded
   assert.match(browser, /guard let nodes = accumulator\.verifiedSelection\(\)/)
   assert.match(browser, /guard model\.entries\.allSatisfy\(\{\s*nodes\[\$0\.id\] == \$0\.node/)
   assert.match(browser, /selectedSnapshots = nodes\s*selectedIDs = ids/)
-  assert.match(selectAll, /total <= XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
+  assert.match(selectAll, /total <= XDriveIOSNativeFilesSelectionPolicy\.maximumSelectedSnapshots/)
   assert.match(selectAll, /page\.total_count == total, page\.offset == nextOffset/)
   assert.match(selectAll, /page\.sort == sort, page\.order == order/)
   assert.match(selectAll, /Set\(page\.items\.map\(\\\.id\)\)\.count == page\.items\.count/)

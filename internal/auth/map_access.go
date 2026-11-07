@@ -15,6 +15,10 @@ type MapAccess struct {
 	UserID         uint64
 	SessionVersion uint64
 	IssuedAt       time.Time
+	// A Desktop map browser AccessJWT is revoked with its exact Agent
+	// refresh chain. This must survive ParseMapAccess so the AFTER-SQL
+	// Owner/epoch recheck cannot ignore a concurrent native logout.
+	DesktopMapNativeRefreshID uint64
 }
 
 // ParseMapAccess rejects legacy tokens without a session version or issued-at.
@@ -41,7 +45,8 @@ func (m Manager) ParseMapAccess(tokenString string, now time.Time) (MapAccess, e
 	if err != nil || !token.Valid || claims.TokenType != "access" ||
 		claims.UserID == 0 || claims.SessionVersion == 0 ||
 		claims.IssuedAt == nil || claims.ExpiresAt == nil ||
-		claims.Subject != strconv.FormatUint(claims.UserID, 10) {
+		claims.Subject != strconv.FormatUint(claims.UserID, 10) ||
+		claims.SourceID != 0 || claims.SourceRunID != "" {
 		return MapAccess{}, denied
 	}
 	issuedAt := claims.IssuedAt.Time
@@ -49,5 +54,8 @@ func (m Manager) ParseMapAccess(tokenString string, now time.Time) (MapAccess, e
 		!claims.ExpiresAt.Time.After(now) {
 		return MapAccess{}, denied
 	}
-	return MapAccess{UserID: claims.UserID, SessionVersion: claims.SessionVersion, IssuedAt: issuedAt}, nil
+	return MapAccess{
+		UserID: claims.UserID, SessionVersion: claims.SessionVersion,
+		IssuedAt: issuedAt, DesktopMapNativeRefreshID: claims.DesktopMapNativeRefreshID,
+	}, nil
 }

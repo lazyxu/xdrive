@@ -11,6 +11,8 @@ const album = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
 const map = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
 const cloud = read('ios/XDriveIOS/NativeServerMediaGallery.swift')
 const cluster = read('ios/XDriveIOS/NativeOwnerMapClusterAlbum.swift')
+const unified = read('ios/XDriveIOS/NativeUnifiedPhotoWall.swift')
+const unifiedGallery = read('ios/XDriveIOS/NativeUnifiedPhotoGallery.swift')
 
 test('one adaptive SwiftUI photo grid is wired into local, album, location and cloud walls', () => {
   assert.match(shared, /struct XDriveIOSNativePhotoWallGrid<Content: View>: View/)
@@ -123,6 +125,43 @@ test('shared retry feedback preserves the current scope and exact caller action'
   assert.match(cloud, /model\.load\(login: login, albumID: albumID, placeID: placeID,/)
 })
 
+
+test('busy and empty feedback are one inert SwiftUI presentation, with source-owned conditions', () => {
+  assert.match(shared, /struct XDriveIOSNativePhotoWallLoadingMessage: View/)
+  assert.match(shared, /struct XDriveIOSNativePhotoWallStatusMessage: View/)
+  assert.match(shared, /ProgressView\(message\)/)
+  assert.match(shared, /\.accessibilityIdentifier\(accessibilityID\)/)
+  assert.match(shared, /\.frame\(maxWidth: \.infinity, minHeight: minHeight, alignment: \.leading\)/)
+  for (const surface of [local, album, map, cluster, cloud, unified]) {
+    assert.match(surface, /XDriveIOSNativePhotoWallLoadingMessage\(/)
+  }
+  for (const surface of [local, map, unified]) {
+    assert.match(surface, /XDriveIOSNativePhotoWallStatusMessage\(/)
+  }
+  assert.match(map, /if !busy && items\.isEmpty && priorWindow\.isEmpty && error == nil \{\s*XDriveIOSNativePhotoWallStatusMessage\(/)
+  assert.match(unified, /if model\.rows\.isEmpty \{\s*XDriveIOSNativePhotoWallStatusMessage\(/)
+  assert.match(unified, /accessibilityID: "native-ios-gallery-visible-proof"/)
+  assert.doesNotMatch(shared, /PHAsset|PHPhotoLibrary|URLSession|login\.owner|Keychain|accessToken|loadNext\(|model\.load\(/)
+})
+
+test('Gallery, album and cloud retry UI retains the original scoped callbacks and guards', () => {
+  assert.match(shared, /var systemImage: String\? = nil/)
+  assert.match(shared, /Label\(message, systemImage: systemImage\)/)
+  assert.match(unifiedGallery, /if let message = wall\.failure \?\? timeline\.notice \{\s*XDriveIOSNativePhotoWallRetryMessage\(/)
+  assert.match(unifiedGallery, /canRetry: selected == nil && phase == \.active,[\s\S]*?systemImage: "info.circle"/)
+  assert.match(unifiedGallery, /\) \{ reset\(\) \}/)
+  assert.match(unified, /if let message = model\.notice \{\s*XDriveIOSNativePhotoWallRetryMessage\(/)
+  assert.match(unified, /canRetry: visible && displayActive && wall\.failure == nil &&\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
+  assert.match(unified, /\) \{ retry = UUID\(\) \}/)
+  assert.match(local, /if let failure \{\s*XDriveIOSNativePhotoWallRetryMessage\(/)
+  assert.match(local, /canRetry: authorized && phase == \.active && selected == nil &&\s*!actionBusy && !shareBusy/)
+  assert.match(album, /canRetry: !loading && !albumActionBusy && !albumShareBusy &&\s*selected == nil && phase == \.active/)
+  assert.match(album, /\) \{ savedOffset = 0; reload\(\) \}/)
+  assert.match(cloud, /if let continuousFailure \{\s*XDriveIOSNativePhotoWallRetryMessage\(/)
+  assert.match(cloud, /if let message = model\.error \{\s*XDriveIOSNativePhotoWallRetryMessage\(/)
+  assert.match(cloud, /offset: model\.failedOffset \?\? model\.page\?\.offset \?\? 0/)
+  assert.match(cloud, /model\.load\(login: login, albumID: album\?\.id, placeID: placeID,/)
+})
 
 test('Gallery and albums share purely visual selection badges, never batch authority', () => {
   assert.match(shared, /struct XDriveIOSNativePhotoWallSelectionIndicator: View/)

@@ -75,9 +75,7 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-unified-gallery"
           "$RUNNER_TEMP/xdrive-ios-unified-gallery"
           node --test desktop/tests/ios-native-unified-photo-gallery.cjs
-          # Independent subpage/Viewer/Map/Owner navigation cases.
-          # These are deterministic source-backed guards; the macOS job
-          # separately compiles the real SwiftUI iPhoneOS application.
+          # Navigation regressions guard bounded Gallery/Files native returns.
           node --test desktop/tests/ios-native-navigation-continuity.cjs
 
       - name: Verify cold launch recovery and BG registration safety
@@ -781,6 +779,19 @@ jobs:
         run: |
           set -euo pipefail
           node --test desktop/tests/ios-native-files-final-parity.cjs desktop/tests/ios-native-files-quick-actions.cjs
+
+      - name: Verify native Files 2048-snapshot bounded chunk writer and three-surface UI
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift \
+            ios/XDriveIOS/NativeFilesSelectionPolicy.swift \
+            ios/XDriveIOS/NativeFilesChunkedPolicy.swift \
+            ios/tests/NativeFilesChunkedPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-chunked"
+          "$RUNNER_TEMP/xdrive-ios-files-chunked"
+          node --test desktop/tests/ios-native-files-three-part-parity.cjs
 
       - name: Verify native Files exact 200-item Server Select All across pages
         run: |
