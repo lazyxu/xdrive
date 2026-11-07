@@ -1,7 +1,7 @@
 import Foundation
 
 /// Server Owner-scoped WGS84 map cells, not raw PhotoKit assets or BD09.
-struct XDriveIOSNativeOwnerMapBounds: Equatable {
+struct XDriveIOSNativeOwnerMapBounds: Equatable, Decodable {
     let west: Double
     let south: Double
     let east: Double
@@ -18,6 +18,23 @@ struct XDriveIOSNativeOwnerMapFacet: Decodable, Identifiable {
     let sample_latitude: Double?
     let sample_longitude: Double?
     let coordinate_kind: String?
+    let display_bounds: XDriveIOSNativeOwnerMapBounds?
+
+    init(id: String, name: String, latitude: Double, longitude: Double,
+         item_count: Int, cover_node_id: UInt64?, sample_latitude: Double?,
+         sample_longitude: Double?, coordinate_kind: String?,
+         display_bounds: XDriveIOSNativeOwnerMapBounds? = nil) {
+        self.id = id
+        self.name = name
+        self.latitude = latitude
+        self.longitude = longitude
+        self.item_count = item_count
+        self.cover_node_id = cover_node_id
+        self.sample_latitude = sample_latitude
+        self.sample_longitude = sample_longitude
+        self.coordinate_kind = coordinate_kind
+        self.display_bounds = display_bounds
+    }
 }
 
 struct XDriveIOSNativeOwnerMapOverview: Decodable {
@@ -70,6 +87,10 @@ enum XDriveIOSNativeOwnerMapOverviewPolicy {
                     item.coordinate_kind == "grid_cell_center" ||
                     item.coordinate_kind == "map_region_sample")
             else { return false }
+            if let bounds = item.display_bounds {
+                guard item.coordinate_kind == "map_region_sample" &&
+                    validBounds(bounds) else { return false }
+            }
             if let lat = item.sample_latitude, let lon = item.sample_longitude {
                 guard lat.isFinite && lon.isFinite && abs(lat) <= 90 && abs(lon) <= 180
                 else { return false }
