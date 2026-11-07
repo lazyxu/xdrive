@@ -386,7 +386,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		timeout = 120 * time.Second // Bounded original CAS upload.
 	} else if r.URL.Path == "/v1/recovery-review" {
 		timeout = 80 * time.Second // Existing owning Agent historical read has a 60s bound.
-	} else if isDSMOwnerNotesWrite(r.URL.Path) {
+	} else if isDSMOwnerNotesWrite(r.URL.Path) || isDSMClipboardWrite(r.URL.Path) {
 		timeout = 60 * time.Second // Authenticated Server Notes writes are bounded.
 	} else if isDSMOwnerNotesImageRoute(r.URL.Path) {
 		timeout = 120 * time.Second // One explicit <=20 MiB image over bounded CGI/Agent IPC.
