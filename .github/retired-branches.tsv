@@ -79,3 +79,6 @@ dev/ios-map-3955-master-20261106	1e58aad412b1be6773d9822eb80cc967a239b8ef	all si
 
 # 2026-11-07 reviewed iOS Files orphan after accepted #3965 consolidation; immutable exact tip only.
 feat/ios-files-grouping-inline-20261106	dfd905125db874cd1ece972f0d3a2755a9e11476	historical pre-CI grouped Files/Quick Access/inline/undo branch explicitly integrated by merged exact-green #3965, with later #3992 native Files parity work in progress; branch last commit only adjusts shared Quick Access source-contract assertion, whose Owner-scoped singleton and stronger tests are present on accepted master; do not restore stale 36-file UI
+
+# 2026-11-07 exact merged-PR alternate ref, no open PR uses this alias.
+fix/photo-cloud-first-upload-time-identity-20261107	24f099d0847e6dd6d96a77d0d4173b10297bc53c	Alternate branch exactly matches merged #4037 tested PR HEAD; master squash a180fe506abde443fa3217c8b63ece17d035e77a retains implementation and subsequent #4038 improves independent cloud matching; exact unchanged alias only, never delete if head advances
