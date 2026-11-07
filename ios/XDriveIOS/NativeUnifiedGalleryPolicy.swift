@@ -72,7 +72,7 @@ struct XDriveIOSNativeUnifiedPageIndex<Cursor: Equatable> {
 }
 
 enum XDriveIOSNativePhotoPairingReason: String, Identifiable {
-    case checking, localUnavailable, duplicate, permission, libraryIncomplete, cloudUnavailable, cloudIdentity
+    case checking, localUnavailable, duplicate, permission, libraryIncomplete, cloudUnavailable, cloudIdentity, matchUnavailable
     var id: Self { self }
     var explanation: String {
         switch self {
@@ -83,6 +83,7 @@ enum XDriveIOSNativePhotoPairingReason: String, Identifiable {
         case .libraryIncomplete: return "目前没有足够的本机原件证据；可正常浏览，备份时校验原件，或手动开始核验。"
         case .cloudUnavailable: return "云端暂不可用或不支持精确核对。重新连接后可重试。"
         case .cloudIdentity: return "云端原件身份尚未就绪或已经变化，需要服务器完成媒体分析后重新核对。"
+        case .matchUnavailable: return "照片仍可浏览，但当前无法验证两端原件是否相同；这不是云端照片不可用。"
         }
     }
 }
