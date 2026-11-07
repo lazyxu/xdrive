@@ -175,7 +175,7 @@ test('manual refresh and empty-map interval never widen Owner scope or call the 
   assert.match(query,/await listOwnerCells\(bounds,request\.signal,/)
   assert.match(query,/approved\.key!==filterRef\.current\.key/)
   assert.match(query,/xDriveValidBaiduNativeCellsPage\(page,bounds\)/)
-  assert.match(query,/frame\.replaceAuthorizedCells\(cells\)/)
+  assert.match(query,/frame\.replaceAuthorizedCells\(cells,liveCamera\)/)
   const child=read('deploy/baidu-isolated-child/child.js')
   assert.doesNotMatch(child,/getMediaThumbnail|loadThumbnail|PhotoAsset/)
 })
