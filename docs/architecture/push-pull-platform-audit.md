@@ -32,9 +32,9 @@ The Server remains the only durable cloud writer: **UploadSession → chunks →
 | P1 | Native iOS/Android backup screens and shared Source Manager represent the same Source/Target/Run yet have different status/configuration affordances. Audit bounded-batch counts, partial/error/unknown-ACK displays, Owner switch, background cancellation, and foreign-device read-only behavior; extend **specific missing** executable contracts, not a parallel backup engine. | Swift/SQLite, Android/JVM/instrumentation, Go/PostgreSQL and shared adapter regressions where coverage is absent |
 | P1 | Source lifecycle across Web/PWA, Desktop and DSM Host adapters still requires a feature-by-feature capability audit: create, configure, resume, pause, archive, restore, history and errors must never advertise an unavailable native action. | One shared capability/negative-action contract per concrete Host; no fake permission state |
 | P1 | The canonical Source progress vocabulary is not a whole-device-backup completion guarantee. Keep each iOS/Android SourceRun as a bounded batch and reject inferred full-library success from scanned, confirmed or old local receipts. | Native SourceRun state and UI tests for partial/unknown/archived cases |
-| P2 | Optional **cloud-only cleanup** of a retained Source has no standalone preview + explicit confirmation + reversible Trash implementation. It is separate from normal Source archive/remove, and is **not** required for the current backup MVP. | Future dedicated Source/Node/Share/CAS integrity and rollback PR, only if this capability is prioritized |
+| P2 | Cloud-only Source cleanup implemented as **separate preview → exact Source-name confirmation → reversible Trash**, independent of Source archive/remove. Only an archived, managed, quiescent, unshared Source target is eligible. The Web Source Manager exposes this only when the authenticated Host has the cleanup port; native and other Hosts cannot invent a cleanup action. | #4093 exact-head PostgreSQL preview/confirm/rollback/forbidden-writer tests, shared Web capability/UI tests; do not claim CI passed until checks finish |
 
-The first two P0 display gaps are addressed in the same post-merge UI/documentation PR as this audit. The remaining work must be checked against accepted master and open PRs before changing code; tests already present in #4082 are not unfinished features.
+The P0 display gaps, native state/permission UI, Source history regressions and conditional cleanup flow are part of the same post-merge #4093 candidate. This audit describes proposed code in #4093, **not master-accepted CI**, until that PR's exact HEAD checks pass. The remaining work must be checked against accepted master and open PRs before changing code; tests already present in #4082 are not unfinished features.
 
 ## 3. Source/security regressions to maintain for subsequent changes
 
@@ -51,7 +51,7 @@ Relevant already-integrated automated coverage includes source_managed_flat_cont
 
 ## 4. Explicitly excluded or suspended — not backlog items
 
-- **No historical target migration**. Old Yike/mixed-root/nested 1A–5B migrations are tracked separately under historical Issue #3774, not this new-source MVP.
+- **No historical target migration**. Old Yike/mixed-root/nested 1A–5B migrations are tracked separately under historical Issue #3774, not this new-source MVP. Cloud cleanup is NOT a migration, does not delete provider data, and never rebinds Source/Node IDs.
 - **No standalone DSM Synology Photos Push**; do not restore xdrive-source-agent, its upload routes or a parallel CAS writer.
 - **No re-enabling Synology Photos/Files Pull** until a separate Owner decision. Keep existing data/history readable and execution disabled.
 - **No remote device backup trigger from Web/Desktop/DSM** for PhotoKit/MediaStore or an unowned local Root.

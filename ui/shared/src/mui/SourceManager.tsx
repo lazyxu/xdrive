@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { XDriveFeedbackSnackbar } from './FeedbackSnackbar'
 import { XDriveSourceCreateDialog } from './SourceManagerCreateDialog'
 import { XDriveSourceManagerListPage } from './SourceManagerListPage'
+import { XDriveSourceCloudCleanupDialog } from './SourceCloudCleanupDialog'
 import type { XDriveSourceCreateValues } from './SourceManagerCreateDialog'
 import { XDriveSourceSettingsDialog } from './SourceManagerSettingsDialog'
 import type { XDriveSourceSettingsValues } from './SourceManagerSettingsDialog'
@@ -28,6 +29,7 @@ import {
   externalSourceDefaults,
   externalSourceDisplayName,
   isReadOnlySynologySource,
+  isNativePhotoSource,
   normalizeSynologyFileRoots,
   normalizeSynologyPhotoSpaces,
   synologyFileRootsValidationError,
@@ -35,6 +37,7 @@ import {
 import type {
   CreateExternalSourceInput,
   ExternalSource,
+  ExternalSourceCloudCleanupPreview,
   ExternalSourceBrowsePage,
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
@@ -60,6 +63,8 @@ export interface XDriveSourceManagerAdapter {
   suggestedPushName?(): Promise<string>
   sourceOverview(signal?: AbortSignal, includeArchived?: boolean): Promise<ExternalSourceOverview[]>
   restoreSource?(sourceID: number, revision: number): Promise<ExternalSource>
+  sourceCloudCleanupPreview?(sourceID: number): Promise<ExternalSourceCloudCleanupPreview>
+  trashSourceCloudCleanup?(preview: ExternalSourceCloudCleanupPreview, confirmName: string): Promise<unknown>
   canRestoreSource?(row: ExternalSourceRow): boolean
   canDeleteSource?(row: ExternalSourceRow): boolean
   createSource(input: CreateExternalSourceInput): Promise<ExternalSource>
@@ -250,6 +255,9 @@ export function XDriveSourceManager({
   const [settingsCredentialReveal, setSettingsCredentialReveal] = useState<ExternalSourceCredentialReveal | null>(null)
   const [settingsCredentialTest, setSettingsCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
   const [settingsCredentialTestError, setSettingsCredentialTestError] = useState('')
+  const [cleanupPreview, setCleanupPreview] = useState<ExternalSourceCloudCleanupPreview | null>(null)
+  const [cleanupPreparingSourceID, setCleanupPreparingSourceID] = useState<number | null>(null)
+  const [cleanupBusy, setCleanupBusy] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [deletingSourceID, setDeletingSourceID] = useState<number | null>(null)
   const [errorDialog, setErrorDialog] = useState<XDriveSourceErrorDialogState | null>(null)
@@ -807,7 +815,7 @@ export function XDriveSourceManager({
     try {
       const result = await adapter.authorizeLocalFolder(row.source.id)
       if (result.cancelled) return
-      setFeedback('本机目录已授权；实际同步引擎尚未启用，不会传输文件')
+      setFeedback('已在绑定设备上授权本机目录；实际 Push 由该设备的 xdrive-agent 执行，不会由 Server 远程扫描')
       await load()
     } catch (error) {
       showActionError('本机目录授权失败', error, '请确认设备在线、目录可读，并检查是否已绑定其他目录。')
@@ -815,6 +823,10 @@ export function XDriveSourceManager({
   }
 
   const triggerNow = async (row: ExternalSourceRow) => {
+    // Native Photos and local-folder Push never delegate scanning to the
+    // Server Source scheduler; the backend rejects such generic Run-Now calls.
+    if (isNativePhotoSource(row.source) || row.source.kind === 'local_folder' ||
+      isReadOnlySynologySource(row.source)) return
     setTriggeringSourceID(row.source.id)
     try {
       await adapter.triggerSource(row.source.id)
@@ -828,6 +840,7 @@ export function XDriveSourceManager({
   }
 
   const cancelRun = async (row: ExternalSourceRow) => {
+    if (isNativePhotoSource(row.source) || isReadOnlySynologySource(row.source)) return
     const run = row.latestRun
     if (!run || run.status !== 'running' || run.cancel_requested_at) return
     setCancellingRunID(run.id)
@@ -874,7 +887,7 @@ export function XDriveSourceManager({
   }
 
   const openSettings = (row: ExternalSourceRow) => {
-    if (savingSettings || row.source.status === 'archived' || isReadOnlySynologySource(row.source)) return
+    if (savingSettings || row.source.status === 'archived' || isReadOnlySynologySource(row.source) || isNativePhotoSource(row.source)) return
     ++settingsSessionRef.current
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     setSetting(row)
@@ -1015,7 +1028,7 @@ export function XDriveSourceManager({
 
   const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!setting || savingSettings) return
+    if (!setting || savingSettings || isNativePhotoSource(setting.source) || isReadOnlySynologySource(setting.source)) return
     const profile = externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
     // Never write guessed/default roots or spaces before the persisted connector
     // scope is known; this guard also protects keyboard/native form submission.
@@ -1181,7 +1194,9 @@ export function XDriveSourceManager({
   }
 
   const deleteSource = async () => {
-    if (!deleteTarget) return
+    if (!deleteTarget || isNativePhotoSource(deleteTarget.source) ||
+        isReadOnlySynologySource(deleteTarget.source) ||
+        !(adapter.canDeleteSource?.(deleteTarget) ?? deleteTarget.source.kind !== 'local_folder')) return
     const row = deleteTarget
     setDeletingSourceID(row.source.id)
     try {
@@ -1210,7 +1225,7 @@ export function XDriveSourceManager({
   }
 
   const restoreSource = async (row: ExternalSourceRow) => {
-    const allowed = !isReadOnlySynologySource(row.source) &&
+    const allowed = !isReadOnlySynologySource(row.source) && !isNativePhotoSource(row.source) &&
       (adapter.canRestoreSource?.(row) ?? row.source.kind !== 'local_folder')
     if (!adapter.restoreSource || !allowed) return
     setRestoringSourceID(row.source.id)
@@ -1223,6 +1238,53 @@ export function XDriveSourceManager({
       await load()
     } finally {
       setRestoringSourceID(null)
+    }
+  }
+
+  const canCleanupSource = (row: ExternalSourceRow) => Boolean(
+    adapter.sourceCloudCleanupPreview && adapter.trashSourceCloudCleanup &&
+    row.source.status === 'archived' && row.source.direction === 'pull' &&
+    row.source.kind === 'yike_photos' && row.source.target_managed &&
+    row.source.target_node_id && row.source.target_path
+  )
+
+  const openCloudCleanup = async (row: ExternalSourceRow) => {
+    if (!canCleanupSource(row) || !adapter.sourceCloudCleanupPreview ||
+        cleanupPreparingSourceID !== null || cleanupBusy) return
+    setCleanupPreparingSourceID(row.source.id)
+    try {
+      const preview = await adapter.sourceCloudCleanupPreview(row.source.id)
+      if (!preview.reversible || preview.source_id !== row.source.id ||
+          preview.source_revision !== row.source.revision ||
+          preview.target_node_id !== row.source.target_node_id ||
+          preview.source_name !== row.source.name) {
+        throw new Error('来源或目标已经变化，请刷新来源列表并重新预览')
+      }
+      setCleanupPreview(preview)
+    } catch (error) {
+      showActionError('云端清理预览失败', error, '来源必须已归档，且没有共享、其他来源依赖或未完成操作。')
+    } finally {
+      setCleanupPreparingSourceID(null)
+    }
+  }
+
+  const confirmCloudCleanup = async (confirmedName: string) => {
+    const preview = cleanupPreview
+    if (!preview || !adapter.trashSourceCloudCleanup || cleanupBusy ||
+        confirmedName !== preview.source_name) return
+    setCleanupBusy(true)
+    try {
+      await adapter.trashSourceCloudCleanup(preview, confirmedName)
+      setCleanupPreview(null)
+      setFeedback('云端目标目录已移入回收站，来源和同步历史仍保留；可在回收站手动恢复')
+      await load()
+    } catch (error) {
+      // A stale preview is never automatically retried. The user must
+      // explicitly request a new read-only preview and re-confirm.
+      setCleanupPreview(null)
+      showActionError('云端清理未执行', error, '目标、版本或写入状态已变化；重新预览后才能再次确认。')
+    } finally {
+      setCleanupBusy(false)
     }
   }
 
@@ -1314,8 +1376,8 @@ export function XDriveSourceManager({
     setCollections([])
     setCollectionItemPages({})
     void loadRunHistory(row.source.id, 1)
-    if (row.source.kind === 'ios_photos') {
-      // iPhone PhotoKit IDs and per-asset failures remain device-local. The
+    if (isNativePhotoSource(row.source)) {
+      // PhotoKit and MediaStore IDs and per-asset failures remain device-local. The
       // shared Source Manager reads only the aggregate SyncRun history.
       setCollectionsReadState('ready')
       setCollectionsLoading(false)
@@ -1416,8 +1478,11 @@ export function XDriveSourceManager({
         showArchived={showArchived}
         onToggleArchived={() => setShowArchived((current) => !current)}
         restoringSourceID={restoringSourceID}
-        canRestoreSource={(row) => !isReadOnlySynologySource(row.source) &&
+        canRestoreSource={(row) => !isReadOnlySynologySource(row.source) && !isNativePhotoSource(row.source) &&
           (adapter.canRestoreSource?.(row) ?? Boolean(adapter.restoreSource && row.source.kind !== 'local_folder'))}
+        canCleanupSource={canCleanupSource}
+        cleanupPreparingSourceID={cleanupPreparingSourceID}
+        onCloudCleanup={openCloudCleanup}
         onRestoreSource={(row) => { void restoreSource(row) }}
         loading={loading}
         hasLoaded={hasLoaded}
@@ -1543,7 +1608,8 @@ export function XDriveSourceManager({
         connectorConfigError={settingsConnectorError}
         clearingCredential={clearingCookie}
         browseDirectories={settingsBrowseDirectories}
-        allowDelete={setting ? (adapter.canDeleteSource?.(setting) ?? setting.source.kind !== 'local_folder') : false}
+        allowDelete={setting ? !isNativePhotoSource(setting.source) && !isReadOnlySynologySource(setting.source) &&
+          (adapter.canDeleteSource?.(setting) ?? setting.source.kind !== 'local_folder') : false}
         onRequestClose={closeSettings}
         onCancel={closeSettings}
         onRetryConnectorConfig={() => {
@@ -1572,10 +1638,18 @@ export function XDriveSourceManager({
         }}
         onRequestClearCredential={() => setClearCookieConfirmOpen(true)}
         onDelete={() => {
-          if (setting && (adapter.canDeleteSource?.(setting) ?? setting.source.kind !== 'local_folder')) {
+          if (setting && !isNativePhotoSource(setting.source) && !isReadOnlySynologySource(setting.source) &&
+              (adapter.canDeleteSource?.(setting) ?? setting.source.kind !== 'local_folder')) {
             setDeleteTarget(setting)
           }
         }}
+      />
+
+      <XDriveSourceCloudCleanupDialog
+        preview={cleanupPreview}
+        busy={cleanupBusy}
+        onClose={() => { if (!cleanupBusy) setCleanupPreview(null) }}
+        onConfirm={(name) => { void confirmCloudCleanup(name) }}
       />
 
       <XDriveSourceDeleteConfirmDialog

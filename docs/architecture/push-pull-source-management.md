@@ -186,6 +186,18 @@ iOS Photos 使用统一的 `Source(kind=ios_photos, direction=push, sync_mode=ba
 - Source Manager 展示统一目标目录、最近运行状态和分页运行历史；不提供 Server 端 Run Now、通用来源设置、虚构的相册集合或逐文件错误快照。继续备份、权限和自动计划仍在绑定的 iPhone 上管理。
 
 
+## Optional Source cloud-only cleanup — #4093 candidate
+
+Cloud-only cleanup is a **separate explicit Owner action**, not Source archive/delete and not a replacement for ordinary Files operations. A retired or archived Source does not silently remove its cloud files.
+
+1. `GET /api/v1/sources/:id/cloud-cleanup/preview` reads the exact archived, Server-managed Source and active Node subtree (bounded), returning its Source and Target revisions, item/file counts, and a digest of Node IDs/revisions/types. The preview is **not** a deletion capability.
+2. The shared Web Source Manager only displays “预览云端清理” for a previously archived, managed Yike Pull Source with a readable cloud target, when its authenticated Host actually exposes both endpoints. DSM/Desktop/native adapters without this capability do not advertise it.
+3. The Owner must type the full Source name. `POST /api/v1/sources/:id/cloud-cleanup/trash` carries the exact preview digest, Source `If-Match` revision, Target ID/revision and typed name. Server recomputes the entire preview within a Source/Node-locked transaction. No blind retry is allowed after a conflict.
+4. Unsettled UploadSessions, running SourceRuns, queued Files operations, foreign Source/SourceItem dependencies, active direct Shares, malformed ancestry and stale revisions **fail closed**. Data remains intact on refusal.
+5. The target subtree is only soft-deleted using the existing bounded, atomic Trash operation. Source/SourceItems/SyncRuns, file versions and CAS stay unchanged. The Owner uses the existing Trash Restore API for rollback; Source stays archived. Ordinary permanent Trash delete is denied while any Source remains bound to the target.
+
+This is a new API + UI candidate in #4093. It is not implemented in merged master until its exact HEAD CI, PostgreSQL tests and Final Gate succeed. Physical device/production validation remains separate.
+
 ## S10–S18 destination policy (merged in #4082, 2026-11-07)
 
 - Push: `同步文件夹/Push/<name>`, without a DeviceID/device-name group. Pull: `同步文件夹/Pull/<connector>/<name>`, with only the leaf editable.

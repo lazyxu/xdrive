@@ -42,6 +42,18 @@ export interface ExternalSource {
   updated_at: string
 }
 
+export interface ExternalSourceCloudCleanupPreview {
+  source_id: number
+  source_revision: number
+  source_name: string
+  target_node_id: number
+  target_revision: number
+  node_count: number
+  file_count: number
+  preview_digest: string
+  reversible: boolean
+}
+
 export interface ExternalSourceRun {
   id: string
   source_id: number
@@ -439,6 +451,7 @@ export interface ExternalSourceCardView {
 }
 
 export interface ExternalSourceDetailView {
+  deviceID?: string
   connector: ExternalSourceConnectorProfile
   kindLabel: string
   modeLabel: string
@@ -707,6 +720,11 @@ export function isSynologyPullTemporarilyDisabled(source: Pick<ExternalSource, '
     (source.kind === 'synology_photos' || source.kind === 'synology_files')
 }
 
+export function isNativePhotoSource(source: Pick<ExternalSource, 'kind' | 'direction'>) {
+  return source.direction === 'push' &&
+    (source.kind === 'ios_photos' || source.kind === 'android_photos')
+}
+
 export function isReadOnlySynologySource(source: Pick<ExternalSource, 'kind' | 'direction'>) {
   return isSynologyPullTemporarilyDisabled(source) ||
     (source.kind === 'synology_photos' && source.direction === 'push')
@@ -722,20 +740,27 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
     // Native MediaStore uploads execute while the Source remains paused to
     // prohibit Server execution. Never mask a real device-owned SourceRun.
     // A terminal run proves only one bounded batch, not the whole library.
-    if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: 'Android 正在备份' }
+    if (latestRun?.status === 'running') return latestRun.cancel_requested_at
+      ? { key: 'running', tone: 'busy', label: '正在停止 Android 备份' }
+      : { key: 'running', tone: 'busy', label: 'Android 正在备份' }
     if (latestRun?.status === 'partial') return { key: 'partial', tone: 'warning', label: '最近一批部分完成' }
-    if (latestRun?.status === 'failed' || source.last_error) return { key: 'error', tone: 'bad', label: '最近一批备份异常' }
+    if (latestRun?.status === 'failed') return { key: 'error', tone: 'bad', label: '最近一批备份异常' }
     if (latestRun?.status === 'cancelled') return { key: 'idle', tone: 'neutral', label: '最近一批已停止' }
-    if (latestRun?.status === 'completed' || source.last_success_at)
-      return { key: 'ready', tone: 'good', label: '最近一批备份完成' }
+    if (latestRun?.status === 'completed') return { key: 'ready', tone: 'good', label: '最近一批备份完成' }
+    if (source.last_error) return { key: 'error', tone: 'bad', label: '最近一批备份异常' }
+    if (source.last_success_at) return { key: 'ready', tone: 'good', label: '最近一批备份完成' }
     return { key: 'paused', tone: 'neutral', label: '等待 Android 设备开始备份' }
   }
   if (source.kind === 'ios_photos') {
-    if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: 'iPhone 正在备份' }
+    if (latestRun?.status === 'running') return latestRun.cancel_requested_at
+      ? { key: 'running', tone: 'busy', label: '正在停止 iPhone 备份' }
+      : { key: 'running', tone: 'busy', label: 'iPhone 正在备份' }
     if (latestRun?.status === 'partial') return { key: 'partial', tone: 'warning', label: '部分项目待处理' }
-    if (latestRun?.status === 'failed' || source.last_error) return { key: 'error', tone: 'bad', label: '最近备份异常' }
+    if (latestRun?.status === 'failed') return { key: 'error', tone: 'bad', label: '最近备份异常' }
     if (latestRun?.status === 'cancelled') return { key: 'cancelled', tone: 'neutral', label: '最近一次备份已取消' }
-    if (source.last_success_at) return { key: 'ready', tone: 'good', label: '最近一次备份完成' }
+    if (latestRun?.status === 'completed') return { key: 'ready', tone: 'good', label: '最近一批备份完成' }
+    if (source.last_error) return { key: 'error', tone: 'bad', label: '最近备份异常' }
+    if (source.last_success_at) return { key: 'ready', tone: 'good', label: '最近一批备份完成' }
     return { key: 'idle', tone: 'neutral', label: '等待 iPhone 备份' }
   }
   if (source.status === 'paused') return { key: 'paused', tone: 'neutral', label: '已暂停' }
@@ -821,13 +846,13 @@ export function externalSourceCardView(row: ExternalSourceRow): ExternalSourceCa
       source.kind === 'android_photos' ? 'Android Push · 原件备份' : externalSourceModeLabel(source),
     state: getExternalSourceState(row),
     trigger: getExternalSourceTriggerState(row),
-    lastActivityLabel: source.kind === 'ios_photos'
+    lastActivityLabel: isNativePhotoSource(source)
       ? (latestRun?.status === 'running' || latestRun?.status === 'partial' ||
         latestRun?.status === 'failed' || latestRun?.status === 'cancelled' ||
         (!source.last_success_at && !!source.last_run_at)
           ? '最近运行' : source.last_success_at ? '上次成功' : '尚无运行')
       : source.run_mode === 'scan' ? '上次扫描' : '上次成功',
-    lastActivityAt: source.kind === 'ios_photos'
+    lastActivityAt: isNativePhotoSource(source)
       ? (latestRun?.status === 'running' || latestRun?.status === 'partial' ||
         latestRun?.status === 'failed' || latestRun?.status === 'cancelled' ||
         (!source.last_success_at && !!source.last_run_at)

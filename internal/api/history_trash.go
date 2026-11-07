@@ -328,6 +328,18 @@ func (s *Server) trashDeletePermanently(c *gin.Context) {
 		if root.Revision != expected {
 			return errRevisionConflict
 		}
+		// Cleanup preserves Source, SourceItems, Nodes and CAS. Until that
+		// historical reference is explicitly and safely detached, ordinary
+		// Trash permanent deletion must not destroy its managed target.
+		var retainedSourceCount int64
+		if err := tx.Model(&meta.Source{}).
+			Where("owner_id = ? AND target_node_id = ?", userID(c), id).
+			Count(&retainedSourceCount).Error; err != nil {
+			return err
+		}
+		if retainedSourceCount != 0 {
+			return errSourceCloudCleanupBlocked
+		}
 		ids, err := subtreeIDsDB(tx, userID(c), id)
 		if err != nil {
 			return err
@@ -378,6 +390,8 @@ func (s *Server) trashDeletePermanently(c *gin.Context) {
 		switch {
 		case errors.Is(err, errRevisionConflict):
 			revisionConflict(c, expected, currentRevision)
+		case errors.Is(err, errSourceCloudCleanupBlocked):
+			fail(c, http.StatusConflict, "managed Source history still owns this Trash target; permanent delete is blocked")
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "trash item not found")
 		default:
