@@ -790,7 +790,10 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 }
                 .onChange(of: visibleWindowRevision) { _ in
                     if let anchor = autoScrollReturnID,
-                       visibleItems.contains(where: { $0.id == anchor }) {
+                       XDriveIOSNativePhotoWallWindowPolicy.canRestore(
+                           anchor, in: visibleItems.map(\.id),
+                           scopeActive: phase == .active
+                       ) {
                         returnScroll.scrollTo(anchor, anchor: .bottom)
                     }
                     autoScrollReturnID = nil
