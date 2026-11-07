@@ -184,17 +184,17 @@ func (s *Server) listMediaExactTrips(c *gin.Context) {
 			title = place + "之行"
 		}
 		trips = append(trips, mediaMemoryDTO{
-			ID: mediaExactTripID(segment, zone),
-			Kind: mediaMemoryKindTrip,
+			ID:    mediaExactTripID(segment, zone),
+			Kind:  mediaMemoryKindTrip,
 			Title: title,
 			Subtitle: mediaMemoryDateRangeLabel(start, end) +
 				fmt.Sprintf(" · %d 张已核对 GPS 照片", summary.ItemCount),
-			StartDate: segment.Days[0].DateKey,
-			EndDate: segment.Days[len(segment.Days)-1].DateKey,
-			PlaceName: place,
-			ItemCount: summary.ItemCount,
+			StartDate:   segment.Days[0].DateKey,
+			EndDate:     segment.Days[len(segment.Days)-1].DateKey,
+			PlaceName:   place,
+			ItemCount:   summary.ItemCount,
 			CoverNodeID: summary.CoverNodeID,
-			UpdatedAt: summary.UpdatedAt,
+			UpdatedAt:   summary.UpdatedAt,
 		})
 		if len(trips) == limit {
 			break
@@ -267,7 +267,9 @@ func (s *Server) listMediaExactTripItems(c *gin.Context) {
 		Items: items, TotalCount: count, Offset: offset, Limit: limit,
 	}
 	c.Header("Cache-Control", "no-store")
-	if rangeRequested { c.JSON(http.StatusOK, page) } else {
+	if rangeRequested {
+		c.JSON(http.StatusOK, page)
+	} else {
 		c.JSON(http.StatusOK, page.Items)
 	}
 }
