@@ -3,7 +3,13 @@ import Foundation
 @main struct XDriveIOSPhotoFocusedBackupPolicyChecks {
     static func main() {
         let p = XDriveIOSPhotoFocusedBackupPolicy.self
-        let step = p.afterWindow
+        // Existing positional-only fixture calls carry no priority uploads.
+        let step: (Int, Int, Int, Int, Bool) -> XDriveIOSPhotoFocusedBackupPolicy.Step =
+          { index, total, scanned, uploaded, review in
+            p.afterWindow(index: index, visibleTotal: total,
+                          scanned: scanned, uploaded: uploaded,
+                          needsReview: review)
+          }
         // Completed boundaries persist; a partially scanned capped window
         // and a fully completed final window have no next checkpoint.
         precondition(p.canSaveCheckpoint(
@@ -95,6 +101,32 @@ import Foundation
         precondition(step(0, -1, 0, 0, false) == .invalidProgress)
         precondition(step(0, 0, 1, 0, false) == .invalidProgress)
         precondition(step(0, 0, 0, 0, true) == .invalidProgress)
+        // Focused consumes the same only-new PhotoKit queue BEFORE reading
+        // positional slots. Twenty verified queue uploads with zero scanned
+        // slots must repeat the unfinished window, not throw invalidProgress.
+        precondition(p.afterWindow(
+            index: 0, visibleTotal: 600, scanned: 0, uploaded: 20,
+            needsReview: false, queuedUploaded: 20
+        ) == .repeatWindow(0))
+        // The queue proof cannot explain one extra upload or bypass an ACK.
+        precondition(p.afterWindow(
+            index: 0, visibleTotal: 600, scanned: 0, uploaded: 20,
+            needsReview: false, queuedUploaded: 19
+        ) == .invalidProgress)
+        precondition(p.afterWindow(
+            index: 0, visibleTotal: 600, scanned: 0, uploaded: 20,
+            needsReview: true, queuedUploaded: 20
+        ) == .pausedForReview)
+        precondition(p.afterWindow(
+            index: 0, visibleTotal: 600, scanned: 0, uploaded: 20,
+            needsReview: false, queuedUploaded: 21
+        ) == .invalidProgress)
+        // On a single-slot last page the verified queue count does not
+        // invalidate a completed positional scan or create a false retry.
+        precondition(p.afterWindow(
+            index: 2, visibleTotal: 513, scanned: 1, uploaded: 20,
+            needsReview: false, queuedUploaded: 19
+        ) == .finished)
         // 100k assets occupy 391 windows; a complete final short window
         // terminates instead of re-scanning the newest 256 forever.
         precondition(XDrivePhotoBackupScanWindow.count(visibleTotal: 100_000) == 391)

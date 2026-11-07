@@ -12,6 +12,7 @@ import type { XDriveSynologyBackupLocalClient } from '@xdrive/ui/mui'
 import './styles.css'
 import { createXDriveSynologyHost } from './synologyHost'
 import { createXDriveDSMNotesPort } from './synologyNotesPort'
+import { createXDriveDSMClipboardPort } from './synologyClipboardPort'
 import { normalizeXDriveAppearance, type XDriveAppearance } from '../../ui/shared/src/preferences'
 import { xDriveBrowserStorageRead, xDriveBrowserStorageWrite } from './browserSafeStorage'
 import { readDSMLoginDraft, saveDSMLoginDraft } from './synologyLoginDraft'
@@ -293,6 +294,7 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
   const theme = useTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [notesOwnerScope, setNotesOwnerScope] = useState('')
+  const [clipboardOwnerScope, setClipboardOwnerScope] = useState('')
   const [notesImagesEnabled, setNotesImagesEnabled] = useState(false)
   // A DSM package login is not an xDrive Owner login. Only expose the shared
   // Notes route after the original Agent's current Owner and Notes capability
@@ -346,15 +348,62 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
       document.removeEventListener('visibilitychange', visibility)
     }
   }, [host])
+  // Independent from Notes: Clipboard has its own narrow capability, Owner
+  // proof and refresh lifecycle, so one module cannot unlock the other.
+  useEffect(() => {
+    const cgi = host.services?.localBackupClient
+    if (!cgi) return
+    let pending: AbortController | null = null
+    let disposed = false
+    const inspect = () => {
+      pending?.abort()
+      const controller = new AbortController()
+      pending = controller
+      void (async () => {
+        try {
+          const first = await cgi.serverConnection(controller.signal)
+          if (!first.configured || first.must_change_password ||
+              !/^[0-9a-f]{64}$/.test(first.owner_scope) ||
+              !await cgi.clipboardAvailable(controller.signal)) {
+            if (!controller.signal.aborted && !disposed) setClipboardOwnerScope('')
+            return
+          }
+          await cgi.ownerQuota(controller.signal)
+          const second = await cgi.serverConnection(controller.signal)
+          if (!controller.signal.aborted && !disposed) {
+            setClipboardOwnerScope(second.configured && !second.must_change_password &&
+              first.owner_scope === second.owner_scope ? first.owner_scope : '')
+          }
+        } catch {
+          if (!controller.signal.aborted && !disposed) setClipboardOwnerScope('')
+        }
+      })()
+    }
+    const onVisibility = () => { if (!document.hidden) inspect() }
+    inspect()
+    window.addEventListener('focus', inspect)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      disposed = true
+      pending?.abort()
+      window.removeEventListener('focus', inspect)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [host])
   const notesPort = useMemo(() => {
     const cgi = host.services?.localBackupClient
     return cgi && notesOwnerScope
       ? createXDriveDSMNotesPort(cgi, notesOwnerScope, notesImagesEnabled) : undefined
   }, [host, notesOwnerScope, notesImagesEnabled])
+  const clipboardPort = useMemo(() => {
+    const cgi = host.services?.localBackupClient
+    return cgi && clipboardOwnerScope
+      ? createXDriveDSMClipboardPort(cgi, clipboardOwnerScope) : undefined
+  }, [host, clipboardOwnerScope])
   const notesHost = useMemo(() => ({
     ...host,
-    services: { ...host.services, notesPage: notesPort },
-  }), [host, notesPort])
+    services: { ...host.services, notesPage: notesPort, clipboardPage: clipboardPort },
+  }), [host, notesPort, clipboardPort])
   // Shared application navigation owns the same-route refresh lifecycle,
   // Server-admin gate and disposable foreground priority for every Host.
   // DSM contributes only authenticated domain ports, never page-specific JSX.
@@ -379,6 +428,7 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
         sections: xDriveWorkspaceHostSections({
           adminRoleVerified: host.adminRoleVerified === true,
           showNotes: Boolean(notesPort),
+          showClipboard: Boolean(clipboardPort),
         }),
       }}
       onNavigate={(key) => {

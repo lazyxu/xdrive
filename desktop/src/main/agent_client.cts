@@ -14,6 +14,20 @@ export type AgentHello = {
   capabilities: string[]
 }
 
+export type AgentClipboardVault = {
+  owner_id: number; salt: string; kdf: string; iterations: number
+  check_nonce: string; check_ciphertext: string; aad_scope: string
+}
+export type AgentClipboardCheck = { nonce: string; ciphertext: string; scope: string }
+export type AgentClipboardWrite = {
+  client_event_id: string; kind: 'text/plain' | 'text/uri-list'
+  nonce: string; ciphertext: string
+}
+export type AgentClipboardItem = AgentClipboardWrite & {
+  id: number; created_at: string; expires_at: string
+}
+export type AgentClipboardPage = { items: AgentClipboardItem[]; next_before: number | null }
+
 export type AgentNotesSource = 'mine' | 'ios_notes'
 export type AgentNotesNamespace = {
   system_node_id: number
@@ -5008,6 +5022,30 @@ export class AgentIPCClient {
   cloudShares(nodeID: number) {
     const query = new URLSearchParams({ node_id: String(nodeID) })
     return this.request<AgentCloudShare[]>('GET', `/v1/cloud/shares?${query.toString()}`)
+  }
+
+  cloudClipboardVault() {
+    return this.request<AgentClipboardVault>('GET', '/v1/cloud/clipboard/vault')
+  }
+  cloudClipboardCheck(value: AgentClipboardCheck) {
+    return this.request<AgentClipboardVault>('PUT', '/v1/cloud/clipboard/check',
+      value, 30_000, undefined, false)
+  }
+  cloudClipboardList(before = 0) {
+    const query = before > 0 ? '?before=' + encodeURIComponent(String(before)) : ''
+    return this.request<AgentClipboardPage>('GET', '/v1/cloud/clipboard/items' + query)
+  }
+  cloudClipboardCreate(value: AgentClipboardWrite) {
+    return this.request<AgentClipboardItem>('POST', '/v1/cloud/clipboard/items',
+      value, 30_000, undefined, false)
+  }
+  cloudClipboardDelete(id: number) {
+    return this.request<void>('DELETE', '/v1/cloud/clipboard/items/' +
+      encodeURIComponent(String(id)), undefined, 30_000, undefined, false)
+  }
+  cloudClipboardClear() {
+    return this.request<void>('DELETE', '/v1/cloud/clipboard/items',
+      undefined, 30_000, undefined, false)
   }
 
   cloudNotesInitialize() {

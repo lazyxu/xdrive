@@ -25,6 +25,7 @@ struct XDriveIOSApp: App {
 private struct XDriveIOSNativeStartupRoot: View {
     let interruptedStage: XDriveIOSNativeLaunchCheckpoint.Phase?
     @State private var normalStartup: Bool
+    @State private var safeStartup = false
 
     init(interruptedStage: XDriveIOSNativeLaunchCheckpoint.Phase?) {
         self.interruptedStage = interruptedStage
@@ -34,7 +35,7 @@ private struct XDriveIOSNativeStartupRoot: View {
     var body: some View {
         Group {
             if normalStartup {
-                XDriveIOSNativeOwnerLoginScreen()
+                XDriveIOSNativeOwnerLoginScreen(safeStartup: safeStartup)
             } else {
                 NavigationStack {
                     VStack(alignment: .leading, spacing: 18) {
@@ -46,13 +47,24 @@ private struct XDriveIOSNativeStartupRoot: View {
                             .font(.footnote.monospaced())
                             .textSelection(.enabled)
                             .accessibilityIdentifier("native-ios-startup-phase")
-                        Button("尝试重新启动原生客户端") {
+                        Button("安全进入（不自动登录和备份）") {
+                            // A broken saved-session restore or PhotoKit startup
+                            // must not trap the user in the same crash loop.
+                            // Keep all credentials, local originals and receipts.
                             XDriveIOSNativeLaunchCheckpoint.mark(.initializing)
+                            safeStartup = true
                             normalStartup = true
                         }
                         .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("native-ios-startup-safe-entry")
+                        Button("尝试完整重新启动原生客户端") {
+                            XDriveIOSNativeLaunchCheckpoint.mark(.initializing)
+                            safeStartup = false
+                            normalStartup = true
+                        }
+                        .buttonStyle(.bordered)
                         .accessibilityIdentifier("native-ios-startup-retry")
-                        Text("若再次退出，请提供 iPhone 分析数据中 xDrive 的 .ips 崩溃报告。编译通过不代表已在真机完成启动验证。")
+                        Text("安全进入只跳过本次自动会话恢复、旧凭据清理和前台自动备份，不删除已保存的登录资料或备份收据。若再次退出，请提供 iPhone 分析数据中 xDrive 的 .ips 报告。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                         Spacer()

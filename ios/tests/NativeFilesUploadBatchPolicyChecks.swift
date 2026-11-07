@@ -65,8 +65,25 @@ struct NativeFilesUploadBatchPolicyChecks {
               "acknowledged overrun rejected")
         check(P.confirmedProgressPercent(bytes: 0, totalBytes: 0) == nil,
               "no percentage for empty original")
-        check(P.confirmedProgressPercent(bytes: 1, totalBytes: gib + 1) == nil,
-              "must satisfy 1 GiB native bound")
+        check(P.confirmedProgressPercent(bytes: 1, totalBytes: gib + 1) == 0,
+              "confirmed percentage supports directly streamed originals over 1 GiB")
+        check(P.confirmedProgressPercent(bytes: 1,
+                    totalBytes: P.maximumDirectProviderBytes + 1) == nil,
+              "no unbounded progress denominators")
+        check(P.maximumDirectProviderBytes == 8 * gib,
+              "bounded direct-provider source is eight GiB")
+        check(P.mayReadDirectly(bytes: gib + 1, securityScopeStarted: true),
+              "direct scoped provider read over copy cap")
+        check(P.mayReadDirectly(bytes: 1, securityScopeStarted: true),
+              "low-storage fallback can avoid a second private copy")
+        check(P.mayReadDirectly(bytes: 8 * gib, securityScopeStarted: true),
+              "direct read upper boundary")
+        check(!P.mayReadDirectly(bytes: 8 * gib + 1, securityScopeStarted: true),
+              "direct read overflow rejected")
+        check(!P.mayReadDirectly(bytes: 1, securityScopeStarted: false),
+              "unscoped Files provider may not bypass private staging")
+        check(!P.mayReadDirectly(bytes: 0, securityScopeStarted: true),
+              "zero-byte direct import is not accepted")
         check(P.confirmedProgressPercent(bytes: gib, totalBytes: gib) == 99,
               "1 GiB completed chunks still provisional")
 

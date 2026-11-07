@@ -10,7 +10,7 @@ const dash = read('ios/XDriveIOS/NativePhotosDashboard.swift');
 
 test('verified native Owner is a root state, not an extra push or confirmation page', () => {
   assert.match(login, /if !restoreFinished/);
-  assert.match(login, /await model\.restore\(\)\s*restoreFinished = true/);
+  assert.match(login, /if !safeStartup \{[\s\S]*?await model\.restore\(\)[\s\S]*?guard !Task\.isCancelled else \{ return \}[\s\S]*?mark\(\.mountingWorkspace\)[\s\S]*?restoreFinished = true/);
   assert.match(login, /else if model\.owner != nil\s*\{[\s\S]*?XDriveIOSNativePhotosDashboard\(/);
   assert.match(login, /else \{\s*NavigationStack \{\s*ScrollView \{/);
   assert.doesNotMatch(login, /showingNativeWorkspace|verifiedAccount\(|navigationDestination\(|已验证的原生账户|native-ios-photos-open/);

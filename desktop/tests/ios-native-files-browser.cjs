@@ -15,7 +15,7 @@ const management = read('ios/XDriveIOS/NativeFilesManagementPanel.swift');
 test('native Files replaces its fixed-tab placeholder without returning to WebView', () => {
   assert.match(dashboard, /private var files: some View \{\s*XDriveIOSNativeFilesBrowser\(login: login\)/);
   assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.files\)/);
-  assert.match(dashboard, /case \.local, \.albums, \.cloud, \.originals, \.map, \.files, \.notes, \.backup: return true/);
+  assert.match(dashboard, /case \.local, \.albums, \.cloud, \.originals, \.map, \.files, \.notes, \.clipboard, \.backup: return true/);
   assert.doesNotMatch(view, /import WebKit|WKWebView\s*\(|document\.cookie|evaluateJavaScript\s*\(/);
   assert.match(view, /NavigationLink\(value: XDriveIOSNativeFilesFolder/);
   assert.match(view, /\.navigationDestination\(for: XDriveIOSNativeFilesFolder\.self\)/);
@@ -235,3 +235,31 @@ test('native Files search matches PWA source and tag filters, including filter-o
   assert.match(web, /useXDriveFileExplorerOwnerSourceOptions/);
   assert.match(web, /tagOptions=\{organization\.tagOptions\}/);
 });
+
+test('native Files child navigation retains verified source/tag filters without re-fetch flash', () => {
+  const start = view.indexOf('private final class XDriveIOSNativeFilesSearchOptionsModel');
+  const end = view.indexOf('private struct XDriveIOSNativeFilesBatchDestinationIntent');
+  assert.ok(start >= 0 && end > start);
+  const filterModel = view.slice(start, end);
+  const suspension = filterModel.slice(
+    filterModel.indexOf('func suspendForNavigation()'),
+    filterModel.indexOf('func belongs(to owner:')
+  );
+  assert.match(suspension, /epoch = UUID\(\)/);
+  assert.match(suspension, /job\?\.cancel\(\)/);
+  assert.doesNotMatch(suspension, /sources = \[\]|tags = \[\]|loadedOwner = nil|verified = false/);
+  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}\s*\.onDisappear \{\s*(?:chunked\.invalidate\(\)\s*)?searchOptions\.suspendForNavigation\(\)/);
+  // A genuine Owner/root change still clears options, and the visible filter
+  // list checks the exact Owner before rendering cached suggestions.
+  assert.match(filterModel, /func invalidate\(\) \{[\s\S]*?loadedOwner = nil[\s\S]*?sources = \[\][\s\S]*?tags = \[\]/);
+  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?searchOptions\.invalidate\(\)/);
+  assert.match(view, /searchOptions\.matches\(login\.owner\)/);
+})
+
+test('Files Home Favorites cache call must pass explicit projection kind to compile', () => {
+  const collectionModel = read('ios/XDriveIOS/NativeFilesCollections.swift')
+  assert.match(collectionModel, /func matches\(_ owner: XDriveNativeOwnerRoot\?,\s*kind: XDriveIOSNativeFilesCollectionKind\) -> Bool/)
+  assert.match(view, /favoriteShortcuts\.matches\(login\.owner, kind: \.favorites\)/)
+  assert.match(view, /guard isHome, favoriteShortcuts\.verified,\s*favoriteShortcuts\.matches\(login\.owner, kind: \.favorites\)/)
+  assert.doesNotMatch(view, /favoriteShortcuts\.matches\(login\.owner\)/)
+})

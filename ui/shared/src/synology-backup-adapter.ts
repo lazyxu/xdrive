@@ -559,6 +559,25 @@ export type XDriveSynologyNotesImageReceipt = {
 }
 
 export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommonBatchActions, XDriveLocalBackupScheduleActions {
+  clipboardAvailable(signal?: AbortSignal): Promise<boolean>
+  clipboardVault(signal?: AbortSignal): Promise<{
+    owner_id: number; salt: string; kdf: string; iterations: number;
+    check_nonce: string; check_ciphertext: string; aad_scope: string
+  }>
+  clipboardCheck(ownerScope: string, value: { nonce: string; ciphertext: string; scope: string },
+    signal?: AbortSignal): Promise<{
+    owner_id: number; salt: string; kdf: string; iterations: number;
+    check_nonce: string; check_ciphertext: string; aad_scope: string
+  }>
+  clipboardList(before?: number, signal?: AbortSignal): Promise<{
+    items: import('./mui/ClipboardPage').XDriveClipboardItem[]; next_before: number | null
+  }>
+  clipboardCreate(ownerScope: string, item: {
+    client_event_id: string; kind: 'text/plain' | 'text/uri-list'
+    nonce: string; ciphertext: string
+  }, signal?: AbortSignal): Promise<import('./mui/ClipboardPage').XDriveClipboardItem>
+  clipboardDelete(ownerScope: string, id: number, signal?: AbortSignal): Promise<void>
+  clipboardClear(ownerScope: string, signal?: AbortSignal): Promise<void>
   /** Same-origin, Server Owner-scoped Notes only. No generic Agent proxy. */
   notesAvailable(signal?: AbortSignal): Promise<boolean>
   notesImagesAvailable(signal?: AbortSignal): Promise<boolean>
@@ -776,7 +795,10 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
        'cloud-gallery-place-items', 'cloud-gallery-map-overview',
        'cloud-live-motion', 'nas-shares',
        'local-source', 'local-source-rename', 'local-target', 'local-mode', 'local-rules', 'local-bound-remove',
-       'cloud-notes-capability', 'cloud-notes-namespace', 'cloud-notes-list', 'cloud-notes-read', 'cloud-notes-create',
+       'cloud-clipboard-capability', 'cloud-clipboard-vault', 'cloud-clipboard-check',
+        'cloud-clipboard-list', 'cloud-clipboard-create', 'cloud-clipboard-delete',
+        'cloud-clipboard-clear',
+        'cloud-notes-capability', 'cloud-notes-namespace', 'cloud-notes-list', 'cloud-notes-read', 'cloud-notes-create',
        'cloud-notes-import-ios', 'cloud-notes-save', 'cloud-notes-delete', 'cloud-notes-versions', 'cloud-notes-history',
        'cloud-notes-image-capability', 'cloud-notes-image-upload', 'cloud-notes-image-import', 'cloud-notes-image-read',
       'nas-share-preflight', 'nas-share-create', 'nas-draft-bind', 'nas-drafts', 'server-connection', 'server-login',
@@ -877,6 +899,44 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
   }
   const notesImageMaxBytes = 20 * 1_048_576
   const api: XDriveSynologyBackupLocalClient = {
+    async clipboardAvailable(signal) {
+      const result = await request<{ available: boolean }>('/v1/cloud-clipboard-capability',
+        'GET', undefined, signal)
+      return result.available === true
+    },
+    clipboardVault(signal) {
+      return request('/v1/cloud-clipboard-vault', 'GET', undefined, signal)
+    },
+    clipboardCheck(ownerScope, value, signal) {
+      return request('/v1/cloud-clipboard-check', 'POST',
+        { ...value, owner_scope: notesOwnerScope(ownerScope) }, signal)
+    },
+    clipboardList(before, signal) {
+      if (before !== undefined && (!Number.isSafeInteger(before) || before <= 0)) {
+        throw new Error('无效的剪贴板历史游标')
+      }
+      const query = before ? '?before=' + encodeURIComponent(String(before)) : ''
+      return request('/v1/cloud-clipboard-list' + query, 'GET', undefined, signal)
+    },
+    clipboardCreate(ownerScope, item, signal) {
+      if (new TextEncoder().encode(item.ciphertext).length > 90000 ||
+          (item.kind !== 'text/plain' && item.kind !== 'text/uri-list')) {
+        throw new Error('无效的剪贴板密文')
+      }
+      return request('/v1/cloud-clipboard-create', 'POST',
+        { ...item, owner_scope: notesOwnerScope(ownerScope) }, signal)
+    },
+    async clipboardDelete(ownerScope, id, signal) {
+      if (!Number.isSafeInteger(id) || id <= 0) throw new Error('无效的剪贴板条目')
+      const response = await request<{ deleted: boolean }>('/v1/cloud-clipboard-delete',
+        'POST', { id, owner_scope: notesOwnerScope(ownerScope) }, signal)
+      if (response.deleted !== true) throw new Error('剪贴板删除回执未确认')
+    },
+    async clipboardClear(ownerScope, signal) {
+      const response = await request<{ cleared: boolean }>('/v1/cloud-clipboard-clear',
+        'POST', { owner_scope: notesOwnerScope(ownerScope) }, signal)
+      if (response.cleared !== true) throw new Error('剪贴板清空回执未确认')
+    },
     async notesAvailable(signal) {
       const value = await request<{ available: boolean }>(
         '/v1/cloud-notes-capability', 'GET', undefined, signal)

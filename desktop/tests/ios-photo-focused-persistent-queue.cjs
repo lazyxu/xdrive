@@ -69,3 +69,19 @@ test('Focused retains the existing bounded original writer, receipt and cursor s
   assert.match(runner, /case \.requiresReview:/)
   assert.doesNotMatch(prepare, /XDriveNativeUploadSessionTransport|URLSession\(/)
 })
+
+
+test('Focused accepts a genuine twenty-item priority queue before positional scanning without bypassing review', () => {
+  const policy = read('ios/XDriveIOS/PhotoFocusedBackupPolicy.swift')
+  const checks = read('ios/tests/PhotoFocusedBackupPolicyChecks.swift')
+  assert.match(policy, /queuedUploaded >= 0, queuedUploaded <= uploaded/)
+  assert.match(policy, /uploaded - queuedUploaded <= scanned/)
+  assert.match(policy, /uploaded <= XDriveIOSPhotoAutoSchedulePolicy\.maxNewFiles/)
+  assert.match(focused, /XDriveIOSPhotoFocusedBackupPolicy\.afterWindow\([\s\S]*?queuedUploaded: result\.changeQueueUploaded/)
+  assert.match(runner, /var changeQueueUploaded = 0/)
+  assert.match(runner, /report\.changeQueueUploaded \+= 1/)
+  assert.match(checks, /scanned: 0, uploaded: 20,[\s\S]*?needsReview: false, queuedUploaded: 20/)
+  assert.match(checks, /scanned: 0, uploaded: 20,[\s\S]*?needsReview: false, queuedUploaded: 19/)
+  assert.match(checks, /index: 2, visibleTotal: 513, scanned: 1, uploaded: 20/)
+  assert.doesNotMatch(policy, /UploadSession|URLSession|Server\.shared/)
+})

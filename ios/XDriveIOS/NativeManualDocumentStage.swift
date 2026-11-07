@@ -5,24 +5,32 @@ enum XDriveManualDocumentStageError: Error {
     case tooLarge
     case insufficientDiskSpace
     case invalidName
+    case directProviderUnavailable
 }
 
-/// Private, one-shot copy of a Files-provider URL. No PhotoKit identity is
-/// inferred and the original provider document is never modified or deleted.
+/// One foreground original: normally a one-shot private copy, or a
+/// security-scoped provider URL held open when local duplication is not
+/// affordable. No PhotoKit identity is inferred. The original source is
+/// never modified or removed; cleanup releases only our own resources.
 struct XDriveStagedManualDocument {
     let fileURL: URL
-    let directoryURL: URL
+    let directoryURL: URL?
+    let retainedSecurityScopeURL: URL?
     let originalName: String
     let byteCount: Int64
 
+    var isDirectProviderRead: Bool { retainedSecurityScopeURL != nil }
+
     func delete() {
-        try? FileManager.default.removeItem(at: directoryURL)
+        if let directoryURL { try? FileManager.default.removeItem(at: directoryURL) }
+        retainedSecurityScopeURL?.stopAccessingSecurityScopedResource()
     }
 }
 
 enum XDriveManualDocumentStager {
     // Foreground-only, one complete private staging copy at a time.
-    // A durable resumable/background transfer is a separate later feature.
+    // A direct provider read is transient, scoped and still uses the same
+    // checked UploadSession/hash/chunk/finalize writer. No background replay.
     static let maxFirstFileBytes: Int64 = XDriveIOSNativeFilesUploadBatchPolicy.maximumStagedFileBytes
 
     static func stage(_ pickedURL: URL) async throws -> XDriveStagedManualDocument {
@@ -34,8 +42,11 @@ enum XDriveManualDocumentStager {
             guard validFilename(name) else { throw XDriveManualDocumentStageError.invalidName }
 
             let securityScopeStarted = pickedURL.startAccessingSecurityScopedResource()
+            var retainScopeUntilUploadCompletes = false
             defer {
-                if securityScopeStarted { pickedURL.stopAccessingSecurityScopedResource() }
+                if securityScopeStarted && !retainScopeUntilUploadCompletes {
+                    pickedURL.stopAccessingSecurityScopedResource()
+                }
             }
 
             let fm = FileManager.default
@@ -45,20 +56,39 @@ enum XDriveManualDocumentStager {
                   originalSize.int64Value >= 0 else {
                 throw XDriveManualDocumentStageError.notAnAccessibleFile
             }
-            guard originalSize.int64Value <= maxFirstFileBytes else {
-                throw XDriveManualDocumentStageError.tooLarge
-            }
-            // The File Provider may live on another filesystem and APFS copy
-            // may allocate the full size. Reject before making an incomplete
-            // temporary original, leaving a fixed free-space reserve.
+            let byteCount = originalSize.int64Value
+            guard byteCount <= XDriveIOSNativeFilesUploadBatchPolicy.maximumDirectProviderBytes
+            else { throw XDriveManualDocumentStageError.tooLarge }
+
+            // A provider may reside on another filesystem. A private copy
+            // can consume the full original size; use one only after a disk
+            // preflight. Otherwise, directly read the picker-granted URL,
+            // retaining its security scope throughout hashing and uploading.
             let filesystem = try? fm.attributesOfFileSystem(
                 forPath: fm.temporaryDirectory.path
             )
             let freeBytes = (filesystem?[.systemFreeSize] as? NSNumber)?.int64Value
-            guard XDriveIOSNativeFilesUploadBatchPolicy.mayStage(
+            if !XDriveIOSNativeFilesUploadBatchPolicy.mayStage(
                 bytes: originalSize.int64Value, freeDiskBytes: freeBytes
-            ) else {
-                throw XDriveManualDocumentStageError.insufficientDiskSpace
+            ) {
+                guard XDriveIOSNativeFilesUploadBatchPolicy.mayReadDirectly(
+                    bytes: byteCount, securityScopeStarted: securityScopeStarted
+                ) else {
+                    if byteCount > maxFirstFileBytes {
+                        throw XDriveManualDocumentStageError.directProviderUnavailable
+                    }
+                    throw XDriveManualDocumentStageError.insufficientDiskSpace
+                }
+                // Do not leak access or treat a failed preflight as permission
+                // to send a POST. The same writer verifies original size,
+                // full SHA-256, every 8 MiB chunk and its final receipt.
+                try Task.checkCancellation()
+                retainScopeUntilUploadCompletes = true
+                return XDriveStagedManualDocument(
+                    fileURL: pickedURL, directoryURL: nil,
+                    retainedSecurityScopeURL: pickedURL,
+                    originalName: name, byteCount: byteCount
+                )
             }
             try Task.checkCancellation()
 
@@ -88,7 +118,7 @@ enum XDriveManualDocumentStager {
                 }
                 return XDriveStagedManualDocument(
                     fileURL: target,
-                    directoryURL: folder,
+                    directoryURL: folder, retainedSecurityScopeURL: nil,
                     originalName: name,
                     byteCount: copiedSize.int64Value
                 )
