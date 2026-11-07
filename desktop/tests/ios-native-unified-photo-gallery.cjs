@@ -118,7 +118,7 @@ test('unified Gallery uses the canonical adaptive photo grid and bounded density
   // page identity, thumbnail admission or the exact Viewer return anchor.
   assert.match(wall, /@State private var retry = UUID\(\)/)
   assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
-  assert.match(wall, /\.onDisappear \{\s*visible = false\s*if !retainWhileCovered \{\s*acceptedGeneration = nil\s*model\.reset\(\)/)
+  assert.match(wall, /\.onDisappear \{\s*visible = false\s*if !retainWhileCovered \{\s*acceptedGeneration = nil[\s\S]*?queueBadges = \[:\][\s\S]*?model\.reset\(\)/)
   assert.match(ui, /scroll\.scrollTo\(anchor, anchor: \.center\)/)
   assert.doesNotMatch(ui, /\.onChange\(of: wallDensity\)[\s\S]*?wall\.reset\(\)/)
 })
