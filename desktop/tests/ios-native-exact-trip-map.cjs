@@ -115,12 +115,12 @@ test('trip MapKit covers require exact place page, three concurrent reads and 40
 
 test('bounded dateline camera has executable Foundation policy in IPA workflow', () => {
   assert.match(camera, /points\.count <= XDriveIOSNativeOwnerMapOverviewPolicy\.maximumCells/)
-  assert.match(camera, /let smallestSpan = max\\(0, 360 - largestGap\\)/)
-  assert.match(camera, /if gap > largestGap \\{/)
+  assert.match(camera, /let smallestSpan = max\(0, 360 - largestGap\)/)
+  assert.match(camera, /if gap > largestGap \{/)
   assert.doesNotMatch(camera, /let wrappedSpan = shiftedMax - shiftedMin/)
-  assert.match(camera, /latitudeSpan: min\\(180, max\\(0\\.06, /)
-  assert.match(cameraChecks, /let multiContinent = \\[/)
-  assert.match(cameraChecks, /let polar = Policy\\.fit\\(\\[/)
+  assert.match(camera, /latitudeSpan: min\(180, max\(0\.06, /)
+  assert.match(cameraChecks, /let multiContinent = \[/)
+  assert.match(cameraChecks, /let polar = Policy\.fit\(\[/)
   assert.match(camera, /longitudeSpan: min\(359, max\(0\.06, smallestSpan \* 1\.25\)\)/)
   assert.match(cameraChecks, /Point\(latitude: 10, longitude: 179\.8\)/)
   assert.match(cameraChecks, /Point\(latitude: 10, longitude: -179\.8\)/)
