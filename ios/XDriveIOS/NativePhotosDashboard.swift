@@ -566,7 +566,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         Button("集中备份（需确认）") { openBackup(.focused) }
         Button("备份设置") { openBackup(.settings) }
         Button("逐项核验当前云端原件") { openBackup(.audit) }
-        Button("管理缩略图缓存") { showThumbnailCacheFromBackup = true }
+        Button("释放本机缓存空间（不删除照片原件）") { showThumbnailCacheFromBackup = true }
     }
 
     private func openBackup(_ action: XDriveIOSNativePhotoBackupLaunch) {
