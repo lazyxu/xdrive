@@ -78,7 +78,7 @@ test('thumbnail cache isolates Owner and revision and fences in-flight writes af
 test('continuous unified wall releases offscreen rows and viewer crosses mixed pages', () => {
   const wall = read('NativeUnifiedPhotoWall')
   const viewer = read('NativeUnifiedPhotoViewer')
-  assert.match(wall, /onDisappear \{ visible = false; model\.reset\(\) \}/)
+  assert.match(wall, /\.onDisappear \{\s*visible = false\s*if !retainWhileCovered \{\s*acceptedGeneration = nil\s*model\.reset\(\)/)
   assert.match(wall, /wall\.generation == ticket/)
   assert.match(wall, /index\.commit\(page: page, count: model\.rows\.count, next: model\.next\)/)
   assert.match(viewer, /while wall\.index\.pages\.indices\.contains\(number\)/)
@@ -118,7 +118,7 @@ test('unified Gallery uses the canonical adaptive photo grid and bounded density
   // page identity, thumbnail admission or the exact Viewer return anchor.
   assert.match(wall, /@State private var retry = UUID\(\)/)
   assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
-  assert.match(wall, /\.onDisappear \{ visible = false; model\.reset\(\) \}/)
+  assert.match(wall, /\.onDisappear \{\s*visible = false\s*if !retainWhileCovered \{\s*acceptedGeneration = nil\s*model\.reset\(\)/)
   assert.match(ui, /scroll\.scrollTo\(anchor, anchor: \.center\)/)
   assert.doesNotMatch(ui, /\.onChange\(of: wallDensity\)[\s\S]*?wall\.reset\(\)/)
 })
@@ -158,7 +158,7 @@ test('iOS cloud-first Gallery never starts original-byte scans on view, refresh 
   assert.match(ui, /guard explicitOriginalAudit, phase == \.active, selected == nil else \{ return \}/)
   assert.match(ui, /Button\("手动核对所有本机原件（耗时）"\)/)
   assert.match(ui, /if indexRequest == request \{ explicitOriginalAudit = false \}/)
-  assert.match(ui, /if selected == nil \{[\s\S]*?explicitOriginalAudit = false[\s\S]*?indexRequest = UUID\(\)/)
+  assert.match(ui, /\.onDisappear \{\s*photoObserver\.stop\(\)[\s\S]*?explicitOriginalAudit = false\s*indexRequest = UUID\(\)/)
   assert.match(ui, /\.onChange\(of: selected\?\.id\) \{ _ in[\s\S]*?explicitOriginalAudit = false/)
   assert.match(ui, /\.refreshable \{ reset\(\) \}/)
   assert.doesNotMatch(ui, /\.refreshable \{ reset\(retryUnavailable: true\) \}/)

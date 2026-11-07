@@ -26,7 +26,7 @@ assert.match(album, /onCrossedPage: \{ next, verifiedPage in/);
 assert.match(album, /onViewed: \{ next in[\s\S]*?viewerReturnID = next\.id/);
 assert.match(album, /XDriveLocalPhotoAlbumPager\.readPage\(\s*offset: requestedOffset/);
 assert.match(album, /PHPhotoLibraryChangeObserver/);
-assert.match(album, /isVisible = true\s*libraryMonitor\.start\(\)\s*reload\(\)/);
+assert.match(album, /isVisible = true\s*libraryMonitor\.start\(\)\s*if !currentPage \{ reload\(\) \}/);
 assert.ok(album.includes('libraryMonitor.stop()'));
 assert.ok(album.includes('suspendForNavigation()'));
 assert.match(album, /XDriveIOSPhotoImageLoader/);

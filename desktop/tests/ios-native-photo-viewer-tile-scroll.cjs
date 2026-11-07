@@ -145,10 +145,10 @@ test('PhotoKit album L3 Viewer navigates only a verified 64-item page at a time 
   assert.match(contents, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
   assert.match(contents, /viewerPage\?\.items\.contains\(where: \{[\s\S]*?\$0\.id == next\.id[\s\S]*?\$0\.kind == next\.kind[\s\S]*?\$0\.isLive == next\.isLive[\s\S]*?\$0\.capturedAt == next\.capturedAt[\s\S]*?\$0\.modifiedAt == next\.modifiedAt/)
   assert.match(contents, /viewerReturnID = next\.id\s+accessibilityFocusedTileID = nil/)
-  assert.match(contents, /private func restoreAfterViewer\(\)[\s\S]*?if phase == \.active \{\s*reload\(\)\s*if let jump = pendingAlbumMapJump \{[\s\S]*?pendingAlbumMapJump = nil[\s\S]*?albumMapJump = jump[\s\S]*?showingAlbumMap = true/)
+  assert.match(contents, /private func restoreAfterViewer\(\)[\s\S]*?if phase == \.active \{\s*if sameVerifiedPage \{\s*pageRenderRevision &\+= 1\s*\} else \{\s*reload\(\)\s*\}\s*if let jump = pendingAlbumMapJump \{[\s\S]*?pendingAlbumMapJump = nil[\s\S]*?albumMapJump = jump[\s\S]*?showingAlbumMap = true/)
   assert.match(contents, /\} else \{\s*pendingAlbumMapJump = nil[\s\S]*?clearViewerTileAnchor\(\)\s*invalidate\(\)/)
   assert.match(contents, /private func restoreViewerTile\(using scroll: ScrollViewProxy\)[\s\S]*?XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
   assert.match(contents, /onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?clearViewerTileAnchor\(\)[\s\S]*?invalidate\(\)/)
-  assert.match(contents, /if selected != nil \{ suspendForViewer\(\) \}/)
+  assert.match(contents, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
   assert.doesNotMatch(contents, /UserDefaults|@AppStorage|CloudKit|UploadSession|isNetworkAccessAllowed = true/)
 });

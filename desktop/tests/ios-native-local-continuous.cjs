@@ -28,7 +28,7 @@ test('local PhotoKit Gallery always mounts continuous lazy virtual pages without
   assert.match(source, /let count = try await reader\.start\(atOffset: offset, mediaFilter: mediaFilter\)/)
   assert.match(source, /loaded\.startOffset == offset/)
   assert.match(source, /count == expectedTotal/)
-  assert.match(source, /\.onDisappear \{\s*page = nil/)
+  assert.match(source, /\.onDisappear \{\s*if !retainWhileCovered \{\s*page = nil/)
   assert.doesNotMatch(source, /\[PHAsset\]|\[String: PHAsset\]|fetchAssets\(withLocalIdentifiers: \w+\.map/)
   assert.match(policy, /static let pageSize = 64/)
 })
