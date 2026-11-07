@@ -217,7 +217,15 @@ func (s *Server) streamClipboardEvents(c *gin.Context) {
     c.Header("Cache-Control", "no-store")
     c.Header("X-Accel-Buffering", "no")
     uid := userID(c)
-    if uid == 0 { c.AbortWithStatus(http.StatusUnauthorized); return }
+    opening, admitted := currentUser(c)
+    if uid == 0 || !admitted {
+        c.AbortWithStatus(http.StatusUnauthorized)
+        return
+    }
+    // Only notify while the EXACT authenticated session remains live.
+    // The stream has a 20-second lifetime, but account disable, password
+    // reset or session-version revocation must stop the old Owner's events
+    // at the next batch/tick, not wait for a reconnect.
     after := uint64(0)
     raw := c.Query("after")
     if raw == "" { raw = c.GetHeader("Last-Event-ID") }
@@ -236,6 +244,15 @@ func (s *Server) streamClipboardEvents(c *gin.Context) {
     deadline := time.NewTimer(20 * time.Second)
     defer deadline.Stop()
     for {
+        var current meta.User
+        if err := s.DB.WithContext(c.Request.Context()).
+            Select("session_version", "disabled_at", "must_change_password").
+            Where("id = ?", uid).Take(&current).Error; err != nil ||
+            current.DisabledAt != nil ||
+            current.MustChangePassword ||
+            current.SessionVersion != opening.SessionVersion {
+            return
+        }
         var ids []uint64
         err := s.DB.WithContext(c.Request.Context()).Model(&meta.ClipboardChange{}).
             Where("owner_id = ? AND id > ?", uid, after).
