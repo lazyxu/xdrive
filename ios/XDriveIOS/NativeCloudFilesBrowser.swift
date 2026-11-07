@@ -2630,7 +2630,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             // SwiftUI NavigationLinks and scroll position. Do not refetch on
             // every stack pop; explicit refresh and Owner change still do.
             if isHome {
-                if !favoriteShortcuts.matches(login.owner) ||
+                if !favoriteShortcuts.matches(login.owner, kind: .favorites) ||
                     !quickAccess.matches(login.owner) {
                     reload()
                 } else {
