@@ -246,7 +246,7 @@ const scenarios = [
     "checks": [
       {
         "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)",
+        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)",
         "flags": ""
       }
     ]
@@ -396,7 +396,7 @@ const scenarios = [
     "checks": [
       {
         "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)\\s*\\} else \\{[\\s\\S]*?loadFavoriteShortcuts\\(\\)",
+        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)\\s*\\} else \\{[\\s\\S]*?loadFavoriteShortcuts\\(\\)",
         "flags": ""
       }
     ]
@@ -421,7 +421,7 @@ const scenarios = [
       },
       {
         "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\)",
+        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\)",
         "flags": ""
       }
     ]
