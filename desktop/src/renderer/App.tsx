@@ -490,6 +490,20 @@ export default function App({
           sync_mode: 'backup', run_mode: 'sync', schedule_type: 'manual',
           target_node_id: targetNodeID, ignore_rules: '',
         })
+        // The Server must allocate an exclusive managed target. A legacy
+        // Agent/Server may accept the POST but return an ordinary or unbound
+        // Source; never open the native Root picker for that acknowledgement.
+        if (!Number.isSafeInteger(created.id) || created.id <= 0 ||
+          !Number.isSafeInteger(created.revision) || created.revision <= 0 ||
+          created.name !== name || created.kind !== 'local_folder' ||
+          created.direction !== 'push' || created.sync_mode !== 'backup' ||
+          created.run_mode !== 'sync' || created.status !== 'paused' ||
+          created.target_managed !== true ||
+          !Number.isSafeInteger(created.target_node_id) || !created.target_node_id ||
+          !created.target_path?.trim()) {
+          throw new Error('Server 未确认本机备份来源的设备绑定及专属云端目录；已停止目录授权。' +
+            '请求可能已创建暂停草稿，请先刷新「本机待完成授权」并恢复，而不要重复创建。')
+        }
         return { id: created.id, revision: created.revision }
       },
       authorize: (sourceID: number) => sourceManagerAdapter.authorizeLocalFolder!(sourceID),

@@ -17,7 +17,13 @@ export interface XDriveLocalBackupCreateActions {
 type LocalDraft = { id: number; revision: number }
 
 function safeMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
+  const message = error instanceof Error ? error.message : String(error)
+  if (/valid source configuration is required/i.test(message)) {
+    return 'Server 拒绝当前本机 Push 来源配置。这通常说明 Server 与 Desktop/Agent 的来源创建协议不兼容，' +
+      '请核对并同步更新支持 Server 自动创建受管目标的版本；不能通过手选普通云端目录绕过。' +
+      '若请求结果不明确，请先刷新「本机待完成授权」检查是否已有草稿。原始错误：' + message
+  }
+  return message
 }
 
 export function XDriveDeviceBackupLocalCreateDialog({
@@ -137,7 +143,7 @@ export function XDriveDeviceBackupLocalCreateDialog({
             fullWidth size="small"
           />
           <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-            云端自动创建：同步文件夹 / 设备备份 / 当前设备 / {normalizedName || '来源名称'}
+            云端目标由 Server 根据已验证的设备与 Source 自动创建；实际目录路径以 Server 返回的受管目标为准。
           </Typography>
           {draft ? (
             <Alert severity="warning">

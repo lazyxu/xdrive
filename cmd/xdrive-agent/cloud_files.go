@@ -3799,6 +3799,12 @@ func (c *agentController) CloudCreateSource(ctx context.Context, input client.Cr
 	}
 	created, err := cli.CreateLocalSource(ctx, input, deviceID, token)
 	if err != nil {
+		return client.Source{}, explainLocalBackupCreateError(err)
+	}
+	// Creation alone must never authorize a local Root. Verify that the
+	// Server returned the same paused Source, authenticated device and
+	// exclusive managed target before Desktop proceeds to the native picker.
+	if err := validateCreatedLocalBackupSource(created, input, deviceID); err != nil {
 		return client.Source{}, err
 	}
 	latest, err := userconfig.Load()
