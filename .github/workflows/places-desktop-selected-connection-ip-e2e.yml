@@ -1,0 +1,46 @@
+name: Places real Electron selected Agent IP domain route
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/places-desktop-selected-connection-ip-e2e.yml'
+      - 'desktop/src/main/places_guest_connection_route.cts'
+      - 'desktop/src/main/index.cts'
+      - 'desktop/scripts/places-electron-selected-connection-ip-*.cjs'
+      - 'desktop/src/main/connection_route.cts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actual-chromium-selected-ip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build real Desktop Main and test source
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb iproute2 openssl
+          npm --prefix desktop install --no-audit --no-fund
+          npm --prefix desktop run build:main
+          node --check desktop/scripts/places-electron-selected-connection-ip-main.cjs
+          node --check desktop/scripts/places-electron-selected-connection-ip-runner.cjs
+      - name: Confirm actual Chromium and WebView use only selected IP for Server origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          sudo ip addr add 10.233.15.17/32 dev lo
+          trap 'sudo ip addr del 10.233.15.17/32 dev lo || true' EXIT
+          xvfb-run -a --server-args='-screen 0 1280x800x24' \
+            node desktop/scripts/places-electron-selected-connection-ip-runner.cjs
