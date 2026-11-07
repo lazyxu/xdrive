@@ -232,24 +232,35 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
     }
 
     func reload(login: XDriveIOSNativeOwnerLoginModel, mode: Mode, filter: Filter) {
-        load(login: login, mode: mode, filter: filter, at: 0)
+        load(login: login, mode: mode, filter: filter, at: 0, clearExisting: true)
     }
 
     func next(login: XDriveIOSNativeOwnerLoginModel, mode: Mode, filter: Filter) {
         guard hasNext, !loading else { return }
         load(login: login, mode: mode, filter: filter,
-             at: offset + (mode == .changes ? Self.changePageSize : Self.libraryPageSize))
+             at: offset + (mode == .changes ? Self.changePageSize : Self.libraryPageSize),
+             clearExisting: false)
     }
 
     func previous(login: XDriveIOSNativeOwnerLoginModel, mode: Mode, filter: Filter) {
         guard offset > 0, !loading else { return }
         let size = mode == .changes ? Self.changePageSize : Self.libraryPageSize
-        load(login: login, mode: mode, filter: filter, at: max(0, offset - size))
+        load(login: login, mode: mode, filter: filter, at: max(0, offset - size), clearExisting: false)
     }
 
     private func load(login: XDriveIOSNativeOwnerLoginModel, mode: Mode,
-                      filter: Filter, at requestedOffset: Int) {
-        reset()
+                      filter: Filter, at requestedOffset: Int,
+                      clearExisting: Bool) {
+        cancel()
+        if clearExisting {
+            rows = []
+            counts = nil
+            libraryTotal = nil
+            offset = 0
+            hasNext = false
+        }
+        errorMessage = nil
+        notice = nil
         guard let owner = login.owner,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
               UIApplication.shared.applicationState == .active else {
