@@ -1137,6 +1137,7 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   startNativeDragOut: (relativePath: string) =>
     ipcRenderer.send('desktop:start-native-drag-out', relativePath),
   copyText: (text: string) => clipboard.writeText(text),
+  readClipboardText: () => clipboard.readText(),
   hide: () => ipcRenderer.send('desktop:hide'),
   quit: () => ipcRenderer.send('desktop:quit'),
   onNavigate: (callback: (view: string | { kind: 'source-run'; sourceID: number; runID: string; server: string; username: string }) => void) => {
