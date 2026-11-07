@@ -139,6 +139,39 @@ import Foundation
     precondition(p.nextDueAfterCompletedWindow(at:now,intervalMinutes:1,
       currentWindow:0,followingWindow:1,visibleTotal:10000,scanned:256,
       uploaded:0,needsReview:false,libraryUnchanged:true) == nil)
+    // Priority PhotoKit revisions are settled before the positional scan.
+    // A batch that uploads twenty queued originals without reading a slot
+    // still has genuine backlog; only a separately verified queued count
+    // authorizes the one-minute first-pass catch-up.
+    func queuedDue(_ scanned: Int, _ uploaded: Int, _ queue: Int,
+                   review: Bool = false, unchanged: Bool = true) -> Date? {
+      p.nextDueAfterCompletedWindow(
+        at: now, intervalMinutes: 60, currentWindow: 0, followingWindow: 0,
+        visibleTotal: 10000, scanned: scanned, uploaded: uploaded,
+        needsReview: review, libraryUnchanged: unchanged,
+        queuedUploaded: queue
+      )
+    }
+    precondition(queuedDue(0, 20, 20) == fast)
+    precondition(queuedDue(0, 10, 10) == normal)
+    precondition(queuedDue(0, 20, 19) == normal)
+    precondition(queuedDue(0, 20, 21) == normal)
+    precondition(queuedDue(0, 20, 20, review: true) == normal)
+    precondition(queuedDue(0, 20, 20, unchanged: false) == normal)
+    precondition(queuedDue(1, 20, 19) == fast)
+    precondition(p.nextDueAfterCompletedWindow(
+      at: now, intervalMinutes: 60, currentWindow: 0, followingWindow: 0,
+      visibleTotal: 10000, scanned: 0, uploaded: 20,
+      needsReview: false, libraryUnchanged: true
+    ) == normal)
+    // On the one-item final positional page, a different twenty-item
+    // queue may already have uploaded originals. The caller must pass
+    // windowUploaded=0, so this completed page still wraps normally.
+    precondition(p.nextWindow(
+      current: 2, visibleTotal: 513, scanned: 1,
+      uploaded: 0, needsReview: false
+    ) == 0)
+
     // A PhotoKit edit or new media wakes only a future due time. An already
     // scheduled earlier/due check is never postponed or requeued repeatedly.
     let soon = now.addingTimeInterval(5)

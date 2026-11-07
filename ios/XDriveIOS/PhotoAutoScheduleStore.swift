@@ -320,7 +320,7 @@ final class XDriveIOSPhotoAutoScheduleStore {
         let followingWindow = unchanged
             ? XDriveIOSPhotoAutoSchedulePolicy.nextWindow(
                 current: state.windowIndex, visibleTotal: progress.totalVisible,
-                scanned: progress.scanned, uploaded: progress.uploaded,
+                scanned: progress.scanned, uploaded: progress.windowUploaded,
                 needsReview: pending
               ) : 0
         state.windowIndex = followingWindow
@@ -385,7 +385,8 @@ final class XDriveIOSPhotoAutoScheduleStore {
                 currentWindow: completedWindow, followingWindow: state.windowIndex,
                 visibleTotal: progress.totalVisible, scanned: progress.scanned,
                 uploaded: progress.uploaded, needsReview: pending,
-                libraryUnchanged: unchanged
+                libraryUnchanged: unchanged,
+                queuedUploaded: progress.changeQueueUploaded
             ) else { throw XDriveIOSPhotoAutoScheduleError.unsupportedInterval }
             state.nextDueAt = due
         }
