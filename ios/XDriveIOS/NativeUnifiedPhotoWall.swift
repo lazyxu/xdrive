@@ -98,9 +98,9 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     }
 
     @ViewBuilder private var content: some View {
-        // Show authorized, explicitly unverified first-page thumbnails as
-        // soon as a bounded window arrives. Never label them paired, or
-        // advance pagination, before the exact SHA-256/Owner proof finishes.
+        // Unverified thumbnails are browsable before local/remote sources
+        // reconcile. Never treat provisional tiles as proven paired, or
+        // advance mixed cursor pagination until the bounded window commits.
         if model.belongs(to: login.owner) &&
             (model.completed || (!model.rows.isEmpty && filter == nil && query == .init())) {
             let groups = Dictionary(grouping: model.rows) { $0.capturedAt.map { Calendar.current.startOfDay(for: $0) } }
@@ -131,7 +131,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                         .font(.footnote).foregroundStyle(.secondary).frame(minHeight: 36)
                 }
                 if !model.completed {
-                    ProgressView("正在核对当前可见照片来源…")
+                    ProgressView("正在加载当前页面与来源状态…")
                         .font(.footnote).accessibilityIdentifier("native-ios-gallery-visible-proof")
                 }
                 if let message = model.notice { Text(message).font(.footnote).foregroundStyle(.secondary) }
@@ -142,7 +142,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                     Text(message).font(.footnote)
                     Button("重新读取") { retry = UUID() }
                 } else if visible && displayActive {
-                    ProgressView("读取并核对照片…")
+                    ProgressView("正在读取照片与缩略图…")
                 }
             }
             .frame(maxWidth: .infinity, minHeight: page.height)
