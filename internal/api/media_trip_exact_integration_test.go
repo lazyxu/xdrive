@@ -152,7 +152,7 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 		excluded[add(owner.ID, root.ID, fmt.Sprintf("same-day-home-%d.jpg", day), day, homeLat, homeLon)] = true
 		excluded[add(owner.ID, root.ID, fmt.Sprintf("unlocated-%d.jpg", day), day, nil, nil)] = true
 	}
-	excluded[add(owner.ID, root.ID, "same-day-other-city.jpg", 4, ptr(20.2), ptr(20.2))] = true
+	included[add(owner.ID, root.ID, "same-day-second-city.jpg", 4, ptr(20.2), ptr(20.2))] = true
 	add(other.ID, otherRoot.ID, "foreign-away.jpg", 4, awayLat, awayLon)
 
 	ctx := context.Background()
@@ -177,8 +177,8 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 		Distinct("xd_media_metadata.node_id").Count(&total).Error; err != nil {
 		t.Fatal(err)
 	}
-	if total != 4 {
-		t.Fatalf("exact member count=%d, expected 4", total)
+	if total != 5 {
+		t.Fatalf("exact multi-city member count=%d, expected 5", total)
 	}
 	server := &Server{DB: db}
 	for _, window := range []struct{ offset, limit, expected int }{
@@ -213,13 +213,14 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if overview.Aggregated || overview.TotalPhotoCount != 4 ||
-		len(overview.Items) != 2 {
-		t.Fatalf("trip GPS map=%+v, expected two true place cells totaling 4", overview)
+	if overview.Aggregated || overview.TotalPhotoCount != 5 ||
+		overview.TripPhotoCount != 5 || len(overview.Items) != 3 {
+		t.Fatalf("trip GPS map=%+v, expected three true place cells totaling 5", overview)
 	}
 	placeCounts := map[string]int64{
 		"place:1010:1010": 3,
 		"place:1012:1010": 1,
+		"place:2020:2020": 1,
 	}
 	for _, facet := range overview.Items {
 		want, exists := placeCounts[facet.ID]
@@ -290,9 +291,19 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 		lon := 10.025 + float64(i/10)*0.0125
 		add(owner.ID, root.ID, fmt.Sprintf("trip-map-many-%d.jpg", i), 5, &lat, &lon)
 	}
-	if overflow, err := server.queryMediaExactTripMap(
-		ctx, owner.ID, segment, "UTC"); err == nil {
-		t.Fatalf("oversized exact trip map incorrectly returned %d cells", len(overflow.Items))
+	// A 65+ place trip now has a bounded display aggregate, not a 409 or
+	// false top-64 subset. Each aggregate is inert until it is zoomed.
+	overflow, err := server.queryMediaExactTripMap(ctx, owner.ID, segment, "UTC")
+	if err != nil || !overflow.Aggregated ||
+		len(overflow.Items) == 0 || len(overflow.Items) > 64 ||
+		overflow.TripPhotoCount != 75 || overflow.TotalPhotoCount != 75 {
+		t.Fatalf("large trip aggregation failed: %+v, err=%v", overflow, err)
+	}
+	for _, facet := range overflow.Items {
+		if facet.CoordinateKind != "map_region_sample" ||
+			strings.HasPrefix(facet.ID, "place:") {
+			t.Fatalf("aggregate promoted to exact place scope: %+v", facet)
+		}
 	}
 	// A GPS edit that makes home dominant on a former trip day must revoke
 	// the old exact segment rather than silently falling back to date range.
