@@ -32,33 +32,35 @@ var errClipboardVaultNotReady = errors.New("clipboard vault has no encrypted ver
 var errClipboardForbidden = errors.New("clipboard target forbidden")
 
 type clipboardWriteRequest struct {
-	ClientEventID string `json:"client_event_id"`
-	Kind          string `json:"kind"`
-	Nonce         string `json:"nonce"`
-	Ciphertext    string `json:"ciphertext"`
+	ClientEventID  string `json:"client_event_id"`
+	Kind           string `json:"kind"`
+	Nonce          string `json:"nonce"`
+	Ciphertext     string `json:"ciphertext"`
 	TargetDeviceID string `json:"target_device_id,omitempty"`
-	EphemeralKey string `json:"ephemeral_key,omitempty"`
-	WrappedKey string `json:"wrapped_key,omitempty"`
-	NodeID uint64 `json:"node_id,omitempty"`
+	EphemeralKey   string `json:"ephemeral_key,omitempty"`
+	WrappedKey     string `json:"wrapped_key,omitempty"`
+	NodeID         uint64 `json:"node_id,omitempty"`
 }
 
 type clipboardItemResponse struct {
-	ID            uint64    `json:"id"`
-	ClientEventID string    `json:"client_event_id"`
-	Kind          string    `json:"kind"`
-	Nonce         string    `json:"nonce"`
-	Ciphertext    string    `json:"ciphertext"`
-	TargetDeviceID string `json:"target_device_id,omitempty"`
-	EphemeralKey string `json:"ephemeral_key,omitempty"`
-	WrappedKey string `json:"wrapped_key,omitempty"`
-	NodeID uint64 `json:"node_id,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	ExpiresAt     time.Time `json:"expires_at"`
+	ID             uint64    `json:"id"`
+	ClientEventID  string    `json:"client_event_id"`
+	Kind           string    `json:"kind"`
+	Nonce          string    `json:"nonce"`
+	Ciphertext     string    `json:"ciphertext"`
+	TargetDeviceID string    `json:"target_device_id,omitempty"`
+	EphemeralKey   string    `json:"ephemeral_key,omitempty"`
+	WrappedKey     string    `json:"wrapped_key,omitempty"`
+	NodeID         uint64    `json:"node_id,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	ExpiresAt      time.Time `json:"expires_at"`
 }
 
 func clipboardItemDTO(item meta.ClipboardItem) clipboardItemResponse {
 	var nodeID uint64
-	if item.NodeID != nil { nodeID = *item.NodeID }
+	if item.NodeID != nil {
+		nodeID = *item.NodeID
+	}
 	return clipboardItemResponse{
 		ID: item.ID, ClientEventID: item.ClientEventID, Kind: item.Kind,
 		Nonce: item.Nonce, Ciphertext: item.Ciphertext,
@@ -73,21 +75,32 @@ func validateClipboardWrite(req clipboardWriteRequest) error {
 		return errClipboardInvalid
 	}
 	switch req.Kind {
-    case "text/plain", "text/uri-list":
-       if req.NodeID != 0 { return errClipboardInvalid }
-    case "image/x-xdrive-node-ref", "application/x-xdrive-node-ref":
-       if req.NodeID == 0 { return errClipboardInvalid }
-    default: return errClipboardInvalid
-    }
-    if req.TargetDeviceID == "" {
-       if req.EphemeralKey != "" || req.WrappedKey != "" { return errClipboardInvalid }
-    } else {
-       id, err := uuid.Parse(req.TargetDeviceID)
-       if err != nil || id.String() != req.TargetDeviceID { return errClipboardInvalid }
-       pub,e1 := base64.StdEncoding.Strict().DecodeString(req.EphemeralKey)
-       wrapped,e2 := base64.StdEncoding.Strict().DecodeString(req.WrappedKey)
-       if e1 != nil || e2 != nil || len(pub) != 32 || len(wrapped) != 60 { return errClipboardInvalid }
-    }
+	case "text/plain", "text/uri-list":
+		if req.NodeID != 0 {
+			return errClipboardInvalid
+		}
+	case "image/x-xdrive-node-ref", "application/x-xdrive-node-ref":
+		if req.NodeID == 0 || req.TargetDeviceID == "" {
+			return errClipboardInvalid
+		}
+	default:
+		return errClipboardInvalid
+	}
+	if req.TargetDeviceID == "" {
+		if req.EphemeralKey != "" || req.WrappedKey != "" {
+			return errClipboardInvalid
+		}
+	} else {
+		id, err := uuid.Parse(req.TargetDeviceID)
+		if err != nil || id.String() != req.TargetDeviceID {
+			return errClipboardInvalid
+		}
+		pub, e1 := base64.StdEncoding.Strict().DecodeString(req.EphemeralKey)
+		wrapped, e2 := base64.StdEncoding.Strict().DecodeString(req.WrappedKey)
+		if e1 != nil || e2 != nil || len(pub) != 32 || len(wrapped) != 60 {
+			return errClipboardInvalid
+		}
+	}
 	nonce, err := base64.StdEncoding.Strict().DecodeString(req.Nonce)
 	if err != nil || len(nonce) != 12 {
 		return errClipboardInvalid
@@ -216,7 +229,12 @@ func (s *Server) putClipboardVaultCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, clipboardVaultDTO(accepted))
 }
 
-func clipboardNodeRefID(item meta.ClipboardItem) uint64 { if item.NodeID != nil { return *item.NodeID }; return 0 }
+func clipboardNodeRefID(item meta.ClipboardItem) uint64 {
+	if item.NodeID != nil {
+		return *item.NodeID
+	}
+	return 0
+}
 func clipboardSameItem(existing meta.ClipboardItem, request clipboardWriteRequest) bool {
 	return existing.Kind == request.Kind &&
 		existing.Nonce == request.Nonce &&
@@ -231,7 +249,9 @@ func clipboardSameItem(existing meta.ClipboardItem, request clipboardWriteReques
 // lock, keeping multi-instance message and notification order consistent.
 func appendClipboardChangeTx(tx *gorm.DB, ownerID uint64, kind string, targets ...string) error {
 	var target string
-	if len(targets)>0 { target=targets[0] }
+	if len(targets) > 0 {
+		target = targets[0]
+	}
 	if err := tx.Create(&meta.ClipboardChange{
 		OwnerID: ownerID, Kind: kind, TargetDeviceID: target, CreatedAt: time.Now().UTC(),
 	}).Error; err != nil {
@@ -274,8 +294,11 @@ func (s *Server) streamClipboardEvents(c *gin.Context) {
 		}
 		after = value
 	}
-	deviceID,ok := s.clipboardVerifiedDevice(c,uid)
-	if !ok { c.JSON(http.StatusForbidden,gin.H{"error":"invalid Clipboard device"}); return }
+	deviceID, ok := s.clipboardVerifiedDevice(c, uid)
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "invalid Clipboard device"})
+		return
+	}
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Status(http.StatusOK)
 	fmt.Fprint(c.Writer, "retry: 2000\nevent: sync\ndata: {}\n\n")
@@ -296,13 +319,15 @@ func (s *Server) streamClipboardEvents(c *gin.Context) {
 			return
 		}
 		if deviceID != "" {
-			id,stillAllowed := s.clipboardVerifiedDevice(c,uid)
-			if !stillAllowed || id != deviceID { return }
+			id, stillAllowed := s.clipboardVerifiedDevice(c, uid)
+			if !stillAllowed || id != deviceID {
+				return
+			}
 		}
 		var ids []uint64
 		query := s.DB.WithContext(c.Request.Context()).Model(&meta.ClipboardChange{}).
 			Where("owner_id = ? AND id > ?", uid, after)
-		err := clipboardVisibleToDevice(query,deviceID).Order("id ASC").Limit(64).Pluck("id", &ids).Error
+		err := clipboardVisibleToDevice(query, deviceID).Order("id ASC").Limit(64).Pluck("id", &ids).Error
 		if err != nil {
 			return
 		}
@@ -346,8 +371,9 @@ func (s *Server) createClipboardItem(c *gin.Context) {
 		return
 	}
 	db := s.DB.WithContext(c.Request.Context())
-	if s.clipboardValidateTargetAndNode(db,uid,req) != nil {
-		c.JSON(http.StatusForbidden,gin.H{"error":"Clipboard destination unavailable"}); return
+	if s.clipboardValidateTargetAndNode(db, uid, req) != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Clipboard destination unavailable"})
+		return
 	}
 	var existing meta.ClipboardItem
 	if err := db.Where("owner_id = ? AND client_event_id = ?", uid, req.ClientEventID).
@@ -375,7 +401,9 @@ func (s *Server) createClipboardItem(c *gin.Context) {
 		TargetDeviceID: req.TargetDeviceID, EphemeralKey: req.EphemeralKey, WrappedKey: req.WrappedKey,
 		CreatedAt: now, ExpiresAt: now.Add(clipboardRetention),
 	}
-	if req.NodeID != 0 { item.NodeID = &req.NodeID }
+	if req.NodeID != 0 {
+		item.NodeID = &req.NodeID
+	}
 	err := db.Transaction(func(tx *gorm.DB) error {
 		// Lock the Owner vault to serialize inserts + 50-item pruning. Two
 		// concurrent READ COMMITTED transactions otherwise can each retain
@@ -388,7 +416,9 @@ func (s *Server) createClipboardItem(c *gin.Context) {
 		if vault.CheckCiphertext == "" {
 			return errClipboardVaultNotReady
 		}
-		if err := s.clipboardValidateTargetAndNode(tx,uid,req); err != nil { return err }
+		if err := s.clipboardValidateTargetAndNode(tx, uid, req); err != nil {
+			return err
+		}
 		if err := tx.Create(&item).Error; err != nil {
 			return err
 		}
@@ -411,6 +441,10 @@ WHERE owner_id = ?
 		return appendClipboardChangeTx(tx, uid, "create", req.TargetDeviceID)
 	})
 	if err != nil {
+		if errors.Is(err, errClipboardForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Clipboard destination unavailable"})
+			return
+		}
 		if errors.Is(err, errClipboardVaultNotReady) || errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusConflict, gin.H{"error": "clipboard vault must be initialized before sending"})
 			return
@@ -452,11 +486,14 @@ func (s *Server) listClipboardItems(c *gin.Context) {
 		}
 		before = value
 	}
-	deviceID,ok := s.clipboardVerifiedDevice(c,uid)
-	if !ok { c.JSON(http.StatusForbidden,gin.H{"error":"invalid Clipboard device"}); return }
+	deviceID, ok := s.clipboardVerifiedDevice(c, uid)
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "invalid Clipboard device"})
+		return
+	}
 	db := s.DB.WithContext(c.Request.Context()).
 		Where("owner_id = ? AND expires_at > ?", uid, time.Now().UTC())
-	db = clipboardVisibleToDevice(db,deviceID)
+	db = clipboardVisibleToDevice(db, deviceID)
 	if before > 0 {
 		db = db.Where("id < ?", before)
 	}
@@ -493,8 +530,11 @@ func (s *Server) deleteClipboardItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid clipboard item ID"})
 		return
 	}
-	deviceID,ok := s.clipboardVerifiedDevice(c,uid)
-	if !ok { c.JSON(http.StatusForbidden,gin.H{"error":"invalid Clipboard device"}); return }
+	deviceID, ok := s.clipboardVerifiedDevice(c, uid)
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "invalid Clipboard device"})
+		return
+	}
 	var deleted bool
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var vault meta.ClipboardVault
@@ -503,10 +543,15 @@ func (s *Server) deleteClipboardItem(c *gin.Context) {
 			return err
 		}
 		var victim meta.ClipboardItem
-		if err := tx.Where("owner_id = ? AND id = ?",uid,id).Take(&victim).Error; err != nil {
-			if errors.Is(err,gorm.ErrRecordNotFound) { return nil }; return err
+		if err := tx.Where("owner_id = ? AND id = ?", uid, id).Take(&victim).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
 		}
-		if victim.TargetDeviceID != "" && victim.TargetDeviceID != deviceID { return errClipboardForbidden }
+		if victim.TargetDeviceID != "" && victim.TargetDeviceID != deviceID {
+			return errClipboardForbidden
+		}
 		result := tx.Where("owner_id = ? AND id = ?", uid, id).Delete(&meta.ClipboardItem{})
 		if result.Error != nil {
 			return result.Error
@@ -517,7 +562,10 @@ func (s *Server) deleteClipboardItem(c *gin.Context) {
 		deleted = true
 		return appendClipboardChangeTx(tx, uid, "delete", victim.TargetDeviceID)
 	})
-	if errors.Is(err,errClipboardForbidden) { c.JSON(http.StatusForbidden,gin.H{"error":"Clipboard target denied"}); return }
+	if errors.Is(err, errClipboardForbidden) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Clipboard target denied"})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard store unavailable"})
 		return
