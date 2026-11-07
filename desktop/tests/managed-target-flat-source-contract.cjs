@@ -24,12 +24,14 @@ test('one Server provisioning function owns the immutable Push/Pull prefixes', (
 
 test('native destination and DSM Push use flat leaves but preserve Device ID authorization', () => {
   const native = read('internal', 'api', 'ios_photo_backup_destination.go')
-  const dsm = read('internal', 'api', 'synology_push_managed_provision.go')
+  const dsm = read('internal', 'api', 'source_managed_provision.go')
   const local = read('internal', 'api', 'local_push_managed_provision.go')
   const android = read('internal', 'api', 'sources.go')
   assert.match(native, /boundDeviceID, bound := meta\.SourceDeviceID\(source\)/)
   assert.match(native, /!bound \|\| boundDeviceID != device\.ID/)
   assert.doesNotMatch(native, /managedPushDeviceFolderName/)
+  assert.match(dsm, /func createSynologyPushManagedTargetTx\(/)
+  assert.match(dsm, /return provisionManagedSourceTargetTx\(ctx, tx, source, &device\)/)
   assert.doesNotMatch(dsm, /managedPushDeviceFolderName/)
   assert.doesNotMatch(local, /managedPushDeviceFolderName/)
   assert.match(android, /SourceKindAndroidPhotos/)
@@ -59,7 +61,13 @@ test('Source Manager shows only an editable last segment and keeps failed drafts
   assert.match(manager, /target_node_id: 0/)
   assert.match(manager, /未自动删除或归档/)
   assert.match(manager, /new TextEncoder\(\)\.encode\(normalizedName\)\.length/)
-  assert.match(preset, /option\.value !== 'synology_push'/)
+  assert.match(preset, /externalSourceCreateOptions\.filter\(/)
+  const options = read('ui', 'shared', 'src', 'external-sources.ts')
+    .split('export const externalSourceCreateOptions:')[1]
+    .split('export const synologyPhotoSpaceOptions')[0]
+  assert.match(options, /value: 'yike_pull'/)
+  assert.match(options, /value: 'local_push'/)
+  assert.doesNotMatch(options, /value:\s*'synology_(?:push|pull|photos_pull|files_pull)'/)
 })
 
 

@@ -44,6 +44,7 @@ func TestBoundLocalSourceArchiveRestoreRequiresOwningDeviceAndRetainsRootBinding
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
 		Revision: 1, TargetNodeID: &targetID,
+		DeviceID: &device.ID, LocalCreatorDeviceID: &device.ID,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)

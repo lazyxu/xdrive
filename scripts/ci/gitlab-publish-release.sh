@@ -327,15 +327,7 @@ for obsolete_name in xdrive-source-agent-linux-amd64 xdrive-source-agent-linux-a
   [ "$obsolete_count" -eq 1 ] || continue
   obsolete_id="$(printf '%s\n' "$obsolete_row" | awk -F '\t' '{print $2}')"
   obsolete_url="$(printf '%s\n' "$obsolete_row" | awk -F '\t' '{print $3}')"
-  printf '%s' "$obsolete_id" | grep -Eq '^[0-9]+glab api --method PUT "$release_endpoint" -f "name=$release_name" -f "description=$release_notes" >/dev/null
-committed=1
-current_description="$(glab_api_jq '.description' "$release_endpoint")"
-[ "$current_description" = "$release_notes" ] || {
-  echo "GitLab Release commit-marker read-back disagrees; inspect publication" >&2
-  exit 1
-}
-echo "Published GitLab snapshot $CI_COMMIT_SHA (verified assets, release links, commit marker)."
- || {
+  printf '%s' "$obsolete_id" | grep -Eq '^[0-9]+$' || {
     echo "invalid retired Release link ID: $obsolete_name" >&2
     exit 1
   }

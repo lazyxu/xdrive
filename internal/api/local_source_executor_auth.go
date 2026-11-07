@@ -343,4 +343,3 @@ func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID
 	}
 	return nil
 }
-

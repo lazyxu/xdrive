@@ -185,4 +185,3 @@ func TestRetiredSynologyPhotosPushPreservesHistoryAndCannotWrite(t *testing.T) {
 		t.Fatalf("retirement lost Source provenance: %+v", storedSource)
 	}
 }
-

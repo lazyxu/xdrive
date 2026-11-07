@@ -43,7 +43,7 @@ func TestRetiredDSMPhotosSourceIDNeverGrantsGenericUpload(t *testing.T) {
 		t.Fatalf("retired DSM SourceID gained upload-init authority: %v", err)
 	}
 	session := meta.UploadSession{
-		ID: "f3bd2c81-8e6b-4b3c-b891-c6caeb5dd941",
+		ID:      "f3bd2c81-8e6b-4b3c-b891-c6caeb5dd941",
 		OwnerID: owner.ID, ParentID: &target.ID,
 		Name: "new.jpg", RequestedName: "new.jpg",
 		SourceID: source.ID, SourceRevision: source.Revision,
