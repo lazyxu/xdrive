@@ -133,3 +133,5 @@ The following must be green at the **final combined HEAD** before merging, not i
 5. Applicable full CI, Final Gate and protected master merge through PR only.
 
 **Unverified or incomplete candidates must remain Draft and unmerged.** Production/manual physical-device acceptance: 跳过（未验收）.
+
+**Android API29–32 compatibility:** The platform JCA XDH key agreement starts at Android API33, whereas xDrive minSdk is 29. The receiver candidate uses Bouncy Castle 1.86 low-level X25519 and preserves the validated 48-byte PKCS#8 sealed private key. The local Kotlin JVM implementation passed the WebCrypto encrypted Node-reference fixture and Node-ID tamper rejection; Android Gradle/runtime checks still require exact-HEAD CI. No physical-device acceptance is claimed.
