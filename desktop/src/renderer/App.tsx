@@ -2946,6 +2946,7 @@ export default function App({
       shareCenterPage: agent.connected && configured && agent.hello?.capabilities.includes('cloud-files')
         ? desktopShareCenterPort : undefined,
       notesPage: desktopNotesPort,
+      clipboardPage: desktopClipboardPort,
       workspaceAlerts: {
         lastError: status?.last_error,
         paused: status?.paused,
