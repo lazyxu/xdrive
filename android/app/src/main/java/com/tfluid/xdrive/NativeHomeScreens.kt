@@ -161,6 +161,7 @@ private val nativeShortcuts = listOf(
     NativeShortcutCard(NativeHomeShortcut.CLOUD_FILES, "云端文件", "文件", R.drawable.xd_folder),
     NativeShortcutCard(NativeHomeShortcut.TRASH, "回收站", "文件", R.drawable.xd_folder),
     NativeShortcutCard(NativeHomeShortcut.NOTES, "笔记", "文件", R.drawable.xd_folder),
+    NativeShortcutCard(NativeHomeShortcut.CLIPBOARD, "剪贴板", "工具", R.drawable.xd_folder),
     NativeShortcutCard(NativeHomeShortcut.TRANSFERS, "传输中心", "工具", R.drawable.xd_refresh),
 )
 
