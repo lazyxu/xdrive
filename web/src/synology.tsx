@@ -348,6 +348,48 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
       document.removeEventListener('visibilitychange', visibility)
     }
   }, [host])
+  // Independent from Notes: Clipboard has its own narrow capability, Owner
+  // proof and refresh lifecycle, so one module cannot unlock the other.
+  useEffect(() => {
+    const cgi = host.services?.localBackupClient
+    if (!cgi) return
+    let pending: AbortController | null = null
+    let disposed = false
+    const inspect = () => {
+      pending?.abort()
+      const controller = new AbortController()
+      pending = controller
+      void (async () => {
+        try {
+          const first = await cgi.serverConnection(controller.signal)
+          if (!first.configured || first.must_change_password ||
+              !/^[0-9a-f]{64}$/.test(first.owner_scope) ||
+              !await cgi.clipboardAvailable(controller.signal)) {
+            if (!controller.signal.aborted && !disposed) setClipboardOwnerScope('')
+            return
+          }
+          await cgi.ownerQuota(controller.signal)
+          const second = await cgi.serverConnection(controller.signal)
+          if (!controller.signal.aborted && !disposed) {
+            setClipboardOwnerScope(second.configured && !second.must_change_password &&
+              first.owner_scope === second.owner_scope ? first.owner_scope : '')
+          }
+        } catch {
+          if (!controller.signal.aborted && !disposed) setClipboardOwnerScope('')
+        }
+      })()
+    }
+    const onVisibility = () => { if (!document.hidden) inspect() }
+    inspect()
+    window.addEventListener('focus', inspect)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      disposed = true
+      pending?.abort()
+      window.removeEventListener('focus', inspect)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [host])
   const notesPort = useMemo(() => {
     const cgi = host.services?.localBackupClient
     return cgi && notesOwnerScope
