@@ -75,6 +75,10 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-unified-gallery"
           "$RUNNER_TEMP/xdrive-ios-unified-gallery"
           node --test desktop/tests/ios-native-unified-photo-gallery.cjs
+          # Independent subpage/Viewer/Map/Owner navigation cases.
+          # These are deterministic source-backed guards; the macOS job
+          # separately compiles the real SwiftUI iPhoneOS application.
+          node --test desktop/tests/ios-native-navigation-continuity.cjs
 
       - name: Verify cold launch recovery and BG registration safety
         run: |
