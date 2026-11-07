@@ -746,9 +746,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
             }
             .onAppear {
+                guard phase == .active else { return }
                 if !model.matches(login.owner, kind: kind) {
-                    reload()
-                } else if phase == .active && !model.loading &&
+                    if !model.loading { reload() }
+                } else if !model.loading &&
                           selectedFile == nil && locateIntent == nil &&
                           managementIntent == nil {
                     // A child folder may mutate Recent or Favorites while
@@ -775,6 +776,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 locateOwner = nil
                 managementIntent = nil
                 filterQuery = ""
+                showingClearRecentConfirmation = false
                 model.invalidate()
                 favorites.invalidate()
                 recentClear.invalidate()
