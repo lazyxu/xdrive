@@ -189,6 +189,9 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err := db.Where("owner_id = ? AND parent_id IS NULL", userA.ID).First(&rootA).Error; err != nil {
 		t.Fatal(err)
 	}
+	// Historical unbound Yike Source: credential verification must provision a
+	// dedicated uid_* managed target. The Owner root is ordinary data and must
+	// never be adopted or used as a Source target.
 	source := meta.Source{
 		OwnerID:      userA.ID,
 		Name:         "Yike Photos",
@@ -198,7 +201,6 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		RunMode:      meta.SourceRunModeSync,
 		Status:       meta.SourceStatusActive,
 		Revision:     1,
-		TargetNodeID: &rootA.ID,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
