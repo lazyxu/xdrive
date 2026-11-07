@@ -89,7 +89,14 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     private func displayedBackupState(for row: XDriveIOSNativeUnifiedPhoto) -> String {
         guard let local = row.local else { return "unverified" }
         if activeProcessingID == local.id { return "processing" }
-        if let stored = queueBadges[local.id]?.state { return stored }
+        let queued = queueBadges[local.id]?.state
+        // A pending newer edit or failure takes precedence over a previously
+        // matched original. A fresh same-content Gallery match is stronger
+        // than the queue's historical confirmed receipt, but still not a
+        // promise that the cloud Node will exist indefinitely.
+        if let queued, queued != "confirmed" { return queued }
+        if row.presence == .both { return "matched" }
+        if queued == "confirmed" { return "confirmed" }
         guard queueHistoryCurrent, let since = onlyNewSince else { return "unverified" }
         switch XDriveIOSPhotoAutoSchedulePolicy.newOnlyCandidate(
             capturedAt: local.capturedAt, modifiedAt: local.modifiedAt, since: since
