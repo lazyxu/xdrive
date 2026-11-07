@@ -57,6 +57,14 @@ async function diagnoseNativeMapAdmission(){
     loginForm:!!document.querySelector('input[type="password"]'),
     agentConnected:state?.data?.connected===true||state?.connected===true,
     agentConfigured:current.configured===true,
+    agentLoggedIn:current.auth_status==='已登录',
+    agentMustChangePassword:current.must_change_password===true,
+    documentReady:document.readyState==='complete',
+    hasReactRoot:!!document.getElementById('root'),
+    reactRootHasChildren:(document.getElementById('root')?.childElementCount||0)>0,
+    bodyHasChildren:(document.body?.childElementCount||0)>0,
+    desktopPreload:!!window.xdriveDesktop?.agent,
+    hasGlobalAlert:!!document.querySelector('[role="alert"]'),
     placesIndex:!!document.querySelector('[data-xdrive-places-index]'),
     map:!!map,sharedWeb:!!panel,unavailable:!!failed,
     webview:!!document.querySelector('[data-xdrive-desktop-embedded-places]'),
@@ -88,6 +96,32 @@ async function run(win){
   let stage='production-desktop-init'
   let guest=null
   let guestLoads=0
+  const rendererFaults=[]
+  let rendererGone=false
+  const boundedFault=(message)=>{
+    const text=String(message||'')
+    const react=text.match(/Minified React error #(\d+)/i)
+    if(react)return 'react_minified_'+react[1]
+    if(/Cannot read properties of undefined/i.test(text))return 'undefined_property'
+    if(/Cannot read properties of null/i.test(text))return 'null_property'
+    if(/Uncaught (?:TypeError|ReferenceError)/i.test(text))return 'uncaught_js'
+    if(/Uncaught Error:/i.test(text))return 'uncaught_error'
+    if(/Failed to fetch dynamically imported module/i.test(text))return 'module_load'
+    if(/Content Security Policy/i.test(text))return 'csp'
+    if(/React/i.test(text)&&/error/i.test(text))return 'react_error'
+    return null
+  }
+  const noteFault=(value)=>{
+    const kind=boundedFault(value)
+    if(kind&&rendererFaults.length<8)rendererFaults.push(kind)
+  }
+  win.webContents.on('console-message',(_event,details)=>{
+    if(details&&typeof details==='object')noteFault(details.message)
+  })
+  win.webContents.on('render-process-gone',()=>{rendererGone=true})
+  win.webContents.on('did-fail-load',(_event,code)=>{
+    if(rendererFaults.length<8)rendererFaults.push('navigation_failed_'+String(Number(code)||0))
+  })
   try{
     win.setContentSize(1280,900)
     win.webContents.on('did-attach-webview',(_event,attached)=>{
@@ -119,7 +153,11 @@ async function run(win){
     }catch(error){
       const diagnostic=await win.webContents.executeJavaScript(
         '('+diagnoseNativeMapAdmission.toString()+')()').catch(()=>({unavailable:true}))
-      throw Error('map admission '+JSON.stringify(diagnostic)+'; '+String(error?.message||error))
+      throw Error('map admission '+JSON.stringify({
+        ...diagnostic,rendererGone,rendererFaults,
+        urlProtocol:win.webContents.getURL().split(':',1)[0],
+        hostDestroyed:win.isDestroyed(),
+      })+'; '+String(error?.message||error))
     }
     stage='production-Desktop-HTTPS-WebView-attach'
     const attached=await until(async()=>{
