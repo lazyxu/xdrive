@@ -26,8 +26,9 @@ test('iOS destination is a dedicated Owner+Device-scoped Server Source, never a 
   assert.match(server, /TargetManaged = true/);
   assert.match(server, /createLocalPushManagedTargetTx\(/);
   assert.match(source, /if req\.Kind == meta\.SourceKindIOSPhotos \|\| req\.Kind == meta\.SourceKindAndroidPhotos/);
-  assert.match(source, /if current\.Kind == meta\.SourceKindIOSPhotos \{/);
-  assert.match(source, /if source\.Kind == meta\.SourceKindIOSPhotos \{/);
+  assert.match(source, /if current\.Kind == meta\.SourceKindIOSPhotos \|\| current\.Kind == meta\.SourceKindAndroidPhotos \{/);
+  assert.match(source, /if source\.Kind == meta\.SourceKindIOSPhotos \|\| source\.Kind == meta\.SourceKindAndroidPhotos \{/);
+  assert.match(source, /errors\.Is\(err, errAndroidPhotoSourceRunUnauthorized\)/);
 });
 
 test('server is sole authority for actual Node/Path and never adopts a user-supplied target id', () => {

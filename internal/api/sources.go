@@ -772,7 +772,11 @@ func (s *Server) updateSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
-		case errors.Is(err, errNativePhotoSourceMutationUnauthorized):
+		case errors.Is(err, errNativePhotoSourceMutationUnauthorized),
+			errors.Is(err, errIOSPhotoSourceRunUnauthorized),
+			errors.Is(err, errAndroidPhotoSourceRunUnauthorized):
+			// The generic Source endpoint does not grant native execution rights.
+			// Missing or revoked device proof must be a stable 403, never 500.
 			fail(c, http.StatusForbidden, "native photos Source requires its registered device")
 		case errors.Is(err, errSourceArchived):
 			fail(c, http.StatusConflict, "source is archived; restore it before editing")
@@ -1089,7 +1093,11 @@ func (s *Server) deleteSource(c *gin.Context) {
 			fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
-		case errors.Is(err, errNativePhotoSourceMutationUnauthorized):
+		case errors.Is(err, errNativePhotoSourceMutationUnauthorized),
+			errors.Is(err, errIOSPhotoSourceRunUnauthorized),
+			errors.Is(err, errAndroidPhotoSourceRunUnauthorized):
+			// The generic Source endpoint does not grant native execution rights.
+			// Missing or revoked device proof must be a stable 403, never 500.
 			fail(c, http.StatusForbidden, "native photos Source requires its registered device")
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "source not found")
