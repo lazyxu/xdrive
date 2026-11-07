@@ -272,6 +272,11 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	}
 	request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
 		strings.NewReader(payload(firstID, ciphertext)), http.StatusOK)
+    var changeCount int64
+    if err := db.Model(&meta.ClipboardChange{}).Where("owner_id = ?", ownerA.ID).
+        Count(&changeCount).Error; err != nil || changeCount != 1 {
+        t.Fatalf("first create must append one Owner event, idempotent retry none: %v count=%d", err, changeCount)
+    }
 	request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
 		strings.NewReader(payload(firstID, base64.StdEncoding.EncodeToString([]byte("different secure data")))),
 		http.StatusConflict)
