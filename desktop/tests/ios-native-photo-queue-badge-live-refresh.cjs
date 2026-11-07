@@ -17,7 +17,7 @@ test('writer completion updates only visible Owner-local queue badges, without r
   assert.match(wall, /\.onChange\(of: badgeRefresh\) \{ _ in[\s\S]*?refreshVisibleBackupQueueStatuses\(\)/)
   assert.match(wall, /private func refreshVisibleBackupQueueStatuses\(\) async/)
   assert.match(wall, /guard let current = page, let owner = backupBadgeOwner,[\s\S]*?current\.items\.count <= 64/)
-  assert.match(wall, /queue\.visibleStatuses\(\s*owner: owner, localIdentifiers: identifiers/)
+  assert.match(wall, /queue\.visibleStatusDetails\(\s*owner: owner, localIdentifiers: identifiers/)
   assert.match(wall, /page\?\.items\.map\(\\\.id\) == identifiers/)
   assert.match(wall, /\.task\(id: "\\\(generation\)-\\\(offset\)-\\\(mediaFilter\.rawValue\)"\)/)
   assert.doesNotMatch(wall, /\.task\(id:[^\n]*badgeRefresh/)
