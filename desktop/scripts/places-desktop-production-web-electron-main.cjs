@@ -23,6 +23,62 @@ function inspectRealDesktop(){
   return {preload:!!window.xdriveDesktop?.agent,
     nav:!!document.querySelector('nav[aria-label="桌面版功能区"]')}
 }
+// Test-only instrumentation runs in the genuine production renderer before
+// the Places section is activated. It stores ONLY error classes and DOM
+// transition counters; URLs, photo IDs, raw errors and credentials are never
+// returned to the test runner.
+function installMapRendererFailureProbe(){
+  const current={errors:[],warnings:0,rootRemovalCount:0,
+    rootRenderCount:0,lastVisibleSection:'',installed:true}
+  const classify=value=>{
+    const v=String(value?.message||value||'')
+    const name=typeof value?.name==='string'
+      ?/^[A-Za-z]{1,35}Error$/.test(value.name)?value.name:'Error':'Error'
+    const code=v.match(/Minified React error #(\d+)/i)
+    if(code)return 'react_minified_'+code[1]
+    if(/maximum update depth/i.test(v))return 'react_update_depth'
+    if(/too many re-renders/i.test(v))return 'react_rerenders'
+    if(/Rendered more hooks|Rendered fewer hooks/i.test(v))return 'react_hook_order'
+    if(/Cannot read properties of (?:undefined|null)/i.test(v)){
+      const key=v.match(/reading ['"]([A-Za-z0-9_$-]{1,45})['"]/)
+      return 'nullish_property_'+(key?.[1]||'unknown')
+    }
+    if(/is not a function/i.test(v))return 'not_a_function'
+    if(/not iterable/i.test(v))return 'not_iterable'
+    if(/invalid hook call/i.test(v))return 'invalid_hook'
+    if(/network error|Failed to fetch/i.test(v))return 'network_error'
+    if(/ChunkLoadError|dynamically imported module/i.test(v))return 'chunk_load'
+    if(/TypeError/i.test(v))return 'type_error'
+    if(/ReferenceError/i.test(v))return 'reference_error'
+    return 'other_'+name
+  }
+  const capture=(kind,value)=>{
+    if(current.errors.length<10)current.errors.push(kind+':'+classify(value))
+  }
+  window.addEventListener('error',e=>capture('window',e.error||e.message))
+  window.addEventListener('unhandledrejection',e=>capture('promise',e.reason))
+  const originalError=console.error.bind(console)
+  console.error=(...args)=>{
+    capture('console',args.find(a=>a instanceof Error)||args[0])
+    originalError(...args)
+  }
+  const root=document.getElementById('root')
+  if(root){
+    const observe=()=>{
+      if(root.childElementCount===0)current.rootRemovalCount++
+      else current.rootRenderCount++
+      const section=document.querySelector('[data-xdrive-gallery-section][aria-current="page"]')
+      const known=section?.getAttribute('data-xdrive-gallery-section')
+      if(['library','places','favorites','albums'].includes(known))
+        current.lastVisibleSection=known
+    }
+    const observer=new MutationObserver(observe)
+    observer.observe(root,{childList:true,subtree:false})
+    observe()
+  }
+  window.__xdrivePlacesRendererFailureProbe=current
+  return true
+}
 function clickGallery(){
   const box=document.querySelector('nav[aria-label="桌面版功能区"]')
   const target=Array.from(box?.querySelectorAll('[role="button"]')||[])
@@ -50,7 +106,14 @@ async function diagnoseNativeMapAdmission(){
   const alert=panel?.querySelector('[role="alert"]')
   const waiting=panel?.querySelector('[role="status"]')
   const content=alert?.textContent||waiting?.textContent||''
+  const safeProbe=window.__xdrivePlacesRendererFailureProbe||{}
   return {
+    rendererExceptionClasses:Array.isArray(safeProbe.errors)
+      ?safeProbe.errors.slice(0,10):[],
+    rootRemovalCount:Number(safeProbe.rootRemovalCount||0),
+    rootRenderCount:Number(safeProbe.rootRenderCount||0),
+    lastVisibleSection:typeof safeProbe.lastVisibleSection==='string'
+      ?safeProbe.lastVisibleSection:'',
     desktopNav:!!document.querySelector('nav[aria-label="桌面版功能区"]'),
     galleryNav:!!document.querySelector('[data-xdrive-gallery-section="places"]'),
     gallerySection:known,
@@ -116,7 +179,11 @@ async function run(win){
     if(kind&&rendererFaults.length<8)rendererFaults.push(kind)
   }
   win.webContents.on('console-message',(_event,details)=>{
-    if(details&&typeof details==='object')noteFault(details.message)
+    if(details&&typeof details==='object'){
+      noteFault(details.message)
+      if(details.level==='error' && rendererFaults.length<8)
+        rendererFaults.push('renderer_error_message')
+    }
   })
   win.webContents.on('render-process-gone',()=>{rendererGone=true})
   win.webContents.on('did-fail-load',(_event,code)=>{
@@ -135,6 +202,8 @@ async function run(win){
       return state.preload&&state.nav
     },40000,'real Main/preload/Renderer login state')
     stage='production-Desktop-Gallery-open'
+    assert.equal(await win.webContents.executeJavaScript(
+      '('+installMapRendererFailureProbe.toString()+')()'),true)
     const nav=await win.webContents.executeJavaScript('('+clickGallery.toString()+')()')
     assert.ok(nav,'real Desktop Gallery navigation missing')
     await until(()=>win.webContents.executeJavaScript(
