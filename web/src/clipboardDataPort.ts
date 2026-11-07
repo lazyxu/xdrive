@@ -15,6 +15,7 @@ export function createXDriveWebClipboardPort(api: XDriveApi, ownerScopeKey: stri
     remove: (id, signal) => api.clipboardRemove(id, signal),
     clear: signal => api.clipboardClear(signal),
     listDevices: signal => api.clipboardDevices(signal),
+    revokeDevice: (id, signal) => api.clipboardRevokeDevice(id, signal),
     copyText: text => xDriveBrowserCopyText(text),
     watchChanges: (onChange, signal) => api.clipboardWatchChanges(onChange, signal),
     readText: async () => {

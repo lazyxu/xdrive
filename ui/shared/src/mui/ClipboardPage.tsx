@@ -56,6 +56,7 @@ export type XDriveClipboardDataPort = {
   watchLocalClipboard?(onChange: (text: string) => Promise<void>, signal: AbortSignal): Promise<void>
   /** Owner session only; public X25519 keys, no source/backup grants. */
   listDevices?(signal?: AbortSignal): Promise<{ devices: XDriveClipboardTargetDevice[] }>
+  revokeDevice?(deviceID: string, signal?: AbortSignal): Promise<void>
 }
 
 type DecodedItem = { record: XDriveClipboardItem; text: string | null }
@@ -89,6 +90,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const [monitorEnabled, setMonitorEnabled] = useState(false)
   const [targetDevices, setTargetDevices] = useState<XDriveClipboardTargetDevice[]>([])
   const [targetID, setTargetID] = useState('')
+  const [confirmRevoke, setConfirmRevoke] = useState(false)
   const [referenceKind, setReferenceKind] = useState<'text' | 'image' | 'file'>('text')
   const [nodeID, setNodeID] = useState('')
   const active = useRef(true)
@@ -406,6 +408,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     setRetryExpired(false)
     setTargetDevices([])
     setTargetID('')
+    setConfirmRevoke(false)
     setReferenceKind('text')
     setNodeID('')
     setMonitorEnabled(false)
@@ -455,7 +458,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
               {port.listDevices ? (
                 <Stack spacing={1}>
                   <TextField select label="发送范围" value={targetID}
-                    onChange={e => setTargetID(e.target.value)} size="small">
+                    onChange={e => { setTargetID(e.target.value); setConfirmRevoke(false) }} size="small">
                     <MenuItem value="">当前 Owner 所有已解锁客户端（广播）</MenuItem>
                     {targetDevices.map(device => (
                       <MenuItem key={device.device_id} value={device.device_id}>
@@ -475,6 +478,31 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                         size="small" inputProps={{ inputMode: 'numeric' }}
                         value={nodeID} onChange={e => setNodeID(e.target.value)}
                         helperText="引用现有 CAS/UploadSession 完成的文件；不会重新上传或复制原件。" /> : null}
+                      {port.revokeDevice ? (
+                        confirmRevoke ? (
+                          <Alert severity="warning" action={
+                            <Stack direction="row" spacing={1}>
+                              <Button size="small" onClick={() => setConfirmRevoke(false)}>取消</Button>
+                              <Button size="small" color="error" disabled={busy} onClick={() => {
+                                const selected = targetID
+                                setConfirmRevoke(false)
+                                void runAction(async signal => {
+                                  await port.revokeDevice!(selected, signal)
+                                  if (active.current && !signal.aborted) {
+                                    setTargetDevices(rows => rows.filter(row => row.device_id !== selected))
+                                    setTargetID('')
+                                  }
+                                }, '已撤销所选设备的 Clipboard 接收授权。')
+                              }}>确认撤权</Button>
+                            </Stack>
+                          }>撤权后该设备不能接收新的定向消息；已被复制的本机内容无法追回。</Alert>
+                        ) : (
+                          <Button variant="outlined" color="error" size="small" disabled={busy}
+                            onClick={() => setConfirmRevoke(true)}>
+                            撤销此设备的 Clipboard 授权
+                          </Button>
+                        )
+                      ) : null}
                     </>
                   ) : null}
                 </Stack>

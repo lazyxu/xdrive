@@ -5212,6 +5212,15 @@ export class XDriveApi {
       '/api/v1/clipboard/devices', { cache: 'no-store', signal })
   }
 
+  clipboardRevokeDevice(deviceID: string, signal?: AbortSignal) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deviceID)) {
+      throw new Error('Clipboard 设备标识无效')
+    }
+    return this.request<void>('/api/v1/clipboard/devices/' + encodeURIComponent(deviceID) + '/revoke', {
+      method: 'POST', cache: 'no-store', signal,
+    })
+  }
+
   clipboardItems(before?: number, signal?: AbortSignal) {
     const query = before ? '?before=' + encodeURIComponent(String(before)) : ''
     return this.request<{
