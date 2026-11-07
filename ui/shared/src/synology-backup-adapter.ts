@@ -559,6 +559,25 @@ export type XDriveSynologyNotesImageReceipt = {
 }
 
 export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommonBatchActions, XDriveLocalBackupScheduleActions {
+  clipboardAvailable(signal?: AbortSignal): Promise<boolean>
+  clipboardVault(signal?: AbortSignal): Promise<{
+    owner_id: number; salt: string; kdf: string; iterations: number;
+    check_nonce: string; check_ciphertext: string; aad_scope: string
+  }>
+  clipboardCheck(ownerScope: string, value: { nonce: string; ciphertext: string; scope: string },
+    signal?: AbortSignal): Promise<{
+    owner_id: number; salt: string; kdf: string; iterations: number;
+    check_nonce: string; check_ciphertext: string; aad_scope: string
+  }>
+  clipboardList(before?: number, signal?: AbortSignal): Promise<{
+    items: import('./mui/ClipboardPage').XDriveClipboardItem[]; next_before: number | null
+  }>
+  clipboardCreate(ownerScope: string, item: {
+    client_event_id: string; kind: 'text/plain' | 'text/uri-list'
+    nonce: string; ciphertext: string
+  }, signal?: AbortSignal): Promise<import('./mui/ClipboardPage').XDriveClipboardItem>
+  clipboardDelete(ownerScope: string, id: number, signal?: AbortSignal): Promise<void>
+  clipboardClear(ownerScope: string, signal?: AbortSignal): Promise<void>
   /** Same-origin, Server Owner-scoped Notes only. No generic Agent proxy. */
   notesAvailable(signal?: AbortSignal): Promise<boolean>
   notesImagesAvailable(signal?: AbortSignal): Promise<boolean>
