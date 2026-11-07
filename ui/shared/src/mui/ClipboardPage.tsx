@@ -134,6 +134,31 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     }
   }, [key, load])
 
+  useEffect(() => {
+    if (!key || !port.watchChanges) return
+    const controller = new AbortController()
+    // SSE carries only invalidation signals. GET /items remains authoritative.
+    // Reconnect is bounded; old deployments keep using foreground polling.
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const run = async () => {
+      if (controller.signal.aborted) return
+      try {
+        await port.watchChanges!(() => {
+          if (!controller.signal.aborted && document.visibilityState === 'visible') void load()
+        }, controller.signal)
+      } catch {
+        // Failed/unsupported SSE never disables the existing visible refresh.
+      } finally {
+        if (!controller.signal.aborted) timer = setTimeout(() => { void run() }, 3000)
+      }
+    }
+    void run()
+    return () => {
+      controller.abort()
+      if (timer) clearTimeout(timer)
+    }
+  }, [key, port, load])
+
   const unlock = async () => {
     if (busy || key) return
     const actionToken = actionFence.current.capture()
