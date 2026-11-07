@@ -106,16 +106,41 @@ internal fun NativeClipboardScreen(
             if (stillSession(snapshot)) refreshing = false
         }
     }
-    // A mounted Compose screen remains alive when Android backgrounds the
-    // app; STOPPED cancels its polling job, STARTED resumes with a fresh GET.
+    // Inactive/background activities must not keep either a polling job or
+    // the Owner SSE socket alive. Resume always reconciles full GET first.
     LaunchedEffect(epoch, key, lifecycleOwner) {
         if (key == null) return@LaunchedEffect
+        val snapshot = actionFence.capture()
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             if (stillOwner() && key != null) refresh()
-            while (stillOwner() && key != null) {
+            while (stillSession(snapshot) && key != null) {
                 delay(15_000)
-                if (!stillOwner() || key == null) break
+                if (!stillSession(snapshot) || key == null) break
                 refresh()
+            }
+        }
+    }
+    LaunchedEffect(epoch, key, lifecycleOwner) {
+        if (key == null) return@LaunchedEffect
+        val snapshot = actionFence.capture()
+        var after = 0L // Only in-memory for the current unlock/Owner epoch.
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (stillOwner() && key != null) refresh()
+            while (stillSession(snapshot) && key != null) {
+                try {
+                    after = controller.clipboardWatch(after) {
+                        withContext(Dispatchers.Main.immediate) {
+                            if (stillSession(snapshot) && key != null) refresh()
+                        }
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // Unsupported/failed SSE never disables the 15s fallback.
+                }
+                if (!stillSession(snapshot) || key == null) break
+                refresh() // Disconnect/cursor eviction: full Owner GET.
+                delay(3_000)
             }
         }
     }

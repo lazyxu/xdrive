@@ -132,17 +132,42 @@ struct XDriveIOSNativeClipboardScreen: View {
         } message: {
             Text("只删除当前 Owner 的 Server 密文历史，不能撤销。")
         }
-        // Never poll while the app is inactive or backgrounded. After
-        // returning to foreground, reconcile current Owner state immediately.
+        // The polling task and SSE stream are both strictly foreground.
+        // Returning to an active scene triggers an immediate current-Owner GET.
         .task(id: unlocked && scenePhase == .active) {
             guard unlocked, scenePhase == .active else { return }
             await refresh()
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(nanoseconds: 15_000_000_000)
-                } catch { break }
+            while !Task.isCancelled && scenePhase == .active {
+                do { try await Task.sleep(nanoseconds: 15_000_000_000) }
+                catch { break }
                 guard !Task.isCancelled, scenePhase == .active else { break }
                 await refresh()
+            }
+        }
+        .task(id: unlocked && scenePhase == .active) {
+            guard unlocked, scenePhase == .active else { return }
+            let generation = sessionGeneration
+            var after: UInt64 = 0 // Never persist or reuse across Owners.
+            while !Task.isCancelled && scenePhase == .active &&
+                  sessionGeneration == generation && key != nil {
+                do {
+                    let client = try await authorizedClient(for: generation)
+                    after = try await client.watchChanges(after: after) {
+                        guard !Task.isCancelled, scenePhase == .active,
+                              sessionGeneration == generation,
+                              ownerAtUnlock == client.owner, key != nil else { return }
+                        await refresh() // Stream contains only invalidations.
+                    }
+                } catch {
+                    if Task.isCancelled || scenePhase != .active ||
+                        sessionGeneration != generation { break }
+                    // Older Server/no SSE: 15-second foreground GET remains.
+                }
+                guard !Task.isCancelled, scenePhase == .active,
+                      sessionGeneration == generation, key != nil else { break }
+                await refresh() // Full GET after disconnect/cursor eviction.
+                do { try await Task.sleep(nanoseconds: 3_000_000_000) }
+                catch { break }
             }
         }
         .onChange(of: login.owner) { _ in lock() }

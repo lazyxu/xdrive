@@ -1,6 +1,7 @@
 package com.tfluid.xdrive.core
 
 import java.io.Closeable
+import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -11,7 +12,10 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -506,6 +510,12 @@ interface XDriveService {
     suspend fun clipboardClear(accessToken: String) {
         throw ApiException(501,"Owner Clipboard clear unavailable")
     }
+    /** Only explicit foreground subscriptions may listen for Owner invalidations.
+     * Current Owner bearer is required; all test stubs fail closed by default.
+     */
+    suspend fun clipboardWatch(accessToken: String, after: Long,
+        onChange: suspend () -> Unit): Long =
+        throw ApiException(501,"Owner Clipboard SSE unavailable")
 
     /** Exact Owner Notes endpoints. Mocks without Notes support fail closed. */
     suspend fun notesInitialize(accessToken: String) {
@@ -1074,6 +1084,56 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     }
     override suspend fun clipboardClear(accessToken: String) {
         request("clipboard/items",accessToken,method="DELETE",emptyResponse=true)
+    }
+
+    /** Bounded 20s server SSE on the SAME TLS/DNS-pinned Owner transport.
+     * The stream only signals invalidation. It never carries ciphertext, OS
+     * clipboard text, credentials or a long-lived device subscription.
+     */
+    override suspend fun clipboardWatch(accessToken: String, after: Long,
+        onChange: suspend () -> Unit): Long = withContext(Dispatchers.IO) {
+        require(after >= 0L && validToken(accessToken))
+        val url = address.url.toHttpUrlOrNull()!!.newBuilder()
+            .addPathSegments("api/v1/clipboard/events")
+            .addQueryParameter("after", after.toString()).build()
+        val request = Request.Builder().url(url)
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept", "text/event-stream")
+            .header("Cache-Control", "no-store")
+            .build()
+        val call = http.newCall(request)
+        val dispose = currentCoroutineContext()[Job]?.invokeOnCompletion { call.cancel() }
+        try {
+            call.execute().use { response ->
+                if (response.code != 200) throw ApiException(response.code,
+                    "Owner Clipboard events unavailable")
+                val type = response.header("Content-Type").orEmpty()
+                    .substringBefore(';').trim().lowercase(Locale.ROOT)
+                if (type != "text/event-stream") invalidPayload()
+                val source = (response.body ?: invalidPayload()).source()
+                val cursor = XDriveClipboardSSECursor(after)
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val line = try {
+                        // An untrusted server must never accumulate unlimited
+                        // content or smuggle a payload into an SSE frame.
+                        source.readUtf8LineStrict(4096)
+                    } catch (_: EOFException) {
+                        break // A short server stream completes normally.
+                    }
+                    if (cursor.acceptLine(line)) {
+                        currentCoroutineContext().ensureActive()
+                        onChange() // UI must re-fetch Owner-scoped GET /items.
+                    }
+                }
+                cursor.cursor
+            }
+        } catch (failure: IOException) {
+            throw transportFailure(failure)
+        } finally {
+            dispose?.dispose()
+            call.cancel()
+        }
     }
 
     override suspend fun notesInitialize(accessToken: String) {
