@@ -166,3 +166,16 @@ test('trip navigation keeps its verified Owner list while the child wall is push
   assert.match(list, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?selectedYear = nil[\s\S]*?invalidate\(\)/);
   assert.match(list, /\.onChange\(of: phase\) \{ new in[\s\S]*?else \{ invalidate\(\) \}/);
 });
+
+test('accepted Owner map covers and TLS transport cannot regress when adding native trips', () => {
+  const covers = map.slice(map.indexOf('private func loadCurrentOwnerCovers()'));
+  assert.match(covers, /let maximumConcurrentCovers = 3/);
+  assert.match(covers, /withTaskGroup\(of: XDriveIOSOwnerMapCoverOutcome\.self\)/);
+  assert.match(covers, /case \.revoked:[\s\S]*?group\.cancelAll\(\)/);
+  assert.match(map, /XDriveIOSNativeExactTripsScreen\(login: login\)/);
+  assert.match(reader, /class XDriveIOSNativeMediaRejectRedirect:\s*XDriveIOSServerTLSDelegate/);
+  assert.match(reader, /expectedStatus: Int = 200/);
+  assert.match(reader, /reply\.statusCode == expectedStatus/);
+  assert.match(reader, /func exactTripPage\(/);
+  assert.doesNotMatch(covers, /URLSession\(configuration:|UploadSession|WKWebView/);
+});
