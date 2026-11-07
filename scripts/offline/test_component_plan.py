@@ -136,7 +136,7 @@ class ComponentPlanTests(unittest.TestCase):
     def test_source_models_metadata_includes_all_weight_hashes(self):
         source = (ROOT / "services/photo-face-analyzer/fetch_models.py").read_text("utf-8")
         self.assertIn('"siglip2_vision_int8.onnx"', source)
-        self.assertIn('"text_recognition_CRNN_CN_2021nov.onnx"', source)
+        self.assertIn('"ppocrv5_mobile_rec.onnx"', source)
         self.assertEqual(len(component_plan.analyze(ROOT, POSTGRES_ID, None)["fingerprints"]["ai-models"]), 64)
 
 

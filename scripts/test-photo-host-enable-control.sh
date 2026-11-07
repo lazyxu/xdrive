@@ -16,7 +16,14 @@ set -euo pipefail
 printf '%s\n' "$*" >> "$XD_PHOTO_HOST_FAKE_CALLS"
 case "$*" in
   "info") exit 0 ;;
+  "image inspect "*) [[ -z "${XD_TEST_PHOTO_IMAGE_MISSING:-}" ]] ;;
+  *"pull photo-face") [[ -z "${XD_TEST_PHOTO_PULL_FAIL:-}" ]] ;;
+  "container ls -a --filter name=^/xdrive-photo-face$ --format {{.ID}}")
+    [[ -z "${XD_TEST_PHOTO_INVENTORY_FAIL:-}" ]] || exit 1
+    [[ -z "${XD_TEST_PHOTO_INVENTORY_ID:-}" ]] || printf '%s\n' "$XD_TEST_PHOTO_INVENTORY_ID"
+    ;;
   "inspect --format {{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}} xdrive-photo-face")
+    [[ -z "${XD_TEST_PHOTO_INSPECT_FAIL:-}" || -f "$XD_PHOTO_HOST_FAKE_STATE" ]] || exit 1
     if [[ -f "$XD_PHOTO_HOST_FAKE_STATE" ]]; then
       [[ -z "${XD_PHOTO_HOST_FAKE_UNHEALTHY:-}" ]] && echo 'true|healthy' || echo 'true|unhealthy'
     else
@@ -41,6 +48,28 @@ source "$ROOT/scripts/server-control.sh"
 unset XD_HOST_CONTROL_SOURCE_ONLY
 dir="$(prepare_dir)"
 status="$dir/photo-host-control-status.json"
+# A missing fixed container is eligible for first creation, but a Docker
+# outage or an existing uninspectable container remains unknown.
+export XD_TEST_PHOTO_INSPECT_FAIL=1
+test "$(photo_host_control_probe)" = stopped
+photo_intelligence_host_refresh
+test "$(json_value "$dir/photo-intelligence-runtime-status.json" state)" = stopped
+export XD_TEST_PHOTO_INVENTORY_FAIL=1
+test "$(photo_host_control_probe)" = unknown
+unset XD_TEST_PHOTO_INVENTORY_FAIL
+export XD_TEST_PHOTO_INVENTORY_ID=existing-but-not-inspectable
+test "$(photo_host_control_probe)" = unknown
+unset XD_TEST_PHOTO_INVENTORY_ID XD_TEST_PHOTO_INSPECT_FAIL
+# First-install download failure cannot start a container; successful
+# preparation does start it. Existing offline cache avoids registry access.
+export XD_TEST_PHOTO_IMAGE_MISSING=1 XD_TEST_PHOTO_PULL_FAIL=1
+if photo_host_control_start; then echo 'failed pull incorrectly started model' >&2; exit 1; fi
+test ! -f "$XD_PHOTO_HOST_FAKE_STATE"
+unset XD_TEST_PHOTO_PULL_FAIL
+photo_host_control_start
+test -f "$XD_PHOTO_HOST_FAKE_STATE"
+rm "$XD_PHOTO_HOST_FAKE_STATE"
+unset XD_TEST_PHOTO_IMAGE_MISSING
 photo_host_control_refresh
 test "$(json_value "$status" state)" = idle
 test "$(photo_host_control_uint "$status" applied_revision)" = 0
@@ -49,8 +78,10 @@ make_request() {
   printf '{"request_id":"0123456789abcdef01234567","revision":%s,"enabled":%s,"created_at":"%s"}\n' \
     "$revision" "$enabled" "$time" > "$dir/photo-host-control-request.json"
 }
+export XD_TEST_PHOTO_INSPECT_FAIL=1
 make_request 1 true
 photo_host_control_process
+unset XD_TEST_PHOTO_INSPECT_FAIL
 test "$(json_value "$status" state)" = success
 test "$(photo_host_control_uint "$status" applied_revision)" = 1
 test "$(json_bool_value "$status" profile_verified)" = true

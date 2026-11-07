@@ -5,10 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"image"
-	"image/color"
-	"image/draw"
-	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,18 +21,15 @@ import (
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/photointelligence"
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/gofont/goregular"
-	"golang.org/x/image/font/opentype"
-	"golang.org/x/image/math/fixed"
 	"gorm.io/gorm"
 )
 
 // runOCRRealModelGalleryFixture is only called from the existing isolated
 // PostgreSQL Gallery filter test when XD_OCR_REAL_MODEL_E2E=1. Unlike the
 // fake analyzer tests, its input is JPEG bytes and its output is produced by
-// the real pinned PP-OCR/CRNN model over the private Unix Socket.
-// It does not test the HTTP upload API or character-level OCR accuracy.
+// the real pinned PP-OCRv3/v5 model over the private Unix Socket.
+// It asserts known Chinese/English text, persistence, ACL and revision fencing.
+// It does not test the HTTP upload API.
 func runOCRRealModelGalleryFixture(
 	t *testing.T,
 	db *gorm.DB,
@@ -130,12 +123,12 @@ func runOCRRealModelGalleryFixture(
 	if err := db.Where("asset_id = ?", asset.ID).First(&ocr).Error; err != nil {
 		t.Fatal(err)
 	}
-	// This checks that the real OCR recognizer finds at least one searchable
-	// word, without claiming the decoded spelling equals the fixture label.
-	word := ocrRealSearchToken(ocr.Text)
-	if word == "" {
-		t.Fatal("pinned PP-OCR/CRNN returned no searchable text for the high-contrast JPEG fixture")
+	for _, expected := range []string{"中文识别", "测试照片", "XDRIVE", "SEARCH 2026"} {
+		if !strings.Contains(ocr.Text, expected) {
+			t.Fatalf("real OCR did not recognize known fixture text %q: %q", expected, ocr.Text)
+		}
 	}
+	word := "中文识别"
 	if ocr.Language == "" {
 		t.Fatal("model OCR language was not persisted")
 	}
@@ -163,18 +156,20 @@ func runOCRRealModelGalleryFixture(
 	if restoreWrite.Error != nil || restoreWrite.RowsAffected != 1 {
 		t.Fatalf("restore actual OCR search evidence: %v (rows=%d)", restoreWrite.Error, restoreWrite.RowsAffected)
 	}
-	items, err := server.queryMediaItems(ctx, ownerID, mediaQueryOptions{Search: word}, "", 10, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, item := range items {
-		if item.Node.ID == node.ID {
-			found = true
+	for _, query := range []string{word, "XDRIVE", "SEARCH 2026"} {
+		items, err := server.queryMediaItems(ctx, ownerID, mediaQueryOptions{Search: query}, "", 10, 0)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if !found {
-		t.Fatalf("real OCR model text is not searchable in Gallery: query runes=%d", len([]rune(word)))
+		found := false
+		for _, item := range items {
+			if item.Node.ID == node.ID {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("real OCR model text is not searchable in Gallery: %q", query)
+		}
 	}
 	foreign := meta.User{
 		Username:     "ocr-real-foreign-" + uuid.NewString(),
@@ -216,35 +211,17 @@ func runOCRRealModelGalleryFixture(
 			t.Fatal("stale OCR remained searchable after image revision changed")
 		}
 	}
-	t.Logf("real JPEG→PP-OCR/CRNN→PostgreSQL→Gallery search passed: JPEG=%d bytes, OCR=%d runes",
+	t.Logf("real JPEG→PP-OCRv3/v5→PostgreSQL→Gallery search passed: JPEG=%d bytes, OCR=%d runes",
 		len(jpegBytes), len([]rune(ocr.Text)))
 }
 
 func ocrRealJPEGFixture(t *testing.T) []byte {
 	t.Helper()
-	img := image.NewRGBA(image.Rect(0, 0, 1024, 640))
-	draw.Draw(img, img.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
-	ttf, err := opentype.Parse(goregular.TTF)
+	data, err := os.ReadFile(filepath.Join("..", "..", "services", "photo-face-analyzer", "tests", "fixtures", "ocr-zh-en.jpg"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	face, err := opentype.NewFace(ttf, &opentype.FaceOptions{
-		Size: 82, DPI: 72, Hinting: font.HintingFull,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer face.Close()
-	drawer := font.Drawer{Dst: img, Src: image.NewUniform(color.Black), Face: face}
-	for i, label := range []string{"XDRIVE", "PHOTO OCR", "SEARCH 2026"} {
-		drawer.Dot = fixed.P(55, 140+i*185)
-		drawer.DrawString(label)
-	}
-	var encoded bytes.Buffer
-	if err := jpeg.Encode(&encoded, img, &jpeg.Options{Quality: 95}); err != nil {
-		t.Fatal(err)
-	}
-	return encoded.Bytes()
+	return data
 }
 
 func ocrRealSearchToken(value string) string {
@@ -276,7 +253,13 @@ func ocrRealStartModel(
 	t *testing.T, ctx context.Context, imageRef, previewOrigin string,
 ) *photointelligence.UnixSmartAnalyzer {
 	t.Helper()
-	socketDir := t.TempDir()
+	// AF_UNIX paths are limited to 108 bytes. A subtest-derived TempDir name
+	// exceeds that limit under nested Docker/runner temporary roots.
+	socketDir, err := os.MkdirTemp("", "ocr-sock-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
 	socketPath := filepath.Join(socketDir, "model.sock")
 	name := "xdrive-ocr-test-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	const token = "ocr-local-test-only-token"
@@ -310,9 +293,11 @@ func ocrRealStartModel(
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(120 * time.Second)
+	var lastCheckErr error
 	for time.Now().Before(deadline) {
 		probeCtx, stop := context.WithTimeout(ctx, time.Second)
 		_, checkErr := client.Info(probeCtx)
+		lastCheckErr = checkErr
 		stop()
 		if checkErr == nil {
 			return client
@@ -324,7 +309,7 @@ func ocrRealStartModel(
 		}
 		time.Sleep(400 * time.Millisecond)
 	}
-	t.Fatal("pinned Photo Intelligence model did not start")
+	t.Fatalf("pinned Photo Intelligence model did not start: %v", lastCheckErr)
 	return nil
 }
 

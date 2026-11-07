@@ -1609,7 +1609,8 @@ jobs:
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         run: bash scripts/ci/test-photo-face-real-model.sh
       - name: Real JPEG PP-OCR and Gallery search PostgreSQL integration
-        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-')
+        # Run the pinned OCR model on the reconciled PR, not only the original fixture.
+        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-') || github.head_ref == 'integration/ocr-master-reconciled-20261107')
         run: bash scripts/ci/test-photo-ocr-real-model.sh
 
       - name: Save Photo Intelligence model download progress

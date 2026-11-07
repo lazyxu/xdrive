@@ -67,6 +67,7 @@ struct XDriveIOSNativeViewerResourceDetail: Identifiable {
 struct XDriveIOSNativeViewerInfoSheet: View {
     let details: XDriveIOSNativeViewerMediaDetails
     var onOpenLocation: (() -> Void)? = nil
+    var ocr: XDriveIOSNativeCloudOCRView? = nil
     @Environment(\.dismiss) private var dismiss
 
     private func sizeLabel(_ bytes: Int64?) -> String {
@@ -94,6 +95,7 @@ struct XDriveIOSNativeViewerInfoSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                if let ocr { Section("识别文字（OCR）") { ocr } }
                 Section("媒体信息") {
                     LabeledContent("名称", value: details.fileName)
                     LabeledContent("类型", value: details.mediaKind)

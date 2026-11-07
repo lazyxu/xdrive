@@ -28,12 +28,13 @@ export function XDriveMediaOCRDetails({
   const [detail, setDetail] = useState<MediaItem | null>(item.ocr ? item : null)
   const [phase, setPhase] = useState<'loading' | 'loaded' | 'error'>(item.ocr ? 'loaded' : 'loading')
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [refresh, setRefresh] = useState(0)
   useEffect(() => {
     const abort = new AbortController()
     setPhase('loading')
     setDetail(null)
     setCopyState('idle')
-    if (item.ocr) {
+    if (item.ocr && (refresh === 0 || !loadMediaItem)) {
       // Dedicated Viewer may already hold the authorized detail response.
       setDetail(item)
       setPhase('loaded')
@@ -55,12 +56,12 @@ export function XDriveMediaOCRDetails({
       if (!abort.signal.aborted) setPhase('error')
     })
     return () => abort.abort()
-  }, [item.node.id, item.node.revision, item.content_key, item.ocr, loadMediaItem])
+  }, [item.node.id, item.node.revision, item.content_key, item.ocr, loadMediaItem, refresh])
 
   const ocr = detail && photoContentIdentity(detail) === photoContentIdentity(item) ? detail.ocr : undefined
   const readyText = phase === 'loaded' && ocr?.state === 'ready' ? ocr.text?.trim() || '' : ''
   const message = phase === 'loading' ? '正在读取 OCR 结果…'
-    : phase === 'error' ? '无法读取识别结果，请重新打开属性'
+    : phase === 'error' ? '无法读取识别结果，请刷新重试'
     : ocr?.state === 'running' ? '正在识别照片文字…'
     : ocr?.state === 'pending' ? '尚未识别，等待后台自动分析'
     : ocr?.state === 'failed'
@@ -95,6 +96,10 @@ export function XDriveMediaOCRDetails({
       ) : (
         <Typography role="status" variant="body2" color="text.secondary">{message}</Typography>
       )}
+      {loadMediaItem ? (
+        <Button size="small" disabled={phase === 'loading'}
+          onClick={() => setRefresh(value => value + 1)}>刷新识别结果</Button>
+      ) : null}
     </Box>
   )
 }

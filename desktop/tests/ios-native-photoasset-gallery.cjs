@@ -262,6 +262,8 @@ test('native PhotoAsset authenticated reads stream and stop at the first byte ov
   assert.match(read, /reply\.statusCode == expectedStatus/);
   const reanalyze = api.slice(api.indexOf('func reanalyzeFaces('), api.indexOf('func people('));
   assert.match(reanalyze, /expectedStatus: 202/);
+  const reanalyzeOCR = api.slice(api.indexOf('func reanalyzeOCR('), api.indexOf('func page('));
+  assert.match(reanalyzeOCR, /method: "POST"[\s\S]*expectedStatus: 202/);
   assert.doesNotMatch(read, /client\.data\(for:/);
 });
 

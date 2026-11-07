@@ -201,7 +201,7 @@ services:
       start_period: 15s
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: ${XD_PHOTO_FACE_MEMORY_LIMIT:-1g}
+    mem_limit: ${XD_PHOTO_FACE_MEMORY_LIMIT:-2g}
     cpus: ${XD_PHOTO_FACE_CPU_LIMIT:-1.0}
     pids_limit: ${XD_PHOTO_FACE_PIDS_LIMIT:-128}
 

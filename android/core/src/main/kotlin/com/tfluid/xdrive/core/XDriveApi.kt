@@ -248,6 +248,7 @@ data class GalleryAsset(
     /** Null means older/partial media DTO did not describe favorite state. */
     val favorite: Boolean? = null,
     val contentKey: String? = null,
+    val ocr: PhotoOCR? = null,
 ) {
     val identity: String get() = contentKey ?: "legacy:${node.id}:${node.revision}"
 }
@@ -498,6 +499,8 @@ interface XDriveService {
     /** Validate a current Files node against its authenticated Owner media DTO. */
     suspend fun filesMediaItem(accessToken: String, node: DriveNode): GalleryAsset =
         throw ApiException(501, "Native Files media detail unavailable")
+    suspend fun reanalyzePhotoOCR(accessToken: String): Unit =
+        throw ApiException(501, "Photo OCR reanalysis unavailable")
     /** BD09-only 8×8 Owner Map/Cells, gated by signed Server release. */
     suspend fun baiduNativeMapCells(
         accessToken: String, bounds: OwnerBd09Bounds,
@@ -1792,7 +1795,8 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             else -> invalidPayload()
         }
         if (live && kind != "image") invalidPayload()
-        return GalleryAsset(original, kind, captured, duration, live, thumbnail)
+        return GalleryAsset(original, kind, captured, duration, live, thumbnail,
+            ocr = if (kind == "image") parsePhotoOCR(detail["ocr"]) else null)
     }
 
     /** Decode both Owner lists and create ACKs through one strict contract. */
@@ -1814,6 +1818,15 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             name.any { it.isISOControl() } ||
             count < 0 || revision < 0 || folder < 0) invalidPayload()
         return GalleryAlbum(id, kind, name, count, revision, folder, cover)
+    }
+
+    override suspend fun reanalyzePhotoOCR(accessToken: String) {
+        val owner = verifiedOwnerIdentity(accessToken)
+        val kinds = JsonArray(listOf(JsonPrimitive("smart_search")))
+        val answer = requestElement("photo-intelligence/reanalyze", accessToken,
+            bodyObject = JsonObject(mapOf("kinds" to kinds)),
+            expectedStatus = 202) as? JsonObject ?: invalidPayload()
+        if (answer.long("owner_id") != owner.id || answer["accepted"] != kinds) invalidPayload()
     }
 
     override suspend fun reanalyzeGalleryFaces(accessToken: String) {

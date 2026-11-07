@@ -61,8 +61,8 @@ def model_output_inputs(source: str) -> bytes:
     Normalized AST ignores comments and formatting while retaining strings,
     expression order and the output/layout logic used to build those files.
     """
-    declarations = {"FILES", "LICENSES", "IMAGENET_LABELS_SHA256", "CRNN_CHARSET_SHA256",
-                    "OPENCV_ZOO_COMMIT", "SIGLIP_ONNX_COMMIT", "SIGLIP_TOKENIZER_COMMIT"}
+    declarations = {"FILES", "LICENSES", "IMAGENET_LABELS_SHA256", "PPOCR_CHARSET_SHA256",
+                    "OPENCV_ZOO_COMMIT", "PPOCR_REC_COMMIT", "SIGLIP_ONNX_COMMIT", "SIGLIP_TOKENIZER_COMMIT"}
     functions = {"write_runtime_text_assets", "model_metadata_text", "main"}
     found = {}
     for node in ast.parse(source).body:

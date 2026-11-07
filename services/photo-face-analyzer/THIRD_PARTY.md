@@ -14,12 +14,26 @@ identities before the image can be built.
 | SFace | `face_recognition_sface_2021dec.onnx` | `0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79` | Apache-2.0 |
 | MobileNetV2 | `image_classification_mobilenetv2_2022apr.onnx` | `c0c3f76d93fa3fd6580652a45618618a220fced18babf65774ed169de0432ad5` | Apache-2.0 |
 | PP-OCRv3 CN detector | `text_detection_cn_ppocrv3_2023may.onnx` | `03f550c6b406fda8bf54bd8327815f6c7e2edd98cea02348c93d879254366587` | Apache-2.0 |
-| CRNN CN recognizer | `text_recognition_CRNN_CN_2021nov.onnx` | `c760bf82d684b87dfabb288e6c0f92d41a8cd6c1780661ca2c3cd10c2065a9ba` | Apache-2.0 |
 
 The corresponding upstream license texts are downloaded from the same pinned
-commit into `/licenses`. ImageNet labels and the CRNN CN charset are extracted
-at image-build time from the pinned OpenCV Zoo source files; xDrive does not
+commit into `/licenses`. ImageNet labels are extracted
+at image-build time from the pinned OpenCV Zoo source; xDrive does not
 fetch labels or dictionaries at runtime.
+
+## PP-OCRv5 recognizer provenance
+
+The official Apache-2.0 [PaddlePaddle model](https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/tree/ed152b8b495f84de93cda5709d768548a9127622)
+is pinned to commit `ed152b8b495f84de93cda5709d768548a9127622`.
+The ONNX SHA-256 is `da72dc72ca4dc220df0dfde68c1dedc31c58d3e76a25871122e5056227d50092`.
+The inference YAML SHA-256 is `5dfeb2777f6d0db8177d8128a8acfcf6e6276dc4ac73ea3bf0dc06d6a5e85d8e`.
+Its 18,383 dictionary entries are extracted into a checksum-verified JSON array;
+CTC adds blank and space exactly once. The pinned model card accompanies the
+Paddle Apache-2.0 license in `/licenses`. PyYAML is used only during packaging.
+
+Recognition uses CPU ONNX Runtime with two intra-op threads and one inter-op
+thread, BGR height 48, aspect-preserving width capped at 1600, zero padding to at
+least 320, normalization to [-1, 1], and CTC collapse. The pipeline version changes
+so earlier recognition evidence is rebuilt instead of treated as current.
 
 ## SigLIP 2 semantic-search provenance
 
@@ -45,7 +59,6 @@ Sources:
 - https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_recognition_sface
 - https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/image_classification_mobilenet
 - https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/text_detection_ppocr
-- https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/text_recognition_crnn
 - https://huggingface.co/google/siglip2-base-patch16-224
 - https://huggingface.co/onnx-community/siglip2-base-patch16-224-ONNX
 
@@ -57,6 +70,7 @@ The image pins:
 - `numpy==2.5.3`
 - `onnxruntime==1.30.0`
 - `tokenizers==0.23.2`
+- `PyYAML==6.0.3`
 
 The headless OpenCV package is used because the analyzer has no GUI/display
 dependency. ONNX Runtime is CPU-only in the reference path. The reference image also
@@ -78,7 +92,7 @@ The lexical Smart Search pipeline is CPU-only:
 
 1. MobileNetV2 provides a bounded top-5 ImageNet visual-label vocabulary.
 2. PP-OCRv3 CN detects scene-text regions on the xDrive analysis preview.
-3. CRNN CN recognizes Chinese, Latin letters, digits, and its pinned symbol set.
+3. PP-OCRv5 mobile recognizes Chinese, Latin letters, digits, and its pinned symbol set.
 4. xDrive stores only rebuildable labels/OCR text.
 
 The semantic Smart Search pipeline is CPU-only:

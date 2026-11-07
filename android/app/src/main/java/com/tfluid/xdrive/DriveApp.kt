@@ -1110,10 +1110,16 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         AlertDialog(onDismissRequest = controller::dismissGalleryInfo,
             title = { Text(photo.node.name) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(if (photo.mediaKind == "video") "视频" else if (photo.livePhoto) "实况照片" else "照片")
                     if (photo.capturedAt.isNotBlank()) Text("拍摄时间：${photo.capturedAt}")
                     Text("大小：${formatSize(photo.node.size)}")
+                    if (photo.mediaKind == "image") {
+                        key(state.nativeUiSessionId, photo.node.id, photo.node.revision) {
+                            GalleryOCRPanel(photo, controller)
+                        }
+                    }
                 }
             },
             confirmButton = {

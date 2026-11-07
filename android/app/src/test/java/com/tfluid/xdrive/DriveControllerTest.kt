@@ -12,6 +12,37 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DriveControllerTest {
+    @Test fun ocrDetailIsDiscardedWhenInfoClosesAndMutationIsNeverRetried() = runTest {
+        val read = CompletableDeferred<Unit>()
+        var posts = 0
+        val api = object : Service() {
+            override suspend fun filesMediaItem(accessToken: String, node: DriveNode): GalleryAsset {
+                read.await()
+                return GalleryAsset(node, "image", ocr = PhotoOCR("ready", "private 中文"))
+            }
+            override suspend fun reanalyzePhotoOCR(accessToken: String) {
+                posts++
+                throw ApiException(401, "expired")
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val item = c.state.value.galleryItems.single()
+        c.showGalleryInfo(item)
+        val pending = async { c.galleryOCR(item) }
+        runCurrent()
+        c.dismissGalleryInfo()
+        read.complete(Unit)
+        runCurrent()
+        assertTrue(pending.isCancelled)
+        c.showGalleryInfo(item)
+        try { c.reanalyzeGalleryOCR(item); fail("unconfirmed request accepted") }
+        catch (_: ApiException) { }
+        assertEquals(1, posts)
+        assertEquals(0, api.refreshed)
+    }
+
     @Test fun peopleScopeRetiresLateResultsAndUsesPersonRange() = runTest {
         val person = GalleryPerson("auto:v1:" + "a".repeat(64), "", 1, true)
         val photo = GalleryAsset(DriveNode(7, 1, "face.jpg", "file", 12, revision = 2),

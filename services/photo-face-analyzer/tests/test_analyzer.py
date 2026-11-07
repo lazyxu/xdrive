@@ -371,7 +371,7 @@ class AnalyzerTests(unittest.TestCase):
         )
         self.assertEqual(
             smart["text_recognizer"]["sha256"],
-            analyzer.CRNN_SHA256,
+            analyzer.PPOCR_REC_SHA256,
         )
 
         creative = self.creative_runtime.info()
@@ -480,6 +480,43 @@ class AnalyzerTests(unittest.TestCase):
         for near_miss in ("", "X", "X D", "XD ", "xd", "XDRIVE", "XD\\n", None):
             self.assertFalse(match(near_miss))
         self.assertFalse(match(True))
+
+    def test_real_bilingual_jpeg_and_blank_image(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "ocr-zh-en.jpg"
+        result = self.smart_runtime.analyze(cv.imread(str(fixture)))
+        for text in ("中文识别", "测试照片", "XDRIVE", "SEARCH 2026"):
+            self.assertIn(text, result["ocr_text"])
+        self.assertEqual(result["ocr_language"], "zh-en")
+        self.assertEqual(self.smart_runtime._ocr(np.full((800, 1024, 3), 255, np.uint8)), "")
+
+    def test_recognizer_ctc_and_invalid_outputs(self) -> None:
+        runtime = self.smart_runtime
+        indices = [0, 2, 2, 0, 2, len(runtime.charset) - 1, 3]
+        output = np.zeros((1, len(indices), len(runtime.charset)), np.float32)
+        for step, index in enumerate(indices):
+            output[0, step, index] = 1
+        self.assertEqual(runtime._decode_text(output), runtime.charset[2] * 2 + " " + runtime.charset[3])
+        for bad in (np.zeros((2, 1, len(runtime.charset))), np.zeros((1, 1, 3)),
+                    np.full((1, 1, len(runtime.charset)), np.nan),
+                    np.zeros((1, analyzer.SMART_OCR_REC_MAX_WIDTH + 1, len(runtime.charset)), np.uint8)):
+            with self.assertRaises(RuntimeError):
+                runtime._decode_text(bad)
+
+    def test_recognizer_limits_extreme_aspect_ratio(self) -> None:
+        runtime = self.smart_runtime
+        original = runtime.text_recognizer
+        shapes = []
+        class Capture:
+            def run(self, _outputs, inputs):
+                shapes.append(inputs["x"].shape)
+                return [np.zeros((1, 1, len(runtime.charset)), np.float32)]
+        try:
+            runtime.text_recognizer = Capture()
+            runtime._recognize_text(np.full((10, 1000, 3), 255, np.uint8),
+                                    np.array([[0, 1], [0, 0], [999, 0], [999, 1]]))
+        finally:
+            runtime.text_recognizer = original
+        self.assertEqual(shapes, [(1, 3, 48, analyzer.SMART_OCR_REC_MAX_WIDTH)])
 
     def test_sface_synthetic_failure_does_not_turn_yunet_green_into_sface_green(self) -> None:
         # The model consumes only internal synthetic pixels. An independent
@@ -684,7 +721,7 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertEqual(smart_result["ocr_language"], "zh-en")
                 connection.close()
 
-                # Smart classifier, OCR detector and CRNN must all execute
+                # Smart classifier, OCR detector and PP-OCRv5 must all execute
                 # on model-local synthetic pixels. No raw OCR text, labels,
                 # media or model output tensors leave the canary.
                 for target, protocol, request_body, expected in (
@@ -741,7 +778,7 @@ class AnalyzerTests(unittest.TestCase):
                     "ocr_region_count", "ocr_char_count",
                     "ocr_fixture_matched",
                 })
-                # Real CRNN can fail this exact fixture. Do not hard-code
+                # Real PP-OCRv5 can fail this exact fixture. Do not hard-code
                 # positive accuracy or expose the actual decoded text.
                 self.assertIs(type(smart_canary["ocr_fixture_matched"]), bool)
                 self.assertNotIn("ocr_text", smart_canary)

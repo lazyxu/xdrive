@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import http.client
+import json
 import math
 import os
 from pathlib import Path
@@ -14,10 +15,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import yaml
 
 OPENCV_ZOO_COMMIT = "47534e27c9851bb1128ccc0102f1145e27f23f98"
 ZOO_MEDIA = "https://media.githubusercontent.com/media/opencv/opencv_zoo/" + OPENCV_ZOO_COMMIT
 ZOO_RAW = "https://raw.githubusercontent.com/opencv/opencv_zoo/" + OPENCV_ZOO_COMMIT
+PPOCR_REC_COMMIT = "ed152b8b495f84de93cda5709d768548a9127622"
+PPOCR_REC_URL = "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/" + PPOCR_REC_COMMIT
 
 SIGLIP_ONNX_COMMIT = "ba1f3b0843f24bc5417d38e19c37b287d719b2f4"
 SIGLIP_ONNX = (
@@ -33,7 +37,7 @@ SIGLIP_TOKENIZER = (
 # Derived from the same pinned OpenCV Zoo source; verify these on cache reuse
 # and in the network-disabled runtime packaging step as well as the ONNX files.
 IMAGENET_LABELS_SHA256 = "0df974a6fdfba8f5bbb7510f1794a7865206e887f0730a498f548fe48b28f933"
-CRNN_CHARSET_SHA256 = "cafc44d3e1c67556f0207b9c1e94ba481a978fdf44add70f5e69edcb9d0e6255"
+PPOCR_CHARSET_SHA256 = "8ad94e456475f65c95944b1b1601695b3f027198163bdd31b1bb31092e185642"
 
 FILES = (
     {
@@ -61,10 +65,16 @@ FILES = (
         "size": 2423490,
     },
     {
-        "name": "text_recognition_CRNN_CN_2021nov.onnx",
-        "url": ZOO_MEDIA + "/models/text_recognition_crnn/text_recognition_CRNN_CN_2021nov.onnx",
-        "sha256": "c760bf82d684b87dfabb288e6c0f92d41a8cd6c1780661ca2c3cd10c2065a9ba",
-        "size": 72807160,
+        "name": "ppocrv5_mobile_rec.onnx",
+        "url": PPOCR_REC_URL + "/inference.onnx",
+        "sha256": "da72dc72ca4dc220df0dfde68c1dedc31c58d3e76a25871122e5056227d50092",
+        "size": 16534782,
+    },
+    {
+        "name": "ppocrv5_mobile_rec.yml",
+        "url": PPOCR_REC_URL + "/inference.yml",
+        "sha256": "5dfeb2777f6d0db8177d8128a8acfcf6e6276dc4ac73ea3bf0dc06d6a5e85d8e",
+        "size": 148345,
     },
     {
         "name": "siglip2_vision_int8.onnx",
@@ -114,9 +124,9 @@ LICENSES = (
         "sha256": "609aaac97719da6b71cd3ffd08b5de08b75f582e5c50a196fab522b6d5087714",
     },
     {
-        "name": "CRNN_LICENSE.txt",
-        "url": ZOO_RAW + "/models/text_recognition_crnn/LICENSE",
-        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "name": "PPOCRV5_MODEL_CARD.md",
+        "url": PPOCR_REC_URL + "/README.md",
+        "sha256": "7331c129fd5024b6a0abd1f510cfdfb2d7714fdcdbb00df21a0cb8b48e6683ee",
     },
     {
         "name": "EFFICIENTSAM_LICENSE.txt",
@@ -371,7 +381,7 @@ def download_text(url: str, destination: Path, expected_sha256: str) -> str:
 def write_runtime_text_assets(model_dir: Path) -> None:
     try:
         verify_model(model_dir / "imagenet1k_labels.txt", IMAGENET_LABELS_SHA256, None)
-        verify_model(model_dir / "crnn_cn_charset.txt", CRNN_CHARSET_SHA256, None)
+        verify_model(model_dir / "ppocrv5_rec_charset.json", PPOCR_CHARSET_SHA256, None)
         return
     except (FileNotFoundError, ModelIntegrityError):
         pass
@@ -392,29 +402,21 @@ def write_runtime_text_assets(model_dir: Path) -> None:
         raise RuntimeError(f"ImageNet label count is {len(labels)}, expected 1000")
     (model_dir / "imagenet1k_labels.txt").write_text(
         "\n".join(labels) + "\n",
-        encoding="utf-8",
+        encoding="utf-8", newline="\n",
     )
 
-    crnn_source = download_text(
-        ZOO_RAW + "/models/text_recognition_crnn/crnn.py",
-        model_dir / ".crnn_source.py",
-        "349e7262b1d1e87041d56cad30d062685acec5dce9e9f333f030bdc36d283004",
-    )
-    charset = "".join(
-        extract_triple_quoted(crnn_source, "CHARSET_CN_3944").splitlines()
-    )
-    if len(charset) < 3900:
-        raise RuntimeError(
-            f"CRNN CN charset length is {len(charset)}, expected at least 3900"
-        )
-    (model_dir / "crnn_cn_charset.txt").write_text(
-        charset,
-        encoding="utf-8",
+    config_path = model_dir / "ppocrv5_mobile_rec.yml"
+    verify_model(config_path, "5dfeb2777f6d0db8177d8128a8acfcf6e6276dc4ac73ea3bf0dc06d6a5e85d8e", 148345)
+    charset = yaml.safe_load(config_path.read_text(encoding="utf-8"))["PostProcess"]["character_dict"]
+    if not isinstance(charset, list) or len(charset) != 18383 or any(not isinstance(c, str) or not c for c in charset):
+        raise RuntimeError("PP-OCRv5 character dictionary is incomplete")
+    (model_dir / "ppocrv5_rec_charset.json").write_text(
+        json.dumps(charset, ensure_ascii=False, separators=(",", ":")) + "\n",
+        encoding="utf-8", newline="\n",
     )
     verify_model(model_dir / "imagenet1k_labels.txt", IMAGENET_LABELS_SHA256, None)
-    verify_model(model_dir / "crnn_cn_charset.txt", CRNN_CHARSET_SHA256, None)
+    verify_model(model_dir / "ppocrv5_rec_charset.json", PPOCR_CHARSET_SHA256, None)
     (model_dir / ".mobilenet_source.py").unlink(missing_ok=True)
-    (model_dir / ".crnn_source.py").unlink(missing_ok=True)
 
 
 def model_metadata_text() -> str:
@@ -422,6 +424,7 @@ def model_metadata_text() -> str:
         "Pinned models used by xDrive Photo Intelligence",
         "repository: https://github.com/opencv/opencv_zoo",
         f"opencv_zoo_commit: {OPENCV_ZOO_COMMIT}",
+        f"ppocr_rec_commit: {PPOCR_REC_COMMIT}",
         f"siglip_onnx_commit: {SIGLIP_ONNX_COMMIT}",
         f"siglip_tokenizer_commit: {SIGLIP_TOKENIZER_COMMIT}",
         "",
@@ -450,7 +453,7 @@ def main(argv: list[str] | None = None) -> int:
         for item in FILES:
             verify_model(model_dir / item["name"], item["sha256"], item["size"])
         verify_model(model_dir / "imagenet1k_labels.txt", IMAGENET_LABELS_SHA256, None)
-        verify_model(model_dir / "crnn_cn_charset.txt", CRNN_CHARSET_SHA256, None)
+        verify_model(model_dir / "ppocrv5_rec_charset.json", PPOCR_CHARSET_SHA256, None)
         for item in LICENSES:
             verify_model(license_dir / item["name"], item["sha256"], None)
         if metadata.read_text(encoding="utf-8") != model_metadata_text():
@@ -468,7 +471,7 @@ def main(argv: list[str] | None = None) -> int:
     write_runtime_text_assets(model_dir)
     for item in LICENSES:
         download(item["url"], license_dir / item["name"], expected_sha256=item["sha256"])
-    metadata.write_text(model_metadata_text(), encoding="utf-8")
+    metadata.write_text(model_metadata_text(), encoding="utf-8", newline="\n")
     return 0
 
 
