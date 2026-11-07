@@ -3143,9 +3143,9 @@ export default function MobileFiles(props: Props) {
             boxShadow: '0 3px 16px rgba(0,0,0,0.10)',
           }} aria-label="文件分类">
             {([
-              ['recent', <HistoryRoundedIcon/>, '最近项目'],
-              ['favorites', <StarBorderRoundedIcon/>, '收藏'],
+              ['recent', <HistoryRoundedIcon/>, '最近'],
               ['browse', <FolderRoundedIcon/>, '浏览'],
+              ['favorites', <StarBorderRoundedIcon/>, '收藏'],
             ] as const).map(([value, icon, label]) => (
               <Button key={value} data-mobile-files-section={value} aria-current={section === value ? 'page' : undefined}
                 onClick={() => changeSection(value)} sx={{

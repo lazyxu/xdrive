@@ -933,9 +933,15 @@ private final class XDriveIOSNativeFilesTagModel: ObservableObject {
     }
 
     private func reload(ticket: UUID, client: XDriveIOSNativeFilesTagClient) async throws {
-        async let nextTags = client.list()
-        async let nextRows = client.query(nodeIDs: nodeIDs)
-        let (loadedTags, rows) = try await (nextTags, nextRows)
+        // Management-only entry has no selected Nodes. Reading all tags
+        // must not send an unauthorized empty /nodes/tags/query request.
+        let loadedTags = try await client.list()
+        let rows: [XDriveIOSNativeFilesNodeTags]
+        if nodeIDs.isEmpty {
+            rows = []
+        } else {
+            rows = try await client.query(nodeIDs: nodeIDs)
+        }
         try await verify(ticket: ticket)
         var counts: [UInt64: Int] = [:]
         for row in rows {
@@ -982,7 +988,7 @@ private final class XDriveIOSNativeFilesTagModel: ObservableObject {
     }
 
     func load() {
-        guard !nodeIDs.isEmpty, nodeIDs.count <= 500,
+        guard nodeIDs.count <= 500,
               nodeIDs.allSatisfy({ $0 > 0 }), Set(nodeIDs).count == nodeIDs.count else {
             status = "所选文件无效，或一次选择超过 500 项。"
             return
@@ -999,6 +1005,7 @@ private final class XDriveIOSNativeFilesTagModel: ObservableObject {
     }
 
     func toggle(_ tagID: UInt64) {
+        guard !nodeIDs.isEmpty else { return }
         let shouldAssign = assignedCount(for: tagID) < nodeIDs.count
         run(loading: false, message: shouldAssign ? "正在应用标签…" : "正在移除标签…") { ticket in
             let client = try await self.client(ticket: ticket)
@@ -1018,13 +1025,15 @@ private final class XDriveIOSNativeFilesTagModel: ObservableObject {
             status = "标签名称不能为空且最多 64 个 UTF-8 字节；颜色必须为 #RRGGBB。"
             return
         }
-        run(loading: false, message: "正在创建并应用标签…") { ticket in
+        run(loading: false, message: nodeIDs.isEmpty ? "正在创建标签…" : "正在创建并应用标签…") { ticket in
             let client = try await self.client(ticket: ticket)
             let created = try await client.create(name: clean, color: color)
-            try await client.setNodes(tagID: created.id, nodeIDs: self.nodeIDs,
-                                      assigned: true)
+            if !self.nodeIDs.isEmpty {
+                try await client.setNodes(tagID: created.id, nodeIDs: self.nodeIDs,
+                                          assigned: true)
+            }
             try await self.reload(ticket: ticket, client: client)
-            self.status = "标签已创建并应用。"
+            self.status = self.nodeIDs.isEmpty ? "标签已创建。" : "标签已创建并应用。"
         }
     }
 
@@ -1101,12 +1110,17 @@ struct XDriveIOSNativeFilesTagPanel: View {
 
     var body: some View {
         Form {
-            Section("选择范围") {
+            Section(nodeIDs.isEmpty ? "管理标签" : "选择范围") {
                 Text(selectionLabel)
-                Text("\(nodeIDs.count) 个文件或文件夹")
-                    .font(.footnote).foregroundStyle(.secondary)
-                Text("支持一次为最多 500 个项目分配标签。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                if nodeIDs.isEmpty {
+                    Text("可创建、编辑颜色、重命名或删除标签；不修改任何文件。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    Text("\(nodeIDs.count) 个文件或文件夹")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("支持一次为最多 500 个项目分配标签。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
             Section("已有标签") {
                 if model.loading {
@@ -1125,21 +1139,23 @@ struct XDriveIOSNativeFilesTagPanel: View {
                                     .frame(width: 10, height: 10)
                                 Text(tag.name)
                                 Spacer()
-                                let count = model.assignedCount(for: tag.id)
-                                if count == nodeIDs.count {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(.tint)
-                                } else if count > 0 {
-                                    Image(systemName: "minus.circle")
+                                if !nodeIDs.isEmpty {
+                                    let count = model.assignedCount(for: tag.id)
+                                    if count == nodeIDs.count {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.tint)
+                                    } else if count > 0 {
+                                        Image(systemName: "minus.circle")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Text("\(count)/\(nodeIDs.count)")
+                                        .font(.caption.monospacedDigit())
                                         .foregroundStyle(.secondary)
                                 }
-                                Text("\(count)/\(nodeIDs.count)")
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
                             }
                         }
                         .buttonStyle(.plain)
-                        .disabled(model.loading || model.busy)
+                        .disabled(nodeIDs.isEmpty || model.loading || model.busy)
                         Menu {
                             Button("编辑") {
                                 editingTagID = tag.id
@@ -1171,7 +1187,8 @@ struct XDriveIOSNativeFilesTagPanel: View {
                         }.tag(item.1)
                     }
                 }
-                Button(editingTagID == nil ? "创建并应用" : "保存修改") {
+                Button(editingTagID != nil ? "保存修改" :
+                       (nodeIDs.isEmpty ? "创建标签" : "创建并应用")) {
                     if let id = editingTagID {
                         model.update(id: id, name: nameDraft, color: colorDraft)
                     } else {
