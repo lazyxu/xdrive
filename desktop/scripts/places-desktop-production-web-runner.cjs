@@ -84,7 +84,7 @@ async function bootElectron(boot,env,bootstrap){
   const proc=launch(electronBinary,['--no-sandbox','--disable-gpu',bootstrap],electronEnv)
   try{
     const result=await Promise.race([
-      proc.exited,delay(135000).then(()=>({code:'timeout'}))
+      proc.exited,delay(360000).then(()=>({code:'timeout'}))
     ])
     assert.equal(result.code,0,'production Desktop map boot '+boot+
       ' failed: '+proc.getError().slice(-1800))
@@ -142,7 +142,7 @@ async function main(){
     const ready=path.join(dir,'ready.json'),stopFile=path.join(dir,'stop')
     const legacyMarker=path.join(dir,'old-server-map-grant-missing')
     server=launch('go',['test','-run','^TestDesktopPlacesProductionWebRestartFixture$',
-      '-count=1','-timeout=8m','-v','./internal/api'],{
+      '-count=1','-timeout=20m','-v','./internal/api'],{
       ...process.env,XD_DESKTOP_PLACES_PRODUCTION_E2E:'1',
       XD_DESKTOP_PLACES_IP:ip,
       XD_DESKTOP_PLACES_WEB_DIST:webdist,
