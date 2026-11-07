@@ -192,8 +192,7 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 		}
 	}
 	if got := request(http.MethodPost, "/api/v1/auth/desktop-map/issue",
-		native.AccessToken, jsonBody("native_refresh_token", native.RefreshToken), "");
-		got.Code == http.StatusOK {
+		native.AccessToken, jsonBody("native_refresh_token", native.RefreshToken), ""); got.Code == http.StatusOK {
 		t.Fatal("logged-out native Agent issued another map browser grant")
 	}
 	// An independently authenticated session for the same Owner is not part
