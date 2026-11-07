@@ -790,7 +790,12 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         },
                         onOpenDefaultMap = { selectNativeTab(NativeHomeTab.DYNAMIC) },
                         onChooseDynamic = { dynamicPickerOpen = true },
-                        notesController = controller)
+                        notesController = controller,
+                        incomingClipboardText = incomingClipboardText?.takeIf {
+                            it.epoch == state.nativeUiSessionId &&
+                                it.server == state.server && it.username == state.username
+                        }?.text,
+                        onIncomingClipboardConsumed = onIncomingClipboardConsumed)
                     else -> Unit
                 }
             } else when (state.screen) {
