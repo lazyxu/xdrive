@@ -1726,41 +1726,107 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     /// Native Files-style edit bar, positioned above the five-module tab
     /// chrome by SwiftUI safe-area layout rather than a fixed global overlay.
+    /// Keep all four common selection actions visible, not hidden in More.
+    /// A short caption row avoids squeezing five touch targets on iPhone.
+    private func selectionDockAction(
+        _ title: String, symbol: String, enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: symbol).font(.body)
+                Text(title).font(.caption2)
+            }
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.45)
+    }
+
+    private var canDirectDownloadSelection: Bool {
+        guard canSelectPage, let folderID = parentID,
+              selectedIDs == Set(chosenItems.map(\.id)) else { return false }
+        if chosenItems.count == 1 {
+            return chosenItems[0].type == "file" &&
+                containsVerifiedNode(chosenItems[0])
+        }
+        return XDriveIOSNativeFilesBatchExportPolicy.validSelection(
+            chosenItems, parentID: folderID
+        )
+    }
+
+    private func directDownloadSelected() {
+        guard canDirectDownloadSelection else { return }
+        if let file = chosenItems.first, chosenItems.count == 1 {
+            // The existing native single-file exporter owns its own verified
+            // URL/receipt/ShareLink lifecycle, not the batch exporter.
+            selecting = false
+            selectedIDs.removeAll()
+            selectedSnapshots.removeAll()
+            openManagement(for: file, quickAction: .download)
+        } else {
+            prepareSelectedExport()
+        }
+    }
+
+    /// The same Safe Area inset is owned by the native Files screen. No
+    /// additional overlay is inserted between the app-wide five tabs.
     private var filesSelectionToolbar: some View {
-        HStack(spacing: 12) {
-            Text("已选 \(selectedIDs.count)")
-                .font(.footnote.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("native-ios-files-selection-count")
-            Spacer(minLength: 4)
+        VStack(spacing: 0) {
+            HStack {
+                Text("已选 \\(selectedIDs.count)")
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-files-selection-count")
+                Spacer(minLength: 4)
+                if selectedIDs.count > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected {
+                    Text("每批最多处理 200 项")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(minHeight: 22)
             if !batchExport.prepared.isEmpty {
-                Button {
-                    showingBatchShare = true
-                } label: {
-                    Label("导出", systemImage: "square.and.arrow.up")
+                HStack(spacing: 16) {
+                    Button {
+                        showingBatchShare = true
+                    } label: {
+                        Label("导出", systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityIdentifier("native-ios-files-batch-share-toolbar")
+                    Button {
+                        batchExport.invalidate()
+                    } label: {
+                        Label("清理暂存", systemImage: "xmark.circle")
+                    }
+                    .accessibilityIdentifier("native-ios-files-batch-discard-toolbar")
                 }
-                .accessibilityIdentifier("native-ios-files-batch-share-toolbar")
-                Button {
-                    batchExport.invalidate()
-                } label: {
-                    Label("清理暂存", systemImage: "xmark.circle")
-                }
-                .accessibilityIdentifier("native-ios-files-batch-discard-toolbar")
+                .frame(maxWidth: .infinity, minHeight: 48)
             } else {
-                Button {
-                    openBatchDestination(.copy)
-                } label: {
-                    Label("复制", systemImage: "doc.on.doc")
-                }
-                .disabled(!canSelectPage || selectedIDs.isEmpty)
-                .accessibilityIdentifier("native-ios-files-batch-copy")
-                Button {
-                    openBatchDestination(.move)
-                } label: {
-                    Label("移动", systemImage: "folder")
-                }
-                .disabled(!canSelectPage || selectedIDs.isEmpty)
-                .accessibilityIdentifier("native-ios-files-batch-move")
+                HStack(spacing: 2) {
+                    selectionDockAction("复制", symbol: "doc.on.doc",
+                                        enabled: canSelectPage && !selectedIDs.isEmpty) {
+                        openBatchDestination(.copy)
+                    }
+                    .accessibilityIdentifier("native-ios-files-batch-copy")
+                    selectionDockAction("移动", symbol: "folder",
+                                        enabled: canSelectPage && !selectedIDs.isEmpty) {
+                        openBatchDestination(.move)
+                    }
+                    .accessibilityIdentifier("native-ios-files-batch-move")
+                    selectionDockAction("下载", symbol: "arrow.down.circle",
+                                        enabled: canDirectDownloadSelection) {
+                        directDownloadSelected()
+                    }
+                    .accessibilityIdentifier("native-ios-files-batch-direct-download")
+                    selectionDockAction("删除", symbol: "trash",
+                                        enabled: canSelectPage && !selectedIDs.isEmpty) {
+                        showingBatchTrashConfirmation = true
+                    }
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("native-ios-files-batch-direct-trash")
                 Menu {
                     Button("全选当前目录（最多 2048 项）") {
                         selectAllCurrentFolder()
@@ -1810,15 +1876,22 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .disabled(!canSelectPage || selectedIDs.isEmpty)
                     .accessibilityIdentifier("native-ios-files-batch-trash")
                 } label: {
-                    Label("更多", systemImage: "ellipsis.circle")
+                    VStack(spacing: 2) {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.body)
+                        Text("更多").font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .contentShape(Rectangle())
                 }
                 .disabled(!canSelectPage)
                 .accessibilityIdentifier("native-ios-files-batch-more")
+                }
             }
         }
-        .font(.subheadline)
-        .padding(.horizontal, 12)
-        .frame(minHeight: 52)
+        .padding(.horizontal, 10)
+        .padding(.top, 4)
+        .padding(.bottom, 4)
         .background(.bar)
         .accessibilityIdentifier("native-ios-files-batch-toolbar")
     }
