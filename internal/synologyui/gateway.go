@@ -418,7 +418,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			((r.URL.Path == "/v1/nas-share-create" || r.URL.Path == "/v1/nas-draft-bind" || r.URL.Path == "/v1/cloud-create-folder" || r.URL.Path == "/v1/cloud-rename-node" || r.URL.Path == "/v1/cloud-delete-node" || r.URL.Path == "/v1/cloud-move-node" || r.URL.Path == "/v1/cloud-copy-node") && (r.ContentLength < 2 || r.ContentLength > 1024)) ||
 			(r.URL.Path == "/v1/cloud-upload-file" && (r.ContentLength < 2 || r.ContentLength > dsmOwnerSmallUploadJSONMax)) ||
 			(isDSMOwnerNotesWrite(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > dsmOwnerNotesBodyMax)) ||
-            (isDSMClipboardWrite(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > dsmClipboardBodyMax)) ||
+			(isDSMClipboardWrite(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > dsmClipboardBodyMax)) ||
 			(isDSMOwnerNotesImageWrite(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > dsmNotesImageUploadJSONMax)) ||
 			(isLocalBackupManagementMutation(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > localBackupManagementBodyLimit(r.URL.Path))) {
 			http.Error(w, "CSRF validation failed", http.StatusForbidden)
@@ -471,10 +471,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveDSMOwnerNotes(w, r, ctx, agent, key, username)
 		return
 	}
-    if isDSMClipboardRoute(r.URL.Path) {
-        serveDSMOwnerClipboard(w, r, ctx, agent, key, username)
-        return
-    }
+	if isDSMClipboardRoute(r.URL.Path) {
+		serveDSMOwnerClipboard(w, r, ctx, agent, key, username)
+		return
+	}
 	if isDSMOwnerNotesImageRoute(r.URL.Path) {
 		serveDSMOwnerNotesImage(w, r, ctx, agent, key, username)
 		return
