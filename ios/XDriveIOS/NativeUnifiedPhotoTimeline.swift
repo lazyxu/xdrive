@@ -207,7 +207,22 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
 
         let scanner = XDrivePhotoKitBoundedSnapshotScanner()
         do {
-            let localTotal = cursor.localEnd ? cursor.local : try await scanner.start(atOffset: cursor.local)
+            let localTotal: Int
+            if cursor.localEnd {
+                localTotal = cursor.local
+            } else {
+                do {
+                    localTotal = try await scanner.start(atOffset: cursor.local)
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    // PhotoKit trouble must never hide a valid Owner cloud
+                    // page. This mixed cursor simply has no local side.
+                    cursor.localEnd = true
+                    localTotal = cursor.local
+                    notice = "本机照片暂不可访问；云端照片仍可浏览。"
+                }
+            }
             var local: ArraySlice<XDrivePhotoKitScanCandidate> = []
             var cloud: ArraySlice<Item> = []
             var visible: [XDriveIOSNativeUnifiedPhoto] = []
@@ -317,20 +332,27 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
             if case .cloud(let row, _) = item { return row }
             return nil
         }
+        // Gallery is a reader, never an implicit SHA-256 worker. Reuse only
+        // already-proven local hashes (from explicit audit or upload receipts).
+        // Unindexed originals stay visible with an unknown presence label.
         var localProbes: [String: XDriveIOSNativeExactPhotoProbe] = [:]
-        var additions: [(String, XDriveIOSNativeExactPhotoProbe)] = []
         for candidate in locals {
             try Task.checkCancellation()
             if let lease, let cached = try await index.probe(id: candidate.id, lease: lease) {
                 localProbes[candidate.id] = cached
-            } else if let fresh = try? await XDriveIOSNativeExactPhotoProbe.read(candidate) {
-                localProbes[candidate.id] = fresh
-                additions.append((candidate.id, fresh))
             }
         }
-        try Task.checkCancellation()
-        if let lease { try await index.remember(additions, lease: lease) }
-        let cloudProbes = try await fingerprints(clouds, reader: reader)
+        let checkedLocal: XDriveIOSNativePhotoFingerprintIndex.Coverage?
+        if let lease {
+            checkedLocal = try await index.coverage(lease: lease)
+        } else {
+            checkedLocal = nil
+        }
+        // Avoid a second cloud fingerprint HTTP walk when there is no
+        // verified local source evidence to reconcile against. The primary
+        // cloud page is already visible independently from these proofs.
+        let needsCloudProof = checkedLocal != nil || !localProbes.isEmpty
+        let cloudProbes = needsCloudProof ? try await fingerprints(clouds, reader: reader) : [:]
         let probes = Dictionary((Array(localProbes.values) + Array(cloudProbes.values)).compactMap { probe in
             probe.fingerprint.map { ($0, probe) }
         }, uniquingKeysWith: { first, _ in first })
@@ -352,12 +374,6 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
             let batch = Array(keys[start..<min(start + Self.probeBatch, keys.count)])
             let replies = try await reader.exactMatches(batch.compactMap { probes[$0] })
             for (key, reply) in zip(batch, replies) { matches[key] = reply }
-        }
-        let checkedLocal: XDriveIOSNativePhotoFingerprintIndex.Coverage?
-        if let lease {
-            checkedLocal = try await index.coverage(lease: lease)
-        } else {
-            checkedLocal = nil
         }
         var cloudByNode = Dictionary(clouds.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         // Search both filenames of a paired row even when their capture dates
@@ -391,7 +407,7 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
                 return item.provisional.unresolved(.cloudIdentity)
             case .cloud(let photo, let date):
                 guard let key = cloudProbes[photo.id]?.fingerprint, let ids = localIDs[key] else {
-                    return item.provisional.unresolved(.cloudIdentity)
+                    return item.provisional.unresolved(.libraryIncomplete)
                 }
                 if ids.count == 1, let id = ids.first,
                    XDriveIOSNativePhotoProofStamp.current(id) != nil, matches[key]?.matches(photo) == true {
