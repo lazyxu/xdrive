@@ -62,7 +62,9 @@ test('Server v2 trip list, current Owner range and route use one exact GPS-cell 
   assert.match(server, /CASE WHEN xd_media_metadata\.longitude = 180 THEN -180/)
   assert.match(server, /mediaMemoryLocalMidnight\(value, location\)/)
   assert.match(server, /mediaMemoryLocalMidnight\(value\.AddDate\(0, 0, 1\), location\)/)
-  assert.match(server, /if chosen == nil \{[\s\S]*?http\.StatusNotFound/)
+  // The current-Owner resolver is shared between trip map and photo Range.
+  assert.match(server, /s\.resolveMediaExactTrip\(/)
+  assert.match(server, /if !found \{[\s\S]*?http\.StatusNotFound/)
   assert.match(server, /Distinct\("xd_media_metadata\.node_id"\)\.Count\(&count\)/)
   assert.match(server, /s\.materializeMediaItems\(/)
   assert.doesNotMatch(server, /mediaMemoryItemsBaseQuery\(|baidu.*Token|UploadSession|GPSUpload/)
