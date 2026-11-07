@@ -46,7 +46,7 @@ async function until(fn,timeout,label){
 }
 function launch(binary,args,env){
   const child=spawn(binary,args,{cwd:root,env,stdio:['ignore','pipe','pipe']})
-  let carry='',errors=''
+  let carry='',errors='',highlighted='',stderrTail=''
   const markers=[]
   child.stdout.on('data',chunk=>{
     const parts=(carry+chunk.toString()).split('\n')
@@ -59,10 +59,17 @@ function launch(binary,args,env){
     }
   })
   child.stderr.on('data',chunk=>{
-    errors=(errors+chunk.toString()).slice(-3500)
+    const next=chunk.toString()
+    errors=(errors+next).slice(-3500)
+    const lines=(stderrTail+next).split('\n')
+    stderrTail=lines.pop()
+    for(const line of lines)if(line.includes('XDRIVE_PLACES_PRODUCTION_FAILED ')){
+      // Retain the bounded test-only stage, not Chromium's noisy D-Bus tail.
+      highlighted=line.slice(line.indexOf('XDRIVE_PLACES_PRODUCTION_FAILED '),1000)
+    }
   })
   const exited=new Promise(resolve=>child.once('exit',(code,signal)=>resolve({code,signal})))
-  return {child,exited,markers,getError:()=>errors}
+  return {child,exited,markers,getError:()=>highlighted||errors}
 }
 async function stop(processInfo){
   if(!processInfo||processInfo.child.exitCode!==null)return
