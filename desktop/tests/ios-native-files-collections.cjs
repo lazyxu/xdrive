@@ -148,7 +148,10 @@ test('native Files can favorite non-root folders with real Owner API and remove 
 
 
 test('native Files favorite shortcut reuses real Owner and revision verified file/folder writer', () => {
-  assert.match(browser, /openManagement\(for: entry\.node, quickAction: \.favorite\)/)
+  // The verified current-directory row now performs the mutation immediately;
+  // the Recent/Favorites collection panels below still use their existing flow.
+  assert.match(browser, /requestQuickFavorite\(entry\.node\)/)
+  assert.match(browser, /private func requestQuickFavorite\([\s\S]*?guard canQuickMutate\(node\) else \{ return \}[\s\S]*?quickFavorite\.add\(node, login: login\)/)
   assert.match(browser, /Label\("收藏", systemImage: "star"\)/)
   assert.match(panel, /case \.favorite:[\s\S]*?favoriteMutation\.add\(selected, login: login\)/)
   assert.match(panel, /guard verified, !anyBusy,[\s\S]*?let selected = file \?\? directory/)

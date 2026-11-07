@@ -81,6 +81,16 @@ final class XDriveIOSNativeFilesInlineFolderStore: ObservableObject {
         }
     }
 
+    func verifiedParentName(for node: XDriveIOSNativeFilesNode,
+                            owner: XDriveNativeOwnerRoot?) -> String? {
+        guard let owner, let parentID = node.parent_id,
+              let branch = branches[parentID], branch.verified,
+              branch.folder.id == parentID,
+              XDriveIOSNativePhotoOwnerScope.matches(owner, branch.owner),
+              branch.entries.contains(node) else { return nil }
+        return branch.folder.name
+    }
+
     /// At most 4 branches x 256 cached rows. Nested expansion is bounded
     /// to three levels; no child page is synthesized from folder names.
     func visibleRows(for root: XDriveIOSNativeFilesNode,

@@ -52,7 +52,11 @@ test('parent NavigationLink and cached child rows survive navigation without sta
   assert.match(browser, /inlineFolders\.suspendForNavigation\(\)/)
   assert.match(browser, /inlineFolders\.invalidate\(\)/)
   assert.match(browser, /onChange\(of: login\.owner\) \{ _ in[\s\S]*?inlineFolders\.invalidate\(\)/)
-  assert.match(browser, /private func reload\(resetOffset: Bool = false\) \{\s*inlineFolders\.invalidate\(\)/)
+  // Discard in-flight Select All/drag before evicting inline children, while
+  // preserving the original navigation cleanup and Owner safety contract.
+  assert.match(browser, /private func reload\(resetOffset: Bool = false\) \{[\s\S]*?inlineFolders\.invalidate\(\)/)
+  assert.match(browser, /private func reload\(resetOffset: Bool = false\) \{[\s\S]*?cancelSelectAllRead\(\)/)
+  assert.match(browser, /private func reload\(resetOffset: Bool = false\) \{[\s\S]*?clearInternalDrag\(\)/)
   assert.match(browser, /if let folderID = parentID,[\s\S]*?model\.canResume\([\s\S]*?lastViewedFile = nil/)
 })
 

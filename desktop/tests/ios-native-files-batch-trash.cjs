@@ -23,7 +23,7 @@ test('real native multi-select accepts up to 200 verified loaded Owner Nodes', (
   assert.match(page, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
   assert.match(page, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection\(/)
   assert.match(page, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?batchTrash\.invalidate\(\)/)
-  assert.match(page, /private func reload\(resetOffset: Bool = false\) \{\s*inlineFolders\.invalidate\(\)\s*selecting = false\s*selectedIDs\.removeAll\(\)\s*selectedSnapshots\.removeAll\(\)/)
+  assert.match(page, /private func reload\(resetOffset: Bool = false\) \{\s*cancelSelectAllRead\(\)[\s\S]*?clearInternalDrag\(\)[\s\S]*?inlineFolders\.invalidate\(\)\s*selecting = false\s*selectedIDs\.removeAll\(\)\s*selectedSnapshots\.removeAll\(\)/)
   assert.match(policy, /static let maxSelected = 200/)
 })
 test('Server batch trash atomically validates revision/subtrees, not per-item fake progress', () => {
@@ -56,7 +56,8 @@ test('Owner change and cancellation report uncertain write rather than replaying
 test('200 selected Nodes may span sparse Range windows but remain Server revision locked', () => {
   assert.doesNotMatch(page, /selectedIDs\.formIntersection\(visibleIDs\)/)
   assert.match(page, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(/)
-  assert.match(page, /\.onChange\(of: model\.entries\.map\(\\\.id\)\)/)
+  assert.match(page, /\.onChange\(of: model\.entries\.map\(\\\.node\)\)/)
+  assert.doesNotMatch(page, /\.onChange\(of: model\.entries\.map\(\\\.id\)\)/)
   assert.match(page, /selectedIDs\.count >= XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
   assert.match(page, /Text\("已选 \\\(selectedIDs\.count\) 项（最多 200 项/)
   assert.match(policy, /static let maxSelected = 200/)

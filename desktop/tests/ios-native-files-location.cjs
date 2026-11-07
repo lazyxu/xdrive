@@ -18,7 +18,14 @@ test('native Files search has bounded actual Server parent location from list an
   assert.match(browser, /private func requestLocation\(for entry: XDriveIOSNativeFilesEntry\)/)
   assert.match(browser, /model\.verifiedPage,[\s\S]*?isGlobalSearch, !selecting/)
   assert.match(browser, /model\.entries\.contains\(where: \{ \$0\.node == entry\.node \}\)/)
-  assert.match(browser, /\.sheet\(item: \$locateIntent, onDismiss: \{\s*reload\(\)/)
+  // Locate only reads and displays the Node's current Server parent.
+  // Closing it must preserve the verified directory window and thumbnails.
+  assert.match(browser, /\.sheet\(item: \$locateIntent\) \{ intent in/)
+  const locate = browser.slice(
+    browser.indexOf('.sheet(item: $locateIntent)'),
+    browser.indexOf('.sheet(item: $managementIntent')
+  )
+  assert.doesNotMatch(locate, /reload\(\)|model\.invalidate\(\)/)
   assert.match(browser, /lastViewedFile = entry\.node[\s\S]*?locateIntent = XDriveIOSNativeFilesLocateIntent/)
   assert.match(browser, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/)
 })
