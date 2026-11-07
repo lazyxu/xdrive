@@ -471,6 +471,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveDSMOwnerNotes(w, r, ctx, agent, key, username)
 		return
 	}
+    if isDSMClipboardRoute(r.URL.Path) {
+        serveDSMOwnerClipboard(w, r, ctx, agent, key, username)
+        return
+    }
 	if isDSMOwnerNotesImageRoute(r.URL.Path) {
 		serveDSMOwnerNotesImage(w, r, ctx, agent, key, username)
 		return
