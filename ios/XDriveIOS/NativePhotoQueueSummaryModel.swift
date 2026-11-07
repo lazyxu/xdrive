@@ -289,6 +289,16 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                 var libraryCount: Int?
                 var readNotice: String?
                 if mode == .changes {
+                    // This list is an only-new change journal, not a generic
+                    // full-library queue. Do not manufacture a new baseline
+                    // or an empty database while the full mode is selected.
+                    guard let plan = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner),
+                          plan.enabled, plan.backupStartRule == .onlyNew else {
+                        if self.ticket == id {
+                            self.notice = "当前未启用“仅备份新照片”。请选择“当前图库”查看分页核验清单；这些条目不等于未备份。"
+                        }
+                        return
+                    }
                     let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
                     // Extra item is used only to decide whether Next is real.
                     let records = try await queue.page(
