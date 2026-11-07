@@ -271,10 +271,10 @@ test('native local and album photo walls free short landscape grid space while r
     if (name === 'album') {
       // Album MapKit cover is another transient child; preserve the verified
       // page and scroll checkpoint, but invalidate on a genuine route exit.
-      assert.match(screen, /if selected != nil \\|\\| showingAlbumMap \\{ suspendForViewer\\(\\) \\}/, name)
-      assert.match(screen, /else \\{ libraryMonitor\\.stop\\(\\); invalidate\\(\\) \\}/, name)
+      assert.match(screen, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/, name)
+      assert.match(screen, /else \{ libraryMonitor\.stop\(\); invalidate\(\) \}/, name)
     } else {
-      assert.match(screen, /if selected != nil \\{ suspendForViewer\\(\\) \\}/, name)
+      assert.match(screen, /if selected != nil \{ suspendForViewer\(\) \}/, name)
     }
     assert.doesNotMatch(screen, /\.id\(compactGallery\)|onChange\(of: compactGallery\)|UploadSession|URLSession/, name)
   }
