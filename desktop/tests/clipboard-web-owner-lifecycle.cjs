@@ -216,6 +216,63 @@ test('Clipboard React unknown ACK retry preserves encrypted bytes and EventID', 
 })
 
 
+test('Clipboard React does not replace an unknown-ACK receipt after editing the draft', async () => {
+  const saved = []
+  const app = await mount(makeUI(), port('https://drive.example:57', {
+    create: async item => {
+      saved.push({ ...item })
+      if (saved.length === 1) throw new Error('lost ACK after server commit')
+      return { id: 57, ...item }
+    },
+  }))
+  try {
+    await unlock(app)
+    await type(app, '输入内容', 'original uncertain payload')
+    await click(app, '加密发送')
+    assert.equal(saved.length, 1)
+    await type(app, '输入内容', 'new draft must not lose first receipt')
+    await click(app, '加密发送')
+    assert.equal(saved.length, 1, 'a new draft must not replace a pending unknown ACK')
+    assert.match(app.snapshot(), /上一条发送回执仍未确认/)
+    assert.ok(app.button('放弃待确认回执'))
+    // Returning to the original draft can retry the same encrypted receipt.
+    await type(app, '输入内容', 'original uncertain payload')
+    await click(app, '加密发送')
+    assert.equal(saved.length, 2)
+    assert.deepEqual(saved[1], saved[0], 'editing and restoring must preserve the original EventID')
+  } finally {
+    await app.unmount()
+  }
+})
+
+test('Clipboard React requires explicit abandon before sending a different draft', async () => {
+  const saved = []
+  const app = await mount(makeUI(), port('https://drive.example:58', {
+    create: async item => {
+      saved.push({ ...item })
+      if (saved.length === 1) throw new Error('lost ACK after server commit')
+      return { id: 58, ...item }
+    },
+  }))
+  try {
+    await unlock(app)
+    await type(app, '输入内容', 'first payload with lost ACK')
+    await click(app, '加密发送')
+    await type(app, '输入内容', 'second payload after lost ACK')
+    await click(app, '加密发送')
+    assert.equal(saved.length, 1, 'unknown-ACK receipt must not be overwritten')
+    await click(app, '放弃待确认回执')
+    assert.match(app.snapshot(), /已放弃旧回执/)
+    await click(app, '加密发送')
+    assert.equal(saved.length, 2)
+    assert.notEqual(saved[1].client_event_id, saved[0].client_event_id,
+      'an explicitly abandoned event must not be silently replayed')
+    assert.equal(saved[1].ciphertext, 'cipher:second payload after lost ACK')
+  } finally {
+    await app.unmount()
+  }
+})
+
 test('Clipboard React blocks stale unknown ACK retries until explicitly abandoned', async () => {
   const realNow = Date.now
   let clock = realNow()
