@@ -1,6 +1,6 @@
 # xDrive Clipboard — cross-device design and Web MVP
 
-Status: Web/PWA E2EE MVP and hardening merged through #4046. Six-platform manual Clipboard and Server/Web SSE merged in #4068 (master `c83bcf3bd`); Native lock/Owner lifecycle and Go SSE revocation tests merged in #4079 (`4b59ca80`). Both passed exact-head complete CI and Final Gate. No repository merge implies physical-device or production deployment acceptance.
+Status: **Merged baseline** — Web/PWA E2EE MVP and hardening through #4046. Six-platform manual Clipboard and Server/Web SSE merged in #4068 (master `c83bcf3bd`); Native lock/Owner lifecycle and Go SSE revocation tests merged in #4079 (`4b59ca80`). Both passed exact-head complete CI and Final Gate. No repository merge implies physical-device or production deployment acceptance.
 
 ## 1. Product boundary
 
@@ -91,7 +91,7 @@ The `POST /clipboard/items` transaction acquires `SELECT ... FOR UPDATE` on the 
 
 **#4079 merged lifecycle protection:** same-Owner manual Lock, Owner change or page disposal invalidates asynchronous unlock/read/send/delete/clear callbacks; iOS generation and Android `XDriveClipboardSessionFence` have executable regression tests. Exact-head CI and Final Gate passed. Already-committed Server writes cannot be undone merely by discarding a late ACK.
 
-**Still outside the manual Clipboard scope:** optional Desktop background OS clipboard monitoring and feedback suppression; targeted E2EE device key wrapping/delivery; image/file TTL objects and Owner Node references; iOS Clipboard Share Extension. Android `ACTION_SEND` is already implemented and is not an iOS Share Extension. Preserve Owner isolation and the existing CAS writer.
+**Beyond the merged manual Clipboard baseline:** Desktop opt-in monitoring, targeted device encryption, file Node references and iOS Share Extension are being developed together on a separate #4086 integration branch. No Draft branch is equivalent to an accepted or published release. Android `ACTION_SEND` is already implemented and is not an iOS Share Extension. Preserve Owner isolation and the existing CAS writer.
 
 ## 10. Native foreground SSE contract (new candidate)
 
@@ -100,3 +100,36 @@ The Native iOS/Android foreground Clipboard pages use an **optional** short-live
 **On a valid change**, the native UI runs an authenticated full `GET /clipboard/items` and decrypts using the current unlocked Owner key; the stream never substitutes for that GET. **On disconnect or lost events**, reconnect after a bounded delay with the current cursor and perform a full Owner GET; retain the independent 15-second foreground polling fallback. Every reconnect revalidates the current Owner/bearer; Lock, Owner change, page dismissal and cancellation stop the subscription and clear in-memory secrets. Android uses the existing pinned-OkHttp Owner transport and Compose Main-thread update; iOS uses an ephemeral HTTPS URLSession with no redirects/cookies and bounded UTF-8 byte framing. Both the 15-second GET and SSE socket are bound to SwiftUI `scenePhase == .active` or Android `Lifecycle.State.STARTED`; an immediate full GET reconciles the current Owner after returning from background. No background SSE job is registered.
 
 Native SSE code and protocol tests: `android/core/.../XDriveClipboardSSECursor.kt`, `ios/XDriveIOS/NativeClipboardSSECursor.swift`, Android JUnit parser tests and executable `ios/tests/ClipboardSSECursorChecks.swift`. Keep the feature isolated in its own PR until **its exact HEAD** passes applicable full CI, Final Gate and iOS Unsigned IPA. Legacy/unsupported Server behaviour must remain functional via foreground polling.
+
+
+## 11. #4086 consolidation candidate (not merged; scope expanded by Owner)
+
+**Delivery status:** The original #4086 SSE HEAD passed its iOS IPA subworkflow but was still undergoing applicable full CI/Final Gate when the Owner expanded the scope to include all listed P0/P1/P2 features. The original HEAD must not be overwritten while that CI is running; new work is staged on `dev/clipboard-4086-all-capabilities-20261107`. All assertions below describe **candidate source**, not accepted production behavior. A single final integration PR is required before any merge to `master`.
+
+### Desktop opt-in local monitoring
+
+The shared UI offers a Desktop-only opt-in switch (off by default). The Electron preload remains the same explicit local OS `readClipboardText` capability; it is polled only while the Clipboard screen is mounted, unlocked and visible. The first sampled value is discarded; repeats, blank/over-limit messages, locally copied remote content, and uncertain-send ACKs are not automatically re-sent. Lock, Owner change, hiding/disposal or unsubscribe cancels observation. Sensitive passwords and one-time codes may still appear in an OS clipboard: enable only with user consent, show a clear warning, never silently turn it on, and do not promise content classification.
+
+### iOS user-triggered Share Extension
+
+The embedded `xDriveClipboardShare` target accepts selected plain text/URL under the iOS share sheet with 64 KiB bounds. Its **only** cross-process handoff is a user-tapped, local-only system paste with a 120-second expiry; it never receives xDrive Owner bearer, vault passphrase, derived key or encrypted history. The user must explicitly return to the Native Clipboard page, unlock, paste and send. Do **not** misrepresent this as automatic direct encrypted delivery from an Extension; that remains a separate integration step.
+
+### Device-targeted end-to-end encryption (v2 candidate)
+
+- A registered ClientDevice ID alone does **not** authorize Clipboard receipt. The user explicitly enrolls a separate `xd_clipboard_device_keys` record, requiring a live Owner session plus the current device installation credential. Enrollment pins an immutable 32-byte X25519 public key; revocation cannot be undone by supplying a different key. The device private key stays in native secure storage (iOS ThisDeviceOnly Keychain; Android enrollment still requires native implementation).
+- The sender obtains the selected Owner's active public key from `GET /clipboard/devices`; no private key is sent to the Server. For each message it generates a random 256-bit AES-GCM content key and ephemeral X25519 key pair. The ephemeral shared secret is fed to HKDF-SHA256: salt = SHA256(`base + "|salt"`), info = `base + "|wrap"`, with `base = "xdrive-clipboard-target-v1|" + pinnedOwnerAAD + "|" + eventUUID + "|" + recipientUUID`.
+- `wrapped_key` is 12-byte AES-GCM wrapping nonce + 48-byte encrypted content key/tag; `ephemeral_key` is the 32-byte ephemeral public key. AEAD additional data includes `base`, media kind and NodeID separately for wrapping (`"|key|"`) and content (`"|content|"`), guarding re-targeting, type substitution and Node swapping. The Server never derives or returns the content key.
+- Ordinary v1 broadcast text remains unchanged. Directed rows are filtered from unauthenticated/unregistered other device views and SSE invalidations; an Owner interactive session and the exact authorized device credentials are both required to read directed rows. Revocation stops future retrieval but cannot remove decrypted plaintext already copied locally.
+- File/image kinds are **references** to existing live Owner file Nodes created by the normal UploadSession/CAS writer. The Server rejects foreign, deleted or non-file Nodes. This candidate does not add a second binary writer; a full native file picker/upload-and-send UI, existing-file Viewer link and all-platform image/file receipt have not yet been fully integrated. It must not be claimed as finished media Clipboard.
+
+### Merge and safety gates for the expanded scope
+
+The following must be green at the **final combined HEAD** before merging, not inferred from historical #4086 CI:
+
+1. `gofmt`, Go build/race, real PostgreSQL Owner A/B + per-device authorization/revoke, SSE late-cursor and unknown-ACK regressions, plus immutable key-enrollment and Node ownership tests.
+2. Web TypeScript/build and executable X25519/HKDF/AES-GCM cross-platform interoperability and tampered target/nonce/kind/Node rejection.
+3. Desktop opt-in lifecycle, no-first-snapshot, echo suppression, lock/Owner switch and failure/reconnect tests; retain existing manual send semantics.
+4. iOS unsigned IPA with an actually embedded Share Extension plus native device public-key registration/Keychain decryption; Android Gradle/JVM/MockWebServer and native lifecycle coverage.
+5. Applicable full CI, Final Gate and protected master merge through PR only.
+
+**Unverified or incomplete candidates must remain Draft and unmerged.** Production/manual physical-device acceptance: 跳过（未验收）.
