@@ -11,7 +11,23 @@ repo="${GITHUB_REPOSITORY:-lazyxu/xdrive}"
 for platform in ios android; do
   case "$platform" in
     ios) tag="ios-unsigned-${sha:0:12}"; pattern='xDrive-unsigned.ipa'; checksum='xDrive-unsigned.ipa.sha256' ;;
-    android) tag="android-debug-$sha"; pattern='*.apk'; checksum='SHA256SUMS.txt' ;;
+    android)
+      # Android master Debug artifacts are intentionally private Actions artifacts.
+      # Only the separately approved, fixed-key signed public android-vN Release
+      # can join an immutable Bundle. Its source line must match this full SHA.
+      releases="$(gh api --paginate "repos/$repo/releases?per_page=100")" || exit 1
+      mapfile -t candidates < <(jq -s -r --arg sha "$sha" '
+        .[][] | select(.tag_name | test("^android-v[0-9]+$"))
+        | select((.body // "") | contains("Source: " + $sha + " (master)"))
+        | select((.body // "") | test("Certificate SHA-256: [a-fA-F0-9]{64}"))
+        | .tag_name
+      ' <<< "$releases")
+      [[ "${#candidates[@]}" -le 1 ]] || { echo "ambiguous same-commit Android signed Releases" >&2; exit 1; }
+      if [[ "${#candidates[@]}" == 0 ]]; then
+        echo "::notice::No approved exact-commit Android signed APK for $sha; omitting"
+        continue
+      fi
+      tag="${candidates[0]}"; pattern='xdrive-android-*.apk'; checksum='SHA256SUMS.txt' ;;
   esac
   if ! gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
     echo "::notice::No published exact-commit $platform package for $sha; omitting"

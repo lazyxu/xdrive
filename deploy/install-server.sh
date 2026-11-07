@@ -1264,7 +1264,11 @@ fi
 if [[ "$needs_source_resolution" == "true" ]]; then
   resolve_install_source "$requested_channel"
 else
-  if [[ -z "$requested_commit" && -n "$BUILT_COMMIT" ]] && ! is_template_placeholder "$BUILT_COMMIT"; then
+  if [[ "$requested_channel" == "master" && -z "$requested_commit" && -n "$BUILT_COMMIT" ]] && ! is_template_placeholder "$BUILT_COMMIT"; then
+    requested_commit="$BUILT_COMMIT"
+  fi
+  # Stable v* bundles retain their real source Commit separately from the v* image tag.
+  if [[ "$requested_channel" == "stable" && -z "$requested_commit" && -n "$BUILT_COMMIT" ]] && ! is_template_placeholder "$BUILT_COMMIT"; then
     requested_commit="$BUILT_COMMIT"
   fi
   echo "Using packaged release source: $SOURCE_REF"

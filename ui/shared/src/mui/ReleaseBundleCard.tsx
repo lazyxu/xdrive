@@ -6,7 +6,7 @@ import { XDriveActionButton } from './ActionButton'
 import { XDriveStatusAlert } from './StatusAlert'
 
 const labels: Record<string, string> = {
-  ios: 'iOS IPA', android: 'Android APK（仅测试）',
+  ios: 'iOS IPA', android: 'Android APK（已签名）',
   windows: 'Windows EXE', linux: 'Linux', dsm: 'Synology SPK', cli: 'CLI',
 }
 const states: Record<string, string> = {
@@ -104,7 +104,7 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
         })}
         <Typography variant="caption" color="text.secondary">
           以上按本机服务器、GitLab、GitHub 顺序列出下载来源；下载后应验证 SHA-256，
-          安装前仍须满足平台签名和兼容性要求。Android Debug APK 仅供测试。
+          安装前仍须满足平台签名和兼容性要求。Android 安装包仍须通过系统签名验证。
         </Typography>
       </Stack>
     </Box>

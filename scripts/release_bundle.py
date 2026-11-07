@@ -74,8 +74,11 @@ def validate(manifest, expected_commit=None, allow_local=False):
             raise ValueError("artifact was built from another commit")
         if item.get("install_mode", "manual") not in ("manual", "manual_test_only"):
             raise ValueError("invalid installation mode")
-        if item["platform"] == "android" and item.get("install_mode") != "manual_test_only":
-            raise ValueError("ephemerally signed debug APK cannot be an automatic update")
+        if item["platform"] == "android" and (
+            item.get("install_mode") != "manual" or
+            not re.fullmatch(r"xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\.apk", name)
+        ):
+            raise ValueError("only approved fixed-key signed Android APKs may enter bundles")
         sources = item.get("sources")
         if not isinstance(sources, dict) or set(sources) != {"gitlab", "github"}:
             raise ValueError("both trusted fallback origins required")
@@ -155,10 +158,15 @@ def _download(url, path, size, digest, lock_path, marker=None):
     if offset > size:
         partial.unlink()
         offset = 0
-    if offset == size and _digest(partial) == (size, digest):
-        os.chmod(partial, 0o644)
-        os.replace(partial, path)
-        return
+    if offset == size:
+        if _digest(partial) == (size, digest):
+            os.chmod(partial, 0o644)
+            os.replace(partial, path)
+            return
+        # A fully downloaded but corrupted .part must not cause endless 416
+        # range requests, or be re-used with bytes from another origin.
+        partial.unlink()
+        offset = 0
     headers = {"User-Agent": "xDrive-ReleaseBundle/1"}
     if offset:
         headers["Range"] = f"bytes={offset}-"
@@ -268,8 +276,13 @@ def sync(manifest, cache, lock_path=None, marker=None, retries=2, allow_local=Fa
                         _atomic_json(cache / "status.json", state)
                         _wait_for_dependencies(lock_path, marker)
                         state["state"] = "syncing"
-                    except (OSError, ValueError, HTTPError):
-                        # Retain partial data only for normal transfer errors.
+                    except ValueError:
+                        # An inconsistent stream or digest must never be
+                        # resumed from a different origin.
+                        target.with_name(name + ".part").unlink(missing_ok=True)
+                    except (OSError, HTTPError):
+                        # A connection failure may resume using the immutable
+                        # Range path (full SHA-256 still checked at completion).
                         pass
                 if success:
                     break

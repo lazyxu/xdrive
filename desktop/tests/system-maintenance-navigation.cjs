@@ -114,6 +114,7 @@ test('administrator maintenance requires explicit confirmation before posting a 
     XDriveWorkspaceSurface: 'WorkspaceSurface',
     XDriveStatusAlert: 'StatusAlert',
     XDriveServerUpdateCard: 'ServerUpdateCard',
+    XDriveReleaseBundleCard: 'ReleaseBundleCard',
     XDriveConfirmDialog: 'ConfirmDialog',
     // The unsupported-backup branch is now always visible and still has no
     // privileged Host action. Execute the original page with its real slots.

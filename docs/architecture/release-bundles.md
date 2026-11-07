@@ -16,10 +16,10 @@ checks remain authoritative.
   CI also produces a Sigstore attestation for the manifest.
 - Artifact records include `platform`, `filename`, `build_commit`,
   `sha256`, `size`, `install_mode` and ordered preferred origins.
-  **Missing platforms are omitted**. A test-only, ephemerally signed Android
-  debug APK is NOT a stable or automatically installable update.
+  **Missing platforms are omitted**. Android Debug APKs are never mirrored. Only independently approved,
+  fixed-key signed public Android APKs may be included.
 - Existing Linux/Windows/Backup CLI/DSM publish contracts remain in place;
-  separately published iOS/Android outputs may enter a Bundle only when the
+  separately published iOS and signed Android outputs may enter a Bundle only when the
   exact-source Release is already present and verified at Bundle publication.
   A later native build does not mutate an existing immutable manifest.
 - The existing GitHub/GitLab `snapshot` and stable channel releases are

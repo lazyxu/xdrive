@@ -33,11 +33,11 @@ class GenerateBundleTests(unittest.TestCase):
 
     def test_add_optional_only_when_present(self):
         (self.directory / "xDrive-unsigned.ipa").write_bytes(b"ios")
-        (self.directory / "xdrive-android-master-aaaaaaaaaaaa-debug.apk").write_bytes(b"apk")
+        (self.directory / "xdrive-android-12-0.1.2.apk").write_bytes(b"apk")
         items = module.build(self.directory, SHA, "master")["artifacts"]
         self.assertEqual(len(items), 7)
         android, = [x for x in items if x["platform"] == "android"]
-        self.assertEqual(android["install_mode"], "manual_test_only")
+        self.assertEqual(android["install_mode"], "manual")
         self.assertEqual(android["sha256"], hashlib.sha256(b"apk").hexdigest())
 
     def test_reject_incomplete_release(self):

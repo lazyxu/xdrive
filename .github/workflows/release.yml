@@ -314,7 +314,7 @@ jobs:
       - name: Collect published optional same-commit iOS/Android packages
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/ci/collect-optional-native-release.sh "$GITHUB_SHA" release
       - name: Generate immutable full-commit Release Bundle manifest
         shell: bash
@@ -445,7 +445,8 @@ jobs:
               ;;
           esac
       - name: Publish verified immutable commit Release Bundle
-        if: github.ref != 'refs/heads/master' || steps.snapshot_eligibility.outputs.publish == 'true'
+        # Immutable per-commit publication is allowed for superseded master sources;
+        # it never advances snapshot, GHCR edge, or DSM floating channels.
         shell: bash
         env:
           GH_TOKEN: ${{ github.ref == 'refs/heads/master' && steps.snapshot_app_token.outputs.token || github.token }}

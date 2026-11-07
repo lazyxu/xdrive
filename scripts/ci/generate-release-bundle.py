@@ -20,7 +20,7 @@ KNOWN = (
     ("cli", "xdrive-backup-windows-amd64.zip", True),
     ("dsm", "xdrivenas-armada38x-*.spk", True),
     ("ios", "xDrive-unsigned.ipa", False),
-    ("android", "xdrive-android-master-*-debug.apk", False),
+    ("android", "xdrive-android-*.apk", False),
 )
 
 
@@ -51,15 +51,15 @@ def build(directory: Path, commit: str, channel: str):
                     size += len(block)
             if not size:
                 raise ValueError(f"empty release file: {path.name}")
-            # A debug Android APK is retained as a manual test download; it
-            # must never be advertised as a stable/signature-compatible update.
+            # Only separately approved, fixed-key signed Android releases enter
+            # the bundle. The independent Debug build is never a publish input.
             entry = {
                 "platform": platform,
                 "filename": path.name,
                 "size": size,
                 "sha256": digest.hexdigest(),
                 "build_commit": commit,
-                "install_mode": "manual_test_only" if platform == "android" else "manual",
+                "install_mode": "manual",
                 "sources": {
                     "gitlab": (
                         "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive"
