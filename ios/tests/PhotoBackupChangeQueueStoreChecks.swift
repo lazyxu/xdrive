@@ -327,7 +327,7 @@ import SQLite3
                          tailPage.count == 6)
             precondition(Set((firstPage + secondPage + tailPage).map(\.localIdentifier)).count == 70)
             precondition(firstPage.allSatisfy { $0.state == .failed && $0.revision == 1 })
-            precondition(try large.page(state: .waitingICloud).isEmpty)
+            try expect(try large.page(state: .waitingICloud).isEmpty)
             do {
                 _ = try large.page(offset: -1)
                 fatalError("negative UI cursor admitted")
