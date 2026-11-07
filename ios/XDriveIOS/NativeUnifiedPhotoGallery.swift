@@ -70,15 +70,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
             .onDisappear {
                 photoObserver.stop()
-                // A full-screen viewer temporarily covers the wall. Preserve
-                // its cursor index until the viewer returns to its exact row.
-                if selected == nil {
-                    started = false
-                    explicitOriginalAudit = false
-                    timeline.reset()
-                    wall.reset()
-                    indexRequest = UUID()
-                }
+                // Child NavigationLinks (People and thumbnail cache) can hide
+                // this wall without a Viewer selection. Preserve its verified
+                // page index and return position; visible page tiles may retire
+                // decoded media independently. Owner, scene and changed PhotoKit
+                // epochs still invalidate on their own explicit boundaries.
+                explicitOriginalAudit = false
+                indexRequest = UUID()
             }
             .onChange(of: photoObserver.change) { _ in reset() }
             .onChange(of: login.owner) { _ in
