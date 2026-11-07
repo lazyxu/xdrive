@@ -237,7 +237,7 @@ import type {
   XDriveMediaThumbnailPriority,
 } from './MediaGalleryThumbnailScheduler'
 
-import { keyboardActivate, MediaTileGrid, MediaVirtualTileGrid, mediaGalleryScrollParent, scrollMediaGalleryHostToOffset } from './MediaGallerySharedTiles'
+import { keyboardActivate, MediaTile, MediaTileGrid, MediaVirtualTileGrid, mediaGalleryScrollParent, scrollMediaGalleryHostToOffset } from './MediaGallerySharedTiles'
 import type { MediaSelectionModifiers, MediaGalleryReturnViewport, XDriveMediaGalleryVirtualCollection } from './MediaGallerySharedTiles'
 // Compatibility exports for existing Gallery and Owner-based map adapters.
 export { MediaTile, MediaVirtualTileGrid } from './MediaGallerySharedTiles'
