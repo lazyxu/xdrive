@@ -18,7 +18,10 @@ import {
 } from '../media-gallery-baidu-diagnostics'
 import type { XDriveBaiduMapDiagnostic } from '../media-gallery-baidu-diagnostics'
 import { XDriveMediaGalleryMapGPSCoverage } from './MediaGalleryMapGPSCoverage'
-import { XDRIVE_DESKTOP_PLACES_GUEST_PROBE, xDriveDesktopPlacesGuestProbeState } from '../desktop-places-embed-admission'
+import {
+  XDRIVE_DESKTOP_PLACES_GUEST_PROBE, xDriveDesktopPlacesGuestProbeState,
+  xDriveStartDesktopPlacesGuestProbe,
+} from '../desktop-places-embed-admission'
 import {
   XDRIVE_PLACES_HANDOFF_TIMEOUT_MS, XDRIVE_PLACES_EMBED_PREPARE_TIMEOUT_MS,
   XDRIVE_PLACES_STATUS_TIMEOUT_MS, xDrivePlacesHandoffTimeValid,
@@ -240,8 +243,13 @@ export function XDriveMediaGalleryPlacesMap({
       probing=true
       // This reads only nonsecret DOM sentinels in the sandboxed guest.
       // It never passes an Agent token, password, cookie or map capability.
-      void guest.executeJavaScript(XDRIVE_DESKTOP_PLACES_GUEST_PROBE)
-        .then(raw=>{
+      // React can mount the WebView before Electron emits dom-ready.
+      // Catch a synchronous not-yet-attached error; do not unmount the
+      // privileged Desktop Renderer or promote a not-ready guest.
+      const request=xDriveStartDesktopPlacesGuestProbe(
+        guest,XDRIVE_DESKTOP_PLACES_GUEST_PROBE)
+      if(!request){probing=false;return}
+      void request.then(raw=>{
           if(!active || denied)return
           const state=xDriveDesktopPlacesGuestProbeState(raw)
           if(state==='login') {

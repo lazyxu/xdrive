@@ -32,3 +32,20 @@ export function xDriveDesktopPlacesGuestProbeState(
   return raw === 'ready' || raw === 'login' || raw === 'denied'
     ? raw : 'pending'
 }
+
+// Electron <webview>.executeJavaScript may throw SYNCHRONOUSLY until the
+// element is attached and dom-ready has fired. A Promise .catch alone cannot
+// intercept it: the exception would escape React's useEffect and unmount
+// the entire Desktop Renderer. A null result means pending navigation; the
+// existing bounded probe timer and dom-ready listener will retry.
+export function xDriveStartDesktopPlacesGuestProbe(
+  guest: { executeJavaScript?: (script: string) => Promise<unknown> } | null | undefined,
+  script: string,
+): Promise<unknown> | null {
+  if (!guest || typeof guest.executeJavaScript !== 'function') return null
+  try {
+    return Promise.resolve(guest.executeJavaScript(script))
+  } catch {
+    return null
+  }
+}
