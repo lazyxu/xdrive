@@ -58,7 +58,9 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 		&meta.MediaMetadata{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
 		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoMetadata{},
 		&meta.PhotoResource{}, &meta.PhotoPlaceLabel{},
-	); err != nil { t.Fatal(err) }
+	); err != nil {
+		t.Fatal(err)
+	}
 
 	createOwner := func(label string) (meta.User, meta.Node) {
 		t.Helper()
@@ -93,7 +95,7 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 		file := meta.File{
 			NodeID: node.ID, Size: 100,
 			StorageKey: "exact-trip-" + name,
-			SHA256: fmt.Sprintf("%064x", node.ID),
+			SHA256:     fmt.Sprintf("%064x", node.ID),
 		}
 		if err := db.Create(&file).Error; err != nil {
 			t.Fatal(err)
@@ -105,7 +107,9 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 			MIMEType: "image/jpeg", CapturedAt: &captured,
 			Latitude: latitude, Longitude: longitude,
 			IndexState: meta.MediaIndexStateReady,
-		}).Error; err != nil { t.Fatal(err) }
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
 		asset := meta.PhotoAsset{
 			OwnerID: uid, PrimaryNodeID: node.ID,
 			Kind: meta.PhotoAssetKindImage, EvidenceKey: "trip:" + name,
@@ -117,7 +121,9 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 			AssetID: asset.ID, MediaKind: meta.MediaKindImage,
 			MIMEType: "image/jpeg", CapturedAt: &captured,
 			Latitude: latitude, Longitude: longitude,
-		}).Error; err != nil { t.Fatal(err) }
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
 		return node.ID
 	}
 	ptr := func(n float64) *float64 { return &n }
@@ -222,4 +228,3 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 		}
 	}
 }
-
