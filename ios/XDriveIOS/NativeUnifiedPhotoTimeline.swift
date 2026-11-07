@@ -352,7 +352,12 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
         // verified local source evidence to reconcile against. The primary
         // cloud page is already visible independently from these proofs.
         let needsCloudProof = checkedLocal != nil || !localProbes.isEmpty
-        let cloudProbes = needsCloudProof ? try await fingerprints(clouds, reader: reader) : [:]
+        let cloudProbes: [UInt64: XDriveIOSNativeExactPhotoProbe]
+        if needsCloudProof {
+            cloudProbes = try await fingerprints(clouds, reader: reader)
+        } else {
+            cloudProbes = [:]
+        }
         let probes = Dictionary((Array(localProbes.values) + Array(cloudProbes.values)).compactMap { probe in
             probe.fingerprint.map { ($0, probe) }
         }, uniquingKeysWith: { first, _ in first })
