@@ -211,6 +211,31 @@ func mediaMapOverviewFittedBounds(
 
 // Only finite, parsed WGS84 viewport values become numeric SQL constants.
 // Eight longitudinal buckets handle west > east at the date line.
+// Display geometry is NOT a signed Owner/photo scope. Fit only the actual
+// bucket selected by the authorized aggregate; zooming this rectangle sends
+// a new Owner-scoped query and may reveal canonical place IDs.
+func mediaMapOverviewBucketBounds(
+    bounds mediaPlaceViewportBounds, row, col int,
+) (mediaPlaceViewportBounds, bool) {
+    if !bounds.valid() || row < 0 || row >= mediaMapOverviewAxis ||
+        col < 0 || col >= mediaMapOverviewAxis {
+        return mediaPlaceViewportBounds{}, false
+    }
+    rowSpan := (bounds.North - bounds.South) / mediaMapOverviewAxis
+    lonSpan := bounds.East - bounds.West
+    if lonSpan < 0 { lonSpan += 360 }
+    colSpan := lonSpan / mediaMapOverviewAxis
+    startLon := bounds.West + float64(col)*colSpan
+    endLon := startLon + colSpan
+    region := mediaPlaceViewportBounds{
+        South: bounds.South + float64(row)*rowSpan,
+        North: bounds.South + float64(row+1)*rowSpan,
+        West: mediaMapOverviewNormalizeLongitude(startLon),
+        East: mediaMapOverviewNormalizeLongitude(endLon),
+    }
+    return region, region.valid()
+}
+
 func mediaMapOverviewBuckets(bounds mediaPlaceViewportBounds) (string, string) {
 	format := func(n float64) string { return strconv.FormatFloat(n, 'f', -1, 64) }
 	latSpan := bounds.North - bounds.South
@@ -393,6 +418,8 @@ LIMIT 65`, longitudeSort)
 			math.Abs(item.SampleLongitude) > 180 {
 			return mediaPlacesMapOverviewDTO{}, fmt.Errorf("invalid spatial summary")
 		}
+		region, ok := mediaMapOverviewBucketBounds(fitted, item.BucketRow, item.BucketCol)
+		if !ok { return mediaPlacesMapOverviewDTO{}, fmt.Errorf("invalid display-only region bounds") }
 		out.TotalPhotoCount += item.ItemCount
 		out.Items = append(out.Items, mediaPlaceDTO{
 			ID: fmt.Sprintf("map-region:q:%s:%s:%s:%s:%d:%d",
@@ -407,6 +434,7 @@ LIMIT 65`, longitudeSort)
 			SampleLatitude:  item.SampleLatitude,
 			SampleLongitude: item.SampleLongitude,
 			CoordinateKind:  "map_region_sample",
+			DisplayBounds: &region,
 			ItemCount:       item.ItemCount,
 			CoverNodeID:     item.CoverNodeID,
 		})
