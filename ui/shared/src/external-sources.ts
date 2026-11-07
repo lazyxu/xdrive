@@ -28,6 +28,7 @@ export interface ExternalSource {
   schedule_expression?: string
   schedule_timezone?: string
   revision: number
+  device_id?: string
   target_node_id?: number
   target_managed?: boolean
   target_path?: string
@@ -849,6 +850,7 @@ export function externalSourceDetailView(row: ExternalSourceRow): ExternalSource
       row.source.kind === 'android_photos' ? 'Android Push · 原件备份' : externalSourceModeLabel(row.source),
     state: getExternalSourceState(row),
     targetNodeID: row.source.target_node_id,
+    deviceID: row.source.direction === 'push' ? row.source.device_id?.trim() || undefined : undefined,
     lastRunAt: row.source.last_run_at,
     lastSuccessAt: row.source.last_success_at,
     scheduleLabel: row.source.kind === 'ios_photos'
