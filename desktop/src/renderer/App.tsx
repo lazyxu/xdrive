@@ -2416,6 +2416,7 @@ export default function App({
     includeClientUpdate: true,
     showShareCenter: agent.connected && configured && agent.hello?.capabilities.includes('cloud-files'),
     showNotes: Boolean(desktopNotesPort),
+    showClipboard: Boolean(desktopClipboardPort),
   })
 
   if (!agent.connected) {
