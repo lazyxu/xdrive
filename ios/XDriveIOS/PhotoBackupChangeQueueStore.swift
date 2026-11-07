@@ -425,6 +425,22 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         }
         try stepDone(statement)
         let changed = sqlite3_changes(database) == 1
+        if changed {
+            // The next item-local failure may have a different cause even
+            // for the same PhotoKit revision. Retire the old diagnostic in
+            // the SAME transaction as the explicit failed -> pending retry.
+            // Never retain a stale reason if the next attempt reports no
+            // reason or is interrupted before it can settle.
+            let oldReason = try prepare(
+                "DELETE FROM failure_reasons WHERE asset_id=? AND revision=?"
+            )
+            defer { sqlite3_finalize(oldReason) }
+            try bind(candidate.localIdentifier, into: oldReason, position: 1)
+            guard sqlite3_bind_int64(oldReason, 2, candidate.revision) == SQLITE_OK else {
+                throw Failure.database(sqlite3_errcode(database))
+            }
+            try stepDone(oldReason)
+        }
         try execute("COMMIT")
         committed = true
         return changed

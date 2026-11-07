@@ -258,6 +258,16 @@ import Foundation
                                                 authorization: 3))
             try expect(try reopened.failureReasonCounts().isEmpty)
             try expect(try reopened.status(for: "reason-video")?.failureReasonCode == nil)
+            // A second item-local failure of the same queued revision must
+            // NOT redisplay the previous attempt's old reason code.
+            try expect(try reopened.settle(
+                item, result: .failed, expectedBaselineToken: Data([11]),
+                authorization: 3
+            ))
+            try expect(try reopened.status(for: "reason-video")?.failureReasonCode == nil)
+            try expect(try reopened.retryFailed(
+                item, expectedBaselineToken: Data([11]), authorization: 3
+            ))
             _ = try reopened.apply(inserted: [], updated: ["reason-video"], deleted: [],
                                    expectedToken: Data([11]), nextToken: Data([12]),
                                    authorization: 3)

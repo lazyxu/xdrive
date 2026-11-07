@@ -465,6 +465,14 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                        !plan.requiresFullLibraryReconciliation {
                         let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: selected)
                         do {
+                            // The user explicitly confirmed THIS original.
+                            // Only a proven local item failure may transition
+                            // back to pending under the current PhotoKit token.
+                            // Unknown ACKs were stopped by the global receipt
+                            // preflight before reaching this branch.
+                            _ = try await queue.retryFailedSingle(
+                                owner: selected, localIdentifier: localIdentifier
+                            )
                             selectedRevision = try await queue.pendingForSingle(
                                 owner: selected, localIdentifier: localIdentifier
                             )
