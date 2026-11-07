@@ -12,7 +12,7 @@ const names=['desktopPlacesCurrentLANPin','ensureDesktopPlacesAgentLANPin']
 const parts=parsed.statements.filter(node=>ts.isFunctionDeclaration(node)&&
   node.name&&names.includes(node.name.text)).map(node=>node.getText(parsed))
 assert.equal(parts.length,2,'execute the actual Main native CA-admission helpers')
-const compiled=ts.transpileModule('let desktopPlacesAgentLANPin=null;\\n'+parts.join('\\n'),{
+const compiled=ts.transpileModule('let desktopPlacesAgentLANPin=null;\n'+parts.join('\n'),{
     fileName:'index.cts',
     compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
   }).outputText
@@ -59,7 +59,7 @@ function makeHarness({receipt,agentError=null,rootOK=true,probeOK=true,
   }
   const keys=Object.keys(bindings)
   const admission=new Function(...keys,compiled+
-    '\\nreturn ({get:()=>desktopPlacesAgentLANPin,'+
+    '\nreturn ({get:()=>desktopPlacesAgentLANPin,'+
     'lookup:desktopPlacesCurrentLANPin,admit:ensureDesktopPlacesAgentLANPin})'
   )(...keys.map(k=>bindings[k]))
   return {admission,state,calls:()=>calls,probes:()=>probes}
