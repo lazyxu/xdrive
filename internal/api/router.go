@@ -416,8 +416,6 @@ func (s *Server) Router() *gin.Engine {
 	// B2: Owner GPS calendar-cell trips, separate from legacy date-only Memories.
 	authed.GET("/media/trips", s.listMediaExactTrips)
 	authed.GET("/media/trips/:tripID/items", s.listMediaExactTripItems)
-	// Trip-only GPS cells; never the whole-Owner places overview.
-	authed.GET("/media/trips/:tripID/map", s.listMediaExactTripMap)
 	authed.GET("/media/duplicate-organize/plan", s.mediaDuplicateOrganizePlan)
 	authed.POST("/media/duplicate-organize/apply", s.applyMediaDuplicateOrganize)
 	authed.GET("/media/duplicates", s.listMediaDuplicateGroups)
@@ -818,6 +816,13 @@ func (s *Server) requireAuth() gin.HandlerFunc {
 			!desktopMapNativeSessionActive(s.DB.WithContext(c.Request.Context()),
 				uid, claims.DesktopMapNativeRefreshID, time.Now().UTC(), false) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "desktop_map_native_session_revoked"})
+			return
+		}
+		// Native-linked browser access JWTs are map-only, never general Agent
+		// Owner credentials for Files, Sources, Notes, admin or writes.
+		if claims.DesktopMapNativeRefreshID != 0 &&
+			!desktopMapBrowserHTTPAllowed(c.Request.Method, c.FullPath()) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "desktop_map_route_denied"})
 			return
 		}
 		path := c.Request.URL.Path
