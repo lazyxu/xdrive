@@ -2528,6 +2528,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 if !favoriteShortcuts.matches(login.owner) ||
                     !quickAccess.matches(login.owner) {
                     reload()
+                } else {
+                    // A child may remove or rename Favorites while Home is
+                    // covered. Revalidate without clearing existing links.
+                    loadFavoriteShortcuts()
                 }
             } else if let folderID = parentID,
                       model.canResume(
