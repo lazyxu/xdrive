@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Behavioral publisher tests at Share HTTP and GitHub download boundaries."""
+"""Behavioral tests of authenticated GitHub offline component publication."""
 import hashlib
 import importlib.util
 import io

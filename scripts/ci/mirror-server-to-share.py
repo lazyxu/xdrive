@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Mirror exact authenticated GitHub offline releases to a private upload Share.
+"""Publish authenticated content-addressed offline components to GitHub Releases.
 
-GitHub publication precedes this opt-in transport. No Owner credential is used;
-remote bytes, including prior uploads, must match before delivery.json appears.
+The historical Share mirror entry point has been retired. This tool now only
+builds/verifies GitHub release metadata, immutable package identities and drafts.
 """
 from __future__ import annotations
 import argparse
@@ -564,8 +564,8 @@ def main():
                 publish_github(args.directory, args.commit, GitHub())
         return 0
     except (MirrorError, OSError, ValueError, KeyError, TypeError) as error:
-        # Only locally controlled codes are logged; exceptions may contain URLs
-        # or credentials from an external process or private Share request.
+        # Only locally controlled codes are logged. GitHub CLI errors may
+        # contain sensitive remote details; never echo their raw exception.
         if isinstance(error, MirrorPhaseError):
             code = error.phase
         elif isinstance(error, PublicationError) and error.code in PublicationError.CODES:

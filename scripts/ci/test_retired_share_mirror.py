@@ -23,6 +23,8 @@ class RetiredShareMirrorContract(unittest.TestCase):
         self.assertIn("uses: ./.github/workflows/offline-packages.yml", ci)
         self.assertIn("  publish-master:\n", ci)
         self.assertIn("  publish-content-addressed-offline:\n", ci)
+        offline_call = ci.split("  publish-content-addressed-offline:\n", 1)[1].split("\n  publish-stable:", 1)[0]
+        self.assertNotIn("secrets: inherit", offline_call)
         for required in ("publish-packages --directory", "publish-github --directory",
                          "gh attestation verify", "actions/attest@v4"):
             self.assertIn(required, offline)

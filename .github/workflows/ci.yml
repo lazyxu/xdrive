@@ -224,7 +224,7 @@ jobs:
       # A scoped PR can edit its own regression tests. Run the already trusted
       # master tests on the candidate publisher too, so changing tests cannot
       # silently weaken the existing security baseline.
-      - name: Re-run trusted base Share publisher regression suite
+      - name: Re-run trusted base GitHub offline publisher regression suite
         if: github.event_name == 'pull_request' && needs.pr-scope.outputs.scope == 'offline-release'
         shell: bash
         env:
@@ -2737,7 +2737,6 @@ jobs:
     uses: ./.github/workflows/offline-packages.yml
     with:
       ci_run_id: ${{ github.run_id }}
-    secrets: inherit
 
   publish-stable:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
