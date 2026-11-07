@@ -24,6 +24,7 @@ const (
 	clipboardPageSize  = 50
 	clipboardMaxText   = 64 << 10
 	clipboardMaxWire   = 128 << 10
+    clipboardChangeCap = 256
 )
 
 var errClipboardInvalid = errors.New("invalid encrypted clipboard payload")
