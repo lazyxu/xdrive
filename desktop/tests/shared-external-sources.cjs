@@ -968,6 +968,28 @@ test('local folder Source UI stays Desktop-only and explicitly non-executable', 
 })
 
 
+
+test('shared Push Source detail shows only a verified owning DeviceID', () => {
+  const pushSource = source({
+    kind: 'local_folder',
+    direction: 'push',
+    device_id: 'c6925cc7-c11c-447e-91c9-209e14e2d9d0',
+  })
+  assert.equal(shared.externalSourceDetailView({ source: pushSource }).deviceID, pushSource.device_id)
+  assert.equal(shared.externalSourceDetailView({
+    source: source({ kind: 'ios_photos', direction: 'push' }),
+  }).deviceID, undefined, 'legacy Sources without a trusted canonical binding must not invent a device')
+  assert.equal(shared.externalSourceDetailView({
+    source: source({ kind: 'yike_photos', direction: 'pull', device_id: pushSource.device_id }),
+  }).deviceID, undefined, 'Pull must not acquire or display a Push device binding')
+  const detail = fs.readFileSync(path.join(__dirname, '..', '..',
+    'ui/shared/src/mui/SourceManagerDetailsDialog.tsx'), 'utf8')
+  assert.match(detail, /detail\.deviceID/)
+  assert.match(detail, /绑定设备/)
+  assert.match(detail, /绑定设备上的 xdrive-agent/)
+  assert.doesNotMatch(detail, /同步执行器尚未启用/)
+})
+
 test('Android Photos Sources are visible but cannot be executed by the Server', () => {
   const row = { source: source({ kind: 'android_photos', direction: 'push', status: 'paused' }) }
   assert.equal(shared.externalSourceConnectorProfile('android_photos').label, 'Android Photos')
