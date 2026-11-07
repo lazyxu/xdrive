@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"time"
 	"strings"
 	"testing"
 
@@ -333,4 +334,62 @@ func TestMediaMapOverviewRealPostgresJinhuaDistribution(t *testing.T) {
 		t.Fatalf("microcell image cover and genuine WGS84 not paired: %+v", representative)
 	}
 
+	// Calendar Map + sparse Viewer Range must share the identical Owner,
+	// captured instant interval, actual 0.01° place and Count. Older rows
+	// without capture timestamps and a foreign Owner must stay excluded.
+	from := time.Date(2026, 3, 28, 0, 0, 0, 0, time.UTC)
+	to := from.Add(24 * time.Hour)
+	scope := &mediaCaptureBounds{From: from, To: to}
+	if !scope.valid() { t.Fatal("invalid exact calendar scope") }
+	for i := 0; i < 4; i++ {
+		lat := 30.01 + float64(i)*0.04
+		lon := 120.01 + float64(i)*0.04
+		name := fmt.Sprintf("exact-date-map-%d.jpg", i)
+		id := addPoint(owner, root, name, lat, lon)
+		if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", id).
+			Update("captured_at", from.Add(12*time.Hour)).Error; err != nil { t.Fatal(err) }
+		var asset meta.PhotoAsset
+		if err := db.Where("owner_id = ? AND primary_node_id = ?", owner, id).
+			First(&asset).Error; err != nil { t.Fatal(err) }
+		if err := db.Create(&meta.PhotoMetadata{
+			AssetID: asset.ID, MediaKind: meta.MediaKindImage,
+			MIMEType: "image/jpeg", CapturedAt: &from,
+			Latitude: &lat, Longitude: &lon,
+		}).Error; err != nil { t.Fatal(err) }
+		if err := db.Create(&meta.File{
+			NodeID: id, StorageKey: "map-date-"+name,
+			SHA256: fmt.Sprintf("%064x", id), Size: 100,
+		}).Error; err != nil { t.Fatal(err) }
+	}
+	ctx := context.Background()
+	dated, err := queryMediaPlacesMapOverview(ctx, db, owner, world, true, scope)
+	if err != nil || dated.Aggregated || dated.TotalPhotoCount != 4 ||
+		len(dated.Items) != 4 {
+		t.Fatalf("date-scoped map includes photos from other dates/Owners: %+v %v", dated, err)
+	}
+	paged, err := queryMediaPlacesViewport(ctx, db, owner, world, 64, 0, scope)
+	if err != nil || paged.TotalPhotoCount != 4 || len(paged.Items) != 4 {
+		t.Fatalf("date-scoped map vs place-list mismatch: %+v %v", paged, err)
+	}
+	server := &Server{DB: db}
+	for _, item := range dated.Items {
+		cell, ok := parseMediaPlaceKey(item.ID)
+		if !ok { t.Fatalf("map returned noncanonical date-filtered place %+v", item) }
+		q, err := server.mediaItemsBaseQuery(ctx, owner, mediaQueryOptions{
+			CapturedFrom: &from, CapturedTo: &to, Place: &cell,
+		}, "")
+		if err != nil { t.Fatal(err) }
+		var count int64
+		if err := q.Session(&gorm.Session{}).
+			Distinct("xd_media_metadata.node_id").Count(&count).Error; err != nil { t.Fatal(err) }
+		if count != item.ItemCount || count != 1 {
+			t.Fatalf("place %s Date/Map/Range count mismatch: %d vs %d", item.ID, count, item.ItemCount)
+		}
+	}
+	outOfDate := &mediaCaptureBounds{From: to, To: to.Add(24*time.Hour)}
+	emptyRange, err := queryMediaPlacesMapOverview(ctx, db, owner, world, true, outOfDate)
+	if err != nil || emptyRange.TotalPhotoCount != 0 || len(emptyRange.Items) != 0 {
+		t.Fatalf("expired map date retained stale GPS entries: %+v %v", emptyRange, err)
+	}
 }
+
