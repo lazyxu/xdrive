@@ -165,10 +165,127 @@ function inspectRealWebGuest(){
   return {ready:true,denied:false,login:false,
     hasGallery:!!root.querySelector('[data-xdrive-places-index]'),
     mapMode:mode?.getAttribute('data-xdrive-places-map-mode')||'',
+    hasModeControls:!!root.querySelector('[data-xdrive-map-mode-prototype]') && !!root.querySelector('[data-xdrive-map-mode-isolated]'),
     guestBridge:typeof window.xdrivePlacesEmbedBridge,
     hasNativeAgent:typeof window.xdriveDesktop,
     url:location.origin}
 }
+
+/**
+ * Executes in the *real* production HTTPS WebView, using its pre-existing
+ * HttpOnly browser session and the genuine Gin/PostgreSQL Owner endpoints.
+ * Only synthetic counts and HTTP status classes return to Electron Main;
+ * no AccessJWT, native refresh credential or raw photo metadata is logged.
+ * The Web View/React UI is still mounted and authenticated before this runs.
+ */
+async function inspectRealWebGuestOwnerDataPath(expectedOwner){
+  const tokenReply=await fetch('/api/v1/auth/browser/refresh',{
+    method:'POST',redirect:'error',credentials:'same-origin',cache:'no-store',
+    headers:{'X-XDrive-Browser-Owner':expectedOwner},
+  })
+  if(!tokenReply.ok)throw Error('map guest Cookie refresh rejected '+tokenReply.status)
+  const receipt=await tokenReply.json()
+  if(receipt.username!==expectedOwner || receipt.browser_session!==true ||
+      typeof receipt.access_token!=='string' || receipt.access_token.length<30)
+    throw Error('map guest browser JWT Owner mismatch')
+  const bearer=receipt.access_token
+  const request=async(path,method='GET')=>fetch(path,{
+    method,credentials:'same-origin',redirect:'error',cache:'no-store',
+    headers:{Authorization:'Bearer '+bearer},
+  })
+  const bounds='west=100&south=20&east=125&north=40&sort_by=captured&sort_dir=desc'
+  const base='/api/v1/media/places/baidu-jsapi/cells?'+bounds
+  const readCells=async(suffix)=> {
+    const response=await request(base+suffix)
+    if(response.status!==200)throw Error('protected Owner cells HTTP '+response.status)
+    const data=await response.json()
+    if(data.coordinate_space!=='bd09ll' || !Array.isArray(data.cells))
+      throw Error('invalid real BD09 cell response')
+    return data
+  }
+  const [all,favorites,family,familyFavorites,emptyDate]=await Promise.all([
+    readCells(''),readCells('&favorite=true'),
+    readCells('&album=manual%3AFamily'),
+    readCells('&album=manual%3AFamily&favorite=true'),
+    readCells('&captured_from=2099-01-01'),
+  ])
+  if(all.total_count!==9 || favorites.total_count!==3 ||
+      family.total_count!==3 || familyFavorites.total_count!==2 ||
+      emptyDate.total_count!==0)
+    throw Error('real Owner-scoped album/favorite/date counts differ from fixture')
+  if(all.cells.length!==1 || favorites.cells.length!==1 ||
+      family.cells.length!==1 || familyFavorites.cells.length!==1)
+    throw Error('real Owner Cells did not preserve bounded descriptor')
+  const cell=all.cells[0]
+  const query=new URLSearchParams(bounds)
+  for(const [key,value] of Object.entries({
+    cell_x:cell.cell_x,cell_y:cell.cell_y,asset_id:cell.asset_id,
+    node_id:cell.node_id,node_revision:cell.node_revision,
+    photo_count:cell.photo_count,offset:0,limit:10,range:true,
+  }))query.set(key,String(value))
+  const items=await request('/api/v1/media/places/baidu-jsapi/cell-items?'+query)
+  if(items.status!==200)throw Error('real Owner Cell-to-Viewer range HTTP '+items.status)
+  const page=await items.json()
+  if(page.total_count!==9 || !Array.isArray(page.items) ||
+      page.items.length===0 || page.items.length>9)
+    throw Error('real Owner Cell-to-Viewer range is not exact')
+  const selected=page.items.find(item=>item?.node?.id===cell.node_id) || page.items[0]
+  if(!Number.isSafeInteger(selected?.node?.id) || selected.node.id<=0)
+    throw Error('Viewer range has no Owner-verified Node')
+  const metadata=await request('/api/v1/media/items/'+selected.node.id)
+  if(metadata.status!==200)throw Error('real Owner Viewer metadata HTTP '+metadata.status)
+  const photo=await metadata.json()
+  if(!photo || !photo.node || photo.node.id!==selected.node.id)
+    throw Error('real Viewer metadata escaped the exact Owner Node')
+  const thumbnail=await request('/api/v1/media/items/'+selected.node.id+'/thumbnail')
+  const viewer=await request('/api/v1/media/items/'+selected.node.id+'/viewer-preview')
+  if([401,403,500,502,503].includes(thumbnail.status) ||
+      [401,403,500,502,503].includes(viewer.status))
+    throw Error('real Viewer derivative request failed authorization or Server')
+  // Derivatives can be 404 before the background thumbnail/preview worker
+  // runs; the test reports that truth rather than fabricating image bytes.
+  const unrelated=await Promise.all([
+    request('/api/v1/nodes'),
+    request('/api/v1/notes'),
+    request('/api/v1/admin/users'),
+    request('/api/v1/media/albums','POST'),
+  ])
+  if(unrelated.some(response=>response.status!==403))
+    throw Error('map browser bearer escaped its dedicated route allowlist')
+  return {
+    ok:true,ownerCells:all.total_count,favorites:favorites.total_count,
+    family:family.total_count,familyFavorites:familyFavorites.total_count,
+    emptyDate:emptyDate.total_count,viewerRange:page.total_count,
+    viewerMetadata:true,thumbnailStatus:thumbnail.status,
+    viewerStatus:viewer.status,mapRouteOnly:true,
+  }
+}
+
+/** Keeps the map JWT only in a guest-local closure across real Agent logout. */
+async function armRealWebGuestNativeRevocation(expectedOwner){
+  const receipt=await fetch('/api/v1/auth/browser/refresh',{
+    method:'POST',redirect:'error',credentials:'same-origin',cache:'no-store',
+    headers:{'X-XDrive-Browser-Owner':expectedOwner},
+  })
+  if(receipt.status!==200)throw Error('cannot arm protected guest revoke probe')
+  const issued=await receipt.json()
+  if(issued.username!==expectedOwner || !issued.browser_session ||
+      !issued.access_token)throw Error('revocation probe Owner mismatch')
+  const bearer=issued.access_token
+  const read=()=>fetch('/api/v1/media/places/baidu-jsapi/cells?'+
+    'west=100&south=20&east=125&north=40&sort_by=captured&sort_dir=desc',{
+    credentials:'same-origin',cache:'no-store',redirect:'error',
+    headers:{Authorization:'Bearer '+bearer},
+  })
+  if((await read()).status!==200)throw Error('map bearer not live before Agent logout')
+  // Boolean-only test signal; neither JWT nor private Owner IDs leave closure.
+  window.__xdrivePlacesNativeRevocationReady=true
+  await new Promise(resolve=>window.addEventListener(
+    'xdrive-test-native-agent-logged-out',resolve,{once:true}))
+  const response=await read()
+  return {revoked:response.status===401 || response.status===403}
+}
+
 let launched=false
 async function run(win){
   let stage='production-desktop-init'
@@ -259,16 +376,75 @@ async function run(win){
     assert.equal(state.url,origin)
     assert.equal(state.hasGallery,true)
     assert.notEqual(state.mapMode,'isolated','default map unexpectedly forced isolation')
+    assert.equal(state.hasModeControls,true,'production Web shared map controls absent')
+    stage='production-Web-Owner-scoped-Gin-Cells-Viewer-and-map-route-fence'
+    const media=await attached.executeJavaScript(
+      '('+inspectRealWebGuestOwnerDataPath.toString()+')('+JSON.stringify(owner)+')')
+    assert.equal(media.ok,true)
+    assert.equal(media.ownerCells,9)
+    assert.equal(media.favorites,3)
+    assert.equal(media.family,3)
+    assert.equal(media.familyFavorites,2)
+    assert.equal(media.emptyDate,0)
+    assert.equal(media.viewerRange,9)
+    assert.equal(media.viewerMetadata,true)
+    assert.equal(media.mapRouteOnly,true)
     const preload=await win.webContents.executeJavaScript(
       'Boolean(window.xdriveDesktop?.agent && document.querySelector("[data-xdrive-places-index]"))')
     assert.equal(preload,true)
+    let nativeLogoutBlockedOldMap=false
+    let oldMapHiddenAfterLogout=false
+    if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===2){
+      stage='production-Desktop-live-Agent-logout-while-WebView-mounted'
+      const readyFile=process.env.XD_DESKTOP_PLACES_LOGOUT_READY
+      const doneFile=process.env.XD_DESKTOP_PLACES_LOGOUT_DONE
+      assert.ok(readyFile && doneFile,'test-only logout coordination absent')
+      const fs=require('node:fs')
+      const inFlight=attached.executeJavaScript(
+        '('+armRealWebGuestNativeRevocation.toString()+')('+JSON.stringify(owner)+')')
+      await until(async()=>{
+        if(attached.isDestroyed())return false
+        return attached.executeJavaScript(
+          'window.__xdrivePlacesNativeRevocationReady===true')
+      },12000,'live browser bearer ready before native logout')
+      fs.writeFileSync(readyFile,'ready',{mode:0o600})
+      await until(()=>fs.existsSync(doneFile),40000,'real Go Agent logout')
+      if(!attached.isDestroyed()){
+        try{await attached.executeJavaScript(
+          'window.dispatchEvent(new Event("xdrive-test-native-agent-logged-out"))')
+        }catch{}
+      }
+      const response=await Promise.race([
+        inFlight.then(x=>x).catch(()=>({guestClosed:true})),
+        wait(9000).then(()=>({guestClosed:attached.isDestroyed()})),
+      ])
+      nativeLogoutBlockedOldMap=response.revoked===true || (
+        response.guestClosed===true && attached.isDestroyed())
+      assert.equal(nativeLogoutBlockedOldMap,true,
+        'native logout left already-minted Web map bearer usable')
+      const guestStillVisible=async()=>{
+        if(win.isDestroyed()||win.webContents.isDestroyed())return false
+        return win.webContents.executeJavaScript(
+          '(() => {const guest=document.querySelector("[data-xdrive-desktop-embedded-places]");'+
+          'return !!guest && getComputedStyle(guest).visibility!=="hidden" &&'+
+          'getComputedStyle(guest).display!=="none"})()').catch(()=>false)
+      }
+      await until(async()=> !(await guestStillVisible()),
+        15000,'old Owner map WebView must retire or hide after logout')
+      oldMapHiddenAfterLogout=true
+    }
     console.log('XDRIVE_PLACES_PRODUCTION_RESTART '+JSON.stringify({
       passed:true,productionMain:true,productionPreload:true,
       productionRenderer:true,actualWebVite:true,actualGinPostgreSQL:true,
       currentOwner:owner,realGuest:true,secureOrigin:true,
       embeddedOnly:true,noNestedLogin:true,syntheticPhotosOnly:true,
       phase:Number(process.env.XD_DESKTOP_PLACES_BOOT||'0'),
-      guestLoads,mapMode:state.mapMode
+      guestLoads,mapMode:state.mapMode,
+      exactOwnerCells:media.ownerCells,exactFavorites:media.favorites,
+      exactFamily:media.family,exactFamilyFavorites:media.familyFavorites,
+      exactViewerRange:media.viewerRange,viewerMetadata:media.viewerMetadata,
+      noUnrelatedMapBearerAccess:media.mapRouteOnly,
+      thumbnailStatus:media.thumbnailStatus,viewerStatus:media.viewerStatus,nativeLogoutBlockedOldMap,oldMapHiddenAfterLogout
     }))
     app.exit(0)
   }catch(error){
