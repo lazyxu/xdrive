@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lazyxu/xdrive/internal/photoasset"
 	"gorm.io/gorm"
 )
 
@@ -32,8 +33,13 @@ func mediaMapCaptureFilter(query *gorm.DB, scope *mediaCaptureBounds) *gorm.DB {
 	if scope == nil {
 		return query
 	}
-	return query.Where("xd_media_metadata.captured_at >= ? AND xd_media_metadata.captured_at < ?",
-		scope.From, scope.To)
+	// The date-scoped map is a projection of the SAME current logical
+	// PhotoAsset rows as /media/items?range=true: a stale primary binding
+	// or missing photo metadata must not become a tappable date-map facet.
+	return query.Joins("JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
+		Where(photoasset.CurrentContentBindingSQL("pa")).
+		Where("xd_media_metadata.captured_at >= ? AND xd_media_metadata.captured_at < ?",
+			scope.From, scope.To)
 }
 
 func parseMediaMapOverviewScopedQuery(raw string) (
