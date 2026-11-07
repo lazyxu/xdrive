@@ -64,6 +64,24 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         select("native-ios-tab-files", in: app)
         XCTAssertEqual(app.state, .runningForeground)
     }
+    func testDirectFilesShellCanMountWithoutLoggedInServer() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke", "-xdrive-ui-files-direct"]
+        app.launch()
+        XCTAssertTrue(app.buttons["native-ios-files-section-browse"]
+            .waitForExistence(timeout: 25), "Native Files root failed to mount")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+    func testDirectFilesShellWithOfflineOwnerDoesNotExit() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke", "-xdrive-ui-files-direct",
+                               "-xdrive-ui-navigation-synthetic-owner"]
+        app.launch()
+        XCTAssertTrue(app.buttons["native-ios-files-open-root-location"]
+            .waitForExistence(timeout: 25),
+            "Native Files root did not mount for synthetic Owner")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
     func testFilesTopLevelNavigationRemainsResponsive() {
         let app = launch()
         for tab in ["files", "mine", "files", "launcher", "files", "gallery"] {

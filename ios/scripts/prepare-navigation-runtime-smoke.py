@@ -35,10 +35,19 @@ private struct XDriveIOSNativeNavigationSmokeRoot: View {
     @StateObject private var login = XDriveIOSNativeOwnerLoginModel()
     @StateObject private var backup = XDriveIOSNativePhotoBackupController()
     var body: some View {
-        XDriveIOSNativePhotosDashboard(
-            login: login, backup: backup, signingOut: false,
-            logoutWarning: nil, onSignOut: { _ in }
-        )
+        Group {
+            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-files-direct") {
+                NavigationStack {
+                    XDriveIOSNativeFilesBrowser(login: login)
+                        .navigationTitle("文件")
+                }
+            } else {
+                XDriveIOSNativePhotosDashboard(
+                    login: login, backup: backup, signingOut: false,
+                    logoutWarning: nil, onSignOut: { _ in }
+                )
+            }
+        }
         .onAppear {
             if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-synthetic-owner") {
                 // Deliberately no active Session/token: real transport stays
