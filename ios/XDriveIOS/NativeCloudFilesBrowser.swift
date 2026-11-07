@@ -2754,8 +2754,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func suspendVisibleRange() {
         cancelPathLookup()
         cancelSelectAllRead()
-        cancelArrangementReanchor()
         clearInternalDrag()
+        cancelArrangementReanchor()
         pendingDrop = nil
         inlineFolders.suspendForNavigation()
         guard selectedFile == nil else { return }
