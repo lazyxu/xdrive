@@ -57,7 +57,13 @@ jobs:
           candidates=[(runtime,d) for runtime,arr in rows.items() for d in arr
                       if d.get("isAvailable",True) and d.get("name","").startswith("iPhone")]
           if not candidates: raise SystemExit("No iPhone Simulator is installed")
-          runtime,d=max(candidates,key=lambda x:(x[0],x[1]["name"]))
+          # Keep Simulator runtime paired to selected Xcode 16.4 / SDK 18.5.
+          compatible=[(runtime,d) for runtime,d in candidates
+                      if runtime.endswith("iOS-18-5")]
+          if not compatible:
+              raise SystemExit("Xcode 16.4 requires installed iOS 18.5 simulator")
+          runtime,d=next(((r,x) for r,x in compatible if x["name"]=="iPhone 16"),
+                         compatible[0])
           with open(os.environ["GITHUB_ENV"],"a") as out:
               out.write("SMOKE_SIM="+d["udid"]+"\n")
           print("Simulator",runtime,d["name"],d["udid"])
@@ -66,8 +72,15 @@ jobs:
           # the exact selected simulator locally before attempting to boot.
           SMOKE_SIM="$(sed -n 's/^SMOKE_SIM=//p' "$GITHUB_ENV" | tail -1)"
           test -n "$SMOKE_SIM"
+          export SMOKE_SIM
           xcrun simctl boot "$SMOKE_SIM"
-          xcrun simctl bootstatus "$SMOKE_SIM" -b
+          # Fail as infrastructure failure instead of waiting indefinitely
+          # for an incompatible/failed CoreSimulator runtime.
+          python3 - <<'PY'
+          import os,subprocess
+          subprocess.run(["xcrun","simctl","bootstatus",os.environ["SMOKE_SIM"],"-b"],
+                         timeout=240,check=True)
+          PY
       - name: Run real XCUITest Gallery-Files transitions
         shell: bash
         run: |
