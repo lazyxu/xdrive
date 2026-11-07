@@ -13,11 +13,14 @@ import { XDriveOfflineSystemUpdatePanel } from './OfflineSystemUpdatePanel'
 import type { XDriveOfflineImportPort } from '../offline-update'
 import { useXDriveServerUpdateController, type XDriveServerUpdatePort } from './ServerUpdateController'
 import { XDriveStatusAlert } from './StatusAlert'
+import { XDriveReleaseBundleCard } from './ReleaseBundleCard'
+import type { XDriveReleaseBundlePort } from '../release-bundles'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
 /** One authenticated Host update workflow for Web and Desktop. */
 export function XDriveSystemUpdatePage({
   updatePort,
+  releaseBundlePort,
   buildInfo = [],
   clientUpdateContent,
   offlinePort,
@@ -29,6 +32,7 @@ export function XDriveSystemUpdatePage({
   onBusyChange,
 }: {
   updatePort: XDriveServerUpdatePort
+  releaseBundlePort?: XDriveReleaseBundlePort
   buildInfo?: { title: string; info?: BuildInfo | null }[]
   clientUpdateContent?: ReactNode
   offlinePort?: XDriveOfflineImportPort
@@ -85,6 +89,7 @@ export function XDriveSystemUpdatePage({
           onStart={() => { if (!actionDisabled) setConfirmationOpen(true) }}
         />
         {update.error ? <XDriveStatusAlert tone="warning">{update.error}</XDriveStatusAlert> : null}
+        <XDriveReleaseBundleCard port={releaseBundlePort} />
         {offlinePort ? (
           <XDriveOfflineSystemUpdatePanel port={offlinePort} disabled={actionDisabled}
             onSubmitted={() => { void update.refresh() }} />

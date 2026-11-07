@@ -173,6 +173,8 @@ prepare_host_layout() {
     "$XDRIVE_HOME" "$CONFIG_DIR" "$BIN_DIR" "$DATA_DIR" \
     "$SNAPSHOT_BACKUP_DIR" "$PRE_UPGRADE_BACKUP_DIR" "$PRE_RESTORE_BACKUP_DIR" \
     "$LOG_DIR" "$STATE_DIR"
+  mkdir -p "$DATA_DIR/release-bundles"
+  chmod 0755 "$DATA_DIR/release-bundles"
   chmod 700 "$XDRIVE_HOME" "$CONFIG_DIR" "$BIN_DIR" "$DATA_DIR" "$BACKUP_ROOT" \
     "$SNAPSHOT_BACKUP_DIR" "$PRE_UPGRADE_BACKUP_DIR" "$PRE_RESTORE_BACKUP_DIR" \
     "$LOG_DIR" "$STATE_DIR"
@@ -192,7 +194,7 @@ prepare_host_layout() {
     cp -p "$LEGACY_CADDY_PATH" "$CADDY_PATH"
     chmod 600 "$CADDY_PATH"
   fi
-  for legacy_tool in xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
+  for legacy_tool in xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py release_bundle.py; do
     if [[ ! -f "$BIN_DIR/$legacy_tool" && -f "$XDRIVE_HOME/$legacy_tool" ]]; then
       cp -p "$XDRIVE_HOME/$legacy_tool" "$BIN_DIR/$legacy_tool"
       chmod 700 "$BIN_DIR/$legacy_tool"
@@ -1262,7 +1264,7 @@ fi
 if [[ "$needs_source_resolution" == "true" ]]; then
   resolve_install_source "$requested_channel"
 else
-  if [[ "$requested_channel" == "master" && -z "$requested_commit" && -n "$BUILT_COMMIT" ]] && ! is_template_placeholder "$BUILT_COMMIT"; then
+  if [[ -z "$requested_commit" && -n "$BUILT_COMMIT" ]] && ! is_template_placeholder "$BUILT_COMMIT"; then
     requested_commit="$BUILT_COMMIT"
   fi
   echo "Using packaged release source: $SOURCE_REF"
@@ -1338,7 +1340,7 @@ if [[ -z "$OFFLINE_ASSET_DIR" && "$requested_source" == "gitlab" ]]; then
 fi
 # The download counter follows the same list as offline staging; it is
 # independent of the nine top-level installer stages.
-maintenance_scripts=(server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py)
+maintenance_scripts=(server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py release_bundle.py)
 deployment_asset_total=$(( ${#maintenance_scripts[@]} + 2 ))
 if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
   # These assets were already verified against the independently trusted
@@ -1383,6 +1385,7 @@ verify_embedded_deploy_assets() {
     scripts/server-doctor.sh
     scripts/server-migrate-user.sh
     scripts/server-control.sh
+    scripts/release_bundle.py
     scripts/caddy-env-config.py
     scripts/caddy-admission.py
     scripts/xdrive-share-update.py
@@ -2900,7 +2903,7 @@ unset_env XD_WEB_PIDS_LIMIT
 unset_env XD_CADDY_BUILD_ID
 
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
-for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
+for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py release_bundle.py; do
   install -m 700 "$STAGING_DIR/$maintenance_script" "$BIN_DIR/$maintenance_script"
 done
 install -m 700 "$STAGING_DIR/xdrive-server" "$HOST_MANAGER_PATH"

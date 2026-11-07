@@ -221,6 +221,9 @@ jobs:
           python3 -m unittest discover -s scripts/offline -p 'test_*.py'
           python3 scripts/test-xdrive-share-update.py -q
           python3 scripts/test-release-attestation-contract.py
+          python3 -m unittest discover -s scripts -p 'test_release_bundle.py'
+          python3 -m unittest discover -s scripts/ci -p 'test_generate_release_bundle.py'
+          bash -n scripts/ci/publish-release-bundle.sh scripts/ci/collect-optional-native-release.sh
       # A scoped PR can edit its own regression tests. Run the already trusted
       # master tests on the candidate publisher too, so changing tests cannot
       # silently weaken the existing security baseline.
