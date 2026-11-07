@@ -165,9 +165,6 @@ internal fun NativeClipboardScreen(
                 modifier=Modifier.fillMaxWidth().heightIn(min=100.dp),
                 label={Text("文字或链接")},maxLines=7)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                val clipboard = remember(context) {
-                    context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                }
                 OutlinedButton(onClick={
                     val text=clipboard.primaryClip?.takeIf{it.itemCount>0}
                         ?.getItemAt(0)?.coerceToText(context)?.toString()
