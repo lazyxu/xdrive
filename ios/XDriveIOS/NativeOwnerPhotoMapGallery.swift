@@ -18,11 +18,13 @@ private enum XDriveIOSOwnerMapCoverOutcome: @unchecked Sendable {
 private struct XDriveIOSOwnerMapCoverRead: @unchecked Sendable {
     let facet: XDriveIOSNativeOwnerMapFacet
     let reader: XDriveIOSNativeMediaGalleryReader
+    let captureRange: XDriveIOSNativePhotoMapCaptureRange?
 
     func perform() async -> XDriveIOSOwnerMapCoverOutcome {
         do {
             try Task.checkCancellation()
-            let page = try await reader.page(offset: 0, placeID: facet.id)
+            let page = try await reader.page(
+                offset: 0, placeID: facet.id, captureRange: captureRange)
             try Task.checkCancellation()
             // A verified page total is mandatory; a MapKit cover Node ID
             // is never a credential for a thumbnail or an Owner PhotoAsset.
@@ -943,6 +945,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             // Every group is structured under coverTask so gesture, Owner,
             // Viewer or scene cancellation terminates in-flight URL requests.
             let maximumConcurrentCovers = 3
+            let captureRange = activeCaptureRange
             let facets = XDriveIOSNativeOwnerMapSelectionPolicy
                 .prioritizedPhotoCovers(result.items)
             for start in stride(from: 0, to: facets.count, by: maximumConcurrentCovers) {
@@ -957,7 +960,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 let end = min(facets.count, start + maximumConcurrentCovers)
                 await withTaskGroup(of: XDriveIOSOwnerMapCoverOutcome.self) { group in
                     for facet in facets[start..<end] {
-                        let request = XDriveIOSOwnerMapCoverRead(facet: facet, reader: reader)
+                        let request = XDriveIOSOwnerMapCoverRead(
+                            facet: facet, reader: reader, captureRange: captureRange)
                         group.addTask { await request.perform() }
                     }
                     for await completed in group {
