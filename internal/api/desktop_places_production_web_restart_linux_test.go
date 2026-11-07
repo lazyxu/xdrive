@@ -248,7 +248,9 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(ready)
-	timer := time.NewTimer(7 * time.Minute)
+	// Multiple real WebView mode/Cookie/revocation phases run within one
+	// test fixture; each phase also has its own shorter failure deadline.
+	timer := time.NewTimer(18 * time.Minute)
 	defer timer.Stop()
 	ticker := time.NewTicker(150 * time.Millisecond)
 	defer ticker.Stop()
