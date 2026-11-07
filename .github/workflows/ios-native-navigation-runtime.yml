@@ -1,0 +1,121 @@
+name: iOS Native Files Gallery simulator crash reproduction
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ios-native-navigation-runtime.yml'
+      - 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'
+      - 'ios/scripts/prepare-navigation-runtime-smoke.py'
+      - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-ios-runtime-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  simulator-navigation:
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [release-c83, candidate]
+    continue-on-error: ${{ matrix.source == 'release-c83' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare original release/current source and UI smoke scheme
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_16.4.app ]]; then
+            sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          fi
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          if [[ "${{ matrix.source }}" == release-c83 ]]; then
+            work="$RUNNER_TEMP/ios-release-c83"
+            mkdir -p "$work/ios/UITests"
+            git archive c83bcf3bd00dc817c9214386efe0743093ad0fc8 | tar -xf - -C "$work"
+            cp ios/UITests/XDriveIOSNavigationRuntimeUITests.swift "$work/ios/UITests/"
+          else
+            work="$GITHUB_WORKSPACE"
+          fi
+          echo "SMOKE_ROOT=$work" >> "$GITHUB_ENV"
+          python3 ios/scripts/prepare-navigation-runtime-smoke.py "$work"
+          bash "$work/ios/scripts/prepare-assets.sh"
+          (cd "$work/ios" && xcodegen generate --spec project.yml)
+      - name: Boot available iPhone simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          rows=json.loads(subprocess.check_output(
+            ["xcrun","simctl","list","devices","available","-j"]))["devices"]
+          candidates=[(runtime,d) for runtime,arr in rows.items() for d in arr
+                      if d.get("isAvailable",True) and d.get("name","").startswith("iPhone")]
+          if not candidates: raise SystemExit("No iPhone Simulator is installed")
+          # Keep Simulator runtime paired to selected Xcode 16.4 / SDK 18.5.
+          compatible=[(runtime,d) for runtime,d in candidates
+                      if runtime.endswith("iOS-18-5")]
+          if not compatible:
+              raise SystemExit("Xcode 16.4 requires installed iOS 18.5 simulator")
+          runtime,d=next(((r,x) for r,x in compatible if x["name"]=="iPhone 16"),
+                         compatible[0])
+          with open(os.environ["GITHUB_ENV"],"a") as out:
+              out.write("SMOKE_SIM="+d["udid"]+"\n")
+          print("Simulator",runtime,d["name"],d["udid"])
+          PY
+          # GITHUB_ENV applies to subsequent steps, not this shell. Reuse
+          # the exact selected simulator locally before attempting to boot.
+          SMOKE_SIM="$(sed -n 's/^SMOKE_SIM=//p' "$GITHUB_ENV" | tail -1)"
+          test -n "$SMOKE_SIM"
+          export SMOKE_SIM
+          xcrun simctl boot "$SMOKE_SIM"
+          # Fail as infrastructure failure instead of waiting indefinitely
+          # for an incompatible/failed CoreSimulator runtime.
+          python3 - <<'PY'
+          import os,subprocess
+          subprocess.run(["xcrun","simctl","bootstatus",os.environ["SMOKE_SIM"],"-b"],
+                         timeout=240,check=True)
+          PY
+      - name: Run real XCUITest Gallery-Files transitions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-navigation-results"
+          xcodebuild test \
+            -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
+            -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SMOKE_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/native-navigation-results/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -only-testing:xDriveIOSNavigationUITests test \
+            2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
+      - name: Capture crash diagnostics and XCTest summary
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 3 -type f \
+            \( -iname '*xDrive*' -o -iname '*.ips' \) -mmin -45 \
+            -exec cp {} "$RUNNER_TEMP/native-navigation-results/diagnostics/" \; 2>/dev/null || true
+          if [[ -d "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" ]]; then
+            xcrun xcresulttool get test-results summary \
+              --path "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
+              > "$RUNNER_TEMP/native-navigation-results/diagnostics/summary.json" 2>&1 || true
+          fi
+      - name: Upload runtime logs and crash evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-navigation-${{ matrix.source }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/native-navigation-results/xcodebuild.log
+            ${{ runner.temp }}/native-navigation-results/diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
