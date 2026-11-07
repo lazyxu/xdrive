@@ -21,6 +21,7 @@ type fakeFaceAnalyzer struct {
 	infoCalls    int
 	analyzeCalls int
 	tasks        []FaceAnalysisTask
+	onAnalyze    func()
 }
 
 func (a *fakeFaceAnalyzer) Info(context.Context) (FaceAnalyzerInfo, error) {
@@ -34,6 +35,9 @@ func (a *fakeFaceAnalyzer) Analyze(
 ) ([]FaceObservation, error) {
 	a.analyzeCalls++
 	a.tasks = append(a.tasks, task)
+	if a.onAnalyze != nil {
+		a.onAnalyze()
+	}
 	return []FaceObservation{
 		{
 			Box: NormalizedBox{
@@ -85,7 +89,7 @@ func TestFaceRunnerPersistsAndInvalidatesDerivedFaces(t *testing.T) {
 		&meta.Node{},
 		&meta.File{},
 		&meta.MediaMetadata{},
-		&meta.PhotoAsset{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoAnalysisState{},
 		&meta.PhotoFace{},
 	); err != nil {
@@ -338,4 +342,30 @@ func TestFaceRunnerPersistsAndInvalidatesDerivedFaces(t *testing.T) {
 			t.Fatalf("updated state=%+v", state)
 		}
 	}
+	t.Run("changed source cannot publish late faces", func(t *testing.T) {
+		if err := db.Model(&meta.PhotoAnalysisState{}).Where("asset_id = ?", asset.ID).
+			Update("state", meta.PhotoAnalysisStateStale).Error; err != nil {
+			t.Fatal(err)
+		}
+		analyzer.onAnalyze = func() {
+			if err := db.Model(&meta.Node{}).Where("id = ?", node.ID).
+				Update("revision", 3).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(&meta.File{}).Where("node_id = ?", node.ID).
+				Update("sha256", strings.Repeat("e", 64)).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		_, _ = runner.RunOwnerBatch(context.Background(), owner.ID, 10)
+		var ready int64
+		if err := db.Model(&meta.PhotoAnalysisState{}).
+			Where("asset_id = ? AND state = ?", asset.ID, meta.PhotoAnalysisStateReady).
+			Count(&ready).Error; err != nil {
+			t.Fatal(err)
+		}
+		if ready != 0 {
+			t.Fatal("late face result was published ready after source changed")
+		}
+	})
 }

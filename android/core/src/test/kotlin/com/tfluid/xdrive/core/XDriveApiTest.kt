@@ -17,6 +17,84 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class XDriveApiTest {
+    @Test fun faceReanalysisRequires202AndExactOwnerReceiptWithoutReplay() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val me = """{"id":7,"username":"owner","role":"user","must_change_password":false,"pwa_offline_instance_id":"server-one"}"""
+            for ((status, receipt, accepted) in listOf(
+                Triple(202, """{"owner_id":7,"accepted":["face"]}""", true),
+                Triple(200, """{"owner_id":7,"accepted":["face"]}""", false),
+                Triple(202, """{"owner_id":8,"accepted":["face"]}""", false),
+                Triple(202, """{"owner_id":7,"accepted":["smart_search"]}""", false))) {
+                server.enqueue(MockResponse().setBody(me))
+                server.enqueue(MockResponse().setResponseCode(status).setBody(receipt))
+                if (accepted) api.reanalyzeGalleryFaces("owner-secret")
+                else assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                    api.reanalyzeGalleryFaces("owner-secret")
+                }.reason)
+                assertEquals("/api/v1/me", server.takeRequest().path)
+                val request = server.takeRequest()
+                assertEquals("POST", request.method)
+                assertEquals("/api/v1/photo-intelligence/reanalyze", request.path)
+                assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+                assertEquals(Json.parseToJsonElement("""{"kinds":["face"]}"""),
+                    Json.parseToJsonElement(request.body.readUtf8()))
+            }
+            assertEquals(8, server.requestCount)
+        } }
+    }
+
+    @Test fun contentSelectionDoesNotDowngradeToMutableNodes() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val key = "sha256:" + "a".repeat(64)
+            val photo = GalleryAsset(DriveNode(7, 1, "a.jpg", "file", 12, revision = 2),
+                "image", contentKey = key)
+            server.enqueue(MockResponse().setBody("""{"updated":1,"favorite":true}"""))
+            assertEquals(1, api.galleryFavoriteBatch("owner-secret", listOf(photo), true))
+            val request = server.takeRequest()
+            val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+            assertEquals(key, body["content_keys"]!!.jsonArray.single().jsonPrimitive.content)
+            assertNull(body["node_ids"])
+            assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+            try {
+                api.galleryFavoriteBatch("owner-secret", listOf(photo,
+                    photo.copy(node = photo.node.copy(id = 8), contentKey = null)), true)
+                fail("mixed identities must not fall back to Node IDs")
+            } catch (_: IllegalArgumentException) { }
+            assertEquals(1, server.requestCount)
+            assertEquals(photo.identity, photo.copy(node = photo.node.copy(id = 99)).identity)
+            assertFalse(validPhotoContentKey("sha256:" + "A".repeat(64)))
+        } }
+    }
+
+    @Test fun personPagesUseBoundedAuthenticatedGroupRoutes() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val id = "auto:v1:" + "b".repeat(64)
+            server.enqueue(MockResponse().setBody("""[{"id":"$id","item_count":2,"face_count":2}]"""))
+            val person = api.galleryPeople("owner-secret", true, 24).single()
+            val list = server.takeRequest()
+            assertTrue(list.path!!.contains("/media/people/suggestions?"))
+            assertEquals("24", list.requestUrl!!.queryParameter("offset"))
+            assertEquals("24", list.requestUrl!!.queryParameter("limit"))
+            val key = "sha256:" + "c".repeat(64)
+            server.enqueue(MockResponse().setBody("""{"items":[{"content_key":"$key",
+                "node":{"id":7,"parent_id":1,"name":"one.jpg","type":"file","size":12,"revision":2},
+                "metadata":{"media_kind":"image","has_thumbnail":true}}],
+                "total_count":1,"offset":0,"limit":60}"""))
+            val page = api.galleryPersonPage("owner-secret", person, 0, false, "", "", "captured", "asc")
+            assertEquals(key, page.items.single().identity)
+            val request = server.takeRequest()
+            assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+            assertEquals(listOf("api", "v1", "media", "people", "suggestions", id, "items"),
+                request.requestUrl!!.pathSegments)
+            assertEquals("60", request.requestUrl!!.queryParameter("limit"))
+            try {
+                api.galleryPersonPage("owner-secret", person.copy(id = "../items"), 0, false, "", "", "captured", "asc")
+                fail("untrusted group selector")
+            } catch (_: IllegalArgumentException) { }
+            assertEquals(2, server.requestCount)
+        } }
+    }
+
     private fun textNode(revision: Int = 4, size: Long = 12L): String =
         """{"id":7,"parent_id":1,"name":"note.txt","type":"file",
             "size":$size,"revision":$revision}"""

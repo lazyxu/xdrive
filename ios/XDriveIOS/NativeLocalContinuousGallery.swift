@@ -68,29 +68,11 @@ struct XDriveIOSNativeSquarePhotoTile: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .clipped()
             }
-            if candidate.kind == "video" {
-                Group {
-                    if let durationLabel {
-                        Text(durationLabel)
-                            .font(.caption2.weight(.semibold))
-                            .monospacedDigit()
-                    } else {
-                        Image(systemName: "play.fill")
-                            .font(.caption2.weight(.semibold))
-                    }
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 3)
-                .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4))
-                .padding(4)
-            } else if candidate.isLive {
-                Image(systemName: "livephoto")
-                    .font(.title3)
-                    .foregroundStyle(.white)
-                    .padding(5)
-                    .shadow(radius: 2)
-            }
+            XDriveIOSNativePhotoWallMediaBadge(
+                isVideo: candidate.kind == "video",
+                isLive: candidate.isLive,
+                verifiedDuration: durationLabel
+            )
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 3))
@@ -199,9 +181,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     }
 
     private var placeholderTile: some View {
-        RoundedRectangle(cornerRadius: 3)
-            .fill(Color(uiColor: .secondarySystemGroupedBackground))
-            .aspectRatio(1, contentMode: .fit)
+        XDriveIOSNativePhotoWallPlaceholderTile()
     }
 
     var body: some View {
@@ -214,11 +194,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 )
                 ForEach(daySections) { section in
                     if !section.continuesPreviousPage {
-                        Text(section.title)
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 4)
-                            .accessibilityAddTraits(.isHeader)
+                        XDriveIOSNativePhotoWallDayHeader(
+                            title: section.title, topPadding: 4
+                        )
                     }
                     XDriveIOSNativePhotoWallGrid(density: density) {
                         ForEach(page.items[section.startIndex..<section.endIndex]) { candidate in
@@ -247,12 +225,10 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                         }
                                     }
                                     if selectionMode {
-                                        Image(systemName: selectedIDs.contains(candidate.id)
-                                            ? "checkmark.circle.fill" : "circle")
-                                            .font(.title2)
-                                            .symbolRenderingMode(.palette)
-                                            .foregroundStyle(.white, Color.accentColor)
-                                            .padding(6)
+                                        XDriveIOSNativePhotoWallSelectionIndicator(
+                                            selected: selectedIDs.contains(candidate.id),
+                                            accented: true
+                                        )
                                     }
                                 }
                             }
@@ -503,14 +479,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 .font(.subheadline).foregroundStyle(.secondary)
                             Spacer(minLength: 6)
                             Menu {
-                                ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
-                                    Button {
-                                        density = option
-                                    } label: {
-                                        Label(option.title, systemImage: density == option
-                                              ? "checkmark.circle.fill" : "square.grid.3x3")
-                                    }
-                                }
+                                xdrivePhotoWallDensityButtons($density)
                                 Section("图片显示") {
                                     ForEach(XDriveIOSNativePhotoWallFraming.allCases) { option in
                                         Button {

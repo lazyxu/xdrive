@@ -232,8 +232,8 @@ test('cloud PhotoAsset Gallery short landscape recovers wall height without losi
   assert.match(wall, /GeometryReader \{ viewport in/)
   assert.match(wall, /viewport\.size\.width >= 680 &&\s*viewport\.size\.height < 500 && !dynamicTypeSize\.isAccessibilitySize/)
   assert.match(wall, /ScrollViewReader \{ returnScroll in\s*ScrollView \{/)
-  assert.match(wall, /if !compactGallery \{\s*Text\(placeID != nil/)
-  assert.match(wall, /if !compactGallery \{\s*Text\("连续滚动只读取附近的 48 项验证范围/)
+  assert.match(wall, /if !compactGallery && placeID == nil \{\s*Text\(album == nil \?/)
+  assert.match(wall, /if !compactGallery && placeID == nil \{\s*Text\("连续滚动只读取附近的 48 项验证范围/)
   assert.match(wall, /native-ios-cloud-gallery-layout-help/)
   assert.match(wall, /accessibilityLabel\("云端图库说明"\)/)
   assert.match(wall, /\.alert\("云端图库说明", isPresented: \$showingGalleryHelp\)/)
@@ -258,7 +258,10 @@ test('native PhotoAsset authenticated reads stream and stop at the first byte ov
   assert.match(read, /bytes\.count \+ chunk\.count < maximum/);
   assert.match(read, /throw XDriveIOSNativeMediaReadFailure\.tooLarge/);
   assert.match(read, /try Task\.checkCancellation\(\)/);
-  assert.match(read, /reply\.statusCode == 200/);
+  assert.match(read, /expectedStatus: Int = 200/);
+  assert.match(read, /reply\.statusCode == expectedStatus/);
+  const reanalyze = api.slice(api.indexOf('func reanalyzeFaces('), api.indexOf('func people('));
+  assert.match(reanalyze, /expectedStatus: 202/);
   assert.doesNotMatch(read, /client\.data\(for:/);
 });
 

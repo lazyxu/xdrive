@@ -25,6 +25,8 @@ test('revisited changed revision invalidates only that selected Node, not offscr
   assert.match(selection, /static func conflictingIDs\(visible:/)
   assert.match(selection, /guard let selected = snapshots\[\$0\.id\] else \{ return false \}/)
   assert.match(selection, /return selected != \$0/)
+  assert.match(browser, /\.onChange\(of: model\.entries\.map\(\\\.node\)\)/)
+  assert.doesNotMatch(browser, /\.onChange\(of: model\.entries\.map\(\\\.id\)\)/)
   assert.match(browser, /XDriveIOSNativeFilesSelectionPolicy\.conflictingIDs\(/)
   assert.match(browser, /selectedIDs\.remove\(id\)/)
   assert.match(browser, /selectedSnapshots\.removeValue\(forKey: id\)/)

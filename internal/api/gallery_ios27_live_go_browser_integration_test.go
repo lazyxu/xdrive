@@ -48,7 +48,7 @@ func TestIOS27GalleryLiveGoFixture(t *testing.T) {
 		&meta.Source{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.SourceItemMetadata{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{},
 		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.PhotoEditRecipe{}, &meta.PhotoAlbumFolder{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 		&meta.PhotoAnalysisState{}, &meta.PhotoFace{},
 		&meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{},

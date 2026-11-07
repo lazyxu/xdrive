@@ -26,19 +26,55 @@ const (
 )
 
 type PhotoAsset struct {
-	ID            uint64 `gorm:"primaryKey"`
-	OwnerID       uint64 `gorm:"not null;index;uniqueIndex:idx_xd_photo_assets_owner_evidence,priority:1;uniqueIndex:idx_xd_photo_assets_owner_primary,priority:1"`
-	PrimaryNodeID uint64 `gorm:"not null;index;uniqueIndex:idx_xd_photo_assets_owner_primary,priority:2"`
-	Kind          string `gorm:"size:32;not null;index"`
-	EvidenceKey   string `gorm:"size:512;not null;uniqueIndex:idx_xd_photo_assets_owner_evidence,priority:2"`
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID      uint64 `gorm:"primaryKey"`
+	OwnerID uint64 `gorm:"not null;index;uniqueIndex:idx_xd_photo_assets_owner_evidence,priority:1;uniqueIndex:idx_xd_photo_assets_owner_content,priority:1,where:content_key <> ''"`
+	// ID remains a private relational/upgrade alias. ContentKey is the immutable
+	// public photo identity; PrimaryNodeID is only the current file locator.
+	ContentKey      string `gorm:"size:96;not null;default:'';uniqueIndex:idx_xd_photo_assets_owner_content,priority:2,where:content_key <> ''"`
+	ContentManifest string `gorm:"type:text;not null;default:''"`
+	PrimaryNodeID   uint64 `gorm:"not null;index"`
+	Kind            string `gorm:"size:32;not null;index"`
+	EvidenceKey     string `gorm:"size:512;not null;uniqueIndex:idx_xd_photo_assets_owner_evidence,priority:2"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 
-	Owner       User `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
-	PrimaryNode Node `gorm:"foreignKey:PrimaryNodeID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	Owner User `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }
 
 func (PhotoAsset) TableName() string { return "xd_photo_assets" }
+
+// An occurrence is one complete file/group location for an immutable photo.
+// Removing a locator must not cascade into the content identity shared by other
+// occurrences. ResourcesJSON preserves each exact original role/hash binding.
+type PhotoAssetOccurrence struct {
+	PrimaryNodeID uint64 `gorm:"primaryKey;autoIncrement:false"`
+	OwnerID       uint64 `gorm:"not null;index"`
+	AssetID       uint64 `gorm:"not null;index"`
+	ResourcesJSON string `gorm:"type:text;not null"`
+	Active        bool   `gorm:"not null;default:true;index"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	Node          Node       `gorm:"foreignKey:PrimaryNodeID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	Asset         PhotoAsset `gorm:"foreignKey:AssetID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (PhotoAssetOccurrence) TableName() string { return "xd_photo_asset_occurrences" }
+
+// Preserve the original annotations/relations when upgrading duplicate legacy
+// asset aliases. The live canonical row owns subsequent mutations; snapshots
+// are migration evidence and never establish current original access rights.
+type PhotoAssetIdentityAlias struct {
+	LegacyAssetID    uint64 `gorm:"primaryKey;autoIncrement:false"`
+	CanonicalAssetID uint64 `gorm:"not null;index"`
+	OwnerID          uint64 `gorm:"not null;index"`
+	ContentKey       string `gorm:"size:96;not null;index"`
+	SnapshotJSON     string `gorm:"type:text;not null"`
+	CreatedAt        time.Time
+	Owner            User       `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	CanonicalAsset   PhotoAsset `gorm:"foreignKey:CanonicalAssetID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (PhotoAssetIdentityAlias) TableName() string { return "xd_photo_asset_identity_aliases" }
 
 type PhotoResource struct {
 	ID           uint64 `gorm:"primaryKey"`
@@ -145,8 +181,9 @@ type PhotoCollection struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 
-	PreferredCoverNodeID *uint64
-	AlbumFolderID        uint64 `gorm:"not null;default:0;index"`
+	PreferredCoverNodeID     *uint64
+	PreferredCoverContentKey string `gorm:"size:96;not null;default:''"`
+	AlbumFolderID            uint64 `gorm:"not null;default:0;index"`
 
 	Owner User `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }

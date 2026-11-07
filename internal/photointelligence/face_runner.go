@@ -8,6 +8,7 @@ import (
 
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photoasset"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -34,13 +35,15 @@ type FaceRunner struct {
 }
 
 type faceCandidate struct {
-	AssetID          uint64
-	OwnerID          uint64
-	SessionVersion   uint64
-	NodeID           uint64
-	NodeRevision     uint64
-	SHA256           string
-	InputFingerprint string
+	AssetID            uint64
+	OwnerID            uint64
+	SessionVersion     uint64
+	NodeID             uint64
+	NodeRevision       uint64
+	SHA256             string
+	ContentKey         string
+	PreviewFingerprint string
+	InputFingerprint   string
 }
 
 func (r *FaceRunner) RunBatch(
@@ -159,14 +162,15 @@ func (r *FaceRunner) runBatch(
 		if ctx.Err() != nil {
 			return processed, ctx.Err()
 		}
-		if err := r.markFaceAnalysisRunning(
+		claim, err := r.markFaceAnalysisRunning(
 			ctx,
 			candidate.AssetID,
 			detectorVersion,
 			embeddingVersion,
 			candidate.InputFingerprint,
 			now,
-		); err != nil {
+		)
+		if err != nil {
 			if firstError == nil {
 				firstError = err
 			}
@@ -181,7 +185,7 @@ func (r *FaceRunner) runBatch(
 			candidate.NodeRevision,
 		)
 		if previewErr != nil {
-			r.failFaceAnalysis(ctx, candidate.AssetID, previewErr, now)
+			r.failFaceAnalysis(ctx, claim, previewErr, now)
 			if firstError == nil {
 				firstError = previewErr
 			}
@@ -192,10 +196,10 @@ func (r *FaceRunner) runBatch(
 			PreviewURL:       previewURL,
 			PreviewVersion:   mediapkg.AnalysisPreviewVersion,
 			PreviewEdge:      mediapkg.AnalysisPreviewEdge,
-			InputFingerprint: candidate.InputFingerprint,
+			InputFingerprint: candidate.PreviewFingerprint,
 		}
 		if err := ValidateFaceAnalysisTask(task); err != nil {
-			r.failFaceAnalysis(ctx, candidate.AssetID, err, now)
+			r.failFaceAnalysis(ctx, claim, err, now)
 			if firstError == nil {
 				firstError = err
 			}
@@ -205,7 +209,7 @@ func (r *FaceRunner) runBatch(
 
 		faces, analyzeErr := r.Analyzer.Analyze(ctx, task)
 		if analyzeErr != nil {
-			r.failFaceAnalysis(ctx, candidate.AssetID, analyzeErr, now)
+			r.failFaceAnalysis(ctx, claim, analyzeErr, now)
 			if firstError == nil {
 				firstError = analyzeErr
 			}
@@ -214,7 +218,7 @@ func (r *FaceRunner) runBatch(
 		}
 		faces, validateErr := ValidateFaceObservations(info, faces)
 		if validateErr != nil {
-			r.failFaceAnalysis(ctx, candidate.AssetID, validateErr, now)
+			r.failFaceAnalysis(ctx, claim, validateErr, now)
 			if firstError == nil {
 				firstError = validateErr
 			}
@@ -223,7 +227,8 @@ func (r *FaceRunner) runBatch(
 		}
 		if err := r.finishFaceAnalysis(
 			ctx,
-			candidate.AssetID,
+			candidate,
+			claim,
 			faces,
 			info,
 			detectorVersion,
@@ -231,7 +236,7 @@ func (r *FaceRunner) runBatch(
 			candidate.InputFingerprint,
 			now,
 		); err != nil {
-			r.failFaceAnalysis(ctx, candidate.AssetID, err, now)
+			r.failFaceAnalysis(ctx, claim, err, now)
 			if firstError == nil {
 				firstError = err
 			}
@@ -277,8 +282,9 @@ func (r *FaceRunner) faceCandidatesForOwner(
 	var candidates []faceCandidate
 	err := query.
 		Select(
-			"pa.id AS asset_id, pa.owner_id, u.session_version, " +
+			"pa.id AS asset_id, pa.owner_id, pa.content_key, u.session_version, " +
 				"n.id AS node_id, n.revision AS node_revision, f.sha256, " +
+				facePreviewFingerprintSQL() + " AS preview_fingerprint, " +
 				inputExpr + " AS input_fingerprint",
 		).
 		Order(
@@ -303,7 +309,7 @@ func (r *FaceRunner) faceCandidateQuery(
 				"AND u.disabled_at IS NULL AND u.must_change_password = false",
 		).
 		Joins(
-			"JOIN xd_nodes AS n ON n.id = pa.primary_node_id AND n.deleted_at IS NULL",
+			"JOIN xd_nodes AS n ON n.id = pa.primary_node_id AND n.owner_id = pa.owner_id AND n.deleted_at IS NULL",
 		).
 		Joins("JOIN xd_files AS f ON f.node_id = n.id").
 		Joins(
@@ -320,12 +326,12 @@ func (r *FaceRunner) faceCandidateQuery(
 				"ON fe.asset_id = pa.id AND fe.kind = ?",
 			meta.PhotoAnalysisKindFaceEmbedding,
 		).
-		Where(
-			"mm.media_kind = ? AND mm.index_state = ? AND "+
-				"mm.node_revision = n.revision AND mm.sha256 = f.sha256",
-			meta.MediaKindImage,
-			meta.MediaIndexStateReady,
-		).
+		Where(photoasset.CurrentContentBindingSQL("pa")).Where(
+		"mm.media_kind = ? AND mm.index_state = ? AND "+
+			"mm.node_revision = n.revision AND mm.sha256 = f.sha256",
+		meta.MediaKindImage,
+		meta.MediaIndexStateReady,
+	).
 		Where(
 			"fd.id IS NULL OR fd.analyzer_version <> ? OR "+
 				"fd.input_fingerprint <> "+inputExpr+" OR "+
@@ -355,6 +361,15 @@ func (r *FaceRunner) faceCandidateQuery(
 }
 
 func faceInputFingerprintSQL() string {
+	return faceContentFingerprintSQL("pa", facePreviewFingerprintSQL())
+}
+
+func faceContentFingerprintSQL(asset, preview string) string {
+	return fmt.Sprintf("CASE WHEN %s.content_key <> '' THEN 'photo-analysis-' || %s.content_key || '-v%d-%d' ELSE (%s) END",
+		asset, asset, mediapkg.AnalysisPreviewVersion, mediapkg.AnalysisPreviewEdge, preview)
+}
+
+func facePreviewFingerprintSQL() string {
 	return fmt.Sprintf(
 		"CASE WHEN COALESCE(trim(f.sha256), '') <> '' "+
 			"THEN 'media-analysis-' || lower(trim(f.sha256)) || '-v%d-%d' "+
@@ -368,31 +383,23 @@ func faceInputFingerprintSQL() string {
 }
 
 func (r *FaceRunner) markFaceAnalysisRunning(
-	ctx context.Context,
-	assetID uint64,
-	detectorVersion, embeddingVersion, fingerprint string,
-	now time.Time,
-) error {
-	return r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := upsertRunningFaceState(
-			tx,
-			assetID,
-			meta.PhotoAnalysisKindFaceDetection,
-			detectorVersion,
-			fingerprint,
-			now,
-		); err != nil {
-			return err
+	ctx context.Context, assetID uint64,
+	detectorVersion, embeddingVersion, fingerprint string, now time.Time,
+) ([]meta.PhotoAnalysisState, error) {
+	var claim []meta.PhotoAnalysisState
+	err := r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, value := range []struct{ kind, version string }{
+			{meta.PhotoAnalysisKindFaceDetection, detectorVersion},
+			{meta.PhotoAnalysisKindFaceEmbedding, embeddingVersion},
+		} {
+			if err := upsertRunningFaceState(tx, assetID, value.kind, value.version, fingerprint, now); err != nil {
+				return err
+			}
 		}
-		return upsertRunningFaceState(
-			tx,
-			assetID,
-			meta.PhotoAnalysisKindFaceEmbedding,
-			embeddingVersion,
-			fingerprint,
-			now,
-		)
+		return tx.Where("asset_id = ? AND kind IN ?", assetID,
+			[]string{meta.PhotoAnalysisKindFaceDetection, meta.PhotoAnalysisKindFaceEmbedding}).Order("kind ASC").Find(&claim).Error
 	})
+	return claim, err
 }
 
 func upsertRunningFaceState(
@@ -427,12 +434,14 @@ func upsertRunningFaceState(
 
 func (r *FaceRunner) finishFaceAnalysis(
 	ctx context.Context,
-	assetID uint64,
+	candidate faceCandidate,
+	claim []meta.PhotoAnalysisState,
 	faces []FaceObservation,
 	info FaceAnalyzerInfo,
 	detectorVersion, embeddingVersion, fingerprint string,
 	now time.Time,
 ) error {
+	assetID := candidate.AssetID
 	rows := make([]meta.PhotoFace, 0, len(faces))
 	for index, face := range faces {
 		landmarks, err := EncodeFaceLandmarks(face.Landmarks)
@@ -458,6 +467,34 @@ func (r *FaceRunner) finishFaceAnalysis(
 	}
 
 	return r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// A late/cancelled worker must never replace a newer attempt's result.
+		if len(claim) != 2 {
+			return fmt.Errorf("face analysis claim is incomplete")
+		}
+		for _, state := range claim {
+			var current meta.PhotoAnalysisState
+			if err := faceClaimQuery(tx, state).Clauses(clause.Locking{Strength: "UPDATE"}).First(&current).Error; err != nil {
+				return err
+			}
+		}
+		var source struct{ ID uint64 }
+		query := tx.Table("xd_photo_assets AS pa").Select("pa.id").
+			Joins("JOIN xd_nodes AS n ON n.id = pa.primary_node_id AND n.owner_id = pa.owner_id").
+			Joins("JOIN xd_files AS f ON f.node_id = n.id").
+			Joins("JOIN xd_media_metadata AS mm ON mm.node_id = n.id AND mm.owner_id = pa.owner_id").
+			Joins("JOIN xd_users AS u ON u.id = pa.owner_id").
+			Where("pa.id = ? AND pa.owner_id = ? AND pa.content_key = ? AND n.deleted_at IS NULL", candidate.AssetID, candidate.OwnerID, candidate.ContentKey).
+			Where("u.session_version = ? AND u.disabled_at IS NULL AND u.must_change_password = false", candidate.SessionVersion).
+			Where("mm.node_revision = n.revision AND mm.sha256 = f.sha256 AND mm.media_kind = ? AND mm.index_state = ?", meta.MediaKindImage, meta.MediaIndexStateReady).
+			Where(faceInputFingerprintSQL()+" = ?", candidate.InputFingerprint).
+			Where(photoasset.CurrentContentBindingSQL("pa"))
+		if candidate.ContentKey == "" {
+			query = query.Where("n.id = ? AND n.revision = ?", candidate.NodeID, candidate.NodeRevision)
+		}
+		result := query.Clauses(clause.Locking{Strength: "SHARE"}).Take(&source)
+		if result.Error != nil {
+			return result.Error
+		}
 		if err := tx.Where("asset_id = ?", assetID).
 			Delete(&meta.PhotoFace{}).Error; err != nil {
 			return err
@@ -505,28 +542,19 @@ func (r *FaceRunner) finishFaceAnalysis(
 	})
 }
 
-func (r *FaceRunner) failFaceAnalysis(
-	ctx context.Context,
-	assetID uint64,
-	cause error,
-	now time.Time,
-) {
-	message := strings.TrimSpace(cause.Error())
-	if len(message) > 2000 {
-		message = message[:2000]
-	}
-	for _, kind := range []string{
-		meta.PhotoAnalysisKindFaceDetection,
-		meta.PhotoAnalysisKindFaceEmbedding,
-	} {
-		_ = r.DB.WithContext(ctx).
-			Model(&meta.PhotoAnalysisState{}).
-			Where("asset_id = ? AND kind = ?", assetID, kind).
-			Updates(map[string]any{
-				"state":        meta.PhotoAnalysisStateFailed,
-				"last_error":   message,
-				"completed_at": nil,
-				"updated_at":   now,
-			}).Error
+// Attempt, model and input fences also apply to failures: an old failure cannot
+// turn a replacement task or explicit cancellation back into failed work.
+func faceClaimQuery(tx *gorm.DB, claim meta.PhotoAnalysisState) *gorm.DB {
+	return tx.Model(&meta.PhotoAnalysisState{}).Where(
+		"asset_id = ? AND kind = ? AND state = ? AND attempt = ? AND analyzer_version = ? AND input_fingerprint = ?",
+		claim.AssetID, claim.Kind, meta.PhotoAnalysisStateRunning, claim.Attempt, claim.AnalyzerVersion, claim.InputFingerprint)
+}
+
+func (r *FaceRunner) failFaceAnalysis(ctx context.Context, claim []meta.PhotoAnalysisState, cause error, now time.Time) {
+	for _, state := range claim {
+		_ = faceClaimQuery(r.DB.WithContext(ctx), state).Updates(map[string]any{
+			"state": meta.PhotoAnalysisStateFailed, "last_error": SmartFailureCode(cause),
+			"completed_at": nil, "updated_at": now,
+		}).Error
 	}
 }

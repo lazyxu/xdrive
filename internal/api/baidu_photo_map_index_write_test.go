@@ -109,8 +109,8 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 	pool.SetMaxOpenConns(2)
 	pool.SetMaxIdleConns(0)
 	defer pool.Close()
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.MediaMetadata{},
-		&meta.PhotoAsset{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{},
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{},
 		&meta.AuditEvent{}); err != nil {
 		t.Fatal(err)
 	}

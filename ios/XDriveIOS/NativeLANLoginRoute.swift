@@ -80,7 +80,10 @@ enum XDriveIOSNativeLANLoginRoute {
             pem = try await XDriveIOSLANCertificateBootstrap.fetch(origin: origin, target: target)
         } catch {
             try Task.checkCancellation()
-            throw XDriveIOSLANPairingFailure.rootUnavailable
+            // Keep the bounded, credential-free bootstrap's specific stage.
+            // Previously every network/TLS/permission error looked like a
+            // missing Caddy root, even when the endpoint itself was healthy.
+            throw (error as? XDriveIOSLANPairingFailure) ?? .connectionUnavailable(0)
         }
         guard let der = XDriveIOSLANPairing.rootDER(from: pem) else {
             throw XDriveIOSLANPairingFailure.invalidRoot

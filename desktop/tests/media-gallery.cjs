@@ -458,7 +458,7 @@ test('Gallery multi-select and Selection Toolbar stay shared across Web and Desk
     'selectionAnchorIndex',
     'handleMediaSelect',
     'rangeDistance <= 1000',
-    'selectedNodeIDs',
+    'selectedContentKeys',
     '<XDriveMediaGallerySelectionToolbar',
     'data-xdrive-gallery-selection-toolbar',
     'onSetFavoriteBatch',
@@ -955,8 +955,10 @@ test('Gallery Automatic Movie is a shared multi-selection creative workflow', ()
   }
 })
 
-test('Gallery contracts are node-level and connector-neutral', () => {
-  assert.match(sharedModels, /export interface MediaItem \{\s*node: Node\s*metadata: MediaMetadata/s)
+test('Gallery contracts carry content identity and current Node delivery without connector identity', () => {
+  const mediaItem = sharedModels.slice(sharedModels.indexOf('export interface MediaItem {'), sharedModels.indexOf('export interface MediaItemRange {'))
+  assert.match(mediaItem, /content_key\?: string/)
+  assert.match(mediaItem, /node: Node\s*metadata: MediaMetadata/)
   assert.match(sharedModels, /export interface MediaTimelineGroupIndex \{[\s\S]*item_count: number[\s\S]*start_index: number/)
   assert.match(sharedModels, /export interface MediaTimelineGroupSets/)
   assert.match(sharedModels, /year: MediaTimelineGroupIndex\[\]/)

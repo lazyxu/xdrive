@@ -210,8 +210,29 @@ func TestCurrentBaiduGeoconvProofQuotaLocksLiveOwnerAndServerAKAcrossPools(t *te
 	if err := attempt(p1, evidence); err != nil {
 		t.Fatal("valid synthetic locked current proof was rejected")
 	}
-	countRows(2)         // fleet and Owner charged once
-	denied(p1, evidence) // Owner limit 1, no second charge
+	countRows(2) // fleet and Owner charged once
+	// A real PostgreSQL-minute rollover may occur between two calls:
+	// a fresh minute is a legitimate new quota window, not a bypass.
+	// Verify the stored fleet window rather than using the host's clock.
+	var firstWindow meta.BaiduGeoconvQuotaBucket
+	if err := db.Where("scope_id = ?", int64(0)).Take(&firstWindow).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := attempt(p1, evidence); err == nil {
+		// Only an actual DB minute rollover can admit the next reservation.
+		var currentWindow meta.BaiduGeoconvQuotaBucket
+		if err := db.Where("scope_id = ?", int64(0)).Take(&currentWindow).Error; err != nil {
+			t.Fatal(err)
+		}
+		if currentWindow.WindowMinute <= firstWindow.WindowMinute {
+			t.Fatal("second account quota reservation bypassed the same-minute limit")
+		}
+		// The newly charged minute must still reject another identical Owner
+		// reservation; no extra charge or unconstrained egress is allowed.
+		denied(p1, evidence)
+	} else if !errors.Is(err, errBaiduGeoconvDispatchUnavailable) {
+		t.Fatalf("unexpected second account quota reservation error: %v", err)
+	}
 	countRows(2)
 	reset()
 

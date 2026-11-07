@@ -39,9 +39,17 @@ test('rotation changes only presentation, not source identity, L2, or L3 Viewer'
   assert.match(shell, /verticalSizeClass == \.compact \? 48 : 56/);
   assert.match(wall, /\.fullScreenCover\(item: \$selected\)/);
   assert.doesNotMatch(shell, /\.onChange\(of: verticalSizeClass\)/);
-  assert.match(shell, /case local, albums, cloud, originals, map/);
+  // A merged unified timeline may add .unified; rotation itself cannot
+  // reset the current Gallery source or the Map's same-Owner return lease.
+  assert.match(shell, /case (?:unified, )?local, albums, cloud, originals, map/);
   assert.match(shell, /case \.originals:\s*openGallery\(\.originals\)/);
-  assert.match(shell, /private func openGallery\(_ source: XDriveIOSNativeGallerySource\) \{\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false\s*if source == \.map \|\| source == \.local \{ localMapJump = nil \}\s*gallerySource = source\s*tab = \.gallery/);
+  const start = shell.indexOf('private func openGallery(')
+  const end = shell.indexOf('private func closeGalleryMap(', start)
+  assert.ok(start >= 0 && end > start)
+  const route = shell.slice(start, end)
+  assert.match(route, /galleryFocusGeneration = UUID\(\)\s*galleryFocused = false\s*if source == \.map \|\| source == \.local \{ localMapJump = nil \}\s*gallerySource = source\s*tab = \.gallery/)
+  assert.match(route, /if source == \.map \{[\s\S]*?mapReturnGallerySource/)
+  assert.match(route, /mapReturnOwnerScopeKey = mapReturnGallerySource != nil/);
   assert.match(shell, /case \.files:\s*tab = \.files/);
   assert.match(shell, /private var files: some View \{\s*XDriveIOSNativeFilesBrowser\(login: login\)/);
 });

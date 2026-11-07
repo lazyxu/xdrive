@@ -96,7 +96,7 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 	dbSQL.SetMaxOpenConns(2)
 	dbSQL.SetMaxIdleConns(0)
 	defer dbSQL.Close()
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{}, &meta.PhotoMetadata{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{}, &meta.PhotoMetadata{}); err != nil {
 		t.Fatal(err)
 	}
 	alice := meta.User{Username: "bd09-alice", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}

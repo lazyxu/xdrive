@@ -309,10 +309,9 @@ private struct XDriveIOSNativeMediaWallTile: View {
                 .frame(width: square.size.width, height: square.size.height)
                 .clipped()
             }
-            if item.isVideo || item.isLive {
-                Image(systemName: item.isVideo ? "play.circle.fill" : "livephoto")
-                    .foregroundStyle(.white).padding(6).shadow(radius: 2)
-            }
+            XDriveIOSNativePhotoWallMediaBadge(
+                isVideo: item.isVideo, isLive: item.isLive
+            )
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 3))
@@ -1290,10 +1289,7 @@ private struct XDriveIOSNativeServerVirtualRange: View {
     private var placeholders: some View {
         XDriveIOSNativePhotoWallGrid(density: density) {
             ForEach(0..<min(48, max(0, expectedTotal - offset)), id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                    .aspectRatio(1, contentMode: .fit)
-                    .accessibilityHidden(true)
+                XDriveIOSNativePhotoWallPlaceholderTile()
             }
         }
     }
@@ -1326,13 +1322,14 @@ private struct XDriveIOSNativeServerVirtualRange: View {
                 placeholders
             }
             if let error = model.error {
-                Text(error).font(.caption).foregroundStyle(.secondary)
-                Button("重试当前照片范围") {
+                XDriveIOSNativePhotoWallRetryMessage(
+                    message: error, buttonTitle: "重试当前照片范围",
+                    canRetry: !model.busy && !viewerActive,
+                    textFont: .caption
+                ) {
                     model.load(login: login, albumID: albumID, placeID: placeID,
                                offset: offset, search: search)
                 }
-                .buttonStyle(.bordered)
-                .disabled(model.busy || viewerActive)
             }
         }
         .id("cloud-range:\(offset)")
@@ -1423,10 +1420,10 @@ struct XDriveIOSNativeServerMediaWall: View {
         ScrollViewReader { returnScroll in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                if !compactGallery {
-                    Text(placeID != nil ?
-                        "当前 Owner 原始 GPS 地点的授权 PhotoAsset 分页（非全库）。" :
-                        album == nil ?
+                // Place sheets already identify the signed GPS scope in their
+                // title; transport explanations belong to the full Gallery.
+                if !compactGallery && placeID == nil {
+                    Text(album == nil ?
                         "服务器 PhotoAsset 全库照片墙（非仅 iPhone 备份目录）。" :
                         "已验证的云端相册成员，按服务器分页读取。")
                         .font(.caption).foregroundStyle(.secondary)
@@ -1460,14 +1457,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer(minLength: 4)
                         Menu {
-                            ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
-                                Button {
-                                    wallDensity = option
-                                } label: {
-                                    Label(option.title, systemImage: wallDensity == option
-                                          ? "checkmark.circle.fill" : "square.grid.3x3")
-                                }
-                            }
+                            xdrivePhotoWallDensityButtons($wallDensity)
                         } label: {
                             Image(systemName: "square.grid.3x3")
                                 .frame(width: 44, height: 44)
@@ -1515,7 +1505,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                                    search: appliedSearch)
                     }
                 }
-                if !compactGallery {
+                if !compactGallery && placeID == nil {
                     Text("连续滚动只读取附近的 48 项验证范围；只有可见图片申请授权缩略图。缩略图缺失不代表原件丢失。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -1914,6 +1904,9 @@ struct XDriveIOSNativeServerMediaAlbums: View {
             LazyVStack(alignment: .leading, spacing: 12) {
                 Text("云端相册归属于当前 Server Owner，与 iPhone 本机相册分开管理。")
                     .font(.caption).foregroundStyle(.secondary)
+                NavigationLink {
+                    XDriveIOSNativeGalleryPeople(login: login)
+                } label: { Label("人物与人物建议", systemImage: "person.2") }
                 ForEach(albums) { album in
                     NavigationLink {
                         XDriveIOSNativeServerMediaWall(

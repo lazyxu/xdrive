@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Mirror exact authenticated GitHub offline releases to a private upload Share.
+"""Publish authenticated content-addressed offline components to GitHub Releases.
 
-GitHub publication precedes this opt-in transport. No Owner credential is used;
-remote bytes, including prior uploads, must match before delivery.json appears.
+The historical Share mirror entry point has been retired. This tool now only
+builds/verifies GitHub release metadata, immutable package identities and drafts.
 """
 from __future__ import annotations
 import argparse
@@ -16,8 +16,6 @@ import re
 import subprocess
 import sys
 import tempfile
-from urllib.error import HTTPError, URLError
-from urllib.request import Request
 
 
 def load(name, path):
@@ -28,37 +26,41 @@ def load(name, path):
 
 
 HERE = Path(__file__).resolve().parent
-client = load('server_mirror_client', HERE / 'mirror-clients-to-share.py')
 offline = load('server_mirror_offline', HERE.parent / 'offline/xdrive_offline.py')
 delivery = load('server_mirror_delivery', HERE.parent / 'offline/delivery_descriptor.py')
-MirrorError = client.MirrorError
+class MirrorError(Exception):
+    pass
+
+
+def sha256_file(path):
+    result = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            result.update(chunk)
+    return result.hexdigest()
 REPOSITORY = 'lazyxu/xdrive'
 METADATA_LIMIT = 16 * 1024 * 1024
 PACKAGE_LIMIT = 8 * 1024**3
 
-# Only constants and fixed component names may reach the public CI log.
-# The underlying Share/GitHub exception can contain a private capability URL.
-PUBLISH_PHASES = frozenset({
-    'github-manifest', 'local-archive', 'share-grant', 'share-root',
-    'share-packages-root', 'share-channel', 'share-release-folder',
-    'share-manifest', 'share-installer', 'share-go-installer', 'share-attestation', 'share-completion',
-} | {f'github-package-{component}' for component in offline.COMPONENTS}
-  | {f'share-package-{component}' for component in offline.COMPONENTS})
+# Only fixed GitHub package stages are emitted on publishing errors.
+# Never expose raw GitHub API responses, credentials, or remote URLs.
+PUBLISH_PHASES = frozenset({'github-manifest'} |
+    {f'github-package-{component}' for component in offline.COMPONENTS})
 
 
 class MirrorPhaseError(MirrorError):
     def __init__(self, phase):
         if phase not in PUBLISH_PHASES:
-            raise ValueError('Unknown mirror stage')
-        super().__init__('Server mirror publication stage failed')
+            raise ValueError('Unknown GitHub package stage')
+        super().__init__('GitHub offline source stage failed')
         self.phase = phase
 
 
 @contextmanager
 def mirror_phase(phase):
     if phase not in PUBLISH_PHASES:
-        raise ValueError('Unknown mirror stage')
-    print('[server-mirror] verifying ' + phase, flush=True)
+        raise ValueError('Unknown GitHub package stage')
+    print('[offline-release] verifying ' + phase, flush=True)
     try:
         yield
     except (MirrorError, OSError, ValueError, KeyError, TypeError) as error:
@@ -71,7 +73,7 @@ def check_file(path, size, digest):
     if (type(size) is not int or not 0 < size <= PACKAGE_LIMIT or
             not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest) or
             path.is_symlink() or not path.is_file() or path.stat().st_size != size or
-            client.sha256_file(path) != digest):
+            sha256_file(path) != digest):
         raise MirrorError('Local artifact is missing or differs from its immutable identity')
 
 
@@ -114,96 +116,6 @@ def fetch_packages(directory):
     return manifest
 
 
-class Share(client.Share):
-    def entries(self, parent):
-        cursor, found, identities, cursors = 0, {}, set(), set()
-        while True:
-            if cursor in cursors or len(cursors) >= 1000:
-                raise MirrorError('Repeated or excessive Share pagination')
-            cursors.add(cursor)
-            page = self.request('POST', '/api/v1/public/share/children',
-                                dict(parent_id=parent, cursor=cursor, password=self.password))
-            if not isinstance(page, dict) or not isinstance(page.get('items'), list):
-                raise MirrorError('Malformed Share directory response')
-            for entry in page['items']:
-                if not isinstance(entry, dict):
-                    raise MirrorError('Malformed Share entry')
-                name, identifier = entry.get('name'), entry.get('id')
-                if (not isinstance(name, str) or len(name) > 255 or '/' in name or '\\' in name or
-                        name in ('', '.', '..') or name in found or type(identifier) is not int or
-                        identifier <= 0 or identifier in identities or entry.get('type') not in ('file', 'dir')):
-                    raise MirrorError('Invalid or duplicate Share path identity')
-                found[name] = entry
-                identities.add(identifier)
-                if len(found) > 100000:
-                    raise MirrorError('Excessive Share directory')
-            cursor = page.get('next_cursor', 0)
-            if cursor is None or cursor == 0:
-                return found
-            if type(cursor) is not int or cursor <= 0:
-                raise MirrorError('Invalid Share pagination cursor')
-
-    def directory(self, parent, name):
-        entry = self.entries(parent).get(name)
-        if entry is not None:
-            if entry['type'] != 'dir':
-                raise MirrorError('Immutable directory path conflicts with a file')
-            return entry['id']
-        identifier = super().directory(parent, name)
-        entry = self.entries(parent).get(name)
-        if entry is None or entry['type'] != 'dir' or entry['id'] != identifier:
-            raise MirrorError('Share directory identity changed during creation')
-        return identifier
-
-    def verify_remote(self, entry, size, digest):
-        node = entry.get('id')
-        if (entry.get('type') != 'file' or type(node) is not int or node <= 0 or
-                type(entry.get('size')) is not int or entry['size'] != size):
-            raise MirrorError('Existing immutable file identity conflicts; never overwrite')
-        ticket = self.request('POST', '/api/v1/public/share/download-ticket',
-                              dict(node_id=node, password=self.password))
-        url = ticket.get('url')
-        if not isinstance(url, str) or not re.fullmatch(
-                r'/api/v1/public-share-download/[1-9][0-9]*\?ticket=[A-Za-z0-9_.~%-]+', url):
-            raise MirrorError('Invalid or out-of-scope Share download ticket')
-        checksum = hashlib.sha256()
-        count = 0
-        try:
-            # A short-lived scoped ticket suffices. Never forward the Share bearer.
-            with self.opener.open(Request(self.base + url, headers={'Accept-Encoding': 'identity'}), timeout=120) as stream:
-                if stream.status != 200 or stream.headers.get('Content-Encoding', 'identity') != 'identity':
-                    raise MirrorError('Unexpected Share download response')
-                length = stream.headers.get('Content-Length')
-                if length is not None and (not length.isdecimal() or int(length) != size):
-                    raise MirrorError('Share download length mismatch')
-                while True:
-                    chunk = stream.read(min(1024 * 1024, size - count + 1))
-                    if not chunk:
-                        break
-                    count += len(chunk)
-                    if count > size:
-                        raise MirrorError('Share stream exceeds declared size')
-                    checksum.update(chunk)
-        except (HTTPError, URLError, OSError, TimeoutError) as error:
-            raise MirrorError('Share byte verification failed') from error
-        if count != size or checksum.hexdigest() != digest:
-            raise MirrorError('Share immutable file SHA256 or length mismatch')
-
-    def upload(self, parent, name, content, digest, platform, commit):
-        size = content.stat().st_size
-        check_file(content, size, digest)
-        entry = self.entries(parent).get(name)
-        if entry is not None:
-            self.verify_remote(entry, size, digest)
-            return 'verified-existing'
-        result = super().upload(parent, name, content, digest, platform, commit)
-        entry = self.entries(parent).get(name)
-        if entry is None:
-            raise MirrorError('Finalized upload has no exact immutable path')
-        self.verify_remote(entry, size, digest)
-        return result
-
-
 def validate_delivery(directory, manifest):
     descriptor = read_json(directory / 'delivery.json')
     expected = {'schema', 'repository_id', 'channel', 'platform',
@@ -236,43 +148,6 @@ def validate_delivery(directory, manifest):
     return descriptor
 
 
-def publish(directory, share):
-    with mirror_phase('local-archive'):
-        manifest = manifest_at(directory)
-        descriptor = validate_delivery(directory, manifest)
-        for item in manifest['packages'].values():
-            check_file(directory / item['filename'], item['size'], item['sha256'])
-    with mirror_phase('share-grant'):
-        share.verify_grant()
-    with mirror_phase('share-root'):
-        root = share.directory(0, 'xDrive-Server')
-    with mirror_phase('share-packages-root'):
-        package_root = share.directory(root, 'packages')
-    for component in offline.COMPONENTS:
-        with mirror_phase('share-package-' + component):
-            item = manifest['packages'][component]
-            folder = share.directory(package_root, item['sha256'])
-            share.upload(folder, item['filename'], directory / item['filename'], item['sha256'],
-                         'server-' + component, manifest['source_commit'])
-    with mirror_phase('share-channel'):
-        channel = share.directory(root, 'master')
-    with mirror_phase('share-release-folder'):
-        folder = share.directory(channel, f"{descriptor['sequence']}-{manifest['source_commit']}")
-    # A signed Go ELF is additive; old Share clients continue to use the
-    # descriptor-bound Python installer. Completion remains last on retries.
-    uploads = [('manifest.json', 'share-manifest'),
-               ('xdrive-offline.py', 'share-installer')]
-    if 'go_installer' in descriptor:
-        uploads.append(('xdrive-offline-linux-amd64', 'share-go-installer'))
-    uploads += [('delivery-attestation.jsonl', 'share-attestation'),
-                ('delivery.json', 'share-completion')]
-    for name, phase in uploads:
-        with mirror_phase(phase):
-            path = directory / name
-            share.upload(folder, name, path, client.sha256_file(path), 'server-delivery', manifest['source_commit'])
-    print('Server mirror verified: sequence ' + str(descriptor['sequence']) + ', commit ' + manifest['source_commit'])
-
-
 # Previously published schema-1 releases are immutable and have exactly seven
 # assets. New releases can additionally carry one signed Go ELF; no unrelated
 # asset names are accepted in either form.
@@ -303,17 +178,17 @@ def previous_manifest(releases):
 
 def write_checksums(directory):
     manifest = manifest_at(directory)
-    lines = [client.sha256_file(directory / 'manifest.json') + '  manifest.json']
+    lines = [sha256_file(directory / 'manifest.json') + '  manifest.json']
     # Declare all five package identities so metadata is deterministic on retries,
     # regardless of which archives the runner needed to build or fetch locally.
     lines.extend(manifest['packages'][c]['sha256'] + '  ' + manifest['packages'][c]['filename']
                  for c in offline.COMPONENTS)
-    lines.append(client.sha256_file(directory / 'xdrive-offline.py') + '  xdrive-offline.py')
+    lines.append(sha256_file(directory / 'xdrive-offline.py') + '  xdrive-offline.py')
     go_binary = directory / GO_INSTALLER_ASSET
     if go_binary.exists() or go_binary.is_symlink():
         if go_binary.is_symlink() or not go_binary.is_file():
             raise MirrorError('Invalid Go ELF asset')
-        lines.append(client.sha256_file(go_binary) + '  ' + GO_INSTALLER_ASSET)
+        lines.append(sha256_file(go_binary) + '  ' + GO_INSTALLER_ASSET)
     (directory / 'SHA256SUMS.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8')
     (directory / 'MANIFEST_SHA256.txt').write_text(lines[0].split()[0] + '\n', encoding='ascii')
 
@@ -548,7 +423,7 @@ def download_release(directory, commit, github, record):
         if path.is_symlink() or not path.is_file() or path.stat().st_size != item['size']:
             raise MirrorError('Downloaded release metadata size mismatch')
         digest = item.get('digest')
-        if digest is not None and digest != 'sha256:' + client.sha256_file(path):
+        if digest is not None and digest != 'sha256:' + sha256_file(path):
             raise MirrorError('Downloaded release metadata digest mismatch')
     return assets
 
@@ -588,8 +463,8 @@ def publish_github(directory, commit, github):
             return
         if record is None:
             notes = ('Source Commit: ' + commit + '\nTrusted Manifest SHA-256: ' +
-                     client.sha256_file(directory / 'manifest.json') + '\nTrusted Installer SHA-256: ' +
-                     client.sha256_file(directory / 'xdrive-offline.py'))
+                     sha256_file(directory / 'manifest.json') + '\nTrusted Installer SHA-256: ' +
+                     sha256_file(directory / 'xdrive-offline.py'))
             github.create(tag, commit, notes)
             record = github.get(tag)
             if not record or release_assets(record, commit) or record['draft'] is not True:
@@ -663,7 +538,7 @@ def resume_github(directory, commit, repository, github):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('fetch', 'publish', 'resume-github', 'publish-github',
+    parser.add_argument('command', choices=('fetch', 'resume-github', 'publish-github',
                                            'reconcile-packages', 'publish-packages', 'checksums', 'previous'))
     parser.add_argument('--directory', type=Path, default=Path('offline'))
     parser.add_argument('--commit')
@@ -687,18 +562,16 @@ def main():
                 reconcile_packages(args.directory, args.commit, args.repository, GitHub())
             else:
                 publish_github(args.directory, args.commit, GitHub())
-        else:
-            url = os.environ.get('XDRIVE_CLIENT_MIRROR_SHARE_URL', '')
-            if not url:
-                raise MirrorError('Missing private publisher Share configuration')
-            publish(args.directory, Share(url, os.environ.get('XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD', '')))
         return 0
     except (MirrorError, OSError, ValueError, KeyError, TypeError) as error:
-        # Only locally controlled codes are logged; exceptions may contain URLs
-        # or credentials from an external process or private Share request.
-        code = (error.phase if isinstance(error, MirrorPhaseError)
-                else error.code if isinstance(error, PublicationError) and error.code in PublicationError.CODES
-                else 'verification')
+        # Only locally controlled codes are logged. GitHub CLI errors may
+        # contain sensitive remote details; never echo their raw exception.
+        if isinstance(error, MirrorPhaseError):
+            code = error.phase
+        elif isinstance(error, PublicationError) and error.code in PublicationError.CODES:
+            code = error.code
+        else:
+            code = 'verification'
         print(f'Server release verification failed [{code}]; no publication may be assumed', file=sys.stderr)
         return 1
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -46,8 +47,8 @@ func TestPersonClusterRunnerRebuildLifecycle(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{},
-		&meta.Node{},
-		&meta.PhotoAsset{},
+		&meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoAnalysisState{},
 		&meta.PhotoFace{},
 		&meta.PhotoPersonCluster{},
@@ -94,6 +95,14 @@ func TestPersonClusterRunnerRebuildLifecycle(t *testing.T) {
 		if err := db.Create(&node).Error; err != nil {
 			t.Fatal(err)
 		}
+		sha := strings.Repeat("a", 64)
+		if err := db.Create(&meta.File{NodeID: node.ID, Size: 100, StorageKey: name, SHA256: sha}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.MediaMetadata{NodeID: node.ID, OwnerID: owner.ID, NodeRevision: 1,
+			SHA256: sha, MediaKind: meta.MediaKindImage, IndexState: meta.MediaIndexStateReady}).Error; err != nil {
+			t.Fatal(err)
+		}
 		asset := meta.PhotoAsset{
 			OwnerID:       owner.ID,
 			PrimaryNodeID: node.ID,
@@ -132,7 +141,7 @@ func TestPersonClusterRunnerRebuildLifecycle(t *testing.T) {
 			AssetID:          asset.ID,
 			Kind:             meta.PhotoAnalysisKindFaceEmbedding,
 			AnalyzerVersion:  embeddingVersion,
-			InputFingerprint: "test:" + name,
+			InputFingerprint: mediapkg.AnalysisPreviewFingerprint(node.ID, node.Revision, sha),
 			State:            meta.PhotoAnalysisStateReady,
 			Attempt:          1,
 			CompletedAt:      &updatedAt,
@@ -140,6 +149,13 @@ func TestPersonClusterRunnerRebuildLifecycle(t *testing.T) {
 			UpdatedAt:        updatedAt,
 		}
 		if err := db.Create(&state).Error; err != nil {
+			t.Fatal(err)
+		}
+		detection := state
+		detection.ID = 0
+		detection.Kind = meta.PhotoAnalysisKindFaceDetection
+		detection.AnalyzerVersion = face.AnalyzerVersion
+		if err := db.Create(&detection).Error; err != nil {
 			t.Fatal(err)
 		}
 		return asset, face

@@ -1,11 +1,6 @@
 name: Publish Content-Addressed Offline Components
 on:
   workflow_call:
-    secrets:
-      XDRIVE_CLIENT_MIRROR_SHARE_URL:
-        required: false
-      XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD:
-        required: false
     inputs:
       ci_run_id:
         required: true
@@ -15,7 +10,7 @@ on:
       ci_run_id:
         required: true
         type: string
-        description: "Completed successful master CI run (retry failed mirror via the original CI rerun-failed-jobs)"
+        description: "Completed successful master CI run (retry failed GitHub publication from its original source run)"
 
 permissions:
   contents: write
@@ -45,9 +40,9 @@ jobs:
           test "$GITHUB_REPOSITORY" = lazyxu/xdrive
           test "$GITHUB_REPOSITORY_ID" = 1382670236
           [[ "$TARGET_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 2
-          # Do not authorize a failed CI through workflow_dispatch. If only this
-          # downstream publisher/mirror failed, rerun the original CI's failed
-          # jobs so its completed prerequisites and exact Final Gate are reused.
+          # Do not authorize a failed CI through workflow_dispatch. For a failed
+          # downstream GitHub publisher, rerun the source CI's failed jobs so
+          # its completed prerequisites and exact Final Gate are reused.
           record="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TARGET_RUN_ID")"
           # GitHub's workflow-run status can lag its individual jobs (a run may
           # still report "queued" while jobs are already running). The exact
@@ -279,13 +274,3 @@ jobs:
           python3 scripts/ci/mirror-server-to-share.py publish-github --directory offline --commit "$CI_COMMIT"
           echo "Published offline-manifest-$SHORT; new packages: $(jq -c .changed plan.json)"
 
-      - name: Mirror exact published server packages into Share (opt-in)
-        if: vars.XDRIVE_CLIENT_MIRROR_ENABLED == 'true'
-        env:
-          XDRIVE_CLIENT_MIRROR_SHARE_URL: ${{ secrets.XDRIVE_CLIENT_MIRROR_SHARE_URL }}
-          XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD: ${{ secrets.XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/ci/mirror-server-to-share.py fetch --directory offline
-          python3 scripts/ci/mirror-server-to-share.py publish --directory offline

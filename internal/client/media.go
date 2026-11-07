@@ -153,6 +153,7 @@ type MediaOCR struct {
 }
 
 type MediaItem struct {
+	ContentKey       string                 `json:"content_key,omitempty"`
 	Node             Node                   `json:"node"`
 	Metadata         MediaMetadata          `json:"metadata"`
 	AssetKind        string                 `json:"asset_kind,omitempty"`

@@ -20,6 +20,10 @@ struct NativeUnifiedGalleryChecks {
         precondition(!query.matches(video: true, live: false, capturedAt: start, names: ["holiday"]))
         query.until = start
         precondition(!query.isValid)
+        // Source uncertainty is not an original-read error, and cannot
+        // prevent viewing either authorized local or cloud thumbnails.
+        precondition(XDriveIOSNativePhotoPairingReason.checking.explanation.contains("正常浏览"))
+        precondition(XDriveIOSNativePhotoPairingReason.libraryIncomplete.explanation.contains("手动开始核验"))
 
         var pages = XDriveIOSNativeUnifiedPageIndex(start: 0)
         // 100k results retain source checkpoints, never media rows. Re-reading

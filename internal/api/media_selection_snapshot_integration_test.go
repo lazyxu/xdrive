@@ -51,7 +51,7 @@ func TestMediaSelectionPostgresFreezesOnlyOwnerMatchedDay(t *testing.T) {
 	}
 	defer dbSQL.Close()
 	dbSQL.SetMaxOpenConns(2)
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoMetadata{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.PhotoResource{}, &meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoMetadata{}); err != nil {
 		t.Fatal(err)
 	}
 	owner := meta.User{Username: "selection-owner", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -106,19 +107,32 @@ func baiduPhotoMapOwnerEligibleQuery(
 	ctx context.Context, db *gorm.DB, ownerID uint64,
 	bounds baiduPhotoMapBounds, projection string,
 ) *gorm.DB {
+	return baiduPhotoMapOwnerEligibleQueryWithMediaAlias(ctx, db, ownerID, bounds, projection, "m")
+}
+
+// mediaAlias is a compile-time query alias, never request input. Gallery can
+// share these exact Owner/source checks without joining a second copy of the
+// same asset, Node and metadata tables through an IN subquery.
+func baiduPhotoMapOwnerEligibleQueryWithMediaAlias(
+	ctx context.Context, db *gorm.DB, ownerID uint64,
+	bounds baiduPhotoMapBounds, projection, mediaAlias string,
+) *gorm.DB {
+	mediaSQL := func(sql string) string { return strings.ReplaceAll(sql, "m.", mediaAlias+".") }
 	query := db.WithContext(ctx).
 		Table("xd_baidu_photo_map_positions AS p").
-		Joins("JOIN xd_users AS u ON u.id = p.owner_id AND u.disabled_at IS NULL AND u.must_change_password = FALSE").
+		// The Owner is constant for this request. An uncorrelated EXISTS checks
+		// the same live account once instead of repeating it for every photo.
+		Where("EXISTS (SELECT 1 FROM xd_users AS u WHERE u.id = ? AND u.disabled_at IS NULL AND u.must_change_password = FALSE)", ownerID).
 		Joins("JOIN xd_photo_assets AS pa ON pa.id = p.asset_id AND pa.owner_id = p.owner_id AND pa.primary_node_id = p.primary_node_id").
 		Joins("JOIN xd_nodes AS n ON n.id = p.primary_node_id AND n.owner_id = p.owner_id AND n.deleted_at IS NULL AND n.revision = p.node_revision AND n.type = ?", meta.NodeTypeFile).
-		Joins("JOIN xd_media_metadata AS m ON m.node_id = n.id AND m.owner_id = p.owner_id AND m.node_revision = n.revision AND m.updated_at = p.media_updated_at").
+		Joins(mediaSQL("JOIN xd_media_metadata AS "+mediaAlias+" ON m.node_id = n.id AND m.owner_id = p.owner_id AND m.node_revision = n.revision AND m.updated_at = p.media_updated_at")).
 		Where(
-			"p.owner_id = ? AND p.coordinate_space = ? AND p.projection_version = ? AND "+
+			mediaSQL("p.owner_id = ? AND p.coordinate_space = ? AND p.projection_version = ? AND "+
 				"m.index_state = ? AND m.media_kind IN ? AND "+
 				"m.latitude BETWEEN -90 AND 90 AND m.longitude BETWEEN -180 AND 180 AND "+
 				"p.source_latitude = m.latitude AND p.source_longitude = m.longitude AND "+
 				"p.latitude BETWEEN -90 AND 90 AND p.longitude BETWEEN -180 AND 180 AND "+
-				"p.latitude >= ? AND p.latitude <= ?",
+				"p.latitude >= ? AND p.latitude <= ?"),
 			ownerID, bounds.CoordinateSpace, projection,
 			meta.MediaIndexStateReady, []string{meta.MediaKindImage, meta.MediaKindVideo},
 			bounds.South, bounds.North,

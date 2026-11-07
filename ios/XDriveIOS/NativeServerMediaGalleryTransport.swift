@@ -31,6 +31,9 @@ struct XDriveIOSNativeMediaItem: Decodable, Identifiable {
     }
     let node: Node
     let metadata: Metadata
+    let content_key: String?
+    var contentIdentity: String { content_key ?? "legacy:\(node.id):\(node.revision)" }
+    var validContentIdentity: Bool { content_key.map(XDriveIOSNativePhotoContentPolicy.valid) ?? true }
     let asset_id: UInt64?
     let asset_kind: String?
     let live_photo: Bool?
@@ -76,6 +79,7 @@ extension XDriveIOSNativeMediaItem {
         metadata.media_kind == rhs.metadata.media_kind &&
         metadata.has_thumbnail == rhs.metadata.has_thumbnail &&
         metadata.container_kind == rhs.metadata.container_kind &&
+        content_key == rhs.content_key &&
         asset_id == rhs.asset_id &&
         metadata.thumbnail_version == rhs.metadata.thumbnail_version &&
         asset_kind == rhs.asset_kind &&
@@ -170,7 +174,7 @@ struct XDriveIOSNativeMediaGalleryReader {
     }
 
     private func read(_ url: URL, method: String = "GET",
-                      bearer: Bool = true, maximum: Int, body: Data? = nil) async throws -> Data {
+                      bearer: Bool = true, maximum: Int, body: Data? = nil, expectedStatus: Int = 200) async throws -> Data {
         let client = session()
         defer { client.invalidateAndCancel() }
         var request = URLRequest(url: url)
@@ -190,7 +194,7 @@ struct XDriveIOSNativeMediaGalleryReader {
         guard let reply = response as? HTTPURLResponse else {
             throw XDriveIOSNativeMediaReadFailure.malformed
         }
-        guard reply.statusCode == 200 else {
+        guard reply.statusCode == expectedStatus else {
             throw XDriveIOSNativeMediaReadFailure.response(reply.statusCode)
         }
         guard maximum > 0 else {
@@ -231,10 +235,12 @@ struct XDriveIOSNativeMediaGalleryReader {
     }
 
     func page(offset: Int, albumID: String? = nil,
-              placeID: String? = nil, search: String = "") async throws -> XDriveIOSNativeMediaRange {
+              placeID: String? = nil, search: String = "",
+              person: XDriveIOSNativeMediaPerson? = nil) async throws -> XDriveIOSNativeMediaRange {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         guard offset >= 0 && offset <= 10_000_000,
               query.unicodeScalars.count <= 200,
+              (person == nil || (person!.isValid && albumID == nil && placeID == nil)),
               (placeID == nil || (
                   albumID == nil &&
                   XDriveIOSNativeOwnerMapSelectionPolicy.canonicalPlaceID(placeID!)
@@ -242,7 +248,9 @@ struct XDriveIOSNativeMediaGalleryReader {
             throw XDriveIOSNativeMediaReadFailure.invalidPage
         }
         let path: String
-        if let albumID {
+        if let person {
+            path = "/api/v1/media/people/\(person.suggested ? "suggestions" : "identities")/\(try albumSegment(person.id))/items"
+        } else if let albumID {
             path = "/api/v1/media/albums/\(try albumSegment(albumID))/items"
         } else {
             path = "/api/v1/media/items"
@@ -266,12 +274,64 @@ struct XDriveIOSNativeMediaGalleryReader {
         guard page.offset == offset, page.limit == Self.pageSize,
               page.total_count >= 0, page.total_count <= 10_000_000,
               page.items.count <= Self.pageSize,
+              Set(page.items.map(\.contentIdentity)).count == page.items.count,
               page.offset + page.items.count <= page.total_count,
               !(page.items.isEmpty && offset < page.total_count),
               page.items.allSatisfy({
-                $0.id > 0 && $0.node.revision > 0 && $0.node.size >= 0 &&
+                $0.validContentIdentity && $0.id > 0 && $0.node.revision > 0 && $0.node.size >= 0 &&
                 $0.node.type == "file"
               })
+        else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        return page
+    }
+
+    /// B2 v2: the read-only, current Owner trips list. The legacy
+    /// /media/memories trip:v1 date heuristic is deliberately not accepted.
+    /// This shares exactly the existing HTTPS/TLS, no-redirect bearer Reader.
+    func exactTrips(timeZone: String, limit: Int = 100) async throws
+        -> [XDriveIOSNativeExactTrip] {
+        guard XDriveIOSNativeExactTripPolicy.validTimeZone(timeZone),
+              (1...XDriveIOSNativeExactTripPolicy.maximumTrips).contains(limit)
+        else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+        let url = try endpoint("/api/v1/media/trips", query: [
+            URLQueryItem(name: "time_zone", value: timeZone),
+            URLQueryItem(name: "limit", value: String(limit))
+        ])
+        let bytes = try await read(url, maximum: 128 * 1_024)
+        let trips = try JSONDecoder().decode([XDriveIOSNativeExactTrip].self, from: bytes)
+        guard trips.count <= limit, XDriveIOSNativeExactTripPolicy.validTrips(trips)
+        else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        return trips
+    }
+
+    /// The exact current trip membership is resolved afresh server-side.
+    /// A changed total, stale v2 ID, changed Owner or unauthorized current
+    /// item must fail closed; no all-Owner date-range fallback is permitted.
+    func exactTripPage(
+        _ trip: XDriveIOSNativeExactTrip, offset: Int, timeZone: String
+    ) async throws -> XDriveIOSNativeMediaRange {
+        guard XDriveIOSNativeExactTripPolicy.validTrip(trip),
+              XDriveIOSNativeExactTripPolicy.validTimeZone(timeZone),
+              offset >= 0,
+              offset % Self.pageSize == 0,
+              offset <= trip.item_count
+        else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+        let url = try endpoint("/api/v1/media/trips/\(trip.id)/items", query: [
+            URLQueryItem(name: "time_zone", value: timeZone),
+            URLQueryItem(name: "range", value: "true"),
+            URLQueryItem(name: "limit", value: String(Self.pageSize)),
+            URLQueryItem(name: "offset", value: String(offset))
+        ])
+        let bytes = try await read(url, maximum: 2 * 1_048_576)
+        let page = try JSONDecoder().decode(XDriveIOSNativeMediaRange.self, from: bytes)
+        guard XDriveIOSNativeExactTripPolicy.validWindow(
+            requestedOffset: offset, responseOffset: page.offset,
+            responseLimit: page.limit, responseTotal: page.total_count,
+            itemIDs: page.items.map(\.id), expectedTotal: trip.item_count
+        ), page.items.allSatisfy({
+            $0.node.revision > 0 && $0.node.size >= 0 &&
+            $0.node.type == "file"
+        })
         else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
         return page
     }
@@ -299,6 +359,31 @@ struct XDriveIOSNativeMediaGalleryReader {
             throw XDriveIOSNativeMediaReadFailure.invalidPage
         }
         return overview
+    }
+
+    func reanalyzeFaces() async throws {
+        struct Receipt: Decodable { let owner_id: UInt64; let accepted: [String] }
+        let body = try JSONEncoder().encode(["kinds": ["face"]])
+        let bytes = try await read(try endpoint("/api/v1/photo-intelligence/reanalyze"),
+            method: "POST", maximum: 8192, body: body, expectedStatus: 202)
+        let receipt = try JSONDecoder().decode(Receipt.self, from: bytes)
+        guard receipt.owner_id == owner.ownerID, receipt.accepted == ["face"] else {
+            throw XDriveIOSNativeMediaReadFailure.invalidScope
+        }
+    }
+
+    func people(suggested: Bool, offset: Int) async throws -> [XDriveIOSNativeMediaPerson] {
+        guard (0...10_000_000).contains(offset) else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        let path = "/api/v1/media/people/\(suggested ? "suggestions" : "identities")"
+        let data = try await read(try endpoint(path, query: [
+            URLQueryItem(name: "limit", value: "24"), URLQueryItem(name: "offset", value: String(offset))
+        ]), maximum: 131_072)
+        let rows = try JSONDecoder().decode([XDriveIOSNativeMediaPerson].self, from: data)
+        guard rows.count <= 24, Set(rows.map(\.id)).count == rows.count,
+              rows.allSatisfy({ $0.isValid && $0.suggested == suggested }) else {
+            throw XDriveIOSNativeMediaReadFailure.invalidPage
+        }
+        return rows
     }
 
     func albums() async throws -> [XDriveIOSNativeMediaAlbum] {
@@ -544,10 +629,14 @@ struct XDriveIOSNativeMediaGalleryReader {
     /// classification or a now-unpaired resource under the old Viewer item.
     private func currentOriginal(_ selected: XDriveIOSNativeMediaItem)
         async throws -> XDriveIOSNativeMediaItem {
-        let url = try endpoint("/api/v1/media/items/\(selected.id)")
+        guard selected.validContentIdentity else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+        let path = try selected.content_key.map { "/api/v1/media/content/\(try albumSegment($0))" }
+            ?? "/api/v1/media/items/\(selected.id)"
+        let url = try endpoint(path)
         let data = try await read(url, maximum: 131_072)
         let current = try JSONDecoder().decode(XDriveIOSNativeMediaItem.self, from: data)
-        guard current.id == selected.id,
+        guard current.contentIdentity == selected.contentIdentity,
+              current.id == selected.id,
               current.node.revision == selected.node.revision,
               current.node.name == selected.node.name,
               current.node.type == selected.node.type,

@@ -184,9 +184,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Publisher-only PRs need the exact immutable Share delivery contracts, not
-  # Android, Desktop, Go image builds or signed release publication. On master
-  # and stable tags both jobs run as part of the complete Final Gate.
+  # Publisher-only PRs validate exact GitHub offline release identity without
+  # unrelated Android, Desktop or image builds; master and v* remain full.
   offline-release-tests:
     needs: pr-scope
     if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'offline-release'
@@ -196,13 +195,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-      - name: Test exact GitHub package selection and Share upload/readback
+      - name: Verify exact GitHub offline package and draft recovery contracts
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ci/mirror-server-to-share.py scripts/ci/mirror-clients-to-share.py
-          python3 scripts/ci/test-mirror-clients-to-share.py -q
+          python3 -m py_compile scripts/ci/mirror-server-to-share.py
           python3 scripts/ci/test-mirror-server-to-share.py -q
+          python3 -m unittest discover -s scripts/ci -p 'test_retired_share_mirror.py'
 
   offline-security-contract:
     needs: pr-scope
@@ -225,7 +224,7 @@ jobs:
       # A scoped PR can edit its own regression tests. Run the already trusted
       # master tests on the candidate publisher too, so changing tests cannot
       # silently weaken the existing security baseline.
-      - name: Re-run trusted base Share publisher regression suite
+      - name: Re-run trusted base GitHub offline publisher regression suite
         if: github.event_name == 'pull_request' && needs.pr-scope.outputs.scope == 'offline-release'
         shell: bash
         env:
@@ -294,7 +293,17 @@ jobs:
       - name: Build Linux desktop runtime
         working-directory: desktop
         run: |
+          set -euo pipefail
           npm install --no-audit --no-fund
+          # npm may omit Rollup's Linux glibc optional native dependency.
+          # Fix only the observed missing package, pinned to the resolved
+          # Rollup version; never skip or mask the real Vite/Electron build.
+          if ! node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" >/dev/null 2>&1; then
+            rollup_version="$(node -p "require('./node_modules/rollup/package.json').version")"
+            npm install --no-audit --no-fund --no-save --no-package-lock \
+              "@rollup/rollup-linux-x64-gnu@$rollup_version"
+          fi
+          node -e "require('@rollup/rollup-linux-x64-gnu')"
           node scripts/set-version.mjs "$XDRIVE_DESKTOP_VERSION"
           npm run runtime:linux
           test -x release/linux-unpacked/xdrive-desktop
@@ -1206,6 +1215,8 @@ jobs:
           bash scripts/test-media-worker-control.sh
           bash -n scripts/test-caddy-host-status.sh
           bash scripts/test-caddy-host-status.sh
+          bash -n scripts/test-caddy-observer-groups.sh
+          sudo -n env TMPDIR="$RUNNER_TEMP" bash scripts/test-caddy-observer-groups.sh
           python3 scripts/test-caddy-https-host-plan.py
           bash -n scripts/test-caddy-rescue-profile.sh
           bash scripts/test-caddy-rescue-profile.sh
@@ -1267,6 +1278,11 @@ jobs:
           sh -n scripts/ci/gitlab-publish-release.sh
           sh -n scripts/ci/install-gitlab-release-tools.sh
           bash scripts/ci/test-gitlab-release-tools.sh
+          # DSM Package Center: POST catalog + immutable version monotonicity.
+          node --test infra/dsm-package-source/worker.test.mjs
+          bash -n scripts/ci/publish-dsm-package-source.sh
+          bash -n scripts/ci/test-publish-dsm-package-source.sh
+          bash scripts/ci/test-publish-dsm-package-source.sh
           bash -n scripts/ci/test-gitlab-release-version.sh
           bash scripts/ci/test-gitlab-release-version.sh
           python3 scripts/ci/test-gitlab-snapshot-publish.py
@@ -1296,6 +1312,7 @@ jobs:
           bash -n scripts/ci/gitlab-server-image.sh
           bash -n scripts/ci/gitlab-caddy-image.sh
           bash -n scripts/ci/test-photo-face-image.sh
+          bash -n scripts/ci/test-photo-face-real-model.sh
           bash -n scripts/ci/photo-face-runtime-cache-key.sh
           bash -n scripts/ci/test-photo-face-runtime-cache.sh
           bash scripts/ci/test-photo-face-runtime-cache.sh
@@ -1581,13 +1598,16 @@ jobs:
         id: photo-face-build
         shell: bash
         run: bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
-      # Source-only OCR PR fixture stays isolated from ordinary artifact jobs.
-      # The shared script is also used by the post-build master/tag smoke below.
+      # Real face models exercise the exact PR source; master/tag use the
+      # detached smoke below to preserve the image publishing prerequisite.
       - uses: actions/setup-go@v5
-        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-')
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         with:
           go-version: "1.25.x"
           cache: true
+      - name: Real face detection, clustering, content and Owner isolation
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: bash scripts/ci/test-photo-face-real-model.sh
       - name: Real JPEG PP-OCR and Gallery search PostgreSQL integration
         if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-')
         run: bash scripts/ci/test-photo-ocr-real-model.sh
@@ -1635,6 +1655,8 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
+      - name: Real face detection and Gallery content smoke
+        run: bash scripts/ci/test-photo-face-real-model.sh
       - name: Real JPEG PP-OCR and Gallery search PostgreSQL smoke
         run: bash scripts/ci/test-photo-ocr-real-model.sh
 
@@ -2685,11 +2707,11 @@ jobs:
           echo "Scoped $CI_SCOPE PR validation passed; master and v* remain full."
 
   publish-master:
-    # Build and package jobs may run in parallel, but *publishing* a Snapshot
-    # must wait for every applicable test, including the real Android emulator.
+    # Snapshot is intentionally artifact-first: exact CI-built images, installers
+    # and Source Agent must exist, then the release workflow verifies integrity.
+    # Full Final Gate keeps running independently; stable v* still waits for it.
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs:
-      - final-gate
       - build-client-core
       - build-source-agent
       - package-linux-client
@@ -2722,7 +2744,6 @@ jobs:
     uses: ./.github/workflows/offline-packages.yml
     with:
       ci_run_id: ${{ github.run_id }}
-    secrets: inherit
 
   publish-stable:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')

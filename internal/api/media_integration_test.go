@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -56,7 +57,7 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		&meta.PhotoCollection{},
 		&meta.PhotoMetadata{},
 		&meta.PhotoResource{},
-		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
+		&meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
 		&meta.MediaGroupItem{},
 		&meta.MediaGroup{},
 		&meta.MediaDerivedResource{},
@@ -89,7 +90,7 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		&meta.ContentBlob{},
 		&meta.ContentDigestAlias{},
 		&meta.Share{},
-		&meta.UploadSession{},
+		&meta.UploadSession{}, &meta.LocalPushQuotaHold{},
 		&meta.UploadPart{},
 		&meta.LocalPushQuotaHold{},
 		&meta.AuditEvent{},
@@ -101,7 +102,7 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		&meta.MediaDerivedResource{},
 		&meta.MediaGroup{},
 		&meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoAnalysisState{},
 		&meta.PhotoOCRText{},
 		&meta.PhotoResource{},
@@ -755,11 +756,8 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	if detail.Metadata.Width != 5 || detail.Metadata.Height != 4 {
 		t.Fatalf("reindexed metadata=%+v", detail.Metadata)
 	}
-	if detail.Description != "Marina Bay sunset\nTrip note" {
-		t.Fatalf("reindexed description=%q", detail.Description)
-	}
-	if !detail.Favorite {
-		t.Fatalf("favorite was lost after media re-index: %+v", detail)
+	if detail.ContentKey != fmt.Sprintf("sha256:%x", sha256.Sum256(secondPNG)) || detail.Description != "" || detail.Favorite {
+		t.Fatalf("replacement original inherited previous photo identity or annotations: %+v", detail)
 	}
 
 	// Real Node overwrite: the original revision URL must NOT respond with

@@ -1858,6 +1858,7 @@ export type AgentMediaCreativeGeneration = {
 }
 
 export type AgentMediaItem = {
+  content_key?: string
   node: AgentCloudNode
   metadata: AgentMediaMetadata
   asset_kind?: string
@@ -2179,6 +2180,15 @@ export type AgentDesktopMapGuestGrant = {
   ticket: string
   username: string
   expires_in: number
+}
+
+// Only the current Agent/Owner's PUBLIC private-LAN root, delivered to
+// trusted Electron Main over authenticated loopback IPC, never Renderer.
+export type AgentDesktopMapLANTrust = {
+  available: boolean
+  server?: string
+  username?: string
+  root_pem?: string
 }
 
 export type AgentMediaBaiduJSAPI4Release = {
@@ -2847,6 +2857,10 @@ export class AgentIPCClient {
     return this.request<AgentCacheReleaseResult>('POST', '/v1/cache/release', undefined, 130_000)
   }
 
+  mediaContent(input: unknown, signal?: AbortSignal) {
+    return this.request<unknown>('POST', '/v1/media/content', input, 30_000, signal)
+  }
+
   mediaItem(nodeID: number, signal?: AbortSignal) {
     return this.request<AgentMediaItem>(
       'GET',
@@ -3107,6 +3121,12 @@ export class AgentIPCClient {
   desktopMapGuestGrant(signal?: AbortSignal) {
     return this.request<AgentDesktopMapGuestGrant>(
       'POST', '/v1/cloud/desktop-map-grant', undefined, 15_000, signal)
+  }
+
+  /** Main only; never exported through preload or ordinary Renderer IPC. */
+  desktopMapLANTrust(signal?: AbortSignal) {
+    return this.request<AgentDesktopMapLANTrust>(
+      'GET', '/v1/cloud/desktop-map-lan-trust', undefined, 10_000, signal)
   }
 
   mediaBaiduMapCoverageReasons(signal?: AbortSignal) {

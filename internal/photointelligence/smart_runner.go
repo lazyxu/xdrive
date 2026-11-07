@@ -8,6 +8,7 @@ import (
 
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photoasset"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -228,7 +229,7 @@ func (r *SmartRunner) smartCandidatesForOwner(
 	now time.Time,
 	limit int,
 ) ([]smartCandidate, error) {
-	inputExpr := faceInputFingerprintSQL()
+	inputExpr := facePreviewFingerprintSQL()
 	query := r.smartCandidateQuery(
 		ctx,
 		visualVersion,
@@ -259,15 +260,16 @@ func (r *SmartRunner) smartCandidateQuery(
 	visualVersion, ocrVersion string,
 	now time.Time,
 ) *gorm.DB {
-	inputExpr := faceInputFingerprintSQL()
+	inputExpr := facePreviewFingerprintSQL()
 	return r.DB.WithContext(ctx).
 		Table("xd_photo_assets AS pa").
+		Where(photoasset.CurrentContentBindingSQL("pa")).
 		Joins(
 			"JOIN xd_users AS u ON u.id = pa.owner_id "+
 				"AND u.disabled_at IS NULL AND u.must_change_password = false",
 		).
 		Joins(
-			"JOIN xd_nodes AS n ON n.id = pa.primary_node_id AND n.deleted_at IS NULL",
+			"JOIN xd_nodes AS n ON n.id = pa.primary_node_id AND n.owner_id = pa.owner_id AND n.deleted_at IS NULL",
 		).
 		Joins("JOIN xd_files AS f ON f.node_id = n.id").
 		Joins(

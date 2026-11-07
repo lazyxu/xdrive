@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -68,7 +69,7 @@ func TestSemanticRunnerPersistsReadyEmbedding(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
-		&meta.PhotoAsset{}, &meta.PhotoAnalysisState{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoAnalysisState{},
 		&meta.PhotoSemanticEmbedding{},
 	); err != nil {
 		t.Fatal(err)
@@ -121,6 +122,7 @@ func TestSemanticRunnerPersistsReadyEmbedding(t *testing.T) {
 	if err := db.Create(&asset).Error; err != nil {
 		t.Fatal(err)
 	}
+	bindTestOriginalContent(t, db, &asset, node, file)
 
 	info := testSemanticAnalyzerInfo()
 	raw := make([]byte, info.EmbeddingDimensions)
@@ -186,7 +188,7 @@ func TestSemanticRunnerPersistsReadyEmbedding(t *testing.T) {
 	}
 	if state.State != meta.PhotoAnalysisStateReady ||
 		state.AnalyzerVersion != SemanticAnalyzerVersion(info) ||
-		state.InputFingerprint == "" {
+		state.InputFingerprint != mediapkg.AnalysisPreviewFingerprint(node.ID, node.Revision, file.SHA256) {
 		t.Fatalf("state=%+v", state)
 	}
 

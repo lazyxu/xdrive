@@ -198,6 +198,28 @@ func (s *Server) redeemDesktopMapGuestGrant(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		// The Browser RefreshToken is not a general independent Owner session.
+		// Link its renewal and its short-lived Access JWT to the original native
+		// Agent authority so native logout revokes already-redeemed sessions too.
+		link := tx.Model(&meta.RefreshToken{}).
+			Where("token_hash = ? AND user_id = ?",
+				auth.HashRefreshToken(session.RefreshToken), user.ID).
+			Updates(map[string]any{
+				"desktop_map_native_refresh_id": grant.NativeRefreshID,
+				"desktop_map_session_version":   grant.SessionVersion,
+			})
+		if link.Error != nil {
+			return link.Error
+		}
+		if link.RowsAffected != 1 {
+			return errDesktopMapGrantDenied
+		}
+		mapAccess, err := s.Auth.IssueDesktopMapAccess(
+			user.ID, grant.SessionVersion, grant.NativeRefreshID)
+		if err != nil {
+			return err
+		}
+		session.Token, session.AccessToken = mapAccess, mapAccess
 		issued = session
 		return nil
 	})

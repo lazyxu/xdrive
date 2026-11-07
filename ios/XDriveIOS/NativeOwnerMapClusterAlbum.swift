@@ -79,11 +79,13 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     } ?? "正在读取位置照片"
                 )
             if let error {
-                Text(error).font(.footnote).foregroundStyle(.secondary)
-                Button("重试读取照片") { load(cursor, history: earlier) }
-                    .disabled(busy || !activeOwner || viewing != nil)
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("native-ios-owner-map-cluster-inline-retry")
+                XDriveIOSNativePhotoWallRetryMessage(
+                    message: error, buttonTitle: "重试读取照片",
+                    canRetry: !busy && activeOwner && viewing == nil,
+                    accessibilityID: "native-ios-owner-map-cluster-inline-retry"
+                ) {
+                    load(cursor, history: earlier)
+                }
             }
             if busy { ProgressView("核对当前 Owner 的地点照片…") }
             ScrollViewReader { returnScroll in
@@ -159,14 +161,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     }
                     .disabled(busy || !activeOwner || viewing != nil)
                     Section("照片网格") {
-                        ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
-                            Button {
-                                wallDensity = option
-                            } label: {
-                                Label(option.title, systemImage: wallDensity == option
-                                    ? "checkmark.circle.fill" : "square.grid.3x3")
-                            }
-                        }
+                        xdrivePhotoWallDensityButtons($wallDensity)
                     }
                 } label: {
                     Label("位置照片操作", systemImage: "ellipsis.circle")
@@ -444,13 +439,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                             .frame(width: tile.size.width,
                                    height: tile.size.height)
                     }
-                    if item.isLive || item.isVideo {
-                        Image(systemName: item.isLive ? "livephoto" : "play.fill")
-                            .font(.caption).foregroundStyle(.white)
-                            .padding(5)
-                            .background(.black.opacity(0.55), in: Capsule())
-                            .padding(5)
-                    }
+                    XDriveIOSNativePhotoWallMediaBadge(
+                        isVideo: item.isVideo, isLive: item.isLive
+                    )
                 }
             }
             .aspectRatio(1, contentMode: .fit)

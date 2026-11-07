@@ -81,7 +81,9 @@ test('native batch action does not retry a lost commit and cancels on Owner or p
   // operation before any replacement Owner directory request is launched.
   // Reload must retire the page selection and staged downloads before
   // invalidating the independent copy/move mutation task.
-  assert.match(page, /private func reload\(resetOffset: Bool = false\) \{\s*inlineFolders\.invalidate\(\)\s*selecting = false\s*selectedIDs\.removeAll\(\)\s*selectedSnapshots\.removeAll\(\)\s*batchExport\.invalidate\(\)\s*batchTarget\.invalidate\(\)/)
+  // In-flight full-Server Select All and internal drag must be fenced
+  // before inline branches, selection and Server batch tasks are retired.
+  assert.match(page, /private func reload\(resetOffset: Bool = false\) \{\s*cancelSelectAllRead\(\)\s*selectAllNotice = nil\s*clearInternalDrag\(\)\s*pendingDrop = nil\s*inlineFolders\.invalidate\(\)\s*selecting = false\s*selectedIDs\.removeAll\(\)\s*selectedSnapshots\.removeAll\(\)\s*batchExport\.invalidate\(\)\s*batchTarget\.invalidate\(\)/)
   assert.doesNotMatch(writer, /WKWebView|localStorage|URLSession\.shared|\/api\/v1\/uploads/)
 })
 

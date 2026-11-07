@@ -346,6 +346,12 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/sync-folders/:sourceID/folders/:folderID", s.getMediaSyncFolder)
 	authed.GET("/media/trash", s.listMediaTrash)
 	authed.GET("/media/items/:id", s.getMediaItem)
+	authed.GET("/media/content/:contentKey", s.withMediaContent(s.getMediaItem))
+	authed.GET("/media/content/:contentKey/sources", s.listMediaContentSources)
+	authed.PATCH("/media/content/:contentKey/favorite", s.withMediaContent(s.setMediaFavorite))
+	authed.PATCH("/media/content/:contentKey/tags", s.withMediaContent(s.setMediaTags))
+	authed.PATCH("/media/content/:contentKey/people", s.withMediaContent(s.setMediaPeople))
+	authed.PATCH("/media/content/:contentKey/description", s.withMediaContent(s.setMediaDescription))
 	authed.PATCH("/media/items/:id/favorite", s.setMediaFavorite)
 	authed.PATCH("/media/items/:id/tags", s.setMediaTags)
 	authed.PATCH("/media/batch/favorite", s.setMediaFavoriteBatch)
@@ -407,6 +413,9 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/media/places/baidu-jsapi/scope-handoff/consume", s.baiduMapScopeHandoffConsumeHTTP)
 	authed.GET("/media/memories", s.listMediaMemories)
 	authed.GET("/media/memories/:memoryID/items", s.listMediaMemoryItems)
+	// B2: Owner GPS calendar-cell trips, separate from legacy date-only Memories.
+	authed.GET("/media/trips", s.listMediaExactTrips)
+	authed.GET("/media/trips/:tripID/items", s.listMediaExactTripItems)
 	authed.GET("/media/duplicate-organize/plan", s.mediaDuplicateOrganizePlan)
 	authed.POST("/media/duplicate-organize/apply", s.applyMediaDuplicateOrganize)
 	authed.GET("/media/duplicates", s.listMediaDuplicateGroups)
@@ -440,6 +449,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/albums/:albumID/items", s.listMediaAlbumItems)
 	authed.POST("/media/albums/:albumID/items", s.addMediaAlbumItems)
 	authed.DELETE("/media/albums/:albumID/items/:nodeID", s.removeMediaAlbumItem)
+	authed.DELETE("/media/albums/:albumID/content/:contentKey", s.removeMediaAlbumItem)
 	authed.POST("/media/smart-albums", s.createSmartMediaAlbum)
 	authed.PATCH("/media/smart-albums/:albumID", s.updateSmartMediaAlbum)
 	authed.DELETE("/media/smart-albums/:albumID", s.deleteSmartMediaAlbum)
@@ -800,6 +810,12 @@ func (s *Server) requireAuth() gin.HandlerFunc {
 		// tokenVersion=0 is accepted only for pre-session-version migration JWTs.
 		if (tokenVersion == 0 && user.SessionVersion > 1) || (tokenVersion != 0 && tokenVersion != user.SessionVersion) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session_revoked"})
+			return
+		}
+		if claims.DesktopMapNativeRefreshID != 0 &&
+			!desktopMapNativeSessionActive(s.DB.WithContext(c.Request.Context()),
+				uid, claims.DesktopMapNativeRefreshID, time.Now().UTC(), false) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "desktop_map_native_session_revoked"})
 			return
 		}
 		path := c.Request.URL.Path

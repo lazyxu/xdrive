@@ -64,7 +64,8 @@ required_builds = {
     "media-worker-image",
 }
 assert required_builds <= needed, f"required publishable artifacts missing: {required_builds - needed}"
-assert "final-gate" in needed, "Snapshot release must wait for full CI Final Gate, including Android emulator tests"
+assert "build-client-core" in needed, "Snapshot release must retain exact client-core artifact provenance"
+assert "final-gate" not in needed, "Master Snapshot must not await unrelated full CI Final Gate; stable still must"
 assert "photo-ocr-master-smoke" not in needed, "snapshot must not wait for OCR model acceptance"
 
 publish_stable = re.search(

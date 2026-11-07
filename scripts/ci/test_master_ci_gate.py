@@ -35,7 +35,7 @@ class FinalGateContract(unittest.TestCase):
             (ROOT / "AGENTS.md").read_text(encoding="utf-8"),
         )
 
-    def test_merge_queue_full_ci_and_publish_waits_for_tests(self):
+    def test_merge_queue_full_ci_and_snapshot_publish_after_artifacts(self):
         self.assertRegex(WORKFLOW, r"(?m)^  merge_group:\n    types: \[checks_requested\]")
         self.assertIn('if [[ "$GITHUB_EVENT_NAME" == "pull_request"', WORKFLOW)
         self.assertIn("scope=full", WORKFLOW)
@@ -46,8 +46,27 @@ class FinalGateContract(unittest.TestCase):
         self.assertIn("      - test-windows-upgrade-artifact\n", gate)
         self.assertIn('all(.[]; .result == "success")', gate)
         publish = WORKFLOW[publish_start:WORKFLOW.index("  publish-content-addressed-offline:", publish_start)]
-        self.assertIn("      - final-gate\n", publish)
+        # Master Snapshot is artifact-first; unrelated tests still run and
+        # report failures through their independent full Final Gate.
+        self.assertNotIn("      - final-gate\n", publish)
+        publish_needs = publish.split("    needs:\n", 1)[1].split("\n    permissions:", 1)[0]
+        self.assertEqual(re.findall(r"(?m)^      - ([a-z0-9-]+)$", publish_needs), [
+            "build-client-core",
+            "build-source-agent",
+            "package-linux-client",
+            "package-windows-client",
+            "server-image",
+            "caddy-image",
+            "photo-face-image",
+            "media-worker-image",
+        ])
         self.assertIn("uses: ./.github/workflows/release.yml", publish)
+        # Stable tags and offline promotion must retain exact Final Gate.
+        offline = WORKFLOW[WORKFLOW.index("  publish-content-addressed-offline:"):WORKFLOW.index("  publish-stable:")]
+        stable = WORKFLOW[WORKFLOW.index("  publish-stable:"):]
+        self.assertIn("needs: [final-gate, publish-master]", offline)
+        self.assertIn("needs: [final-gate, photo-ocr-master-smoke]", stable)
+        self.assertIn("uses: ./.github/workflows/release.yml", stable)
 
     def test_pr_ancestry_allows_master_advance_and_queue_rejects_stale_head(self):
         # Git's parent order is significant: first is candidate master,

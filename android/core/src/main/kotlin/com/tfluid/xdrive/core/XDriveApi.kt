@@ -247,7 +247,10 @@ data class GalleryAsset(
     val hasThumbnail: Boolean = false,
     /** Null means older/partial media DTO did not describe favorite state. */
     val favorite: Boolean? = null,
-)
+    val contentKey: String? = null,
+) {
+    val identity: String get() = contentKey ?: "legacy:${node.id}:${node.revision}"
+}
 data class GalleryTimelineGroup(val key: String, val itemCount: Long, val startIndex: Int)
 data class GalleryTimelineSets(
     val year: List<GalleryTimelineGroup>,
@@ -526,6 +529,13 @@ interface XDriveService {
         initialLatest: Boolean = false): GalleryPage =
         throw ApiException(501, "Gallery Owner range unavailable")
     /** Read-only Collections: use the existing PhotoCollection and member-Range APIs. */
+    suspend fun reanalyzeGalleryFaces(accessToken: String): Unit =
+        throw UnsupportedOperationException("Face analysis unavailable")
+    suspend fun galleryPeople(accessToken: String, suggested: Boolean, offset: Int): List<GalleryPerson> =
+        throw UnsupportedOperationException("People unavailable")
+    suspend fun galleryPersonPage(accessToken: String, person: GalleryPerson, offset: Int,
+        initialLatest: Boolean, search: String, kind: String, sortBy: String, sortDir: String): GalleryPage =
+        throw UnsupportedOperationException("People unavailable")
     suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> =
         throw ApiException(501, "Gallery albums unavailable")
     /** One Owner-authenticated manual collection creation; no retry or second writer. */
@@ -578,6 +588,11 @@ interface XDriveService {
     suspend fun gallerySetManualAlbumCover(
         accessToken: String, album: GalleryAlbum, nodeId: Long,
     ): GalleryAlbum = throw ApiException(501, "Manual album cover editing unavailable")
+    suspend fun gallerySetManualAlbumContentCover(accessToken: String, album: GalleryAlbum,
+        item: GalleryAsset): GalleryAlbum {
+        require(item.contentKey == null) { "Content-addressed album covers are unavailable" }
+        return gallerySetManualAlbumCover(accessToken, album, item.node.id)
+    }
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
     /** Read-only audio: same Range/ETag/Bearer transport as native video,
@@ -1801,6 +1816,50 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return GalleryAlbum(id, kind, name, count, revision, folder, cover)
     }
 
+    override suspend fun reanalyzeGalleryFaces(accessToken: String) {
+        val owner = verifiedOwnerIdentity(accessToken)
+        val answer = requestElement("photo-intelligence/reanalyze", accessToken,
+            bodyObject = JsonObject(mapOf("kinds" to JsonArray(listOf(JsonPrimitive("face"))))),
+            expectedStatus = 202) as? JsonObject ?: invalidPayload()
+        if (answer.long("owner_id") != owner.id ||
+            answer["accepted"] != JsonArray(listOf(JsonPrimitive("face")))) invalidPayload()
+    }
+
+    override suspend fun galleryPeople(accessToken: String, suggested: Boolean,
+        offset: Int): List<GalleryPerson> {
+        require(offset in 0..10_000_000)
+        val records = requestArray("media/people/" + if (suggested) "suggestions" else "identities",
+            accessToken, query = mapOf("limit" to "24", "offset" to offset.toString()))
+        if (records.size > 24) invalidPayload()
+        val seen = HashSet<String>()
+        return records.map { value ->
+            val entry = value as? JsonObject ?: invalidPayload()
+            val id = entry.string("id")
+            val count = entry.long("item_count")
+            val name = if (suggested) "" else entry.string("name")
+            if (!validGalleryPersonId(id, suggested) || !seen.add(id) || count < 0 ||
+                name.length > 256) invalidPayload()
+            GalleryPerson(id, name, count, suggested)
+        }
+    }
+
+    override suspend fun galleryPersonPage(accessToken: String, person: GalleryPerson,
+        offset: Int, initialLatest: Boolean, search: String, kind: String,
+        sortBy: String, sortDir: String): GalleryPage {
+        require(validGalleryPersonId(person.id, person.suggested))
+        require(offset >= 0 && (!initialLatest || offset == 0) && search.length <= 200 &&
+            search == search.trim() && kind in setOf("", "image", "video") &&
+            sortBy in setOf("captured", "added") && sortDir in setOf("asc", "desc"))
+        val query = mutableMapOf("range" to "true", "limit" to "60", "offset" to offset.toString(),
+            "sort_by" to sortBy, "sort_dir" to sortDir, "unknown_first" to "true", "fold_duplicates" to "true")
+        if (initialLatest && sortDir == "asc") query["initial_position"] = "latest"
+        if (search.isNotEmpty()) query["q"] = search
+        if (kind.isNotEmpty()) query["kind"] = kind
+        val result = request("media/people", accessToken, query = query,
+            pathTailSegments = listOf(if (person.suggested) "suggestions" else "identities", person.id, "items"))
+        return parseGalleryRange(result, offset, initialLatest, kind, sortBy, sortDir)
+    }
+
     override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
         val records = requestArray("media/albums", accessToken)
         if (records.size > 4096) invalidPayload()
@@ -2184,9 +2243,11 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 else -> invalidPayload()
             }
             GalleryAsset(itemNode, kind, captured, duration, live, hasThumb,
-                favorite = favorite)
+                favorite = favorite, contentKey = entry.optionalString("content_key")?.also {
+                    if (!validPhotoContentKey(it)) invalidPayload()
+                })
         }
-        if (items.map { it.node.id }.toSet().size != items.size ||
+        if (items.map { it.identity }.toSet().size != items.size ||
             (total > returnedOffset && items.isEmpty())) invalidPayload()
         return GalleryPage(items, total, returnedOffset.toInt(), 60,
             if (sortBy == "captured" && sortDir == "asc")
@@ -2200,13 +2261,13 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         accessToken: String, items: List<GalleryAsset>, favorite: Boolean,
     ): Int {
         require(validToken(accessToken) && items.size in 1..200 &&
-            items.map { it.node.id }.toSet().size == items.size &&
+            items.map { it.identity }.toSet().size == items.size &&
             items.all { it.node.id > 0 && it.node.revision > 0 &&
                 it.node.type == "file" && it.mediaKind in setOf("image", "video") }) {
             "Invalid Owner media selection"
         }
         val body = JsonObject(mapOf(
-            "node_ids" to JsonArray(items.map { JsonPrimitive(it.node.id) }),
+            galleryContentSelection(items),
             "favorite" to JsonPrimitive(favorite),
         ))
         val answer = request("media/batch/favorite", accessToken,
@@ -2223,7 +2284,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         accessToken: String, items: List<GalleryAsset>, tags: List<String>,
     ): Int {
         require(validToken(accessToken) && items.size in 1..200 &&
-            items.map { it.node.id }.toSet().size == items.size &&
+            items.map { it.identity }.toSet().size == items.size &&
             items.all { it.node.id > 0 && it.node.revision > 0 &&
                 it.node.type == "file" && it.mediaKind in setOf("image", "video") }) {
             "Invalid Owner media selection"
@@ -2231,7 +2292,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         val normalized = parseGalleryTagInput(tags.joinToString(","))
             ?: throw IllegalArgumentException("Invalid tags")
         val payload = JsonObject(mapOf(
-            "node_ids" to JsonArray(items.map { JsonPrimitive(it.node.id) }),
+            galleryContentSelection(items),
             "tags" to JsonArray(normalized.map { JsonPrimitive(it) }),
         ))
         val answer = request("media/batch/tags", accessToken, bodyObject = payload)
@@ -2254,13 +2315,13 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             album.id.startsWith("manual:") && validGalleryAlbumId(album.id) &&
             album.revision > 0 && album.revision < Long.MAX_VALUE - 1 &&
             album.itemCount >= 0 && album.itemCount <= Long.MAX_VALUE - items.size &&
-            items.size in 1..200 && items.map { it.node.id }.toSet().size == items.size &&
+            items.size in 1..200 && items.map { it.identity }.toSet().size == items.size &&
             items.all { it.node.id > 0 && it.node.revision > 0 &&
                 it.node.type == "file" && it.mediaKind in setOf("image", "video") }) {
             "Invalid Owner album selection"
         }
         val body = JsonObject(mapOf(
-            "node_ids" to JsonArray(items.map { JsonPrimitive(it.node.id) }),
+            galleryContentSelection(items),
         ))
         val response = request(
             "media/albums", accessToken, bodyObject = body, ifMatch = album.revision,
@@ -2299,7 +2360,10 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         val saved = galleryAlbumDTO(request(
             "media/albums", accessToken, method = "DELETE",
             ifMatch = album.revision,
-            pathTailSegments = listOf(album.id, "items", item.node.id.toString()),
+            pathTailSegments = if (item.contentKey != null) {
+                require(validPhotoContentKey(item.contentKey))
+                listOf(album.id, "content", item.contentKey)
+            } else listOf(album.id, "items", item.node.id.toString()),
         ))
         // The selected item must have been a real loaded member. Go returns the
         // old revision on no-op: never report a verified removal in that case.
@@ -2335,6 +2399,22 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             saved.itemCount != album.itemCount ||
             saved.revision !in album.revision..(album.revision + 1) ||
             (nodeId > 0 && saved.coverNodeId != nodeId)) invalidPayload()
+        return saved
+    }
+
+    override suspend fun gallerySetManualAlbumContentCover(accessToken: String,
+        album: GalleryAlbum, item: GalleryAsset): GalleryAlbum {
+        val key = item.contentKey ?: return gallerySetManualAlbumCover(accessToken, album, item.node.id)
+        require(validToken(accessToken) && validPhotoContentKey(key) &&
+            validGalleryAlbumId(album.id) && album.kind == "manual" &&
+            album.revision in 1 until Long.MAX_VALUE && album.itemCount > 0)
+        val saved = galleryAlbumDTO(request("media/albums", accessToken,
+            bodyObject = JsonObject(mapOf("content_key" to JsonPrimitive(key))),
+            method = "PUT", ifMatch = album.revision,
+            pathTailSegments = listOf(album.id, "cover")))
+        if (saved.id != album.id || saved.kind != "manual" || saved.name != album.name ||
+            saved.albumFolderId != album.albumFolderId || saved.itemCount != album.itemCount ||
+            saved.revision !in album.revision..(album.revision + 1) || saved.coverNodeId == null) invalidPayload()
         return saved
     }
 
@@ -2689,6 +2769,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         longRunning: Boolean = false,
         pathTailSegments: List<String> = emptyList(),
         deviceIdentity: NativeAndroidDeviceEnrollment? = null,
+        expectedStatus: Int? = null,
     ): JsonElement {
         // Device headers are allowed on exactly one read-only identity route.
         // A token never appears in the query, URI, body or ordinary API calls.
@@ -2761,6 +2842,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                     try {
                         val result = response.use {
                             if (!it.isSuccessful) throw ApiException(it.code, "Server request failed", errorReason(path, it))
+                            if (expectedStatus != null && it.code != expectedStatus) invalidPayload()
                             if (emptyResponse) return@use JsonObject(emptyMap())
                             val body = it.body ?: invalidPayload()
                             // Go returns up to 1 MiB of UTF-8 as JSON.

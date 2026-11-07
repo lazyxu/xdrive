@@ -51,3 +51,27 @@ test('Staged picker cancellation is fenced by creating Agent and cannot start lo
   assert.match(desktop, /schedule_type: 'manual'/)
   assert.match(desktop, /sync_mode: 'backup'/)
 })
+
+test('Desktop refuses old unmanaged Source create responses before granting a Root', () => {
+  const app = read('desktop', 'src', 'renderer', 'App.tsx')
+  const agent = read('cmd', 'xdrive-agent', 'cloud_files.go')
+  const validator = read('cmd', 'xdrive-agent', 'device_backup_local_create_validation.go')
+  const dialog = read('ui', 'shared', 'src', 'mui', 'DeviceBackupLocalCreateDialog.tsx')
+
+  // A successful POST alone is not a successful device-bound provisioning
+  // acknowledgement. Both Agent and Renderer fail closed on an older Server.
+  assert.match(agent, /validateCreatedLocalBackupSource\(created, input, deviceID\)/)
+  assert.match(agent, /explainLocalBackupCreateError\(err\)/)
+  assert.match(validator, /created\.DeviceID != deviceID/)
+  assert.match(validator, /!created\.TargetManaged/)
+  assert.match(validator, /created\.TargetNodeID == nil/)
+  assert.match(validator, /created\.Status != meta\.SourceStatusPaused/)
+  assert.match(app, /created\.target_managed !== true/)
+  assert.match(app, /!created\.target_path\?\.trim\(\)/)
+  assert.match(app, /created\.status !== 'paused'/)
+  assert.match(app, /本机待完成授权/)
+  assert.match(dialog, /valid source configuration is required/i)
+  assert.match(dialog, /Server 返回的受管目标/)
+  assert.doesNotMatch(dialog, /设备备份 \/ 当前设备/)
+  assert.doesNotMatch(agent, /cli\.CreateSource\(ctx, input\).*?localbackup/s)
+})

@@ -72,6 +72,8 @@ internal fun ColumnScope.GalleryCollections(
             ) { Text("新建") }
         }
     }
+    TextButton(onClick = { controller.openGalleryPeople() }, enabled = !state.loading,
+        modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-open-people")) { Text("人物与人物建议") }
     when {
         state.error != null && !state.galleryAlbumsLoaded -> Column(
             Modifier.weight(1f).fillMaxWidth().padding(20.dp)

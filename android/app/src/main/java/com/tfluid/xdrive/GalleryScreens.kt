@@ -182,7 +182,7 @@ internal fun ColumnScope.Gallery(
 
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Text(state.gallerySelectedAlbum?.name ?: if (state.gallerySearchQuery.isEmpty()) "图库" else "搜索结果",
+        Text(state.gallerySelectedPerson?.title ?: state.gallerySelectedAlbum?.name ?: if (state.gallerySearchQuery.isEmpty()) "图库" else "搜索结果",
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (state.galleryLoaded) Text("${state.galleryTotal} 项",
@@ -438,7 +438,7 @@ internal fun ColumnScope.Gallery(
         LaunchedEffect(returnIndex, state.galleryLoaded, blankTop, gridState) {
             if (returnIndex != null && state.galleryLoaded &&
                 returnIndex in state.galleryItems.indices) {
-                val id = state.galleryItems[returnIndex].node.id
+                val id = state.galleryItems[returnIndex].identity
                 if (gridState.layoutInfo.visibleItemsInfo.none { it.key == id }) {
                     gridState.scrollToItem(returnIndex + if (blankTop > 0.dp) 1 else 0)
                 }
@@ -466,10 +466,10 @@ internal fun ColumnScope.Gallery(
             if (blankTop > 0.dp) item(key = "tail-spacer", span = { GridItemSpan(maxLineSpan) }) {
                 Spacer(Modifier.fillMaxWidth().height(blankTop))
             }
-            items(state.galleryItems, key = { it.node.id }) { item ->
+            items(state.galleryItems, key = { it.identity }) { item ->
                 GalleryTile(item, controller, bitmaps, containTiles,
                     state.gallerySelectionMode,
-                    state.gallerySelectedItems.any { it.node.id == item.node.id },
+                    state.gallerySelectedItems.any { it.identity == item.identity },
                     restoreFocus = !state.gallerySelectionMode &&
                         returnIndex != null &&
                         state.galleryItems.getOrNull(returnIndex)?.node == item.node,
@@ -508,7 +508,10 @@ internal fun ColumnScope.Gallery(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (state.gallerySelectedAlbum != null) {
+                    if (state.gallerySelectedPerson != null) {
+                        TextButton(onClick = controller::closeGalleryPerson,
+                            modifier = Modifier.heightIn(min = 48.dp)) { Text("返回人物") }
+                    } else if (state.gallerySelectedAlbum != null) {
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
                             shape = RoundedCornerShape(50.dp), tonalElevation = 2.dp,

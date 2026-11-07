@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photoasset"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -28,10 +29,11 @@ func (s *Server) setMediaAlbumCover(c *gin.Context) {
 		return
 	}
 	var input struct {
-		NodeID *uint64 `json:"node_id" binding:"required"`
+		NodeID     *uint64 `json:"node_id"`
+		ContentKey *string `json:"content_key"`
 	}
-	if err := c.ShouldBindJSON(&input); err != nil || input.NodeID == nil {
-		fail(c, http.StatusBadRequest, "node_id is required (0 restores automatic cover)")
+	if err := c.ShouldBindJSON(&input); err != nil || (input.NodeID == nil) == (input.ContentKey == nil) || (input.ContentKey != nil && *input.ContentKey != "" && !photoasset.ValidContentKey(*input.ContentKey)) {
+		fail(c, http.StatusBadRequest, "choose node_id or content_key (0 or empty restores automatic cover)")
 		return
 	}
 
@@ -51,35 +53,44 @@ func (s *Server) setMediaAlbumCover(c *gin.Context) {
 		}
 
 		var nodeID *uint64
-		if *input.NodeID != 0 {
-			var count int64
-			err := tx.Table("xd_photo_collection_assets AS pca").
-				Joins("JOIN xd_photo_assets AS pa ON pa.id = pca.asset_id AND pa.owner_id = ?", userID(c)).
-				Joins("JOIN xd_nodes AS n ON n.id = pa.primary_node_id AND n.owner_id = ? AND n.deleted_at IS NULL", userID(c)).
-				Joins("JOIN xd_media_metadata AS mm ON mm.node_id = pa.primary_node_id").
-				Where(
-					"pca.collection_id = ? AND pa.primary_node_id = ? AND mm.media_kind IN ?",
-					collection.ID, *input.NodeID, []string{meta.MediaKindImage, meta.MediaKindVideo},
-				).
-				Count(&count).Error
+		contentKey := ""
+		if (input.NodeID != nil && *input.NodeID != 0) || (input.ContentKey != nil && *input.ContentKey != "") {
+			var nodes []uint64
+			var keys []string
+			if input.NodeID != nil {
+				nodes = []uint64{*input.NodeID}
+			} else {
+				keys = []string{*input.ContentKey}
+			}
+			assets, err := mediaAssetsForSelection(c.Request.Context(), tx, userID(c), nodes, keys)
 			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errMediaAlbumCoverNotMember
+				}
 				return err
 			}
-			if count == 0 {
+			asset := assets[0]
+			var count int64
+			if err := tx.Model(&meta.PhotoCollectionAsset{}).Where("collection_id = ? AND asset_id = ?", collection.ID, asset.ID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count != 1 {
 				return errMediaAlbumCoverNotMember
 			}
-			nodeID = input.NodeID
+			nodeID, contentKey = &asset.PrimaryNodeID, asset.ContentKey
 		}
-		if (nodeID == nil && collection.PreferredCoverNodeID == nil) ||
-			(nodeID != nil && collection.PreferredCoverNodeID != nil && *nodeID == *collection.PreferredCoverNodeID) {
+		sameNode := (nodeID == nil && collection.PreferredCoverNodeID == nil) || (nodeID != nil && collection.PreferredCoverNodeID != nil && *nodeID == *collection.PreferredCoverNodeID)
+		if sameNode && contentKey == collection.PreferredCoverContentKey {
 			return nil
 		}
+
 		result := tx.Model(&meta.PhotoCollection{}).
 			Where("id = ? AND revision = ?", collection.ID, expected).
 			Updates(map[string]any{
-				"preferred_cover_node_id": nodeID,
-				"revision":                gorm.Expr("revision + 1"),
-				"updated_at":              time.Now().UTC(),
+				"preferred_cover_node_id":     nodeID,
+				"preferred_cover_content_key": contentKey,
+				"revision":                    gorm.Expr("revision + 1"),
+				"updated_at":                  time.Now().UTC(),
 			})
 		if result.Error != nil {
 			return result.Error

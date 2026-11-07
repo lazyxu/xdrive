@@ -588,6 +588,7 @@ declare global {
         getCache: (requestID?: string) => Promise<DesktopResult<AgentCacheStats>>
         getLocalDiskSpace: (requestID?: string) => Promise<DesktopResult<AgentLocalDiskSpace>>
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
+        photoContent: <T>(input: unknown, requestID?: string) => Promise<DesktopResult<T>>
         getMediaItem: (nodeID: number, requestID: string) => Promise<DesktopResult<AgentMediaItem>>
         cancelMediaItem: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
         getMediaItems: (

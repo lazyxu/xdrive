@@ -59,9 +59,26 @@ test('native context shortcuts reuse real Owner-scoped file/folder actions, not 
   assert.equal((browser.match(/nativeQuickActions\(for: entry\)/g) || []).length, 3)
   assert.match(browser, /@ViewBuilder private func nativeQuickActions\(for entry:/)
   assert.match(browser, /if !entry\.node\.isDirectory \{\s*Button \{\s*openViewer\(entry\)/)
-  for (const action of ['copy', 'move', 'rename', 'favorite', 'shareLink', 'download', 'trash']) {
-    assert.match(browser, new RegExp('openManagement\\(for: entry\\.node, quickAction: \\.' + action + '\\)'))
+  // Row actions that mutate the canonical Node execute behind the verified
+  // Owner/revision/busy guard. Only share/download retain the management panel.
+  const actions = browser.slice(browser.indexOf('@ViewBuilder private func nativeQuickActions('),
+    browser.indexOf('private func openManagement(',
+      browser.indexOf('@ViewBuilder private func nativeQuickActions(')))
+  assert.ok(actions.length > 0)
+  assert.match(actions, /captureItem\(entry, kind: \.copy\)/)
+  assert.match(actions, /captureItem\(entry, kind: \.move\)/)
+  assert.match(actions, /requestRowDestination\(entry\.node, kind: \.copy\)/)
+  assert.match(actions, /requestRowDestination\(entry\.node, kind: \.move\)/)
+  assert.match(actions, /requestQuickRename\(entry\.node\)/)
+  assert.match(actions, /requestQuickFavorite\(entry\.node\)/)
+  assert.match(actions, /requestQuickTrash\(entry\.node\)/)
+  for (const action of ['shareLink', 'download']) {
+    assert.match(actions, new RegExp('openManagement\\(for: entry\\.node, quickAction: \\.' + action + '\\)'))
   }
+  assert.doesNotMatch(actions,
+    /openManagement\(for: entry\.node, quickAction: \.(?:copy|move|rename|favorite|trash)\)/)
+  assert.match(browser, /private func canQuickMutate\([\s\S]*?model\.verifiedPage/)
+  assert.match(browser, /private func requestRowDestination\([\s\S]*?canQuickMutate\(node\)/)
   assert.match(browser, /Button\(role: \.destructive\)/)
   assert.match(browser, /quickAction: quickAction/)
   assert.match(browser, /initialQuickAction: intent\.quickAction/)

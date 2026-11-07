@@ -56,7 +56,8 @@ test('media request is lazy, cancellable and rejects stale Node/revision respons
 })
 
 test('Web and Desktop fetch the canonical single MediaItem without traversing the media wall', () => {
-  assert.match(webApi, /mediaItem\(nodeID: number, signal\?: AbortSignal\)/)
+  assert.match(webApi, /mediaItem\(nodeID: number, signal\?: AbortSignal, contentKey\?: string\)/)
+  assert.match(webApi, /photoContentPath\(nodeID, contentKey\)/)
   assert.match(webExplorer, /xDriveFileExplorerReadNodeID\(item, !signal\.aborted\)/)
   assert.match(webExplorer, /nodeID === null \? Promise\.resolve\(null\) : api\.mediaItem\(nodeID, signal\)/)
   assert.match(webExplorer, /loadMediaItem=\{trashActive \? undefined : loadMediaItem\}/)

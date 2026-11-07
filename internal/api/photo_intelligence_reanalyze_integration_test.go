@@ -412,9 +412,9 @@ func openPhotoIntelligenceAPITestDB(
 	if err := db.AutoMigrate(
 		&meta.User{},
 		&meta.RefreshToken{},
-		&meta.Node{},
+		&meta.Node{}, &meta.File{},
 		&meta.AuditEvent{},
-		&meta.PhotoAsset{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoAnalysisState{},
 		&meta.PhotoPersonClusterState{},
 		&meta.BackgroundOwnerCancellation{},

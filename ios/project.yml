@@ -29,6 +29,7 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         CFBundleDisplayName: xDrive
+        XDriveSourceCommit: $(XDRIVE_SOURCE_COMMIT)
         UILaunchScreen: {}
         LSRequiresIPhoneOS: true
         NSLocalNetworkUsageDescription: 用于连接你局域网内的 xDrive 服务器。

@@ -498,8 +498,10 @@ func queryMediaTripDays(
 		"FLOOR(xd_media_metadata.latitude * %d)::bigint",
 		mediaMemoryTripCellScale,
 	)
+	// +180 and -180 describe one WGS84 meridian. Group them into
+	// the same cell before choosing each day's dominant GPS location.
 	lonExpr := fmt.Sprintf(
-		"FLOOR(xd_media_metadata.longitude * %d)::bigint",
+		"FLOOR((CASE WHEN xd_media_metadata.longitude = 180 THEN -180 ELSE xd_media_metadata.longitude END) * %d)::bigint",
 		mediaMemoryTripCellScale,
 	)
 	var rows []row
@@ -565,8 +567,20 @@ func queryMediaTripDays(
 	return dominant, nil
 }
 
+// Signed EXIF +180 and -180 represent the same meridian. Keep one
+// canonical home-location key even when the original GPS sign differs.
+func mediaMemoryTripCanonicalLongitudeCell(cell int64) int64 {
+	half := int64(180) * mediaMemoryTripCellScale
+	circle := 2 * half
+	wrapped := (cell + half) % circle
+	if wrapped < 0 {
+		wrapped += circle
+	}
+	return wrapped - half
+}
+
 func mediaMemoryTripCellKey(day mediaMemoryTripDay) string {
-	return fmt.Sprintf("%d:%d", day.LatitudeCell, day.LongitudeCell)
+	return fmt.Sprintf("%d:%d", day.LatitudeCell, mediaMemoryTripCanonicalLongitudeCell(day.LongitudeCell))
 }
 
 func mediaMemoryTripNearHome(
@@ -577,9 +591,15 @@ func mediaMemoryTripNearHome(
 	if latDistance < 0 {
 		latDistance = -latDistance
 	}
-	lonDistance := day.LongitudeCell - homeLon
+	lonDistance := mediaMemoryTripCanonicalLongitudeCell(day.LongitudeCell) -
+		mediaMemoryTripCanonicalLongitudeCell(homeLon)
 	if lonDistance < 0 {
 		lonDistance = -lonDistance
+	}
+	// The shortest WGS84 distance may cross the antimeridian.
+	circle := int64(360) * mediaMemoryTripCellScale
+	if lonDistance > circle/2 {
+		lonDistance = circle - lonDistance
 	}
 	return latDistance <= 1 && lonDistance <= 1
 }

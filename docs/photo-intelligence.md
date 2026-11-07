@@ -1,5 +1,10 @@
 # xDrive Photo Intelligence
 
+Photo identity, current-reference validation and the late-result completion fence
+are specified in [Photo content identity](photo-content-identity.md). Gallery
+content identity is Owner-scoped; numeric asset IDs and Nodes remain relational
+and delivery locators, respectively.
+
 > **Normative boundary:** Photo Intelligence is an optional, connector-neutral analysis layer that runs only after xDrive has created local `PhotoAsset` / `PhotoResource` / `PhotoMetadata` state. Yike, Synology Photos, FileStation, Synology Push, and future synchronization-folder connectors must not provide canonical face/person/place/visual/OCR intelligence.
 
 This document defines the architecture for automatic face/person analysis, human-readable place analysis, and rebuildable Smart Search visual/OCR/semantic analysis. It is deliberately separate from `docs/photo-source-v2-roadmap.md`: Photo Source v2 is the file-ingestion and native-media foundation; Photo Intelligence is a later derived product layer.

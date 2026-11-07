@@ -67,6 +67,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     let owner: XDriveNativeOwnerRoot
     let filter: XDriveIOSNativeGalleryPresence?
     let query: XDriveIOSNativeUnifiedGalleryQuery
+    let density: XDriveIOSNativePhotoWallDensity
     let displayActive: Bool
     let open: (XDriveIOSNativeUnifiedGalleryPage, Int) -> Void
     let loaded: () -> Void
@@ -97,13 +98,17 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     }
 
     @ViewBuilder private var content: some View {
-        if model.completed && model.belongs(to: login.owner) {
+        // Unverified thumbnails are browsable before local/remote sources
+        // reconcile. Never treat provisional tiles as proven paired, or
+        // advance mixed cursor pagination until the bounded window commits.
+        if model.belongs(to: login.owner) &&
+            (model.completed || (!model.rows.isEmpty && filter == nil && query == .init())) {
             let groups = Dictionary(grouping: model.rows) { $0.capturedAt.map { Calendar.current.startOfDay(for: $0) } }
             let days = groups.keys.sorted { ($0 ?? .distantPast) > ($1 ?? .distantPast) }
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(days, id: \.self) { day in
-                    Text(day?.formatted(date: .abbreviated, time: .omitted) ?? "拍摄日期未知").font(.headline)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 4)], spacing: 4) {
+                    XDriveIOSNativePhotoWallDayHeader(title: day?.formatted(date: .abbreviated, time: .omitted) ?? "拍摄日期未知")
+                    XDriveIOSNativePhotoWallGrid(density: density) {
                         ForEach(groups[day] ?? []) { row in
                             Button {
                                 guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
@@ -125,6 +130,10 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                     Text(model.next == nil ? "已浏览到底，没有更多符合条件的照片" : "正在查找符合条件的照片…")
                         .font(.footnote).foregroundStyle(.secondary).frame(minHeight: 36)
                 }
+                if !model.completed {
+                    ProgressView("正在加载当前页面与来源状态…")
+                        .font(.footnote).accessibilityIdentifier("native-ios-gallery-visible-proof")
+                }
                 if let message = model.notice { Text(message).font(.footnote).foregroundStyle(.secondary) }
             }
         } else {
@@ -133,7 +142,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                     Text(message).font(.footnote)
                     Button("重新读取") { retry = UUID() }
                 } else if visible && displayActive {
-                    ProgressView("读取并核对照片…")
+                    ProgressView("正在读取照片与缩略图…")
                 }
             }
             .frame(maxWidth: .infinity, minHeight: page.height)

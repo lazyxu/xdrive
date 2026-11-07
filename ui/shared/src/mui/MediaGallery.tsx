@@ -1,3 +1,5 @@
+import type { PhotoContentSources } from '../photo-content-identity'
+import { photoContentIdentity, photoContentKeys } from '../photo-content-identity'
 import { xDriveViewerForegroundActive, xDriveObserveViewerForeground, xDriveBeginForegroundContentTransition, xDriveForegroundContentTransitionPending } from './ViewerForegroundPriority'
 import { xDriveMediaGallerySelectionScopeKey } from '../media-gallery-selection-scope'
 import { xDrivePrototypeTrustedSingleton, xDrivePrototypeCanonicalPlaceID, xDrivePrototypeSingletonScopeValid } from '../media-gallery-baidu-prototype-singleton'
@@ -269,7 +271,8 @@ export interface MediaGalleryDataSource {
     query?: MediaGalleryQuery,
     signal?: AbortSignal,
   ) => Promise<MediaItemRange>
-  getItem?: (nodeID: number, signal?: AbortSignal) => Promise<MediaItem>
+  listContentSources?: (key: string, cursor?: string, signal?: AbortSignal) => Promise<PhotoContentSources>
+  getItem?: (nodeID: number, signal?: AbortSignal, contentKey?: string) => Promise<MediaItem>
   listFacets?: (query?: MediaGalleryQuery, albumID?: string) => Promise<MediaGalleryFacets>
   getIndexStatus?: () => Promise<MediaGalleryIndexStatus>
   createSelectionSnapshot?: (
@@ -479,17 +482,17 @@ export interface MediaGalleryDataSource {
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
   saveVideoPoster?: MediaVideoPosterSaver
-  setFavorite?: (nodeID: number, favorite: boolean) => Promise<void>
-  setFavoriteBatch?: (nodeIDs: number[], favorite: boolean) => Promise<void>
-  addTagsBatch?: (nodeIDs: number[], tags: string[]) => Promise<void>
+  setFavorite?: (nodeID: number, favorite: boolean, contentKey?: string) => Promise<void>
+  setFavoriteBatch?: (nodeIDs: number[], favorite: boolean, contentKeys?: string[]) => Promise<void>
+  addTagsBatch?: (nodeIDs: number[], tags: string[], contentKeys?: string[]) => Promise<void>
   deleteItems?: (items: MediaItem[]) => Promise<MediaGalleryDeleteOperation | void>
   downloadItems?: (items: MediaItem[], clientRequestID?: string) => Promise<void | { saved: boolean }>
   /** Desktop-only live Agent receipt; subscribed by the mounted Viewer, not the 100k wall. */
   viewerDownloadReceipt?: XDriveViewerDownloadReceiptPort
   exportLivePhoto?: (item: MediaItem) => Promise<void>
-  setTags?: (nodeID: number, tags: string[]) => Promise<string[]>
-  setPeople?: (nodeID: number, people: string[]) => Promise<string[]>
-  setDescription?: (nodeID: number, description: string) => Promise<string>
+  setTags?: (nodeID: number, tags: string[], contentKey?: string) => Promise<string[]>
+  setPeople?: (nodeID: number, people: string[], contentKey?: string) => Promise<string[]>
+  setDescription?: (nodeID: number, description: string, contentKey?: string) => Promise<string>
   saveEditRecipe?: (
     nodeID: number,
     input: MediaEditRecipeInput,
@@ -518,9 +521,9 @@ export interface MediaGalleryDataSource {
   deleteSmartAlbum?: (albumID: string, revision: number) => Promise<void>
   renameAlbum?: (albumID: string, revision: number, name: string) => Promise<MediaAlbum>
   deleteAlbum?: (albumID: string, revision: number) => Promise<void>
-  setAlbumCover?: (albumID: string, revision: number, nodeID: number) => Promise<MediaAlbum>
-  addToAlbum?: (albumID: string, revision: number, nodeIDs: number[]) => Promise<MediaAlbum>
-  removeFromAlbum?: (albumID: string, revision: number, nodeID: number) => Promise<MediaAlbum>
+  setAlbumCover?: (albumID: string, revision: number, nodeID: number, contentKey?: string) => Promise<MediaAlbum>
+  addToAlbum?: (albumID: string, revision: number, nodeIDs: number[], contentKeys?: string[]) => Promise<MediaAlbum>
+  removeFromAlbum?: (albumID: string, revision: number, nodeID: number, contentKey?: string) => Promise<MediaAlbum>
 }
 
 export type MediaCleanupReviewTarget =
@@ -2471,7 +2474,7 @@ export function XDriveMediaGalleryPage({
 
   const addToAlbum = useCallback(async (album: MediaAlbum, item: MediaItem) => {
     if (!source.addToAlbum || !album.revision) throw new Error('当前相册不可编辑')
-    const updated = await source.addToAlbum(album.id, album.revision, [item.node.id])
+    const updated = await source.addToAlbum(album.id, album.revision, [item.node.id], photoContentKeys([item]))
     replaceAlbum(updated)
     return updated
   }, [replaceAlbum, source])
@@ -2479,7 +2482,7 @@ export function XDriveMediaGalleryPage({
   const setAlbumCover = useCallback(async (album: MediaAlbum, item?: MediaItem) => {
     if (!source.setAlbumCover || !album.revision) throw new Error('当前客户端不支持设置相册封面')
     try {
-      const updated = await source.setAlbumCover(album.id, album.revision, item?.node.id ?? 0)
+      const updated = await source.setAlbumCover(album.id, album.revision, item?.node.id ?? 0, item?.content_key)
       replaceAlbum(updated)
       return updated
     } catch (error) {
@@ -2491,7 +2494,7 @@ export function XDriveMediaGalleryPage({
 
   const removeFromAlbum = useCallback(async (album: MediaAlbum, item: MediaItem) => {
     if (!source.removeFromAlbum || !album.revision) throw new Error('当前相册不可编辑')
-    const updated = await source.removeFromAlbum(album.id, album.revision, item.node.id)
+    const updated = await source.removeFromAlbum(album.id, album.revision, item.node.id, item.content_key)
     replaceAlbum(updated)
     if (currentAlbum?.id === album.id) {
       await loadFirstPage(updated, query)
@@ -3562,14 +3565,14 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage, onError, source])
 
   const patchLoadedItems = useCallback((
-    nodeID: number,
+    original: MediaItem,
     updater: (item: MediaItem) => MediaItem,
   ) => {
     setItems((current) => current.map((item) => (
-      item.node.id === nodeID ? updater(item) : item
+      photoContentIdentity(item) === photoContentIdentity(original) ? updater(item) : item
     )))
     virtualCollection.updateLoadedItems((item) => (
-      item.node.id === nodeID ? updater(item) : item
+      photoContentIdentity(item) === photoContentIdentity(original) ? updater(item) : item
     ))
   }, [virtualCollection.updateLoadedItems])
 
@@ -3580,8 +3583,8 @@ export function XDriveMediaGalleryPage({
     if (!source.setFavorite) return
     setError('')
     try {
-      await source.setFavorite(item.node.id, favorite)
-      patchLoadedItems(item.node.id, (value) => ({ ...value, favorite }))
+      await source.setFavorite(item.node.id, favorite, item.content_key)
+      patchLoadedItems(item, (value) => ({ ...value, favorite }))
       if (
         query.favorite !== undefined ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.favorite !== undefined)
@@ -3609,8 +3612,8 @@ export function XDriveMediaGalleryPage({
     if (!source.setTags) return item.tags || []
     setError('')
     try {
-      const normalized = await source.setTags(item.node.id, tags)
-      patchLoadedItems(item.node.id, (value) => ({ ...value, tags: normalized }))
+      const normalized = await source.setTags(item.node.id, tags, item.content_key)
+      patchLoadedItems(item, (value) => ({ ...value, tags: normalized }))
       if (
         query.tag ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.tag)
@@ -3638,8 +3641,8 @@ export function XDriveMediaGalleryPage({
     if (!source.setPeople) return item.people || []
     setError('')
     try {
-      const normalized = await source.setPeople(item.node.id, people)
-      patchLoadedItems(item.node.id, (value) => ({ ...value, people: normalized }))
+      const normalized = await source.setPeople(item.node.id, people, item.content_key)
+      patchLoadedItems(item, (value) => ({ ...value, people: normalized }))
       if (
         query.person ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.person)
@@ -3667,8 +3670,8 @@ export function XDriveMediaGalleryPage({
     if (!source.setDescription) return item.description || ''
     setError('')
     try {
-      const normalized = await source.setDescription(item.node.id, description)
-      patchLoadedItems(item.node.id, (value) => ({ ...value, description: normalized }))
+      const normalized = await source.setDescription(item.node.id, description, item.content_key)
+      patchLoadedItems(item, (value) => ({ ...value, description: normalized }))
       if (
         query.search ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.search)
@@ -3700,7 +3703,7 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const recipe = await source.saveEditRecipe(item.node.id, input)
-      patchLoadedItems(item.node.id, (value) => ({
+      patchLoadedItems(item, (value) => ({
         ...value,
         edit_recipe: recipe.revision ? recipe : undefined,
       }))
@@ -3722,7 +3725,7 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const recipe = await source.resetEditRecipe(item.node.id, revision)
-      patchLoadedItems(item.node.id, (value) => ({
+      patchLoadedItems(item, (value) => ({
         ...value,
         edit_recipe: recipe.revision ? recipe : undefined,
       }))
@@ -3743,7 +3746,7 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const nodeIDs = selectedItems.map((item) => item.node.id)
-      await source.setFavoriteBatch(nodeIDs, favorite)
+      await source.setFavoriteBatch(nodeIDs, favorite, photoContentKeys(selectedItems))
       const selectedIDs = new Set(nodeIDs)
       setItems((current) => current.map((item) => (
         selectedIDs.has(item.node.id) ? { ...item, favorite } : item
@@ -3785,7 +3788,7 @@ export function XDriveMediaGalleryPage({
     if (!source.addTagsBatch || selectedItems.length === 0) return
     setError('')
     try {
-      await source.addTagsBatch(selectedItems.map((item) => item.node.id), tags)
+      await source.addTagsBatch(selectedItems.map((item) => item.node.id), tags, photoContentKeys(selectedItems))
       await loadFirstPage(
         currentAlbum,
         currentAlbum?.kind === 'smart' ? {} : query,
@@ -3821,6 +3824,7 @@ export function XDriveMediaGalleryPage({
         album.id,
         album.revision,
         selectedItems.map((item) => item.node.id),
+        photoContentKeys(selectedItems),
       )
       if (ownerScope === deletePreferenceScopeRef.current) replaceAlbum(updated)
     } catch (albumError) {
@@ -4550,6 +4554,7 @@ export function XDriveMediaGalleryPage({
           />
         )}
         loadThumbnail={source.loadThumbnail}
+        loadContentSources={source.listContentSources}
         loadMediaItem={source.getItem}
         loadNodeLocation={source.getNodeLocation}
         onShowInFolder={onShowInFolder}
@@ -5012,7 +5017,8 @@ export interface XDriveMediaGalleryProps {
   filters?: ReactNode
   querySelectionActions?: XDriveMediaGalleryQuerySelectionActions
   loadThumbnail: MediaThumbnailLoader
-  loadMediaItem?: (nodeID: number, signal?: AbortSignal) => Promise<MediaItem>
+  loadContentSources?: (key: string, cursor?: string, signal?: AbortSignal) => Promise<PhotoContentSources>
+  loadMediaItem?: (nodeID: number, signal?: AbortSignal, contentKey?: string) => Promise<MediaItem>
   loadMusicRoot?: () => Promise<Node>
   listMusicChildren?: (parentID: number) => Promise<Node[]>
   loadLivePhotoMotion?: MediaMotionLoader
@@ -5754,7 +5760,7 @@ function MediaTileGrid({
   onSetFavorite,
   onSetCover,
   selectionMode,
-  selectedNodeIDs,
+  selectedContentKeys,
   onSelect,
   onOpen,
   onPreview,
@@ -5768,7 +5774,7 @@ function MediaTileGrid({
   referenceColumnWidth?: number
   baselineColumns?: number
   selectionMode: boolean
-  selectedNodeIDs: ReadonlySet<number>
+  selectedContentKeys: ReadonlySet<string>
   onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
   indexOffset?: number
   loadThumbnail: MediaThumbnailLoader
@@ -5830,11 +5836,11 @@ function MediaTileGrid({
     >
       {items.map((item, index) => (
         <MediaTile
-          key={item.node.id}
+          key={photoContentIdentity(item)}
           item={item}
           logicalIndex={indexOffset + index}
           selectionMode={selectionMode}
-          selectedForAction={selectedNodeIDs.has(item.node.id)}
+          selectedForAction={selectedContentKeys.has(photoContentIdentity(item))}
           recommendedForCleanup={item.node.id === recommendedNodeID}
           onSelect={onSelect}
           loadThumbnail={loadThumbnail}
@@ -5888,7 +5894,7 @@ function MediaVirtualTileGrid({
   onSetFavorite,
   onSetCover,
   selectionMode,
-  selectedNodeIDs,
+  selectedContentKeys,
   onSelect,
   onOpen,
   onPreview,
@@ -5906,7 +5912,7 @@ function MediaVirtualTileGrid({
   referenceColumnWidth?: number
   baselineColumns?: number
   selectionMode: boolean
-  selectedNodeIDs: ReadonlySet<number>
+  selectedContentKeys: ReadonlySet<string>
   onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
   loadThumbnail: MediaThumbnailLoader
   thumbnailScheduler: XDriveMediaThumbnailScheduler
@@ -6139,11 +6145,11 @@ function MediaVirtualTileGrid({
     slots.push(
       item ? (
         <MediaTile
-          key={item.node.id}
+          key={photoContentIdentity(item)}
           item={item}
           logicalIndex={index}
           selectionMode={selectionMode}
-          selectedForAction={selectedNodeIDs.has(item.node.id)}
+          selectedForAction={selectedContentKeys.has(photoContentIdentity(item))}
           recommendedForCleanup={item.node.id === recommendedNodeID}
           onSelect={onSelect}
           loadThumbnail={loadThumbnail}
@@ -6236,7 +6242,7 @@ function MediaVirtualTimeline({
   onSetFavorite,
   onSetCover,
   selectionMode,
-  selectedNodeIDs,
+  selectedContentKeys,
   onSelect,
   onOpen,
   onPreview,
@@ -6254,7 +6260,7 @@ function MediaVirtualTimeline({
   referenceColumnWidth?: number
   baselineColumns?: number
   selectionMode: boolean
-  selectedNodeIDs: ReadonlySet<number>
+  selectedContentKeys: ReadonlySet<string>
   onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
   loadThumbnail: MediaThumbnailLoader
   thumbnailScheduler: XDriveMediaThumbnailScheduler
@@ -6484,11 +6490,11 @@ function MediaVirtualTimeline({
           slots.push(
             item ? (
               <MediaTile
-                key={item.node.id}
+                key={photoContentIdentity(item)}
                 item={item}
                 logicalIndex={index}
                 selectionMode={selectionMode}
-                selectedForAction={selectedNodeIDs.has(item.node.id)}
+                selectedForAction={selectedContentKeys.has(photoContentIdentity(item))}
                 onSelect={onSelect}
                 loadThumbnail={loadThumbnail}
                 thumbnailScheduler={thumbnailScheduler}
@@ -6732,6 +6738,7 @@ export function XDriveMediaGallery({
   filters,
   querySelectionActions,
   loadThumbnail,
+  loadContentSources,
   loadMediaItem,
   loadNodeLocation,
   onShowInFolder,
@@ -6919,7 +6926,7 @@ export function XDriveMediaGallery({
   const selectionControlRef = useRef<HTMLButtonElement | null>(null)
   const restoreSelectionFocusRef = useRef(false)
   const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null)
-  const [selectedMediaItems, setSelectedMediaItems] = useState<Map<number, MediaItem>>(
+  const [selectedMediaItems, setSelectedMediaItems] = useState<Map<string, MediaItem>>(
     () => new Map(),
   )
   const [collageDialogItems, setCollageDialogItems] = useState<MediaItem[] | null>(null)
@@ -6989,20 +6996,20 @@ export function XDriveMediaGallery({
   }, [personNameDialog, suggestedPeople, suggestionTargetDialog])
 
   const patchLocalMediaItem = useCallback((
-    nodeID: number,
+    original: MediaItem,
     updater: (item: MediaItem) => MediaItem,
   ) => {
     setSelected((current) => (
-      current?.node.id === nodeID ? updater(current) : current
+      current && photoContentIdentity(current) === photoContentIdentity(original) ? updater(current) : current
     ))
     setPreviewItem((current) => (
-      current?.node.id === nodeID ? updater(current) : current
+      current && photoContentIdentity(current) === photoContentIdentity(original) ? updater(current) : current
     ))
     setSelectedMediaItems((current) => {
-      const selectedItem = current.get(nodeID)
+      const selectedItem = current.get(photoContentIdentity(original))
       if (!selectedItem) return current
       const next = new Map(current)
-      next.set(nodeID, updater(selectedItem))
+      next.set(photoContentIdentity(original), updater(selectedItem))
       return next
     })
   }, [])
@@ -7013,7 +7020,7 @@ export function XDriveMediaGallery({
   ) => {
     if (!onSaveEditRecipe) throw new Error('当前客户端不支持媒体编辑')
     const recipe = await onSaveEditRecipe(item, input)
-    patchLocalMediaItem(item.node.id, (value) => ({
+    patchLocalMediaItem(item, (value) => ({
       ...value,
       edit_recipe: recipe.revision ? recipe : undefined,
     }))
@@ -7026,7 +7033,7 @@ export function XDriveMediaGallery({
   ) => {
     if (!onResetEditRecipe) throw new Error('当前客户端不支持重置媒体编辑')
     const recipe = await onResetEditRecipe(item, revision)
-    patchLocalMediaItem(item.node.id, (value) => ({
+    patchLocalMediaItem(item, (value) => ({
       ...value,
       edit_recipe: recipe.revision ? recipe : undefined,
     }))
@@ -7586,7 +7593,7 @@ export function XDriveMediaGallery({
     () => Array.from(selectedMediaItems.values()),
     [selectedMediaItems],
   )
-  const selectedNodeIDs = useMemo(
+  const selectedContentKeys = useMemo(
     () => new Set(selectedMediaItems.keys()),
     [selectedMediaItems],
   )
@@ -7635,12 +7642,12 @@ export function XDriveMediaGallery({
         const end = Math.max(index, selectionAnchorIndex)
         for (let logicalIndex = start; logicalIndex <= end; logicalIndex += 1) {
           const value = virtualCollection?.itemAt(logicalIndex) ?? items[logicalIndex]
-          if (value) next.set(value.node.id, value)
+          if (value) next.set(photoContentIdentity(value), value)
         }
-      } else if (next.has(item.node.id)) {
-        next.delete(item.node.id)
+      } else if (next.has(photoContentIdentity(item))) {
+        next.delete(photoContentIdentity(item))
       } else {
-        next.set(item.node.id, item)
+        next.set(photoContentIdentity(item), item)
       }
       return next
     })
@@ -8861,9 +8868,10 @@ export function XDriveMediaGallery({
         busy={selectionBusy}
         onRemove={(nodeID) => {
           setSelectedMediaItems((current) => {
-            if (!current.has(nodeID)) return current
+            const entry = Array.from(current).find(([, item]) => item.node.id === nodeID)
+            if (!entry) return current
             const next = new Map(current)
-            next.delete(nodeID)
+            next.delete(entry[0])
             return next
           })
         }}
@@ -9678,7 +9686,7 @@ export function XDriveMediaGallery({
               onSetFavorite={collectionSetFavorite}
               onSetCover={onChooseCollectionCover}
               selectionMode={selectionMode}
-              selectedNodeIDs={selectedNodeIDs}
+              selectedContentKeys={selectedContentKeys}
               onSelect={handleMediaSelect}
               onOpen={openMediaItem}
               onPreview={openMediaPreview}
@@ -9725,7 +9733,7 @@ export function XDriveMediaGallery({
                baselineColumns={compactGallery ? mobileBaselineColumns : undefined}
                     indexOffset={group.startIndex}
                     selectionMode={selectionMode}
-                    selectedNodeIDs={selectedNodeIDs}
+                    selectedContentKeys={selectedContentKeys}
                     onSelect={handleMediaSelect}
                     loadThumbnail={loadThumbnail}
                     thumbnailScheduler={thumbnailScheduler}
@@ -9749,7 +9757,7 @@ export function XDriveMediaGallery({
             referenceColumnWidth={XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH}
                baselineColumns={compactGallery ? mobileBaselineColumns : undefined}
             selectionMode={selectionMode}
-            selectedNodeIDs={selectedNodeIDs}
+            selectedContentKeys={selectedContentKeys}
             onSelect={handleMediaSelect}
             loadThumbnail={loadThumbnail}
             thumbnailScheduler={thumbnailScheduler}
@@ -9778,7 +9786,7 @@ export function XDriveMediaGallery({
             referenceColumnWidth={XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH}
                baselineColumns={compactGallery ? mobileBaselineColumns : undefined}
             selectionMode={selectionMode}
-            selectedNodeIDs={selectedNodeIDs}
+            selectedContentKeys={selectedContentKeys}
             onSelect={handleMediaSelect}
             loadThumbnail={loadThumbnail}
             thumbnailScheduler={thumbnailScheduler}
@@ -9995,6 +10003,7 @@ export function XDriveMediaGallery({
 
       <XDriveMediaDetailsInspector
         item={selected}
+        loadContentSources={isTrashSection ? undefined : loadContentSources}
         loadMediaItem={isTrashSection ? undefined : loadMediaItem}
         overlayZIndex={previewItem ? 1400 : undefined}
         showPreview={!previewItem}
@@ -10401,7 +10410,7 @@ export function XDriveMediaGallery({
               >
                 {items.map((item) => (
                   <FormControlLabel
-                    key={item.node.id}
+                    key={photoContentIdentity(item)}
                     control={(
                       <Checkbox
                         checked={splitNodeIDs.includes(item.node.id)}

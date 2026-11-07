@@ -1,10 +1,12 @@
 import Foundation
+import Network
 import Security
 
 @main
 enum NativeLANTrustChecks {
     static func main() throws {
         let fixtures = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+        checkBootstrapFailures()
         let ip = XDriveIOSLANAuthority(ip: "192.168.2.4", port: 8443)!
         let otherIP = XDriveIOSLANAuthority(ip: "192.168.2.5", port: 8443)!
         precondition(ip != XDriveIOSLANAuthority(ip: "192.168.2.4", port: 443))
@@ -49,6 +51,28 @@ enum NativeLANTrustChecks {
         let leafPEM = try Data(contentsOf: fixtures.appendingPathComponent("ip.pem"))
         precondition(XDriveIOSLANPairing.rootDER(from: leafPEM) == nil, "reject leaf as the root")
         print("Native LAN certificate policy checks passed")
+    }
+
+    private static func checkBootstrapFailures() {
+        let classify = XDriveIOSLANCertificateBootstrap.transportFailure
+        if case .localNetworkDenied = classify(.posix(.ENETDOWN), true) {} else {
+            preconditionFailure("permission denial must not become a certificate error")
+        }
+        if case .localNetworkDenied = classify(.dns(-65570), false) {} else {
+            preconditionFailure("policy denial must remain actionable")
+        }
+        if case .domainCertificateInvalid(let status) = classify(.tls(errSSLBadCert), false) {
+            precondition(status == errSSLBadCert)
+        } else { preconditionFailure("TLS failure was flattened") }
+        if case .connectionUnavailable(let code) = classify(.posix(.ECONNREFUSED), false) {
+            precondition(code == POSIXErrorCode.ECONNREFUSED.rawValue)
+        } else { preconditionFailure("connection refusal was flattened") }
+        if case .connectionTimedOut = classify(.posix(.ETIMEDOUT), false) {} else {
+            preconditionFailure("timeout was flattened")
+        }
+        if case .connectionTimedOut = classify(nil, false) {} else {
+            preconditionFailure("deadline without a transport error is a timeout")
+        }
     }
 
     private static func checkBootstrapFraming(_ pem: Data) throws {

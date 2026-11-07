@@ -58,6 +58,26 @@ Full target and recovery rules:
 Historical `ios/docs/shared-ios-host-adapter.md` and iOS-PWA documents
 describe removed implementations, not active app behavior or fallback code.
 
+## Diagnosing native LAN HTTPS pairing
+
+With an HTTPS domain and optional private IPv4, pairing connects directly to
+that IP at the domain URL's port. The first anonymous request verifies the
+domain certificate with system trust and domain SNI, then fetches the fixed
+public Caddy CA endpoint. A second anonymous request independently verifies
+the IP SAN and chain under that CA before storing the scoped pairing. This
+does not require an iOS hosts entry or a router's public-IP loopback support.
+
+The login form shows the client version and compiled source commit before
+authentication. Locally built apps without the source build setting report
+that the build identifier is unavailable. Pairing distinguishes local-network
+permission denial, connection failure/timeout, domain TLS failure and an
+invalid certificate-download response; it does not bypass any trust check.
+
+A Windows direct-IP/TLS test can verify the Caddy endpoints independently of
+hosts, but cannot establish that the installed iOS build or Network.framework
+connection succeeded. Record the pre-login build and exact error for a phone
+failure; keep physical-device acceptance separate from protocol tests.
+
 ## GitHub Actions: unsigned IPA for SideStore
 
 `.github/workflows/ios-unsigned-ipa.yml` builds on macOS for iOS-scoped PRs,

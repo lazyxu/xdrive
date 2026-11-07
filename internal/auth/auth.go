@@ -25,6 +25,9 @@ type Claims struct {
 	SessionVersion uint64 `json:"ver,omitempty"`
 	SourceID       uint64 `json:"source_id,omitempty"`
 	SourceRunID    string `json:"source_run_id,omitempty"`
+	// Revocable native Agent authority for a Desktop-map-derived browser
+	// bearer. Ordinary browser logins have zero; this is not a generic cookie.
+	DesktopMapNativeRefreshID uint64 `json:"desktop_map_native_refresh_id,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -52,6 +55,26 @@ func (m Manager) Issue(userID, sessionVersion uint64) (string, error) {
 		UserID:         userID,
 		TokenType:      "access",
 		SessionVersion: sessionVersion,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(m.accessTTL)),
+			Subject:   fmt.Sprintf("%d", userID),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.secret)
+}
+
+// IssueDesktopMapAccess binds a browser Access JWT to the native Agent
+// RefreshToken that authorized the one-use Desktop map exchange. requireAuth
+// must recheck that native session on every protected API request.
+func (m Manager) IssueDesktopMapAccess(userID, sessionVersion, nativeRefreshID uint64) (string, error) {
+	if userID == 0 || sessionVersion == 0 || nativeRefreshID == 0 {
+		return "", errors.New("invalid native Desktop map access binding")
+	}
+	now := time.Now()
+	claims := Claims{
+		UserID: userID, SessionVersion: sessionVersion, TokenType: "access",
+		DesktopMapNativeRefreshID: nativeRefreshID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.accessTTL)),
@@ -90,7 +113,10 @@ func (m Manager) ParseClaims(tokenString string) (Claims, error) {
 	})
 	if err != nil || !token.Valid || claims.UserID == 0 ||
 		(claims.TokenType != "" && claims.TokenType != "access") ||
-		(claims.SourceID == 0) != (claims.SourceRunID == "") {
+		(claims.SourceID == 0) != (claims.SourceRunID == "") ||
+		(claims.DesktopMapNativeRefreshID != 0 &&
+			(claims.SourceID != 0 || claims.SessionVersion == 0 ||
+				claims.TokenType != "access")) {
 		return Claims{}, errors.New("invalid token")
 	}
 	return *claims, nil

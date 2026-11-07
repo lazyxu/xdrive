@@ -38,12 +38,14 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @StateObject private var photoObserver = XDriveIOSUnifiedPhotoObserver()
     @State private var selected: XDriveIOSNativeUnifiedGallerySelection?
     @State private var sourceFilter: XDriveIOSNativeGalleryPresence?
+    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var draft = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var showFilters = false
     @State private var pairing: XDriveIOSNativeUnifiedPhoto?
     @State private var indexRequest = UUID()
     @State private var retryUnavailable = false
+    @State private var explicitOriginalAudit = false
     @State private var viewerReturnAnchor: String?
     @State private var viewerReturnPage = 0
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -54,8 +56,12 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         galleryContent
             .accessibilityIdentifier("native-ios-unified-photo-gallery")
             .task(id: indexRequest) {
-                guard phase == .active, selected == nil else { return }
+                // Viewing thumbnails must never start a whole-library SHA-256
+                // job. A user explicitly starts the optional read-only audit.
+                guard explicitOriginalAudit, phase == .active, selected == nil else { return }
+                let request = indexRequest
                 await timeline.scanLocal(login: login, retryUnavailable: retryUnavailable)
+                if indexRequest == request { explicitOriginalAudit = false }
             }
             .onAppear {
                 photoObserver.start()
@@ -66,7 +72,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 photoObserver.stop()
                 // A full-screen viewer temporarily covers the wall. Preserve
                 // its cursor index until the viewer returns to its exact row.
-                if selected == nil { started = false; timeline.reset(); wall.reset() }
+                if selected == nil {
+                    started = false
+                    explicitOriginalAudit = false
+                    timeline.reset()
+                    wall.reset()
+                    indexRequest = UUID()
+                }
             }
             .onChange(of: photoObserver.change) { _ in reset() }
             .onChange(of: login.owner) { _ in
@@ -75,20 +87,31 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             .onChange(of: sourceFilter) { _ in resetWall() }
             .onChange(of: query) { _ in resetWall() }
             .onChange(of: timeline.indexRevision) { _ in resetWall() }
-            .onChange(of: selected?.id) { _ in indexRequest = UUID() }
+            .onChange(of: selected?.id) { _ in
+                // Leaving the page for Viewer also retires any explicit
+                // audit. A returned Viewer must never restart SHA reads.
+                explicitOriginalAudit = false
+                indexRequest = UUID()
+            }
             .onChange(of: phase) { state in
                 if state == .active { reset() }
-                else { selected = nil; timeline.reset(); wall.reset(); indexRequest = UUID() }
+                else {
+                    explicitOriginalAudit = false
+                    selected = nil
+                    timeline.reset()
+                    wall.reset()
+                    indexRequest = UUID()
+                }
             }
             .sheet(isPresented: $showFilters) { filterEditor }
             .sheet(item: $pairing) { row in
-                XDriveIOSNativePhotoPairingDetails(row: row, retry: { reset(retryUnavailable: true) }, backup: openBackup)
+                XDriveIOSNativePhotoPairingDetails(row: row, retry: { reset() }, backup: openBackup)
             }
             .fullScreenCover(item: $selected) { selection in
                 XDriveIOSNativeUnifiedPhotoViewer(login: login, wall: wall, selection: selection,
                     filter: sourceFilter, query: query,
                     onViewed: { page, id in viewerReturnPage = page; viewerReturnAnchor = id },
-                    pairing: { _ in reset(retryUnavailable: true) })
+                    pairing: { _ in reset() })
             }
     }
 
@@ -100,11 +123,27 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 }
                 Spacer()
                 if query != .init() { Button("清除") { query = .init() } }
+                Menu {
+                    xdrivePhotoWallDensityButtons($wallDensity)
+                } label: {
+                    Image(systemName: "square.grid.3x3")
+                }
+                .accessibilityLabel("缩略图大小")
+                .accessibilityIdentifier("native-ios-unified-wall-density")
                 NavigationLink {
                     XDriveIOSNativePhotoThumbnailCacheScreen(login: login)
                 } label: {
                     Image(systemName: "internaldrive")
                 }.accessibilityLabel("管理缩略图缓存")
+                Menu {
+                    Button("手动核对所有本机原件（耗时）") {
+                        requestOriginalAudit(retryUnavailable: false)
+                    }
+                } label: {
+                    Image(systemName: "checkmark.shield")
+                }
+                .accessibilityLabel("手动核对本机原件")
+                .accessibilityIdentifier("native-ios-gallery-explicit-audit")
             }.padding(.horizontal, 12).padding(.vertical, 4)
             filters.padding(.horizontal, 12).padding(.vertical, 4)
             Divider()
@@ -115,7 +154,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                         if let owner = login.owner {
                             ForEach(wall.index.pages) { page in
                                 XDriveIOSNativeUnifiedPhotoWallPage(page: page, wall: wall, login: login, owner: owner,
-                                    filter: sourceFilter, query: query, displayActive: selected == nil && phase == .active,
+                                    filter: sourceFilter, query: query, density: wallDensity,
+                                    displayActive: selected == nil && phase == .active,
                                     open: { payload, position in
                                         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
                                         selected = .init(owner: owner, page: payload, position: position)
@@ -132,7 +172,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     .id(wall.generation)
                     .padding(.horizontal, 12).padding(.vertical, 8)
                 }
-                .refreshable { reset(retryUnavailable: true) }
+                .refreshable { reset() }
+                .simultaneousGesture(
+                    MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
+                        guard selected == nil, phase == .active, !showFilters else { return }
+                        wallDensity = wallDensity.applyingPinch(scale)
+                    }
+                )
                 .onChange(of: selected?.id) { selection in
                     if selection == nil, viewerReturnAnchor != nil {
                         scroll.scrollTo("unified-page-\(viewerReturnPage)", anchor: .top)
@@ -146,6 +192,10 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     private var filters: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack {
+                NavigationLink {
+                    XDriveIOSNativeGalleryPeople(login: login)
+                } label: { Label("人物", systemImage: "person.2") }
+                .accessibilityIdentifier("native-ios-gallery-people")
                 filterButton(nil, title: "全部")
                 ForEach(XDriveIOSNativeGalleryPresence.allCases) { presence in filterButton(presence, title: presence.title) }
             }
@@ -175,14 +225,18 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         }
         if let message = wall.failure ?? timeline.notice {
             Label(message, systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary)
-            Button("重新读取") { reset(retryUnavailable: true) }
+            Button("重新读取") { reset() }
         }
         if let status = timeline.coverage, !status.finished {
             ProgressView("正在核对本机原件 \(status.checked) / \(status.total)",
                          value: Double(status.checked), total: Double(max(1, status.total))).font(.footnote)
         } else if let status = timeline.coverage, status.unavailable > 0 {
             Text("\(status.unavailable) 项本机原件暂不可读；其他已确认的匹配仍可浏览。").font(.footnote).foregroundStyle(.secondary)
-            Button("重新核对暂不可读的原件") { reset(retryUnavailable: true) }
+            Button("重新核对暂不可读的原件") { requestOriginalAudit(retryUnavailable: true) }
+        }
+        if sourceFilter == .cloudOnly {
+            Text("“仅云端”仅显示已确认本机没有相同原件的照片；想浏览全部云端照片，请使用上方“单独浏览 → 云端图库”。")
+                .font(.footnote).foregroundStyle(.secondary)
         }
         if query != .init() {
             Text("\(query.media.title)\(query.term.isEmpty ? "" : " · 文件名包含「\(query.term)」")")
@@ -226,12 +280,19 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
 
     private func applyQuery() { guard draft.isValid else { return }; query = draft; showFilters = false }
     private func resetWall() { selected = nil; viewerReturnAnchor = nil; wall.reset() }
-    private func reset(retryUnavailable: Bool = false) {
+    private func requestOriginalAudit(retryUnavailable: Bool) {
+        // An explicit diagnostic is independent from upload scheduling.
+        self.retryUnavailable = retryUnavailable
+        explicitOriginalAudit = true
+        indexRequest = UUID()
+    }
+    private func reset() {
         pairing = nil
         resetWall()
         permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         timeline.reset()
-        self.retryUnavailable = retryUnavailable
+        self.retryUnavailable = false
+        explicitOriginalAudit = false
         indexRequest = UUID()
     }
 }
@@ -260,7 +321,7 @@ struct XDriveIOSNativePhotoPairingDetails: View {
                 if let backup, row.presence == .localOnly {
                     Button("打开相册备份") { dismiss(); backup() }
                 }
-                Button("重新核对") { dismiss(); retry() }
+                Button("重新读取来源状态") { dismiss(); retry() }
             }
             .navigationTitle("照片来源").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
@@ -290,12 +351,12 @@ struct XDriveIOSUnifiedPhotoTile: View {
                 }
             }
             .clipped()
-            .overlay(alignment: .topLeading) {
-                if row.isLive || row.isVideo {
-                    Label(row.isLive ? "实况" : "视频", systemImage: row.isLive ? "livephoto" : "play.fill")
-                        .font(.caption2.weight(.semibold)).foregroundStyle(.white)
-                        .padding(4).background(.black.opacity(0.65), in: Capsule()).padding(4)
-                }
+            .overlay(alignment: .topTrailing) {
+                // Keep the independent source/presence badge unobstructed
+                // in compact grids; the media icon uses the same shared style.
+                XDriveIOSNativePhotoWallMediaBadge(
+                    isVideo: row.isVideo, isLive: row.isLive
+                )
             }
             .overlay(alignment: .bottomLeading) {
                 Label(row.presence.title, systemImage: row.presence.symbol)

@@ -6,11 +6,15 @@ on:
     paths:
       - 'ios/**'
       - '.github/workflows/ios-unsigned-ipa.yml'
+      - 'scripts/ci/publish-ios-unsigned-ipa.sh'
+      - 'scripts/ci/test-ios-unsigned-release.sh'
   push:
     branches: [master]
     paths:
       - 'ios/**'
       - '.github/workflows/ios-unsigned-ipa.yml'
+      - 'scripts/ci/publish-ios-unsigned-ipa.sh'
+      - 'scripts/ci/test-ios-unsigned-release.sh'
   workflow_dispatch:
 
 permissions:
@@ -22,6 +26,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  ios-release-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact iOS release test source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Test direct IPA publisher, SHA validation, and immutable release safety
+        run: bash scripts/ci/test-ios-unsigned-release.sh
+
   unsigned-ipa:
     runs-on: macos-15
     timeout-minutes: 35
@@ -33,6 +51,15 @@ jobs:
           # source-backed Swift contracts are present; push uses event SHA.
           ref: ${{ github.sha }}
           persist-credentials: false
+
+      - name: Verify immutable photo and person selectors
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativePhotoContentIdentity.swift \
+            ios/tests/NativePhotoContentIdentityChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-content-identity"
+          "$RUNNER_TEMP/xdrive-ios-content-identity"
 
       - name: Verify persistent unified Gallery fingerprint index
         run: |
@@ -590,6 +617,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-owner-map-selection-policy"
           node --test desktop/tests/ios-native-owner-map-gallery.cjs
 
+      - name: Verify native exact Owner trip ID and sparse Range reader
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeExactTripPolicy.swift \
+            ios/tests/NativeExactTripPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-owner-exact-trip-policy"
+          "$RUNNER_TEMP/xdrive-ios-owner-exact-trip-policy"
+          node --test desktop/tests/ios-native-exact-trips.cjs
+
       - name: Verify native Files Owner Range, search and fixed-tab wiring
         run: |
           set -euo pipefail
@@ -700,6 +737,23 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-files-quick-access"
           "$RUNNER_TEMP/xdrive-ios-files-quick-access"
           node --test desktop/tests/ios-native-files-quick-access.cjs
+
+      - name: Verify native Files final UI/gesture parity contracts
+        run: |
+          set -euo pipefail
+          node --test desktop/tests/ios-native-files-final-parity.cjs desktop/tests/ios-native-files-quick-actions.cjs
+
+      - name: Verify native Files exact 200-item Server Select All across pages
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift \
+            ios/XDriveIOS/NativeFilesSelectionPolicy.swift \
+            ios/XDriveIOS/NativeFilesSelectAllPolicy.swift \
+            ios/tests/NativeFilesSelectAllChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-select-all"
+          "$RUNNER_TEMP/xdrive-ios-files-select-all"
 
       - name: Verify native Files Viewer bounded navigation and Owner preview contracts
         run: |
@@ -906,6 +960,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY='' \
+            XDRIVE_SOURCE_COMMIT="$(git rev-parse HEAD)" \
             build
 
       - name: Validate app and package SideStore compatible IPA
@@ -918,6 +973,8 @@ jobs:
           test ! -e "$app/embedded.mobileprovision"
           actual=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
           test "$actual" = 'com.lazyxu.xdrive.ios'
+          compiled_source=$(/usr/libexec/PlistBuddy -c 'Print XDriveSourceCommit' "$app/Info.plist")
+          test "$compiled_source" = "$(git rev-parse HEAD)"
           /usr/libexec/PlistBuddy -c 'Print NSLocalNetworkUsageDescription' "$app/Info.plist" | grep -Fq 'xDrive'
           # Test the actual compiled device app, not only the XcodeGen YAML.
           APP_PLIST="$app/Info.plist" python3 - <<'PY'
@@ -962,3 +1019,35 @@ jobs:
             xDrive-unsigned.ipa.sha256
           if-no-files-found: error
           retention-days: 14
+
+  publish-unsigned-ipa:
+    needs: [unsigned-ipa, ios-release-contract]
+    # The PR's untrusted/unsigned build is retained as an Action Artifact only.
+    # Publication requires a successful, exact-source master build.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout exact successful master source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Download verified IPA from this workflow run, not a PR or another run
+        uses: actions/download-artifact@v4
+        with:
+          name: xDrive-iOS-unsigned-${{ github.sha }}
+          path: dist/ios-unsigned
+      - name: Verify exact checked-out source commit
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Publish direct .ipa and .sha256 to an immutable GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash scripts/ci/publish-ios-unsigned-ipa.sh dist/ios-unsigned "$GITHUB_SHA"

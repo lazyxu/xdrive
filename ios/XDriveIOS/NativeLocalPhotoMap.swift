@@ -577,14 +577,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
-                            Button {
-                                wallDensity = option
-                            } label: {
-                                Label(option.title, systemImage: wallDensity == option
-                                    ? "checkmark.circle.fill" : "square.grid.3x3")
-                            }
-                        }
+                        xdrivePhotoWallDensityButtons($wallDensity)
                     } label: {
                         Label("缩略图大小", systemImage: "square.grid.3x3")
                     }
@@ -763,13 +756,13 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     )
                 if busy { ProgressView("正在读取位置照片…") }
                 if let error {
-                    Text(error).font(.footnote).foregroundStyle(.secondary)
-                    Button("重试读取照片") {
+                    XDriveIOSNativePhotoWallRetryMessage(
+                        message: error, buttonTitle: "重试读取照片",
+                        canRetry: !busy && phase == .active,
+                        accessibilityID: "native-ios-map-cluster-inline-retry"
+                    ) {
                         if worker != nil { loadNext() } else { loadInitial() }
                     }
-                    .disabled(busy || phase != .active)
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("native-ios-map-cluster-inline-retry")
                 }
                 if !busy && items.isEmpty && priorWindow.isEmpty && error == nil {
                     Text("此位置没有可访问的照片或视频。")
@@ -822,14 +815,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         Button("重新核对当前位置照片") { loadInitial() }
                             .disabled(busy || viewer != nil || phase != .active)
                         Section("照片网格") {
-                            ForEach(XDriveIOSNativePhotoWallDensity.allCases) { option in
-                                Button {
-                                    wallDensity = option
-                                } label: {
-                                    Label(option.title, systemImage: wallDensity == option
-                                        ? "checkmark.circle.fill" : "square.grid.3x3")
-                                }
-                            }
+                            xdrivePhotoWallDensityButtons($wallDensity)
                         }
                     } label: {
                         Label("位置照片操作", systemImage: "ellipsis.circle")
