@@ -22,6 +22,28 @@ vm.runInNewContext(compiled.outputText,sandbox)
 const {xDriveStartDesktopPlacesGuestProbe:start,
   XDRIVE_DESKTOP_PLACES_GUEST_PROBE:script,
   xDriveDesktopPlacesGuestProbeState:decode}=sandbox.exports
+const sdkSurface=fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+function guestState({rootPresent=false,phase=null,unavailable=false,
+  login=false,denied=false}={}){
+  const sdk=phase===null?null:{
+    getAttribute:key=>key==='data-xdrive-places-sdk-phase'?phase:null,
+  }
+  const page={querySelector:selector=>{
+    if(selector==='[data-xdrive-baidu-isolated-photo-map]')return sdk
+    if(selector==='[data-xdrive-baidu-map-unavailable]')return unavailable?{}:null
+    return null
+  }}
+  const document={querySelector:selector=>{
+    if(selector==='[data-xdrive-desktop-places-web-page]')
+      return rootPresent?page:null
+    if(selector==='#web-login-username')return login?{}:null
+    if(selector==='[data-xdrive-desktop-places-auth-denied]')
+      return denied?{}:null
+    return null
+  }}
+  return vm.runInNewContext(script,{document})
+}
 
 test('real guest helper contains pre-dom-ready synchronous exception without unmounting React',async()=>{
   let mounted=false,attempts=0
@@ -45,4 +67,19 @@ test('pending guest never authenticates or leaks native data',async()=>{
   assert.equal(decode('unknown'),'pending')
   assert.match(component,/xDriveStartDesktopPlacesGuestProbe\(\s*guest,XDRIVE_DESKTOP_PLACES_GUEST_PROBE\)/)
   assert.doesNotMatch(source,/native_refresh_token|desktopMapGuestGrant|Authorization: Bearer/)
+})
+ 
+test('black-screen regression: React root alone must never expose an empty WebView',()=>{
+  assert.equal(guestState(), 'pending')
+  assert.equal(guestState({rootPresent:true}), 'pending')
+  assert.equal(guestState({rootPresent:true,phase:'loading'}), 'pending')
+  assert.equal(guestState({rootPresent:true,phase:'ready'}), 'ready')
+  assert.equal(guestState({rootPresent:true,phase:'unavailable'}), 'unavailable')
+  assert.equal(guestState({rootPresent:true,unavailable:true}), 'unavailable')
+  assert.equal(guestState({rootPresent:true,phase:'ready',login:true}), 'login')
+  assert.equal(guestState({rootPresent:true,phase:'ready',denied:true}), 'denied')
+  assert.equal(decode('unavailable'),'unavailable')
+  assert.match(sdkSurface,/data-xdrive-places-sdk-phase=\{phase\}/)
+  assert.match(component,/state==='unavailable'/)
+  assert.match(component,/按 F12 查看地图 Console 和 Network/)
 })

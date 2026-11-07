@@ -63,6 +63,7 @@ import { editContextMenuTemplate } from './edit_context_menu.cjs'
 import {
   desktopShortcutActionFromArgs,
   desktopShortcutActionFromInput,
+  desktopDevToolsTargetFromInput,
   desktopShortcutShowsWindow,
   windowsUserTasks,
   type DesktopShortcutAction,
@@ -2173,7 +2174,32 @@ function createMainWindow(showOnReady = true) {
     if (win.isVisible()) void showRendererRecoveryDialog()
   })
   win.on('unresponsive', () => lifecycleLog?.record('window_unresponsive'))
+  // The map is an isolated HTTPS WebView, not the file:// Desktop renderer.
+  // F12 must inspect the guest to expose its Console and Network failures.
+  const openDesktopDevTools = (target:'places'|'desktop') => {
+    const guestID = target==='places'
+      ? [...desktopPlacesGuests.keys()].find(id => {
+          const guest=electronWebContents.fromId(id)
+          return !!guest && !guest.isDestroyed()
+        }) : undefined
+    const guest=guestID===undefined ? undefined : electronWebContents.fromId(guestID)
+    const contents=guest && !guest.isDestroyed() ? guest : win.webContents
+    try {
+      contents.openDevTools({mode:'detach',activate:true})
+      lifecycleLog?.record('devtools_opened', {
+        target: contents===win.webContents ? 'desktop' : 'places',
+      })
+    } catch {
+      lifecycleLog?.record('devtools_open_failed', {target})
+    }
+  }
   win.webContents.on('before-input-event', (event, input) => {
+    const devtools=desktopDevToolsTargetFromInput(input)
+    if (devtools) {
+      event.preventDefault()
+      openDesktopDevTools(devtools)
+      return
+    }
     const action = desktopShortcutActionFromInput(input)
     if (!action) return
     event.preventDefault()
@@ -2224,6 +2250,37 @@ function createMainWindow(showOnReady = true) {
     const identity={owner,origin:target.origin,scope:pending.scope}
     desktopPlacesGuests.set(guest.id,identity)
     guest.setWindowOpenHandler(()=>({action:'deny'}))
+    // Keyboard events inside the guest do not reliably reach the Parent.
+    guest.on('before-input-event',(event,input)=>{
+      const target=desktopDevToolsTargetFromInput(input)
+      if(!target)return
+      event.preventDefault()
+      openDesktopDevTools(target)
+    })
+    guest.on('did-fail-load',(_event,errorCode,_description,_url,isMainFrame)=>{
+      if(isMainFrame && errorCode!==-3)
+        lifecycleLog?.record('places_guest_load_failed',{error_code:errorCode})
+    })
+    guest.on('render-process-gone',(_event,details)=>{
+      lifecycleLog?.record('places_guest_renderer_gone',{
+        reason:details.reason,exit_code:details.exitCode,
+      })
+    })
+    guest.on('preload-error',()=>lifecycleLog?.record('places_guest_preload_failed'))
+    // Never persist raw console strings, URLs, Owner identifiers or Cookies.
+    // F12 exposes the actual complete Console/Network only on local user intent.
+    let recordedErrors=0
+    guest.on('console-message',(_event,details)=>{
+      if(details.level!=='error' || recordedErrors>=12)return
+      recordedErrors++
+      const message=String(details.message||'')
+      const category=/Content Security Policy|\bCSP\b/i.test(message)?'csp':
+        /ERR_CERT_|certificate/i.test(message)?'tls':
+        /ERR_NAME_NOT_RESOLVED|ERR_CONNECTION|ERR_PROXY/i.test(message)?'network':
+        /Failed to fetch|NetworkError/i.test(message)?'fetch':
+        /Uncaught|TypeError|ReferenceError/i.test(message)?'javascript':'other'
+      lifecycleLog?.record('places_guest_console_error',{category})
+    })
     const authorized=(rawURL:string)=>{
       try {
         const url=new URL(rawURL)

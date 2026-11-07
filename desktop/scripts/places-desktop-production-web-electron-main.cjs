@@ -247,6 +247,13 @@ async function run(win){
     const attached=await until(async()=>{
       return guest&&!guest.isDestroyed()?guest:null
     },30000,'actual Main-attached HTTPS WebView')
+    stage='production-Desktop-F12-real-WebView-DevTools'
+    win.webContents.focus()
+    win.webContents.sendInputEvent({type:'keyDown',keyCode:'F12'})
+    await until(()=>attached.isDevToolsOpened(),8000,
+      'F12 must inspect real HTTPS Places WebView, not parent Electron shell')
+    assert.equal(win.webContents.isDevToolsOpened(),false)
+    attached.closeDevTools()
     stage='production-Web-Owner-Places-root'
     const state=await until(()=>attached.executeJavaScript(
       '('+inspectRealWebGuest.toString()+')()'),

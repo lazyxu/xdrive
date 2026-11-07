@@ -4,6 +4,7 @@ const assert = require('node:assert/strict')
 const {
   desktopShortcutActionFromArgs,
   desktopShortcutActionFromInput,
+  desktopDevToolsTargetFromInput,
   desktopShortcutShowsWindow,
   windowsUserTasks,
 } = require('../dist/main/desktop_shortcuts.cjs')
@@ -70,4 +71,19 @@ test('window-local keyboard shortcuts map to constrained desktop actions', () =>
   assert.equal(desktopShortcutActionFromInput(keyDown('S', { type: 'keyUp', shift: true })), null)
   assert.equal(desktopShortcutActionFromInput({ ...keyDown(','), control: false, meta: false }), null)
   assert.equal(desktopShortcutActionFromInput({ ...keyDown(','), control: false, meta: true }), 'settings')
+})
+ 
+test('F12 inspects map guest while Ctrl+Shift+I inspects trusted Desktop shell',()=>{
+  const key= (code,extra={}) => ({
+    type:'keyDown',key:code,control:false,meta:false,shift:false,
+    alt:false,isAutoRepeat:false,...extra,
+  })
+  assert.equal(desktopDevToolsTargetFromInput(key('F12')),'places')
+  assert.equal(desktopDevToolsTargetFromInput(key('i',{control:true,shift:true})),'desktop')
+  assert.equal(desktopDevToolsTargetFromInput(key('I',{meta:true,shift:true})),'desktop')
+  assert.equal(desktopDevToolsTargetFromInput(key('F12',{type:'keyUp'})),null)
+  assert.equal(desktopDevToolsTargetFromInput(key('F12',{isAutoRepeat:true})),null)
+  assert.equal(desktopDevToolsTargetFromInput(key('F12',{alt:true})),null)
+  assert.equal(desktopDevToolsTargetFromInput(key('F12',{control:true})),null)
+  assert.equal(desktopDevToolsTargetFromInput(key('I',{control:true})),null)
 })

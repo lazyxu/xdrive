@@ -256,6 +256,8 @@ export function XDriveMediaGalleryPlacesMap({
             deny('Server Web 返回了完整登录页面，而不是地图。请更新 Server Web snapshot 与 Desktop 客户端后重试。')
           } else if(state==='denied') {
             deny('Web 地图身份桥接或临时会话验证失败，请检查 Server Web 版本后重试。')
+          } else if(state==='unavailable') {
+            deny('百度地图 SDK 加载失败，已停止显示空白画布。请重试；按 F12 查看地图 Console 和 Network。')
           } else if(state==='ready' && !mapMounted) {
             mapMounted=true
             setEmbedGuestReady({key:embedIdentity})
@@ -297,7 +299,7 @@ export function XDriveMediaGalleryPlacesMap({
     const poll=window.setInterval(()=>{
       if(document.visibilityState==='hidden')return
       if(!mapMounted && Date.now()-navigationStartedAt>20_000) {
-        deny('Web 地图没有进入就绪状态。请确认 Server Web snapshot 已更新、Desktop 专用 preload 已加载，然后重试。')
+        deny('Web 地图未在 20 秒内完成 SDK 初始化，已停止显示空白画布。请重试；按 F12 查看地图 Console 和 Network。')
       } else probe()
     },900)
     probe()
