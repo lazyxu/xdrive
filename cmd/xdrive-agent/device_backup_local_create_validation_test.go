@@ -21,7 +21,7 @@ func TestValidateCreatedLocalBackupSourceRequiresManagedTargetAndOwningDevice(t 
 		Direction: request.Direction, SyncMode: request.SyncMode,
 		RunMode: request.RunMode, Status: meta.SourceStatusPaused,
 		Revision: 1, TargetNodeID: &id, TargetManaged: true,
-		TargetPath: "同步文件夹/Push/Windows_device-a/win",
+		TargetPath: "同步文件夹/Push/win",
 		DeviceID:   "device-a",
 	}
 	if err := validateCreatedLocalBackupSource(valid, request, "device-a"); err != nil {

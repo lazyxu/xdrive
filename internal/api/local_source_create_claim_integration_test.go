@@ -53,8 +53,8 @@ func TestLocalSourceCreateAndFirstBindRequireCreatingDevice(t *testing.T) {
 	}
 	if created.ID == 0 || created.Revision != 1 || created.Status != meta.SourceStatusPaused ||
 		created.TargetNodeID == nil || *created.TargetNodeID == target.ID ||
-		created.TargetPath != "同步文件夹/Push/"+managedPushDeviceFolderName(deviceA)+"/A photos" {
-		t.Fatalf("local Source must use device-scoped managed Push directory, not old target: %+v", created)
+		created.TargetPath != "同步文件夹/Push/A photos" {
+		t.Fatalf("local Source must use flat managed Push directory, not old target: %+v", created)
 	}
 	if strings.Contains(response.Body.String(), "creator_device") || strings.Contains(response.Body.String(), secretA) {
 		t.Fatalf("device claim or secret leaked: %s", response.Body.String())

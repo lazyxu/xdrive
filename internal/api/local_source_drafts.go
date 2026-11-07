@@ -201,8 +201,8 @@ func discardPristineLocalManagedTargetTx(ctx context.Context, tx *gorm.DB, sourc
 			Take(&group).Error; err != nil {
 			return err
 		}
-		// Preserve fixed Push and server-pinned device ancestors even after
-		// the last draft is deleted, so future Sources retain a stable Node ID.
+		// Flat managed Push targets have no per-device ancestor to prune.
+		// The fixed Push namespace must survive even the last draft deletion.
 		if group.Name == "Push" {
 			return nil
 		}
@@ -212,7 +212,6 @@ func discardPristineLocalManagedTargetTx(ctx context.Context, tx *gorm.DB, sourc
 		}
 		if childCount == 0 {
 			refs := []guard{
-				{&meta.ClientDevice{}, "managed_push_node_id = ?", []any{group.ID}},
 				{&meta.Source{}, "target_node_id = ? AND id <> ?", []any{group.ID, source.ID}},
 				{&meta.Share{}, "node_id = ?", []any{group.ID}},
 				{&meta.UploadSession{}, "parent_id = ? OR node_id = ? OR result_node_id = ?", []any{group.ID, group.ID, group.ID}},

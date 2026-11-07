@@ -427,7 +427,7 @@ class NativePhotoIncrementalWriterTest {
             val destination = NativeAndroidPhotoDestination(
                 configured = true, deviceId = deviceId, name = "Pixel Backup",
                 sourceId = 19, sourceRevision = 1, targetNodeId = 120,
-                targetPath = "同步文件夹/Push/Pixel_${deviceId}/Pixel Backup")
+                targetPath = "同步文件夹/Push/Pixel Backup")
             staged().use { original ->
                 val item = source(original)
                 assertThrows(IOException::class.java) {
@@ -506,7 +506,7 @@ class NativePhotoIncrementalWriterTest {
         val managed = NativeAndroidPhotoDestination(
             configured = true, deviceId = deviceId, name = "Pixel Backup",
             sourceId = 19, sourceRevision = 1, targetNodeId = 120,
-            targetPath = "同步文件夹/Push/Pixel_${deviceId}/Pixel Backup")
+            targetPath = "同步文件夹/Push/Pixel Backup")
         staged().use { original ->
             val item = source(original)
             assertEquals(NativePhotoIncrementalOutcome.UPLOADED,

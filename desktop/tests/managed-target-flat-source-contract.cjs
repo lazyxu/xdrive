@@ -22,18 +22,18 @@ test('one Server provisioning function owns the immutable Push/Pull prefixes', (
   assert.match(schema, /idx_xd_sources_owner_yike_account/)
 })
 
-test('native destination and DSM Push pin device groups while preserving Device ID authorization', () => {
+test('native destination and DSM Push use flat leaves but preserve Device ID authorization', () => {
   const native = read('internal', 'api', 'ios_photo_backup_destination.go')
   const dsm = read('internal', 'api', 'source_managed_provision.go')
   const local = read('internal', 'api', 'local_push_managed_provision.go')
   const android = read('internal', 'api', 'sources.go')
   assert.match(native, /boundDeviceID, bound := meta\.SourceDeviceID\(source\)/)
   assert.match(native, /!bound \|\| boundDeviceID != device\.ID/)
-  assert.match(dsm, /managedPushDeviceFolderName/)
+  assert.doesNotMatch(native, /managedPushDeviceFolderName/)
   assert.match(dsm, /func createSynologyPushManagedTargetTx\(/)
   assert.match(dsm, /return provisionManagedSourceTargetTx\(ctx, tx, source, &device\)/)
-  assert.match(dsm, /ensureManagedPushDeviceGroupTx/)
-  assert.match(local, /provisionManagedSourceTargetTx/)
+  assert.doesNotMatch(dsm, /managedPushDeviceFolderName/)
+  assert.doesNotMatch(local, /managedPushDeviceFolderName/)
   assert.match(android, /SourceKindAndroidPhotos/)
   assert.match(android, /native photos target requires registered device proof/)
 })

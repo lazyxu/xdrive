@@ -23,55 +23,6 @@ func managedSourceGuardEnabled(db *gorm.DB) bool {
 	return db != nil && db.Migrator().HasTable(&meta.Source{})
 }
 
-// Migration and thin-schema integration tests may not yet have the optional
-// ClientDevice column. Never treat a display name as a device-group proof.
-func managedPushGroupGuardEnabled(db *gorm.DB) bool {
-	return db != nil && db.Migrator().HasColumn(&meta.ClientDevice{}, "managed_push_node_id")
-}
-
-// A registered Device's pinned group stays read-only, even after its last
-// pristine Source draft is cancelled. The group is not an arbitrary Owner dir.
-func managedPushGroupInAncestorsDB(ctx context.Context, db *gorm.DB, ownerID, nodeID uint64) (bool, error) {
-	if !managedPushGroupGuardEnabled(db) {
-		return false, nil
-	}
-	var pinned bool
-	err := db.WithContext(ctx).Raw(`
-WITH RECURSIVE ancestors AS (
-	SELECT id, parent_id FROM xd_nodes
-	WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
-	UNION ALL
-	SELECT n.id, n.parent_id FROM xd_nodes n JOIN ancestors a ON n.id = a.parent_id
-	WHERE n.owner_id = ? AND n.deleted_at IS NULL
-)
-SELECT EXISTS (
-	SELECT 1 FROM xd_client_devices d JOIN ancestors a ON a.id = d.managed_push_node_id
-	WHERE d.owner_id = ?
-)`, nodeID, ownerID, ownerID, ownerID).Scan(&pinned).Error
-	return pinned, err
-}
-
-// This also protects the whole Device ancestor from rename/move/delete
-// when there are zero Source rows beneath it.
-func managedPushGroupInSubtreeDB(ctx context.Context, db *gorm.DB, ownerID, nodeID uint64) (bool, error) {
-	if !managedPushGroupGuardEnabled(db) {
-		return false, nil
-	}
-	var pinned bool
-	err := db.WithContext(ctx).Raw(`
-WITH RECURSIVE subtree AS (
-	SELECT id FROM xd_nodes WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
-	UNION ALL
-	SELECT n.id FROM xd_nodes n JOIN subtree p ON n.parent_id = p.id
-	WHERE n.owner_id = ? AND n.deleted_at IS NULL
-)
-SELECT EXISTS (
-	SELECT 1 FROM xd_client_devices d JOIN subtree n ON n.id = d.managed_push_node_id
-	WHERE d.owner_id = ?
-)`, nodeID, ownerID, ownerID, ownerID).Scan(&pinned).Error
-	return pinned, err
-}
-
 // managedSourceNodeInTargetDB blocks regular Files writes on the managed root
 // and all its descendants, including files that have direct Share tokens.
 func managedSourceNodeInTargetDB(ctx context.Context, db *gorm.DB, ownerID, nodeID uint64) (bool, error) {
@@ -92,10 +43,7 @@ SELECT EXISTS (
 	SELECT 1 FROM xd_sources s JOIN ancestors a ON a.id = s.target_node_id
 	WHERE s.owner_id = ? AND `+managedTargetPredicate+`
 )`, nodeID, ownerID, ownerID, ownerID).Scan(&protected).Error
-	if err != nil || protected {
-		return protected, err
-	}
-	return managedPushGroupInAncestorsDB(ctx, db, ownerID, nodeID)
+	return protected, err
 }
 
 // managedSourceTargetInSubtreeDB protects ancestors of a managed root against
@@ -117,10 +65,7 @@ SELECT EXISTS (
 	SELECT 1 FROM xd_sources s JOIN subtree d ON d.id = s.target_node_id
 	WHERE s.owner_id = ? AND `+managedTargetPredicate+`
 )`, nodeID, ownerID, ownerID, ownerID).Scan(&protected).Error
-	if err != nil || protected {
-		return protected, err
-	}
-	return managedPushGroupInSubtreeDB(ctx, db, ownerID, nodeID)
+	return protected, err
 }
 
 func managedSourceTargetInIDsDB(ctx context.Context, db *gorm.DB, ownerID uint64, ids []uint64) (bool, error) {
@@ -136,15 +81,6 @@ func managedSourceTargetInIDsDB(ctx context.Context, db *gorm.DB, ownerID uint64
 		Where("s.owner_id = ? AND s.target_node_id IS NOT NULL AND "+managedTargetPredicate, ownerID).
 		Pluck("s.target_node_id", &targetIDs).Error; err != nil {
 		return false, err
-	}
-	if managedPushGroupGuardEnabled(db) {
-		var pinnedIDs []uint64
-		if err := db.WithContext(ctx).Model(&meta.ClientDevice{}).
-			Where("owner_id = ? AND managed_push_node_id IS NOT NULL", ownerID).
-			Pluck("managed_push_node_id", &pinnedIDs).Error; err != nil {
-			return false, err
-		}
-		targetIDs = append(targetIDs, pinnedIDs...)
 	}
 	if len(targetIDs) == 0 {
 		return false, nil

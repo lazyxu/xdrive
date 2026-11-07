@@ -117,27 +117,12 @@ data class NativeAndroidPhotoDestination(
                 sourceId != null && sourceId > 0 &&
                 sourceRevision != null && sourceRevision > 0 &&
                 targetNodeId != null && targetNodeId > 0 &&
-                acceptsServerManagedPath())
+                targetPath == "同步文件夹/Push/" + name)
         } else {
             require(name == null && sourceId == null && sourceRevision == null &&
                 targetNodeId == null && targetPath == null &&
                 suggestedName != null && validDriveNodeName(suggestedName))
         }
-    }
-
-    // TargetNodeID, SourceRevision and Device proof are Server-authoritative.
-    // Existing flat paths remain readable for historical Sources; all new
-    // server-created targets are grouped under the registered Device ID.
-    fun acceptsServerManagedPath(): Boolean {
-        val leaf = name ?: return false
-        val path = targetPath ?: return false
-        if (path == "同步文件夹/Push/" + leaf) return true
-        val parts = path.split('/')
-        return parts.size == 4 && parts[0] == "同步文件夹" &&
-            parts[1] == "Push" && parts[3] == leaf &&
-            parts[2].length > deviceId.length + 1 &&
-            parts[2].endsWith("_" + deviceId) &&
-            validDriveNodeName(parts[2])
     }
 
     override fun toString(): String = "NativeAndroidPhotoDestination([redacted])"
@@ -884,7 +869,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         require(destination.configured && destination.deviceId == enrolled.deviceId &&
             destination.sourceId != null && destination.sourceRevision != null &&
             destination.targetNodeId != null && destination.name != null &&
-            destination.acceptsServerManagedPath())
+            destination.targetPath == "同步文件夹/Push/" + destination.name)
         if (run != null) require(run.sourceId == destination.sourceId &&
             run.sourceRevision == destination.sourceRevision &&
             run.targetNodeId == destination.targetNodeId)
@@ -1850,7 +1835,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         require(destination.configured && destination.deviceId == enrolled.deviceId &&
             destination.targetNodeId != null && destination.sourceId != null &&
             destination.sourceRevision != null && destination.name != null &&
-            destination.acceptsServerManagedPath())
+            destination.targetPath == "同步文件夹/Push/" + destination.name)
         return uploadFileWithPhotoIdentity(
             accessToken, requireNotNull(destination.targetNodeId), name, size,
             openSource, onProgress, originalSha256, resumeKey, enrolled)
@@ -1983,7 +1968,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         require(destination.configured && destination.deviceId == enrolled.deviceId &&
             destination.targetNodeId != null && destination.sourceId != null &&
             destination.sourceRevision != null && destination.name != null &&
-            destination.acceptsServerManagedPath())
+            destination.targetPath == "同步文件夹/Push/" + destination.name)
         return inspectNativePhotoUploadExact(
             accessToken, requireNotNull(destination.targetNodeId), name, size,
             originalSha256, resumeKey, enrolled)

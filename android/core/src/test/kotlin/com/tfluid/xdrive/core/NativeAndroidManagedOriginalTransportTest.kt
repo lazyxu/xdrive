@@ -15,7 +15,7 @@ class NativeAndroidManagedOriginalTransportTest {
     private val destination = NativeAndroidPhotoDestination(
         configured = true, deviceId = device.deviceId,
         name = "Pixel 原件", sourceId = 19, sourceRevision = 2,
-        targetNodeId = 120, targetPath = "同步文件夹/Push/Pixel_${device.deviceId}/Pixel 原件")
+        targetNodeId = 120, targetPath = "同步文件夹/Push/Pixel 原件")
     private val name = "xdrive-photo-" + "b".repeat(20) + "-" + "c".repeat(20) + ".jpg"
     private val key = "and_" + "d".repeat(64)
     private val sessionId = "00000000-0000-4000-8000-000000000199"
