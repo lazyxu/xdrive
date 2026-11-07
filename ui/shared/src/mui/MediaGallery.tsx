@@ -5570,7 +5570,10 @@ export function MediaTile({
         />
       ) : (
         <XDriveMediaAsyncThumbnail
-          nodeID={item.metadata.has_thumbnail ? item.node.id : undefined}
+          // Map's previous CoverThumbnail attempted the trusted preview
+          // even while has_thumbnail metadata lagged the current revision.
+          // Preserve that behavior only for authenticated Places tiles.
+          nodeID={placesDrawer || item.metadata.has_thumbnail ? item.node.id : undefined}
           revision={item.node.revision}
           alt={item.node.name}
           loadThumbnail={effectiveThumbnailLoader}
