@@ -5193,14 +5193,14 @@ export class XDriveApi {
   // encrypted data only, through the same revocable Owner bearer transport.
   clipboardVault(signal?: AbortSignal) {
     return this.request<{ salt: string; iterations: number; kdf: string;
-      check_nonce: string; check_ciphertext: string; aad_scope: string }>(
+      check_nonce: string; check_ciphertext: string; aad_scope: string; owner_id: number }>(
       '/api/v1/clipboard/vault', { cache: 'no-store', signal },
     )
   }
 
   clipboardInitializeCheck(check: { nonce: string; ciphertext: string; scope: string }, signal?: AbortSignal) {
     return this.request<{ salt: string; iterations: number; kdf: string;
-      check_nonce: string; check_ciphertext: string; aad_scope: string }>(
+      check_nonce: string; check_ciphertext: string; aad_scope: string; owner_id: number }>(
       '/api/v1/clipboard/vault/check', {
         method: 'PUT', body: JSON.stringify(check), cache: 'no-store', signal,
       },
