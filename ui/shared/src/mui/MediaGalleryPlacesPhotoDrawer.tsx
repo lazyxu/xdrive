@@ -6,13 +6,14 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import type { MediaItem } from '../models'
 import { XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT } from '../media-gallery-places-photo-drawer'
 import type { XDrivePlacesDrawerPresentation } from '../media-gallery-places-photo-drawer'
-import { MediaTile, MediaVirtualTileGrid } from './MediaGallery'
-import type { MediaThumbnailLoader, XDriveMediaGalleryVirtualCollection } from './MediaGallery'
+import { MediaTile, MediaVirtualTileGrid } from './MediaGallerySharedTiles'
+import type { XDriveMediaGalleryVirtualCollection } from './MediaGallerySharedTiles'
+import type { MediaThumbnailLoader } from './MediaGallery'
 import { XDriveMediaThumbnailScheduler } from './MediaGalleryThumbnailScheduler'
 
 /** Trusted Parent-only photo sheet; no Baidu SDK data or media URLs cross the Child. */
 export function XDriveMediaGalleryPlacesPhotoDrawer({
-  items, total, phase, expanded, loadingMore, pageError, loadThumbnail, onExpand,
+  items, total, phase, expanded, loadingMore, pageError, loadThumbnail, photoTileMinWidth = 108, onExpand,
   onClose, onRetry, onRefreshMap, onLoadMore, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
 }: {
   items: MediaItem[]
@@ -22,6 +23,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   loadingMore: boolean
   pageError: boolean
   loadThumbnail: MediaThumbnailLoader
+  photoTileMinWidth?: number
   onExpand: (expanded: boolean) => void
   onClose: () => void
   onRetry: () => void
@@ -56,7 +58,9 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     owner: MediaThumbnailLoader
     scheduler: XDriveMediaThumbnailScheduler
   } | null>(null)
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // Commit this scheduler before paint, so an authorized first page does not
+    // flash a blank tile wall between Dialog mount and the first effect.
     const scheduler = new XDriveMediaThumbnailScheduler(loadThumbnail)
     setThumbnailSession({ owner: loadThumbnail, scheduler })
     return () => scheduler.dispose()
@@ -322,7 +326,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               <MediaVirtualTileGrid
                 placesDrawer
                 collection={collection}
-                minTileWidth={108}
+                minTileWidth={photoTileMinWidth}
                 selectionMode={false}
                 selectedContentKeys={new Set<string>()}
                 onSelect={() => undefined}
