@@ -274,7 +274,10 @@ class MainActivity : ComponentActivity() {
                 // The app remains interactive while login/navigation is
                 // required; the review dialog appears only for a real folder.
                 Box(Modifier.fillMaxSize()) {
-                    DriveApp(model.controller, model.updates, openUpdate = { url ->
+                    DriveApp(model.controller, model.updates,
+                        incomingClipboardText = sharedClipboardText,
+                        onIncomingClipboardConsumed = { sharedClipboardText = null },
+                        openUpdate = { url ->
                         try {
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
                             true
