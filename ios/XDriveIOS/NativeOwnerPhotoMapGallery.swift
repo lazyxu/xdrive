@@ -626,6 +626,17 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
+                // Same verified Owner: these are Server GPS members, not
+                // PhotoKit assets or heuristic date-only Memories.
+                NavigationLink {
+                    XDriveIOSNativeExactTripsScreen(login: login)
+                } label: {
+                    Label("旅行地点", systemImage: "map")
+                }
+                .disabled(login.owner == nil || phase != .active)
+                .accessibilityIdentifier("native-ios-owner-map-exact-trips")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     showingMapHelp = true
                 } label: {
