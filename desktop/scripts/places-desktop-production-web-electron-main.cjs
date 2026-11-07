@@ -28,7 +28,7 @@ function inspectRealDesktop(){
 // transition counters; URLs, photo IDs, raw errors and credentials are never
 // returned to the test runner.
 function installMapRendererFailureProbe(){
-  const current={errors:[],warnings:0,rootRemovalCount:0,
+  const current={errors:[],redactedErrorMessages:[],warnings:0,rootRemovalCount:0,
     rootRenderCount:0,lastVisibleSection:'',installed:true}
   const classify=value=>{
     const v=String(value?.message||value||'')
@@ -54,6 +54,19 @@ function installMapRendererFailureProbe(){
   }
   const capture=(kind,value)=>{
     if(current.errors.length<10)current.errors.push(kind+':'+classify(value))
+    // This is a wholly synthetic, isolated CI user/server fixture. Capture
+    // the first exception MESSAGE only (never stack, source URLs or bodies).
+    // Redact opaque credentials, IP/URLs and quoted unknown strings before
+    // reporting a bounded category-specific diagnostic.
+    if(current.redactedErrorMessages.length<3){
+      const source=String(value?.message||value||'').split('\n')[0]
+      const sanitized=source
+        .replace(/https?:\/\/[^\s)]+/gi,'[url]')
+        .replace(/[a-f0-9]{32,}/gi,'[opaque]')
+        .replace(/(Bearer|refresh[_-]?token|password|Cookie)\s*[:=]\s*[^\s,;]+/gi,'[secret]')
+        .slice(0,175)
+      current.redactedErrorMessages.push(kind+':'+sanitized)
+    }
   }
   window.addEventListener('error',e=>capture('window',e.error||e.message))
   window.addEventListener('unhandledrejection',e=>capture('promise',e.reason))
@@ -110,6 +123,8 @@ async function diagnoseNativeMapAdmission(){
   return {
     rendererExceptionClasses:Array.isArray(safeProbe.errors)
       ?safeProbe.errors.slice(0,10):[],
+    errorMessages:Array.isArray(safeProbe.redactedErrorMessages)
+      ?safeProbe.redactedErrorMessages.slice(0,3):[],
     rootRemovalCount:Number(safeProbe.rootRemovalCount||0),
     rootRenderCount:Number(safeProbe.rootRenderCount||0),
     lastVisibleSection:typeof safeProbe.lastVisibleSection==='string'
@@ -257,7 +272,7 @@ async function run(win){
     }))
     app.exit(0)
   }catch(error){
-    console.error('XDRIVE_PLACES_PRODUCTION_FAILED '+stage+': '+String(error?.message||error).slice(0,650))
+    console.error('XDRIVE_PLACES_PRODUCTION_FAILED '+stage+': '+String(error?.message||error).slice(0,1350))
     app.exit(1)
   }
 }
