@@ -583,6 +583,7 @@ declare global {
       preparePlacesEmbed: (scope: import('../../../ui/shared/src/media-gallery-baidu-map-photo-scope').XDriveBaiduMapPhotoScope) => Promise<DesktopResult<{allowed:true;partition:string}>>
       startNativeDragOut: (relativePath: string) => void
       copyText: (text: string) => void
+      readClipboardText: () => string
       hide: () => void
       quit: () => void
       onNavigate: (callback: (view: DesktopNavigationIntent) => void) => () => void
