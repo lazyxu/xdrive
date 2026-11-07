@@ -246,6 +246,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/clipboard/vault", s.clipboardVault)
 	authed.PUT("/clipboard/vault/check", s.putClipboardVaultCheck)
 	authed.GET("/clipboard/items", s.listClipboardItems)
+	authed.GET("/clipboard/events", s.streamClipboardEvents)
 	authed.POST("/clipboard/items", s.createClipboardItem)
 	authed.DELETE("/clipboard/items/:id", s.deleteClipboardItem)
 	authed.DELETE("/clipboard/items", s.clearClipboardItems)

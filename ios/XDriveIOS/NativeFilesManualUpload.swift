@@ -383,7 +383,12 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
             } catch XDriveManualDocumentStageError.tooLarge {
                 phase = .failed
                 if epoch == ticket {
-                    status = "已确认 \(confirmed)/\(files.count) 项；当前文件超过 1 GiB，后续未提交。"
+                    status = "已确认 \(confirmed)/\(files.count) 项；当前文件超过 8 GiB 直读上限，后续未提交。"
+                }
+            } catch XDriveManualDocumentStageError.directProviderUnavailable {
+                phase = .failed
+                if epoch == ticket {
+                    status = "已确认 \(confirmed)/\(files.count) 项；文件超过私有暂存上限且提供者未授予直接读取权限，后续未提交。"
                 }
             } catch XDriveManualDocumentStageError.insufficientDiskSpace {
                 phase = .failed
@@ -585,7 +590,9 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
               XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
             throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
         }
-        status = "正在上传第 \(index + 1)/\(count) 项“\(staged.originalName)”；结果不明确时停止后续文件。"
+        status = staged.isDirectProviderRead
+            ? "正在直接读取文件提供者并上传第 \(index + 1)/\(count) 项“\(staged.originalName)”；结果不明确时停止。"
+            : "正在上传第 \(index + 1)/\(count) 项“\(staged.originalName)”；结果不明确时停止后续文件。"
 
         // File-provider staging and hashing can take time. Re-prove this
         // Owner and parent immediately before each new UploadSession POST.

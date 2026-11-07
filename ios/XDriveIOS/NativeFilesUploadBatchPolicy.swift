@@ -7,8 +7,15 @@ import Foundation
 enum XDriveIOSNativeFilesUploadBatchPolicy {
     static let maximumFiles = 64
     // Foreground Files originals use the existing 8 MiB chunked Server writer.
-    // Only a single picked file is staged at a time, even in an eight-file batch.
+    // Only a single picked file is staged at a time, even in a 64-file batch.
+    // Direct provider reads hold the fileImporter's security scope for the
+    // entire authenticated UploadSession and do NOT create a second copy.
     static let maximumStagedFileBytes: Int64 = 1_073_741_824
+    static let maximumDirectProviderBytes: Int64 = 8 * 1_073_741_824
+
+    static func mayReadDirectly(bytes: Int64, securityScopeStarted: Bool) -> Bool {
+        securityScopeStarted && bytes > 0 && bytes <= maximumDirectProviderBytes
+    }
     static let freeDiskReserveBytes: Int64 = 128 * 1_048_576
 
     static func mayStage(bytes: Int64, freeDiskBytes: Int64?) -> Bool {
@@ -24,7 +31,7 @@ enum XDriveIOSNativeFilesUploadBatchPolicy {
     /// Confirmed chunks are still provisional until Finalize and exact
     /// Node/revision/SHA readback, so this is capped below 100%.
     static func confirmedProgressPercent(bytes: Int64, totalBytes: Int64) -> Int? {
-        guard totalBytes > 0, totalBytes <= maximumStagedFileBytes,
+        guard totalBytes > 0, totalBytes <= maximumDirectProviderBytes,
               bytes >= 0, bytes <= totalBytes else { return nil }
         return min(99, Int(Double(bytes) * 100.0 / Double(totalBytes)))
     }

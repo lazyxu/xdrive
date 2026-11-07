@@ -15,6 +15,7 @@ export function createXDriveWebClipboardPort(api: XDriveApi, ownerScopeKey: stri
     remove: (id, signal) => api.clipboardRemove(id, signal),
     clear: signal => api.clipboardClear(signal),
     copyText: text => xDriveBrowserCopyText(text),
+    watchChanges: (onChange, signal) => api.clipboardWatchChanges(onChange, signal),
     readText: async () => {
       if (!navigator.clipboard?.readText || !window.isSecureContext) {
         throw new Error('浏览器不允许读取系统剪贴板')

@@ -206,6 +206,11 @@ import {
   type AgentCreatedCloudShare,
   type AgentOwnerSharePage,
   type AgentOwnerShareLink,
+  type AgentClipboardVault,
+  type AgentClipboardCheck,
+  type AgentClipboardItem,
+  type AgentClipboardWrite,
+  type AgentClipboardPage,
   type AgentNotesNamespace,
   type AgentNotesRow,
   type AgentNotesDetail,
@@ -8846,6 +8851,68 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudShares(nodeID)
   }, false))
+
+  // Clipboard has six explicit channels and requires the current signed-in
+  // Owner. Renderer never sees a Server bearer or arbitrary HTTP URL.
+  const requireClipboardAgent = async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-clipboard')
+    return requireAgentClient()
+  }
+  const clipboardIndex = (value: unknown, allowZero = false): number => {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) ||
+        value < (allowZero ? 0 : 1)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Owner Clipboard cursor')
+    }
+    return value
+  }
+  const clipboardCheck = (value: unknown): AgentClipboardCheck => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard verifier')
+    }
+    const v = value as Record<string, unknown>
+    if (typeof v.nonce !== 'string' || !/^[A-Za-z0-9+/]{16}$/.test(v.nonce) ||
+        typeof v.ciphertext !== 'string' || v.ciphertext.length > 256 ||
+        typeof v.scope !== 'string' || v.scope.length > 512 ||
+        !/^https?:\/\/[^/?#@]+:[0-9]+$/.test(v.scope)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard verifier metadata')
+    }
+    return { nonce: v.nonce, ciphertext: v.ciphertext, scope: v.scope }
+  }
+  const clipboardWrite = (value: unknown): AgentClipboardWrite => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard encrypted item')
+    }
+    const v = value as Record<string, unknown>
+    if (typeof v.client_event_id !== 'string' ||
+        !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v.client_event_id) ||
+        (v.kind !== 'text/plain' && v.kind !== 'text/uri-list') ||
+        typeof v.nonce !== 'string' || v.nonce.length !== 16 ||
+        typeof v.ciphertext !== 'string' ||
+        v.ciphertext.length < 20 || v.ciphertext.length > 90000) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard ciphertext')
+    }
+    return { client_event_id: v.client_event_id, kind: v.kind,
+      nonce: v.nonce, ciphertext: v.ciphertext }
+  }
+  ipcMain.handle('agent:cloud-clipboard-vault', () =>
+    runAgentAction<AgentClipboardVault>(async () =>
+      (await requireClipboardAgent()).cloudClipboardVault(), false))
+  ipcMain.handle('agent:cloud-clipboard-check', (_event, value: unknown) =>
+    runAgentAction<AgentClipboardVault>(async () =>
+      (await requireClipboardAgent()).cloudClipboardCheck(clipboardCheck(value)), false))
+  ipcMain.handle('agent:cloud-clipboard-list', (_event, before: unknown) =>
+    runAgentAction<AgentClipboardPage>(async () =>
+      (await requireClipboardAgent()).cloudClipboardList(clipboardIndex(before, true)), false))
+  ipcMain.handle('agent:cloud-clipboard-create', (_event, value: unknown) =>
+    runAgentAction<AgentClipboardItem>(async () =>
+      (await requireClipboardAgent()).cloudClipboardCreate(clipboardWrite(value)), false))
+  ipcMain.handle('agent:cloud-clipboard-delete', (_event, id: unknown) =>
+    runAgentAction<void>(async () =>
+      (await requireClipboardAgent()).cloudClipboardDelete(clipboardIndex(id)), false))
+  ipcMain.handle('agent:cloud-clipboard-clear', () =>
+    runAgentAction<void>(async () =>
+      (await requireClipboardAgent()).cloudClipboardClear(), false))
 
   // Renderer never receives the Server bearer. Only this explicit, versioned
   // Notes channel uses the already-authenticated, full Desktop Agent.

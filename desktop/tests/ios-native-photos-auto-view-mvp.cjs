@@ -17,7 +17,7 @@ const cloud = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift')
 const scope = read('ios/XDriveIOS/NativePhotoOwnerScope.swift')
 
 test('native Photos entry uses SwiftUI rather than WKWebView and supports verified login', () => {
-  assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(\)/)
+  assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(safeStartup: safeStartup\)/)
   assert.doesNotMatch(app, /\bXDriveWebAppHome\(\)/)
   assert.match(login, /if model\.owner != nil \{[\s\S]*?XDriveIOSNativePhotosDashboard\(/)
   assert.match(dashboard, /XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset,\s*mediaFilter: \$localGalleryMediaFilter\s*\)/)
@@ -268,7 +268,14 @@ test('native local and album photo walls free short landscape grid space while r
     assert.match(screen, /@AccessibilityFocusState private var accessibilityFocusedTileID: String\?/, name)
     assert.match(screen, /\.onChange\(of: pageRenderRevision\)/, name)
     assert.match(screen, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/, name)
-    assert.match(screen, /if selected != nil \{ suspendForViewer\(\) \}/, name)
+    if (name === 'album') {
+      // Album MapKit cover is another transient child; preserve the verified
+      // page and scroll checkpoint, but invalidate on a genuine route exit.
+      assert.match(screen, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/, name)
+      assert.match(screen, /else \{ libraryMonitor\.stop\(\); invalidate\(\) \}/, name)
+    } else {
+      assert.match(screen, /if selected != nil \{ suspendForViewer\(\) \}/, name)
+    }
     assert.doesNotMatch(screen, /\.id\(compactGallery\)|onChange\(of: compactGallery\)|UploadSession|URLSession/, name)
   }
   assert.match(localWall, /if authorization == \.limited \|\| !compactGallery/)
@@ -359,8 +366,9 @@ test('PhotoKit changes advance only an approved foreground Owner plan, not an or
   assert.match(controller, /PHPhotoLibrary\.shared\(\)\.unregisterChangeObserver\(observer\)/)
   assert.match(controller, /\[weak self, weak login\][\s\S]*?let owner = login\.owner/)
   assert.match(controller, /\.expediteForLibraryChange\(owner: owner\)/)
-  assert.match(login, /\.onAppear \{\s*backup\.startLibraryChangeMonitoring\(login: model\)/)
-  assert.match(login, /\.onDisappear \{\s*backup\.stopLibraryChangeMonitoring\(\)/)
+  assert.match(login, /mark\(\.ready\)\s*startupReady = true[\s\S]*?if !safeStartup \{\s*backup\.startLibraryChangeMonitoring\(login: model\)/)
+  assert.match(login, /readinessTask\?\.cancel\(\)[\s\S]*?backup\.stopLibraryChangeMonitoring\(\)/)
+  assert.match(login, /mayAutoBackup\([\s\S]*?startupReady: startupReady, safeStartup: safeStartup/)
   assert.match(store, /func expediteForLibraryChange\(owner: XDriveNativeOwnerRoot/)
   assert.match(store, /state\.enabled, !state\.pausedForReview/)
   assert.match(store, /\.earlierDueAfterLibraryChange\(currentDueAt: state\.nextDueAt, at: now\)/)

@@ -421,6 +421,14 @@ declare global {
   type AgentStorageCacheCleanupKind = StorageCacheCleanupKind
   type AgentCloudVersion = FileVersion
   type AgentCloudShare = FileShare
+  type AgentClipboardVault = { owner_id: number; salt: string; kdf: string; iterations: number;
+    check_nonce: string; check_ciphertext: string; aad_scope: string }
+  type AgentClipboardCheck = { nonce: string; ciphertext: string; scope: string }
+  type AgentClipboardWrite = {
+    client_event_id: string; kind: 'text/plain' | 'text/uri-list'; nonce: string; ciphertext: string
+  }
+  type AgentClipboardItem = AgentClipboardWrite & { id: number; created_at: string; expires_at: string }
+  type AgentClipboardPage = { items: AgentClipboardItem[]; next_before: number | null }
   type AgentNotesSource = 'mine' | 'ios_notes'
   type AgentNotesNamespace = {
     system_node_id: number
@@ -575,6 +583,7 @@ declare global {
       preparePlacesEmbed: (scope: import('../../../ui/shared/src/media-gallery-baidu-map-photo-scope').XDriveBaiduMapPhotoScope) => Promise<DesktopResult<{allowed:true;partition:string}>>
       startNativeDragOut: (relativePath: string) => void
       copyText: (text: string) => void
+      readClipboardText: () => string
       hide: () => void
       quit: () => void
       onNavigate: (callback: (view: DesktopNavigationIntent) => void) => () => void
@@ -1164,6 +1173,12 @@ declare global {
         cloudVersions: (nodeID: number) => Promise<DesktopResult<AgentCloudVersion[]>>
         cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudShares: (nodeID: number) => Promise<DesktopResult<AgentCloudShare[]>>
+        cloudClipboardVault: () => Promise<DesktopResult<AgentClipboardVault>>
+        cloudClipboardCheck: (value: AgentClipboardCheck) => Promise<DesktopResult<AgentClipboardVault>>
+        cloudClipboardList: (before: number) => Promise<DesktopResult<AgentClipboardPage>>
+        cloudClipboardCreate: (value: AgentClipboardWrite) => Promise<DesktopResult<AgentClipboardItem>>
+        cloudClipboardDelete: (id: number) => Promise<DesktopResult<void>>
+        cloudClipboardClear: () => Promise<DesktopResult<void>>
         cloudNotesInitialize: () => Promise<DesktopResult<AgentNotesNamespace>>
         cloudNotesList: (source: AgentNotesSource, query: string, offset: number) => Promise<DesktopResult<AgentNotesPage>>
         cloudNotesRead: (id: string) => Promise<DesktopResult<AgentNotesDetail>>

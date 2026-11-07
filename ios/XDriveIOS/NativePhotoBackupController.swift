@@ -1150,7 +1150,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             let decision = XDriveIOSPhotoFocusedBackupPolicy.afterWindow(
                 index: window, visibleTotal: result.totalVisible,
                 scanned: result.scanned, uploaded: result.uploaded,
-                needsReview: result.stoppedForReview || result.needsReview > 0
+                needsReview: result.stoppedForReview || result.needsReview > 0,
+                queuedUploaded: result.changeQueueUploaded
             )
             switch decision {
             case .repeatWindow(let same):

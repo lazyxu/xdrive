@@ -1,0 +1,59 @@
+import type { XDriveClipboardDataPort } from '../../../ui/shared/src/mui/ClipboardPage'
+
+// Desktop never receives a Server bearer. The selected authenticated Agent
+// owns each narrow operation; OS clipboard is read only on a user's click.
+export function createDesktopClipboardDataPort(
+  agent: Pick<Window['xdriveDesktop']['agent'],
+    'cloudClipboardVault' | 'cloudClipboardCheck' | 'cloudClipboardList' |
+    'cloudClipboardCreate' | 'cloudClipboardDelete' | 'cloudClipboardClear'>,
+  ownerScopeKey: string,
+  server: string,
+  ownerCurrent: () => boolean,
+): XDriveClipboardDataPort {
+  const verify = (signal?: AbortSignal) => {
+    signal?.throwIfAborted()
+    if (!ownerCurrent()) throw new Error('Desktop 账号已变化，请重新打开剪贴板。')
+  }
+  const unwrap = <T,>(result: DesktopResult<T>): T => {
+    if (!result.ok) throw new Error(result.error.message || 'Agent Clipboard 请求失败')
+    return result.data
+  }
+  const run = async <T,>(perform: () => Promise<DesktopResult<T>>, signal?: AbortSignal) => {
+    verify(signal)
+    const result = await perform()
+    verify(signal)
+    return unwrap(result)
+  }
+  return {
+    ownerScopeKey,
+    claimScope(vault) {
+      const id = vault.owner_id
+      if (!Number.isSafeInteger(id) || !id || id <= 0) {
+        throw new Error('当前 Agent 未提供经过验证的 Clipboard Owner 身份')
+      }
+      const url = new URL(server)
+      if (url.protocol !== 'https:' || url.username || url.password ||
+          url.pathname !== '/' || url.search || url.hash) {
+        throw new Error('Desktop Clipboard Server 地址无效')
+      }
+      return url.origin + ':' + String(id)
+    },
+    vault: signal => run(() => agent.cloudClipboardVault(), signal),
+    initializeCheck: (value, signal) => run(() => agent.cloudClipboardCheck(value), signal),
+    list: (before, signal) => run(() => agent.cloudClipboardList(before ?? 0), signal),
+    create: (value, signal) => run(() => agent.cloudClipboardCreate(value), signal),
+    remove: (id, signal) => run(() => agent.cloudClipboardDelete(id), signal),
+    clear: signal => run(() => agent.cloudClipboardClear(), signal),
+    readText: async () => {
+      verify()
+      const text = window.xdriveDesktop.readClipboardText()
+      verify()
+      return text
+    },
+    copyText: async text => {
+      verify()
+      window.xdriveDesktop.copyText(text)
+      verify()
+    },
+  }
+}

@@ -66,7 +66,7 @@ test('album viewer return revalidates the same album and last confirmed offset',
   assert.match(wall, /savedOffset = loadedPage\.startOffset/)
   assert.match(wall, /let anchor = XDriveIOSNativePhotoVirtualPagePolicy\.normalizedAnchor\(/)
   assert.match(wall, /returnScroll\.scrollTo\("album-page:/)
-  assert.match(wall, /if selected != nil \{ suspendForViewer\(\) \}/)
+  assert.match(wall, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
   assert.match(wall, /\.onChange\(of: libraryMonitor\.revision\)/)
   const phase = wall.slice(wall.indexOf('.onChange(of: phase)'),
     wall.indexOf('.onDisappear', wall.indexOf('.onChange(of: phase)')))
@@ -90,4 +90,53 @@ test('Owner-specific cloud Viewer retains modal state but clears stale previews'
   assert.match(ownerChanged, /refreshAfterViewer = false\s*selected = nil\s*viewerOwner = nil\s*viewerLoadedNodes = \[\]\s*viewerReturnNode = nil\s*accessibilityFocusedNodeID = nil\s*model\.invalidate\(\)/)
   assert.match(cloud, /player\?\.pause\(\)[\s\S]*still = nil[\s\S]*dismiss\(\)/)
   assert.doesNotMatch(local + albums, /UserDefaults\.standard|URLSession\(|UploadSession|WKWebView/)
+})
+
+const unified = read('ios/XDriveIOS/NativeUnifiedPhotoGallery.swift')
+
+test('Gallery child NavigationLinks keep verified unified page checkpoints on return', () => {
+  const life = unified.slice(
+    unified.indexOf('struct XDriveIOSNativeUnifiedPhotoGallery: View'),
+    unified.indexOf('private var galleryContent:')
+  )
+  assert.match(unified, /NavigationLink\(isActive: \$showingThumbnailCache\) \{\s*XDriveIOSNativePhotoThumbnailCacheScreen\(login: login\)/)
+  assert.match(unified, /NavigationLink\(isActive: \$showingPeople\) \{\s*XDriveIOSNativeGalleryPeople\(login: login\)/)
+  const disappeared = life.slice(
+    life.indexOf('.onDisappear {'), life.indexOf('.onChange(of: photoObserver.change)')
+  )
+  assert.match(disappeared, /photoObserver\.stop\(\)/)
+  assert.match(disappeared, /explicitOriginalAudit = false/)
+  assert.doesNotMatch(disappeared, /started = false|timeline\.reset\(\)|wall\.reset\(\)/)
+  // Owner, PhotoKit epoch and scene invalidation must still run independently.
+  assert.match(life, /!XDriveIOSNativePhotoFingerprintIndex\.isCurrent\(library\) \{ reset\(\) \}/)
+  assert.match(life, /\.onChange\(of: login\.owner\) \{ _ in/)
+  assert.match(life, /\.onChange\(of: phase\) \{ state in/)
+})
+
+test('native Gallery Map and album Map covers preserve their bounded verified page state', () => {
+  const localWall = continuous.slice(continuous.indexOf(
+    'struct XDriveIOSNativeLocalContinuousGalleryScreen: View'
+  ))
+  const localDisappearance = localWall.slice(
+    localWall.indexOf('.onDisappear {', localWall.indexOf('.onChange(of: phase)')),
+    localWall.indexOf('private func mediaFilterBinding')
+  )
+  assert.match(localDisappearance, /if selected != nil \|\| showingMap \{/)
+  assert.match(localDisappearance, /suspendForCoveredNavigation\(\)/)
+  assert.match(localDisappearance, /\} else \{\s*invalidate\(with: nil\)\s*monitor\?\.stop\(\)/)
+  const suspended = localWall.slice(
+    localWall.indexOf('private func suspendForCoveredNavigation()'),
+    localWall.indexOf('private func reload()')
+  )
+  assert.match(suspended, /scanTask\?\.cancel\(\)/)
+  assert.doesNotMatch(suspended, /total = 0|generation = UUID\(\)|monitor\?\.stop\(\)/)
+  assert.match(localWall, /if value != \.active \{[\s\S]*?invalidate\(with: nil\)/)
+  const albumWall = albums.slice(
+    albums.indexOf('struct XDriveIOSNativeAlbumContentsScreen: View'),
+    albums.indexOf('struct XDriveIOSNativePhotoAlbumsScreen: View')
+  )
+  assert.match(albumWall, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
+  assert.match(albumWall, /else \{ libraryMonitor\.stop\(\); invalidate\(\) \}/)
+  assert.match(albumWall, /\.onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?invalidate\(\)/)
+  assert.match(albumWall, /\.onChange\(of: phase\) \{ state in/)
 })

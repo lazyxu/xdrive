@@ -16,6 +16,18 @@ const compiled = ts.transpileModule(read(filename), {
 })
 assert.deepEqual((compiled.diagnostics ?? []).filter(x => x.category === ts.DiagnosticCategory.Error), [])
 const mod = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputText).toString('base64'))
+// Cross-platform fixture (public test data, never a production key). Swift
+// CryptoKit and Android JCE must decode these same AES-GCM bytes and AAD.
+const vector = JSON.parse(read('docs/architecture/clipboard-interop-vectors.json'))
+const vectorKey = await mod.xDriveClipboardDeriveKey(vector.passphrase, vector.salt)
+assert.equal(await mod.xDriveClipboardDecrypt(vectorKey, vector.owner_scope, {
+  client_event_id: vector.client_event_id, kind: vector.kind,
+  nonce: vector.nonce, ciphertext: vector.ciphertext,
+}), vector.plaintext, 'Web must decrypt the native AES-GCM interoperability vector')
+await assert.rejects(mod.xDriveClipboardDecrypt(vectorKey, vector.owner_scope + ':tampered', {
+  client_event_id: vector.client_event_id, kind: vector.kind,
+  nonce: vector.nonce, ciphertext: vector.ciphertext,
+}))
 const salt = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('base64')
 const key = await mod.xDriveClipboardDeriveKey('same long passphrase for both browsers', salt)
 const peer = await mod.xDriveClipboardDeriveKey('same long passphrase for both browsers', salt)
@@ -165,10 +177,10 @@ assert.match(ui, /await xDriveClipboardEncrypt\(key, aadScope, client_event_id, 
 assert.match(ui, /setDraft\(current => current === draft \? '' : current\)/,
   'successful old send must preserve draft text entered during that send')
 assert.match(ui, /xDriveClipboardDecrypt\(/)
-assert.match(ui, /canonicalScope = verified\.aad_scope \|\| port\.ownerScopeKey/)
+assert.match(ui, /canonicalScope = verified\.aad_scope \|\| claimScope/)
 assert.match(ui, /setAADScope\(canonicalScope\)/)
 assert.match(ui, /!verified\.aad_scope/)
-assert.match(ui, /scope: port\.ownerScopeKey/)
+assert.match(ui, /scope: claimScope/)
 assert.match(ui, /xDriveClipboardEncrypt\(key, aadScope/)
 assert.match(ui, /xDriveClipboardDecrypt\(key, aadScope/)
 assert.match(ui, /port\.copyText\(text\)/)

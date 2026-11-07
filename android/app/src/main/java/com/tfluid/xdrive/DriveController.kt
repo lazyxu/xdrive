@@ -4755,6 +4755,23 @@ class DriveController(
         }
     }
 
+    // Clipboard uses the existing verified native Owner root and coordinated
+    // bearer refresh. The API and Crypto never receive Device/Source tokens.
+    suspend fun clipboardVault(): OwnerClipboardVault =
+        withNotesOwner { service, token -> service.clipboardVault(token) }
+    suspend fun clipboardCheck(nonce: String,ciphertext: String,scope: String): OwnerClipboardVault =
+        withNotesOwner { service, token -> service.clipboardCheck(token,nonce,ciphertext,scope) }
+    suspend fun clipboardList(before: Long? = null): OwnerClipboardPage =
+        withNotesOwner { service, token -> service.clipboardList(token,before) }
+    suspend fun clipboardCreate(item: XDriveClipboardCrypto.Wire): OwnerClipboardItem =
+        withNotesOwner { service, token -> service.clipboardCreate(token,item) }
+    suspend fun clipboardDelete(id: Long) {
+        withNotesOwner { service, token -> service.clipboardDelete(token,id) }
+    }
+    suspend fun clipboardClear() {
+        withNotesOwner { service, token -> service.clipboardClear(token) }
+    }
+
     suspend fun notesInitialize() {
         withNotesOwner { service, token -> service.notesInitialize(token) }
     }

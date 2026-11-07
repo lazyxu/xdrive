@@ -21,7 +21,7 @@ export type XDriveClipboardDataPort = {
   /** Server origin + authenticated, verified Owner ID. Never contain a token. */
   readonly ownerScopeKey: string
   vault(signal?: AbortSignal): Promise<{ salt: string; iterations: number; kdf: string;
-    check_nonce: string; check_ciphertext: string; aad_scope: string }>
+    check_nonce: string; check_ciphertext: string; aad_scope: string; owner_id?: number }>
   initializeCheck(check: { nonce: string; ciphertext: string; scope: string }, signal?: AbortSignal): Promise<{
     salt: string; iterations: number; kdf: string; check_nonce: string; check_ciphertext: string; aad_scope: string }>
   list(before?: number, signal?: AbortSignal): Promise<{ items: XDriveClipboardItem[]; next_before: number | null }>
@@ -34,6 +34,10 @@ export type XDriveClipboardDataPort = {
   /** Must be initiated by the user's gesture; never silently query OS clipboard. */
   readText?(): Promise<string>
   copyText(text: string): Promise<void>
+  /** Canonical v1 AES AAD scope for native hosts, derived from verified Owner ID. */
+  claimScope?(vault: { owner_id?: number }): string
+  /** Optional authenticated SSE. The existing foreground refresh remains a fallback. */
+  watchChanges?(onChange: () => void, signal: AbortSignal): Promise<void>
 }
 
 type DecodedItem = { record: XDriveClipboardItem; text: string | null }
@@ -132,6 +136,31 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     }
   }, [key, load])
 
+  useEffect(() => {
+    if (!key || !port.watchChanges) return
+    const controller = new AbortController()
+    // SSE carries only invalidation signals. GET /items remains authoritative.
+    // Reconnect is bounded; old deployments keep using foreground polling.
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const run = async () => {
+      if (controller.signal.aborted) return
+      try {
+        await port.watchChanges!(() => {
+          if (!controller.signal.aborted && document.visibilityState === 'visible') void load()
+        }, controller.signal)
+      } catch {
+        // Failed/unsupported SSE never disables the existing visible refresh.
+      } finally {
+        if (!controller.signal.aborted) timer = setTimeout(() => { void run() }, 3000)
+      }
+    }
+    void run()
+    return () => {
+      controller.abort()
+      if (timer) clearTimeout(timer)
+    }
+  }, [key, port, load])
+
   const unlock = async () => {
     if (busy || key) return
     const actionToken = actionFence.current.capture()
@@ -145,13 +174,14 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
         throw new Error('Server 剪贴板加密版本不兼容。')
       }
       const nextKey = await xDriveClipboardDeriveKey(passphrase, info.salt)
+      const claimScope = port.claimScope ? port.claimScope(info) : port.ownerScopeKey
       const verified = info.check_ciphertext
         ? info
         : await port.initializeCheck({
-            ...await xDriveClipboardMakeVaultCheck(nextKey, port.ownerScopeKey),
-            scope: port.ownerScopeKey,
+            ...await xDriveClipboardMakeVaultCheck(nextKey, claimScope),
+            scope: claimScope,
           }, controller.signal)
-      let canonicalScope = verified.aad_scope || port.ownerScopeKey
+      let canonicalScope = verified.aad_scope || claimScope
       await xDriveClipboardVerifyVaultCheck(nextKey, canonicalScope, {
         nonce: verified.check_nonce, ciphertext: verified.check_ciphertext,
       })
@@ -160,13 +190,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       if (!verified.aad_scope) {
         const pinned = await port.initializeCheck({
           nonce: verified.check_nonce, ciphertext: verified.check_ciphertext,
-          scope: port.ownerScopeKey,
+          scope: claimScope,
         }, controller.signal)
         // During a rolling Server/Web deployment an older Server may omit
         // aad_scope. The successfully verified original-origin v1 vault
         // remains usable; cross-domain support becomes available after
         // the Server is upgraded and the original browser pins its scope.
-        canonicalScope = pinned.aad_scope || port.ownerScopeKey
+        canonicalScope = pinned.aad_scope || claimScope
         await xDriveClipboardVerifyVaultCheck(nextKey, canonicalScope, {
           nonce: pinned.check_nonce, ciphertext: pinned.check_ciphertext,
         })

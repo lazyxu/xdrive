@@ -27,4 +27,22 @@ enum XDriveIOSNativeLaunchCheckpoint {
     static func mark(_ phase: Phase, defaults: UserDefaults = .standard) {
         defaults.set(phase.rawValue, forKey: key)
     }
+
+    /// A cancelled login/restore view task is not evidence that an already
+    /// mounted native workspace failed. Only the visible scene may acknowledge
+    /// readiness, independently of the task that restored the session.
+    static func mayFinishStartup(
+        restoreComplete: Bool, workspaceVisible: Bool, foreground: Bool
+    ) -> Bool {
+        restoreComplete && workspaceVisible && foreground
+    }
+
+    /// Do not start an automatic foreground original writer until native UI
+    /// startup has completed. A user-selected rescue boot stays read-only
+    /// unless the user explicitly starts an operation.
+    static func mayAutoBackup(
+        startupReady: Bool, safeStartup: Bool, foreground: Bool
+    ) -> Bool {
+        startupReady && !safeStartup && foreground
+    }
 }

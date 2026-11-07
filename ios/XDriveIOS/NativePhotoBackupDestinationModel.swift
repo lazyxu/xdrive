@@ -264,8 +264,9 @@ final class XDriveIOSNativePhotoBackupDestinationModel: ObservableObject {
               let name = dto.name,
               XDriveIOSPhotoBackupDestinationNamePolicy.normalized(name) == name,
               let path = dto.target_path,
-              path.hasPrefix("同步文件夹/设备备份/"),
-              path.hasSuffix("/" + name)
+              XDriveIOSPhotoBackupDestinationPathPolicy.accepts(
+                  path: path, name: name, deviceID: device.deviceID
+              )
         else { throw XDriveIOSPhotoManagedDestinationFailure.invalidResponse }
         return XDriveIOSPhotoManagedDestination(
             sourceID: sourceID, deviceID: device.deviceID, name: name,

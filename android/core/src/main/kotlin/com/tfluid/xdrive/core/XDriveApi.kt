@@ -425,6 +425,19 @@ enum class ApiFailureReason { UNKNOWN, CURRENT_PASSWORD_INCORRECT, DNS, CONNECTI
 
 class ApiException(val statusCode: Int, message: String, val reason: ApiFailureReason = ApiFailureReason.UNKNOWN) : IOException(message)
 
+data class OwnerClipboardVault(
+    val ownerID: Long, val salt: String, val kdf: String, val iterations: Int,
+    val checkNonce: String, val checkCiphertext: String, val aadScope: String,
+)
+data class OwnerClipboardItem(
+    val id: Long, val clientEventID: String, val kind: String,
+    val nonce: String, val ciphertext: String,
+    val createdAt: String, val expiresAt: String,
+) {
+    val wire get() = XDriveClipboardCrypto.Wire(clientEventID,kind,nonce,ciphertext)
+}
+data class OwnerClipboardPage(val items: List<OwnerClipboardItem>,val nextBefore: Long?)
+
 interface XDriveService {
     suspend fun login(username: String, password: String): AuthSession
     suspend fun refresh(refreshToken: String): AuthSession
@@ -442,6 +455,25 @@ interface XDriveService {
     suspend fun verifyNativeAndroidDevice(
         accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
     ): Unit = throw ApiException(501, "Android device identity verification unavailable")
+    /** Native Clipboard never borrows Photo, SourceRun or Files credentials.
+     * Existing test stubs default to unsupported rather than falsely succeeding.
+     */
+    suspend fun clipboardVault(accessToken: String): OwnerClipboardVault =
+        throw ApiException(501,"Owner Clipboard vault unavailable")
+    suspend fun clipboardCheck(accessToken: String, nonce: String,
+        ciphertext: String, scope: String): OwnerClipboardVault =
+        throw ApiException(501,"Owner Clipboard verifier unavailable")
+    suspend fun clipboardList(accessToken: String, before: Long? = null): OwnerClipboardPage =
+        throw ApiException(501,"Owner Clipboard list unavailable")
+    suspend fun clipboardCreate(accessToken: String, item: XDriveClipboardCrypto.Wire): OwnerClipboardItem =
+        throw ApiException(501,"Owner Clipboard send unavailable")
+    suspend fun clipboardDelete(accessToken: String, id: Long) {
+        throw ApiException(501,"Owner Clipboard delete unavailable")
+    }
+    suspend fun clipboardClear(accessToken: String) {
+        throw ApiException(501,"Owner Clipboard clear unavailable")
+    }
+
 
     /** Read-only current Owner+Android-Device managed Source/Target discovery. */
     suspend fun nativeAndroidPhotoDestination(
@@ -969,6 +1001,78 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             !sha.all { it in "0123456789abcdefABCDEF" } ||
             updated.length > 64) invalidPayload()
         return OwnerNoteRow(id, source, title, nodeId, revision, sha, bytes, updated)
+    }
+
+    private fun clipboardVaultRow(value: JsonObject): OwnerClipboardVault {
+        val row = OwnerClipboardVault(
+            ownerID = value.long("owner_id"),
+            salt = value.string("salt"),
+            kdf = value.string("kdf"),
+            iterations = value.long("iterations").toInt(),
+            checkNonce = value.string("check_nonce"),
+            checkCiphertext = value.string("check_ciphertext"),
+            aadScope = value.string("aad_scope"),
+        )
+        if (row.ownerID <= 0 || row.kdf != "PBKDF2-SHA256" || row.iterations != 310000 ||
+            runCatching { java.util.Base64.getDecoder().decode(row.salt).size }.getOrDefault(0) != 16)
+            invalidPayload()
+        return row
+    }
+    private fun clipboardItemRow(value: JsonObject): OwnerClipboardItem {
+        val item = OwnerClipboardItem(
+            id = value.long("id"),
+            clientEventID = value.string("client_event_id"),
+            kind = value.string("kind"),
+            nonce = value.string("nonce"),
+            ciphertext = value.string("ciphertext"),
+            createdAt = value.string("created_at"),
+            expiresAt = value.string("expires_at"),
+        )
+        if (item.id <= 0 || item.kind !in setOf("text/plain","text/uri-list") ||
+            runCatching { java.util.UUID.fromString(item.clientEventID) }.isFailure ||
+            runCatching { java.util.Base64.getDecoder().decode(item.nonce).size }.getOrDefault(0) != 12 ||
+            item.ciphertext.length !in 24..90000) invalidPayload()
+        return item
+    }
+
+    override suspend fun clipboardVault(accessToken: String) =
+        clipboardVaultRow(request("clipboard/vault", accessToken))
+    override suspend fun clipboardCheck(accessToken: String, nonce: String,
+        ciphertext: String, scope: String): OwnerClipboardVault {
+        require(nonce.length == 16 && ciphertext.length in 20..256 && scope.length in 1..512)
+        val value = request("clipboard/vault/check",accessToken,method="PUT",
+            values=mapOf("nonce" to nonce,"ciphertext" to ciphertext,"scope" to scope))
+        return clipboardVaultRow(value)
+    }
+    override suspend fun clipboardList(accessToken: String,before: Long?): OwnerClipboardPage {
+        require(before == null || before > 0)
+        val data = request("clipboard/items",accessToken,
+            query = if (before == null) emptyMap() else mapOf("before" to before.toString()))
+        val raw = data["items"] as? JsonArray ?: invalidPayload()
+        if (raw.size > 50) invalidPayload()
+        val items = raw.map { clipboardItemRow(it as? JsonObject ?: invalidPayload()) }
+        if (items.map { it.id }.toSet().size != items.size) invalidPayload()
+        val next = if (data["next_before"] == null || data["next_before"] == JsonNull)
+            null else data.long("next_before").takeIf { it > 0 } ?: invalidPayload()
+        return OwnerClipboardPage(items,next)
+    }
+    override suspend fun clipboardCreate(
+        accessToken: String,item: XDriveClipboardCrypto.Wire): OwnerClipboardItem {
+        require(item.ciphertext.length in 24..90000 && item.nonce.length == 16 &&
+            item.kind in setOf("text/plain","text/uri-list"))
+        val value = clipboardItemRow(request("clipboard/items",accessToken,
+            values=mapOf("client_event_id" to item.clientEventID,"kind" to item.kind,
+                "nonce" to item.nonce,"ciphertext" to item.ciphertext)))
+        if (value.clientEventID != item.clientEventID || value.kind != item.kind ||
+            value.nonce != item.nonce || value.ciphertext != item.ciphertext) invalidPayload()
+        return value
+    }
+    override suspend fun clipboardDelete(accessToken: String,id: Long) {
+        require(id > 0)
+        request("clipboard/items/$id",accessToken,method="DELETE",emptyResponse=true)
+    }
+    override suspend fun clipboardClear(accessToken: String) {
+        request("clipboard/items",accessToken,method="DELETE",emptyResponse=true)
     }
 
     override suspend fun notesInitialize(accessToken: String) {
