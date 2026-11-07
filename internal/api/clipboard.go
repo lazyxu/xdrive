@@ -325,9 +325,7 @@ WHERE owner_id = ?
          ) AS recent
        ))`,
 			uid, now, uid, now, clipboardPageSize).Error
-        // Broadcast only after a committed new item, never on idempotent retry.
-        // The Owner vault row serializes this cursor with write/prune.
-        // (The retention statement runs before the event.)
+        // Existing duplicate receipts are handled outside this transaction.
 	})
 	if err != nil {
 		if errors.Is(err, errClipboardVaultNotReady) || errors.Is(err, gorm.ErrRecordNotFound) {
