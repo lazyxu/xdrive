@@ -87,7 +87,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     load(cursor, history: earlier)
                 }
             }
-            if busy { ProgressView("核对当前 Owner 的地点照片…") }
+            if busy {
+                XDriveIOSNativePhotoWallLoadingMessage(message: "核对当前 Owner 的地点照片…")
+            }
             ScrollViewReader { returnScroll in
             ScrollView {
                 XDriveIOSNativePhotoWallGrid(density: wallDensity) {

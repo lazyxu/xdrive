@@ -37,6 +37,37 @@ struct XDriveIOSNativePhotoWallPlaceholderTile: View {
     }
 }
 
+/// Presentation-only busy indicator. The caller owns task lifetime and
+/// never starts a reader or makes an authorization decision here.
+struct XDriveIOSNativePhotoWallLoadingMessage: View {
+    let message: String
+    var accessibilityID: String? = nil
+
+    @ViewBuilder var body: some View {
+        if let accessibilityID {
+            ProgressView(message)
+                .font(.footnote)
+                .accessibilityIdentifier(accessibilityID)
+        } else {
+            ProgressView(message).font(.footnote)
+        }
+    }
+}
+
+/// Presentation-only secondary/empty text. The caller decides whether its
+/// verified range is empty, filtered, temporarily loading or unavailable.
+struct XDriveIOSNativePhotoWallStatusMessage: View {
+    let message: String
+    var minHeight: CGFloat = 0
+
+    var body: some View {
+        Text(message)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
+    }
+}
+
 /// A day heading only for a capture-time-ordered collection. Location ranges
 /// are not automatically chronological and must not show invented headings.
 struct XDriveIOSNativePhotoWallDayHeader: View {
@@ -77,10 +108,17 @@ struct XDriveIOSNativePhotoWallRetryMessage: View {
     let canRetry: Bool
     var accessibilityID: String? = nil
     var textFont: Font = .footnote
+    var systemImage: String? = nil
     let onRetry: () -> Void
 
     var body: some View {
-        Text(message).font(textFont).foregroundStyle(.secondary)
+        if let systemImage {
+            Label(message, systemImage: systemImage)
+                .font(textFont)
+                .foregroundStyle(.secondary)
+        } else {
+            Text(message).font(textFont).foregroundStyle(.secondary)
+        }
         if let accessibilityID {
             Button(buttonTitle, action: onRetry)
                 .disabled(!canRetry)

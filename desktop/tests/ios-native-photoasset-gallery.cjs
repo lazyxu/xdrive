@@ -238,7 +238,7 @@ test('cloud PhotoAsset Gallery short landscape recovers wall height without losi
   assert.match(wall, /accessibilityLabel\("云端图库说明"\)/)
   assert.match(wall, /\.alert\("云端图库说明", isPresented: \$showingGalleryHelp\)/)
   assert.match(wall, /if let page = model\.page \{/)
-  assert.match(wall, /if model\.busy \{ ProgressView\("读取云端图库/)
+  assert.match(wall, /if model\.busy \{\s*XDriveIOSNativePhotoWallLoadingMessage\(message: "读取云端图库/)
   assert.match(wall, /if let message = model\.error \{/)
   assert.match(wall, /Button\("搜索"\) \{ applySearch\(\) \}/)
   assert.match(wall, /XDriveIOSNativeServerVirtualRange\(/)
