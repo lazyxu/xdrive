@@ -105,6 +105,7 @@ async function bootElectron(boot,env,bootstrap){
     assert.equal(row.exactViewerRange,9)
     assert.equal(row.viewerMetadata,true)
     assert.equal(row.noUnrelatedMapBearerAccess,true)
+    if(boot===1)assert.equal(row.realWebModeRoundTrip,true)
     if(boot===2){
       assert.equal(row.nativeLogoutBlockedOldMap,true)
       assert.equal(row.oldMapHiddenAfterLogout,true)
