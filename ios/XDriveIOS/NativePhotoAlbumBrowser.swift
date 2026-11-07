@@ -330,6 +330,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
     let sortOrder: XDriveIOSNativeAlbumSortOrder
     let selectionMode: Bool
     let selectedIDs: Set<String>
+    let retainWhileCovered: Bool
     // The continuous album wall owns the Viewer return focus state. Pass the
     // binding to virtual tiles so VoiceOver can resume on the verified item.
     let accessibilityFocus: AccessibilityFocusState<String?>.Binding
@@ -338,6 +339,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
     let onFailure: () -> Void
     @State private var page: XDrivePhotoKitScanPage?
     @State private var precedingCapturedAt: Date?
+    @State private var retainedGeneration: UUID?
     @State private var reader: XDriveIOSNativeAlbumPageReader?
 
     private var placeholder: some View {
@@ -393,6 +395,16 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
         }
         .id("album-page:\(offset)")
         .task(id: "\(generation)-\(album.collectionIdentifier)-\(offset)-\(sortOrder.rawValue)") {
+            if let cached = page, retainedGeneration == generation,
+               cached.startOffset == offset,
+               cached.totalAccessibleAssets == expectedTotal,
+               [.authorized, .limited].contains(
+                   PHPhotoLibrary.authorizationStatus(for: .readWrite)
+               ) {
+                onRead(cached)
+                return
+            }
+            retainedGeneration = nil
             page = nil
             precedingCapturedAt = nil
             let next = XDriveIOSNativeAlbumPageReader()
@@ -413,6 +425,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
                 }
                 precedingCapturedAt = preceding
                 page = result
+                retainedGeneration = generation
                 onRead(result)
             } catch is CancellationError {
             } catch {
@@ -422,10 +435,13 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
             if !Task.isCancelled { reader = nil }
         }
         .onDisappear {
-            page = nil
+            if !retainWhileCovered {
+                page = nil
+                precedingCapturedAt = nil
+                retainedGeneration = nil
+            }
             if let reader { Task { await reader.reset() } }
             reader = nil
-            precedingCapturedAt = nil
         }
     }
 }
@@ -445,6 +461,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
+    @State private var pageRevision = 0
     @State private var total: Int?
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
     @State private var sortOrder: XDriveIOSNativeAlbumSortOrder = .newest
@@ -578,12 +595,14 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                                 generation: epoch, density: density,
                                 sortOrder: sortOrder, selectionMode: selectionMode,
                                 selectedIDs: Set(selectedCandidates.keys),
+                                retainWhileCovered: selected != nil || showingAlbumMap,
                                 accessibilityFocus: $accessibilityFocusedTileID,
                                 onSelect: { item, loadedPage in
                                     if page?.startOffset != loadedPage.startOffset {
                                         selectedCandidates.removeAll()
                                     }
                                     page = loadedPage
+                                    pageRevision = libraryMonitor.revision
                                     savedOffset = loadedPage.startOffset
                                     if selectionMode {
                                         toggleAlbumSelection(item)
@@ -598,6 +617,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                                     if shouldRestoreViewerTile &&
                                         loadedPage.startOffset == savedOffset {
                                         page = loadedPage
+                                        pageRevision = libraryMonitor.revision
                                         pageRenderRevision &+= 1
                                     }
                                 },
@@ -1047,9 +1067,19 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     private func restoreAfterViewer() {
         viewerPage = nil
         shouldRestoreViewerTile = viewerReturnID != nil && phase == .active
-        // Open the same album/page only after fresh PhotoKit authorization.
+        // Keep a same-page Viewer return stable after a fresh authorization and
+        // live PhotoKit change-epoch check. Cross-page jumps still reload.
+        let freshPermission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        let sameVerifiedPage = !loading && page?.startOffset == savedOffset &&
+            pageRevision == libraryMonitor.revision &&
+            freshPermission == permission &&
+            (freshPermission == .authorized || freshPermission == .limited)
         if phase == .active {
-            reload()
+            if sameVerifiedPage {
+                pageRenderRevision &+= 1
+            } else {
+                reload()
+            }
             if let jump = pendingAlbumMapJump {
                 pendingAlbumMapJump = nil
                 mapAlbumScope = nil
@@ -1168,6 +1198,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
     @Environment(\.scenePhase) private var phase
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var page: XDriveLocalPhotoAlbumPage?
+    @State private var lastConfirmedRevision = 0
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false
     @State private var error: String?
@@ -1245,23 +1276,34 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                 Text("仅删除相簿本身，照片仍在系统照片库，云端备份不受影响。")
             }
             .onAppear {
+                let currentPermission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                let currentPage = page != nil && !loading && error == nil &&
+                    lastConfirmedRevision == libraryMonitor.revision &&
+                    currentPermission == permission &&
+                    (currentPermission == .authorized || currentPermission == .limited)
                 isVisible = true
                 libraryMonitor.start()
-                reload()
+                if !currentPage { reload() }
             }
             .onChange(of: libraryMonitor.revision) { _ in
-                // Own successful mutations and external library changes both
-                // require a fresh, permission-checked directory snapshot.
+                // Do not remove NavigationLink's source album while hidden.
+                // A changed revision forces a new read on return.
+                guard isVisible else { return }
                 if phase == .active && !albumMutationBusy { reload() }
                 else { invalidate() }
             }
             .onChange(of: phase) { state in
-                if state == .active { reload() } else { invalidate() }
+                if state == .active {
+                    if isVisible { reload() }
+                } else {
+                    libraryMonitor.stop()
+                    invalidate()
+                }
             }
             .onDisappear {
                 isVisible = false
                 visibleTailAlbumID = nil
-                libraryMonitor.stop()
+                // Keep change notifications across album child navigation.
                 suspendForNavigation()
             }
     }
@@ -1569,6 +1611,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                     )
                     savedOffset = requestedOffset
                 }
+                lastConfirmedRevision = libraryMonitor.revision
             } catch is CancellationError {
             } catch {
                 guard epoch == ticket else { return }

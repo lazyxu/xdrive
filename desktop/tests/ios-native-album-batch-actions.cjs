@@ -109,7 +109,7 @@ test('scene, source/page changes cancel batch tasks and forget selected photo id
   assert.match(source, /private func invalidate\(\) \{\s*cancelAlbumOperations\(\)/)
   assert.match(source, /\.onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?invalidate\(\)/)
   assert.match(source, /\.onChange\(of: phase\) \{ state in[\s\S]*?if state != \.active/)
-  assert.match(source, /if selected != nil \{ suspendForViewer\(\) \}/)
+  assert.match(source, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
   assert.match(source, /onCrossPage: \{ oldPage, anchor, direction in/)
   assert.match(source, /viewerReturnID = next\.id/)
 })

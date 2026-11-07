@@ -102,7 +102,7 @@ test('Recent and Favorites locate both list and grid items in the real Owner fol
   assert.match(screen, /guard phase == \.active, model\.verified, !model\.loading,/)
   assert.match(screen, /let owner = login\.owner, filteredItems\.contains\(item\),\s*model\.items\.contains\(item\)/)
   assert.match(screen, /locateOwner = owner\s*locateIntent = item/)
-  assert.match(screen, /\.sheet\(item: \$locateIntent, onDismiss: \{\s*locateOwner = nil\s*reload\(\)/)
+  assert.match(screen, /\.sheet\(item: \$locateIntent, onDismiss: \{\s*locateOwner = nil[\s\S]*?if !model\.matches\(login\.owner\) \{ reload\(\) \}/)
   assert.match(screen, /XDriveIOSNativeFilesLocateScreen\(\s*login: login, selected: selected\.node,/)
   assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, openedOwner\)/)
   assert.match(screen, /if selectedFile == nil && locateIntent == nil && managementIntent == nil/)
