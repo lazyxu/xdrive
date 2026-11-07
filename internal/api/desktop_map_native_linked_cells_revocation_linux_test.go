@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,7 +16,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 // Real PostgreSQL and real production Gin endpoints. This is the missing
@@ -31,6 +34,8 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.DesktopMapGuestGrant{},
 		&meta.BaiduJSAPIMapEpoch{}, &meta.AuditEvent{},
+		&meta.AdminServiceSecret{}, &meta.InternalServiceKeyAnchor{},
+		&meta.PhotoCollection{}, &meta.BaiduMapScopeHandoff{},
 		&meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.MediaMetadata{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{},
 		&meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
@@ -47,6 +52,11 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 		if err := db.Create(u).Error; err != nil {
 			t.Fatal(err)
 		}
+		if err := db.Create(&meta.BaiduJSAPIMapEpoch{
+			OwnerID: u.ID, Epoch: 3,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	const fakeSHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	const fakeCAS = "synthetic-map-cas-only"
@@ -54,10 +64,45 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 		fakeCAS, fakeSHA, 10)
 	seedP04BrowserOwnerPhotoCells(t, db, foreign.ID, "foreign-linked", 1, 0,
 		fakeCAS, fakeSHA, 10)
+	const origin = "https://map.example.invalid:8443"
 	s := &Server{DB: db,
-		Auth:       auth.New("map-native-owner-cells-test-only", 15*time.Minute),
-		RefreshTTL: time.Hour,
+		Auth:          auth.New("map-native-owner-cells-test-only", 15*time.Minute),
+		RefreshTTL:    time.Hour,
+		AllowedOrigin: origin,
 	}
+	// Genuine signed Server runtime is mandatory for protected /cells. The
+	// synthetic internal AK is never sent to Baidu or exposed to a guest.
+	keys, err := connectorsecret.NewKeyring(1, map[uint32]string{
+		1: strings.Repeat("cd", 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ConnectorSecrets = keys
+	keyVersion, encryptedAK, err := keys.Seal(
+		baiduJSAPISecretAADID, baiduJSAPISecretKind,
+		[]byte("SYNTHETIC_NATIVE_LINKED_CELLS_AK_NO_PROVIDER"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.AdminServiceSecret{
+		Name: baiduJSAPISecretName, Enabled: true, Revision: 1,
+		KeyVersion: keyVersion, Ciphertext: encryptedAK,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureBaiduJSAPI4InternalKeys(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	priorCommit := version.Commit
+	version.Commit = strings.Repeat("b", 40)
+	defer func() { version.Commit = priorCommit }()
+	if err := s.RefreshBaiduJSAPI4ManagedRelease(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer s.ClearBaiduJSAPI4OperatorRelease()
+
 	native, err := s.issueSession(db, owner)
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +117,6 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := s.Router()
-	const origin = "https://map.example.invalid:8443"
 	request := func(method, route, bearer, body, requestOrigin string) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequest(method, origin+route, strings.NewReader(body))
