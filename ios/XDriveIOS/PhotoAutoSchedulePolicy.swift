@@ -165,12 +165,14 @@ enum XDriveIOSPhotoAutoSchedulePolicy {
     }
 
     /// Explicitly opted-in foreground catch-up for a confirmed safe window.
-    /// No accelerated rescan after unknown receipts, changed PhotoKit epoch,
-    /// malformed progress, or the end of a complete library pass.
+    /// Priority PhotoKit queue uploads are included in the total write cap,
+    /// but do not consume a positional scan slot. Unproven extra writes,
+    /// unknown receipts or changed PhotoKit epochs never accelerate a run.
     static func nextDueAfterCompletedWindow(
         at now: Date, intervalMinutes: Int, currentWindow: Int,
         followingWindow: Int, visibleTotal: Int, scanned: Int,
-        uploaded: Int, needsReview: Bool, libraryUnchanged: Bool
+        uploaded: Int, needsReview: Bool, libraryUnchanged: Bool,
+        queuedUploaded: Int = 0
     ) -> Date? {
         guard let periodic = nextDue(after: now, intervalMinutes: intervalMinutes)
         else { return nil }
@@ -178,7 +180,11 @@ enum XDriveIOSPhotoAutoSchedulePolicy {
               currentWindow >= 0, followingWindow >= 0,
               visibleTotal > 0, scanned >= 0,
               uploaded >= 0, uploaded <= maxNewFiles,
-              uploaded <= scanned else { return periodic }
+              queuedUploaded >= 0, queuedUploaded <= uploaded,
+              // Queue uploads can finish before any positional slot is read.
+              // Only non-queue uploads are bounded by scanned slots; the
+              // combined total still obeys the original 20-write cap.
+              uploaded - queuedUploaded <= scanned else { return periodic }
         let offset = currentWindow > Int.max / windowSize
             ? Int.max : currentWindow * windowSize
         guard offset < visibleTotal else { return periodic }

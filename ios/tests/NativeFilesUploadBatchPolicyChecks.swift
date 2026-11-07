@@ -25,7 +25,13 @@ struct NativeFilesUploadBatchPolicyChecks {
               "invalid source name")
         let eight = (1...8).map { URL(fileURLWithPath: "/tmp/document-\($0).pdf") }
         check(P.validSelection(eight), "bounded eight")
-        check(!P.validSelection(eight + [single]), "nine rejected before any upload")
+        check(P.validSelection(eight + [single]), "nine originals now supported")
+        let sixtyFour = (1...64).map {
+            URL(fileURLWithPath: "/tmp/document-\($0).pdf")
+        }
+        check(P.validSelection(sixtyFour), "64 sequential originals")
+        check(!P.validSelection(sixtyFour + [single]),
+              "65 originals rejected before first upload")
         let gib = P.maximumStagedFileBytes
         let reserve = P.freeDiskReserveBytes
         check(gib == 1_073_741_824, "one GiB upper bound")
@@ -65,8 +71,8 @@ struct NativeFilesUploadBatchPolicyChecks {
               "1 GiB completed chunks still provisional")
 
         typealias F = XDriveIOSNativeFilesFolderUploadPolicy
-        check(F.maximumFiles == 64 && F.maximumDirectories == 32 &&
-              F.maximumDepth == 8 && F.maximumTotalBytes == 256 * 1_048_576,
+        check(F.maximumFiles == 128 && F.maximumDirectories == 64 &&
+              F.maximumDepth == 8 && F.maximumTotalBytes == 512 * 1_048_576,
               "bounded foreground folder upload limits")
         check(F.validComponent("选中的文件夹") && F.validComponent("a.txt"),
               "valid native Files provider relative names")
@@ -74,15 +80,15 @@ struct NativeFilesUploadBatchPolicyChecks {
               "reject unrepresentable relative names")
         check(F.acceptsDirectory(existing: 0, depth: 1),
               "root directory admitted")
-        check(F.acceptsDirectory(existing: 31, depth: 8),
+        check(F.acceptsDirectory(existing: 63, depth: 8),
               "last directory and depth boundary admitted")
-        check(!F.acceptsDirectory(existing: 32, depth: 8) &&
+        check(!F.acceptsDirectory(existing: 64, depth: 8) &&
               !F.acceptsDirectory(existing: 0, depth: 9),
               "folder depth/count rejected before POST")
-        check(F.acceptsFile(existing: 63, totalBytes: F.maximumTotalBytes - 1,
+        check(F.acceptsFile(existing: 127, totalBytes: F.maximumTotalBytes - 1,
                             nextBytes: 1, depth: 8),
               "last file and byte boundary admitted")
-        check(!F.acceptsFile(existing: 64, totalBytes: 0, nextBytes: 1, depth: 1) &&
+        check(!F.acceptsFile(existing: 128, totalBytes: 0, nextBytes: 1, depth: 1) &&
               !F.acceptsFile(existing: 0, totalBytes: F.maximumTotalBytes,
                              nextBytes: 1, depth: 1) &&
               !F.acceptsFile(existing: 0, totalBytes: 0, nextBytes: -1, depth: 1),

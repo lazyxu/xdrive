@@ -144,7 +144,7 @@ final class XDriveIOSBGOriginalWindowStore {
         state.windowIndex = unchanged
             ? XDriveIOSPhotoAutoSchedulePolicy.nextWindow(
                 current: state.windowIndex, visibleTotal: report.totalVisible,
-                scanned: report.scanned, uploaded: report.uploaded,
+                scanned: report.scanned, uploaded: report.windowUploaded,
                 needsReview: unresolved
               ) : 0
         state.libraryChangeEpoch = epoch.serialized

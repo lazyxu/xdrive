@@ -39,7 +39,20 @@ struct XDriveIOSNativeFilesBatchExportPolicyChecks {
                 name: "document-\(n).pdf", type: "file", size: 1, revision: 1)
         }
         check(P.validSelection(eight, parentID: 3), "eight distinct files")
-        check(!P.validSelection(eight + [a], parentID: 3), "nine files rejected")
+        check(P.validSelection(eight + [a], parentID: 3), "nine files supported")
+        let thirtyTwo = (1...32).map { n in
+            XDriveIOSNativeFilesNode(id: UInt64(n + 100), parent_id: 3,
+                name: "document-\(n).pdf", type: "file", size: 1, revision: 1)
+        }
+        check(P.validSelection(thirtyTwo, parentID: 3), "32 files supported")
+        check(!P.validSelection(thirtyTwo + [a], parentID: 3),
+              "33 files rejected before download")
+        let overSingle = XDriveIOSNativeFilesNode(
+            id: 1000, parent_id: 3, name: "over.bin",
+            type: "file", size: P.maximumPerFileBytes + 1, revision: 1
+        )
+        check(!P.validSelection([a, overSingle], parentID: 3),
+              "single-original 1 GiB limit remains independently enforced")
         check(!P.validSelection([a,b], parentID: 0), "unknown folder")
         print("native Files bounded multi-export policy: PASS")
     }

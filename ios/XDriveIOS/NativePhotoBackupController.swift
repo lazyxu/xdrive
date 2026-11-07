@@ -818,7 +818,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         self.manualNextWindow = unchanged
                             ? XDriveIOSPhotoAutoSchedulePolicy.nextWindow(
                                 current: window, visibleTotal: result.totalVisible,
-                                scanned: result.scanned, uploaded: result.uploaded,
+                                scanned: result.scanned, uploaded: result.windowUploaded,
                                 needsReview: result.stoppedForReview || result.needsReview > 0
                               ) : 0
                         self.manualLibraryEpoch = completed.serialized

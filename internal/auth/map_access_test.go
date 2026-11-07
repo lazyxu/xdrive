@@ -35,6 +35,16 @@ func TestMapAccessStrictSignedIssuedAt(t *testing.T) {
 	if err != nil || verified.UserID != 17 || verified.SessionVersion != 3 || !verified.IssuedAt.Equal(now.Add(-time.Minute)) {
 		t.Fatalf("rejected valid signed map access: %v %#v", err, verified)
 	}
+	// Native Agent lineage must remain available for the SECOND, post-query
+	// Server authorization. Other tokens remain unlinked (zero).
+	native := issue(func(c *Claims) { c.DesktopMapNativeRefreshID = 471 })
+	nativeAccess, err := m.ParseMapAccess(native, now)
+	if err != nil || nativeAccess.DesktopMapNativeRefreshID != 471 {
+		t.Fatalf("map bootstrap stripped current native lineage: %v %#v", err, nativeAccess)
+	}
+	if verified.DesktopMapNativeRefreshID != 0 {
+		t.Fatal("ordinary Owner JWT unexpectedly acquired native lineage")
+	}
 	wrongKey, err := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
 		UserID: 17, SessionVersion: 3, TokenType: "access",
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "17", IssuedAt: jwt.NewNumericDate(now.Add(-time.Minute)), ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour))},
@@ -53,6 +63,7 @@ func TestMapAccessStrictSignedIssuedAt(t *testing.T) {
 		{"expired", issue(func(c *Claims) { c.ExpiresAt = jwt.NewNumericDate(now.Add(-time.Second)) })},
 		{"legacy missing version", issue(func(c *Claims) { c.SessionVersion = 0 })},
 		{"wrong type", issue(func(c *Claims) { c.TokenType = "preview_stream" })},
+		{"source-run bearer", issue(func(c *Claims) { c.SourceID = 3; c.SourceRunID = "synthetic-run" })},
 		{"wrong subject", issue(func(c *Claims) { c.Subject = "19" })},
 		{"missing subject", issue(func(c *Claims) { c.Subject = "" })},
 		{"no user", issue(func(c *Claims) { c.UserID = 0 })},
