@@ -655,6 +655,16 @@ private final class XDriveIOSNativeFilesSearchOptionsModel: ObservableObject {
         errorMessage = nil
     }
 
+    func suspendForNavigation() {
+        epoch = UUID()
+        job?.cancel()
+        job = nil
+        loading = false
+        // Retain only the same-Owner already verified filter options.
+        // belongs(to:) gates their rendering, and Owner changes call
+        // invalidate() to revoke even these read-only entries.
+    }
+
     func belongs(to owner: XDriveNativeOwnerRoot?) -> Bool {
         guard let owner, let loadedOwner else { return false }
         return XDriveIOSNativePhotoOwnerScope.matches(owner, loadedOwner)
@@ -2531,7 +2541,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
-            searchOptions.invalidate()
+            searchOptions.suspendForNavigation()
             if isHome, let current = login.owner,
                let retained = favoriteShortcutsOwner,
                XDriveIOSNativePhotoOwnerScope.matches(current, retained) {
