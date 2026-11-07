@@ -958,10 +958,13 @@ test('local folder Source UI stays Desktop-only and explicitly non-executable', 
   assert.match(manager, /await adapter\.authorizeLocalFolder\(created\.id\)/)
   assert.match(desktopAdapter, /localFolderSupported \? \(sourceID\) => window\.xdriveDesktop\.authorizeLocalFolder\(sourceID\)/)
   assert.match(app, /capabilities\.includes\('local-folder-root-grants'\)/)
-  assert.equal(shared.getExternalSourceTriggerState({
+  assert.deepEqual(shared.getExternalSourceTriggerState({
     source: { kind: 'local_folder', status: 'paused', direction: 'push', run_mode: 'sync', sync_mode: 'backup' },
     latestRun: null, credential: null,
-  }).ready, false)
+  }), {
+    ready: false,
+    label: '请在已绑定设备的「文件夹备份」中运行；Server 不远程扫描本地文件夹',
+  }, 'do not misreport the already implemented owning Agent as disabled')
 })
 
 
