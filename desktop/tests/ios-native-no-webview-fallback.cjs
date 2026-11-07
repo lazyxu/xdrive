@@ -20,7 +20,7 @@ test('native iPhone IPA has no fallback WebKit/PWA UI or JavaScript Photo Host',
   const native = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift');
   const model = read('ios/XDriveIOS/NativeOwnerLoginModel.swift');
   const project = read('ios/project.yml');
-  assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(\)/);
+  assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(safeStartup: safeStartup\)/);
   assert.match(native, /XDriveIOSNativePhotosDashboard\(/);
   assert.doesNotMatch(app + native + model, /import WebKit|WKWebView|XDriveWebAppHome|ios\.web\.origin/);
   assert.match(model, /xdrive\.ios\.native\.last-server/);

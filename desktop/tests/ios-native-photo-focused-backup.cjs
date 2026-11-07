@@ -45,7 +45,9 @@ test('focused backup is explicit, native, Owner-bound and not a hidden BG grant'
   assert.match(focusEntry, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/);
   assert.match(focusEntry, /kind: \.focused/);
   assert.doesNotMatch(focusEntry, /URLSession|Keychain|BGTask|UserDefaults/);
-  assert.match(rootScreen, /else \{ backup\.cancel\(\) \}/);
+  const phaseChange = rootScreen.slice(rootScreen.indexOf('.onChange(of: phase)'),
+    rootScreen.indexOf('.onChange(of: model.owner)'));
+  assert.match(phaseChange, /else \{[\s\S]*?readinessTask\?\.cancel\(\)[\s\S]*?backup\.stopLibraryChangeMonitoring\(\)[\s\S]*?backup\.cancel\(\)/);
   const lifecycle = ui.slice(ui.indexOf('.onDisappear'), ui.indexOf('    // Native Form Sections'));
   assert.match(lifecycle, /showFocusedConsent = false/);
   assert.match(lifecycle, /focusedConsentOwner = nil/);
