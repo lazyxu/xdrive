@@ -77,6 +77,37 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     @State private var visible = false
     @State private var retry = UUID()
     @State private var acceptedGeneration: UUID?
+    @State private var queueBadges: [String: XDriveIOSPhotoKitPersistentBackupQueue.VisibleItemStatus] = [:]
+    @State private var badgeReadEpoch = UUID()
+    @Environment(\.xdriveNativePhotoQueueBadgeOwner) private var backupBadgeOwner
+    @Environment(\.xdriveNativePhotoProcessingID) private var activeProcessingID
+    @Environment(\.xdriveNativePhotoPriorityAction) private var priorityAction
+
+    private func readVisibleQueueBadges() async {
+        let epoch = UUID()
+        badgeReadEpoch = epoch
+        // The unified wall holds at most 48 current rows; only read local IDs.
+        let ids = model.rows.compactMap { $0.local?.id }
+        guard ids.count <= 48, visible, displayActive,
+              XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
+              !ids.isEmpty else {
+            queueBadges = [:]
+            return
+        }
+        do {
+            let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
+            let fetched = try await queue.visibleStatusDetails(
+                owner: owner, localIdentifiers: ids
+            )
+            try Task.checkCancellation()
+            guard badgeReadEpoch == epoch, visible, displayActive,
+                  XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
+                  model.rows.compactMap({ $0.local?.id }) == ids else { return }
+            queueBadges = fetched
+        } catch {
+            if badgeReadEpoch == epoch { queueBadges = [:] }
+        }
+    }
 
     var body: some View {
         content
@@ -91,8 +122,13 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                 visible = false
                 if !retainWhileCovered {
                     acceptedGeneration = nil
+                    queueBadges = [:]
+                    badgeReadEpoch = UUID()
                     model.reset()
                 }
+            }
+            .onChange(of: backupBadgeOwner) { _ in
+                Task { await readVisibleQueueBadges() }
             }
             .task(id: "\(visible):\(displayActive):\(retry)") {
                 guard visible, displayActive, wall.failure == nil,
@@ -109,6 +145,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                 if acceptedGeneration == ticket, model.completed,
                    model.belongs(to: login.owner) {
                     loaded()
+                    await readVisibleQueueBadges()
                     return
                 }
                 await model.load(from: page.start, filter: filter, login: login, query: query, library: wall.library)
@@ -123,6 +160,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                 if wall.accept(model, page: page.id) {
                     acceptedGeneration = ticket
                     loaded()
+                    await readVisibleQueueBadges()
                 }
             }
     }
@@ -145,13 +183,41 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                                       let position = model.rows.firstIndex(where: { $0.id == row.id }) else { return }
                                 open(.init(number: page.id, rows: model.rows), position)
                             } label: {
-                                XDriveIOSUnifiedPhotoTile(row: row, login: login, presentingOwner: owner,
-                                                         displayActive: displayActive)
+                                ZStack(alignment: .topLeading) {
+                                    XDriveIOSUnifiedPhotoTile(
+                                        row: row, login: login, presentingOwner: owner,
+                                        displayActive: displayActive
+                                    )
+                                    if let local = row.local, backupBadgeOwner != nil,
+                                       let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy.badge(
+                                        for: activeProcessingID == local.id ? "processing" :
+                                            (queueBadges[local.id]?.state ?? "unverified"),
+                                        failureReasonCode: queueBadges[local.id]?.failureReasonCode
+                                       ) {
+                                        Label(badge.title, systemImage: badge.symbol)
+                                            .font(.system(size: 9, weight: .semibold))
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 3)
+                                            .background(Color.black.opacity(0.7), in: Capsule())
+                                            .padding(3)
+                                            .accessibilityHidden(true)
+                                    }
+                                }
                             }
                             .buttonStyle(.plain).id(row.id)
                             .accessibilityLabel("\(row.isLive ? "实况照片" : row.isVideo ? "视频" : "照片")，\(row.presence.title)")
                             .contextMenu {
                                 Button("来源与核对详情") { pairing(row) }
+                                if let local = row.local, let priorityAction,
+                                   backupBadgeOwner != nil {
+                                    Button(queueBadges[local.id]?.state == "failed"
+                                        ? "核对并重试失败原件" : "优先备份此原件") {
+                                        priorityAction(
+                                            local.id, queueBadges[local.id]?.state == "failed"
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
