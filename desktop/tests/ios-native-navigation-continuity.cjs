@@ -1,4 +1,6 @@
 'use strict'
+// This suite guards the actual SwiftUI route/model lifecycle; physical frame
+// timing remains an independent acceptance check, not a source-test claim.
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
