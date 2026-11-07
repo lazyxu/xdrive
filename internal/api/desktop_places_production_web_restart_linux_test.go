@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"net"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"github.com/lazyxu/xdrive/internal/version"
 )
@@ -155,6 +157,41 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 			CollectionID: family.ID, AssetID: assets[idx].ID, Position: int64(i),
 		}).Error; err != nil {
 			t.Fatal(err)
+		}
+	}
+	// Seed genuinely decodable, cache-contract-valid synthetic JPEG bytes
+	// for every Owner photo. This makes protected Thumbnail and Viewer
+	// endpoints test actual binary delivery rather than an unbuilt worker.
+	var derivative bytes.Buffer
+	if err := jpeg.Encode(&derivative, original, &jpeg.Options{Quality: 87}); err != nil {
+		t.Fatal(err)
+	}
+	variant, err := mediapkg.ViewerQualityVariantFor(mediapkg.ViewerQualityHigh, "jpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, asset := range assets {
+		var node meta.Node
+		if err := db.Preload("File").First(&node, asset.PrimaryNodeID).Error; err != nil ||
+			node.File == nil {
+			t.Fatal("synthetic Owner media node missing for derivative")
+		}
+		var metadata meta.MediaMetadata
+		if err := db.Where("node_id = ?", node.ID).Take(&metadata).Error; err != nil {
+			t.Fatal("synthetic media metadata missing for derivative")
+		}
+		thumbKey := mediaThumbnailStorageKey(node, metadata)
+		viewerKey, err := mediapkg.ViewerQualityStorageKey(
+			node.ID, node.Revision, metadata.SHA256, variant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, cacheKey := range []string{thumbKey, viewerKey} {
+			if written, putErr := local.Put(context.Background(),
+				cacheKey, bytes.NewReader(derivative.Bytes())); putErr != nil ||
+				written != int64(derivative.Len()) {
+				t.Fatal("synthetic thumbnail/viewer JPEG bytes were not cached")
+			}
 		}
 	}
 	server := &Server{DB: db, Store: local,
