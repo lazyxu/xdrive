@@ -311,7 +311,7 @@ private struct XDriveIOSNativeMediaWallTile: View {
                 .clipped()
             }
         }
-        .aspectRatio(1, contentMode: .fit)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 3))
         .accessibilityLabel(
             item.isLive ? "实况媒体：\(item.node.name)" :
