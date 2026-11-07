@@ -177,7 +177,7 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 	// A JWT minted from the Agent's map grant must never become a generic
 	// Owner bearer for Files, Notes, uploads, or Gallery mutations.
 	for _, denied := range []struct{ method, route string }{
-		{http.MethodGet, "/api/v1/nodes"},
+		{http.MethodGet, "/api/v1/nodes/root"},
 		{http.MethodGet, "/api/v1/notes"},
 		{http.MethodPost, "/api/v1/media/albums"},
 		{http.MethodPost, "/api/v1/uploads"},

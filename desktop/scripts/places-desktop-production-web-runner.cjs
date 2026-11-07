@@ -47,6 +47,19 @@ async function until(fn,timeout,label){
 function launch(binary,args,env){
   const child=spawn(binary,args,{cwd:root,env,stdio:['ignore','pipe','pipe']})
   let carry='',errors='',highlighted='',stderrTail=''
+  const goDiagnostics=[]
+  const captureGoDiagnostic=line=>{
+    if(!(/\.go:[0-9]+/.test(line) || /^#\s/.test(line) ||
+         /^--- FAIL:/.test(line) || /^panic:/.test(line) || /^FAIL(?:\s|$)/.test(line)))return
+    // This fixture uses synthetic accounts and images. Return only bounded
+    // failure lines, not process environment, credential-bearing URLs or bodies.
+    const clean=line.replace(/https?:\/\/[^\s]+/gi,'[url]')
+      .replace(/Bearer\s+\S+/gi,'Bearer [redacted]')
+      .replace(/(?:password|refresh_token|ticket)\s*[:=]\s*\S+/gi,'[secret]')
+      .slice(0,260)
+    goDiagnostics.push(clean)
+    if(goDiagnostics.length>12)goDiagnostics.shift()
+  }
   const markers=[]
   child.stdout.on('data',chunk=>{
     const parts=(carry+chunk.toString()).split('\n')
@@ -56,6 +69,7 @@ function launch(binary,args,env){
         markers.push(JSON.parse(line.slice('XDRIVE_PLACES_PRODUCTION_RESTART '.length)))
       }
       if(line.includes('XDRIVE_PLACES_PRODUCTION_FAILED'))errors+=line.slice(0,900)+'\n'
+      captureGoDiagnostic(line)
     }
   })
   child.stderr.on('data',chunk=>{
@@ -69,7 +83,8 @@ function launch(binary,args,env){
     }
   })
   const exited=new Promise(resolve=>child.once('exit',(code,signal)=>resolve({code,signal})))
-  return {child,exited,markers,getError:()=>highlighted||errors}
+  return {child,exited,markers,getError:()=>highlighted||errors,
+    getGoDiagnostic:()=>goDiagnostics.join(' | ').slice(-1800)}
 }
 async function stop(processInfo){
   if(!processInfo||processInfo.child.exitCode!==null)return
@@ -155,7 +170,7 @@ async function main(){
       XD_DESKTOP_PLACES_LEGACY_MARKER:legacyMarker,
     })
     const fixture=await until(()=>{
-      if(server.child.exitCode!==null)throw Error('real Gin/PostgreSQL fixture failed')
+      if(server.child.exitCode!==null)throw Error('real Gin/PostgreSQL fixture failed: '+server.getGoDiagnostic())
       return fs.existsSync(ready)?JSON.parse(fs.readFileSync(ready,'utf8')):null
     },240000,'real production Web PostgreSQL fixture')
     assert.ok(fixture.url.startsWith('https://'+ip+':'))

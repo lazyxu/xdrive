@@ -252,7 +252,7 @@ async function inspectRealWebGuestOwnerDataPath(expectedOwner){
   if(!thumbnailBytesValid || !viewerBytesValid)
     throw Error('real Owner thumbnail or Viewer JPEG payload invalid')
   const unrelated=await Promise.all([
-    request('/api/v1/nodes'),
+    request('/api/v1/nodes/root'),
     request('/api/v1/notes'),
     request('/api/v1/admin/users'),
     request('/api/v1/media/albums','POST'),

@@ -25,8 +25,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
-	"github.com/lazyxu/xdrive/internal/meta"
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
+	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"github.com/lazyxu/xdrive/internal/version"
 )
