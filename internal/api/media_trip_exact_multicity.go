@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
@@ -48,6 +49,94 @@ func mediaExactTripHome(days []mediaMemoryTripDay) (int64, int64, bool) {
 	}
 	home := coordinates[bestKey]
 	return home[0], home[1], true
+}
+
+// A home-dominant travel transition day can still have genuine off-home
+// photos (e.g. return home after visiting another city). Promote it only
+// when a distinct neighboring day is already independently identified as
+// away; isolated commuter GPS rows must never manufacture a trip.
+func mediaExactTripPromoteTransitDays(
+    dominant []mediaMemoryTripDay, offHome []mediaMemoryTripDay,
+    homeLat, homeLon int64,
+) []mediaMemoryTripDay {
+    candidates := make(map[string]mediaMemoryTripDay, len(offHome))
+    for _, away := range offHome {
+        if away.ItemCount >= 2 && !mediaMemoryTripNearHome(away, homeLat, homeLon) {
+            candidates[away.DateKey] = away
+        }
+    }
+    adjusted := append([]mediaMemoryTripDay(nil), dominant...)
+    for i, day := range dominant {
+        if !mediaMemoryTripNearHome(day, homeLat, homeLon) { continue }
+        away, ok := candidates[day.DateKey]
+        if !ok { continue }
+        anchored := false
+        for j, other := range dominant {
+            if i == j || mediaMemoryTripNearHome(other, homeLat, homeLon) {
+                continue
+            }
+            delta := int(day.Date.Sub(other.Date).Hours() / 24)
+            if delta >= -1 && delta <= 1 {
+                anchored = true
+                break
+            }
+        }
+        if anchored {
+            adjusted[i] = away
+        }
+    }
+    return adjusted
+}
+
+// SQL chooses one genuine off-home cell per local day, without loading
+// every distinct GPS location into memory. This is recognition evidence
+// only; exact membership still includes all off-home cities and is checked
+// through the independent current-Owner predicate.
+func queryMediaExactTripAwayDays(
+    ctx context.Context, db *gorm.DB, ownerID uint64, zone string,
+    homeLat, homeLon int64,
+) ([]mediaMemoryTripDay, error) {
+    base, err := (&Server{DB: db}).mediaItemsBaseQuery(
+        ctx, ownerID, mediaQueryOptions{}, "")
+    if err != nil { return nil, err }
+    predicate, arguments := mediaExactTripAwayPredicate(homeLat, homeLon)
+    dateExpr := mediaIANAZoneExpression(
+        "TO_CHAR(xd_media_metadata.captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')", zone)
+    latExpr := fmt.Sprintf("FLOOR(xd_media_metadata.latitude * %d)::bigint", mediaMemoryTripCellScale)
+    lonExpr := fmt.Sprintf("FLOOR((CASE WHEN xd_media_metadata.longitude = 180 THEN -180 ELSE xd_media_metadata.longitude END) * %d)::bigint", mediaMemoryTripCellScale)
+    grouped := base.Where(
+        "xd_media_metadata.index_state = ? AND xd_media_metadata.captured_at IS NOT NULL AND "+
+            mediaPlaceValidGPSPredicate, meta.MediaIndexStateReady).
+        Where(predicate, arguments...).
+        Select(dateExpr+" AS day_key, "+latExpr+" AS latitude_cell, "+
+            lonExpr+" AS longitude_cell, COUNT(DISTINCT xd_media_metadata.node_id) AS item_count").
+        Group("day_key, "+latExpr+", "+lonExpr)
+    ranked := db.WithContext(ctx).Table("(?) AS off_home_days", grouped).
+        Select("day_key, latitude_cell, longitude_cell, item_count, "+
+            "ROW_NUMBER() OVER (PARTITION BY day_key ORDER BY item_count DESC, latitude_cell ASC, longitude_cell ASC) AS rank")
+    type row struct {
+        DayKey string
+        LatitudeCell int64
+        LongitudeCell int64
+        ItemCount int64
+    }
+    var rows []row
+    if err := db.WithContext(ctx).Table("(?) AS ranked_days", ranked).
+        Select("day_key, latitude_cell, longitude_cell, item_count").
+        Where("rank = 1").Order("day_key ASC").Scan(&rows).Error; err != nil {
+        return nil, err
+    }
+    out := make([]mediaMemoryTripDay, 0, len(rows))
+    for _, row := range rows {
+        day, err := time.Parse("2006-01-02", row.DayKey)
+        if err != nil { return nil, err }
+        out = append(out, mediaMemoryTripDay{
+            Date: mediaMemoryDate(day), DateKey: row.DayKey,
+            LatitudeCell: row.LatitudeCell, LongitudeCell: row.LongitudeCell,
+            ItemCount: row.ItemCount,
+        })
+    }
+    return out, nil
 }
 
 // Resolve every travel day once. The SQL aggregate has O(days) response size,
