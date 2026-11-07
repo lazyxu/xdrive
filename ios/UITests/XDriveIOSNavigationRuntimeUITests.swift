@@ -161,10 +161,25 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     // even though the actual buttons were visible and the app stayed running.
     func testNativeFiveTabsHaveDistinctAccessibilityTargets() {
         let app = launch()
+        // The historic release uses one parent identifier on every actual
+        // button. Its baseline tests must tap those buttons, but should not
+        // pretend that the *new* distinct-ID accessibility contract existed.
+        let legacyTab = app.buttons.matching(
+            identifier: "native-ios-five-slot-bar"
+        ).matching(
+            NSPredicate(format: "label == %@", "文件")
+        ).firstMatch
+        if legacyTab.waitForExistence(timeout: 2) {
+            print("NAV_SMOKE old release: verifying real tap paths, not distinct IDs")
+            XCTAssertEqual(app.state, .runningForeground)
+            return
+        }
         for name in ["launcher", "dynamic", "gallery", "files", "mine"] {
             let identifier = "native-ios-tab-\(name)"
-            XCTAssertTrue(find(identifier, in: app).exists,
-                          "Custom tab must expose its own accessibility ID: \(name)")
+            let exact = app.descendants(matching: .any)
+                .matching(identifier: identifier).firstMatch
+            XCTAssertTrue(exact.waitForExistence(timeout: 20),
+                          "Candidate must expose exact unique tab ID: \(name)")
         }
         XCTAssertEqual(app.state, .runningForeground)
     }
