@@ -2868,11 +2868,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             managementIntent = nil
             versionHistoryIntent = nil
             locateIntent = nil
+            selectedFile = nil
+            selectedOwner = nil
             cancelArrangementReanchor()
             showingTagManager = false
             tagManagerOwner = nil
-            selectedFile = nil
-            selectedOwner = nil
             returnOwner = nil
             lastViewedFile = nil
             offset = 0
